@@ -74,13 +74,25 @@ export async function continueActiveTargetIfIdle(
   });
 }
 
-export async function executeTargetContinuationCommand(
+export type TargetContinuationOutcome =
+  | { kind: "executed"; result: TurnResult; verifiedHealthy: boolean }
+  | { kind: "completed"; targetId: string }
+  | { kind: "deferred-background"; targetId: string }
+  | { kind: "skipped-verifier-failed"; targetId: string; reason?: string }
+  | { kind: "skipped" };
+
+/**
+ * Same decision path as executeTargetContinuationCommand, but reports WHY nothing ran so the
+ * continuation loop can distinguish "goal reached / target gone" (stop is correct) from
+ * "verifier itself failed" (stop would silently abandon the mission).
+ */
+export async function executeTargetContinuationWithOutcome(
   this: AgentRuntimeInternal,
   options: TargetContinuationRuntimeCommandOptions,
-): Promise<TurnResult | null> {
+): Promise<TargetContinuationOutcome> {
   const traceContext = options.traceContext;
   const target = await targetContinuationCandidateForCommand.call(this, traceContext);
-  if (!target) return null;
+  if (!target) return { kind: "skipped" };
 
   if (
     options.verifyBeforeContinue === true &&
@@ -93,7 +105,10 @@ export async function executeTargetContinuationCommand(
       status: "waiting",
       targetId: target.targetID,
     });
-    return null;
+    // Distinct outcome: the continuation loop must wait for background tasks to drain and
+    // re-attempt instead of exiting — otherwise any session that keeps background benches or
+    // serves running never auto-continues after a turn ends.
+    return { kind: "deferred-background", targetId: target.targetID };
   }
 
   const verificationResult = options.verifyBeforeContinue
@@ -111,10 +126,11 @@ export async function executeTargetContinuationCommand(
       status: "completed",
       targetId: verificationResult.target.targetID,
     });
-    return null;
+    return { kind: "completed", targetId: verificationResult.target.targetID };
   }
-  // 没有 nextAction 的失败结果来自 verifier 自身失败或无效输出，
-  // 不是模型确认的下一步工作；继续自动续跑会把内部错误变成无限目标迭代。
+  // A failure without a next action comes from the verifier itself (error or invalid
+  // output), not from model-confirmed work. Report it to the caller, which decides whether
+  // to degrade to one unverified continuation.
   if (verificationResult && !verificationResult.verification.nextAction?.trim()) {
     this.logger?.warn("Goal continuation skipped after verifier failed without next action", {
       ...traceContextToLogContext(traceContext),
@@ -123,7 +139,11 @@ export async function executeTargetContinuationCommand(
       reason: verificationResult.verification.reason,
       targetId: verificationResult.target.targetID,
     });
-    return null;
+    return {
+      kind: "skipped-verifier-failed",
+      targetId: verificationResult.target.targetID,
+      reason: verificationResult.verification.reason,
+    };
   }
   const latestTarget = await this.readSessionTargetForContext(traceContext);
   // 目标校验请求可能在用户点击 Stop 后才返回；队列会保持 stopRequested，
@@ -141,7 +161,7 @@ export async function executeTargetContinuationCommand(
       module: "core.runtime",
       targetId: target.targetID,
     });
-    return null;
+    return { kind: "skipped" };
   }
   const continuationTarget = latestTarget;
   const prompt = wrapSystemReminderForSource(
@@ -164,7 +184,7 @@ export async function executeTargetContinuationCommand(
     targetId: continuationTarget.targetID,
   });
 
-  return await this.executeTurnCommand(prompt, undefined, {
+  const result = await this.executeTurnCommand(prompt, undefined, {
     abortSignal: options.abortSignal,
     // session/send 期间触发的目标自动续跑仍属于同一次用户提交。
     // 若这里丢掉 inputId，最终 turn.completed 会回落到 runtime trace，
@@ -176,6 +196,21 @@ export async function executeTargetContinuationCommand(
     targetId: continuationTarget.targetID,
     traceContext: continuationTrace,
   });
+  // verifiedHealthy: the verifier produced a usable next action (not skipped, not a
+  // degraded unverified retry). The continuation loop uses this to reset failure streaks.
+  return {
+    kind: "executed",
+    result,
+    verifiedHealthy: verificationResult?.verification.nextAction?.trim() ? true : false,
+  };
+}
+
+export async function executeTargetContinuationCommand(
+  this: AgentRuntimeInternal,
+  options: TargetContinuationRuntimeCommandOptions,
+): Promise<TurnResult | null> {
+  const outcome = await executeTargetContinuationWithOutcome.call(this, options);
+  return outcome.kind === "executed" ? outcome.result : null;
 }
 
 export async function targetContinuationCandidate(

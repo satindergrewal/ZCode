@@ -131,7 +131,26 @@ export interface AgentRuntimeConfig {
   maxTurns?: number;
   permissionTimeoutMs?: number;
   compact?: AutoCompactPolicyConfig;
-  targetCompletionVerification?: { enabled?: boolean };
+  targetCompletionVerification?: {
+    enabled?: boolean;
+    /**
+     * Consecutive verifier failures (verifier error without a usable next action) tolerated
+     * before the goal continuation loop stops. Each failure still gets one unverified
+     * continuation turn so the mission keeps moving; the counter resets whenever the
+     * verifier produces a healthy next action. Default 3.
+     */
+    maxFailureContinuations?: number;
+    /**
+     * Independent verifier passes required before the loop accepts goal completion.
+     * Protects against a single false-positive "done" ending a mission early. Default 2.
+     */
+    requiredCompletionConfirmations?: number;
+    /**
+     * How long the continuation loop waits for running background tasks to drain before
+     * giving up on auto-continuation. Default 2 hours.
+     */
+    backgroundDeferralTimeoutMs?: number;
+  };
   midConversationSystem?: {
     mode?: "auto" | "force";
   };
