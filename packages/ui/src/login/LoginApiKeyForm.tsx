@@ -41,12 +41,19 @@ import {
 import { useZCodeStore } from "@/store/StoreProvider.js";
 
 interface LoginApiKeyFormProps {
-  onCancel: () => void;
+  /** Only rendered when allowCancel is true; the startup variant has no providers view to return to. */
+  onCancel?: () => void;
   onSaved: () => void | Promise<void>;
   onSkipped: () => void | Promise<void>;
+  allowCancel?: boolean;
 }
 
-export function LoginApiKeyForm({ onCancel, onSaved, onSkipped }: LoginApiKeyFormProps) {
+export function LoginApiKeyForm({
+  onCancel,
+  onSaved,
+  onSkipped,
+  allowCancel = true,
+}: LoginApiKeyFormProps) {
   const { intl, locale } = useZCodeIntl();
   const platform = usePlatform();
   const { modelSelectionService, providerSettingsService, settingService } = useServices();
@@ -258,17 +265,19 @@ export function LoginApiKeyForm({ onCancel, onSaved, onSkipped }: LoginApiKeyFor
           {saving ? <Loader2Icon className="size-4 animate-spin" /> : null}
           {intl.formatMessage({ id: "login.apiKey.continue" })}
         </Button>
-        <Button
-          type="button"
-          variant="outline"
-          className="h-10 w-full text-ui-base"
-          size="lg"
-          data-testid={TID_LOGIN_API_KEY_CANCEL_BUTTON}
-          disabled={busy}
-          onClick={onCancel}
-        >
-          {intl.formatMessage({ id: "login.apiKey.cancel" })}
-        </Button>
+        {allowCancel ? (
+          <Button
+            type="button"
+            variant="outline"
+            className="h-10 w-full text-ui-base"
+            size="lg"
+            data-testid={TID_LOGIN_API_KEY_CANCEL_BUTTON}
+            disabled={busy}
+            onClick={() => onCancel?.()}
+          >
+            {intl.formatMessage({ id: "login.apiKey.cancel" })}
+          </Button>
+        ) : null}
         <Button
           type="button"
           variant="link"

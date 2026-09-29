@@ -26,25 +26,36 @@ import { renderOAuthProviderIcon } from "./lib/oauthProviderIcon.js";
 import { ThemeHeroVisual } from "./openWorkspacePageThemeHero.js";
 import { useZCodeStore } from "./store/StoreProvider.js";
 
+/**
+ * Login screen mode:
+ * - "startup": first-run / provider gate — API-key (custom provider) form only,
+ *   no OAuth provider buttons. Other logins live in Settings → Model settings.
+ * - "login-entry": explicitly opened from a settings/agent login entry — full
+ *   provider list + API-key toggle (legacy behavior).
+ */
+export type LoginScreenMode = "startup" | "login-entry";
+
 interface WelcomeScreenProps {
+  mode: LoginScreenMode;
   onComplete: (reason: LoginCompleteReason) => void | Promise<void>;
 }
 
 export type LoginCompleteReason = "oauth" | "apiKey" | "skip";
 
-export function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
+export function WelcomeScreen({ mode, onComplete }: WelcomeScreenProps) {
   return (
     <main className="relative flex h-full min-h-dvh items-center justify-center overflow-hidden bg-background px-4 py-6 text-foreground sm:px-6">
       <ThemeHeroVisual className="absolute inset-0" />
       <div className="pointer-events-none absolute left-0 top-0 right-0 z-10 flex h-12 w-full items-center [app-region:drag]" />
       <section className="relative z-10 w-full flex flex-col gap-10 max-w-sm rounded-2xl border border-popover-border bg-background p-8 text-ui-base/relaxed shadow-md sm:p-10">
-        <LoginPanel active onComplete={onComplete} />
+        <LoginPanel mode={mode} active onComplete={onComplete} />
       </section>
     </main>
   );
 }
 
 interface LoginPanelProps {
+  mode: LoginScreenMode;
   active: boolean;
   onComplete: (reason: LoginCompleteReason) => void | Promise<void>;
 }
@@ -68,7 +79,7 @@ function shouldCompleteLoginFromExistingUser(params: {
   return params.hasUser && !params.attempt;
 }
 
-function LoginPanel({ active, onComplete }: LoginPanelProps) {
+function LoginPanel({ mode, active, onComplete }: LoginPanelProps) {
   const { intl } = useZCodeIntl();
   const {
     startLogin,
@@ -291,7 +302,10 @@ function LoginPanel({ active, onComplete }: LoginPanelProps) {
         {/* Root 层写入 oauthError（轮询/回调失败）后 effect 会把 useOAuth reset 回 idle，
             若只判断 status==="idle" 会让失败块和渠道按钮列表同屏、状态纠缠。
             失败期间统一由下方失败块接管（重新登录/取消），渠道列表等错误清掉后再回来。 */}
-        {status === "idle" && !oauthError && loginMode === "providers" && (
+        {status === "idle" &&
+          !oauthError &&
+          loginMode === "providers" &&
+          mode === "login-entry" && (
           <div className="space-y-4">
             {loadingProviders ? (
               <div className="flex items-center justify-center gap-2 rounded-xl border border-border bg-surface px-4 py-6 text-ui-base text-foreground-subtle">
@@ -354,9 +368,26 @@ function LoginPanel({ active, onComplete }: LoginPanelProps) {
           </div>
         )}
 
-        {status === "idle" && loginMode === "apiKey" ? (
+        {status === "idle" && loginMode === "apiKey" && mode === "login-entry" ? (
           <LoginApiKeyForm
             onCancel={() => setLoginMode("providers")}
+            onSaved={() => {
+              resetApiKeyForm();
+              return onComplete("apiKey");
+            }}
+            onSkipped={() => {
+              resetApiKeyForm();
+              return onComplete("skip");
+            }}
+          />
+        ) : null}
+
+        {/* Startup variant: API-key / custom-provider setup only, no OAuth buttons and no
+            Cancel (there is no provider list to return to). Other logins are added later
+            from Settings → Model settings, or the user stays unconnected via Skip. */}
+        {status === "idle" && !oauthError && mode === "startup" ? (
+          <LoginApiKeyForm
+            allowCancel={false}
             onSaved={() => {
               resetApiKeyForm();
               return onComplete("apiKey");

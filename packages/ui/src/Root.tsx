@@ -985,7 +985,15 @@ function RootInner({
         {rootModelSelectionErrorNode}
         {remoteConnectionDialog}
         {directoryBrowserDialog}
-        <WelcomeScreen onComplete={handleWelcomeScreenComplete} />
+        <WelcomeScreen
+          mode={
+            welcomeScreenOpenReason === "manual-login" ||
+            welcomeScreenOpenReason === "provider-request"
+              ? "login-entry"
+              : "startup"
+          }
+          onComplete={handleWelcomeScreenComplete}
+        />
       </RootShell>
     );
   }
