@@ -117,11 +117,20 @@ export function parseOtlpHeaders(value: string | undefined): Record<string, stri
  * 在 CLI 的异步启动边界准备身份并动态加载 OTel SDK。同步 App 工厂只借用已准备好的
  * 进程级 Owner；disabled 路径不会 import SDK/Exporter。
  */
+// Privacy-hardened build: hard-disable agent OTLP telemetry. While true, no host-injected
+// OTEL_EXPORTER_OTLP_* endpoint can prepare identity, import the OTel SDK/exporters, or
+// create a telemetry runtime (see docs/specs/telemetry-hardening.md).
+const AGENT_OTLP_TELEMETRY_BUILD_DISABLED = true;
+
 export async function prepareModelTelemetryEnv(
   env: EnvRecord,
   options: PrepareModelTelemetryOptions = {},
 ): Promise<EnvRecord> {
-  if (!resolveOtlpTraceEndpoint(env) || isExplicitlyDisabled(env.ZCODE_MODEL_TELEMETRY_ENABLED)) {
+  if (
+    AGENT_OTLP_TELEMETRY_BUILD_DISABLED ||
+    !resolveOtlpTraceEndpoint(env) ||
+    isExplicitlyDisabled(env.ZCODE_MODEL_TELEMETRY_ENABLED)
+  ) {
     return env;
   }
   const existingInstallationId = normalizeTelemetryDeviceMid(env.ZCODE_TELEMETRY_DEVICE_MID);

@@ -810,8 +810,14 @@ const rendererActionTraceRollout = createRendererActionTraceRollout({
   fetchConfig: electronClientConfigsFetcher,
   logger,
 });
+// Privacy hardening: when the telemetry master switch is off, pass an empty env so the
+// localTtft and rendererActionTrace OTLP outlets fail endpoint resolution and are never
+// created — even if the host shell presets OTEL_* variables.
+const localTelemetryEnv = ZCODE_TELEMETRY_ENABLED
+  ? { ...hostProcessLocalEnv, ...process.env }
+  : {};
 const localTtftExporter = createLocalTtftExporter({
-  env: { ...hostProcessLocalEnv, ...process.env },
+  env: localTelemetryEnv,
   version: ZCODE_VERSION || app.getVersion(),
   logger,
 });
@@ -819,10 +825,7 @@ ipcMain.on(PlatformChannels.ReportLocalTtftBatch, (_event, batch: unknown) =>
   localTtftExporter.enqueue(batch),
 );
 const rendererActionTraceBroker = createRendererActionTraceBroker({
-  exporter: createRendererActionTraceExporter({
-    ...hostProcessLocalEnv,
-    ...process.env,
-  }),
+  exporter: createRendererActionTraceExporter(localTelemetryEnv),
   logger,
 });
 let disposeRendererActionTraceIpc: (() => void) | undefined;
@@ -2013,7 +2016,10 @@ app.whenReady().then(async () => {
   // Preview 身份无论连接哪个后端都不自动更新：stable feed 上只分发正式 ZCode 安装包，
   // 不向 Preview 渠道提供更新。
   void initAutoUpdater({
-    enabled: ZCODE_PRODUCT_FLAVOR === "production",
+    // Privacy hardening: disable auto-update checks. The update manifest request reports
+    // device_mid, and installing official builds would silently overwrite this hardened
+    // build; update by pulling new source and rebuilding (see docs/specs/telemetry-hardening.md).
+    enabled: false,
     onBeforeQuitAndInstall: async () => {
       notifyStabilityLifecycle("update_install");
       await prepareAppQuit("auto-update quitAndInstall", "update-install");
