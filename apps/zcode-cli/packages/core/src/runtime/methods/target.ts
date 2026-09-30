@@ -419,12 +419,24 @@ export async function finishTargetTurnAccounting(
 
 export async function pauseActiveTargetForCancellation(
   this: AgentRuntimeInternal,
-  traceContext: TraceContext,
+  input: { traceContext: TraceContext; reason?: string },
 ): Promise<void> {
+  const traceContext = input.traceContext;
   if (!this.sessionStore) return;
 
   const target = await this.readSessionTargetForContext(traceContext);
   if (!target || target.status !== "active") return;
+
+  // A paused goal must be explainable: without the cancel reason here, a mid-mission pause
+  // is indistinguishable from a mysterious stop. Log loudly with whatever reason the
+  // cancellation carried.
+  this.logger?.warn("Goal paused by turn cancellation", {
+    ...traceContextToLogContext(traceContext),
+    event: "target.paused_by_cancellation",
+    module: "core.runtime",
+    reason: input.reason ?? "unspecified",
+    targetId: target.targetID,
+  });
 
   try {
     const pausedTarget = await this.sessionStore.updateTargetStatus({

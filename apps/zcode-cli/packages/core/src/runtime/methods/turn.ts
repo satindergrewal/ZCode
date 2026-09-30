@@ -729,7 +729,13 @@ export async function executeTurnCommand(
           startedTarget = finishedTarget;
         }
         if (coreError.type === CoreErrorType.TurnCancelled) {
-          await this.pauseActiveTargetForCancellation(turnTraceContext);
+          await this.pauseActiveTargetForCancellation({
+            traceContext: turnTraceContext,
+            reason:
+              coreError.cause instanceof Error
+                ? coreError.cause.message
+                : String(coreError.cause ?? "turn cancelled"),
+          });
           if (activeTurn) {
             await this.fallbackPendingGuidesToQueue({
               activeTurn,
