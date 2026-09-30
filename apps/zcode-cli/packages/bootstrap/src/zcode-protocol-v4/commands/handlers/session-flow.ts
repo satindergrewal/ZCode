@@ -234,6 +234,8 @@ async function sendText(
         abortMessage: "v4 sendText startNow preempts active turn",
         goalPausedMutationReason: "send_now_goal_paused",
         preserveQueueAutoDrainOnCancel: true,
+        // startNow 插入新输入而非叫停任务：goal 保持 active，任务由 post-turn goal loop 继续。
+        suppressGoalPauseOnCancel: true,
       });
     } catch (error) {
       releaseForegroundPromotionLease();
@@ -414,6 +416,8 @@ export async function preemptActiveTurnAndWait(
     abortMessage: string;
     goalPausedMutationReason: string;
     preserveQueueAutoDrainOnCancel?: boolean;
+    /** Queue promotion 插入新输入时暂停 goal；false = goal 保持 active，由 promoted prompt 的 post-turn goal loop 继续任务。 */
+    suppressGoalPauseOnCancel?: boolean;
   },
 ): Promise<boolean> {
   const bootstrapAbortController = record.activeAbortController;
@@ -423,9 +427,11 @@ export async function preemptActiveTurnAndWait(
   const runtimeStop = record.app.runtime?.stopActiveForegroundExecution?.({
     preserveQueueAutoDrainOnCancel: options.preserveQueueAutoDrainOnCancel === true,
     reason: options.abortMessage,
+    suppressGoalPauseOnCancel: options.suppressGoalPauseOnCancel === true,
   });
   if (bootstrapAbortController || runtimeStop?.kind === "stopped") {
-    const pausedGoal = await pauseActiveGoal(host, record);
+    const pausedGoal =
+      options.suppressGoalPauseOnCancel === true ? false : await pauseActiveGoal(host, record);
     if (runtimeStop?.kind !== "stopped") {
       bootstrapAbortController?.abort(new Error(options.abortMessage));
     }

@@ -729,13 +729,27 @@ export async function executeTurnCommand(
           startedTarget = finishedTarget;
         }
         if (coreError.type === CoreErrorType.TurnCancelled) {
-          await this.pauseActiveTargetForCancellation({
-            traceContext: turnTraceContext,
-            reason:
-              coreError.cause instanceof Error
-                ? coreError.cause.message
-                : String(coreError.cause ?? "turn cancelled"),
-          });
+          // Queue promotion (send now / send queued now) preempts the turn on purpose:
+          // the goal stays active and the promoted prompt's own post-turn goal loop
+          // continues the mission with the new input included. Only other cancellations
+          // pause the goal.
+          const suppressGoalPause =
+            this.activeForegroundExecution?.suppressGoalPauseOnCancel === true;
+          if (suppressGoalPause) {
+            this.logger?.info("Goal pause suppressed: turn preempted by queue promotion", {
+              ...traceContextToLogContext(turnTraceContext),
+              event: "target.pause_skipped_queue_promotion",
+              module: "core.runtime",
+            });
+          } else {
+            await this.pauseActiveTargetForCancellation({
+              traceContext: turnTraceContext,
+              reason:
+                coreError.cause instanceof Error
+                  ? coreError.cause.message
+                  : String(coreError.cause ?? "turn cancelled"),
+            });
+          }
           if (activeTurn) {
             await this.fallbackPendingGuidesToQueue({
               activeTurn,

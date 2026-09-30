@@ -547,12 +547,15 @@ export interface ActiveForegroundExecutionState {
   disposeParentAbort: () => void;
   foregroundExecutionId: string;
   preserveQueueAutoDrainOnCancel: boolean;
+  /** Queue promotion preempts the turn without pausing an active session goal. */
+  suppressGoalPauseOnCancel: boolean;
 }
 
 export interface StopActiveForegroundExecutionOptions {
   expectedForegroundExecutionId?: string;
   preserveQueueAutoDrainOnCancel?: boolean;
   reason?: string;
+  suppressGoalPauseOnCancel?: boolean;
 }
 
 export type StopActiveForegroundExecutionResult =

@@ -257,13 +257,17 @@ async function verifyTargetCompletion(
         ),
         modelTraceContext,
       );
-      // 用户 Stop 或队列“立即发送”打断 goal verifier 时，当前没有普通
+      // 用户 Stop 或队列"立即发送"打断 goal verifier 时，当前没有普通
       // executeTurn 的取消收口路径会暂停 target。如果仍保持 active，后续
       // resumeSession + sendPrompt 会被 agent 当成 goal continuation，普通用户消息会继续输出 checkpoint。
-      await this.pauseActiveTargetForCancellation({
-        traceContext: modelTraceContext,
-        reason: "goal completion verifier interrupted by user stop or queue promotion",
-      });
+      // Queue promotion 抢占（suppressGoalPauseOnCancel）时跳过暂停：goal 保持 active，
+      // promoted prompt 的 post-turn goal loop 会带着新输入继续任务。
+      if (this.activeForegroundExecution?.suppressGoalPauseOnCancel !== true) {
+        await this.pauseActiveTargetForCancellation({
+          traceContext: modelTraceContext,
+          reason: "goal completion verifier interrupted by user stop or queue promotion",
+        });
+      }
       throw error;
     }
     this.logger?.warn("Goal completion verification failed open", {

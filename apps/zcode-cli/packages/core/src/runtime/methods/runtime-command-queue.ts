@@ -426,6 +426,7 @@ function beginForegroundExecution(
     },
     foregroundExecutionId: String(command.id),
     preserveQueueAutoDrainOnCancel: false,
+    suppressGoalPauseOnCancel: false,
   };
   // 旧 Stop 只持有 bootstrap 外层 controller，而 goal verifier/continuation
   // 已经越过普通 turn 生命周期。取消域必须覆盖整条 runtime command，才能在两个阶段
@@ -476,6 +477,7 @@ export function stopActiveForegroundExecution(
   // turn catch 因而把 queueAutoDrain 关闭。把调用意图固定在当前 foreground
   // execution 上，保证超时后迟到的 TurnComplete 仍能保留原队列授权。
   active.preserveQueueAutoDrainOnCancel = options.preserveQueueAutoDrainOnCancel === true;
+  active.suppressGoalPauseOnCancel = options.suppressGoalPauseOnCancel === true;
   active.controller.abort(new Error(options.reason ?? "foreground execution stopped"));
   return {
     kind: "stopped",
