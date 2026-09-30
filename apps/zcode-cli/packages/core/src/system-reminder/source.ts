@@ -29,6 +29,7 @@ export const SYSTEM_REMINDER_PERSISTED_SOURCES = [
   "goal_state_change",
   "plugin_reference",
   "target_continuation",
+  "mission_continuation",
   "goal_completion_verification",
   "rewind_notice",
   "conversation_fork",
@@ -127,6 +128,7 @@ const SYSTEM_REMINDER_DESCRIPTORS: Record<SystemReminderSource, DescriptorShape>
   ),
   goal_state_change: descriptor("mid_turn_event", "mid_turn_event", true, "sr.goal_state_change"),
   target_continuation: descriptor("real_user", "real_user", false, "sr.target_continuation"),
+  mission_continuation: descriptor("real_user", "real_user", false, "sr.mission_continuation"),
   goal_completion_verification: descriptor(
     "tool_result",
     "tool_result",

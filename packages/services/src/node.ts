@@ -519,6 +519,7 @@ import {
   type ZCodeAutomationRun,
   getCapturedZCodeAgentTelemetryEnv,
   ZCODE_DESKTOP_CONTEXT_PROMPT_ENABLED_ENV,
+  ZCODE_MISSION_CONTINUATION_ENV_KEY,
   ZAI_PROVIDER_ID,
   zcodeAccountAccessSchema,
   zcodeProviderAccountAccessSchema,
@@ -1384,6 +1385,10 @@ export function createLocalServices(options: {
       : desktopContextPromptEnabledRaw === "0"
         ? false
         : undefined;
+  // Mission continuation (task-list-driven autonomous continuation): snapshot the Desktop
+  // toggle at Host startup, then inject it into every Agent spawn env. A standalone CLI run
+  // can also enable it by exporting the variable directly.
+  const missionContinuationEnabled = process.env[ZCODE_MISSION_CONTINUATION_ENV_KEY]?.trim() === "1";
 
   // app 自签 CA：首次启动生成一份根 CA（幂等），供 agent 子进程经 NODE_EXTRA_CA_CERTS 信任、
   // 出口代理用其私钥重签。生成失败不应阻断启动（例如只读文件系统），仅记录日志后继续。
@@ -2224,6 +2229,8 @@ export function createLocalServices(options: {
           noProxy: agentNetwork.noProxy,
           caCertPath: settings.httpProxyCaCertPath,
         }),
+        // Mission continuation toggle (Desktop setting -> Host env -> Agent env).
+        ...(missionContinuationEnabled ? { [ZCODE_MISSION_CONTINUATION_ENV_KEY]: "1" } : {}),
         // 把 host 解析出的权威 origin（含 settings 覆盖）下发给 agent，否则 agent 侧只按
         // env 推导，test env + 自定义端点时两侧信任判定的输入分叉、官方 MCP 整体 fail closed。
         ...buildAgentEndpointOriginEnv(await resolveCurrentZCodeEndpointOrigin()),

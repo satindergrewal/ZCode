@@ -11,6 +11,7 @@ import { runControlOnlyTurnCommand } from "./control-only-turn.js";
 import { createTurnCancelledError } from "../helpers/index.js";
 import { executeTargetContinuationCommand } from "./target.js";
 import { runActiveTargetContinuationLoop } from "./target-continuation-loop.js";
+import { runMissionContinuationLoop } from "./mission-continuation.js";
 import { isStaleBranchRuntimeCommand } from "./runtime-command-generation.js";
 import type {
   AcquireForegroundPromotionLeaseResult,
@@ -216,7 +217,14 @@ async function runRuntimeCommand(
           command,
           foregroundExecution.controller.signal,
         );
-        command.resolve(continuationResult ?? result);
+        // Mission continuation (task-list-driven) runs after the goal loop: a verified-done
+        // goal with open list items still keeps working.
+        const missionResult = await runMissionContinuationLoop.call(this, {
+          abortSignal: foregroundExecution.controller.signal,
+          inputId: command.options?.inputId,
+          traceContext: command.options?.traceContext ?? command.traceContext,
+        });
+        command.resolve(missionResult ?? continuationResult ?? result);
       } finally {
         this.runtimeCommandQueue.clearCancelPending(command.id);
       }
@@ -369,6 +377,10 @@ async function runTaskNotificationBatch(
       firstCommand,
       foregroundExecution.controller.signal,
     );
+    await runMissionContinuationLoop.call(this, {
+      abortSignal: foregroundExecution.controller.signal,
+      traceContext: firstCommand.traceContext,
+    });
     this.logger?.info?.("Background task notification batch completed", {
       ...traceContextToLogContext(firstCommand.traceContext),
       batchSize: eligibleCommands.length,

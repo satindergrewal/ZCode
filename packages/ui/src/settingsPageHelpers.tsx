@@ -62,6 +62,7 @@ export function GeneralSectionContent({
   integratedTerminalShell = { mode: "auto" },
   integratedTerminalShellOptions = [],
   nativeSearchEnhancementsEnabled,
+  missionContinuationEnabled,
   httpProxy = "",
   httpProxyNoProxy = "",
   httpProxyCaCertPath = "",
@@ -88,6 +89,7 @@ export function GeneralSectionContent({
   onTerminalFontFamilyChange = async () => {},
   onIntegratedTerminalShellChange = async () => {},
   onNativeSearchEnhancementsEnabledChange,
+  onMissionContinuationEnabledChange,
   onHttpProxyChange = async () => {},
   onHttpProxyNoProxyChange = async () => {},
   onHttpProxyCaCertPathChange = async () => {},
@@ -124,6 +126,7 @@ export function GeneralSectionContent({
   integratedTerminalShell?: IntegratedTerminalShellSelection;
   integratedTerminalShellOptions?: IntegratedTerminalShellOption[];
   nativeSearchEnhancementsEnabled: boolean;
+  missionContinuationEnabled: boolean;
   httpProxy?: string;
   httpProxyNoProxy?: string;
   httpProxyCaCertPath?: string;
@@ -151,6 +154,7 @@ export function GeneralSectionContent({
   onTerminalFontFamilyChange: (fontFamily: string) => Promise<void>;
   onIntegratedTerminalShellChange?: (selection: IntegratedTerminalShellSelection) => Promise<void>;
   onNativeSearchEnhancementsEnabledChange: (enabled: boolean) => Promise<void>;
+  onMissionContinuationEnabledChange: (enabled: boolean) => Promise<void>;
   onHttpProxyChange?: (httpProxy: string) => Promise<void>;
   onHttpProxyNoProxyChange?: (noProxy: string) => Promise<void>;
   onHttpProxyCaCertPathChange?: (caCertPath: string) => Promise<void>;
@@ -441,6 +445,25 @@ export function GeneralSectionContent({
               data-testid={TID_SETTINGS_NATIVE_SEARCH_SWITCH}
               onCheckedChange={(checked) => {
                 void onNativeSearchEnhancementsEnabledChange(checked);
+              }}
+            />
+          }
+        />
+        <SettingsRow
+          label={intl.formatMessage({
+            id: "settings.missionContinuation",
+          })}
+          description={intl.formatMessage({
+            id: "settings.missionContinuationDescription",
+          })}
+          control={
+            <Switch
+              aria-label={intl.formatMessage({
+                id: "settings.missionContinuation",
+              })}
+              checked={missionContinuationEnabled}
+              onCheckedChange={(checked) => {
+                void onMissionContinuationEnabledChange(checked);
               }}
             />
           }

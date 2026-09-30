@@ -147,9 +147,25 @@ export interface AgentRuntimeConfig {
     requiredCompletionConfirmations?: number;
     /**
      * How long the continuation loop waits for running background tasks to drain before
-     * giving up on auto-continuation. Default 2 hours.
+     * giving up on auto-continuation. Default 7 days (missions legitimately keep background
+     * work running for days; Stop and queued user input are the real interrupt paths).
      */
     backgroundDeferralTimeoutMs?: number;
+  };
+  /**
+   * Task-list-driven autonomous continuation (mission mode): when enabled, a turn never
+   * ends while the session task list has open items — the loop re-issues model-only
+   * continuation turns carrying the full authoritative list. Enabled via the Desktop
+   * missionContinuationEnabled setting (-> ZCODE_MISSION_CONTINUATION) or by exporting
+   * that env var for standalone CLI runs.
+   */
+  missionContinuation?: {
+    enabled?: boolean;
+    /**
+     * Consecutive continuation turns with zero task-list progress tolerated before the
+     * loop stops (anti-spin valve). Default 100; any list change resets the streak.
+     */
+    idleContinuationCap?: number;
   };
   midConversationSystem?: {
     mode?: "auto" | "force";

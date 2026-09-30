@@ -69,6 +69,8 @@ function syntheticUserNoticeKind(source: SyntheticUserMessageSource): MessageSem
       return "system_reminder";
     case "goal-continuation":
       return "system_reminder";
+    case "mission-continuation":
+      return "system_reminder";
     case "plugin_reference":
       return "system_reminder";
     case "rewind":

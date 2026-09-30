@@ -459,6 +459,7 @@ const appSettingsObjectSchema = z.object({
   providerFamilyDomainUpdatedAt: z.number().int().nonnegative().optional(),
   providerFamilyDomainMigrated: z.boolean().default(false),
   nativeSearchEnhancementsEnabled: z.boolean().default(true),
+  missionContinuationEnabled: z.boolean().default(false),
   onboardingOccupation: appSettingsOccupationSchema.nullish(),
   proactiveSuggestionsEnabled: z.boolean().optional(),
   memoryEnabled: z.boolean().default(false),
@@ -527,6 +528,7 @@ export const appSettingsPatchSchema = z.object({
   providerFamilyDomainUpdatedAt: z.number().int().nonnegative().optional(),
   providerFamilyDomainMigrated: z.boolean().optional(),
   nativeSearchEnhancementsEnabled: z.boolean().optional(),
+  missionContinuationEnabled: z.boolean().optional(),
   onboardingOccupation: z
     .enum([
       "office",

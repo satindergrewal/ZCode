@@ -10,6 +10,8 @@ export const ZCODE_AGENT_CA_CERT_ENV_KEY = "ZCODE_AGENT_CA_CERT";
 export const ZCODE_TOOL_ENV_PASSTHROUGH_ENV_KEY = "ZCODE_TOOL_ENV_PASSTHROUGH_JSON";
 /** Desktop Main 将服务端裁决的单功能灰度结果传给 Local/Remote Host。 */
 export const ZCODE_DESKTOP_CONTEXT_PROMPT_ENABLED_ENV = "ZCODE_DESKTOP_CONTEXT_PROMPT_ENABLED";
+/** Desktop -> Host -> Agent: task-list-driven autonomous continuation (mission mode) switch. */
+export const ZCODE_MISSION_CONTINUATION_ENV_KEY = "ZCODE_MISSION_CONTINUATION";
 export const ZCODE_CUA_PRODUCT_HELPER_ENV_KEY = "ZCODE_CUA_PRODUCT_HELPER";
 export const ZCODE_CUA_BROKER_SOCKET_ENV_KEY = "ZCODE_CUA_PERMISSION_BROKER_SOCKET";
 /** Shared node_repl host marker; unlike the broker bearer values it is not a secret. */

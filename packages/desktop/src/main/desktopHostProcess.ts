@@ -32,6 +32,7 @@ import {
   type RemoteTarget,
   type WorkspacePurpose,
   ZCODE_DESKTOP_CONTEXT_PROMPT_ENABLED_ENV,
+  ZCODE_MISSION_CONTINUATION_ENV_KEY,
 } from "@zcode/shared";
 import { getMainLaunchPartialMarks } from "./desktopLaunchMarks.js";
 import { BroadcastHub } from "./broadcastHub.js";
@@ -156,6 +157,8 @@ export function spawnHostProcess(
     hostProcessLocalEnv: Record<string, string>;
     /** Main 进程已完成服务端灰度裁决；Host 只消费这个快照，不自行请求或分桶。 */
     desktopContextPromptEnabled?: () => boolean;
+    /** Task-list-driven autonomous continuation switch; the Host forwards it to the Agent spawn env. */
+    missionContinuationEnabled?: () => boolean;
     logger: {
       info: (...args: unknown[]) => void;
       warn: (...args: unknown[]) => void;
@@ -271,6 +274,13 @@ export function spawnHostProcess(
       ...(dependencies.desktopContextPromptEnabled
         ? {
             [ZCODE_DESKTOP_CONTEXT_PROMPT_ENABLED_ENV]: dependencies.desktopContextPromptEnabled()
+              ? "1"
+              : "0",
+          }
+        : {}),
+      ...(dependencies.missionContinuationEnabled
+        ? {
+            [ZCODE_MISSION_CONTINUATION_ENV_KEY]: dependencies.missionContinuationEnabled()
               ? "1"
               : "0",
           }

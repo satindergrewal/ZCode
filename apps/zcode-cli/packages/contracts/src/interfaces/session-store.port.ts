@@ -53,6 +53,7 @@ export const SYNTHETIC_USER_MESSAGE_SOURCES = [
   "fork",
   "goal_state_change",
   "goal-continuation",
+  "mission-continuation",
   "plugin_reference",
   "rewind",
   "selection_side_chat",

@@ -680,6 +680,7 @@ export function SettingsPage({
   }, [sharedSettings?.recentProjects, workspaceTabs]);
   const memoryEnabled = sharedSettings?.memoryEnabled === true;
   const nativeSearchEnhancementsEnabled = sharedSettings?.nativeSearchEnhancementsEnabled !== false;
+  const missionContinuationEnabled = sharedSettings?.missionContinuationEnabled === true;
   const askUserQuestionAutoResolutionEnabled =
     sharedSettings?.askUserQuestionAutoResolutionEnabled !== false;
   const modelIoFullRetentionEnabled = sharedSettings?.modelIoFullRetentionEnabled === true;
@@ -890,6 +891,12 @@ export function SettingsPage({
           stateAfter: enabled ? "enabled" : "disabled",
         },
       });
+    },
+    [updateSharedSettings],
+  );
+  const handleMissionContinuationEnabledChange = useCallback(
+    async (enabled: boolean) => {
+      await updateSharedSettings({ missionContinuationEnabled: enabled });
     },
     [updateSharedSettings],
   );
@@ -1674,6 +1681,7 @@ export function SettingsPage({
                             integratedTerminalShell={integratedTerminalShell}
                             integratedTerminalShellOptions={integratedTerminalShellOptions}
                             nativeSearchEnhancementsEnabled={nativeSearchEnhancementsEnabled}
+                            missionContinuationEnabled={missionContinuationEnabled}
                             httpProxy={httpProxy}
                             httpProxyNoProxy={httpProxyNoProxy}
                             httpProxyCaCertPath={httpProxyCaCertPath}
@@ -1730,8 +1738,11 @@ export function SettingsPage({
                             onTerminalFontFamilyChange={handleTerminalFontFamilyChange}
                             onIntegratedTerminalShellChange={handleIntegratedTerminalShellChange}
                             onNativeSearchEnhancementsEnabledChange={
-                              handleNativeSearchEnhancementsEnabledChange
-                            }
+                                handleNativeSearchEnhancementsEnabledChange
+                              }
+                            onMissionContinuationEnabledChange={
+                                handleMissionContinuationEnabledChange
+                              }
                             onModelIoFullRetentionEnabledChange={
                               handleModelIoFullRetentionEnabledChange
                             }

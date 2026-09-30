@@ -690,6 +690,17 @@ function resolveDesktopContextPromptEnabledForHost(): boolean {
   return rollout.getSnapshot().enabled;
 }
 
+// Mission continuation (task-list-driven autonomous continuation) is a synchronous snapshot
+// on the main-process side: the cache refreshes when settings load/update, and the Host fork
+// reads it synchronously. Changes take effect on the next Host fork.
+let missionContinuationEnabledCache = false;
+function resolveMissionContinuationEnabledForHost(): boolean {
+  return missionContinuationEnabledCache;
+}
+function refreshMissionContinuationEnabledCache(settings: { missionContinuationEnabled?: boolean }): void {
+  missionContinuationEnabledCache = settings.missionContinuationEnabled === true;
+}
+
 // 首个 Host 创建前的有界灰度裁决门。Host/Agent 的 presentation surface 在进程启动时
 // 冻结（services/node.ts 顶层 const + CLI --surface），而灰度请求是旁路、不阻塞 Host。若首个
 // Host fork 早于请求 resolve，成功结果（enabled:true）对已冻结的 Host/Agent 无可达生效路径。
@@ -1428,6 +1439,7 @@ function resetShortcutRecordingForWebContents(webContentsId: number) {
 function rebuildMenu() {
   void Promise.all([resolveZCodeEndpointSelection(), mainSettingService.get()]).then(
     ([zcodeEndpointSelection, settings]) => {
+      refreshMissionContinuationEnabledCache(settings);
       rebuildApplicationMenu({
         currentApplicationLocale,
         zcodeEndpointSelection,
@@ -1712,6 +1724,7 @@ function createWindowInstance(startupBootstrap: StartupWindowBootstrap = {}) {
         {
           hostProcessLocalEnv,
           desktopContextPromptEnabled: resolveDesktopContextPromptEnabledForHost,
+          missionContinuationEnabled: resolveMissionContinuationEnabledForHost,
           logger,
           broadcastHub,
           taskRealtimeBus,

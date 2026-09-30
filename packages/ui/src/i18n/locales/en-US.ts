@@ -2137,6 +2137,8 @@ const enUS: Record<string, string> = {
     "Applies to new sessions only. On Windows, Bash uses this shell; Auto tries Git Bash, then cmd.exe.",
   "settings.integratedTerminalShell.auto": "Auto",
   "settings.nativeSearchEnhancements": "Enhanced Find and Grep",
+  "settings.missionContinuation": "Mission continuation",
+  "settings.missionContinuationDescription": "Autonomous missions: when the session task list still has open items, the agent keeps working automatically after every turn instead of stopping. Enable for long unattended runs; Stop and your messages always interrupt it.",
   "settings.nativeSearchEnhancementsDescription":
     "Use enhanced Find and Grep in new sessions and sessions restored after an app restart. Active sessions keep their current setting; Find remains unchanged on Windows.",
   "settings.memory": "Memory",

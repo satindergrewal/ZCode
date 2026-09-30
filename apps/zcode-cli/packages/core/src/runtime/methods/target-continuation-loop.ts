@@ -14,7 +14,9 @@ interface RunActiveTargetContinuationLoopOptions extends ContinueActiveTargetLoo
 const BACKGROUND_DEFERRAL_POLL_INTERVAL_MS = 20_000;
 const DEFAULT_MAX_VERIFIER_FAILURE_CONTINUATIONS = 3;
 const DEFAULT_REQUIRED_COMPLETION_CONFIRMATIONS = 2;
-const DEFAULT_BACKGROUND_DEFERRAL_TIMEOUT_MS = 2 * 60 * 60 * 1000;
+// Missions legitimately run background work for days; Stop and queued user input remain the
+// real interrupt paths, so the deferral wait defaults to a week, not hours.
+const DEFAULT_BACKGROUND_DEFERRAL_TIMEOUT_MS = 7 * 24 * 60 * 60 * 1000;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 

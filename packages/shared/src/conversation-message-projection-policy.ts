@@ -52,6 +52,7 @@ const PROVIDER_CONTEXT_SYNTHETIC_SOURCES = new Set([
   "goal-continuation",
   "goal_completion_verification",
   "goal_state_change",
+  "mission-continuation",
   "plugin_reference",
   "queued_system_notification",
   "resume_goal_state",
@@ -72,6 +73,7 @@ const MODEL_ONLY_TURN_TRIGGER_SOURCES = new Set([
   "subagent",
   "subagent_message",
   "goal-continuation",
+  "mission-continuation",
   "target_continuation",
 ]);
 

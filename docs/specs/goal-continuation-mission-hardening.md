@@ -31,6 +31,25 @@ continuation loop exit silently:
   `target.continuation.verifier_failure_cap_reached` warning.
 - User input always wins: pending queued commands still yield the loop immediately; Stop pauses
   the goal as before.
+- **Background-deferral wait defaults to 7 days** (was 2h): missions legitimately keep
+  background work running for days; Stop and queued user input are the real interrupt paths.
+
+## Mission Mode (task-list-driven continuation)
+
+Separate from the goal verifier, a session can run **mission continuation**: when enabled
+(Desktop setting `missionContinuationEnabled`, default off → `ZCODE_MISSION_CONTINUATION=1`
+injected Desktop → Host → Agent; standalone CLI can export the env directly), after every turn
+(user prompt or background notification):
+
+- The loop reads the authoritative session task list (`sessionStore.readTodos`).
+- Open items (non-completed) → it issues model-only continuation turns whose prompt carries the
+  **full** task list with anti-shrink rules: never remove or shrink the list; discovered work
+  becomes new items; blocked items are marked and stated in one line while the rest continues.
+- Progress valve: consecutive continuation turns with zero list changes are capped
+  (`missionContinuation.idleContinuationCap`, default 100; any list change resets the streak)
+  with a `mission.continuation.idle_cap_reached` warning.
+- Runs after the goal loop: a verified-done goal with open list items still keeps working.
+- Queued user input and Stop interrupt immediately, as with the goal loop.
 
 ## State Owners
 
