@@ -469,10 +469,47 @@ export async function activatePausedTargetAfterResume(
   this: AgentRuntimeInternal,
   traceContext: TraceContext,
 ): Promise<SessionGoal | null> {
-  if (!this.sessionStore || this.getPlanEnabled()) return null;
+  if (!this.sessionStore) return null;
   const target = await this.readSessionTargetForContext(traceContext);
-  // 用户 Stop 运行中的 goal 时，取消收口会把 target 标记为 paused。
-  // 冷恢复不能再把它自动改回 active，否则会在用户明确停止后继续 verifier/continuation，
-  // 也会让桌面队列“立即发送”被残留 active goal 状态卡住。显式 /goal resume 才能重新激活。
+  // Mission mode (task-list-driven autonomous continuation) auto-reactivates a paused goal
+  // on cold resume: for autonomous missions the rule is that a stopped goal comes back on
+  // its own, with no manual /goal resume. Turn off missionContinuationEnabled to keep the
+  // old behavior for deliberate user stops.
+  if (
+    target?.status === "paused" &&
+    (this.config.missionContinuation?.enabled === true ||
+      process.env.ZCODE_MISSION_CONTINUATION === "1")
+  ) {
+    try {
+      const reactivated = await this.sessionStore.updateTargetStatus({
+        sessionID: this.sessionId,
+        status: "active",
+      });
+      if (reactivated) {
+        await this.recordTargetChanged({
+          action: "status_updated",
+          previousTarget: target,
+          source: "runtime",
+          target: reactivated,
+          traceContext,
+        });
+        this.logger?.warn("Mission mode: paused goal auto-reactivated on session resume", {
+          ...traceContextToLogContext(traceContext),
+          event: "target.auto_resumed_on_session_resume",
+          module: "core.runtime",
+          targetId: reactivated.targetID,
+        });
+        return reactivated;
+      }
+    } catch (error) {
+      this.logger?.warn("Failed to auto-reactivate paused goal on session resume", {
+        ...traceContextToLogContext(traceContext),
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+      return target;
+    }
+  }
+  // Without mission mode: a user-stopped goal stays paused across cold resume (re-activate
+  // explicitly via /goal resume), preserving the deliberate-stop semantics.
   return target;
 }

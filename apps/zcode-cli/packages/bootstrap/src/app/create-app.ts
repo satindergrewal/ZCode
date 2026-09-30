@@ -491,7 +491,24 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
           persistedMessages: resumeOptions?.persistedMessages,
           traceContext: resumeTraceContext,
         });
-        await runtime.activatePausedTargetAfterResume(resumeTraceContext);
+        const resumedTarget = await runtime.activatePausedTargetAfterResume(resumeTraceContext);
+        // Mission mode (ZCODE_MISSION_CONTINUATION): after a cold resume, fire the goal
+        // continuation loop immediately so hardware-gated mission work resumes without a
+        // manual /goal resume. The loop is a safe no-op when no active goal exists.
+        if (process.env.ZCODE_MISSION_CONTINUATION === "1" && resumedTarget?.status === "active") {
+          void runtime
+            .continueActiveTargetLoop({
+              traceContext: resumeTraceContext,
+              trigger: "manual",
+              verifyBeforeFirstContinue: false,
+            })
+            .catch((error: unknown) => {
+              logger.warn("Mission goal continuation after resume failed", {
+                error: error instanceof Error ? error.message : String(error),
+                event: "mission.goal_continuation.resume_failed",
+              });
+            });
+        }
         resumePrepared = true;
         return { ...result, modelSelection };
       } finally {

@@ -51,6 +51,29 @@ injected Desktop → Host → Agent; standalone CLI can export the env directly)
 - Runs after the goal loop: a verified-done goal with open list items still keeps working.
 - Queued user input and Stop interrupt immediately, as with the goal loop.
 
+## Blocker Semantics (anti-lazy-out contract)
+
+The completion verifier's contract now states, explicitly:
+
+- **A documented blocker does not complete the goal.** Deliverables that remain unmeasured or
+  unfinished because of a hardware power state, an offline machine, or any external condition
+  mean `passed=false` — even when every currently-runnable step is done, a watchdog is armed,
+  and the blocker is documented. `nextAction` must describe the monitoring/resumption plan.
+- The continuation prompt mirrors this: blocked work gets automated monitoring (watchdog or
+  scheduled re-check) that resumes the gated work the moment the blocker clears; monitoring
+  turns are expected and are not a reason to declare the objective done.
+- Rationale: without this rule the verifier accepted "everything completable is done, blocker
+  documented" as goal-complete, ending missions that had pending hardware-gated cells.
+
+## Cold-Resume Auto-Reactivation
+
+With mission mode enabled, `activatePausedTargetAfterResume` reactivates a paused goal on
+session cold resume (instead of requiring `/goal resume`), and the bootstrap resume flow fires
+the goal continuation loop immediately when the reactivated goal is active. Deliberate user
+stops still pause; they are simply overridden by the next session resume under mission mode —
+which is the intended semantics for autonomous missions. Without mission mode, the old
+deliberate-stop semantics are preserved.
+
 ## State Owners
 
 | State | Single Owner |
