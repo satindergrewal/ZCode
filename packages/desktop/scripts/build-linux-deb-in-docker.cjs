@@ -65,9 +65,19 @@ fs.mkdirSync(path.join(ptyPrebuilds, "linux-x64"), { recursive: true });
 fs.copyFileSync(PTY_PREBUILD_SRC, path.join(ptyPrebuilds, "linux-x64", "pty.node"));
 fs.chmodSync(path.join(ptyPrebuilds, "linux-x64", "pty.node"), 0o644);
 
-// Native search tools are darwin binaries from this cross-build; drop them instead of
-// shipping executables Linux cannot run.
-fs.rmSync(path.join(appDir, "resources/tools"), { recursive: true, force: true });
+// NOTE: resources/tools (native bfs/ugrep/ripgrep) must come from a build with
+// ZCODE_TARGET_OS=linux ZCODE_TARGET_ARCH=x64 set — otherwise the dir output contains
+// build-host (darwin) binaries. This script no longer strips the directory; verify instead.
+for (const tool of ["bfs", "ripgrep", "ugrep"]) {
+  const toolPath = path.join(appDir, "resources/tools", tool, tool);
+  if (fs.existsSync(toolPath)) {
+    const header = Buffer.from(fs.readFileSync(toolPath).subarray(0, 4));
+    if (!header.equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46]))) {
+      console.error(`FATAL: ${toolPath} is not a Linux ELF binary — rebuild with ZCODE_TARGET_OS=linux ZCODE_TARGET_ARCH=x64`);
+      process.exit(1);
+    }
+  }
+}
 
 fs.mkdirSync(path.join(dataDir, "usr/bin"), { recursive: true });
 fs.symlinkSync("/opt/ZCode/zcode", path.join(dataDir, "usr/bin/zcode"));
