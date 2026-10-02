@@ -79,12 +79,40 @@ function resolveCommitId() {
   }
 }
 
+/**
+ * Fork revision suffix: `<baseVersion>-<N>` where N is the count of commits since the fork
+ * point (upstream's release commit). Auto-increments with every fork commit, giving builds
+ * like 3.14.3-23, 3.14.3-24, ... without touching package.json (which upstream owns).
+ */
+function resolveForkVersion(baseVersion) {
+  const override = process.env.ZCODE_FORK_REVISION?.trim();
+  if (override) {
+    return `${baseVersion}-${override.replace(/^-+/, "")}`;
+  }
+  try {
+    const count = execSync(
+      'git rev-list --count 29628c9..HEAD 2>/dev/null || git rev-list --count HEAD',
+      { cwd: workspaceDir, stdio: ["ignore", "pipe", "ignore"] },
+    )
+      .toString()
+      .trim();
+    if (count && /^\d+$/.test(count)) {
+      return `${baseVersion}-${count}`;
+    }
+  } catch {
+    // fall through to plain version
+  }
+  return baseVersion;
+}
+
 export function collectBuildMetadata() {
   const rootPackageJson = readJson(resolve(workspaceDir, "package.json"));
   const desktopPackageJson = readJson(resolve(desktopDir, "package.json"));
 
+  const baseAppVersion = normalizeVersion(rootPackageJson.version);
   return {
-    appVersion: normalizeVersion(rootPackageJson.version),
+    appVersion: resolveForkVersion(baseAppVersion),
+    baseVersion: baseAppVersion,
     buildCommitId: resolveCommitId(),
     buildTime: new Date().toISOString(),
     electronBuilderVersion: resolveInstalledPackageVersion(

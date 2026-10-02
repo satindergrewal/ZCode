@@ -28,7 +28,19 @@ const PTY_PREBUILD_SRC = path.join(
   "node_modules/@lydell/node-pty-linux-x64/prebuilds/linux-x64/pty.node",
 );
 const OUT = path.join(REPO, "packages/desktop/dist/ZCode-3.14.3-linux-amd64.deb");
-const VERSION = "3.14.3";
+// Fork build version stamped by build-metadata.mjs (e.g. 3.14.3-14); falls back to base.
+function readForkVersion() {
+  try {
+    const meta = JSON.parse(
+      fs.readFileSync(path.join(REPO, "packages/desktop/out/metadata/build-meta.json"), "utf-8"),
+    );
+    if (typeof meta.appVersion === "string" && /^3\.\d+\.\d+(-\d+)?$/.test(meta.appVersion)) {
+      return meta.appVersion;
+    }
+  } catch {}
+  return "3.14.3";
+}
+const VERSION = readForkVersion();
 const PKG = "zcode";
 const ARCH = "amd64";
 const MAINTAINER = "ZCode <dev@zcode.z.ai>";
