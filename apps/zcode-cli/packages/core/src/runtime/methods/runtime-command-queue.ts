@@ -156,11 +156,15 @@ async function runPostCommandActiveTargetLoop(
   command: RuntimeCommand,
   abortSignal: AbortSignal,
 ): Promise<Awaited<ReturnType<AgentRuntimeInternal["continueActiveTargetLoop"]>> | null> {
-  if (command.mode === "prompt" && command.options?.continueActiveTargetAfterTurn === true) {
+  // An active session goal drives continuation after EVERY prompt turn, regardless of which
+  // submission path armed it (desktop sendInput does not set the opt-in flag — relying on it
+  // silently starved goal missions that were mid-run when a user prompt landed).
+  // The loop is a safe no-op without an active target (first gate: candidate check).
+  if (command.mode === "prompt") {
     return await runActiveTargetContinuationLoop.call(this, {
       abortSignal,
-      inputId: command.options.inputId,
-      traceContext: command.options.traceContext ?? command.traceContext,
+      inputId: command.options?.inputId,
+      traceContext: command.options?.traceContext ?? command.traceContext,
       trigger: "user-prompt",
       verifyBeforeFirstContinue: true,
     });
