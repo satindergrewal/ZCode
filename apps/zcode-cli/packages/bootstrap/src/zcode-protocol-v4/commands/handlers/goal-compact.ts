@@ -497,4 +497,25 @@ async function runGoalContinuationInBackground(
   await host.afterLegacyStateMutation?.(record, mutationReason);
 }
 
-export const goalCompactHandlers = { compact, pauseGoal, resumeGoal, sendGoalCommand };
+/** sendMissionCommand：会话级 Mission 续跑开关（on/off），控制任务清单驱动的自主续跑层。 */
+async function sendMissionCommand(
+  host: V4CommandCoreHost,
+  envelope: CommandEnvelope,
+): Promise<CommandResult | undefined> {
+  const payload = envelope.payload as CommandPayloadMap["sendMissionCommand"];
+  const record = requireRecord(host, envelope.sessionId);
+  record.app.runtime?.setMissionContinuationSessionMode?.({ enabled: payload.enabled });
+  host.logger?.info?.("v4 mission continuation session mode set", {
+    sessionId: record.app.sessionId,
+    enabled: payload.enabled,
+  });
+  return undefined;
+}
+
+export const goalCompactHandlers = {
+  compact,
+  pauseGoal,
+  resumeGoal,
+  sendGoalCommand,
+  sendMissionCommand,
+};

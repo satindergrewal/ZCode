@@ -565,6 +565,7 @@ export interface AgentRuntime {
     verifyBeforeContinue?: boolean;
   }): Promise<TurnResult | null>;
   continueActiveTargetLoop(options: ContinueActiveTargetLoopOptions): Promise<TurnResult | null>;
+  setMissionContinuationSessionMode(input: { enabled: boolean }): void;
   stopActiveForegroundExecution(
     options?: StopActiveForegroundExecutionOptions,
   ): StopActiveForegroundExecutionResult;

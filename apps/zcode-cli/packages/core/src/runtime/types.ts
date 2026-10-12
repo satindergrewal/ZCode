@@ -162,6 +162,11 @@ export interface AgentRuntimeConfig {
   missionContinuation?: {
     enabled?: boolean;
     /**
+     * Explicit per-session override set from the UI (/mission on|off). When set, it wins
+     * over the machine-wide env/setting; unset means follow the global default.
+     */
+    sessionOverride?: boolean;
+    /**
      * Consecutive continuation turns with zero task-list progress tolerated before the
      * loop stops (anti-spin valve). Default 100; any list change resets the streak.
      */

@@ -23,6 +23,11 @@ export type V4VisibleSlashCommand =
       displayText: string;
     }
   | {
+      kind: "sendMissionCommand";
+      enabled: boolean;
+      displayText: string;
+    }
+  | {
       kind: "emptyGoal";
       displayText: string;
     }
@@ -78,6 +83,11 @@ export function parseV4VisibleSlashCommand(
 
   if (commandName === "compact" || commandName === "compress") {
     return { kind: "compact", displayText };
+  }
+  if (commandName === "mission") {
+    const mode = args.split(/\s+/, 1)[0]?.toLowerCase() ?? "";
+    if (mode !== "on" && mode !== "off") return null;
+    return { kind: "sendMissionCommand", enabled: mode === "on", displayText };
   }
   if (commandName !== "goal" && commandName !== "target") {
     return null;

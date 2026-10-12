@@ -105,6 +105,7 @@ import { sumMetrics } from "./context-usage.js";
 import { toScheduleState } from "./resume.js";
 import { resumeFromStore } from "./resume.js";
 import { readSessionTodosForContext } from "./resume.js";
+import { setMissionContinuationSessionMode } from "./mission-continuation.js";
 import { readSessionTargetForContext } from "./resume.js";
 import { injectTargetStateIntoMessageHistory } from "./resume.js";
 import { recordTargetChanged } from "./target.js";
@@ -307,6 +308,7 @@ export function installAgentRuntimeMethods(ctor: AgentRuntimeConstructor): void 
   proto.toScheduleState = toScheduleState;
   proto.resumeFromStore = resumeFromStore;
   proto.readSessionTodosForContext = readSessionTodosForContext;
+  proto.setMissionContinuationSessionMode = setMissionContinuationSessionMode;
   proto.readSessionTargetForContext = readSessionTargetForContext;
   proto.injectTargetStateIntoMessageHistory = injectTargetStateIntoMessageHistory;
   proto.recordTargetChanged = recordTargetChanged;

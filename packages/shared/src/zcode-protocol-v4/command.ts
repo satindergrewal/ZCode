@@ -141,6 +141,9 @@ export const commandPayloadSchemas = {
     heldQueueDisposition: z.enum(["clearQueueAndSend", "keepQueueAndSend"]).optional(),
     expectedHeldQueueItemIds: z.array(z.string().min(1)).optional(),
   }),
+  sendMissionCommand: z.object({
+    enabled: z.boolean(),
+  }),
   stop: z.object({
     // 来自 activeWorks；CLI 用它拒绝会误杀后续无关执行的迟到 Stop。
     expectedForegroundExecutionId: z.string().min(1).optional(),

@@ -329,6 +329,7 @@ export interface AgentRuntimeCoreMethods {
   toScheduleState(schedule: ToolSchedule): TurnState["scheduledTools"];
   resumeFromStore(options?: ResumeSessionOptions): Promise<ResumeSessionResult>;
   readSessionTodosForContext(traceContext: TraceContext): Promise<TodoItem[]>;
+  setMissionContinuationSessionMode(input: { enabled: boolean }): void;
   readSessionTargetForContext(traceContext: TraceContext): Promise<SessionGoal | null>;
   injectTargetStateIntoMessageHistory(target: SessionGoal | null): void;
   recordTargetChanged(input: TargetChangedPayload & { traceContext: TraceContext }): Promise<void>;

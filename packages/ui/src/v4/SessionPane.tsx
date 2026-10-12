@@ -2474,6 +2474,10 @@ export function SessionPane({
           type = "resumeGoal";
           withBaseRevision = true;
           break;
+        case "sendMissionCommand":
+          type = "sendMissionCommand";
+          payload = { enabled: command.enabled };
+          break;
         case "emptyGoal":
           logger.warn("[v4-pane] /goal 需要目标文本");
           return true;

@@ -9,7 +9,7 @@
 // completed, the user queues input / hits Stop, or the no-progress cap trips.
 
 import { traceContextToLogContext } from "../deps.js";
-import type { TodoItem } from "../deps.js";
+import type { TodoItem, TraceContext } from "../deps.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import type { TurnResult } from "../types.js";
 import { wrapSystemReminderForSource } from "../../system-reminder/source.js";
@@ -17,8 +17,39 @@ import { wrapSystemReminderForSource } from "../../system-reminder/source.js";
 const DEFAULT_IDLE_CONTINUATION_CAP = 100;
 
 export function isMissionContinuationEnabled(runtime: AgentRuntimeInternal): boolean {
+  // Per-session override wins over the global env/setting: a session where the user turned
+  // mission mode OFF stays manual even when the machine-wide switch is on (and vice versa).
+  if (runtime.config.missionContinuation?.sessionOverride !== undefined) {
+    return runtime.config.missionContinuation.sessionOverride;
+  }
   if (runtime.config.missionContinuation?.enabled === true) return true;
   return process.env.ZCODE_MISSION_CONTINUATION === "1";
+}
+
+export function setMissionContinuationSessionMode(
+  this: AgentRuntimeInternal,
+  input: { enabled: boolean; traceContext?: TraceContext },
+): void {
+  const previous = runtimeMissionSessionMode(this);
+  this.config.missionContinuation = {
+    ...(this.config.missionContinuation ?? {}),
+    enabled: input.enabled,
+    sessionOverride: true,
+  };
+  this.logger?.info("Mission continuation session mode set", {
+    ...traceContextToLogContext(input.traceContext ?? this.rootTraceContext),
+    event: "mission.continuation.session_mode_set",
+    module: "core.runtime",
+    enabled: input.enabled,
+    previous,
+  });
+}
+
+function runtimeMissionSessionMode(runtime: AgentRuntimeInternal): boolean | "unset" {
+  const override = runtime.config.missionContinuation?.sessionOverride;
+  if (override !== undefined) return override;
+  if (runtime.config.missionContinuation?.enabled === true) return true;
+  return process.env.ZCODE_MISSION_CONTINUATION === "1" ? true : "unset";
 }
 
 export function formatMissionContinuationPrompt(input: {
