@@ -440,11 +440,19 @@ export function resolveDefaultZCodeAgentCommand(
 ): ZCodeAgentCommand | null {
   const command = process.env.ZCODE_AGENT_SERVER_COMMAND?.trim();
   if (command) {
+    // The desktop prepares session storage inside the Host worker using the same CLI bundle
+    // (storagePreparationProcesses), which requires supportsStorageStartup +
+    // storagePreparationEntry. The env-override branch previously omitted both, so a packaged
+    // desktop failed at startup with unsupported_runtime; reuse the packaged-mode entry here.
+    const storageEntry = findZCodeAgentRuntimeNodeBundle();
     return applyPresentationSurfaceToCommand(
       {
         command,
         args: parseArgsJson(process.env.ZCODE_AGENT_SERVER_ARGS_JSON) ?? ["app-server", "--stdio"],
         cwd: process.env.ZCODE_AGENT_SERVER_CWD?.trim() || context.workspacePath,
+        ...(storageEntry
+          ? { storagePreparationEntry: storageEntry, supportsStorageStartup: true }
+          : {}),
       },
       context.presentationSurface,
     );

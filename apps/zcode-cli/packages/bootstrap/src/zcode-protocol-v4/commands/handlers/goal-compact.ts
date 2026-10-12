@@ -497,7 +497,7 @@ async function runGoalContinuationInBackground(
   await host.afterLegacyStateMutation?.(record, mutationReason);
 }
 
-/** sendMissionCommand：会话级 Mission 续跑开关（on/off），控制任务清单驱动的自主续跑层。 */
+/** sendMissionCommand: session-scoped Mission continuation switch (on/off) for the task-list-driven autonomy layer. */
 async function sendMissionCommand(
   host: V4CommandCoreHost,
   envelope: CommandEnvelope,
