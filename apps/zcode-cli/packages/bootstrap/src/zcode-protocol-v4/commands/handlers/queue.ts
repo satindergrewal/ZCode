@@ -217,8 +217,8 @@ async function sendQueuedNow(
         abortMessage: "v4 sendQueuedNow preempts active turn",
         goalPausedMutationReason: "send_queued_now_goal_paused",
         preserveQueueAutoDrainOnCancel: true,
-        // Send-queued-now 插入新输入而非叫停任务：goal 保持 active，
-        // promoted prompt 跑完后 post-turn goal loop 自动续跑。
+        // Send-queued-now inserts new input rather than halting the mission: the goal stays
+        // active and the post-turn goal loop resumes after the promoted prompt completes.
         suppressGoalPauseOnCancel: true,
       });
     }

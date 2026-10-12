@@ -257,11 +257,11 @@ async function verifyTargetCompletion(
         ),
         modelTraceContext,
       );
-      // 用户 Stop 或队列"立即发送"打断 goal verifier 时，当前没有普通
-      // executeTurn 的取消收口路径会暂停 target。如果仍保持 active，后续
-      // resumeSession + sendPrompt 会被 agent 当成 goal continuation，普通用户消息会继续输出 checkpoint。
-      // Queue promotion 抢占（suppressGoalPauseOnCancel）时跳过暂停：goal 保持 active，
-      // promoted prompt 的 post-turn goal loop 会带着新输入继续任务。
+      // A user Stop or queue promotion ("send now") interrupts the goal verifier outside the
+      // normal executeTurn cancel path, which would otherwise leave the target active and
+      // make later resume+sendPrompt look like goal continuation. With promotion suppression
+      // (suppressGoalPauseOnCancel) the pause is skipped instead: the goal stays active and
+      // the promoted prompt's own post-turn goal loop carries the mission forward.
       if (this.activeForegroundExecution?.suppressGoalPauseOnCancel !== true) {
         await this.pauseActiveTargetForCancellation({
           traceContext: modelTraceContext,

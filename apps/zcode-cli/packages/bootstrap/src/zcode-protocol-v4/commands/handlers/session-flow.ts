@@ -234,7 +234,8 @@ async function sendText(
         abortMessage: "v4 sendText startNow preempts active turn",
         goalPausedMutationReason: "send_now_goal_paused",
         preserveQueueAutoDrainOnCancel: true,
-        // startNow 插入新输入而非叫停任务：goal 保持 active，任务由 post-turn goal loop 继续。
+        // startNow inserts new input rather than halting the mission: the goal stays active
+        // and the post-turn goal loop continues the work.
         suppressGoalPauseOnCancel: true,
       });
     } catch (error) {
@@ -416,7 +417,7 @@ export async function preemptActiveTurnAndWait(
     abortMessage: string;
     goalPausedMutationReason: string;
     preserveQueueAutoDrainOnCancel?: boolean;
-    /** Queue promotion 插入新输入时暂停 goal；false = goal 保持 active，由 promoted prompt 的 post-turn goal loop 继续任务。 */
+    /** When false (queue promotion inserts input), skip the goal pause: the goal stays active and the promoted prompt's post-turn goal loop continues the mission. */
     suppressGoalPauseOnCancel?: boolean;
   },
 ): Promise<boolean> {
