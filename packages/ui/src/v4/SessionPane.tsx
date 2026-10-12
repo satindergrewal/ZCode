@@ -2498,6 +2498,13 @@ export function SessionPane({
         withBaseRevision ? baseRevision : undefined,
       );
       if (ack.status === "accepted") onAccepted?.(ack.commandId);
+      if (command.kind === "sendMissionCommand" && ack.status === "accepted") {
+        toast(
+          intl.formatMessage({
+            id: command.enabled ? "chat.mission.continuationOn" : "chat.mission.continuationOff",
+          }),
+        );
+      }
       if (ack.reasonCode === "guard.heldQueueConfirmationStale") {
         return "confirmationRequired";
       }

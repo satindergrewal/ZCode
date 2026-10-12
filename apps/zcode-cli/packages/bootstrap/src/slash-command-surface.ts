@@ -20,6 +20,12 @@ export const APP_PROTOCOL_APP_ONLY_BUILTIN_SLASH_COMMANDS = [
     name: "plan",
     source: "builtin",
   },
+  {
+    description: "Toggle task-list-driven autonomous continuation for this session.",
+    inputHint: "/mission [on|off]",
+    name: "mission",
+    source: "builtin",
+  },
 ] as const satisfies readonly ZCodeSlashCommand[];
 
 const EXTRA_RESERVED_SLASH_COMMAND_NAMES = ["compress", "plan"] as const;

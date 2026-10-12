@@ -2137,6 +2137,8 @@ const enUS: Record<string, string> = {
     "Applies to new sessions only. On Windows, Bash uses this shell; Auto tries Git Bash, then cmd.exe.",
   "settings.integratedTerminalShell.auto": "Auto",
   "settings.nativeSearchEnhancements": "Enhanced Find and Grep",
+  "chat.mission.continuationOn": "Mission continuation ON — open tasks keep this session working.",
+  "chat.mission.continuationOff": "Mission continuation OFF — this session stops when the turn ends.",
   "settings.missionContinuation": "Mission continuation",
   "settings.missionContinuationDescription": "Autonomous missions: when the session task list still has open items, the agent keeps working automatically after every turn instead of stopping. Enable for long unattended runs; Stop and your messages always interrupt it.",
   "settings.nativeSearchEnhancementsDescription":
