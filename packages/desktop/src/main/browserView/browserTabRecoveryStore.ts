@@ -251,7 +251,8 @@ function prunePageStates(
     //
     .slice(0, Math.max(0, maxPageStates));
   const retained: BrowserTabPageStateRecord[] = [];
-
+  // Account for the enclosing JSON array brackets before accumulating per-record sizes.
+  let totalBytes = 2;
   for (const [index, candidate] of candidates.entries()) {
     const nextBytes = Buffer.byteLength(candidate.serialized, "utf8") + (index === 0 ? 0 : 1);
     if (totalBytes + nextBytes > maxTotalBytes) break;

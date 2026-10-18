@@ -304,6 +304,7 @@ function expandMessageCollection(
   }
   // Newer model-io stores only deltas per session to avoid duplicated full-context gradients;
   // the service layer rehydrates them for UI.
+  target[keys.collectionKey] = [...previousMessages.slice(0, offset), ...deltaMessages];
 }
 
 function mapMessages(value: unknown): ZCodeModelTrajectoryMessage[] {

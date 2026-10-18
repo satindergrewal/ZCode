@@ -44,3 +44,72 @@ vi.mock("node:os", async (importOriginal) => {
     },
   };
 });
+
+// Bugfix: restore `localStorage` for DOM-based test environments (jsdom) on
+// Node >= 23. Node defines a `localStorage` accessor on globalThis that resolves
+// to undefined unless --localstorage-file is provided. vitest's getWindowKeys()
+// drops window properties that already exist on the Node global unless they are
+// in its hardcoded allowlist, which has no `localStorage` entry, so the jsdom
+// window's storage never reaches globalThis and tests reading the bare global
+// get undefined. Install an in-memory Storage instead; jsdom's own storage is
+// in-memory per document too, so observable semantics are equivalent. The
+// marker below lets a later file in a reused worker replace a stale shim with
+// a fresh instance, keeping per-file isolation.
+type MinimalStorageLike = {
+  readonly length: number;
+  clear: () => void;
+  getItem: (key: string) => string | null;
+  key: (index: number) => string | null;
+  removeItem: (key: string) => void;
+  setItem: (key: string, value: string) => void;
+};
+
+type StorageShimHost = typeof globalThis & {
+  document?: unknown;
+  navigator?: unknown;
+  localStorage?: MinimalStorageLike | undefined;
+};
+
+const SHIM_MARKER = "__zcodeInMemoryStorageShim";
+
+type ShimMarkedStorage = MinimalStorageLike & { [SHIM_MARKER]?: boolean };
+
+function looksLikeDomEnv(host: StorageShimHost): boolean {
+  return "document" in host && "navigator" in host;
+}
+
+function installStorageShim(host: StorageShimHost): void {
+  const backing = new Map<string, string>();
+  const storage: ShimMarkedStorage = {
+    [SHIM_MARKER]: true,
+    get length() {
+      return backing.size;
+    },
+    clear: () => {
+      backing.clear();
+    },
+    getItem: (key: string) => (backing.has(key) ? (backing.get(key) as string) : null),
+    key: (index: number) => Array.from(backing.keys())[index] ?? null,
+    removeItem: (key: string) => {
+      backing.delete(key);
+    },
+    setItem: (key: string, value: string) => {
+      backing.set(String(key), String(value));
+    },
+  };
+  Object.defineProperty(host, "localStorage", {
+    value: storage,
+    configurable: true,
+    writable: true,
+  });
+}
+
+const storageHost = globalThis as StorageShimHost;
+
+if (looksLikeDomEnv(storageHost)) {
+  const existing = storageHost.localStorage;
+  const staleShim = Boolean(existing && (existing as ShimMarkedStorage)[SHIM_MARKER]);
+  if (typeof existing === "undefined" || staleShim) {
+    installStorageShim(storageHost);
+  }
+}

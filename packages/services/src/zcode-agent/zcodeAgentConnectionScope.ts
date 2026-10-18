@@ -270,6 +270,7 @@ export function createZCodeAgentConnectionScope(
         clientMode: downstream.clientMode,
         // The delta bit belongs to the downstream end: relays do not consume frames, only forward
         // the downstream clientHello declaration.
+        ...(downstream.workflowRunDeltas === true ? { workflowRunDeltas: true } : {}),
       };
     }
     return {

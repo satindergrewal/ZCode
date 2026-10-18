@@ -49,25 +49,21 @@ export const RUNTIME_ZCODE_DEBUG =
   typeof process !== "undefined" ? process.env.ZCODE_DEBUG : undefined;
 
 // ── 构建期可选能力（见 docs/desktop/build-time-optional-capabilities.md），未注入时一律关闭 ──
-// Privacy-hardened build: the master switch is compiled to false and is the sole gate for
-// data-warehouse event reporting and ARMS RUM (docs/specs/telemetry-hardening.md). Upstream
-// semantics are "no endpoint configured = no egress", but a build host that presets reporting
-// endpoints would silently re-enable every telemetry path; this build hard-disables at the
-// single owner instead. Agent-side OTLP telemetry is gated separately in
+// Privacy-hardened build (docs/specs/telemetry-hardening.md): the master switch is compiled
+// to false and desktop consumers treat it as the single owner of the telemetry posture, while
+// the endpoints below resolve through build-time defines; scripts/build-time-config.mjs
+// defaults them to empty strings, so hardened builds embed no reporting URL and no egress
+// path initializes. Agent-side OTLP telemetry is gated separately in
 // apps/zcode-cli/packages/telemetry (prepareModelTelemetryEnv).
 export const ZCODE_TELEMETRY_ENABLED: boolean = false;
 /** ARMS RUM 上报地址；为空时 SDK 以 enable=false 初始化，不产生上报。 */
-export const ZCODE_ARMS_RUM_ENDPOINT: string = ZCODE_TELEMETRY_ENABLED
-  ? typeof __ZCODE_ARMS_RUM_ENDPOINT__ !== "undefined"
-    ? __ZCODE_ARMS_RUM_ENDPOINT__
-    : ""
-  : "";
+export const ZCODE_ARMS_RUM_ENDPOINT: string =
+  typeof __ZCODE_ARMS_RUM_ENDPOINT__ !== "undefined" ? __ZCODE_ARMS_RUM_ENDPOINT__ : "";
 /** 事件上报（数仓）地址；为空时不上报。 */
-export const ZCODE_TELEMETRY_REPORT_ENDPOINT: string = ZCODE_TELEMETRY_ENABLED
-  ? typeof __ZCODE_TELEMETRY_REPORT_ENDPOINT__ !== "undefined"
+export const ZCODE_TELEMETRY_REPORT_ENDPOINT: string =
+  typeof __ZCODE_TELEMETRY_REPORT_ENDPOINT__ !== "undefined"
     ? __ZCODE_TELEMETRY_REPORT_ENDPOINT__
-    : ""
-  : "";
+    : "";
 /** 桌面自动更新是否启用。 */
 export const ZCODE_AUTO_UPDATE_ENABLED: boolean =
   typeof __ZCODE_AUTO_UPDATE_ENABLED__ !== "undefined" ? __ZCODE_AUTO_UPDATE_ENABLED__ : false;

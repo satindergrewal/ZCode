@@ -93,6 +93,8 @@ export const E2E_DESKTOP_BUILD_ENV_NAMES = [
   "ZCODE_ENV",
   "ZCODE_E2E_COVERAGE",
   "ZCODE_E2E_KEEP_BUILD_CACHE",
+  // Fork revision is compiled into build metadata; a bump must invalidate the cached bundle.
+  "ZCODE_FORK_REVISION",
   "ZCODE_PACKAGED_AGENT_OTEL_ENDPOINT",
   "ZCODE_PACKAGED_AGENT_OTEL_HEADERS",
   "ZCODE_PACKAGED_AGENT_OTEL_SERVICE_NAME",
