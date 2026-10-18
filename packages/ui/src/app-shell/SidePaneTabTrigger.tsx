@@ -1,4 +1,4 @@
-/* oxlint-disable eslint(max-lines) -- The side pane tab trigger centralizes drag, context menu, and per-type icons; this change only adds a Browser residency test attribute, so the existing interactions are not split up for line count. */
+/* oxlint-disable eslint(max-lines) -- 侧栏 Tab trigger 集中维护拖拽、上下文菜单与各类图标；本次只增加 Browser 驻留态测试属性，不为行数拆散既有交互。 */
 import { useRef, type CSSProperties } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -11,9 +11,11 @@ import {
   MapIcon,
   MessageSquareTextIcon,
   ListTreeIcon,
+  PlugIcon,
   NotepadTextIcon,
   PackageIcon,
   PaletteIcon,
+  ShieldCheckIcon,
   SquareTerminalIcon,
   TerminalIcon,
   WaypointsIcon,
@@ -35,11 +37,9 @@ import { BrowserUseTabIcon } from "@/app-shell/BrowserUseTabIcon.js";
 import { BrowserTabFavicon } from "@/app-shell/BrowserTabFavicon.js";
 import { SidePaneTabTitleTooltip } from "@/app-shell/SidePaneTabTitleTooltip.js";
 
-// Tabs are equal-width at 156px by default; when space runs short they shrink uniformly to 60px
-// under identical grow/shrink, and the outer scroll container takes the overflow so title length
-// never changes a tab's width.
-// Without a dedicated title cap, long page titles keep widening tabs; both the main tab and the
-// drag overlay clamp the title text only, protecting icon, badge, and close button.
+// tab 默认按 156px 等宽排列；空间不足时以相同 grow/shrink 参数平均收缩到 60px，
+// 之后由外层滚动容器承接溢出，避免标题长度改变每个 tab 的宽度。
+// 标题没有独立上限时，长网页标题会持续撑宽 tab；主 tab 与拖拽浮层都只钳制标题本体，避免挤占图标、徽标和关闭按钮。
 export function SortableSidePaneTabTrigger({
   tab,
   title,
@@ -76,8 +76,8 @@ export function SortableSidePaneTabTrigger({
   const normalizedTransform = transform
     ? {
         ...transform,
-        // Horizontal tabs are fixed-height controls; dragging allows horizontal movement only.
-        // dnd-kit carries scale; clamp it back to 1 so tabs are never squashed or stretched.
+        // 横向 tabs 是固定高度控件，拖拽时只允许水平位移。
+        // dnd-kit 会携带 scale 信息；这里钳回 1，避免 tab 被临时压缩或拉伸。
         scaleX: 1,
         scaleY: 1,
       }
@@ -106,15 +106,14 @@ export function SortableSidePaneTabTrigger({
         {...listeners}
         onPointerDown={(event) => {
           listeners?.onPointerDown?.(event);
-          // The side pane tab has its own close button, so the outer element must not render as
-          // a button -- nested buttons get DOM-corrected in production, misrouting
-          // tab/close/drag events. TabsTrigger asChild carries the Radix state while the real
-          // DOM stays a div and the close button remains a native button.
+          // side pane tab 里有独立关闭按钮，外层不能再渲染成 button。
+          // 否则会形成 button 嵌套 button，生产包里浏览器会修正 DOM，导致 tab/close/drag 事件错位。
+          // 这里用 TabsTrigger asChild 承载 Radix 状态，真实 DOM 改成 div，关闭按钮继续保持原生 button。
           event.preventDefault();
         }}
         onClick={(event) => {
-          // Browsers may dispatch both click and auxclick for middle-click; intercept during
-          // click so closing never first activates an inactive tab.
+          // 浏览器可能同时派发 middle-click 的 click/auxclick；先在 click 阶段拦截，
+          // 避免关闭前把 inactive tab 激活。
           if (event.button === 1) {
             event.preventDefault();
             event.stopPropagation();
@@ -132,10 +131,9 @@ export function SortableSidePaneTabTrigger({
         onAuxClick={(event) => {
           if (event.button !== 1) return;
 
-          // Side pane tabs previously only had left-click activation and an explicit close
-          // button; middle-click triggered the browser's autoscroll and, in some browsers, tab
-          // activation too. Cancel the default and close the target tab during auxclick, keeping
-          // the active tab unchanged.
+          // Side Pane tab 之前只有左键激活和显式关闭按钮，middle-click 会触发
+          // 浏览器默认自动滚动，且部分浏览器还会先触发 tab 激活。统一在 auxclick 阶段
+          // 取消默认行为并关闭目标 tab，保持原 active tab 不变。
           event.preventDefault();
           event.stopPropagation();
           onCloseTab(tab.id);
@@ -146,9 +144,8 @@ export function SortableSidePaneTabTrigger({
           "!border-transparent !bg-transparent text-foreground-subtle !rounded-lg",
           "hover:text-foreground",
           !isActive && "hover:!bg-hover",
-          // With TabsTrigger asChild wrapped again by ContextMenuTrigger, Radix's active marker
-          // does not reliably land on the real tab div. Sync data-active / data-state from the
-          // controlled isActive so Tailwind active variants still match.
+          // TabsTrigger asChild 经过 ContextMenuTrigger 再包一层后，Radix 的 active 标记不会稳定落到真实 tab div。
+          // 这里用受控的 isActive 同步补齐 data-active / data-state，保证 Tailwind 的 active variant 能命中。
           "data-active:!bg-selected data-active:text-foreground",
           "cursor-default",
           isDragging && "cursor-grabbing shadow-md",
@@ -269,37 +266,35 @@ function isDiffPreviewTab(tab: WorkspaceSidePaneTab): boolean {
 }
 
 export function SidePaneTabIcon({ tab }: { tab: WorkspaceSidePaneTab }) {
-  // The plan-detail tab opens from the switch-mode (ExitPlanMode) tool-call card, whose icon is
-  // NotepadTextIcon; the tab must match its source so the icon does not jump on click. Not
-  // ListChecksIcon: it collides with the status panel's Todo section and reads as todo rather
-  // than a plan document.
+  // plan-detail tab 由 switch-mode（ExitPlanMode）工具调用卡片打开，来源卡片
+  // 用 NotepadTextIcon；tab 必须与来源一致，避免点击后图标跳变。不用 ListChecksIcon：
+  // 那会与状态面板 Todo section 撞图标，语义上也偏向 todo 而非计划方案文档。
   if (tab.type === "plan-detail") {
     return <NotepadTextIcon className="size-3.5" />;
   }
-  // Same covenant: the source card (CreateWorkflow) uses lucide Workflow, so must the tab.
+  if (tab.type === "plugin-ui") {
+    return <PlugIcon className="size-3.5" />;
+  }
+  // 同一条约定：来源卡片（CreateWorkflow）用 lucide Workflow，tab 必须与它一致。
   if (tab.type === "workflow-run") {
     return <WorkflowIcon className="size-3.5" />;
   }
-  // The run directory and a single run's detail must be told apart at a glance (one roster page
-  // vs one run), so borrow the subagent directory's "directory" icon -- the two directory pages
-  // deliberately look alike on the tab strip; that is their shared nature.
+  // run 目录与单个 run 的详情必须能一眼分开（一页名单 vs 一次运行），所以借 subagent 目录
+  // 的同一枚「目录」图标——两个目录页在 tab 条上因此同形，正是它们的共同点。
   if (tab.type === "workflow-directory") {
     return <ListTreeIcon className="size-3.5" />;
   }
-  // An actor transcript is "one actor's conversation log": neither the whole run (Workflow) nor a
-  // subagent session (Bot). All three must be distinguishable at a glance -- their visibility and
-  // eviction semantics differ.
+  // actor transcript 是「一个 actor 的对话记录」：既不是整次运行（Workflow），也不是子智能体
+  // 会话（Bot）。三者在 tab 条上必须能一眼分开——它们的可见性与回收语义都不同。
   if (tab.type === "workflow-actor-session") {
     return <BotMessageSquareIcon className="size-3.5" />;
   }
-  // The script transcript shares the script pill's glyph (terminal): source and tab agree, no
-  // jump on open.
+  // 脚本 transcript 与脚本药丸同一枚字形（终端）：来源与 tab 一致，点开不跳变。
   if (tab.type === "workflow-workspace") {
     return <TerminalIcon className="size-3.5" />;
   }
-  // A per-kind artifact icon is wrong: the tab-strip icon must be stable before the tab opens
-  // (metadata is not read back yet when a tab restores from memory). Use one fixed
-  // "deliverable" icon and let the tab's internal header/cards distinguish kind.
+  // 产物 tab 的图标**按 kind 变**是错的：tab 条上的图标要在打开前就稳定（tab 从内存恢复时
+  // 元数据还没读回来）。所以用一枚固定的「交付物」图标，kind 的区分留给 tab 内部的头部与卡片。
   if (tab.type === "workflow-artifact") {
     return <PackageIcon className="size-3.5" />;
   }
@@ -316,6 +311,10 @@ export function SidePaneTabIcon({ tab }: { tab: WorkspaceSidePaneTab }) {
 
   if (tab.type === "browser") {
     return <BrowserTabFavicon faviconUrl={tab.faviconUrl} />;
+  }
+
+  if (tab.type === "browser-permissions") {
+    return <ShieldCheckIcon className="size-3.5" />;
   }
 
   if (tab.type === "git") {
@@ -342,11 +341,10 @@ export function SidePaneTabIcon({ tab }: { tab: WorkspaceSidePaneTab }) {
     return <SquareTerminalIcon className="size-3.5" />;
   }
 
-  // Same as getSidePaneTabTitle -- a browser-use tab has no source; without this branch control
-  // falls through to `tab.source.type` below and crashes reading undefined.type.
-  // After agent navigation the <webview> favicon event backfills faviconUrl, showing the real
-  // icon exactly like a human browser tab; fall back to the globe icon otherwise
-  // (about:blank / not yet resolved).
+  // 同 getSidePaneTabTitle——browser-use tab 无 source，若不在此拦截会 fallthrough
+  // 到下方 `tab.source.type` 读 undefined.type 崩溃。
+  // agent 导航后由 <webview> favicon 事件回填 faviconUrl，与 human browser tab 一致地展示真实图标；
+  // 缺省（about:blank/未取到）回退地球图标。
   if (tab.type === "browser-use") {
     return <BrowserUseTabIcon tab={tab} />;
   }
@@ -441,9 +439,8 @@ function getPatchHeaderFileDisplayTarget(patch: string): string | null {
     if (line.startsWith("+++ ")) {
       const nextFileTarget = parseDiffHeaderPath(line.slice(4));
       if (isUsablePatchFileTarget(nextFileTarget)) {
-        // Some file diff sources carry no path and the title may be just "Diff".
-        // Parse the real filename from the unified diff headers and let fileDisplay resolve the
-        // file-type icon.
+        // 部分 file diff source 没有带 path，title 也可能只是“Diff”。
+        // 这里从 unified diff 的文件头里取真实文件名，再交给 fileDisplay 解析文件类型图标。
         return nextFileTarget;
       }
     }
@@ -463,7 +460,7 @@ function getPatchHeaderFileDisplayTarget(patch: string): string | null {
   return null;
 }
 
-function getPatchFileDisplayTarget(source: {
+export function getPatchFileDisplayTarget(source: {
   path?: string;
   title: string;
   patch: string;
@@ -477,9 +474,8 @@ function getPatchFileDisplayTarget(source: {
     return patchHeaderTarget;
   }
 
-  // Add/delete diffs sometimes pass /dev/null as source.path.
-  // /dev/null is not a business filename and would always resolve to the document icon; fall back
-  // to the title only when the path is unusable.
+  // 新增/删除文件的 diff 有时会把 source.path 传成 /dev/null。
+  // /dev/null 不是业务文件名，直接用于图标识别会固定落到 document；这里只在路径无效时回退 title。
   return isUsablePatchFileTarget(source.title) ? source.title : null;
 }
 
@@ -490,27 +486,24 @@ export function getSidePaneTabTitle(
   if (tab.type === "plan-detail") {
     return formatMessage({ id: "planTool.panel.planTab" });
   }
-  // The display name is the frozen-at-open fallback; run identity is always the runId (its
-  // segment of the tab id).
+  // 展示名是卡片打开时冻结的兜底；run 身份始终是 runId（tab id 里那一段）。
   if (tab.type === "workflow-run") {
     return tab.workflowName?.trim() || formatMessage({ id: "sidePane.workflowRun" });
   }
   if (tab.type === "workflow-directory") {
     return formatMessage({ id: "sidePane.workflowDirectory" });
   }
-  // The instance ordinal must stay in the title: instances of the same lane family share the
-  // script's one name, and without the ordinal the tab strip shows two indistinguishable
-  // "reviewer" tabs. Concatenate rather than localize -- per the selection-side-chat precedent.
+  // 实例序号必须留在标题里：同一车道族的实例共用脚本里那一个名字，少了序号 tab 条上就是
+  // 两个无法区分的「reviewer」。拼接而不是本地化模板——照 selection-side-chat 的先例。
   if (tab.type === "workflow-actor-session") {
     const name = tab.actorName?.trim() || formatMessage({ id: "sidePane.workflowActor" });
     return `${name} #${tab.ordinal}`;
   }
-  // The title is the run name (one script transcript per run); the type label "Script steps" lives in the tooltip.
+  // 标题是 run 名（一个 run 一份脚本 transcript）；类型标签「Script steps / 脚本步骤」在 tooltip 里。
   if (tab.type === "workflow-workspace") {
     return tab.workflowName?.trim() || formatMessage({ id: "sidePane.workflowScript" });
   }
-  // The display name is the frozen-at-open fallback; artifact identity is always
-  // (runId, artifactId) (those two segments of the tab id).
+  // 展示名是打开时冻结的兜底；产物身份始终是 (runId, artifactId)（tab id 里那两段）。
   if (tab.type === "workflow-artifact") {
     return (
       tab.title?.trim() || tab.artifactId || formatMessage({ id: "sidePane.workflowArtifact" })
@@ -530,6 +523,10 @@ export function getSidePaneTabTitle(
   if (tab.type === "browser") {
     const pageTitle = tab.title?.trim();
     return pageTitle || formatMessage({ id: "browser.title" });
+  }
+
+  if (tab.type === "browser-permissions") {
+    return formatMessage({ id: "browser.permission.settings" });
   }
 
   if (tab.type === "git") {
@@ -556,12 +553,15 @@ export function getSidePaneTabTitle(
     return tab.title || formatMessage({ id: "terminal.title" });
   }
 
-  // browser-use tabs were not dispatched here and fell through to the bottom
-  // `tab.source.title`, but browser-use tabs have no source field -> reading undefined.title
-  // crashed React (the whole workspace subtree died). Use the page title (backfilled by getState
-  // after agent navigation); fall back to the browser.title copy.
+  // browser-use tab 之前未在此分派，会 fallthrough 到底部 `tab.source.title`，
+  // 而 browser-use tab 无 source 字段 → 读 undefined.title 触发 React 崩溃（整棵 workspace 子树挂掉）。
+  // 用页面标题（agent 导航后由 getState 回填），缺省复用 browser.title 文案。
   if (tab.type === "browser-use") {
     return tab.title?.trim() || formatMessage({ id: "browser.title" });
+  }
+
+  if (tab.type === "plugin-ui") {
+    return tab.title.trim() || formatMessage({ id: "sidePane.pluginUi" });
   }
 
   return tab.source.title || formatMessage({ id: "codeViewer.title" });

@@ -7,7 +7,7 @@ import {
 } from "@zcode/shared/zcode-protocol-v4";
 import { logger } from "@/logger.js";
 
-interface TopicWireDecoder {
+export interface TopicWireDecoder {
   accept(wire: TopicWireFrameCandidate): void;
   /** Same-sub recovery: clear the fail-closed flag only, keep the assembler ordinal tombstone. */
   recover(topic: string, subscriptionId: string): void;

@@ -202,7 +202,7 @@ export function rejectWith(message: string): ContractsSubmitVerdict {
  * the **session event stream** (where tool calls actually appear), accumulated per ask and
  * passed in.
  */
-function statsFromTurn(result: TurnResult, toolCounts: ActorToolCounts): AskStats {
+export function statsFromTurn(result: TurnResult, toolCounts: ActorToolCounts): AskStats {
   const usage = result.usage;
   return {
     tokens: usage?.totalTokens ?? 0,

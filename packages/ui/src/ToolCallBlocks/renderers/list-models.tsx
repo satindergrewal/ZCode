@@ -117,7 +117,7 @@ function readResultRecord(value: unknown): ListModelsResult | null {
  * probe covers old sessions and non-v4 hosts. If nothing reads, return null - "no models on this
  * machine" and "unreadable result" must stay distinguishable.
  */
-function readListModelsResult(
+export function readListModelsResult(
   toolCall: ToolCallBlockRenderContext["toolCallNode"]["toolCall"],
 ): ListModelsResult | null {
   const display = readToolResultDisplay(toolCall.raw);
@@ -182,7 +182,7 @@ function listModelsGroupName(
  * decimal only when present (`1M` / `1.5M`). This column is for eyeballing magnitude, not for
  * verifying exact token counts.
  */
-function formatContextWindow(contextWindow: number): string {
+export function formatContextWindow(contextWindow: number): string {
   if (contextWindow < 1_000) {
     return String(contextWindow);
   }
@@ -204,7 +204,10 @@ function levelWord(level: string, formatMessage: FormatMessage): string {
  * the next line. The canonical id exists for machine backfill of `subagent_model` and belongs only
  * here (same division of labor as subagent-model-label.ts).
  */
-function listModelsRowTooltip(model: ListModelsEntryView, formatMessage: FormatMessage): string {
+function listModelsRowTooltip(
+  model: ListModelsEntryView,
+  formatMessage: FormatMessage,
+): string {
   let levelsLine: string;
   if (model.reasoningLevels.length === 0) {
     levelsLine = formatMessage({ id: "chat.toolCall.workflow.models.noLevels" });

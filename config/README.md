@@ -1,25 +1,28 @@
-# Built-in default configuration
+# 内置默认配置
 
-`config/default.json` is the default configuration shipped with the client and must be kept. Desktop reads it from the packaged files and Web imports it at build time; the built-in values are used when remote requests fail or valid fields are missing.
+`config/default.json` 是随客户端发布的默认配置，必须保留。Desktop 从打包文件读取，
+Web 在构建时导入；远端请求失败或缺少有效字段时使用内置值。
 
-## Help configuration source
+## 帮助配置来源
 
-The newer community and feedback entries request `GET /api/v1/client/configs` on the current endpoint and read `data.configs.feedbackUrl`:
+新版社群和反馈入口请求当前 endpoint 的 `GET /api/v1/client/configs`，
+读取 `data.configs.feedbackUrl`：
 
-- `community_urls["zh-CN" | "en-US"]`: falls back to the built-in entry by the current language only, never across languages.
-- `feedback_url`: a valid remote address wins, otherwise the built-in address is used.
-- `feedback_use_external_form`: a remote boolean wins; `false` is also a valid override.
+- `community_urls["zh-CN" | "en-US"]`：只按当前语言回退到内置入口，不跨语言回退。
+- `feedback_url`：远端有效地址优先，否则使用内置地址。
+- `feedback_use_external_form`：远端布尔值优先，`false` 也是有效覆盖。
 
-Requests carry `app_version`; Desktop also sends `platform-arch`, while Web omits the platform field.
-Successful responses are cached in memory for 1 hour only, requests use `cache: no-store`, and failures are not cached.
+请求携带 `app_version`；Desktop 另带 `platform-arch`，Web 省略平台参数。
+成功响应仅做 1 小时内存缓存，请求使用 `cache: no-store`，失败不缓存。
 
 ```text
-current endpoint client/configs -> valid help fields -> platform entry
-                  | missing / failed
+当前 endpoint client/configs -> 有效帮助字段 -> 平台入口
+                  | 缺失 / 失败
                   v
-          built-in default.json -> platform entry
+          内置 default.json -> 平台入口
 ```
 
-default.json is the built-in default distributed with the client; it was historically served from the CDN and is kept only for older-client compatibility. Current versions have no request or URL-construction path and rely solely on the built-in file in this directory; all other fields are unchanged for existing consumers.
+旧 CDN default.json 仅为旧版客户端兼容保留；新版无请求或 URL 构造链路，
+不要因此删除线上旧文件或本目录内置文件。内置文件的其他字段与既有消费者保持不变。
 
-See [community entry configuration](../docs/ui/settings-community-link-config.md) for the detailed rules.
+详细规则见 [用户社群入口配置](../docs/ui/settings-community-link-config.md)。

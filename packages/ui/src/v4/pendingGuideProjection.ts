@@ -1,6 +1,6 @@
 import type { QueueItem, QueueState } from "@zcode/shared/zcode-protocol-v4";
 
-interface PendingGuideQueueProjection {
+export interface PendingGuideQueueProjection {
   pendingGuides: readonly QueueItem[];
   visibleQueue: QueueState;
 }
@@ -11,7 +11,9 @@ interface PendingGuideQueueProjection {
  * Split display by the authoritative admitted delivery only - no copying, no rewriting of
  * accepted-input state.
  */
-export function projectPendingGuideQueue(queue: QueueState): PendingGuideQueueProjection {
+export function projectPendingGuideQueue(
+  queue: QueueState,
+): PendingGuideQueueProjection {
   const pendingGuides: QueueItem[] = [];
   const visibleItems: QueueItem[] = [];
   for (const item of queue.items) {
@@ -24,6 +26,8 @@ export function projectPendingGuideQueue(queue: QueueState): PendingGuideQueuePr
   return {
     pendingGuides,
     visibleQueue:
-      visibleItems.length === queue.items.length ? queue : { ...queue, items: visibleItems },
+      visibleItems.length === queue.items.length
+        ? queue
+        : { ...queue, items: visibleItems },
   };
 }

@@ -1,15 +1,20 @@
-import { createUuid } from "@zcode/shared";
+import {
+  createUuid,
+  CONVERSATION_SELECTION_MAX_TEXT_LENGTH,
+  CONVERSATION_SELECTION_MAX_COUNT,
+  CONVERSATION_SELECTION_MAX_TOTAL_LENGTH,
+  type ConversationSelectionText,
+} from "@zcode/shared";
 
-export const CONVERSATION_SELECTION_MAX_TEXT_LENGTH = 8_000;
-const CONVERSATION_SELECTION_MAX_COUNT = 8;
-const CONVERSATION_SELECTION_MAX_TOTAL_LENGTH = 16_000;
+export {
+  buildPromptWithConversationSelections,
+  CONVERSATION_SELECTION_MAX_TEXT_LENGTH,
+  CONVERSATION_SELECTION_MAX_COUNT,
+  CONVERSATION_SELECTION_MAX_TOTAL_LENGTH,
+  type ConversationSelectionText,
+} from "@zcode/shared";
 
 export type ConversationSelectionContentType = "user" | "assistant" | "reasoning" | "tool";
-
-export interface ConversationSelectionText {
-  text: string;
-  path?: string;
-}
 
 export interface MessageSelectionReference extends ConversationSelectionText {
   id: string;
@@ -44,7 +49,7 @@ interface ConversationSelectionAddEventDetail {
 }
 
 export type ConversationSelectionLimitReason = "count" | "single" | "total";
-type ConversationSelectionAppendResult =
+export type ConversationSelectionAppendResult =
   | {
       ok: true;
       references: readonly ConversationSelectionReference[];
@@ -109,7 +114,9 @@ export function createConversationSelectionReference(
   return { ...input, id: createUuid() };
 }
 
-function getConversationSelectionDedupeKey(reference: ConversationSelectionReference): string {
+export function getConversationSelectionDedupeKey(
+  reference: ConversationSelectionReference,
+): string {
   if (reference.contentType === "markdown") {
     return ["markdown", reference.sourceKey, reference.text].join("\0");
   }
@@ -121,7 +128,7 @@ function getConversationSelectionDedupeKey(reference: ConversationSelectionRefer
   ].join("\0");
 }
 
-function appendConversationSelectionReference(
+export function appendConversationSelectionReference(
   current: readonly ConversationSelectionReference[],
   reference: ConversationSelectionReference,
 ): ConversationSelectionAppendResult {
@@ -142,21 +149,6 @@ function appendConversationSelectionReference(
   return { ok: true, references: [...current, reference], duplicate: false };
 }
 
-export function buildPromptWithConversationSelections(
-  visibleContent: string,
-  references: readonly ConversationSelectionDisplayReference[],
-): string {
-  if (references.length === 0) return visibleContent;
-  // File selections once sent body only, losing provenance; keep the path, drop identity fields.
-  const block = [
-    "# userselect:",
-    "```userselect",
-    JSON.stringify(references.map(({ text, path }) => (path?.trim() ? { path, text } : { text }))),
-    "```",
-  ].join("\n");
-  return visibleContent ? `${visibleContent}\n\n${block}` : block;
-}
-
 export function parsePromptConversationSelections(text: string): {
   visibleContent: string;
   references: readonly ConversationSelectionDisplayReference[];
@@ -165,7 +157,7 @@ export function parsePromptConversationSelections(text: string): {
   if (userSelectMatch) {
     return parseConversationSelectionBlock(text, userSelectMatch, (value) => {
       if (!isConversationSelectionText(value)) return null;
-      // Mirrors the send contract: history keeps the path, plain chats restore body only.
+      // 与发送合同一致，历史保留文件路径，普通对话继续只恢复正文。
       return value.path ? { path: value.path, text: value.text } : { text: value.text };
     });
   }

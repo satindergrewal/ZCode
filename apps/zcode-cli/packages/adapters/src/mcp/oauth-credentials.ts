@@ -4,32 +4,32 @@ import type { OAuthClientInformationMixed, OAuthTokens } from "@modelcontextprot
 import type { SharedZCodeCredentialStore } from "../auth/shared-credentials.js";
 
 export const MCP_OAUTH_CANONICAL_CREDENTIALS_KEY = "authorization_credentials";
-const MCP_OAUTH_LEGACY_CLIENT_KEY = "client_information";
-const MCP_OAUTH_LEGACY_TOKENS_KEY = "tokens";
+export const MCP_OAUTH_LEGACY_CLIENT_KEY = "client_information";
+export const MCP_OAUTH_LEGACY_TOKENS_KEY = "tokens";
 export const MCP_OAUTH_CREDENTIALS_VERSION = 2;
 export const MCP_OAUTH_SUPPORTED_CREDENTIAL_VERSIONS = new Set([1, MCP_OAUTH_CREDENTIALS_VERSION]);
 
 /**
  * canonical credential pair。
  *
- * `generation`, `obtained_at`, `expires_at` and `issuer` are optional additive fields, no version bump:
- * appending optional fields is backward compatible (old readers ignore unknown keys), while a bump makes
- * un-upgraded CLI/desktop treat new records as unknown versions, fall back to the legacy mirror and lose pair guarantees.
+ * `generation`、`obtained_at`、`expires_at`、`issuer` 都是**可选新增字段**，不 bump version：
+ * 追加可选字段对旧 reader 向后兼容（旧 reader 忽略未知字段即可），bump version 反而会让未升级的
+ * CLI/desktop 把新记录当未知版本整体忽略、退回 legacy 镜像，丢掉 pair 保证。
  */
 export interface McpOAuthCanonicalCredentials {
   client_information: OAuthClientInformationMixed;
-  /** Absolute expiry derived from `expires_in` and `obtained_at` (epoch ms). */
+  /** 由 `expires_in` 与 `obtained_at` 推导的绝对过期点（epoch ms）。 */
   expires_at?: number;
   /**
-   * Random id, unique per publication.
+   * 每次 publication 唯一的随机 id。
    *
-   * Never reuse `published_by`: it is an OAuth-state-derived transaction id, unchanged across refreshes of the same
-   * transaction, unfit for generation observation or invalidation CAS. The random id also breaks ABA.
+   * 不能复用 `published_by`：它是 OAuth state 派生的事务 id，同一事务的多次 refresh 不会改变它，
+   * 无法承担 follower 观察换代与失效 CAS 的职责。随机 id 同时消除 ABA。
    */
   generation?: string;
-  /** Authorization server issuer. Retained only; not part of the credential key. */
+  /** 授权服务器 issuer。本次只留存字段，不参与 credential key 键控。 */
   issuer?: string;
-  /** Token acquisition time (epoch ms). `OAuthTokens` has only `expires_in`; without this the real expiry is unknowable cross-process. */
+  /** token 获取时间（epoch ms）。`OAuthTokens` 只有 `expires_in`，没有它无法跨进程算真实过期点。 */
   obtained_at?: number;
   published_by: string;
   tokens: OAuthTokens;
@@ -42,7 +42,7 @@ export interface CanonicalCredentialSnapshot {
   generation: string;
   issuer?: string;
   obtainedAt?: number;
-  /** Raw JSON, for compare-and-delete. */
+  /** 原始 JSON，供 compare-and-delete 使用。 */
   raw: string;
   tokens: OAuthTokens;
 }
@@ -51,15 +51,18 @@ export function mcpOAuthCredentialKey(keyPrefix: string, name: string): string {
   return `${keyPrefix}:${name}`;
 }
 
-function createCredentialGeneration(): string {
+export function createCredentialGeneration(): string {
   return randomBytes(16).toString("hex");
 }
 
 /**
- * Migration baseline: legacy records lack `generation`; substitute a stable hash of the canonical raw content.
- * Content change implies generation change, enough for the follower's generation check.
+ * 迁移期 baseline：旧记录没有 `generation`，用 canonical 原始内容的稳定 hash 代替。
+ * 内容变化即 generation 变化，足以支撑 follower 的「是否换代」判断。
  */
-function resolveCredentialGeneration(canonical: McpOAuthCanonicalCredentials, raw: string): string {
+export function resolveCredentialGeneration(
+  canonical: McpOAuthCanonicalCredentials,
+  raw: string,
+): string {
   if (typeof canonical.generation === "string" && canonical.generation.length > 0) {
     return canonical.generation;
   }
@@ -84,10 +87,10 @@ export function isCanonicalCredentials(value: unknown): value is McpOAuthCanonic
 }
 
 /**
- * Read only the canonical pair, no legacy derivation.
+ * 只读取 canonical pair，不做 legacy 兼容推导。
  *
- * Phase 2 baseline generation and Phase 1 refresh need canonical only; legacy-mirror interleave
- * compat stays in the provider.
+ * Phase 2 的 baseline generation 与 Phase 1 的 refresh 都只需要 canonical；legacy 镜像的
+ * 交错兼容逻辑仍留在 provider 内。
  */
 export async function loadCanonicalCredentials(
   credentialStore: SharedZCodeCredentialStore,
@@ -114,7 +117,7 @@ export async function loadCanonicalCredentials(
   };
 }
 
-interface PublishCanonicalCredentialsInput {
+export interface PublishCanonicalCredentialsInput {
   clientInformation: OAuthClientInformationMixed;
   issuer?: string;
   obtainedAt?: number;
@@ -122,7 +125,7 @@ interface PublishCanonicalCredentialsInput {
   tokens: OAuthTokens;
 }
 
-interface PublishedCanonicalCredentials {
+export interface PublishedCanonicalCredentials {
   canonical: McpOAuthCanonicalCredentials;
   generation: string;
   legacyClientRaw: string;
@@ -131,11 +134,11 @@ interface PublishedCanonicalCredentials {
 }
 
 /**
- * Publish canonical pair and legacy mirror atomically.
+ * 原子发布 canonical pair 与 legacy 镜像。
  *
- * Client and refresh tokens must come from one grant, so all three keys are written inside a single cross-process
- * read-modify-write critical section of the shared credential store; separate writes could pair a client and token
- * from different transactions. The legacy mirror is maintained during the compat window for un-upgraded CLI/Desktop.
+ * client 与 refresh token 必须来自同一次授权，因此三个 key 必须在共享凭据 store 的同一个
+ * 跨进程 read-modify-write 临界区内一次写入；分开覆盖会让最后写入的 client 与 token 来自
+ * 不同事务。兼容窗口内继续维护 legacy 镜像，使未升级的 CLI/Desktop 仍可读取。
  */
 export async function publishCanonicalCredentials(
   credentialStore: SharedZCodeCredentialStore,
@@ -173,14 +176,14 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** Safety margin for access-token expiry checks. */
-const MCP_OAUTH_EXPIRY_SKEW_MS = 30_000;
+/** access token 临期判定的安全余量。 */
+export const MCP_OAUTH_EXPIRY_SKEW_MS = 30_000;
 
 /**
- * Whether the token needs refreshing before it goes into request headers.
+ * 是否需要在把 token 交给请求头之前先刷新。
  *
- * Without `expires_at` (legacy record, or server sent no `expires_in`) always treat as near-expiry:
- * `OAuthTokens` carries no acquisition time, so take the lock and try one refresh rather than send a possibly stale token.
+ * 没有 `expires_at`（旧记录，或服务器未返回 `expires_in`）一律视为临期：`OAuthTokens` 不带获取
+ * 时间，无法算出真实过期点，宁可进锁尝试一次刷新，也不要把一个可能已过期的 token 发出去。
  */
 export function isCanonicalTokenNearExpiry(
   snapshot: Pick<CanonicalCredentialSnapshot, "expiresAt">,
@@ -191,14 +194,14 @@ export function isCanonicalTokenNearExpiry(
   return now >= snapshot.expiresAt - skewMs;
 }
 
-type CanonicalInvalidationScope = "tokens" | "all";
+export type CanonicalInvalidationScope = "tokens" | "all";
 
 /**
- * Conditional invalidation against the canonical snapshot.
+ * 按 canonical 快照做条件失效。
  *
- * Deletes only while canonical still equals `expectedRaw`; if another transaction already published a new pair,
- * this invalidation aborts entirely and never kills the winner. `tokens` keeps the legacy client as re-grant seed; `all` is for
- * `invalid_client`, where client and token must be dropped as a pair.
+ * 只有 canonical 当前值仍等于 `expectedRaw` 时才删除，因此另一个事务已经发布新 pair 时本次
+ * 失效整体放弃，不会误删 winner。`tokens` 保留 legacy client 作为重新授权的种子；`all` 用于
+ * `invalid_client`，client 与 token 必须整对丢弃。
  */
 export async function invalidateCanonicalCredentials(
   credentialStore: SharedZCodeCredentialStore,
@@ -220,18 +223,18 @@ export async function invalidateCanonicalCredentials(
 export interface CredentialPairSnapshot {
   clientInformation?: OAuthClientInformationMixed;
   expiresAt?: number;
-  /** canonical generation when available; content-derived for legacy-only, still usable to observe generations. */
+  /** canonical 可用时为其 generation；只有 legacy 时按内容派生，仍可用于观察换代。 */
   generation?: string;
   issuer?: string;
   obtainedAt?: number;
-  /** canonical raw JSON; undefined for legacy-only (no canonical CAS possible). */
+  /** canonical 原始 JSON；只有 legacy 时为 undefined（无法做 canonical CAS）。 */
   raw?: string;
   source: "canonical" | "legacy";
   tokens?: OAuthTokens;
 }
 
 /**
- * Read canonical and legacy mirror and derive one usable pair per compat rules.
+ * 读取 canonical 与 legacy 镜像并按兼容规则派生出一份可用 pair。
  */
 export async function loadCredentialPair(
   credentialStore: SharedZCodeCredentialStore,
@@ -249,14 +252,14 @@ export async function loadCredentialPair(
 }
 
 /**
- * Pair derivation under the compat window (pure function, no I/O).
+ * 兼容窗口内的 pair 派生规则（纯函数，不做 I/O）。
  *
- * Pure so callers already holding raw snapshots (needing them for compare-and-delete) reuse the same
- * rules instead of re-reading the credential file; duplicating these interleave branches always diverges.
+ * 抽成纯函数是为了让「已经持有原始快照的调用方」（需要原始值做 compare-and-delete 的
+ * provider）复用同一份规则，而不是再读一次凭据文件——两处各写一遍这套交错兼容分支必然发散。
  *
- * Background: during the window CLI and desktop may be different versions; old processes write only the legacy key,
- * new ones write canonical+mirror. The question: can a legacy change be proven to belong to the same grant
- * without a generation?
+ * 规则背景：兼容窗口内 CLI 与 desktop 可能是不同版本，旧进程只写 legacy key，新进程写
+ * canonical + 镜像。这里判断的就是「在没有 generation 的旧格式下，legacy 的变化能否被证明属于
+ * 同一次授权」。
  */
 export function deriveCredentialPair(input: {
   canonicalRaw?: string;
@@ -293,23 +296,23 @@ export function deriveCredentialPair(input: {
           tokens: legacyTokens,
         };
       }
-      // v1 publish deletes the legacy mirror, so no mirror is a steady state; applying v2 mirror-invalidation
-      // rules would drop a still-valid canonical token and force every upgraded user to re-grant.
+      // v1 发布后会删除 legacy 镜像，因此无镜像是正常稳态；若把它套用 v2 的
+      // 镜像失效规则，会丢弃仍有效的 canonical token，并强制所有升级用户重新授权。
       return canonicalSnapshot;
     }
     if (!legacyTokens) {
-      // After a legacy provider invalidates tokens the invalid state must persist; never resurrect from canonical.
+      // 旧 provider invalidate tokens 后必须维持失效，不能从 canonical 复活旧 token。
       return { clientInformation: legacyClient, source: "legacy" };
     }
     if (isDeepStrictEqual(legacyTokens, canonical.tokens)) {
       return legacyClient ? canonicalSnapshot : { source: "legacy", tokens: legacyTokens };
     }
     if (legacyClient && isDeepStrictEqual(legacyClient, canonical.client_information)) {
-      // Unchanged client proves the legacy token is an older refresh of the same identity.
+      // client 未变化时可以确认 legacy token 是同一身份的旧 provider refresh 结果。
       return { clientInformation: legacyClient, source: "legacy", tokens: legacyTokens };
     }
-    // Client and token both changed with no generation: same-transaction cannot be proven. Keep the client for
-    // re-grant and never guess-splice credentials.
+    // client 与 token 都变化且无 generation 时无法证明来自同一事务：保留 client 重新授权，
+    // 绝不猜测性拼接认证资产。
     return { clientInformation: legacyClient, source: "legacy" };
   }
 

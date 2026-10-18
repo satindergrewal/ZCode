@@ -4,9 +4,9 @@
 // safety facts, and the deactivation surface; the pool maintains only idle TTL, LRU touch, operation leases, and
 // deactivation gate。
 
-const DEFAULT_SESSION_RESIDENT_TARGET_COUNT = 8;
+export const DEFAULT_SESSION_RESIDENT_TARGET_COUNT = 8;
 export const DEFAULT_SESSION_RESIDENT_HIGH_WATER_COUNT = 16;
-const DEFAULT_SESSION_RESIDENT_IDLE_TIMEOUT_MS = 10 * 60 * 1_000;
+export const DEFAULT_SESSION_RESIDENT_IDLE_TIMEOUT_MS = 10 * 60 * 1_000;
 
 export type SessionDeactivationReason = "high_water_lru" | "idle_timeout";
 
@@ -94,17 +94,22 @@ export class SessionResidentPool {
       * Acquires the protocol-request lease. A process-wide count keeps async workspace operations and the sampler's
       * reclamation from racing across sessions; the per-session count expresses exact ownership and feeds that session's eligibility.
    */
-  async acquireOperation(sessionIdsInput?: string | readonly string[]): Promise<() => void> {
+  async acquireOperation(
+    sessionIdsInput?: string | readonly string[],
+  ): Promise<() => void> {
     const sessionIds = [
       ...new Set(
-        (typeof sessionIdsInput === "string" ? [sessionIdsInput] : (sessionIdsInput ?? [])).filter(
+        (typeof sessionIdsInput === "string" ? [sessionIdsInput] : sessionIdsInput ?? []).filter(
           (sessionId) => sessionId.length > 0,
         ),
       ),
     ];
     this.activeOperationCount += 1;
     for (const sessionId of sessionIds) {
-      this.operationLeaseCounts.set(sessionId, (this.operationLeaseCounts.get(sessionId) ?? 0) + 1);
+      this.operationLeaseCounts.set(
+        sessionId,
+        (this.operationLeaseCounts.get(sessionId) ?? 0) + 1,
+      );
     }
 
     let released = false;

@@ -1196,7 +1196,7 @@ function buildDeveloperRequests(
         "Structured logs are a diagnostic index; session events are the source of truth for reconstruction.",
       schema: [
         "append-only JSONL through SessionEventSink",
-        "same envelope fields as existing structured log sinks",
+        "same envelope fields as docs/design/v2/logging.md",
         "redacted artifact refs for large payloads",
       ],
     });

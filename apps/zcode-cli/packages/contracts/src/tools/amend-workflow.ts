@@ -2,12 +2,16 @@
 // AmendWorkflow Tool - revise a run: stop it if it is still going, import its finished work, start the revision
 // ============================================================
 //
-// Why a separate tool from CreateWorkflow: amending is a different action and a different card -- the model is not
-// starting something but changing something the user is watching, and the predecessor may still be running. Both share one output shape, so the
-// executor's background tracking, the backgrounded contract, and the display payload exist only once.
+// 与 CreateWorkflow 分成两个工具的理由：修订是**另一种动作、另一张卡**——模型不是在启动什么，
+// 而是在改一个用户正看着的东西，而且前驱可能仍在跑。两者共用同一个输出形状，所以 executor 的
+// 后台追踪、`backgrounded` 契约与 display 载荷只有一份。
 
 import { z } from "zod";
 import { toToolJsonSchema } from "./json-schema.js";
+import {
+  WorkflowAdjustableSettingsSchema,
+  WorkflowModelBindingsSchema,
+} from "./workflow-settings.js";
 import {
   WORKFLOW_RUN_LIFECYCLE_STATUSES,
   WORKFLOW_RUN_STOP_REASONS,
@@ -16,28 +20,26 @@ import {
 export const AMEND_WORKFLOW_TOOL_NAME = "AmendWorkflow";
 
 /**
-  * Violation note for at-most-one-amendment-script. Same spot, same tone as CREATE_WORKFLOW_SOURCE_ERROR;
-  * unlike it, providing neither is **legal** here -- that means keep the predecessor's script.
+ * 「至多给一个修订脚本」的违规说明。与 `CREATE_WORKFLOW_SOURCE_ERROR` 同一个位置、同一种语气；
+ * 与它不同的是两个都不给在这里**合法**——那是「沿用前驱的脚本」。
  */
 export const AMEND_WORKFLOW_SOURCE_ERROR =
   "Provide at most one revised script: `path` for the script file you edited (the usual form), or `script` for the whole revised script inline. Passing both is ambiguous; omit both to keep the predecessor's script unchanged.";
 
 /**
-  * Model-facing input. Only run_id is required; every other field follows one rule: **omit to inherit from the predecessor**. predecessor is not
-  * listed here -- it is a resolveInput-backfilled fact (below), absent from the model's JSON schema.
+ * 模型面入参。只有 `run_id` 必填，其余每个字段都守同一条规则：**省略即沿用前驱**。`predecessor` 不在这里——那是
+ * resolveInput 回填的事实（下面），模型的 JSON schema 不列它。
  */
 const AmendWorkflowModelInputSchema = z.object({
   run_id: z
     .string()
     .min(1)
-    .describe(
-      "ID of the run to amend (from a result, a notification, GetWorkflowRun or ListWorkflowRuns).",
-    ),
+    .describe("ID of the run to amend (from a result, a notification, GetWorkflowRun or ListWorkflowRuns)."),
   /**
-      * Omitting both script and path = keep the predecessor's archived script:
-      * a settings-only amendment need not re-paste a multi-thousand-token script. Same lifecycle as the two settings -- resolveInput reads the
-      * predecessor's script back in and stamps predecessor.script_inherited; from then on hook, confirmation dialog, and handler all see one
-      * script. The runtime schema must still accept absence: after hook rewrites, call-runner revalidates the model's original shape.
+   * `script` 与 `path` 都省略 = 沿用前驱存档的脚本：
+   * 只改设定的修订不必把几千 token 的脚本再抄一遍。与两个设定同一个生命周期——`resolveInput` 读前驱
+   * 的脚本回填进来并盖上 `predecessor.script_inherited`，此后 hook、确认窗与 handler 面对的都是一份
+   * 脚本。运行时 schema 仍须接受缺席：hook 改写后 call-runner 会按模型的原始形状二次校验。
    */
   script: z
     .string()
@@ -47,8 +49,8 @@ const AmendWorkflowModelInputSchema = z.object({
       "The whole revised script, inline. This OR `path`, never both; omit both to keep the predecessor's script.",
     ),
   /**
-      * The everyday amendment source: edit one line of the predecessor's script in place,
-      * then hand back the same path. Inline is still accepted, but it re-streams the whole script -- exactly what this path exists to avoid.
+   * 修订的常态来源：前驱的脚本文件就地改一行，
+   * 再把同一个路径交回来。内联仍然收，但它要把整段脚本再流一遍——而那正是这条路径要省掉的。
    */
   path: z
     .string()
@@ -63,10 +65,10 @@ const AmendWorkflowModelInputSchema = z.object({
     .optional()
     .describe("Display label for the new run; defaults to the predecessor's."),
   /**
-      * Three states: omitted = keep the predecessor's cap,
-      * null = clear (back to the ceiling), number = set (clamped below the ceiling). The tri-state lives only until resolveInput, which
-      * normalizes it to a number or absence; confirmation dialog and handler read the would-be effective value. The runtime schema keeps nullable
-      * because call-runner revalidates the model's original shape after hook rewrites.
+   * 三态（docs/dynamic-workflow/concurrency.md「Two bounds on a run」）：省略 = 沿用前驱的上界、
+   * `null` = 解除（回到默认并发）、数 = 设定（向下取整到至少 1，没有上限）。三态只活到 `resolveInput`：那里把它
+   * 归一成一个数或缺席，确认窗与 handler 读到的就是将要生效的值。运行时 schema 保留 `nullable`
+   * 是因为 hook 改写后 call-runner 会二次校验模型的原始形状。
    */
   max_concurrency: z
     .number()
@@ -75,13 +77,13 @@ const AmendWorkflowModelInputSchema = z.object({
     .nullable()
     .optional()
     .describe(
-      "Omit to keep the predecessor's limit, null to remove it, a number to set one (only when the user asks).",
+      "Omit to keep the predecessor's limit, null to return to the default, a number to set one above or below it (only when the user asks).",
     ),
   /**
-      * Tri-state, word-for-word the same rules as max_concurrency:
-      * omitted = keep the predecessor's choice (resolveInput re-resolves once after backfilling from the predecessor snapshot, so an already-
-      * deleted model fails now instead of at the subagent's first utterance), null = clear (back to the session model),
-      * string = set. The tri-state lives only until resolveInput: it normalizes to a canonical string or absence.
+   * 三态，与 `max_concurrency` 逐字同规：
+   * 省略 = 沿用前驱的选型（`resolveInput` 从前驱快照回填后**重新解析一次**，好让一个已经被
+   * 删掉的模型现在就失败，而不是拖到子代理第一次开口）、`null` = 清除（回到会话模型）、
+   * 字符串 = 设定。三态只活到 `resolveInput`：那里归一成一个规范形字符串或缺席。
    */
   subagent_model: z
     .string()
@@ -95,11 +97,11 @@ const AmendWorkflowModelInputSchema = z.object({
 });
 
 /**
-  * Predecessor facts backfilled by resolveInput (step 2).
+ * resolveInput 回填的前驱事实（第 2 步）。
  *
-  * Both the permission decision (this session's runs skip confirmation) and the confirmation dialog (still running, will be stopped) read it, and both sit
-  * before the handler and must agree synchronously -- so resolveInput (async, the flow's single port read) computes it into the inputs.
-  * Normalization **unconditionally overwrites**: a model-forged value is invalid (same precedent as saved.path).
+ * 权限判定（本会话的 run 免确认）与确认窗（「仍在运行，将被停止」）都读它，而两处都在
+ * handler 之前、且必须同步——所以由 resolveInput（异步、全流程唯一一次读端口）算好放进入参。
+ * 归一化**无条件覆盖**：模型伪造它是无效的（saved.path 的同一条先例）。
  */
 export const AmendWorkflowPredecessorSchema = z
   .object({
@@ -108,9 +110,9 @@ export const AmendWorkflowPredecessorSchema = z
     stop_reason: z.enum(WORKFLOW_RUN_STOP_REASONS).optional(),
     owned_by_this_session: z.boolean(),
     /**
-          * Neither script nor path was given on this call; the input script was read from the predecessor archive by resolveInput. Present-means-true only:
-          * the confirmation dialog uses it to say script unchanged on the lineage row, the handler to switch to inherited wording and the diagnostic's first sentence. Overwritten
-          * unconditionally along with the rest; a model-forged value is invalid.
+     * 这次调用 `script` 与 `path` 都没给，入参里的 `script` 是 resolveInput 从前驱存档读来的。只有「在场即真」一种值：
+     * 确认窗据它在 lineage 行说「脚本不变」，handler 据它换成「沿用」的文案与诊断首句。与整块一起
+     * 被无条件覆盖，模型伪造无效。
      */
     script_inherited: z.literal(true).optional(),
   })
@@ -119,14 +121,15 @@ export const AmendWorkflowPredecessorSchema = z
 export type AmendWorkflowPredecessor = z.infer<typeof AmendWorkflowPredecessorSchema>;
 
 /**
-  * The predecessor belongs to this session and was not user-stopped -- the confirm-free owner rule.
+ * 「这个前驱归本会话、且不是用户亲手停下的」——免确认的 owner 规则
+ * （docs/dynamic-workflow/launch.md「Amending this session's runs」）。
  *
-  * It lives in contracts, not the permission service, because it now has **two** readers that must agree word for word:
-  * the permission service admits it in the always-ask branch, and when an in-place call hits not_live the handler uses it to decide whether the
-  * falling-back amendment would have opened a dialog at all. Written twice, someday a
-  * nothing-approved call would silently start a new run.
+ * 住在契约里而不是权限服务里，是因为它现在有**两个**读者，而两个读者必须一字不差地同意：
+ * 权限服务据它在 always-ask 分支里放行，就地调并发遇上 `not_live` 时 handler 据它判断这次落回
+ * 的修订本来要不要开窗（「When the port says `not_live`」）。两处各写一遍，总有一天会让一条
+ * 「什么都没批」的调用悄悄起一次新 run。
  *
-  * Takes unknown: the permission service holds not-yet-parsed tool inputs, the handler the parsed fact block.
+ * 收 `unknown`：权限服务拿到的是还没解析的工具入参，handler 拿到的是解析好的事实块。
  */
 export function isAmendWorkflowOwnedPredecessor(predecessor: unknown): boolean {
   if (!predecessor || typeof predecessor !== "object") return false;
@@ -135,21 +138,25 @@ export function isAmendWorkflowOwnedPredecessor(predecessor: unknown): boolean {
 }
 
 /**
-  * Runtime input: the model-facing keys plus backfilled predecessor and script_line_offset. .strict():
-  * legacy spellings such as resume_from are visible errors here too.
+ * 运行时入参：模型面那些键 + 回填的 `predecessor` 与 `script_line_offset`。`.strict()`：
+ * `resume_from` 这类旧拼写在这里也是可见错误。
  */
 export const AmendWorkflowInputSchema = AmendWorkflowModelInputSchema.extend({
   predecessor: AmendWorkflowPredecessorSchema.optional(),
   /**
-      * Body-line to file-line offset, nonzero only when the path file carries a /* zcode-workflow block. Same posture as predecessor:
-      * a resolved fact, not a fillable parameter; absent from the model's JSON schema.
+   * 正文行 → 文件行的偏移，`path` 文件带 `/* zcode-workflow` 块时才非零。与 `predecessor`
+   * 同一个姿态：解析结果，不是可填的参数，模型的 JSON schema 不列它。
    */
   script_line_offset: z.number().int().nonnegative().optional(),
+  /** 确认窗可调的两项设置，与 CreateWorkflow 同一块、同一条回填规则（workflow-settings.ts）。 */
+  adjustable_settings: WorkflowAdjustableSettingsSchema.optional(),
+  /** 新脚本点名的模型解析成的绑定表，与 CreateWorkflow 同一块（同名沿用前驱的绑定，见 launch.md）。 */
+  model_bindings: WorkflowModelBindingsSchema.optional(),
 }).strict();
 
 export type AmendWorkflowInput = z.infer<typeof AmendWorkflowInputSchema>;
 
-/** The JSON schema handed to the model: no predecessor, no script_line_offset. */
+/** 交给模型的 JSON schema：不含 `predecessor`、`script_line_offset`、`adjustable_settings` 与 `model_bindings`。 */
 export const AmendWorkflowInputJsonSchema = toToolJsonSchema(
   AmendWorkflowModelInputSchema.strict(),
 );

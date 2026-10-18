@@ -14,7 +14,7 @@ import { legacyTelemetryProviderId } from "@/lib/providerTelemetryIdentity.js";
 const EVENT_REGION = "app.automations";
 type TelemetryPlatform = Pick<IPlatformService, "reportTelemetryEvent">;
 
-function resolveAutomationModelTelemetry(
+export function resolveAutomationModelTelemetry(
   modelValue: string | null | undefined,
   explicitProvider: string | null | undefined,
   providerSettingsView: ProviderSettingsView | null,
@@ -64,16 +64,16 @@ export function resolveAutomationSelectionTelemetry(
   );
 }
 
-function sanitizeAutomationTelemetryError(error: string | null | undefined): string {
-  // Fix: the old regex only masked the Bearer token after Authorization, still leaking secrets; drop raw text.
+export function sanitizeAutomationTelemetryError(error: string | null | undefined): string {
+  // 修复原因：旧正则只遮住 Authorization 后的 Bearer，秘密值仍会泄露；统一丢弃原文。
   return sanitizeTelemetryErrorMessage(error);
 }
 
 function classifyAutomationTelemetryError(
   error: string | null | undefined,
 ): "limit" | "timeout" | "network" | "auth" | "validation" | "unknown" {
-  // Fix: with raw error text removed, a constant-empty error_code blocked failure attribution.
-  // Emit fixed categories only; the store already stringified errors, so never guess or echo raw text.
+  // 修复原因：删除错误原文后，恒空的 error_code 让创建失败无法归因。
+  // 只输出固定类别；错误已被 store 转成字符串，未知模式不猜测、更不回传原文。
   const message = error ?? "";
   if (isAutomationCreateLimitError(message)) return "limit";
   if (/\b(?:ETIMEDOUT|ESOCKETTIMEDOUT|TimeoutError|timed? out|timeout)\b/i.test(message)) {
@@ -90,7 +90,7 @@ function classifyAutomationTelemetryError(
     return "auth";
   }
   if (
-    /\b(?:ZodError|invalid automation mode|validation failed|invalid cron)\b|Automation model selection unavailable/i.test(
+    /\b(?:ZodError|invalid automation mode|validation failed|invalid cron)\b|Automation 模型选择不可用/i.test(
       message,
     )
   ) {

@@ -5,8 +5,9 @@ import { cn } from "@/components/lib/utils.js";
 import { TabsContent } from "@/components/ui/tabs.js";
 import type { BrowserSidePaneMetadata, BrowserUseSidePaneTab } from "@/lib/workspaceSidePane.js";
 
-interface BrowserUseSidePaneContentProps {
+export interface BrowserUseSidePaneContentProps {
   tab: BrowserUseSidePaneTab;
+  onOpenPermissionSettings?: (origin: string) => void;
   isPanelVisible: boolean;
   isSelected: boolean;
   isCurrentTask: boolean;
@@ -22,6 +23,7 @@ interface BrowserUseSidePaneContentProps {
 /** browser-use-only TabsContent: inactive tabs keep the real composite layout only during screenshot preparation. */
 export function BrowserUseSidePaneContent({
   tab,
+  onOpenPermissionSettings,
   isPanelVisible,
   isSelected,
   isCurrentTask,
@@ -75,6 +77,7 @@ export function BrowserUseSidePaneContent({
     >
       <UnifiedBrowserView
         browserKey={tab.tabId}
+        onOpenPermissionSettings={onOpenPermissionSettings}
         isResidencyRestore={tab.residency === "restoring"}
         isVisible={isPanelVisible && isSelected}
         isSelected={isSelected}

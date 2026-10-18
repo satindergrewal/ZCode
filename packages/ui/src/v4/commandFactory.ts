@@ -1,6 +1,6 @@
-// Command envelope factory.
-// commandId = uuid v7 (time-ordered, stable across retries); clientId is stable per client instance and persisted,
-// and both the server idempotency table and the pendingCommands display tell submitters apart by it.
+// Command 信封工厂。
+// commandId = uuid v7（时间有序，重试不变）；clientId 每个客户端实例稳定并持久化，
+// 服务端幂等表与 pendingCommands 展示都以它区分提交端。
 import {
   COMMANDS_REQUIRING_BASE_REVISION,
   ROW_TARGETING_COMMANDS,
@@ -15,8 +15,8 @@ const CLIENT_ID_STORAGE_KEY = "zcode-v4-client-id:v1";
 let cachedClientId: string | null = null;
 
 /**
- * Stable clientId of this client instance. Prefers localStorage persistence (survives refresh,
- * so the idempotency table still recognizes retries); without storage, per-process stable.
+ * 本客户端实例的稳定 clientId。优先 localStorage 持久化（刷新后不变，
+ * 幂等表跨刷新仍能识别重试）；无 storage 环境退化为进程内稳定。
  */
 export function getV4ClientId(): string {
   if (cachedClientId) return cachedClientId;
@@ -24,38 +24,40 @@ export function getV4ClientId(): string {
   try {
     stored = localStorage.getItem(CLIENT_ID_STORAGE_KEY);
   } catch {
-    // incognito / node test environments lack localStorage; fall back to in-memory
+    // incognito / node 测试环境无 localStorage，退化为内存缓存
   }
   const clientId = stored ?? `client-${uuidv7()}`;
   if (!stored) {
     try {
       localStorage.setItem(CLIENT_ID_STORAGE_KEY, clientId);
     } catch {
-      // same as above; ignore
+      // 同上，忽略
     }
   }
   cachedClientId = clientId;
   return clientId;
 }
 
-interface CreateCommandEnvelopeInput<T extends CommandType> {
+export interface CreateCommandEnvelopeInput<T extends CommandType> {
   type: T;
   payload: CommandPayloadMap[T];
-  /** Null on createSession. */
+  /** createSession 时为 null。 */
   sessionId: string | null;
   baseRevision?: number;
   baseLogEpoch?: string;
 }
 
-/** Builds the command envelope; a CAS command without baseRevision throws (client bug, in place). */
+/** 构造命令信封；CAS 命令缺 baseRevision 直接抛（客户端编程错误就地暴露）。 */
 export function createCommandEnvelope<T extends CommandType>(
   input: CreateCommandEnvelopeInput<T>,
 ): CommandEnvelope {
   if (COMMANDS_REQUIRING_BASE_REVISION.has(input.type) && input.baseRevision === undefined) {
-    throw new Error(`command ${input.type} is a CAS command and requires baseRevision`);
+    throw new Error(
+      `command ${input.type} 是 CAS 命令，必须携带 baseRevision（10-protocol-spec §6.4）`,
+    );
   }
   if (ROW_TARGETING_COMMANDS.has(input.type) && !input.baseLogEpoch) {
-    throw new Error(`command ${input.type} is a row-target command and requires baseLogEpoch`);
+    throw new Error(`command ${input.type} 是 row target 命令，必须携带 baseLogEpoch`);
   }
   return {
     commandId: uuidv7(),

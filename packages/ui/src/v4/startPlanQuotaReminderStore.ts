@@ -6,8 +6,8 @@ interface RecordEntry {
   owner: object | null;
 }
 
-/** Sole owner of the 10% reminder record; shown-facts persist, the live display instance stays in memory. */
-function createStartPlanQuotaReminderStore(
+/** 10% 提醒记录唯一 owner；已展示事实持久化，当前展示实例只留在内存。 */
+export function createStartPlanQuotaReminderStore(
   options: {
     storage?: () => Storage | null;
   } = {},
@@ -30,7 +30,7 @@ function createStartPlanQuotaReminderStore(
     version += 1;
     for (const listener of listeners) listener();
   }
-  // Fix: device time may be past the server period; share the snapshot time with candidate buckets.
+  // 修复：设备时间可能已越过服务端周期，必须与候选桶共用快照时间。
   function read(key: string, referenceTime: number): RecordEntry | undefined {
     const cached = entries.get(key);
     if (cached && cached.expiresAt > referenceTime) return cached;
@@ -43,7 +43,7 @@ function createStartPlanQuotaReminderStore(
         return entry;
       }
     } catch {
-      /* Storage broken or disabled: keep using this renderer in-memory record. */
+      /* 存储损坏或禁用时仍可使用当前 Renderer 的内存记录。 */
     }
     return undefined;
   }
@@ -58,7 +58,7 @@ function createStartPlanQuotaReminderStore(
           target.removeItem(key);
       }
     } catch {
-      /* Cleanup failure never affects display or in-memory dedupe. */
+      /* 清理失败不影响显示和内存去重。 */
     }
   }
   return {
@@ -86,7 +86,7 @@ function createStartPlanQuotaReminderStore(
       emit();
     },
     dismiss(key: string): void {
-      // Shown-facts are never re-decided by wall clock at close; here only the display owner releases.
+      // 已展示事实不由关闭时的墙钟重新裁决；这里只释放当前展示 owner。
       const entry = entries.get(key);
       if (!entry || entry.owner === null) return;
       entry.owner = null;

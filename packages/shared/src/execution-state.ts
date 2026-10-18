@@ -1,14 +1,14 @@
 import { z } from "zod";
 
-/** auto stays an internal permission; plan is accepted only at the legacy-format read boundary. */
-export const executionPermissionModeSchema = z.enum(["build", "edit", "yolo", "auto"]);
+/** auto 保留为内部权限；plan 仅在旧格式读取边界接受。 */
+export const executionPermissionModeSchema = z.enum(["build", "edit", "yolo", "guarded", "auto"]);
 export const executionStateSchema = z.object({
   mode: executionPermissionModeSchema,
   planEnabled: z.boolean(),
 });
 export type ExecutionState = z.infer<typeof executionStateSchema>;
 
-/** Pin legacy request semantics at the admission boundary; never reinterpret at queue consumption by current config. */
+/** 在接纳边界固定旧请求语义，不能在队列消费时按当前配置重新解释。 */
 export function resolveExecutionState(
   input: { mode?: string; planEnabled?: boolean },
   current: ExecutionState = { mode: "build", planEnabled: false },

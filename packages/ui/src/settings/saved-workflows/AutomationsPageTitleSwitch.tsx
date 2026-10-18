@@ -6,7 +6,7 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 /** The automations page's two top-level tabs. */
 export type AutomationsPageTab = "automation" | "workflow";
 
-const AUTOMATIONS_PAGE_TABS: readonly AutomationsPageTab[] = ["automation", "workflow"];
+export const AUTOMATIONS_PAGE_TABS: readonly AutomationsPageTab[] = ["automation", "workflow"];
 
 /**
  * The automations page title. Without the dynamic-workflows flag the page has only "Automations", so

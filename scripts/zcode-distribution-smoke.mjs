@@ -1,5 +1,4 @@
-// Verify the distribution package outside the repository, so dev-machine node_modules cannot
-// mask missing TUI/native/worker dependencies.
+// 在仓库外验证发行包，避免开发机 node_modules 掩盖缺失的 TUI/native/worker 依赖。
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
@@ -8,7 +7,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout } from "node:timers/promises";
-import { promisify } from "node:util";
+import { promisify, stripVTControlCharacters } from "node:util";
 import { pathToFileURL } from "node:url";
 
 const exec = promisify(execFile);
@@ -57,14 +56,18 @@ try {
     }),
   );
   await until(
-    // Match the localized TUI placeholders (zh-CN login/prompt words, en login prompt), ASCII-escaped.
-    () => /ZCode/.test(screen) && /(?:\u767b\u5f55|\/login|\u8f93\u5165\u63d0\u793a\u8bcd|Type a prompt)/i.test(screen),
+    () => {
+      // 修复：TUI 渲染器会在相邻字符之间插入 SGR/光标定位序列，原始 PTY 输出里的提示词不连续；
+      // 先去掉终端控制序列再匹配可见文本，避免界面已就绪却被判定为超时。
+      const visible = stripVTControlCharacters(screen);
+      return /ZCode/.test(visible) && /(?:登录|\/login|输入提示词|Type a prompt)/i.test(visible);
+    },
     "TUI initialized render",
-    () => screen,
+    () => stripVTControlCharacters(screen),
   );
   assert.equal(terminalExit, undefined, screen);
   assert.doesNotMatch(screen, /Cannot find (?:module|package)|ERR_MODULE_NOT_FOUND/);
-  // Keep the real keyboard exit path; no prompt is sent and no model is called.
+  // 保留真实键盘退出链路；不发送 prompt，不调用模型。
   terminal.write("\u0003");
   await setTimeout(200);
   if (!terminalExit) terminal.write("\u0003");

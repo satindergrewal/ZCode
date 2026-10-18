@@ -25,16 +25,14 @@ interface CodingPlanUpgradeDialogProps {
   target?: CodingPlanUpgradeDialogTarget;
   onClose: () => void;
   onOpenResult?: (opened: boolean) => void;
-  // Keeps the existing CodingPlanUpgradeDialogProvider contract.
-  // Rationale: after purchase/sign-in moved into the official-site webview, the App no longer needs the
-  // "close dialog to sign in → reopen on success" recovery flow; this prop is currently unused, kept
-  // only so the Provider signature stays unchanged.
+  // 兼容 CodingPlanUpgradeDialogProvider 现有契约。
+  // 改造原因：购买/登录流程迁到官网 webview 内部后，App 不再需要「关闭弹窗去登录 → 成功后重开」
+  // 的恢复链路；此 prop 当前不使用，保留签名避免改动 Provider。
   onReopen?: (target: CodingPlanUpgradeDialogTarget) => void;
 }
 
-// Completion refresh: called after the official page reports a successful purchase via
-// window.zcodeBridge.notifyPurchaseComplete.
-async function refreshCodingPlanUpgradeCompletion(params: {
+// 完成刷新：官网页通过 window.zcodeBridge.notifyPurchaseComplete 回传购买成功后调用。
+export async function refreshCodingPlanUpgradeCompletion(params: {
   productsProviderId: CodingPlanProviderId | null;
   providerId: CodingPlanProviderId | null;
   refreshCodingPlanEntitlements: () => Promise<unknown> | unknown;
@@ -44,20 +42,19 @@ async function refreshCodingPlanUpgradeCompletion(params: {
   await Promise.all([
     params.refreshProviderState(),
     params.refreshCodingPlanEntitlements(),
-    // The Team Plan connection entry depends on the authenticated pricing/customer product snapshot.
-    // It must also be refreshed before the global purchase dialog closes, so new team products
-    // are visible right after Done.
+    // Team Plan 连接项依赖 authenticated pricing/customer 项目快照。
+    // 全局购买弹窗关闭前也必须刷新它，避免 Done 后仍看不到新团队项目。
     params.refreshTeamPlanProducts?.(),
   ]);
 }
 
-async function closeAndRefreshCodingPlanUpgradeFromWebview(params: {
+export async function closeAndRefreshCodingPlanUpgradeFromWebview(params: {
   onClose: () => void;
   refresh: () => Promise<unknown> | unknown;
   onRefreshError?: (error: unknown) => void;
 }) {
-  // The completion signal from the official-site webview means "close the upgrade dialog and refresh the provider".
-  // Closing must happen first so a successful payment is not blocked in the webview by a slow provider/entitlement refresh.
+  // 官网 webview 发回的完成信号语义是“关闭升级弹窗并刷新 provider”。
+  // 关闭必须先发生，避免用户付款成功后还被弱网下的 provider/权益刷新阻塞在 webview 上。
   params.onClose();
   try {
     await params.refresh();
@@ -66,11 +63,7 @@ async function closeAndRefreshCodingPlanUpgradeFromWebview(params: {
   }
 }
 
-export function CodingPlanUpgradeDialog({
-  target,
-  onClose,
-  onOpenResult,
-}: CodingPlanUpgradeDialogProps) {
+export function CodingPlanUpgradeDialog({ target, onClose, onOpenResult }: CodingPlanUpgradeDialogProps) {
   const { providerSettingsService, credentialService, codingPlanSubscriptionService } =
     useServices();
   const providerSettingsRead = useProviderSettingsView();
@@ -91,8 +84,7 @@ export function CodingPlanUpgradeDialog({
     () => providerSettingsService.refresh("coding-plan-purchase-complete"),
     [providerSettingsService],
   );
-  // Purchase-complete callback from the official site: the webview tells the App to close the
-  // upgrade dialog and refresh the current provider in the background.
+  // 官网页购买完成回传：webview 告诉 App 关闭升级弹窗，并在后台刷新当前 provider。
   const handlePurchaseComplete = useCallback(async () => {
     await closeAndRefreshCodingPlanUpgradeFromWebview({
       onClose,
@@ -105,9 +97,8 @@ export function CodingPlanUpgradeDialog({
           refreshTeamPlanProducts:
             teamPlanFamily !== null
               ? () =>
-                  // After purchase the webview dialog closes first and the in-dialog hook unmounts.
-                  // Fetch the current family's team products straight via the service so the
-                  // refresh request is not swallowed by the unmount ordering.
+                  // 购买完成后会先关闭 webview 弹窗，弹窗内 hook 随即卸载。
+                  // 这里直接走 service 拉取当前 family 的团队项目，避免刷新请求被卸载时序吞掉。
                   codingPlanSubscriptionService.getEnterprisePricing({
                     authenticated: true,
                     family: teamPlanFamily,
@@ -115,9 +106,8 @@ export function CodingPlanUpgradeDialog({
               : undefined,
         }),
       onRefreshError: (error) => {
-        // A refresh failure must not block closing: the payment already succeeded and the plan
-        // updates on the next natural refresh.
-        logger.warn("[CodingPlanUpgradeDialog] Failed to refresh state after purchase", {
+        // 刷新失败不阻塞关闭：用户已付款成功，套餐会在下次自然刷新时更新。
+        logger.warn("[CodingPlanUpgradeDialog] 购买完成后刷新状态失败", {
           providerId,
           productsProviderId,
           error,

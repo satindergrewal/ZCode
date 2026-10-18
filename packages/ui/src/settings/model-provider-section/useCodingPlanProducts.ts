@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- Coding Plan handling centralizes static plans, remote previews, caching, and signed-out fallbacks; splitting it would scatter shared state. */
+/* eslint-disable max-lines -- Coding Plan 套餐需要集中处理静态套餐、远端试算、缓存与登录态回退，避免把共享状态拆散。 */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BUILTIN_MODEL_PROVIDER_IDS,
@@ -24,12 +24,15 @@ interface CodingPlanProductsState {
   error: string | null;
 }
 
-type CodingPlanProductsSnapshot = Omit<CodingPlanBatchPreviewResponse, "productList"> & {
+type CodingPlanProductsSnapshot = Omit<
+  CodingPlanBatchPreviewResponse,
+  "productList"
+> & {
   productList: CodingPlanProductDisplay[];
 };
 
 const CODING_PLAN_OAUTH_REQUIRED_ERROR = "coding_plan_oauth_required";
-const ZAI_START_FREE_PRODUCT_ID = "zai-start-free";
+export const ZAI_START_FREE_PRODUCT_ID = "zai-start-free";
 const ZAI_START_FREE_PRODUCT_IDS = {
   month: `${ZAI_START_FREE_PRODUCT_ID}-monthly`,
   quarter: `${ZAI_START_FREE_PRODUCT_ID}-quarterly`,
@@ -37,7 +40,10 @@ const ZAI_START_FREE_PRODUCT_IDS = {
 } as const;
 const CODING_PLAN_PRODUCTS_CACHE_TTL_MS = 30_000;
 const CODING_PLAN_STATIC_PRODUCTS_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const productRequestCache = new Map<string, Promise<CodingPlanProductsSnapshot>>();
+const productRequestCache = new Map<
+  string,
+  Promise<CodingPlanProductsSnapshot>
+>();
 const productSnapshotCache = new Map<
   string,
   { snapshot: CodingPlanProductsSnapshot; expiresAt: number }
@@ -47,7 +53,8 @@ let staticProductsConfigCache: {
   config: CodingPlanStaticProductsConfig;
   expiresAt: number;
 } | null = null;
-let staticProductsConfigRequest: Promise<CodingPlanStaticProductsConfig> | null = null;
+let staticProductsConfigRequest: Promise<CodingPlanStaticProductsConfig> | null =
+  null;
 
 export function useCodingPlanProducts(
   providerId: CodingPlanProviderId,
@@ -59,7 +66,10 @@ export function useCodingPlanProducts(
     providerId === BUILTIN_MODEL_PROVIDER_IDS.bigmodelIndividualCodingPlan ||
     isZaiCodingPlanProviderId(providerId);
   const enabled = supportedProvider && options?.remotePreviewEnabled !== false;
-  const staticSnapshot = useMemo(() => buildStaticProductsSnapshot(providerId), [providerId]);
+  const staticSnapshot = useMemo(
+    () => buildStaticProductsSnapshot(providerId),
+    [providerId],
+  );
   const [state, setState] = useState<CodingPlanProductsState>(() => ({
     snapshot: null,
     loading: supportedProvider,
@@ -78,11 +88,14 @@ export function useCodingPlanProducts(
       }
       if (!enabled) {
         const loadedStaticSnapshot = service
-          ? await loadCodingPlanStaticProductsSnapshotForTest(providerId, service)
+          ? await loadCodingPlanStaticProductsSnapshotForTest(
+              providerId,
+              service,
+            )
           : staticSnapshot;
         setState({
-          // Signed-out/disconnected states skip the paid batch-preview but still show static plans.
-          // Returning an empty snapshot + loading here used to leave the plan list stuck loading.
+          // 未登录/未连接时禁止打 paid batch-preview，但仍要展示静态套餐。
+          // 之前这里返回空 snapshot + loading，导致套餐列表一直卡在加载态。
           snapshot: loadedStaticSnapshot,
           loading: false,
           error: null,
@@ -99,9 +112,8 @@ export function useCodingPlanProducts(
       }
 
       setState((current) => ({
-        // With static plans now remote-configured, there is no local fallback on first view.
-        // Keep an empty snapshot while config/preview load so the outer shell shows a full loading
-        // state instead of flashing an empty list.
+        // 静态套餐改为远端配置后，首次查看套餐列表时没有本地数据可兜底；
+        // 请求配置和试算期间必须保持空 snapshot，让外层展示整块加载态，而不是先闪空列表。
         snapshot: options?.force === true ? current.snapshot : null,
         loading: true,
         error: null,
@@ -109,8 +121,14 @@ export function useCodingPlanProducts(
 
       let loadedStaticSnapshot = staticSnapshot;
       try {
-        const staticProducts = await loadCodingPlanStaticProductListForTest(providerId, service);
-        loadedStaticSnapshot = buildStaticProductsSnapshotFromList(providerId, staticProducts);
+        const staticProducts = await loadCodingPlanStaticProductListForTest(
+          providerId,
+          service,
+        );
+        loadedStaticSnapshot = buildStaticProductsSnapshotFromList(
+          providerId,
+          staticProducts,
+        );
         const snapshot = await loadCodingPlanProducts(
           providerId,
           service,
@@ -124,14 +142,13 @@ export function useCodingPlanProducts(
         });
       } catch (error) {
         const message = normalizeErrorMessage(error);
-        logger.warn("[useCodingPlanProducts] Failed to load Coding Plan products", {
+        logger.warn("[useCodingPlanProducts] 读取 Coding Plan 套餐失败", {
           providerId,
           error: message,
         });
         setState((current) => ({
-          // A failed manual refresh must not overwrite the last valid preview with static plans.
-          // soldOut/canPurchase/forbidden exist only in batch-preview; overwriting would make period
-          // lists count "sold out" as subscribable.
+          // 手动刷新失败不能用静态套餐覆盖上一轮有效 preview。
+          // soldOut/canPurchase/forbidden 只存在于 batch-preview，覆盖后周期列表会把“已售罄”误算成可订阅。
           snapshot: resolveCodingPlanProductsFailureSnapshot(
             current.snapshot,
             loadedStaticSnapshot,
@@ -154,9 +171,11 @@ export function useCodingPlanProducts(
   };
 }
 
-async function loadCodingPlanProductsForTest(
+export async function loadCodingPlanProductsForTest(
   providerId: CodingPlanProviderId,
-  service: NonNullable<ReturnType<typeof useOptionalServices>>["codingPlanSubscriptionService"],
+  service: NonNullable<
+    ReturnType<typeof useOptionalServices>
+  >["codingPlanSubscriptionService"],
   force: boolean,
   staticProducts?: CodingPlanStaticProduct[],
 ): Promise<CodingPlanProductsSnapshot> {
@@ -174,13 +193,15 @@ async function loadCodingPlanProductsForTest(
     return cachedPromise;
   }
 
-  // React strict mode and settings refreshes remount plan cards in quick bursts, and the
-  // BigModel/Z.AI preview endpoints intermittently return "system busy" on bursts. Coalesce in-flight
-  // requests and short-cache successes only; manual refresh, login/connect success, and purchase
-  // completion all bypass the cache with force so transactional state never goes stale.
-  // Login/connect must also strip older signed-out previews of cache-write eligibility, so a
-  // late-returning unauthenticated preview cannot overwrite the authenticated result.
-  const promise = loadBatchPreviewWithStaticProducts(providerId, service, staticProducts ?? []);
+  // React 严格模式和设置页状态刷新会短时间重复挂载套餐卡，
+  // BigModel/Z.AI 套餐预览接口对连发请求会偶发返回“系统繁忙”；这里合并进行中请求，并只短缓存成功结果，
+  // 手动刷新、登录/连接成功和购买完成都用 force 绕过缓存，避免交易状态长期陈旧。
+  // 登录/连接成功还必须让旧的未登录试算请求失去写缓存资格，避免它晚返回后覆盖新的登录态试算结果。
+  const promise = loadBatchPreviewWithStaticProducts(
+    providerId,
+    service,
+    staticProducts ?? [],
+  );
   productRequestCache.set(providerId, promise);
 
   try {
@@ -199,21 +220,34 @@ async function loadCodingPlanProductsForTest(
   }
 }
 
-async function loadCodingPlanStaticProductsSnapshotForTest(
+export async function loadCodingPlanStaticProductsSnapshotForTest(
   providerId: CodingPlanProviderId,
-  service: NonNullable<ReturnType<typeof useOptionalServices>>["codingPlanSubscriptionService"],
+  service: NonNullable<
+    ReturnType<typeof useOptionalServices>
+  >["codingPlanSubscriptionService"],
 ): Promise<CodingPlanProductsSnapshot> {
-  const staticProducts = await loadCodingPlanStaticProductListForTest(providerId, service);
+  const staticProducts = await loadCodingPlanStaticProductListForTest(
+    providerId,
+    service,
+  );
   return buildStaticProductsSnapshotFromList(providerId, staticProducts);
 }
 
 const loadCodingPlanProducts = loadCodingPlanProductsForTest;
 
-function resolveCodingPlanProductsFailureSnapshot(
+export function resolveCodingPlanProductsFailureSnapshot(
   currentSnapshot: CodingPlanProductsSnapshot | null,
   fallbackSnapshot: CodingPlanProductsSnapshot,
 ): CodingPlanProductsSnapshot {
   return currentSnapshot ?? fallbackSnapshot;
+}
+
+export function clearCodingPlanProductsCacheForTest() {
+  productRequestCache.clear();
+  productSnapshotCache.clear();
+  productCacheGeneration.clear();
+  staticProductsConfigCache = null;
+  staticProductsConfigRequest = null;
 }
 
 function invalidateCodingPlanProductsCache(providerId: CodingPlanProviderId) {
@@ -226,7 +260,9 @@ function invalidateCodingPlanProductsCache(providerId: CodingPlanProviderId) {
 
 async function loadBatchPreviewWithStaticProducts(
   providerId: CodingPlanProviderId,
-  service: NonNullable<ReturnType<typeof useOptionalServices>>["codingPlanSubscriptionService"],
+  service: NonNullable<
+    ReturnType<typeof useOptionalServices>
+  >["codingPlanSubscriptionService"],
   staticProducts: CodingPlanStaticProduct[],
 ): Promise<CodingPlanProductsSnapshot> {
   const previewSnapshot = await service.batchPreview({ providerId });
@@ -236,7 +272,10 @@ async function loadBatchPreviewWithStaticProducts(
   const productList =
     staticProducts.length > 0
       ? buildStaticProductDisplayList(staticProducts).map((product) =>
-          mergeStaticProductWithPreview(product, previewByProductId.get(product.productId)),
+          mergeStaticProductWithPreview(
+            product,
+            previewByProductId.get(product.productId),
+          ),
         )
       : previewSnapshot.productList.map((product) => ({
           ...product,
@@ -249,17 +288,25 @@ async function loadBatchPreviewWithStaticProducts(
   };
 }
 
-function buildStaticProductsSnapshot(providerId: CodingPlanProviderId): CodingPlanProductsSnapshot {
+function buildStaticProductsSnapshot(
+  providerId: CodingPlanProviderId,
+): CodingPlanProductsSnapshot {
   return buildStaticProductsSnapshotFromList(providerId, []);
 }
 
-function buildZaiStartStaticProducts(preview: StartPlanPreviewConfig): CodingPlanStaticProduct[] {
+function buildZaiStartStaticProducts(
+  preview: StartPlanPreviewConfig,
+): CodingPlanStaticProduct[] {
   const isChineseLocale =
-    typeof navigator !== "undefined" && navigator.language.toLowerCase().startsWith("zh");
+    typeof navigator !== "undefined" &&
+    navigator.language.toLowerCase().startsWith("zh");
   const previewName = preview.name.trim() || "Z.ai Start";
   const equityList = preview.entitlements.map((entitlement) => ({
     productEquityTitle: entitlement.showName,
-    productEquityDetails: formatStartPlanPreviewEntitlement(entitlement, isChineseLocale),
+    productEquityDetails: formatStartPlanPreviewEntitlement(
+      entitlement,
+      isChineseLocale,
+    ),
   }));
 
   return [
@@ -309,20 +356,21 @@ function formatStartPlanPreviewEntitlement(
   entitlement: StartPlanPreviewConfig["entitlements"][number],
   isChineseLocale: boolean,
 ): string {
-  const amount = new Intl.NumberFormat(isChineseLocale ? "zh-CN" : "en-US").format(
-    entitlement.grantUnits,
-  );
+  const amount = new Intl.NumberFormat(
+    isChineseLocale ? "zh-CN" : "en-US",
+  ).format(entitlement.grantUnits);
   const unit = entitlement.unitType.trim();
   const period = entitlement.period.trim();
   return [amount, unit, period].filter(Boolean).join(" ");
 }
 
-function isZaiStartFreeProductId(productId: string | null | undefined) {
+export function isZaiStartFreeProductId(productId: string | null | undefined) {
   if (!productId) {
     return false;
   }
   return (
-    productId === ZAI_START_FREE_PRODUCT_ID || productId.startsWith(`${ZAI_START_FREE_PRODUCT_ID}-`)
+    productId === ZAI_START_FREE_PRODUCT_ID ||
+    productId.startsWith(`${ZAI_START_FREE_PRODUCT_ID}-`)
   );
 }
 
@@ -351,8 +399,8 @@ function buildStaticProductDisplayList(
     );
     return {
       ...product,
-      // The display model still needs the newline-joined string for legacy card logic, alongside the
-      // structured items, or per-item tooltips from client/configs are lost in normalization.
+      // 展示模型仍需要换行字符串供旧卡片逻辑读取，同时保留结构化条目，
+      // 否则 client/configs 下发的单条 tooltip 会在归一化时丢失。
       productDescription:
         descriptionItems.length > 0
           ? descriptionItems.map((item) => item.text).join("\n")
@@ -366,14 +414,16 @@ function buildStaticProductDisplayList(
   });
 }
 
-async function loadCodingPlanStaticProductListForTest(
+export async function loadCodingPlanStaticProductListForTest(
   providerId: CodingPlanProviderId,
-  service: NonNullable<ReturnType<typeof useOptionalServices>>["codingPlanSubscriptionService"],
+  service: NonNullable<
+    ReturnType<typeof useOptionalServices>
+  >["codingPlanSubscriptionService"],
 ): Promise<CodingPlanStaticProduct[]> {
   try {
     const config = await loadCodingPlanStaticProductsConfig(service);
-    // Plan descriptions are maintained centrally in remote client/configs; the frontend must not
-    // hardcode Lite/Pro/Max overrides, or the settings page shows stale copy after remote updates.
+    // 套餐描述由远端 client/configs 统一维护，前端不能再按 Lite/Pro/Max 写死覆盖，
+    // 否则远端更新后设置页仍展示旧文案。
     const remoteProducts = config[providerId] ?? [];
     if (providerId === BUILTIN_MODEL_PROVIDER_IDS.zaiIndividualCodingPlan) {
       return filterCodingPlanPurchaseProducts(providerId, remoteProducts);
@@ -387,26 +437,26 @@ async function loadCodingPlanStaticProductListForTest(
         ? await service.getStartPlanPreview()
         : null;
     if (!startPlanPreview) {
-      // Trial-plan existence is decided by client/configs.startPlanPreview.
-      // No local hardcoded fallback when the field is missing, or a config-disabled trial plan would show.
+      // 体验套餐是否存在由 client/configs.startPlanPreview 决定。
+      // 后端缺字段时不能再用本地硬编码兜底，否则会展示已经被配置关闭的体验套餐。
       return remoteProducts;
     }
 
-    // The free Start tier now belongs to the dedicated Start Plan entry and must be enabled explicitly
-    // by the remote preview flag. The Z.AI - Coding Plan purchase list shows paid upgrades only, so
-    // Start is never listed as a purchasable duplicate.
+    // Start 免费档现在归属于独立的 Start Plan 入口，且必须由远端 preview 开关显式打开。
+    // Z.AI - Coding Plan 的购买列表只展示付费升级项，避免把 Start 当成可购买套餐重复显示。
     const seen = new Set<string>();
-    return [...buildZaiStartStaticProducts(startPlanPreview), ...remoteProducts].filter(
-      (product) => {
-        if (seen.has(product.productId)) {
-          return false;
-        }
-        seen.add(product.productId);
-        return true;
-      },
-    );
+    return [
+      ...buildZaiStartStaticProducts(startPlanPreview),
+      ...remoteProducts,
+    ].filter((product) => {
+      if (seen.has(product.productId)) {
+        return false;
+      }
+      seen.add(product.productId);
+      return true;
+    });
   } catch (error) {
-    logger.warn("[useCodingPlanProducts] Failed to load remote static Coding Plan products", {
+    logger.warn("[useCodingPlanProducts] 读取远端 Coding Plan 静态套餐失败", {
       providerId,
       error: normalizeErrorMessage(error),
     });
@@ -420,11 +470,15 @@ function filterCodingPlanPurchaseProducts<
   if (providerId !== BUILTIN_MODEL_PROVIDER_IDS.zaiIndividualCodingPlan) {
     return products;
   }
-  return products.filter((product) => !isZaiStartFreeProductId(product.productId));
+  return products.filter(
+    (product) => !isZaiStartFreeProductId(product.productId),
+  );
 }
 
 async function loadCodingPlanStaticProductsConfig(
-  service: NonNullable<ReturnType<typeof useOptionalServices>>["codingPlanSubscriptionService"],
+  service: NonNullable<
+    ReturnType<typeof useOptionalServices>
+  >["codingPlanSubscriptionService"],
 ): Promise<CodingPlanStaticProductsConfig> {
   const now = Date.now();
   if (staticProductsConfigCache && staticProductsConfigCache.expiresAt > now) {
@@ -438,9 +492,8 @@ async function loadCodingPlanStaticProductsConfig(
     return {};
   }
 
-  // Static plans come from remote client/configs but are needed only once the user actually opens the
-  // plan list. One-day in-memory cache plus in-flight request coalescing avoids re-fetching per
-  // settings re-render or per provider card.
+  // 静态套餐来自远端 client/configs，但只有用户真正查看套餐列表时才需要请求；
+  // 这里做一天内存缓存和进行中请求合并，避免设置页重渲染或多个 provider 卡片重复拉配置。
   const request = service.getStaticProducts();
   staticProductsConfigRequest = request;
   try {
@@ -494,16 +547,31 @@ function mergeStaticProductWithPreview(
 export function normalizeErrorMessage(error: unknown): string {
   const message = readErrorMessage(error);
   if (isCodingPlanSystemBusyMessage(message)) {
-    // The payment endpoints can return WAF HTML or JSON parse errors; never show that raw content.
-    // Normalize to the system-busy message.
+    // 支付接口可能返回 WAF HTML 或 JSON 解析错误。
+    // 这类内容不能直接展示给用户，统一提示系统繁忙。
     return CODING_PLAN_SYSTEM_BUSY;
   }
   if (isCodingPlanOAuthRequiredMessage(message)) {
-    // Plan/payment endpoints still rely on the OAuth session. An expired, corrupted, or missing token
-    // must route the user to re-login/reconnect, not surface the backend's raw token error.
+    // 套餐/支付接口仍依赖 OAuth 登录态。
+    // token 过期、损坏或缺失时要引导用户重新登录/连接，不能直接展示后端原始 token 错误。
     return CODING_PLAN_OAUTH_REQUIRED_ERROR;
   }
   return message;
+}
+
+export function isCodingPlanOAuthRequiredError(error: string): boolean {
+  return (
+    error === CODING_PLAN_OAUTH_REQUIRED_ERROR ||
+    error === "bigmodel_oauth_required" ||
+    error === "zai_oauth_required" ||
+    isCodingPlanOAuthRequiredMessage(error)
+  );
+}
+
+export function isCodingPlanSystemBusyError(error: string): boolean {
+  return (
+    error === CODING_PLAN_SYSTEM_BUSY || isCodingPlanSystemBusyMessage(error)
+  );
 }
 
 function readErrorMessage(error: unknown): string {

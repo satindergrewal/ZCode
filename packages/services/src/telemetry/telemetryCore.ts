@@ -1,9 +1,8 @@
-/* oxlint-disable eslint(max-lines) -- telemetry state lock, deviceMid orchestration, and upload paths share one state file; splitting risks lock-semantics drift */
+/* oxlint-disable eslint(max-lines) -- telemetry state lock、deviceMid 编排和上报路径共享同一状态文件，拆分会增加锁语义漂移风险。 */
 import {
   createUuid,
   ZCODE_VERSION,
   ZCODE_ENV,
-  ZCODE_TELEMETRY_ENABLED,
   ZCODE_TELEMETRY_REPORT_ENDPOINT,
   buildZCodeSourceHeadersFromContext,
   rewriteZCodeEndpointUrl,
@@ -12,17 +11,14 @@ import {
   type TelemetryRendererContext,
   type OAuthLoginAttribution,
 } from "@zcode/shared";
-import {
-  ensureDeviceMid,
-  ensureDeviceMidInLockedState,
-  type EnsureDeviceMidOptions,
-} from "../device/deviceMid.js";
 import { mkdir, open, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { version } from "node:os";
 import { dirname, join } from "node:path";
 import { createServiceLogger } from "#src/logger/serviceLogger.js";
 import { getAppConfigDir } from "../paths.js";
+
+const REPORT_ENDPOINT = ZCODE_TELEMETRY_REPORT_ENDPOINT;
 
 function sessionCreateEventId(userId: string, sessionId: string): string {
   const bytes = createHash("sha256")
@@ -99,6 +95,8 @@ interface TelemetryLockOwner {
   pid: number;
   createdAt: number;
 }
+
+const deviceMidCacheByStateFile = new Map<string, Promise<string>>();
 
 function normalizeOsCategory(platform: NodeJS.Platform): string {
   switch (platform) {
@@ -236,8 +234,8 @@ async function withTelemetryStateLock<T>(
     try {
       const handle = await open(lockFile, "wx");
       try {
-        // Bugfix: the legacy lock was an empty file, indistinguishable from an orphan for 5 minutes after a crash.
-        // Locks now record the owner pid so later processes can reclaim a stale-but-owner-dead lock safely.
+        // Bugfix: 旧锁文件只有一个空文件，崩溃后 5 分钟内无法判断是否为孤儿锁。
+        // 新锁写入 owner pid，让后续进程能安全回收“刚残留但持有进程已退出”的锁。
         await handle.writeFile(
           JSON.stringify({
             pid: process.pid,
@@ -260,9 +258,8 @@ async function withTelemetryStateLock<T>(
         throw error;
       }
 
-      // Bugfix: telemetry-state.lock can survive crashes/force quits and block every later startup until timeout.
-      // Detect clearly expired orphan locks by mtime and reclaim them, so one stale empty file
-      // cannot dead-lock reporting forever.
+      // Bugfix: 崩溃/强退后 telemetry-state.lock 可能遗留在磁盘上，后续所有启动都会直接卡死到超时。
+      // 这里按 mtime 识别明显过期的孤儿锁并自动回收，避免用户目录里一个陈旧空文件把上报永久锁死。
       const removedStaleLock = await removeStaleTelemetryLockIfNeeded(lockFile, Date.now());
       if (removedStaleLock) {
         continue;
@@ -275,12 +272,65 @@ async function withTelemetryStateLock<T>(
   throw new Error("Telemetry state lock timeout");
 }
 
-// The persistent owner of device identity is device/deviceMid: same state file, same lock.
-// Keep the legacy export as a stable alias for the reporting entry; delegate internally, one write path only.
-export type { EnsureDeviceMidOptions as EnsureTelemetryDeviceMidOptions } from "../device/deviceMid.js";
+export interface EnsureTelemetryDeviceMidOptions {
+  homeDir?: string;
+  randomUUID?: () => string;
+}
 
-export function ensureTelemetryDeviceMid(options: EnsureDeviceMidOptions = {}): Promise<string> {
-  return ensureDeviceMid(options);
+function rememberDeviceMid(telemetryStateFile: string, deviceMid: string): string {
+  deviceMidCacheByStateFile.set(telemetryStateFile, Promise.resolve(deviceMid));
+  return deviceMid;
+}
+
+/** 调用方必须已持有 telemetry-state.lock；只在 state 缺失 deviceMid 时生成并写回。 */
+async function ensureDeviceMidInLockedState(
+  state: TelemetryState,
+  options: EnsureTelemetryDeviceMidOptions,
+): Promise<string> {
+  const telemetryStateFile = resolveTelemetryStateFile(options.homeDir);
+  if (state.deviceMid) {
+    return rememberDeviceMid(telemetryStateFile, state.deviceMid);
+  }
+
+  // device_mid 独立生成，不再复用首条事件的 eventId：让它表达「设备标识」而非
+  // 「某次上报」，并与 ARMS 侧（desktopDeviceMid）读取的同一字段保持同值。
+  const deviceMid = (options.randomUUID ?? createUuid)();
+  state.deviceMid = deviceMid;
+  await writeTelemetryState(state, options.homeDir);
+  return rememberDeviceMid(telemetryStateFile, deviceMid);
+}
+
+/**
+ * 确保 telemetry-state.json 里存在 deviceMid 并返回它。
+ *
+ * Bug 根因：远端 zcode-server 所在主机没有 Desktop main 进程，过去没有任何进程会在那里写
+ * telemetry-state.json；buildZCodeSourceHeaders() 又只读不生成，于是远端发往 ZCode endpoint 的
+ * 请求永远缺 X-Device-Mid，billing/balance 被服务端拒绝为 parameter error，Start Plan 在远程
+ * 工作区被判成未开通。这里把 telemetry 上报内部的 ensure 逻辑抽成独立入口，供远端 server 启动时
+ * 调用：同一个文件、同一个字段、同一把 telemetry-state.lock，与同机 CLI 得到同一个设备身份。
+ */
+export function ensureTelemetryDeviceMid(
+  options: EnsureTelemetryDeviceMidOptions = {},
+): Promise<string> {
+  const telemetryStateFile = resolveTelemetryStateFile(options.homeDir);
+  const cached = deviceMidCacheByStateFile.get(telemetryStateFile);
+  if (cached) {
+    return cached;
+  }
+
+  // Bugfix: message_completion / agent_step 等高频埋点之前每条都抢 telemetry-state.lock，
+  // 即使 deviceMid 已经落盘也会在 burst 场景里把 2 秒锁等待打满。这里按 state 文件缓存
+  // deviceMid 的读取 promise，只在首次缺失或首次读取时进入文件锁。
+  const pending = withTelemetryStateLock(options.homeDir, async (state) =>
+    ensureDeviceMidInLockedState(state, options),
+  ).catch((error) => {
+    if (deviceMidCacheByStateFile.get(telemetryStateFile) === pending) {
+      deviceMidCacheByStateFile.delete(telemetryStateFile);
+    }
+    throw error;
+  });
+  deviceMidCacheByStateFile.set(telemetryStateFile, pending);
+  return pending;
 }
 
 export function createTelemetryCore(dependencies: TelemetryCoreDependencies = {}) {
@@ -298,7 +348,7 @@ export function createTelemetryCore(dependencies: TelemetryCoreDependencies = {}
   const requestTimeoutMs = dependencies.requestTimeoutMs ?? REPORT_REQUEST_TIMEOUT_MS;
   const retrySleep = dependencies.sleep ?? sleep;
   const pendingReports = new Set<Promise<void>>();
-  const deviceMidOptions: EnsureDeviceMidOptions = {
+  const deviceMidOptions: EnsureTelemetryDeviceMidOptions = {
     homeDir: dependencies.homeDir,
     randomUUID,
   };
@@ -329,7 +379,7 @@ export function createTelemetryCore(dependencies: TelemetryCoreDependencies = {}
     try {
       authorization = (await dependencies.loadAuthorization?.(userId)) ?? null;
     } catch {
-      // Report anonymously when credentials are unreadable: no raw exception, no blocked events.
+      // 凭据不可读时匿名上报，不打印原始异常，也不阻断业务事件。
     }
     const abortController = new AbortController();
     const timeout = setTimeout(() => abortController.abort(), requestTimeoutMs);
@@ -342,7 +392,7 @@ export function createTelemetryCore(dependencies: TelemetryCoreDependencies = {}
           ...headers,
           ...(authorization ? { Authorization: authorization } : {}),
         },
-        // Never forward identified reports to a server-side redirect target.
+        // 不把带身份的上报转发至服务端重定向目标。
         redirect: "error",
         body,
         signal: abortController.signal,
@@ -365,20 +415,18 @@ export function createTelemetryCore(dependencies: TelemetryCoreDependencies = {}
     userId: string,
     deviceMid: string,
   ): Promise<void> {
-    // Events end here when the master switch is off or no endpoint is configured.
-    if (!ZCODE_TELEMETRY_ENABLED || !ZCODE_TELEMETRY_REPORT_ENDPOINT) {
-      return;
-    }
+    // 构建期未配置事件上报端点时不上报（见 docs/desktop/build-time-optional-capabilities.md）
+    if (!REPORT_ENDPOINT) return;
     let marketingParams: OAuthLoginAttribution | null = null;
     try {
       marketingParams = await loadMarketingParams();
     } catch {
-      // Fix: marketing attribution is auxiliary context; corrupt/unreadable credentials
-      // must not block the event. Warn once per core so high-frequency instrumentation cannot spam.
+      // 修复原因：营销归因只是 telemetry 的附加上下文，凭据损坏或暂时不可读
+      // 不应阻断原事件；同一 core 只告警一次，避免高频埋点持续刷屏。
       if (!didWarnMarketingParamsLoadFailure) {
         didWarnMarketingParamsLoadFailure = true;
-        // Credential backend errors may carry local paths/stacks; production logs keep a fixed,
-        // redacted degradation event only.
+        // 凭据后端异常可能带本机路径或堆栈；生产日志只保留固定、脱敏的降级事件。
+        warn("Telemetry marketing attribution load failed; continuing without attribution");
       }
     }
     const requestBody = JSON.stringify({
@@ -389,8 +437,7 @@ export function createTelemetryCore(dependencies: TelemetryCoreDependencies = {}
       event_region: payload.eventRegion,
       event_type: payload.eventType,
       event_text: payload.eventText ?? "",
-      // Fix: Host/Main or legacy renderers can bypass UI scrubbing; the outbound path always
-      // strips raw error text and login-URL secrets.
+      // 修复原因：Host/Main 或旧 Renderer 可绕过 UI 清洗，最终出网统一禁止错误原文与登录 URL 秘密。
       event_extra_detail: sanitizeTelemetryEventDetail(
         payload.elementName,
         payload.eventExtraDetail,
@@ -409,8 +456,8 @@ export function createTelemetryCore(dependencies: TelemetryCoreDependencies = {}
 
     const endpoint = String(
       rewriteZCodeEndpointUrl(
-        ZCODE_TELEMETRY_REPORT_ENDPOINT,
-        (await dependencies.resolveZCodeEndpointOrigin?.()) ?? ZCODE_TELEMETRY_REPORT_ENDPOINT,
+        REPORT_ENDPOINT,
+        (await dependencies.resolveZCodeEndpointOrigin?.()) ?? REPORT_ENDPOINT,
       ),
     );
 
@@ -440,8 +487,8 @@ export function createTelemetryCore(dependencies: TelemetryCoreDependencies = {}
           break;
         }
 
-        // Fix: public /event/report used to drop events on transient network failure. Log only
-        // redacted attempt metadata with bounded retries; never payload/body/raw errors in prod logs.
+        // 修复原因：公共 /event/report 过去遇到瞬时网络故障会直接丢事件。这里只记录脱敏的
+        // attempt 元数据并有界重试，禁止把 payload、响应体或原始错误写入生产日志。
         telemetryLogger.debug(
           undefined,
           `retry event=${payload.elementName} eventId=${eventId} attempt=${attempt} category=${lastError.category}`,
@@ -478,8 +525,8 @@ export function createTelemetryCore(dependencies: TelemetryCoreDependencies = {}
     });
 
     try {
-      // Fix: a single Set snapshot during exit-drain misses IPC reports that enter Main
-      // while the barrier waits. Re-read the set per settled batch until empty or the global deadline.
+      // 修复原因：退出 drain 如果只拍一次 Set 快照，会漏掉屏障等待期间刚进入 Main 的 IPC
+      // 上报。每批 settled 后重新读取集合，直到为空或命中同一个总 deadline。
       while (!timedOut && pendingReports.size > 0) {
         await Promise.race([Promise.allSettled(pendingReports), deadline]);
       }
@@ -509,9 +556,8 @@ export function createTelemetryCore(dependencies: TelemetryCoreDependencies = {}
       return trackReport(
         (async () => {
           const userId = input.userId ?? (await loadUserId());
-          // Repeated callbacks/cross-host rereports of one session keep their event identity;
-          // the UUIDv8 encodes an app-defined SHA-256 mapping so source/device changes do not
-          // mint new creation events.
+          // 重复回调/跨宿主重报同一 Session 必须保留事件身份；不能每次生成随机 ID。
+          // UUIDv8 表达应用自定义的 SHA-256 映射，来源与设备变化不产生新的创建事件。
           const eventId =
             input.elementName === "session_create" && input.talkId
               ? sessionCreateEventId(userId, input.talkId)
@@ -581,10 +627,10 @@ export function createTelemetryCore(dependencies: TelemetryCoreDependencies = {}
 
               const eventId = randomUUID();
               const deviceMid = await ensureDeviceMidInLockedState(state, deviceMidOptions);
-              // Bugfix: reportAppDailyActive used to run network requests while holding the lock;
-              // concurrent app_launch/app_daily_active/reportEvent at startup stalled later callers
-              // until the stable Telemetry state lock timeout. Now: short lock sets an in-flight marker,
-              // the request runs unlocked, a second short lock commits the result - dedup intact,
+              // Bugfix: 之前 reportAppDailyActive 会在持锁状态下直接执行网络请求。
+              // 启动期 app_launch / app_daily_active / reportEvent 一旦并发，后来的调用会一直卡在锁外，
+              // 最终稳定打出 "Telemetry state lock timeout"。这里改成短锁写入 in-flight 标记，
+              // 锁外发送网络请求，成功后再短锁提交完成态，既保留跨实例去重，也不再把整个 telemetry 通道锁死。
               state.dailyActiveInFlight = {
                 date: today,
                 startedAt: timestamp,

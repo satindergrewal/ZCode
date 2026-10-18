@@ -28,7 +28,7 @@ interface FeedbackBackgroundUploadIndicatorProps {
   feedbackDialogOpen: boolean;
 }
 
-interface FeedbackBackgroundUploadIndicatorViewProps {
+export interface FeedbackBackgroundUploadIndicatorViewProps {
   status: FeedbackSubmissionJobStatus;
   progress: FeedbackSubmissionProgressState;
   ticketId?: string;
@@ -39,18 +39,18 @@ interface FeedbackBackgroundUploadIndicatorViewProps {
   defaultExpanded?: boolean;
 }
 
-function shouldOpenExistingFeedbackTicket(
+export function shouldOpenExistingFeedbackTicket(
   status: FeedbackSubmissionJobStatus,
   ticketId: string | undefined,
 ): ticketId is string {
   return Boolean(ticketId) && (status === "success" || status === "error");
 }
 
-type FeedbackBackgroundOpenTarget =
+export type FeedbackBackgroundOpenTarget =
   | { kind: "submission"; jobId: string }
   | { kind: "ticket"; ticketId: string };
 
-function getFeedbackBackgroundOpenTarget(
+export function getFeedbackBackgroundOpenTarget(
   job: Pick<FeedbackSubmissionJobSnapshot, "id" | "status" | "ticketId">,
 ): FeedbackBackgroundOpenTarget {
   if (shouldOpenExistingFeedbackTicket(job.status, job.ticketId)) {
@@ -114,7 +114,7 @@ function FeedbackBackgroundUploadJobCard({
 
   const handleOpen = () => {
     const target = getFeedbackBackgroundOpenTarget(job);
-    logger.debug("[FeedbackBackgroundUploadIndicator] Opened background feedback card", {
+    logger.debug("[FeedbackBackgroundUploadIndicator] 打开后台反馈卡片", {
       jobId: job.id,
       status: job.status,
       target: target.kind,
@@ -124,7 +124,7 @@ function FeedbackBackgroundUploadJobCard({
       dismissFeedbackSubmissionJob(job.id);
       return;
     }
-    // Multiple uploads must open by the clicked card's jobId; never fall back to the last active job.
+    // 多个上传任务必须按被点击卡片的 jobId 打开，不能再回退到最后一个活动任务。
     onOpenSubmissionJob(target.jobId);
   };
 
@@ -141,7 +141,7 @@ function FeedbackBackgroundUploadJobCard({
   );
 }
 
-function FeedbackBackgroundUploadIndicatorView({
+export function FeedbackBackgroundUploadIndicatorView({
   status,
   progress,
   ticketId,
@@ -181,8 +181,8 @@ function FeedbackBackgroundUploadIndicatorView({
         )}
       >
         <Icon
-          // The background hint is toast-like semantics; wrapping the status icon in a framed
-          // base reads as a button and duplicates the outer layer's radius.
+          // 后台提示是 toast 语义，状态图标不应再包一层边框底座，
+          // 否则会被误读成独立按钮，也会和外层浮层圆角形成重复层级。
           className={cn("mt-0.5 shrink-0", expanded ? "size-4" : "size-3.5", statusTone)}
         />
         <button
@@ -224,8 +224,7 @@ function FeedbackBackgroundUploadIndicatorView({
             size="icon-sm"
             variant="ghost"
             onClick={() => {
-              // Expanding the collapsed state would reveal only a sliver and demand another
-              // click; open the full feedback page directly.
+              // 收起态再点“展开”只露出一小截状态条，用户还要二次操作；这里直接打开完整反馈页。
               if (!expanded) {
                 onOpen();
                 return;
@@ -239,7 +238,7 @@ function FeedbackBackgroundUploadIndicatorView({
           >
             {expanded ? <ChevronDown className="size-3" /> : <ChevronUp className="size-3" />}
           </Button>
-          {/* paused-log can only continue; hiding it would strand a background job that waits on the user.*/}
+          {/* Bugfix: paused-log 只能继续上传；如果允许隐藏，会把等待用户动作的后台 job 变成不可恢复的悬挂状态。 */}
           {!isPaused ? (
             <Button
               type="button"

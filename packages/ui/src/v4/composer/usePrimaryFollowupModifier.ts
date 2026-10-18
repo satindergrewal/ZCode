@@ -38,7 +38,7 @@ function attachWindowListeners(): () => void {
  * Splits and multi-window trees may mount several Composers. The modifier is window fact;
  * per-Composer keydown/keyup would double-handle; one external store broadcasts the momentary state.
  */
-function subscribePrimaryFollowupModifier(listener: () => void): () => void {
+export function subscribePrimaryFollowupModifier(listener: () => void): () => void {
   listeners.add(listener);
   if (!detachWindowListeners && typeof window !== "undefined") {
     detachWindowListeners = attachWindowListeners();
@@ -52,7 +52,7 @@ function subscribePrimaryFollowupModifier(listener: () => void): () => void {
   };
 }
 
-function getPrimaryFollowupModifierSnapshot(): boolean {
+export function getPrimaryFollowupModifierSnapshot(): boolean {
   return pressed;
 }
 

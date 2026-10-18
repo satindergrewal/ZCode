@@ -1,10 +1,18 @@
 import type { TurnInputIntentMetadata } from "@zcode/contracts";
 import type { ModelSelection } from "@zcode/shared";
-import type { AttachmentRef, CommandEnvelope, QueueItem } from "@zcode/shared/zcode-protocol-v4";
-import type { SubmissionMode } from "@zcode/shared/zcode-protocol-v4";
+import type {
+  AttachmentRef,
+  CommandEnvelope,
+  CommandPayloadMap,
+  QueueItem,
+  SubmissionMode,
+} from "@zcode/shared/zcode-protocol-v4";
 import { commandAdmissionOf } from "./executor.js";
 
-interface CanonicalCommandIntent {
+export interface CanonicalCommandIntent {
+  inputOrigin?: "desktop" | "mobile";
+  conversationQuotes?: import("@zcode/contracts").TurnInputIntentMetadata["conversationQuotes"];
+  botGroupSource?: TurnInputIntentMetadata["botGroupSource"];
   kind: "sendText" | "sendGoalCommand";
   text: string;
   modelSelection?: ModelSelection;
@@ -19,12 +27,16 @@ interface CanonicalCommandIntent {
   attachmentRefs?: readonly AttachmentRef[];
   sharedContextRefs?: TurnInputIntentMetadata["sharedContextRefs"];
   provenance?: TurnInputIntentMetadata["provenance"];
+  source?: TurnInputIntentMetadata["source"];
 }
 
 export function inputIntentMetadata(
   envelope: CommandEnvelope,
   options: {
     text: string;
+    inputOrigin?: "desktop" | "mobile";
+    conversationQuotes?: import("@zcode/contracts").TurnInputIntentMetadata["conversationQuotes"];
+    botGroupSource?: TurnInputIntentMetadata["botGroupSource"];
     requestedDelivery: TurnInputIntentMetadata["requestedDelivery"];
     admittedDelivery?: TurnInputIntentMetadata["admittedDelivery"];
     fallbackReasonCode?: string;
@@ -33,10 +45,18 @@ export function inputIntentMetadata(
     mode?: SubmissionMode;
     planEnabled?: boolean;
     sharedContextRefs?: TurnInputIntentMetadata["sharedContextRefs"];
+    source?: TurnInputIntentMetadata["source"];
   },
 ): TurnInputIntentMetadata {
   const admission = commandAdmissionOf(envelope);
+  const highspeed =
+    envelope.type === "sendText"
+      ? (envelope.payload as CommandPayloadMap["sendText"]).highspeedMeta
+      : undefined;
   return {
+    ...(options.inputOrigin ? { inputOrigin: options.inputOrigin } : {}),
+    ...(options.conversationQuotes ? { conversationQuotes: options.conversationQuotes } : {}),
+    ...(options.botGroupSource ? { botGroupSource: options.botGroupSource } : {}),
     sourceCommandId: envelope.commandId,
     queueItemId: admission.queueItemId,
     clientId: envelope.clientId || "cli",
@@ -46,8 +66,8 @@ export function inputIntentMetadata(
         : envelope.type === "sendGoalCommand"
           ? "sendGoalCommand"
           : "sendText",
-    // live intents used to carry only kind/source, so projection could only fall back to the visible command text;
-    // a goal's displayText (e.g. `/GoAl replace X`) is not the runtime-resolved canonical objective.
+    // live intent 过去只带 kind/来源，projection 只能回退可见 command 文案；
+    // goal 的 displayText（如 `/GoAl replace X`）不是 runtime 已解析的 canonical objective。
     text: options.text,
     ...(options.modelSelection ? { modelSelection: options.modelSelection } : {}),
     ...(options.mode ? { mode: options.mode } : {}),
@@ -65,10 +85,12 @@ export function inputIntentMetadata(
     ...(options.fallbackReasonCode ? { fallbackReasonCode: options.fallbackReasonCode } : {}),
     ...(options.attachmentRefs ? { attachmentRefs: [...options.attachmentRefs] } : {}),
     ...(options.sharedContextRefs ? { sharedContextRefs: [...options.sharedContextRefs] } : {}),
+    ...(highspeed ? { highspeed } : {}),
+    ...(options.source ? { source: options.source } : {}),
   };
 }
 
-/** edit/retry rebuilds under a new commandId but keeps the original canonical kind/delivery/cause. */
+/** edit/retry 以新 commandId 重建，但保留原 canonical kind/delivery/cause。 */
 export function inputIntentMetadataFromCanonical(
   envelope: CommandEnvelope,
   canonical: CanonicalCommandIntent,
@@ -78,6 +100,9 @@ export function inputIntentMetadataFromCanonical(
   const originalSourceCommandId =
     canonical.provenance?.sourceCommandId ?? canonical.sourceCommandId;
   return {
+    ...(canonical.inputOrigin ? { inputOrigin: canonical.inputOrigin } : {}),
+    ...(canonical.conversationQuotes ? { conversationQuotes: canonical.conversationQuotes } : {}),
+    ...(canonical.botGroupSource ? { botGroupSource: canonical.botGroupSource } : {}),
     sourceCommandId: envelope.commandId,
     queueItemId: admission.queueItemId,
     clientId: envelope.clientId || canonical.clientId || "cli",
@@ -93,6 +118,7 @@ export function inputIntentMetadataFromCanonical(
     ...(canonical.fallbackReasonCode ? { fallbackReasonCode: canonical.fallbackReasonCode } : {}),
     ...(canonical.attachmentRefs ? { attachmentRefs: [...canonical.attachmentRefs] } : {}),
     ...(canonical.sharedContextRefs ? { sharedContextRefs: [...canonical.sharedContextRefs] } : {}),
+    ...(canonical.source ? { source: canonical.source } : {}),
     ...(originalSourceCommandId
       ? {
           provenance: canonical.provenance ?? {
@@ -105,12 +131,15 @@ export function inputIntentMetadataFromCanonical(
   };
 }
 
-/** sendQueuedNow may only convert the original QueueItem; never rebuild the source from a promotion commandId. */
+/** sendQueuedNow 只能转换原 QueueItem，禁止用 promotion commandId 重建来源。 */
 export function inputIntentMetadataFromQueueItem(
   item: QueueItem,
   canonicalText: string,
 ): TurnInputIntentMetadata {
   return {
+    ...(item.inputOrigin ? { inputOrigin: item.inputOrigin } : {}),
+    ...(item.conversationQuotes ? { conversationQuotes: item.conversationQuotes } : {}),
+    ...(item.botGroupSource ? { botGroupSource: item.botGroupSource } : {}),
     sourceCommandId: item.sourceCommandId,
     queueItemId: item.queueItemId,
     clientId: item.clientId,
@@ -129,7 +158,9 @@ export function inputIntentMetadataFromQueueItem(
       : {}),
     attachmentRefs: item.attachments,
     ...(item.sharedContextRefs ? { sharedContextRefs: [...item.sharedContextRefs] } : {}),
-    // Promotion only changes scheduling state; the source linkage of the retried/edited original input must not be lost here.
+    ...(item.highspeed ? { highspeed: item.highspeed } : {}),
+    ...(item.source ? { source: item.source } : {}),
+    // 提升只改变调度状态；重试／编辑原始输入的来源关联不能在此丢失。
     ...(item.provenance ? { provenance: { ...item.provenance } } : {}),
   };
 }

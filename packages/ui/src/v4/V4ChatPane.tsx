@@ -30,21 +30,22 @@ import type {
   ConversationFindMatchState,
 } from "@/v4/legacyChatViewTypes.js";
 
-interface V4ChatPaneProps {
+export interface V4ChatPaneProps {
   workspacePath: string;
   workspaceIdentity?: string;
-  /** Prompt template telemetry currently covers Desktop only. */
+  /** Prompt 模板埋点当前仅覆盖 Desktop。 */
   isDesktop?: boolean;
   readOnly?: boolean;
-  /** CLI session id; null = first send from a draft. */
+  compactForRemoteControl?: boolean;
+  /** CLI session id；null = draft 首发。 */
   sessionId: string | null;
-  /** Open entry for the current workspace primary pane; counted under sidebar when absent. */
+  /** 当前 workspace 主 pane 的打开入口，未提供时按 sidebar 统计。 */
   openTrigger?: SessionOpenTrigger;
   provider?: ZCodeProvider;
   onSessionCreated?: (sessionId: string) => void;
-  /** deleteSession: return to the draft after deleting the current session. */
+  /** deleteSession：删除当前会话后回到 draft。 */
   onSessionDeleted?: () => void;
-  /** Draft-state composer contextHeader (m5, constructed by the shell). */
+  /** 草稿态 composer contextHeader（m5，壳层构造下发）。 */
   draftComposerHeader?: ReactNode;
   gitSummary?: GitRepositorySummary | null;
   gitDirtyFileCount?: number;
@@ -79,14 +80,15 @@ interface V4ChatPaneProps {
 }
 
 /**
- * Vertical-slice chat area: the minimal entry replacing ChatView.
- * The shell wraps V4ConversationProvider per workspace; the single pane keeps paneId workspace-main.
+ * 竖切聊天区：替换 ChatView 的最小入口。
+ * 外层按 workspace 包 V4ConversationProvider；单 pane paneId 固定 workspace-main。
  */
 export function V4ChatPane({
   workspacePath,
   workspaceIdentity,
   isDesktop = false,
   readOnly = false,
+  compactForRemoteControl = false,
   sessionId,
   openTrigger = "sidebar",
   provider,
@@ -134,6 +136,7 @@ export function V4ChatPane({
         workspacePath={workspacePath}
         workspaceIdentity={workspaceIdentity}
         isDesktop={isDesktop}
+        compactForRemoteControl={compactForRemoteControl}
         provider={provider}
         onSessionCreated={onSessionCreated}
         onSessionDeleted={onSessionDeleted}

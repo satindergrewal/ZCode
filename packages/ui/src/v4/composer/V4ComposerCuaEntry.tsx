@@ -23,7 +23,7 @@ import {
   type UseCuaComposerEntryParams,
 } from "@/hooks/useCuaComposerEntry.js";
 
-type V4ComposerCuaEntryProps = UseCuaComposerEntryParams;
+export type V4ComposerCuaEntryProps = UseCuaComposerEntryParams;
 
 /**
  * Platform gate, outermost: when the platform is unsupported (or the host provides no

@@ -1,4 +1,7 @@
-import { TID_AUTOMATION_CREATE_MANUALLY, TID_AUTOMATION_CREATE_MENU } from "@zcode/shared";
+import {
+  TID_AUTOMATION_CREATE_MANUALLY,
+  TID_AUTOMATION_CREATE_MENU,
+} from "@zcode/shared";
 import type { ReactNode } from "react";
 import {
   DropdownMenu,
@@ -8,7 +11,10 @@ import {
 } from "@/components/ui/dropdown-menu.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { AutomationSwitchToggle } from "@/settings/AutomationSwitchToggle.js";
-import { AutomationChevronDownIcon, AutomationInfoIcon } from "@/settings/AutomationIcons.js";
+import {
+  AutomationChevronDownIcon,
+  AutomationInfoIcon,
+} from "@/settings/AutomationIcons.js";
 import { Button } from "@/components/ui/button.js";
 import { SettingsSegmentedTabs } from "@/settings/SettingsSegmentedTabs.js";
 
@@ -30,13 +36,21 @@ export {
   AutomationTrashIcon,
 } from "@/settings/AutomationIcons.js";
 
-// space-y margins on inline labels ride the font's line box, visually under the 6px spec.
+/** 设置页返回入口仅高亮图标与文本，保留点击热区但不显示 hover/focus 背景。 */
+export const AUTOMATION_BACK_TRIGGER_CLASSNAME =
+  "-m-1 inline-flex w-fit max-w-full min-w-0 items-center gap-1 bg-transparent p-1 text-ui-base leading-5 text-foreground-subtle transition-colors hover:text-foreground active:text-foreground focus-visible:text-foreground focus-visible:outline-none";
+
+// 修复原因：space-y 给行内 label 添加 margin 时会受字体行盒影响，实际视觉间距小于设计稿的 6px。
 export const AUTOMATION_FORM_FIELD_CLASSNAME = "flex flex-col gap-1.5";
 
 export type AutomationSettingsHistoryTab = "settings" | "history";
 
-/** Scheduled and idle share one run-history empty state, so transparent spacing and card chrome never drift apart. */
-export function AutomationHistoryEmptyState({ children }: { children: ReactNode }) {
+/** 定时与闲时共用运行历史空态，防止透明留白与卡片容器样式再次漂移。 */
+export function AutomationHistoryEmptyState({
+  children,
+}: {
+  children: ReactNode;
+}) {
   return (
     <div className="flex min-h-[226px] items-center justify-center rounded-xl border border-dashed border-card-border bg-background px-4 text-center text-ui-base text-foreground-subtle">
       {children}
@@ -44,7 +58,7 @@ export function AutomationHistoryEmptyState({ children }: { children: ReactNode 
   );
 }
 
-/** Both automation settings pages reuse the Hooks scope-tab pill, keeping detail-page segments uniform. */
+/** 定时与闲时设置页复用 Hooks scope tabs 的 pill 视觉，避免详情页分段样式漂移。 */
 export function AutomationSettingsHistoryTabs({
   value,
   settingsLabel,
@@ -68,7 +82,7 @@ export function AutomationSettingsHistoryTabs({
   );
 }
 
-/** Keep-awake notice; the switch binds the global shared setting, not a page-level mock store. */
+/** Keep-awake 提示条；开关值由调用方接入全局共享设置，而非页面级 mock store。 */
 export function AutomationKeepAwakeNotice({
   checked,
   onChange,
@@ -77,13 +91,16 @@ export function AutomationKeepAwakeNotice({
   onChange: (value: boolean) => void;
 }) {
   const { intl } = useZCodeIntl();
-  // The desktop breakpoint once zeroed the notice's vertical padding, off the 12px spec.
+  // 桌面断点曾清空提示栏的垂直内边距，导致实际样式偏离 12px 规格。
   return (
     <div
       data-automations-keep-awake
       className="flex min-h-11 w-full items-center gap-3 overflow-hidden rounded-[10px] bg-surface px-3 py-3 text-foreground-subtle"
     >
-      <span className="flex size-5 shrink-0 items-center justify-center" aria-hidden="true">
+      <span
+        className="flex size-5 shrink-0 items-center justify-center"
+        aria-hidden="true"
+      >
         <AutomationInfoIcon className="size-4" />
       </span>
       <p className="min-w-0 flex-1 text-ui-base leading-5">
@@ -134,7 +151,11 @@ export function AutomationCreateDropdown({
           </Button>
         </DropdownMenuTrigger>
       </div>
-      <DropdownMenuContent align="end" sideOffset={4} className="w-auto min-w-0">
+      <DropdownMenuContent
+        align="end"
+        sideOffset={4}
+        className="w-auto min-w-0"
+      >
         <DropdownMenuItem className="pr-6" onSelect={onViaChat}>
           {intl.formatMessage({ id: "automations.createViaChat" })}
         </DropdownMenuItem>

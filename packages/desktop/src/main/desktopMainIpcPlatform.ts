@@ -1,4 +1,5 @@
-/* /* eslint-disable max-lines -- desktop platform IPC assembles here; splitting obscures the permission boundary. Grows with platform features. */
+import { decorateRequestSecurityLogArgs } from "./request-security-edition/index.js";
+/* eslint-disable max-lines -- 桌面平台 IPC 集中装配，拆散会让权限边界更难审计；行数随平台能力增长。 */
 import { BrowserWindow, dialog, ipcMain, nativeTheme } from "electron";
 import { readZCodeStdioTapDevState } from "@zcode/services/node";
 import {
@@ -10,6 +11,8 @@ import {
   PlatformChannels,
   rendererLogPayloadSchema,
   stringArraySchema,
+  webRemoteControlTaskTargetsSchema,
+  webRemoteControlWorkspaceTargetsSchema,
   type DesktopCommandId,
   type ApplicationIconRequest,
   type Locale,
@@ -18,7 +21,10 @@ import {
   type OpenInEditorOptions,
   type SaveCliMcpToUserDirectoryRequest,
   type CreateTempTextAttachmentRequest,
+  type MaterializeWorkflowArtifactFileRequest,
   type UpdateStatePayload,
+  type WebRemoteControlTaskTarget,
+  type WebRemoteControlWorkspaceTarget,
   type WindowControlsOverlayReadyPayload,
 } from "@zcode/shared";
 import { getInstalledEditors } from "./editors.js";
@@ -32,6 +38,7 @@ import {
   setResourceUsageSamplingActive,
 } from "./resourceManagerWindow.js";
 import { registerResourceManagerStorageIpc } from "./resourceManagerStorage.js";
+import { registerResourceManagerNetworkIpc } from "./resourceManagerNetwork.js";
 import { applyWindowsTitleBarTheme, getWindowOverlayTheme } from "./desktopWindowChrome.js";
 import { syncWindowControlsOverlayForZoomLevel } from "./desktopWindowButtonPosition.js";
 import { resolveDesktopZoomLevelFromFactor } from "./desktopZoom.js";
@@ -52,6 +59,7 @@ import {
   saveCliMcpToUserDirectory,
 } from "./mcpUserDirectory/index.js";
 import { createTempTextAttachment } from "./tempTextAttachment.js";
+import { materializeWorkflowArtifactFile } from "./workflowArtifactFile.js";
 import { registerDesktopSaveFileIpcHandler } from "./desktopSaveFile.js";
 import { registerDesktopPrintToPdfIpcHandler } from "./desktopPrintToPdf.js";
 import { registerCuaPipActiveSessionIpc } from "./desktopCuaPipIpc.js";
@@ -78,8 +86,17 @@ export function registerPlatformIpcHandlers(options: {
   acknowledgePostUpdateReleaseNotes: (version: string) => Promise<void>;
   syncActiveTaskSession: (windowId: number, sessionId: string | null) => void;
   syncTaskRealtimeWorkspaceKeys: (windowId: number, workspaceKeys: Iterable<string>) => void;
+  restorePreviouslyEnabledWebRemoteControl: (
+    windowId: number,
+    contexts: Array<{ workspacePath: string }>,
+  ) => void;
   getUpdateState: () => UpdateStatePayload;
   openUpdateStatusWindow: () => void;
+  syncWebRemoteControlWorkspaces: (
+    windowId: number,
+    workspaces: WebRemoteControlWorkspaceTarget[],
+  ) => void;
+  syncWebRemoteControlTasks: (windowId: number, tasks: WebRemoteControlTaskTarget[]) => void;
   getDesktopSessionActivity: () => {
     runningAgentSessionCount: number;
   };
@@ -88,17 +105,19 @@ export function registerPlatformIpcHandlers(options: {
   }>;
   setAutoDownloadAndInstallUpdates: (enabled: boolean) => Promise<void>;
   syncAppSettings: (patch: unknown) => void;
-  /* /** Shortcut recorder toggle: while true, main rebuilds menus without configurable accelerators */
+  /** 关闭驻留托盘能力查询（spec：docs/desktop/linux-close-to-tray.md）；传入 monitor 的 refresh */
+  refreshCloseToTrayCapability: () => Promise<import("@zcode/shared").DesktopCloseToTrayCapability>;
+  /** 快捷键设置页录制态开关：true 时 main 重建菜单摘除可配置 accelerator（见 shortcut-settings-spec §7） */
   setShortcutRecordingActive?: (active: boolean, ownerWebContentsId?: number | null) => void;
-  /* /** Desktop device identifier (SHA-256 of the userData path) */
+  /** 桌面端设备标识符（基于 userData 路径的 SHA-256） */
   deviceMid: string;
-  /* /** CDP-on-guest pivot: renderer webviews report guest webContentsId and main attaches. */
+  /** CDP-on-guest pivot：renderer `<webview>` 上报 guest webContentsId → main attach。 */
   attachBrowserGuest?: AttachBrowserGuest;
-  /* /** Renderer free-size changes routed to the owning controlled tab. */
+  /** renderer 自由尺寸变化 → 当前窗口所属的受控 tab。 */
   updateBrowserGuestViewport?: UpdateBrowserGuestViewport;
-  /* /** Background screenshot-surface ready, reported by the trusted owner renderer. */
+  /** 可信 owner renderer 上报的后台截图表面 ready。 */
   reportBrowserScreenshotSurfaceReady?: ReportBrowserScreenshotSurfaceReady;
-  /* /** Browser tab close/suspend/resume plus cross-restart shell IPC. */
+  /** Browser tab 关闭、挂起、恢复与跨重启 shell IPC。 */
   browserViewResidencyHandlers?: BrowserViewResidencyIpcHandlers;
 }) {
   ipcMain.handle(PlatformChannels.SelectDirectory, async () => {
@@ -141,6 +160,13 @@ export function registerPlatformIpcHandlers(options: {
     },
   );
 
+  ipcMain.handle(
+    PlatformChannels.MaterializeWorkflowArtifactFile,
+    async (_event, payload: MaterializeWorkflowArtifactFileRequest) => {
+      return materializeWorkflowArtifactFile(payload);
+    },
+  );
+
   registerDesktopBrowserIpcHandlers(
     options.attachBrowserGuest,
     options.updateBrowserGuestViewport,
@@ -175,10 +201,15 @@ export function registerPlatformIpcHandlers(options: {
   ipcMain.handle(PlatformChannels.GetResourceUsageSnapshot, (event) =>
     getResourceUsageSnapshot(event.sender.id),
   );
+  // 设置页 Linux 置灰判断入口；monitor 带 stale 缓存，用户装完扩展重开设置页即可解除置灰。
+  ipcMain.handle(PlatformChannels.GetCloseToTrayCapability, () =>
+    options.refreshCloseToTrayCapability(),
+  );
   ipcMain.on(PlatformChannels.SetResourceUsageSamplingActive, (event, active: unknown) => {
     if (typeof active === "boolean") setResourceUsageSamplingActive(event.sender.id, active);
   });
   registerResourceManagerStorageIpc();
+  registerResourceManagerNetworkIpc();
   ipcMain.handle(PlatformChannels.GetZCodeStdioTapDevState, () => readZCodeStdioTapDevState());
   ipcMain.on(PlatformChannels.OpenResourceManager, () => {
     openResourceManager();
@@ -249,7 +280,47 @@ export function registerPlatformIpcHandlers(options: {
     if (win) {
       options.windowWorkspaceMap.set(win.id, new Set(result.data));
       options.syncTaskRealtimeWorkspaceKeys(win.id, result.data);
+      options.restorePreviouslyEnabledWebRemoteControl(
+        win.id,
+        result.data.map((workspacePath) => ({ workspacePath })),
+      );
     }
+  });
+
+  ipcMain.on(PlatformChannels.SyncWebRemoteControlWorkspaces, (event, payload: unknown) => {
+    const result = webRemoteControlWorkspaceTargetsSchema.safeParse(payload);
+    if (!result.success) {
+      options.logger.warn(
+        "[sync-web-remote-control-workspaces] invalid payload:",
+        formatZodError(result.error),
+      );
+      return;
+    }
+
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) {
+      return;
+    }
+
+    options.syncWebRemoteControlWorkspaces(win.id, result.data);
+  });
+
+  ipcMain.on(PlatformChannels.SyncWebRemoteControlTasks, (event, payload: unknown) => {
+    const result = webRemoteControlTaskTargetsSchema.safeParse(payload);
+    if (!result.success) {
+      options.logger.warn(
+        "[sync-web-remote-control-tasks] invalid payload:",
+        formatZodError(result.error),
+      );
+      return;
+    }
+
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) {
+      return;
+    }
+
+    options.syncWebRemoteControlTasks(win.id, result.data);
   });
 
   ipcMain.on(PlatformChannels.SyncWindowUnreadCount, (event, payload: unknown) => {
@@ -272,8 +343,8 @@ export function registerPlatformIpcHandlers(options: {
         return;
       }
 
-      // // The preload runs before React; use its synced zoom level to fix macOS traffic lights early,
-      // instead of repositioning only after RootStartupLoading swaps to the app page.
+      // preload 早于 React 页面运行，用它同步到的 zoom 档位先调整 macOS 红绿灯，
+      // 避免等 RootStartupLoading 切到 App 页面后才重置位置。
       syncWindowControlsOverlayForZoomLevel(senderWindow, payload.zoomLevel);
     },
   );
@@ -291,9 +362,9 @@ export function registerPlatformIpcHandlers(options: {
     options.syncAppSettings(result.data);
   });
 
-  // Shortcut recording: the settings page notifies on enter/exit. macOS system menus eat keydowns
-  // before the renderer, so recording must strip configurable accelerators or keys fire real commands.
-  // Carries the origin webContents id so main resets state if that window dies (see index.ts).
+  // 快捷键录制态：renderer 设置页进入/退出录制时通知。macOS 系统菜单会先于 renderer
+  // 吃掉按键，录制 menu 通道命令必须先摘掉可配置 accelerator，否则按键直接触发原命令。
+  // 附带发起方 webContents id：录制中窗口销毁时 main 侧据此复位（见 index.ts）。
   ipcMain.on(PlatformChannels.SetShortcutRecordingActive, (event, payload: unknown) => {
     if (typeof payload !== "boolean") {
       options.logger.warn("[shortcuts] invalid recording-active payload:", payload);
@@ -302,7 +373,7 @@ export function registerPlatformIpcHandlers(options: {
     options.setShortcutRecordingActive?.(payload, event.sender.id);
   });
 
-  ipcMain.on(PlatformChannels.Log, (_event, payload: unknown) => {
+  ipcMain.on(PlatformChannels.Log, (event, payload: unknown) => {
     const result = rendererLogPayloadSchema.safeParse(payload);
     if (!result.success) {
       options.logger.warn("[renderer-log] invalid payload:", formatZodError(result.error));
@@ -310,7 +381,10 @@ export function registerPlatformIpcHandlers(options: {
     }
     (
       options.logger as unknown as { fromRenderer(level: string, args: unknown[]): void }
-    ).fromRenderer?.(result.data.level, result.data.args);
+    ).fromRenderer?.(
+      result.data.level,
+      decorateRequestSecurityLogArgs(result.data.args, event.sender.id),
+    );
   });
 
   ipcMain.handle(PlatformChannels.OpenInFileManager, async (_event, rawPath: string) =>
@@ -404,7 +478,7 @@ export function registerPlatformIpcHandlers(options: {
       return;
     }
 
-    // The result passes through to the renderer's executeDesktopCommand promise (GetCuaOsSupport relies on this).
+    // 返回值直通 renderer 的 executeDesktopCommand promise（GetCuaOsSupport 依赖此行为）。
     return await options.executeDesktopCommand(command as DesktopCommandId, senderWindow);
   });
 }

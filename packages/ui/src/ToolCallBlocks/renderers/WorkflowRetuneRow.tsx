@@ -1,61 +1,55 @@
 // ============================================================
-// The transcript row of an in-place effective retune
+// 就地生效的修订在转写里的那一行（docs/dynamic-workflow/concurrency.md）
 // ============================================================
-// When only the concurrency limit changes and the run is still in flight, `AmendWorkflow` compiles
-// nothing and mints no new run; it just changes that run's limit. So this row has no card to draw:
-// the run's card lives in the round that started it, and a second card would read as a second run;
-// the original static card would show compile-validation results, making a concurrency change look
-// like a re-compiled, restarted workflow.
+// 只改并发上限、run 又在飞时，`AmendWorkflow` 不编译、不铸新 run，只把那条 run 的上限改掉。于是
+// 这一行没有卡可画：那条 run 的卡在它启动的那一轮里，再画一张会读成第二次运行；而原来的静态卡
+// 会摆出「已通过校验 · 调整 run X · 脚本不变」，三件事一件都没发生。
 //
-// What renders is exactly the settings row the GUI "configure" flow leaves behind
-// (`WorkflowSettingsChangeRow`), verbatim - one event must not have two readings depending on the
-// initiator. The only difference: this row is **clickable** - the tool row is where the model's
-// step landed, and the user reaches that run from here.
+// 画的就是 GUI「配置」留下的那条设置行（`WorkflowSettingsChangeRow`），一字不差——同一件事由谁
+// 发起不该有两种读法。唯一的差别是它**可点**：工具行是模型这一步的落点，用户从这里回到那条 run。
 
 import type { WorkflowSettingsAmendMeta } from "@zcode/shared/zcode-protocol-v4";
 import { WorkflowSettingsChangeRow } from "@/components/workflow-timeline/WorkflowSettingsChangeRow.js";
 
 /**
- * The input number -> the settings-round metadata block. Both notations describe the same fact
- * (GUI via round metadata, tool via input); mapping into one shape keeps the wording to a single
- * implementation.
+ * 入参里那个数 → 设置轮那一块元数据。两者本来就是同一件事的两种记法（GUI 走轮元数据，工具走
+ * 入参），映射到同一个形状之后措辞只剩一份实现。
  *
- * `requested` is the **model-emitted, unclamped** number (readWorkflowRetuneCall); the CLI clamps
- * it into `[1, ceiling]`. So the ceiling is handed to the wording rule too:
- * `workflowSettingsChangeSegments` treats `to >= ceiling` the same as missing `to`, reading
- * "limit restored to the machine default" - exactly the post-clamp truth (clamped to ceiling =
- * this run has no bound of its own). The row thus never shows a number above the machine limit.
- * When the ceiling is unknown (the run left the projection, or an older CLI never sent it), the
- * requested value is echoed as-is; it can only be too high, never too low - and "at most n" is an
- * upper-bound statement, so it cannot mislead toward "runs more than actual".
+ * `requested` 是**模型发出的**数（readWorkflowRetuneCall）。它没有上限——默认并发 D 是起点不是
+ * 天花板，高于 D 的数就是生效的数。所以这里把 D（元数据的 `ceiling` 键，名字早于「默认并发」）
+ * 一起交给措辞规则：`workflowSettingsChangeSegments` 对 `to === D` 与 `to` 缺席一视同仁，都念
+ * 「上限恢复为默认」（等于默认 = 这条 run 没有自己的界），其余的数照念。D 未知（那条 run 已被
+ * 淘汰出投影、或老 CLI 没发过它）时只能照念请求值。
  *
- * `from` is not set: the input does not know the previous value, and the wording reads only `to`.
- * `predecessorRunId` is omitted too - in-place application has no predecessor (workflow-row-meta.ts).
+ * `from` 不填：入参不知道改之前是多少，而这一行的措辞只读 `to`。`predecessorRunId` 同样不填——
+ * 就地生效没有前驱（workflow-row-meta.ts）。
  */
 function retuneAsAmendMeta(
   requested: number | null,
-  ceiling: number | undefined,
+  defaultConcurrency: number | undefined,
 ): WorkflowSettingsAmendMeta {
   return {
     maxConcurrency: requested === null ? {} : { to: requested },
-    ...(ceiling === undefined ? {} : { ceiling }),
+    ...(defaultConcurrency === undefined ? {} : { ceiling: defaultConcurrency }),
   };
 }
 
 export function WorkflowRetuneRow({
-  ceiling,
+  defaultConcurrency,
   onOpen,
   requested,
   runId,
 }: {
-  /** Machine concurrency ceiling (the run's projection reading); absent when unknown. */
-  ceiling?: number;
-  /** Open the run's detail page; without it (read-only display or feature off) the row is a record only. */
+  /** 默认并发 D（那条 run 的投影读数 `run.concurrencyCeiling`）；未知时缺席。 */
+  defaultConcurrency?: number;
+  /** 打开这条 run 的详情页；宿主没给（只读面、灰度关）时这一行只是记录。 */
   onOpen?: () => void;
   requested: number | null;
   runId: string;
 }) {
-  const row = <WorkflowSettingsChangeRow amend={retuneAsAmendMeta(requested, ceiling)} />;
+  const row = (
+    <WorkflowSettingsChangeRow amend={retuneAsAmendMeta(requested, defaultConcurrency)} />
+  );
   if (onOpen === undefined) {
     return (
       <div data-testid="workflow-retune-row" data-workflow-retune-run-id={runId}>

@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- network metric capture / aggregation / ARMS reporting */
+/* eslint-disable max-lines -- 网络指标采集/聚合/ARMS 上报 */
 import armsRum from "@arms/rum-electron";
 import { mapZCodeEnvToArmsRumEnv } from "@zcode/shared";
 import type { NetworkObservation } from "@zcode/rpc";
@@ -11,8 +11,8 @@ import {
 } from "./networkTelemetryAggregator.js";
 import { desktopRuntimeEnv } from "./desktopRuntimeEnv.js";
 
-/** Aligned with resource metrics: 1min in development, 5min in production. */
-const NETWORK_REPORT_INTERVAL_MS = desktopRuntimeEnv === "development" ? 60_000 : 300_000;
+/** 与资源指标对齐：开发 1min、生产 5min 聚合上报 */
+export const NETWORK_REPORT_INTERVAL_MS = desktopRuntimeEnv === "development" ? 60_000 : 300_000;
 
 interface NetworkLogger {
   info: (...args: unknown[]) => void;
@@ -91,8 +91,7 @@ function reportInterfaceStats(stats: InterfaceNetworkStats): void {
     success_count: stats.successCount,
     fail_count: stats.failCount,
     retry_count: stats.retryCount,
-    // value already carries the duration mean; per-stage timings keep only the mean to
-    // preserve fixed budget for counts and main-error attribution.
+    // value 已表达 duration mean；阶段耗时只保留 mean，给 counts 与主错误归因留固定预算。
     duration_ms_peak: stats.duration.peak,
     duration_ms_p95: stats.duration.p95,
     duration_ms_sample_count: stats.duration.sample_count,
@@ -138,6 +137,47 @@ export function ingestHostNetworkObservations(observations: NetworkObservation[]
   for (const observation of observations) {
     recordNetworkObservation(observation);
   }
+}
+
+/** 远控 relay WebSocket：接口维度固定为 web_remote_control.relay */
+export const WEB_REMOTE_RELAY_INTERFACE = "web_remote_control.relay";
+
+export function noteWebRemoteRelayConnectAttempt(
+  durationMs: number,
+  ok: boolean,
+  options?: { error?: unknown; attempt?: number },
+): void {
+  recordNetworkObservation({
+    transport: "websocket",
+    interface: WEB_REMOTE_RELAY_INTERFACE,
+    durationMs: Math.max(0, Math.round(durationMs)),
+    ok,
+    errorKind: ok ? undefined : classifyWsError(options?.error),
+    attempt: options?.attempt ?? 1,
+  });
+}
+
+export function noteWebRemoteRelayReconnect(): void {
+  recordNetworkObservation({
+    transport: "websocket",
+    interface: WEB_REMOTE_RELAY_INTERFACE,
+    durationMs: 0,
+    ok: false,
+    errorKind: "connection_reset",
+    attempt: 2,
+  });
+}
+
+function classifyWsError(error: unknown): string {
+  const message =
+    error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  if (message.includes("timeout") || message.includes("timed out")) {
+    return "timeout";
+  }
+  if (message.includes("dns") || message.includes("getaddrinfo")) {
+    return "dns_failure";
+  }
+  return "connection_reset";
 }
 
 export function configureDesktopNetworkTelemetry(context: NetworkGlobalContext): void {

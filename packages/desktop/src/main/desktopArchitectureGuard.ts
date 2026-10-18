@@ -1,32 +1,36 @@
 import type { BrowserWindow, NativeImage } from "electron";
-import { DEFAULT_ZCODE_ENDPOINT_ORIGIN, buildZCodeEndpointUrls, type Locale } from "@zcode/shared";
+import {
+  DEFAULT_ZCODE_ENDPOINT_ORIGIN,
+  buildZCodeEndpointUrls,
+  type Locale,
+} from "@zcode/shared";
 
-interface ArchitectureMismatch {
-  /** Architecture of the running binary, e.g. x64. */
+export interface ArchitectureMismatch {
+  /** 当前运行的二进制架构，例如 x64。 */
   binaryArch: string;
-  /** The recommended native arch; today translation falls back to arm64 only. */
+  /** 推荐安装的原生架构，目前翻译运行只会回退到 arm64。 */
   nativeArch: string;
 }
 
-interface DetectArchitectureMismatchOptions {
+export interface DetectArchitectureMismatchOptions {
   platform?: NodeJS.Platform;
   binaryArch?: string;
   /**
-   * Electron app.runningUnderARM64Translation:
-   * true when an x64/x86 installer runs translated on arm64 hardware
-   * (Rosetta on macOS, Windows on ARM) -- the classic wrong-arch install.
+   * Electron 的 app.runningUnderARM64Translation：
+   * 当 x64/x86 安装包被翻译到 arm64 硬件上运行时为 true
+   * （macOS 上的 Rosetta、Windows on ARM）。这正是“装错架构”的典型场景。
    */
   runningUnderARM64Translation?: boolean;
 }
 
 /**
- * Whether the current process runs under the wrong architecture.
+ * 判断当前进程是否在“错误架构”下运行。
  *
- * Decided via runningUnderARM64Translation, not process.arch vs os.arch(): on Apple silicon, x64 builds
- * also report os.arch() === "x64" under transparent Rosetta, so a plain compare sees no difference.
- * The translation flag is the only reliable signal.
+ * 之所以以 runningUnderARM64Translation 为准而不是直接比对 process.arch 和 os.arch()：
+ * Node 在 Apple Silicon 上跑 x64 包时，os.arch() 同样会返回 "x64"（被 Rosetta 透明翻译），
+ * 单纯比对两者无法发现差异。translation 标志是唯一可靠的信号。
  */
-function detectArchitectureMismatch(
+export function detectArchitectureMismatch(
   options: DetectArchitectureMismatchOptions = {},
 ): ArchitectureMismatch | null {
   const platform = options.platform ?? process.platform;
@@ -36,7 +40,7 @@ function detectArchitectureMismatch(
   if (!translated) {
     return null;
   }
-  // Only macOS/Windows have ARM64 translation; pass other platforms through to avoid false positives.
+  // 仅 macOS / Windows 存在 ARM64 翻译运行；其余平台直接放行，避免误报。
   if (platform !== "darwin" && platform !== "win32") {
     return null;
   }
@@ -44,11 +48,11 @@ function detectArchitectureMismatch(
   return { binaryArch, nativeArch: "arm64" };
 }
 
-function resolveArchitectureDownloadUrl(
+export function resolveArchitectureDownloadUrl(
   locale: Locale,
   endpointOrigin = DEFAULT_ZCODE_ENDPOINT_ORIGIN,
 ): string {
-  // Same locale split as the changelog links: route to the matching download page.
+  // 与 changelog 等外链保持一致，按应用语言分流到官网下载页。
   const origin = buildZCodeEndpointUrls(endpointOrigin).origin;
   return locale === "zh-CN" ? `${origin}/cn` : `${origin}/en`;
 }
@@ -61,20 +65,21 @@ interface ArchitectureMismatchDialogText {
   dismissButton: string;
 }
 
-function formatArchitectureMismatchDialogText(
+export function formatArchitectureMismatchDialogText(
   mismatch: ArchitectureMismatch,
   locale: Locale,
 ): ArchitectureMismatchDialogText {
   const isZh = locale === "zh-CN";
   if (isZh) {
     return {
-      title: "Architecture mismatch",
-      message: "This install does not match this Mac",
+      title: "架构不匹配",
+      message: "当前安装的不是适配本机的版本",
       detail:
-        `through Rosetta translation, which is slower and drains battery.\n\n` +
-        `For best performance, download and install the native ${mismatch.nativeArch} build from the website.`,
-      downloadButton: "Download",
-      // downloadButton: "Download",
+        `你正在运行 ${mismatch.binaryArch} 版本，但本机是 ${mismatch.nativeArch}（Apple 芯片）架构，` +
+        `当前通过系统转译运行，会更慢、更耗电。\n\n` +
+        `建议前往官网下载并安装 ${mismatch.nativeArch} 原生版本以获得最佳性能。`,
+      downloadButton: "前往下载",
+      dismissButton: "暂不处理",
     };
   }
 
@@ -90,14 +95,14 @@ function formatArchitectureMismatchDialogText(
   };
 }
 
-interface ArchitectureGuardLogger {
+export interface ArchitectureGuardLogger {
   info: (...args: unknown[]) => void;
   warn: (...args: unknown[]) => void;
 }
 
 /**
- * Detect an architecture mismatch at startup; on a wrong-arch install, prompt for the native build.
- * Non-blocking: the dialog fires asynchronously after detection; UI loading continues.
+ * 启动时检测架构是否匹配；若用户装了错误架构的版本，弹框提示其下载原生版本。
+ * 非阻塞：检测命中后异步弹框，不影响主界面继续加载。
  */
 export async function maybeWarnArchitectureMismatch(options: {
   locale: Locale;
@@ -115,7 +120,7 @@ export async function maybeWarnArchitectureMismatch(options: {
   }
 
   options.logger.warn(
-    `[architecture] mismatch: running ${mismatch.binaryArch}, host ${mismatch.nativeArch} (translated)`,
+    `[architecture] 检测到架构不匹配：运行 ${mismatch.binaryArch}，本机为 ${mismatch.nativeArch}（转译运行）`,
   );
 
   const text = formatArchitectureMismatchDialogText(mismatch, options.locale);
@@ -137,7 +142,7 @@ export async function maybeWarnArchitectureMismatch(options: {
 
   if (response === 0) {
     const url = resolveArchitectureDownloadUrl(options.locale);
-    options.logger.info(`[architecture] user chose to download: ${url}`);
+    options.logger.info(`[architecture] 用户选择前往下载：${url}`);
     await shell.openExternal(url);
   }
 }

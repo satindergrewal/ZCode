@@ -1,9 +1,8 @@
-// Aggregates sessions-index sessions across workspace scopes into ZCodeTaskMeta[] (reactive),
-// feeding the sidebar lists' live activity/detail; persistent rows come from tasks-index.
-// Shared across consumers: one endpoint+workspace subscription is refcounted via
-// sessionsIndexRegistry (the foundation). A scope carries its endpoint dimension and that
-// endpoint's agentService (from resolveWorkspaceServices); remote shards (web/phone-remote/SSH
-// workspaces) ride the same sessions-index path via the @zcode/rpc proxy.
+// 把若干 workspace scope 的 sessions-index 会话聚合成 ZCodeTaskMeta[]（响应式），
+// 作为侧栏各列表的实时 activity/detail 输入；持久行集合由 tasks-index 提供。
+// 多消费者共享：同一 endpoint+workspace 的订阅经 sessionsIndexRegistry 引用计数复用（地基）。
+// scope 携带 endpoint 维度与该 endpoint 的 agentService（resolveWorkspaceServices 产物），
+// remote shard（web/手机远控/SSH workspace）经 @zcode/rpc proxy 走同一条 sessions-index 链路。
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ZCodeTaskMeta } from "@zcode/shared";
 import { useBaseWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
@@ -28,30 +27,28 @@ import {
 export interface WorkspaceSessionsIndexScope {
   workspacePath: string;
   workspaceIdentity?: string;
-  /** Endpoint dimension (the remote shard remoteSessionId); default = local __base__. */
+  /** endpoint 维度（remote shard 的 remoteSessionId）；缺省 = 本机 __base__。 */
   endpointKey?: string;
-  /** The scope endpoint's agent service (from resolveWorkspaceServices); default = base services. */
+  /** scope 所属 endpoint 的 agent service（resolveWorkspaceServices 产物）；缺省 = base services。 */
   agentService?: SessionsIndexAgentService;
 }
 
-interface WorkspaceSessionsIndexItemsResult {
-  /** Aggregated session metas (running first, rest by updatedAt desc; tick-driven recompute, stable references). */
+export interface WorkspaceSessionsIndexItemsResult {
+  /** 聚合会话 meta（running 置顶；其余按 updatedAt 降序；tick 驱动重算，引用稳定）。 */
   items: ZCodeTaskMeta[];
   /**
-   * Read-only generation per endpoint+workspace scope: the service binding plus the store's
-   * logEpoch/seq, letting the async tasks-index membership join reject stale activity snapshots
-   * precisely.
+   * 每个 endpoint + workspace scope 的只读代次。包含 service binding 与 store 的
+   * logEpoch/seq，供异步 tasks-index membership join 精确拒绝旧 activity 快照。
    */
   sourceRevisionByScopeKey: Readonly<Record<string, string>>;
   /**
-   * Endpoints subscribed but awaiting their first snapshot ("__base__" or a remoteSessionId).
-   * Consumers keep loading/syncing hints with it, so a slow remote first frame never reads as
-   * an empty list.
+   * 已订阅但尚未收到首个 snapshot 的 endpoint（"__base__" 或 remoteSessionId）。
+   * 消费者用它维持 loading/syncing 提示，避免远端首帧未到时把列表当成空。
    */
   hydratingEndpointKeys: string[];
 }
 
-/** Workspace reuse key = the services resolveWorkspaceKey rule (identity ?? path). */
+/** workspace 复用键 = services resolveWorkspaceKey 口径（identity ?? path）。 */
 function workspaceKeyOf(scope: WorkspaceSessionsIndexScope): string {
   return scope.workspaceIdentity?.trim() || scope.workspacePath;
 }
@@ -85,7 +82,7 @@ function buildScopeBindingKey(
   return `${buildSessionsIndexEntryKey(toRegistryScope(scope), agentService)}\0path:${scope.workspacePath}`;
 }
 
-/** The store holds no snapshot yet (connecting/first frame pending); error is not hydrating (avoids eternal loading). */
+/** store 尚未持有任何 snapshot（connecting/首帧未到）；error 不算 hydrating（避免永久 loading）。 */
 function isHydratingStore(store: SessionsIndexStore): boolean {
   return (
     store.getState().workspaceId === null &&
@@ -94,10 +91,9 @@ function isHydratingStore(store: SessionsIndexStore): boolean {
 }
 
 /**
- * Subscribes the given workspace scopes' sessions-index and aggregates ZCodeTaskMeta[]
- * (running first, rest by updatedAt desc). Lifecycle: scope-set changes acquire/release the
- * shared stores by refcount; any store change recomputes. sessions-index changes are conflated
- * low-frequency list events, not high-frequency snapshots.
+ * 订阅给定 workspace scope 的 sessions-index，聚合出 ZCodeTaskMeta[]（running 置顶，其余按 updatedAt 降序）。
+ * 生命周期：scope 集合变化时按引用计数 acquire/release 共享 store；任一 store 变化即重算。
+ * sessions-index 变化是 conflated 低频列表事件，不属于高频 snapshot。
  */
 export function useWorkspaceSessionsIndexItems(
   scopes: WorkspaceSessionsIndexScope[],
@@ -105,9 +101,8 @@ export function useWorkspaceSessionsIndexItems(
   const baseServices = useBaseWorkspaceServices();
   const baseAgentService = baseServices.zcodeAgentService;
 
-  // Stabilize the scope signature so reconcile is not recomputed per render; effect/memo read
-  // the latest content-equal scopes via ref. endpointKey, workspacePath, or agentService
-  // generation changes all rotate the signature.
+  // scope 签名稳定化，避免每渲染重算协调；effect/memo 通过 ref 读取内容等价的最新 scopes。
+  // endpointKey、workspacePath 或 agentService generation 变化都会换签名。
   const signature = useMemo(
     () =>
       scopes
@@ -124,7 +119,7 @@ export function useWorkspaceSessionsIndexItems(
   const scopesRef = useRef(scopes);
   scopesRef.current = scopes;
 
-  // tick: +1 on any store change, driving the aggregate memo recompute.
+  // tick：任一 store 变化 +1，驱动聚合 memo 重算。
   const [tick, setTick] = useState(0);
   const bumpTick = useCallback(() => setTick((n) => n + 1), []);
   const subscriptionSetRef = useRef<WorkspaceSessionsIndexSubscriptionSet | null>(null);
@@ -136,7 +131,7 @@ export function useWorkspaceSessionsIndexItems(
   useEffect(() => {
     const bindings: WorkspaceSessionsIndexBinding[] = [];
     for (const scope of scopesRef.current) {
-      // Guard: tests/degraded environments may lack zcodeAgentService (the sessions-index transport); skip subscribing such scopes.
+      // 防御：测试/降级环境可能没有 zcodeAgentService（sessions-index 传输面），此时不订阅该 scope。
       const agentService = scope.agentService ?? baseAgentService;
       if (!agentService) {
         continue;
@@ -144,8 +139,8 @@ export function useWorkspaceSessionsIndexItems(
       bindings.push({ scope: toRegistryScope(scope), agentService });
     }
     subscriptionSet.reconcile(bindings);
-    // The signature covers scope/endpoint/workspacePath/service-generation changes; reconcile
-    // touches acquire/release only for bindings that actually changed.
+    // signature 覆盖 scopes、endpoint、workspacePath 与 service generation 变化；
+    // reconcile 只 acquire/release 真正发生变化的绑定。
   }, [signature, baseAgentService, subscriptionSet]);
 
   useEffect(
@@ -155,7 +150,7 @@ export function useWorkspaceSessionsIndexItems(
     [subscriptionSet],
   );
 
-  // Aggregate per-store sessions -> ZCodeTaskMeta + hydration state (tick-driven recompute, stable references).
+  // 从各 store 聚合会话 → ZCodeTaskMeta + hydration 状态（tick 驱动重算，引用稳定）。
   const previousItemsRef = useRef<ZCodeTaskMeta[]>([]);
   const previousHydratingRef = useRef<string[]>([]);
   return useMemo(() => {
@@ -196,13 +191,11 @@ export function useWorkspaceSessionsIndexItems(
       }
     }
     metas.sort((a, b) => compareZCodeTaskListItems(a, b, "updated"));
-    // Every tick rebuilds metas wholesale; even with identical content (say a cold restore
-    // swapping the seed for the live projection, changing only preview fields the lists never
-    // read), downstream treats a brand-new array reference as new data: the grouped view
-    // refreshes whole-tree, workspace row caches invalidate, every list republishes - seen as
-    // opening one historical task reloads the entire left sidebar. Stabilize per item: reuse the
-    // old object when content-equal and the old array when the table is equal, so every
-    // identity-dependent effect short-circuits.
+    // 每个 tick 都全量重建 metas，即使内容完全没变（例如冷恢复把 seed 换成
+    // live 投影只改了列表不消费的 preview 字段），下游也会把"全新数组引用"当成新数据：
+    // grouped 视图整树 refresh、workspace 行缓存被 invalidate、各列表 republish——
+    // 表现为"打开一个历史任务，左侧列表整个重新加载"。这里做逐条引用稳定化：
+    // 内容等价复用旧对象；整表等价复用旧数组，让依赖数组身份的 effect 全部短路。
     const items = stabilizeTaskListItems(previousItemsRef.current, metas);
     previousItemsRef.current = items;
     const nextHydrating = [...hydratingEndpointKeys].sort();

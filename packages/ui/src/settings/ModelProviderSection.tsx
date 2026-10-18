@@ -1,5 +1,7 @@
-/* eslint-disable max-lines -- the Model Provider settings page centralizes navigation, forms, and OAuth flows; consolidate only when it is split apart later. */
+/* eslint-disable max-lines -- Model Provider 设置页需要集中编排导航、表单和 OAuth 交互，后续整体拆分时再收敛。 */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useStore } from "zustand";
+import { marketingNavigation, finishMarketingNavigation } from "@/lib/marketingNavigation.js";
 import {
   getProviderFormApiKey,
   type ProviderSettingsFormProvider,
@@ -77,7 +79,7 @@ type CodingPlanConnectionNavItem = Extract<
   { type: "codingPlan" | "teamPlan" }
 >;
 
-function resolveCodingPlanProviderSyncAttemptKey({
+export function resolveCodingPlanProviderSyncAttemptKey({
   activeOAuthProvider,
   oauthProviderId,
   providerId,
@@ -89,12 +91,11 @@ function resolveCodingPlanProviderSyncAttemptKey({
   if (activeOAuthProvider !== oauthProviderId) {
     return null;
   }
-  // The operation identity consists only of stable provider/auth facts; never put display states
-  // such as "checking" into the key.
+  // 操作身份只由稳定的 provider/auth 事实组成，禁止把 checking 等展示状态放入 key。
   return `${providerId}:${activeOAuthProvider}`;
 }
 
-function shouldRetryUnchangedCodingPlanProviderSync({
+export function shouldRetryUnchangedCodingPlanProviderSync({
   attemptKey,
   attemptStatus,
   modeUnchanged,
@@ -139,9 +140,9 @@ function shouldRefreshCodingPlanEntitlementsAfterSave(
     return false;
   }
 
-  // UI-only config such as enabled/name/models never changes the entitlement-query credentials.
-  // Saving any Coding Plan field used to refresh state, briefly loading the sidebar and wiping the
-  // current selection; refresh only when the API key actually changed.
+  // 只比较手工 Key 配置；OAuth account access 不读取旧 Key，由账号/权益事件刷新。
+  // Bugfix: enabled/name/models 这类 UI 配置不会改变权益查询凭据。
+  // 之前保存任意 Coding Plan 字段都会刷新状态，导致侧栏短暂进入 loading 并冲掉当前选中。
   return (
     (previousProvider ? getProviderFormApiKey(previousProvider).trim() : "") !==
     getProviderFormApiKey(nextProvider).trim()
@@ -215,7 +216,7 @@ function resolveConnectionSelectionForNavItem(
   return isStartPlanModelProviderId(item.presetId) ? null : { kind: "individual-coding-plan" };
 }
 
-function resolveModelProviderSideSelectionKey(
+export function resolveModelProviderSideSelectionKey(
   item: ModelProviderNavGroup["items"][number],
 ): string {
   if (item.type !== "preset" && item.type !== "codingPlan" && item.type !== "teamPlan") {
@@ -230,9 +231,8 @@ function resolveModelProviderSideSelectionKey(
 }
 
 /**
- * Model Provider settings are injected with the Local Host only by SettingsPage; this component takes
- * no workspaceIdentity so a remote workspace cannot misroute Provider Settings reads/writes to a
- * remote Environment.
+ * 模型 Provider 设置只由 SettingsPage 注入 Local Host；这里不接收 workspaceIdentity，
+ * 防止远程 workspace 误将 Provider Settings 的读写路由到远端 Environment。
  */
 export function ModelProviderSection({
   workspacePath = "",
@@ -308,9 +308,8 @@ export function ModelProviderSection({
     useState<BuiltinModelProviderId | null>(null);
   const [codingPlanDisconnectProviderId, setCodingPlanDisconnectProviderId] =
     useState<BuiltinModelProviderId | null>(null);
-  // Dead-code cleanup: refreshToken is consumed only by the retired native purchase panel; keep just
-  // the setter so the post-login/unlink refreshCodingPlanProducts contract still works (shared
-  // helper signature unchanged).
+  // 死代码清理：refreshToken 只被已下线的原生购买面板消费，这里仅保留 setter 供
+  // 登录/解绑后的 refreshCodingPlanProducts 契约调用（保持共享 helper 签名不变）。
   const [, setCodingPlanProductsRefreshToken] = useState(0);
   const [pendingCreatedProviderId, setPendingCreatedProviderId] = useState<string | null>(null);
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
@@ -323,10 +322,9 @@ export function ModelProviderSection({
     ) {
       return;
     }
-    // saveProvider publishes the shared snapshot first, then persists asynchronously; under load React
-    // may commit selectedNodeKey before the provider list. Navigation correction rolls a not-yet-existing
-    // custom key back, and the new provider no longer auto-selects when it appears. Finish selection and
-    // draft cleanup only once the list is factually visible.
+    // saveProvider 会先发布共享快照，再异步落盘；React 在高负载下可能先提交
+    // selectedNodeKey、后提交 provider 列表。导航校正会把暂时不存在的 custom key 回退，
+    // 新 provider 随后出现也不会再自动选中。只在列表事实可见后完成选中与草稿清理。
     setSelectedNodeKey(createCustomProviderNodeKey(pendingCreatedProviderId));
     setPendingCreatedProviderId(null);
   }, [modelProviders, pendingCreatedProviderId]);
@@ -336,10 +334,9 @@ export function ModelProviderSection({
       if (!target) return false;
       const providerId = resolveCodingPlanIntentProviderId(target);
       if (!providerId) {
-        // An unknown ID must not be silently ignored: an unconsumed pending instruction traps
-        // navigation on bad external input. Show the error only, keep the current operable page and
-        // persistent connection; later valid navigation or manual selection recovers.
-        logger.warn("[ModelProviderSection] Failed to open target provider", { providerId: target.providerId });
+        // 未知 ID 不能只静默忽略：pending 指令不消费的话，外部输入错误会困住导航。
+        // 仅显示错误，保留当前可操作页面和持久连接，后续合法导航/手动选择可恢复。
+        logger.warn("[ModelProviderSection] 无法打开目标供应商", { providerId: target.providerId });
         setInvalidProviderTarget(true);
         setTemplatePickerOpen(false);
         return true;
@@ -407,9 +404,9 @@ export function ModelProviderSection({
     authenticated: true,
     family: "bigmodel",
   });
-  // Symmetric zai/bigmodel Team Plan handling. Previously only bigmodel ran the hook, so zai team
-  // subscriptions could never be fetched or displayed. zai now calls the hook too (zai family via the
-  // zai provider); downstream merges both families' subscribed products.
+  // zai 与 bigmodel Team Plan 对称化。原仅 bigmodel 调 hook，
+  // zai 团队订阅永远拉不到、也无法展示对应团队。
+  // zai 独立调 hook（zai family 走 zai provider），下游合并两 family 的订阅产品。
   const authenticatedZaiEnterpriseProducts = useEnterpriseCodingPlanProducts({
     enabled:
       codingPlanPurchaseTokenAuthenticatedByProviderId[
@@ -447,8 +444,8 @@ export function ModelProviderSection({
     }),
     [connectionSelections, pendingConnectionSelections],
   );
-  // Previously only the bigmodel selectedKey was checked for team plan, so a zai team key never
-  // triggered the purchased-team fallback (broken). Now any family with a persisted team key shows it.
+  // 原仅检查 bigmodel selectedKey 是否为 team plan，zai team key
+  // 永远不会触发已购团队 fallback（断裂）。改为任一 family 有持久化 team key 即显示。
   const showPurchasedTeamPlanFallback = Boolean(
     effectiveConnectionSelections.bigmodel?.kind === "team-coding-plan" ||
     effectiveConnectionSelections.zai?.kind === "team-coding-plan",
@@ -471,9 +468,8 @@ export function ModelProviderSection({
         if (JSON.stringify(connectionSelections[familyId]) !== JSON.stringify(selection)) {
           continue;
         }
-        // Settings persistence and hook refresh are async after an API Key/Coding Plan tab click.
-        // Clear pending only once the persisted snapshot catches up, so a stale mode cannot briefly
-        // snap the selection back and flicker.
+        // API Key/Coding Plan tab 点击后 settings 落盘和 hook 刷新是异步的。
+        // 等持久化快照真的追上再清 pending，避免旧 mode 把选中项短暂纠偏回去造成闪烁。
         next = clearPendingProviderFamilyConnectionSelection(next, familyId, selection);
       }
       return next;
@@ -522,9 +518,8 @@ export function ModelProviderSection({
           (bigmodelToken?.trim().length ?? 0) > 0,
       });
       if (!normalizedActiveProvider && options.clearUserWhenLoggedOut) {
-        // provider Unlink is now equivalent to App logout.
-        // Once the server-side tokens are cleared, the settings page must also clear the Zustand user,
-        // otherwise the sidebar keeps showing the stale signed-in state until restart.
+        // provider Unlink 已等价于 App logout。
+        // 服务端 token 已清理后，设置页也要同步清掉 Zustand user，否则侧边栏会一直显示旧登录态直到重启。
         setUser(null);
         setOAuthError(null);
       }
@@ -588,8 +583,8 @@ export function ModelProviderSection({
         });
         codingPlanStatusSyncAttemptsRef.current.set(attemptKey, "succeeded");
       } catch (error) {
-        // Keep the failed status explicit. Automatic hydration does not loop-retry after failed;
-        // clicking the same connection item again recovers actively via the failed state.
+        // 失败状态必须显式保留。自动水合看到 failed 后不循环重试，
+        // 用户再次点击同一连接项时则可以按 failed 状态主动恢复。
         codingPlanStatusSyncAttemptsRef.current.set(attemptKey, "failed");
         throw error;
       } finally {
@@ -644,9 +639,8 @@ export function ModelProviderSection({
           presetId: presetSubscriptionProviderId,
         });
         try {
-          // After connect/re-auth the provider apiKey persists before the entitlement API responds.
-          // Clear pending only after this entitlement refresh round completes, or the Plan Card briefly
-          // shows a stale plan or a non-loading state.
+          // Bugfix: 连接/重新授权成功后账号连接状态会先于本轮权益接口结果就绪。
+          // pending 必须等本轮权益刷新完成后再清，否则 Plan Card 会短暂显示旧套餐态或非 loading 状态。
           await refreshProviderPanelAfterAuthChange({});
         } finally {
           presetSubscriptionCompletionProviderIdRef.current = null;
@@ -711,9 +705,8 @@ export function ModelProviderSection({
     selectedNavItem?.type === "codingPlan" || selectedNavItem?.type === "teamPlan"
       ? selectedNavItem.key
       : null;
-  // The plan card self-corrects each time the user opens it; the shared freshness window keeps
-  // sub-minute back-and-forth from amplifying quota requests. An entitlement display update is not
-  // the user re-opening the plan.
+  // 套餐卡每次被用户打开时按需校正；共享 freshness window 保证一分钟内切换返回
+  // 不会放大 quota 请求。权益展示更新不等于用户重新打开套餐。
   useCodingPlanAccessRefresh({
     refresh: refreshCodingPlanEntitlements,
     selectedPlanKey: selectedPlanAccessKey,
@@ -736,10 +729,10 @@ export function ModelProviderSection({
       return;
     }
 
-    // This is first-hydration correction, not a status-machine driven by the detail state.
-    // Run once per provider/OAuth combination; checking-to-final flips must not restart the refresh.
+    // 这是首次水合校正，不是由详情 status 驱动的状态机。
+    // 同一 provider/OAuth 组合只执行一次，checking 与最终状态来回切换不能重启刷新。
     void syncCodingPlanProviderOnce(selectedNavItem).catch((error) => {
-      logger.warn("[ModelProviderSection] Failed to auto-sync Coding Plan provider", {
+      logger.warn("[ModelProviderSection] 自动同步 Coding Plan provider 失败", {
         providerId: selectedNavItem.presetId,
         error,
       });
@@ -758,14 +751,13 @@ export function ModelProviderSection({
         const previousProvider = modelProviders.find(
           (provider) => provider.providerId === config.providerId,
         );
-        // A non-executable config is not the user signing out; saving must not wipe the account domain,
-        // or no plan selection could ever become ready.
+        // 配置不可执行不是用户退出账号；保存不得顺带清空账号域，否则套餐再选也无法就绪。
         await saveProvider(config);
         if (shouldRefreshCodingPlanEntitlementsAfterSave(previousProvider, config)) {
           refreshCodingPlanEntitlements();
         }
       } catch (error) {
-        logger.error("[ModelProviderSection] Failed to save model provider", error);
+        logger.error("[ModelProviderSection] 保存模型供应商失败", error);
         throw error;
       }
     },
@@ -805,7 +797,7 @@ export function ModelProviderSection({
     ) => {
       setPresetSubscriptionProviderId(presetId);
       setCodingPlanStatusSyncProviderId(presetId);
-      logger.info("[ModelProviderSection] Login and Coding Plan connect requested via the unified sign-in entry", {
+      logger.info("[ModelProviderSection] 请求通过统一登录入口登录并连接 Coding Plan", {
         presetId,
         providerId,
         providerName,
@@ -819,7 +811,7 @@ export function ModelProviderSection({
         });
         return;
       }
-      // ZAI/BigModel providers no longer have a separate connection; Connect must switch the App active provider.
+      // ZAI/BigModel provider 不再有独立 connection，Connect 必须切换 App active provider。
       return requestLoginEntry(providerId);
     },
     [activeOAuthProvider, refreshProviderPanelAfterAuthChange, requestLoginEntry],
@@ -834,19 +826,18 @@ export function ModelProviderSection({
       setCodingPlanDisconnectProviderId(presetId);
       setCodingPlanStatusSyncProviderId(presetId);
       try {
-        logger.info("[ModelProviderSection] Unlink requested for Coding Plan provider", {
+        logger.info("[ModelProviderSection] 请求解绑 Coding Plan provider", {
           presetId,
           providerId,
           providerName,
         });
-        // ZAI/BigModel providers are restored as mirrors of the App login.
-        // Unlink here must go through provider logout: sign out the active provider and let the other
-        // provider family return to Connect.
+        // ZAI/BigModel provider 已恢复为 App 登录镜像。
+        // 这里的 Unlink 必须走 provider logout，退出当前 active provider 并触发另一组 provider 恢复 Connect。
         const nextProviderFamilyDomain = resolveLogoutProviderFamilyDomain({
           currentDomain: sharedSettings?.providerFamilyDomain,
         });
         await oauthService.logout(providerId);
-        // The Coding Plan official-site webview uses a dedicated persistent partition; provider Unlink is an account boundary too.
+        // Coding Plan 官网 webview 使用独立持久 partition，provider Unlink 也属于账号边界。
         if (typeof platform.executeDesktopCommand === "function") {
           await platform.executeDesktopCommand(DesktopCommandIds.ClearCodingPlanWebviewStorage);
         }
@@ -857,14 +848,13 @@ export function ModelProviderSection({
         });
         await refreshCodingPlanPurchaseTokenState({ clearUserWhenLoggedOut: true });
         await refresh();
-        // After unlink, batch-preview subscription/auth state is stale; the plan card's internal cache
-        // must refresh, or buttons keep the pre-unlink purchased/authenticated state.
+        // 解绑后 batch-preview 的订阅/鉴权态已经失效，套餐卡片内部缓存必须刷新，
+        // 否则按钮会继续沿用解绑前的 purchased 或 authenticated 状态。
         refreshCodingPlanProducts();
-        // React closures from before the unlink may still hold old Start/Coding provider keys.
-        // The unlink button awaits only local logout and the provider list refresh; the entitlement
-        // hook clears old state once the new provider snapshot lands.
+        // unlink 前的 React 闭包里仍可能保留旧 Start/Coding provider key。
+        // 解绑按钮只等待本地 logout 和 provider 列表刷新；权益 hook 会在新 provider 快照落地后清空旧状态。
       } catch (error) {
-        logger.error("[ModelProviderSection] Failed to unlink Coding Plan provider", {
+        logger.error("[ModelProviderSection] 解绑 Coding Plan provider 失败", {
           presetId,
           providerId,
           providerName,
@@ -901,8 +891,7 @@ export function ModelProviderSection({
       if (!selection) return;
       const selectionUnchanged =
         JSON.stringify(connectionSelections[familySpec.id]) === JSON.stringify(selection);
-      // The same plan can still lack a persisted account domain; a user re-selection must fill it in,
-      // and page-display fallbacks must not be used for dedup.
+      // 同套餐仍可能缺少持久账号域；用户重选必须补齐，不能用页面展示兜底值去重。
       const modeUnchanged = sharedSettings?.providerFamilyDomain === familySpec.id;
       const selectedKeyUnchanged = selectionUnchanged;
       const planSyncAttemptKey =
@@ -933,7 +922,7 @@ export function ModelProviderSection({
               refreshPlanSnapshots: false,
             });
           } catch (error) {
-            logger.warn("[ModelProviderSection] Failed to retry Coding Plan provider sync", {
+            logger.warn("[ModelProviderSection] 重试同步 Coding Plan provider 失败", {
               providerId: item.presetId,
               error,
             });
@@ -946,8 +935,7 @@ export function ModelProviderSection({
         [familySpec.id]: selection,
       }));
       if (planSyncAttemptKey) {
-        // Pending state triggers a render first; reserve the slot so the hydration effect does not
-        // start a duplicate sync before settings persist.
+        // pending state 会先触发渲染；先占位，避免水合 effect 在设置落盘前重复发起同步。
         codingPlanStatusSyncAttemptsRef.current.set(planSyncAttemptKey, "inFlight");
       }
       try {
@@ -961,7 +949,7 @@ export function ModelProviderSection({
           },
         });
         if (item.type === "codingPlan" || item.type === "teamPlan") {
-          // The user action owns the connection-mode transition: refresh the target Plan provider once after persisting.
+          // 用户动作拥有连接方式 transition：设置落盘后只刷新一次目标 Plan provider。
           await syncCodingPlanProviderOnce(item, {
             userTransition: true,
             refreshPlanSnapshots: false,
@@ -969,10 +957,10 @@ export function ModelProviderSection({
         }
       } catch (error) {
         if (planSyncAttemptKey) {
-          // Same-item retry must stay possible when persisting or the follow-up provider sync fails.
+          // 设置落盘或后续 provider 同步失败时必须允许同项重试。
           codingPlanStatusSyncAttemptsRef.current.set(planSyncAttemptKey, "failed");
         }
-        logger.warn("[ModelProviderSection] Failed to save model provider connection mode", {
+        logger.warn("[ModelProviderSection] 保存模型供应商连接方式失败", {
           familyId: familySpec.id,
           error,
         });
@@ -1018,6 +1006,47 @@ export function ModelProviderSection({
     [createPersonalProvider, locale],
   );
 
+  const marketingRequest = useStore(marketingNavigation, (state) => state.request);
+  useEffect(() => {
+    if (marketingRequest?.target.page !== "settings" || !marketingRequest.target.provider_id)
+      return;
+    if (
+      loading ||
+      modelProvidersRefreshing ||
+      sharedSettingsLoading ||
+      navigationItems.some((item) => item.type === "codingPlanLoading")
+    )
+      return;
+    const providerId = marketingRequest.target.provider_id;
+    const item = navigationItems.find((item) =>
+      item.type === "custom"
+        ? // 当前表单契约使用 providerId；旧 id 会让所有自定义提供商被误判为不存在。
+          item.provider.providerId === providerId
+        : "presetId" in item &&
+          item.presetId === providerId &&
+          (!isStartPlanModelProviderId(providerId) || item.type === "codingPlan"),
+    );
+    if (!item) {
+      finishMarketingNavigation(marketingRequest.id, new Error("marketing_provider_unavailable"));
+      return;
+    }
+    const key = resolveModelProviderSideSelectionKey(item);
+    if (selectedNodeKey !== key) {
+      // 只定位侧栏节点；禁止复用带 mode 的选择路径，避免营销导航修改套餐连接。
+      setSelectedNodeKey(key);
+    } else if (selectedNavItem) {
+      finishMarketingNavigation(marketingRequest.id);
+    }
+  }, [
+    marketingRequest,
+    loading,
+    modelProvidersRefreshing,
+    sharedSettingsLoading,
+    navigationItems,
+    selectedNodeKey,
+    selectedNavItem,
+  ]);
+
   const handleReorderProviderIds = useCallback(
     async (orderedGroupProviderIds: string[]) => {
       const groupProviderIdSet = new Set(orderedGroupProviderIds);
@@ -1048,9 +1077,9 @@ export function ModelProviderSection({
     [testModelConnectivity],
   );
 
-  // On a slow first load this used to return null, blanking the whole model provider section so neither
-  // the sidebar group loading nor the refresh button loading ever rendered. Always render the layout
-  // shell first and show loading per group, so the page does not look broken.
+  // 首屏慢网时之前直接 return null，导致整块模型供应商页空白，
+  // 已有的左侧分组 loading 和刷新按钮 loading 都没有机会渲染。
+  // 这里改为始终先渲染布局壳子，再按分组展示 loading，避免用户误以为页面坏了。
   const presetLoading = loading || modelProvidersRefreshing;
   const customLoading = loading || modelProvidersRefreshing;
 
@@ -1075,8 +1104,8 @@ export function ModelProviderSection({
       onRefresh={() => {
         void refreshModelProviderSection({
           refresh,
-          // A manual settings refresh must also refresh the Z.ai / BigModel Team Plan snapshots;
-          // previously only BigModel refreshed, leaving stale Z.ai items after purchase/subscription changes.
+          // 手动刷新设置页时也要同时刷新 Z.ai / BigModel Team Plan 快照；
+          // 原来只刷新 BigModel，Z.ai Team Plan 购买或订阅变化后会继续显示旧项目。
           refreshTeamPlanProducts: refreshAuthenticatedEnterpriseProducts,
         });
         refreshCodingPlanEntitlements();
@@ -1124,8 +1153,7 @@ export function ModelProviderSection({
               ? resolveModelProviderFamilySpecByProviderId(providerId)
               : null;
             const entitlement = family ? codingPlanEntitlements[family.startPlanProviderId] : null;
-            // Show only entitlements already queried for this family; never substitute the current
-            // Start selection for the owned count.
+            // 只展示当前 Family 已查询到的权益，不用当前是否选中 Start 代替拥有数量。
             return entitlement?.error
               ? 0
               : (entitlement?.snapshot?.subscription?.details.length ?? 0);
@@ -1144,16 +1172,14 @@ export function ModelProviderSection({
           onSetPersonalModelEnabled={setPersonalModelEnabled}
           onDeletePersonalModel={deletePersonalModel}
           onDelete={handleDelete}
-          // The provider sidebar ordering permission was mistakenly reused as a model ordering gate,
-          // blocking Effective models of Built-in/Account providers from writing Personal modelOrder.
-          // Model ordering is independent of where members come from.
+          // Provider 的左栏排序权限被误复用成模型排序门禁，导致 Built-in / Account
+          // Provider 的 Effective 模型无法写入 Personal modelOrder。模型调序独立于成员来源。
           onReorderProviderModels={reorderProviderModels}
           onTestModel={handleTestModel}
           onCodingPlanLogin={handleCodingPlanLogin}
           onRetryCodingPlan={() => {
-            // A failed key fetch is not a signed-out session; reuse the Host manual refresh and never
-            // clear OAuth or force re-login.
-            logger.info("[ModelProviderSection] Retry plan status fetch");
+            // 取 Key 失败不等于登录失效；沿用 Host 手动刷新，不清除 OAuth 或重新登录。
+            logger.info("[ModelProviderSection] 重试获取套餐状态");
             return refresh().then(() =>
               refreshCodingPlanEntitlements({ force: true, reason: "manual" }),
             );
@@ -1162,8 +1188,7 @@ export function ModelProviderSection({
           onOpenApiKeyUrl={handleOpenApiKeyUrl}
           onSelectNavItem={handleSelectNavItem}
           onOpenBigModelRegistration={() => {
-            // The not-registered hint comes from one failed OAuth checking state; restore the normal
-            // state after jumping to registration so the hint cannot stick.
+            // 未注册提示来自一次失败的 OAuth checking 状态；跳转注册后要恢复普通状态，避免提示卡住。
             setOAuthError(null);
             setPresetSubscriptionProviderId((current) =>
               current === BUILTIN_MODEL_PROVIDER_IDS.bigmodelIndividualCodingPlan ? null : current,

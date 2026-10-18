@@ -18,7 +18,7 @@ import { CSS } from "@dnd-kit/utilities";
 import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 
-function resolveReorderedModelIds(params: {
+export function resolveReorderedModelIds(params: {
   activeModelId: string;
   overModelId: string;
   modelIds: readonly string[];
@@ -41,7 +41,7 @@ class ModelRowPointerSensor extends PointerSensor {
   ];
 }
 
-function isInteractiveModelDragTarget(target: EventTarget | null): boolean {
+export function isInteractiveModelDragTarget(target: EventTarget | null): boolean {
   return (
     target instanceof Element &&
     target.closest(
@@ -50,15 +50,15 @@ function isInteractiveModelDragTarget(target: EventTarget | null): boolean {
   );
 }
 
-function resolveSortableProviderModelRowClassName({
+export function resolveSortableProviderModelRowClassName({
   isDragging,
   isLast,
 }: {
   isDragging: boolean;
   isLast: boolean;
 }): string {
-  // Dragging kept the row's bottom border, reading as underlined once lifted.
-  // A transparent border keeps the 1px slot so row height never jumps on state change.
+  // 拖动状态沿用了普通行的可见底部分隔线，浮起后看起来像带下划线。
+  // 透明边框保留既有的 1px 占位，避免切换拖动状态时行高抖动。
   const dividerClassName = isDragging
     ? "border-b border-transparent"
     : isLast
@@ -94,13 +94,13 @@ function SortableProviderModelRow({
       {...attributes}
       {...listeners}
       onKeyDown={(event) => {
-        // Portal space presses bubble to model rows, starting keyboard sort and writing versions early.
-        // Share the pointer path's target isolation; no preventDefault, the row keeps its own keyboard sensor.
+        // Portal 弹窗的空格会冒泡到模型行，启动键盘排序并抢先写入版本。
+        // 复用指针的交互目标隔离；不阻止输入默认行为，行自身仍交给原键盘传感器。
         if (!isInteractiveModelDragTarget(event.target)) listeners?.onKeyDown?.(event);
       }}
     >
-      {/* {/* useSortable sets role=button on the row; the old sensor grabbed the nearest
-          role=button, so drags from the name or blank space never started. */}
+      {/* Bug 原因：useSortable 会给本行添加 role=button。旧传感器把最近的
+          [role=button] 当成交互控件，导致从模型名称或空白处永远无法启动拖拽。 */}
       {children}
     </div>
   );

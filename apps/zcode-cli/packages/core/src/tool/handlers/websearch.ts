@@ -114,7 +114,6 @@ const webSearchHandler: ToolHandler<WebSearchInput, WebSearchOutput> = async (in
           toolName: WEBSEARCH_TOOL_NAME,
           querySource: "web_search_tool",
         },
-        modelRequestSessionType: "other",
         modelCall: { operation: "web_search" },
         // No statusSink here: the executor-wrapped context.model already carries the default session-event sink.
         traceContext: webSearchTraceFromContext(context),

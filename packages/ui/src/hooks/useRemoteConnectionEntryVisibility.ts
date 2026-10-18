@@ -1,3 +1,13 @@
+import type { ZCodeEnv } from "@zcode/shared";
+
+export function shouldShowRemoteConnectionEntry(params: {
+  env: ZCodeEnv;
+  isIntranet: boolean;
+}): boolean {
+  void params;
+  return true;
+}
+
 export function useRemoteConnectionEntryVisibility(): boolean {
   // The SSH entry used to reuse the internal-only gate, hiding it in production
   // internet-facing setups too. But SSH availability depends on the target machine, network

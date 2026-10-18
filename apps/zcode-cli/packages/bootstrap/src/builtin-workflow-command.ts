@@ -3,11 +3,14 @@ import { BUILTIN_ZCODE_SLASH_COMMAND_HELP_ENTRIES } from "@zcode/shared";
 import { DYNAMIC_WORKFLOW_SKILL_NAME } from "./app/bundled-skills.js";
 
 /**
- * The builtin `/workflow` command.
- * Its body ships with the CLI; like `/init` it is a code-defined prompt command, independent of uninstallable plugins.
- * The name is in the reserved-word table, so same-name user/plugin commands are never expanded.
+ * 内置 `/workflow` 命令（docs/dynamic-workflow/authoring.md「The `/workflow` command and the skill」）。
  *
- * The body reuses the contracts custom-command expansion rules: substitute $ARGUMENTS and append the `skills:` preamble.
+ * 它曾是 zcode-guide 内置插件的 `commands/workflow.md`：插件一被卸载/停用，命令与加号菜单入口一起消失，
+ * 而十个工作流工具仍在（2026-09-19 事故）。现在命令正文随 CLI 编译，与 `/init` 同为代码定义的
+ * prompt 型内置命令；名字进入保留字表，用户或插件同名命令不再被展开。
+ *
+ * 正文刻意复用 contracts 的 custom command 展开（$ARGUMENTS 替换 + `skills:` 前言），
+ * 让模型看到的提示词与插件时代逐字同形，不重新调教。
  */
 export const BUILTIN_WORKFLOW_COMMAND_NAME = "workflow";
 
@@ -15,7 +18,7 @@ const helpEntry = BUILTIN_ZCODE_SLASH_COMMAND_HELP_ENTRIES.find(
   (entry) => entry.name === BUILTIN_WORKFLOW_COMMAND_NAME,
 );
 if (!helpEntry) {
-  // The shared help table is the single source for reserved words, TUI candidates, and the app catalog; without an entry the command is not addressable at all.
+  // 共享 help 表是保留字、TUI 候选与 App 目录的唯一来源；条目缺席时命令根本不可寻址。
   throw new Error(`Missing builtin slash command help entry: ${BUILTIN_WORKFLOW_COMMAND_NAME}`);
 }
 
@@ -25,7 +28,7 @@ export const BUILTIN_WORKFLOW_COMMAND_ARGUMENT_HINT = helpEntry.usage.startsWith
   ? helpEntry.usage.slice(USAGE_PREFIX.length)
   : "";
 
-/** `$ARGUMENTS` must be present: otherwise expansion appends the args as a misplaced "User arguments:" tail block. */
+/** `$ARGUMENTS` 必须在场：否则展开会把参数追加成位置不受控的 "User arguments:" 尾块。 */
 const BUILTIN_WORKFLOW_COMMAND_BODY = [
   `Use the \`${DYNAMIC_WORKFLOW_SKILL_NAME}\` skill to design and launch a dynamic workflow for this request:`,
   "",

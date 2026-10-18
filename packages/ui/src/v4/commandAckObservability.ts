@@ -3,7 +3,7 @@
  * e2e/field debugging needs a probeable sink. Every command ack summary lands in a window-level
  * bounded ring buffer (the __zcodeSessionStoreE2E debug surface), never heavy payloads like message bodies.
  */
-interface V4CommandAckSummary {
+export interface V4CommandAckSummary {
   type: string;
   status: string;
   reasonCode?: string;

@@ -22,7 +22,7 @@ export type ConversationShareSelectionPreflightState =
 // Default objects recreated per render break memo reference stability; the idle default is read-only.
 const DEFAULT_PREFLIGHT: ConversationShareSelectionPreflightState = { status: "idle" };
 
-interface ConversationShareSelectionDockProps {
+export interface ConversationShareSelectionDockProps {
   selectedCount: number;
   totalCount: number;
   onCancel: () => void;

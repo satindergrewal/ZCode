@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- main's thin-forwarding contract keeps request/port association in one place. */
+/* eslint-disable max-lines -- Main 的完整薄转发契约集中维护请求与端口关联。 */
 import { randomUUID } from "node:crypto";
 import { BrowserWindow, MessageChannelMain } from "electron";
 import type { MessagePortMain, UtilityProcess as ElectronUtilityProcess } from "electron";
@@ -15,6 +15,7 @@ import {
   type RemoteTarget,
   type ProviderProvisioningTrigger,
   type WindowHostRemoteWorkspaceDescriptor,
+  type WebRemoteControlFailure,
 } from "@zcode/shared";
 import type {
   RemoteConnectionStats,
@@ -40,7 +41,7 @@ interface PendingConnect {
 
 interface RemoteAttachmentRoute {
   webContentsId: number;
-  // // Main keeps only request/session association and redacted descriptors for forwarding; connection/task facts live in the Host.
+  // Main 只保留端口转发所需的 request/session 关联和脱敏 descriptor；连接/任务事实归 Host。
   descriptor: WindowHostRemoteWorkspaceDescriptor;
   rendererAttachmentId?: string;
   pendingRendererAttachment?: {
@@ -129,7 +130,7 @@ function closeMessagePort(port: MessagePortMain | undefined): void {
   try {
     port.close();
   } catch {
-    // // A failed MessagePort close must not disturb the Host's idempotent attachment close/dispose.
+    // MessagePort 关闭失败不影响 Host 内 attachment 的 close/dispose 幂等收口。
   }
 }
 
@@ -158,6 +159,11 @@ export function createRemoteWorkspaceSessionManager(options: {
     durationMs: number;
   }) => void;
   monotonicNowMs?: () => number;
+  webRemoteControlManagerRef: {
+    current: {
+      failRemoteSession(sessionId: string, reason: string, failure: WebRemoteControlFailure): void;
+    } | null;
+  };
   providerProvisioningCoordinator?: ProviderProvisioningEnvironmentCoordinator;
 }) {
   const pendingByRequestKey = new Map<string, PendingConnect>();
@@ -180,7 +186,7 @@ export function createRemoteWorkspaceSessionManager(options: {
   function getWindowHost(win: BrowserWindow): ElectronUtilityProcess {
     const child = options.windowHostProcessMap.get(win.webContents.id);
     if (!child || child.pid == null) {
-      throw new Error(`Window Local Host not found, windowId=${win.webContents.id}`);
+      throw new Error(`未找到窗口 Local Host，windowId=${win.webContents.id}`);
     }
     ensureHostListener(child, win.webContents.id);
     return child;
@@ -207,8 +213,8 @@ export function createRemoteWorkspaceSessionManager(options: {
       level: payload.level,
       source: "window-host-controller",
       message: payload.message,
-      // A rework once handed full ISO timestamps to the connection log UI; long stamps squeezed the flex column and wrapped.
-      // Restore the compact-clock display contract; Host requestId routing and raw log content unchanged.
+      // 改造曾把完整 ISO 时间直接交给连接日志 UI，长时间戳会挤压 flex 日志列并换行。
+      // 这里恢复既有的紧凑时钟展示契约，Host 的 requestId 路由和原始日志内容保持不变。
       timestamp: new Date().toLocaleTimeString(undefined, {
         hour12: false,
         hour: "2-digit",
@@ -229,7 +235,7 @@ export function createRemoteWorkspaceSessionManager(options: {
         attachmentId,
       });
     } catch (error) {
-      // Candidate-port reclamation is idempotent cleanup; a dead Host must not leave the ready promise pending again.
+      // 候选 port 的回收属于幂等清理，不能因 Host 已退出导致 ready promise 再次悬空。
       options.logger.warn("[window-host-remote] detach renderer attachment failed", {
         attachmentId,
         reason,
@@ -244,13 +250,13 @@ export function createRemoteWorkspaceSessionManager(options: {
     reason: string,
   ): Promise<void> {
     if (win.isDestroyed() || win.webContents.isDestroyed()) {
-      throw new Error("Window closed; cannot attach remote workspace");
+      throw new Error("窗口已关闭，无法 attachment 远程 workspace");
     }
     const child = getWindowHost(win);
     const descriptor = route.descriptor;
     if (!descriptor.workspacePath || !descriptor.workspaceIdentity) {
       throw new Error(
-        `Remote descriptor missing workspace scope, sessionId=${descriptor.remoteSessionId}`,
+        `远程 descriptor 缺少 workspace scope，sessionId=${descriptor.remoteSessionId}`,
       );
     }
     const { port1, port2 } = createMessageChannel();
@@ -262,9 +268,7 @@ export function createRemoteWorkspaceSessionManager(options: {
       route.pendingRendererAttachment = undefined;
       detachServicePort(child, superseded.attachmentId, "superseded");
       superseded.reject(
-        new Error(
-          `Renderer attachment superseded by a later generation, sessionId=${descriptor.remoteSessionId}`,
-        ),
+        new Error(`renderer attachment 已被后续换代替代，sessionId=${descriptor.remoteSessionId}`),
       );
     }
 
@@ -275,7 +279,7 @@ export function createRemoteWorkspaceSessionManager(options: {
         route.pendingRendererAttachment = undefined;
         detachServicePort(child, attachmentId, "ready-timeout");
         const error = new Error(
-          `Renderer attachment ready timeout, sessionId=${descriptor.remoteSessionId}`,
+          `renderer attachment ready 超时，sessionId=${descriptor.remoteSessionId}`,
         );
         options.logger.warn("[window-host-remote] renderer attachment ready timeout", {
           sessionId: descriptor.remoteSessionId,
@@ -354,13 +358,13 @@ export function createRemoteWorkspaceSessionManager(options: {
     route.pendingRendererAttachment = undefined;
     const child = options.windowHostProcessMap.get(route.webContentsId);
     if (!child || child.pid == null) {
-      pending.reject(new Error(`Window Local Host exited, sessionId=${payload.sessionId}`));
+      pending.reject(new Error(`窗口 Local Host 已退出，sessionId=${payload.sessionId}`));
       return;
     }
     route.rendererAttachmentId = pending.attachmentId;
     if (pending.previousAttachmentId) {
-      // Host generation bind fails closed and invalidates A immediately; main must still wait for the renderer to register B
-      // before promoting the route and cleaning up. A reload re-attach has no generation change, so the old working port is not torn down early.
+      // Host generation bind 会 fail-closed 立即失效 A；Main 仍需等 renderer 注册 B
+      // 后再提升 route 并做幂等清理。reload 复挂没有 generation 换代，也因此不会提前拆掉可用旧 port。
       detachServicePort(child, pending.previousAttachmentId, "candidate-promoted");
     }
     options.logger.info(
@@ -424,7 +428,7 @@ export function createRemoteWorkspaceSessionManager(options: {
           requestId,
           sessionId: descriptor.remoteSessionId,
           level: "info",
-          message: `Remote ${descriptor.target.kind} workspace connected`,
+          message: `远程 ${descriptor.target.kind} workspace 已连接`,
         });
         pending.resolve(descriptor.remoteSessionId);
       })
@@ -435,6 +439,12 @@ export function createRemoteWorkspaceSessionManager(options: {
           type: HostMessageTypes.DisposeRemoteWorkspaceSession,
           requestId: randomUUID(),
           remoteSessionId: descriptor.remoteSessionId,
+        });
+        emitConnectionLog(pending.win, {
+          requestId,
+          sessionId: descriptor.remoteSessionId,
+          level: "error",
+          message: error instanceof Error ? error.message : String(error),
         });
         pending.reject(error instanceof Error ? error : new Error(String(error)));
       });
@@ -508,7 +518,7 @@ export function createRemoteWorkspaceSessionManager(options: {
     try {
       options.reportRemoteConnectionStateChanged?.({ ...common, transition: reason });
     } catch (error) {
-      // Telemetry is a side-channel of the connection lifecycle; a reporter error must not roll back route exit state.
+      // telemetry 是连接生命周期的旁路，不能因 reporter 异常回滚 route 退出状态。
       options.logger.warn("[remote-usage-arms] disconnect gauge reporter failed", { error });
     }
     try {
@@ -542,7 +552,7 @@ export function createRemoteWorkspaceSessionManager(options: {
       detachRouteAttachments(
         route,
         "session-released",
-        new Error(`Remote workspace disposed, sessionId=${event.remoteSessionId}`),
+        new Error(`远程 workspace 已释放，sessionId=${event.remoteSessionId}`),
       );
       return;
     }
@@ -550,15 +560,23 @@ export function createRemoteWorkspaceSessionManager(options: {
       route.attachmentState = "closed";
     });
     route.providerProvisioningDispose?.();
-    // A dropped connection only marks the route closed; exposed desktop attachments stay in the window Host.
-    // Once the sessionId regenerates, main deletes the route and the old ChannelServer permanently loses its reclamation entry.
+    // 连接断开只把 route 标成 closed，已暴露的 desktop attachment 仍留在窗口 Host；
+    // sessionId 换代后 Main 又会删除 route，导致旧 ChannelServer 永久失去回收入口。
     detachRouteAttachments(
       route,
       "session-connection-closed",
-      new Error(`Remote workspace closed, sessionId=${event.remoteSessionId}`),
+      new Error(`远程 workspace 已关闭，sessionId=${event.remoteSessionId}`),
     );
     const win = BrowserWindow.getAllWindows().find(
       (candidate) => candidate.webContents.id === webContentsId,
+    );
+    options.webRemoteControlManagerRef.current?.failRemoteSession(
+      event.remoteSessionId,
+      "window-host:connection-closed",
+      {
+        reason: "workspace-closed",
+        message: "远程工作区连接已结束，请在桌面端重新连接。",
+      },
     );
     if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
       win.webContents.send(PlatformChannels.RemoteSessionClosed, {
@@ -570,7 +588,7 @@ export function createRemoteWorkspaceSessionManager(options: {
       emitConnectionLog(win, {
         sessionId: event.remoteSessionId,
         level: "warn",
-        message: event.error || "Remote workspace connection dropped",
+        message: event.error || "远程 workspace 连接已断开",
       });
     }
   }
@@ -584,8 +602,8 @@ export function createRemoteWorkspaceSessionManager(options: {
       if (parsed.data.type === HostResponseTypes.RemoteWorkspaceConnectionLog) {
         const pending = pendingByRequestKey.get(requestKey(webContentsId, parsed.data.requestId));
         if (!pending) return;
-        // Multiple remote connections share the window Host; ownership can no longer be guessed from process label/stdout.
-        // The Host stamps the connection requestId; main thin-forwards only to the originating window.
+        // 多个远程连接共享 window Host，不能再从进程 label/stdout 猜日志归属；
+        // Host 已带上连接 requestId，Main 只向对应发起窗口做薄转发。
         emitConnectionLog(pending.win, {
           requestId: parsed.data.requestId,
           level: parsed.data.level,
@@ -608,15 +626,23 @@ export function createRemoteWorkspaceSessionManager(options: {
           durationMs: Math.max(0, monotonicNowMs() - pending.startedAtMonotonicMs),
         };
         if (parsed.data.status !== "applied" && parsed.data.status !== "already-applied") {
+          const errorCode =
+            parsed.data.errorCode ??
+            (parsed.data.status === "unsupported"
+              ? "capability-unavailable"
+              : "target-apply-failed");
+          // 首次失败以前在 warning 前返回，连接面板也只剩开始日志，无法区分本地与远端故障。
+          // 仅记录经过 schema 校验的阶段码；远端 error 自由文本仍不进入日志或反馈。
+          options.logger.warn("[provider-provisioning] Environment sync did not apply", {
+            ...logContext,
+            errorCode,
+          });
           if (pending.trigger === "environment-online") {
             pending.reject(
-              new Error(`Provider Provisioning initial sync failed (${parsed.data.status})`),
+              new Error(`Provider Provisioning 首次同步失败 (${parsed.data.status}; ${errorCode})`),
             );
             return;
           }
-          // Target errors come from arbitrary remote implementations and may carry request material; for now log only locatable status facts,
-          // never copy free text of unproven redaction, keeping the provisioning log from leaking credentials.
-          options.logger.warn("[provider-provisioning] Environment sync did not apply", logContext);
         } else {
           options.logger.info("[provider-provisioning] Environment sync completed", logContext);
         }
@@ -645,7 +671,7 @@ export function createRemoteWorkspaceSessionManager(options: {
       }
     });
     child.once("exit", () => {
-      const error = new Error("Window Local Host exited");
+      const error = new Error("窗口 Local Host 已退出");
       for (const [requestId, pendingExecution] of pendingProviderProvisioningExecutions) {
         if (pendingExecution.child !== child) continue;
         pendingProviderProvisioningExecutions.delete(requestId);
@@ -679,7 +705,7 @@ export function createRemoteWorkspaceSessionManager(options: {
     lifecycle?: { remoteUsageTelemetryEligible?: boolean },
   ): Promise<string> {
     if (appShutdownStarted) {
-      throw new Error("App is exiting; cannot create a remote workspace connection");
+      throw new Error("应用正在退出，无法创建远程工作区连接");
     }
     const child = getWindowHost(win);
     const resolvedTarget =
@@ -687,22 +713,22 @@ export function createRemoteWorkspaceSessionManager(options: {
         ? await options.resolveWslTarget(target)
         : target;
     if (appShutdownStarted) {
-      // WSL identity resolution awaits; the shutdown barrier may clear main's request map and start Host reclamation in between.
-      // Re-validate the lifecycle after the await; no late registrations once past the shutdown barrier.
-      throw new Error("App is exiting; cannot create a remote workspace connection");
+      // WSL identity 解析跨 await，期间退出屏障可能已清空 Main 请求关联并开始回收 Host。
+      // 恢复后必须重新验证生命周期，禁止在 shutdown barrier 之后注册迟到请求。
+      throw new Error("应用正在退出，无法创建远程工作区连接");
     }
     if (win.isDestroyed() || win.webContents.isDestroyed()) {
-      throw new Error("Window closed; cannot create a remote workspace connection");
+      throw new Error("窗口已关闭，无法创建远程工作区连接");
     }
     const resolvedRequestId = requestId ?? randomUUID();
     const key = requestKey(win.webContents.id, resolvedRequestId);
     if (pendingByRequestKey.has(key)) {
-      throw new Error(`Duplicate remote connection requestId, requestId=${resolvedRequestId}`);
+      throw new Error(`远程连接 requestId 重复，requestId=${resolvedRequestId}`);
     }
     emitConnectionLog(win, {
       requestId: resolvedRequestId,
       level: "info",
-      message: `Connecting to ${resolvedTarget.kind} workspace via the window Host`,
+      message: `正在通过窗口 Host 连接 ${resolvedTarget.kind} workspace`,
     });
     return new Promise<string>((resolve, reject) => {
       pendingByRequestKey.set(key, {
@@ -732,12 +758,12 @@ export function createRemoteWorkspaceSessionManager(options: {
     const route = routesBySessionId.get(sessionId);
     if (!route) {
       if (expectedWebContentsId != null) {
-        throw new Error(`Remote workspace session not found, sessionId=${sessionId}`);
+        throw new Error(`未找到远程 workspace session，sessionId=${sessionId}`);
       }
       return;
     }
     if (expectedWebContentsId != null && route.webContentsId !== expectedWebContentsId) {
-      throw new Error(`Remote workspace session belongs to another window, sessionId=${sessionId}`);
+      throw new Error(`远程 workspace session 不属于当前窗口，sessionId=${sessionId}`);
     }
     const workspaceIdentity =
       context.workspaceIdentity?.trim() ||
@@ -747,7 +773,7 @@ export function createRemoteWorkspaceSessionManager(options: {
       (candidate) => candidate.webContents.id === route.webContentsId,
     );
     if (!child || !win) {
-      throw new Error(`Owning window Host not found for remote workspace, sessionId=${sessionId}`);
+      throw new Error(`未找到远程 workspace 所属窗口 Host，sessionId=${sessionId}`);
     }
     child.postMessage({
       type: HostMessageTypes.BindRemoteWorkspaceContext,
@@ -762,7 +788,7 @@ export function createRemoteWorkspaceSessionManager(options: {
       workspaceIdentity,
       generation: route.descriptor.generation + 1,
     };
-    // Bind is handled before Attach on the same parentPort; the IPC returns only after the renderer registers the new port.
+    // 同一 parentPort 上 Bind 先于 Attach 处理；IPC 只在 renderer 注册新 port 后返回。
     await attachRendererPort(win, route, "workspace-context-bound");
   }
 
@@ -808,7 +834,7 @@ export function createRemoteWorkspaceSessionManager(options: {
       clearTimeout(pending.timeout);
       route.pendingRendererAttachment = undefined;
       if (child) detachServicePort(child, pending.attachmentId, "session-disposed");
-      pending.reject(new Error(`Remote workspace session disposed, sessionId=${sessionId}`));
+      pending.reject(new Error(`远程 workspace session 已释放，sessionId=${sessionId}`));
     }
     if (!child) return;
     if (route.rendererAttachmentId) {
@@ -833,13 +859,13 @@ export function createRemoteWorkspaceSessionManager(options: {
       route.providerProvisioningDispose?.();
       if (route.pendingRendererAttachment) {
         clearTimeout(route.pendingRendererAttachment.timeout);
-        route.pendingRendererAttachment.reject(new Error("Window closed; attachment cancelled"));
+        route.pendingRendererAttachment.reject(new Error("窗口已关闭，attachment 已取消"));
       }
     }
     for (const [key, pending] of Array.from(pendingByRequestKey)) {
       if (pending.webContentsId !== webContentsId) continue;
       pendingByRequestKey.delete(key);
-      pending.reject(new Error("Window closed; remote connection cancelled"));
+      pending.reject(new Error("窗口已关闭，远程连接已取消"));
     }
   }
 
@@ -897,20 +923,20 @@ export function createRemoteWorkspaceSessionManager(options: {
     const route = routesBySessionId.get(params.remoteSessionId);
     if (!route) {
       throw Object.assign(
-        new Error(`Remote workspace session not found, sessionId=${params.remoteSessionId}`),
+        new Error(`未找到远程 workspace session，sessionId=${params.remoteSessionId}`),
         {
           code: "REMOTE_SESSION_MISSING" as const,
         },
       );
     }
     if (route.attachmentState !== "attachable") {
-      throw Object.assign(new Error("Remote workspace source is currently offline"), {
+      throw Object.assign(new Error("远程 workspace source 当前离线"), {
         code: "REMOTE_SESSION_OFFLINE" as const,
       });
     }
     const win = BrowserWindow.fromId(params.windowId);
     if (!win || win.webContents.id !== route.webContentsId) {
-      throw Object.assign(new Error("Remote workspace session belongs to another window"), {
+      throw Object.assign(new Error("远程 workspace session 不属于当前窗口"), {
         code: "REMOTE_SESSION_WINDOW_MISMATCH" as const,
       });
     }
@@ -920,7 +946,7 @@ export function createRemoteWorkspaceSessionManager(options: {
       descriptor.workspaceIdentity !== params.workspaceIdentity ||
       params.workspaceKey !== params.workspaceIdentity
     ) {
-      throw Object.assign(new Error("Remote workspaceKey does not match the logical session."), {
+      throw Object.assign(new Error("远程 workspaceKey 与 logical session 不匹配。"), {
         code: "REMOTE_WORKSPACE_IDENTITY_MISMATCH" as const,
       });
     }
@@ -989,7 +1015,7 @@ export function createRemoteWorkspaceSessionManager(options: {
       );
     });
     if (!routeEntry) {
-      throw new Error("No remote logical session available for Bot attachment");
+      throw new Error("未找到可供 Bot attachment 的远程 logical session");
     }
     return attachRemoteWorkspaceSessionHost({
       windowId: win.id,
@@ -1015,7 +1041,7 @@ export function createRemoteWorkspaceSessionManager(options: {
     disposeRemoteWorkspaceSessionsForWindow,
     disposeAllAndWaitForAppShutdown: async (_reason: string) => {
       appShutdownStarted = true;
-      const error = new Error("App exiting; remote connection cancelled");
+      const error = new Error("应用正在退出，远程连接已取消");
       for (const pending of pendingByRequestKey.values()) pending.reject(error);
       pendingByRequestKey.clear();
       for (const [sessionId, route] of Array.from(routesBySessionId)) {
@@ -1031,7 +1057,7 @@ export function createRemoteWorkspaceSessionManager(options: {
     },
     cancelPendingRemoteWorkspaceSessionsForWindow,
     handleWorkspaceRunningTaskCountChanged: () => {
-      // Running-task facts live in the window Host registry/ControllerProjection; main no longer keeps a WSL pool.
+      // Running-task 事实现在由窗口 Host registry/ControllerProjection 持有；Main 不再维护 WSL pool。
     },
   };
 }

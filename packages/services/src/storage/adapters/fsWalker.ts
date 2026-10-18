@@ -8,7 +8,7 @@ import { join, relative, sep } from "node:path";
 import type { StorageScanEntry } from "../domain/usageAggregate.js";
 import type { StoragePathError } from "@zcode/shared";
 
-interface WalkStorageRootOptions {
+export interface WalkStorageRootOptions {
   rootPath: string;
   onEntry: (entry: StorageScanEntry) => void;
   onError?: (error: StoragePathError) => void;
@@ -19,14 +19,14 @@ interface WalkStorageRootOptions {
   yieldEvery?: number;
 }
 
-interface WalkStorageRootResult {
+export interface WalkStorageRootResult {
   directoriesScanned: number;
   filesScanned: number;
   /** true when the root itself is missing (empty root, not an error). */
   missingRoot: boolean;
 }
 
-function createStorageAbortError(): Error {
+export function createStorageAbortError(): Error {
   return new DOMException("storage scan aborted", "AbortError");
 }
 

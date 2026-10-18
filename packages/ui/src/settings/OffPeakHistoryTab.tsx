@@ -1,6 +1,6 @@
-/* Idle-task History tab:
-      one row per complete execution (3h-resume segments transparent to the user): Instructions / Triggered /
-      Status / Duration plus row menu Go to session / Delete; no records means No history yet. */
+/* 闲时任务 History tab（spec §5 / Figma 4866-2819 · 4866-3106 空态）：
+   一行汇总一次完整执行（3h 续跑分段对用户透明，D30-6）：Instructions / Triggered /
+   Status / Duration + 行菜单 Go to session / Delete；无执行记录 → 「No history yet.」 */
 import { isOffPeakTerminalStatus, type ZCodeOffPeakTask } from "@zcode/shared";
 import {
   DropdownMenu,
@@ -19,7 +19,7 @@ import {
   AutomationTrashIcon,
 } from "@/settings/AutomationDesignPrimitives.js";
 
-// Status renders as dot + colored text (scheduled history table density spec).
+// 状态用「圆点 + 彩色文字」呈现（Scheduled 历史表密度规格）。
 const STATUS_INDICATOR_CLASS = {
   succeeded: { dot: "bg-success", text: "text-success" },
   failed: { dot: "bg-destructive", text: "text-destructive" },
@@ -27,7 +27,7 @@ const STATUS_INDICATOR_CLASS = {
   running: { dot: "bg-brand", text: "text-brand" },
 } as const satisfies Record<string, { dot: string; text: string }>;
 
-function resolveOffPeakHistoryStatus(
+export function resolveOffPeakHistoryStatus(
   task: Pick<ZCodeOffPeakTask, "status">,
 ): keyof typeof STATUS_INDICATOR_CLASS {
   if (task.status === "completed") return "succeeded";
@@ -46,7 +46,7 @@ export function OffPeakHistoryTab({
   onDelete?: (task: ZCodeOffPeakTask) => void;
 }) {
   const { intl } = useZCodeIntl();
-  // A record exists once the first segment's dispatch started (startedAt set); pure queued/paused tasks have no history.
+  // 执行记录 = 首段派发起跑过（startedAt 存在）；纯排队/暂停中的任务无历史。
   if (!task?.startedAt || task.historyDeletedAt !== undefined) {
     return (
       <AutomationHistoryEmptyState>
@@ -55,11 +55,16 @@ export function OffPeakHistoryTab({
     );
   }
   const status = resolveOffPeakHistoryStatus(task);
-  const endAt = isOffPeakTerminalStatus(task.status) ? (task.endedAt ?? Date.now()) : Date.now();
-  const durationMin = Math.max(1, Math.round((endAt - task.startedAt) / 60_000));
+  const endAt = isOffPeakTerminalStatus(task.status)
+    ? (task.endedAt ?? Date.now())
+    : Date.now();
+  const durationMin = Math.max(
+    1,
+    Math.round((endAt - task.startedAt) / 60_000),
+  );
   return (
     <div className="overflow-x-auto rounded-[8px]">
-      {/* History table scales its type; relative line-heights keep large text inside the fixed 18px line box.*/}
+      {/* 修复原因：History 表格字号可缩放，使用相对行高避免大字号内容被固定 18px 行盒裁切。 */}
       <table className="w-full text-left text-ui-base font-normal leading-snug tracking-[-0.08px]">
         <thead className="bg-surface text-foreground-subtle">
           <tr className="h-[30px] border-b border-border">
@@ -80,7 +85,10 @@ export function OffPeakHistoryTab({
         </thead>
         <tbody>
           <tr className="h-[46px] transition-colors hover:bg-surface-hover">
-            <td className="max-w-64 truncate px-4 text-foreground-subtle" title={task.prompt}>
+            <td
+              className="max-w-64 truncate px-4 text-foreground-subtle"
+              title={task.prompt}
+            >
               {task.prompt}
             </td>
             <td className="whitespace-nowrap px-4 text-foreground-subtle">
@@ -120,10 +128,13 @@ export function OffPeakHistoryTab({
                       })}
                       className="flex size-6 items-center justify-center rounded-[6px] text-foreground-subtle transition-colors hover:bg-white/10 hover:text-foreground data-[state=open]:bg-white/10 data-[state=open]:text-foreground"
                     >
-                      <AutomationMoreHorizontalIcon className="size-4" aria-hidden="true" />
+                      <AutomationMoreHorizontalIcon
+                        className="size-4"
+                        aria-hidden="true"
+                      />
                     </button>
                   </DropdownMenuTrigger>
-                  {/* The old right-edge alignment with compact menu padding offset the layer inward by 17.5px. */}
+                  {/* 旧版按触发器右缘对齐且沿用紧凑菜单内距，导致浮层向表格内侧偏移并少 17.5px。 */}
                   <DropdownMenuContent
                     align="start"
                     alignOffset={-10}
@@ -137,7 +148,10 @@ export function OffPeakHistoryTab({
                         onSelect={() => onOpenSession(task)}
                       >
                         <span className="flex size-5 shrink-0 items-center justify-center">
-                          <AutomationExternalLinkIcon className="size-4" aria-hidden="true" />
+                          <AutomationExternalLinkIcon
+                            className="size-4"
+                            aria-hidden="true"
+                          />
                         </span>
                         {intl.formatMessage({ id: "offPeak.goToSession" })}
                       </DropdownMenuItem>

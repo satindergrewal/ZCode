@@ -1,9 +1,7 @@
-// The workflow run line under a sidebar task row's title:
-// Workflow glyph + mini track lights + current phase name — enough to see that this
-// session runs a workflow and where it stands. Nothing else: no halo, no marching dash,
-// no question chips (escalations are answered by the main agent), no agent counts, no
-// arrow — those live in the hover tooltip. A finished run is one neutral word; color is
-// reserved for the lights.
+// 侧栏任务行标题下的工作流运行行：
+// Workflow 图标 + 迷你轨道灯 + 当前 phase 名。一眼看懂「这个会话在跑工作流、跑到哪一站」，
+// 别的都不画：没有光晕、没有行进虚线、没有问题 chip（升级问答由主代理作答，不是用户）、
+// 没有子代理数、没有箭头——那些进 hover tooltip。结束的 run 只剩一个中性词，颜色只留给灯。
 import { useEffect, useMemo, type MouseEvent } from "react";
 import { Workflow } from "lucide-react";
 import type {
@@ -14,7 +12,6 @@ import { isSessionWorkflowRunLive } from "@zcode/shared/zcode-protocol-v4";
 import { cn } from "@/components/lib/utils.js";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import {
-  STATUS_DOT,
   readWorkflowRunStopReason,
   workflowRunStopReasonMessageId,
 } from "@/components/workflow-graph/run-status-presentation.js";
@@ -27,6 +24,7 @@ import {
   workflowRunParallelPhaseLabel,
   type WorkflowRunRail,
 } from "@/lib/workflowRunLine.js";
+import { WorkflowRunRail as RunRail } from "@/components/workflow-run-line/WorkflowRunRail.js";
 import { useWorkflowRunOpen } from "@/v4/workflowRunOpenContext.js";
 
 export interface TaskWorkflowRunLinesIntl {
@@ -35,96 +33,36 @@ export interface TaskWorkflowRunLinesIntl {
 
 interface TaskWorkflowRunLinesProps {
   activity: SessionWorkflowActivity | undefined;
-  /** Whether the session is being opened: when true, acknowledge its finished runs (their rows collapse at once). */
+  /** 会话是否正被打开：为真时确认它所有已结束的 run（结束的行随即折叠）。 */
   isActive: boolean;
   intl: TaskWorkflowRunLinesIntl;
-  /** Session address needed to open the run pane on click; without it (phone home) the row is not a button. */
+  /** 点击打开 run pane 所需的会话地址；缺席（手机首页）时运行行不是按钮。 */
   session?: { workspacePath: string; workspaceIdentity?: string; sessionId: string };
-  /** compact = the phone-remote row (24px, smaller type). */
+  /** compact = 手机远控行（24px、更小字号）。 */
   density?: "default" | "compact";
   className?: string;
 }
 
-const TRACE_FAINT = "var(--color-workflow-trace)";
-const TRACE_STRONG = "var(--color-workflow-trace-strong)";
 const SEPARATOR = " · ";
-
-function RunRail({ rail, intl }: { rail: WorkflowRunRail; intl: TaskWorkflowRunLinesIntl }) {
-  if (rail.implicit) {
-    return (
-      <span
-        data-workflow-run-rail="true"
-        data-implicit="true"
-        className="flex shrink-0 items-center"
-      >
-        <span aria-hidden="true" className={cn("size-1.5 rounded-full", STATUS_DOT.running)} />
-      </span>
-    );
-  }
-  return (
-    <span data-workflow-run-rail="true" className="flex shrink-0 items-center">
-      {rail.stations.map((station, index) => (
-        <span key={`${station.name}:${index}`} className="flex items-center">
-          {index > 0 ? (
-            station.twin === true ? (
-              // Twin segment: this station runs parallel to the previous one — control flow
-              // never traveled here. Two 1px lines 2px apart (4px container, one hugging each
-              // edge); width and ink rules match a plain segment exactly.
-              <span
-                aria-hidden="true"
-                data-rail-segment={station.reached ? "strong" : "faint"}
-                data-rail-twin="true"
-                className="flex h-1 w-1.5 flex-col justify-between"
-              >
-                <span
-                  className="h-px w-full"
-                  style={{ backgroundColor: station.reached ? TRACE_STRONG : TRACE_FAINT }}
-                />
-                <span
-                  className="h-px w-full"
-                  style={{ backgroundColor: station.reached ? TRACE_STRONG : TRACE_FAINT }}
-                />
-              </span>
-            ) : (
-              <span
-                aria-hidden="true"
-                data-rail-segment={station.reached ? "strong" : "faint"}
-                className="h-px w-1.5"
-                style={{ backgroundColor: station.reached ? TRACE_STRONG : TRACE_FAINT }}
-              />
-            )
-          ) : null}
-          <span
-            aria-hidden="true"
-            data-rail-station={station.status}
-            title={station.name}
-            className={cn("size-1.5 rounded-full", STATUS_DOT[station.status])}
-          />
-        </span>
-      ))}
-      {rail.hidden > 0 ? (
-        <span className="ml-1 text-ui-xs leading-none text-foreground-subtlest">
-          {intl.formatMessage(
-            { id: "taskList.workflowRun.moreStations" },
-            { count: String(rail.hidden) },
-          )}
-        </span>
-      ) : null}
-    </span>
-  );
-}
 
 function runStatusWord(run: SessionWorkflowRunSummary, intl: TaskWorkflowRunLinesIntl): string {
   return intl.formatMessage({ id: `chat.toolCall.workflow.run.status.${run.status}` });
 }
 
-/** The row's word: running -> current phase name (no phase vocabulary -> "Workflow"); finished -> neutral word (+ phase / reason). */
+/** 行上的词：在跑 → 当前 phase 名（无阶段词汇表 → 「Workflow」）；结束 → 中性词（+ phase / 原因）。 */
 function runLineText(
   run: SessionWorkflowRunSummary,
   rail: WorkflowRunRail,
   intl: TaskWorkflowRunLinesIntl,
 ): string {
   if (isSessionWorkflowRunLive(run.status)) {
+    // 停在留白上：「决定分组 · 等待补全」（docs/dynamic-workflow/presentation.md「Holes on the timeline」）。
+    if (run.waitingHole !== undefined) {
+      return intl.formatMessage(
+        { id: "taskList.workflowRun.holeWaiting" },
+        { name: run.waitingHole },
+      );
+    }
     if (rail.implicit) {
       return intl.formatMessage({ id: "chat.toolCall.workflow.graph.phase.workflow" });
     }
@@ -145,14 +83,13 @@ function runName(run: SessionWorkflowRunSummary, intl: TaskWorkflowRunLinesIntl)
   return run.name ?? intl.formatMessage({ id: "chat.toolCall.workflow.graph.phase.workflow" });
 }
 
-/** Tooltip's second line: `{phase} - {n agents working} - {elapsed}`; missing segments drop. */
+/** tooltip 第二行：`{phase} · {n agents working} · {elapsed}`，缺的段落省略。 */
 function runTooltipDescription(
   run: SessionWorkflowRunSummary,
   intl: TaskWorkflowRunLinesIntl,
 ): string | undefined {
   const parts: string[] = [];
-  // When parallel, no single station is current: the concurrently running ones are listed
-  // as peers, none more current than another.
+  // 并行时「当前阶段」不再是一个站：同时在跑的几站并排列出，谁都不比谁更当前。
   const parallel = workflowRunParallelPhaseLabel(run.phases);
   if (parallel !== undefined) parts.push(parallel);
   else if (run.currentPhase !== undefined) parts.push(run.currentPhase);
@@ -179,8 +116,7 @@ export function TaskWorkflowRunLines({
   const isAcknowledged = useWorkflowRunAcknowledged();
   const openRun = useWorkflowRunOpen();
   const settledKey = settledWorkflowRunIds(activity).join(" ");
-  // Opening a session acknowledges every run finished at that moment; while it stays open,
-  // runs finishing later are acknowledged too (collapsing before the reader's eyes).
+  // 打开会话 = 确认它此刻所有已结束的 run；会话保持打开时 run 结束也立即确认（在读者眼前折叠）。
   useEffect(() => {
     if (!isActive || settledKey.length === 0) return;
     getWorkflowRunAckStore().acknowledge(settledKey.split(" "));
@@ -232,8 +168,7 @@ export function TaskWorkflowRunLines({
               {...lineProps}
               aria-label={ariaLabel}
               onClick={(event: MouseEvent<HTMLButtonElement>) => {
-                // The row itself is also clickable (selects the session); the run line is the
-                // more specific target, so stop the click from bubbling into a plain select.
+                // 行本身也可点（选中会话）；运行行是更具体的落点，不让点击再冒泡成一次普通选中。
                 event.preventDefault();
                 event.stopPropagation();
                 openRun({

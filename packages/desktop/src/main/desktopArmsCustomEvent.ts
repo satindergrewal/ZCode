@@ -6,7 +6,7 @@ import type {
   FinalArmsCustomEventPayload,
 } from "@zcode/shared";
 
-const MAX_FINAL_ARMS_CUSTOM_EVENT_E2E_ENTRIES = 200;
+export const MAX_FINAL_ARMS_CUSTOM_EVENT_E2E_ENTRIES = 200;
 const MAX_SUPPRESSED_EVENT_NAMES = 100;
 const MAX_EVENT_NAME_LENGTH = 256;
 
@@ -38,23 +38,23 @@ function cloneFinalPayload(payload: FinalArmsCustomEventPayload): FinalArmsCusto
 
 function normalizeSuppressedEventNames(value: unknown): string[] {
   if (!Array.isArray(value) || value.length > MAX_SUPPRESSED_EVENT_NAMES) {
-    throw new Error("suppressedEventNames must be a string array of at most 100 items");
+    throw new Error("suppressedEventNames 必须是最多 100 项的字符串数组");
   }
   const names = value.map((item) => {
     if (typeof item !== "string") {
-      throw new Error("suppressedEventNames must contain only strings");
+      throw new Error("suppressedEventNames 只能包含字符串");
     }
     const normalized = item.trim();
     if (!normalized || normalized.length > MAX_EVENT_NAME_LENGTH) {
-      throw new Error("suppressedEventNames contains an empty or oversized event name");
+      throw new Error("suppressedEventNames 包含空值或超长 event name");
     }
     return normalized;
   });
   return [...new Set(names)];
 }
 
-/** Main-process memory ring; no disk writes, never the renderer store. */
-function createFinalArmsCustomEventE2EController(
+/** Main-process 内存 ring；不写磁盘，也不进入 renderer store。 */
+export function createFinalArmsCustomEventE2EController(
   options: {
     capacity?: number;
     now?: () => number;
@@ -106,10 +106,10 @@ function createFinalArmsCustomEventE2EController(
 }
 
 /**
- * Main-side shared E2E capture ring.
+ * main 侧共享的 E2E 捕获环。
  *
- * Renderer custom events via IPC and main's own resource/stability events must land in one ring,
- * else E2E sees only the renderer half. Enabled by desktopMainIpcRemote behind a double gate.
+ * renderer 经 IPC 来的自定义事件与 main 自己发出的资源 / 稳定性事件必须进同一个环，
+ * 否则 E2E 只能看到 renderer 那一半。由 `desktopMainIpcRemote` 在双门禁下开启。
  */
 let sharedFinalArmsCustomEventE2E: FinalArmsCustomEventE2EController | null = null;
 
@@ -161,7 +161,7 @@ export function buildFinalArmsCustomEventPayload(params: {
   };
 }
 
-/** Capture happens before the sendCustom call; network suppression skips only the target event name. */
+/** 捕获发生在 sendCustom 调用前，网络抑制只跳过目标 event name。 */
 export function dispatchFinalArmsCustomEvent(params: {
   payload: ArmsCustomEventPayload;
   context: Parameters<typeof buildFinalArmsCustomEventPayload>[0]["context"];

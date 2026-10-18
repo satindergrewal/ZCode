@@ -1,7 +1,7 @@
 import type { ZCodeTaskMeta } from "@zcode/shared";
 import { isTaskListRowActive } from "@/v4/taskListRowActivity.js";
 
-type TaskListTimeSortBy = "created" | "updated";
+export type TaskListTimeSortBy = "created" | "updated";
 
 interface TaskListSortableItem {
   taskId: string;
@@ -43,7 +43,7 @@ function compareTaskListItemsByTime(
  * workflow run): the latter's turn is closed but activity time still advances, and leaving them
  * out would reproduce the same row swapping.
  */
-function compareTaskListItemsWithRunningFirst<T extends TaskListSortableItem>(
+export function compareTaskListItemsWithRunningFirst<T extends TaskListSortableItem>(
   left: T,
   right: T,
   sortBy: TaskListTimeSortBy,

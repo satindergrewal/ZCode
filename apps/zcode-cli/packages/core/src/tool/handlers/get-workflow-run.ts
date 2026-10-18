@@ -1,21 +1,22 @@
 // ============================================================
 // GetWorkflowRun Tool Handler
 // ============================================================
-// Adaptive detail for one workflow run: running → progress summary + log tail; terminal → artifact / failure.
+// 单 workflow run 的自适应详情：running → 进度摘要 + log 尾巴；终态 → 产物 / 失败。
 //
-// The handler does four things the port cannot:
-//   1. Artifact serialization. The port hands over the raw return value; the model-facing text projection has one
-//      core implementation (`serializeWorkflowArtifact`, shared by completion notice and TaskOutput). A second,
-//      port-side copy would make the same artifact look different in notice and tool.
-//   2. Unknown-runId normalization. The port returns `undefined`; the model needs a structured failure.
-//   3. One clock read. `generatedAt` taken here once; every model-face how-long-ago computes against it —
-//      the formatter stays pure and two ages in one output stay comparable.
-//   4. Compose the summary. `summary` assembles deterministically from structured fields (get-workflow-run-summary.ts),
-//      no model in the loop.
+// handler 只做四件端口做不了的事：
+//   1. **产物序列化**。端口交出的是脚本返回值的**原值**；面向模型的文本投影在 core 有唯一
+//      实现（`serializeWorkflowArtifact`，完成通知与 TaskOutput 共用它）。在端口侧再做一次
+//      就会出现「同一个 run 的产物在通知里和在本工具里长得不一样」。
+//   2. **未知 runId 的归一**。端口回 `undefined`，模型要的是一个结构化失败。
+//   3. **读一次时钟**。`generatedAt` 在这里取一次，模型面所有「多久以前」都对它算——
+//      格式器因此是纯函数，一次输出里的两个年龄也永远可比。
+//   4. **拼摘要**。`summary` 由结构化字段确定性拼出（get-workflow-run-summary.ts），
+//      没有模型参与。
 //
-// Deliberately no wait/block semantics: waiting is TaskOutput work; this is an instant snapshot.
+// 刻意**不做** wait/block 语义：等待是 TaskOutput 的活，这里是即时快照。
 
 import {
+  GET_WORKFLOW_RUN_MAX_HOLES,
   GET_WORKFLOW_RUN_TOOL_NAME,
   GetWorkflowRunInputJsonSchema,
   GetWorkflowRunInputSchema,
@@ -25,8 +26,8 @@ import {
   type GetWorkflowRunOutput,
 } from "@zcode/contracts";
 import { serializeWorkflowArtifact } from "../executor/workflow-artifact.js";
-// ⚠ Two artifacts: the first serializes the script top-level return value (into `<result>`); the second describes
-// outputs the script published for the user via `artifact.*` (into `<artifacts>`). One word, two senses; both appear here.
+// ⚠ 两个 artifact：上面那个序列化的是脚本的**顶层返回值**（进 `<result>`），下面这个描述的是
+// 脚本经 `artifact.*` **发布给用户看的产出**（进 `<artifacts>`）。同一个词两个义，本文件两者都出现。
 import { WORKFLOW_ARTIFACTS_INTROSPECTION_MAX_LINES } from "../executor/workflow-published-artifacts.js";
 import type { ToolEntry, ToolHandler } from "../types.js";
 import { formatGetWorkflowRunModelContent } from "./get-workflow-run-format.js";
@@ -44,7 +45,7 @@ import {
 } from "./workflow-run-introspection.js";
 
 const GET_WORKFLOW_RUN_TIMEOUT_MS = 10_000;
-/** Per TaskOutput: artifacts are exactly payloads large enough to need one. */
+/** 照 TaskOutput：产物就是可能大到需要 artifact 的那类载荷。 */
 const GET_WORKFLOW_RUN_RESULT_BUDGET_BYTES = 400_000;
 const GET_WORKFLOW_RUN_PERSIST_THRESHOLD_CHARS = 100_000;
 
@@ -70,12 +71,12 @@ const getWorkflowRunHandler: ToolHandler = async (input, context) => {
   }
 
   const detail = await port.getRunDetail(parsed.run_id);
-  // An empty object would read existing-but-empty; unknown runId is a first-class failure.
+  // 空对象会让模型以为这个 run 存在但没内容；未知 runId 是一等失败。
   if (detail === undefined) return workflowRunNotFoundFailure(parsed.run_id);
 
-  // A `undefined` result → field absent (completion-notice rule). `null` is a legal result, serialized "null".
+  // `undefined` 产物 → 整字段缺席（与完成通知同规）。`null` 是合法产物，序列化成 "null"。
   const result = serializeWorkflowArtifact(detail.result);
-  // One call, one ruler: every how-long-ago uses this reading; two ages stay comparable.
+  // 一次调用一把尺：所有「多久以前」都对这一个读数算，两个年龄因此永远可比。
   const generatedAt = Date.now();
   const roster = toGetWorkflowRunSubagents(detail.subagents);
   const phases = toGetWorkflowRunPhases(detail.phases);
@@ -87,14 +88,16 @@ const getWorkflowRunHandler: ToolHandler = async (input, context) => {
     status: detail.status,
     ...(detail.stopReason === undefined ? {} : { stopReason: detail.stopReason }),
     ...(detail.resumedFrom === undefined ? {} : { resumedFrom: detail.resumedFrom }),
-    // The port gives this field only below the ceiling (at-ceiling runs state nothing), so forwarding as-is is
-    // already absent-means-absent.
+    // 端口只在不等于默认并发时给这个字段（跑在默认上的 run 没有可说的），所以这里原样转发就
+    // 已经是「无则缺席」。
     ...(detail.maxConcurrency === undefined ? {} : { maxConcurrency: detail.maxConcurrency }),
-    // Same absent-means-absent rule: a run on the session model states nothing. An AmendWorkflow omitting
-    // `subagent_model` inherits exactly this string; it must stay readable in the model face.
+    // 同规「无则缺席」：跑在会话模型上的 run 没有可说的。一次省略 `subagent_model` 的
+    // AmendWorkflow 沿用的就是这个字符串，所以它必须在模型面上可读。
     ...(detail.subagentModel === undefined ? {} : { subagentModel: detail.subagentModel }),
-    // Same rule: no script file, nothing to state. The port gives the absolute path (run identity);
-    // the model face, workspace-relative — the model will Edit it, and that is the form it uses elsewhere.
+    // 同规「无则缺席」：脚本没点名模型的 run 没有可说的。修订里同名的模型沿用的就是这些绑定。
+    ...(detail.modelBindings === undefined ? {} : { modelBindings: detail.modelBindings }),
+    // 同规「无则缺席」：没有脚本文件的 run 没有可说的。端口给的是绝对路径（run 身份的一部分），
+    // 模型面给工作区相对写法——它接下来要 Edit 这个文件，而那是它在别处用的那一种路径。
     ...(detail.scriptPath === undefined
       ? {}
       : { scriptPath: describeWorkflowScriptPath(detail.scriptPath, context.workingDirectory) }),
@@ -119,11 +122,11 @@ const getWorkflowRunHandler: ToolHandler = async (input, context) => {
     logTail: detail.logTail.map((entry) => ({
       sequence: entry.sequence,
       message: entry.message,
-      // Event persisted-time; absent in old journals without the column — those rows carry no age prefix.
+      // 事件的落库时刻；没有这一列的老 journal 上缺席，那样的行就不带年龄前缀。
       ...(entry.at === undefined ? {} : { at: entry.at }),
     })),
-    // The situation cross-section (phases / roster / health): the counts become a where-is-it, who-does-what,
-    // is-it-moving report. Field-by-field mapping in get-workflow-run-roster-output.ts.
+    // 情势截面（阶段 / 花名册 / 健康）：把上面那些计数变成一份「这个 run 在哪、谁在干什么、
+    // 它还在动吗」的报告。逐字段搬见 get-workflow-run-roster-output.ts。
     ...(phases === undefined ? {} : { phases }),
     subagents: roster.subagents,
     ...(roster.truncated ? { subagentsTruncated: true as const } : {}),
@@ -140,8 +143,8 @@ const getWorkflowRunHandler: ToolHandler = async (input, context) => {
               : { providerStop: detail.error.providerStop }),
           },
         }),
-    // Zero rows → field absent (the port never emits empty arrays; re-checked, not `?? []`): an empty
-    // pending section reads asked-and-answered; absence reads nobody-waiting.
+    // 零条时整字段缺席（端口本身就不发空数组，这里再确认一次而不是 `?? []`）：一个空的
+    // pending 区读起来像「问过、已答完」，而缺席读起来才是「没人在等」。
     ...(detail.pendingQuestions === undefined || detail.pendingQuestions.length === 0
       ? {}
       : {
@@ -154,9 +157,25 @@ const getWorkflowRunHandler: ToolHandler = async (input, context) => {
             askedAt: pending.askedAt,
           })),
         }),
-    // User-facing artifacts; none present → field absent. The cap 32 equals
-    // `ARTIFACT_CAPS.maxArtifactsPerRun` — the port gives no more; this pins the bound in
-    // the model face. `bytes` hangs on version entries only; take the latest (the list describes the latest).
+    // 留白（docs/dynamic-workflow/launch.md「The `FillWorkflowHole` tool」）：与 pendingQuestions 同规，
+    // 零条时整字段缺席；上界 32 与 display 契约的留白上界同值。
+    ...(detail.holes === undefined || detail.holes.length === 0
+      ? {}
+      : {
+          holes: detail.holes.slice(0, GET_WORKFLOW_RUN_MAX_HOLES).map((hole) => ({
+            siteId: hole.siteId,
+            ordinal: hole.ordinal,
+            name: hole.name,
+            type: hole.type,
+            state: hole.state,
+            ...(hole.since === undefined ? {} : { since: hole.since }),
+            ...(hole.filledAt === undefined ? {} : { filledAt: hole.filledAt }),
+            ...(hole.filledBy === undefined ? {} : { filledBy: hole.filledBy }),
+          })),
+        }),
+    // 用户面产物。零件时整字段缺席；上界 32 与
+    // `ARTIFACT_CAPS.maxArtifactsPerRun` 同值——端口本身也不会给出更多，这里只是把界写死在
+    // 模型面上。`bytes` 在端口上只挂在版本项里，取最新版那一条（清单描述的就是最新版）。
     ...(detail.artifacts === undefined || detail.artifacts.length === 0
       ? {}
       : {
@@ -183,7 +202,7 @@ const getWorkflowRunHandler: ToolHandler = async (input, context) => {
         }),
   } satisfies Omit<GetWorkflowRunOutput, "summary">;
 
-  // The summary composes last: it reads exactly the fields above — facts, then the sentence.
+  // 摘要最后拼：它读的就是上面这些字段，所以先有事实，再有那一句话。
   return { ...base, summary: buildWorkflowRunSummary(base) } satisfies GetWorkflowRunOutput;
 };
 
@@ -214,7 +233,7 @@ export const getWorkflowRunToolEntry: ToolEntry = {
     riskLevel: "low",
     sideEffectScope: "none",
     needsApproval: false,
-    // run_id into the pattern-match face (as TaskOutput task_id) so project rules can address a run.
+    // run_id 进入模式匹配面（照 TaskOutput 的 task_id），好让项目规则能约束到具体 run。
     patternSources: ["toolName", "input"],
     alwaysAllowPatternSources: ["toolName"],
     denyPriority: "beforeAsk",

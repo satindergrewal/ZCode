@@ -33,7 +33,10 @@ const MAX_REMEMBERED_EVENT_IDS = 2_048;
  * When the main sessionId is unavailable, let events through: better a little extra rendering than a blank transcript
  * over one missing id.
  */
-function isMainSessionEvent(event: SessionEvent, mainSessionId: string | undefined): boolean {
+export function isMainSessionEvent(
+  event: SessionEvent,
+  mainSessionId: string | undefined,
+): boolean {
   // Tool mirrors deliberately carry the parent's sessionId. They are activity
   // metadata, not parent transcript/tool/usage facts.
   if (isSubagentToolMirror(event)) return false;
@@ -61,7 +64,7 @@ type SessionEventApplierInput = SessionEventHandlers & {
  * The gate runs before dedup: foreign events must not occupy dedup-window slots (the window is bounded; evicting
  * entries for actor events would let main-session duplicates through).
  */
-function applyMainSessionEvent(
+export function applyMainSessionEvent(
   event: SessionEvent,
   applied: Set<string>,
   input: SessionEventApplierInput,
@@ -89,7 +92,7 @@ export function useSessionEventApplier(
 }
 
 /** A stable subscription survives renders; both event sources share the applier. */
-function useSessionEventSubscription(
+export function useSessionEventSubscription(
   subscribe: ((sink: (event: SessionEvent) => void) => () => void) | undefined,
   applyEvent: (event: SessionEvent) => void,
 ): void {
@@ -103,7 +106,7 @@ function useSessionEventSubscription(
  *
  * Events without an id always pass: better a duplicate render than silently dropping an event over a missing key.
  */
-function rememberSessionEvent(applied: Set<string>, event: SessionEvent): boolean {
+export function rememberSessionEvent(applied: Set<string>, event: SessionEvent): boolean {
   const eventId = typeof event.id === "string" && event.id.length > 0 ? event.id : undefined;
   if (eventId === undefined) return true;
   if (applied.has(eventId)) return false;

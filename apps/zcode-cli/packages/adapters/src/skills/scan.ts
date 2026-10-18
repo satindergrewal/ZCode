@@ -27,7 +27,7 @@ import { lstat, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { SKILL_FILE_NAME, shouldWalkSkillDirectoryEntry } from "@zcode/shared";
 
-interface ScanSkillFilesOptions {
+export interface ScanSkillFilesOptions {
   /**
    * Whether to follow symlinks (dir and file level); default true (user-level skill roots support
    * symlink imports). Plugin-scope scans must pass false: links may point outside the plugin root, and

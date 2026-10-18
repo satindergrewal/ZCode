@@ -6,7 +6,6 @@ import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { resolveSpawnRuntimeOptions } from "../../../../../scripts/spawn-command.mjs";
 import { resolveDownloadedNodeBinary } from "./sea-node-download.mjs";
-import { stageNodeNotices } from "../../../../../scripts/third-party-notices.mjs";
 import {
   adHocCodesignArgs,
   hostTarget,
@@ -71,8 +70,8 @@ export const resolvePostjectBin = ({
   const executable = platform === "win32" ? "postject.cmd" : "postject";
   let directory = startDirectory;
 
-  // Hoisted pnpm layouts put postject in the repo-root node_modules, not the CLI subpackage.
-  // Walk upwards from the CLI package dir so the SEA build does not depend on one install layout.
+  // pnpm hoisted 布局会把 postject 放到仓库根 node_modules，而不是 CLI 子包下。
+  // 从 CLI 包目录逐级向上找，避免 SEA 构建依赖某一种安装布局。
   while (true) {
     const candidate = resolve(directory, "node_modules", ".bin", executable);
     if (existsSync(candidate)) return candidate;
@@ -138,7 +137,7 @@ const resolveNodeBinary = async ({ nodeBinaries, nodeVersion, target }) => {
   });
 };
 
-const prepareSeaBlob = async (target, nodeVersion) => {
+const prepareSeaBlob = async (target) => {
   const seaBlob = seaBlobForTarget(target);
   const seaConfig = seaConfigForTarget(target);
   await prepareSeaRuntimeToolAssets({
@@ -173,11 +172,6 @@ const prepareSeaBlob = async (target, nodeVersion) => {
       target,
     });
   const providerConfigAssets = await collectSeaProviderConfigAssets({ root: repositoryRoot });
-  const nodeLicensePath = await stageNodeNotices(
-    seaAssetStagingForTarget(`${target}-node`),
-    nodeVersion,
-    repositoryRoot,
-  );
 
   await writeFile(
     seaConfig,
@@ -190,7 +184,6 @@ const prepareSeaBlob = async (target, nodeVersion) => {
           ...runtimeToolAssets,
           ...playwrightAssets,
           ...providerConfigAssets,
-          "zcode-node-license": nodeLicensePath,
         },
         disableExperimentalSEAWarning: true,
         main: "dist/zcode.cjs",
@@ -267,7 +260,7 @@ const smokeTestHostTarget = async (target, binaryPath) => {
 
 const buildTarget = async ({ nodeBinaries, nodeVersion, postjectBin, target }) => {
   const binaryPath = resolve(dist, outputBinaryName(target));
-  const seaBlob = await prepareSeaBlob(target, nodeVersion);
+  const seaBlob = await prepareSeaBlob(target);
   const targetNodeBinary = await resolveNodeBinary({
     nodeBinaries,
     nodeVersion,
@@ -277,9 +270,6 @@ const buildTarget = async ({ nodeBinaries, nodeVersion, postjectBin, target }) =
   console.log(`[sea] building ${target} -> ${binaryPath}`);
   await copyFile(targetNodeBinary, binaryPath);
   await chmod(binaryPath, 0o755);
-  // Same notices are embedded in --licenses and staged under dist, so single-file uploads still carry the full set.
-
-  await stageNodeNotices(dist, nodeVersion, repositoryRoot);
 
   const sentinelFuse = await findSeaFuse(binaryPath);
   if (!sentinelFuse.startsWith(sentinelFusePrefix)) {

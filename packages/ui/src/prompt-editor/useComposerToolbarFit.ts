@@ -1,13 +1,12 @@
 import { useLayoutEffect, useRef } from "react";
 
-/** Owns only the DOM layout projection; permission/Plan/CUA business state stays in the original hooks. */
-function fitComposerToolbar(root: HTMLElement) {
+/** 仅拥有 DOM 布局投影；权限、Plan 和 CUA 业务状态仍由原有 hooks 管理。 */
+export function fitComposerToolbar(root: HTMLElement) {
   const available = root.querySelector<HTMLElement>("[data-composer-leading-actions]");
   const content = root.querySelector<HTMLElement>("[data-composer-leading-content]");
   if (!available || !content) return;
   const controls = root.querySelectorAll<HTMLElement>("[data-composer-collapse-priority]");
-  // Measure from the full layout each time: independent per-button observers fight for space, and
-  // this also covers locale and async-entry changes.
+  // 每次从完整布局测量，避免各按钮独立 observer 互相抢空间，也覆盖语言与异步入口变化。
   delete root.dataset.composerModelIcon;
   delete root.dataset.composerProviderCompact;
   for (const control of controls) delete control.dataset.composerCompact;
@@ -24,7 +23,7 @@ function fitComposerToolbar(root: HTMLElement) {
             root.getBoundingClientRect().width
         : 0,
     );
-  // The first four steps collapse Computer, mode, Plan, then think text; never merge verdicts.
+  // 前四档依次收起 Computer、mode、Plan、think 文字，不能合并裁决。
   for (const priority of ["0", "1", "2", "3"]) {
     if (overflow() <= 0) return;
     for (const control of controls) {
@@ -40,7 +39,7 @@ function fitComposerToolbar(root: HTMLElement) {
   if (overflow() <= 0) return;
   const thought = root.querySelector<HTMLElement>("[data-composer-thought-control]");
   if (thought) thought.dataset.composerCompact = "icon";
-  // Re-measure after dropping think's accent bar; if only that width is missing, keep the full model name.
+  // think 去掉绿条后重新测量；只差这点宽度时应保留完整模型名。
   if (overflow() <= 0) return;
   root.dataset.composerModelIcon = "true";
 }
@@ -52,7 +51,7 @@ export function useComposerToolbarFit() {
     if (!root) return;
     const update = () => {
       if (!root.parentElement || root.getBoundingClientRect().width <= 0) return;
-      // Try expansions on a hidden clone so real buttons never shuffle, lose hover, or close tooltips.
+      // 在不可见副本上尝试展开，避免真实按钮测量时来回移动、丢失 hover 或关闭 Tooltip。
       const probe = root.cloneNode(true) as HTMLElement;
       probe.setAttribute("aria-hidden", "true");
       probe.inert = true;
@@ -92,7 +91,7 @@ export function useComposerToolbarFit() {
         resize?.observe(element);
       update();
     };
-    // Do not observe layout attributes themselves or writing data-composer-compact recurses.
+    // 不观察布局属性自身，防止写 data-composer-compact 引起递归测量。
     const mutations = new MutationObserver(observe);
     mutations.observe(root, { childList: true, subtree: true, characterData: true });
     observe();

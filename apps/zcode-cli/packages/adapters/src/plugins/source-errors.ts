@@ -1,6 +1,6 @@
 import type { PluginDiagnosticCode } from "@zcode/contracts";
 
-class PluginSourceMaterializationError extends Error {
+export class PluginSourceMaterializationError extends Error {
   readonly diagnosticCode: PluginDiagnosticCode;
 
   constructor(diagnosticCode: PluginDiagnosticCode, message: string, options?: ErrorOptions) {
@@ -34,7 +34,7 @@ export function createArchiveFetchError(source: string, cause: unknown): Error {
  * Source materialization errors now persist and project to desktop/web; URL
  * userinfo must never reach state files, logs or screenshots. Redact once at the diagnostic boundary; all consumers share the rule.
  */
-function redactPluginSource(source: string): string {
+export function redactPluginSource(source: string): string {
   const trimmed = source.trim();
   try {
     const url = new URL(trimmed);
@@ -49,7 +49,9 @@ function redactPluginSource(source: string): string {
 
 function redactPluginDiagnosticText(text: string): string {
   return text
-    .replace(/\b[a-z][a-z\d+.-]*:\/\/[^\s"'<>()[\]{}]+/giu, (source) => redactPluginSource(source))
+    .replace(/\b[a-z][a-z\d+.-]*:\/\/[^\s"'<>()[\]{}]+/giu, (source) =>
+      redactPluginSource(source),
+    )
     .replace(/\b[^\s:@]+:[^\s@]+@[^\s]+/gu, "configured Git source");
 }
 

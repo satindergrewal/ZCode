@@ -1,10 +1,8 @@
 /**
- * Shortcut conflict policy — reserved-key blacklist, physical-equivalence normalization, occupancy
- * checks, and confirmed steal-binding.
+ * 快捷键冲突策略——保留键黑名单、物理等价归一、占用检测与二次确认抢绑。
  *
- * Split from bindings.ts (kernel vs conflict-policy layering; bindings.ts has a max-lines gate):
- * matching/recording/effective keymap stay in bindings.ts; this module only answers "may this
- * binding land".
+ * 从 bindings.ts 拆出（内核 vs 冲突策略分层，且 bindings.ts 有 max-lines 门禁）：
+ * 键位匹配/录制/生效表仍在 bindings.ts，本模块只回答"这个绑定能不能落"。
  */
 import { parseShortcutBinding, SHORTCUT_COMMANDS, type ShortcutCommandId } from "@zcode/shared";
 
@@ -15,56 +13,52 @@ import {
 import { resolveEffectiveShortcutBindings } from "./bindings.js";
 
 /**
- * Reserved-key blacklist: browser/editor native behaviors, refresh and devtools, the whole
- * function-key row, and component-fixed single keys. Comparison happens after normalization
- * (canonical keys, see checkShortcutBindingConflict); command-table defaults must not intersect it
- * (unit-tested, global scope only).
- * Note: of Escape/Enter/Tab/Space/Backspace, Enter is in the key-name whitelist (composer scope
- * needs it) and explicitly listed here to block the global scope; Escape/Tab/Space/Backspace are
- * not in the key-name whitelist.
+ * 保留键黑名单：浏览器/编辑原生行为、刷新与开发工具、功能键整段、
+ * 组件固定交互单键。比较发生在规范化之后（canonical 键，见 checkShortcutBindingConflict）；
+ * 命令表默认绑定不得与之相交（单测断言，仅限 global 作用域）。
+ * 注：Escape/Enter/Tab/Space/Backspace 中 Enter 已入键名白名单（composer 作用域需要），
+ * 显式列在黑名单里挡住 global 作用域；Escape/Tab/Space/Backspace 仍不在键名白名单内。
  */
-const RESERVED_BINDINGS: ReadonlySet<string> = new Set([
-  // Editing-class native behaviors (primary-modifier combos)
+export const RESERVED_BINDINGS: ReadonlySet<string> = new Set([
+  // 编辑类原生行为（主修饰键组合）
   ...["c", "v", "x", "z", "a", "y", "s", "p", "l"].map((key) => `CmdOrCtrl+${key}`),
   "CmdOrCtrl+Shift+z",
-  // Refresh and devtools
+  // 刷新与开发工具
   "CmdOrCtrl+r",
   "CmdOrCtrl+Shift+r",
   "CmdOrCtrl+Shift+i",
   "CmdOrCtrl+Shift+j",
   "CmdOrCtrl+Shift+c",
-  // The whole function-key row (any F1-F12 combo with modifiers)
+  // 功能键整段（F1-F12 的任何含修饰组合）
   ...Array.from({ length: 12 }, (_, index) => `F${index + 1}`),
   ...Array.from({ length: 12 }, (_, index) => `CmdOrCtrl+F${index + 1}`),
   ...Array.from({ length: 12 }, (_, index) => `CmdOrCtrl+Shift+F${index + 1}`),
-  // Bare arrow keys (component-fixed interactions)
+  // 方向键单键（组件固定交互）
   "ArrowUp",
   "ArrowDown",
   "ArrowLeft",
   "ArrowRight",
-  // Enter: after the key-name whitelist opened, the global scope must block it explicitly
-  // (globalizing the dialog-confirm key would break every confirmation); composer is exempt.
+  // Enter：键名白名单放开后 global 作用域必须显式挡住
+  // （对话框确认键全局化会毁掉所有确认交互）；composer 作用域不受此限。
   "Enter",
 ]);
 
 /**
- * macOS system menu role:"minimize" fixed accelerator Cmd+M:
- * the system menu consumes keys before the renderer, so binding it is a dead binding; no scope
- * may occupy/steal it. mac only — on win/linux CmdOrCtrl+m is physically Ctrl+M (openModelMenu's
- * default) and goes through occupancy checks instead. After the toolbar three-key promotion this
- * is the only mac defense for CmdOrCtrl+m.
+ * macOS 系统菜单 role:"minimize" 的固定 accelerator ⌘M（新 场景 B）：
+ * 系统菜单先于 renderer 吃键，绑上去就是死绑定，不可被任何作用域命令占用/抢绑。
+ * 仅 mac 生效——win/linux 上 CmdOrCtrl+m 物理等价于 Ctrl+M（openModelMenu 默认键），
+ * 走占用检测而不是保留拦截。工具条三键转正后本条是 CmdOrCtrl+m 唯一的 mac 防线。
  */
 const MACOS_MENU_RESERVED_BINDINGS: ReadonlySet<string> = new Set(["CmdOrCtrl+m"]);
 
 /**
- * Physical-equivalence normalization for conflict detection: matching already treats platform-
- * equivalent combos as one physical key (win/linux CmdOrCtrl = explicit Ctrl, AltGr folding into
- * Alt); string-exact conflict checks would let the recorder's platform-normalized output (e.g.
- * "CmdOrCtrl+m" recorded on win) bypass occupancy checks against explicit-Ctrl defaults (toolbar
- * "Ctrl+m" etc.), silently shadowing without a prompt. Normalize per the kernel modifiersMatch
- * semantics into a stable comparison key:
- * - non-apple: primary = cmdOrCtrl | ctrl | altGr (one physical primary), alt = alt | altGr
- * - apple: primary = cmdOrCtrl (meta), secondaryCtrl = ctrl (distinct key), alt = alt | altGr
+ * 冲突检测专用的物理等价归一（新）：匹配侧把平台等价组合视为同一物理键
+ * （win/linux 的 CmdOrCtrl ≡ 显式 Ctrl，AltGr 叠加 Alt 位），冲突检测若只做字符串
+ * 精确比较，录制器的平台归一产物（如 win 上录 ⌃M 产出 "CmdOrCtrl+m"）会绕过对
+ * 显式 Ctrl 默认绑定（工具条三键 "Ctrl+m" 等）的占用检测，造成无提示静默遮蔽。
+ * 归一按内核 modifiersMatch 的语义折算成稳定比较键：
+ * - 非 apple：primary = cmdOrCtrl | ctrl | altGr（同一物理主修饰），alt = alt | altGr
+ * - apple：primary = cmdOrCtrl（meta），secondaryCtrl = ctrl（独立物理键），alt = alt | altGr
  */
 function canonicalBindingKey(binding: string, isApple: boolean): string | null {
   const parsed = parseShortcutBinding(binding);
@@ -72,8 +66,8 @@ function canonicalBindingKey(binding: string, isApple: boolean): string | null {
     return null;
   }
   if (isApple) {
-    // On apple, modifiersMatch's wantPrimaryOrCtrl also counts altGr as primary
-    // (AltGr+m = Cmd+Alt+m = CmdOrCtrl+Alt+m); the canonical primary slot must fold it too.
+    // apple 上 modifiersMatch 的 wantPrimaryOrCtrl 同样把 altGr 算作主修饰
+    // （AltGr+m ≡ ⌘⌥M ≡ CmdOrCtrl+Alt+m），canonical 主修饰位必须一并折算。
     return `${parsed.cmdOrCtrl || parsed.altGr ? 1 : 0}${parsed.ctrl ? 1 : 0}${
       parsed.alt || parsed.altGr ? 1 : 0
     }${parsed.shift ? 1 : 0}:${parsed.key}`;
@@ -84,10 +78,9 @@ function canonicalBindingKey(binding: string, isApple: boolean): string | null {
 }
 
 /**
- * Do two binding strings denote the same physical combo (equal canonical keys)? The conflict
- * normalization, reused for search: settings' "search by combo" matches a win-recorded CmdOrCtrl+m
- * against explicit Ctrl+m as the same entry. Unparseable strings are unequal (same null
- * short-circuit as conflict detection).
+ * 两个绑定串是否为同一物理组合（canonical 键相等）：冲突检测的归一口径对搜索复用，
+ * 设置页「按组合键搜索」用它把 win 上录出的 CmdOrCtrl+m 与显式 Ctrl+m 命中为同一条。
+ * 任一串解析失败即不等（与冲突检测的 null 短路语义一致）。
  */
 export function isSamePhysicalBinding(
   a: string,
@@ -100,7 +93,7 @@ export function isSamePhysicalBinding(
   return keyA !== null && keyA === keyB;
 }
 
-/** Canonical comparison keys of the reserved blacklist (built lazily per platform; canonicalization also catches hand-edited setting.json variants). */
+/** 保留键黑名单的 canonical 比较键（按平台惰性构建；canonical 化让手改 setting.json 的等价变体同样被拦）。 */
 let reservedCanonicalKeysCache: {
   apple: ReadonlySet<string>;
   nonApple: ReadonlySet<string>;
@@ -127,21 +120,20 @@ function getReservedCanonicalKeys(): {
   return reservedCanonicalKeysCache;
 }
 
-interface ShortcutBindingConflict {
+export interface ShortcutBindingConflict {
   kind: "reserved" | "occupied";
-  /** Occupying command when occupied. */
+  /** occupied 时的占用命令。 */
   ownerCommandId?: ShortcutCommandId;
   binding: string;
 }
 
 /**
- * Conflict check (reject + highlight policy): would binding newBinding to commandId be rejected?
- * null means bindable. The command's own existing bindings never conflict (override = whole-group
- * replace). Scope isolation: occupancy compares only same-scope commands (composer's
- * CmdOrCtrl+Enter coexisting with global commands is fine); the reserved blacklist blocks only
- * global rebinds.
- * Physical-equivalence normalization: blacklist and occupancy comparisons run on canonical keys so
- * platform-equivalent combos (win/linux CmdOrCtrl = Ctrl) never escape.
+ * 冲突检测（拒绝 + 标红策略）：把 newBinding 绑定到 commandId 是否会被拒绝。
+ * 返回 null 表示可绑定。commandId 自身的现有绑定不构成冲突（覆盖语义为整组替换）。
+ * 作用域隔离：占用只与**同作用域**命令比对（composer 的 CmdOrCtrl+Enter
+ * 与全局命令并存不算冲突）；保留黑名单只拦截 global 作用域的重绑。
+ * 物理等价归一（新）：黑名单与占用比对都在 canonical 键上进行，平台等价
+ * 组合（win/linux 的 CmdOrCtrl ≡ Ctrl）不会漏检。
  */
 export function checkShortcutBindingConflict(
   commandId: ShortcutCommandId,
@@ -149,7 +141,7 @@ export function checkShortcutBindingConflict(
   overrides?: Record<string, readonly string[]>,
   options?: {
     menuChannelReserved?: boolean;
-    /** Defaults to the runtime navigator (tests pass it explicitly to pin platform semantics). */
+    /** 缺省读运行时 navigator（单测显式传入以固定平台语义）。 */
     platformInfo?: KeyboardShortcutPlatformInfo;
   },
 ): ShortcutBindingConflict | null {
@@ -157,8 +149,8 @@ export function checkShortcutBindingConflict(
   const commandScope = commandEntry?.scope ?? "global";
   const isApple = isAppleKeyboardPlatform(options?.platformInfo);
   const newKey = canonicalBindingKey(newBinding, isApple);
-  // The macOS Cmd+M minimize defense is scope-independent: the system menu eats the key before
-  // any renderer dispatch; binding it to a composer command is equally dead.
+  // macOS ⌘M minimize 防线与作用域无关：系统菜单先于任何 renderer 分发吃键，
+  // 绑到 composer 命令同样是死绑定。
   if (isApple && MACOS_MENU_RESERVED_BINDINGS.has(newBinding)) {
     return { kind: "reserved", binding: newBinding };
   }
@@ -172,16 +164,16 @@ export function checkShortcutBindingConflict(
     if (entry.id === commandId) {
       continue;
     }
-    // Scope isolation: the same key in another scope is not a conflict.
+    // 作用域隔离：跨作用域同键不算冲突
     if ((entry.scope ?? "global") !== commandScope) {
       continue;
     }
     for (const binding of effective[entry.id] ?? []) {
       const candidateKey = canonicalBindingKey(binding, isApple);
       if (newKey !== null && candidateKey === newKey) {
-        // Web menu-channel commands are not configurable, but their default keys are still
-        // consumed by the root fallback listener (useRootPlatformEffects always handles
-        // Cmd/Ctrl+N,O) — reject as reserved, no steal entry, or both actions fire on one key.
+        // Web 端 menu 通道命令不可配置，但其默认键仍被根级回退监听
+        // （useRootPlatformEffects 固定响应 Cmd/Ctrl+N、O）消费——按保留键拒绝，
+        // 不提供抢绑入口，否则抢绑后同键双动作。
         if (options?.menuChannelReserved && entry.channel === "menu") {
           return { kind: "reserved", binding: newBinding };
         }
@@ -193,16 +185,13 @@ export function checkShortcutBindingConflict(
 }
 
 /**
- * Steal-binding after confirmation (an in-app command's occupancy may be rebound with consent):
- * bind newBinding to commandId with line-level semantics and remove it from the effective keymap
- * of every other command currently holding it — the stolen command's overrides become its
- * effective bindings minus newBinding, possibly an explicit empty array (= unset, no default
- * fallback). Physical-equivalence normalization: platform-equivalent entries (win Ctrl+m and
- * CmdOrCtrl+m) are cleared together.
- * Line-level semantics: stealing only changes conflict handling, never the user's chosen line
- * action — options.mode/bindingIndex mirrors the recording state: replace + index replaces that
- * entry (others kept); add or null index (unassigned records first) appends; absent (legacy
- * callers) replaces the whole group with the single key.
+ * 二次确认后的「抢绑」（app 内命令占用经确认允许改绑）：
+ * 把 newBinding 按行级语义绑到 commandId，并从当前占用该绑定的其他命令生效表里移除它——
+ * 被抢命令写入 overrides = 其生效绑定减去 newBinding，可能为显式空数组（= 未设置，不回退默认）。
+ * 物理等价归一（新）：平台等价条目（如 win 的 Ctrl+m 与 CmdOrCtrl+m）一并清除。
+ * 行级语义：抢绑只改变「冲突处理方式」，不改变用户原本选择的行级操作——
+ * options.mode/bindingIndex 与录制态一致：replace + 下标 → 替换该条（其余绑定保留）；
+ * add 或 bindingIndex 为 null（未分配录第一条）→ 追加；缺省（旧调用方）→ 整组替换为单键。
  */
 export function buildShortcutOverridesAfterSteal(
   overrides: Record<string, readonly string[]> | undefined,
@@ -210,9 +199,9 @@ export function buildShortcutOverridesAfterSteal(
   newBinding: string,
   options?: {
     platformInfo?: KeyboardShortcutPlatformInfo;
-    /** Recording mode (from settings RecordingState): replace = per-line, add = append; absent = whole-group replace. */
+    /** 录制模式（来自设置页 RecordingState）：replace = 行级替换，add = 追加；缺省 = 整组替换。 */
     mode?: "replace" | "add";
-    /** Target index for replace mode. */
+    /** replace 模式的目标下标。 */
     bindingIndex?: number | null;
   },
 ): Record<string, string[]> {
@@ -240,7 +229,7 @@ export function buildShortcutOverridesAfterSteal(
     if (entry.id === commandId) {
       continue;
     }
-    // Scope isolation: stealing clears occupancy of same-scope commands only.
+    // 作用域隔离：抢绑只清除同作用域命令的占用
     if ((entry.scope ?? "global") !== commandScope) {
       continue;
     }
@@ -256,11 +245,10 @@ export function buildShortcutOverridesAfterSteal(
 }
 
 /**
- * "Add binding" (a command may hold several; displayed A / B): append newBinding after the
- * command's current effective bindings (defaults included). Override semantics are whole-group
- * replace, so appending must write the full defaults+overrides list into overrides or uncovered
- * defaults are lost. Physical-equivalent duplicates within one command are rejected earlier by the
- * caller (settings recording entry); not re-checked here.
+ * 「添加绑定」（一个命令可挂多组键，展示 A / B）：在命令现有生效绑定
+ * （含默认键）之后追加 newBinding。覆盖语义是整组替换，所以追加必须把
+ * 默认+已有覆盖的完整列表写进 overrides，否则会丢掉未覆盖的默认键。
+ * 同命令内的物理等价重复由调用方（设置页录制入口）先行拒绝，这里不重复校验。
  */
 export function buildShortcutOverridesAfterAppend(
   overrides: Record<string, readonly string[]> | undefined,
@@ -276,7 +264,28 @@ export function buildShortcutOverridesAfterAppend(
   return next;
 }
 
-/** Per-line replace: swap effective list entry bindingIndex for newBinding, write the group back to overrides. */
+/**
+ * 拆行模型的行级操作都基于「生效列表整体写回 overrides」，三个构建器配套使用：
+ * AfterAppend（追加一条）、WithoutBindingAt（删除第 index 条，删空即显式 [] 未分配）、
+ * WithBindingAt（替换第 index 条）。同命令物理等价重复由设置页录制入口先行拒绝。
+ */
+
+/** 拆行删除：把生效列表第 bindingIndex 条移除后整组写回 overrides（spec §8）。 */
+export function buildShortcutOverridesWithoutBindingAt(
+  overrides: Record<string, readonly string[]> | undefined,
+  commandId: ShortcutCommandId,
+  bindingIndex: number,
+): Record<string, string[]> {
+  const effective = resolveEffectiveShortcutBindings(overrides);
+  const next: Record<string, string[]> = {};
+  for (const [key, value] of Object.entries(overrides ?? {})) {
+    next[key] = [...value];
+  }
+  next[commandId] = (effective[commandId] ?? []).filter((_, index) => index !== bindingIndex);
+  return next;
+}
+
+/** 拆行替换：把生效列表第 bindingIndex 条换成 newBinding 后整组写回 overrides（spec §8）。 */
 export function buildShortcutOverridesWithBindingAt(
   overrides: Record<string, readonly string[]> | undefined,
   commandId: ShortcutCommandId,

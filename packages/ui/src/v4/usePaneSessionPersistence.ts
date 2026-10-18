@@ -14,7 +14,7 @@ function storageKey(workspaceKey: string): string {
   return `${STORAGE_PREFIX}${workspaceKey}`;
 }
 
-function readPersistedPaneSession(workspaceKey: string): string | null {
+export function readPersistedPaneSession(workspaceKey: string): string | null {
   try {
     return localStorage.getItem(storageKey(workspaceKey));
   } catch {
@@ -22,7 +22,10 @@ function readPersistedPaneSession(workspaceKey: string): string | null {
   }
 }
 
-function persistPaneSession(workspaceKey: string, sessionId: string | null): void {
+export function persistPaneSession(
+  workspaceKey: string,
+  sessionId: string | null,
+): void {
   try {
     if (sessionId) {
       localStorage.setItem(storageKey(workspaceKey), sessionId);
@@ -34,7 +37,7 @@ function persistPaneSession(workspaceKey: string, sessionId: string | null): voi
   }
 }
 
-interface UsePaneSessionPersistenceParams {
+export interface UsePaneSessionPersistenceParams {
   workspaceKey: string;
   activeSessionId: string | null;
   /** startDraft explicit-user-intent generation; above 0, null means draft, not pending-restore. */
@@ -45,7 +48,7 @@ interface UsePaneSessionPersistenceParams {
   selectSession: (sessionId: string) => void;
 }
 
-function shouldRestorePersistedPaneSession(params: {
+export function shouldRestorePersistedPaneSession(params: {
   activeSessionId: string | null;
   draftFocusVersion: number;
   enabled: boolean;

@@ -10,7 +10,7 @@ export interface StorageCatalogContext {
   hasCustomDataBaseDir: boolean;
 }
 
-interface StorageClassification {
+export interface StorageClassification {
   categoryId: StorageCategoryId;
   /** Drill-down aggregation key: the next segment under the matched rule. */
   entryKey: string;

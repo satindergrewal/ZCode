@@ -5,9 +5,8 @@ import { cn } from "@/components/lib/utils.js";
 import { useZCodeIntl, type IntlInstance } from "@/i18n/IntlProvider.js";
 import type { ToolCallBlockRenderContext } from "@/ToolCallBlocks/shared.js";
 
-// Static turn-tail card for OffPeakCreate (sibling of cron-create, same style contract).
-// The queue position is a creation-time snapshot (from the ticket response), with no
-// subscription to later state — history replay never shows stale live data.
+// OffPeakCreate 的静态轮尾卡（cron-create 兄弟实现，样式契约一致）。
+// 位次是创建时快照（取自取号返回），不订阅后续状态——历史回看不产生过期活数据。
 
 export interface OffPeakCreateTaskSummary {
   offPeakTaskId?: string;
@@ -49,7 +48,9 @@ function normalizeOutputCandidate(value: unknown): unknown {
   return typeof value === "string" ? parseJsonString(value) : value;
 }
 
-function readOffPeakCreateTaskOutputSummary(value: unknown): OffPeakCreateTaskSummary | null {
+export function readOffPeakCreateTaskOutputSummary(
+  value: unknown,
+): OffPeakCreateTaskSummary | null {
   const normalizedValue = normalizeOutputCandidate(value);
   if (!isPlainRecord(normalizedValue)) {
     return null;
@@ -61,7 +62,7 @@ function readOffPeakCreateTaskOutputSummary(value: unknown): OffPeakCreateTaskSu
       ? task.offPeakTaskId.trim()
       : undefined;
   const title = typeof task.title === "string" && task.title.trim() ? task.title.trim() : undefined;
-  // The card must be able to locate the task; a missing id means invalid output — fall back to the plain tool row.
+  // 卡片必须能定位任务；缺 id 视为无效输出，回退普通工具行。
   if (!offPeakTaskId) {
     return null;
   }
@@ -106,8 +107,11 @@ export function readOffPeakCreateTaskSummary(
   return null;
 }
 
-/** Card second line: creation-time position snapshot first; without one, fall back to the "added to off-peak queue" copy. */
-function describeOffPeakCardStatus(task: OffPeakCreateTaskSummary, intl: IntlInstance): string {
+/** 卡片第二行：创建时位次快照优先，缺位次回退「已加入闲时队列」文案。 */
+export function describeOffPeakCardStatus(
+  task: OffPeakCreateTaskSummary,
+  intl: IntlInstance,
+): string {
   if (typeof task.queuePosition === "number" && task.queuePosition > 0) {
     return intl.formatMessage(
       { id: "offPeak.chatCreated.queuedAt" },
@@ -126,7 +130,7 @@ export function OffPeakCreateTaskCard({
 }) {
   const { intl } = useZCodeIntl();
   const title = task.title ?? intl.formatMessage({ id: "offPeak.chatCreated.defaultTitle" });
-  // Tasks created in-session are bound to and run in that session; a hint follows the position snapshot.
+  // 会话内创建的任务绑定并运行在当前会话；位次快照后追加一句提示。
   const statusLine = `${describeOffPeakCardStatus(task, intl)} · ${intl.formatMessage({
     id: "offPeak.chatCreated.boundHint",
   })}`;

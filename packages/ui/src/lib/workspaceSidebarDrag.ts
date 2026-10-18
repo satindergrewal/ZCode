@@ -5,17 +5,24 @@ import type { SortingStrategy } from "@dnd-kit/sortable";
 // Sibling displacement must always use the fully collapsed 32px, never dnd-kit's cached expanded height.
 const WORKSPACE_DRAG_COLLAPSED_ROW_HEIGHT = 32;
 
-function resolveWorkspaceDragSiblingDisplacement(params: {
+export function resolveWorkspaceDragSiblingDisplacement(params: {
   activeIndex: number;
   index: number;
   itemGap: number;
   overIndex: number;
 }): number {
-  const displacement = WORKSPACE_DRAG_COLLAPSED_ROW_HEIGHT + Math.max(0, params.itemGap);
-  if (params.index < params.activeIndex && params.index >= params.overIndex) {
+  const displacement =
+    WORKSPACE_DRAG_COLLAPSED_ROW_HEIGHT + Math.max(0, params.itemGap);
+  if (
+    params.index < params.activeIndex &&
+    params.index >= params.overIndex
+  ) {
     return displacement;
   }
-  if (params.index > params.activeIndex && params.index <= params.overIndex) {
+  if (
+    params.index > params.activeIndex &&
+    params.index <= params.overIndex
+  ) {
     return -displacement;
   }
   return 0;

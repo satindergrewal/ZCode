@@ -55,6 +55,7 @@ import {
 import { toModelStreamEvent } from "./runner-normalization.js";
 import type { EnvRecord } from "./model-execution.js";
 import { detectProviderBusinessFinishError } from "./provider-finish-business-error.js";
+import { createRequestVerificationEmptyStreamError } from "./request-security-edition/recovery.js";
 import {
   calculateRetryDelay,
   logRetryDelayDecision,
@@ -77,6 +78,8 @@ import type {
   AiSdkModelTextRequest,
   ResolvedAiSdkModel,
 } from "./runner-runtime.js";
+import { isRequestVerificationRejection } from "./request-security-edition/recovery.js";
+import { AccountRequestRetry } from "./account-request-retry.js";
 import { resolveModelForAttempt, RuntimeHeadersRefreshError } from "./runner-runtime-headers.js";
 import { retryAllowedByFailurePolicy } from "./workflow-model-failure-policy.js";
 import {
@@ -103,8 +106,8 @@ export async function* runStreamText(input: {
   streamIdleTimeoutMs: number;
   modelIoFullRetentionEnabled: boolean;
 }): AsyncGenerator<ModelStreamEvent> {
-  // Retry budget tier: only relaxes the give-up conditions for transient failures;
-  // the no-retry-after-emittedRetryBoundaryEvent rule stands. Status events use maxAttempts 0 for unbounded.
+  // 重试预算档位：只放宽瞬态失败的放弃条件；
+  // `emittedRetryBoundaryEvent` 之后不重试的规则不变。状态事件 maxAttempts 以 0 表示无上限。
   const retryBudget = input.request.modelRetryBudget;
   const statusMaxAttempts = (extraAttempts: number): number =>
     retryBudgetMaxAttempts(retryBudget, input.retry.maxAttempts + extraAttempts);
@@ -118,6 +121,7 @@ export async function* runStreamText(input: {
   const isDev = isDevelopmentModelIOEnv(input.env);
   let requestMessages = input.request.messages;
   let signatureRepairAttempted = false;
+  const authRetry = new AccountRequestRetry(input.request, input.resolved, input.logger);
   let emptyCompletionRetryCount = 0;
 
   for (
@@ -125,15 +129,14 @@ export async function* runStreamText(input: {
     retryAttemptLoopContinues(
       retryBudget,
       attempt,
-      input.retry.maxAttempts + Number(signatureRepairAttempted),
+      input.retry.maxAttempts + Number(signatureRepairAttempted) + authRetry.extraAttempts,
     );
     attempt += 1
   ) {
-    const retryBudgetAttempt =
-      attempt - Number(signatureRepairAttempted);
+    const retryBudgetAttempt = attempt - Number(signatureRepairAttempted) - authRetry.extraAttempts;
     const startedAt = Date.now();
-    // Retries after an SSE idle timeout must not reuse the first-request window or the same silent provider
-    // window keeps interrupting; core recovery and adapter retries add 30s per attempt.
+    // SSE idle timeout 后的重试如果仍固定首请求窗口，容易被同一段 provider 静默窗口反复打断；
+    // core recovery 和 adapter 内部 retry 都统一按重试次数每次增加 30s。
     const streamIdleTimeoutMs = resolveModelStreamIdleTimeoutMs({
       baseTimeoutMs: input.streamIdleTimeoutMs,
       retryNumber: (input.request.streamIdleTimeoutRetryNumber ?? 0) + retryBudgetAttempt - 1,
@@ -154,9 +157,7 @@ export async function* runStreamText(input: {
     let statusContext = createAttemptStatusContext(
       {
         ...baseStatusContext,
-        maxAttempts: statusMaxAttempts(
-          Number(signatureRepairAttempted),
-        ),
+        maxAttempts: statusMaxAttempts(Number(signatureRepairAttempted) + authRetry.extraAttempts),
       },
       attempt,
     );
@@ -166,7 +167,7 @@ export async function* runStreamText(input: {
     let attemptFailed = false;
     let awaitIteratorClose = false;
     let terminalStatusPublished = false;
-    // Hoisted above try so the catch branch can log the failing model-io with options/result.
+    // 提升到 try 外,使 catch 分支也能拿到 options/result 记录失败 model-io。
     let options: ReturnType<typeof createStreamTextOptions> | undefined;
     let result: AiSdkStreamTextResult | undefined;
     let requestHeaders: Record<string, string> = {};
@@ -188,15 +189,15 @@ export async function* runStreamText(input: {
       );
       if (!repairedMessages) return false;
 
-      // Signatures are valid only for the thinking block that produced them. While the stream has not committed output, replace
-      // only this request's copy and grant one physical retry with a fresh requestId outside the normal budget;
-      // never write cleanup results back into canonical history.
+      // 签名只对生成它的 thinking block 有效。流尚未提交输出时，只替换
+      // 本次请求副本，并给一次不占普通 retry 预算且拥有新 requestId 的物理请求机会；
+      // 不能把清理结果写回 canonical history。
       signatureRepairAttempted = true;
       requestMessages = repairedMessages;
       input.logger?.warn("Retrying model stream after thinking signature rejection", {
         attempt,
         event: "model.reasoning_signature_repair.retry",
-        maxAttempts: input.retry.maxAttempts + 1,
+        maxAttempts: input.retry.maxAttempts + 1 + authRetry.extraAttempts,
         nextAttempt: attempt + 1,
         requestId: statusContext.requestId,
         status: "waiting",
@@ -235,9 +236,9 @@ export async function* runStreamText(input: {
       }
     };
 
-    // Process-level admission: wait for a slot before issuing each attempt;
-    // the token returns when the attempt ends (success/failure/throw/consumer abandon via finally; before the backoff sleep).
-    // Cancel while waiting follows the same path as cancelled sleep: record a connect-stage cancelled failure and throw.
+    // 进程级准入：每次尝试发出前等槽位，
+    // 票据在本次尝试结束时归还（成功 / 失败 / 抛出 / 消费者放弃流都经 finally；退避 sleep 之前先归还）。
+    // 等待中被取消 → 与 sleep 被取消同一条路：记 connect 阶段的 cancelled 失败，抛出。
     let admission: AttemptAdmission;
     try {
       admission = await admitAttempt({
@@ -278,7 +279,8 @@ export async function* runStreamText(input: {
     try {
       resolved = await resolveModelForAttempt({
         attempt,
-        request: attemptRequest,
+        reason: authRetry.takeReason(),
+        request: authRetry.prepareRequest(attemptRequest),
         resolveModel: input.resolveModel,
       });
       const anthropicMetadataUserId = await resolveAnthropicRequestMetadataUserId({
@@ -365,6 +367,7 @@ export async function* runStreamText(input: {
             requestHeaderCount,
             requestHeaders,
             repairThinkingSignatureRejection,
+            canRecoverProjectToken: (error) => authRetry.canRecoverProjectToken(error),
             retryBudgetAttempt,
             startedAt,
             statusContext,
@@ -373,15 +376,15 @@ export async function* runStreamText(input: {
         } catch (error) {
           const directToolCommit = compactDirectToolCallCommitEvent(input.request, next.value);
           if (directToolCommit) {
-            // A complete direct tool-call is already a provider event; name/input validation failures
-            // must not make the adapter treat it as pre-first-event failure and replay SSE.
+            // 完整 direct tool-call 已是 provider 事件；name/input 校验即使抛错，
+            // 也不能让 adapter 当作首事件前失败再次 SSE 重放。
             emittedRetryBoundaryEvent = true;
             for (const pendingEvent of pendingRetrySafeEvents.splice(0)) {
               emittedEvent = true;
               yield pendingEvent;
             }
-            // Providers without raw message-block provenance may deliver a complete tool-call.
-            // Hand the inferred block stop to the hidden collector before propagating the validation error, avoiding an HTTP replay.
+            // 无 raw message-block provenance 的 provider 可能直接给完整 tool-call。
+            // 先把 inferred block stop 交给隐藏 collector，再传播校验错误，避免 HTTP 重放。
             emittedEvent = true;
             yield directToolCommit;
           }
@@ -405,8 +408,8 @@ export async function* runStreamText(input: {
             retryCount: emptyCompletionRetryCount,
           });
         if (shouldHoldEmptyCompletionEvents) {
-          // finish flushes the cached start to core; buffer until natural EOF and confirm the generic-empty
-          // case before retrying, so attempt one's finish/start never leak to the UI.
+          // finish 会把已缓存的 start 一并刷给 core；先暂存到自然 EOF，确认这是
+          // generic empty 后再重试，避免第一次 attempt 的 finish/start 泄漏到 UI。
           event.visibleEvents.length = 0;
         }
         emittedError = emittedError || event.emittedError;
@@ -414,9 +417,9 @@ export async function* runStreamText(input: {
         emittedRetryBoundaryEvent = emittedRetryBoundaryEvent || event.emittedRetryBoundaryEvent;
 
         if (event.retryScheduled) {
-          // Retrying on an SSE error chunk is normal control flow, not the catch path;
-          // without an explicit failure mark, finally would skip the old attempt's iterator/tee cleanup.
-          // The next physical request may start only after this round's abort and bounded cleanup.
+          // SSE error chunk 的 retry 是正常控制流，不会进入 catch；
+          // 若不显式标记失败，finally 会跳过旧 attempt 的 iterator/tee 清理。
+          // 下一次物理请求必须等待本轮 abort 与有界清理后才能启动。
           attemptFailed = true;
           awaitIteratorClose = true;
           retryScheduledFromStreamChunk = true;
@@ -438,7 +441,7 @@ export async function* runStreamText(input: {
 
       if (retryScheduledFromStreamChunk) {
         if (offPeakQueueHoldFromStreamChunk) {
-          // Queue waits burn no retry budget: rewind the counter so the for-loop retries in place.
+          // 排队等待不消耗重试预算：回退计数让 for 自增后原地重试。
           attempt -= 1;
         }
         continue;
@@ -471,10 +474,10 @@ export async function* runStreamText(input: {
       }
 
       if (!emittedError) {
-        // Business errors synthesized after natural EOF leave via TerminalStreamChunkError, outside the outer catch;
-        // compact context is empty on the normal main path, so the stream stage must be recorded at the synthesis site.
-        // Classify provider business errors before generic-empty, or quota-style
-        // HTTP 200 empty streams would be misread as retryable transient empties.
+        // 自然 EOF 后合成的业务错误会通过 TerminalStreamChunkError 直接离开外层 catch；
+        // compact 上下文在普通主链路为空，因此必须在合成现场显式保留 stream 阶段。
+        // 先识别 provider business error，再考虑 generic empty；否则额度等
+        // HTTP 200 空流会被误判成可重试的暂时性空响应。
         const hiddenProviderBusinessError = detectProviderBusinessFinishError({
           providerId: String(statusContext.providerId),
           providerKind: statusContext.providerKind,
@@ -487,6 +490,8 @@ export async function* runStreamText(input: {
             } satisfies Record<string, unknown>),
         });
         if (hiddenProviderBusinessError) {
+          if (isRequestVerificationRejection(hiddenProviderBusinessError))
+            throw hiddenProviderBusinessError;
           const failure = classifyModelFailure(
             hiddenProviderBusinessError,
             input.request.abortSignal,
@@ -503,14 +508,23 @@ export async function* runStreamText(input: {
         }
 
         if (isSuspiciousStreamDiagnostics(diagnostics)) {
-          // Business errors like 403 JSON sometimes surface no error chunk and the stream ends with an empty completion;
-          // without an adapter-level termination core reports Model returned no text.
-          const streamEndedWithoutOutputError = detectProviderBusinessFinishError({
-            providerId: String(statusContext.providerId),
-            providerKind: statusContext.providerKind,
-            source: diagnostics.lastErrorChunk ?? diagnostics.lastFinishChunk,
-          });
+          // 403 JSON 等业务错误有时不会让 AI SDK 抛出 error chunk，流会以空 completion 结束；
+          // 若不在 adapter 层终止，core 会误报 “Model returned no text...”。
+          const streamEndedWithoutOutputError =
+            detectProviderBusinessFinishError({
+              providerId: String(statusContext.providerId),
+              providerKind: statusContext.providerKind,
+              source: diagnostics.lastErrorChunk ?? diagnostics.lastFinishChunk,
+            }) ??
+            createRequestVerificationEmptyStreamError({
+              accountMode: resolved.accountAccess?.mode,
+              headers: resolved.headers,
+              providerId: String(statusContext.providerId),
+              providerKind: resolved.providerKind,
+            });
           if (streamEndedWithoutOutputError) {
+            if (isRequestVerificationRejection(streamEndedWithoutOutputError))
+              throw streamEndedWithoutOutputError;
             const failure = classifyModelFailure(
               streamEndedWithoutOutputError,
               input.request.abortSignal,
@@ -544,8 +558,8 @@ export async function* runStreamText(input: {
           ) {
             const responseHeaders = await resolveStreamResponseHeaders(streamResult);
             const completedAt = Date.now();
-            // finish flushes retry-safe preliminaries as visible events; an empty completion must enter one
-            // adapter retry before the flush so core does not treat attempt one as final.
+            // finish 会把 retry-safe 前奏刷成可见事件；空 completion 需在
+            // flush 前进入一次 adapter retry，避免 core 把第一次 attempt 当成已完成。
             logStreamDiagnostics({
               attempt,
               diagnostics,
@@ -660,8 +674,8 @@ export async function* runStreamText(input: {
         error instanceof ModelProtocolError &&
         error.code === ModelErrorCode.ModelRequestAuthMissing
       ) {
-        // stream resolved request auth inside the attempt try, re-normalizing typed pre-flight
-        // auth errors into generic request failures; generate keeps the raw protocol error.
+        // stream 在 attempt try 内解析请求鉴权，过去会把网络前的类型化
+        // 鉴权缺失错误重新归一化为通用请求失败；generate 则直接保留原始协议错误。
         throw error;
       }
 
@@ -671,7 +685,7 @@ export async function* runStreamText(input: {
       if (retryWithRepairedHistory) {
         statusContext = {
           ...statusContext,
-          maxAttempts: statusMaxAttempts(1),
+          maxAttempts: statusMaxAttempts(1 + authRetry.extraAttempts),
         };
       }
       const classified = classifyModelFailure(error, input.request.abortSignal);
@@ -679,7 +693,7 @@ export async function* runStreamText(input: {
         classified.message = error.message;
         classified.retryable = false;
       }
-      // off-peak special case (idle plan providers only): queued 429 retries exempt from budget; 3102 marks defeat and triggers resume.
+      // off-peak 特判（仅 idle plan provider）：排队 429 豁免预算无限探测；3102 标记落败触发续跑。
       const offPeak = resolveOffPeakFailureDecision({
         offPeak: resolved.accountAccess?.mode === "off-peak",
         failure: classified,
@@ -719,7 +733,24 @@ export async function* runStreamText(input: {
           diagnostics.lastErrorChunk || diagnostics.lastFinishChunk,
         ),
       });
-      // off-peak queued-429 budget exemption: does not consume maxAttempts; the visible-output boundary still applies.
+      const retryWithAuth = authRetry.claim(
+        error,
+        options === undefined ||
+          emittedRetryBoundaryEvent ||
+          streamOutputCommitted ||
+          (input.request.preserveProviderStreamBoundaries === true &&
+            failureDecision.context?.streamFailurePhase === "response_body"),
+      );
+      if (retryWithAuth) {
+        failureDecision.canRetry = true;
+        statusContext = {
+          ...statusContext,
+          maxAttempts: statusMaxAttempts(
+            Number(signatureRepairAttempted) + authRetry.extraAttempts,
+          ),
+        };
+      }
+      // off-peak 排队 429 豁免预算：不消耗 maxAttempts，SSE 可见输出边界仍适用。
       if (offPeak?.kind === "queued" && !emittedRetryBoundaryEvent) {
         failureDecision.canRetry = true;
       }
@@ -765,6 +796,18 @@ export async function* runStreamText(input: {
       );
       terminalStatusPublished = true;
 
+      if (retryWithAuth) {
+        await publishRetryScheduledStatus(
+          input,
+          statusContext,
+          attempt,
+          0,
+          { ...failure, retryReason: ModelRetryReason.AuthRefresh },
+          requestHeaders,
+          responseHeaders,
+        );
+        continue;
+      }
       if (retryWithRepairedHistory) {
         await publishRetryScheduledStatus(
           input,
@@ -821,7 +864,7 @@ export async function* runStreamText(input: {
         responseHeaders,
         admission,
       );
-      // No token during backoff: free the slot for others, re-admit on retry.
+      // 退避期间不持票：槽位让给别人，重试再准入。
       admission.release();
       try {
         await sleep(delayMs, input.request.abortSignal);
@@ -844,7 +887,7 @@ export async function* runStreamText(input: {
             type: "model_request_failed",
           },
           {
-            // Token already returned during backoff: this cancellation belongs to no attempt, do not forward it.
+            // 退避期间票据已归还：这次取消不属于任何一次尝试，不转投票据。
             ...statusPublishOptions(input),
             failureError: unwrapRetryError(sleepError),
           },
@@ -855,7 +898,7 @@ export async function* runStreamText(input: {
         });
       }
       if (offPeak?.kind === "queued") {
-        // Queue waits burn no retry budget: rewind the counter so the for-loop retries in place, probing unbounded.
+        // 排队等待不消耗重试预算：回退计数让 for 自增后原地重试，无限探测。
         attempt -= 1;
       }
     } finally {
@@ -863,17 +906,17 @@ export async function* runStreamText(input: {
         !streamReachedNaturalEnd &&
         (attemptFailed || input.request.preserveProviderStreamBoundaries === true)
       ) {
-        // Without this cleanup branch, a failed 429 retry on the normal stream path would leave the
-        // AI SDK fullStream tee holding the old provider request, stalling later physical requests before send.
-        // Failed attempts must be aborted and released unconditionally; normal consumer early-end keeps its semantics.
+        // 普通 stream 的 429 retry 失败若不进入本清理分支，
+        // AI SDK fullStream tee 会持有旧 provider 请求，连续重试会让后续物理请求卡在发送前。
+        // 失败 attempt 必须无条件中止并释放；普通 consumer 主动提前结束仍保持原语义。
         if (!attemptAbortController.signal.aborted) {
           attemptAbortController.controller.abort(
             new Error("Model stream attempt ended before natural EOF."),
           );
         }
         if (!attemptFailed && !terminalStatusPublished && !emittedError) {
-          // Consumer-side validation failures only trigger AsyncIteratorClose, never the catch above;
-          // settle the started physical request as cancelled to avoid a dangling started state before fallback.
+          // consumer 侧的校验异常只会触发 AsyncIteratorClose，不会回到上面的 catch；
+          // 将已启动的物理请求收口为 cancelled，避免 fallback 前遗留悬空 started 状态。
           const completedAt = Date.now();
           await publishModelStatus(
             {
@@ -908,14 +951,14 @@ export async function* runStreamText(input: {
           });
         }
       } else if (attemptAbortController.signal.aborted) {
-        // The normal main path keeps its lifecycle: close the iterator best-effort only when caller/idle already aborted.
+        // 普通 main 保留既有生命周期：只有 caller/idle 已经 abort 时才 best-effort 关闭 iterator。
         void closeStreamIteratorBestEffort(streamIterator, {
           attempt,
           logger: input.logger,
         });
       }
       attemptAbortController.cleanup();
-      // Fallback release (success/throw/consumer early-return); the normal failure path released before sleep, idempotent.
+      // 兜底归还（成功 / 抛出 / 消费者提前 return 都到这里）；正常失败路径已在 sleep 前归还，幂等。
       admission.release();
     }
   }
@@ -935,8 +978,8 @@ async function closeStreamIteratorBestEffort(
   if (options.result?.consumeStream) {
     cleanupOperations.push({
       name: "result.consumeStream",
-      // The AI SDK fullStream getter tees and parks one branch in baseStream;
-      // awaiting only iterator.return() can still leak the underlying reader/connection slot.
+      // AI SDK fullStream getter 会 tee 并把另一支保存在 baseStream；
+      // 只等待外层 iterator.return() 仍可能让底层 reader/连接槽继续被保留。
       promise: Promise.resolve().then(() => options.result?.consumeStream()),
     });
   }
@@ -977,7 +1020,7 @@ async function closeStreamIteratorBestEffort(
       : [],
   );
   if (failures.length > 0) {
-    // Async cleanup failure or timeout downgrades to a warning; never mask the original provider/retry error.
+    // 异步清理失败或超时只能降级告警，不能覆盖原始 provider/retry 错误。
     options.logger?.warn("Model stream attempt cleanup failed", {
       attempt: options.attempt,
       event: "model.stream_attempt_cleanup.failed",
@@ -988,7 +1031,7 @@ async function closeStreamIteratorBestEffort(
 }
 
 async function handleStreamChunk(input: {
-  /** Admission of this attempt: returned before the error-branch backoff sleep. */
+  /** 本次尝试的准入：错误块的退避 sleep 之前先归还。 */
   admission: AttemptAdmission;
   attempt: number;
   chunk: TextStreamPart<ToolSet>;
@@ -1003,6 +1046,7 @@ async function handleStreamChunk(input: {
   };
   pendingRetrySafeEvents: ModelStreamEvent[];
   repairThinkingSignatureRejection: (error: unknown) => boolean;
+  canRecoverProjectToken: (error: unknown) => boolean;
   retryBudgetAttempt: number;
   requestHeaderCount: number;
   requestHeaders: Record<string, string>;
@@ -1014,7 +1058,7 @@ async function handleStreamChunk(input: {
   emittedEvent: boolean;
   emittedRetryBoundaryEvent: boolean;
   retryScheduled: boolean;
-  /** off-peak queued retry: the outer for freezes the attempt budget. */
+  /** off-peak 排队重试：外层 for 冻结 attempt 预算。 */
   offPeakQueueHold: boolean;
   terminalError?: TerminalStreamChunkError;
   visibleEvents: ModelStreamEvent[];
@@ -1044,8 +1088,8 @@ async function handleStreamChunk(input: {
   }
   if (!event) {
     if (providerEventObserved) {
-      // The raw provider event only ends the compact SSE retry; it is not visible
-      // content. Project only response/block/stop semantic boundaries and flush the buffered synthetic start.
+      // raw provider event 只用于结束 compact SSE retry；它本身不属于
+      // 可见正文；只投影 response/block/stop 的语义边界，并立即刷出已暂存的 synthetic start。
       return applyStreamEventsToRetryBoundary({
         emittedRetryBoundaryEvent: input.emittedRetryBoundaryEvent,
         events: providerBoundaryEvent ? [providerBoundaryEvent] : [],
@@ -1090,8 +1134,8 @@ function applyStreamEventsToRetryBoundary(input: {
 
   for (const event of input.events) {
     emittedEvent = true;
-    // The AI SDK start is synthesized locally before reading the provider stream and must not pose as the first provider event;
-    // compact stops SSE retry once any real event arrives, then core's block commit decides HTTP fallback.
+    // AI SDK 的 start 在读取 provider stream 前本地合成，不能冒充首个 provider event；
+    // compact 一旦收到其余真实事件就停止 SSE retry，再由 Core 的 block commit 决定能否 HTTP fallback。
     const retrySafePrelude =
       isRetrySafePreludeStreamEvent(event) &&
       (!input.preserveProviderStreamBoundaries || event.type === "start");
@@ -1196,6 +1240,7 @@ async function handleStreamErrorEvent(
   input: Parameters<typeof handleStreamChunk>[0],
   error: unknown,
 ): Promise<Awaited<ReturnType<typeof handleStreamChunk>>> {
+  if (isRequestVerificationRejection(error) || input.canRecoverProjectToken(error)) throw error;
   const retryWithRepairedHistory =
     !input.emittedRetryBoundaryEvent && input.repairThinkingSignatureRejection(error);
   const statusContext = retryWithRepairedHistory
@@ -1208,7 +1253,7 @@ async function handleStreamErrorEvent(
       }
     : input.statusContext;
   const classified = classifyModelFailure(error, input.input.request.abortSignal);
-  // off-peak special case: a queued 429 on the first SSE chunk (no visible output yet) is also budget-exempt.
+  // off-peak 特判：SSE 首块即错（尚无可见输出）时的排队 429 同样豁免预算重试。
   const offPeak = resolveOffPeakFailureDecision({
     offPeak: input.input.resolved.accountAccess?.mode === "off-peak",
     failure: classified,
@@ -1240,7 +1285,7 @@ async function handleStreamErrorEvent(
     retryBudget: input.input.request.modelRetryBudget,
     streamErrorChunkObserved: true,
   });
-  // off-peak queued-429 budget exemption: does not consume maxAttempts; the visible-output boundary still applies.
+  // off-peak 排队 429 豁免预算：不消耗 maxAttempts，SSE 可见输出边界仍适用。
   if (offPeak?.kind === "queued" && !input.emittedRetryBoundaryEvent) {
     failureDecision.canRetry = true;
   }
@@ -1335,7 +1380,7 @@ async function handleStreamErrorEvent(
     responseHeaders,
     input.admission,
   );
-  // No token during backoff: this attempt ends here, free the slot.
+  // 退避期间不持票：这次尝试到此结束，槽位让给别人。
   input.admission.release();
   // Note: AI SDK can surface pre-output APICallError as an error chunk;
   // retry it here so protocol clients still receive the normal apiRetry status updates.
@@ -1343,8 +1388,8 @@ async function handleStreamErrorEvent(
     await sleep(delayMs, input.input.request.abortSignal);
   } catch (sleepError) {
     const sleepFailure = classifyModelFailure(sleepError, input.input.request.abortSignal);
-    // The SSE error chunk waits inside the helper; on cancellation the iterator still exists,
-    // so keying on the iterator alone would misrecord stream. Write the connect fact at the real wait boundary.
+    // SSE error chunk 在 helper 内等待 retry；取消发生时 iterator 仍存在，
+    // 外层仅按 iterator 判断会误记为 stream。先在真实等待边界写入 connect 事实。
     throw toAdapterError(sleepError, sleepFailure, statusContext, input.attempt, {
       errorPhase: "connect",
     });
@@ -1381,8 +1426,8 @@ function classifyStreamFailurePhase(input: {
   }
 
   if (input.streamErrorChunkObserved) {
-    // An error chunk proves the stream body started; its ProviderBusinessError.statusCode
-    // may be just a business class, not HTTP setup. Explicit transport status still wins in the branch above.
+    // error chunk 本身证明 stream body 已开始；其中的 ProviderBusinessError.statusCode
+    // 可能只是业务分类，不能反推成 HTTP request setup。明确 transport status 仍由上面的分支优先。
     return "response_body";
   }
 
@@ -1463,10 +1508,10 @@ function canRetryStreamFailure(input: {
   retryBudget?: ModelRetryBudget;
   streamFailurePhase?: StreamFailurePhase;
 }): boolean {
-  // Workflow traffic (unbounded budget) ignores the classifier retryable and reads the policy table: only deterministic
-  // model-side errors go unretried; concurrency caps like 3008/3009/3010 retry here.
+  // workflow 流量（无上限预算）不读分类器的 retryable，读策略表：只有确定性的模型侧错误
+  // 才不重试；3008/3009/3010 这类并发上限在这里是 retry。
   const providerCode = inspectProviderFailure(input.error).providerErrorCode;
-  // Never replay after visible output (core stream recovery handles it); the budget gate is always open when unbounded.
+  // 可见输出已发出后绝不重放（交给 core 的 stream recovery）；预算门在 unbounded 下恒开。
   if (
     input.emittedRetryBoundaryEvent ||
     !retryBudgetAllows(input.retryBudget, input.attempt, input.maxAttempts)
@@ -1482,8 +1527,8 @@ function canRetryStreamFailure(input: {
     input.preserveProviderStreamBoundaries === true &&
     isCompactStaleStreamFailure(input.error, input.httpResponseStatus)
   ) {
-    // Compact requests retry EPIPE/ConnectionClosed; those are outside the generic
-    // model-failure retryable set and must be judged before the generic gate.
+    // compact 请求允许重试 EPIPE/ConnectionClosed；它们不在通用
+    // model failure retryable 集合中，必须先于通用 gate 判定。
     return true;
   }
 
@@ -1491,8 +1536,8 @@ function canRetryStreamFailure(input: {
     return false;
   }
 
-  // Setup failures keep the existing adapter/API retry; compact SSE protocol/business body errors
-  // are not replayed, and the post-exhaustion non-stream fallback is core's per commit boundary.
+  // setup failure 保留既有 adapter/API retry；compact 的 SSE protocol/business body error
+  // 不再重放，耗尽后的 non-stream fallback 由 Core 按 commit boundary 处理。
   return (
     input.preserveProviderStreamBoundaries !== true || input.streamFailurePhase !== "response_body"
   );
@@ -1500,8 +1545,8 @@ function canRetryStreamFailure(input: {
 
 function resolveCompactHttpResponseStatus(error: unknown): number | undefined {
   const unwrapped = unwrapRetryError(error);
-  // ProviderBusinessError.responseStatus is the transport status kept by the fetch layer; outer
-  // APICallError/statusCode may already be overridden by business codes, so prefer this hard evidence.
+  // ProviderBusinessError.responseStatus 是 fetch 层保留的 transport status；外层
+  // APICallError/statusCode 可能已被业务码覆盖，因此必须优先使用这一硬证据。
   return findProviderBusinessError(unwrapped)?.responseStatus ?? getHttpResponseStatus(unwrapped);
 }
 
@@ -1541,7 +1586,7 @@ function streamChunkResult(
     emittedEvent: boolean;
     emittedRetryBoundaryEvent: boolean;
     retryScheduled: boolean;
-    /** off-peak queued retry: the outer for freezes the attempt budget. */
+    /** off-peak 排队重试：外层 for 冻结 attempt 预算。 */
     offPeakQueueHold: boolean;
     terminalError?: TerminalStreamChunkError;
     visibleEvents: ModelStreamEvent[];
@@ -1562,15 +1607,17 @@ function statusPublishOptions(
   input: {
     logger?: Logger;
     request: AiSdkModelTextRequest;
+    resolved?: Pick<ResolvedAiSdkModel, "requestObservations">;
     statusSink?: ModelStatusSink;
   },
   admission?: AttemptAdmission,
 ) {
   return {
+    requestObservations: input.resolved?.requestObservations,
     logger: input.logger,
     requestStatusSink: input.request.statusSink,
     statusSink: input.statusSink,
-  // This attempt's admission token doubles as its status-event sink.
+    // 本次尝试的准入票据也是它的状态事件汇。
     ...(admission?.ticket === undefined ? {} : { admissionTicket: admission.ticket }),
   };
 }

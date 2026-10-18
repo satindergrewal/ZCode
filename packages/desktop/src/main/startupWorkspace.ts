@@ -37,7 +37,10 @@ export interface StartupWorkspaceWarmupTarget {
   workspaceIdentity?: string;
 }
 
-const STARTUP_AGENT_WARMUP_LIMIT = 3;
+// 修复原因：会话 CLI 没有 idle 回收，启动预热 3 个会让每个窗口常驻 3 份 Agent 进程内存；
+// 切到最近项目的冷启动收益抵不上常驻成本，收敛为只预热 active workspace。
+// 与 @zcode/protocol 的 init-local `agentWarmupTargets.max(1)` 保持一致。
+export const STARTUP_AGENT_WARMUP_LIMIT = 1;
 
 export interface StartupWindowBootstrap {
   restoreSession?: boolean;
@@ -71,7 +74,7 @@ function resolvePersistedActiveSession(
   return sessions[activeIndex];
 }
 
-function resolveStartupAgentWarmupTargets(
+export function resolveStartupAgentWarmupTargets(
   settings: Pick<ReturnType<typeof appSettingsSchema.parse>, "recentProjects">,
   activeTarget: StartupWorkspaceWarmupTarget,
 ): StartupWorkspaceWarmupTarget[] {
@@ -130,8 +133,8 @@ export async function resolveStartupWindowBootstrap({
         ? persistedActiveSession.workspacePath
         : undefined;
     if (unavailableWorkspacePath) {
-      // When the last-active workspace moved/was deleted, the agent keeps the original path for history,
-      // but child cwd must exist; the conversation backing workspace is cwd fallback only.
+      // 上次激活 workspace 被移动或删除后，Agent 仍需保留原业务路径读取历史，
+      // 但子进程 cwd 必须落在真实存在的目录；conversation backing workspace 只承担 cwd 兜底。
       await mkdir(conversationWorkspaceDir, { recursive: true });
       logger?.warn?.(
         "[startup-workspace] active local workspace unavailable; using read-only restore:",
@@ -145,9 +148,9 @@ export async function resolveStartupWindowBootstrap({
     const activeSession =
       localActiveSessionIndex == null ? undefined : sessions[localActiveSessionIndex];
     if (activeSession?.kind === "local") {
-      // Passive full sessions-index restore must not spawn every workspace, yet warming one pushes
-      // full cold starts onto every project switch. Main fixes the most recent 3 at the single startup
-      // boundary; the Host keeps initializeWorkspace and never scans a 4th to backfill.
+      // 被动 sessions-index 全量恢复不能启动全部 workspace；Main 在唯一启动边界固定只选
+      // active workspace（STARTUP_AGENT_WARMUP_LIMIT），Host 走原 initializeWorkspace 路径；
+      // recentProjects 保持 dormant，预热失败也不扫描其它 workspace 补位。
       const agentWarmupTargets = resolveStartupAgentWarmupTargets(settings, {
         workspacePath: activeSession.workspacePath,
       });
@@ -159,8 +162,8 @@ export async function resolveStartupWindowBootstrap({
     return unavailableWorkspacePath ? { unavailableWorkspacePath } : {};
   }
 
-  // The UI may have no project, but the agent always needs a real cwd. First start warms the
-  // app-managed conversation backing workspace; no ZCodeProject that reads as a user project.
+  // UI 可以没有项目，但 Agent 必须始终有真实 cwd。首次启动统一预热
+  // app-managed conversation backing workspace，不能再创建会被误认成项目的 ZCodeProject。
   await mkdir(conversationWorkspaceDir, { recursive: true });
   logger?.info?.("[startup-workspace] using conversation workspace:", conversationWorkspaceDir);
   return {
@@ -168,4 +171,22 @@ export async function resolveStartupWindowBootstrap({
     initialWorkspacePurpose: "conversation",
     agentWarmupTargets: [{ workspacePath: conversationWorkspaceDir }],
   };
+}
+
+export async function resolveStartupWorkspacePath({
+  settingsFile,
+  conversationWorkspaceDir,
+  logger,
+}: {
+  settingsFile: string;
+  conversationWorkspaceDir: string;
+  logger?: StartupWorkspaceLogger;
+}): Promise<string | undefined> {
+  return (
+    await resolveStartupWindowBootstrap({
+      settingsFile,
+      conversationWorkspaceDir,
+      logger,
+    })
+  ).initialWorkspacePath;
 }

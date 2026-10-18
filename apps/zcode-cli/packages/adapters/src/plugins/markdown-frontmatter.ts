@@ -1,14 +1,14 @@
 import { readFileSync } from "node:fs";
 
 /**
- * Minimal Markdown frontmatter extraction with YAML block scalars (> folded / | literal, +/- chomping).
+ * 轻量 Markdown frontmatter 抽取，支持 YAML 块标量（`>` 折叠 / `|` 字面，及 `+`/`-` chomping 变体）。
  *
- * When plugins/describe read name/description with a one-line regex, a
- * description: > block scalar turned the > indicator into the whole description, leaving every skill blurb a bare >.
- * This reuses the skills adapter's block-scalar rules (skills/index.ts), folding continuation lines
- * into the full description; missing frontmatter or keys degrade to omitted, never fabricated.
+ * 插件市场详情 (plugins/describe) 用一行正则读 `name`/`description` 时，遇到
+ * `description: >` 这类块标量时会把指示符 `>` 当成描述本体，导致技能列表里每项描述只剩一个 `>`。
+ * 这里复用与 skills adapter 同款的块标量解析规则（见 skills/index.ts），把后续缩进行
+ * 正确折叠/拼接成完整描述；缺失 frontmatter 或无对应键时按「省略」优雅降级，绝不伪造。
  *
- * Only the name/description scalar keys (all detail views need); no full YAML parse.
+ * 仅提取 name / description 两个标量键（与 skills/commands 详情展示所需一致），不做完整 YAML 解析。
  */
 export function readMarkdownFrontmatter(filePath: string): {
   name?: string;
@@ -23,8 +23,8 @@ export function readMarkdownFrontmatter(filePath: string): {
   return parseMarkdownFrontmatter(content);
 }
 
-/** Pure variant: parse frontmatter from a string, easing block-scalar unit tests. */
-function parseMarkdownFrontmatter(content: string): {
+/** 纯函数版：直接解析 Markdown 文本的 frontmatter，便于单测覆盖块标量分支。 */
+export function parseMarkdownFrontmatter(content: string): {
   name?: string;
   description?: string;
 } {
@@ -49,14 +49,14 @@ function extractFrontmatter(content: string): string | null {
   return lines.slice(1, endIndex).join("\n");
 }
 
-/** Parse top-level key: value; block scalars (>/|) absorb following indented lines. Scalar strings only. */
+/** 解析顶层 `key: value`，块标量（`>`/`|`）会把后续缩进行收进同一个键。只保留标量字符串值。 */
 function parseFlatYamlScalars(frontmatter: string): Record<string, string> {
   const values: Record<string, string> = {};
   const lines = frontmatter.split(/\r?\n/);
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index] ?? "";
     if (line.trim().length === 0 || line.trim().startsWith("#")) continue;
-    // Indented lines belong to the previous block scalar; the top-level scan skips them.
+    // 缩进行属于上一个块标量的内容，顶层扫描跳过。
     if (/^\s/.test(line)) continue;
     const separator = line.indexOf(":");
     if (separator <= 0) continue;
@@ -90,7 +90,7 @@ function readBlockScalar(
   let index = startIndex;
   while (index < lines.length) {
     const line = lines[index] ?? "";
-    // A non-empty non-indented line ends the block scalar (back to top level).
+    // 非空且非缩进的行表示块标量结束（回到顶层键）。
     if (line.trim().length > 0 && !/^\s/.test(line)) break;
     rawLines.push(line);
     index += 1;
@@ -104,7 +104,10 @@ function readBlockScalar(
     line.trim().length === 0 ? "" : line.slice(indent ?? 0),
   );
   return {
-    value: style === "folded" ? foldBlockScalarLines(contentLines) : contentLines.join("\n").trim(),
+    value:
+      style === "folded"
+        ? foldBlockScalarLines(contentLines)
+        : contentLines.join("\n").trim(),
     nextIndex: index,
   };
 }
@@ -114,7 +117,7 @@ function leadingWhitespaceLength(value: string): number {
   return match?.[1]?.length ?? 0;
 }
 
-/** Folded style (>): newlines in a paragraph become spaces, blank lines split paragraphs. */
+/** 折叠样式（`>`）：同段内换行折成空格，空行分段。 */
 function foldBlockScalarLines(lines: string[]): string {
   const paragraphs: string[] = [];
   let current: string[] = [];

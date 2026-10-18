@@ -1,7 +1,7 @@
 import { localTtftFactsSchema } from "../localTtft.js";
-/* eslint-disable max-lines -- the three topics' logical/physical/candidate schemas must share one transport declaration to avoid cross-file forking. */
-// Transport envelope: connection handshake / subscription / frame envelope.
-// Phases are type placeholders (enabled when the channel layer lands); data shapes are finalized per spec.
+/* eslint-disable max-lines -- 三个 topic 的 logical/physical/candidate schema 必须共享同一通用传输声明，避免跨文件分叉。 */
+// 传输外壳：连接握手 / 订阅 / 帧信封。
+// 阶段为类型占位（后半接通道层时启用），数据形状已按规范定稿。
 import { z } from "zod";
 import { APP_USAGE_RANGES, appUsageSnapshotSchema } from "../usage-stats.js";
 import { zcodeWorkspaceRefSchema } from "../zcode-protocol-legacy-types.js";
@@ -19,20 +19,20 @@ import { conversationSnapshotSchema } from "./snapshot.js";
 import { workspaceConfigDeltaSchema, workspaceConfigSnapshotSchema } from "./workspace-config.js";
 import { createTopicWireFrameSchema, topicWireFrameCandidateSchema } from "./wire.js";
 
-// -- Connection and handshake --
+// ── 连接与握手 ──
 export const hostCapabilitiesSchema = z.object({
   nativeDialogs: z.boolean(),
   localTerminal: z.boolean(),
-  // ws binary (used for relay path probing).
+  // ws binary（relay 链路探测用）。
   binaryFrames: z.boolean(),
   compression: z.enum(["none", "permessage-deflate"]),
-  // Wire-compatible: missing on legacy hosts equals false; callers must test === true.
+  // Wire-compatible：旧 Host 缺失等价于 false；调用方必须用 === true 判断。
   workspaceHookReview: z.boolean().optional(),
   independentPlanState: z.boolean().optional(),
   /**
-   * This host emits `workflowRun.*` key-level deltas (the two ops in delta.ts), so `workflowRuns`
-   * actors / nodes may reach 1024 instead of the legacy 256. Consumers without this bit still get whole-key
-   * `state.updated`, clamped to the legacy cap by `clampWorkflowRunsForLegacy` first.
+   * 本 Host 会发 `workflowRun.*` 键级增量（delta.ts 的两条 op），因而 `workflowRuns` 的
+   * actors / nodes 可以到 1024 而不是旧界的 256。没有这个位的消费者收到的仍是整键
+   * `state.updated`，并且先经 `clampWorkflowRunsForLegacy` 裁到旧界。
    */
   workflowRunDeltas: z.boolean().optional(),
 });
@@ -45,10 +45,10 @@ export const helloMessageSchema = z
     connectionId: z.string(),
     clientMode: z.enum(["desktop-continuous", "web-remote-replayable"]),
     deliveryProfile: z.enum(["continuous", "replayable"]),
-    // First clock calibration.
+    // 首次时钟校准。
     serverTime: timestampSchema,
     capabilities: hostCapabilitiesSchema,
-    // Reserved slot only.
+    // 此处只留位。
     auth: z.object({ userId: z.string().optional() }),
   })
   .strict()
@@ -64,7 +64,7 @@ export const helloMessageSchema = z
   });
 export type HelloMessage = z.infer<typeof helloMessageSchema>;
 
-// clientMode registers once per connection, never inside command envelopes.
+// clientMode 连接级注册一次，不进 command 信封。
 export const clientHelloSchema = z
   .object({
     kind: z.literal("clientHello"),
@@ -72,14 +72,14 @@ export const clientHelloSchema = z
     clientId: z.string(),
     clientKind: z.enum(["desktop", "web", "mobileRemote", "mobileApp"]).optional(),
     appVersion: z.string(),
-    // Absent means a legacy client without the Settings-centered review UI.
+    // 缺失代表旧客户端，不具备 Settings-centered review UI。
     capabilities: z
       .object({
         workspaceHookReviewUi: z.boolean().optional(),
         /**
-         * This client understands `workflowRun.*` deltas. The declaration rule is **one-way**: the client may include this key only
-         * after seeing `workflowRunDeltas === true` in the host hello--this capabilities object
-         * is `.strict()`; legacy hosts fail the whole clientHello parse on unknown keys and the handshake never completes.
+         * 本客户端认得 `workflowRun.*` 增量。⚠ 声明规则是**单向**的：客户端只有在 Host 的
+         * hello 里见到 `workflowRunDeltas === true` 时才能带上这个键——这个 capabilities 对象
+         * 是 `.strict()` 的，老 Host 见到不认识的键会整条 clientHello 解析失败、连接握不上手。
          */
         workflowRunDeltas: z.boolean().optional(),
       })
@@ -105,14 +105,14 @@ export function clientSupportsWorkflowRunDeltas(clientHello: ClientHello): boole
   return clientHello.capabilities?.workflowRunDeltas === true;
 }
 
-// -- 3.1 Subscription --
+// ── §3.1 订阅 ──
 export const subscribeParamsSchema = z
   .object({
     // "conversation/<sessionId>" | "sessions-index/<workspaceId>" | ...
     topic: z.string(),
-    // Watermark invariant: include only when the client truly holds a consistent state as of that point.
+    // 水位不变量：仅当客户端真持有该时刻一致状态才允许带。
     base: z.object({ logEpoch: z.string(), seq: z.number() }).optional(),
-    // QoS hint: affects scheduling, not semantics.
+    // QoS hint，只影响调度，不影响语义。
     visibility: z.enum(["foreground", "background"]).optional(),
   })
   .strict();
@@ -120,7 +120,7 @@ export type SubscribeParams = z.infer<typeof subscribeParamsSchema>;
 
 export const subscribeAckSchema = z.object({
   subscriptionId: z.string(),
-  // resume = valid base, deltas continue from base.seq; else snapshot.
+  // resume = base 有效，从 base.seq 续传增量；否则 snapshot。
   mode: z.enum(["snapshot", "resume"]),
   logEpoch: z.string(),
 });
@@ -130,8 +130,8 @@ const openTimingMsSchema = z.number().int().nonnegative().optional();
 const openTimingCountSchema = z.number().int().nonnegative().optional();
 
 /**
- * Low-frequency diagnostic timing of a desktop session's first open; attached only to the conversation subscribe ACK,
- * never into snapshot, delta, sessions-index, or workspace-config.
+ * Desktop session 首次打开的低频诊断 timing；只挂在 conversation subscribe ACK，
+ * 不进入 snapshot、delta、sessions-index 或 workspace-config。
  */
 export const conversationOpenTimingSchema = z
   .object({
@@ -155,19 +155,19 @@ const conversationSubscribeAckSchema = subscribeAckSchema.extend({
 });
 export type ConversationSubscribeAck = z.infer<typeof conversationSubscribeAckSchema>;
 
-// -- Frame envelope (generic frame; factories instantiate per topic) --
+// ── 帧信封（泛型帧用工厂构造具体 topic 的 schema）──
 export function createTopicFrameSchema<S extends z.ZodTypeAny, D extends z.ZodTypeAny>(
   snapshotSchema: S,
   deltaSchema: D,
 ) {
   return z.object({
     topic: z.string(),
-    // Generation id, keeping old streams from interleaving.
+    // 代际标识，防旧流交错。
     subscriptionId: z.string(),
-    // Range accounting (fromSeq, toSeq]; snapshot frames fix fromSeq at 0.
+    // 区间记账 (fromSeq, toSeq]；snapshot 帧 fromSeq 固定为 0。
     fromSeq: z.number(),
     toSeq: z.number(),
-    // CLI clock, for clockOffset estimation.
+    // CLI 时钟，供 clockOffset 估计。
     sentAt: timestampSchema,
     payload: z.discriminatedUnion("kind", [
       z.object({ kind: z.literal("snapshot"), snapshot: snapshotSchema }),
@@ -186,8 +186,8 @@ export interface TopicFrame<S, D> {
 }
 type Timestamp = z.infer<typeof timestampSchema>;
 
-// Concrete frame schemas of the conversation topic (the five-piece instantiation).
-// The transport envelope/golden tests use it for frame validation; the host channel layer reuses it.
+// conversation topic 的具体帧 schema（五件套实例化）。
+// 传输外壳/黄金测试用它做帧合法性校验；host 通道层 复用。
 export const conversationTopicFrameSchema = createTopicFrameSchema(
   conversationSnapshotSchema,
   conversationDeltaSchema,
@@ -219,7 +219,7 @@ export const conversationTopicWireCandidateSchema = topicWireFrameCandidateSchem
 );
 export type ConversationTopicWireCandidate = z.infer<typeof conversationTopicWireCandidateSchema>;
 
-// Concrete frame schemas of the sessions-index topic (five-piece instantiation; sidebar liveness source).
+// sessions-index topic 的具体帧 schema（五件套实例化；侧栏列表活性数据源）。
 export const sessionsIndexTopicFrameSchema = createTopicFrameSchema(
   sessionsIndexSnapshotSchema,
   sessionsIndexDeltaSchema,
@@ -256,7 +256,7 @@ export const sessionsIndexTopicWireCandidateSchema = topicWireFrameCandidateSche
 );
 export type SessionsIndexTopicWireCandidate = z.infer<typeof sessionsIndexTopicWireCandidateSchema>;
 
-// Concrete frame schemas of the workspace-config topic (additive changes; config-directory liveness source).
+// workspace-config topic 的具体帧 schema（additive 变更；配置目录活性数据源）。
 export const workspaceConfigTopicFrameSchema = createTopicFrameSchema(
   workspaceConfigSnapshotSchema,
   workspaceConfigDeltaSchema,
@@ -306,7 +306,7 @@ export type WorkspaceConfigTopicWireCandidate = z.infer<
   typeof workspaceConfigTopicWireCandidateSchema
 >;
 
-/** Shared logical / physical routing surface of the three production topics. */
+/** 三个生产 topic 的公共 logical / physical 路由面。 */
 export const routedTopicFrameSchema = z.union([
   conversationTopicFrameSchema,
   sessionsIndexTopicFrameSchema,
@@ -326,9 +326,9 @@ export const routedTopicWireCandidateSchema = z.union([
 ]);
 export type RoutedTopicWireCandidate = z.infer<typeof routedTopicWireCandidateSchema>;
 
-// -- v4 RPC entrances/exits (host channel layer) --
-// Carriers reuse the existing JSON-RPC (stdio NDJSON / socket); method names carry the v4/ prefix alongside the legacy protocol;
-// once the legacy session/* methods are deleted, this is the only protocol surface.
+// ── v4 RPC 出入口（host 通道层）──
+// 载体复用现有 JSON-RPC（stdio NDJSON / socket），方法名带 v4/ 前缀与旧协议并存；
+// 旧 session/* 方法删除后，这里就是唯一协议面。
 export const V4_METHODS = {
   connectionFlow: "v4/connection/flow",
   controllerSubscribe: "v4/controller/subscribe",
@@ -337,54 +337,54 @@ export const V4_METHODS = {
   conversationSubscribe: "v4/conversation/subscribe",
   conversationResync: "v4/conversation/resync",
   conversationUnsubscribe: "v4/conversation/unsubscribe",
-  // Row-paged query (rows/range): read-only, stateless, safe to resend on timeout.
+  // 行分页 query（rows/range）：只读、无状态、超时重发安全。
   conversationRowsRange: "v4/conversation/rowsRange",
-  // Terminal ExitPlanMode directory of the current effective branch; read-only, stateless, resend-safe.
+  // 当前有效分支的终态 ExitPlanMode 目录；只读、无状态、超时重发安全。
   conversationPlans: "v4/conversation/plans",
   conversationFileChanges: "v4/conversation/fileChanges",
   backgroundBashOutput: "v4/conversation/backgroundBashOutput",
   conversationFileRewindPreview: "v4/conversation/fileRewindPreview",
-  // Event-log paging of a workflow run (detail-page audit view): read-only, stateless, resend-safe.
-  // New methods are skew-safe by construction--legacy desktops never call them.
+  // workflow run 的事件日志分页（详情页审计面）：只读、无状态、超时重发安全。
+  // 新方法天然偏斜安全——旧桌面根本不会调用它。
   conversationWorkflowRunEvents: "v4/conversation/workflowRunEvents",
   conversationWorkflowRuns: "v4/conversation/workflowRuns",
-  // User-facing artifacts of a workflow run. A family of three:
-  // read-only, stateless, resend-safe; schemas in workflow-artifacts.ts (terminology disambiguation there too).
-  //   Artifacts    the artifact list (durable read for cold recovery and the hub detail page)
-  //   ArtifactData preset-dashboard entry paging (cursor = journal sequence)
-  //   ArtifactRead content-artifact bytes, <= 512 KiB per chunk, shape verbatim from attachmentRead
+  // workflow run 的用户面产物。三条同族：
+  // 只读、无状态、超时重发安全；schema 在 workflow-artifacts.ts（那边还有术语消歧）。
+  //   Artifacts    产物清单（冷恢复与中枢详情的 durable 读法）
+  //   ArtifactData 预置看板的条目分页（cursor = journal sequence）
+  //   ArtifactRead 内容产物的字节，≤ 512 KiB 一块，形状逐字照 attachmentRead
   conversationWorkflowRunArtifacts: "v4/conversation/workflowRunArtifacts",
   conversationWorkflowRunArtifactData: "v4/conversation/workflowRunArtifactData",
   conversationWorkflowRunArtifactRead: "v4/conversation/workflowRunArtifactRead",
-  // Workspace transcript of a workflow run. A pair,
-  // split like artifacts 1/3: Workspace is the light row list (no bodies), NodeResult one node's bounded body.
+  // workflow run 的工作区 transcript。两条同族，
+  // 照产物的 ①/③ 拆法：Workspace 是轻行清单（不带正文），NodeResult 是一个节点的有界正文。
   conversationWorkflowRunWorkspace: "v4/conversation/workflowRunWorkspace",
   conversationWorkflowRunNodeResult: "v4/conversation/workflowRunNodeResult",
-  // usage query (same shape as rows/range: read-only, stateless, resend-safe).
-  // The usage source of truth is the CLI session DB (model_usage/turn_usage aggregates); the host keeps no copy,
-  // hence a v4 query instead of a host-direct connection; the legacy usage/stats and session/usage names are retired here.
+  // usage query（模式同 rows/range：只读、无状态、超时重发安全）。
+  // usage 事实源在 CLI 的 session 库（model_usage/turn_usage 聚合），host 侧无副本，
+  // 故收敛为 v4 query 而非 host 直连；旧词 usage/stats、session/usage 就此消费清零。
   usageStats: "v4/usage/stats",
   conversationUsage: "v4/conversation/usage",
-  // Attachment transactions: full-data RPC forbidden. Each chunk's decoded bytes <=512KiB;
-  // both the renderer->host Channel and host->CLI NDJSON must prove <=1MiB per request.
+  // 附件事务：禁止 full-data RPC。每个 chunk 的 decoded bytes <=512KiB，
+  // renderer->host Channel 与 host->CLI NDJSON 都必须逐 request 证明 <=1MiB。
   attachmentBegin: "v4/attachment/begin",
   attachmentChunk: "v4/attachment/chunk",
   attachmentCommit: "v4/attachment/commit",
   attachmentAbort: "v4/attachment/abort",
-  // Sent-image previews: read-only, authorized per session row, responses still chunked at 512KiB.
+  // 已发送图片预览：只读、按 session row 授权，响应仍按 512KiB 分块。
   attachmentRead: "v4/attachment/read",
-  // Share read of userInput attachments: non-media types like text/plain allowed, still row/index authorized and chunked.
+  // Share 读取 userInput 附件：允许 text/plain 等非媒体类型，仍按 row/index 授权并分块返回。
   conversationAttachmentRead: "v4/conversation/attachmentRead",
-  // Share precheck of userInput attachment metadata: row/index authorization and stat only, no full-file read.
+  // Share 预检 userInput 附件元数据：只做 row/index 授权和 stat，不读取完整文件。
   conversationAttachmentStat: "v4/conversation/attachmentStat",
-  // Desktop-local sent videos: returns only local playback sources authorized by the same row/index.
+  // Desktop local 已发送视频：只返回经过同一 row/index 授权的本地播放源。
   attachmentPreviewSource: "v4/attachment/previewSource",
   commandsQuery: "v4/commands/query",
   command: "v4/command",
 } as const;
 export type V4Method = (typeof V4_METHODS)[keyof typeof V4_METHODS];
 
-/** Task-authorized bounded output query; no arbitrary paths, no caller-enlarged read budgets. */
+/** 按任务授权的有界输出查询，不接受任意路径或调用方扩大的读取预算。 */
 export const v4BackgroundBashOutputParamsSchema = z.strictObject({
   sessionId: z.string().min(1),
   workId: z.string().min(1),
@@ -405,40 +405,40 @@ export type V4ConnectionFlowParams = z.infer<typeof v4ConnectionFlowParamsSchema
 export const v4ConnectionFlowResultSchema = z.object({}).strict();
 
 export const V4_NOTIFICATIONS = {
-  // Downstream frames (snapshot / deltas); params = ConversationTopicFrame.
+  // 下行帧（snapshot / deltas），params = ConversationTopicFrame。
   conversationFrame: "v4/conversation/frame",
-  // Body-less facts for live ingest only; never into topic snapshot/recovery.
+  // 仅 live ingest 的无正文事实；不进入 topic snapshot/recovery。
   conversationTelemetryFact: "v4/telemetry/event",
   localTtftFacts: "v4/telemetry/local-ttft",
-  // Produced only by the current process's live ToolCallResult; history and replayable paths must not fabricate it.
+  // 仅当前进程 live ToolCallResult 产生；历史与 replayable 链路不得补造。
   cuaPermissionObservation: "v4/cua/permission-observation",
 } as const;
 
-/** 3.3.6 SSH historical-task attribution proof; shares the bounded window with the sessions-index cold seed. */
+/** 3.3.6 SSH 历史任务归属证明与 sessions-index 冷种子共享同一有界窗口。 */
 export const MAX_LEGACY_TASK_IDS_PER_SUBSCRIBE = 200;
 
-// subscribe request = generic SubscribeParams + connectionId (re-subscribe replacement is decided by
-// (connectionId, topic); in the single-stdio-pipe case the host allocates one per downstream client).
+// subscribe 请求 = 通用 SubscribeParams + connectionId（重订阅替换按
+// (connectionId, topic) 判定；stdio 单管道场景由 host 为每个下游客户端分配）。
 export const v4ConversationSubscribeParamsSchema = subscribeParamsSchema.extend({
   connectionId: z.string(),
   clientMode: z.enum(["desktop-continuous", "web-remote-replayable"]),
-  // Workspace of the currently trusted attachment; cold resume prefers it for identity restoration, live ignores it.
+  // 当前可信 attachment 的 workspace；cold resume 优先使用它恢复身份，live 不消费。
   workspace: zcodeWorkspaceRefSchema.optional(),
-  /** Allowlist of legacy task attributions read exactly from the remote workspace's tasks-index by the host. */
+  /** host 从当前 remote workspace 的 tasks-index 精确读取的旧任务归属 allowlist。 */
   legacyTaskIds: z.array(z.string().min(1)).max(MAX_LEGACY_TASK_IDS_PER_SUBSCRIBE).optional(),
-  // For host->CLI cold resume only; live conversation never consumes this hint.
+  // 仅供 host→CLI cold resume 使用；live conversation 不消费该 hint。
   resumeThoughtLevel: z.string().trim().min(1).optional(),
   /**
-   * Whether this subscription takes `workflowRun.*` key-level deltas. Kin of `clientMode`: injected by the **trusted host** from that
-   * connection's clientHello; UI-facing subscribes cannot pick it--whether a client understands deltas is a fact of the connection,
-   * not a per-subscription taste. Absent = treat as legacy consumer (whole-key patch + legacy-cap clamp).
+   * 这条订阅收不收 `workflowRun.*` 键级增量。与 `clientMode` 同族：由**可信 host** 从该连接的
+   * clientHello 注入，面向 UI 的 subscribe 选不了它——一个客户端能不能认得增量是连接的事实，
+   * 不是某一次订阅可以自选的口味。缺席 = 按旧消费者处理（整键 patch + 旧界裁剪）。
    */
   workflowRunDeltas: z.boolean().optional(),
 });
 export type V4ConversationSubscribeParams = z.infer<typeof v4ConversationSubscribeParamsSchema>;
 
-// The common subscribe response is ACK-only. The initial snapshot/resume is emitted by the server's
-// request-scoped post-response outbox as an owned notification after the response line.
+// 公共 subscribe response 严格只含 ACK。initial snapshot/resume 由 server 的
+// request-scoped post-response outbox 在 response line 之后作为 owned notification 发出。
 export const v4ConversationSubscribeResultSchema = z
   .object({
     ack: conversationSubscribeAckSchema,
@@ -446,7 +446,7 @@ export const v4ConversationSubscribeResultSchema = z
   .strict();
 export type V4ConversationSubscribeResult = z.infer<typeof v4ConversationSubscribeResultSchema>;
 
-// sessions-index and conversation share one subscribe RPC; the common response is likewise ACK-only.
+// sessions-index 与 conversation 共用同一 subscribe RPC；公共 response 同样 ACK-only。
 export const v4SessionsIndexSubscribeResultSchema = z
   .object({
     ack: subscribeAckSchema,
@@ -454,7 +454,7 @@ export const v4SessionsIndexSubscribeResultSchema = z
   .strict();
 export type V4SessionsIndexSubscribeResult = z.infer<typeof v4SessionsIndexSubscribeResultSchema>;
 
-// workspace-config also ACKs only; the initial frame follows the same post-response notification ordering.
+// workspace-config 也只回 ACK；initial frame 走同一 post-response notification 时序。
 export const v4WorkspaceConfigSubscribeResultSchema = z
   .object({
     ack: subscribeAckSchema,
@@ -464,8 +464,8 @@ export type V4WorkspaceConfigSubscribeResult = z.infer<
   typeof v4WorkspaceConfigSubscribeResultSchema
 >;
 
-// Same-sub recovery for live subscriptions. topic/connection/profile must be looked up by the host owned registry;
-// the client may only declare its acknowledged watermark and whether to force a snapshot.
+// 活跃订阅的 same-sub 恢复。topic/connection/profile 必须由 host owned registry
+// 反查，客户端只能声明自己已确认的水位与是否强制 snapshot。
 export const conversationResyncParamsSchema = z
   .object({
     subscriptionId: z.string().trim().min(1).max(1024),
@@ -481,7 +481,7 @@ export const conversationResyncParamsSchema = z
   .strict();
 export type ConversationResyncParams = z.infer<typeof conversationResyncParamsSchema>;
 
-// CLI-facing shape: topic/connectionId injected only by the connection facade from the owned registry.
+// CLI-facing 形状：topic/connectionId 只能由 connection facade 从 owned registry 注入。
 export const v4ConversationResyncParamsSchema = conversationResyncParamsSchema
   .extend({
     topic: z.string().trim().min(1).max(2048),
@@ -506,32 +506,32 @@ export const v4ConversationUnsubscribeParamsSchema = z
   .strict();
 export type V4ConversationUnsubscribeParams = z.infer<typeof v4ConversationUnsubscribeParamsSchema>;
 
-// -- rows/range (cursor-based row paging, loadOlder) --
-// No index semantics: total order = ascending rowId; the client merges keyed by rowId.
+// ── rows/range（游标制行分页，loadOlder）──
+// 无 index 语义：全序 = rowId 升序；客户端按 rowId 键控合并。
 export const v4ConversationRowsRangeParamsSchema = z.object({
   sessionId: z.string(),
   /** Host attachment injects this trusted value; renderer callers omit it. */
   clientMode: z.enum(["desktop-continuous", "web-remote-replayable"]).optional(),
-  // Rows with rowId < beforeRowId; absent = backwards from the current tail.
+  // 取 rowId < beforeRowId 的行；缺省 = 从当前尾部向前。
   beforeRowId: z.number().optional(),
   limit: z.number().min(1).max(PROTOCOL_V4_LIMITS.rowsRangeMaxLimit),
 });
 export type V4ConversationRowsRangeParams = z.infer<typeof v4ConversationRowsRangeParamsSchema>;
 
 export const v4ConversationRowsRangeResultSchema = z.object({
-  // Ascending rowId.
+  // rowId 升序。
   rows: z.array(conversationRowSchema),
-  // Watermark/epoch at server read time; shared with read-only queries like fileChanges so data is not stitched across revisions.
+  // 服务端取值时的水位/纪元；与 fileChanges 等只读查询共用，避免跨 revision 拼接发布数据。
   atSeq: z.number(),
   atRevision: z.number().int().nonnegative(),
   atLogEpoch: z.string(),
-  // Whether older rows exist in the beforeRowId direction.
+  // beforeRowId 方向是否还有更早的行。
   hasMore: z.boolean(),
 });
 export type V4ConversationRowsRangeResult = z.infer<typeof v4ConversationRowsRangeResultSchema>;
 
 // ── conversation plans directory ──
-// The directory comes from the CLI's full effective projection, never derived from the renderer's bounded tail window.
+// 目录来自 CLI 完整有效 projection，不能用 renderer 的有界 tail window 推导。
 export const v4ConversationPlansParamsSchema = z
   .object({
     sessionId: z.string().min(1),
@@ -541,7 +541,7 @@ export type V4ConversationPlansParams = z.infer<typeof v4ConversationPlansParams
 
 export const v4ConversationPlansResultSchema = z
   .object({
-    // Terminal ExitPlanMode of the current effective branch, rowId descending (newest first).
+    // 当前有效分支的终态 ExitPlanMode，rowId 降序（最新优先）。
     plans: z.array(toolCallRowSchema),
     atSeq: z.number().int().nonnegative(),
     atLogEpoch: z.string().min(1),
@@ -591,18 +591,29 @@ export const v4ConversationFileChangesResultSchema = z
   .strict();
 export type V4ConversationFileChangesResult = z.infer<typeof v4ConversationFileChangesResultSchema>;
 
-// -- workflow run event log --
-// Same family as rows/range and plans: read-only, stateless, resend-safe. cursor = journal sequence
-// (monotonically assigned by `appendEvent`), refetched when workflowRuns[].lastEventSequence rises.
-// Deliberately **not** a v4 command: a command's ACK is the closed "change result" discriminated union of
-// commandResultSchema--stuffing a read-only page into it puts reads into the write vocabulary and drags along baseRevision/idempotence for nothing.
+// ── workflow run 事件日志──
+// 形态与 rows/range、plans 同族：只读、无状态、超时重发安全。cursor = journal sequence
+// （`appendEvent` 单调分配），在 workflowRuns[].lastEventSequence 抬升时重取。
+// 刻意**不是** v4 command：command 的 ACK 结果是 commandResultSchema 那个封闭的「变更结果」
+// 判别联合，把一页只读事件塞进去等于把读放进写的词汇表，还要白背 baseRevision/幂等那套机制。
+
+/**
+ * 事件日志一页的两道界，网关按它们取数（apps/zcode-cli/packages/dynamic-workflow/docs/execution-engine.md
+ * 「Reading the journal」）。字节按存储里的序列化字节计、取协议单帧上限的四分之一：条数单独
+ * 管不住字节，500 条带着大 report item 的事件足以顶到单帧上限。
+ */
+export const WORKFLOW_RUN_EVENTS_PAGE_LIMITS = {
+  maxEvents: 500,
+  maxBytes: PROTOCOL_V4_LIMITS.logicalFrameAssemblyMaxBytes / 4,
+} as const;
+
 export const v4ConversationWorkflowRunEventsParamsSchema = z
   .object({
     sessionId: z.string().min(1),
     runId: z.string().min(1),
-    /** Only events with sequence strictly greater; absent = from the beginning. */
+    /** 只取 sequence 严格大于该值的事件；缺省从头取。 */
     afterSequence: z.number().int().nonnegative().optional(),
-    limit: z.number().int().positive().max(500).optional(),
+    limit: z.number().int().positive().max(WORKFLOW_RUN_EVENTS_PAGE_LIMITS.maxEvents).optional(),
   })
   .strict();
 export type V4ConversationWorkflowRunEventsParams = z.infer<
@@ -616,45 +627,45 @@ export const v4ConversationWorkflowRunEventsResultSchema = z
         .object({
           sequence: z.number().int().nonnegative(),
           type: z.string().min(1).max(64),
-          // The payload was bounded CLI-side by boundDynamicWorkflowRunEventPayload (the same serialization
-          // also feeds the workflowRuns projection). The engine's event shape is not restated here: readers interpret by kind.
+          // 载荷已在 CLI 侧经 boundDynamicWorkflowRunEventPayload 有界化（同一次序列化
+          // 也喂给 workflowRuns 投影）。这里不再复述引擎的事件形状：读端按种类解释。
           payload: z.record(z.string(), z.unknown()),
           truncated: z.boolean().optional(),
         })
         .strict(),
     ),
-    /** This page filled `limit` and more events follow. */
+    /** 本页之后仍有事件（页可能因条数或字节上界提前收尾）。 */
     hasMore: z.boolean(),
   })
   .strict();
-// **Deliberately no `atSeq` / `atLogEpoch`**, although sibling rows/range and plans carry both.
+// **刻意不带 `atSeq` / `atLogEpoch`**，尽管同族的 rows/range 与 plans 都带。
 //
-// There those fields are **stale-read guards**: they read the conversation projection, whose
-// `rowId` is meaningful only within one log epoch (rebuild / fork / rewind renumber), so the reader contract is
-// "atLogEpoch != store's current epoch => discard the whole result".
+// 那两个字段在同族里是**陈旧读防护**：它们读的是 conversation projection，而 projection 的
+// `rowId` 只在一个 log epoch 内有意义（重建 / fork / rewind 会重新编号），所以读端的契约是
+// "atLogEpoch ≠ store 当前 epoch → 整个结果丢弃"。
 //
-// This query reads the **journal** (`dwf_event`), unrelated to the conversation log, and its cursor never expires:
-// the journal's JournalStorePort contract requires append-only sequences,
-// continuing from the existing max across resumes, never reset or reused; existing numbering is stable. So a
-// `(runId, sequence)` cursor is valid forever--there is no "stale" to guard against.
+// 本 query 读的是 **journal**（`dwf_event`），它与 conversation log 无关，且 cursor 永不失效：
+// journal 的 JournalStorePort 契约要求 sequence 只追加、
+// 跨 resume 从既有最大值继续、既不重置也不复用，既有条目的编号不变。也就是说一个
+// `(runId, sequence)` cursor 永远有效——没有任何"陈旧"可供防护。
 //
-// Worse, adding `atLogEpoch` is not harmless symmetry: per the sibling reader contract, a rewind of a wholly unrelated
-// session (epoch change) would make the detail page drop an entirely **valid** journal page. Rather one field less
- // than a field whose correct semantics cannot be defined here.
+// 更要紧的是：带上 `atLogEpoch` 不是无害的对称。按同族的读端契约，一次与 run 完全无关的
+// 会话 rewind（epoch 变化）会让详情页把**合法的** journal 页整页丢掉。宁可少一个字段，
+// 也不要携带一个在这里定义不出正确语义的字段。
 export type V4ConversationWorkflowRunEventsResult = z.infer<
   typeof v4ConversationWorkflowRunEventsResultSchema
 >;
 
-// -- dwf run enumeration --
-// The journal-backed post-restart discovery surface: the `workflowRuns` projection is memory-only (cold-merge classified)
-// and empty after restart--tool-card joins and Resume-button availability must be restored from dwf_run rows. Kin of
-// workflowRunEvents (read-only, stateless, resend-safe), likewise deliberately not a v4 command,
-// likewise no atSeq/atLogEpoch (journal reads, unrelated to the conversation log; see the previous query's argument).
-// New method, skew-safe by construction: legacy desktops never call it.
+// ── dwf run 枚举 ──
+// journal-backed 的重启后发现面：`workflowRuns` 投影是 memory-only（冷合并归类），
+// 重启后为空——工具卡 join 与 Resume 按钮的可用性只能从 dwf_run 行还原。与
+// workflowRunEvents 同族（只读、无状态、超时重发安全），同样刻意不是 v4 command，
+// 同样不带 atSeq/atLogEpoch（读 journal，与 conversation log 无关，见上一个 query 的论证）。
+// 新方法天然偏斜安全：旧桌面永远不会调用它。
 export const v4ConversationWorkflowRunsParamsSchema = z
   .object({
     sessionId: z.string().min(1),
-    /** Row cap; defaulting and clamping live CLI-side (the enumeration surface is bounded, never an unbounded table scan). */
+    /** 返回条数上限；缺省与钳制在 CLI 侧（枚举面有界，绝不无界扫库）。 */
     limit: z.number().int().positive().max(64).optional(),
   })
   .strict();
@@ -665,31 +676,31 @@ export type V4ConversationWorkflowRunsParams = z.infer<
 export const v4ConversationWorkflowRunSummarySchema = z
   .object({
     runId: z.string().min(1),
-    /** CreateWorkflow tool-call id that started the run (the tool-card -> detail/Resume join key); absent on legacy runs. */
+    /** 发起 run 的 CreateWorkflow 工具调用 id（工具卡 → 详情页/Resume 的关联键）；老 run 缺席。 */
     toolCallId: z.string().min(1).optional(),
     /**
-     * Display label, derived at read time (`name` -> script first line -> runId). Optional is skew-safety:
-     // legacy CLIs omit the key and readers fall back to runId--a missing label is degradation, not an error.
-     // Cap mirrors the derivation side's 80 chars with headroom (user-set `name` is not bound by the derivation cap).
+     * 展示标签，服务端读时派生（`name` → 脚本首行 → runId）。optional 是偏斜安全：
+     * 老 CLI 不发这个键，读侧回落 runId——少一个标签是退化，不是错误。
+     * 上限与派生侧的 80 字符对齐后留一倍余量（用户起的 `name` 不受派生上限约束）。
      */
     label: z.string().min(1).max(160).optional(),
-    /** Last update (epoch millis, the journal's `dwf_run.time_updated`); absent = no time shown. */
+    /** 最后更新时间（epoch 毫秒，journal 的 `dwf_run.time_updated`）。缺席即不显示时间。 */
     updatedAt: z.number().int().nonnegative().optional(),
-    // Same five-value vocabulary as the workflowRuns projection;
-    // this query uses its own schema so new query states never alter the projection's state keys.
+    // 与 workflowRuns 投影同一套五值词汇；
+    // 此查询使用独立的 schema，新增查询状态不改变投影侧的状态键。
     status: z.enum(["completed", "errored", "pending", "running", "stopped"]),
-    /** Present only when `status === "stopped"`. One shared word list with the observation surface--duplicated copies once made this
-     * strict schema reject the whole run directory when the engine gained
-     * `superseded` (desktop showed "failed to read run summary"; task-list counts and the directory page blanked together). */
+    /** `status === "stopped"` 才在场。词表与观察面共用一份——这里曾各抄一遍，于是引擎多出
+     * `superseded` 时这份 strict schema 把整页 run 目录拒掉（桌面端表现为
+     * 「读取 run 摘要失败」，任务列表计数与目录页一起空白）。 */
     stopReason: z.enum(WORKFLOW_RUN_STOP_REASONS).optional(),
-    // lineage: revised runs carry a predecessor,
-    // superseded runs a successor (only with `stopReason: "superseded"`). Both optional: legacy CLIs omit them.
+    // lineage：修订出来的 run 带前驱，
+    // 被替代的 run 带后继（只随 `stopReason: "superseded"`）。两者 optional：老 CLI 不发。
     resumedFrom: z.string().min(1).optional(),
     supersededBy: z.string().min(1).optional(),
-    /** Structured failure code of errored / stopped(provider|interrupted) (`ProviderStop` / `Interrupted` ...). */
+    /** errored / stopped(provider|interrupted) 的结构化失败编码（`ProviderStop` / `Interrupted` …）。 */
     failureCode: z.string().min(1).max(64).optional(),
     failureMessage: z.string().max(2048).optional(),
-    /** Resumable? Computed CLI-side by the same predicate as the resume gate--the UI never derives it (two predicates drift). */
+    /** 是否可恢复。CLI 按 resume 门的同一个谓词算好——UI 绝不自行推导（两处谓词会漂移）。 */
     resumable: z.boolean(),
   })
   .strict();
@@ -699,7 +710,7 @@ export type V4ConversationWorkflowRunSummary = z.infer<
 
 export const v4ConversationWorkflowRunsResultSchema = z
   .object({
-    /** Most recent first (ordered in the storage layer). */
+    /** 最近更新在前（排序在存储层）。 */
     runs: z.array(v4ConversationWorkflowRunSummarySchema),
   })
   .strict();
@@ -768,8 +779,8 @@ export type V4ConversationFileRewindPreviewResult = z.infer<
 >;
 
 // ── usage query──
-// App-level usage aggregation: range/timeZone inputs mirror legacy usage/stats (consumer semantics unchanged),
-// result = AppUsageSnapshot (shape owned by the neutral usage-stats.ts, not coupled to the legacy name file).
+// app 级用量聚合：range/timeZone 入参与旧 usage/stats 同形（消费者语义不变），
+// 结果 = AppUsageSnapshot（形状归属中性模块 usage-stats.ts，不与旧词表文件耦合）。
 export const v4UsageStatsParamsSchema = z
   .object({
     range: z.enum(APP_USAGE_RANGES),
@@ -780,8 +791,8 @@ export type V4UsageStatsParams = z.infer<typeof v4UsageStatsParamsSchema>;
 export const v4UsageStatsResultSchema = appUsageSnapshotSchema;
 export type V4UsageStatsResult = z.infer<typeof v4UsageStatsResultSchema>;
 
-    // Session-level token usage (the v4 namespace home of legacy session/usage: sessions are first-class protocol concepts,
-    // tasks are a UI projection and stay out of the protocol vocabulary). Fields mirror the legacy result; the legacy schema dies with the name.
+// 会话级 token 用量（旧 session/usage 的 v4 名字空间落位：会话是协议一等概念，
+// task 是 UI 投影概念不进协议词表）。字段与旧 result 同形，旧 schema 随词一起死。
 export const v4ConversationUsageParamsSchema = z
   .object({
     sessionId: z.string().min(1),
@@ -804,15 +815,15 @@ export const v4ConversationUsageResultSchema = z
   .strict();
 export type V4ConversationUsageResult = z.infer<typeof v4ConversationUsageResultSchema>;
 
-// -- Attachment upload transaction --
-// The UI high level still uses put(input)->ref; this full-data schema describes renderer-internal calls only, never a
-// production RPC method. The wire only allows begin/chunk/commit/abort.
+// ── 附件上行事务 ──
+// UI 高层仍用 put(input)->ref；这份 full-data schema 只描述 renderer 内部调用，绝不作为
+// production RPC method。wire 只能用 begin/chunk/commit/abort。
 export const v4AttachmentPutParamsSchema = z
   .object({
     sessionId: z.string().min(1),
     fileName: z.string().min(1),
     mime: z.string().min(1),
-    // base64 (no data: prefix); decoded bytes <= PROTOCOL_V4_LIMITS.attachmentMaxBytes.
+    // base64（不带 data: 前缀）；解码后字节数 ≤ PROTOCOL_V4_LIMITS.attachmentMaxBytes。
     dataBase64: z.string().min(1),
   })
   .strict();
@@ -951,12 +962,12 @@ export const v4AttachmentAbortParamsSchema = v4AttachmentTerminalParamsSchema;
 export type V4AttachmentAbortParams = z.infer<typeof v4AttachmentAbortParamsSchema>;
 export const v4AttachmentAbortResultSchema = z.object({}).strict();
 
-/** Sent image/video/PDF preview query; the ref must be re-authorized by the CLI against the current session projection. */
+/** 已发送 image/video/PDF 预览 query；ref 必须由 CLI 对当前 session projection 再授权。 */
 export const v4AttachmentReadParamsSchema = z
   .object({
     sessionId: z.string().min(1),
     ref: z.string().min(1),
-    // New renderers use stable row identity + attachment ordinal to kill same-path cross-round ambiguity; the pair is mandatory.
+    // 新 renderer 用稳定 row 身份 + 附件序号消除同一路径跨轮歧义；两者必须成对出现。
     target: conversationRowTargetSchema.optional(),
     attachmentIndex: z.number().int().nonnegative().optional(),
     offset: z.number().int().nonnegative(),
@@ -973,7 +984,7 @@ export const v4AttachmentReadParamsSchema = z
   });
 export type V4AttachmentReadParams = z.infer<typeof v4AttachmentReadParamsSchema>;
 
-/** Desktop-local sent-video source query; remote and web must return chunked. PDF is always chunked. */
+/** Desktop local 已发送视频 source query；远端与 Web 必须返回 chunked。PDF 始终走 chunked。 */
 export const v4AttachmentPreviewSourceParamsSchema = z
   .object({
     sessionId: z.string().min(1),
@@ -1016,8 +1027,9 @@ export const v4AttachmentReadResultSchema = z
         (value) =>
           value.startsWith("image/") ||
           value.startsWith("video/") ||
-          value.split(";", 1)[0]?.trim().toLowerCase() === "application/pdf",
-        "attachment preview only supports image/video/pdf media types",
+          value.split(";", 1)[0]?.trim().toLowerCase() === "application/pdf" ||
+          value.split(";", 1)[0]?.trim().toLowerCase() === "text/plain",
+        "attachment preview only supports image/video/pdf/plain text types",
       ),
     totalBytes: z.number().int().nonnegative().max(PROTOCOL_V4_LIMITS.attachmentPreviewMaxBytes),
     nextOffset: z.number().int().positive().nullable(),
@@ -1025,7 +1037,9 @@ export const v4AttachmentReadResultSchema = z
   .strict()
   .superRefine((value, context) => {
     if (
-      value.mediaType.startsWith("image/") &&
+      // 根因：运行时已支持材料文本，响应 schema 仍只接受媒体，导致跨进程预览失败。
+      (value.mediaType.startsWith("image/") ||
+        value.mediaType.split(";", 1)[0]?.trim().toLowerCase() === "text/plain") &&
       value.totalBytes > PROTOCOL_V4_LIMITS.attachmentMaxBytes
     ) {
       context.addIssue({
@@ -1033,7 +1047,7 @@ export const v4AttachmentReadResultSchema = z
         maximum: PROTOCOL_V4_LIMITS.attachmentMaxBytes,
         origin: "number",
         inclusive: true,
-        message: "image preview exceeds total byte limit",
+        message: "image/text preview exceeds total byte limit",
         path: ["totalBytes"],
       });
     }
@@ -1062,7 +1076,7 @@ export const v4AttachmentReadResultSchema = z
   });
 export type V4AttachmentReadResult = z.infer<typeof v4AttachmentReadResultSchema>;
 
-/** Share read of user-input attachments; any authorized MIME, no change to media-preview read semantics. */
+/** Share 读取用户输入附件，允许任意已授权 MIME，不改变媒体预览 read 的语义。 */
 export const v4ConversationAttachmentReadParamsSchema = z
   .object({
     sessionId: z.string().min(1),
@@ -1113,7 +1127,7 @@ export type V4ConversationAttachmentReadResult = z.infer<
   typeof v4ConversationAttachmentReadResultSchema
 >;
 
-/** Share selection-stage metadata-only attachment check. */
+/** Share 选择阶段的 metadata-only 附件检查。 */
 export const v4ConversationAttachmentStatParamsSchema = z
   .object({
     sessionId: z.string().min(1),
@@ -1129,8 +1143,8 @@ export type V4ConversationAttachmentStatParams = z.infer<
 export const v4ConversationAttachmentStatResultSchema = z
   .object({
     mediaType: z.string().min(1),
-    // stat is a metadata-only probe and must express real sizes above the transfer cap, otherwise
-    // "known over-capacity" cannot be presented as a blocker at selection time (see the attachmentStatMaxBytes comment).
+    // stat 是 metadata-only 探测，必须能表达超过传输上限的真实大小，否则
+    // 「已知容量超限」无法在选择阶段作为阻断项呈现（见 attachmentStatMaxBytes 注释）。
     totalBytes: z.number().int().nonnegative().max(PROTOCOL_V4_LIMITS.attachmentStatMaxBytes),
     mtimeMs: z.number().finite().optional(),
   })
@@ -1139,12 +1153,12 @@ export type V4ConversationAttachmentStatResult = z.infer<
   typeof v4ConversationAttachmentStatResultSchema
 >;
 
-/** conversation topic key construction (dual of parseConversationTopic). */
+/** conversation topic key 构造（与 parseConversationTopic 对偶）。 */
 export function conversationTopic(sessionId: string): string {
   return `conversation/${sessionId}`;
 }
 
-/** conversation topic key parse ("conversation/<sessionId>"). */
+/** conversation topic key 解析（"conversation/<sessionId>"）。 */
 export function parseConversationTopic(topic: string): string | null {
   if (!topic.startsWith("conversation/")) return null;
   const sessionId = topic.slice("conversation/".length);

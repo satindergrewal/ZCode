@@ -15,7 +15,7 @@ import {
   type HydratedGoalVerificationEntry,
 } from "./transcript-hydration.js";
 
-interface ConversationMaterializationSource {
+export interface ConversationMaterializationSource {
   goalVerificationEntries: HydratedGoalVerificationEntry[];
   memoryEvents: SessionEvent[];
   messages: MessageWithParts[];
@@ -120,7 +120,7 @@ export async function loadPersistedConversationMaterialization(input: {
   };
 }
 
-interface ColdEventMergeDiagnostic {
+export interface ColdEventMergeDiagnostic {
   code:
     | "cold_merge.durable_event_suppressed"
     | "cold_merge.ambiguous_legacy_turn_preserved"
@@ -148,6 +148,13 @@ interface MergeInput {
   target?: SessionGoal | null;
 }
 
+const LIVE_ONLY_EVENT_TYPES = new Set<string>([
+  SessionEventType.PluginUiResourceUpdated,
+  SessionEventType.PluginUiResourceListChanged,
+  SessionEventType.PluginUiAppToolCallRequested,
+  SessionEventType.PluginUiInstanceClosed,
+]);
+
 const MEMORY_ONLY_EVENT_TYPES = new Set<string>([
   SessionEventType.SessionResumed,
   SessionEventType.SessionTitleUpdated,
@@ -166,6 +173,7 @@ const MEMORY_ONLY_EVENT_TYPES = new Set<string>([
   SessionEventType.DynamicWorkflowRunProgress,
   SessionEventType.TargetChanged,
   SessionEventType.RewindTriggered,
+  SessionEventType.TurnExecutionModelFallback,
 ]);
 
 const TRANSCRIPT_DERIVED_EVENT_TYPES = new Set<string>([
@@ -868,6 +876,11 @@ export function mergeColdConversationEvents(input: MergeInput): ColdEventMergeRe
             // session_target is durable authority, yet the legacy merge appended in-memory TargetChanged as
             // an ephemeral tail, letting cold-restore terminal state be overridden by the old goal; an explicit null must override too.
       recordDiagnostic(diagnostics, "cold_merge.durable_event_suppressed", event);
+      return;
+    }
+    if (LIVE_ONLY_EVENT_TYPES.has(event.type)) {
+      // 插件 UI 资源通知只对当时活着的沙箱实例有意义，冷恢复一律丢弃。
+      recordDiagnostic(diagnostics, "cold_merge.non_product_event_suppressed", event);
       return;
     }
     if (MEMORY_ONLY_EVENT_TYPES.has(event.type)) {

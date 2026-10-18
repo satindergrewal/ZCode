@@ -2,12 +2,12 @@
 // AmendWorkflow Tool Handler
 // ============================================================
 //
-// Two differences from CreateWorkflow: resolveInput resolves the **predecessor run**, not a saved file
-// (omitted script/concurrency/model inherit from the predecessor -- amend-workflow-resolve.ts; script
-// provenance in amend-workflow-source.ts), and the handler calls
-// `port.amend` (service stops the in-flight predecessor, waits, imports, relaunches). Compile, diagnostic
-// paths, display payload, and the backgrounded contract are verbatim CreateWorkflow; the model-facing
-// response follows its shape plus one line -- which run was replaced -- and, on inherited script, "script unchanged".
+// 与 CreateWorkflow 的差别只有两处：resolveInput 解析的是**前驱 run**而不是保存的文件（省略的
+// 脚本、并发上界与子代理模型都从前驱沿用，见 amend-workflow-resolve.ts；脚本的三条来路见
+// amend-workflow-source.ts），handler 调的是
+// `port.amend`（service 负责停在飞前驱、等结算、导入、启动）。编译、诊断路径、display 载荷、
+// backgrounded 契约与 CreateWorkflow 逐字共用——模型面的 response 也照它的样子写，只多一句
+// 「哪个 run 被替代了」，沿用脚本时再多说一句「脚本没变」。
 
 import {
   AMEND_WORKFLOW_TOOL_NAME,
@@ -58,8 +58,21 @@ import {
   type WorkflowScriptLocation,
 } from "./workflow-script-notes.js";
 import { analyzeScript } from "./workflow-script-analysis.js";
+import {
+  allScriptModelsBound,
+  describeScriptModelBindings,
+  readScriptModelBindings,
+  scriptModelSelections,
+  unresolvedScriptModelDiagnostics,
+} from "./workflow-script-models.js";
 import { describeWorkflowScriptPath } from "./workflow-script-path.js";
 import { amendWorkflowNeedsSkill, requireDynamicWorkflowSkill } from "./workflow-skill-gate.js";
+import {
+  applyWorkflowSettingsAdjustments,
+  describeWorkflowRunSettings,
+  readAppliedWorkflowSettings,
+  withWorkflowAdjustableSettings,
+} from "./workflow-settings-adjustment.js";
 
 const AMEND_WORKFLOW_TIMEOUT_MS = 15_000;
 const AMEND_WORKFLOW_MODEL_BYTES = 24_000;
@@ -73,7 +86,7 @@ function amendUnavailableFailure(): ToolHandlerFailure {
   };
 }
 
-/** Port refusal reasons -> structured failures with actionable copy (discriminant: message prefix). */
+/** 端口两种拒绝理由 → 各配可操作文案的结构化失败（判别键在 message 前缀）。 */
 function amendRefusalFor(reason: string, runId: string): ToolHandlerFailure {
   switch (reason) {
     case "run_not_found":
@@ -85,7 +98,7 @@ function amendRefusalFor(reason: string, runId: string): ToolHandlerFailure {
         message: `workflow_amend_missing_boundaries: run ${runId}'s journal predates transcript-boundary bookkeeping (or its boundaries were never recorded), so its finished asks cannot seed an amended run — there is no fallback. Submit this script as a fresh CreateWorkflow instead. Nothing was stopped or created.`,
       };
     default:
-      // Out-of-contract reason: still a structured failure (throw is the wiring-bug channel); copy keeps the raw word for triage.
+      // 端口契约外的 reason：仍回结构化失败（throw 是接线故障的通道），文案带原词供日志排查。
       return {
         result: false,
         errorCode: AMEND_WORKFLOW_ERROR_CODE.MISSING_BOUNDARIES,
@@ -95,10 +108,10 @@ function amendRefusalFor(reason: string, runId: string): ToolHandlerFailure {
 }
 
 /**
- * Copy handed back when the script does not compile. Diagnostic lines and NOTE use file coordinates per
- "Script files" (when the script has one). An inherited script must say so up front -- **inherited**:
- * the model wrote none of these lines this call and would blame its own args (same reasoning as
- * "inherited subagent model unavailable"). Both add: the predecessor was untouched.
+ * 编不过时交回模型的文案。诊断行与 NOTE 照「Script files」写成文件坐标（脚本有文件时）。沿用来的
+ * 脚本要先说清它是**继承
+ * 来的**：模型这次调用没写这些行，光给诊断它会以为自己传错了参数——与「继承来的子代理模型已
+ * 不可用」同一条理由。两种情形都补一句前驱未动：否则模型会以为它刚把一个在跑的 run 停掉了。
  */
 function compileFailureResponse(
   input: AmendWorkflowInput,
@@ -124,9 +137,9 @@ function compileFailureResponse(
 
 const amendWorkflowHandler: ToolHandler = async (input, context) => {
   const parsed = AmendWorkflowInputSchema.parse(input) as AmendWorkflowInput;
-  // In-place concurrency:
-// the path resolveInput approved leaves one trace here -- no script, one number. On port `not_live`
-// (settled between the two steps) fall back to a real amend; compile deferred to that moment.
+  // 就地调并发（docs/dynamic-workflow/launch.md「Changing only the parallelism of a live run」）：
+  // resolveInput 判过的那条路在这里只剩一个痕迹——没有脚本、只有一个并发值。端口答 `not_live`
+  // （run 在两步之间结算了）时回落到一次真正的修订，脚本与编译推迟到那一刻才发生。
   if (isConcurrencyOnlyAmend(parsed)) {
     const retuned = await runConcurrencyRetune(parsed, context);
     if (retuned !== undefined) return retuned;
@@ -137,26 +150,39 @@ const amendWorkflowHandler: ToolHandler = async (input, context) => {
   return await amendResolvedWorkflow(parsed, context);
 };
 
-/** The amend proper: args now certainly carry the script that will run (routing and fall-back settled). */
+/** 修订本体：入参此刻必定带着将要跑的那份脚本（工具路由与落回路都已落定它）。 */
 async function amendResolvedWorkflow(
   parsed: AmendWorkflowInput,
   context: ToolExecutionContext,
 ): Promise<CreateWorkflowOutput | ToolHandlerFailure> {
-  // resolveInput always lands a script (`path` read into `script`, omissions backfilled, or hard fail);
-// a missing script here means a normalization-bypassing caller -- same structured failure, never hand
- // undefined to the compiler.
+  // resolveInput 恒把脚本落定进来（`path` 读成 `script`、省略的从前驱回填，或当场失败）；到这里还
+  // 缺脚本，只可能是绕过归一化的调用方——同样回结构化失败，而不是把 undefined 交给编译器。
+  const script = parsed.script;
   if (script === undefined) return scriptUnavailableFailure(parsed.run_id, "host");
   const cwd = context.workingDirectory;
 
   const analysis = analyzeScript(script);
-  const { diagnostics, ok } = analysis;
+  // 脚本点名的模型：与 CreateWorkflow 同一条路（没绑定的名字报 9011）。文案要分清「沿用前驱的
+  // 那个模型没了」与「这个名字解不出来」，所以只在真有没绑定的名字时才再读一次前驱的绑定表。
+  const modelBindings = readScriptModelBindings(parsed);
+  const modelDiagnostics =
+    analysis.ok && !allScriptModelsBound(analysis, modelBindings)
+      ? unresolvedScriptModelDiagnostics(
+          analysis,
+          modelBindings,
+          context.modelCatalogPort,
+          (await context.dynamicWorkflowRunPort?.getTask(parsed.run_id))?.modelBindings,
+        )
+      : [];
+  const diagnostics = [...analysis.diagnostics, ...modelDiagnostics];
+  const ok = analysis.ok && modelDiagnostics.length === 0;
   const causalityGraph = boundGraphOfAnalysis(analysis);
 
-  // Inline amends follow the CreateWorkflow rule: the working copy hits disk **regardless of compile
- outcome**, so a broken amend still has a file to fix; analysis runs first only for naming (first phase
- name when no `name` and no predecessor name). With `path` present, skip -- that file already is the
- working copy. Inherited scripts go either way: while the predecessor's file still holds these bytes,
- resolveInput filled `path` (the new run keeps tracking it); otherwise write a fresh not-from-file copy.
+  // 内联修订与 `CreateWorkflow` 同一条纪律：工作副本**无论编译结果如何**都落盘，好让一段编不过的
+  // 修订也有文件可改；分析排在前面只为取名（无 `name`、无前驱名时取第一个阶段名）。`path` 在场
+  // 就不写——那个文件已经是工作副本。沿用的脚本两头都可能：前驱的脚本文件仍是这份字节时
+  // resolveInput 已把它填进 `path`（新 run 继续记它），否则这里照「不来自文件的脚本」写一份新的。
+  const inlineDraft =
     parsed.path === undefined
       ? await writeWorkflowDraft({
           cwd,
@@ -164,18 +190,18 @@ async function amendResolvedWorkflow(
           source: script,
         })
       : undefined;
-  // Only script the model wrote this call records as read; inherited-script drafts do not -- those bytes
- may come from another session or pre-compaction, and vouching for unseen content is what
- read-before-edit prevents.
+  // 模型本次亲手写的脚本才记作它写过的文件；沿用前驱脚本的新草稿不记——那份字节可能来自别的
+  // 会话或压缩之前，替模型担保它没看过的内容正是 read-before-edit 要防的事。
+  if (inlineDraft !== undefined && parsed.predecessor?.script_inherited !== true) {
     await recordAuthoredWorkflowDraft(context, {
       path: inlineDraft.path,
       source: script,
       toolName: "AmendWorkflow",
     });
   }
-  // A run records the file **holding this script**. Once the script changes, never inherit the predecessor
- path: it holds the old script, and pointing the new run there sends the model to edit dead code. The
- predecessor's file may stay recorded only while its current bytes are this script (resolveKeptScriptFile checked).
+  // run 记的永远是**装着这一次脚本**的文件。脚本改了就绝不沿用前驱的路径：那个文件装的是旧
+  // 脚本，记到新 run 上就是让模型下次去编辑一段已经不在跑的代码。沿用脚本时前驱的文件可以继续
+  // 记，但只在它此刻的字节仍是这份脚本时（resolveKeptScriptFile 已核对过）。
   const scriptPath = parsed.path ?? inlineDraft?.path;
   const location: WorkflowScriptLocation | undefined =
     scriptPath === undefined
@@ -187,7 +213,7 @@ async function amendResolvedWorkflow(
         };
 
   if (!ok) {
-    // Does not compile: nothing stopped, nothing created.
+    // 编不过：什么都没停、什么都没建。
     return {
       diagnostics,
       ok,
@@ -215,27 +241,32 @@ async function amendResolvedWorkflow(
       ...(parsed.name === undefined ? {} : { name: parsed.name }),
       parentSessionId: context.sessionId,
       toolCallId: context.toolCallId,
-      // New script's declaration phase table: the amend inherits the predecessor inputId, but the sidebar
- lane must draw the new script's sites. The concurrent table indexes into this new table -- both from
- the same graph, together.
+      // 新脚本的声明阶段表：修订沿用前驱的 inputId，侧栏轨道却要画新脚本的站点。「同时在跑」表的下标
+      // 指向的正是这张新表，所以两者必须一起从同一张图上取。
+      ...(() => {
         const phaseNames = createWorkflowPhaseNames(causalityGraph);
         if (phaseNames === undefined) return {};
         const phaseAlongside = createWorkflowPhaseAlongside(causalityGraph);
         return { phaseNames, ...(phaseAlongside === undefined ? {} : { phaseAlongside }) };
       })(),
-      // Three-state already normalized to "number or absent"; `null` here only from a bypassing caller
- (ports do not take it) -- read as absent.
+      // 三态已在 resolveInput 归一成「一个数或没有」；`null` 到这里只可能来自绕过归一化的
+      // 调用方（端口不收它），同样读作缺席。
       ...(typeof parsed.max_concurrency === "number"
         ? { maxConcurrency: parsed.max_concurrency }
         : {}),
-      // As above: normalized to "canonical form or absent"; `null` from a bypassing caller only,
- synonymous with absent (ports do not take it).
+      // 同上：三态已在 resolveInput 归一成「一个规范形或没有」，`null` 在这里只可能来自绕过
+      // 归一化的调用方，与缺席同义（端口不收它）。
       ...(() => {
         const subagentModel = parseWorkflowSubagentModel(parsed.subagent_model ?? undefined);
         return subagentModel === undefined ? {} : { subagentModel };
       })(),
-      // This amend's script file. Absent = draft unwritable;
-// the model face falls back to the legacy copy.
+      // 新脚本点名的模型：resolveInput 已按「同名沿用前驱」归一成一张表，端口不再继承任何绑定。
+      ...(() => {
+        const selections = scriptModelSelections(modelBindings);
+        return selections === undefined ? {} : { modelBindings: selections };
+      })(),
+      // 这一次修订的脚本文件。缺席即草稿写不
+      // 下去，模型面随之退回旧文案。
       ...(scriptPath === undefined ? {} : { scriptPath }),
       trace: resolveTraceContext(context),
     },
@@ -247,17 +278,27 @@ async function amendResolvedWorkflow(
     amended.supersededRunId === undefined
       ? `Run ${parsed.run_id} had already settled; its finished work is imported as cache.`
       : `Run ${amended.supersededRunId} was still running: it has been stopped and superseded, and everything it finished before the stop is imported as cache. It will not send a notification of its own.`;
-  // On an inherited script, say "script unchanged": the model learns this amend touched settings only,
- and will not go re-reading a script it never wrote.
+  // 沿用脚本时点明「脚本没变」：模型据此知道这次改的只是设定，而不是去翻自己没写过的新脚本。
+  const started =
     parsed.predecessor?.script_inherited === true
       ? `The script of run ${parsed.run_id} started unchanged in the background as run ${amended.runId}.`
       : `The revised script started in the background as run ${amended.runId}.`;
+  const defaultConcurrency = port.defaultConcurrency?.();
+  // 确认窗里的调整：与 CreateWorkflow 同一句话、同一个位置（workflow-settings-adjustment.ts）。
+  const settingsSentences = describeWorkflowRunSettings({
+    applied: readAppliedWorkflowSettings(context.inputAdjustments),
+    defaultConcurrency,
+    describeLimit: () =>
+      describeWorkflowConcurrencyLimit(parsed.max_concurrency ?? undefined, defaultConcurrency),
+    describeModel: () => describeWorkflowSubagentModel(parsed.subagent_model ?? undefined),
+    describeScriptModels: () => describeScriptModelBindings(modelBindings),
+  });
   return {
     diagnostics,
     ok,
-    // Copy mirrors CreateWorkflow's backgrounded guidance: give the id, still running, result arrives
- // as a notification, explicitly discourage default polling.
-    response: `${superseded} ${started} It is still running — you will be notified with the final output when it completes. Do not wait for it or poll it with TaskOutput; continue with other work unless the user asked you to wait.${describeWorkflowConcurrencyLimit(parsed.max_concurrency ?? undefined, port.concurrencyCeiling?.())}${describeWorkflowSubagentModel(parsed.subagent_model ?? undefined)}${location === undefined ? "" : workflowAmendedScriptSentence(location)}`,
+    // 文案照 CreateWorkflow 的 backgrounded 引导：给出 id、说明仍在跑、结果以通知形式回来、
+    // 显式劝阻默认轮询。
+    response: `${superseded} ${started} It is still running — you will be notified with the final output when it completes. Do not wait for it or poll it with TaskOutput; continue with other work unless the user asked you to wait.${settingsSentences}${location === undefined ? "" : workflowAmendedScriptSentence(location)}`,
     status: "backgrounded",
     backgroundTaskId: amended.runId,
     ...(causalityGraph === undefined ? {} : { causalityGraph }),
@@ -265,20 +306,24 @@ async function amendResolvedWorkflow(
 }
 
 /**
- * Confirm preview: the same code as CreateWorkflow (compile failure passes through to the handler's
- diagnostics). Display kind stays `create_workflow` -- one UI implementation for graph, draft pen, and
- diagnostics; "this is an amend" is said by the tool name and args' run_id/predecessor.
+ * 确认窗预览：与 CreateWorkflow 同一段代码（编不过即放行给 handler 回诊断）。display 的 kind
+ * 仍是 `create_workflow`——图、草稿笔与诊断卡在 UI 侧只有一份实现；「这是修订」由工具名与入参
+ * 的 `run_id` / `predecessor` 说出来。
  */
 function prepareAmendWorkflowApproval(input: unknown): ToolApprovalGate {
   const parsed = AmendWorkflowInputSchema.safeParse(input);
-  // No script, nothing to approve; both cases share this pass-through:
- //   - in-place concurrency: the dialog exists to show the script about to run; this path runs none,
-//   it moves one number into [1, ceiling]. **Attribution-agnostic** -- another user's run pops nothing,
-//   or a no-op would read as approving a new run.
-//   - normalization bypassed: pass to the handler, which fails structuredly; an open dialog has nothing to approve.
+  // 没有脚本就没有可批的东西，两种情形共用这一条放行：
+  //   - 就地调并发（docs/dynamic-workflow/launch.md「No window, for any owner」）：窗的用处是
+  //     把将要跑的脚本摆到人面前，而这条路一段脚本都不跑，只把一个数上下挪一挪；
+  //     **归属无关**——别人的 run 也不弹窗，否则一次「什么都没批」会被当成批准了一次新 run。
+  //   - 有人绕过了归一化：放行给 handler，它回结构化失败，窗开了也无物可批。
   if (!parsed.success || parsed.data.script === undefined) return { gate: "proceed" };
   const analysis = analyzeScript(parsed.data.script);
   if (!analysis.ok) return { gate: "proceed" };
+  // 有没绑定的模型名：同 CreateWorkflow，不开窗，让 handler 报 9011。
+  if (!allScriptModelsBound(analysis, readScriptModelBindings(parsed.data))) {
+    return { gate: "proceed" };
+  }
   const display = displayOfAnalysis(analysis, AMEND_WORKFLOW_TOOL_NAME);
   return { gate: "ask", ...(display ? { display } : {}) };
 }
@@ -299,16 +344,26 @@ export const amendWorkflowToolEntry: ToolEntry = {
     needsApproval: true,
   },
   handler: amendWorkflowHandler,
-  // At most one amend script, and only for model args (post-normalization script+path together is legal).
+  // 修订脚本至多给一个，只对模型入参成立（归一化后 `script` 与 `path` 同时在场是合法执行态）。
   validateInput: (input) => validateAmendWorkflowSource(input),
-  resolveInput: (input, context) => {
-    // Skill gate before predecessor resolution: path/script amends write script; settings-only inherits and passes.
+  resolveInput: async (input, context) => {
+    // 技能门先于前驱解析：带 `path` / `script` 的修订是在写脚本；只改设定的调用沿用前驱脚本，放行。
     if (amendWorkflowNeedsSkill(input)) {
       const refused = requireDynamicWorkflowSkill(context, AMEND_WORKFLOW_TOOL_NAME);
       if (refused) return refused;
     }
-    return resolveAmendWorkflowInput(input, context);
+    // 回填块只给会开窗的形状：就地调并发的归一化结果没有脚本，也就没有确认窗。
+    return withWorkflowAdjustableSettings(
+      await resolveAmendWorkflowInput(input, context),
+      context,
+      (resolved) => resolved.script !== undefined,
+    );
   },
+  applyInputAdjustments: (input, adjustments, context) =>
+    applyWorkflowSettingsAdjustments(input, adjustments, context, {
+      errorCode: AMEND_WORKFLOW_ERROR_CODE.SUBAGENT_MODEL,
+      schema: AmendWorkflowInputSchema,
+    }),
   prepareApproval: prepareAmendWorkflowApproval,
   inputSchema: AmendWorkflowInputJsonSchema,
   outputSchema: CreateWorkflowOutputJsonSchema,
@@ -324,8 +379,8 @@ export const amendWorkflowToolEntry: ToolEntry = {
     patternSources: ["toolName"],
     alwaysAllowPatternSources: ["toolName"],
     denyPriority: "beforeAsk",
-    // Same gate as CreateWorkflow (alwaysAsk); this session's own runs pass via the permission service's
- // owner rule in the always-ask branch.
+    // 与 CreateWorkflow 同一道门（alwaysAsk）；本会话自己的 run 由权限服务的 owner 规则在
+    // always-ask 分支里放行。
     alwaysAsk: true,
     askOptions: { allowAlways: "session" },
   },

@@ -1,4 +1,4 @@
-/* oxlint-disable eslint(max-lines) -- the mention panel concentrates the virtual list and E2E hooks; not worth splitting for a few test attributes. */
+/* oxlint-disable eslint(max-lines) -- 提示面板集中承载虚拟列表和 E2E 定位属性，暂不为少量测试属性拆组件。 */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
@@ -23,9 +23,9 @@ export interface MentionPanelOption {
   description: string;
   content?: ReactNode;
   meta?: ReactNode;
-  /** Disabled state (e.g. same-name plugin conflict fails closed): visible but not clickable; keyboard nav skips it upstream. */
+  /** 禁选态（如同名 Plugin 冲突 fail closed）：可见但不可点击，键盘导航由上层跳过。 */
   disabled?: boolean;
-  /** Disabled reason; shown in the description slot when no custom content is set. */
+  /** 禁选原因；无自定义 content 时展示在描述位。 */
   disabledReason?: string;
 }
 
@@ -73,14 +73,14 @@ type VirtualRow =
 
 const OPTION_ROW_HEIGHT = 34;
 const STATUS_ROW_HEIGHT = 40;
-const SECTION_HEADER_ROW_HEIGHT = 34;
+export const SECTION_HEADER_ROW_HEIGHT = 34;
 
-// After group titles moved to the base font size, the old 28px virtual row cannot fit the default line height plus 12px vertical padding.
-// Use the command-item metrics instead: 32px visible / 34px virtual row height, avoiding clipped or overlapping rows.
-const SECTION_HEADER_CLASS_NAME =
+// 分组标题改用 base 字号后，旧的 28px 虚拟行装不下默认行高与 12px 上下 padding。
+// 使用与命令项一致的 32px 可见高度和 34px 虚拟行高度，避免裁切或覆盖下一行。
+export const SECTION_HEADER_CLASS_NAME =
   "flex h-8 items-center px-3 text-ui-base font-semibold uppercase tracking-wide text-foreground-subtle";
 
-function buildVirtualRows(sections: MentionPanelSection[]): VirtualRow[] {
+export function buildVirtualRows(sections: MentionPanelSection[]): VirtualRow[] {
   const rows: VirtualRow[] = [];
   let flatOptionIndex = 0;
   const shouldRenderSectionHeader = sections.length > 1;
@@ -415,7 +415,7 @@ function OptionRow({
         )}
         onMouseDown={(event) => {
           event.preventDefault();
-          // Disabled entries never commit: fail closed so a conflicting plugin cannot be inserted.
+          // 禁选项不触发选择：fail closed，冲突 Plugin 不能被插入。
           if (isDisabled) {
             return;
           }

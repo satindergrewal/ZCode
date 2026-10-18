@@ -12,7 +12,7 @@
 // workspacePath back as the session workingDirectory.
 import type { RemoteTarget } from "./remoteTarget.js";
 
-export type RemoteWorkspaceIdentityKind = "ssh" | "wsl" | "docker";
+export type RemoteWorkspaceIdentityKind = "ssh" | "wsl" | "docker" | "server";
 
 export interface ParsedRemoteWorkspaceIdentity {
   kind: RemoteWorkspaceIdentityKind;
@@ -27,10 +27,13 @@ const AUTHORITY_SEGMENTS: Record<RemoteWorkspaceIdentityKind, number> = {
   ssh: 3,
   wsl: 1,
   docker: 1,
+  server: 1,
 };
 
-function isRemoteWorkspaceIdentityKind(value: string): value is RemoteWorkspaceIdentityKind {
-  return value === "ssh" || value === "wsl" || value === "docker";
+function isRemoteWorkspaceIdentityKind(
+  value: string,
+): value is RemoteWorkspaceIdentityKind {
+  return value === "ssh" || value === "wsl" || value === "docker" || value === "server";
 }
 
 function normalizeWorkspacePathForIdentity(workspacePath: string): string {
@@ -39,11 +42,51 @@ function normalizeWorkspacePathForIdentity(workspacePath: string): string {
   return `/${trimmed}`;
 }
 
+function resolveServerIdentityId(target: Extract<RemoteTarget, { kind: "server" }>): string {
+  const explicit = target.serverId?.trim() || target.name?.trim();
+  if (explicit) {
+    return explicit;
+  }
+  try {
+    return new URL(target.url.trim()).host;
+  } catch {
+    return target.url.trim();
+  }
+}
+
+function normalizeServerIdForIdentity(serverId: string): string {
+  const normalized = serverId
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  if (!normalized) {
+    throw new Error("serverId must contain at least one identity-safe character");
+  }
+  return normalized;
+}
+
+export interface BuildServerRemoteWorkspaceIdentityOptions {
+  serverId: string;
+  workspacePath: string;
+}
+
+export function buildServerRemoteWorkspaceIdentity(
+  options: BuildServerRemoteWorkspaceIdentityOptions,
+): string {
+  const serverId = normalizeServerIdForIdentity(options.serverId);
+  const workspacePath = normalizeWorkspacePathForIdentity(options.workspacePath);
+  return `${REMOTE_IDENTITY_PREFIX}server:${serverId}:${workspacePath}`;
+}
+
 /**
  * The single constructor of remote workspace identities. Host, main, and UI never concat authorities themselves;
  * workspacePath enters the identity key only after normalization here, while actual IO keeps the caller's original path.
  */
-export function buildRemoteWorkspaceIdentity(workspacePath: string, target: RemoteTarget): string {
+export function buildRemoteWorkspaceIdentity(
+  workspacePath: string,
+  target: RemoteTarget,
+): string {
   const normalizedPath = normalizeWorkspacePathForIdentity(workspacePath);
   switch (target.kind) {
     case "ssh":
@@ -57,6 +100,11 @@ export function buildRemoteWorkspaceIdentity(workspacePath: string, target: Remo
     }
     case "docker":
       return `remote:docker:${target.container}:${normalizedPath}`;
+    case "server":
+      return buildServerRemoteWorkspaceIdentity({
+        serverId: resolveServerIdentityId(target),
+        workspacePath: normalizedPath,
+      });
   }
 }
 

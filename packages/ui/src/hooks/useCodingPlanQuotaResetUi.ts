@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- The quota-reset hook centralizes scope-shared requests, polling, idempotent redemption, and server history reconciliation. */
+/* eslint-disable max-lines -- 额度重置 hook 集中处理 scope 共享请求、轮询、幂等核销与服务端历史对账。 */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { IUsageStatsService } from "@zcode/services";
 import type {
@@ -23,6 +23,7 @@ import {
   applyCodingPlanQuotaResetStatus,
   completeCodingPlanQuotaResetEntitlementRefresh,
   failCodingPlanQuotaResetManualUse,
+  hasUsableCodingPlanQuotaResetOpportunity,
   resolveCodingPlanQuotaResetStatusVisible,
   startCodingPlanQuotaResetManualUse,
   type CodingPlanQuotaResetUiEntries,
@@ -80,8 +81,7 @@ function latestUsedAtForType(
   );
 }
 
-// Replace only the target type's slot and leave the other untouched; explicit branches avoid
-// union computed-key narrowing issues.
+// 只替换目标类型的槽位，另一类型保持不变；显式分支避免 union 计算键的类型收窄问题。
 function withEntry(
   entries: CodingPlanQuotaResetUiEntries,
   resetType: CodingPlanResetType,
@@ -90,11 +90,9 @@ function withEntry(
   return resetType === "WEEK" ? { ...entries, week: entry } : { ...entries, fiveHour: entry };
 }
 
-// Do not decide "re-login" from "the store already had a completed state before mount": the
-// settings page may write the state earlier in the same auth session and a later-mounted
-// Composer must still show it. Mute only when the first observation of the same used_at
-// belongs to the previous auth session. The result is memoized so the muted shape does not
-// create a new object per render and trigger an effect/setNow loop.
+// 不能用“组件挂载前 store 已有完成态”判断是否重新登录；设置页可能在同一鉴权会话
+// 先写入状态，Composer 后挂载仍应展示。只有同一 used_at 的首次观察记录属于上一鉴权会话时
+// 才静音。返回值由 useMemo 缓存，避免静音态每次 render 创建新对象并触发 effect/setNow 循环。
 function suppressAutomaticAnimationFromPreviousAuthEpoch(
   entry: CodingPlanQuotaResetUiEntry | null,
   observation: CodingPlanQuotaResetAutomaticObservation | null,
@@ -140,8 +138,7 @@ function buildScopeKey(scope: CodingPlanResetScopeRequest): string {
   return JSON.stringify([scope.preferredProviderId, scope.accountAccess]);
 }
 
-// Manual-redemption trails are isolated per scope + reset type: five-hour and weekly manual
-// resets never interfere.
+// 手动核销轨迹按 scope + 重置类型隔离：五小时与周额度的手动重置互不干扰。
 function buildManualAttemptKey(
   scope: CodingPlanResetScopeRequest,
   resetType: CodingPlanResetType,
@@ -256,9 +253,8 @@ function resolveSharedManualResetStartedAt(params: {
     return attempt.startedAt;
   }
 
-  // A shared trail is attributed only to the first changed used_at. Later, different history
-  // belongs to a new automatic/ops reset: clear the manual marker and keep the original
-  // automatic Tooltip and trigger confetti.
+  // 共享轨迹只归属第一次变化的 used_at。后续不同历史属于新的自动/运营重置，
+  // 必须清除手动标记，保留原有自动 Tooltip 和触发器烟花。
   clearSharedManualResetAttempt(params.service, params.scope, params.resetType);
   return null;
 }
@@ -268,10 +264,10 @@ function markHistoryReadOnce(params: {
   scope: CodingPlanResetScopeRequest;
   usedAt: number;
 }): Promise<void> {
-  // Contract (bigmodelUsageQuotaProvider): history/read is a user-wide shared cursor; the
-  // request carries no target scope, and any entry reporting clears unread for all scopes.
-  // So the key is usedAt only -- sending once per service+usedAt is contract-conformant
-  // dedupe, whereas splitting by scope would cause duplicate POSTs.
+  // 契约（bigmodelUsageQuotaProvider）：
+  // history/read 是用户全 scope 共享游标，请求不带 target scope；任一入口上报后
+  // 服务端同时清除所有 scope 的 unread。因此 key 只按 usedAt——同 service 相同
+  // usedAt 只发一次是符合契约的去重，按 scope 拆分反而造成重复 POST。
   const historyKey = String(params.usedAt);
   let completed = historyReadCompletedByService.get(params.service);
   if (!completed) {
@@ -317,8 +313,7 @@ function createIdempotencyKey(): string {
     return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
   }
 
-  // Very old WebViews lack Web Crypto; the fallback must stay stable across retries of the
-  // same failure. This key is for idempotency only, never authentication.
+  // 极旧 WebView 没有 Web Crypto 时仍需保证同一次失败重试稳定；该 key 只用于幂等，不承载鉴权。
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
 
@@ -335,30 +330,29 @@ function toErrorMessage(error: unknown): string {
 
 export interface CodingPlanQuotaResetTypeController {
   entry: CodingPlanQuotaResetUiEntry | null;
-  /** Server-issued manual reset opportunity is visible. */
+  /** 仍有可核销的手动重置机会（available，或 completed 携带的同类型余下机会）。 */
   opportunityVisible: boolean;
-  /** Manual use + status reconciliation in progress. */
+  /** 手动 use + status 对账中。 */
   processing: boolean;
-  /** Server used_at received. */
+  /** 已拿到服务端 used_at。 */
   done: boolean;
   statusVisible: boolean;
-  /** Start a manual redemption; rejects on failure so the Action can restore interaction. */
+  /** 发起手动核销；失败 reject 供 Action 恢复交互。 */
   reset: () => Promise<void>;
 }
 
-// Five-hour fields stay flat at the top level for existing callers; the weekly quota is
-// exposed through the week sub-controller.
+// 五小时字段平铺在顶层保持既有调用方兼容；周额度通过 week 子控制器暴露。
 export interface CodingPlanQuotaResetUiController extends CodingPlanQuotaResetTypeController {
   enabled: boolean;
   week: CodingPlanQuotaResetTypeController;
-  /** Composer requests a transient play reservation; played is not written during this phase. */
+  /** Composer 申请临时播放 reservation；此阶段不写 played。 */
   reserveAutomaticCompletion: (
     resetType: CodingPlanResetType,
     completedAt: number,
   ) => Promise<CodingPlanQuotaResetAutoPlayReservationAttempt>;
-  /** Commit played while the component is still mounted and about to show. */
+  /** 组件仍有效且即将展示时提交 played。 */
   commitAutomaticCompletion: (reservation: CodingPlanQuotaResetAutoPlayReservation) => boolean;
-  /** Release the reservation when the component goes stale before commit. */
+  /** 组件在 commit 前失效时释放 reservation。 */
   releaseAutomaticCompletion: (
     reservation: CodingPlanQuotaResetAutoPlayReservation,
   ) => Promise<void>;
@@ -453,8 +447,7 @@ export function useCodingPlanQuotaResetUi({
     FIVE_HOUR: fiveHourObservation,
     WEEK: weekObservation,
   };
-  // Cross-window played records live in a ref: applyStatusForType reads only the latest value
-  // and must not have its callback identity rebuilt by played merges.
+  // 跨窗口已播记录走 ref：applyStatusForType 只读最新值，不因 played 合并重建回调身份。
   const playedBySourceRef = useRef(playedBySource);
   playedBySourceRef.current = playedBySource;
   const entriesRef = useRef<CodingPlanQuotaResetUiEntries>({
@@ -463,9 +456,8 @@ export function useCodingPlanQuotaResetUi({
   });
   const initialRefreshCompletedAt = (entry: CodingPlanQuotaResetUiEntry | null): number | null =>
     entry?.status === "completed" && !entry.quotaOverridePending ? entry.completedAt : null;
-  // Five-hour and weekly each track their entitlement-refresh dedupe key; while completed but
-  // still under an optimistic override, newly mounted entries must keep trying to refresh the
-  // real entitlement.
+  // 五小时与周额度各自记录 entitlement 刷新去重键；已完成但仍处于乐观覆盖时，
+  // 新挂载入口必须继续尝试刷新真实 entitlement。
   const lastEntitlementRefreshRef = useRef<
     Record<CodingPlanResetType, { sourceKey: string | null; completedAt: number | null }>
   >({
@@ -479,12 +471,11 @@ export function useCodingPlanQuotaResetUi({
     },
   });
   const [now, setNow] = useState(() => Date.now());
-  // Callers often pass onEntitlementRefresh as an inline arrow (new identity every render).
-  // Keeping it in useCallback deps would rebuild refreshStatus in a chain and restart the
-  // polling effect on every parent render; the dense re-renders when settings toggles
-  // personal/team plans would fire repeated /opportunity for the same scope (status has a 1.5s
-  // freshness cache; opportunity only dedupes in-flight). With a ref, the polling identity
-  // changes only with enabled/scope/sourceKey/service while still invoking the latest callback.
+  // onEntitlementRefresh 常被调用方以内联箭头传入（每次 render 都是新身份）。
+  // 若把它留在 useCallback 依赖里，会连锁重建 refreshStatus 并让轮询 effect 随父组件
+  // 每次 render 重启；设置页切换个人/团队套餐时的密集重渲染会对同一 scope 连发多次
+  // /opportunity（status 有 1.5s 新鲜度缓存，opportunity 只有 in-flight 合并）。
+  // 存入 ref 后轮询身份只随 enabled/scope/sourceKey/service 变化，执行时仍读取最新回调。
   const onEntitlementRefreshRef = useRef(onEntitlementRefresh);
 
   useEffect(() => {
@@ -523,21 +514,17 @@ export function useCodingPlanQuotaResetUi({
         manualStartedAt,
         resetType,
       );
-      // Once a rehydrated stale completion is held at completed by the sticky rule,
-      // createCompletedEntry renews observedAt to now; clear it again only when the first
-      // observation belongs to the previous auth epoch. Later-mounted entries in the same
-      // session are not muted.
+      // 补水的旧完成态被粘滞规则保持为 completed 后，createCompletedEntry 会把 observedAt
+      // 续期回 now；仅当首次观察记录属于上一鉴权 epoch 时再次置空。同会话其他入口后挂载不静音。
       next = suppressAutomaticAnimationFromPreviousAuthEpoch(
         next,
         automaticObservationsRef.current[resetType],
         authSessionSeq,
       );
-      // This used_at's automatic completion was already played in another window (this window
-      // got the cross-window played broadcast first). Suppress only a "fresh arrival" completion;
-      // never suppress the same completion held by the sticky rule, or the played record written
-      // when this window plays it would clear its own observedAt on re-reconciliation and kill a
-      // legit short toast. While suppressed, keep the completed state driving the 100% optimistic
-      // override and entitlement refresh -- just skip Tooltip/confetti.
+      // 该 used_at 的自动完成提示已在其他窗口播放过（本窗口先收到跨窗口已播广播）。
+      // 只抑制本窗口"新进入"的完成；粘滞保持的同一完成不抑制，否则本窗口自己播放时写入的
+      // played 记录会在重复对账时把自己的 observedAt 清掉，误杀正常短提示。
+      // 被抑制时保留完成态驱动 100% 乐观覆盖与 entitlement 刷新，只是不播 Tooltip/撒花。
       const playedUsedAt = playedBySourceRef.current[sourceKey]?.[key] ?? null;
       const isNewCompletionInWindow =
         previous?.status !== "completed" || previous.completedAt !== next?.completedAt;
@@ -556,11 +543,10 @@ export function useCodingPlanQuotaResetUi({
 
       const completedAt = next?.status === "completed" ? next.completedAt : null;
       const isNewCompletion = completedAt !== null && completedAt !== previous?.completedAt;
-      // has_unread_history is a single cursor shared by both types; marking read after either
-      // completes clears it, and per-type used_at uniqueness makes repeated marks harmless.
-      // Mark read BEFORE the entitlement refresh: reporting after the refresh resolves would
-      // delay clearing the server cursor, and other windows polling meanwhile could replay the
-      // automatic completion toast.
+      // has_unread_history 是两类共享的单一游标；任一类型完成后标记已读即可清空，
+      // used_at 按类型唯一，重复标记无副作用。
+      // 必须先于 entitlement 刷新标记已读。等待刷新完成再上报会延迟清理服务端游标，
+      // 其他窗口在此期间轮询可能重复播放自动完成提示。
       if (snapshot.hasUnreadHistory && completedAt !== null) {
         void markHistoryReadOnce({
           service: usageStatsService,
@@ -582,8 +568,7 @@ export function useCodingPlanQuotaResetUi({
       if (completedAt !== null && !entitlementAlreadyRefreshed && refreshEntitlement) {
         try {
           await refreshEntitlement();
-          // Never record completion when the refresh failed, or later polls for the same
-          // used_at would stop correcting the real quota.
+          // 刷新失败时不能提前记为已完成，否则同一 used_at 后续轮询不会再校正真实额度。
           if (authSessionSeqRef.current !== authSessionSeq) {
             return entriesRef.current[key];
           }
@@ -617,7 +602,7 @@ export function useCodingPlanQuotaResetUi({
 
   const applyStatus = useCallback(
     async (snapshot: CodingPlanResetStatusSnapshot): Promise<CodingPlanQuotaResetUiEntries> => {
-      // One /status snapshot reconciles five-hour and weekly together, avoiding duplicate polling.
+      // 一次 /status 快照同时对账五小时与周额度，避免重复轮询。
       for (const resetType of CODING_PLAN_QUOTA_RESET_TYPES) {
         await applyStatusForType(snapshot, resetType);
       }
@@ -639,16 +624,12 @@ export function useCodingPlanQuotaResetUi({
         authSessionSeq,
       });
       const next = await applyStatus(snapshot);
-      // /opportunity is a scope-level grant endpoint evaluating five-hour and weekly eligibility
-      // in one call. The backend caps outstanding unconsumed opportunities per type and repeated
-      // calls do not stack, so "already has an available opportunity" no longer blocks this call --
-      // otherwise one type holding an opportunity starves the other's grant (a week opportunity
-      // can sit for days while five-hour never gets granted). Two skip cases remain, unrelated to
-      // the cap:
-      // - manual redemption in flight: the /use reconciliation loop fires 4 times within
-      //   250ms-1.5s; interleaving /opportunity would hit the rate limper and 429;
-      // - just completed this round: history/read and entitlement force-refresh already run during
-      //   the completion window; a grant now would be rejected by next_try_at.
+      // /opportunity 是 scope 级发放接口,一次同时评估五小时与周两类资格。后端对「同一类型
+      // 已持有未消费机会」有发放上限,重复调用不会叠加,因此"已有可用机会"不再阻塞本次调用——
+      // 否则一类挂着机会会饿死另一类的发放(周机会可挂数天,期间五小时永远发不出来)。
+      // 仍需跳过的两种情形与发放上限无关:
+      // - 手动核销进行中:/use 对账循环里 250ms~1.5s 连发 4 次,插入 /opportunity 会撞发卡锁触发 429;
+      // - 本轮刚完成:完成周期内已在做 history/read 与 entitlement 强刷,此刻发放必被 next_try_at 拒。
       const anyTypeResetInFlight = CODING_PLAN_QUOTA_RESET_TYPES.some((resetType) => {
         const key = entryKeyForType(resetType);
         const entry = next[key];
@@ -666,10 +647,9 @@ export function useCodingPlanQuotaResetUi({
       }
 
       try {
-        // /status only lists already-granted opportunities; /opportunity must be called too or
-        // the backend never runs the eligibility check. Eligibility stays server-side; the
-        // client triggers it whenever not redeeming/just-completed, deduping concurrent calls by
-        // service + scope. /opportunity is scope-level: one call covers five-hour and weekly.
+        // /status 只查询已发放机会；必须再调 /opportunity，否则后端不会执行资格判断。
+        // 资格仍完全由服务端决定,客户端在非核销/非刚完成时都触发判断,并按 service + scope
+        // 合并并发请求。/opportunity 是 scope 级请求,一次即覆盖五小时与周两类机会。
         const result = await requestCodingPlanResetOpportunityWhenDue({
           service: usageStatsService,
           authSessionSeq,
@@ -699,10 +679,9 @@ export function useCodingPlanQuotaResetUi({
     [applyStatus, authSessionSeq, enabled, scope, sourceKey, usageStatsService],
   );
 
-  // With four UI entries each running a 60s timer, only same-instant in-flight requests were
-  // deduped; staggered mounts and timer ticks still amplified /status and /opportunity. Use a
-  // single Coordinator keyed by auth session + service + scope; entries only subscribe, sharing
-  // one visibility listener and one polling owner.
+  // 四个 UI 入口各自维护 60 秒计时器时，只能合并同一瞬间的 in-flight，
+  // 错开的挂载与定时 tick 仍会放大 /status 和 /opportunity。改为 auth session + service + scope
+  // 唯一 Coordinator；入口只订阅，共享一个可见性监听和一个轮询 owner。
   useEffect(() => {
     if (!enabled || !usageStatsService || !scope) {
       return;
@@ -715,23 +694,25 @@ export function useCodingPlanQuotaResetUi({
     });
   }, [authSessionSeq, enabled, refreshStatus, scope, usageStatsService]);
 
-  // Available countdown: run a 1s ticker while any type is available; refresh now on entry
-  // changes so countdowns/windows are based on the latest time.
+  // 可核销倒计时：任一类型仍有可核销机会（含 completed 携带的余下机会）时启动 1 秒 ticker；
+  // 入口变化时刷新 now 保证倒计时/窗口基于最新时间。
   useEffect(() => {
     if (!enabled) {
       return;
     }
-    setNow(Date.now());
-    const anyAvailable = fiveHourEntry?.status === "available" || weekEntry?.status === "available";
-    if (!anyAvailable) {
+    const nowMs = Date.now();
+    setNow(nowMs);
+    const anyUsable =
+      hasUsableCodingPlanQuotaResetOpportunity(fiveHourEntry, nowMs) ||
+      hasUsableCodingPlanQuotaResetOpportunity(weekEntry, nowMs);
+    if (!anyUsable) {
       return;
     }
     const ticker = window.setInterval(() => setNow(Date.now()), 1_000);
     return () => window.clearInterval(ticker);
   }, [enabled, fiveHourEntry, weekEntry]);
 
-  // Completed short-toast window: schedule refreshes at the nearest unexpired boundary across
-  // both types and stop automatically once each expires.
+  // completed 短提示窗口：取两类中最近的未过期到期时刻定时刷新，逐个到期后自动停止。
   useEffect(() => {
     if (!enabled) {
       return;
@@ -761,40 +742,42 @@ export function useCodingPlanQuotaResetUi({
         return;
       }
       const key = entryKeyForType(resetType);
-      if (entriesRef.current[key]?.status !== "available") {
+      // Bugfix：放行条件曾是 status === "available"。completed 携带同类型余下机会时，
+      // 弹框里再次点击会在这里被静默忽略（弹框仍播放成功反馈，实际没有 /use）。
+      // 统一按「是否仍可核销」判定，与弹框行、徽标、标题旁「重置」同一口径。
+      if (!hasUsableCodingPlanQuotaResetOpportunity(entriesRef.current[key], Date.now())) {
         return;
       }
-      // Cross-entry double-redemption guard: when a manual trail already exists for this
-      // scope + type (started by another entry in this window), this entry may still show
-      // available from a stale poll. Force-reconcile first: while the other /use is in flight,
-      // or once this entry is no longer available after reconciliation (quota consumed), do not
-      // /use again -- a second click would redeem twice under a fresh idempotency key.
-      // Still available after reconciliation means the trail belongs to an earlier redemption
-      // and a new opportunity was granted: allow the new redemption. Multi-window/remote entries
-      // do not share this trail; cross-window concurrency is settled by the server's
-      // per-opportunity redemption.
+      // 跨入口防双核销：同 scope + 类型已有手动核销轨迹（本窗口其他入口发起，或本入口刚核销
+      // 完一张）时，本入口可能基于过期轮询仍显示可核销。先强制对账：对方 /use 仍在进行、或
+      // 对账后本入口已无可核销机会（额度已被核销），都不得再次 /use——第二次点击会携带新
+      // 幂等键重复核销。对账后仍可核销说明轨迹属于更早的核销，余下或新发放的机会放行为新的
+      // 一次核销。多窗口 / remote 入口不共享该轨迹，跨窗口并发由服务端按机会核销兜底。
       const priorAttempt = manualResetAttemptByService
         .get(usageStatsService)
         ?.get(buildManualAttemptKey(scope, resetType));
       if (priorAttempt) {
         const reconciled = await refreshStatus(true);
-        if (priorAttempt.completedAt === null || reconciled[key]?.status !== "available") {
+        if (
+          priorAttempt.completedAt === null ||
+          !hasUsableCodingPlanQuotaResetOpportunity(reconciled[key], Date.now())
+        ) {
           return;
         }
       }
       const current = entriesRef.current[key];
-      if (!current || current.status !== "available") {
+      // 放行判定与 processing 起点共用同一时刻，避免机会恰好在两次取时之间到期。
+      const startedAt = Date.now();
+      if (!current || !hasUsableCodingPlanQuotaResetOpportunity(current, startedAt)) {
         return;
       }
       const idempotencyKey = current.idempotencyKey ?? createIdempotencyKey();
-      const startedAt = Date.now();
       const processing = startCodingPlanQuotaResetManualUse(current, idempotencyKey, startedAt);
       if (!processing) {
         return;
       }
-      // The completion history of a manual reset is polled independently by the Composer,
-      // settings page, and Usage page. The trail must be shared by service + scope + type, not
-      // pinned to the initiating entry's local processing state.
+      // 手动重置的完成历史会被 Composer、设置页和 Usage 页分别轮询到。
+      // 轨迹必须按 service + scope + 类型 共享，不能只依赖发起入口自己的 processing 状态。
       startSharedManualResetAttempt({
         service: usageStatsService,
         scope,
@@ -895,10 +878,9 @@ export function useCodingPlanQuotaResetUi({
     resetFn: () => Promise<void>,
   ): CodingPlanQuotaResetTypeController => ({
     entry,
-    opportunityVisible:
-      entry?.status === "available" &&
-      entry.opportunityCount > 0 &&
-      (entry.opportunityExpiresAt ?? 0) > now,
+    // Bugfix：曾只认 status === "available"，completed 携带的同类型余下机会不可见，
+    // 徽标少计、标题显示「已重置」。改用与 reset() 放行同一判定。
+    opportunityVisible: hasUsableCodingPlanQuotaResetOpportunity(entry, now),
     processing: entry?.status === "processing",
     done: entry?.status === "completed",
     statusVisible: enabled && resolveCodingPlanQuotaResetStatusVisible(entry, now),

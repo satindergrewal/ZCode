@@ -48,14 +48,19 @@ export class SubagentContextBuilder extends ContextBuilder {
     const orderedSections = orderSubagentSections(sections);
     const totalChars = orderedSections.reduce((sum, section) => sum + section.chars, 0);
     const totalTokens = orderedSections.reduce((sum, section) => sum + section.tokens, 0);
-    const systemMessages = orderedSections
-      .filter((section) => section.injectionTarget === "system")
+    const systemSections = orderedSections.filter(
+      (section) => section.injectionTarget === "system",
+    );
+    // 逐段标记会耗尽缓存断点额度，导致对话末尾标记被丢弃；正文合并时保留各段自带的换行。
+    const systemMessages = [
+      systemSections.filter((section) => section.source === "cli_prefix"),
+      systemSections.filter((section) => section.source !== "cli_prefix"),
+    ]
+      .filter((group) => group.length > 0)
       .map(
-        (section): ModelInputMessage => ({
+        (group): ModelInputMessage => ({
           role: "system",
-          content: section.content,
-          // The subagent context builder bypasses main ContextBuilder system assembly but still needs
-          // a provider cache breakpoint on every stable child system-prompt segment.
+          content: group.map((section) => section.content).join(""),
           cacheControl: EPHEMERAL_CACHE_CONTROL,
         }),
       );
@@ -112,8 +117,8 @@ function buildSubagentContextSections(config: SubagentContextBuilderConfig): Con
         name: "Subagent Agent Prompt",
         source: "subagent_agent_prompt",
         cacheHint: "stable",
-        // An empty prompt is not a semantic segment; a bare left edge must not become its own system block.
-        // ZCode by design: the Subagent agent prompt carries a single-newline left edge vs the CLI prefix.
+        // 空 prompt 不是语义段，不能让左边界单独成为 system block。
+        // ZCode by design：Subagent agent prompt 自带相对 CLI prefix 的单换行左边界。
         content: `\n${agentPrompt}`,
       }),
     );
@@ -124,7 +129,7 @@ function buildSubagentContextSections(config: SubagentContextBuilderConfig): Con
       name: "Subagent Notes",
       source: "subagent_notes",
       cacheHint: "stable",
-      // ZCode by design: later Subagent system blocks all carry a double-newline left edge.
+      // ZCode by design：后续 Subagent system block 统一自带双换行左边界。
       content: `\n\n${buildSubagentCommonNotes()}`,
     }),
     createSubagentSection({

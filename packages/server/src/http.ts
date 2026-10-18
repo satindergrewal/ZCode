@@ -12,9 +12,12 @@ import {
   VSBuffer,
   SocketProtocol,
   ChannelServer,
+  ChannelClient,
   LoggingChannelServer,
   type ISocket,
 } from "@zcode/rpc";
+import type { TopicResourcePeers } from "@zcode/services/node";
+import { TOPIC_RESOURCE_RELAY_CHANNEL } from "@zcode/shared";
 import {
   ServiceCollection,
   IZCodeAgentService,
@@ -87,6 +90,7 @@ function setupChannelServer(
   ws: WebSocket,
   services: ServiceCollection,
   clientMode: "desktop-continuous" | "web-remote-replayable",
+  resourcePeers?: TopicResourcePeers,
 ) {
   const socket = wrapWebSocket(ws);
   const protocol = new SocketProtocol(socket);
@@ -94,8 +98,13 @@ function setupChannelServer(
   // Wrap with the logging middleware to record every RPC call uniformly
   const server = new LoggingChannelServer(rawServer, log);
   const agentService = services.getOptional(IZCodeAgentService);
+  const reverseClient =
+    clientMode === "desktop-continuous" && resourcePeers ? new ChannelClient(protocol) : undefined;
+  const peer = reverseClient
+    ? resourcePeers?.attach(reverseClient.getChannel(TOPIC_RESOURCE_RELAY_CHANNEL))
+    : undefined;
   const connectionScope = agentService
-    ? createZCodeAgentConnectionScope(agentService, {
+    ? createZCodeAgentConnectionScope(peer ? peer.wrapAgent(agentService) : agentService, {
         connectionId: `server-ws-${randomUUID()}`,
         clientMode,
         role: clientMode === "desktop-continuous" ? "trusted-host-relay" : "terminal-client",
@@ -120,6 +129,8 @@ function setupChannelServer(
   }
   services.exposeOnChannelServer(server, overrides);
   socket.onClose(() => {
+    peer?.dispose();
+    reverseClient?.dispose();
     void connectionScope?.dispose();
     rawServer.dispose();
   });
@@ -132,7 +143,8 @@ function generateId(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
-interface HttpServerOptions {
+export interface HttpServerOptions {
+  topicResourcePeers?: TopicResourcePeers;
   serverId?: string;
   name?: string;
   host?: string;
@@ -335,7 +347,12 @@ export function createHttpServer(
 
   const upgradeTrustedHostWebSocket = upgradeWebSocket(() => ({
     onOpen(_event, ws) {
-      setupChannelServer(ws.raw as WebSocket, services, "desktop-continuous");
+      setupChannelServer(
+        ws.raw as WebSocket,
+        services,
+        "desktop-continuous",
+        options.topicResourcePeers,
+      );
     },
   }));
   app.use("/ws/host", async (c, next) => {

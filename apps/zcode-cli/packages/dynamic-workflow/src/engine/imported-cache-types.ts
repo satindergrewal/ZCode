@@ -1,73 +1,74 @@
 // ============================================================
-// The amend-resume import cache.
+// amend-resume 的导入缓存
 // ============================================================
-// Split from engine/types.ts (at oxlint's max-lines cap): pure data; the run service builds it from the predecessor
-// journal; the engine only looks it up.
+// 从 engine/types.ts 拆出（该文件已到 oxlint max-lines 上限）：纯数据结构，run service 读前驱
+// journal 构建，引擎只查表。
 
 import type { AskStats, NodeKind, PersonaSpec } from "./types.js";
 
 /**
-  * One importable finished ask: the result of the named actor nth Q&A in the predecessor run.
-  * The array index is the actorSeq (see ImportedActorCandidate.entries), so no seq is stored here.
+ * 一条可导入的已完结 ask：前驱 run 里某具名 actor 第 `actorSeq` 次问答的结果。
+ * 数组下标即 actorSeq（见 {@link ImportedActorCandidate.entries}），所以这里不存 seq。
  */
 export interface ImportedAskEntry {
-    /** The predecessor-recorded inputHash (over the instruction body). Compared per record at runtime; a match hits. */
+  /** 前驱记录的 inputHash（对指令正文）。运行期与本次 ask 的哈希逐条比对，一致才命中。 */
   inputHash: string;
   result: unknown;
   stats?: AskStats;
   /**
-      * Message count of the source session after this ask settled (NodeRecord.messageBoundary). **Required**:
-      * the run service no-marker-predecessors-rejected gate guarantees every importable entry carries a boundary, so the
-      * engine needs no absent branch -- a seed truncation without a boundary is meaningless.
+   * 该 ask 结算后源会话的消息数（{@link NodeRecord.messageBoundary}）。**必填**：
+   * run service 的「无 marker 前驱整体拒绝」门保证每条可导条目都带边界，所以引擎这边
+   * 不必有缺席分支——种子截断没有边界就无从谈起。
    */
   messageBoundary: number;
 }
 
 /**
-  * The ask still in flight when the predecessor stopped (actorSeq equals the entries length; the running row right after the prefix).
+ * 前驱停下时**还在飞**的那一条 ask（`actorSeq === entries.length`，紧接前缀之后的 running 行）。
  *
-  * It has no result to import; what imports is **the transcript it already produced**: if the amendment re-issues the same instruction
-  * at the same spot (matching inputHash), the new session continues from there instead of discarding the half-done exchange.
+ * 它没有结果可导入，导入的是**它已经跑出来的那段转录**：修订若在同一位置重发同一条指令
+ * （`inputHash` 相符），新会话就从这里接着跑，而不是把那半场对话扔掉重来
+ * （见 `docs/execution-engine.md`「How the engine consumes the cache」）。
  */
 export interface ImportedInFlightAsk {
-    /** The predecessor-recorded inputHash (over the instruction body). Continuation presupposes a match with this ask hash. */
+  /** 前驱记录的 inputHash（对指令正文）。与本次 ask 的哈希相符才谈得上续跑。 */
   inputHash: string;
   /**
-      * Message count of the predecessor entire settled session (not one ask ledger boundary -- an unfinished ask has no boundary to record).
-      * It includes the prefix completed exchanges plus this half-done one: exactly where the resume continues.
+   * 前驱**整个已结算会话**的消息数（不是某一条 ask 的记账边界——未完结的 ask 没有边界可记）。
+   * 它既含前缀那些完整交换，也含这半场未完的问答，正是续跑要接上的位置。
    */
   messageBoundary: number;
 }
 
 /**
-  * The importable prefix of one named actor in the predecessor run. Built by the run service from the predecessor journal (pure, deterministic, rebuildable).
+ * 前驱 run 里一个具名 actor 的可导入前缀。由 run service 从前驱 journal 构建（纯确定，可重建）。
  */
 export interface ImportedActorCandidate {
-    /** The predecessor-recorded normalized persona -- compared at createActor time (a mismatch discards the candidate). */
+  /** 前驱记录的规范化 persona——运行期 createActor 比对用（不一致即弃该候选）。 */
   persona: PersonaSpec;
   /**
-      * The longest all-completed ask prefix, indexed by actorSeq 0..n-1. **May be empty**: a candidate with an in-flight entry
-      * often finished none (amended during the fan-out first round -- exactly this shape).
+   * 最长全 completed ask 前缀，按 actorSeq 0..n-1 索引。**可以为空**：带 {@link inFlight} 的候选
+   * 常常一条都没做完（扇出第一轮在飞时被修订，正是这个形状）。
    */
   entries: ImportedAskEntry[];
   /**
-      * The ask in flight at predecessor stop, if any. Imported only when the transcript source is the predecessor own row -- that half-exchange
-      * exists only in the predecessor session; sources resolved from earlier ancestors carry complete prefixes only.
+   * 前驱停下时还在飞的那条 ask（若有）。只在转录源就是前驱自己那一行时导入——那半场对话只
+   * 存在于前驱的会话里，从更早祖先解析出的源只有完整前缀。
    */
   inFlight?: ImportedInFlightAsk;
   /**
-      * The transcript source session id resolved along the resumed-from chain. The service guarantees presence -- a chain with no ancestor
-      * holding this actor session is discarded service-side already (downgraded to a fresh actor), so not optional here.
+   * 经 `resumed_from` 链解析出的转录源会话 id。service 保证在场——链上没有任何祖先
+   * 持有该 actor 会话的候选在 service 侧就已弃置（降级为全新 actor），所以这里不是可选。
    */
   transcriptSourceSessionId: string;
   /**
-      * The model pin resolved by the predecessor, handed to the driver with the seed. **Effective only when a transcript is actually imported**: an
-      * actor with zero hits resolves fresh, without the pin (see the scheduler ensureSession).
+   * 前驱解析出的模型 pin，随种子带给 driver。**仅当真的导入了转录时生效**：一条也没命中的
+   * actor 走全新解析、不带 pin（见 scheduler 的 ensureSession）。
    */
   resolvedModel?: string;
 }
 
-/** One importable world node (world-read / world-run), matched by content + occurrence order. */
+/** 一条可导入的世界节点（world-read / world-run），按内容 + 出现序匹配。 */
 export interface ImportedWorldEntry {
   inputHash: string;
   kind: NodeKind;
@@ -75,32 +76,32 @@ export interface ImportedWorldEntry {
 }
 
 /**
-  * The import cache injected into the engine (the amend-resume accelerator). **Pure data**: the engine stays IO-free; the
-  * run service builds the table from the predecessor journal.
-  * Not a source of truth -- every hit persists a real dwf_node row; lost, it rebuilds from the resumed-from link.
+ * 注入引擎的导入缓存（amend-resume 的加速结构）。**纯数据**：引擎保持零 I/O，这张表由
+ * run service 读前驱 journal 构建。
+ * 它不是真相源——每次命中都落一行真 dwf_node，丢了可从 `resumed_from` 重建。
  */
 export interface ImportedRunCache {
-    /** Key = the effective actor name (unique and non-empty within the predecessor). */
+  /** 键 = 有效 actor 名（前驱内唯一且非空的那些）。 */
   actors: ReadonlyMap<string, ImportedActorCandidate>;
   /**
-      * Key = inputHash of op+args; value = a queue in predecessor listNodes insertion order -- the nth occurrence of the same
-      * op+args pairs with the nth record; the queue head is the next hit.
+   * 键 = `inputHash({op, args})`；值 = 按前驱 listNodes 插入序排好的队列——同一个
+   * `{op,args}` 的第 n 次出现对第 n 条记录，队列头即下一次命中。
    */
   world: ReadonlyMap<string, ImportedWorldEntry[]>;
 }
 
 /**
-  * The session seed: handed to WorkflowDriver.createActorSession at a diverged actor first live dispatch,
-  * so the new session opens on the source session full-fidelity transcript prefix.
+ * 会话种子：分歧 actor 首次 live 派发时交给 {@link WorkflowDriver.createActorSession}，
+ * 让新会话以源会话的**全保真转录前缀**开场（spec 的「转录截断」行）。
  */
 export interface ActorSessionSeed {
-    /** The transcript source session (this named actor session in the predecessor or an earlier ancestor). */
+  /** 转录来源会话（前驱或更早祖先的该名 actor 会话）。 */
   sourceSessionId: string;
   /**
-      * How many messages of the source session to copy = the last consumed ask messageBoundary.
-      * Count offsets survive prefix copies, so this value applies directly at any session-holding ancestor along the chain.
+   * 复制源会话前多少条消息 = 最后一条被消费导入 ask 的 {@link NodeRecord.messageBoundary}。
+   * count offset 跨前缀复制不变，所以这个值在链上任何持会话祖先处都直接可用。
    */
   messageCount: number;
-    /** The inherited model pin (a silent model swap under transcript continuation is exactly the identity drift pins prevent). */
+  /** 承袭的模型 pin（转录接续下静默换模型正是 pin 要防的身份突变）。 */
   resolvedModel?: string;
 }

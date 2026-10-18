@@ -1,4 +1,5 @@
-/* oxlint-disable eslint(max-lines) -- each concrete Writer maintains its own canonical keys inline, avoiding yet another mapping layer in runtime Schema/Registry. */
+import { recordRequestObservation } from "./request-security-edition/index.js";
+/* oxlint-disable eslint(max-lines) -- concrete Writer 在同一文件显式维护各自 canonical key，避免运行时 Schema/Registry 再造一层映射。 */
 import {
   context,
   ROOT_CONTEXT,
@@ -42,6 +43,7 @@ import type {
   ToolExecutionSpanWriter,
   ToolTraceStart,
 } from "@zcode/contracts/telemetry";
+import type { ModelRequestObservation } from "@zcode/contracts/model";
 import {
   activeWriterContext,
   BaseSpanWriter,
@@ -589,7 +591,7 @@ export class AgentExecutionTelemetryRuntime
             spanName,
           });
         } catch {
-          // Health callbacks are bypassed too.
+          // 健康回调同样属于旁路。
         }
       }
       return fallback;
@@ -607,7 +609,7 @@ export class AgentExecutionTelemetryRuntime
           spanName,
         });
       } catch {
-        // Health callbacks are bypassed too.
+        // 健康回调同样属于旁路。
       }
       return fallback;
     }
@@ -622,7 +624,7 @@ export class AgentExecutionTelemetryRuntime
           errorType: error instanceof Error ? error.name : typeof error,
         });
       } catch {
-        // Metrics and health callbacks are both bypassed.
+        // Metric 与健康回调都属于旁路。
       }
     }
   }
@@ -724,8 +726,8 @@ abstract class TrackedBaseWriter extends BaseSpanWriter {
     super(span, parentContext, metadata, lifecycle, health, (outcome, durationMs, observation) => {
       const writer = terminalTarget.writer;
       if (writer) {
-        // Terminal metrics are projected from live facts already recorded by Writers, covering explicit finish,
-        // business exceptions, missing_terminal, and process reaping; per-branch emission would leave gaps.
+        // 终态 Metric 从 Writer 已记录的实时事实投影，覆盖显式 finish、业务异常、
+        // missing_terminal 和进程回收；不能只埋在各 finishXxx 分支里留下缺口。
         writer.safe(() => onRemoved(writer));
         writer.safe(() => writer.recordTerminalDetailMetrics(outcome, observation));
         writer.safe(() =>
@@ -1427,6 +1429,16 @@ class ModelAttemptWriter extends TrackedBaseWriter implements ModelAttemptSpanWr
     this.addEvent("stream_stalled", { idle_ms: normalized });
   }
 
+  recordRequestObservation(observation: ModelRequestObservation): void {
+    recordRequestObservation(
+      {
+        setAttribute: (name, value) => this.setAttribute(name, value),
+        addEvent: (name, attributes) => this.addEvent(name, attributes),
+      },
+      observation,
+    );
+  }
+
   finishCompleted(): void {
     this.finishCompletedIfOpen();
   }
@@ -1617,6 +1629,7 @@ const NOOP_MODEL_ATTEMPT_WRITER: ModelAttemptSpanWriter = {
   markFirstProviderEvent() {},
   markFirstText() {},
   markStreamStalled() {},
+  recordRequestObservation() {},
   setCacheReadTokens() {},
   setCacheWriteTokens() {},
   setEffectiveReasoningBudgetTokens() {},

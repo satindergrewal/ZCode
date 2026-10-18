@@ -2,6 +2,11 @@ import { CodingPlanEntryButton } from "@/settings/CodingPlanEntryButton.js";
 import { Loader2Icon, RocketIcon } from "lucide-react";
 import type { UsageEntitlementSnapshot, UsageQuotaLimit } from "@zcode/shared";
 import { cn } from "@/components/lib/utils.js";
+import {
+  CodingPlanBillingDiscountBadgePill,
+  CodingPlanBillingDiscountInfoDialog,
+  useCodingPlanBillingDiscount,
+} from "@/CodingPlanBillingDiscount.js";
 import type { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { getContextQuotaMeterGridClass } from "@/chat-input-toolbar/contextQuotaMeterGrid.js";
 import { formatStartPlanBucketResetTime } from "@/lib/codingPlanQuotaPresentation.js";
@@ -9,10 +14,10 @@ import { formatQuotaModelDisplayName } from "@/settings/model-provider-section/q
 
 export interface ChatStartPlanBalanceConfig {
   loading: boolean;
-  /** Silent access refresh triggered on hover-open of the context panel (same semantics as the Coding Plan section's onAccess). */
+  /** hover 打开 context 面板时发起的静默 access 刷新（与 Coding Plan 段 onAccess 语义一致）。 */
   onAccess?: () => Promise<void> | void;
   onUpgradeClick?: () => void;
-  /** In-flight promise of the hover-triggered refresh; silent refreshes do not set entitlement.loading, so the spinner follows this. */
+  /** hover 触发的本次刷新 promise 进行中；静默刷新不置 entitlement.loading，spinner 需要跟随它。 */
   refreshing?: boolean;
   snapshot: UsageEntitlementSnapshot | null;
 }
@@ -70,39 +75,45 @@ export function hasChatStartPlanBalance(config: ChatStartPlanBalanceConfig | und
   return (
     config.loading ||
     getVisibleStartPlanLimits(config.snapshot).length > 0 ||
-    // Start Plan and Coding Plan connection types are mutually exclusive, so the hover-refresh
-    // entry cannot hang only off the Coding Plan config. With no cached snapshot this section
-    // (trigger included) does not render and users lose the hover entry for the first balance
-    // request. Treat a present onAccess as refreshable and keep the trigger (mirroring
-    // hasChatCodingPlanUsageRemaining's fallback).
+    // Start Plan 与 Coding Plan 连接方式互斥，hover 刷新入口不能只挂在 Coding Plan
+    // 配置上；首次无缓存快照时本段（含触发器）不渲染，用户没有 hover 入口发起第一次余额请求。
+    // onAccess 存在即视为可按需刷新，保留触发器（对齐 hasChatCodingPlanUsageRemaining 的兜底）。
     Boolean(config.onAccess)
   );
 }
 
-function ChatStartPlanBalanceMeter({ limit, locale }: { limit: UsageQuotaLimit; locale: string }) {
+function ChatStartPlanBalanceMeter({
+  limit,
+  locale,
+}: {
+  limit: UsageQuotaLimit;
+  locale: string;
+}) {
   const total = resolveLimitTotal(limit);
   const remaining = resolveLimitRemaining(limit);
   const remainingRatio = total > 0 ? Math.max(0, Math.min(1, remaining / total)) : 0;
-  // Bucket refresh time comes only from that bucket's expires_at (nextResetTime); no plan-level
-  // renewTime or global-aggregate fallback, or multi-plan setups would copy one time into every
-  // bucket.
+  // 桶刷新时间只来自本桶 expires_at（nextResetTime）；不再用套餐级 renewTime
+  // 或全局聚合时间兜底，否则多套餐下会把同一时间复制进每个桶。
   const renewTime = formatStartPlanBucketResetTime(locale, limit.nextResetTime);
 
   return (
     <div className="min-w-0 space-y-1.5">
       <div className="min-w-0 space-y-0.5 text-ui-sm">
-        <div className="min-w-0 truncate text-foreground-subtle">{formatLimitModels(limit)}</div>
+        <div className="min-w-0 truncate text-foreground-subtle">
+          {formatLimitModels(limit)}
+        </div>
         <div className="min-w-0 text-ui-sm tabular-nums">
           <span className="font-mono text-foreground">
             {formatStartPlanRemainingPercentage(remainingRatio, locale)}
           </span>
-          {renewTime ? <span className="text-foreground-subtle"> · {renewTime}</span> : null}
+          {renewTime ? (
+            <span className="text-foreground-subtle"> · {renewTime}</span>
+          ) : null}
         </div>
       </div>
       <div className="h-1.5 overflow-hidden rounded-full bg-surface-hover">
-        {/* Aligned with the Coding Plan usage bar: after the hover silent refresh returns, width
-            eases to the new value — an instant jump makes "refreshed" invisible; keep the
-            motion-reduce a11y fallback. */}
+        {/* 修复原因：与 Coding Plan 额度条对齐，hover 静默刷新返回后宽度平滑过渡到新值，
+            原先瞬间跳变导致"已刷新"完全无感；同时保留 motion-reduce 无障碍降级。 */}
         <div
           className="h-full rounded-full bg-success transition-[width] duration-500 ease-out motion-reduce:transition-none"
           style={{ width: `${remainingRatio * 100}%` }}
@@ -123,6 +134,8 @@ export function ChatStartPlanBalancePanel({
   locale: string;
   separated?: boolean;
 }) {
+  const billingDiscount = useCodingPlanBillingDiscount();
+  const upgradeButtonHighlighted = billingDiscount.active === true;
   const limits = getVisibleStartPlanLimits(config.snapshot);
 
   if (!config.loading && limits.length === 0) {
@@ -137,26 +150,44 @@ export function ChatStartPlanBalancePanel({
             {intl.formatMessage({ id: "settings.modelProvider.startPlan.balance.title" })}
           </span>
           {config.loading || config.refreshing === true ? (
-            // A silent access refresh with a cached snapshot never sets entitlement.loading; the
-            // spinner follows the hover-triggered promise (refreshing), matching the Coding Plan
-            // section.
+            // 静默 access 刷新有缓存快照时不会把 entitlement.loading 置 true，
+            // spinner 还要跟随 hover 触发的本次 promise（refreshing），与 Coding Plan 段语义一致。
             <Loader2Icon className="size-3.5 shrink-0 animate-spin text-foreground-subtle" />
           ) : null}
         </div>
         {config.onUpgradeClick ? (
-          <CodingPlanEntryButton
-            type="button"
-            size="xs"
-            className="h-6 shrink-0 gap-1 px-2 text-ui-sm"
-            onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              config.onUpgradeClick?.();
-            }}
-          >
-            <RocketIcon className="size-3" />
-            {intl.formatMessage({ id: "chat.quota.action.upgrade" })}
-          </CodingPlanEntryButton>
+          <div className="inline-flex shrink-0 items-center gap-1">
+            <CodingPlanEntryButton
+              type="button"
+              size="xs"
+              className={cn(
+                "h-6 shrink-0 gap-1 px-2 text-ui-sm",
+                upgradeButtonHighlighted &&
+                  "button-gradient rounded-full pr-[5px] text-white hover:bg-transparent hover:opacity-90 dark:bg-[#484A58] dark:hover:bg-[#484A58]",
+              )}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                config.onUpgradeClick?.();
+              }}
+            >
+              <RocketIcon className="size-3" />
+              {intl.formatMessage({ id: "chat.quota.action.upgrade" })}
+              {upgradeButtonHighlighted ? (
+                <CodingPlanBillingDiscountBadgePill
+                  config={billingDiscount.config}
+                  iconVisible={false}
+                  size="compact"
+                  variant="surface"
+                />
+              ) : null}
+            </CodingPlanEntryButton>
+            {upgradeButtonHighlighted ? (
+              <CodingPlanBillingDiscountInfoDialog
+                config={billingDiscount.config}
+              />
+            ) : null}
+          </div>
         ) : null}
       </div>
       <div className={cn("grid gap-2", getContextQuotaMeterGridClass(limits.length))}>

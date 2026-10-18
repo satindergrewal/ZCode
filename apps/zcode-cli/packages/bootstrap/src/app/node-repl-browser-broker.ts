@@ -55,8 +55,8 @@ export function createNodeReplBrowserBroker(input: {
     socketPath,
     token,
     close: async () => {
-      // createZCodeApp is a synchronous factory; with very short lifetimes close can precede the listen callback,
-      // so checking server.listening directly would miss a socket bound right after.
+      // createZCodeApp 是同步工厂，极短生命周期下 close 可能先于 listen 回调；
+      // 直接检查 server.listening 会漏关随后才绑定成功的 socket。
       await ready.catch(() => undefined);
       await closeServer(server);
       if ((input.platform ?? process.platform) !== "win32") {
@@ -104,11 +104,11 @@ async function handleSocket(
   const abortController = new AbortController();
   let completed = false;
   let requestId = randomUUID();
-  // steer makes the node_repl client abort and immediately socket.destroy(), usually while the broker is
-  // still writing screenshot base64. An error listener only during readLine (removed by cleanup on resolve) is not enough:
-  // during the response write there is no listener at all, so a peer-disconnect EPIPE becomes an unhandled 'error' event that
-  // kills the whole Agent process (Unhandled error event -> exit 1). Keep a listener for the socket's whole lifetime and collapse
-  // peer disconnects into "cancel the current request" instead of bubbling a process-level error.
+  // steer 会让 node_repl 客户端 abort 后立即 socket.destroy()，而 broker 此刻通常正在
+  // 回写截图 base64。socket 只在 readLine 期间挂 error 监听（resolve 时就被 cleanup 摘掉）是不够的，
+  // 写响应阶段完全没有监听者，对端断开产生的 EPIPE 就成了无人接收的 'error' 事件，直接击穿整个
+  // Agent 进程（Unhandled error event -> exit 1）。这里让监听覆盖 socket 全生命周期，并把对端
+  // 断开收敛为「取消当前请求」，不再冒泡成进程级错误。
   socket.on("error", (error) => {
     if (!completed) abortController.abort();
     input.logger.debug("Node REPL browser broker connection dropped", {
@@ -122,8 +122,8 @@ async function handleSocket(
   try {
     const raw = await readLine(socket, abortController.signal);
     const payload = JSON.parse(raw) as unknown;
-    // A strict schema throws on unknown fields such as timeout; the random placeholder id used to be replaced only after a full parse,
-    // so real parameter errors were swallowed by the client's response-id-mismatch secondary error.
+    // 严格 schema 会在 timeout 等未知字段处直接抛错；过去只有完整 parse 成功后才覆盖
+    // 随机占位 id，导致真实参数错误被 client 的 response id mismatch 二次错误吞掉。
     requestId = requestIdFromPayload(payload) ?? requestId;
     const request = nodeReplBrowserBrokerRequestSchema.parse(payload);
     requestId = request.id as ReturnType<typeof randomUUID>;
@@ -154,7 +154,7 @@ function requestIdFromPayload(payload: unknown): ReturnType<typeof randomUUID> |
 }
 
 function respond(socket: Socket, response: NodeReplBrowserBrokerResponse): void {
-  // The peer may have destroyed the socket after the steer cancel; writing back is pointless and only earns an EPIPE.
+  // 对端可能已在 steer 取消后销毁 socket；此时没有回写的意义，写了也只会换来一个 EPIPE。
   if (!socket.writable) return;
   socket.end(`${JSON.stringify(response)}\n`);
 }
@@ -165,12 +165,10 @@ function authorizeRequest(request: NodeReplBrowserBrokerRequest, input: { token:
   if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
     throw new Error("Node REPL browser broker request is not authorized");
   }
-  // The shared MCP child process can no longer be bound to one session, but top-level MCP metadata still
-  // must not grant Browser permission directly. The private socket token first proves the request comes from the host-launched node_repl; the
-  // sessionId is then authoritatively checked by BrowserControlPort's requireSession, and subagents are rejected before reaching the port.
-  if (request.runtimeScope === "subagent") {
-    throw new Error("Browser is not available in subagent");
-  }
+  // 共享 MCP 子进程不能再绑定某一个 session，但 top-level MCP metadata 也不能
+  // 直接取得 Browser 权限。私有 socket token 先证明请求来自宿主启动的 node_repl；sessionId
+  // 随后由 BrowserControlPort 的 requireSession 做权威校验——subagent 的子会话只有经父 runtime
+  // forChildSession 登记后才能解析到客户端会话，未登记的一律拒绝。
 }
 
 async function executeRequest(

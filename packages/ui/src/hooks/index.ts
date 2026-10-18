@@ -1,15 +1,15 @@
 /**
  * Hooks barrel export
  *
- * Every service/platform hook is exported from here.
- * Components reach services through hooks, never services.* or window.zcode.* directly.
+ * 所有服务和平台操作的 hooks 统一从此导出。
+ * 组件应通过 hooks 访问服务，不再直接使用 services.* 或 window.zcode.*。
  */
 
-// Service context
+// 服务上下文
 export { ServiceProvider, useServices } from "./useServices.js";
 export { useBaseWorkspaceServices, useWorkspaceServices } from "./useWorkspaceServices.js";
 
-// Platform-operations context
+// 平台操作上下文
 export {
   PlatformProvider,
   usePlatform,
@@ -17,32 +17,32 @@ export {
   useConnectRemote,
 } from "./usePlatform.js";
 
-// File service
+// 文件服务
 export { useReaddir } from "./useFileService.js";
 
-// File watcher service
+// 文件监视服务
 export { useWatchedReaddir } from "./useFileWatcherService.js";
 
-// System service
+// 系统服务
 export { useSystemInfo, useIntranetProbe } from "./useSystemService.js";
 export { useWorkspaceHomePath } from "./useWorkspaceHomePath.js";
 
-// Terminal service
+// 终端服务
 export { useTerminal } from "./useTerminalService.js";
 
-// Settings service
+// 设置服务
 export { useSettings, useRecentProjects } from "./useSettingService.js";
 export { useSkills } from "./useSkills.js";
 export { usePlugins } from "./usePlugins.js";
 
-// Onboarding record service (local persistence, uploaded to the server later)
+// Onboarding 完成记录服务（本地持久化，后续上传服务器）
 export { useOnboardingRecordService } from "./useOnboardingRecordService.js";
 
-// Generic confirm dialog
+// 通用确认弹窗
 export { useConfirmDialog } from "./useConfirmDialog.js";
 export { useAlertDialog } from "./useAlertDialog.js";
 
-// Credentials service
+// 凭据服务
 export { useCredentials, useAuthToken } from "./useCredentials.js";
 export { useZCodeAgentService } from "./useZCodeAgentService.js";
 
@@ -50,7 +50,8 @@ export { useZCodeAgentService } from "./useZCodeAgentService.js";
 export { useGitAutoRefresh } from "./useGitAutoRefresh.js";
 export { useGitRepository } from "./useGitRepository.js";
 export { useGitActions } from "./useGitActions.js";
-// Workspace provider configuration paths
+// workspace provider 配置路径
+export { useWorkspaceProviderConfigFile } from "./useWorkspaceProviderConfigFile.js";
 export { useTaskNativeSessionLogFile } from "./useTaskNativeSessionLogFile.js";
 export { useTaskSessionFilePath } from "./useTaskSessionFilePath.js";
 export { useUsageStats } from "./useUsageStats.js";

@@ -18,7 +18,7 @@ export interface CuaOperationStateReporter {
   onStateChanged(event: CuaOperationState): void;
 }
 
-interface CuaOperationTurnTracker {
+export interface CuaOperationTurnTracker {
   accept(workspace: CuaOperationWorkspaceTarget, event: ZCodeComputerUseOperationEvent): void;
   /** Whether a turn with a running Computer Use tool exists. */
   hasActiveTurn(): boolean;

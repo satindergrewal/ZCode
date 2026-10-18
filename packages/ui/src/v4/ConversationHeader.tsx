@@ -9,40 +9,48 @@ import { Button } from "@/components/ui/button.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { runUserAction } from "@/lib/userActionTelemetry.js";
 
-/** Ownership badge across workspace panes (future cross-workspace-session origin badges extend here). */
+/** 跨 workspace pane 的归属徽标（未来跨 workspace session 的多路径徽标在此扩展）。 */
 export interface PaneWorkspaceBadge {
-  /** Display name (workspacePath basename). */
+  /** 展示名（workspacePath basename）。 */
   label: string;
-  /** Full path (tooltip). */
+  /** 完整路径（tooltip）。 */
   workspacePath: string;
-  /** Remote workspace (SSH/WSL/Docker) marker. */
+  /** 远程 workspace（SSH/WSL/Docker）标识。 */
   remote: boolean;
 }
 
-interface ConversationHeaderProps {
-  /** meta.title; test/observability projection only, never renders a placeholder header. */
+export interface ConversationHeaderProps {
+  /** meta.title；仅作为测试/可观测投影，不渲染占位 header。 */
   title: string;
-  /** Split a new draft pane to the right (host withholds at the leaf limit). */
+  /** 向右拆分新 draft 窗格（叶子数达上限时宿主不下发）。 */
   onSplitRight?: () => void;
-  /** Split a new draft pane downward. */
+  /** 向下拆分新 draft 窗格。 */
   onSplitDown?: () => void;
-  /** Close this pane (sent for non-primary panes only; closing a pane never stops the session). */
+  /** 关闭本窗格（仅非 primary pane 下发；关 pane ≠ 停 session）。 */
   onClosePane?: () => void;
-  /** Cross-workspace ownership badge (sent when the pane workspace differs from the shell workspace). */
+  /** 跨 workspace pane 的归属徽标（pane workspace ≠ shell 当前 workspace 时下发）。 */
   workspaceBadge?: PaneWorkspaceBadge;
 }
 
 /**
- * Pane chrome: no layout height; the split/close entries float top-right.
- * Keeps the title data node for E2E projection reads, without restoring the old header bar.
+ * pane chrome：不占布局高度，只在右上角悬浮拆分/关闭入口。
+ * 保留 title data 节点，供 E2E 读取投影但不恢复旧横条。
  */
-function ConversationHeaderImpl({ title, onClosePane, workspaceBadge }: ConversationHeaderProps) {
+function ConversationHeaderImpl({
+  title,
+  onClosePane,
+  workspaceBadge,
+}: ConversationHeaderProps) {
   const { intl } = useZCodeIntl();
   const hasFloatingActions = Boolean(workspaceBadge) || Boolean(onClosePane);
 
   return (
     <>
-      <span data-testid={TID_V4_SESSION_TITLE} data-title={title} className="sr-only" />
+      <span
+        data-testid={TID_V4_SESSION_TITLE}
+        data-title={title}
+        className="sr-only"
+      />
       {hasFloatingActions ? (
         <div
           data-v4-pane-actions="floating"
@@ -57,11 +65,13 @@ function ConversationHeaderImpl({ title, onClosePane, workspaceBadge }: Conversa
             >
               <span className="truncate">{workspaceBadge.label}</span>
               {workspaceBadge.remote ? (
-                <span className="shrink-0">{intl.formatMessage({ id: "v4Pane.remote" })}</span>
+                <span className="shrink-0">
+                  {intl.formatMessage({ id: "v4Pane.remote" })}
+                </span>
               ) : null}
             </span>
           ) : null}
-          {/* Pane-chrome split entry is temporarily disabled on the product side; callbacks and the underlying capability stay for a quick restore. */}
+          {/* 2026-07-13 产品侧暂时下线 pane chrome 拆分入口；保留回调接口与底层能力，便于后续恢复。 */}
           {/* {onSplitRight ? (
             <Button
               type="button"

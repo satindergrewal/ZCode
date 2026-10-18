@@ -30,8 +30,8 @@ import { savedWorkflowRunBadgeKind } from "@/settings/saved-workflows/savedWorkf
 
 const MAX_ARG_CHIPS = 3;
 
-/** /** Last-run badge: four states + never-run. Same badge shape as the scheduled card (rounded-lg, 20px icon slot). */
-function SavedWorkflowLastRunBadge({
+/** 卡片「上次运行」徽标：四态 + 尚未运行。沿用定时任务卡的徽标形状（rounded-lg，20px 图标槽）。 */
+export function SavedWorkflowLastRunBadge({
   run,
   now,
 }: {
@@ -61,7 +61,7 @@ function SavedWorkflowLastRunBadge({
       className = "text-destructive";
       break;
     case "running":
-      // running uses the active warning color (same source as the instance detail's status header).
+      // running 用活动色 warning（与实例详情页状态头同源）。
       icon = <Loader2 className="size-4 animate-spin" strokeWidth={1.33} aria-hidden="true" />;
       className = "rounded-lg bg-warning/10 text-warning";
       break;
@@ -94,14 +94,14 @@ interface SavedWorkflowCardProps {
   onRun: (entry: ZCodeSavedWorkflowEntry) => void;
   onRevise: (entry: ZCodeSavedWorkflowEntry) => void;
   onCopyPath: (entry: ZCodeSavedWorkflowEntry) => void;
-  /** /** Scope actions: project row Promote to global (AI summary) / global row Move to project...; only when passed. */
+  /** 作用域动作：项目档「提升为全局」（AI 概括）/ 全局档「移到项目…」；仅在传入时出现。 */
   onMove?: (entry: ZCodeSavedWorkflowEntry) => void;
   onDelete: (entry: ZCodeSavedWorkflowEntry) => void;
 }
 
 /**
- * Same grid as the scheduled card (132px rows, rounded-xl, p-3): title row = name + Run and ... top-right;
- * two description lines; footer left = last-run badge, right = arg-name chips (3 + +N). The whole card opens detail.
+ * 与定时任务卡同一张网格（132px 行、rounded-xl、p-3）：标题行 = 名字 + 右上「运行」与 ⋯；
+ * 两行说明；底栏左 = 上次运行徽标、右 = 实参名芯片（最多 3 个 + `+N`）。整卡可点进详情。
  */
 export const SavedWorkflowCard = memo(function SavedWorkflowCard({
   entry,
@@ -171,7 +171,7 @@ export const SavedWorkflowCard = memo(function SavedWorkflowCard({
         </div>
       </div>
 
-      {/* {/* Card actions layer above whole-card click: buttons stopPropagation, and Enter never bubbles into open-detail. */}
+      {/* 卡面动作与整卡点击分层：按钮 stopPropagation，键盘上也不会把 Enter 冒泡成「打开详情」。 */}
       <div
         className="absolute right-3 top-3 flex items-center gap-1"
         onClick={(event) => event.stopPropagation()}

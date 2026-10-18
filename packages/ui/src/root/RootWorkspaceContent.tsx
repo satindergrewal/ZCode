@@ -42,6 +42,10 @@ interface RootWorkspaceContentProps {
   reconnectingRemoteWorkspaceLogsByWorkspaceKey: AppProps["reconnectingRemoteWorkspaceLogsByWorkspaceKey"];
   remoteConnectionLogs?: AppProps["remoteConnectionLogs"];
   allowOpenWorkspace: NonNullable<RootProps["allowOpenWorkspace"]>;
+  webRemoteControlWorkspaceSwitcher?: RootProps["webRemoteControlWorkspaceSwitcher"];
+  initialWebRemoteControlMobileNavigationIntent?: RootProps["initialWebRemoteControlMobileNavigationIntent"];
+  initialWebRemoteControlWorkspaceList?: RootProps["initialWebRemoteControlWorkspaceList"];
+  webRemoteControlTerminalTransportState?: RootProps["webRemoteControlTerminalTransportState"];
   isDesktop?: RootProps["isDesktop"];
   isMacDesktop?: RootProps["isMacDesktop"];
   isWindowsDesktop?: RootProps["isWindowsDesktop"];
@@ -80,6 +84,10 @@ export function RootWorkspaceContent({
   reconnectingRemoteWorkspaceLogsByWorkspaceKey,
   remoteConnectionLogs,
   allowOpenWorkspace,
+  webRemoteControlWorkspaceSwitcher,
+  initialWebRemoteControlMobileNavigationIntent,
+  initialWebRemoteControlWorkspaceList,
+  webRemoteControlTerminalTransportState,
   isDesktop,
   isMacDesktop,
   isWindowsDesktop,
@@ -104,23 +112,23 @@ export function RootWorkspaceContent({
         data-root-workspace-surface={isSettingsTabActive ? "inert" : "interactive"}
         inert={isSettingsTabActive ? true : undefined}
       >
-        {/* Settings used to replace the whole App conditionally; closing it unmounted and rebuilt the main tree,
-            so chat/terminal local UI state counted as re-entering the workspace.
-            The workspace shell now stays mounted and settings only overlays it.
-            Keying by workspacePath as well remounted sidebar and task lists on cross-workspace task switches,
-            visible as list flicker plus mount/unmount storms in logs.
-            The App instance now stays continuous; only workspace-local state syncs inside, so closing settings or switching workspaces never remounts the tree.
-            Also, hidden must not display:none the underlying workspace shell when settings opens:
-            the sidebar settings entry hosts a Radix DropdownMenu, and an anchor leaving layout mid-close-animation
-            makes Floating UI lose its reference, flashing the menu to the top-left.
-            invisible kept the geometry, but on some platforms the frame the whole shell flips to visibility:hidden
-            reads as an abrupt visibility change, the left side flashing on settings entry.
-            opacity-0 + pointer-events-none instead: layout and the menu anchor survive,
-            and the overlay is a stable transparent layer rather than a hard visible/hidden switch.
-            With hidden, the workspace subtree stays mounted but quickpick popups inherit display:none;
-            Cmd/Ctrl+K in settings would open fully invisible, so layout stays and only interaction closes.
-            Plain opacity/pointer-events still lets permission/AskUserQuestion autofocus
-            steal the settings form focus; while settings overlays, mark the whole workspace inert and restore on explicit return. */}
+        {/* Bugfix: 设置页之前通过条件分支直接替换整个 App，关闭设置时会把主界面整棵树卸载再重建，
+            聊天区、终端等本地 UI 状态都会被当成一次“重新进入 workspace”。
+            这里改成让 workspace 壳层常驻挂载，只把设置页覆盖到上面。
+            之前再额外按 workspacePath 改 key，会让跨工作区切 task 时把侧边栏和任务列表整棵卸载重建，
+            用户看到的就是列表闪烁、日志里大量 mount/unmount。
+            现在保持 App 实例连续，只在内部按需同步 workspace 相关局部状态，关闭设置和切换工作区都不会再触发整树重挂载。
+            另外这里不能在切到设置页时直接用 hidden 把底层 workspace 壳层 display:none。
+            侧边栏设置入口本身挂着 Radix DropdownMenu，菜单关闭动画仍在跑时如果锚点节点突然退出布局，
+            Floating UI 会短暂失去定位参考，表现成菜单内容先闪到左上角再消失。
+            之前这里用 invisible，虽然也能保留几何信息，但部分平台在整棵 workspace 壳层切成 visibility:hidden
+            的那一帧会把 sidebar 视为一次突兀的可见性切换，切到 settings 时容易感觉“左侧闪一下”。
+            这里改成 opacity-0 + pointer-events-none：仍然保留布局和菜单锚点，避免 DropdownMenu 丢参考点，
+            同时把切层从“可见/不可见硬切”改成稳定的透明覆盖，减少 sidebar 闪烁。
+            修复原因：这里如果误用 hidden，workspace 子树虽然还挂载，但 quickpick 弹层也会继承 display:none，
+            用户在设置页按 Cmd/Ctrl+K 时状态已打开却完全不可见，所以必须保持布局占位只关闭交互。
+            修复原因：只用 opacity 和 pointer-events 仍会让底层权限/AskUserQuestion 卡片的 autofocus
+            抢走设置表单焦点；设置页覆盖期间必须把整棵 workspace 标为 inert，等用户显式返回后再恢复交互。 */}
         <ConversationTelemetryWorkspaceAttachment
           enabled={isDesktop === true}
           foregroundEnabled={!isSettingsTabActive}
@@ -137,41 +145,49 @@ export function RootWorkspaceContent({
               className="h-full"
             >
               <StableWorkspaceApp
-                services={workspaceScopedServices}
-                baseFeedbackService={baseFeedbackService}
-                onConnectRemote={handleConnectRemote}
-                onSelectRemoteProject={handleSelectRemoteProject}
-                onCancelRemoteProject={handleCancelRemoteProject}
-                onReconnectRemoteWorkspace={handleReconnectRemoteWorkspace}
-                onLogout={handleLogout}
-                onLogin={onLogin}
-                user={user}
-                reconnectingRemoteWorkspaceKeys={reconnectingRemoteWorkspaceKeys}
-                remoteWorkspaceErrorByWorkspaceKey={remoteWorkspaceErrorByWorkspaceKey}
-                reconnectingRemoteWorkspaceLogsByWorkspaceKey={
-                  reconnectingRemoteWorkspaceLogsByWorkspaceKey
-                }
-                remoteConnectionLogs={remoteConnectionLogs}
-                workspaceAbsPath={workspaceShellPath}
-                workspaceRemoteSessionId={workspaceRemoteSessionId}
-                workspaceIdentity={workspaceIdentity}
-                onCreateTask={handleCreateTask}
-                onCreateConversationTask={handleCreateConversationTask}
-                onResolveConversationWorkspace={handleResolveConversationWorkspace}
-                onOpenWorkspace={handleOpenWorkspace}
-                onOpenFolderFromWorkspaceMenu={handleOpenFolderFromWorkspaceMenu}
-                onOpenRemoteWorkspace={handleOpenRemoteWorkspace}
-                onCreateScratchWorkspace={handleCreateScratchWorkspace}
-                remoteConnectionInProgress={remoteConnectionInProgress}
-                onReturnToWorkspace={handleBackFromSettings}
-                allowOpenWorkspace={allowOpenWorkspace}
-                allowRemoteWorkspace={allowRemoteWorkspace}
-                remoteWorkspaceSessions={remoteWorkspaceSessions}
-                isWorkspaceVisible={!isSettingsTabActive}
-                isDesktop={isDesktop}
-                isMacDesktop={isMacDesktop}
-                isWindowsDesktop={isWindowsDesktop}
-                supportsEmbeddedBrowser={supportsEmbeddedBrowser}
+              services={workspaceScopedServices}
+              baseFeedbackService={baseFeedbackService}
+              onConnectRemote={handleConnectRemote}
+              onSelectRemoteProject={handleSelectRemoteProject}
+              onCancelRemoteProject={handleCancelRemoteProject}
+              onReconnectRemoteWorkspace={handleReconnectRemoteWorkspace}
+              onLogout={handleLogout}
+              onLogin={onLogin}
+              user={user}
+              reconnectingRemoteWorkspaceKeys={reconnectingRemoteWorkspaceKeys}
+              remoteWorkspaceErrorByWorkspaceKey={remoteWorkspaceErrorByWorkspaceKey}
+              reconnectingRemoteWorkspaceLogsByWorkspaceKey={
+                reconnectingRemoteWorkspaceLogsByWorkspaceKey
+              }
+              remoteConnectionLogs={remoteConnectionLogs}
+              workspaceAbsPath={workspaceShellPath}
+              workspaceRemoteSessionId={workspaceRemoteSessionId}
+              workspaceIdentity={workspaceIdentity}
+              onCreateTask={handleCreateTask}
+              onCreateConversationTask={handleCreateConversationTask}
+              onResolveConversationWorkspace={handleResolveConversationWorkspace}
+              onOpenWorkspace={handleOpenWorkspace}
+              onOpenFolderFromWorkspaceMenu={handleOpenFolderFromWorkspaceMenu}
+              onOpenRemoteWorkspace={handleOpenRemoteWorkspace}
+              onCreateScratchWorkspace={handleCreateScratchWorkspace}
+              remoteConnectionInProgress={remoteConnectionInProgress}
+              onReturnToWorkspace={handleBackFromSettings}
+              allowOpenWorkspace={allowOpenWorkspace}
+              webRemoteControlWorkspaceSwitcher={webRemoteControlWorkspaceSwitcher}
+              initialWebRemoteControlMobileNavigationIntent={
+                initialWebRemoteControlMobileNavigationIntent
+              }
+              initialWebRemoteControlWorkspaceList={initialWebRemoteControlWorkspaceList}
+              webRemoteControlTerminalTransportState={
+                webRemoteControlTerminalTransportState
+              }
+              allowRemoteWorkspace={allowRemoteWorkspace}
+              remoteWorkspaceSessions={remoteWorkspaceSessions}
+              isWorkspaceVisible={!isSettingsTabActive}
+              isDesktop={isDesktop}
+              isMacDesktop={isMacDesktop}
+              isWindowsDesktop={isWindowsDesktop}
+              supportsEmbeddedBrowser={supportsEmbeddedBrowser}
               />
             </ScopedErrorBoundary>
           </ServiceProvider>

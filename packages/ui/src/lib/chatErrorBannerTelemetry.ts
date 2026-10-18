@@ -8,21 +8,22 @@ import { logger } from "@/logger.js";
 import {
   getProviderBusinessErrorUiAction,
   isProviderBusinessErrorCode,
+  resolveRequestVerificationBusinessCode,
   type ProviderBusinessErrorUiAction,
 } from "@/lib/providerBusinessError.js";
 import { resolveTelemetryAttribution } from "@/lib/chatErrorAttribution.js";
 import type { ZCodeUiError } from "@/lib/zcodeUiError.js";
 
-const CHAT_ERROR_BANNER_ARMS_EVENT_NAME = "chat_error_banner";
-const CHAT_ERROR_BANNER_ARMS_GROUP = "ui_error";
+export const CHAT_ERROR_BANNER_ARMS_EVENT_NAME = "chat_error_banner";
+export const CHAT_ERROR_BANNER_ARMS_GROUP = "ui_error";
 export type ChatErrorBannerSurface = "chat_input_error_banner" | "session_subscription_error";
 
 const CHAT_ERROR_BANNER_MESSAGE_LIMIT = 500;
 
 function sanitizeUnderlyingTelemetryText(value: string | undefined): string | undefined {
   if (!value?.trim()) return undefined;
-  // The raw message can carry auth headers or raw responses; diagnostic fields must not
-  // breach telemetry privacy. Only the reported copy changes; display, classification and local detail keep originals.
+  // 底层 message 可能包含认证头或原始响应，不能因新增诊断字段绕过遥测隐私边界。
+  // 只影响上报副本；错误展示、分类及本地详情仍使用原值。
   if (
     /authorization|\b(?:bearer|basic)\s+\S+|(?:https?|wss?|file):\/\/|(?:api[_-]?key|token|password|secret)\s*["']?\s*[:=]|<(?:html|body|script|form|!doctype)\b/i.test(
       value,
@@ -33,8 +34,8 @@ function sanitizeUnderlyingTelemetryText(value: string | undefined): string | un
   return truncateTelemetryText(value);
 }
 
-// The provider/model allowlist and normalization live in @zcode/shared telemetryRedaction:
-// events like plan_usage and ui_perf share one allowlist so copies cannot drift.
+// provider/model 白名单与归一实现已收敛到 @zcode/shared 的 telemetryRedaction：
+// plan_usage、ui_perf 等事件复用同一条白名单，避免多份副本各自漂移。
 
 interface ChatProviderBusinessRecoveryAction {
   kind: ProviderBusinessErrorUiAction;
@@ -44,8 +45,11 @@ interface ChatProviderBusinessRecoveryAction {
 export function resolveVisibleChatErrorTelemetryRecoveryAction(
   error: Pick<ZCodeUiError, "code" | "message">,
 ): ChatProviderBusinessRecoveryAction | null {
-  // Fix: the legacy UI reported visible recovery actions of routine provider errors as a dimension;
-  // business codes without actions such as 3007 or 3001 now return null and skip the dimension.
+  // 修复原因：旧 UI 会把普通 provider 业务错误的可见恢复动作作为聚合维度上报；
+  // 3007 的 request verification retry 是内部自动恢复动作，不显示按钮，因此必须继续留空。
+  if (resolveRequestVerificationBusinessCode(error.code, error.message)) {
+    return null;
+  }
   if (!isProviderBusinessErrorCode(error.code)) {
     return null;
   }
@@ -97,8 +101,8 @@ function resolveErrorKey(params: {
     providerBusinessRecoveryAction?.providerBusinessCode ?? "",
   ].join("\u001f");
 
-  // Fix: the UI dedupe key carries the full error.message and must not bypass the 500-char truncation
-  // into analytics; telemetry keeps structured dimensions plus a short hash for dedupe and aggregation.
+  // 修复原因：UI 本地去重 key 包含完整 error.message，不能绕过 500 字符截断进入埋点。
+  // telemetry 只保留结构化维度和短 hash，既能去重聚合，也避免扩大上报正文范围。
   return [
     normalizeTelemetryKeyPart(params.error.taskId, "no-task"),
     normalizeTelemetryKeyPart(params.error.code, "UNKNOWN"),
@@ -112,7 +116,7 @@ function resolveErrorKey(params: {
   ].join(":");
 }
 
-function buildChatErrorBannerTelemetryPayload(params: {
+export function buildChatErrorBannerTelemetryPayload(params: {
   surface?: ChatErrorBannerSurface;
   errorKey?: string | null;
   displayMessage: string;
@@ -147,7 +151,7 @@ function buildChatErrorBannerTelemetryPayload(params: {
       error_code: params.error.code ?? "",
       error_message: errorMsg,
       ...(underlyingErrorMessage ? { error_detail_message: underlyingErrorMessage } : {}),
-      // The telemetry contract forbids uploading full detail; it stays in the local protocol, never error_detail_text.
+      // 现行遥测契约禁止上传完整 detail；仅在本地协议中保留，不能照搬上游 error_detail_text。
       trace_id: params.error.traceId ?? "",
       task_id: taskId,
       has_detail: Boolean(params.error.detail),
@@ -180,10 +184,10 @@ export async function reportChatErrorBannerTelemetry(
   },
 ): Promise<void> {
   try {
-    // Fix: the error banner is exception observability and must not use warehouse analytics;
-    // route it through ARMS custom, the same outlet as the React ErrorBoundary.
+    // 修复原因：错误横幅属于异常可观测，不能走数仓业务 telemetry；
+    // 这里改走 ARMS custom，与 React ErrorBoundary 保持同一监控出口。
     await platform.reportArmsCustomEvent(buildChatErrorBannerTelemetryPayload(params));
   } catch (error) {
-    logger.warn("[ChatViewErrorBanner] ARMS report failed:", error);
+    logger.warn("[ChatViewErrorBanner] ARMS 上报失败:", error);
   }
 }

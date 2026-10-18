@@ -171,12 +171,16 @@ export function useWorkspaceSidebarFooterUsageSummaryState({
     // Team project context arrives only via enterprise pricing/customerInfo; the account-level
     // avatar badge must not be blocked by the current connection type.
     enabled:
-      enabled && !providerSourcesLoading && bigmodelFamilyAllowed && Boolean(bigmodelTeamProvider),
+      enabled &&
+      !providerSourcesLoading &&
+      bigmodelFamilyAllowed &&
+      Boolean(bigmodelTeamProvider),
     authenticated: true,
     family: "bigmodel",
   });
   const zaiEnterpriseProducts = useEnterpriseCodingPlanProducts({
-    enabled: enabled && !providerSourcesLoading && zaiFamilyAllowed && Boolean(zaiTeamProvider),
+    enabled:
+      enabled && !providerSourcesLoading && zaiFamilyAllowed && Boolean(zaiTeamProvider),
     authenticated: true,
     family: "zai",
   });
@@ -414,7 +418,7 @@ export function useWorkspaceSidebarFooterUsageSummaryState({
   };
 }
 
-type WorkspaceSidebarFooterUsageSummaryState = ReturnType<
+export type WorkspaceSidebarFooterUsageSummaryState = ReturnType<
   typeof useWorkspaceSidebarFooterUsageSummaryState
 >;
 

@@ -2,9 +2,9 @@ import { create } from "zustand";
 import type { ConversationShareAccessMode } from "@zcode/shared";
 import type { ConversationShareFailureIssue } from "@zcode/services";
 
-type ConversationShareScope = "all" | "partial";
-type ConversationShareSelectionView = "selection" | "timeline";
-type ConversationShareSelectionStage = "selection" | "configuration";
+export type ConversationShareScope = "all" | "partial";
+export type ConversationShareSelectionView = "selection" | "timeline";
+export type ConversationShareSelectionStage = "selection" | "configuration";
 export const DEFAULT_CONVERSATION_SHARE_ACCESS_MODE: ConversationShareAccessMode =
   "public_importable";
 
@@ -19,11 +19,15 @@ export interface ConversationShareDisplayError {
   issueCount: number;
   omittedIssueCount?: number;
   requestId?: string;
-  /** Actionable copy resolved by error kind, shown when the server gives no issues. */
+  clientRequestId?: string;
+  operationId?: string;
+  status?: number;
+  code?: number;
+  /** 没有服务端 issues 时展示的、按错误类型解析出的可行动文案。 */
   messageId?: string;
 }
 
-/** Non-blocking notice when publish succeeded but some artifacts were skipped. */
+/** 发布成功但有结果物被跳过时的非阻断提示。 */
 export interface ConversationShareDisplayWarnings {
   issues: readonly ConversationShareFailureIssue[];
   issueCount: number;
@@ -32,7 +36,7 @@ export interface ConversationShareDisplayWarnings {
 
 export type ConversationShareProgressPhase = "collecting" | "uploading" | "checking";
 
-interface ConversationShareSelectionDraft {
+export interface ConversationShareSelectionDraft {
   scope: ConversationShareScope;
   stage: ConversationShareSelectionStage;
   view: ConversationShareSelectionView;
@@ -42,7 +46,7 @@ interface ConversationShareSelectionDraft {
   accessMode: ConversationShareAccessMode;
 }
 
-interface ConversationShareDockState {
+export interface ConversationShareDockState {
   title?: string;
   disclosureAccepted: boolean;
   publishing: boolean;
@@ -68,7 +72,7 @@ interface ConversationShareSelectionState {
     turns: readonly { rowId: number; productTurnId: string }[],
   ) => void;
   toggleRow: (taskId: string, rowId: number) => void;
-  /** Cancel the selection of a whole product turn (the dismiss-turn entry of blocking items). */
+  /** 按 product turn 身份整轮取消选择（阻断项的「取消选择该轮」入口）。 */
   deselectProductTurn: (taskId: string, productTurnId: string) => void;
   setAllRowsSelected: (taskId: string, selected: boolean) => void;
   goToConfiguration: (taskId: string) => void;
@@ -102,11 +106,28 @@ export const DEFAULT_CONVERSATION_SHARE_DOCK_STATE: ConversationShareDockState =
   attempt: null,
 });
 
+const SESSION_SWITCH_REOPEN_KEY = "__zcodeConversationShareReopenAfterTaskSwitch";
+
+type ConversationShareWindow = Window & Partial<Record<typeof SESSION_SWITCH_REOPEN_KEY, boolean>>;
+
+export function markConversationSharePopoverForSessionSwitch(): void {
+  if (typeof window === "undefined") return;
+  (window as ConversationShareWindow)[SESSION_SWITCH_REOPEN_KEY] = true;
+}
+
+export function consumeConversationSharePopoverSessionSwitch(): boolean {
+  if (typeof window === "undefined") return false;
+  const runtimeWindow = window as ConversationShareWindow;
+  const shouldReopen = runtimeWindow[SESSION_SWITCH_REOPEN_KEY] === true;
+  delete runtimeWindow[SESSION_SWITCH_REOPEN_KEY];
+  return shouldReopen;
+}
+
 function normalizeRowIds(rowIds: readonly number[]): number[] {
   return [...new Set(rowIds.filter(Number.isSafeInteger))].sort((left, right) => left - right);
 }
 
-function getConversationShareDraft(
+export function getConversationShareDraft(
   state: Pick<ConversationShareSelectionState, "drafts">,
   taskId: string,
 ): ConversationShareSelectionDraft {
@@ -164,7 +185,7 @@ export const useConversationShareSelectionStore = create<ConversationShareSelect
           delete dockStates[taskId];
         }
         return {
-          // In per-turn selection the left pane is the only scope selector, so two overlays never fight for focus.
+          // 进入局部选择后左侧面板成为唯一的范围选择入口，避免两个浮层同时争抢焦点。
           popoverOpen: scope === "partial" ? false : state.popoverOpen,
           drafts: {
             ...state.drafts,
@@ -176,7 +197,7 @@ export const useConversationShareSelectionStore = create<ConversationShareSelect
                     view: "selection",
                     availableRowIds:
                       state.drafts[taskId]?.availableRowIds ?? EMPTY_DRAFT.availableRowIds,
-                    // Entering from All conversations always starts a new selection draft, all-selected by product semantics.
+                    // 每次从「全部对话」进入都是新的选择草稿，按产品语义默认全选。
                     excludedRowIds: [],
                     productTurnIdByRowId:
                       state.drafts[taskId]?.productTurnIdByRowId ??
@@ -260,12 +281,12 @@ export const useConversationShareSelectionStore = create<ConversationShareSelect
         };
       }),
     /**
-     * Cancels the selection of a whole product turn.
+     * 按 product turn 身份整轮取消选择。
      *
-     * The UI must not index its per-query lists by the service turnOrdinal:
-     * the two numberings misalign in conversations with system-context turns or multiple steer queries, and toggleRow
-     * excludes a single row only, leaving the turn other queries selected - the blocking turn never removed.
-     * Dismiss-turn means the whole turn: exclude every row by productTurnId, idempotently.
+     * 不能让 UI 用 service 的 turnOrdinal 去索引自己的 per-query 列表：
+     * 两套编号在含系统上下文轮或多 steer query 的会话里必然错位；而且 toggleRow 只
+     * 排除一行，同一轮的其他 query 仍留在选择里，阻断轮根本没被移除。
+     * 「取消该轮」的语义是整轮，因此按 productTurnId 一次性排除全部行，且幂等。
      */
     deselectProductTurn: (taskId, productTurnId) =>
       set((state) => {
@@ -353,8 +374,8 @@ export const useConversationShareSelectionStore = create<ConversationShareSelect
         const current = getConversationShareDraft(state, taskId);
         if (current.scope !== "partial" || current.stage !== "selection") return state;
         return {
-          // The timeline was marked keep-open for the popover, so returning to the left pane
-          // left the corner dropdown stuck. The store owns pane switches and closes the dropdown too.
+          // timeline 被标记为 popover 的 keep-open 区域，导致返回左侧面板时
+          // 右上角 dropdown 仍滞留。面板切换由 store 收口，同时关闭 dropdown。
           popoverOpen: false,
           drafts: {
             ...state.drafts,
@@ -367,7 +388,7 @@ export const useConversationShareSelectionStore = create<ConversationShareSelect
         const dockStates = { ...state.dockStates };
         const previousAttempt = dockStates[taskId]?.attempt;
         if (previousAttempt) {
-          // Idempotent-retry records persist per session, but visible results, progress and errors must clear on close.
+          // 幂等重试记录按 session 保留，但关闭后的可见结果、进度和错误必须清空。
           dockStates[taskId] = {
             ...DEFAULT_CONVERSATION_SHARE_DOCK_STATE,
             attempt: previousAttempt,
@@ -377,8 +398,8 @@ export const useConversationShareSelectionStore = create<ConversationShareSelect
         }
         return {
           drafts: { ...state.drafts, [taskId]: EMPTY_DRAFT },
-          // When SessionPane reuses the instance, the shared-success state must not stay component-local,
-          // or it keeps rendering after the session switches; ending a share clears only that session dock key.
+          // SessionPane 复用实例时，分享成功态不能留在组件本地，
+          // 切到其它 session 后会继续被渲染；结束分享必须只清理当前 session 的 dock key。
           dockStates,
         };
       }),

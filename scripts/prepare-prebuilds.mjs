@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 /* eslint-disable max-lines */
 
-import { access, cp, mkdir } from "node:fs/promises";
 import {
   chmodSync,
   copyFileSync,
@@ -24,15 +23,24 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
+import {
+  LEGACY_REMOTE_RIPGREP_VERSION,
+  NATIVE_SEARCH_PREBUILT_RELEASES,
+  resolveNativeSearchArtifactSource,
+  resolveNativeSearchPrebuiltRelease,
+} from "./native-search-tools-config.mjs";
 import { resolveRemoteNativeSearchPrebuiltPlan } from "./remote-native-search-tools-config.mjs";
 import { prepareNativeSearchTools } from "./prepare-native-search-tools.mjs";
-import { stageNodeNotices, stageThirdPartyNotices } from "./third-party-notices.mjs";
+import {
+  stageNativeSearchNotices,
+  stageNodeNotices,
+  stageThirdPartyNotices,
+} from "./third-party-notices.mjs";
 import {
   computeDeterministicSourceSha256 as computeComponentSourceSha256,
   packSourceAsDeterministicTarGzip as packComponentSourceAsArchive,
 } from "./deterministic-tar-archive.mjs";
 import { runCommand } from "./spawn-command.mjs";
-import { resolveIntranetDepsBaseUrl } from "./intranetDefaults.mjs";
 
 export { computeComponentSourceSha256, packComponentSourceAsArchive };
 
@@ -55,20 +63,17 @@ const pnpmCommand = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const isBootstrapWithRemote = process.env.ZCODE_BOOTSTRAP_WITH_REMOTE === "1";
 
 /**
- * Node dist download source. Defaults to a China mirror; override with
- * `ZCODE_NODE_DIST_MIRROR` (same convention as the identically named CI variable in
- * `.gitlab/ci/00-workflow.yml` and in `scripts/cua-helper-sea-base.mjs`).
+ * Node dist 下载源。默认走国内镜像，`ZCODE_NODE_DIST_MIRROR` 可覆盖（与
+ * `.gitlab/ci/00-workflow.yml` 的同名 CI 变量、`scripts/cua-helper-sea-base.mjs` 同一约定）。
  *
- * This used to hardcode `https://nodejs.org/dist`, which the macOS runner could not
- * reach — all 3 attempts failed with `UND_ERR_CONNECT_TIMEOUT` (10s). Worse, this file's
- * error message kept telling people to "check the Node.js mirror URL" when no such
- * knob existed.
+ * 这里原本硬编码 `https://nodejs.org/dist`，而 macOS
+ * runner 连不上它 —— 3 次尝试全部 `UND_ERR_CONNECT_TIMEOUT`（10s）。更糟的是本文件的报错文案
+ * 一直在让人「检查 Node.js 镜像地址」，可当时根本没有这个旋钮。
  *
- * Why it went unnoticed: `mock-cdn` persists across jobs via GIT_CLEAN_FLAGS exclusions, while
- * `build:remote:assets` runs `rm -rf` on every release dir except its own $VERSION.
- * Version dirs therefore evict each other's persisted artifacts, and whichever gets evicted
- * must re-download from the source. Normally it logs `[skip] already exists`, so this network
- * path was rarely exercised.
+ * 为什么之前没暴露：`mock-cdn` 靠 GIT_CLEAN_FLAGS 排除项跨 job 持久化，而
+ * `build:remote:assets` 每次都 `rm -rf` 掉除自己 $VERSION 以外的所有 release 目录。
+ * 不同版本目录因此互相驱逐持久化产物，谁被驱逐谁就必须回源下载。
+ * 平时都是 `[skip] already exists`，所以这条网络路径长期没被真正走过。
  */
 export const DEFAULT_NODE_DIST_BASE = "https://cdn.npmmirror.com/binaries/node";
 
@@ -77,34 +82,99 @@ export function nodeDistBase(env = process.env) {
   return (mirror || DEFAULT_NODE_DIST_BASE).replace(/\/+$/u, "");
 }
 const BROWSER_USE_PLUGIN_PACKAGE_NAME = "@zcode/browser-use-plugin";
-// After the node_repl host was split into the standalone @zcode/node-repl-host package,
-// browser-use no longer produces dist/mcp/server.js, and CUA assets moved to
-// @zcode/zcode-cua-plugin. This is the **third** parallel manifest (the other two: production
-// packaging in packages/desktop/scripts/prepare-agent-node-bundle.mjs and the dev build in
-// scripts/build-desktop-agent-cli.mjs); only the dev copy was updated back then, so
-// build:macos:arm64 and then build:remote:assets each failed with "missing runtime".
-// Authoritative ownership lives in bootstrap/official-plugin-definitions.ts.
+// node_repl 宿主抽成独立包 @zcode/node-repl-host 之后，browser-use
+// 不再产出 dist/mcp/server.js，CUA 资产也已归 @zcode/zcode-cua-plugin。这是**第三份**平行清单
+// （另两份：packages/desktop/scripts/prepare-agent-node-bundle.mjs 的生产打包、
+// scripts/build-desktop-agent-cli.mjs 的 dev 构建），当时只改了 dev 那份，于是先后在
+// build:macos:arm64 与 build:remote:assets 上以 "missing runtime" 挂掉两次。
+// 权威归属见 bootstrap/official-plugin-definitions.ts。
 const browserUseRequiredRuntimePaths = [
   "scripts/browser-client.mjs",
   "docs/api.json",
   "docs/documents.json",
   "docs/overview.md",
-  // The remote prebuild must share the desktop seed's recording-doc completeness contract.
+  // remote prebuild 必须和桌面 seed 使用同一录屏文档完整性合同。
   "docs/recording.md",
   "docs/workflow.md",
   "skills/control-browser/SKILL.md",
   "skills/web-gui-tester/SKILL.md",
 ];
 const remoteOfficialPluginPackages = [
-  // 44b25ed46c "remove bundled plugins except browser use and cua" removed the other bundled
-  // plugin sources but missed this manifest, so bootstrap:with-remote threw missing on the very
-  // first staged manifest. Keep this in sync with the desktop seed manifest in
-  // packages/desktop/scripts/prepare-agent-node-bundle.mjs and the remote contract in
-  // packages/server/src/remote/zcodeAgentOfficialPluginAssets.ts.
   {
-    // The remote shared-host must deploy the node_repl runtime, otherwise only the skill exists
-    // with no mcp__node_repl__js — that runtime is now provided by @zcode/node-repl-host
-    // (see next entry); browser-use only ships its own client script and skill/docs.
+    packageName: "@zcode/android-emulator-plugin",
+    relativePath: "apps/zcode-cli/packages/android-emulator-plugin",
+    requiresRuntime: true,
+    requiredRuntimePaths: ["dist/mcp/server.js"],
+    runtimeBuildScript: "scripts/build-mcp.mjs",
+    stagedPath: "packages/android-emulator-plugin",
+  },
+  {
+    packageName: "@zcode/documents-plugin",
+    relativePath: "apps/zcode-cli/packages/documents-plugin",
+    requiresRuntime: false,
+    stagedPath: "packages/documents-plugin",
+  },
+  {
+    packageName: "@zcode/image-search-plugin",
+    relativePath: "apps/zcode-cli/packages/image-search-plugin",
+    requiresRuntime: false,
+    stagedPath: "packages/image-search-plugin",
+  },
+  {
+    packageName: "@zcode/pdf-plugin",
+    relativePath: "apps/zcode-cli/packages/pdf-plugin",
+    requiresRuntime: false,
+    stagedPath: "packages/pdf-plugin",
+  },
+  {
+    packageName: "@zcode/presentations-plugin",
+    relativePath: "apps/zcode-cli/packages/presentations-plugin",
+    requiresRuntime: false,
+    stagedPath: "packages/presentations-plugin",
+  },
+  {
+    packageName: "@zcode/spreadsheets-plugin",
+    relativePath: "apps/zcode-cli/packages/spreadsheets-plugin",
+    requiresRuntime: false,
+    stagedPath: "packages/spreadsheets-plugin",
+  },
+  {
+    packageName: "@zcode/visualize-plugin",
+    relativePath: "apps/zcode-cli/packages/visualize-plugin",
+    requiresRuntime: false,
+    requiredSeedPaths: [
+      "skills/visualize/SKILL.md",
+      "skills/visualize/references/api.md",
+      "skills/visualize/references/styles.md",
+      "skills/visualize/tweak.md",
+      "skills/visualize/LICENSE.md",
+      "skills/visualize/scripts/render.py",
+      "skills/visualize/assets/visualize.css",
+      "skills/visualize/assets/visualize.html",
+      "skills/visualize/assets/calendar.js",
+      "skills/visualize/assets/runtime-manifest.json",
+      "skills/visualize/scripts/vendor.py",
+      "skills/visualize/assets/vendor/manifest.json",
+      "skills/visualize/assets/vendor/floating-ui-core-1.7.3.min.js",
+      "skills/visualize/assets/vendor/floating-ui-core-1.7.3.min.js.LICENSE",
+      "skills/visualize/assets/vendor/floating-ui-dom-1.7.4.min.js",
+      "skills/visualize/assets/vendor/floating-ui-dom-1.7.4.min.js.LICENSE",
+      "skills/visualize/assets/vendor/lucide-1.17.0.js",
+      "skills/visualize/assets/vendor/lucide-1.17.0.js.LICENSE",
+      "skills/visualize/assets/vendor/d3-7.9.0.min.js",
+      "skills/visualize/assets/vendor/d3-7.9.0.min.js.LICENSE",
+      "skills/visualize/widgets/calendar.md",
+      "skills/visualize/examples/calendar.html",
+      "skills/visualize/assets/standalone-host-bridge.js",
+      "skills/visualize/assets/standalone-shell.js",
+    ],
+    requiredRuntimePaths: [],
+    stagedPath: "packages/visualize-plugin",
+  },
+  {
+    // 远端 shared-host 必须部署 node_repl runtime，否则只剩 skill 而没有 mcp__node_repl__js ——
+    // 该 runtime 现由 @zcode/node-repl-host 提供（见下一个条目），browser-use 只带自己的
+    // client script 与 skill/docs。
     packageName: "@zcode/browser-use-plugin",
     relativePath: "apps/zcode-cli/packages/browser-use-plugin",
     requiresRuntime: true,
@@ -113,8 +183,8 @@ const remoteOfficialPluginPackages = [
     stagedPath: "packages/browser-use-plugin",
   },
   {
-    // node_repl host: the MCP runtime shared by Browser Use and Computer Use. Without it the
-    // remote shared-host has no mcp__node_repl__js and both bua/cua fail to connect.
+    // node_repl 宿主：Browser Use 与 Computer Use 共用的 MCP runtime。远端 shared-host 缺它
+    // 就没有 mcp__node_repl__js，bua/cua 两边都会连不上。
     packageName: "@zcode/node-repl-host",
     relativePath: "apps/zcode-cli/packages/node-repl-host",
     requiresRuntime: true,
@@ -122,10 +192,49 @@ const remoteOfficialPluginPackages = [
     runtimeBuildScript: "scripts/build.mjs",
     stagedPath: "packages/node-repl-host",
   },
+  {
+    // CUA 远端只部署 SDK/skill/docs；runtime 仍必须 attachment 到 desktop shared host，
+    // 不在 remote workspace 安装或启动 native Helper。
+    packageName: "@zcode/zcode-cua-plugin",
+    relativePath: "apps/zcode-cli/packages/zcode-cua-plugin",
+    requiresRuntime: false,
+    stagedPath: "packages/zcode-cua-plugin",
+  },
+  {
+    packageName: "@zcode/ios-simulator-plugin",
+    relativePath: "apps/zcode-cli/packages/ios-simulator-plugin",
+    requiresRuntime: true,
+    requiredRuntimePaths: ["dist/mcp/server.js"],
+    runtimeBuildScript: "scripts/build-mcp.mjs",
+    stagedPath: "packages/ios-simulator-plugin",
+  },
+  {
+    packageName: "@zcode/restore-legacy-sessions-plugin",
+    relativePath: "apps/zcode-cli/packages/restore-legacy-sessions-plugin",
+    requiresRuntime: false,
+    stagedPath: "packages/restore-legacy-sessions-plugin",
+  },
+  {
+    packageName: "@zcode/skill-creator-plugin",
+    relativePath: "apps/zcode-cli/packages/skill-creator-plugin",
+    requiresRuntime: false,
+    stagedPath: "packages/skill-creator-plugin",
+  },
+  {
+    packageName: "@zcode/plugin-creator-plugin",
+    relativePath: "apps/zcode-cli/packages/plugin-creator-plugin",
+    requiresRuntime: false,
+    stagedPath: "packages/plugin-creator-plugin",
+  },
+  {
+    packageName: "@zcode/zcode-guide-plugin",
+    relativePath: "apps/zcode-cli/packages/zcode-guide-plugin",
+    requiresRuntime: false,
+    stagedPath: "packages/zcode-guide-plugin",
+  },
 ];
-// Skill packs bundled with the CLI (not plugins): the remote agent's bootstrap looks for
-// packages/bundled-skills next to zcode.cjs via the same candidate dirs used for official
-// plugins and reads them in place; same manifest as packages/desktop/scripts/prepare-agent-node-bundle.mjs.
+// 随 CLI 内置的技能包（不是插件）：远端 agent 的 bootstrap 沿官方插件同款候选目录在 zcode.cjs 旁
+// 找 packages/bundled-skills 并原地读取；与 packages/desktop/scripts/prepare-agent-node-bundle.mjs 同一份清单。
 const remoteBundledSkillPack = {
   relativePath: "apps/zcode-cli/packages/bundled-skills",
   requiredPaths: [
@@ -134,14 +243,13 @@ const remoteBundledSkillPack = {
     "skills/dynamic-workflows/examples.md",
   ],
   stagedPath: "packages/bundled-skills",
-  topLevelPaths: ["skills"],
+  topLevelPaths: ["README.md", "skills"],
 };
 const remoteOfficialPluginTopLevelPaths = new Set([
   ".mcp.json",
   ".zcode-plugin",
   "README.md",
-  // The production remote prebuild has its own top-level allowlist; omitting agents would
-  // permanently strip subagents before upload.
+  // 生产远程预构建有独立顶层白名单，遗漏 agents 会在上传前永久裁掉子代理。
   "agents",
   "commands",
   "dist",
@@ -165,8 +273,32 @@ function shouldCopyOfficialPluginAsset(sourcePath) {
   return !excludedOfficialPluginAssetNames.has(name) && !name.endsWith(".pyc");
 }
 const remoteOfficialPluginRequiredPaths = [
+  "packages/android-emulator-plugin/.zcode-plugin/plugin.json",
   "packages/browser-use-plugin/.zcode-plugin/plugin.json",
-  "packages/node-repl-host/.zcode-plugin/plugin.json",
+  "packages/zcode-cua-plugin/.zcode-plugin/plugin.json",
+  "packages/image-search-plugin/.zcode-plugin/plugin.json",
+  "packages/image-search-plugin/.mcp.json",
+  "packages/documents-plugin/.zcode-plugin/plugin.json",
+  "packages/pdf-plugin/.zcode-plugin/plugin.json",
+  "packages/presentations-plugin/.zcode-plugin/plugin.json",
+  "packages/spreadsheets-plugin/.zcode-plugin/plugin.json",
+  "packages/ios-simulator-plugin/.zcode-plugin/plugin.json",
+  "packages/restore-legacy-sessions-plugin/.zcode-plugin/plugin.json",
+  "packages/skill-creator-plugin/.zcode-plugin/plugin.json",
+  "packages/plugin-creator-plugin/.zcode-plugin/plugin.json",
+  "packages/plugin-creator-plugin/skills/plugin-creator/SKILL.md",
+  "packages/zcode-guide-plugin/.zcode-plugin/plugin.json",
+  // 修复原因：文档技能正文与 visual-judge 都是必需 seed 资产，不能只校验 manifest。
+  "packages/documents-plugin/agents/visual-judge.md",
+  "packages/documents-plugin/skills/docx/SKILL.md",
+  "packages/pdf-plugin/agents/visual-judge.md",
+  "packages/pdf-plugin/skills/pdf/SKILL.md",
+  "packages/presentations-plugin/agents/visual-judge.md",
+  "packages/presentations-plugin/skills/pptx/SKILL.md",
+  "packages/spreadsheets-plugin/agents/visual-judge.md",
+  "packages/spreadsheets-plugin/skills/xlsx/SKILL.md",
+  "packages/visualize-plugin/.zcode-plugin/plugin.json",
+  "packages/visualize-plugin/skills/visualize/SKILL.md",
 ];
 
 function readZCodeAgentRuntimeVersion() {
@@ -188,9 +320,8 @@ async function download(url, destinationPath) {
     throw new Error(`Download failed: empty response body (${url})`);
   }
 
-  // The original response.pipe(file) + finish listener could neither resolve nor reject when
-  // the network dropped, eventually triggering Node 24's unsettled top-level await. Switched to
-  // pipeline so failure paths are observable and exit non-zero.
+  // 原实现使用 response.pipe(file) + finish 监听，网络中断时可能既不 resolve 也不 reject，
+  // 最终触发 Node 24 的 unsettled top-level await。改为 pipeline，确保异常路径可观测且可失败退出。
   await pipeline(
     Readable.fromWeb(response.body),
     createWriteStream(destinationPath, { flags: "w" }),
@@ -218,11 +349,10 @@ async function extractArchiveMember(url, destinationDir, archiveMember) {
 
   try {
     await downloadWithRetry(url, archivePath);
-    // Bugfix: on Windows the absolute path carries a drive-letter colon (C:\...) and GNU tar
-    // (Git Bash) treats "C:" as a remote host, reporting "Cannot connect to C". Use cwd plus a
-    // relative archive name to keep the colon out of -f. Backslash paths are also mangled by
-    // MSYS tar argument conversion (\3 parsed as an escape); -C targets are normalized to
-    // forward slashes, a no-op for bsdtar and Linux/macOS CI.
+    // Bugfix: Windows 下绝对路径带盘符冒号（C:\...），GNU tar（Git Bash）会把 "C:" 当成
+    // 远程主机名报 "Cannot connect to C"。改用 cwd + 相对归档名，避开 -f 参数里的冒号。
+    // 反斜杠路径同样会被 MSYS tar 参数转换破坏（\3 被当转义），-C 目标统一转正斜杠，
+    // 对 bsdtar 与 Linux/macOS CI 无影响。
     runCommand(
       "tar",
       [
@@ -238,14 +368,13 @@ async function extractArchiveMember(url, destinationDir, archiveMember) {
       },
     );
   } finally {
-    // Bugfix: on Windows a freshly written archive can be held briefly by antivirus/indexers or
-    // an xz child that has not exited; rmSync right away hits EPERM, and an exception thrown in
-    // finally masks the real download/extract error. Retry the deletion, warn only on failure,
-    // and let the original error propagate.
+    // Bugfix: Windows 下刚写完的归档可能被杀毒/索引器或尚未退出的 xz 子进程短暂持有句柄，
+    // rmSync 立即删除会 EPERM，且 finally 里抛出的异常会掩盖真正的下载/解压错误。
+    // 带重试删除，失败时仅告警，让原始错误正常抛出。
     try {
       rmSync(tempDir, { force: true, recursive: true, maxRetries: 10, retryDelay: 500 });
     } catch (error) {
-      console.warn(`  [warn] failed to remove temp dir (ignorable): ${tempDir}`);
+      console.warn(`  [warn] 清理临时目录失败（可忽略）: ${tempDir}`);
       console.warn(`  [warn] ${String(error)}`);
     }
   }
@@ -294,6 +423,7 @@ async function prepareNodeBinaries() {
   for (const platformKey of remotePlatforms) {
     const nodeDir = join(releaseDir, "node", platformKey);
     const nodeBinaryPath = join(nodeDir, "node");
+    // 远端 node 组件独立下载；复用缓存时也要刷新精确版本的 Node 许可原文。
     await stageNodeNotices(nodeDir, nodeVersion, rootDir);
 
     if (existsSync(nodeBinaryPath)) {
@@ -312,9 +442,9 @@ async function prepareNodeBinaries() {
       chmodSync(nodeBinaryPath, 0o755);
       console.log(`  [ok] mock-cdn node/${platformKey}`);
     } catch (error) {
-      console.error(`  [error] download or extraction failed: ${url}`);
+      console.error(`  [error] 下载或解压失败: ${url}`);
       console.error(
-        `  [error] check the CI runner's internet access and tar/xz availability, or override the download source with ZCODE_NODE_DIST_MIRROR (current ${nodeDistBase()})`,
+        `  [error] 请检查 CI runner 的外网访问、tar/xz 依赖，或用 ZCODE_NODE_DIST_MIRROR 覆盖下载源（当前 ${nodeDistBase()}）`,
       );
       throw error;
     }
@@ -330,25 +460,23 @@ function buildServerBundle() {
       return;
     }
 
-    // On Windows CI (Node 24), spawnSync("pnpm.cmd") throws EINVAL before the child starts.
-    // Route through the cross-platform spawn wrapper so .cmd runs via shell/cmd.exe and remote
-    // asset preparation does not abort early.
+    // Windows CI（Node 24）里直接 spawnSync("pnpm.cmd") 会在拉起子进程前就抛 EINVAL。
+    // 这里统一走跨平台启动封装，让 .cmd 通过 shell/cmd.exe 执行，避免远端资源准备阶段提前中断。
     runCommand(pnpmCommand, ["run", "build:remote"], {
       cwd: join(rootDir, "packages/server"),
     });
   } catch (error) {
     console.error(
-      "  [error] packages/server build:remote failed; check the TypeScript / esbuild output in the CI logs first",
+      "  [error] packages/server build:remote 失败，请优先检查 CI 日志中的 TypeScript / esbuild 输出",
     );
     throw error;
   }
 }
 
 function runBootstrapServerRemoteBuild() {
-  // bootstrap:with-remote chains install, remote assets, and the workspace build locally.
-  // Do not reuse the existing zcode-server.cjs: in dev the package version often stays the same,
-  // and a stale bundle would deploy a server missing new RPCs to the SSH remote. Keep only the
-  // low-memory optimization of running tsx via the current Node; CI's build:remote is unchanged.
+  // bootstrap:with-remote 会在本地串联 install、remote assets、workspace build。
+  // 这里不能复用已有 zcode-server.cjs：开发时 package version 常不变，旧 bundle 会把缺少新 RPC 的
+  // server 部署到 SSH 远端。只保留“直接用当前 Node 启动 tsx”的低内存优化，不改变 CI 的 build:remote。
   runCommand(
     process.execPath,
     [join(rootDir, "node_modules/tsx/dist/cli.mjs"), "build-remote.ts"],
@@ -404,9 +532,9 @@ function copyNodePtyPrebuilds() {
       continue;
     }
 
-    // On Darwin, node-pty needs spawn-helper in addition to pty.node. mock-cdn used to copy
-    // only pty.node and remote deployment failed at terminal.create with posix_spawn ENOENT.
-    // Copy spawn-helper into the remote assets too so remote terminals are never missing it.
+    // Darwin 平台 node-pty 除了 pty.node 还依赖 spawn-helper。
+    // 之前 mock-cdn 只复制了 pty.node，远端部署后会在 terminal.create 阶段报 posix_spawn ENOENT。
+    // 这里把 spawn-helper 一并拷贝进 remote 资产目录，避免远端终端启动时缺关键二进制。
     copyFileSync(sourceBinaryPath, targetBinaryPath);
     if (requiresSpawnHelper) {
       const sourceSpawnHelperPath = join(sourcePrebuildDir, "spawn-helper");
@@ -453,11 +581,10 @@ function buildRemoteOfficialPluginRuntimeForBootstrap(plugin) {
     return;
   }
 
-  // bootstrap:with-remote prepares remote assets and the workspace build serially.
-  // Official plugin runtimes are only needed while staging assets; run the equivalent build with
-  // the current Node instead of nesting pnpm/tsc shims. browser-use's MCP server and
-  // browser-client must come from the same build; trusting a stale server.js for reuse would
-  // mix stale or missing clients into the remote assets, so always rebuild it in bootstrap mode.
+  // bootstrap:with-remote 会串行准备远端资源和工作区构建。
+  // 官方插件 runtime 只在 stage 资源时需要，这里用当前 Node 执行等价构建，避免再嵌套 pnpm/tsc shim。
+  // browser-use 的 MCP server 与 browser-client 必须来自同一次构建；只凭旧 server.js 判定可复用
+  // 会让远端资源混入陈旧或缺失的 client，因此 bootstrap 模式下对该插件无条件重建。
   runCommand(process.execPath, ["../../node_modules/typescript/bin/tsc"], {
     cwd: pluginRoot,
     env: process.env,
@@ -511,38 +638,42 @@ function stageRemoteOfficialPlugins(glmDir) {
   }
 }
 
-async function stageRemoteBundledSkillPack(glmDir) {
+function stageRemoteBundledSkillPack(glmDir) {
   const sourceRoot = join(rootDir, remoteBundledSkillPack.relativePath);
   const targetRoot = join(glmDir, ...remoteBundledSkillPack.stagedPath.split("/"));
-  await mkdir(targetRoot, { recursive: true });
+  mkdirSync(targetRoot, { recursive: true });
   for (const entryName of remoteBundledSkillPack.topLevelPaths) {
     const sourcePath = join(sourceRoot, entryName);
-    await cp(sourcePath, join(targetRoot, entryName), {
+    if (!existsSync(sourcePath)) continue;
+    cpSync(sourcePath, join(targetRoot, entryName), {
       recursive: true,
       filter: shouldCopyOfficialPluginAsset,
     });
   }
   for (const relativePath of remoteBundledSkillPack.requiredPaths) {
     const stagedAssetPath = join(targetRoot, ...relativePath.split("/"));
-    await access(stagedAssetPath);
+    if (!existsSync(stagedAssetPath)) {
+      throw new Error(
+        `[prepare-prebuilds] missing staged remote bundled skill asset: ${stagedAssetPath}`,
+      );
+    }
   }
   console.log(`  [ok] mock-cdn glm bundled skill pack ${remoteBundledSkillPack.stagedPath}`);
 }
 
-// Remote agents now run the compiled zcode.cjs instead of per-platform native binaries:
-// remote deployment already has a dedicated node (running zcode-server.cjs) and the agent
-// reuses it to run zcode.cjs, so there is no need for a per-platform SEA binary with an
-// embedded node. zcode.cjs is identical across platforms; per platform it is just placed in
-// its glm/<platform> component dir, keeping the existing manifest component structure.
-async function stageRemoteAgentBundles() {
+// 远端 agent 现在跑编译出来的 zcode.cjs（而不是各平台独立的原生二进制）：
+// 远端部署时已经有一份独立 node（跑 zcode-server.cjs），agent 复用它执行 zcode.cjs 即可，
+// 不必再为每个平台准备一份内嵌 node 的 SEA 二进制。zcode.cjs 跨平台同一份，逐平台只是放进各自的
+// glm/<platform> 组件目录，保持现有 manifest 组件结构不变。
+function stageRemoteAgentBundles() {
   console.log("==> Building zcode-cli bundle for remote agents");
-  // Reuse the desktop build script (turbo build:desktop-agent --filter=@zcode/cli); near-instant on cache hits.
+  // 复用桌面同款构建脚本（turbo build:desktop-agent --filter=@zcode/cli），命中缓存时几乎瞬时。
   runCommand(process.execPath, [join(rootDir, "scripts/build-desktop-agent-cli.mjs")], {
     cwd: rootDir,
     env: process.env,
   });
-  // browser-use runtime's tsc depends on @zcode/core/dist. Remote assets must build the
-  // agent CLI deps first too, avoiding TS2307 on clean CI checkouts hidden by dev caches.
+  // browser-use runtime 的 tsc 依赖 @zcode/core/dist。远端资产也必须先构建
+  // agent CLI 依赖，避免 CI 干净检出时被开发机缓存掩盖的 TS2307。
   buildRemoteOfficialPluginRuntimes();
   const cliBundlePath = join(rootDir, "apps/zcode-cli/packages/cli/dist/zcode.cjs");
   if (!existsSync(cliBundlePath)) {
@@ -551,44 +682,91 @@ async function stageRemoteAgentBundles() {
 
   for (const platformKey of remotePlatforms) {
     const glmDir = join(releaseDir, "glm", platformKey);
-    // Clean rebuild: the glm component now contains only zcode.cjs; drop legacy native binaries
-    // and stale meta so they do not bloat the component tar shipped to remotes.
+    // 干净重建：glm 组件现在只含 zcode.cjs，清掉历史遗留的原生二进制 / 旧 meta，
+    // 避免被打进组件 tar 把远端资源撑大。
     rmSync(glmDir, { recursive: true, force: true });
     mkdirSync(glmDir, { recursive: true });
     copyFileSync(cliBundlePath, join(glmDir, "zcode.cjs"));
     stageRemoteOfficialPlugins(glmDir);
-    await stageRemoteBundledSkillPack(glmDir);
+    stageRemoteBundledSkillPack(glmDir);
     console.log(`  [ok] mock-cdn glm/${platformKey}/zcode.cjs`);
   }
 }
 
-function canResolveIntranetDepsBaseUrl() {
+function downloadRemoteNativeSearchToolsFromIntranet(platformKey, targetOs, targetArch) {
   try {
-    resolveIntranetDepsBaseUrl();
-    return true;
-  } catch {
-    return false;
+    if (targetOs === "linux") {
+      // 修复原因：Linux remote 过去仍走 legacy rg13 单工具下载链，导致 WSL 的 Bash
+      // 找不到随包 bfs/ugrep。这里复用 desktop/SEA 已验证的同一 release plan，
+      // 一次准备 glibc 2.28 的 bfs/ugrep -2 与 Microsoft musl rg14。
+      runCommand(
+        process.execPath,
+        [
+          join(rootDir, "scripts/download-native-search-tools.mjs"),
+          "--platform",
+          targetOs,
+          "--arch",
+          targetArch,
+          "--output-dir",
+          join(releaseDir, "tools", platformKey),
+        ],
+        {
+          cwd: rootDir,
+          env: process.env,
+        },
+      );
+    } else {
+      runCommand(
+        process.execPath,
+        [
+          join(rootDir, "scripts/download-ripgrep.mjs"),
+          LEGACY_REMOTE_RIPGREP_VERSION,
+          targetOs,
+          targetArch,
+        ],
+        {
+          cwd: rootDir,
+          env: {
+            ...process.env,
+            ZCODE_FORCE_REMOTE_MOCK_CDN: "1",
+          },
+        },
+      );
+    }
+  } catch (error) {
+    console.error(
+      `  [error] native search 下载失败 (${platformKey})，请检查依赖镜像和 runner 网络访问`,
+    );
+    throw error;
   }
 }
 
-export async function prepareRemoteNativeSearchTools({
-  platforms = remotePlatforms,
-  outputDir = join(releaseDir, "tools"),
-} = {}) {
-  console.log("==> Preparing local native search binaries for remote platforms");
-  for (const platformKey of platforms) {
+// 远端 native search 与 desktop/SEA 使用同一来源判定：内网依赖源已配置时保持原有下载命令
+// （Linux 走 release plan，macOS 保留 legacy rg13 单工具下载），未配置时按远端 plan 解包仓库归档。
+// 两条路径都在组件哈希计算前把许可声明写进各工具目录，保证组件归档自带材料。
+async function prepareRemoteNativeSearchTools({ env = process.env } = {}) {
+  const source = resolveNativeSearchArtifactSource(env);
+  console.log(
+    source === "intranet"
+      ? "==> Downloading native search binaries for remote platforms"
+      : "==> Preparing native search binaries for remote platforms from repository archives",
+  );
+  for (const platformKey of remotePlatforms) {
     const [targetOs, targetArch] = platformKey.split("-");
     if (!targetOs || !targetArch) {
       throw new Error(`Invalid remote platform key: ${platformKey}`);
     }
-
-    await prepareNativeSearchTools({
-      prebuiltPlan: resolveRemoteNativeSearchPrebuiltPlan({
-        platform: targetOs,
-        arch: targetArch,
-        outputDir: join(outputDir, platformKey),
-      }),
+    const prebuiltPlan = resolveRemoteNativeSearchPrebuiltPlan({
+      platform: targetOs,
+      arch: targetArch,
+      outputDir: join(releaseDir, "tools", platformKey),
     });
+    if (source === "intranet") {
+      downloadRemoteNativeSearchToolsFromIntranet(platformKey, targetOs, targetArch);
+      await stageNativeSearchNotices(prebuiltPlan, rootDir, { origin: "intranet-mirror" });
+    } else {
+      await prepareNativeSearchTools({ prebuiltPlan, source: "repository" });
+    }
   }
 }
 
@@ -650,9 +828,8 @@ function resolveComponentSemanticVersion(componentVersion) {
   return /^[a-f0-9]{12,64}$/.test(suffix) ? version.slice(0, plusIndex) : version;
 }
 
-// glm carries the zcode-cli app-server protocol schema. Even when the runtime version is
-// unchanged, zcode.cjs can still change with app code; reusing an old glm across releases makes
-// remote agents reject new protocol fields.
+// glm 承载 zcode-cli app-server 协议 schema。即使 runtime 版本未变化，
+// zcode.cjs 也可能随 app 代码变更；跨 release 复用旧 glm 会让远端 agent 拒绝新协议字段。
 const nonReusableReleaseAssetIds = new Set(["server-bundle", "glm"]);
 
 function readJsonFile(filePath) {
@@ -774,14 +951,12 @@ export function restoreReusableReleaseAssets({
           continue;
         }
 
-        // A new app version creates a new releases/<version> dir, so cache hits must not depend
-        // on that path. Copy a historical release only when the component version matches and
-        // key files are intact, avoiding re-downloads of stable runtimes.
+        // app version 变更会生成新的 releases/<version> 目录，mock-cdn cache 命中不能依赖该路径。
+        // 这里仅在组件自身版本一致且关键文件完整时复制历史 release，避免稳定 runtime 重复下载。
         mkdirSync(dirname(targetPath), { recursive: true });
         if (existsSync(targetPath)) {
-          // An interrupted bootstrap can leave a target dir holding only .part files.
-          // When the target exists but key files are incomplete, do not skip reuse: clear it
-          // and repair from the historical release's complete assets.
+          // 上一次 bootstrap 中断可能留下只有 .part 文件的残缺目标目录。
+          // 目标目录存在但关键文件不完整时不能跳过复用，先清掉再用历史 release 的完整资源修复。
           rmSync(targetPath, { force: true, recursive: true });
         }
         cpSync(sourcePath, targetPath, { recursive: true });
@@ -815,9 +990,8 @@ function buildReusableComponentRequiredPaths(componentId, platformKey) {
     case "node-pty":
       return platformKey.startsWith("darwin-") ? ["pty.node", "spawn-helper"] : ["pty.node"];
     case "glm":
-      // GLM is now the compiled zcode.cjs (identical across platforms); remotes execute it with
-      // the already-deployed node. Reuse also requires the official plugin seed assets to be
-      // intact, otherwise old releases keep producing remote packages with 0 builtin plugins.
+      // GLM 现在是编译产物 zcode.cjs（跨平台同一份），远端用已部署的 node 执行它。
+      // 复用时还要确认官方插件 seed 资源完整，否则旧 release 会继续产出 0 builtin plugin 的远端资源包。
       return ["zcode.cjs", ...remoteOfficialPluginRequiredPaths];
     case "bfs":
       return ["bfs"];
@@ -846,41 +1020,54 @@ export function buildRemoteComponentDefinitions(platformKey) {
     },
     {
       id: "node-pty",
-      // The node-pty component used to be pinned to v1, so clients kept hitting stale cache
-      // after package upgrades. Use the actual copied-from package version so the component
-      // cache invalidates when @lydell/node-pty-<platform> is upgraded.
+      // node-pty 组件之前固定成 v1，平台包升级后客户端仍会命中旧 cache。
+      // 这里使用实际复制来源包的版本，让 @lydell/node-pty-<platform> 升级时组件 cache 自动失效。
       semanticPrefix: resolveNodePtyPackageVersion(platformKey),
       mount: joinPosix("node-pty", platformKey),
       sourcePath: join(releaseDir, "node-pty", platformKey),
     },
     {
       id: "glm",
-      // The GLM native binary used to be pinned to v1, so binary upgrades never invalidated
-      // the component cache. Reuse ZCODE_AGENT_RUNTIME.glm.version to keep the manifest version
-      // aligned with the runtime descriptor.
+      // GLM native binary 之前固定成 v1，二进制版本升级后不会触发组件 cache 失效。
+      // 这里复用 ZCODE_AGENT_RUNTIME.glm.version，保持 manifest 版本与运行时描述一致。
       semanticPrefix: ZCODE_AGENT_RUNTIME.glm.version,
       mount: joinPosix("glm", platformKey),
       sourcePath: join(releaseDir, "glm", platformKey),
     },
   ];
 
-  const [platform, arch] = platformKey.split("-");
-  const nativeSearchPlan = resolveRemoteNativeSearchPrebuiltPlan({
-    platform,
-    arch,
-    outputDir: join(releaseDir, "tools", platformKey),
-  });
+  if (platformKey.startsWith("linux-")) {
+    return [
+      ...baseComponents,
+      {
+        id: "bfs",
+        semanticPrefix: resolveNativeSearchPrebuiltRelease("bfs", "linux"),
+        mount: joinPosix("tools", platformKey, "bfs"),
+        sourcePath: join(releaseDir, "tools", platformKey, "bfs"),
+      },
+      {
+        id: "ripgrep",
+        semanticPrefix: NATIVE_SEARCH_PREBUILT_RELEASES.ripgrep,
+        mount: joinPosix("tools", platformKey, "ripgrep"),
+        sourcePath: join(releaseDir, "tools", platformKey, "ripgrep"),
+      },
+      {
+        id: "ugrep",
+        semanticPrefix: resolveNativeSearchPrebuiltRelease("ugrep", "linux"),
+        mount: joinPosix("tools", platformKey, "ugrep"),
+        sourcePath: join(releaseDir, "tools", platformKey, "ugrep"),
+      },
+    ];
+  }
 
   return [
     ...baseComponents,
-    ...nativeSearchPlan.artifacts
-      .toSorted((left, right) => left.toolId.localeCompare(right.toolId))
-      .map((artifact) => ({
-        id: artifact.toolId,
-        semanticPrefix: artifact.release,
-        mount: joinPosix("tools", platformKey, artifact.toolId),
-        sourcePath: dirname(artifact.binaryPath),
-      })),
+    {
+      id: "ripgrep",
+      semanticPrefix: LEGACY_REMOTE_RIPGREP_VERSION,
+      mount: joinPosix("tools", platformKey, "ripgrep"),
+      sourcePath: join(releaseDir, "tools", platformKey, "ripgrep"),
+    },
   ];
 }
 
@@ -950,9 +1137,8 @@ export function prepareRemoteComponentArtifact({
     sourceSha256,
   });
   if (reusedComponent) {
-    // Never re-tar.gz unchanged remote mock-cdn component sources on every run. Match the
-    // existing manifest and artifact via the source dir content fingerprint, avoiding
-    // re-compressing large components during bootstrap:with-remote.
+    // remote mock-cdn 组件源内容没变时不能每次重打 tar.gz。
+    // 这里用源目录内容指纹命中已有 manifest 和 artifact，避免 bootstrap:with-remote 重复压缩大组件。
     console.log(`  [skip] component ${component.id} ${platformKey} unchanged`);
     return reusedComponent;
   }
@@ -967,9 +1153,8 @@ export function prepareRemoteComponentArtifact({
   const stagingArtifactPath = join(mockCdnDir, ...stagingArtifactRelativePath.split("/"));
   mkdirSync(dirname(stagingArtifactPath), { recursive: true });
 
-  // Reusing the old tar on same-version local reruns would point manifest sha256 at stale
-  // content. Pack to a temp artifact first and only then write the content hash into the final
-  // file name, so CDN caches stop hitting the stale same-name object.
+  // 同版本本地重跑时继续复用旧 tar 会让 manifest sha256 指向陈旧内容。
+  // 这里先打临时包再把内容 hash 写进最终文件名，避免 CDN 缓存继续命中同名旧对象。
   packComponentSourceAsArchive(component.sourcePath, stagingArtifactPath);
   const artifactSha256 = computeFileSha256(stagingArtifactPath);
   const componentVersion = buildContentAddressedComponentVersion(
@@ -1013,14 +1198,6 @@ function prepareRemoteComponentArtifacts() {
     );
 
     for (const component of componentDefinitions) {
-      if (!existsSync(component.sourcePath)) {
-        if (!canResolveIntranetDepsBaseUrl()) {
-          console.warn(
-            `  [skip] component ${component.id} (${platformKey}): source missing and intranet deps source is not configured`,
-          );
-          continue;
-        }
-      }
       componentManifestEntries.push(
         prepareRemoteComponentArtifact({
           mockCdnDir,
@@ -1065,10 +1242,9 @@ async function main() {
   buildServerBundle();
   copyServerBundle();
   copyNodePtyPrebuilds();
-  await stageRemoteAgentBundles();
+  stageRemoteAgentBundles();
   await prepareRemoteNativeSearchTools();
-  // Fix: server, pty, and agent are each independently downloadable; their notices must be
-  // staged before component hashes are computed.
+  // 修复：server、pty、agent 均可独立下载，需在组件哈希计算前补齐各自的声明。
   await stageThirdPartyNotices(join(releaseDir, "server"), rootDir);
   for (const platformKey of remotePlatforms) {
     await stageThirdPartyNotices(join(releaseDir, "node-pty", platformKey), rootDir);

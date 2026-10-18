@@ -10,13 +10,13 @@ import {
   stringifyReplResult,
 } from "./node-repl-runtime-helpers.js";
 
-/** Images collected by the REPL (nodeRepl.emitImage). */
+/** REPL 收集的图片（nodeRepl.emitImage）。 */
 export interface NodeReplImage {
   base64: string;
   mimeType: string;
 }
 
-/** SDK/bridge result blocks; keeps MCP's structured fields without a core dependency on MCP SDK types. */
+/** SDK/bridge 结果块；保持 MCP 的结构化字段，但不让 core 依赖 MCP SDK 类型。 */
 export interface NodeReplStructuredResult {
   content: Array<{ type: string; [key: string]: unknown }>;
   isError?: boolean;
@@ -25,18 +25,18 @@ export interface NodeReplStructuredResult {
 }
 
 /**
- * Target app identity of this cell's operations (Computer Use).
+ * 本次 cell 操作的目标应用身份（Computer Use）。
  *
- * Recorded only by the host CUA bridge on broker responses — never on sandbox globals, so the model cannot tamper with it.
- * `nodeRepl.setResponseMeta` / `nodeRepl.emitStructuredResult` are model-writable channels; producer app metadata arriving
- * through them is untrusted and must be dropped in toMcpRunResult.
+ * 只由宿主的 CUA bridge 在收到 broker 响应时记录 —— 它不在 sandbox globals 上，模型改不到。
+ * `nodeRepl.setResponseMeta` / `nodeRepl.emitStructuredResult` 都是模型可写通道，经它们到达的
+ * producer 应用元数据不可信，必须在 toMcpRunResult 里丢弃。
  */
 export interface NodeReplCuaAppIdentity {
   appKey: string;
   displayName?: string;
 }
 
-/** Output sink for nodeRepl.write / console inside the REPL; emitImage collects images. */
+/** 输出 sink：REPL 内 nodeRepl.write / console 汇聚到这里；emitImage 收集图片。 */
 export interface NodeReplWriteSink {
   write(text: string): void;
   images: NodeReplImage[];
@@ -47,30 +47,30 @@ export interface NodeReplWriteSink {
 }
 
 export interface NodeReplRunResult {
-  /** Stringified last value / return value (may be undefined). */
+  /** 最后值/返回值的字符串化（可能为 undefined）。 */
   result?: string;
-  /** Output collected from nodeRepl.write + console during this run. */
+  /** 本次 run 期间 nodeRepl.write + console 收集的输出。 */
   logs: string;
-  /** Structured error when thrown (never crashes the process). */
+  /** 抛错时的结构化错误（不崩进程）。 */
   error?: { name: string; message: string; stack?: string };
-  /** Images collected via nodeRepl.emitImage during this run (screenshots, e.g.). */
+  /** 本次 run 期间 nodeRepl.emitImage 收集的图片（如截图）。 */
   images?: NodeReplImage[];
-  /** Indexes in images confirmed to come from this run's explicit tab.screenshot(). */
+  /** images 中确认来自本次显式 tab.screenshot() 的索引。 */
   browserScreenshotImageIndices?: number[];
-  /** Structured result written via the dedicated SDK channel; beats console/REPL echo. */
+  /** SDK 通过专用通道写入的结构化结果；优先级高于 console/REPL 回显。 */
   structuredResults?: NodeReplStructuredResult[];
-  /** Metadata set via nodeRepl.setResponseMeta during this run. */
+  /** 本次 run 期间 nodeRepl.setResponseMeta 设置的元数据。 */
   responseMeta?: Record<string, unknown>;
-  /** App operated on by this cell's last identity-establishing CUA call; host-recorded, not model-writable. */
+  /** 本次 cell 最后一个确立身份的 CUA 调用所操作的应用；由宿主 bridge 记录，模型不可写。 */
   cuaApp?: NodeReplCuaAppIdentity;
 }
 
 export type NodeReplRequestMeta = Record<string, unknown>;
 
 export interface NodeReplSessionOptions {
-  /** Extra globals injected into the sandbox (browser execute bridge, agent object, etc.). */
+  /** 注入到 sandbox 的额外全局（如 browser execute 桥、agent 对象）。 */
   injectedGlobals?: Record<PropertyKey, unknown> | (() => Record<PropertyKey, unknown>);
-  /** The MCP stdio runtime gets a restricted process facade so a cell cannot kill processes or corrupt protocol stdout. */
+  /** MCP stdio runtime 使用受限 process facade，防止 cell 关闭进程或写坏协议 stdout。 */
   restrictProcess?: boolean;
 }
 
@@ -98,9 +98,9 @@ function browserScreenshotIndexResult(
 }
 
 /**
- * Across several CUA calls in one cell, keep the last identity-establishing one, matching `_meta`'s existing last-write-wins.
- * Calls producing no primary (list_apps items mode, request_access/stop none) never
- * enter this array, so earlier identities are never overwritten.
+ * 一个 cell 里多次 CUA 调用时取最后一个确立身份的那个，与 `_meta` 既有的 last-write-wins 一致。
+ * 不产生 primary 的调用（list_apps 的 items 模式、request_access / stop 的 none）根本不会
+ * 进入这个数组，所以不会把前面动作的身份覆盖掉。
  */
 function latestCuaAppResult(
   cuaApps: readonly NodeReplCuaAppIdentity[],
@@ -110,13 +110,13 @@ function latestCuaAppResult(
 }
 
 /**
- * NodeReplSession: a persistent JavaScript execution engine inside the caller's process.
+ * NodeReplSession：调用方进程内的持久 JavaScript 执行引擎。
  *
- * One instance per session; the sandbox is the globalThis the model sees, with state kept across run() calls.
- * Top-level await runs via an async IIFE, dynamic imports go through the injected importModule(), results return structured.
+ * 每个 session 一个实例；sandbox 即模型看到的 globalThis，并在多次 run() 之间保持状态。
+ * 顶层 await 由 async IIFE 执行，动态加载通过注入的 importModule() 完成，结果统一结构化返回。
  *
- * Safety note: vm is not a security sandbox; isolation stays with upper-layer permissions and approval gates. The restricted process facade only
- * limits a cell's direct process control and MCP stdio impact; third-party modules still run in the host Node realm.
+ * 安全说明：vm 不是安全沙箱，隔离仍由上层权限与审批 gate 承担。受限 process facade 只负责
+ * 限制 cell 对进程控制和 MCP stdio 的直接影响；第三方模块仍在宿主 Node realm 执行。
  */
 export class NodeReplSession {
   private context: Context;
@@ -129,7 +129,7 @@ export class NodeReplSession {
   } | null = null;
   private disposed = false;
   private cleanupContextResources: () => void = () => undefined;
-  /** Execute+persist strategy (route B by default); swapping the executor swaps the route, run body unchanged. */
+  /** 执行+持久策略（默认路线 B）；切换 executor 即切换路线，run 主体不变。 */
   private readonly executor: ReplExecutor;
 
   constructor(options: NodeReplSessionOptions = {}) {
@@ -179,7 +179,7 @@ export class NodeReplSession {
       timeouts.clear();
       intervals.clear();
     };
-    // Tee console to the current sink (rebound before each run) while keeping the original for debugging.
+    // console tee 到当前 sink（每次 run 前设置），同时保留原始 console 便于调试。
     const teeConsole = {
       log: (...args: unknown[]) => this.emit(args),
       info: (...args: unknown[]) => this.emit(args),
@@ -187,7 +187,7 @@ export class NodeReplSession {
       error: (...args: unknown[]) => this.emit(args),
       debug: (...args: unknown[]) => this.emit(args),
     };
-    // Use the current working directory as the require base.
+    // 用当前工作目录作 require 基准。
     const req = createReplRequire(createRequire(`${process.cwd()}/`), this.restrictedProcess);
     const nodeReplApi = {
       cwd: process.cwd(),
@@ -195,10 +195,10 @@ export class NodeReplSession {
       tmpDir: tmpdir(),
       requestMeta: {} as NodeReplRequestMeta,
       write: (text: string) => this.emit([text]),
-      // Hand images (e.g. tab.screenshot results) to the model as image content blocks; accepts bytes/base64/dataUrl.
+      // 把图片（如 tab.screenshot 结果）作为 image 内容块回给模型；接受 bytes/base64/dataUrl。
       emitImage: (image: unknown) => this.emitImage(image),
-      // SDK results must use the structured channel; otherwise a console.log flattens image/image_ref into plain text,
-      // and the official CUA's exact-frame check could not confirm the blocks stay adjacent and unmodified.
+      // SDK 结果必须走结构化通道；否则模型的 console.log 会把 image/image_ref 拆成普通文本，
+      // 官方 CUA 的精确帧校验就无法确认这两块仍然相邻且未被改写。
       emitStructuredResult: (result: unknown) => this.emitStructuredResult(result),
       setResponseMeta: (meta: unknown) => this.setResponseMeta(meta),
     };
@@ -218,17 +218,17 @@ export class NodeReplSession {
       queueMicrotask,
       structuredClone,
       require: req,
-      // Dynamic module loading. Injected function instead of bare import(): import() inside vm needs the
-      // --experimental-vm-modules startup flag (the agent is a packaged binary); importModule forwards to host import(), no flag.
-      // The model and browser skill write plain await import("..."); the executor rewrites those to this loader via AST.
+      // 动态加载模块。用注入函数而非裸 import()：vm 里的 import() 需要 --experimental-vm-modules
+      // 启动 flag（agent 是打包 binary，不便加 flag）；importModule 直通宿主 import()，无需 flag。
+      // 模型与 browser skill 使用标准 await import("...")；executor 会按 AST 安全改写到该 loader。
       importModule: (specifier: string) => this.importModule(specifier),
       nodeRepl: nodeReplApi,
-      // Rebuild the browser-client facade on every kernel reset; browser/tab bindings from an old context
-      // must not drift across resets into the new generation, keeping the fresh-session bootstrap boundary intact.
+      // 每次 kernel reset 都重建 browser-client facade；旧 context 中的 browser/tab binding
+      // 不能跨 reset 漂移到新 generation，保持新会话 bootstrap 边界一致。
       ...this.createInjectedGlobals(),
     };
     const context = createContext(sandbox);
-    // Self-reference globalThis so the model can persist values via globalThis.x = ...
+    // globalThis 自引用，让模型可用 globalThis.x = ... 显式持久化。
     runInContext("globalThis.globalThis = globalThis;", context);
     return context;
   }
@@ -244,9 +244,9 @@ export class NodeReplSession {
   }
 
   /**
-   * Collect an image into this run's output (formatModelContent turns it into an image content block for the model).
-   * Accepts Uint8Array/Buffer/number[], data URLs, or { base64 | bytes, mimeType }.
-   * Throws TypeError on invalid input so the model sees the usage error directly.
+   * 收集一张图片到本次 run 输出（供 formatModelContent 转成 image 内容块给模型）。
+   * 接受 Uint8Array/Buffer/number[]、data URL，或 { base64 | bytes, mimeType }。
+   * 入参非法时抛 TypeError，让模型直接看到用法错误。
    */
   private emitImage(image: unknown): void {
     if (!this.currentSink) {
@@ -319,14 +319,13 @@ export class NodeReplSession {
     this.currentSink.structuredResults.push(result as NodeReplStructuredResult);
   }
 
-  /** The browser-client transport merges backend meta into the tool result within the same js run. */
+  /** browser-client transport 在同一次 js run 内把 backend meta 合并进工具结果。 */
   mergeResponseMeta(meta: Record<string, unknown>): void {
     if (!this.currentSink) return;
     const currentSurface = this.currentSink.responseMeta["zcode/toolSurface"];
     const nextSurface = meta["zcode/toolSurface"];
-
-    // At cell end attach the last successful side effect's openTabIds/sessionEnded; the auto preview and later
-    // title/url/domSnapshot reads must not overwrite earlier action meta.
+    // 工具结果需保留同一 cell 内最后一次成功 side-effect 的 openTabIds/sessionEnded。ZCode 不做
+    // 自动 preview，但同一 cell 后续 title/url/domSnapshot 读取不能把先前动作 meta 覆盖掉。
     if (
       currentSurface &&
       typeof currentSurface === "object" &&
@@ -347,24 +346,24 @@ export class NodeReplSession {
     this.setResponseMeta(meta);
   }
 
-  /** The browser transport records images from model-explicit screenshots for provenance matching in emitImage results. */
+  /** browser transport 记录模型显式 screenshot 的原始图片，供 emitImage 结果做来源对应。 */
   recordBrowserScreenshot(image: NodeReplImage): void {
     if (!this.currentSink) return;
     this.currentSink.browserScreenshots.push(image);
   }
 
   /**
-   * The CUA bridge records this call's target app identity from the broker response.
+   * CUA bridge 从 broker 响应记录本次调用的目标应用身份。
    *
-   * Deliberately kept off sandbox globals (unlike write/emitImage/emitStructuredResult/setResponseMeta):
-   * the tool card shows the app icon from it; writable by the model, it would let any app be claimed.
+   * 刻意不放进 sandbox globals（对比 write/emitImage/emitStructuredResult/setResponseMeta）：
+   * 工具卡据此显示 App 图标，模型能写就能声称自己操作了别的应用。
    */
   recordCuaAppIdentity(app: NodeReplCuaAppIdentity): void {
     if (!this.currentSink) return;
     this.currentSink.cuaApps.push(app);
   }
 
-  /** Execute one cell; signal supports cancellation (timeout/stop). */
+  /** 执行一段代码；signal 支持取消（超时/停止）。 */
   async run(
     code: string,
     options: {
@@ -376,7 +375,7 @@ export class NodeReplSession {
     if (this.disposed) {
       return {
         logs: "",
-        error: { name: "DisposedError", message: "REPL session disposed" },
+        error: { name: "DisposedError", message: "REPL session 已释放" },
       };
     }
     let buffer = "";
@@ -399,8 +398,8 @@ export class NodeReplSession {
       cuaApps,
     };
     try {
-      // Execution delegates to the executor (route B by default: instrument top-level declarations → async-IIFE → runInContext),
-      // making top-level const/let/var/function/class persist across js calls (copied to globalThis).
+      // 执行委托给 executor（默认路线 B：instrument 顶层声明 → async-IIFE → runInContext），
+      // 使顶层 const/let/var/function/class 跨 js 调用持久（复制到 globalThis）。
       const value = await this.executor.run(
         code,
         this.context,
@@ -417,22 +416,22 @@ export class NodeReplSession {
         ...latestCuaAppResult(cuaApps),
       };
     } catch (error) {
-      // Note: an Error thrown inside the vm context belongs to another realm; host-side `instanceof Error` is false.
-      // So extract duck-typed by error-like shape (name/message/stack fields) instead of wrapping in a new Error,
-      // which would turn the message into "Error: boom" and lose the original.
+      // 注意：vm context 内抛出的 Error 属于不同 realm，host 侧 `instanceof Error` 为 false。
+      // 因此按 error-like 结构（有 name/message/stack 字段）鸭子提取，而非包装成新 Error
+      // （包装会把 message 变成 "Error: boom" 丢失原始 message）。
       const normalized = normalizeReplError(error);
       const mustResetKernel =
         normalized.name === "AbortError" ||
         normalized.name === "TimeoutError" ||
         normalized.message.includes("Script execution timed out");
       if (mustResetKernel && !this.disposed) {
-        // Promise.race only stops waiting; stale async continuations/timers may still write state on the same global.
-        // After a cancel or VM timeout, discard the whole context and clear that generation's timers;
-        // later calls see only a fresh kernel and can never observe late mutations.
+        // Promise.race 只能停止等待，旧 async continuation/timer 仍可能在同一 global 上
+        // 继续写状态。取消或 VM timeout 后废弃整个 context，并清掉该 generation 的 timers；
+        // 后续调用只能看到 fresh kernel，不能观察到迟到 mutation。
         this.cleanupContextResources();
         this.context = this.buildContext();
-        // Silently rebuilding the context would let the model keep calling cleared browser/tab variables,
-        // growing one timeout into a streak of ReferenceErrors. The error itself must expose reset semantics and the recovery.
+        // 静默重建 context 会让模型继续调用已清除的 browser/tab 变量，
+        // 将一次 timeout 扩大成连续 ReferenceError。错误本身必须暴露 reset 语义和恢复动作。
         normalized.message = `${normalized.message}; kernel reset, all previous bindings were cleared; reinitialize browser/tab bindings before rerunning`;
       }
       return {
@@ -459,7 +458,7 @@ export class NodeReplSession {
     return await import(specifier);
   }
 
-  /** Release resources. */
+  /** 释放资源。 */
   dispose(): void {
     this.disposed = true;
     this.cleanupContextResources();

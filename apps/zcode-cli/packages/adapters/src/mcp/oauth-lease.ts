@@ -5,7 +5,7 @@ import { ZCODE_FILE_LOCK_TIMEOUT_ERROR_CODE } from "@zcode/shared";
 import type { SharedZCodeCredentialStore } from "../auth/shared-credentials.js";
 import { isRecord, mcpOAuthCredentialKey } from "./oauth-credentials.js";
 
-const MCP_OAUTH_PENDING_AUTHORIZATION_KEY = "pending_authorization";
+export const MCP_OAUTH_PENDING_AUTHORIZATION_KEY = "pending_authorization";
 
 /**
  * Contention wait budget for the authorization lease.
@@ -19,7 +19,7 @@ const AUTHORIZATION_LEASE_MAX_WAIT_MS = 250;
 const AUTHORIZATION_LEASE_RETRY_DELAYS_MS = [25] as const;
 const AUTHORIZATION_LEASE_OWNERLESS_GRACE_MS = 100;
 
-interface McpOAuthAuthorizationLease {
+export interface McpOAuthAuthorizationLease {
   attemptId: string;
   release(): Promise<void>;
 }
@@ -30,7 +30,10 @@ interface McpOAuthAuthorizationLease {
  * Basename allows only hash and hyphen: the credential key prefix looks like `mcp:oauth:<hash>` and colons are
  * illegal in Windows filenames; splicing it in would break the entire grant flow on Windows.
  */
-function resolveAuthorizationLeasePath(credentialsFilePath: string, keyPrefix: string): string {
+export function resolveAuthorizationLeasePath(
+  credentialsFilePath: string,
+  keyPrefix: string,
+): string {
   return join(dirname(credentialsFilePath), `${sanitizeKeyPrefix(keyPrefix)}.authz`);
 }
 
@@ -68,7 +71,7 @@ export async function tryAcquireAuthorizationLease(input: {
   }
 }
 
-interface PendingAuthorizationRecord {
+export interface PendingAuthorizationRecord {
   attemptId: string;
   authorizationUrl: string;
   baselineGeneration?: string;

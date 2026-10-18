@@ -9,7 +9,7 @@
  *   intent, fire once on disabled-to-false.
  * - focus-now: enabled and editable, focus immediately.
  */
-type ComposerAutoFocusDecision = "focus-now" | "defer" | "skip";
+export type ComposerAutoFocusDecision = "focus-now" | "defer" | "skip";
 
 export interface ComposerAutoFocusOptions {
   /** Host gate (SessionPane.focused): only the focused pane autofocuses. */

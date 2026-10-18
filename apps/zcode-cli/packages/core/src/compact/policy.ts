@@ -7,7 +7,7 @@ export const DEFAULT_COMPACT_CONTEXT_WINDOW = 200_000;
 // Normal requests have converged on a 32K default output; auto compact must reserve the same target,
 // otherwise request budgets and the compaction window keep drifting on two sets of constants.
 export const DEFAULT_AUTOCOMPACT_OUTPUT_RESERVE_TOKENS = 32_000;
-const PREFLIGHT_AUTOCOMPACT_OUTPUT_RESERVE_TOKENS = 21_000;
+export const PREFLIGHT_AUTOCOMPACT_OUTPUT_RESERVE_TOKENS = 21_000;
 export const MAX_OUTPUT_TOKENS_FOR_SUMMARY = 20_000;
 export const AUTOCOMPACT_BUFFER_TOKENS = 13_000;
 export const DEFAULT_AUTOCOMPACT_THRESHOLD_PERCENT = 100;

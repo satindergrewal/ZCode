@@ -1,10 +1,10 @@
 /**
- * Resource telemetry for the cron scheduler process itself.
+ * cron scheduler 进程自身的资源遥测。
  *
- * The scheduler had no sampling; this adds its only unref timer: every 60s read
- * process.cpuUsage()/memoryUsage() and parentPort the sample to main,
- * feeding the scheduler role's heap. Read/send failures drop one sample, never the dispatch loop.
- * Zero external processes; timer is unref'd, no lifetime extension.
+ * scheduler 之前完全没有采样，本模块新增它唯一的一个 unref 定时器：每 60 秒读一次
+ * `process.cpuUsage()` 与 `process.memoryUsage()`，经 parentPort 把样本发给 main，
+ * 成为 scheduler 角色事件的 heap 来源。读数或发送失败只丢当前样本，不影响派发主循环。
+ * 零外部进程；定时器 unref，不延长进程寿命。
  */
 
 import {
@@ -18,8 +18,8 @@ interface SchedulerResourceTelemetryTimerHandle {
   unref?(): void;
 }
 
-interface StartSchedulerResourceTelemetryOptions extends NodeSelfResourceSamplerOptions {
-  /** parentPort sink; pass a no-op when parentPort is unavailable. */
+export interface StartSchedulerResourceTelemetryOptions extends NodeSelfResourceSamplerOptions {
+  /** parentPort 的发送口；parentPort 不可用时调用方传一个 no-op。 */
   postMessage: (message: SchedulerToMainMessage) => void;
   readMemoryUsage?: () => NodeJS.MemoryUsage;
   intervalMs?: number;
@@ -52,7 +52,7 @@ export function startSchedulerResourceTelemetry(
       }
       options.postMessage({ type: "scheduler-resource-sample", sample });
     } catch {
-      // Read errors, missing parentPort, or postMessage throws drop one sample only.
+      // 读数异常、parentPort 不可用或 postMessage 抛错时只丢当前样本。
     }
   };
 
@@ -63,7 +63,7 @@ export function startSchedulerResourceTelemetry(
   try {
     handle.unref?.();
   } catch {
-    // Keep the handle for stop() even when unref is unavailable.
+    // unref 不可用时仍保留 handle 供 stop 回收。
   }
 
   return {
@@ -76,7 +76,7 @@ export function startSchedulerResourceTelemetry(
       try {
         timer.clearInterval(current);
       } catch {
-        // Cleanup failures never block the scheduler's existing exit flow.
+        // 清理失败不能阻塞 scheduler 既有退出流程。
       }
     },
   };

@@ -14,12 +14,14 @@ const timestampMsSchema = z.number().int().nonnegative();
 export const zcodeDeliveryKindSchema = z.enum(["desktop-continuous", "web-remote-replayable"]);
 export const zcodeMessageVisibilitySchema = z.enum(["user-visible", "model-only"]);
 export const zcodeSyntheticUserMessageSourceSchema = z.enum([
+  "agent_listing_delta",
   "background_task",
   "fork",
   "goal_state_change",
   "goal-continuation",
   "mission-continuation",
   "plugin_reference",
+  "bot_topic_context",
   "rewind",
   "selection_side_chat",
   "subagent",
@@ -72,7 +74,7 @@ export const zcodePermissionResponseSchema = z
   })
   .strict();
 export type ZCodePermissionResponse = z.infer<typeof zcodePermissionResponseSchema>;
-export const zcodeSessionModeSchema = z.enum(["plan", "build", "edit", "yolo", "auto"]);
+export const zcodeSessionModeSchema = z.enum(["plan", "build", "edit", "yolo", "guarded", "auto"]);
 export const zcodeSessionStatusSchema = z.enum([
   "idle",
   "running",

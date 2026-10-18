@@ -16,18 +16,24 @@ import {
 type RemoteKind = RemoteTarget["kind"];
 export type SSHAuthMethod = "password" | "privateKey";
 
-function buildAvailableKinds(options: { isWindowsDesktop: boolean }): RemoteKind[] {
+export function buildAvailableKinds(options: {
+  isWindowsDesktop: boolean;
+  isLocalDevelopmentRuntime: boolean;
+}): RemoteKind[] {
   const kinds: RemoteKind[] = ["ssh"];
-  // In the remote-connection entry, WSL and SSH are both host-style connections.
-  // On Windows, put WSL before Docker so WSL does not appear far from SSH on the picker
-  // once Docker separates them.
+  // Bugfix: Server remote 目前只是本地开发能力。之前无条件放入可选列表，
+  // 导致 production-mode 打包也会露出未对外开放的入口。
+  if (options.isLocalDevelopmentRuntime) {
+    kinds.push("server");
+  }
+  // Bugfix: 远程连接入口里 WSL 和 SSH 同属主机类连接。
+  // Windows 下先放 WSL 再放 Docker，避免 WSL 被 Docker 隔开后在选择页显得离 SSH 很远。
   if (options.isWindowsDesktop) {
     kinds.push("wsl");
   }
-  // The Docker entry used to show up only when pre-probing succeeded, so it vanished
-  // whenever probing was temporarily unavailable or the user had not switched to Docker yet,
-  // hiding that Docker is supported at all. Always show the entry; lazy-load probe results
-  // after switching.
+  // Docker入口之前完全依赖预探测结果决定是否展示。
+  // 当探测能力暂时不可用、或用户还没切到 Docker 时，入口会直接消失，
+  // 用户甚至不知道这里支持 Docker 连接。改为始终展示入口，切换后再懒加载探测结果。
   kinds.push("docker");
   return kinds;
 }
@@ -59,6 +65,10 @@ export function useRemoteConnectionForm({
   const [wslUser, setWslUser] = useState("");
   const [dockerContainer, setDockerContainer] = useState("");
   const [manualDockerContainer, setManualDockerContainer] = useState("");
+  const [serverUrl, setServerUrl] = useState("");
+  const [serverName, setServerName] = useState("");
+  const [serverToken, setServerToken] = useState("");
+  const [serverWorkspacePath, setServerWorkspacePath] = useState("");
   const [sshConfigAliases, setSshConfigAliases] = useState<SSHConfigAliasOption[]>([]);
   const [sshConfigAliasesLoading, setSshConfigAliasesLoading] = useState(false);
   const [sshConfigAliasesLoaded, setSshConfigAliasesLoaded] = useState(false);
@@ -76,9 +86,12 @@ export function useRemoteConnectionForm({
   const applyingSshAliasRef = useRef(false);
   const dockerOptionsActiveLoadIdRef = useRef(0);
   const dockerOptionsInFlightLoadIdRef = useRef<number | null>(null);
+  const isLocalDevelopmentRuntime =
+    platform.isLocalDevelopmentRuntime === true || import.meta.env.DEV === true;
+
   const availableKinds = useMemo(
-    () => buildAvailableKinds({ isWindowsDesktop }),
-    [isWindowsDesktop],
+    () => buildAvailableKinds({ isWindowsDesktop, isLocalDevelopmentRuntime }),
+    [isLocalDevelopmentRuntime, isWindowsDesktop],
   );
 
   useEffect(() => {
@@ -146,9 +159,8 @@ export function useRemoteConnectionForm({
 
         if (!result.error) {
           setDockerContainers(result.dockerContainers);
-          // Containers may have stopped since the last refresh; the previous code updated the
-          // list without clearing the selection, leaving the trigger showing a gone container.
-          // After a successful refresh, constrain the selection to the latest running list.
+          // 下拉刷新后旧容器可能已经停止。之前只更新列表不清空选中值，
+          // 触发器仍会显示已不存在的容器；成功刷新后必须让选中值受最新运行中列表约束。
           setDockerContainer((currentContainer) =>
             resolveDockerContainerSelectionAfterRefresh({
               currentContainer,
@@ -309,9 +321,8 @@ export function useRemoteConnectionForm({
       const nextUsername = aliasOption.username?.trim() ?? "";
       const nextPrivateKeyPath = aliasOption.privateKeyPath?.trim() ?? "";
 
-      // Switching aliases used to overwrite only the populated fields, leaving stale values
-      // from the previous alias or manual input in missing ones. Rebuild every SSH field from
-      // the current alias and blank out missing values to avoid cross-seeding state.
+      // 切换 alias 时之前只覆盖“有值字段”，缺失字段会残留上一个 alias/手动输入值。
+      // 这里改为全量覆盖：所有 SSH 字段都按当前 alias 重建，缺失值统一置空，避免状态串用。
       setHostState(nextHost);
       setPortState(nextPort);
       setUsernameState(nextUsername);
@@ -342,6 +353,10 @@ export function useRemoteConnectionForm({
     wslUser,
     dockerContainer,
     manualDockerContainer,
+    serverUrl,
+    serverName,
+    serverToken,
+    serverWorkspacePath,
     sshConfigAliases,
     sshConfigAliasesLoading,
     sshConfigAliasesError,
@@ -363,9 +378,12 @@ export function useRemoteConnectionForm({
     setWslUser,
     setDockerContainer,
     setManualDockerContainer,
-    // The Docker container list is runtime data and used to be fetched once on entry.
-    // Refresh on demand through this callback each time the dropdown opens so the user never
-    // sees a stale container list.
+    setServerUrl,
+    setServerName,
+    setServerToken,
+    setServerWorkspacePath,
+    // Bugfix: Docker 容器列表是运行态数据，之前只在进入 Docker 页时拉一次。
+    // 下拉每次打开都通过这个回调按需刷新，避免用户看到已过期的容器列表。
     refreshDockerContainers: () => refreshDockerContainers({ clearContainersOnError: false }),
     applySshConfigAlias,
     clearSelectedSshConfigAlias,

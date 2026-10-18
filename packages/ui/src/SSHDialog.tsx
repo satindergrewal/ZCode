@@ -112,6 +112,10 @@ export function RemoteConnectionDialog({
     wslUser,
     dockerContainer,
     manualDockerContainer,
+    serverUrl,
+    serverName,
+    serverToken,
+    serverWorkspacePath,
     sshConfigAliases,
     sshConfigAliasesLoading,
     sshConfigAliasesError,
@@ -133,6 +137,10 @@ export function RemoteConnectionDialog({
     setWslUser,
     setDockerContainer,
     setManualDockerContainer,
+    setServerUrl,
+    setServerName,
+    setServerToken,
+    setServerWorkspacePath,
     refreshDockerContainers,
     applySshConfigAlias,
     clearSelectedSshConfigAlias,
@@ -331,6 +339,10 @@ export function RemoteConnectionDialog({
       wslUser,
       dockerContainer,
       manualDockerContainer,
+      serverUrl,
+      serverName,
+      serverToken,
+      serverWorkspacePath,
     });
     if (!nextTarget) {
       // Missing required fields is form validation, not a connection failure; they must not share
@@ -533,6 +545,10 @@ export function RemoteConnectionDialog({
                     wslDistros={wslDistros}
                     dockerContainer={dockerContainer}
                     manualDockerContainer={manualDockerContainer}
+                    serverUrl={serverUrl}
+                    serverName={serverName}
+                    serverToken={serverToken}
+                    serverWorkspacePath={serverWorkspacePath}
                     dockerContainers={dockerContainers}
                     dockerAvailable={dockerAvailable}
                     sshConfigAliases={sshConfigAliases}
@@ -560,6 +576,10 @@ export function RemoteConnectionDialog({
                     onWslUserChange={setWslUser}
                     onDockerContainerChange={setDockerContainer}
                     onManualDockerContainerChange={setManualDockerContainer}
+                    onServerUrlChange={setServerUrl}
+                    onServerNameChange={setServerName}
+                    onServerTokenChange={setServerToken}
+                    onServerWorkspacePathChange={setServerWorkspacePath}
                     onDockerContainersRefresh={refreshDockerContainers}
                     onApplySshConfigAlias={applySshConfigAlias}
                     onClearSelectedSshConfigAlias={clearSelectedSshConfigAlias}
@@ -609,7 +629,9 @@ export function RemoteConnectionDialog({
                       localPluginSyncService={baseServices.pluginSyncService}
                       remotePluginSyncService={directoryBrowserServices?.pluginSyncService ?? null}
                       localZCodeAgentService={baseServices.zcodeAgentService}
-                      remoteZCodeAgentService={directoryBrowserServices?.zcodeAgentService ?? null}
+                      remoteZCodeAgentService={
+                        directoryBrowserServices?.zcodeAgentService ?? null
+                      }
                       localWorkspacePath={localWorkspacePath}
                       selecting={selectingDirectory}
                       onSelect={(path) => {

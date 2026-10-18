@@ -21,7 +21,7 @@ const OAUTH_PENDING_PROVIDER_KEY = "oauth_pending_provider";
 /** Login providers supported by this app. Private-share owner identity is provider-specific; both sides must be able to sign in. */
 export type WebOAuthProviderId = typeof ZAI_PROVIDER_ID | typeof BIGMODEL_PROVIDER_ID;
 
-function isWebOAuthProviderId(value: unknown): value is WebOAuthProviderId {
+export function isWebOAuthProviderId(value: unknown): value is WebOAuthProviderId {
   return value === ZAI_PROVIDER_ID || value === BIGMODEL_PROVIDER_ID;
 }
 

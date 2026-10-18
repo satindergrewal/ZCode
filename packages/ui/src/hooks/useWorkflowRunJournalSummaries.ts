@@ -32,7 +32,7 @@ import { useV4Conversation } from "@/v4/V4ConversationContext.js";
  * hardcoded capability name. `sessionNotFound` is deliberately **not** capability-missing:
  * that is exactly the retryable case.
  */
-function isWorkflowRunsCapabilityMissing(error: unknown): boolean {
+export function isWorkflowRunsCapabilityMissing(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return message.includes("capabilityUnsupported") || message.includes("listDynamicWorkflowRuns");
 }

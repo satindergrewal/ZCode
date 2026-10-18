@@ -51,6 +51,8 @@ export interface BotUserConfigOptionsParams {
 }
 
 export interface BotAutomationRunWatchParams {
+  /** 与该次 sendPrompt.traceId 一致，避免排队期间污染其他轮次。 */
+  runId?: string;
   target: ZCodeAutomationBotDeliveryTarget;
   taskId: string;
   workspacePath: string;
@@ -125,6 +127,15 @@ export type BotFeishuRegistrationPollResult =
     };
 
 export interface IBotsService {
+  replyToChannel?(
+    params: import("@zcode/shared").ChannelReplyHostRequest,
+  ): Promise<import("@zcode/shared").ChannelReplyResult>;
+  validateTopicResource?(
+    params: import("#src/bots/topicResource.js").TopicResourceRequest,
+  ): Promise<void>;
+  readTopicResource?(
+    params: import("#src/bots/topicResource.js").TopicResourceRequest,
+  ): Promise<import("@zcode/shared").ZCodePromptAttachment>;
   /**
    * Sync app-global interaction preferences to the bot's existing remote runtime; never open a new remote connection for this.
    */
@@ -150,7 +161,46 @@ export interface IBotsService {
   deleteBot(botId: string): Promise<void>;
   testBot(botId: string): Promise<BotTestResult>;
   createBindCode(params: BotCreateBindCodeParams): Promise<BotBindCodeResult>;
+  getGroupMemberNames?(params: { botId: string; chatId: string }): Promise<Record<string, string>>;
   getBotStates(): Promise<BotContextState[]>;
+  retryTopicPreparation?(params: {
+    botId: string;
+    chatId: string;
+    threadId: string;
+    messageId: string;
+    taskId: string;
+    workspacePath: string;
+    workspaceIdentity?: string;
+  }): Promise<void>;
+  getTopicDetails?(params: {
+    botId: string;
+    chatId: string;
+    threadId?: string;
+    taskId: string;
+    workspacePath: string;
+    workspaceIdentity?: string;
+  }): Promise<{
+    messageCount: number;
+    hasGap: boolean;
+    historyEnabled: boolean;
+    summaries: Array<{ checkpoint: string; text: string }>;
+  }>;
+
+  setGroupEnabled?(params: { botId: string; chatId: string; enabled: boolean }): Promise<void>;
+  reconcileGroupResult?(params: {
+    botId: string;
+    chatId: string;
+    deliveryId: string;
+    threadId?: string;
+    received: boolean;
+  }): Promise<import("@zcode/shared").BotGroupDelivery>;
+  resendGroupResult?(params: {
+    botId: string;
+    chatId: string;
+    deliveryId: string;
+    threadId?: string;
+  }): Promise<import("@zcode/shared").BotGroupDelivery>;
+  retryPrivateDelivery?(params: { botId: string; deliveryId: string }): Promise<void>;
   resetBotState(contextKey: string): Promise<void>;
   /** Subscribe to the terminal state before the automation prompt dispatch and push the result back to the bot conversation that created it. */
   watchAutomationRun(params: BotAutomationRunWatchParams): Promise<void>;

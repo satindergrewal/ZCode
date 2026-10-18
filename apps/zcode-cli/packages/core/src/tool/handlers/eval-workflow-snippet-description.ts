@@ -1,7 +1,7 @@
-// EvalWorkflowSnippet's ever-present description.
+// EvalWorkflowSnippet 的常驻描述（docs/dynamic-workflow/authoring.md「EvalWorkflowSnippet」）。
 //
-// The snippet facade's scope and writing rules live in the `dynamic-workflows` skill's "Tool reference"
-// section, enforced by the skill gate; here only what it is, what it is for, and read-the-skill-first.
+// 2026-09-21 起收短：snippet facade 的范围与写作规则在 `dynamic-workflows` 技能的「Tool
+// reference」里，由技能门保证读过；这里只说它是什么、拿来干什么、先读技能。
 
 import { DYNAMIC_WORKFLOW_SKILL_NAME } from "@zcode/contracts";
 

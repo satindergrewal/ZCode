@@ -1,21 +1,19 @@
-/* oxlint-disable eslint(max-lines) -- the composer concentrates all input-area wiring (attachments/drafts/history/mention); splitting it would break that cohesion. */
+/* oxlint-disable eslint(max-lines) -- composer 集中收口输入区 wiring（附件/草稿/历史/mention），拆分会打散收口粒度。 */
 import { getLocalTtftObserver } from "@/v4/telemetry/localTtftObserver.js";
 /**
- * v4 conversation composer (composer parity).
+ * v4 会话 composer（composer parity）。
  *
- * Shell: ChatPromptEditor (Lexical editor + action menu + drag feedback + sticky base visuals),
- * plus the attachment preview grid/image preview/error area.
+ * 壳：ChatPromptEditor（Lexical 编辑器 + 动作菜单 + 拖拽反馈 + sticky 底座视觉），
+ * 附件预览网格/大图预览/错误提示区一并提供。
  *
- * Core: brand-new v4 wiring -
- * - routing/state always read the v4 projection snapshot.inputRouting / control / config / usage;
- * - send-button state machine mirrors the old UI: canSend (text or attachments + routing
- *   allows) / pending spinner / running+empty draft -> Stop (v4 stop command) / paused queue
- *   (choice) -> clear-or-keep confirm dialog after send;
- * - the full attachment path lives in useComposerAttachments (sending via v4 sendText attachments);
- * - mentions (@ file/canvas, # session, $ skill) and the full slash catalog are wired inside
- *   LexicalChatInput;
- * - per-session draft persistence (composerDraftStore) + prompt history (promptHistoryStorage);
- * - toolbar (model/reasoning/mode/context usage) lives in V4ComposerToolbar.
+ * 芯：全新 v4 wiring——
+ * - 路由/状态一律读 v4 投影 snapshot.inputRouting / control / config / usage；
+ * - 发送键状态机对齐旧 UI：canSend（有文本或附件+路由允许）/ pending spinner /
+ *   running+空草稿 → Stop（v4 stop 命令）/ 暂停队列（choice）→ 发送后弹清空/保留确认框；
+ * - 附件全链路见 useComposerAttachments（发送经 v4 sendText attachments）；
+ * - mention（@ 文件/画板、# 会话、$ 技能）与 slash 目录全集在 LexicalChatInput 内接线；
+ * - 草稿 per-session 持久化（composerDraftStore）+ prompt history（promptHistoryStorage）；
+ * - 工具条（模型/思考深度/模式/context usage）见 V4ComposerToolbar。
  */
 import {
   memo,
@@ -29,6 +27,8 @@ import {
   type ReactNode,
 } from "react";
 import { cn } from "@/components/lib/utils.js";
+import { HighspeedComposerBackground } from "@/highspeed/HighspeedActivationVisual.js";
+import { useHighspeedComposerEntrance } from "@/highspeed/useHighspeedComposerEntrance.js";
 import {
   TID_CHAT_ATTACHMENT_BUTTON,
   TID_CHAT_ATTACHMENT_MENU_ITEM,
@@ -43,6 +43,7 @@ import {
   TID_V4_ATTACHMENT_UPLOAD_RETRY,
   TID_V4_STOP,
   testId,
+  type HighspeedCardSnapshot,
   type PlanIdentitySnapshot,
   type ZCodeProvider,
 } from "@zcode/shared";
@@ -107,7 +108,12 @@ import {
   type ChatComposerAttachment,
 } from "@/lib/chatAttachments.js";
 import { resolveChatPlaceholderKey } from "@/lib/chatPlaceholder.js";
-import { resolveChatEnterShortcut } from "@/lib/mobileTextInput.js";
+import {
+  resolveChatEnterShortcut,
+  resolveChatEnterSubmits,
+  shouldAvoidIosInputFocusZoom,
+  useIsMobileTextInputViewport,
+} from "@/lib/mobileTextInput.js";
 import { appendPromptHistoryEntry } from "@/lib/promptHistory.js";
 import {
   persistPromptHistoryEntries,
@@ -147,6 +153,11 @@ import {
 } from "@/v4/composer/composerPromptContexts.js";
 import { useCodeCommentContexts } from "@/v4/composer/useCodeCommentContexts.js";
 import { useWebElementContexts } from "@/v4/composer/useWebElementContexts.js";
+import {
+  PluginUiModelContextChip,
+  usePluginUiContextImages,
+  usePluginUiModelContexts,
+} from "@/plugin-ui/index.js";
 import { usePptxElementReferences } from "@/v4/composer/usePptxElementReferences.js";
 import { PptxElementReferenceChip } from "@/v4/composer/PptxElementReferenceChip.js";
 import { useOpenPptxElementReference } from "@/v4/composer/useOpenPptxElementReference.js";
@@ -175,20 +186,23 @@ import { resolveAttachableShareContext } from "@/lib/conversationShareContext.js
 const MODEL_SELECTION_LOADING_STATE: ModelSelectionState = { status: "loading" };
 
 export interface ConversationComposerSendOptions {
-  /** Config captured on send click; null means the selection is incomplete - the Host must not backfill it from the Session. */
+  /** 点击发送时复制的配置；null 表示未完成选择，Host 不得从 Session 补齐。 */
   submission?: ComposerSubmissionConfig | null;
   heldQueueDisposition?: "clearQueueAndSend" | "keepQueueAndSend";
-  /** Paused-queue id observed while the send confirm dialog is open; the CLI uses it to gate cross-device add/remove races. */
+  /** 发送确认框打开时看到的暂停队列 ID；CLI 用它拦截跨端增删竞态。 */
   expectedHeldQueueItemIds?: readonly string[];
-  /** Attachment command surface: serialized attachments (the host converts to AttachmentRef and sends via v4 sendText/createSession). */
+  /** 附件命令面：已序列化附件（宿主转 AttachmentRef 后随 v4 sendText/createSession 发送）。 */
   attachments?: AttachmentRef[];
-  /** Context attachments carried inside the prompt text; used to stop local commands such as /goal from consuming them by mistake. */
+  /** Prompt 文本内携带的上下文附件数量；用于阻止 /goal 等本地命令误消费。 */
   contextAttachmentCount?: number;
-  /** Renderer-only: after an accepted ACK, SessionPane binds the real commandId/sessionId. */
+  conversationQuotes?: import("@zcode/shared").ConversationSelectionText[];
+  /** renderer-only：ACK accepted 后由 SessionPane 绑定真实 commandId/sessionId。 */
   telemetrySeed?: ConversationPromptTelemetrySeed;
-  /** One-shot delivery override for this busy input; never mutates session preferences. */
+  /** 本次 busy input 的一次性投递覆盖，不改 session 偏好。 */
   requestedDelivery?: "startNow" | "queue" | "guide";
   sharedContextRefs?: Array<{ kind: "shared_context_import"; context_id: string }>;
+  /** 插件 UI 代发：随 sendText 持久化，用户消息卡片显示"来自插件 X"。 */
+  source?: import("@zcode/shared/zcode-protocol-v4").ConversationInputSource;
 }
 
 export type ConversationComposerSendResult = "sent" | "blocked" | "confirmationRequired";
@@ -201,14 +215,14 @@ function getComposerAttachmentTypeLabel(filename: string, mimeType: string): str
   return (mimeType.split("/").at(-1) ?? mimeType).toUpperCase();
 }
 
-interface ExternalTextInsertRequest {
+export interface ExternalTextInsertRequest {
   requestId: number;
   text: string;
   mention?: ComposerMentionPrefill;
   mode?: "replace" | "prepend-if-missing";
 }
 
-function restorePersistedComposerDraftIntoInput({
+export function restorePersistedComposerDraftIntoInput({
   draft,
   inputApi,
   onEditorStateError,
@@ -229,9 +243,8 @@ function restorePersistedComposerDraftIntoInput({
     }
   }
   if (draft.mention && draft.text.startsWith(draft.mention.markdown)) {
-    // Workspace plugin details unmount the chat Composer. Structured mentions must be
-    // restored from the shared draft source of truth, not from one-shot insert events, or a
-    // remount degrades them to canonical plain text.
+    // Workspace 插件详情会卸载聊天 Composer。结构化 mention 必须从共享草稿事实源恢复，
+    // 不能只依赖一次性插入事件，否则重挂载时会退化成 canonical 普通文本。
     inputApi.setMention(draft.mention, draft.text.slice(draft.mention.markdown.length));
     return draft.text;
   }
@@ -239,7 +252,7 @@ function restorePersistedComposerDraftIntoInput({
   return draft.text;
 }
 
-function applyExternalTextInsertRequestToComposer({
+export function applyExternalTextInsertRequestToComposer({
   appliedRequestId,
   inputApi,
   request,
@@ -271,21 +284,19 @@ function applyExternalTextInsertRequestToComposer({
     if (!inputApi.prependMentionIfMissing(request.mention)) {
       return request.requestId;
     }
-    // Bug: replaying the prompt saved at click time would clobber edits made during the
-    // install. The node-level prestep preserves the editor's current mentions and paragraph
-    // structure, then the canonical draft is read back from the editor.
+    // Bug 原因：安装完成后若回放点击时保存的旧 prompt，会覆盖用户安装期间的编辑。
+    // 节点级前置保留编辑器当前的 mention 与段落结构，再从编辑器读取 canonical 草稿。
     updateText(inputApi.getMarkdown());
     scheduleDraftPersist();
     requestFocus();
     return request.requestId;
   }
   if (request.mention && request.text.startsWith(request.mention.markdown)) {
-    // Root cause: store trials used to pass canonical text only, so Lexical could not tell
-    // that a leading link was a structured plugin mention. The request also carries display-only
-    // node data; sending and the draft source of truth still use request.text verbatim.
+    // 根因：商店试用以前只传 canonical 文本，Lexical 无法知道开头链接是结构化 Plugin mention。
+    // request 同时携带 display-only 节点数据；发送与草稿事实源仍使用 request.text 原文。
     inputApi.setMention(request.mention, request.text.slice(request.mention.markdown.length));
   } else if (request.text.includes("](plugin://")) {
-    // Recommended tasks may combine several plugins in the body; rebuild them as real mention nodes at their original positions.
+    // 推荐任务可在正文中组合多个插件；按原位置构造成真实提及节点。
     inputApi.setTextWithPluginMentions(request.text);
   } else {
     inputApi.setText(request.text);
@@ -306,7 +317,7 @@ export interface ComposerRestoreRequest {
   config?: Pick<V4ComposerDraft, "mode" | "planEnabled" | "modelSelection">;
 }
 
-function applyComposerRestoreRequestToComposer({
+export function applyComposerRestoreRequestToComposer({
   appliedRequestId,
   currentSessionId,
   currentWorkspaceKey,
@@ -357,130 +368,136 @@ function arePromptHistoryEntriesEqual(left: readonly string[], right: readonly s
   return left.length === right.length && left.every((entry, index) => entry === right[index]);
 }
 
-interface ConversationComposerProps {
+export interface ConversationComposerProps {
   snapshot: ConversationSnapshot | null;
-  /** Draft scope (sessionId; null while drafting -> the "__draft__" scope). */
+  /** 草稿 scope（sessionId；draft 态 null → "__draft__" scope）。 */
   sessionId?: string | null;
-  /** Skill catalog authority; the prewarmSessionId once draft prewarm completes. Never changes task/draft identity. */
+  /** Skill catalog authority；草稿预热完成后为 prewarmSessionId，不改变 task/draft 身份。 */
   skillCatalogSessionId?: string | null;
-  /** Draft state has no snapshot, but the first send can still createSession. */
+  /** draft 态无 snapshot，但仍可 createSession 首发。 */
   draftMode?: boolean;
-  /** The renderer draft config intent; overrides a late prewarm projection only in draftMode. */
+  /** renderer 当前草稿配置意图；只在 draftMode 下覆盖迟到的 prewarm projection。 */
   draftConfig?: Partial<SessionConfigState>;
-  /** The full Draft owner injected by SessionPane; on the production path the editor never overwrites the persisted record directly. */
+  /** SessionPane 注入的完整 Draft owner；生产路径不再由编辑器直接覆盖持久记录。 */
   composerDraft: V4ComposerDraft;
   updateComposerContent: (
     content: Pick<V4ComposerDraft, "text" | "editorStateJson" | "mention">,
   ) => void;
   replaceComposerDraft: (draft: Omit<V4ComposerDraft, "updatedAt">) => void;
-  /** Whether the Composer can form a complete Submission; false when model or reasoning is empty. */
+  /** 当前 Composer 是否能构造完整 Submission；空模型或空 Reasoning 时为 false。 */
   submissionReady?: boolean;
   createSubmissionFromComposer?: () => ComposerSubmissionConfig | null;
-  /** Freezes the model dimension for send telemetry only; merges the draft initialization config with explicit intent. */
+  /** 仅供发送埋点冻结模型维度；包含草稿初始化 config 与显式 intent 的合并值。 */
   telemetryDraftConfig?: Partial<SessionConfigState>;
   /**
-   * Empty-state contextHeader (m5-composer-parity): workspace switcher + Git branch
-   // switcher rendered above the editor (same slot as the old ChatViewComposer
-   // contextHeaderContent). Provided by the host in draft state only; empty once a session exists.
+   * 空态 contextHeader（m5-composer-parity）：workspace 切换菜单 + Git 分支
+   * 切换器，渲染在编辑器上方（旧 ChatViewComposer contextHeaderContent 同位）。
+   * 仅草稿态由宿主下发；会话建立后为空。
    */
   contextHeader?: ReactNode;
-  /** Centered draft layout (old shouldUseCenteredDraftChatLayout): narrower max-w-2xl, no sticky. */
+  /** 居中草稿布局（旧 shouldUseCenteredDraftChatLayout）：收窄 max-w-2xl、去 sticky。 */
   centered?: boolean;
   /**
-   // v4 bottom-dock blocking interaction id. While present the composer is hidden, not unmounted, preserving draft, attachments, and the editor instance.
+   * v4 bottom dock 阻塞交互 id。存在时 composer 只隐藏不卸载，保留草稿、附件与编辑器实例。
    */
   blockingRequestId?: string | null;
   disabled?: boolean;
+  /** 当前 Task 可用的 Highspeed 卡；只影响静态标识和模型锁定。 */
+  highspeedCard?: HighspeedCardSnapshot | null;
   /**
-   // Whether to auto-focus the input after new-task/session switch/mount (default on).
-   // In split-pane slices the host passes SessionPane.focused: only the focused pane grabs
-   // focus, background panes never steal it.
+   * 发送路径 draw 新命中登记的一次性激活请求（值为 cardId）。
+   * 命中当前卡时才播放激活动效，composer 锁定入场方式后经回调消费；切回、恢复与重挂载不重播。
+   */
+  highspeedActivationCardId?: string | null;
+  onHighspeedActivationApplied?: (cardId: string) => void;
+  /**
+   * 是否在新建任务 / 切换会话 / 挂载后自动把光标聚焦到输入框（默认开）。
+   * 竖切多 pane 时由宿主传入 SessionPane.focused，仅焦点 pane 聚焦、后台 pane 不抢焦点。
    */
   autoFocusEnabled?: boolean;
-  /** Whether this composer runs inside the mobile web remote-control shell. */
+  /** 当前 composer 是否运行在手机 Web 远控壳中。 */
+  isWebRemoteControl?: boolean;
   workspacePath: string;
   workspaceIdentity?: string;
   remoteSessionId?: string;
-  /** Selection facts atomically read by SessionPane from the target Host; the Composer never resolves the Host itself. */
+  /** SessionPane 从目标 Host 原子读取的选择事实；Composer 不自行解析 Host。 */
   modelSelectionView?: ModelSelectionView | null;
   modelSelectionState?: ModelSelectionState;
-  /** Explicit retry entry after the first Model Selection read fails. */
+  /** Model Selection 首次读取失败后的显式重试入口。 */
   modelSelectionReload?: () => void;
-  /** In draft state, the prewarm session carries attachment transactions. */
+  /** 草稿态使用预热 session 作附件 transaction 载体。 */
   attachmentSessionId?: string | null;
   attachmentPut: AttachmentPutFn;
   onRuntimeRestart?: (listener: () => void) => () => void;
-  /** When the transport exposes runtime liveness, prefer this over onRuntimeRestart. */
+  /** 承载 transport 暴露 runtime 存活态时优先用它，替代 onRuntimeRestart。 */
   onRuntimeLifecycle?: (listener: (state: "available" | "unavailable") => void) => () => void;
   provider?: ZCodeProvider;
-  /** Real visibility jointly decided by the host pane and workspace scrim; used for visible-only telemetry. */
+  /** 宿主 pane 与 workspace 遮罩共同裁决的真实可见性，仅用于 visible-only telemetry。 */
   telemetryVisible?: boolean;
-  /** Reads the plan identity at send click; the double-confirm reuses the same frozen seed. */
+  /** 点击发送时读取套餐身份；二次确认会继续复用同一份冻结 seed。 */
   readPlanIdentitySnapshot?: () => PlanIdentitySnapshot;
   onSendText: (
     text: string,
     options?: ConversationComposerSendOptions,
   ) => Promise<ConversationComposerSendResult | void>;
-  /** Hands the current input text to the parent (editUserQuery uses the composer text as newText). */
+  /** 把当前输入文本上抛给父组件（editUserQuery 用 composer 文本作 newText）。 */
   onTextChange?: (text: string) => void;
-  /** Full composer-occupancy snapshot read by queue-withdraw admission; attachments include in-upload state. */
+  /** queue 撤回 admission 读取的完整 composer 占用态；附件包含上传中状态。 */
   onDraftStateChange?: (state: { hasContent: boolean; busy: boolean }) => void;
   onStop: () => void;
-  /** Model picked from the catalog (providerId/modelId); thought/revision are backfilled by the host from the latest projection. */
+  /** 目录选中模型（providerId/modelId）；thought/revision 由宿主从最新投影补齐。 */
   onSelectModel: (
     provider: string,
     model: string,
     sourceModel: ModelSelectionSource | null,
   ) => void;
-  /** Selected reasoning depth; carries the model visible at action time so a late async echo never attributes the thought to another model. */
+  /** 选中思考深度；同时带上用户操作时看到的模型，避免异步回流后把 thought 归到另一模型。 */
   onSelectThought: (thought: string, modelContext: { provider: string; model: string }) => void;
   onSwitchMode: (mode: string) => void;
-  /** Opens the current session Status panel, straight to the Running detail. */
+  /** 打开当前 session 的 Status panel，并直达 Running 明细。 */
   onOpenRunningBackgroundWorks?: () => void;
   /**
-   // Target of the background-works entry click: "workflow-run" = the single running workflow
-   // opens its detail page directly (host-decided); default "panel" = expand the status pill.
-   // Only the tooltip switches here; the behavior itself lives in onOpenRunningBackgroundWorks.
+   * 后台任务入口点击的落点：`"workflow-run"` = 唯一在跑的工作流直达详情页（宿主判定），
+   * 缺省 `"panel"` = 展开状态胶囊。入口据此换 tooltip；行为本身在 onOpenRunningBackgroundWorks 里。
    */
   backgroundWorkOpenTarget?: "panel" | "workflow-run";
   runningSubagentCount?: number;
-  /** On prepare/configOptions failure, custom-provider choices enter the workspace recovery chain. */
+  /** prepare/configOptions 失败时，custom provider 选择走 workspace recovery 链。 */
   onRecoverCustomModelSelection?: (
     value: string,
     sourceModel: ModelSelectionSource | null,
   ) => Promise<void> | void;
-  /** /compact entry of the context-usage panel (the host issues the v4 compact command). */
+  /** context usage 面板的 /compact 入口（宿主走 v4 compact 命令）。 */
   onSendCompressionCommand?: (command: string) => void;
-  /** Session-level v4 error (snapshot.control.lastError), shown above the input. */
+  /** v4 会话级错误（snapshot.control.lastError），展示在输入框上方。 */
   error?: ZCodeUiError | null;
   onDismissError?: () => void;
-  /** Recovery action for the no-models banner; SessionPane injects the shell navigation - the component never touches tabs directly. */
+  /** 无可用模型横幅的恢复动作；由 SessionPane 注入壳层导航，组件不直接操作 tab。 */
   onOpenModelSettings?: () => void;
   onOpenModelUpgrade?: () => void;
   onOpenCodeViewer?: (source: CodeViewerSource) => void;
   /**
-   // Whether to listen for the global add-to-chat event (workspace file tree / canvas button).
-   // In split view only the primary pane listens, so one click never inserts twice.
+   * 是否监听全局「加入对话」事件（workspace file tree / 画板按钮）。
+   * 分屏时仅 primary pane 监听，避免一次点击插入两份。
    */
   listenAddToChatEvents?: boolean;
   /**
-   // One-shot external text-prefill requests (Example Prompt etc.).
-   // requestId ensures the same text can be recalled twice in a row and still trigger the
-   // backfill.
+   * 外部一次性文本预填请求（Example Prompt 等）。
+   * requestId 保证同一文本可连续取回两次时仍能触发回填。
    */
   externalTextInsertRequest?: ExternalTextInsertRequest | null;
   onExternalTextInsertApplied?: (requestId: number) => void;
   /**
-   // Queue edit-withdraw restores the full future intent into the input after the delete ACK.
-   // requestId + session/workspace binding keep it idempotent and never cross-write other tasks.
+   * 队列“编辑”在 delete ACK 后把完整未来意图取回输入框。
+   * requestId + session/workspace binding 保证幂等且不会串写其他 task。
    */
   composerRestoreRequest?: ComposerRestoreRequest | null;
   onComposerRestoreApplied?: (requestId: number) => void;
-  /** Side sessions expose no goal capability; the protocol layer still rejects direct calls. */
+  /** 副屏会话不提供 goal 能力；协议层仍会拒绝直接调用。 */
   suppressGoalCommands?: boolean;
-  /** App-level local slash commands (e.g. `/side`), assembled by SessionPane behind its gates and passed through. */
+  /** App 层本地斜杠命令（如 `/side`），由 SessionPane 按门禁组装后透传。 */
   appSlashCommands?: readonly AppSlashCommand[];
-  // Exposes the composer drop routing to the whole conversation pane / desktop draft title bar.
+  /** 把 composer 的 drop 路由暴露给整个对话 pane / 桌面草稿标题栏。 */
   onDropTargetControllerChange?: (controller: ConversationDropTargetController | null) => void;
 }
 
@@ -505,7 +522,11 @@ function ConversationComposerImpl({
   centered = false,
   blockingRequestId = null,
   disabled = false,
+  highspeedCard = null,
+  highspeedActivationCardId = null,
+  onHighspeedActivationApplied,
   autoFocusEnabled = true,
+  isWebRemoteControl = false,
   workspacePath,
   workspaceIdentity,
   remoteSessionId,
@@ -557,6 +578,32 @@ function ConversationComposerImpl({
   const configPickerScopeKey = `${workspaceKey}\0${draftScopeId}`;
   const [text, setText] = useState("");
   const [pending, setPending] = useState(false);
+  const [presentedHighspeedCardId, setPresentedHighspeedCardId] = useState<string | null>(null);
+  const [highspeedSweepActive, setHighspeedSweepActive] = useState(false);
+  const highspeedCardId = highspeedCard?.cardId ?? null;
+  const highspeedEntrance = useHighspeedComposerEntrance({
+    cardId: highspeedCardId,
+    activationCardId: highspeedActivationCardId,
+    onActivationApplied: onHighspeedActivationApplied,
+  });
+  const highspeedEntranceAnimated = highspeedEntrance === "activation";
+  // 恢复入场（切回 Task、快照恢复、重挂载）不经扩散交接，卡片出现即呈现模型与倒计时。
+  const highspeedPresented =
+    highspeedCardId !== null &&
+    (!highspeedEntranceAnimated || presentedHighspeedCardId === highspeedCardId);
+  const handleHighspeedModelTransitionStart = useCallback(() => {
+    // 只记录已完成视觉交接的卡片身份，不改变卡片有效性或发送状态。
+    setPresentedHighspeedCardId(highspeedCardId);
+  }, [highspeedCardId]);
+  useEffect(() => {
+    // 扫光属于激活动效，只在 draw 新命中的交接后播放一次。
+    if (!highspeedPresented || !highspeedEntranceAnimated) {
+      setHighspeedSweepActive(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setHighspeedSweepActive(true), 1_900);
+    return () => window.clearTimeout(timer);
+  }, [highspeedEntranceAnimated, highspeedPresented]);
   const [configPickerState, setConfigPickerState] = useState<{
     scopeKey: string;
     activePicker: V4ComposerConfigPicker | null;
@@ -564,10 +611,9 @@ function ConversationComposerImpl({
     scopeKey: configPickerScopeKey,
     activePicker: null,
   }));
-  // A fixed-key SessionPane reuses the composer across tasks/drafts, so a stale picker owner
-  // rides the instance into the new scope. Zero it synchronously before the new-scope portal
-  // mounts to avoid a one-frame menu flash; the old Radix layer's late close event is dropped
-  // by the scope guard below.
+  // 固定 key 的 SessionPane 会跨 task/draft 复用 composer，旧 picker owner
+  // 因此跟着实例进入新 scope。提交新 scope portal 前同步归零，避免菜单闪现一帧；
+  // 旧 Radix layer 随后到达的 close 事件由下方 scope guard 丢弃。
   if (configPickerState.scopeKey !== configPickerScopeKey) {
     setConfigPickerState({
       scopeKey: configPickerScopeKey,
@@ -578,10 +624,9 @@ function ConversationComposerImpl({
     configPickerState.scopeKey === configPickerScopeKey ? configPickerState.activePicker : null;
   const handleConfigPickerOpenChange = useCallback(
     (picker: V4ComposerConfigPicker, open: boolean) => {
-      // Once composer content restores pointer-events for the nav rail, the three Radix modal
-      // pickers' independent open states race within one pointerdown and the stale layer
-      // cannot reliably dismiss. A close callback may land after a sibling picker's open
-      // callback; let it clean up only itself so it never closes the new owner.
+      // composer 内容为导航 rail 恢复 pointer-events 后，三个 Radix modal
+      // picker 的独立 open 状态会在同一次 pointerdown 中竞争，旧 layer 无法可靠 dismiss。
+      // 关闭回调可能晚于兄弟 picker 的打开回调，只允许它清理自己，避免误关接管者。
       setConfigPickerState((current) => {
         if (current.scopeKey !== configPickerScopeKey) {
           return current;
@@ -600,23 +645,38 @@ function ConversationComposerImpl({
     requestedDelivery?: "startNow" | "queue" | "guide";
   } | null>(null);
   const [sendTooltipOpen, setSendTooltipOpen] = useState(false);
-  // The submit path reads the latest text/pending via refs so the callback identity never changes per keystroke.
+  // submit 经 ref 读取最新文本/pending，避免回调随每次输入变更引用。
   const textRef = useRef("");
   const contentRevisionRef = useRef(0);
   const pendingRef = useRef(false);
   const snapshotRef = useRef(snapshot);
   snapshotRef.current = snapshot;
-  // This wire once broke: the composer read a parallel sharedContextImport prop that
-  // SessionPane never passed (zero `sharedContextImport=` hits repo-wide), so the first message
-  // never carried sharedContextRefs. Now derived from the snapshot we always have; rationale
-  // and bounds in resolveAttachableShareContext.
+  // 这条线断过一次：composer 原本读一个平行的 sharedContextImport prop，而 SessionPane 从没
+  // 传过它（全仓 `sharedContextImport=` 零命中），于是首条消息永远不带 sharedContextRefs。
+  // 现在从必然拿到的 snapshot 推导，理由与边界见 resolveAttachableShareContext。
   const activeShareContext = resolveAttachableShareContext(snapshot?.sharedContextImport);
   const pendingShareContext = activeShareContext?.status === "pending" ? activeShareContext : null;
   const inputApiRef = useRef<LexicalChatInputHandle | null>(null);
   const reportedErrorKeysRef = useRef(new Set<string>());
+  const isMobileTextInputViewport = useIsMobileTextInputViewport();
   const primaryModifierPressed = usePrimaryFollowupModifier();
   const appleKeyboardPlatform = isAppleKeyboardPlatform();
-  const enterSubmits = true;
+  // Bugfix：M3 删除旧 ChatView 后，M5 只恢复了桌面端的 false 硬编码，已登记的手机远控
+  // 接线没有补回，导致 Enter 误发送。恢复旧语义：手机视口下 Enter 换行并用按钮发送；
+  // 桌面端仍由 resolveChatEnterSubmits 的视口门禁保持 Enter 发送。
+  const enterSubmits = resolveChatEnterSubmits({
+    isMobileTextInputViewport,
+    preferEnterNewline: isWebRemoteControl,
+  });
+  // 修复原因：旧 ChatView 删除后，iOS 防聚焦放大的接线没有迁到 v4 composer，
+  // 手机 Web 远控输入框会重新触发 Safari 的页面缩放。
+  const avoidIosInputFocusZoom = shouldAvoidIosInputFocusZoom({
+    isMobileTextInputViewport,
+    isWebRemoteControl,
+  });
+  // Bugfix：手机远控把完整能力说明放进绝对定位 placeholder 后，三行英文会越过
+  // 40px 编辑区并覆盖工具栏。手机端改用短文案并限制两行；桌面端继续保留完整提示。
+  const compactMobilePlaceholder = isWebRemoteControl && isMobileTextInputViewport;
   const sendShortcut = resolveChatEnterShortcut({ enterSubmits });
   const updateText = useCallback(
     (next: string) => {
@@ -629,7 +689,7 @@ function ConversationComposerImpl({
     [onTextChange, workspaceIdentity, workspacePath],
   );
 
-  // -- Attachment pipeline (pick/paste/drag/canvas/pre-upload/gates) --
+  // ── 附件全链路（选择/粘贴/拖拽/画板/预传/门禁）──
   const attachmentsApi = useComposerAttachments({
     workspacePath,
     workspaceIdentity,
@@ -642,9 +702,8 @@ function ConversationComposerImpl({
     disabled,
     listenAddToChatEvents: listenAddToChatEvents && !disabled,
   });
-  // Mirrors the old useChatComposer: a window-level dragover pre-lights the whole chat area
-  // and desktop draft title bar before the pointer enters ChatView; workspace-payload copy
-  // wins over OS attachments.
+  // 对齐旧版 useChatComposer：窗口级 dragover 会在指针进入 ChatView 前预先点亮
+  // 整个聊天区与桌面草稿标题栏；workspace payload 的文案优先于系统附件。
   const { externalFileDragging, workspaceFileDragging } = usePromptEditorDragState({
     enableExternalFileDrop: true,
     enableWorkspaceFileDrop: true,
@@ -665,7 +724,7 @@ function ConversationComposerImpl({
     (event: DragEvent<HTMLElement>) => {
       const workspaceFilePayload = readWorkspaceFileDragPayload(event.dataTransfer);
       if (workspaceFilePayload) {
-        // File-tree payloads are not OS File[]: insert the mention only, never the upload queue.
+        // 文件树 payload 与 OS File[] 语义不同：只插入 mention，绝不能进入上传队列。
         event.preventDefault();
         attachmentsApi.handleDropComposer(event);
         appendWorkspaceFileMentionToComposer({
@@ -727,12 +786,20 @@ function ConversationComposerImpl({
   } = useWebElementContexts({
     workspacePath,
     workspaceIdentity,
-    // The composer is disabled while queue-withdraw waits for its ACK; also block global
-    // add-to-chat from writing web context, so a successful authoritative delete never collides
-    // with a draft created inside the ACK window.
+    // queue 撤回等待 ACK 时 composer 处于 disabled；此时也要阻止全局 add-to-chat
+    // 写入网页上下文，避免权威删除成功后撞上 ACK 窗口内的新草稿。
     listenAddToChatEvents: listenAddToChatEvents && !disabled,
     scopeId: draftScopeId,
   });
+  // 插件 UI 经 ui/update-model-context 附加的上下文；按 sessionId 接收，随发送清空。
+  const {
+    contexts: pluginUiContexts,
+    hasContexts: hasPluginUiContexts,
+    removeContext: removePluginUiContext,
+    clearContexts: clearPluginUiContexts,
+  } = usePluginUiModelContexts({ sessionId, workspacePath, workspaceIdentity });
+  // 上下文里的 image 块 → 本 composer 的图片附件，随下一回合发送。
+  usePluginUiContextImages(pluginUiContexts, attachmentsApi);
   const {
     references: pptxElementReferences,
     hasReferences: hasPptxElementReferences,
@@ -759,7 +826,7 @@ function ConversationComposerImpl({
   } = useConversationSelectionReferences({ sessionId, workspaceKey });
   const hasConversationSelectionReferences = conversationSelectionReferences.length > 0;
 
-  // -- Per-session draft persistence (survives session switches/reloads; mention pills preserved via editorStateJson) --
+  // ── 草稿 per-session 持久化（切会话/刷新不丢；mention pill 经 editorStateJson 保真）──
   const draftScopeRef = useRef(draftScopeId);
   const draftTargetRef = useRef({
     workspacePath,
@@ -785,7 +852,7 @@ function ConversationComposerImpl({
       const editorState = inputApiRef.current?.getEditorState();
       editorStateJson = editorState ? JSON.stringify(editorState.toJSON()) : undefined;
     } catch (error) {
-      logger.warn(`[v4-composer] failed to serialize draft editorState: ${String(error)}`);
+      logger.warn(`[v4-composer] 草稿 editorState 序列化失败: ${String(error)}`);
     }
     return currentText.trim()
       ? { text: currentText, ...(editorStateJson ? { editorStateJson } : {}) }
@@ -815,46 +882,44 @@ function ConversationComposerImpl({
     }, 350);
   }, [persistDraftNow]);
 
-  // -- Auto-focus (new task / session switch / mount hands the caret back to the input) --
-  // Triggers: the draftFocusVersion incremented by startDraft (covers Cmd/Ctrl+N and every
-  // new-task entry), sessionId->draftScopeId changes (session/draft switch), and mount. Each
-  // sets the focus intent; because the composer is briefly disabled while connecting to a
-  // session, the intent is parked and honored once editing is possible.
+  // ── 自动聚焦（新建任务 / 切会话 / 挂载后把光标交还输入框）──
+  // 触发源：startDraft 递增的 draftFocusVersion（覆盖 Cmd/Ctrl+N 与所有「新建任务」入口）、
+  // sessionId→draftScopeId 变化（切会话/切草稿）、以及挂载。三者置位聚焦意图；因切到需
+  // 连接的会话时 composer 短暂 disabled，聚焦意图暂存，待可编辑时兑现一次。
   const draftFocusVersion = useZCodeSessionStore(
     (state) => state.getWorkspaceState(workspacePath, workspaceIdentity).draftFocusVersion,
   );
   const pendingFocusRef = useRef(false);
-  // Whether this focus was programmatic (see flushPendingFocus); lets send_input_focus skip non-user actions.
+  // 本次 focus 是否由程序触发（见 flushPendingFocus），供 send_input_focus 过滤非用户动作。
   const programmaticFocusRef = useRef(false);
-  // The send button and Enter share one form submit; button onClick fires before submit,
-  // which distinguishes send_click's send_trigger; reset to the default right after reading.
+  // 发送键与 Enter 共用同一个 form submit；按钮 onClick 早于 submit 触发，
+  // 借此区分 send_click 的 send_trigger，读取后立刻复位回默认的 shortcut。
   const sendTriggerRef = useRef<"button" | "shortcut">("shortcut");
-  // Modifier-clicks land before form submit; store only that beat's delivery-flip intent, cleared once submit consumes it.
+  // 修饰键点击先于 form submit；这里只保存这一拍的 delivery 反转意图，submit 消费后清零。
   const reversePointerDeliveryRef = useRef(false);
   const appliedComposerRestoreRequestRef = useRef<number | null>(null);
   const appliedExternalTextInsertRequestRef = useRef<number | null>(null);
-  // Decision inputs are read via refs so autoFocusEnabled/disabled/viewport never enter the
-  // scope effect dependencies and trigger surplus draft restores (a disabled flip must not
-  // replay the draft).
+  // 决策入参经 ref 读取，避免把 autoFocusEnabled/disabled/viewport 灌进 scope effect 依赖，
+  // 触发多余的草稿重恢复（disabled 变化本不应重放草稿）。
   const focusOptsRef = useRef<ComposerAutoFocusOptions>({
     autoFocusEnabled,
     disabled,
-    isMobileViewport: false,
+    isMobileViewport: isMobileTextInputViewport,
   });
   focusOptsRef.current = {
     autoFocusEnabled,
     disabled,
-    isMobileViewport: false,
+    isMobileViewport: isMobileTextInputViewport,
   };
   const flushPendingFocus = useCallback(() => {
     if (!pendingFocusRef.current) return;
     if (resolveComposerAutoFocus(focusOptsRef.current) !== "focus-now") return;
     if (!inputApiRef.current) return;
     pendingFocusRef.current = false;
-    // Programmatic focus and a real click raise the same DOM focus event; the flag set here
-    // is consumed by handleEditorFocus so refocuses are never misreported as send_input_focus.
+    // 程序性聚焦与用户点击输入框会触发同一个 DOM focus 事件；置位后由 handleEditorFocus
+    // 消费，避免把「切会话 / 挂载回焦 / 上下文块移除后回焦」误报成 send_input_focus。
     programmaticFocusRef.current = true;
-    // The Lexical root may be a frame late; focus is queued to the next frame (as with the draft backfill).
+    // Lexical root 可能晚一帧就绪，聚焦排到下一帧（与草稿回填同款时序）。
     if (typeof requestAnimationFrame === "function") {
       requestAnimationFrame(() => inputApiRef.current?.focus());
     } else {
@@ -880,7 +945,7 @@ function ConversationComposerImpl({
     clearContexts: clearCodeCommentContexts,
     getContexts: getCodeCommentContexts,
   } = useCodeCommentContexts({
-    // The composer is disabled while queue-withdraw waits for its ACK; same write gate as web context.
+    // queue 撤回等待 ACK 时 composer 处于 disabled；与网页上下文保持同一写入门禁。
     listenAddToChatEvents: listenAddToChatEvents && !disabled,
     onContextRemoved: handleCodeCommentRemoved,
     requestFocus: requestComposerFocus,
@@ -900,12 +965,13 @@ function ConversationComposerImpl({
           codeCommentContexts.length > 0 ||
           webElementContexts.length > 0 ||
           pptxElementReferences.length > 0 ||
-          conversationSelectionReferences.length > 0,
+          conversationSelectionReferences.length > 0 ||
+          pluginUiContexts.length > 0,
         inputApi: inputApiRef.current,
         request: composerRestoreRequest,
         requestFocus: requestComposerFocus,
         restoreSessionOwnedAttachments: attachmentsApi.restoreSessionOwnedAttachments,
-        // A withdrawn item carries its own Submission config; keep the draft owner, restore once, and preserve the already-handled consent flags.
+        // 撤回项携带独立 Submission 配置；沿用草稿 owner，一次恢复且保留已处理授权标记。
         restoreDraftConfig: (config) =>
           replaceComposerDraft({
             ...ownerDraftRef.current.draft,
@@ -942,10 +1008,11 @@ function ConversationComposerImpl({
     updateText,
     webElementContexts.length,
     pptxElementReferences.length,
+    pluginUiContexts.length,
     workspaceKey,
   ]);
 
-  // Scope switch: persist the old scope draft first, then restore the new one (editorStateJson first, plain-text fallback).
+  // scope 切换：先落旧 scope 草稿，再恢复新 scope（editorStateJson 优先，退纯文本）。
   useEffect(() => {
     const previousTarget = draftTargetRef.current;
     const targetChanged =
@@ -969,7 +1036,7 @@ function ConversationComposerImpl({
           targetWorkspaceIdentity: workspaceIdentity,
         });
       if (shouldTransferDraft) {
-        // Unbinding a project only changes the draft cwd; body text, mention editor state, and in-component attachments all stay.
+        // 项目解绑只改变草稿的 cwd；输入正文、mention editor state 和组件内附件继续保留。
         replaceComposerDraft({ ...ownerDraftRef.current.draft, ...previousDraft });
         transferredDraft = previousDraft;
       }
@@ -995,9 +1062,7 @@ function ConversationComposerImpl({
           draft,
           inputApi: api,
           onEditorStateError: (error) => {
-            logger.warn(
-              `[v4-composer] draft editorState restore failed, falling back to plain text: ${String(error)}`,
-            );
+            logger.warn(`[v4-composer] 草稿 editorState 恢复失败，退纯文本: ${String(error)}`);
           },
         }),
       );
@@ -1006,17 +1071,17 @@ function ConversationComposerImpl({
       const api = inputApiRef.current;
       if (!api) return;
       restoreDraftInto(api);
-      // After a draft restore, hand the caret back to the input (session/draft switch/mount); honored once the connecting session is editable.
+      // 草稿恢复后把光标交还输入框（切会话/切草稿/挂载）；连接中会话待可编辑后兑现。
       requestComposerFocus();
     };
-    // The Lexical root may be a frame late; draft restore is queued to the next frame (same timing as the old initialValue backfill).
+    // Lexical root 可能晚一帧就绪；draft 恢复排到下一帧（与旧 initialValue 回填同款时序）。
     if (typeof requestAnimationFrame === "function") {
       const frame = requestAnimationFrame(applyDraft);
       return () => cancelAnimationFrame(frame);
     }
     applyDraft();
     return undefined;
-    // Dependencies narrowed to scope/workspace: draft restores happen only on scope or workspace switches.
+    // 依赖收敛到 scope/workspace：draft 恢复只应发生在 scope 切换或 workspace 切换。
   }, [
     draftScopeId,
     persistDraftNow,
@@ -1038,9 +1103,8 @@ function ConversationComposerImpl({
     };
   }, [composerDraft, draftScopeId, workspaceIdentity, workspacePath]);
 
-  // External prefill and scope restore can land in the same pass. If the prefill effect ran
-  // first, the later restore would overwrite the Example Prompt the user just clicked; apply
-  // and acknowledge the one-shot insert only after the scope restore.
+  // 外部预填和 scope 恢复可能在同一轮发生。若预填 effect 先执行，后续恢复会用旧草稿
+  // 覆盖用户刚点的 Example Prompt；因此必须在 scope 恢复之后应用并确认单次插入请求。
   useEffect(() => {
     if (!externalTextInsertRequest) return;
     const applyRequest = () => {
@@ -1071,7 +1135,7 @@ function ConversationComposerImpl({
     updateText,
   ]);
 
-  // New task (including repeated Cmd/Ctrl+N while already drafting, scope unchanged): the startDraft nonce bump refocuses.
+  // 新建任务（含已在草稿态重复 Cmd/Ctrl+N，scope 未变）：startDraft 递增 nonce 即重新聚焦。
   const lastFocusVersionRef = useRef(draftFocusVersion);
   useEffect(() => {
     if (lastFocusVersionRef.current === draftFocusVersion) return;
@@ -1079,12 +1143,12 @@ function ConversationComposerImpl({
     requestComposerFocus();
   }, [draftFocusVersion, requestComposerFocus]);
 
-  // Switching to a connecting session sets disabled=true and defers the focus intent; honored once disabled flips back to false.
+  // 切到需连接的会话时 disabled=true，聚焦意图 defer；连接完成 disabled→false 时兑现一次。
   useEffect(() => {
     flushPendingFocus();
   }, [disabled, flushPendingFocus]);
 
-  // Persist the current draft before refresh/window close.
+  // 刷新/关窗前落盘当前草稿。
   useEffect(() => {
     if (typeof window === "undefined") return;
     const flush = () => persistDraftNow(draftScopeRef.current);
@@ -1101,7 +1165,7 @@ function ConversationComposerImpl({
     };
   }, [persistDraftNow]);
 
-  // -- Prompt history (per-workspace localStorage; up/down navigation consumed by PromptHistoryPlugin) --
+  // ── prompt history（per-workspace localStorage，↑/↓ 导航由 PromptHistoryPlugin 消费）──
   const [promptHistory, setPromptHistory] = useState<readonly string[]>(() =>
     readPromptHistoryEntries(workspacePath),
   );
@@ -1112,6 +1176,8 @@ function ConversationComposerImpl({
   const mode = snapshot?.inputRouting.mode ?? "startNow";
   const modifiedEnterSubmits = shouldEnableModifiedEnterSubmit({
     inputRoutingMode: mode,
+    isMobileTextInputViewport,
+    isWebRemoteControl,
   });
   const canStop = Boolean(snapshot?.control.canStop);
   const modifiedEnterReversesDelivery = modifiedEnterSubmits && canStop;
@@ -1123,6 +1189,7 @@ function ConversationComposerImpl({
     hasWebElementContexts ||
     hasPptxElementReferences ||
     hasConversationSelectionReferences ||
+    hasPluginUiContexts ||
     Boolean(pendingShareContext);
   const hasComposerDraftContent =
     text.length > 0 ||
@@ -1131,6 +1198,7 @@ function ConversationComposerImpl({
     hasWebElementContexts ||
     hasPptxElementReferences ||
     hasConversationSelectionReferences ||
+    hasPluginUiContexts ||
     Boolean(pendingShareContext);
   useEffect(() => {
     onDraftStateChange?.({
@@ -1138,10 +1206,9 @@ function ConversationComposerImpl({
       busy: pending,
     });
   }, [hasComposerDraftContent, onDraftStateChange, pending]);
-  // choice keeps the normal send button; after submit, SessionPane decides via slash semantics
-  // whether to show the confirm dialog. The V4 rework treated guide as non-submittable, which
-  // killed both the button and Enter; guide is a CLI-authorized busy-input route, and whether
-  // it ends as steer or queue fallback is decided at the command layer.
+  // choice 保留正常发送按钮；提交后由 SessionPane 按 slash 语义决定是否弹确认框。
+  // V4 重构时把 guide 当成“不可提交”状态，导致按钮和 Enter 同时失效；
+  // guide 是 CLI 已授权的 busy 输入路由，是否最终 steer 或回退 queue 由命令层裁决。
   const routingAllowsSend = draftMode || (snapshot !== null && mode !== "reject");
   const attachmentsReady = !attachmentsApi.hasUnreadyAttachments;
   const canSend =
@@ -1151,7 +1218,7 @@ function ConversationComposerImpl({
     routingAllowsSend &&
     attachmentsReady &&
     submissionReady;
-  // Old-UI state machine: streaming + empty draft -> Stop; with a draft -> send (enqueue).
+  // 旧 UI 状态机：streaming + 空草稿 → Stop；有草稿 → 发送键（入队）。
   const showStopControl = canStop && !hasDraftToSubmit;
 
   useEffect(() => {
@@ -1173,15 +1240,16 @@ function ConversationComposerImpl({
       const hasPendingCodeCommentContexts = currentCodeCommentContexts.length > 0;
       const currentWebElementContexts = webElementContexts;
       const hasPendingWebElementContexts = currentWebElementContexts.length > 0;
+      const currentPluginUiContexts = pluginUiContexts;
+      const hasPendingPluginUiContexts = currentPluginUiContexts.length > 0;
       const currentPptxElementReferences = pptxElementReferences;
       const hasPendingPptxElementReferences = currentPptxElementReferences.length > 0;
       const currentConversationSelections = conversationSelectionReferences;
       const hasPendingConversationSelections = currentConversationSelections.length > 0;
       const submittedShareContext = pendingShareContext;
-      // After a draft first-send is accepted, the same composer promotes in place from the
-      // __draft__ to the session scope; reading the mutable ref during success cleanup would
-      // wipe the new scope and leave the first input in __draft__, restored on the next new
-      // task. Freeze the actually-submitted scope when the send starts.
+      // 草稿首发 accepted 后同一 composer 会原地从 __draft__ promotion 到
+      // session scope；若成功清理时再读可变 ref，会误清新 scope，并把首条输入残留在
+      // __draft__，下次新建任务又恢复。发送开始时冻结真正提交的 scope。
       const submittedDraft = snapshotDraftOfEditor();
       let cleanupRevision = contentRevisionRef.current;
       const submission = createSubmissionFromComposer?.() ?? null;
@@ -1193,6 +1261,7 @@ function ConversationComposerImpl({
           !hasPendingWebElementContexts &&
           !hasPendingPptxElementReferences &&
           !hasPendingConversationSelections &&
+          !hasPendingPluginUiContexts &&
           !submittedShareContext) ||
         pendingRef.current ||
         !submissionReady ||
@@ -1209,14 +1278,13 @@ function ConversationComposerImpl({
       });
       pendingRef.current = true;
       setPending(true);
-      // Root cause: draft intent stores only explicit user changes; the inherited model lives
-      // in the frozen initialization config. Reading draftConfig alone before the prewarm
-      // snapshot arrives would wrongly settle send_btn on empty model/glm.
+      // Bug 根因：草稿 intent 只保存用户显式改动，正常继承模型位于冻结初始化 config。
+      // prewarm snapshot 尚未到达时若只读 draftConfig，send_btn 会错误落成空模型/glm。
       const telemetryConfig = telemetryDraftConfig ?? snapshotRef.current?.config ?? draftConfig;
       let telemetrySeed: ConversationPromptTelemetrySeed;
       if (existingTelemetrySeed) {
-        // The queue double-confirm reuses the first click's seed: no duplicate send_click and
-        // no send-trigger reset, keeping send_click/send_result strictly 1:1.
+        // 队列二次确认复用首次点击的 seed：不重报 send_click，也不重置发送触发来源，
+        // 保证 send_click 与 send_result 严格 1:1。
         telemetrySeed = existingTelemetrySeed;
         if (telemetrySeed.localTtft)
           getLocalTtftObserver()?.confirmation(telemetrySeed.localTtft, false);
@@ -1243,9 +1311,8 @@ function ConversationComposerImpl({
         };
         const sendTrigger = sendTriggerRef.current;
         sendTriggerRef.current = "shortcut";
-        // recordSendClick backfills sendClickId; its return value must become the follow-up
-        // seed, otherwise settlement loses the correlation key and send_result is skipped as a
-        // background task.
+        // recordSendClick 回填 sendClickId，必须用它的返回值作为后续 seed，
+        // 否则落定时拿不到关联键，send_result 会被当成后台任务跳过。
         telemetrySeed =
           conversationTelemetry?.recordSendClick({
             sessionId: sessionId ?? null,
@@ -1263,17 +1330,16 @@ function ConversationComposerImpl({
           window.clearTimeout(draftPersistTimerRef.current);
           draftPersistTimerRef.current = null;
         }
-        // First-send promotion switches scope or rebuilds the Composer before onSendText
-        // returns. Letting the old-scope effect persist would have the new Composer restore
-        // already-sent text as a draft. Occupy and hide the draft before submitting; restore it
-        // on the failure path, never hiding the race behind the wait.
+        // 首发 promotion 会在 onSendText 返回前切换 scope 或重建 Composer。
+        // 若仍允许旧 scope effect 落盘，新 Composer 会把已经发送的正文当草稿恢复。
+        // 提交前先占用并隐藏该草稿；失败路径再恢复，避免用等待时间掩盖竞态。
         suppressDraftPersistRef.current = true;
         updateComposerContent({ text: "" });
         draftSubmissionClaimed = true;
       };
       const restoreSubmittedDraft = () => {
         if (!draftSubmissionClaimed) return;
-        // If the user edited while waiting, the current full text is the newer truth; a stale failure reply must not overwrite it.
+        // 用户在等待期间已经产生更新时，当前完整正文是更新后的事实；旧失败回包不能覆盖。
         if (contentRevisionRef.current === cleanupRevision) {
           updateComposerContent(submittedDraft);
         }
@@ -1307,12 +1373,12 @@ function ConversationComposerImpl({
         setPromptHistory(currentPromptHistory);
       };
       try {
-        // Second gate: consume only finished pre-uploaded refs; never fall back to uploading inside the send click.
+        // 二次门禁：只消费预传完成的 ref，不在点击发送时回落上传。
         const readyAttachmentRefs = await attachmentsApi.prepareForSend();
         if (readyAttachmentRefs === null) {
           if (telemetrySeed.localTtft)
             getLocalTtftObserver()?.exclude(telemetrySeed.localTtft, "rejected");
-          // send_click is already reported; leaving it unsettled strands an unpaired sample and pollutes the success-rate denominator.
+          // send_click 已上报，此处不落定会留下无配对的悬空样本，污染成功率分母。
           conversationTelemetry?.settleSendResult({
             seed: telemetrySeed,
             sessionId: sessionId ?? null,
@@ -1322,20 +1388,19 @@ function ConversationComposerImpl({
           sendAction.fail({ failureStage: "attachment_not_ready" });
           return;
         }
-        // External context never travels as protocol attachments; it serializes into the fixed
-        // tail-block order selection -> code comment -> web -> PPTX so historical user rows can
-        // parse losslessly in reverse and hide the internal prompt blocks.
+        // 外部上下文不走协议附件；按 selection -> code comment -> web -> PPTX 的固定尾块顺序
+        // 序列化，历史 user row 才能按相反顺序无损解析并隐藏内部 prompt block。
         //
-        // Share handover is not serialized here: the share-URL block is renderer-internal
-        // (nothing in the CLI/shared parses it) and only ever drove a chip since cut from the
-        // product, at the cost of stuffing a share URL into the model-bound body. The model-side
-        // content arrives via the hidden shared_context message through
-        // inputIntent.sharedContextRefs, independent of the body.
+        // 分享 handover 不在这里序列化：share URL 块纯粹是 renderer 自产自销（CLI/shared
+        // 里没有任何东西解析它），唯一作用是驱动一个已被产品裁掉的 chip，代价却是把一个
+        // share URL 塞进发给模型的正文。模型侧内容由隐藏的 shared_context 消息经
+        // inputIntent.sharedContextRefs 注入，与正文无关。
         const promptText = serializeComposerPromptContexts(trimmed, {
           codeComments: currentCodeCommentContexts,
-          conversationSelections: currentConversationSelections,
+          conversationSelections: [],
           webElements: currentWebElementContexts,
           pptxElements: currentPptxElementReferences,
+          pluginUiContexts: currentPluginUiContexts,
         });
         const contextAttachmentCount =
           countComposerPromptContexts({
@@ -1343,16 +1408,16 @@ function ConversationComposerImpl({
             conversationSelections: currentConversationSelections,
             webElements: currentWebElementContexts,
             pptxElements: currentPptxElementReferences,
+            pluginUiContexts: currentPluginUiContexts,
           }) + (submittedShareContext ? 1 : 0);
         if (trimmed) {
           promptHistoryBeforeSend = readPromptHistoryEntries(workspacePath);
           promptHistoryAfterAppend = appendPromptHistoryEntry(promptHistoryBeforeSend, trimmed);
           if (!arePromptHistoryEntriesEqual(promptHistoryBeforeSend, promptHistoryAfterAppend)) {
-            // Once the prewarmed first-send is accepted, SessionPane promotes to the new
-            // session immediately and the draft composer may unmount before the await resumes;
-            // never hide the persistence inside a React state updater. The old-UI localStorage
-            // history stays (no input_history DB): write synchronously before the real send and
-            // restore the pre-send snapshot if the send fails.
+            // 预热首发 accepted 后，SessionPane 会立即 promote 到新 session，
+            // draft composer 可能在 await 恢复前卸载；不能把写盘藏在 React state updater 里。
+            // 这里继续沿用旧 UI 的 localStorage history，不接 input_history 数据库：
+            // 发起真实发送前先同步写盘，若发送失败再恢复到发送前快照。
             persistPromptHistoryEntries(workspacePath, promptHistoryAfterAppend);
             promptHistoryWasPersisted = true;
             setPromptHistory(promptHistoryAfterAppend);
@@ -1360,10 +1425,9 @@ function ConversationComposerImpl({
         }
         claimSubmittedDraft();
         if (requestedDelivery === "startNow") {
-          // Atomic preemption waits for the old turn to exit and the new TurnStarted ACK;
-          // if the editor also waited for the whole chain to clear, the shortcut would look
-          // dead. Clear the visible body now; on command rejection restore verbatim from the
-          // frozen editor state.
+          // 原子抢占需要等旧 turn 退出并提交新 TurnStarted ACK；
+          // 若编辑器也等整条链路才清空，用户会误以为快捷键未生效。
+          // 先清空可见正文；命令拒绝时用冻结 editor state 原样恢复。
           inputApiRef.current?.clear();
           updateText("");
           cleanupRevision = contentRevisionRef.current;
@@ -1371,6 +1435,20 @@ function ConversationComposerImpl({
         }
         const sendResult = await onSendText(promptText, {
           submission,
+          ...(currentConversationSelections.length
+            ? {
+                conversationQuotes: currentConversationSelections.map(
+                  ({ text, path, senderName, senderId, messageId, sentAt }) => ({
+                    text,
+                    path,
+                    senderName,
+                    senderId,
+                    messageId,
+                    sentAt,
+                  }),
+                ),
+              }
+            : {}),
           telemetrySeed,
           ...(requestedDelivery ? { requestedDelivery } : {}),
           ...(heldQueueDisposition ? { heldQueueDisposition } : {}),
@@ -1391,9 +1469,8 @@ function ConversationComposerImpl({
         if (sendResult === "blocked") {
           if (telemetrySeed.localTtft)
             getLocalTtftObserver()?.exclude(telemetrySeed.localTtft, "rejected");
-          // The product guard is a plain rejection, not an exception path; roll back the
-          // history staged before the send and keep editor/draft/attachments intact so the
-          // user can retry right after switching modes.
+          // 产品 guard 是一次正常拒绝，不应借异常路径表达；回滚发送前暂记的 history，
+          // 同时不 clear editor/draft/附件，让用户切换模式后可以直接重试。
           rollbackPromptHistory();
           restoreSubmittedDraft();
           conversationTelemetry?.settleSendResult({
@@ -1412,9 +1489,9 @@ function ConversationComposerImpl({
           restoreSubmittedDraft();
           const latestQueueItemIds =
             snapshotRef.current?.queue.items.map((item) => item.queueItemId) ?? [];
-          // The first submit freezes the current queue; after a cross-device stale, replace it from the latest projection and ask for confirmation again.
+          // 首次提交冻结当前队列；跨端 stale 后用最新投影替换，要求用户重新确认。
           setHeldQueueConfirmation({
-            // Marks queueConfirmed: settlement reuses this seed, so send_cost_ms includes the time spent in the dialog.
+            // 标记 queueConfirmed：确认后复用该 seed 落定，send_cost_ms 含用户在弹窗上的停留。
             telemetrySeed: { ...telemetrySeed, queueConfirmed: true },
             ...(requestedDelivery ? { requestedDelivery } : {}),
             queueItemIds:
@@ -1424,26 +1501,26 @@ function ConversationComposerImpl({
           return;
         }
         setHeldQueueConfirmation(null);
-        // Staged content is handed to the task only on send success; on failure it stays a retryable draft.
+        // 暂存内容只有在发送成功后才移交给 task；失败仍保留为可重试草稿。
         await attachmentsApi.adoptSentAttachments(submittedAttachmentIds);
-        // Bug: text typed while the send is in flight belongs to the next Submission; a stale ACK must not clear it.
+        // Bug 原因：发送等待期间产生的新正文属于下一次 Submission，旧 ACK 不能清除。
         if (contentRevisionRef.current === cleanupRevision) {
           inputApiRef.current?.clear();
           updateText("");
         }
         attachmentsApi.clearAttachments(submittedAttachmentIds);
-        // Like attachments, remove only the refs frozen for this send; refs added while waiting belong to the next message.
+        // 与附件相同，只移除本次冻结的引用；等待期间新加入的引用属于下一条消息。
         currentCodeCommentContexts.forEach(removeCodeCommentContext);
         currentWebElementContexts.forEach((context) => removeWebElementContext(context.id));
+        currentPluginUiContexts.forEach((context) => removePluginUiContext(context.id));
         currentPptxElementReferences.forEach((reference) =>
           removePptxElementReference(reference.id),
         );
         currentConversationSelections.forEach((reference) =>
           removeConversationSelectionReference(reference.id),
         );
-        // Send succeeded: clear the scope draft captured for this submission; prompt history
-        // was already written synchronously before the real send, so the first-send promote
-        // neither loses history nor wipes the post-promotion scope.
+        // 发送成功：清本次提交捕获的 scope 草稿；prompt history 已在真实发送前同步写盘，
+        // 避免首发 promote 丢失或误清 promotion 后的新 scope。
         finalizeSubmittedDraft();
         sendAction.complete({ resultSource: "authority_ack", admissionResult: "accepted" });
       } catch (error) {
@@ -1451,9 +1528,9 @@ function ConversationComposerImpl({
         restoreSubmittedDraft();
         if (telemetrySeed.localTtft)
           getLocalTtftObserver()?.exclude(telemetrySeed.localTtft, "failed");
-        // On send failure the draft stays in the input (not cleared); only the reason is recorded.
-        logger.warn(`[v4-composer] send failed: ${String(error)}`);
-        // ACK-side failures are settled by SessionPane; reaching here means a composer-local pipeline error.
+        // 发送失败草稿保留在输入框（不清空），仅记录原因。
+        logger.warn(`[v4-composer] 发送失败: ${String(error)}`);
+        // ACK 侧失败已由 SessionPane 落定；能走到这里的是 composer 自身链路异常。
         conversationTelemetry?.settleSendResult({
           seed: telemetrySeed,
           sessionId: sessionId ?? null,
@@ -1484,6 +1561,8 @@ function ConversationComposerImpl({
       removeConversationSelectionReference,
       removePptxElementReference,
       removeWebElementContext,
+      removePluginUiContext,
+      pluginUiContexts,
       sessionId,
       snapshotDraftOfEditor,
       updateText,
@@ -1495,12 +1574,12 @@ function ConversationComposerImpl({
     ],
   );
 
-  // Lexical onChange (stable from the first character; see LexicalChatInput.TextContentPlugin).
+  // Lexical onChange（首字符也稳定回传，见 LexicalChatInput.TextContentPlugin）。
   const handleEditorChange = useCallback(
     (value: string) => {
       conversationTelemetry?.recordComposerTextChange(value);
       updateText(value);
-      // Body text enters the same in-memory Draft as mode/model first; debounce only augments the latest Lexical JSON.
+      // 正文先进入与 mode/model 相同的内存 Draft；防抖只负责补充最新 Lexical JSON。
       updateComposerContent({ text: value });
       scheduleDraftPersist();
     },
@@ -1509,7 +1588,7 @@ function ConversationComposerImpl({
 
   const handleEditorFocus = useCallback(() => {
     conversationTelemetry?.recordComposerFocus();
-    // Programmatic focus is not a click into the input; the flag is one-shot, later manual focuses report as usual.
+    // 程序性聚焦不算「点击输入框」；标记一次性消费，之后的手动 focus 照常上报。
     if (programmaticFocusRef.current) {
       programmaticFocusRef.current = false;
       return;
@@ -1519,8 +1598,8 @@ function ConversationComposerImpl({
     });
   }, [conversationTelemetry, sessionId]);
 
-  // Editor submit (Enter / send button share the form-submit path). Returning false: the editor never resets itself,
-  // submit clears via inputApiRef.clear() on success - on failure the draft stays in the input.
+  // 编辑器提交（Enter / 发送键 form submit 同路径）。返回 false：编辑器不自行 reset，
+  // 由 submit 成功后经 inputApiRef.clear() 清空——失败时草稿留在输入框。
   const handleEditorSubmit = useCallback(
     (value: string) => {
       textRef.current = value;
@@ -1542,8 +1621,8 @@ function ConversationComposerImpl({
     (value: string) => {
       const followupMode = snapshotRef.current?.config.followupMode;
       textRef.current = value;
-      // Early in a turn, inputRouting may still be startNow; never use it
-      // to infer idle. The modifier always expresses a one-shot reversed delivery; an idle CLI starts now anyway.
+      // inputRouting 在 turn 启动初期可能仍为 startNow，不能用它
+      // 推断空闲。组合键始终表达单次反向 delivery；空闲时 CLI 自然 startNow。
       void submit(
         undefined,
         undefined,
@@ -1584,8 +1663,8 @@ function ConversationComposerImpl({
     });
   }, [onStop]);
 
-  // The send button is type=submit sharing handleEditorSubmit with Enter; DOM order guarantees click before
-  // submit, so this only sets the flag; submit() reads and resets it.
+  // 发送键是 type="submit"，与 Enter 共用 handleEditorSubmit；DOM 事件顺序保证 click 早于
+  // submit，故这里只置标记，由 submit() 读取并复位。
   const handleSendButtonClick = useCallback(
     (event: ReactMouseEvent<HTMLButtonElement>) => {
       sendTriggerRef.current = "button";
@@ -1599,7 +1678,7 @@ function ConversationComposerImpl({
     [appleKeyboardPlatform, modifiedEnterReversesDelivery],
   );
 
-  // -- Global add-to-conversation event (workspace file tree context menu/button) -> mention insert --
+  // ── 「加入对话」全局事件（workspace file tree 右键/按钮）→ mention 插入 ──
   useEffect(() => {
     if (!listenAddToChatEvents || typeof window === "undefined") {
       return;
@@ -1624,13 +1703,13 @@ function ConversationComposerImpl({
     };
   }, [listenAddToChatEvents, updateText, workspaceIdentity, workspacePath]);
 
-  // Dynamic placeholder (legacy chatViewPlaceholder semantics): no history -> newTask;
-  // history + idle -> followUpAsk; history + running -> followUpQueue.
+  // 动态 placeholder（旧 chatViewPlaceholder 语义）：无历史 → newTask；
+  // 有历史空闲 → followUpAsk；有历史处理中 → followUpQueue。
   const placeholder = intl.formatMessage({
     id: resolveChatPlaceholderKey({
       hasHistoryMessages: (snapshot?.rows.totalCount ?? 0) > 0,
       isTaskProcessing: canStop,
-      compactNewTask: false,
+      compactNewTask: compactMobilePlaceholder,
     }),
   });
   const sendTooltipTitle = intl.formatMessage({
@@ -1660,7 +1739,7 @@ function ConversationComposerImpl({
     ].join(":");
     if (reportedErrorKeysRef.current.has(telemetryKey)) return;
     reportedErrorKeysRef.current.add(telemetryKey);
-    // Errors surface only once actually rendered past suppression; once per key per composer mount.
+    // 错误只有经过 suppression 后真实进入 render 才曝光；同一 composer mount 相同 key 一次。
     conversationTelemetry.reportVisibleChatError({
       errorKey: telemetryKey,
       displayMessage: resolveChatErrorBannerDisplayMessage(visibleError, intl),
@@ -1688,10 +1767,10 @@ function ConversationComposerImpl({
     [intl, attachmentsApi.openAttachmentPicker],
   );
 
-  // -- Attachment preview grid --
+  // ── 附件预览网格 ──
   const composerAttachments = attachmentsApi.attachments;
   const orderedComposerAttachments = useMemo(() => {
-    // Media group (images/video) first, files after; within a group, insertion order.
+    // 媒体组（图片/视频）优先、文件在后；组内保持添加顺序。
     const media: (typeof composerAttachments)[number][] = [];
     const files: (typeof composerAttachments)[number][] = [];
     for (const attachment of composerAttachments) {
@@ -1721,7 +1800,8 @@ function ConversationComposerImpl({
       codeCommentContexts.length === 0 &&
       webElementContexts.length === 0 &&
       pptxElementReferences.length === 0 &&
-      conversationSelectionReferences.length === 0
+      conversationSelectionReferences.length === 0 &&
+      pluginUiContexts.length === 0
     ) {
       return null;
     }
@@ -1811,10 +1891,10 @@ function ConversationComposerImpl({
                     url: attachment.objectUrl ?? "",
                   }}
                   onRemove={() => attachmentsApi.removeAttachment(attachment.id)}
-                  // Attachments support non-image formats: PDF gets the dedicated PdfViewer,
-                  // other files show a type icon and name, so docs never fail as broken images.
-                  // Images and videos enter the pre-send gallery in insertion order,
-                  // keeping each media group navigable in sequence.
+                  // 附件支持非图片格式，PDF 走独立 PdfViewer，
+                  // 其他文件展示类型图标和文件名，避免 doc 等普通文件被当成图片渲染失败。
+                  // 图片与视频统一按添加顺序进入发送前 gallery，
+                  // 保证同一组媒体可以连续导航。
                   onOpen={
                     canPreviewImageAttachment || canPreviewVideoAttachment
                       ? () => {
@@ -1922,7 +2002,12 @@ function ConversationComposerImpl({
                           className="block truncate text-ui-base font-medium text-foreground"
                           title={attachment.filename}
                         >
-                          {attachment.filename}
+                          {attachment.sourceKind === "topic-history"
+                            ? intl.formatMessage(
+                                { id: "chat.attachments.topicHistory" },
+                                { count: attachment.messageCount ?? 0 },
+                              )
+                            : attachment.filename}
                         </span>
                         <span className="block truncate text-ui-sm font-normal text-foreground-subtle">
                           {getComposerAttachmentTypeLabel(attachment.filename, attachment.mimeType)}
@@ -1989,7 +2074,8 @@ function ConversationComposerImpl({
         {codeCommentContexts.length > 0 ||
         webElementContexts.length > 0 ||
         pptxElementReferences.length > 0 ||
-        conversationSelectionReferences.length > 0 ? (
+        conversationSelectionReferences.length > 0 ||
+        pluginUiContexts.length > 0 ? (
           <div
             className="flex max-w-full flex-wrap items-center gap-2"
             data-composer-context-attachments-row="true"
@@ -2003,6 +2089,11 @@ function ConversationComposerImpl({
               contexts={webElementContexts}
               onRemove={removeWebElementContext}
               onRemoveAll={clearWebElementContexts}
+            />
+            <PluginUiModelContextChip
+              contexts={pluginUiContexts}
+              onRemove={removePluginUiContext}
+              onRemoveAll={clearPluginUiContexts}
             />
             <PptxElementReferenceChip
               references={pptxElementReferences}
@@ -2025,6 +2116,7 @@ function ConversationComposerImpl({
     clearCodeCommentContexts,
     clearConversationSelectionReferences,
     clearWebElementContexts,
+    clearPluginUiContexts,
     clearPptxElementReferences,
     codeCommentContexts,
     composerAttachments,
@@ -2035,19 +2127,21 @@ function ConversationComposerImpl({
     removeCodeCommentContext,
     removeConversationSelectionReference,
     removeWebElementContext,
+    removePluginUiContext,
     removePptxElementReference,
     conversationSelectionReferences,
     pendingShareContext,
     webElementContexts,
+    pluginUiContexts,
     pptxElementReferences,
     onOpenCodeViewer,
     openPptxElementReference,
   ]);
 
-  // Send/stop control cluster (parity with the legacy ChatViewComposer.submitControlNode:
-  // left model/thought/usage cluster + right stop or send).
-  // useMemo: the composer re-renders on every streaming snapshot; the cluster rebuilds only on semantic dep changes,
-  // avoiding a Tooltip/Select subtree rebuild per token batch.
+  // 发送/停止控制簇（对齐旧 ChatViewComposer.submitControlNode 结构：
+  // 左侧 model/thought/usage 簇 + 右侧 stop 或 send）。
+  // useMemo：composer 随流式 snapshot 高频重渲染，控制簇只在语义依赖变化时重建，
+  // 避免每个 token 批次都重建 Tooltip/Select 子树。
   const composerUsage = snapshot?.usage ?? null;
   const composerPhase = snapshot?.control.phase ?? null;
   const handleSelectModelTrace = useCallback(
@@ -2077,10 +2171,18 @@ function ConversationComposerImpl({
             sessionId={sessionId ?? null}
             phase={composerPhase}
             provider={provider}
+            isWebRemoteControl={isWebRemoteControl}
+            isMobileViewport={isMobileTextInputViewport}
             draftMode={draftMode}
             draftConfig={draftConfig}
             usage={composerUsage}
             disabled={disabled}
+            modelLocked={highspeedCard !== null}
+            highspeedPresented={highspeedPresented}
+            highspeedEntranceAnimated={highspeedEntranceAnimated}
+            highspeedSweepActive={highspeedSweepActive}
+            highspeedExpiresAt={highspeedCard?.expiresAt}
+            highspeedModel={highspeedCard?.model}
             activeConfigPicker={activeConfigPicker}
             onConfigPickerOpenChange={handleConfigPickerOpenChange}
             onSelectModel={handleSelectModelTrace}
@@ -2138,6 +2240,11 @@ function ConversationComposerImpl({
       handleStopClick,
       handleSendButtonClick,
       handleConfigPickerOpenChange,
+      highspeedCard,
+      highspeedEntranceAnimated,
+      highspeedPresented,
+      highspeedSweepActive,
+      isWebRemoteControl,
       mode,
       handleSelectModelTrace,
       modelSelectionReload,
@@ -2163,8 +2270,8 @@ function ConversationComposerImpl({
     ],
   );
 
-  // Bottom-left: mode selection + CUA entry + current-session background works. followupMode is synced to the CLI from app settings,
-  // with no composer-local toggle; the background entry consumes the same snapshot, never a second task state.
+  // 左下：模式选择 + CUA 入口 + 当前 session 后台任务入口。followupMode 由 app 设置页同步到 CLI，
+  // 不在 composer 暴露局部开关；后台入口只消费同一 snapshot，不维护第二份任务状态。
   const leadingActionsNode = useMemo(
     () => (
       <>
@@ -2178,12 +2285,13 @@ function ConversationComposerImpl({
           onConfigPickerOpenChange={handleConfigPickerOpenChange}
           onSwitchMode={onSwitchMode}
         />
-        {/* The attachment-gallery rework once overwrote leadingActions, dropping the persistent CUA entry.
-            The entry itself still owns platform/remote/settings visibility; no duplicate judgment here. */}
+        {/* Bug 原因：附件画廊 rebase 曾整段覆盖 leadingActions，误删 staging 的 CUA 常驻入口。
+            入口自身继续负责平台、远程与设置可见性，不在 composer 重复判定。 */}
         <V4ComposerCuaEntry
           workspacePath={workspacePath}
           workspaceIdentity={workspaceIdentity}
           remoteSessionId={remoteSessionId}
+          isWebRemoteControl={isWebRemoteControl}
           currentSessionBusy={canStop}
         />
         <ConversationBackgroundWorkTrigger
@@ -2200,6 +2308,7 @@ function ConversationComposerImpl({
       disabled,
       draftConfig,
       handleConfigPickerOpenChange,
+      isWebRemoteControl,
       backgroundWorkOpenTarget,
       onOpenRunningBackgroundWorks,
       onSwitchMode,
@@ -2213,17 +2322,17 @@ function ConversationComposerImpl({
   );
   const isBlockedByInteraction = blockingRequestId !== null;
 
-  // v4 pendingInteractions is a bottom-dock blocking state; the composer must stay mounted,
-  // hidden only visually and from the a11y tree, so permission/Q&A cards never cost the draft or editor state.
+  // v4 pendingInteractions 是 bottom dock 阻塞态；composer 必须保留挂载，
+  // 只在视觉和可访问树中隐藏，避免权限/问答卡片出现时丢失草稿和编辑器内部状态。
   return (
-    // The outer bottom dock owns sticky and main-column width; the composer organizes error surface and input shell.
-    // centered (centered draft layout, m5): narrower max-w-2xl (the draft step of legacy
-    // getChatViewComposerWidthClassName), positioned by the host centered container.
-    // With a contextHeader (draft state), the inner input surface wears the legacy ChatViewComposer card:
-    // rounded-2xl bg-surface shadow-xl/5; session state falls back to the opaque page background.
-    // Though the error banner precedes the contextHeader, it must not share the input rounded surface,
-    // or it reads as the input-card header; narrowing the surface to workspace header + editor keeps the DOM
-    // order shared by desktop and phone web while restoring separate layers for error and input card.
+    // 外层 bottom dock 负责 sticky 与横向主列宽度；composer 自身组织错误提示与输入壳。
+    // centered（居中草稿布局，m5）：收窄 max-w-2xl（旧
+    // getChatViewComposerWidthClassName 的 draft 档），由宿主的居中容器摆位。
+    // 有 contextHeader（草稿态）时，内层输入 surface 套旧 ChatViewComposer 同款卡：
+    // rounded-2xl bg-surface shadow-xl/5；会话态回落不透明页面底色。
+    // 错误横幅虽然排在 contextHeader 前面，但不能与输入区共用同一个圆角 surface，
+    // 视觉上会被误认为输入卡标题栏；将 surface 边界收窄到工作区头和编辑器后，桌面与手机
+    // Web 仍共享同一 DOM 顺序，同时恢复错误提示与输入卡之间的独立层级。
     <div
       data-testid={TID_V4_COMPOSER}
       data-input-routing={mode}
@@ -2234,7 +2343,7 @@ function ConversationComposerImpl({
         centered && "max-w-2xl",
       )}
     >
-      {/* Legacy ChatViewComposer-style hidden file input (web / no-native-picker fallback). */}
+      {/* 旧 ChatViewComposer 同款隐藏 file input（web/无 native picker 平台回退）。 */}
       <input
         ref={attachmentsApi.attachmentInputRef}
         type="file"
@@ -2243,9 +2352,9 @@ function ConversationComposerImpl({
         onChange={attachmentsApi.handleAttachmentInputChange}
       />
       {visibleError ? (
-        // Attachment errors alone would miss the session-level lastError; after a task failure the reason belongs above the input too.
-        // Reuses the legacy ChatErrorBanner shell, fed only the SessionPane-normalized current error.
-        // The error banner sits outside the input surface, before the desktop/phone-shared contextHeader.
+        // 仅展示附件错误会漏掉会话级 lastError，任务失败后也应在输入框上方显示原因。
+        // 这里复用旧 ChatErrorBanner 壳，只接收 SessionPane 已归一化后的当前错误。
+        // 错误横幅独立于输入 surface，并先于桌面和手机共用的 contextHeader。
         <div className="mb-6 w-full shrink-0">
           <ChatErrorBanner
             error={visibleError}
@@ -2256,19 +2365,32 @@ function ConversationComposerImpl({
         </div>
       ) : null}
       <div
+        data-highspeed-composer={highspeedCard ? "true" : undefined}
+        data-highspeed-entrance={highspeedCard ? highspeedEntrance : undefined}
         className={cn(
-          "chat-composer-input-surface w-full",
+          "chat-composer-input-surface relative w-full",
           contextHeader && "rounded-2xl bg-surface shadow-xl/5",
+          highspeedCard && "highspeed-composer-surface",
+          highspeedPresented && "highspeed-placeholder-presented",
         )}
       >
+        {highspeedCard ? (
+          <HighspeedComposerBackground
+            key={highspeedCard.cardId}
+            animated={highspeedEntranceAnimated}
+            onModelTransitionStart={handleHighspeedModelTransitionStart}
+          />
+        ) : null}
         {contextHeader ? (
-          // Legacy ChatViewComposer contextHeaderContent wrapper (workspace menu + Git branch).
-          <div className="p-1.5 flex min-w-0 flex-wrap items-center gap-0">{contextHeader}</div>
+          // 旧 ChatViewComposer contextHeaderContent 同款包装（workspace 菜单 + Git 分支）。
+          <div className="relative z-10 p-1.5 flex min-w-0 flex-wrap items-center gap-0">
+            {contextHeader}
+          </div>
         ) : null}
         {conversationSelectionLimitReason ? (
           <div
             role="alert"
-            className="mb-2 w-full rounded-lg border border-[var(--color-warning)]/30 bg-[var(--color-warning)]/10 px-3 py-2 text-ui-base text-foreground"
+            className="relative z-10 mb-2 w-full rounded-lg border border-[var(--color-warning)]/30 bg-[var(--color-warning)]/10 px-3 py-2 text-ui-base text-foreground"
           >
             {intl.formatMessage({
               id: `chat.selections.limit.${conversationSelectionLimitReason}`,
@@ -2285,34 +2407,42 @@ function ConversationComposerImpl({
           submitting={pending}
           submitDisabled={pending || !routingAllowsSend || !attachmentsReady || !submissionReady}
           allowSubmitWhenEmpty={
-            // The send button already counts code comments as sendable context, but this check missed the same state:
-            // with empty text plus a code comment, Enter judged empty and forced the pointer.
+            // 发送按钮已把代码评论视为可发送上下文，但这里曾漏掉同一状态，
+            // 导致空文本仅附代码评论时 Enter 被编辑器判为空，必须改点发送按钮。
             hasCodeCommentContexts ||
             hasAttachments ||
             hasWebElementContexts ||
             hasPptxElementReferences ||
-            hasConversationSelectionReferences
+            hasConversationSelectionReferences ||
+            hasPluginUiContexts
           }
           enterSubmits={enterSubmits}
           onModifiedSubmit={modifiedEnterSubmits ? handleModifiedEditorSubmit : undefined}
           submitLabel={sendTooltipTitle}
           showSlashButton
-          // @ is the main entry for Plugin / file / conversation / canvas; # session and $ / ¥ / ￥ skills
-          // remain compatible triggers in MentionPlugin but are not duplicated in the + menu.
+          // @ 是 Plugin / 文件 / 对话 / 画板主入口；# 会话与 $ / ¥ / ￥ Skills
+          // 仍由 MentionPlugin 保留兼容触发，但不在 + 菜单重复展示。
           showMentionButton
           topContent={topContentNode}
           attachmentAction={attachmentAction}
           inputTestId={TID_V4_COMPOSER_INPUT}
           inputApiRef={inputApiRef}
           promptHistory={promptHistory}
-          // The command catalog must come wholly from the CLI workspace slash catalog; the UI only
-          // hides goal on secondary panes per product capability, never appending built-ins or aliases.
+          avoidIosInputFocusZoom={avoidIosInputFocusZoom}
+          compactPlaceholder={compactMobilePlaceholder}
+          // Bugfix 原因：命令目录必须完整来自 CLI workspace slash catalog；UI 只在
+          // secondary pane 按产品能力隐藏 goal，不再追加任何内建命令或别名。
           excludedSlashCommandNames={suppressGoalCommands ? ["goal"] : undefined}
           appSlashCommands={appSlashCommands}
           enableMentionPanel
           leadingActions={leadingActionsNode}
           submitControl={submitControlNode}
           className="p-0"
+          shellClassName={
+            highspeedCard
+              ? "relative z-10 !rounded-none !border-0 !bg-transparent !transition-none hover:!border-transparent focus-within:!border-transparent focus-within:!bg-transparent"
+              : undefined
+          }
           onChange={handleEditorChange}
           onFocus={handleEditorFocus}
           onSubmit={handleEditorSubmit}

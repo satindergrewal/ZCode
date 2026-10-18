@@ -40,7 +40,7 @@ interface DiscoveredShareArtifact extends MaterializedShareArtifact {
   row: ArtifactRow;
 }
 
-interface ConversationShareArtifactSnapshot {
+export interface ConversationShareArtifactSnapshot {
   rows: ConversationRow[];
   bytesBySourceRef: Map<string, Uint8Array>;
   additionalArtifacts: ConversationSharePublicArtifact[];
@@ -115,15 +115,19 @@ async function materializeRegisteredArtifacts(options: {
   workspacePath: string;
   maxArtifactBytes: number;
   artifacts: ConversationSharePublicArtifact[];
+  inlineBytesBySourceRef?: ReadonlyMap<string, Uint8Array>;
   artifactSource: ConversationShareArtifactSource;
 }): Promise<MaterializedShareArtifact[]> {
   const materialized: MaterializedShareArtifact[] = [];
   for (const artifact of options.artifacts) {
-    const { bytes, canonicalPath } = await options.artifactSource.read({
-      workspacePath: options.workspacePath,
-      ref: artifact.sourceRef,
-      maxBytes: options.maxArtifactBytes,
-    });
+    const inlineBytes = options.inlineBytesBySourceRef?.get(artifact.sourceRef);
+    const { bytes, canonicalPath } = inlineBytes
+      ? { bytes: inlineBytes, canonicalPath: artifact.sourceRef }
+      : await options.artifactSource.read({
+          workspacePath: options.workspacePath,
+          ref: artifact.sourceRef,
+          maxBytes: options.maxArtifactBytes,
+        });
     const sha256 = createHash("sha256").update(bytes).digest("hex");
     // Rows are recorded at tool completion and the user may edit the same path before publishing;
     // re-verify current bytes or the projection/manifest describe the old file while multipart
@@ -669,6 +673,7 @@ export async function buildConversationShareArtifactSnapshot(options: {
   input: PublishTextConversationInput;
   selectedRows: ConversationRow[];
   registeredArtifacts: ConversationSharePublicArtifact[];
+  inlineBytesBySourceRef?: ReadonlyMap<string, Uint8Array>;
   capabilities: ConversationShareCapabilities;
   revision: number;
   logEpoch: string;
@@ -691,6 +696,7 @@ export async function buildConversationShareArtifactSnapshot(options: {
     workspacePath: options.input.workspacePath,
     maxArtifactBytes: options.capabilities.max_artifact_bytes,
     artifacts: options.registeredArtifacts,
+    inlineBytesBySourceRef: options.inlineBytesBySourceRef,
     artifactSource: options.artifactSource,
   });
   const discovered = await discoverPreviewArtifacts({

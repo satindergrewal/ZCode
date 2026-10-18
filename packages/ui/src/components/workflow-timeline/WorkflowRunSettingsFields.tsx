@@ -1,10 +1,8 @@
 // ============================================================
-// The Configure popover's two fields
+// 「配置」弹层的两个字段
 // ============================================================
-// Split out of WorkflowRunSettingsPopover.tsx: that side owns form state, the command, and
-// the consequence line; this only draws two controlled fields — the subagent model
-// (composer's model menu + reasoning level) and the max-concurrent-runs stepper. Props
-// arrive fully resolved.
+// 从 WorkflowRunSettingsPopover.tsx 拆出：那边管表单状态、命令与后果句，这里只画两个受控字段——
+// 子代理模型（composer 的模型菜单 + 思考档）与「最大并发数」步进器。props 全是烹熟的值。
 
 import { useMemo, useRef, useState } from "react";
 import { MinusIcon, PlusIcon } from "lucide-react";
@@ -28,16 +26,14 @@ import { clampWorkflowRunSettingsBound } from "./workflowRunSettings.js";
 
 const MODEL_ITEM_NEVER_LOCKED = () => false;
 
-/** Field label: 12px, secondary color, 4px above its control. */
+/** 字段标签：12px、次要色，控件上方 4px。 */
 function FieldLabel({ children }: { children: string }) {
   return <div className="text-ui-sm text-foreground-subtle">{children}</div>;
 }
 
 /**
- * Subagent model: the composer's exact model menu with Session model first; when the
- * chosen model has reasoning levels, the trigger gets the same level control the settings
- * page's subagent row uses. An empty list collapses the field to one sentence (the cap
- * stays adjustable).
+ * 子代理模型：composer 的同一份模型菜单，「会话模型」排第一；所选模型有思考档时，触发器旁边是
+ * 设置页子代理那一格用的同一个思考档控件。清单为空时整格换成一句话（上限仍可调）。
  */
 export function WorkflowRunSettingsModelField({
   badge,
@@ -51,16 +47,16 @@ export function WorkflowRunSettingsModelField({
   triggerLabel,
   value,
 }: {
-  /** Badge in the trigger: "Session model" or "Unavailable"; absent means none. */
+  /** 触发器里的徽标：「会话模型」或「不可用」；缺席即无。 */
   badge?: { text: string; tone: "subtle" | "warning" };
   disabled: boolean;
   groups: readonly ModelSelectGroup[];
   leadingItem: ModelSelectGroupItem;
-  /** The agent has no selectable models: the field degrades to one sentence. */
+  /** 当前 agent 没有可选模型：整格退成一句话。 */
   noCatalog: boolean;
   onLevelChange: (level: string) => void;
   onValueChange: (value: string) => void;
-  /** The chosen model's reasoning level; absent hides the level control. */
+  /** 所选模型的思考档；缺席即不画思考档控件。 */
   thoughtOption: ZCodeConfigOption | null;
   triggerLabel: string;
   value: string;
@@ -69,7 +65,7 @@ export function WorkflowRunSettingsModelField({
   const levelTriggerRef = useRef<HTMLSpanElement | null>(null);
   const [levelOpen, setLevelOpen] = useState(false);
   const label = intl.formatMessage({ id: "chat.toolCall.workflow.run.settings.model" });
-  // ModelConfigSelect is memoized: a fresh inline array each render would defeat the memo.
+  // ModelConfigSelect 是 memo 组件：内联数组每次渲染都是新引用，会让它的 memo 形同虚设。
   const leadingItems = useMemo(() => [leadingItem], [leadingItem]);
   if (noCatalog) {
     return (
@@ -143,30 +139,30 @@ export function WorkflowRunSettingsModelField({
 }
 
 /**
- * Max-concurrent-runs stepper: minus, tabular number, plus, from 1 to the machine
- * ceiling. The ceiling itself means "no bound of its own" — copy becomes "= machine
- * limit". Unknown ceiling (old CLI): no cap, no hint, the number is freely typable.
+ * 「最大并发数」步进器：减、等宽数字、加，从 1 起、**没有上限**——默认并发 D 是起点不是天花板
+ * （docs/dynamic-workflow/presentation.md「The settings popover」）。提示写「默认 N」，停在 D 上即
+ * 「本 run 没有自己的界」，提示改写成「= 默认」。D 未知（老 CLI）时没有提示，数字照样可以直接敲。
  */
 export function WorkflowRunSettingsBoundField({
   bound,
-  ceiling,
+  defaultConcurrency,
   disabled,
   onChange,
 }: {
   bound: number | null;
-  ceiling: number | undefined;
+  defaultConcurrency: number | undefined;
   disabled: boolean;
   onChange: (bound: number) => void;
 }) {
   const { intl } = useZCodeIntl();
   const hint =
-    ceiling === undefined
+    defaultConcurrency === undefined
       ? undefined
-      : bound !== null && bound >= ceiling
-        ? intl.formatMessage({ id: "chat.toolCall.workflow.run.settings.limit.atCeiling" })
+      : bound === defaultConcurrency
+        ? intl.formatMessage({ id: "chat.toolCall.workflow.run.settings.limit.atDefault" })
         : intl.formatMessage(
-            { id: "chat.toolCall.workflow.run.settings.limit.ceiling" },
-            { n: ceiling },
+            { id: "chat.toolCall.workflow.run.settings.limit.default" },
+            { n: defaultConcurrency },
           );
   return (
     <div className="flex flex-col gap-1" data-testid="workflow-run-settings-bound">
@@ -182,9 +178,7 @@ export function WorkflowRunSettingsBoundField({
               })}
               data-testid="workflow-run-settings-bound-decrease"
               disabled={disabled || bound === null || bound <= 1}
-              onClick={() =>
-                bound !== null && onChange(clampWorkflowRunSettingsBound(bound - 1, ceiling))
-              }
+              onClick={() => bound !== null && onChange(clampWorkflowRunSettingsBound(bound - 1))}
               size="icon-xs"
             >
               <MinusIcon className="size-3.5" />
@@ -198,7 +192,7 @@ export function WorkflowRunSettingsBoundField({
             inputMode="numeric"
             onChange={(event) => {
               const parsed = Number.parseInt(event.target.value, 10);
-              if (Number.isFinite(parsed)) onChange(clampWorkflowRunSettingsBound(parsed, ceiling));
+              if (Number.isFinite(parsed)) onChange(clampWorkflowRunSettingsBound(parsed));
             }}
             placeholder="—"
             value={bound === null ? "" : String(bound)}
@@ -209,10 +203,8 @@ export function WorkflowRunSettingsBoundField({
                 id: "chat.toolCall.workflow.run.settings.limit.increase",
               })}
               data-testid="workflow-run-settings-bound-increase"
-              disabled={disabled || bound === null || (ceiling !== undefined && bound >= ceiling)}
-              onClick={() =>
-                bound !== null && onChange(clampWorkflowRunSettingsBound(bound + 1, ceiling))
-              }
+              disabled={disabled || bound === null}
+              onClick={() => bound !== null && onChange(clampWorkflowRunSettingsBound(bound + 1))}
               size="icon-xs"
             >
               <PlusIcon className="size-3.5" />

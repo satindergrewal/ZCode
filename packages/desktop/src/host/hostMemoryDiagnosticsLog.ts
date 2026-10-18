@@ -16,14 +16,14 @@ interface HostMemoryDiagnosticsTimerHandle {
 
 export interface StartHostMemoryDiagnosticsLogOptions {
   logger: HostMemoryDiagnosticsLogger;
-  /** Domain counters from the services layer (`collectServiceMemoryDiagnostics`). */
+  /** services 层的领域计数器（`collectServiceMemoryDiagnostics`）。 */
   collectCounters(): Record<string, number>;
   readMemoryUsage?: () => NodeJS.MemoryUsage;
   /**
-   * A second outlet for the same `memoryUsage()` reading: the resource-telemetry host sample.
+   * 同一次 `memoryUsage()` 读数的第二个出口：资源遥测的 host 样本
    *
-   * Independent of the write gating: local logs may be skipped by the gate, but telemetry samples go out every 60s;
-   * a throwing callback only drops the telemetry sample, never the local log.
+   * 与写盘门控无关——本地日志可能被门控跳过，遥测样本每 60 秒都要发；
+   * 该回调抛错只丢遥测样本，不影响本地日志。
    */
   onMemoryUsage?: (memoryUsage: NodeJS.MemoryUsage) => void;
   now?: () => number;
@@ -34,16 +34,16 @@ export interface StartHostMemoryDiagnosticsLogOptions {
   };
 }
 
-interface HostMemoryDiagnosticsLog {
-  /** Samples once immediately (tests/manual trigger); returns whether it wrote to disk. */
+export interface HostMemoryDiagnosticsLog {
+  /** 立即采样一次（供测试与手动触发），返回是否写盘。 */
   sampleNow(): boolean;
   stop(): void;
 }
 
 /**
- * Memory diagnostics for the Local Host process itself.
- * Samples every 60s and, after change/heartbeat gating, writes one `[memory] role=utility_host ...` line through the
- * existing host logger into the Desktop main log; no new parentPort message types.
+ * Local Host 进程自身的内存诊断日志。
+ * 60s 采样、变化/心跳门控后写一行 `[memory] role=utility_host ...`，经既有 host logger
+ * 转发到 Desktop 主日志；不新增 parentPort 消息类型。
  */
 export function startHostMemoryDiagnosticsLog(
   options: StartHostMemoryDiagnosticsLogOptions,
@@ -62,14 +62,14 @@ export function startHostMemoryDiagnosticsLog(
     try {
       memoryUsage = readMemoryUsage();
     } catch {
-      // On read failure neither outlet has data; drop only the current sample.
+      // 读数失败时两个出口都没有事实可用，只丢当前样本。
       return false;
     }
 
     try {
       options.onMemoryUsage?.(memoryUsage);
     } catch {
-      // A telemetry-outlet failure drops only that sample; the local diagnostic log still writes.
+      // 遥测出口失败只丢当前样本，本地诊断日志照写。
     }
 
     try {
@@ -85,7 +85,7 @@ export function startHostMemoryDiagnosticsLog(
       options.logger.info(formatMemorySampleLine(sample, reason));
       return true;
     } catch {
-      // A sampling failure drops only the current sample and must not affect Host services.
+      // 诊断采样失败只丢当前样本，不能影响 Host 服务。
       return false;
     }
   };
@@ -97,7 +97,7 @@ export function startHostMemoryDiagnosticsLog(
   try {
     handle.unref?.();
   } catch {
-    // Keep the handle for stop cleanup even when unref is unavailable.
+    // unref 不可用时仍保留 handle 供 stop 回收。
   }
 
   return {

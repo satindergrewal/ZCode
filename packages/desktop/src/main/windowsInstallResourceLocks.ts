@@ -1,5 +1,11 @@
 import { execFile } from "node:child_process";
-import { existsSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
@@ -10,13 +16,13 @@ const WINDOWS_PACKAGED_RESOURCE_DIRS = ["glm", "tools"];
 // handover window.
 export const WINDOWS_UPDATE_LOCK_RELEASE_GRACE_MS = 750;
 
-interface WindowsInstallResourceLockProcess {
+export interface WindowsInstallResourceLockProcess {
   pid: number;
   commandLine?: string;
   executablePath?: string;
 }
 
-interface WindowsUpdateProcessCleanupResult<TTerminationResult> {
+export interface WindowsUpdateProcessCleanupResult<TTerminationResult> {
   initialLockProcesses: WindowsInstallResourceLockProcess[];
   terminationPids: number[];
   terminationResults: TTerminationResult[];
@@ -27,7 +33,9 @@ interface WindowsUpdateProcessCleanupResult<TTerminationResult> {
 interface WindowsUpdateProcessCleanupOptions<TTerminationResult> {
   resourceLockMarkers: readonly string[];
   lockReleaseGraceMs: number;
-  scan: (markers: readonly string[]) => Promise<WindowsInstallResourceLockProcess[]>;
+  scan: (
+    markers: readonly string[],
+  ) => Promise<WindowsInstallResourceLockProcess[]>;
   terminate: (pids: number[]) => Promise<TTerminationResult[]>;
   delay: (ms: number) => Promise<void>;
 }
@@ -47,7 +55,10 @@ export async function runWindowsUpdateProcessCleanup<TTerminationResult>(
     // are not identity. Even if the scanner misbehaves, keep only processes still referencing bundled
     // resources at cleanup time, so taskkill /T /F never hits unrelated trees.
     initialLockProcesses = scannedProcesses.filter((processInfo) =>
-      isWindowsProcessReferencingResourceMarkers(processInfo, options.resourceLockMarkers),
+      isWindowsProcessReferencingResourceMarkers(
+        processInfo,
+        options.resourceLockMarkers,
+      ),
     );
   } catch (error) {
     // A broken helper scan must not block the update; report to main and continue the NSIS handover.
@@ -124,7 +135,9 @@ function normalizeForWindowsCommandLineMatch(value: string): string {
   return value.trim().replaceAll("/", "\\").toLowerCase();
 }
 
-export function resolveWindowsPackagedResourceLockMarkers(resourcesPath: string): string[] {
+export function resolveWindowsPackagedResourceLockMarkers(
+  resourcesPath: string,
+): string[] {
   return WINDOWS_PACKAGED_RESOURCE_DIRS.map((dir) => join(resourcesPath, dir));
 }
 
@@ -196,7 +209,7 @@ export function probeWindowsPackagedResourceWritable(
   });
 }
 
-function isWindowsProcessReferencingResourceMarkers(
+export function isWindowsProcessReferencingResourceMarkers(
   processInfo: WindowsInstallResourceLockProcess,
   markers: readonly string[],
 ): boolean {

@@ -21,7 +21,11 @@ export const EVAL_WORKFLOW_SNIPPET_SOURCE_ERROR =
 
 export const EvalWorkflowSnippetInputSchema = z
   .object({
-    code: z.string().min(1).optional().describe("The snippet, inline. This OR `path`, never both."),
+    code: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("The snippet, inline. This OR `path`, never both."),
     /**
      * The snippet's second source. **The whole file is the code**:
      * snippets have none of saved-definitions' semantics, and a file that merely starts with `/* zcode-workflow` must not be stripped as a declaration block.

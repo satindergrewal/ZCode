@@ -8,17 +8,17 @@ import {
   type PhaseSourceFact,
 } from "./phase-graph.js";
 import type { SiteGraph, SiteLoc, SiteNode } from "./types.js";
-import { SINK_ID, UNKNOWN_LANE, WORKSPACE_LANE } from "./causality-graph-types.js";
+import { MAIN_LANE, SINK_ID, UNKNOWN_LANE, WORKSPACE_LANE } from "./causality-graph-types.js";
 import type { CausalityGraph, Certainty, Fact, Lane } from "./causality-graph-types.js";
 import type { OrderEdge, Region, Step, StepKind } from "./causality-graph-types.js";
-import { dedupeFacts, expandMaySetLanes, weakest } from "./causality-graph-lanes.js";
+import { dedupeFacts, expandMaySetLanes, fillOf, weakest } from "./causality-graph-lanes.js";
 
 /** Re-exported so the causality vocabulary is importable from one module. */
 export type { NamePattern } from "./types.js";
-// Split: this file sat at oxlint's max-lines cap (400). The public types and the three lane constants
-// live in causality-graph-types.ts, may-set lane expansion and fact dedupe in causality-graph-lanes.ts; re-exported here
-// verbatim, leaving existing from causality-graph.js imports untouched.
-export { SINK_ID, UNKNOWN_LANE, WORKSPACE_LANE } from "./causality-graph-types.js";
+// 拆分：本文件顶到 oxlint max-lines 上限（400 行）。公开类型与三个 lane 常量定义
+// 在 causality-graph-types.ts，may-set 车道展开与事实去重在 causality-graph-lanes.ts；这里原样
+// 再导出，既有的 `from "./causality-graph.js"` 引用一个不改。
+export { MAIN_LANE, SINK_ID, UNKNOWN_LANE, WORKSPACE_LANE } from "./causality-graph-types.js";
 export type { CausalityGraph, Certainty, Lane, OrderEdge } from "./causality-graph-types.js";
 export type { Phase, Region, Step, StepKind } from "./causality-graph-types.js";
 
@@ -57,7 +57,8 @@ export function projectCausalityGraph(core: AnalysisCore, site: SiteGraph): Caus
 
   const stepNodes = site.nodes.filter(
     (node): node is SiteNode & { loc: SiteLoc } =>
-      (node.kind === "ask" || node.kind === "world-read") && node.loc !== undefined,
+      (node.kind === "ask" || node.kind === "world-read" || node.kind === "hole") &&
+      node.loc !== undefined,
   );
   const stepIds = new Set(stepNodes.map((node) => node.id));
 
@@ -133,10 +134,10 @@ export function projectCausalityGraph(core: AnalysisCore, site: SiteGraph): Caus
     return parent?.id;
   };
 
-    // Steps emitted from arms ending in continue / break are deferred relative to the loop they jump out of:
-    // step -> (loop id -> jump kind). Later issues in the same round must re-judge their seq facts (see
-    // Fact.viaJump). The arm is the innermost branch region inside the target loop on the jump-event region chain; an unconditional
-    // continue written directly in the loop body has no arm, hence nothing to defer (the round's remaining statements would not run anyway).
+  // 以 `continue` / `break` 结束的分支臂里发出的 step，相对它跳出的那个循环被「延后」：
+  // step → (循环 id → 跳转种类)。同一轮里更靠后的 issue 对它们的 seq 事实要改判（见
+  // `Fact.viaJump`）。臂 = 跳转事件区域链上、目标循环之内最靠里的 `branch` 区域；直接写在
+  // 循环体里的无条件 `continue` 没有臂，也就没有可延后的东西（本轮剩余语句本来就不会跑）。
   const deferredByStep = new Map<string, Map<string, "continue" | "break">>();
   for (const event of trace.events) {
     // `mark` leaves belong to the control-flow projection only. Skipped up front:
@@ -213,8 +214,8 @@ export function projectCausalityGraph(core: AnalysisCore, site: SiteGraph): Caus
         mayHaveSettled = mayHaveSettled === undefined ? maybe : mayHaveSettled && maybe;
       }
       if (mayHaveSettled === undefined) continue;
-            // Deferral: if from was emitted in an arm leaving L while this issue is still inside L, then a
-            // break arm means the fact cannot hold (neither this round nor the next); a continue arm means next round only.
+      // 延后判定：`from` 若在一个跳出了 L 的臂里发出，而这次 issue 仍在 L 之内，那么
+      // `break` 臂 → 事实不成立（本轮和下一轮都到不了），`continue` 臂 → 只能靠下一轮。
       let viaJump = false;
       let unrealizable = false;
       for (const [loop, kind] of deferredByStep.get(from) ?? []) {
@@ -239,6 +240,10 @@ export function projectCausalityGraph(core: AnalysisCore, site: SiteGraph): Caus
   for (const node of stepNodes) {
     if (node.kind === "world-read") {
       laneSet.set(node.id, [WORKSPACE_LANE]);
+      continue;
+    }
+    if (node.kind === "hole") {
+      laneSet.set(node.id, [MAIN_LANE]); // 留白等的是主代理：它的车道（docs/analysis.md「Sites」）
       continue;
     }
     const actors = node.actors ?? [];
@@ -291,7 +296,9 @@ export function projectCausalityGraph(core: AnalysisCore, site: SiteGraph): Caus
     (a, b) => (minIssue.get(a.id) ?? 0) - (minIssue.get(b.id) ?? 0),
   );
   const realLanes = (step: string): string[] =>
-    (laneSet.get(step) ?? []).filter((lane) => lane !== WORKSPACE_LANE && lane !== UNKNOWN_LANE);
+    (laneSet.get(step) ?? []).filter(
+      (lane) => lane !== WORKSPACE_LANE && lane !== UNKNOWN_LANE && lane !== MAIN_LANE,
+    );
   for (let i = 0; i < issueOrder.length; i += 1) {
     for (let j = i + 1; j < issueOrder.length; j += 1) {
       const a = issueOrder[i] as SiteNode;
@@ -421,7 +428,7 @@ export function projectCausalityGraph(core: AnalysisCore, site: SiteGraph): Caus
       // round), not WHERE it was witnessed.
       ...rest,
       kind: "carry" as const,
-            // Keep the underlying kind: carry minimization must know whether the back edge was a hard dependency or pure order before retyping.
+      // 保留底层 kind：carry 最小化需要知道回边改型前是硬依赖还是纯顺序。
       ...(kind === "carry" ? {} : { carryOf: kind }),
     });
   }
@@ -430,9 +437,9 @@ export function projectCausalityGraph(core: AnalysisCore, site: SiteGraph): Caus
 
   const edges: OrderEdge[] = [];
   const fedBy: string[] = [];
-    // Quotient-graph input: the same reduced facts, certainty inherited per endpoint, sink edges dropped (phase-to-sink
-    // does not graph; the UI derives it from the feeding step's phase). carryOf must come along -- phase edges run the same
-    // reduceOrdering, and carry minimization judges by the underlying kind.
+  // 商图的输入：同一批归约后的事实，certainty 已按端点继承过，sink 边剔除（阶段→sink 不
+  // 出图，UI 由 fedBy step 的 phase 推导）。carryOf 必须带上——阶段边跑的是同一个
+  // reduceOrdering，carry 最小化按底层 kind 判见证。
   const phaseFacts: PhaseSourceFact[] = [];
   for (const fact of reduced) {
     const certainty = weakest([fact.certainty, certaintyOf(fact.from), certaintyOf(fact.to)]);
@@ -469,6 +476,7 @@ export function projectCausalityGraph(core: AnalysisCore, site: SiteGraph): Caus
   for (const node of stepNodes) for (const lane of laneSet.get(node.id) ?? []) usedLanes.add(lane);
 
   const laneOrder: Lane[] = [];
+  if (usedLanes.has(MAIN_LANE)) laneOrder.push({ id: MAIN_LANE });
   if (usedLanes.has(WORKSPACE_LANE)) laneOrder.push({ id: WORKSPACE_LANE });
   for (const actor of site.actors) {
     if (!usedLanes.has(actor.id)) continue;
@@ -522,11 +530,15 @@ export function projectCausalityGraph(core: AnalysisCore, site: SiteGraph): Caus
     if (lane.families !== undefined) lane.families = lane.families.map(renamed);
   }
 
+  // 开放的留白自己的 id 不带前缀（名字键，hole-id.ts）：它属于哪次补全要问站点表。
+  const holeFill = new Map(core.sites.holes.map((hole) => [hole.id, hole.fill]));
   const steps: Step[] = stepNodes.map((node) => {
     const lanes = laneSet.get(node.id) ?? [UNKNOWN_LANE];
     const repeats = repeat.get(node.id);
+    const fill = fillOf(node.id) ?? holeFill.get(node.id);
     return {
       certainty: certaintyOf(node.id),
+      ...(fill === undefined ? {} : { fill }),
       id: node.id,
       kind: node.kind as StepKind,
       label: node.label,
@@ -546,8 +558,8 @@ export function projectCausalityGraph(core: AnalysisCore, site: SiteGraph): Caus
     steps,
     ...(fedBy.length > 0 ? { sink: { fedBy } } : {}),
   });
-    // The phase projection runs last: it mechanically rewrites the finished graph (cross-phase copies + quotient) and is the identity
-    // on zero-marker scripts -- the regression pin for existing snapshots.
+  // 阶段投影最后跑：它对成品图做机械改写（跨阶段拷贝 + 商图），并且在零标记脚本上是恒等
+  // 函数——既有快照的回归钉就是这一条。
   return projectPhaseGraph(
     expanded,
     trace.phases,

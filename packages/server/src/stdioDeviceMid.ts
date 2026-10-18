@@ -1,37 +1,32 @@
-import { ensureDeviceMid as ensureSharedDeviceMid } from "@zcode/services/node";
+import { ensureTelemetryDeviceMid } from "@zcode/services/node";
 
-interface EnsureRemoteServerDeviceMidOptions {
-  /** Test injection only; production always uses the services ensureDeviceMid. */
+export interface EnsureRemoteServerDeviceMidOptions {
+  /** 仅测试注入；生产固定使用 services 的 ensureTelemetryDeviceMid。 */
   ensureDeviceMid?: () => Promise<string>;
   log: (...args: unknown[]) => void;
 }
 
 /**
- * Ensures at remote-server startup that the host owns its own deviceMid.
+ * 远端 server 启动时确保所在主机拥有自己的 deviceMid。
  *
- * Remote workspaces (SSH/WSL/Docker) have no Desktop main process, and
- * historically nothing wrote the device identity file on the remote host while
- * buildZCodeSourceHeaders() is read-only. Since 3.12.0 the Start Plan entitlement
- * is queried by the remote itself, so billing/balance requests without
- * X-Device-Mid were rejected by the server as parameter errors and remote
- * workspaces could not see Start Plan models. Desktop main owns this locally via
- * ensureDesktopDeviceMidSync; the remote stdio entry owns the same duty here,
- * reusing the same file, fields, and lock, sharing one device identity with a
- * co-located zcode-cli.
+ * 远程工作区（SSH/WSL/Docker）里没有 Desktop main 进程，过去没有任何进程会在远端主机
+ * 写设备身份文件，而 buildZCodeSourceHeaders() 只读不生成。3.12.0 起 Start Plan 权益由
+ * 远端自己查询，billing/balance 请求因缺 X-Device-Mid 被服务端拒绝为 parameter error，远程工作区
+ * 看不到 Start Plan 模型。Desktop main 通过 ensureDesktopDeviceMidSync 承担本地的这一职责，这里让
+ * 远端 stdio entry 承担同一职责，复用同一个文件、字段与锁，与同机 zcode-cli 共享同一个设备身份。
  *
- * Failure never blocks startup: a missing device identity only drops one header
- * on ZCode endpoint requests (same as before the fix) and nothing else on the
- * remote server depends on it. Log a warn with the cause; never fabricate an ID.
+ * 失败不阻断启动：设备标识缺失只会让 ZCode endpoint 请求少一个 header（与修复前行为一致），
+ * 远端 server 的其余能力不依赖它；这里记录 warn 并保留原因，不伪造设备 ID。
  */
 export async function ensureRemoteServerDeviceMid(
   options: EnsureRemoteServerDeviceMidOptions,
 ): Promise<string | undefined> {
-  const ensureDeviceMid = options.ensureDeviceMid ?? ensureSharedDeviceMid;
+  const ensureDeviceMid = options.ensureDeviceMid ?? ensureTelemetryDeviceMid;
   try {
     return await ensureDeviceMid();
   } catch (error) {
     options.log(
-      "deviceMid initialization failed; ZCode endpoint requests will omit X-Device-Mid:",
+      "telemetry deviceMid 初始化失败，ZCode endpoint 请求将不带 X-Device-Mid:",
       error instanceof Error ? error.message : String(error),
     );
     return undefined;

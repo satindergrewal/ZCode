@@ -62,6 +62,7 @@ const ACTIVE_OAUTH_PROVIDER_KEY = "oauth:active_provider";
 export interface OffPeakCredentialSnapshot {
   jwt: string;
   codingPlanApiKey: string;
+  accountScope?: string;
   kind: OffPeakCodingPlanKind;
   providerFamily: "zai" | "bigmodel";
   providerId: string;
@@ -187,6 +188,7 @@ export async function resolveOffPeakCredentials(
       throw new OffPeakCodingPlanUnavailableError("connection_unavailable");
     }
     let codingPlanApiKey = "";
+    let accountScope: string | undefined;
     try {
       const auth = await deps.accountRequestAuthService.resolveCurrent({
         providerId: selection.providerId,
@@ -195,6 +197,7 @@ export async function resolveOffPeakCredentials(
         reason: "off-peak",
       });
       codingPlanApiKey = auth.apiKey?.trim() ?? "";
+      accountScope = auth.accountScope;
     } catch (error) {
       if (error instanceof AccountRequestCredentialUnavailableError) {
         throw new OffPeakCredentialsUnavailableError("codingPlanApiKey");
@@ -208,6 +211,7 @@ export async function resolveOffPeakCredentials(
       ...selection,
       jwt,
       codingPlanApiKey,
+      ...(accountScope ? { accountScope } : {}),
       ...(provider.baseURL ? { providerBaseURL: provider.baseURL } : {}),
     };
   }
@@ -246,10 +250,11 @@ export function buildOffPeakPlanIdentityHeaders(
 export function buildOffPeakRequestAuth(params: {
   credentials: OffPeakCredentialSnapshot;
   ticketId: string;
-}): { apiKey: string; headers: Record<string, string> } {
+}): { apiKey: string; headers: Record<string, string>; accountScope?: string } {
   return {
     // Anthropic-compatible clients send x-api-key; the server still rules via Authorization + plan key.
     apiKey: params.credentials.jwt,
+    ...(params.credentials.accountScope ? { accountScope: params.credentials.accountScope } : {}),
     headers: {
       Authorization: `Bearer ${params.credentials.jwt}`,
       "X-Coding-Plan-Api-Key": params.credentials.codingPlanApiKey,

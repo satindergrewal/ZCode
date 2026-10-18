@@ -1,5 +1,5 @@
 import type { SessionCreateSource } from "@zcode/shared";
-/* eslint-disable max-lines -- workspace-level state actions live in this one slice; keeping them together aids maintenance. */
+/* eslint-disable max-lines -- workspace 级状态动作集中在同一 slice，先保持收口便于维护。 */
 import {
   buildNativeSupplierKey,
   normalizeAgentProviderToZCodeAgent,
@@ -11,6 +11,7 @@ import {
   type ZCodeTaskRuntimeStatus,
   type ZCodeWorkspaceInitStatus,
 } from "@zcode/shared";
+import { persistLastSelectedAgentProvider } from "@/lib/zcodeProviderPreference.js";
 import { areConfigOptionsEquivalent } from "@/lib/configOptionsEquality.js";
 import type { ZCodeUiError } from "@/lib/zcodeUiError.js";
 import { pushNavEntry } from "@/lib/taskNavigationHistory.js";
@@ -60,7 +61,7 @@ function normalizeThoughtLevelConfigOption(option: ZCodeConfigOption): ZCodeConf
   if (!fallbackValue) {
     return option;
   }
-  // In model-switch races thought_level can be transiently empty; normalize in the store so the toolbar Select never sits empty-selected.
+  // 模型切换竞态里 thought_level 可能短暂为空；store 统一归一，避免工具栏 Select 进入空选中态。
   return { ...option, currentValue: fallbackValue };
 }
 
@@ -208,9 +209,9 @@ function resolveActiveTaskConfigOptionsOnSwitch(
   }
 
   const taskMeta = getTaskMeta(current, taskId);
-  // On historical tasks the toolbar model and context usage come from different state buckets.
-  // Without a task-level settings cache, warm the model from task meta and enter loading until runtime settings fill in,
-  // instead of pairing the previous task model (e.g. glm-0531[1m]) with the current task contextWindow.
+  // 切到历史 task 时，工具栏模型和 context 用量来自不同状态桶。
+  // 没有 task 级 settings 缓存时先用 task meta 预热模型，并进入 loading 等待运行态 settings 回填，
+  // 避免继续展示上一条任务的模型（例如 glm-0531[1m]）配上当前任务的 contextWindow。
   const preloadedOptions = normalizeConfigOptions(
     resolveTaskRestorePreloadConfigOptions({
       taskMeta: {
@@ -248,9 +249,9 @@ export function createWorkspaceSlice(set: SetFn) {
                     ...current.optimisticTaskListByTaskId,
                     [id]: {
                       ...optimisticTask,
-                      // Mark-unread writes unreadAt into the optimistic task as well;
-                      // reopening the current task used to clear only the old unread map, and the list merge wrote the dot
-                      // back from the optimistic task. Opening a task must clear that projection in the same workspace transaction.
+                      // 右键标记未读会把 unreadAt 同时写进 optimistic task；
+                      // 之前重复打开当前 task 只清旧 unread map，列表合并又从 optimistic task
+                      // 把蓝点写回来。打开 task 时必须在同一个 workspace 事务里清掉这份投影。
                       unreadAt: undefined,
                     },
                   }
@@ -264,8 +265,8 @@ export function createWorkspaceSlice(set: SetFn) {
               taskUnreadByTaskId: restTaskUnreadByTaskId,
               optimisticTaskListByTaskId: nextOptimisticTaskListByTaskId,
               activeTaskId: id,
-              // The grouped New-task draft row is only the current draft-state anchor.
-              // Selecting a real task means leaving the transient entity: clear it at once, or the sidebar keeps an inert fake row.
+              // grouped 的 New task 草稿行只是当前草稿态锚点。
+              // 一旦用户选中真实 task，就代表离开这个临时实体，必须立刻清掉，避免侧栏留下不可操作的假行。
               groupedDraftTask: id ? null : current.groupedDraftTask,
             };
             return activeTaskId && activeTaskConfig
@@ -318,19 +319,19 @@ export function createWorkspaceSlice(set: SetFn) {
               workspacePath,
               ...(workspaceIdentity ? { workspaceIdentity } : {}),
               createdAt: draft.createdAt,
-              // A renderer placeholder row plugging the ACK gap only; not session truth.
-              // updatedAt uses the lowest sentinel so any authoritative sessions-index meta wins
-              // in mergeTaskWithOptimisticMeta, keeping the local clock from overriding mode/provider/status.
+              // 这是只用于填补 ACK 空档的 renderer 占位行，不是 session 真相。
+              // updatedAt 用最低哨兵值，保证任何 sessions-index 权威 meta 都会在
+              // mergeTaskWithOptimisticMeta 中获胜，避免本地时钟压住 mode/provider/status 等字段。
               updatedAt: 0,
-              mode: "build",
+              mode: "default",
               provider: current.selectedProvider,
             };
-            // Task navigation and draft-session creation are different transitions. Only the successful-create boundary
-            // may bind the grouped placement captured at command time to the new task. During the ACK wait the user
-            // may already sit in another draft, so clear the current draft only while the identity still matches.
-            // Clearing the draft row used to precede the real task meta from sessions-index,
-            // leaving a gap between the create/send ACK and the authoritative projection. The promoting transaction also writes minimal optimistic meta,
-            // without faking conversation state; the desktop-continuous/web-replayable authoritative projections still finalize.
+            // task 导航和 draft session 创建是不同状态转换。只有创建成功边界
+            // 才能把发起命令时捕获的 grouped placement 绑定到新 task。ACK 返回期间用户
+            // 可能已进入另一份草稿，因此只在 identity 仍匹配时清除当前草稿。
+            // 过去这里先清除 draft row，却要等 sessions-index 才有真实 task meta，
+            // create/send ACK 与权威投影之间会闪出空档。提升事务同时写最小乐观元数据，
+            // 但不伪造 conversation 状态，后续仍由 desktop continuous / web replayable 权威投影收口。
             return {
               ...current,
               groupedDraftTask:
@@ -339,8 +340,8 @@ export function createWorkspaceSlice(set: SetFn) {
                   : current.groupedDraftTask,
               optimisticTaskListByTaskId: {
                 ...current.optimisticTaskListByTaskId,
-                // task_created can reach the renderer before the command ACK; with richer optimistic meta already present,
-                // this gap-plugging minimal row must not downgrade it.
+                // task_created 可能比 command ACK 更早到 renderer；若已有更完整的乐观元数据，
+                // 不能被这个仅用于补空档的最小行反向降级。
                 [taskId]: current.optimisticTaskListByTaskId[taskId] ?? optimisticTask,
               },
               promotedGroupedDraftTaskByTaskId: {
@@ -367,8 +368,8 @@ export function createWorkspaceSlice(set: SetFn) {
             if (!current.promotedGroupedDraftTaskByTaskId[taskId]) {
               return current;
             }
-            // The promoted placement covers the single transaction before the draft lands in SQLite ordering.
-            // Consume it after persistence, or a later manual drag is pulled back to the old group by the stale placement.
+            // promoted placement 只负责草稿提升到 SQLite 排序收敛前的单次事务。
+            // 落库后必须消费，避免用户后续手动拖动 task 时被旧 placement 再次拉回原 group。
             const { [taskId]: _consumedPromotedDraft, ...restPromotedGroupedDraftTaskByTaskId } =
               current.promotedGroupedDraftTaskByTaskId;
             return {
@@ -408,8 +409,8 @@ export function createWorkspaceSlice(set: SetFn) {
           workspacePath,
           (current) => ({
             ...current,
-            // A protocol-v4 draft warmup session lives only inside the SessionPane; clearing the legacy
-            // draftSessionId alone is not enough. The version bump lets the pane reclaim the unpromoted warmup and rebuild capability snapshots.
+            // protocol-v4 的草稿预热会话只存在于 SessionPane 内，不能仅清空
+            // legacy draftSessionId。递增版本让 pane 精确回收未提升的预热会话并重建能力快照。
             draftRuntimeInvalidationVersion: current.draftRuntimeInvalidationVersion + 1,
             draftSessionId: null,
           }),
@@ -519,6 +520,9 @@ export function createWorkspaceSlice(set: SetFn) {
       const normalizedProvider = provider
         ? normalizeAgentProviderToZCodeAgent(provider)
         : undefined;
+      if (normalizedProvider) {
+        persistLastSelectedAgentProvider(normalizedProvider);
+      }
 
       set((state) =>
         updateWorkspaceState(
@@ -543,9 +547,9 @@ export function createWorkspaceSlice(set: SetFn) {
             const inheritedConfigOptions = activeTaskIdForInheritance
               ? cachedActiveTaskConfigOptions && cachedActiveTaskConfigOptions.length > 0
                 ? cachedActiveTaskConfigOptions
-                : // A protocol-v4 current-task config may have completed only the workspace projection;
-                  // legacy task cache not yet written or still a first-frame empty array, while the toolbar already shows
-                  // current.configOptions; a new draft must inherit the current projection, never warm up seedless.
+                : // Bug 原因：protocol-v4 当前任务的配置可能只完成了 workspace 投影，
+                  // legacy task 缓存尚未写入或仍是首帧空数组。此时工具条已经显示
+                  // current.configOptions，新草稿必须从当前投影继承，不能无种子预热。
                   current.configOptions
               : null;
             const inheritedDraftConfigOptions =
@@ -569,8 +573,8 @@ export function createWorkspaceSlice(set: SetFn) {
                 return current.groupedDraftTask;
               }
               if (current.activeTaskId === null && current.groupedDraftTask) {
-                // One grouped draft can be re-targeted by different New-task entries.
-                // Repeated clicks on one entry reuse the transient entity, but global-entry -> group-entry must move the creation spot.
+                // 同一个 grouped 草稿可以被不同 New task 入口重新定位。
+                // 连续点击同入口要复用临时实体，但从全局入口切到 group 入口时，创建位置必须跟随最新入口。
                 return {
                   ...current.groupedDraftTask,
                   workspacePath,
@@ -594,14 +598,14 @@ export function createWorkspaceSlice(set: SetFn) {
               draftCreateSource:
                 options?.createSource ?? (options?.groupedDraftPlacement ? "group" : "session"),
               draftRuntime: { status: "idle", error: null },
-              // New Task from an existing task must inherit that task full config into the draft input,
-              // or the later workspace prepare rebuilds the draft from Team Plan/default models and deepseek bounces back to GLM.
+              // 从已有 task 点 New Task 时，草稿输入框必须继承当前 task 的完整配置。
+              // 否则后续 workspace prepare 会按 Team Plan / 默认模型重建草稿，把已选的其他模型回弹成 GLM。
               ...(inheritedDraftConfigOptions
                 ? {
                     configOptions: inheritedDraftConfigOptions,
                     configOptionsStatus: inheritedConfigOptionsStatus,
-                    // A stale deferred draft session may still sit on the previous default model.
-                    // After inheriting the active task the draft session must be recreated, or the old session reply overwrites the new draft.
+                    // 旧 deferred draft session 可能仍停在上一次默认模型。
+                    // 继承 active task 后必须重新创建 draft session，避免旧 session 回包覆盖新草稿。
                     draftSessionId: null,
                   }
                 : {}),
@@ -609,24 +613,24 @@ export function createWorkspaceSlice(set: SetFn) {
               modelSwitchRequestId: null,
               modelSwitchPending: false,
               modelSwitchStage: "idle",
-              // Cmd/Ctrl+N and the task-list New task used to flip store state only, never handing focus back to the input.
-              // The Electron menu/button takes focus first, so the draft looks open while the caret returns a beat later.
-              // Bump a version on every draft entry so ChatView can focus the Lexical input once the state switch settles.
+              // Cmd/Ctrl+N 或任务列表"新建任务"之前只切了 store 状态，没有显式把焦点交还给输入框。
+              // Electron 菜单和按钮点击会先拿走焦点，导致用户看到草稿已打开，但光标要过一拍才回来。
+              // 这里在每次进入草稿态时递增版本号，让 ChatView 能在状态切换完成后主动 focus 到 Lexical 输入框。
               draftFocusVersion: current.draftFocusVersion + 1,
               optimisticMessages: [],
-              // The new-task state (taskId=null) now has its own unsent draft.
-              // Entering draft state resets only this creation transient state and never clears the null-scope draft,
-              // so returning to New task from taskA/B/C can still edit the unsent text.
-              // A new draft inheriting the previous session slashCommands shows stale commands on /.
-              // Clearing on every New task emptied the list on repeated draft clicks, with no refill triggered.
-              // Clear only on task->draft or a real provider switch, sparing repeated clicks within one draft.
+              // 新建任务态（taskId=null）现在也有自己的未发送草稿。
+              // 这里切到草稿态时只重置“本次创建任务的瞬时状态”，不主动清空 null 作用域草稿，
+              // 这样用户从 taskA/B/C 切回“新建任务”时，才能继续编辑刚才没发出去的内容。
+              // 新建草稿如果继续沿用上一条会话的 slashCommands，输入 `/` 时会看到旧任务遗留的命令。
+              // 但以前这里每次“新建任务”都无条件清空，草稿态重复点击会把命令列表清空且不会触发回填。
+              // 仅在“从 task 切到 draft”或“provider 真正切换”时清空，避免同草稿态重复点击误伤。
               ...(shouldClearSlashCommands ? { slashCommands: [] } : {}),
               ...(normalizedProvider ? { selectedProvider: nextSelectedProvider } : {}),
               ...(shouldResetSupplierForDraftProvider
                 ? {
-                    // Some New-task entries pass the current selectedProvider back into startDraft.
-                    // Force-resetting the supplier without a real provider change tears the UI: a custom model shown with custom locked.
-                    // Return to native only on a real provider switch, preserving supplier context for same-provider drafts.
+                    // 某些“新建任务”入口会把当前 selectedProvider 透传回 startDraft。
+                    // 如果 provider 实际没变化却强制重置 supplier，会出现“显示 custom 模型但 custom 选项被锁”的撕裂态。
+                    // 这里只在 provider 真正切换时才回到 native，避免同 provider 新建草稿误伤现有 supplier 上下文。
                     selectedSupplierKey: buildNativeSupplierKey(nextSelectedProvider),
                     isGhostSupplier: false,
                     supplierMismatchReason: null,
@@ -768,9 +772,9 @@ export function createWorkspaceSlice(set: SetFn) {
           workspacePath,
           (current) => ({
             ...current,
-            // On first-send failure there is no taskId yet; an error kept only in component memory
-            // disappears across page switches. A dedicated workspace-level draftError
-            // keeps the no-task-yet error visible inside the current workspace.
+            // 草稿态首发失败时还没有 taskId，错误如果只留在组件内存里，
+            // 切到别的页面再回来就看不到了。单独保存一份 workspace 级 draftError，
+            // 保证"未建 task 的错误"也能在当前工作区里继续显示。
             draftError: error,
           }),
           workspaceIdentity,
@@ -792,8 +796,8 @@ export function createWorkspaceSlice(set: SetFn) {
           (current) => ({
             ...current,
             modelSwitchRequestId: requestId,
-            // A plain session/setModel already updated the UI optimistically; the requestId only guards stale replies.
-            // Only heavy paths (custom provider, runtime restart) put the toolbar into loading.
+            // 普通 session/setModel 已经先乐观更新 UI，只需要 requestId 防止旧回包覆盖新选择。
+            // 只有 custom provider、runtime restart 等重路径才需要把 toolbar 置为 loading。
             modelSwitchPending: options?.pending ?? true,
             modelSwitchStage: stage,
           }),
@@ -859,8 +863,8 @@ export function createWorkspaceSlice(set: SetFn) {
         const normalizedOptions = normalizeConfigOptions(options);
         const skipped = areConfigOptionsEquivalent(current.configOptions, normalizedOptions);
         if (skipped) {
-          // Without an API key or with a dead model, the toolbar recovery effect commits the same empty model config repeatedly.
-          // An equal config must not notify the workspace store, or ChatInputToolbar sets configOptions again in its effect.
+          // 无 API key / 旧模型不可用时，工具栏 recovery effect 会多次提交同一份空模型配置。
+          // 等价配置不应触发 workspace 级 store 通知，否则 ChatInputToolbar 会在 effect 中再次 setConfigOptions。
           return state;
         }
 
@@ -869,8 +873,8 @@ export function createWorkspaceSlice(set: SetFn) {
           workspacePath,
           (current) => ({
             ...current,
-            // startDraft stores the active task warmup seed first, then async catalog hydration lands here.
-            // A catalog refresh is not the end of the draft lifecycle; clearing the seed lets createSession fall back to the global default model.
+            // startDraft 先保存 active task 的预热种子，随后异步目录水合会走到这里。
+            // 目录刷新不是草稿生命周期终点，不能清掉种子，否则 createSession 会回退全局默认模型。
             configOptions: normalizedOptions,
           }),
           workspaceIdentity,
@@ -934,9 +938,9 @@ export function createWorkspaceSlice(set: SetFn) {
             return {
               ...current,
               configOptions: nextConfigOptions,
-              // The active-task runtime ignores workspace_config_options_update, and
-              // first-send/restore may already have written a model-only task config.
-              // mode_update is session truth and must be mirrored into the task config bucket, or the mode entry vanishes after send.
+              // active task 运行态会忽略 workspace_config_options_update，
+              // first-send/restore 又可能先写入只含 model 的 task 配置。
+              // mode_update 是 session 事实源，必须同步补到 task 配置桶，否则发送后模式入口会消失。
               ...activeTaskPatch,
             };
           },
@@ -971,8 +975,8 @@ export function createWorkspaceSlice(set: SetFn) {
           (current) => ({
             ...current,
             taskListCache: tasks,
-            // Unread truth now converges on task meta.unreadAt.
-            // Never rebuild the list cache into a second unread source; cache refresh and local optimistic updates would fight.
+            // unread 的真实来源已经统一收敛到 task meta.unreadAt。
+            // 这里不再把列表缓存重建成另一份“未读真相源”，避免 cache 刷新和局部 optimistic 更新互相打架。
             taskUnreadByTaskId: current.taskUnreadByTaskId,
           }),
           workspaceIdentity,
@@ -1024,8 +1028,8 @@ export function createWorkspaceSlice(set: SetFn) {
             }
 
             if (!currentHasUnread && currentUnreadAt === undefined) {
-              // After a permission confirm, both the local response and the stream response clear unread.
-              // Already-read reuses the workspace state, sparing pointless task-list/ChatView refreshes.
+              // 权限确认后本地响应和 stream 响应都会清一次未读。
+              // 已经是已读时直接复用 workspace state，避免任务列表和 ChatView 被无意义刷新。
               return current;
             }
 

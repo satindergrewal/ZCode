@@ -60,7 +60,7 @@
         inset: 0;
         pointer-events: none;
         content: "";
-        /* The boot-logo shell keeps a fixed dark base; its border must not follow light-theme tokens or the first paint looks too heavy
+        /* 修复原因：启动 logo 壳是固定深色底，边框不能跟随浅色主题 token，否则首屏边框过重。 */
         border: 1px solid rgba(255, 255, 255, 0.1);
         border-radius: inherit;
       }
@@ -107,13 +107,7 @@
   </head>
   <body>
     <div id="root"></div>
-    <div
-      id="loading"
-      class="[app-region:drag]"
-      role="status"
-      aria-busy="true"
-      aria-label="Loading..."
-    >
+    <div id="loading" class="[app-region:drag]" role="status" aria-busy="true" aria-label="Loading...">
       <div class="startup-logo-shell">
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -146,8 +140,8 @@
       let animationDone = false;
       let reactReady = false;
 
-      // The main entry must not rely on a post-animation dynamic import; if that path fails under Electron/Vite the page stalls on the HTML loader forever.
-      // Load the main entry statically and fade the boot shell out as a mere animation mask.
+      // 修复原因：主入口不能依赖动画结束后的动态 import；一旦导入路径在 Electron/Vite 下失败，
+      // 页面会永久停在 HTML loading。这里让主入口静态加载，只把启动壳作为动画遮罩延迟移除。
       const tryFinishStartupAnimation = () => {
         if (finished || !animationDone || !reactReady) return;
         finished = true;
@@ -166,8 +160,8 @@
       };
 
       if (isUpdateStatusWindow) {
-        // The update window is itself a lightweight dialog; reusing the entry HTML must not re-show the boot shell,
-        // or the logo overlays the update buttons in the transparent window, looking like a broken dialog.
+        // Bugfix: 更新状态窗口本身就是一个轻量弹窗，复用主入口 HTML 时不应再显示启动壳。
+        // 否则透明独立窗口里的启动 logo 会短暂或持续盖在更新按钮上，看起来像弹窗 UI 异常。
         finished = true;
         document.body.classList.add("zcode-startup-ready");
         startupLoading?.remove();

@@ -6,7 +6,7 @@ import type { WebContents } from "electron";
  * reports, hence perf=0 in beforeReport). Re-dispatch load after did-finish-load and
  * dom-ready, and wait for RumSDK to be ready.
  */
-const ARMS_BROWSER_PERF_LOAD_NUDGE_SCRIPT = `(function () {
+export const ARMS_BROWSER_PERF_LOAD_NUDGE_SCRIPT = `(function () {
   function dispatchLoad() {
     try {
       window.dispatchEvent(new Event("load"));

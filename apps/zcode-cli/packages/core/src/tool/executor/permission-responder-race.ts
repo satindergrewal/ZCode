@@ -8,7 +8,7 @@
 import type { PermissionBrokerResult } from "@zcode/contracts";
 import { linkAbortSignal } from "./timeout.js";
 
-interface PermissionResponderRaceInput {
+export interface PermissionResponderRaceInput {
   /**
    * Hook-chain responder. Resolving undefined means no decision (forfeit; only the broker waits);
    * throwing counts as a forfeit too and invokes {@link PermissionResponderRaceInput.onHookFailure} --
@@ -30,7 +30,7 @@ interface PermissionResponderRaceInput {
   onHookFailure?: (error: unknown) => void;
 }
 
-interface PermissionResponderRaceOutcome {
+export interface PermissionResponderRaceOutcome {
   result: PermissionBrokerResult;
   source: "hook" | "broker";
 }

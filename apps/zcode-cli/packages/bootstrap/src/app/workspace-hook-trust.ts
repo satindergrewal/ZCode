@@ -1,4 +1,6 @@
-import { createDefaultFileWorkspaceHookTrustStore } from "@zcode/adapters/storage";
+import {
+  createDefaultFileWorkspaceHookTrustStore,
+} from "@zcode/adapters/storage";
 import {
   InMemoryWorkspaceHookPolicyProvider,
   WorkspaceHookTrustCoordinator,
@@ -32,19 +34,19 @@ import {
 import { createWorkspaceHookReviewMutationPort } from "./workspace-hook-review-mutation.js";
 import type { WorkspaceHookReviewHostContext } from "./types.js";
 
-interface WorkspaceHookRuntimeSecurity {
+export interface WorkspaceHookRuntimeSecurity {
   admission: WorkspaceHookRuntimeAdmissionPort;
   snapshot: WorkspaceHookBundleSnapshot;
   /**
-      * The trust store is a file, while the coordinator's
-      * persistentRecords is a per-session in-memory mirror loaded once at session creation.
-      * In-settings trust (the no-task pretrust path) writes the file and returns; a running session's
-      * coordinator refreshes neither records nor revision -- trusted hooks keep being rejected and the banner's
-      * pendingCount goes stale. After a successful pretrust grant, call this to reload the file into this
-      * session's coordinator and re-emit admission state, matching the in-task respond path.
+   * Trust store 是文件，而 coordinator 的
+   * persistentRecords 是 per-session 内存镜像，只在 session 创建时 load 一次。
+   * Settings 行内信任（无 task 的 pretrust 路径）直接写文件后返回，运行中 session
+   * 的 coordinator 既不更新记录也不 bump revision——已信任 Hook 继续被拒、banner
+   * pendingCount 停留旧值。pretrust 授权成功后必须调用本方法把文件内容重载进本
+   * session 的 coordinator 并重发 admission 状态，与 task 内 respond 路径对齐。
    */
   reloadTrust(): Promise<void>;
-    /** Soft gate: opens a review flow on demand; a safe no-op when nothing is pending. */
+  /** 软门禁:按需开审核 flow,无 pending 项时为安全 no-op */
   requestReview(target: {
     workspaceIdentity: string;
     bundleDigest: string;
@@ -87,7 +89,7 @@ export function createWorkspaceHookRuntimeSecurity(input: {
   snapshot?: WorkspaceHookBundleSnapshot;
   userConfigPath: string;
   workingDirectory: string;
-    /** Tests inject a temporary HOME; production omits it, so the trust store lives in the real ~/.zcode/security. */
+  /** 测试注入临时 HOME；生产不传，Trust store 落在真实 ~/.zcode/security。 */
   homeDir?: string;
 }): WorkspaceHookRuntimeSecurity | undefined {
   if (!input.snapshot) return undefined;
@@ -97,8 +99,8 @@ export function createWorkspaceHookRuntimeSecurity(input: {
     coordinatorEpoch: crypto.randomUUID(),
     policyProvider,
   });
-    // With the rollout off, keep the legacy hard block and do not read any existing trust store; the file stays,
-    // so re-enrolling later resumes the user's previous choices.
+  // Rollout 关闭时必须保持旧 hard block，且不能读取已有 Trust store；Trust 文件保留，
+  // 方便后续重新打开开关后继续使用用户已做出的选择。
   const trustEnabled = input.workspaceHookTrustEnabled === true;
   const store = trustEnabled
     ? createDefaultFileWorkspaceHookTrustStore({
@@ -114,27 +116,30 @@ export function createWorkspaceHookRuntimeSecurity(input: {
       })
     : Promise.resolve();
   let controller: WorkspaceHookReviewController | undefined;
-    // Soft gate: onAdmissionStateChanged -> emit the WorkspaceHookAdmissionUpdated session event.
-    // Fires after activate()'s evaluate and after replaceSnapshot, letting the projection write the snapshot field.
-  const onAdmissionStateChanged: ((state: WorkspaceHookAdmissionState) => void) | undefined =
-    input.emitAdmissionEvent
-      ? (state) => {
-          void input.emitAdmissionEvent!({
-            type: SessionEventType.WorkspaceHookAdmissionUpdated,
-            payload: {
-              pendingCount: state.pendingCount,
-              bundleDigest: state.bundleDigest,
-              ...(state.workspaceIdentity ? { workspaceIdentity: state.workspaceIdentity } : {}),
-            },
-          }).catch((error: unknown) => {
-            input.logger.warn("Failed to emit WorkspaceHookAdmissionUpdated", {
-              errorType: error instanceof Error ? error.name : typeof error,
-              event: "workspace_hook.admission_event_emit_failed",
-              module: "bootstrap.workspace_hook_trust",
-            });
+  // 软门禁:onAdmissionStateChanged → 发射 WorkspaceHookAdmissionUpdated 会话事件。
+  // activate() 完成 evaluate 后、replaceSnapshot 后均会触发,供投影层写入 snapshot 字段。
+  const onAdmissionStateChanged:
+    | ((state: WorkspaceHookAdmissionState) => void)
+    | undefined = input.emitAdmissionEvent
+    ? (state) => {
+        void input.emitAdmissionEvent!({
+          type: SessionEventType.WorkspaceHookAdmissionUpdated,
+          payload: {
+            pendingCount: state.pendingCount,
+            bundleDigest: state.bundleDigest,
+            ...(state.workspaceIdentity
+              ? { workspaceIdentity: state.workspaceIdentity }
+              : {}),
+          },
+        }).catch((error: unknown) => {
+          input.logger.warn("Failed to emit WorkspaceHookAdmissionUpdated", {
+            errorType: error instanceof Error ? error.name : typeof error,
+            event: "workspace_hook.admission_event_emit_failed",
+            module: "bootstrap.workspace_hook_trust",
           });
-        }
-      : undefined;
+        });
+      }
+    : undefined;
   const admission = createWorkspaceHookRuntimeAdmission({
     coordinator,
     enabled: trustEnabled,
@@ -178,13 +183,15 @@ export function createWorkspaceHookRuntimeSecurity(input: {
     reloadTrust: async () => {
       if (!trustEnabled || !store) return;
       await loadWorkspaceHookTrustStore({ coordinator, logger: input.logger, store });
-            // replacePersistentTrustRecords already bumped the revision and cleared evaluation caches;
-            // activate is idempotent (skips the ready wait), re-evaluates, and re-emits admission state
-            // (also when pendingCount === 0, to clear the banner).
+      // replacePersistentTrustRecords 已 bump revision 并清空 evaluation 缓存；
+      // activate 幂等（跳过 ready 等待），重新 evaluate 并重发 admission 状态
+      // （pendingCount === 0 也会发，用于清空 banner）。
       await admission.activate("resume");
     },
     requestReview: (target) =>
-      controller ? controller.requestReview(target) : Promise.resolve(unavailable()),
+      controller
+        ? controller.requestReview(target)
+        : Promise.resolve(unavailable()),
     respond: (target, decision) =>
       controller ? controller.respond(target, decision) : Promise.resolve(unavailable()),
     toggle: (target, reviewItemId, enabled) =>

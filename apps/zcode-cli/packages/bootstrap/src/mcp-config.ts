@@ -15,10 +15,14 @@ import {
   ZCODE_PLUGIN_ID_ENV_KEY,
 } from "@zcode/shared";
 
-export { ZCODE_CUA_BROKER_SOCKET_ENV_KEY as ZCODE_CUA_BROKER_SOCKET_ENV } from "@zcode/shared";
-// The CLI entry cleans broker credentials first; the shared node_repl trusted config restores them from the in-process captured snapshot.
+export {
+  ZCODE_CUA_BROKER_SOCKET_ENV_KEY as ZCODE_CUA_BROKER_SOCKET_ENV,
+} from "@zcode/shared";
+// 保留环境变量名供旧诊断脚本读取；迁移后的配置路径不会据此启动独立 CUA MCP。
+export const ZCODE_CUA_BROKER_UNAVAILABLE_ENV = "ZCODE_CUA_PERMISSION_BROKER_UNAVAILABLE";
+// CLI 入口会先清理 broker 凭据；shared node_repl 的可信配置随后从进程内捕获快照恢复它们。
 function resolveZCodeCuaBrokerSocket(): string | undefined {
-    // captured wins; stale sockets left from a previous run must not override the trusted snapshot.
+  // captured 优先；运行时残留的 stale socket 不能覆盖可信快照。
   return (
     getCapturedZCodeCuaBrokerCredentials().socket ||
     process.env[ZCODE_CUA_BROKER_SOCKET_ENV_KEY]?.trim()
@@ -26,7 +30,9 @@ function resolveZCodeCuaBrokerSocket(): string | undefined {
 }
 
 function resolveZCodeCuaBrokerToken(): string | undefined {
-  return undefined;
+  return (
+    undefined
+  );
 }
 
 const NODE_REPL_SERVER_NAME = "node_repl";
@@ -65,8 +71,8 @@ export async function listMcpServerStatuses(
   const statuses: Record<string, McpServerStatus> = {};
 
   for (const [name, config] of Object.entries(servers)) {
-        // After migration the legacy zcode-cua MCP is historical config only and no longer enters state projection; CUA
-        // is carried by the shared node_repl, keeping the settings page from listing the removed server as available.
+    // 迁移后旧的 zcode-cua MCP 只是历史配置，不再进入状态投影；CUA
+    // 由 shared node_repl 承载，避免设置页继续把已删除的 server 显示为可用。
     if (isRetiredCuaMcpServer(name, config)) continue;
     const configuredStatus = getConfiguredServerStatus(name, config, untrustedServerNames);
     statuses[name] = liveStatuses[name] ?? {
@@ -93,7 +99,9 @@ export function omitMcpServers(
 ): Record<string, McpServerConfig> {
   const kept = Object.fromEntries(
     Object.entries(servers).filter(
-      ([name, config]) => !omittedNames.has(name) && !isRetiredCuaMcpServer(name, config),
+      ([name, config]) =>
+        !omittedNames.has(name) &&
+        !isRetiredCuaMcpServer(name, config),
     ),
   );
 
@@ -105,7 +113,7 @@ export function omitMcpServers(
   );
 }
 
-function injectZCodeCuaBrokerMcpServers(
+export function injectZCodeCuaBrokerMcpServers(
   servers: Record<string, McpServerConfig>,
   socketPath: string | undefined,
   token: string | undefined = undefined,
@@ -149,8 +157,8 @@ function injectCuaCredentialsIntoNodeRepl(
   if (config.type !== "stdio") return config;
   const captured = getCapturedZCodeCuaBrokerCredentials();
   const pluginAuthority = captured.pluginAuthority;
-    // The CLI runtime env is cleaned before bootstrap. Like socket/token, the marker must come from the private credential snapshot,
-    // or after the SDK migration the broker survives while permission refresh silently stops.
+  // CLI runtime env 会在 bootstrap 前被清理。marker 必须和 socket/token 一样取自私有凭据快照，
+  // 否则 SDK 迁移后 broker 虽然存活，权限刷新仍会静默停止。
   const refreshMarker = captured.refreshMarker || process.env[REFRESH_MARKER_ENV]?.trim();
   return {
     ...config,
@@ -171,16 +179,16 @@ function isZCodeCuaStdioServer(
 ): config is McpStdioServerConfig {
   if (config.type !== "stdio") return false;
   if (name === "computer-use") return true;
-    // The builtin official zcode-cua plugin's MCP server uses __zcode-plugin-host; command is Helper
-    // (not zcode-cua) and args are [zcode.cjs, __zcode-plugin-host, server.js] (not the zcode-cua package arg),
-    // so none of the three name/command/args checks above match. The _plugin id is written into env authoritatively by the adapters resolver
-    // (manifest/user env cannot override); use it to identify official plugin servers.
+  // 内置 official zcode-cua plugin 的 MCP server 走 __zcode-plugin-host，command 是 Helper
+  // (非 zcode-cua)、args 是 [zcode.cjs, __zcode-plugin-host, server.js]（非 zcode-cua package arg），
+  // 上面的 name/command/args 三条都匹配不到。_plugin id 由 adapters resolver 权威写入 env
+  // （manifest/user env 不可覆盖），用它识别 official plugin server。
   if (
     config.env?.[ZCODE_PLUGIN_ID_ENV_KEY]?.trim().toLowerCase() === ZCODE_CUA_OFFICIAL_PLUGIN_ID
   ) {
     return true;
   }
-    // The check shares @zcode/shared's single source of truth with desktop/services, keeping both injection entries from drifting.
+  // 判定与 desktop/services 共用 @zcode/shared 的单一事实源，避免两条注入入口漂移。
   if (isZCodeCuaMcpCommand(config.command)) return true;
   return (config.args ?? []).some(isZCodeCuaMcpPackageArg);
 }
@@ -188,9 +196,7 @@ function isZCodeCuaStdioServer(
 function isRetiredCuaMcpServer(name: string, config: McpServerConfig | undefined): boolean {
   // node_repl is the single supported CUA host and may share the CUA plugin's
   // authority marker; all other CUA-shaped MCP entries are retired.
-  return (
-    name !== NODE_REPL_SERVER_NAME && config !== undefined && isZCodeCuaStdioServer(name, config)
-  );
+  return name !== NODE_REPL_SERVER_NAME && config !== undefined && isZCodeCuaStdioServer(name, config);
 }
 
 function getConfiguredServerStatus(

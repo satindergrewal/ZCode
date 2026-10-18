@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
-  isProviderProvisioningAccountCredentialKey,
   providerProvisioningEnvelopeSchema,
   type ProviderProvisioningCredentialEntry,
   type ProviderProvisioningEnvelope,
@@ -60,7 +59,7 @@ export function createProviderProvisioningSource(
         providerFamilyConnectionSelections: settings.providerFamilyConnectionSelections ?? {},
       };
       return providerProvisioningEnvelopeSchema.parse({
-        schemaVersion: 1,
+        schemaVersion: 2,
         syncId,
         personalConfig,
         accountSettings,
@@ -130,18 +129,14 @@ async function readProvisioningCredentials(
   // those are not this sync's facts and their corruption never blocks legal account credentials.
   // allowlist entries keep string+decrypt validation, so unknown content never ships as a Secret.
   for (const [key, encrypted] of Object.entries(parsed)) {
-    const scope = allowedKeys.has(key)
-      ? ("oauth-session" as const)
-      : isProviderProvisioningAccountCredentialKey(key)
-        ? ("account-provider" as const)
-        : undefined;
-    if (!scope) continue;
+    // OAuth 换证不再依赖旧账号 Key；它的坏密文也不能阻断远端登录态同步。
+    if (!allowedKeys.has(key)) continue;
     if (typeof encrypted !== "string") {
       throw new Error(`Credential allowlist value must be a string: ${key}`);
     }
     const value = cipher.decrypt(encrypted);
     if (!value.trim()) continue;
-    entries.push({ scope, key, value });
+    entries.push({ scope: "oauth-session", key, value });
   }
   return entries;
 }
@@ -177,7 +172,5 @@ export async function listProviderProvisioningCredentialKeys(
   const parsed = JSON.parse(raw) as unknown;
   if (!isRecord(parsed)) throw new Error("Credential Store must be a JSON object");
   const oauthKeys = new Set<string>(PROVIDER_PROVISIONING_OAUTH_CREDENTIAL_KEYS);
-  return Object.keys(parsed).filter(
-    (key) => oauthKeys.has(key) || isProviderProvisioningAccountCredentialKey(key),
-  );
+  return Object.keys(parsed).filter((key) => oauthKeys.has(key));
 }

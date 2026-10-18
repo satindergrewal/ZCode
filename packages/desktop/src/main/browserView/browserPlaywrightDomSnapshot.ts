@@ -3,7 +3,7 @@ import { getPlaywrightInjectedScriptSource } from "./playwrightInjectedScriptSou
 
 const PLAYWRIGHT_WORLD_NAME = "zcode-playwright-dom-snapshot";
 const PLAYWRIGHT_GLOBAL = "__zcodePlaywrightInjected";
-// Playwright op budget: 3s top-level snapshot; 1s extra total for IAB iframes.
+// Playwright 操作预算：顶层 snapshot 3s；IAB iframe 额外总预算 1s。
 const TOP_LEVEL_TIMEOUT_MS = 3_000;
 const IAB_IFRAME_TOTAL_BUDGET_MS = 1_000;
 const IAB_IFRAME_CHILD_BUDGET_MS = 500;
@@ -91,9 +91,9 @@ function cleanSnapshotLine(line: string): string {
 function normalizeSnapshotNode(node: SnapshotTreeNode): SnapshotTreeNode[] {
   const children = node.children.flatMap(normalizeSnapshotNode);
   const line = cleanSnapshotLine(node.line);
-  // Images without name or content give nothing to locate by; drop from interaction snapshots.
+  // 无名称或内容的图片无法提供可定位依据，因此从交互快照中移除。
   if (/^- img(?: \[[^\]]+\])*:?$/.test(line)) return [];
-  // Anonymous structural containers carry no locator information; flattening keeps their children.
+  // 匿名结构容器本身不提供定位信息；压平时必须保留其 children。
   if (/^- (generic|listitem|group)(?: \[[^\]]+\])*:?$/.test(line)) return children;
   return [{ children, indent: node.indent, line }];
 }
@@ -109,8 +109,8 @@ function renderSnapshotTree(nodes: SnapshotTreeNode[], depth = 0): string {
   return lines.join("\n");
 }
 
-/** Public DOM-snapshot normalization: strip internal ref/cursor, flatten semantic-free containers. */
-function normalizeBrowserDomSnapshot(snapshot: string): string {
+/** Playwright DOM snapshot 的公开结果归一化：删除内部 ref/cursor 并压平无语义容器。 */
+export function normalizeBrowserDomSnapshot(snapshot: string): string {
   if (!snapshot.startsWith("- ") && !snapshot.includes("\n- ") && !snapshot.includes("\n  - ")) {
     return snapshot;
   }
@@ -367,9 +367,9 @@ class PlaywrightDomSnapshotSession {
     if (!frameId || Date.now() >= deadline) return undefined;
     let target = await this.childTarget(parent, frameId, timeoutMs);
     if (!target && Date.now() < deadline) {
-      // During OOPIF navigation an iframe node's frameId can briefly point at a destroyed target.
-      // Let Chromium refresh targets, then re-resolve from the same Playwright aria-ref; else
-      // the snapshot occasionally keeps only an empty iframe shell (stable on real Electron/CDP pages).
+      // OOPIF 导航时 iframe node 的 frameId 可能短暂指向已经销毁的 target。
+      // 先让 Chromium 刷新 target 列表，再从同一个 Playwright aria-ref 重新解析；否则
+      // 主快照会偶发只剩 iframe 空壳，真实 Electron/CDP 页面可以稳定复现。
       await this.send(parent, "Target.getTargets").catch(() => undefined);
       frameId = await this.frameIdForRef(
         parent,

@@ -1,12 +1,11 @@
 import { type UsageEntitlementSnapshot } from "@zcode/shared";
-import { type ProviderSettingsFormProvider } from "@/lib/providerSettingsFormTypes.js";
+import type { ProviderSettingsFormProvider } from "@/lib/providerSettingsFormTypes.js";
 
 export function pickCodingPlanEntitlementProvider(
   codingPlanProvider: ProviderSettingsFormProvider | null | undefined,
 ): ProviderSettingsFormProvider | null {
-  // Coding Plan and plain API keys are separate entry points.
-  // Entitlement/model entries follow only the Coding Plan provider's own key so a plain
-  // provider key cannot light up the subscription state.
+  // 修复原因：Coding Plan 与普通 API Key 是两个独立入口。
+  // 权益和模型入口只跟随套餐账号 Provider，不能由普通供应商 Key 推断订阅态。
   return codingPlanProvider ?? null;
 }
 
@@ -17,9 +16,9 @@ export function hasActiveUsageEntitlementSnapshot(
   return resolveUsageEntitlementOutcome(snapshot, providerId) === "active";
 }
 
-type UsageEntitlementOutcome = "active" | "inactive" | "unknown";
+export type UsageEntitlementOutcome = "active" | "inactive" | "unknown";
 
-/** Only the authoritative no_plan outcome counts as inactive; network/auth and partial snapshots stay unknown. */
+/** 只把权威 no_plan 解释为失效；网络、鉴权和不完整快照都保持未知。 */
 export function resolveUsageEntitlementOutcome(
   snapshot: UsageEntitlementSnapshot | null,
   providerId?: string,
@@ -29,7 +28,6 @@ export function resolveUsageEntitlementOutcome(
     return "unknown";
   }
   if (snapshot.unavailableReason === "no_plan") return "inactive";
-  // Quota or remaining quota does not prove a subscription; personal/team entitlements
-  // are proven by the subscription summary returned by the service.
+  // 额度或剩余额度不代表订阅；个人/团队都由服务返回的订阅摘要证明权益。
   return snapshot.subscription?.details.length ? "active" : "unknown";
 }

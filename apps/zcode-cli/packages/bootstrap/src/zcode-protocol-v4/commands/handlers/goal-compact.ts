@@ -22,7 +22,7 @@ import {
   enqueueDeferredInputForBusyWork,
   resolveSubmittedExecutionState,
   V4InputAdmissionRejectedError,
-} from "./session-flow.js";
+} from "../input-admission.js";
 
 /** This group's verdict rejections (the gateway catches into ACK failed, message passed to the client). */
 export class V4GoalCompactRejectedError extends Error {

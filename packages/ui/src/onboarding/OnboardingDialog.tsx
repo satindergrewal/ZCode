@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- the onboarding dialog orchestrates welcome, session migration, external import and the final execution; splitting would raise cross-step state plumbing */
+/* eslint-disable max-lines -- onboarding 弹窗集中编排欢迎页、会话迁移、外部导入和最终执行状态，拆开会增加跨步骤状态传递复杂度 */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog.js";
 import { useClaudeSessionMigration } from "@/hooks/useClaudeSessionMigration.js";
@@ -39,7 +39,7 @@ const ONBOARDING_STEP_ORDER: OnboardingWizardStep[] = [
   "session",
   "skills-import",
   "mcp-import",
-  // Plugin import step is disabled.
+  // 插件导入步骤未启用。
   // "plugins-import",
   "commands-import",
   "agents-file",
@@ -70,7 +70,7 @@ export function OnboardingDialog(props: {
   const initializedWorkspaceSelectionRef = useRef(false);
   const autoScannedSessionStepRef = useRef(false);
 
-  // Onboarding has no scope choice; the target is always the current-context workspace, so its service is injected directly.
+  // 引导阶段没有 Scope 选择，target 恒为当前上下文 workspace，直接注入其 service。
   const { settingsSyncService } = useServices();
 
   const skillsImportState = useExternalAgentImportCategoryState({
@@ -88,7 +88,7 @@ export function OnboardingDialog(props: {
     workspaceIdentity: props.workspaceIdentity,
   });
   /*
-   * Plugin import step is disabled.
+   * 插件导入步骤未启用。
    * const pluginsImportState = useExternalAgentImportCategoryState({
    *   category: "plugins",
    *   enabled: view === "wizard" && wizardStep === "plugins-import",
@@ -150,7 +150,7 @@ export function OnboardingDialog(props: {
     sessionMigration,
     agentsFileMigration,
     settingsSync,
-    // The proxy step is disabled; do not import its defaults.
+    // 代理设置步骤未启用，不导入其默认选择。
     { includeSettingsSelections: false },
   );
 
@@ -237,7 +237,9 @@ export function OnboardingDialog(props: {
   }, [sessionMigration.candidates]);
 
   const selectedWorkspaceCount = selectedWorkspacePaths.length;
-  /** Migration step stays blocked without a session or an external-import item. */
+  // 暂时隐藏数据迁移向导里的代理设置步骤，同时不把默认选中的代理设置暗中计入迁移任务。
+  const settingsTaskCount = 0;
+  /** 既无会话也无外部导入项时，禁止进入迁移步骤。 */
   const beginMigrationDisabled =
     selectedWorkspaceCount === 0 &&
     totalExternalImportSelectedCount === 0 &&
@@ -252,6 +254,7 @@ export function OnboardingDialog(props: {
   const totalExecutionTaskCount =
     finishExecution.sessionTotalCount +
     finishExecution.agentsFileTotalCount +
+    settingsTaskCount +
     externalImportSelections.length;
   const completedExecutionTaskCount =
     finishExecution.sessionCompletedCount +
@@ -416,7 +419,7 @@ export function OnboardingDialog(props: {
           />
         );
       /*
-       * Plugin import step is disabled.
+       * 插件导入步骤未启用。
        * case "plugins-import":
        *   return (
        *     <OnboardingExternalAgentImportStep
@@ -460,8 +463,8 @@ export function OnboardingDialog(props: {
       open={settingsSync.state.open}
       onOpenChange={(nextOpen) => {
         if (!nextOpen) {
-          // During a running migration Radix still reacts to overlay clicks and Esc even with the corner close button hidden.
-          // Closing directly used to kill a long migration instantly with no confirmation; funneling through the confirm flow prevents accidental closes.
+          // onboarding 迁移执行中即使隐藏了右上角关闭按钮，Radix 仍会响应遮罩点击和 Esc。
+          // 之前这里直接 close 会把长时间迁移任务瞬间关掉，用户也拿不到二次确认；统一收口到确认逻辑后才不会误关。
           void handleCloseRequest();
         }
       }}
@@ -490,6 +493,7 @@ export function OnboardingDialog(props: {
               <OnboardingWizardFooter
                 currentStep={wizardStep}
                 selectedWorkspaceCount={selectedWorkspaceCount}
+                settingsTaskCount={settingsTaskCount}
                 finishRunning={finishExecution.running}
                 finishReady={finishExecution.finished}
                 onBackToWelcome={() => setView("welcome")}
@@ -499,6 +503,12 @@ export function OnboardingDialog(props: {
                 onFinish={settingsSync.actions.finish}
                 beginMigrationDisabled={beginMigrationDisabled}
               />
+              {/*
+                暂时隐藏数据迁移向导里的代理设置步骤，批量选择按钮随步骤一起隐藏。
+                onAgentSettingsBulkToggle={toggleAgentSettingsBulk}
+                agentSettingsBulkToggleDisabled={agentSettingsBulkToggleDisabled}
+                agentSettingsBulkIsClear={agentSettingsFullySelected}
+              */}
             </div>
           </div>
         )}

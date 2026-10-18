@@ -29,7 +29,15 @@ import type { ModelSelection } from "../model/model.js";
 // Collaboration Mode and Risk Level
 // -----------------------------------------------
 
-export type CollaborationMode = "plan" | "build" | "edit" | "yolo" | "auto";
+export type CollaborationMode = "plan" | "build" | "edit" | "yolo" | "guarded" | "auto";
+
+/** 父 guarded 只收紧内部 YOLO 派生；显式的其它子模式保留各自策略。 */
+export function inheritPermissionMode<T extends CollaborationMode | undefined>(
+  parent: CollaborationMode | undefined,
+  resolved: T,
+): T | "guarded" {
+  return parent === "guarded" && resolved === "yolo" ? "guarded" : resolved;
+}
 export type SessionStatus = "idle" | "running" | "waiting" | "paused" | "completed" | "error";
 export type RiskLevel = "low" | "medium" | "high" | "critical";
 export type InputDelivery = "auto" | "start_turn" | "steer_active_turn";
@@ -44,13 +52,13 @@ export type TurnSteerRejectReason =
 // Session Event Store Port
 // -----------------------------------------------
 
-/** Resident scale of the in-memory event store; local memory diagnostics only. */
+/** 内存 event store 的驻留规模；只用于本地内存诊断日志。 */
 export interface SessionEventStoreStats {
   sessions: number;
   events: number;
-  /** Transient events evicted by the turn-window policy, cumulative; always 0 in unbounded mode. */
+  /** 按 turn 窗口策略已淘汰的瞬态事件累计数；unbounded 模式恒为 0。 */
   evictedEvents?: number;
-  /** Transient events currently resident (in-flight turn + one lagging turn). */
+  /** 当前仍驻留的瞬态事件数（进行中 turn + 一个滞后 turn）。 */
   retainedTransient?: number;
 }
 
@@ -60,11 +68,11 @@ export interface SessionEventStorePort {
   getEventsAfter(sessionId: SessionId, sequenceNumber: number): Promise<SessionEvent[]>;
   getLatestSequenceNumber(sessionId: SessionId): Promise<number>;
   deleteSession(sessionId: SessionId): Promise<void>;
-  /** Synchronous, O(sessions) read-only stats; persistence impls may skip. */
+  /** 同步、O(sessions) 的只读统计；持久化实现可不提供。 */
   getStats?(): SessionEventStoreStats;
   /**
-   * Transient-event time-based eviction on a low-frequency tick;
-   * returns the evicted count. Persistence impls may skip.
+   * 低频 tick 触发的瞬态事件时间兜底淘汰；
+   * 返回淘汰条数。持久化实现可不提供。
    */
   pruneTransientEvents?(nowMs?: number): number;
 }
@@ -121,6 +129,7 @@ export interface TargetCompletionVerificationProjectionInfo {
 }
 
 export interface PendingPermission {
+  approvalMode?: "user-once";
   requestId?: string;
   toolCallId: string;
   toolName: string;
@@ -129,7 +138,7 @@ export interface PendingPermission {
   input?: unknown;
   suggestedPermissionUpdates?: PermissionUpdate[];
   origin?: InteractionRequestOrigin;
-  /** Ask preview carried by request events; cold-recovered session dialogs still need it, so it must enter projection state. */
+  /** 请求事件携带的 ask 预览；冷恢复重建的会话弹窗仍需带图，所以必须进 projection 状态。 */
   display?: ToolResultDisplayPayload;
   optionsPolicy?: PermissionOptionsPolicy;
   requestedAt: Date;
@@ -143,7 +152,7 @@ export interface PendingSteerInputInfo {
   commandKind?: TurnSteerCommandKind;
   source?: TurnSteerSource;
   inputPresentation?: RuntimeInputPresentation;
-  /** Tool-hide list attached to currently queued inputs; automation busy-enqueues must keep applying at consumption. */
+  /** 当前排队输入附带的工具隐藏列表；automation busy 入队必须在消费时继续生效。 */
   toolDisallowlist?: readonly string[];
   queuedAt: Date;
   targetTurnId: TurnId;
@@ -262,7 +271,7 @@ export interface TurnSteerInput {
   attachments?: PendingTurnAttachment[];
   pendingInputId?: string;
   traceContext?: TraceContext;
-  /** Tool names hidden from the provider while the current input is consumed. */
+  /** 当前输入消费时不向 provider 暴露的工具名。 */
   toolDisallowlist?: readonly string[];
 }
 
@@ -270,26 +279,99 @@ export type TurnSteerCommandKind = "sendText" | "sendGoalCommand" | "compact";
 export type TurnSteerSource = "plan_approval_feedback" | "workflow_refine_feedback";
 
 /**
- * Input delivery semantics:
- * - "queue": a queued future intent; consuming starts a new product turn (one per item, with its own reply/hours/edit scope);
- * - "guide": supplementary steering of work in flight, inline in the current turn, no turn switch.
- * Runtime injection is identical for both (boundary injection); only product presentation and ledger semantics differ.
+ * 输入投递语义：
+ * - "queue"：排队的未来意图，消费时切新 product turn（每条一轮，自己的回复/工时/edit 范围）；
+ * - "guide"：对进行中工作的补充引导，内联在当前轮，不切轮。
+ * runtime 注入机制两者相同（boundary 注入），差异只在产品呈现与账本语义。
  */
 export type TurnSteerDeliveryMode = "guide" | "queue";
 
-/** Protocol-agnostic input intent metadata; bootstrap v4 assembles ConversationInputIntent at the event boundary. */
+/** message.data metadata.highspeed 的持久化契约；不包含运行时凭据。 */
+export interface HighspeedMessageMetadata {
+  schemaVersion: 1;
+  cardId: string;
+  taskId: string;
+  provider: string;
+  model: string;
+  issuedAt: number;
+  expiresAt: number;
+  regularTps?: number;
+  outputTokens?: number;
+  durationMs?: number;
+  savedDurationMs?: number;
+  modelDurationMs?: number;
+  toolDurationMs?: number;
+  otherDurationMs?: number;
+  fallbackAt?: number;
+  fallbackReason?: "highspeed_card_expired" | "highspeed_request_failed";
+}
+
+/** 协议无关的输入 intent metadata；bootstrap v4 在事件边界组装为 ConversationInputIntent。 */
+export type TurnInputSourceMetadata =
+  | { kind: "pluginUi"; pluginId: string; toolCallId: string }
+  | { kind: "genUi"; path: string; title?: string };
+
 export interface TurnInputIntentMetadata {
   planEnabled?: boolean;
+  conversationQuotes?: Array<{
+    text: string;
+    path?: string;
+    senderName?: string;
+    senderId?: string;
+    messageId?: string;
+    sentAt?: string;
+  }>;
+  inputOrigin?: "desktop" | "mobile";
+  botGroupSource?: {
+    botIdentity?: { name: string; openId?: string };
+    mentionedBot?: boolean;
+    appId?: string;
+    contentParts?: import("@zcode/shared").ChannelContentPart[];
+    messages?: Array<{
+      mentionedBot?: boolean;
+      messageId: string;
+      senderId: string;
+      senderName: string;
+      text: string;
+      attachmentIndexes: number[];
+      contentParts?: import("@zcode/shared").ChannelContentPart[];
+    }>;
+    /** 入队时由 Host 注入，历史资源请求不能借用后续重新授权的版本。 */
+    authorizationId?: string;
+    botId: string;
+    provider: "feishu" | "lark";
+    chatId: string;
+    threadId?: string;
+    rootMessageId?: string;
+    topicContext?: {
+      checkpoint: string;
+      hasGap: boolean;
+      messages: Array<{
+        id: string;
+        chatId: string;
+        threadId: string;
+        senderId: string;
+        senderType: "user" | "app";
+        text: string;
+        createdAt: number;
+        kind: string;
+        deleted?: boolean;
+      }>;
+    };
+    senderId: string;
+    senderName: string;
+    messageId: string;
+  };
   sourceCommandId: string;
   queueItemId: string;
   clientId: string;
   kind: TurnSteerCommandKind;
-  /** Canonical command text threading the full ConversationInputIntent through transcript hydration. */
+  /** transcript hydration 贯穿完整 ConversationInputIntent 的 canonical command text。 */
   text?: string;
-  /** Fixed at admission; Queue/Guide must never re-read the latest Composer or Session choice. */
+  /** Admission 时固定；Queue/Guide 后续不得重新读取 Composer 或 Session 最新选择。 */
   modelSelection?: ModelSelection;
-  /** Collaboration mode fixed together with this user submission. */
-  mode?: "build" | "edit" | "plan" | "yolo";
+  /** 与本次用户 Submission 一起固定的协作模式。 */
+  mode?: "build" | "edit" | "plan" | "yolo" | "guarded";
   admissionSeq: number;
   admittedAt: number;
   requestedDelivery: "auto" | "startNow" | "queue" | "guide";
@@ -302,25 +384,31 @@ export interface TurnInputIntentMetadata {
     mime: string;
     bytes: number;
     previewRef?: string;
+    sourceKind?: "clipboard-text" | "topic-history";
+    messageCount?: number;
   }>;
+  highspeed?: HighspeedMessageMetadata;
   sharedContextRefs?: Array<{
     kind: "shared_context_import";
     context_id: string;
   }>;
-  /** Stable trace of the original canonical input cause for edit/retry-rebuilt commands. */
+  /** edit/retry 重建的新 command 对原始 canonical input cause 的稳定追溯。 */
   provenance?: {
     sourceCommandId: string;
     queueItemId?: string;
     clientId?: string;
   };
+  /** 插件 UI 代发（MCP Apps ui/message）的来源；用户亲自输入时缺省。 */
+  source?: TurnInputSourceMetadata;
 }
 
-/** Attachment descriptor kept unresolved in the queue; consumed through the same resolver as ordinary turns. */
+/** queue 内保留尚未 resolve 的附件描述；消费时与普通 turn 使用同一 resolver。 */
 export interface PendingTurnAttachment {
   type: "file" | "image" | "video" | "pdf" | "url";
   path?: string;
   content?: string;
-  sourceKind?: "clipboard-text";
+  sourceKind?: "clipboard-text" | "topic-history";
+  messageCount?: number;
   filename?: string;
   mimeType?: string;
   sizeBytes?: number;
@@ -338,7 +426,7 @@ export interface PendingTurnInput {
   delivery?: TurnSteerDeliveryMode;
   intent?: TurnInputIntentMetadata;
   attachments?: PendingTurnAttachment[];
-  /** Tool names hidden from the provider after the pending input drains. */
+  /** 当前 pending input drain 后不向 provider 暴露的工具名。 */
   toolDisallowlist?: readonly string[];
   turnId: TurnId;
 }

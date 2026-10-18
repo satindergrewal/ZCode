@@ -1,5 +1,5 @@
-/* oxlint-disable eslint(max-lines) -- the input shell owns Lexical sync, drag-drop, and toolbar slots; no component split yet. */
-// Input display shell: pure props, no store/protocol dependencies; the mention panel passes through enableMentionPanel.
+/* oxlint-disable eslint(max-lines) -- 输入壳同时收口 Lexical 同步、拖拽和工具栏插槽，暂不拆组件。 */
+// 输入展示壳：纯 props 组件、无 store/协议依赖；mention 面板通过 enableMentionPanel 透传。
 import type {
   KeyboardEventHandler,
   DragEventHandler,
@@ -61,6 +61,7 @@ export function ChatPromptEditor({
   isDraggingOver = false,
   dragAttachmentHint,
   topContent,
+  inputLeadingContent,
   leadingActions,
   attachmentAction,
   betweenCancelAndSubmitAction,
@@ -74,6 +75,7 @@ export function ChatPromptEditor({
   promptHistory,
   className,
   shellClassName,
+  avoidIosInputFocusZoom = false,
   compactPlaceholder = false,
   onChange,
   onSubmit,
@@ -92,7 +94,7 @@ export function ChatPromptEditor({
   workspacePath: string;
   workspaceIdentity?: string;
   taskId: string | null;
-  /** For the Composer Skill catalog only; may be a draft's prewarmed session. */
+  /** 仅供 Composer Skill catalog；可为草稿的 prewarm Session。 */
   skillCatalogSessionId?: string | null;
   initialValue?: string;
   syncInitialValueOnMount?: boolean;
@@ -112,6 +114,8 @@ export function ChatPromptEditor({
   isDraggingOver?: boolean;
   dragAttachmentHint?: string;
   topContent?: ReactNode;
+  /** 与输入正文同一行的前置内容；Highspeed 使用紧凑 Fast 标签。 */
+  inputLeadingContent?: ReactNode;
   leadingActions?: ReactNode;
   attachmentAction?: {
     label: string;
@@ -119,7 +123,7 @@ export function ChatPromptEditor({
     testId?: string;
     menuItemTestId?: string;
   };
-  /** Inline-edit only: fixed second action between cancel and primary submit. */
+  /** 行内编辑专用：固定插在取消与主提交之间的第二动作。 */
   betweenCancelAndSubmitAction?: ReactNode;
   submitControl?: ReactNode;
   inputTestId?: string;
@@ -131,10 +135,10 @@ export function ChatPromptEditor({
   promptHistory?: readonly string[];
   className?: string;
   shellClassName?: string;
+  avoidIosInputFocusZoom?: boolean;
   compactPlaceholder?: boolean;
   onChange?: (value: string) => void;
-  // Adapter: false means the business layer rejected/deferred the submit; Lexical does not reset
-  // (draft kept).
+  // 适配：返回 false 表示业务层拒绝/延迟本次提交，Lexical 不自行 reset（草稿保留）。
   onSubmit: (value: string) => boolean | void;
   onModifiedSubmit?: (value: string) => boolean | void;
   onCancel?: () => void;
@@ -145,9 +149,9 @@ export function ChatPromptEditor({
   onDragLeave?: DragEventHandler<HTMLDivElement>;
   onDrop?: DragEventHandler<HTMLDivElement>;
   excludedSlashCommandNames?: readonly string[];
-  /** App-local slash commands (pass-through to LexicalChatInput). */
+  /** App 层本地斜杠命令（透传 LexicalChatInput）。 */
   appSlashCommands?: readonly AppSlashCommand[];
-  /** Mention panel switch (pass-through to LexicalChatInput). */
+  /** mention 面板开关（透传 LexicalChatInput）。 */
   enableMentionPanel?: boolean;
 }) {
   const { intl } = useZCodeIntl();
@@ -192,9 +196,8 @@ export function ChatPromptEditor({
 
     latestTextRef.current = initialValue;
     runAfterFrame(() => {
-      // On draft restore the outer input state is already updated, but Lexical's internal text
-      // does not follow props. Plain typing also updates the input prop, so compare the editor
-      // text first and never programmatically rewrite per keystroke.
+      // task 草稿恢复时外层 input state 已经更新，但 Lexical 内部文本不会自动跟随 props。
+      // 同时普通打字也会更新 input prop，必须先比较当前编辑器文本，避免每个字符都程序化重写编辑器。
       if (resolvedInputApiRef.current?.getMarkdown() === initialValue) {
         return;
       }
@@ -224,8 +227,8 @@ export function ChatPromptEditor({
         return;
       }
 
-      // Mounted via React Portal, the dialog's Esc-close still bubbles along the tree into the
-      // inline-edit form. The dialog consumed the interaction; do not cancel the message edit too.
+      // Dialog 通过 React Portal 挂载时，Esc 关闭弹窗的事件仍会沿组件树
+      // 冒泡到行内编辑 form；弹窗已消费这次交互，不能再把消息编辑一并取消。
       if (
         event.defaultPrevented ||
         (event.target instanceof Element && event.target.closest('[role="dialog"]'))
@@ -233,7 +236,7 @@ export function ChatPromptEditor({
         return;
       }
 
-      // Interaction: message edit is a transient state; Esc equals Cancel for a fast keyboard exit.
+      // 交互说明：用户消息 edit 是临时编辑态，Esc 应等价于点击取消，方便键盘流快速退出。
       event.preventDefault();
       onCancel();
     },
@@ -241,8 +244,8 @@ export function ChatPromptEditor({
   );
 
   const handleEditorSubmit = useCallback(
-    // Adapter: pass the business return through (false = keep the editor, draft kept); swallowing
-    // it would make Enter always clear.
+    // 适配：透传业务层返回值（false = 不 reset 编辑器，草稿保留），
+    // 吞掉返回值会让 Enter 路径总是清空。
     (value: string) => onSubmit(value),
     [onSubmit],
   );
@@ -252,8 +255,8 @@ export function ChatPromptEditor({
       const hasWorkspaceFilePayload =
         enableWorkspaceFileDrop && hasWorkspaceFileDragPayload(event.dataTransfer);
       if (hasWorkspaceFilePayload) {
-        // During dragover browsers usually expose only dataTransfer.types, not getData content.
-        // Deciding on the full payload made drop work while the hover state stayed dark.
+        // 浏览器在 dragover 阶段通常只暴露 dataTransfer.types，不保证能读到 getData 内容。
+        // 之前用完整 payload 判断，导致编辑输入框 drop 可用但 hover 状态不亮。
         event.preventDefault();
         event.dataTransfer.dropEffect = "copy";
         setWorkspaceFileDragging(true);
@@ -288,11 +291,11 @@ export function ChatPromptEditor({
         ? readWorkspaceFileDragPayload(event.dataTransfer)
         : null;
       if (workspaceFilePayload) {
-        // File-tree drags are not system files; no attachment branch. Convert to the same mention
-        // as @ files so contenteditable never gets plain text.
+        // file tree 拖拽不是系统文件，不能走附件分支；
+        // 这里统一转换成和 @ 文件一致的 mention，避免 contenteditable 插入纯文本。
         event.preventDefault();
-        // This editor nests inside the ChatView drop target; stop propagation after consuming,
-        // or the bottom main input receives the same mention again.
+        // 用户消息编辑器嵌套在 ChatView drop target 内；消费后必须停止冒泡，
+        // 否则同一条 mention 还会被底部主输入框再次接收。
         event.stopPropagation();
         setInternalDragging(false);
         setWorkspaceFileDragging(false);
@@ -323,8 +326,8 @@ export function ChatPromptEditor({
     ],
   );
 
-  // File-tree drops into the editor insert mentions, not attachments. Use workspace-file copy and
-  // light the droppable state from dragstart, not only once over the input.
+  // file tree 拖进编辑框时走的是 mention 插入，不是附件上传。
+  // 这里单独使用 workspace file 文案，并从拖拽开始事件就点亮可投放状态，避免必须 over 到输入框才有反馈。
   const isWorkspaceFileDropActive = workspaceFileDragging || internalDragging;
   const isExternalFileDropActive = externalFileDragging || isDraggingOver;
   const draggingOverlayHint = isWorkspaceFileDropActive
@@ -332,6 +335,35 @@ export function ChatPromptEditor({
     : isExternalFileDropActive
       ? dragAttachmentHint
       : undefined;
+
+  const editorNode = (
+    <LexicalChatInput
+      placeholder={placeholder}
+      disabled={disabled}
+      submitDisabled={submitDisabled}
+      allowSubmitWhenEmpty={allowSubmitWhenEmpty}
+          enterSubmits={enterSubmits}
+          onSubmit={handleEditorSubmit}
+          onModifiedSubmit={onModifiedSubmit}
+      onChange={handleTextChange}
+      onFocus={onFocus}
+      triggerPanelContainer={resolvedTriggerPanelContainer}
+      workspacePath={workspacePath}
+      workspaceIdentity={workspaceIdentity}
+      taskId={taskId}
+      skillCatalogSessionId={skillCatalogSessionId}
+      inputTestId={inputTestId}
+      editorApiRef={resolvedInputApiRef}
+      promptHistory={promptHistory}
+      avoidIosInputFocusZoom={avoidIosInputFocusZoom}
+      compactPlaceholder={compactPlaceholder}
+      onWhiteboardMentionSelected={onWhiteboardMentionSelected}
+      onPaste={onPaste}
+      excludedSlashCommandNames={excludedSlashCommandNames}
+      appSlashCommands={appSlashCommands}
+      enableMentionPanel={enableMentionPanel}
+    />
+  );
 
   return (
     <form onSubmit={handleSubmit} onKeyDown={handleKeyDown} className={cn("relative", className)}>
@@ -362,31 +394,14 @@ export function ChatPromptEditor({
         ) : null}
 
         {topContent}
-        <LexicalChatInput
-          placeholder={placeholder}
-          disabled={disabled}
-          submitDisabled={submitDisabled}
-          allowSubmitWhenEmpty={allowSubmitWhenEmpty}
-          enterSubmits={enterSubmits}
-          onSubmit={handleEditorSubmit}
-          onModifiedSubmit={onModifiedSubmit}
-          onChange={handleTextChange}
-          onFocus={onFocus}
-          triggerPanelContainer={resolvedTriggerPanelContainer}
-          workspacePath={workspacePath}
-          workspaceIdentity={workspaceIdentity}
-          taskId={taskId}
-          skillCatalogSessionId={skillCatalogSessionId}
-          inputTestId={inputTestId}
-          editorApiRef={resolvedInputApiRef}
-          promptHistory={promptHistory}
-          compactPlaceholder={compactPlaceholder}
-          onWhiteboardMentionSelected={onWhiteboardMentionSelected}
-          onPaste={onPaste}
-          excludedSlashCommandNames={excludedSlashCommandNames}
-          appSlashCommands={appSlashCommands}
-          enableMentionPanel={enableMentionPanel}
-        />
+        {inputLeadingContent ? (
+          <div className="flex min-w-0 items-start gap-2">
+            <div className="shrink-0">{inputLeadingContent}</div>
+            <div className="min-w-0 flex-1">{editorNode}</div>
+          </div>
+        ) : (
+          editorNode
+        )}
         <div ref={toolbarRef} className="group/toolbar flex items-end gap-3">
           <div className="flex min-w-0 flex-1 items-center" data-composer-leading-actions>
             <div className="flex shrink-0 items-center gap-1" data-composer-leading-content>
@@ -405,7 +420,7 @@ export function ChatPromptEditor({
                   showPlugins={enableMentionPanel !== false}
                 />
               ) : null}
-              {/* Permission/mode selectors used to render as leadingActions before the action menu, inverting the mandated order.*/}
+              {/* Bugfix：权限/模式选择曾作为 leadingActions 先于动作菜单渲染，导致常驻顺序与产品规范相反。 */}
               {leadingActions}
               {onModeSwitchContainerChange ? (
                 <span ref={onModeSwitchContainerChange} className="flex shrink-0 items-center" />

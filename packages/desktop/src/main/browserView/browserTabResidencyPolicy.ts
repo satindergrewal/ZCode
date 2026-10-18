@@ -12,12 +12,12 @@ export interface BrowserTabResidencyCandidate {
   windowId: number;
   sessionId: string;
   residency: BrowserTabResidency;
-  /** The physical guest is attached and not destroyed; logical residency cannot substitute for this fact. */
+  /** 物理 guest 已 attach 且未 destroyed；logical residency 不能替代此事实。 */
   guestAttached: boolean;
   openedAt: number;
   lastActivityAt: number;
   lastSelectedAt: number | null;
-  /** Main tab most recently selected for the current task; at most one per window/session. */
+  /** 当前任务最近一次被选择的主 tab；同一 window/session 至多一个。 */
   preferred: boolean;
   currentTask: boolean;
   selected: boolean;
@@ -30,15 +30,14 @@ export interface BrowserTabResidencyCandidate {
   downloadActive: boolean;
 }
 
-interface BrowserTabResidencySelectionOptions {
+export interface BrowserTabResidencySelectionOptions {
   windowId: number;
   tabLimit?: number;
 }
 
-function isBrowserTabResidencyProtected(candidate: BrowserTabResidencyCandidate): boolean {
-  // Product boundary: preferred only restores the default selection. At the logical tab
-  // limit only user-visible or running states are protected; a suspended shell may be
-  // closed directly.
+export function isBrowserTabResidencyProtected(candidate: BrowserTabResidencyCandidate): boolean {
+  // 产品边界：preferred 只用于恢复默认选中，不提供 30 分钟豁免；达到逻辑 tab
+  // 上限时，只有用户可见或正在运行的状态受保护，suspended shell 也可以被直接关闭。
   return (
     candidate.residency === "live-visible" ||
     candidate.residency === "restoring" ||

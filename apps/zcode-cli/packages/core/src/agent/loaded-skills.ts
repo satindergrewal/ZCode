@@ -1,21 +1,21 @@
 // ============================================================
-// "Was a skill loaded during this history?"
+// 「这段历史里加载过某个技能吗」（docs/dynamic-workflow/authoring.md「The authoring surface」）
 // ============================================================
-// The skill gate for workflow-authoring tools (tool/handlers/workflow-skill-gate.ts) asks exactly this. The signal deliberately comes from
-// the runtime's provider-visible history, not a separate session-level Set: history is what the model remembers right now —
-// once compaction squeezes out that Skill call the skill body is gone too, so the gate should close again; on resume/rewind
-// the history is rebuilt and the answer with it — no second hydration path needed.
+// 工作流创作工具的技能门（tool/handlers/workflow-skill-gate.ts）问的是这一句。判据刻意取自
+// runtime 的 provider 可见历史，而不是另立一个会话级 Set：历史就是模型此刻记得的东西——
+// compaction 把那次 Skill 调用挤出去，技能正文也一起不在了，门理应重新关上；resume / rewind
+// 重建历史时，答案随之重建，不需要第二套 hydration。
 
 import type { RuntimeMessageEntry } from "./message-history.js";
 
 const SKILL_TOOL_NAME = "Skill";
 
 /**
- * Whether a **successfully completed** `Skill` call in history loaded `skillName`.
+ * 历史里是否有一次**成功完成**的 `Skill` 调用加载了 `skillName`。
  *
- * Success = the assistant-issued call has a matching tool result entry that is not an error. Issued without a result (still running, denied)
- * or an `isError` result does not count. Both the current `{ skill }` shape and the legacy `{ name }` shape are accepted
- * (the contracts SkillInputSchema accepts both).
+ * 成功 = assistant 发出的调用有对应的 tool 结果条目且不是错误。只发出没结果（还在跑、被拒）
+ * 或结果 `isError` 都不算。技能名同时认当前形 `{ skill }` 与旧形 `{ name }`
+ * （contracts 的 SkillInputSchema 两种都收）。
  */
 export function sessionHasLoadedSkill(
   entries: readonly RuntimeMessageEntry[],

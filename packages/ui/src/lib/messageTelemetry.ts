@@ -1,4 +1,4 @@
-/* oxlint-disable eslint(max-lines) -- message_completion and agent_step share prompt lifecycle state; splitting would add cross-file sync complexity. */
+/* oxlint-disable eslint(max-lines) -- message_completion 与 agent_step 共用 prompt 生命周期状态，拆分会增加跨文件同步复杂度。 */
 import {
   legacyTelemetryModelFields,
   legacyTelemetryModelValue,
@@ -63,12 +63,12 @@ interface FinalizePromptTelemetryInput {
   agentComposition?: AgentComposition;
 }
 
-/** Sources of a standalone background wake: the Agent tool's background subagent, or a dynamic-workflow run notification. */
+/** 独立 background wake 轮的来源：Agent 工具的后台子代理，或 dynamic-workflow run 的通知。 */
 export type PromptMessageSource = "background_subagent" | "background_workflow";
 
 /**
- * `message_completion.agent_composition`: which Subagent results this turn consumed
- * (fg = foreground, bg = background, wf = dynamic-workflow run). Eight values = three booleans.
+ * `message_completion.agent_composition`：本轮消费过哪些 Subagent 结果（fg = 前台、bg = 后台、
+ * wf = 动态工作流 run）。八个值 = 三个布尔的组合。
  */
 type AgentComposition =
   | "main_only"
@@ -180,10 +180,9 @@ function resolvePromptTelemetryModelProvider(params: {
   selectedSupplierKey?: string | null;
 }): string {
   const { modelName, provider, selectedSupplierKey } = params;
-  // Bugfix: send_btn's model_name is already corrected to the UI model value, but
-  // selectedSupplierKey occasionally still points at the previous supplier, producing
-  // `uuid/model` paired with a `glm` provider. When the model value carries its own provider
-  // dimension, the provider must align with the same UI selection.
+  // Bugfix: send_btn 的 model_name 已按 UI model value 修正，但 selectedSupplierKey
+  // 偶尔仍停留在上一个 supplier，导致出现 `uuid/model` 搭配 `glm` provider。
+  // 当 model value 自身带 provider 维度时，provider 必须与同一份 UI selection 对齐。
   const providerFromModelName = readProviderIdFromModelValue(modelName);
   if (providerFromModelName) {
     return providerFromModelName;
@@ -198,7 +197,7 @@ function resolvePromptTelemetryModelProvider(params: {
     return customProviderId || provider || "";
   }
 
-  // A ghost supplier is the temporary quarantine before a stable custom provider resolves; fall back to the current ZCode Agent provider.
+  // ghost supplier 代表尚未解析到稳定 custom provider 的临时隔离态，provider 维度统一回退到当前 ZCode Agent provider。
   if (selectedSupplierKey.startsWith(GHOST_SUPPLIER_KEY_PREFIX)) {
     return provider ?? "";
   }
@@ -346,9 +345,8 @@ function finalizeAgentStep(input: {
   const isToolCall = input.step.stepType === "tool_call";
   const usage = input.step.usage?.usage;
   const model = input.step.model;
-  // Bugfix: scanning all of taskMessages before completion made later turns double-count
-  // historical steps/tools. Per-step closure is the source of truth for the current message,
-  // so aggregation must accumulate here, synchronously.
+  // Bugfix：completion 之前扫描整个 taskMessages，导致后一轮把历史 step/tool
+  // 重复计入。逐 step 收口才是当前 message 的事实源，因此聚合必须在这里同步累计。
   input.prompt.finalizedAgentStepCount += 1;
   if (isToolCall) {
     input.prompt.toolCallTotal += 1;
@@ -369,9 +367,8 @@ function finalizeAgentStep(input: {
       is_tftt_cached: "0",
       loop_index: String(input.step.loopIndex),
       step_type: input.step.stepType,
-      // Root cause: the old code read the model from shared prompt fields, so a later main or
-      // child request overwrote already-created steps. A step must freeze the model its request
-      // actually used; fall back to the prompt seed only when the legacy fact lacks request identity.
+      // Bug 根因：旧实现从 prompt 共享字段取模型，后续主请求或 child 请求会覆盖已创建 step。
+      // step 必须冻结其真实请求模型；只有旧事实缺少 request identity 时才回退 prompt seed。
       model_name: legacyTelemetryModelValue(
         model?.modelName ?? input.prompt.baseEventExtraDetail.model_name ?? "",
       ),
@@ -450,9 +447,8 @@ function closeGenerationStep(
     return;
   }
 
-  // Fix: replayable resume replays historical chunk/terminal events on the client, so
-  // Date.now() is local processing time, not the true tail latency from the source's final
-  // content chunk to the terminal state.
+  // 修复原因：replayable 恢复会把历史 chunk/terminal 在客户端重放，
+  // Date.now() 只能代表本地处理时间，不能代表源端正文尾包到终态的真实尾延迟。
   const canReportGenerationTailFinalize = clientMode === "desktop-continuous";
   const generationTailFinalizeMs =
     canReportGenerationTailFinalize &&
@@ -605,13 +601,11 @@ export function buildPromptTelemetryExtraDetail(params: {
     ask_mode: params.askMode ?? "",
     model_name: legacyTelemetryModelValue(params.modelName ?? ""),
     model_provider: legacyTelemetryProviderId(modelProvider),
-    // Fix: a custom provider's model_provider is often an internal uuid, meaningless for
-    // warehouse analysis of the real backend. provider_name now carries the provider hostname;
-    // model_provider is untouched to preserve the existing uuid/provider-id warehouse
-    // dimensions. Only the hostname is parsed from the URL -- never the full endpoint, to
-    // avoid leaking path or query.
+    // 修复原因：custom provider 的 model_provider 经常是内部 uuid，数仓分析真实后端时没有意义。
+    // provider_name 当前承载 provider hostname；不改 model_provider，避免影响既有 uuid/provider id 数仓口径。
+    // 这里只从 URL 解析 hostname，不上报完整 endpoint，避免泄漏路径或 query。
     ...(providerHostname ? { provider_name: providerHostname } : {}),
-    // agent comes from the ZCode Agent provider; this repo has no separate session.agentId.
+    // agent 字段取 ZCode Agent provider；本仓库没有独立 session.agentId。
     agent: params.provider ?? "",
     plan_status: params.planIdentitySnapshot?.planStatus ?? "unknown",
     plan_product_id: params.planIdentitySnapshot?.planProductId ?? "",
@@ -629,17 +623,15 @@ function isCompactionTerminalStatus(status: ZCodeTimelineStatus): boolean {
 }
 
 /**
- * Telemetry fields for context-compaction outcomes.
- * Returns the field object only in terminal states (completed/failed/interrupted) and null
- * while running (started/retrying/skipped); callers use that to decide whether to report.
- * The warehouse computes the success rate by status: completed / (completed + failed + interrupted).
- * provider/model dimensions reuse buildPromptTelemetryExtraDetail; version is injected by the
- * backend reportEvent.
+ * 构建压缩（context compaction）结果埋点字段。
+ * 仅在终态（completed/failed/interrupted）返回字段对象，运行态（started/retrying/skipped）返回 null，
+ * 调用方据此决定是否上报。成功率由数仓按 status 聚合：completed / (completed + failed + interrupted)。
+ * provider/model 维度复用 buildPromptTelemetryExtraDetail，version 由后端 reportEvent 注入。
  */
 export function buildCompactionTelemetryExtraDetail(params: {
   timeline: ZCodeContextCompactionTimelineMeta;
   provider?: ZCodeProvider;
-  /** Provider normalized by the V4 fact from the real model request; preferred over legacy UI supplier derivation. */
+  /** V4 fact 已从真实模型请求归一化出的 provider；优先于旧 UI supplier 推导。 */
   modelProvider?: string | null;
   modelName?: string | null;
   selectedSupplierKey?: string | null;
@@ -659,7 +651,7 @@ export function buildCompactionTelemetryExtraDetail(params: {
 
   const preCompactTokens = timeline.preCompactTokenCount ?? 0;
   const postCompactTokens = timeline.postCompactTokenCount ?? 0;
-  // Compaction ratio uses the provider's post/pre figures; leave empty when pre is 0 (no data) to avoid divide-by-zero polluting the distribution.
+  // 压缩率用供应商口径 post/pre；pre 为 0（缺数据）时留空，避免除零污染分布。
   const compactRatio =
     preCompactTokens > 0 ? (postCompactTokens / preCompactTokens).toFixed(4) : "";
   const durationMs =
@@ -698,7 +690,7 @@ function buildPromptUsageTelemetryExtraDetail(
     reasoning_tokens: String(usage.reasoningTokens ?? 0),
     cached_input_tokens: String(usage.cachedInputTokens ?? 0),
     cache_write_input_tokens: String(usage.cachedWriteInputTokens ?? 0),
-    // The ZCode Agent path never surfaces tool-use prompt tokens; pad success states with 0 to keep the extraDetail field set complete.
+    // ZCode Agent 链路未透出 tool use prompt token，成功态显式补 0 保持 extraDetail 字段集合完整。
     tool_use_prompt_tokens: "0",
     total_tokens: String(usage.totalTokens),
     ...(tokenSource ? { token_source: tokenSource } : {}),
@@ -907,7 +899,7 @@ export function activatePromptTelemetry(taskId: string, messageId: string): void
   agentStepTelemetryByTask.set(taskId, createAgentStepTelemetryState());
 }
 
-/** Background children reuse agent_step state only; they never create or report a separate message lifecycle. */
+/** background child 只复用 agent_step 状态，不创建或上报独立的 message 生命周期。 */
 export function activateDetachedAgentStepTelemetry(input: {
   taskId: string;
   messageId: string;
@@ -926,6 +918,37 @@ export function activateDetachedAgentStepTelemetry(input: {
     }),
   );
   agentStepTelemetryByTask.set(input.taskId, createAgentStepTelemetryState());
+}
+
+export function rekeyQueuedPromptTelemetry(
+  taskId: string,
+  fromMessageId: string,
+  toMessageId: string,
+): void {
+  if (fromMessageId === toMessageId) {
+    return;
+  }
+
+  const queue = queuedPromptTelemetryByTask.get(taskId);
+  if (!queue || queue.length === 0) {
+    return;
+  }
+
+  const targetIndex = queue.findIndex((item) => item.messageId === fromMessageId);
+  if (targetIndex === -1) {
+    return;
+  }
+
+  const target = queue[targetIndex];
+  if (!target) {
+    return;
+  }
+
+  queue[targetIndex] = {
+    ...target,
+    messageId: toMessageId,
+  };
+  queuedPromptTelemetryByTask.set(taskId, queue);
 }
 
 export function recordPromptModelRequestStarted(
@@ -967,10 +990,8 @@ export function recordPromptModelRequestStarted(
   };
   active.baseEventExtraDetail = {
     ...active.baseEventExtraDetail,
-    // Fix: send_btn is a UI selection snapshot, but message_completion/agent_step should
-    // reflect the real model request. When a custom provider is selected the workspace
-    // configOptions may still name a builtin model; override the terminal-state model
-    // dimensions with the runtime request_started payload.
+    // 修复原因：send_btn 是 UI 选择快照，但 message_completion/agent_step 要尽量代表真实模型请求。
+    // 自定义供应商切换时 workspace configOptions 可能仍是 builtin 模型；这里用运行时 request_started 回包覆盖完成态模型维度。
     ...(modelName ? { model_name: modelName } : {}),
     ...(modelProvider ? { model_provider: modelProvider } : {}),
     ...(providerHostname ? { provider_name: providerHostname } : {}),
@@ -1000,8 +1021,8 @@ function assignUsageToStep(step: ActiveAgentStep, attribution: AgentStepUsageAtt
 }
 
 /**
- * Write the Subagent's real model and cumulative usage onto its Agent step.
- * Foreground uses the parent task state; background uses the detached child state.
+ * 将 Subagent 的真实模型与累计 usage 写入其 Agent step。
+ * foreground 使用父 task state，background 使用 detached child state。
  */
 export function recordSubagentToolAttribution(input: {
   taskId: string;
@@ -1029,11 +1050,9 @@ export function recordSubagentToolAttribution(input: {
     };
   }
   if (input.usage) {
-    // Root cause: on cancel/failure the parent Agent tool's terminal state can precede
-    // SubagentStopped. Attributing only at stopped would find the tool step already removed
-    // from the active index and wrongly fall back to the main model with 0 tokens. The child
-    // fact carries lifetime cumulative values, so overwrite rather than add to keep
-    // incremental sync from double-counting.
+    // Bug 根因：取消/失败时父 Agent 工具终态可能早于 SubagentStopped。若只在 stopped
+    // 时首次归因，工具 step 已从活动索引删除，只能错误回退主模型且 token 为 0。
+    // child fact 每次携带的是当前生命周期累计值，这里覆盖而不是叠加，避免增量同步重复计数。
     step.usage = {
       requestIds: [...input.requestIds],
       requestCount: input.requestCount,
@@ -1065,8 +1084,7 @@ function applyAgentStepSkillMetadata(
   step: ActiveAgentStep,
   metadata: AgentStepSkillMetadata | undefined,
 ): void {
-  // Fix: metadata may only be written to Skill steps, keeping dirty fields from non-Skill
-  // tool_calls out of telemetry.
+  // 修复原因：metadata 只允许写入 Skill step，避免非 Skill tool_call 的脏字段进入 telemetry。
   if (!metadata || step.toolName !== "Skill") return;
   step.skillMetadata = {
     ...step.skillMetadata,
@@ -1093,11 +1111,10 @@ function materializePendingModelUsageBeforeTool(input: {
     return;
   }
 
-  // Root cause: when the model returns tool_use directly there is no content step, and the
-  // old logic let pending usage be consumed by the tool step created afterwards. Once the
-  // Agent tool adds child usage on top, main-model-A and child-model-B tokens blend into one
-  // model dimension. Emit a zero-duration generation that carries only this real model
-  // request; the tool step stays separate, awaiting the tool's or foreground child's facts.
+  // Bug 根因：模型直接返回 tool_use 时没有正文 step，旧逻辑会让 pending usage
+  // 被随后创建的工具 step 消费。Agent 工具再叠加 child usage 后，就会把主模型 A
+  // 和 child 模型 B 的 token 混在同一模型维度。这里补一个零时长 generation，
+  // 只承接本次真实模型 request；工具 step 保持独立，等待工具或前台 child 的事实。
   input.state.generationStep = createAgentStep(input.state, "generation", input.now);
   closeGenerationStep(
     input.prompt,
@@ -1129,9 +1146,8 @@ export function recordAgentStepTelemetryEvent(input: {
       ? input.event.inputId
       : undefined;
   if (input.activeInputId && eventInputId && input.activeInputId !== eventInputId) {
-    // Bugfix: once completion moved to per-step aggregation, late chunks/tools from a stale
-    // input would pollute the current message. Ownership follows the runtime activeInputId,
-    // tolerating inputId rebinding when a queued prompt is actually sent.
+    // Bugfix：completion 改用逐 step 聚合后，旧 input 的迟到 chunk/tool 也会污染当前 message。
+    // ownership 以 runtime activeInputId 为准，兼容 queued prompt 发送时实际 inputId 重绑定。
     return [];
   }
 
@@ -1162,9 +1178,8 @@ export function recordAgentStepTelemetryEvent(input: {
         return finalized;
       }
       if (input.event.parentToolUseId) {
-        // Fix: chunks carrying parentToolUseId are tool/subagent output shown on the tool
-        // card; they must not open a generation step as main assistant content nor refresh
-        // the content-tail timestamp.
+        // 修复原因：带 parentToolUseId 的 chunk 是工具/子 agent 输出，UI 会挂到工具卡片；
+        // 不能把它当主 assistant 正文创建 generation step 或刷新正文尾包时间。
         return finalized;
       }
       markPromptFirstToken(prompt, now);
@@ -1261,10 +1276,9 @@ export function recordAgentStepTelemetryEvent(input: {
       }
       applyAgentStepSkillMetadata(existing, input.skillMetadata ?? input.event.skillMetadata);
       applyAgentStepToolAttribution(existing, input.toolAttribution);
-      // Fix: recovery/out-of-order paths can observe permission_request followed directly by
-      // the tool terminal state with no preceding tool_call. Backfill settled waits first,
-      // then return the fallback step to the index to consume still-open waits, and finally
-      // correct startedAt so tool wall-clock time always covers waiting_ms.
+      // 修复原因：恢复/乱序链路可能先看到 permission_request，随后直接收到工具终态，
+      // 没有前置 tool_call。先回填已收口等待，再把兜底 step 放回索引消费仍开放的等待，
+      // 最后校正 startedAt，保证工具墙钟耗时始终覆盖 waiting_ms。
       applySettledPermissionWaitAttribution(state, existing);
       state.toolStepsById.set(input.event.toolId, existing);
       settlePermissionWaitsForTool(prompt, state, input.event.toolId, now);
@@ -1281,9 +1295,8 @@ export function recordAgentStepTelemetryEvent(input: {
           status: input.event.status,
           errorType: input.event.status === "failed" ? "TOOL_EXEC_ERROR" : undefined,
           errorMsg: input.event.error,
-          // Root cause: the compatibility stream only gave agent_step the tool name and
-          // status; the new task ID returned by CronCreate stayed in content, so ops could
-          // not correlate the creation step with the task.
+          // Bug 原因：兼容流过去只把工具名和状态交给 agent_step，CronCreate
+          // 返回的新任务 ID 留在 content 中，导致运营无法关联创建步骤与任务。
           automationId:
             input.event.status === "completed" &&
             (input.event.toolName ?? input.event.kind ?? existing.toolName) === "CronCreate"
@@ -1339,9 +1352,17 @@ export function recordAgentStepTelemetryEvent(input: {
   }
 }
 
-// Model name of the currently active prompt, letting ARMS mirror events (stream_stall etc.)
-// fill the model dimension; undefined when no prompt is active or it has no model_name, and
-// callers leave the field empty.
+export function recordPromptFirstToken(taskId: string, now = Date.now()): void {
+  const active = activePromptTelemetryByTask.get(taskId);
+  if (!active || active.firstTokenAt !== null) {
+    return;
+  }
+
+  active.firstTokenAt = now;
+}
+
+// 当前激活 prompt 的模型名,供 ARMS 镜像事件(stream_stall 等)补齐 model 维度;
+// 无激活 prompt 或未带 model_name 时返回 undefined,由调用方留空。
 export function getActivePromptModelName(taskId: string): string | undefined {
   const active = activePromptTelemetryByTask.get(taskId);
   return active?.baseEventExtraDetail.model_name || undefined;
@@ -1460,9 +1481,8 @@ export function finalizePromptTelemetry(
 
   const { changedFileCount, generatedCodeLines } = collectFileChangeMetrics(input.fileChanges);
   const isSuccess = input.status === "success";
-  // V4 live-fact usage arrives as low-frequency deltas; terminal does not re-carry the full
-  // aggregate. The legacy path may still pass usage at terminal. Prefer explicit terminal
-  // usage on success, falling back to the aggregated deltas.
+  // V4 live fact 的 usage 以低频 delta 到达，terminal 不重复携带整包累计值；
+  // 旧链路仍可在 terminal 直接传 usage。成功态优先显式 terminal usage，缺省回落已聚合 delta。
   const usageForTelemetry = isSuccess
     ? (input.usage ?? active.usage ?? undefined)
     : (active.usage ?? undefined);
@@ -1502,14 +1522,21 @@ export function finalizePromptTelemetry(
   };
 }
 
-/** Releasing a workspace telemetry attachment clears only its own task keys, never other workspaces'. */
+export function resetMessageTelemetryForTest(): void {
+  composerInputTimingByWorkspace.clear();
+  queuedPromptTelemetryByTask.clear();
+  activePromptTelemetryByTask.clear();
+  agentStepTelemetryByTask.clear();
+}
+
+/** workspace telemetry attachment 释放时只清自己的内部 task key，不影响其它 workspace。 */
 export function discardPromptTelemetry(taskId: string): void {
   queuedPromptTelemetryByTask.delete(taskId);
   activePromptTelemetryByTask.delete(taskId);
   agentStepTelemetryByTask.delete(taskId);
 }
 
-/** Discard only the not-yet-activated prompt so other queued messages in the session survive. */
+/** 仅丢弃尚未激活的单条 prompt，避免同 session 其它排队消息被一并清空。 */
 export function discardQueuedPromptTelemetry(taskId: string, messageId: string): void {
   const queue = queuedPromptTelemetryByTask.get(taskId);
   if (!queue) return;

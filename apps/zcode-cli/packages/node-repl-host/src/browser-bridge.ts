@@ -3,16 +3,13 @@ import { createConnection } from "node:net";
 import type { BrowserClientTransport } from "@zcode/core/browser-client";
 import type { NodeReplRequestMeta, NodeReplSession } from "@zcode/core/repl";
 import type { BrowserCommand, BrowserCommandResult } from "@zcode/shared";
-// Load only the broker protocol; the shared barrel would initialize unrelated-domain schemas in every Worker.
+// 只加载 broker 协议；shared 总入口会在每个 Worker 中初始化无关领域的 schema。
 import {
   NODE_REPL_BROWSER_BROKER_SOCKET_ENV,
   NODE_REPL_BROWSER_BROKER_TOKEN_ENV,
   nodeReplBrowserBrokerResponseSchema,
 } from "@zcode/shared/node-repl-browser-broker";
-import {
-  BROWSER_UNAVAILABLE_IN_SUBAGENT_MESSAGE,
-  NODE_REPL_BROWSER_BRIDGE_SYMBOL,
-} from "./runtime-bridge.js";
+import { NODE_REPL_BROWSER_BRIDGE_SYMBOL } from "./runtime-bridge.js";
 
 const MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
 type BrokerResponse = ReturnType<typeof nodeReplBrowserBrokerResponseSchema.parse>;
@@ -44,19 +41,9 @@ export function createBrowserBridgeGlobals(input: {
     }
     return active;
   };
-  const assertAvailable = (): ActiveNodeReplCall => {
-    const active = assertActive();
-    // One shared node_repl child serves main and subagents alike. Even with a fresh kernel per call, Browser
-    // permissions must be gated on the current call's trusted metadata, never guessed from session id or code text.
-
-    if (active.requestMeta.runtime_scope === "subagent") {
-      throw new Error(BROWSER_UNAVAILABLE_IN_SUBAGENT_MESSAGE);
-    }
-    return active;
-  };
   const transport: BrowserClientTransport = {
     list: async () => {
-      const active = assertAvailable();
+      const active = assertActive();
       const response = await sendBrokerRequest(
         { op: "list", ...requestContext(active.requestMeta) },
         active.signal,
@@ -65,7 +52,7 @@ export function createBrowserBridgeGlobals(input: {
       return response.browsers ?? [];
     },
     execute: async (browserId, browserGeneration, command) => {
-      const active = assertAvailable();
+      const active = assertActive();
       const response = await sendBrokerRequest(
         {
           op: "execute",
@@ -86,7 +73,7 @@ export function createBrowserBridgeGlobals(input: {
     [NODE_REPL_BROWSER_BRIDGE_SYMBOL]: {
       ...transport,
       documentationRoot: input.documentationRoot,
-      assertAvailable,
+      assertAvailable: assertActive,
     },
   };
 }

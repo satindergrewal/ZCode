@@ -1,17 +1,17 @@
 // ============================================================
-// Dynamic Workflow Run's **situation snapshot**: phases / subagents / health
+// Dynamic Workflow Run 的**情势截面**：阶段 / 子代理 / 健康
 // ============================================================
-// `getRunDetail` used to offer only counts and a
-// log tail, unable to answer the model's three real questions: where is the run, what is each subagent doing now, is it still moving.
-// This module is the derivation of exactly those three, and **only a derivation** -- pure functions, no journal, no registry, no clock:
-// events, node rows, actor rows, reducer state, parked questions, and `now` all arrive from the caller.
+// `getRunDetail` 原本只给得出计数与一截
+// 日志尾巴，回答不了模型真正要问的三件事：run 走到哪了、每个子代理此刻在干什么、它还在动吗。
+// 本模块就是那三件事的派生，且**只是派生**——纯函数，不碰 journal、不碰注册表、不取时钟：
+// 事件、节点行、actor 行、归约状态、停驻问题和 `now` 全部由调用方递进来。
 //
-// Why pure: the rules for these three field groups (state-word order, absent-reading, the single time source) are dense
-// and error-prone, while their data sources (SQLite journal + engine registry) are brutally expensive in tests. Separating rules from fetching
-// lets hand-made events and rows pin the rules; one integration test then proves the wiring.
+// 之所以要纯：这三组字段的规则（状态词的判定顺序、缺席的读法、时间的唯一来源）密度高、
+// 易错，而它们的取数面（SQLite journal + 引擎注册表）在测试里贵得离谱。把规则和取数分开，
+// 规则就能用一把手搓的事件与行钉死，取数只需一条集成用例证明接线通了。
 //
-// Split: event scan in -roster-events.ts, phase table in -roster-phases.ts, roster in
-// -roster-subagents.ts (each header documents its own fetch discipline); this file keeps the public contract, health face, and orchestration.
+// 拆分：事件扫描在 -roster-events.ts，阶段表在 -roster-phases.ts，花名册在
+// -roster-subagents.ts（各自的文件头写了自己的取数纪律）；本文件留下公开契约、健康面与编排。
 
 import type {
   DynamicWorkflowRunHealth,
@@ -31,42 +31,45 @@ import {
 import { buildPhaseViews } from "./dynamic-workflow-run-roster-phases.js";
 import { buildSubagentViews, NODE_ROW_RUNNING } from "./dynamic-workflow-run-roster-subagents.js";
 
-/** The `kind` of ask node rows. Streaks count ask settlements only: a world-read failure is not "subagents dying in a row". */
+/** ask 节点行的 `kind`。连败只数 ask 的结算：world-read 失败不是「子代理连着挂」。 */
 const ASK_NODE_KIND = "ask";
 
-/** The situation snapshot's fetch inputs. */
-interface WorkflowRunRosterInput {
+/** 情势截面的取数入参。 */
+export interface WorkflowRunRosterInput {
   /**
-      * This run's reducer state (journal events replayed into the same reducer as the run panel).
-      * A run with zero events (registry gap) passes `undefined`: no phase table, empty roster.
+   * 本 run 的归约状态（journal 事件重放进 run 面板同一个 reducer 的结果）。
+   * 一条事件都没有的 run（注册表间隙）传 `undefined`：那时阶段表缺席、花名册为空。
    */
   run: WorkflowRunState | undefined;
-    /** All of the run's journal events, ascending sequence. The **only** source of time. */
+  /** 本 run 的全部 journal 事件，sequence 升序。时间的**唯一**来源。 */
   events: readonly StoredEvent[];
-    /** `journal.listNodes(runId)`. Contributes status and `stats` only; rows carry no time columns. */
+  /**
+   * 非 report 的节点行、不带结果（`listNodes(runId, {kinds: NON_REPORT_NODE_KINDS, withResult:
+   * false})`）。只贡献状态与 `stats`，行上没有任何时间列。
+   */
   nodes: readonly NodeRecord[];
-    /** `journal.listActors(runId)`. The roster's roster. */
+  /** `journal.listActors(runId, {withPersona: false})`。花名册的名册本身。 */
   actors: readonly ActorRecord[];
-    /** The run's lifecycle state, the same value the detail face shows (terminal or not rewrites half the state words). */
+  /** run 的生命周期状态，与详情面给出的那一个同值（终态与否改写一半的状态词）。 */
   status: DynamicWorkflowRunLifecycleStatus;
   /**
-      * Questions parked on this run; **`undefined` = this read cannot see the park table** (the run lives
-      * in another process); then `health.pendingQuestionsKnown` is false and no subagent is reported `parked`.
-      * An empty array is the opposite: a definite "nobody waiting".
+   * 此刻停驻在这个 run 上的问题；**`undefined` 表示这次读查不到停驻表**（run 在别的进程
+   * 名下），此时 `health.pendingQuestionsKnown` 为假且没有子代理会被报成 `parked`。
+   * 空数组与之相反，是一句确定的「没人在等」。
    */
   pendingQuestions?: readonly DynamicWorkflowRunPendingQuestion[];
-    /** The instant of this read, used only to **clamp** event times (see -roster-events.ts's `timeOf`). */
+  /** 本次读的时刻，只用于给事件时间**上钳**（见 -roster-events.ts 的 `timeOf`）。 */
   now: number;
 }
 
-/** The situation snapshot: the detail face spreads these three keys. */
-interface WorkflowRunRoster {
+/** 情势截面：详情面直接展开这三个键。 */
+export interface WorkflowRunRoster {
   phases?: DynamicWorkflowRunPhaseView[];
   subagents: DynamicWorkflowRunSubagentView[];
   health: DynamicWorkflowRunHealth;
 }
 
-/** Derives the situation snapshot from the facts a getRunDetail already fetched. */
+/** 从一次 getRunDetail 已经读到的那几份事实里派生情势截面。 */
 export function buildWorkflowRunRoster(input: WorkflowRunRosterInput): WorkflowRunRoster {
   const { run, events, nodes, actors, status, pendingQuestions, now } = input;
   const terminal = TERMINAL_RUN_STATUSES.has(status);
@@ -86,7 +89,7 @@ export function buildWorkflowRunRoster(input: WorkflowRunRosterInput): WorkflowR
   };
 }
 
-/** Whether the run as a whole is still moving (see `DynamicWorkflowRunHealth`). */
+/** run 整体还在不在动（见 `DynamicWorkflowRunHealth`）。 */
 function buildHealth(input: {
   run: WorkflowRunState | undefined;
   nodes: readonly NodeRecord[];
@@ -95,7 +98,7 @@ function buildHealth(input: {
   pendingQuestions?: readonly DynamicWorkflowRunPendingQuestion[];
 }): DynamicWorkflowRunHealth {
   const { run, nodes, index, terminal, pendingQuestions } = input;
-    // Only terminal runs count leftovers: while alive, "rows marked running" is just the run working.
+  // 终态 run 才数遗留：run 还活着时「有行标着 running」就是它在正常干活。
   const leftoverRunning = terminal
     ? nodes.filter((node) => node.status === NODE_ROW_RUNNING).length
     : 0;
@@ -111,14 +114,15 @@ function buildHealth(input: {
 }
 
 /**
-  * The concurrency picture.
+ * 并发现状。
  *
-  * `cap` is **this run's own** bound: the user's number if set, else the machine ceiling.
-  * `effective` is what the governor actually admits now, i.e. min with the shared gate once more.
+ * `cap` 是**这个 run 自己的**上界：用户给它定过就是那个数，没定过就是默认并发（`concurrency.ceiling`，
+ * 键名早于「默认并发」这个概念）。
+ * `effective` 是治理器此刻实际放行的数，即再与共享闸门取一次小。
  *
-  * **Present only when `effective < cap`**, the same absence rule as the detail's `maxConcurrency`: a run
-  * saturated at its own bound has nothing to say. Reporting the ceiling as `cap` is wrong -- a run started with `max_concurrency: 3` on a
-  * six-core machine would read "3/6" forever, like being throttled, while running on the user's own bound.
+ * **只在 `effective < cap` 时在场**，与详情面的 `maxConcurrency` 同一条缺席规则：一个跑满自己
+ * 那条界的 run 没有可说的。报默认值当 `cap` 是错的——一个以 `max_concurrency: 3` 起的 run 在
+ * 六核机器上会永远显示成「3/6」，读起来像被限流，而它正跑在用户亲手定的界上。
  */
 function concurrencyField(
   run: WorkflowRunState | undefined,
@@ -140,9 +144,9 @@ function concurrencyField(
 }
 
 /**
-  * Consecutively failed asks at the **end** of the settlement order: 3 in a row and 3 scattered are different situations --
-  * the former predicts the next failure too. Asks only -- world-read failures are the script's problem, not subagents collapsing.
-  * `cancelled` breaks the streak like success: cancelled is not failed.
+ * 按结算顺序**结尾处连续**失败的 ask 数：连挂 3 次与前后散落 3 次是两个不同的处境，
+ * 前者说明下一条也多半会挂。只数 ask——world-read 的失败是脚本的事，不是子代理在垮。
+ * `cancelled` 与成功一样断开连败：被取消不是失败。
  */
 function countTrailingFailures(nodes: readonly NodeRecord[], index: RosterEventIndex): number {
   const askKeys = new Set(

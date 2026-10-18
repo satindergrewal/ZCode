@@ -1,110 +1,131 @@
 // ============================================================
-// workflowRuns: live run-state schema of the dwf engine (the workflowRuns key of snapshot.ts)
+// workflowRuns：dwf 引擎 run 的实时运行态 schema（snapshot.ts 的 workflowRuns 键）
 // ============================================================
-// Split out of snapshot.ts: this vocabulary is self-contained (run/actor/node/usage/limits),
-// and the split brings snapshot.ts back under its max-lines cap (same precedent as workspace-hook-review.ts).
+// 从 snapshot.ts 拆出：这块词汇表自成一体（run / actor / node / usage / limits），
+// 拆出让 snapshot.ts 回到 max-lines 上限之内（与 workspace-hook-review.ts 同一先例）。
 
 import { z } from "zod";
 
 import { workflowRunArtifactSummarySchema } from "./workflow-artifacts.js";
 
-// -- workflowRuns: live run state of the dwf engine --
-// Same pattern as subagents: run state belongs to the conversation authority projection, not a renderer query cache.
-// One engine RunEvent -> one conversation event -> whole-key replacement here, so there is no dual clock of event plus follow-up RPC.
+// ── workflowRuns：dwf 引擎 run 的实时运行态──
+// 与 subagents 同一个模式：运行态属于 conversation 权威投影，而不是 renderer 的查询缓存。
+// 一条引擎 RunEvent → 一条会话事件 → 这里的键级整体替换，因此不存在「事件 + 另查 RPC」的双时钟。
 export const WORKFLOW_RUNS_LIMITS = {
-  /** Most recent runs; oldest evicted beyond the cap. */
+  /** 最近若干个 run；超出按最旧淘汰。 */
   maxRuns: 8,
   /**
-   * actors and nodes share the same capacity so a visible node never outlives its evicted subagent.
-   * Key-level deltas carry only the changed part per event; the caps bound each run's projection size
-   * and the resource drag of runaway scripts. Cross-run totals are governed by {@link maxTotalEntries}.
-   * These are display-state caps; they never limit subagents the engine actually runs.
+   * actors 与 nodes **同界**。每个节点都属于某个 actor，所以 nodes 的界已经隐含了 actor
+   * 数的量级；把 actors 压得更低（曾是 32）只会让一个平常的 50 路 fan-out 在检视器里
+   * 静默少掉 18 个子代理，而节点表、引擎、图三层都装得下。
+   *
+   * 2026-09-20 从 256 抬到 1024：原来那条界的理由是「状态键按事件整体重发，无界即 O(N²)
+   * 字节」，而键级增量（workflow-runs-delta.ts）落地后每条事件只发改动量，那条理由没了。
+   * 剩下的两条理由都还在，而且都不需要 256 这么紧：挡住「疯掉的脚本在循环里 `agent()`」，
+   * 以及让单条 run 的字节数有个上界。**跨 run** 的总量另有 {@link maxTotalEntries} 管。
+   * 它仍然不是产品意义上的子代理上限。
    */
   maxActors: 1_024,
   maxNodes: 1_024,
   /**
-   * Entry budget of the whole state key: sum of `nodes.length + actors.length` over all runs.
+   * 整个状态键的条目预算：所有 run 的 `nodes.length + actors.length` 之和。
    *
-   * maxRuns x per-run bound = 16384 entries; at ~150 bytes each that is ~2.5MB -
-   * near the 16MiB snapshot cap, and snapshots serialize whole. The budget keeps the worst case ~1MB,
-   * at the cost of the oldest terminal run leaving early (its full facts stay in the journal; details still queryable).
-   * On over-budget the reducer evicts terminal runs only - never running ones, never the event's own run.
+   * 单条 run 的界乘以 {@link maxRuns} 是 16384 条，按每条约 150 字节算就是 ~2.5 MB ——
+   * 离 16 MiB 的快照上限不远，而快照是要整份序列化的。预算把最坏情形压回 ~1 MB，
+   * 代价是**最旧的终态 run** 会提前离场（它的完整事实仍在 journal 里，详情页照样查得到）。
+   * 归约在超预算时只淘汰终态 run，绝不动在跑的 run，也绝不动事件所属的那条。
    */
   maxTotalEntries: 6_144,
   /**
-   * Display budget of the details-page Results section, deliberately far below the engine's per-run report cap (256):
-   // the wire bound is a display budget; the engine's bound is the contract. They need not match. Entries beyond it
-   // stay in the journal (`dwf_node.kind = "report"`), just out of this high-frequency state key.
+   * 详情页 Results 区的**展示**预算，刻意远小于引擎的 run 级 report 上限（`REPORT_CAPS.maxItemsPerRun`）：
+   * 协议线上的界是展示预算，引擎的界才是契约，两者不必相等。超出这个界的条目仍在
+   * journal 里（`dwf_node.kind = "report"`），只是不进这条高频状态键。
    */
   maxReports: 64,
   maxReportPreviewLength: 2_048,
   maxResultPreviewLength: 2_048,
   maxErrorLength: 2_048,
   /**
-   * Concurrent escalated questions. The engine's true bound is
-   // 3 per ask x in-flight asks (maxConcurrency), so 32 suffices under any realistic caps;
-   // it is also a guard - a runaway script must not be able to blow up a high-frequency state key.
+   * 同时停驻的升级问题条数。引擎侧的真实上界是
+   * per-ask 3 条 × 在飞 ask 数（maxConcurrency），32 因此在任何现实 caps 下都够用；
+   * 它同时是一道防线——一个疯掉的脚本不该能把一个高频状态键撑爆。
    */
   maxPendingQuestions: 32,
-  /** Display cap for questions and notes; equal to the event-payload string bound (2048) so the normal path never truncates. */
+  /** 问题与补充说明的展示上界。与事件载荷的字符串界（2048）同值，所以正常路径永不截断。 */
   maxQuestionLength: 2_048,
-  /** Bound on concurrency-bucket provider keys (`${providerId}/${modelId}`). */
+  /** 并发桶的 provider key（`${providerId}/${modelId}`）上界。 */
   maxConcurrencyKeyLength: 256,
   /**
-   * Wire bound on subagent model strings (`providerId/modelId`, optional `$reasoningLevel` suffix). Same value as the
-   // concurrency-bucket provider key: same family of identifier, plus possibly a reasoning tier.
+   * 子代理模型串（`providerId/modelId`，可带 `$reasoningLevel` 后缀）的线上上界。与并发桶的
+   * provider key 同值：两者是同一族标识串，只是这一条可能多一个推理档后缀。
    */
   maxSubagentModelLength: 256,
   /**
-   * Bound on `run.concurrencyCeiling`. The ceiling derives from `min(16, cores - 2)`; this bound only rejects bad payloads
-   // (the reducer treats out-of-range as unreadable and keeps the known value).
+   * actor `sessionId` 的线上上界。会话 id 是铸出来或读出来的标识，不是展示文本：超界的值
+   * 整条丢弃而不是截断——一个被砍短的会话 id 指向的是另一条（或不存在的）会话。
+   */
+  maxSessionIdLength: 256,
+  /**
+   * `run.concurrencyCeiling`（默认并发 D）的上界。D 按 `max(4, min(16, cores − 2))` 推导，这条界只挡坏载荷
+   * （reducer 读到界外的值当作读不出，沿用已知值）。
    */
   maxConcurrencyCeiling: 1_024,
   /**
-   * Wire bound on subagent display names (actor.name, same value as pendingQuestion.actorName). Names are arbitrary
-   // author strings (`agent("reader-" + paths.join("+"))`); the reducer must clip to this bound before publishing:
-   // a 131-char name once got every later frame of the parent session rejected, killing the subscription.
+   * 子代理展示名的线上上界（actor.name 与 pendingQuestion.actorName 同值）。名字是脚本作者
+   * 写的任意字符串（`agent("reader-" + paths.join("+"))`），reducer 必须按这条界裁剪后再上线：
+   * 曾因一个 131 字的名字让父会话之后的每一帧被渲染端拒收，订阅永久失效。
    */
   maxActorNameLength: 128,
   /**
-   * Count of user-facing artifacts. Equal to the engine's
-   // `ARTIFACT_CAPS.maxArtifactsPerRun` - opposite reasoning from maxReports ('display budget < engine contract'):
-   // the engine cap is already 32; pushing the display bound lower would silently drop cards
-   // from the side panel - the very cards this feature exists for.
+   * 用户面产物的条数。与引擎侧的
+   * `ARTIFACT_CAPS.maxArtifactsPerRun` **同值**，理由与 maxReports 的「展示预算 <
+   * 引擎契约」相反：产物的引擎上限本来就是 32，把展示界压得更低只会让一个跑在上限上的
+   * 脚本在侧板里静默少掉几张卡，而这些卡正是这个特性存在的全部理由。
    */
   maxArtifacts: 32,
   /**
-   * Count of entered phases. Equal to the display payload's
-   // `CREATE_WORKFLOW_GRAPH_MAX_PHASES`: phases the timeline cannot draw need not be projected.
+   * 被进入过的阶段条数。与 display
+   * 载荷的 `CREATE_WORKFLOW_GRAPH_MAX_PHASES` 同值：时间线上画不出的阶段，投影里也不必记。
    */
   maxPhases: 32,
-  /** Wire bound on phase names, equal to display's `CREATE_WORKFLOW_GRAPH_MAX_NAME_CHARS` (the UI joins both sides by name). */
+  /** 阶段名的线上上界，与 display 的 `CREATE_WORKFLOW_GRAPH_MAX_NAME_CHARS` 同值（UI 按名字关联两边）。 */
   maxPhaseNameLength: 128,
   /**
-   * Bound on an ask's task summary (`instructionsHead` of node-queued). Equal to the engine's
-   // `INSTRUCTIONS_HEAD_MAX_CHARS`: that side already clips to it; this is the second gate on the wire.
-   // 240 chars is what 'see at a glance what this subagent was sent to do' needs; longer means shipping the full
-   // instructions over the protocol, which live in the journal and the subagent transcript.
+   * 一条 run 记得的留白条数（docs/dynamic-workflow/presentation.md「Holes on the timeline」）。与 display
+   * 载荷的 `holes` 同界：时间线上画不出的留白，投影里也不必记。一个留白就是一个阶段，所以它天然
+   * 不会多过 `maxPhases`。
+   */
+  maxHoles: 32,
+  /** 留白类型原文（`Plan`）的线上上界，与 display 的同名字段同值。 */
+  maxHoleTypeLength: 128,
+  /** 留白的提示语在 run 状态里的上限（侧板等待体要画它）；超长时截到 499 字加 `…`。 */
+  maxHolePromptLength: 500,
+  /**
+   * 一次 ask 的**任务摘要**上界（`node-queued` 的 `instructionsHead`）。与引擎侧的
+   * `INSTRUCTIONS_HEAD_MAX_CHARS` 同值：那一头已经按这条界切好，这里是线上的第二道闸。
+   * 240 是「一眼看出这个子代理被派去干什么」所需的长度——再长就是在协议线上搬运指令全文，
+   * 而指令全文有 journal 与子代理转录两处可去。
    */
   maxInstructionsHeadLength: 240,
-  /** Bound on the last tool call's tool name (same order as actor/node siteId; a tool name is an identifier, not prose). */
+  /** 最近一次工具调用的工具名上界（与 actor/node 的 siteId 同量级，工具名是标识符不是文本）。 */
   maxLastToolNameLength: 64,
   /**
-   * Bound on the last tool call's target (file path, command head). Equal to the engine's
-   // `LAST_TOOL_TARGET_MAX_CHARS`. Doubles as a safety bound: it fits one path or command head,
-   // not full args or file content - those never belong on this high-frequency key.
+   * 最近一次工具调用的**目标**上界（文件路径、命令头）。与引擎侧的
+   * `LAST_TOOL_TARGET_MAX_CHARS` 同值。这条界同时是一条安全界：它只放得下一个路径或命令头，
+   * 放不下参数全文或文件内容——后两者永远不该出现在这条高频状态键上。
    */
   maxLastToolTargetLength: 120,
 } as const;
 
 /**
- * Bounds compiled into **legacy consumers** (the generation without the `workflowRunDeltas` capability) for actors/nodes.
+ * **旧消费者**（没有 `workflowRunDeltas` 能力的那一代）编译进去的 actors / nodes 界。
  *
- * Never change these two numbers: they are validation bounds inside someone else's binary, not ours. An over-bound payload
- * is not trimmed - the whole `state.updated` patch fails to parse, the frame drops, and the subscription dies silently.
- * So every frame for such subscribers passes `clampWorkflowRunsForLegacy` first.
+ * ⚠ 这两个数**永远不能改**：它们不是我们的界，是别人二进制里的校验界。超界的载荷不会被
+ * 剥掉一个键——它会让整个 `state.updated` patch 解析失败、整帧被丢，那条订阅从此静默
+ * （2026-09-04 的那次 `fault.subscription.recoveryFailed` 就是这个形状）。所以给这类订阅者
+ * 发帧前必须先过 `clampWorkflowRunsForLegacy`。
  *
- * 'First 256' is not arbitrary: the legacy reducer rejects-new on overflow, which yields exactly the oldest 256.
+ * 「前 256 条」不是随手取的：旧归约触界时是**拒新**，它产出的恰好就是最早的那 256 条。
  */
 export const WORKFLOW_RUNS_LEGACY_LIMITS = {
   maxActors: 256,
@@ -112,8 +133,9 @@ export const WORKFLOW_RUNS_LEGACY_LIMITS = {
 } as const;
 
 /**
- * A phase entered by control flow (marked via `phase("...")`). `name` is the author's verbatim string (the timeline joins display's `phases[].name` by it); `rounds` counts
- * entries - monotonic (reducer takes max), so resume replays never double it.
+ * 一个被控制流进入过的阶段（`phase("…")` 标记；docs/dynamic-workflow/presentation.md
+ * 2026-09-05）。`name` 是作者原词（时间线按它关联 display 的 `phases[].name`）；`rounds` 是进入
+ * 次数——单调（reducer 取 max），所以 resume 重放的前缀不会把它加倍。
  */
 export const workflowRunPhaseSchema = z.object({
   name: z.string().min(1).max(WORKFLOW_RUNS_LIMITS.maxPhaseNameLength),
@@ -122,17 +144,17 @@ export const workflowRunPhaseSchema = z.object({
 export type WorkflowRunPhase = z.infer<typeof workflowRunPhaseSchema>;
 
 /**
- * How much of the bound a birth phase spent.
+ * 界在某个**出生阶段**上花掉了多少（docs/dynamic-workflow/presentation.md「Reduction」）。
  *
- * Two counters ({@link workflowRunUsageSchema} `nodesUnlisted`/`nodesUnlistedSettled`) say how
- * many entries a run under-listed in total, but not where - while the read surface is per-stop: each stop's roster, count ring
- * and 'N more' must add back its own off-table entries, or a wide fan-out stop shows a tiny number.
+ * 两个计数器（{@link workflowRunUsageSchema} 的 `nodesUnlisted` / `nodesUnlistedSettled`）说得出
+ * 一条 run 总共少列了多少，说不出少在**哪一站**——而读面是按站画的：一个站点的花名册、计数环和
+ * 「N more」都得把自己那格的表外条目加回去，否则宽 fan-out 的站点会显示成一个小数字。
  *
- * `phaseName` absent = the phaseless bucket (born before any `phase()` mark, or an old CLI). `actors` counts
- * subagents of this phase not currently in the actor table (rejected, evicted, orphan-ruled all count);
- * `actorsSettled` those known finished, `actorsFailed` the failed among them; `settled` counts off-table
- * settled nodes recorded in this bucket. `actors` can rise and fall: an evicted subagent re-enters the table on its next dispatch.
- * Optional subkeys are absent at zero; a bucket of four zeros is absent entirely (same absence rule as the rest of this file).
+ * `phaseName` 缺席 = 无阶段那一格（出生在任何 `phase()` 标记之前，或旧 CLI 没打戳）。`actors` 是
+ * 这个阶段**此刻不在 actor 表上**的子代理数（被拒的、被淘汰的、按孤儿规则摘掉的都算），
+ * `actorsSettled` 是其中已知已经结束的、`actorsFailed` 又是其中失败的，`settled` 是记在这一格上的
+ * 表外已结算节点数。`actors` 可加可减：一个被淘汰的子代理在下次被派活时会回到表上。
+ * 零值的可选子键缺席，四个数全零的格子整个不在（与本文件其余「无则缺席」同规）。
  */
 export const workflowRunUnlistedPhaseSchema = z.object({
   phaseName: z.string().min(1).max(WORKFLOW_RUNS_LIMITS.maxPhaseNameLength).optional(),
@@ -144,21 +166,22 @@ export const workflowRunUnlistedPhaseSchema = z.object({
 export type WorkflowRunUnlistedPhase = z.infer<typeof workflowRunUnlistedPhaseSchema>;
 
 /**
- * Run-level usage: an observation surface, not a control surface. `spentTokens` mirrors
- * the engine usage-updated total (written in the same step as `dwf_run.spent_tokens`, always equal);
- * `nodesUsed` counts nodes dispatched in this run - no bound exists to derive it from, none needed.
- * no bound exists to derive it from, and none is needed.
+ * run 级用量：观察面，不是控制面（docs/dynamic-workflow/authoring.md）。`spentTokens` 直接取
+ * 引擎 `usage-updated` 事件携带的已花总量（与 `dwf_run.spent_tokens` 同一同步步骤写入，
+ * 二者永远相等）；`nodesUsed` 是本 run 已派发（dispatched）的节点数，由节点事件计数——
+ * 没有任何上限可以拿来反算，也不需要。
  */
 export const workflowRunUsageSchema = z.object({
   spentTokens: z.number().int().nonnegative(),
   nodesUsed: z.number().int().nonnegative(),
   /**
-   * Instances rejected from the table on hitting {@link WORKFLOW_RUNS_LIMITS.maxNodes}, and settled ones among them. `truncated` says only 'something did not fit',
-   * not how much - a 3000-way fan-out would display as '1024 steps', a falsehood.
+   * 撞上 {@link WORKFLOW_RUNS_LIMITS.maxNodes} 被**拒之表外**的实例数，以及其中已结算的条数
+   * （docs/dynamic-workflow/presentation.md）。`truncated` 只说得出「有东西没进来」，说不出
+   * 有多少——于是一个 3000 路 fan-out 的 run 在读面上会显示成「1024 步」，那是一句假话。
    *
-   * Both are additive counts (rejected instances have no identity in the table to dedup), so the reducer counts them
-   * only when an event raises the watermark; retransmitted tail events cannot inflate them. `run-started`
-   * zeroes them with the whole usage: resume re-sends the script prefix, and not resetting would sum two lifetimes. Absent at zero.
+   * 两条都是**加出来**的计数（被拒实例根本不在表里，没有可去重的身份），所以归约只在事件
+   * **抬过水位**时才计，重传的队尾事件不会把它们越推越高。`run-started` 连同整个 usage 一起
+   * 清零：resume 会把脚本前缀重发一遍，不清零等于把两世的步数加在一起。零时整个键缺席。
    */
   nodesUnlisted: z.number().int().nonnegative().optional(),
   nodesUnlistedSettled: z.number().int().nonnegative().optional(),
@@ -166,41 +189,50 @@ export const workflowRunUsageSchema = z.object({
 export type WorkflowRunUsage = z.infer<typeof workflowRunUsageSchema>;
 
 /**
- * One actor instance. `status` is a derived tri-state:
- * Engine Boundary C emits no actor lifecycle events beyond actor-created, so status derives from the actor's
- * nodes and the run's terminal state -
- *   - running: some node executing/repairing/nudged (model request sent, in flight);
- *   - waiting: a live node (queued/dispatched/waiting: not yet placed, queued for a slot, or backing off)
- *     or no nodes yet with the run not terminal (created, never asked);
- *   - completed: everything else (all nodes settled, or run terminal).
- * No observable per-actor failed exists: a failed ask still 'finished its work'; the result lives on nodes.
+ * 一个 actor 实例。`status` 是**派生**的三态：
+ * 引擎的 Boundary C 除了 `actor-created` 之外不发任何 actor 生命周期事件，所以状态从该 actor 的
+ * 节点与 run 的终态推出来——
+ *   - `running`：有节点处于 executing / repairing / nudged（模型请求已发出、正在跑）；
+ *   - `waiting`：有 live 节点（queued / dispatched / waiting：还没派下去、在等槽位或在退避），
+ *     **或**尚无任何节点而 run 未终态（建了还没被 ask）；
+ *   - `completed`：其余（全部节点已结算，或 run 已终态）。
+ * 不存在可观察的 actor 级 failed：某次 ask 失败仍是「它的活干完了」，结果在节点上。
  *
- * `sessionId` is the actor session id (phase 5 transcript drill-down reads it directly). Also not on Boundary C:
- * the run service mints it deterministically from (runId, actorRef).
+ * `sessionId` 是**持有这个子代理转录的那条会话**（transcript 下钻直接读它，
+ * docs/dynamic-workflow/presentation.md「Subagent transcripts」）。通常是 run service 按
+ * `(runId, actorRef)` 确定性铸造的本 run 会话；修订 run 里一个到目前为止全部答案都来自导入
+ * 命中的子代理没有自己的会话（命中不建会话），这时它是前驱里被读取的那条会话，由缓存结算的
+ * `sourceSessionId` 带来，第一次 live 派发之后换回本 run 的会话（种子已抄入前缀）。
  */
 export const workflowRunActorSchema = z.object({
   siteId: z.string().min(1).max(64),
   ordinal: z.number().int().nonnegative(),
   name: z.string().min(1).max(WORKFLOW_RUNS_LIMITS.maxActorNameLength).optional(),
-  sessionId: z.string().min(1).max(256).optional(),
+  sessionId: z.string().min(1).max(WORKFLOW_RUNS_LIMITS.maxSessionIdLength).optional(),
   status: z.enum(["waiting", "running", "completed"]),
   /**
-   * Birth phase of this instance: the `phase("...")` name at control flow when its ordinal was minted. The UI joins `phases[].name`
-   * by name - the only vocabulary engine and analyzer share - so the bound equals `maxPhaseNameLength`.
+   * 这个实例**出生**在哪个阶段：它的 ordinal 被铸造的那一刻，控制流所在的 `phase("…")` 标记名。UI 按**名字**与 `phases[].name`
+   * 关联——名字是引擎与分析器唯一共享的词汇，所以界与 `maxPhaseNameLength` 同值。
    *
-   * Absent has two readings, both valid: born before any mark (no `phase()` in the script, or later),
-   * or the event came from an old CLI without the key.
+   * 缺席有两种读法，消费者都要认：出生在任何标记之前（脚本没写 `phase()`，或写在后面），
+   * 或者发事件的是不带这个键的旧 CLI。
    */
   phaseName: z.string().min(1).max(WORKFLOW_RUNS_LIMITS.maxPhaseNameLength).optional(),
+  /**
+   * 这个子代理的模型：persona 点名了模型时，宿主按本 run 的绑定表解析出的规范串
+   * `providerId/modelId[$level]`（docs/dynamic-workflow/presentation.md「Reduction」）。缺席即它跑在
+   * run 的子代理模型上（或发事件的是不带这个键的旧 CLI）。与 `subagentModel` 同界。
+   */
+  model: z.string().min(1).max(WORKFLOW_RUNS_LIMITS.maxSubagentModelLength).optional(),
 });
 export type WorkflowRunActor = z.infer<typeof workflowRunActorSchema>;
 
 /**
- * Most recent tool call of an ask (via node-progress). `name` is the tool; `target` is
- * a label-short target - file path, command head - absent when unreadable.
+ * 一次 ask 里**最近一次**工具调用（`node-progress` 携带）。`name` 是工具名；`target` 是一个
+ * 短到能当标签用的目标——文件工具的路径、Bash 的命令头，读不出时缺席。
  *
- * Deliberately only these two keys: full args and file content stay off this high-frequency key (one per resolved turn);
- * they live in the journal and subagent transcript. The `target` bound is thus both display budget and enforcement of that rule.
+ * **刻意只有这两个键**：参数全文与文件内容不进这条高频状态键（每个已解析轮次发一条），
+ * 它们在 journal 与子代理转录里。`target` 的界因此既是展示预算也是那条约束的守卫。
  */
 export const workflowRunNodeLastToolSchema = z.object({
   name: z.string().min(1).max(WORKFLOW_RUNS_LIMITS.maxLastToolNameLength),
@@ -209,15 +241,15 @@ export const workflowRunNodeLastToolSchema = z.object({
 export type WorkflowRunNodeLastTool = z.infer<typeof workflowRunNodeLastToolSchema>;
 
 /**
- * A node (ask/world-read) instance. `phase` is the node lifecycle phase the engine actually emitted:
+ * 一个节点（ask / world-read）实例。`phase` 就是引擎**实际发出的**节点事件：
  *   queued → dispatched → executing ⇄ waiting → (repairing | nudged) → settled。
- * executing/waiting come from driver observation:
- * node-executing = the ask's model request truly sent; node-waiting = waiting on a process-level slot or backing off.
- * dispatched is therefore the brief 'session ready, first request not yet admitted' phase; the read surface groups it with queued/waiting.
+ * `executing` / `waiting` 来自 driver 的观察：
+ * `node-executing` = 该 ask 的模型请求真的发出去了；`node-waiting` = 它在等进程级槽位或在退避。
+ * `dispatched` 因此是「会话就绪、首个请求尚未准入」的短暂相位，读面把它与 queued / waiting 同归「等待」。
  *
- * `kind` is optional: resume completion-cache hits emit node-settled directly (ask via scheduler.ts
- * releaseCachedAsk/tryImportedSettle, world-read via engine-world.ts replay/import hits),
- * skipping node-queued, and only queued carries kind.
+ * `kind` 可缺省：resume 的完结命中短路直接发 `node-settled`（ask 走 scheduler.ts 的
+ * releaseCachedAsk / tryImportedSettle，world-read 走 engine-world.ts 的重放与导入命中），
+ * 不经 `node-queued`，而 kind 只在 queued 上携带。
  */
 export const workflowRunNodeSchema = z.object({
   siteId: z.string().min(1).max(64),
@@ -226,27 +258,27 @@ export const workflowRunNodeSchema = z.object({
   phase: z.enum(["queued", "dispatched", "executing", "waiting", "repairing", "nudged", "settled"]),
   outcome: z.enum(["ok", "failed", "cancelled"]).optional(),
   cached: z.boolean().optional(),
-  /** Site id of the owning actor (world-reads have none). */
+  /** 该节点所属 actor 的站点 id（world-read 无 actor）。 */
   actorSiteId: z.string().min(1).max(64).optional(),
   actorOrdinal: z.number().int().nonnegative().optional(),
   /**
-   * Birth phase of this instance,
-   * verbatim semantics of the same key in {@link workflowRunActorSchema}: the `phase("...")` name when the ordinal was
-   * minted; the UI joins phases[].name by it; absent = born before any mark, or an old CLI.
+   * 这个实例**出生**在哪个阶段，
+   * 语义与 {@link workflowRunActorSchema} 的同名键逐字相同：ordinal 被铸造那一刻的
+   * `phase("…")` 标记名，UI 按名字与 `phases[].name` 关联；缺席 = 出生在任何标记之前，或旧 CLI。
    *
-   * Not the same as `phase` above: phase is the node lifecycle (queued/executing/settled...),
-   * phaseName is the script-phase coordinate. The distinct name keeps the concepts apart.
+   * ⚠ 与上面的 `phase` **不是**一回事：`phase` 是节点的生命周期相位（queued / executing /
+   * settled…），`phaseName` 是脚本阶段坐标。字段特意不叫 `phase` 就是为了不把两个概念揉在一起。
    *
-   * Stamped only on birth events (node-queued, and the direct
-   * node-settled {cached:true} on replay hits); other node-* events omit it and the reducer carries it forward.
+   * 引擎只在**出生事件**上打戳（`node-queued`，以及 replay 命中时直接发的
+   * `node-settled { cached: true }`）；其余 `node-*` 不带，由 reducer 向前携带。
    */
   phaseName: z.string().min(1).max(WORKFLOW_RUNS_LIMITS.maxPhaseNameLength).optional(),
   /**
-   * This ask's task: first 240 chars of the author's instructions, via node-queued. The read surface answers 'what was this subagent sent to do' from it -
-   * the phase only says 'running', never what.
+   * 这次 ask 的**任务**：作者写的 `instructions` 的头 240 字，随 `node-queued` 到达。读面据它回答「这个子代理被派去干什么」——
+   * 相位只说得出「在跑」，说不出在跑什么。
    *
-   * Head of the author's verbatim text, without engine-appended footers (runtime scaffolding, not the task).
-   * Absent has two readings: a world-read node (no instructions), or an old CLI/journal without the key.
+   * 是**作者原文**的头，不含引擎后来追加的尾注（那些是运行时脚手架，不是任务）。
+   * 缺席有两种读法，消费者都要认：world-read 节点（没有指令），或不带这个键的旧 CLI/旧 journal。
    */
   instructionsHead: z
     .string()
@@ -254,15 +286,15 @@ export const workflowRunNodeSchema = z.object({
     .max(WORKFLOW_RUNS_LIMITS.maxInstructionsHeadLength)
     .optional(),
   /**
-   * Which resolved turn this ask reached (1-based, nudge turns count), plus cumulative tool calls and the latest one -
-   * via node-progress, one per resolved turn.
+   * 这次 ask 走到第几个已解析轮次（1 起，nudge 轮次计入），以及累计工具调用数与最近一次
+   * 工具调用——随 `node-progress` 到达，每个已解析轮次一条。
    *
-   * Together they answer 'is it moving': an ask stuck in executing for ten minutes is only distinguishable
-   * (long task vs dead) by these. On journals without node-progress all three are absent -
-   * render 'unknown', never 0: 0 is the fact 'no tool call yet'.
+   * 三者一起回答「它在动吗」：一个卡在 `executing` 十分钟的 ask，只有这几个读数能分出
+   * 「在干一件长活」与「已经死了」。**没有 `node-progress` 的旧 journal 上三键全缺席**，
+   * 读面必须把缺席显示成「不知道」，而不是显示成 0 —— 0 是「一个工具都没调过」的事实。
    *
-   * Reduction is last-writer-wins, not max (opposite of phases[].rounds): a re-queued instance after
-   * resume is a brand-new ask counting from 1; max would freeze the previous life's readings here.
+   * 归约是**后来者覆盖**而不是取 max（与 `phases[].rounds` 相反）：同一实例在 resume 里被
+   * 重新 queue 时是一次全新的 ask，轮次从 1 重新数，取 max 会把上一世的读数冻在这里。
    */
   turn: z.number().int().positive().optional(),
   toolCalls: z.number().int().nonnegative().optional(),
@@ -271,20 +303,21 @@ export const workflowRunNodeSchema = z.object({
 export type WorkflowRunNode = z.infer<typeof workflowRunNodeSchema>;
 
 /**
- * This run's concurrency picture. Two bounds; actual concurrency is the smaller:
- * actual concurrency is the smaller of the two:
+ * 本 run 的并发现状。两条界，
+ * 实际并发是**两者取小**：
  *
- * - cap: the shared gate state of this run's provider key (the governor buckets by key, fans out per run, moves with concurrency-changed);
- *   ceiling: the CPU-derived cap. Events carry no ceiling; the reducer derives it from the max previous/next seen
- *   (buckets start at the ceiling, so the first event's previous is it; a only-decreasing series keeps it maximal).
- *   previous is it; in a only-decreasing series it stays the max).
- * - limit: this run's own bound (`max_concurrency` of CreateWorkflow/AmendWorkflow via caps.maxConcurrency),
- *   arriving with run-started, fixed for the run. Present only below the ceiling:
- *   a run at the ceiling looks exactly as before, no extra key.
- * - cooldownMs: how long a Retry-After freeze blocks new dispatches, relative (same reason as retryInMs);
- *   idle_reset and run terminal state clear it.
+ * - `cap`：本 run 所在 provider key 的**共享**闸门现状（治理器按 key 分桶、按 run 扇出，
+ *   随 `concurrency-changed` 移动）。
+ * - `ceiling`：默认并发 D（线上键名早于「默认并发」，旧端还在读它，故保留）。它是参照线不是上限：
+ *   共享 cap 可以自动长到 2D，用户也可以把本 run 调到 D 之上。已知 `run.concurrencyCeiling` 时就取
+ *   它；只有老 CLI（不发 D）才退回「见过的最大 `previous` / `next`」。
+ * - `limit`：本 run **自己的**界（`CreateWorkflow` / `AmendWorkflow` 的 `max_concurrency`
+ *   落到 `caps.maxConcurrency`），随 `run-started` 到达、就地 retune 时随 `run-caps-changed` 移动。
+ *   **只在 ≠ D 时在场**（高于低于都算）：跑在默认上的 run 与从前一模一样，一个键都不多。
+ * - `cooldownMs`：带 Retry-After 的限流冻结新派发的时长，**相对量**（同 `retryInMs` 的理由）；
+ *   `idle_reset` 与 run 终态清掉它。
  *
- * The UI shows the readout only when min(cap, limit) < ceiling (see workflowRunConcurrencyView).
+ * UI 的读数规则见 workflowRunConcurrencyView（docs/dynamic-workflow/concurrency.md「What the user sees」）。
  */
 export const workflowRunConcurrencySchema = z.object({
   key: z.string().min(1).max(WORKFLOW_RUNS_LIMITS.maxConcurrencyKeyLength).optional(),
@@ -296,51 +329,51 @@ export const workflowRunConcurrencySchema = z.object({
 export type WorkflowRunConcurrency = z.infer<typeof workflowRunConcurrencySchema>;
 
 /**
- * A progressive artifact delivered by script `report(item)` (one row of the details Results section).
+ * 一条脚本 `report(item)` 交出的**渐进产物**（详情页 Results 区的一行）。
  *
- * report differs from log: it has site identity, enters the journal, has its own RunEvent - so it enters
- * the event log, the Results section, and the completion notice to the model; but it never enters the causality graph
- * (pure progress, no ordering meaning) nor nodes[] - a chatty workflow must not look like more steps.
+ * `report` 与 `log` 不同类：它有 site 身份、进 journal、有自己的 `RunEvent`，所以它进
+ * 事件日志、进 Results 区、也随完成通知回给模型；但它**不进因果图**（纯进度发射、
+ * 无任何顺序意义），也**不进 `nodes[]`**——报得勤的工作流不该显得步数虚高。
  *
- * siteId x ordinal is identity (the journal key) and the reducer's dedup key: on replay every
- * report call re-runs; one instance must land as one row, not two.
+ * `siteId × ordinal` 是身份（journal 的键），也是归约的去重键：脚本 replay 时每个
+ * `report` 调用都会重跑，同一实例必须落成同一行而不是两行。
  *
- * Stores preview text, not raw values: the serialization rule (strings as-is, else pretty JSON) is the same one
- * used for run-artifact echo, computed once CLI-side, so the renderer never duplicates the contract; it also
- * reduces the 'all payloads bounded at the protocol edge' invariant to one string bound.
+ * 存**预览文本**而不是原值：序列化规则（string 原样；其余 pretty JSON）与 run 产物
+ * 回投那条路径同源，一次算在 CLI 侧，renderer 因此不需要复制一份序列化契约；顺带
+ * 让「协议边界上的所有载荷有界」这条不变量落在一个 string 上界上。
  */
 export const workflowRunReportSchema = z.object({
   siteId: z.string().min(1).max(64),
   ordinal: z.number().int().nonnegative(),
   preview: z.string().max(WORKFLOW_RUNS_LIMITS.maxReportPreviewLength),
   /**
-   * Second arg of `report(item, artifactId)`: which preset board this entry feeds. Absent = untagged, Results section only.
+   * `report(item, artifactId)` 的第二实参：这条条目喂给哪个**预置看板**。缺席 = 没打标签，照旧只进 Results 区。
    *
-   * Tagged entries still enter reports: one channel, one cap; the tag adds a destination, never reroutes.
-   * Bound equals the artifact-id bound (64): it is one.
+   * 带标签的条目**仍然进 `reports`**：一条通道一套上限，标签只是多一个去处，不是改道。
+   * 上界与产物 id 同（64），因为它就是一个产物 id。
    */
   artifactId: z.string().min(1).max(64).optional(),
 });
 export type WorkflowRunReport = z.infer<typeof workflowRunReportSchema>;
 
 /**
- * An escalated question while parked: an actor hit a real blocker
- * (broken gate, contradictory instructions, missing fact), escalated to the main agent, and parks inside its ask awaiting the answer.
+ * 一个**停驻中**的升级问题：某个 actor 撞上真阻塞
+ * （坏门、指令自相矛盾、缺关键事实），把问题升级给主代理，并停在自己那次 ask 里等答案。
  *
- * Identity is qid (globally unique, cross-run), not a site instance - escalations have no site identity:
- * no dwf_node row, no maxNodes; a slow tool call inside one ask turn. Dedup key is qid; the actor is an attribute.
- * A different family from the (siteId, ordinal)-deduped nodes/actors/reports tables.
+ * 身份是 `qid`（全局唯一、跨 run），不是站点实例——升级**没有** site 身份：它不写 dwf_node
+ * 行、不占 maxNodes，是一次 ask 轮次**内部**的慢工具调用。所以去重键是 qid，而 actor 只是
+ * 一个属性。这与 nodes/actors/reports 那三张按 (siteId, ordinal) 去重的表是不同的族。
  *
- * actorSiteId/actorOrdinal are therefore optional (shape copied from WorkflowRunNode's pair): a record
- * that cannot say who asked must still display - visibility is the point; hiding a question over an
- * unreadable actor ref destroys its only fallback value. actorName is the persona name, absent for anonymous actors
- * (the event side deliberately synthesizes no fallback label; consumers decide how to render nameless).
+ * `actorSiteId` / `actorOrdinal` 因此可缺省（形态照抄 `WorkflowRunNode` 的同名一对）：一条
+ * 问不出提问者是谁的记录仍然要显示——这个特性存在的理由就是让被卡住的问题**可见**，为了
+ * 一个读不动的 actor ref 把整条问题藏起来，恰好毁掉它唯一的兜底价值。`actorName` 是 persona
+ * 名，匿名 actor 缺席（事件侧刻意不合成兜底标签，由消费者各自决定怎么渲染「无名」）。
  *
- * Purely in-memory, cleared at run terminal state: the truth is a parked deferred in the CLI process.
- * Once the process dies the deferreds are gone, so 'who still owes an answer' is always false on terminal runs -
+ * **纯内存、随 run 终态清空**：真相是 CLI 进程内的停驻 deferred。进程一死那些 deferred 就没了，
+ * 于是「还欠谁一个答案」这件事在终态 run 上恒为假——终态 run 按定义没有在听的人。
  */
 export const workflowRunPendingQuestionSchema = z.object({
-  /** Globally unique question id (like `dwfq-<runId fragment>-<seq>`); the main agent answers by it. */
+  /** 全局唯一的问题 id（形如 `dwfq-<runId 片段>-<seq>`）。主代理按它作答。 */
   qid: z.string().min(1).max(128),
   actorSiteId: z.string().min(1).max(64).optional(),
   actorOrdinal: z.number().int().nonnegative().optional(),
@@ -348,79 +381,106 @@ export const workflowRunPendingQuestionSchema = z.object({
   question: z.string().min(1).max(WORKFLOW_RUNS_LIMITS.maxQuestionLength),
   context: z.string().min(1).max(WORKFLOW_RUNS_LIMITS.maxQuestionLength).optional(),
   /**
-   * Ask time (epoch ms), carried by the event - this module is a pure reducer with no clock.
+   * 提问时刻（epoch 毫秒），由事件携带——本模块是纯归约，没有时钟可用。
    *
-   * Required event-side (the driver is the sole producer, same Date.now() as the parked record), yet optional here:
-   * journals on old dev machines may replay events predating askedAt. Render wait time only when present;
-   * absence is not an error.
+   * 事件侧**必填**（driver 是唯一生产者，与停驻记录取同一个 `Date.now()`），这里仍然 optional：
+   * 老开发机上的 journal 可能重放出 askedAt 之前的事件。所以渲染侧按「有则显示等待时长」处理，
+   * 缺席不是错误。
    */
   askedAt: z.number().int().nonnegative().optional(),
 });
 export type WorkflowRunPendingQuestion = z.infer<typeof workflowRunPendingQuestionSchema>;
 
+/**
+ * 一个留白（docs/dynamic-workflow/authoring.md「Holes」；投影侧见 docs/dynamic-workflow/presentation.md
+ * 「Holes on the timeline」）：脚本里一处 `hole<T>("名字")`，run 走到它就停驻那条分支、等主代理用
+ * `FillWorkflowHole` 补上代码。身份是**站点 id**（名字键 `hole#<8 位十六进制>`）：同一站点在循环里可以停驻多个 ordinal，
+ * 表里只留最新的那一个——补全是按站点一次性的，读面要说的也只是「这个留白等着 / 补上了」。
+ *
+ * `state`：`waiting` = 引擎里有停驻的 deferred（真相在 CLI 进程内，与 pendingQuestions 同族，所以新的
+ * 一世与终态都把它剥掉）；`filled` = 补全已接进 run（事实在 journal 的 `hole-filled` 事件里，跨世保留）。
+ * `type` 是作者写的类型原文；载荷不带它时缺席，读面退回 display 载荷的 `holes[].type` 按站点 id 取。
+ * `since` 是到达时刻（epoch 毫秒，由事件携带——本模块无时钟），`filledAt` / `filledBy` 随 `hole-filled` 到达。
+ */
+export const workflowRunHoleSchema = z.object({
+  siteId: z.string().min(1).max(64),
+  ordinal: z.number().int().nonnegative(),
+  name: z.string().min(1).max(WORKFLOW_RUNS_LIMITS.maxPhaseNameLength),
+  type: z.string().min(1).max(WORKFLOW_RUNS_LIMITS.maxHoleTypeLength).optional(),
+  /** 主代理收到的提示语（`hole-reached` 载荷的 `prompt`），已按 {@link WORKFLOW_RUNS_LIMITS.maxHolePromptLength} 截断。 */
+  prompt: z.string().min(1).max(WORKFLOW_RUNS_LIMITS.maxHolePromptLength).optional(),
+  state: z.enum(["waiting", "filled"]),
+  since: z.number().int().nonnegative().optional(),
+  filledAt: z.number().int().nonnegative().optional(),
+  filledBy: z.string().min(1).max(128).optional(),
+});
+export type WorkflowRunHole = z.infer<typeof workflowRunHoleSchema>;
+
 export const workflowRunSchema = z.object({
   runId: z.string().min(1).max(128),
-  /** The CreateWorkflow tool call that started this run (tool card -> details correlation key). */
+  /** 发起该 run 的 CreateWorkflow 工具调用（工具卡 → 详情页的关联键）。 */
   toolCallId: z.string().min(1).max(128).optional(),
   status: z.enum(["pending", "running", "completed", "errored", "stopped"]),
-  /** Present only when status === "stopped". */
+  /** `status === "stopped"` 才在场。 */
   stopReason: z.enum(["user", "model", "provider", "interrupted", "superseded"]).optional(),
   /**
-   * Both ends of the lineage: which run this one revised
-   * (`resumedFrom` of run-started) and which revision stopped-and-replaced it
-   * (`supersededBy` of run-settled, only with stopReason superseded). Both optional, same reason as reports:
-   * appending fields to a live state key means old CLIs just omit one key - degradation, not a dropped frame.
+   * lineage 的两端：本 run 修订自哪个 run
+   * （`run-started` 载荷的 `resumedFrom`），以及本 run 被哪次修订停下并替代（`run-settled` 载荷的
+   * `supersededBy`，只随 `stopReason: "superseded"` 出现）。两者都 optional，理由与 `reports` 同：
+   * 往已有状态键追加字段，旧 CLI 不发它们时少一个键是退化，不是整帧被丢。
    */
   resumedFrom: z.string().min(1).max(128).optional(),
   supersededBy: z.string().min(1).max(128).optional(),
   usage: workflowRunUsageSchema,
   error: z.string().min(1).max(WORKFLOW_RUNS_LIMITS.maxErrorLength).optional(),
   /**
-   * Resumable. Present only when true.
+   * 可恢复。**为真才在场**。
    *
-   * Computed by the CLI on the run-settled payload with the same predicate as the resume gate (live via toProgressPayload,
-   * cold replay from journal lines); the reducer only carries it - the UI must never re-derive from status+failureCode
-   * (the two predicates will drift: button lit, command rejected). Optional per the reports rule: appending to a
-   * live state key means old CLIs omit one key - degradation, not a dropped frame.
+   * 由 CLI 在 `run-settled` 载荷上按 resume 门的同一个谓词给出（live 由 toProgressPayload 算，
+   * 冷回放由补种按 journal 行算），reducer 只搬运——UI 绝不自行按 status + failureCode 推导
+   * （两处谓词总有一天不一致：按钮亮着但命令被拒）。optional 的理由与 `reports` 同：往已有
+   * 状态键追加字段，旧 CLI 不发它时少一个键是退化，不是整帧被丢。
    */
   resumable: z.literal(true).optional(),
   resultPreview: z.string().max(WORKFLOW_RUNS_LIMITS.maxResultPreviewLength).optional(),
   actors: z.array(workflowRunActorSchema).max(WORKFLOW_RUNS_LIMITS.maxActors),
   nodes: z.array(workflowRunNodeSchema).max(WORKFLOW_RUNS_LIMITS.maxNodes),
   /**
-   * Progressive artifacts from `report(item)`, in report order. The whole key is absent at zero (not an empty array):
-   * the Results section renders nothing at all rather than an empty shell for workflows that never report.
+   * `report(item)` 交出的渐进产物，按报告顺序。**零条时整个键缺席**（不是空数组）：
+   * Results 区据此整区不渲染，而不是给不用 `report` 的工作流留一节空壳。
    *
-   * Deliberately optional: this appends a field to a live state key, and parse errors on known keys
-   * are not trimmed - the whole state.updated patch fails, the frame drops.
-   * Required would trip that path for any old CLI without reports; optional degrades to 'one key fewer'.
+   * 刻意 optional 而不是必填：这是往一个**已有状态键**上追加字段，而已知键上的解析错误
+   * 不会被剥离——它会让整个 `state.updated` patch 失败、整帧被丢。
+   * 必填意味着任何一个不发 reports 的旧 CLI 都会触发那一档；optional 让它退化成「少一个键」。
    */
   reports: z.array(workflowRunReportSchema).max(WORKFLOW_RUNS_LIMITS.maxReports).optional(),
   /**
-   * Escalated questions in ask order. Whole key absent at zero (not []), same convention as reports:
-   * the sidebar renders nothing rather than an empty section for a question-less run.
+   * 停驻中的升级问题，按提问顺序。**零条时整个键缺席**（不是空数组），与 `reports` 同一条
+   * 惯例：侧栏据此整区不渲染，而不是给一个没人提问的 run 留一节空壳。
    *
-   * Zero is this key's steady state, and it churns: an answered question leaves the table, the last answer
-   * returns it to absent. Consumers must not treat 'seen once' as 'stays forever'.
+   * 「零条」是这个键的**常态**，而且它会来回进出：问题一被作答就从表里消失，答完最后一个
+   * 又退回缺席。所以消费者不能把「见过一次这个键」当成它会一直在。
    *
-   * Second reason for optional, as with reports: appending to a live state key; parse errors on known keys
-   * are not trimmed - required would drop whole frames for old CLIs without the field.
+   * optional 的第二个理由与 `reports` 相同：这是往一个**已有状态键**上追加字段，而已知键上的
+   * 解析错误不会被剥离——必填会让任何一个不发该字段的旧 CLI 整帧被丢。
    */
   pendingQuestions: z
     .array(workflowRunPendingQuestionSchema)
     .max(WORKFLOW_RUNS_LIMITS.maxPendingQuestions)
     .optional(),
   /**
-   * Concurrency picture (see workflowRunConcurrencySchema). Present only when one bound sits below the ceiling:
-   * either a concurrency-changed arrived (shared bucket throttled) or run-started carried a sub-ceiling
-   * limit (user-capped). Runs with neither stay at the ceiling; nothing to say.
-   * Optional per the reports/pendingQuestions rule.
+   * 并发现状（见 {@link workflowRunConcurrencySchema}）。收到过 `concurrency-changed`（共享桶动过），
+   * 或 `run-started` / `run-caps-changed` 带来一个 ≠ 默认并发的 `limit`（用户给这次 run 定了界）时
+   * 在场。两者都没有的 run 一直跑在默认上，没有可说的。
+   * optional 的理由与 `reports` / `pendingQuestions` 同。
    */
   concurrency: workflowRunConcurrencySchema.optional(),
   /**
-   * This machine's concurrency ceiling (run-started's concurrencyCeiling, a process fact baked in CLI-side).
-   * Unlike concurrency.ceiling - the chip's own watermark, present only with the chip - this one is
-   * present whenever readable, regardless of the run's relation to it: where the config dialog's stepper stops. Optional per the concurrency rule.
+   * 默认并发 D（`run-started` 载荷的 `concurrencyCeiling`，CLI 铸载荷时拼进去的进程事实；键名早于
+   * 「默认并发」这个概念，为兼容旧端保留）。它是起点不是上限。与 `concurrency` 不同，它**只要读得到
+   * 就在**，不论本 run 有没有自己的界——「配置」弹层据它写「默认 N」、判「等于默认 = 不设自己的界」
+   * （docs/dynamic-workflow/concurrency.md「Protocol state」）。optional 的理由与 `concurrency` 同：
+   * 老 CLI 不发，少一个键是退化。
    */
   concurrencyCeiling: z
     .number()
@@ -429,78 +489,95 @@ export const workflowRunSchema = z.object({
     .max(WORKFLOW_RUNS_LIMITS.maxConcurrencyCeiling)
     .optional(),
   /**
-   * Which model this run's subagents use (CreateWorkflow/AmendWorkflow subagent_model via payload subagentModel),
-   * canonical `providerId/modelId`, optional $reasoningLevel. Fixed with run-started for the run -
-   * same family as concurrency.limit: a user-set condition, not a runtime observation.
-   * condition, not a runtime observation.
+   * 这次 run 的**子代理**跑在哪个模型上（`CreateWorkflow` / `AmendWorkflow` 的 `subagent_model`
+   * 落到载荷的 `subagentModel`），规范串 `providerId/modelId`，可带 `$reasoningLevel` 后缀。
+   * 随 `run-started` 到达、整条 run 不动——与 `concurrency.limit` 同族：用户给这次 run 定下的
+   * 条件，不随运行时涨落。
    *
-   * Present only when the user pinned a model for this run: otherwise subagents follow the session model, nothing to say.
-   * The main agent always stays on the session model; this key speaks only for the subagent side.
-   * Optional, verbatim the reports/concurrency reason: appended to a live state key; old CLIs omit one key -
-   * degradation, not a dropped frame.
+   * **只在用户给这次 run 指定过模型时在场**：不指定的 run 里子代理跟随会话模型，没有可说的。
+   * 主代理无论如何都留在会话模型上，所以这个键说的只是子代理那一侧。
+   * optional 的理由与 `reports` / `concurrency` 逐字相同：往已有状态键追加字段，旧 CLI 不发它时
+   * 少一个键是退化，不是整帧被丢。
    */
   subagentModel: z.string().min(1).max(WORKFLOW_RUNS_LIMITS.maxSubagentModelLength).optional(),
   /**
-   * User-facing artifacts published by this run, in first-seen order, latest-version metadata only. Whole key absent when none (not []):
-   * the side panel's Artifacts section renders nothing - same absence rule as reports/pendingQuestions.
+   * 本 run 发布的**用户面产物**，按首次出现顺序，每项只带**最新版**的元数据。**零件时整个键缺席**（不是空数组）：
+   * 侧板的 Artifacts 区据此整区不渲染——「无则缺席」与 `reports` / `pendingQuestions` 同规。
    *
-   * Second optional rationale, verbatim reports, and the one that matters: appended to a live
-   * state key; parse errors on known keys are not trimmed - required would drop whole frames for
-   * old CLIs without artifacts. One key fewer is degradation, not error.
+   * optional 的第二个理由与 `reports` 逐字相同，也是这里真正要紧的那个：这是往一个**已有
+   * 状态键**上追加字段，而已知键上的解析错误不会被剥离——必填会让任何一个不发产物的旧 CLI
+   * 整帧被丢。少一个键是退化，不是错误。
    *
-   * Terminology: artifact here is user-visible script output, not the 'top-level return value'
-   * behind resultPreview (called artifact inside the engine too). See the workflow-artifacts.ts header.
+   * ⚠ 术语：这里的 artifact 是脚本发布给用户看的产出，不是 `resultPreview` 背后那个
+   * 「脚本顶层返回值」（引擎内部也叫 artifact）。见 workflow-artifacts.ts 的文件头。
    */
   artifacts: z
     .array(workflowRunArtifactSummarySchema)
     .max(WORKFLOW_RUNS_LIMITS.maxArtifacts)
     .optional(),
   /**
-   * Phases entered by control flow, first-entry order.
-   * Whole key absent at zero; optional per the reports rule (old CLIs omit; one key fewer is degradation,
-   * not error). The timeline uses it for zero-member stop lights and to fill every stop's pre-first-dispatch running segment.
+   * 被进入过的阶段，按首次进入顺序。
+   * **零条时整个键缺席**；optional 的理由与 `reports` 逐字相同（旧 CLI 不发它，少一个键是退化
+   * 不是错误）。时间线据它给零成员的站点灯、给所有站补「第一个 ask 派发之前」那段的 running。
    */
   phases: z.array(workflowRunPhaseSchema).max(WORKFLOW_RUNS_LIMITS.maxPhases).optional(),
-  /** Phase name control flow last entered (latest phase-entered); absent before any. */
+  /** 控制流最后进入的阶段名（最后一条 `phase-entered`）；从未进入过任何阶段时缺席。 */
   currentPhase: z.string().min(1).max(WORKFLOW_RUNS_LIMITS.maxPhaseNameLength).optional(),
   /**
-   * Phases the script declares, declaration order (run-launched.phaseNames). Complements phases (entered): the sidebar mini-track draws not-yet-reached stops from it.
-   * Whole key absent at zero / old CLI / mark-less scripts.
+   * 脚本**声明**的阶段表，按声明序（`run-launched.phaseNames`）。与 `phases`（已进入的）互补：侧栏迷你轨道据此画出前方还没到的站点。
+   * 零条 / 旧 CLI / 无标记脚本时整个键缺席。
    */
   phaseNames: z
     .array(z.string().min(1).max(WORKFLOW_RUNS_LIMITS.maxPhaseNameLength))
     .max(WORKFLOW_RUNS_LIMITS.maxPhases)
     .optional(),
   /**
-   * Position-aligned 'also running' table (run-launched.phaseAlongside):
-   * phaseAlongside[i] lists indexes into phaseNames - phases whose strands still ran when phaseNames[i] was entered.
-   * The sidebar mini-track draws parallel stops as a double segment.
+   * 与 `phaseNames` **按位置对齐**的「同时在跑」表（`run-launched.phaseAlongside`）：
+   * `phaseAlongside[i]` 是进入 `phaseNames[i]` 时 strand 仍在跑的其他阶段的**下标**，下标落在
+   * `phaseNames` 这张表上。侧栏迷你轨道据此把并行的两站之间画成双线段
    *
-   * Depends on phaseNames: absent whenever that is; also absent with no parallel phases - absence reads
-   * 'this track is a straight line'. The reducer guarantees every index lands in the accepted table (workflow-runs-phases.ts).
+   * 依附 `phaseNames`：后者不在场时它一定不在场；没有任何阶段并行时同样缺席——缺席就是
+   * 「这条轨道是一条直线」。归约保证每个下标都落在被接受的那张表里（workflow-runs-phases.ts）。
    */
   phaseAlongside: z
     .array(z.array(z.number().int().nonnegative()).max(WORKFLOW_RUNS_LIMITS.maxPhases))
     .max(WORKFLOW_RUNS_LIMITS.maxPhases)
     .optional(),
   /**
-   * Per-birth-phase spend of the bound (see workflowRunUnlistedPhaseSchema). Whole key absent
-   * when no bucket exists. One extra slot beyond maxPhases: the phaseless bucket shares the table.
+   * `phaseNames` 里哪几站是**还开着的留白**（下标表，`run-launched.holes` / `hole-filled.holes`；
+   * docs/dynamic-workflow/presentation.md「Holes on the timeline」的「The model」）。侧栏只从 `phaseNames`
+   * 画迷你轨道，没有 display 载荷可查，所以这张表是它把留白画成虚线灯的唯一依据。补全之后那一站
+   * 不再是留白，表随 `hole-filled` 整张换新。依附 `phaseNames`：后者不在场时它一定不在场；一个都没有
+   * 时同样缺席。
+   */
+  phaseHoles: z
+    .array(z.number().int().nonnegative())
+    .max(WORKFLOW_RUNS_LIMITS.maxPhases)
+    .optional(),
+  /**
+   * 这条 run 的留白（见 {@link workflowRunHoleSchema}），按首次到达顺序。**零条时整个键缺席**，与
+   * `pendingQuestions` 同规。optional 的理由与 `reports` 逐字相同：往已有状态键追加字段，旧 CLI 不发它
+   * 时少一个键是退化，不是整帧被丢。
+   */
+  holes: z.array(workflowRunHoleSchema).max(WORKFLOW_RUNS_LIMITS.maxHoles).optional(),
+  /**
+   * 界在各个出生阶段上花掉了多少（见 {@link workflowRunUnlistedPhaseSchema}）。**一格都没有时
+   * 整个键缺席**。表长比 `maxPhases` 多一格：那一格是「无阶段」，它与具名阶段共用同一张表。
    *
-   * Once full, newer phases' attribution drops; the run-level counters stay exact - a stop may miss a number it never had,
-   * run totals must not lie.
+   * 表满之后新阶段的归属**丢掉**，run 级两个计数器照旧准——一个站点可以少一个它本来就没有的
+   * 数字，run 的总数不可以说假话。
    */
   unlistedByPhase: z
     .array(workflowRunUnlistedPhaseSchema)
     .max(WORKFLOW_RUNS_LIMITS.maxPhases + 1)
     .optional(),
   /**
-   * Set when actors/nodes/reports/pendingQuestions/artifacts/phases hit their caps;
-   * also set by eviction (making room): the run's entry tables no longer fit their own facts,
-   * and run-started reads this bit to decide whether a new life starts from empty tables.
+   * actors / nodes / reports / pendingQuestions / artifacts / phases 触到上限后置位；
+   * 原始事实仍在 journal。淘汰（给活的新人腾位）同样置位：这条 run 的条目表已经装不下它
+   * 自己的事实了，而 `run-started` 正是按这一位决定新一世要不要从空表重开。
    */
   truncated: z.boolean().optional(),
-  /** Journal sequence of the last reduced event; raising it triggers an event-log refetch. */
+  /** 最后一条已归约事件的 journal sequence；抬升即事件日志重取的触发条件。 */
   lastEventSequence: z.number().int().nonnegative(),
 });
 export type WorkflowRunState = z.infer<typeof workflowRunSchema>;

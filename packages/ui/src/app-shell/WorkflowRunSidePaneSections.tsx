@@ -1,12 +1,13 @@
 // ============================================================
-// Section subcomponents of WorkflowRunSidePane (status header / terminal-result area).
+// WorkflowRunSidePane 的分区子组件（状态头 / 终态结果区）
 // ============================================================
-// Split from WorkflowRunSidePane.tsx (eslint max-lines 400 gate): the pane file keeps
-// data assembly and interaction wiring; this file holds pure presentational sections whose props are
-// fully prepared view values - no projection, lease or command channel access.
+// 从 WorkflowRunSidePane.tsx 拆出（eslint max-lines 400 行门）：面板文件承载
+// 数据装配与交互接线，本文件承载纯展示分区。props 全是烹熟的视图值——不接触
+// 投影、lease 或命令通道。
 
 import { workflowRunStopReasonMessageId } from "@/components/workflow-graph/run-status-presentation.js";
 import { memo, type ReactNode } from "react";
+import type { WorkflowRunSaveSlots } from "@/components/workflow-timeline/WorkflowRunSaveControls.js";
 import {
   ArrowUpRightIcon,
   ListIcon,
@@ -19,18 +20,17 @@ import { Button } from "@/components/ui/button.js";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import type { workflowRunResultView } from "@/app-shell/workflowRunPanel.js";
-import { workflowRunConcurrencyView } from "@/app-shell/workflowRunThrottle.js";
+import { workflowRunConcurrencyChip } from "@/app-shell/workflowRunThrottle.js";
 import { WorkflowRunStatus } from "@/components/workflow-timeline/WorkflowCardChrome.js";
+import { RunHolesWaitingChip } from "@/components/workflow-timeline/WorkflowHoleParts.js";
 import { WorkflowTruncatedNotice } from "@/components/workflow-timeline/WorkflowTruncatedNotice.js";
 import { useNowTicker } from "@/components/workflow-graph/use-now-ticker.js";
 
-function formatCount(value: number): string {
-  return value.toLocaleString();
-}
+const formatCount = (value: number): string => value.toLocaleString();
 
 /**
- * The summary-line model segment: a button while the run is configurable (underline on hover), opening the same Configure popover anchored to itself;
- * otherwise plain text with a tooltip.
+ * 摘要行的模型段：run 能配置时它也是一枚按钮（悬停下划线），打开同一个「配置」弹层、锚在它自己身上；
+ * 否则就是一段带 tooltip 的字。
  */
 function SubagentModelSegment({
   children,
@@ -68,10 +68,10 @@ function SubagentModelSegment({
 }
 
 /**
- * Status header: line one is the name and actions (Configure,
- * Resume, Stop); line two is light + status word + concurrency chip - three buttons beside the status is too dense, hence its own line.
- * Below: the lineage row and a summary line sharing the chat-card footer copy - one run must say the same thing on both faces.
- * Without summary parts (no graph, no timeline) it falls back to the legacy usage line.
+ * 状态头：第一行是名字与控件（Configure、
+ * Resume、Stop），第二行是灯与状态词 + 并发芯片——三枚按钮挤在状态旁边太满，状态因此单独成行。
+ * 其下是 lineage 行与与聊天卡页脚**同文案**的摘要行——同一个 run 在两个面上必须说同一句话。
+ * 摘要行素材缺席（图不可得，建不出时间线）时退回既有的用量行。
  */
 export const WorkflowRunStatusHeader = memo(function WorkflowRunStatusHeader({
   cancellable,
@@ -83,58 +83,69 @@ export const WorkflowRunStatusHeader = memo(function WorkflowRunStatusHeader({
   rejection,
   resumable,
   run,
+  saveSlots,
   subagentModel,
   summaryParts,
   title,
   usage,
 }: {
   cancellable: boolean;
-  /** The Configure popover is open right now (also the Configure button/model segment aria-expanded). */
+  /** 「配置」弹层此刻开着（Configure 钮与模型段的 aria-expanded）。 */
   configureOpen?: boolean;
   onCancel: () => void;
   /**
-   * Opens the Configure popover anchored to the clicked element. Absent = the run is not configurable: no Configure button, the model segment is plain text.
+   * 打开「配置」弹层、锚在点中的那个元素上。缺席即这个 run 不能配置：没有 Configure 钮，模型段只是字。
    */
   onConfigureFrom?: (element: HTMLElement) => void;
-  /** Why the last Stop/Resume was rejected; detail is the diagnostic carried by the ACK. */
+  /** 最近一次 Stop / Resume 被拒的解释；`detail` 是 ACK 携带的诊断。 */
   rejection?: { text: string; detail?: string };
-  /** Opens the successor that superseded this run (run.supersededBy); absent when the host cannot resolve it, that row stays static text. */
+  /** 打开替代了本 run 的后继（`run.supersededBy`）；宿主解析不到后继时缺席，那一行是静态文字。 */
   onOpenSuccessor?: () => void;
   onResume: () => void;
   resumable: boolean;
   run: WorkflowRunState | undefined;
   /**
-   * This run subagent model: name is the on-screen word, title carries level and the spec string. The header first line no longer shows a model chip -
-   * the model is the first word of line two, leading both the summary line and the degenerate usage line. Absent = nothing to say.
+   * 「已保存」芯片与「保存」/「再次运行」（docs/dynamic-workflow/transcript-and-notifications.md
+   * 「Saving the run, and running it again」）。同一个 run 在完成卡与这里必须说同一句话，所以两处
+   * 用的是同一个控制器造出来的这两个节点，本组件只负责摆位置：动词排在 Stop 之前，芯片在第二行。
+   * `null` / 缺席即没有服务上下文（那时一个控件都不画）。
+   */
+  saveSlots?: WorkflowRunSaveSlots | null;
+  /**
+   * 这次 run 的子代理模型：`name` 是屏幕上的词，`title` 里是强度与规范串
+   * （docs/dynamic-workflow/presentation.md「The run pane」）。状态头第一行不再摆模型芯片——
+   * 模型是第二行的第一个词，摘要行与退化的用量行都由它开头。缺席即没有可说的。
    */
   subagentModel?: { name: string; title: string };
-  /** Summary-line segments (workflowSummaryParts); falls back to the usage line when absent. */
+  /** 摘要行各段（`workflowSummaryParts`）；缺席时退回用量行。 */
   summaryParts: readonly string[] | undefined;
   title: string;
   usage: WorkflowRunUsage | undefined;
 }) {
   const { intl } = useZCodeIntl();
+  const saveChip = saveSlots?.leading ?? null;
+  const saveVerb = saveSlots?.trailing ?? null;
   const cancelLabel = intl.formatMessage({ id: "chat.toolCall.workflow.run.cancel" });
   const resumeLabel = intl.formatMessage({ id: "chat.toolCall.workflow.run.resume" });
-  // Concurrency readout: present only while the effective concurrency
-  // (min of the shared cap and this run own limit) is below the ceiling; a cooldown is a deadline,
-  // so with one pending it counts down and expires by itself.
+  // 并发芯片（docs/dynamic-workflow/concurrency.md「What the user sees」）：生效的界（共享 cap 与
+  // 本 run 的界取小）被压在界之下、或 run 有自己的界，且 run 能配置时在场；冷却是一个 deadline，
+  // 所以有冷却时走秒针，让它自己过期。
   const cooldownActive = run?.concurrency?.cooldownMs !== undefined;
   const now = useNowTicker(cooldownActive);
-  const concurrency = workflowRunConcurrencyView(run?.concurrency, now);
-  // Lineage row (status header): a revised run says what it amended,
-  // a superseded run points to its successor. Both can coexist, so each gets its own line.
+  const concurrency = workflowRunConcurrencyChip(run, now);
+  // lineage 行（docs/dynamic-workflow/presentation.md「The run pane」状态头）：修订出来的 run 说它改自谁，
+  // 被替代的 run 指向后继。两者互斥不成立（一个修订 run 也可能再被替代），所以各自一行。
   const resumedFrom = run?.resumedFrom;
   const supersededBy = run?.supersededBy;
 
   return (
     <div className="shrink-0 border-b border-border px-4 py-3">
       <div className="flex items-center gap-2">
-        {/* The run name is an identifier: monospace (DESIGN.md reserves font-mono for technical values). */}
+        {/* 运行名是标识符：等宽排印（DESIGN.md 把 font-mono 留给技术值）。 */}
         <span className="min-w-0 flex-1 truncate font-mono text-ui-base font-medium text-foreground">
           {title}
         </span>
-        {/* Configure precedes Resume/Stop: opens the Configure popover anchored under this button. */}
+        {/* Configure 排在 Resume / Stop 之前：打开「配置」弹层，锚在这枚钮下。 */}
         {onConfigureFrom === undefined ? null : (
           <Button
             aria-expanded={configureOpen}
@@ -149,7 +160,7 @@ export const WorkflowRunStatusHeader = memo(function WorkflowRunStatusHeader({
             {intl.formatMessage({ id: "chat.toolCall.workflow.run.configure" })}
           </Button>
         )}
-        {/* Resume renders only when resumable (predicate: isWorkflowRunResumable); the button presence is the capability gate. */}
+        {/* Resume 只在可恢复时渲染（谓词见 isWorkflowRunResumable）：按钮的存在本身就是能力门控。 */}
         {resumable ? (
           <ControlHintTooltip
             title={intl.formatMessage({ id: "chat.toolCall.workflow.run.resumeHint" })}
@@ -168,9 +179,12 @@ export const WorkflowRunStatusHeader = memo(function WorkflowRunStatusHeader({
             </Button>
           </ControlHintTooltip>
         ) : null}
-        {/* Stop shares the card button icon (filled square): one action, same face everywhere. Enabled, the hint
-            carries a second line, stopped-runs-can-resume - after the verb changed from cancel, say before the press
-            that this is not a discard; disabled, only the why remains, no second line. */}
+        {/* 「保存」/「再次运行」排在 Stop 之前：与完成卡表头同一个次序——先是「留下它」，
+            最后才是「停掉它」。 */}
+        {saveVerb}
+        {/* Stop 与卡上那枚钮同图标（实心方块）：同一个动作在两个面上不能长得不一样。可用时提示
+            带第二行「停下的运行可以恢复」——动词从「取消」改过来之后，要在按下去之前就说清楚
+            这不是丢弃；不可用时只剩那句为什么不可用，没有第二行可说。 */}
         <ControlHintTooltip
           title={
             cancellable
@@ -196,17 +210,21 @@ export const WorkflowRunStatusHeader = memo(function WorkflowRunStatusHeader({
           </Button>
         </ControlHintTooltip>
       </div>
-      {/* Second line: light + status word + concurrency chip. Both absent once the run leaves the projection; the row goes too. */}
-      {run === undefined && concurrency === undefined ? null : (
+      {/* 第二行：灯与状态词 + 并发芯片。run 不在投影里时两者都没有，整行缺席。 */}
+      {run === undefined && concurrency === undefined && saveChip === null ? null : (
         <div
           className="mt-1.5 flex min-w-0 flex-wrap items-center gap-2"
           data-testid="workflow-run-status-row"
         >
           {run ? <WorkflowRunStatus run={run} testId="workflow-run-status" /> : null}
-          {/* Concurrency 4: how many subagents this run may really have in flight now - the governor pushed the shared pool under the ceiling,
-            or the user capped this run lower. The reason the run slowed, visible at a glance.
-            At the ceiling the whole block is absent (nothing to say).
-            Same shape as the status badge (border+text), activity color: runtime tuning, not a failure. */}
+          {/* 「{n} 处留白待补全」（docs/dynamic-workflow/presentation.md「Holes on the timeline」）：与卡上同一枚芯片。 */}
+          <RunHolesWaitingChip run={run} testId="workflow-run-holes" />
+          {/* 芯片跟在状态词之后：第一行三枚按钮已经很满，而它本来也不是一个动作。 */}
+          {saveChip}
+          {/* 「最大并发数 4」：这次 run 最多能有几个子代理同时在飞——治理器把共享桶压到了本 run 的界
+            之下，或者用户给这次 run 定了自己的上限（高于或低于默认）。run 快慢的原因就在这里，一眼可见。
+            跑在默认上、或 run 已不能配置（完成 / 被替代）时整块缺席。
+            与状态徽标同形（border+text）、活动色：这是运行时在调节，不是故障。 */}
           {concurrency === undefined ? null : (
             <span
               className="shrink-0 rounded-xs border border-warning/60 px-1.5 py-0.5 font-mono text-ui-xs leading-none text-warning"
@@ -227,7 +245,7 @@ export const WorkflowRunStatusHeader = memo(function WorkflowRunStatusHeader({
         </div>
       )}
 
-      {/* A rejected Stop/Resume: one line + optional diagnostic. warning, not destructive - nothing happened, nothing broke. */}
+      {/* 被拒的 Stop / Resume：一句话 + 可选诊断。warning 而非 destructive——什么都没发生，不是坏了。 */}
       {rejection === undefined ? null : (
         <div
           className="mt-1.5 text-ui-xs text-warning"
@@ -313,13 +331,13 @@ export const WorkflowRunStatusHeader = memo(function WorkflowRunStatusHeader({
           ))}
         </div>
       ) : usage ? (
-        // Usage is observational with no cap for a denominator: one line, usage N tokens / M steps, no progress track.
+        // 用量是观察面，没有上限可做分母：一行「用量：N tokens · M 步」，不画进度轨
         <div
           className="mt-2 flex items-baseline justify-between gap-2"
           data-testid="workflow-run-usage"
         >
-          {/* When the graph is unavailable the whole summary line disappears, but the model must not vanish with it - the user set it for this run,
-              regardless of the graph. So it leads here too, same word and tooltip as the summary line. */}
+          {/* 图不可得时摘要行整条缺席，模型不能跟着一起消失——它是用户给这次 run 定下的条件，
+              与有没有图无关。所以它在这里也开头，和摘要行同一个词、同一个 tooltip。 */}
           <span className="flex min-w-0 items-baseline gap-2">
             {subagentModel === undefined ? null : (
               <SubagentModelSegment
@@ -346,14 +364,14 @@ export const WorkflowRunStatusHeader = memo(function WorkflowRunStatusHeader({
           </span>
         </div>
       ) : null}
-      {/* The only-n-of-m-steps-shown note under the summary line, same implementation as the card: the spine lists what the instance table kept
-              while the row count already includes the untabled ones - this note is exactly that difference. */}
+      {/* 摘要行下的那一句「仅展示 n/m 步的详情」，与卡上同一份实现：脊柱列的是实例表留住的
+          那些，行里的数却已经把表外的算进来了——这一行说的正是这个差额。 */}
       <WorkflowTruncatedNotice className="mt-1.5" run={run} testId="workflow-run-truncated" />
     </div>
   );
 });
 
-/** Terminal section: untrackable notice / completed-artifact preview / failure-and-cancel error panel; each absent unless its terminal state. */
+/** 终态区：不可追踪提示 / 完成产物预览 / 失败与取消的错误面板。非对应终态时各自缺席。 */
 export const WorkflowRunResultSections = memo(function WorkflowRunResultSections({
   result,
 }: {
@@ -363,7 +381,7 @@ export const WorkflowRunResultSections = memo(function WorkflowRunResultSections
 
   return (
     <>
-      {/* The run is not in the projection: evicted, or a pre-cold-start CLI. The wording says live state is gone, never that the run vanished. */}
+      {/* run 不在投影里：淘汰或冷启动前的 CLI。措辞只说"实时状态没了"，不暗示 run 消失。 */}
       {result.kind === "absent" ? (
         <div
           className="shrink-0 border-b border-border px-4 py-3"
@@ -378,7 +396,7 @@ export const WorkflowRunResultSections = memo(function WorkflowRunResultSections
         </div>
       ) : null}
 
-      {/* Result / failure panel */}
+      {/* 结果 / 失败面板 */}
       {result.kind === "completed" ? (
         <div
           className="shrink-0 border-b border-border px-4 py-3"
@@ -422,13 +440,14 @@ export const WorkflowRunResultSections = memo(function WorkflowRunResultSections
             ) : null}
           </div>
           {/*
-            The projection writes WorkflowErrorJson.message into error - the product-projection.ts
-            run-settled branch keeps only .message (code dropped), and the engine messages are human short sentences:
-            run cancelled, typed ask ended without a result, node count over the 100 cap. So typeset it as
-            prose, not a mono code block (DESIGN.md reserves font-mono for paths/commands/code/identifiers/
-            terminal data). pre-wrap stays so newlines in the message survive.
-            code is unavailable here and the panel has no second landing spot: the event-log area is gone,
-            structured payloads live only in the journal - their readers are models and the CLI, not the human at this panel.
+            投影写进 `error` 的是 `WorkflowErrorJson.message`——product-projection.ts 的
+            run-settled 分支只取 `.message`（`code` 被丢掉），而引擎那些 message 是人话短句：
+            「run 已取消」「typed ask 结束时未提交结果」「节点数超过上限 100」。所以这里按
+            正文排版而不是等宽代码块（DESIGN.md 把 font-mono 留给路径/命令/代码/标识符/
+            终端数据）。保留 pre-wrap 是为了万一 message 带换行不被折叠掉。
+            这里给不出 `code`，面板上也不再有第二个落点：事件日志区已经撤走（2026-09-04
+            用户指令，见 docs/dynamic-workflow/presentation.md），结构化载荷只留在 journal 里
+            ——它的读者是模型与 CLI，不是坐在这块面板前的人。
           */}
           <p
             className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-words text-ui-base text-foreground"

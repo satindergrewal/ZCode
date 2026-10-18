@@ -23,10 +23,22 @@ import type {
   ChromeBrowserDataImportResult,
   DockerContainerInfo,
   EmbeddedBrowserOpenUrlRequest,
+  EmbeddedBrowserPermissionPromptEvent,
+  EmbeddedBrowserPermissionResolveRequest,
+  EmbeddedBrowserSitePermissionUpdateRequest,
+  EmbeddedBrowserSitePermissionResetRequest,
+  EmbeddedBrowserSitePermissionsSnapshot,
   EditorInfo,
   ApplicationIconInfo,
   ApplicationIconRequest,
   Locale,
+  WebRemoteControlContext,
+  WebRemoteControlReconnectWorkspaceRequest,
+  WebRemoteControlReconnectWorkspaceResult,
+  WebRemoteControlStartOperationResult,
+  WebRemoteControlStatus,
+  WebRemoteControlTaskTarget,
+  WebRemoteControlWorkspaceTarget,
   OAuthStateRegistration,
   PostUpdateReleaseNotesPayload,
   RemoteConnectionRuntimeLog,
@@ -49,12 +61,22 @@ import type {
 } from "@zcode/shared";
 
 /**
- * window.zcode type definitions -- platform operations that need the main process.
+ * window.zcode 类型定义 —— 仅包含需要 main 进程参与的平台操作
  *
- * Credential management moved to ICredentialService (over RPC) and no longer goes through this interface.
+ * 凭据管理已迁移到 ICredentialService（通过 RPC），不再经过此接口。
  */
 declare global {
   interface Window {
+    /** 插件 UI 沙箱 preload 命名空间；旧 preload 下为 undefined。 */
+    zcodePluginSandbox?: {
+      supportsRetainedMove?: boolean;
+      copyImage?(
+        input: import("@zcode/shared/mcp-apps").PluginSandboxCaptureRequest,
+      ): Promise<void>;
+      getOwnerWebContentsId(): Promise<number>;
+      disposeSandbox(sandboxId: string, initId?: number): Promise<void>;
+      consumeUserGesture(sandboxId: string): Promise<boolean>;
+    };
     zcode: {
       connectRemote(
         options: RemoteTarget,
@@ -65,63 +87,115 @@ declare global {
           connectTrigger?: import("@zcode/shared").RemoteWorkspaceConnectTrigger;
         },
       ): Promise<{ success: boolean; error?: string; sessionId?: string }>;
-      /** Cancel a remote connection not yet established for the current window */
+      /** 取消当前窗口尚未建立完成的远程连接 */
       cancelPendingRemoteConnection?(requestId?: string): Promise<void>;
-      /** Bind the canonical workspace context of a remote logical session */
+      /** 绑定远程 logical session 的 canonical workspace context */
       bindRemoteWorkspaceSessionContext?(context: {
         remoteSessionId: string;
         workspacePath: string;
         workspaceIdentity?: string;
       }): Promise<BrowserGuestAttachResult>;
-      /** Dispose the remote session held in the current window */
+      /** 为当前 workspace 开启 Web 远程控制 */
+      startWebRemoteControl(
+        context: WebRemoteControlContext,
+      ): Promise<WebRemoteControlStartOperationResult>;
+      /** 清除旧配对材料并重新生成 Web 远程控制二维码 */
+      refreshWebRemoteControlPairing(
+        context: WebRemoteControlContext,
+      ): Promise<WebRemoteControlStartOperationResult>;
+      /** 关闭当前窗口的 Web 远程控制 */
+      stopWebRemoteControl(): Promise<void>;
+      /** 查询当前窗口 Web 远程控制状态 */
+      getWebRemoteControlStatus(): Promise<WebRemoteControlStatus>;
+      /** 订阅当前窗口 Web 远程控制状态变化 */
+      onWebRemoteControlStatusChanged?(
+        handler: (status: WebRemoteControlStatus) => void,
+      ): () => void;
+      /** 释放当前窗口里的远程 session */
       disposeRemoteSession(sessionId: string): Promise<void>;
-      /** Check whether the local Docker daemon is available */
+      /** 检查本机 Docker daemon 是否可用 */
       isDockerAvailable(): Promise<boolean>;
-      /** List WSL distros available on this machine */
+      /** 列出本机可用的 WSL 发行版 */
       listWSLDistros(): Promise<WSLDistro[]>;
-      /** List Docker containers available for connecting */
+      /** 列出当前可连接的 Docker 容器 */
       listDockerContainers(): Promise<DockerContainerInfo[]>;
-      /** List SSH config aliases usable for quick form fill */
+      /** 列出当前机器 SSH config 里可用于快速填表的 alias */
       listSSHConfigAliases(): Promise<SSHConfigAliasOption[]>;
-      /** Forward renderer logs over IPC to the main process for unified storage */
+      /** renderer 日志通过 IPC 传到 main 进程统一存储 */
       log(level: "info" | "warn" | "error", args: unknown[]): void;
-      /** Open the system directory picker; resolves to the selected path or null */
+      /** 打开系统目录选择框，返回选中路径或 null */
       selectDirectory(): Promise<string | null>;
-      /** Open the system file picker; resolves to the selected file path or null */
+      /** 打开系统文件选择框，返回选中文件路径或 null */
       selectFile(): Promise<string | null>;
-      /** Open the multi-file picker; resolves to selected paths, or [] when canceled */
+      /** 打开系统多文件选择框，返回选中文件路径；取消时返回空数组 */
       selectFiles?(): Promise<string[]>;
-      /** Save a file via the native save-as dialog */
+      /** 通过系统原生另存为对话框保存文件 */
       saveFile?(
         payload: import("@zcode/shared").SaveFileRequest,
       ): Promise<import("@zcode/shared").SaveFileResult>;
-      /** Export the page's print layout as PDF (Chromium print engine, vector text) */
+      /** 将当前页面的 print 媒体版面导出为 PDF（Chromium 打印引擎，矢量文本） */
       printPageToPdf?(): Promise<import("@zcode/shared").PrintPageToPdfResult>;
-      /** Resolve the local path of a Web File obtained via drag-and-drop or file input */
+      /** 从系统拖拽/文件输入得到的 Web File 解析真实本地路径 */
       getPathForFile?(file: File): string | null;
-      /** Subscribe to remote-connection progress logs in this window; returns a disposer */
+      /** dwf 产物「作为文件打开」：把某一版的字节落成本机副本，返回其路径 */
+      materializeWorkflowArtifactFile(
+        payload: import("@zcode/shared").MaterializeWorkflowArtifactFileRequest,
+      ): Promise<import("@zcode/shared").MaterializeWorkflowArtifactFileResult>;
+      /** 订阅当前窗口内远程连接过程日志，返回 disposer */
       onRemoteConnectionLog(handler: (entry: RemoteConnectionRuntimeLog) => void): () => void;
-      /** Subscribe to remote workspace session closed events; returns a disposer */
+      /** 订阅远程 workspace session 关闭事件，返回 disposer */
       onRemoteSessionClosed(handler: (event: RemoteSessionClosedEvent) => void): () => void;
-      /** Subscribe to bot-triggered remote workspace reconnection success; returns a disposer */
+      /** 订阅 Bot 触发的远程 workspace 重连成功事件，返回 disposer */
       onBotRemoteWorkspaceReconnected(
         handler: (event: BotRemoteWorkspaceReconnectedEvent) => void,
       ): () => void;
-      /** Check whether the directory is already open in another window */
+      /** 检查目录是否已在其他窗口打开 */
       activateOrSetWorkspace?(path: string): Promise<{ activated: boolean }>;
-      /** Sync the workspace paths of all tabs in this window to the main process */
+      /** 同步当前窗口所有 tab 的 workspace 路径到 main 进程 */
       syncWindowTabs(paths: string[]): void;
-      /** Sync this window's unread task count to the main process */
+      /** 同步当前窗口里 Web 远程控制允许切换的 workspace */
+      syncWebRemoteControlWorkspaces?(workspaces: WebRemoteControlWorkspaceTarget[]): void;
+      /** 同步当前窗口里 Web 远程控制可展示的 task 快照 */
+      syncWebRemoteControlTasks?(tasks: WebRemoteControlTaskTarget[]): void;
+      /** 注册手机端 Web 远控请求重连 workspace 的回调 */
+      onWebRemoteControlReconnectWorkspace?(
+        handler: (
+          request: WebRemoteControlReconnectWorkspaceRequest,
+        ) => Promise<WebRemoteControlReconnectWorkspaceResult>,
+      ): () => void;
+      /** 同步当前窗口的未读 task 数到 main 进程 */
       syncWindowUnreadCount(count: number): void;
       syncActiveTaskSession(sessionId: string | null): void;
-      /** Sync app settings the main process must learn immediately */
+      /** 同步需要 main 进程即时感知的应用设置 */
       syncAppSettings?(patch: Partial<AppSettings>): void;
-      /** Register the callback for the main process focusing a workspace tab; returns a disposer */
+      /** 查询关闭驻留托盘能力（Linux 置灰判断；spec：docs/desktop/linux-close-to-tray.md） */
+      getCloseToTrayCapability?(): Promise<import("@zcode/shared").DesktopCloseToTrayCapability>;
+      /** 注册 main 进程要求聚焦指定 workspace tab 的回调，返回 disposer */
       onFocusTab(handler: (path: string) => void): () => void;
-      /** Register the callback for the main process triggering a new tab; returns a disposer */
+      /** 注册 main 进程触发新建 tab 的回调，返回 disposer */
       onNewTab(handler: () => void): () => void;
-      /** Register the callback for the embedded browser webview requesting a new page; returns a disposer */
+      /** 注册内置浏览器 webview 请求打开新页面的回调，返回 disposer */
       onOpenBrowserUrl?(handler: (request: EmbeddedBrowserOpenUrlRequest) => void): () => void;
+      /** 注册内置浏览器网页权限/源选择/设备选择弹窗请求，返回 disposer */
+      onEmbeddedBrowserPermissionPrompt?(
+        handler: (event: EmbeddedBrowserPermissionPromptEvent) => void,
+      ): () => void;
+      /** 回传用户对内置浏览器权限弹窗的决策 */
+      resolveEmbeddedBrowserPermissionPrompt?(
+        request: EmbeddedBrowserPermissionResolveRequest,
+      ): void;
+      /** 读取内置浏览器站点权限记录（设置页「网站权限」） */
+      getEmbeddedBrowserSitePermissions?(): Promise<EmbeddedBrowserSitePermissionsSnapshot>;
+      /** 修改/删除单条站点权限 */
+      setEmbeddedBrowserSitePermission?(
+        request: EmbeddedBrowserSitePermissionUpdateRequest,
+      ): Promise<EmbeddedBrowserSitePermissionsSnapshot>;
+      /** 清空全部站点权限记录 */
+      clearEmbeddedBrowserSitePermissions?(): Promise<EmbeddedBrowserSitePermissionsSnapshot>;
+      /** 重置单个站点的全部权限记录 */
+      resetEmbeddedBrowserSitePermission?(
+        request: EmbeddedBrowserSitePermissionResetRequest,
+      ): Promise<EmbeddedBrowserSitePermissionsSnapshot>;
       onBrowserViewReady?(
         handler: (payload: {
           workspaceKey: string;
@@ -163,75 +237,75 @@ declare global {
       onBrowserViewRestore?(
         handler: (payload: BrowserViewResidencyTransitionPayload) => void,
       ): () => void;
-      /** Register the callback for the main process triggering a new task; returns a disposer */
+      /** 注册 main 进程触发新建任务的回调，返回 disposer */
       onNewTask(handler: () => void): () => void;
-      /** Register the callback for the main process opening the workspace; returns a disposer */
+      /** 注册 main 进程触发打开工作区的回调，返回 disposer */
       onOpenWorkspace?(handler: () => void): () => void;
-      /** Register the callback for the main process opening a local workspace dir via deep link; returns a disposer */
+      /** 注册 main 进程通过 deep link 直接打开本地工作区目录的回调，返回 disposer */
       onOpenWorkspacePath?(handler: (path: string) => void): () => void;
-      /** Register the window fullscreen-change callback; returns a disposer */
+      /** 注册窗口全屏状态变化回调，返回 disposer */
       onWindowFullscreenChanged(handler: (isFullscreen: boolean) => void): () => void;
-      /** Read window maximized state and native rounded-corner capability */
+      /** 读取窗口最大化状态与系统原生圆角能力 */
       getDesktopWindowChromeState?(): Promise<DesktopWindowChromeState>;
-      /** Subscribe to window maximized state and native rounded-corner changes */
+      /** 订阅窗口最大化状态与系统原生圆角能力变化 */
       onDesktopWindowChromeStateChanged?(
         handler: (state: DesktopWindowChromeState) => void,
       ): () => void;
-      /** Read the desktop window page zoom level */
+      /** 读取当前桌面窗口页面缩放档位 */
       getDesktopZoomLevel?(): Promise<DesktopZoomState>;
-      /** Subscribe to desktop window page zoom level changes */
+      /** 订阅当前桌面窗口页面缩放档位变化 */
       onDesktopZoomLevelChanged?(handler: (state: DesktopZoomState) => void): () => void;
-      /** Register the callback for jumping to a task after its system notification is clicked; returns a disposer */
+      /** 注册用户点击系统通知后跳转到对应任务的回调，返回 disposer */
       onTaskNotificationClick(handler: (taskId: string) => void): () => void;
-      /** Open an external URL */
+      /** 打开外部 URL */
       openExternal(url: string): void;
-      /** Check whether a community entry exists for the current language */
+      /** 查询当前语言下是否存在可用的用户社群入口 */
       canOpenCommunity(locale: Locale): Promise<boolean>;
-      /** Open the given path in the system file manager */
+      /** 在系统文件管理器中打开指定路径 */
       openInFileManager(path: string): Promise<{ success: boolean; error?: string }>;
-      /** Open a local file with the system default app */
+      /** 使用系统默认应用打开本地文件 */
       openExternalFile(path: string): Promise<{ success: boolean; error?: string }>;
-      /** Open the full ZCode Computer Use permission onboarding */
+      /** 打开 ZCode Computer Use 完整权限引导 */
       openCuaPermissionOnboarding?(
         options?: OpenCuaPermissionOnboardingOptions,
       ): Promise<CuaAccessibilitySettingsResult>;
-      /** Cancel only the onboarding participant started by this renderer with the given operationId. */
+      /** 只取消当前 renderer 以 operationId 发起的 onboarding participant。 */
       cancelCuaPermissionOnboarding?(operationId: string): void;
-      /** Warm and cache the verified helper path so dragstart can startDrag synchronously */
+      /** 预热并缓存已验证的 Helper 路径，使 dragstart 能同步 startDrag */
       prepareCuaHelperPermissionDrag?(): Promise<PrepareCuaHelperPermissionDragResult>;
-      /** Drag Helper.app into the macOS permission list from the permission popover */
+      /** 从权限浮窗拖拽 Helper.app 到 macOS 权限列表 */
       startCuaHelperPermissionDrag?(): void;
-      /** Report an OAuth state for deep link routing */
+      /** 上报 OAuth state 用于 deep link 路由 */
       registerOAuthState(payload: OAuthStateRegistration): void;
-      /** Register the OAuth deep link callback; returns a disposer */
+      /** 注册 OAuth deep link 回调，返回 disposer */
       onOAuthCallback(cb: (url: string) => void): () => void;
-      /** Register the payment deep link callback; returns a disposer */
+      /** 注册支付 deep link 回调，返回 disposer */
       onPaymentCallback(cb: (url: string) => void): () => void;
-      /** Tell the main process the renderer is ready */
+      /** 通知 main process renderer 已就绪 */
       notifyRendererReady(): void;
-      /** Sync this renderer's telemetry context to the main process */
+      /** 同步当前 renderer 的 telemetry 上下文到 main process */
       syncTelemetryContext(context: TelemetryRendererContext): void;
-      /** Report product telemetry events via the main process */
+      /** 通过 main process 统一上报业务 telemetry 事件 */
       reportTelemetryEvent(payload: RendererTelemetryEventPayload): Promise<void>;
-      /** Read the desktop renderer user-action trace rollout config. */
+      /** 读取 Desktop Renderer 用户操作 Trace 灰度配置。 */
       getRendererActionTraceConfig?(): Promise<RendererActionTraceConfigV1>;
-      /** Subscribe to desktop renderer user-action trace rollout config changes. */
+      /** 订阅 Renderer 用户操作 Trace 灰度配置变化。 */
       onRendererActionTraceConfigChanged?(
         callback: (config: RendererActionTraceConfigV1) => void,
       ): () => void;
-      /** Send a finished ui_action batch; Main returns no business result. */
+      /** 发送已结束的 ui_action batch；Main 不返回业务结果。 */
       reportRendererActionTraceBatch?(batch: RendererActionTraceBatchV1): void;
-      /** 60-second heap reading of the main-window renderer; one-way send, no ack from Main. */
+      /** 主窗口 renderer 的 60 秒 heap 读数；单向 send，Main 不回执。 */
       reportRendererHeapSample?(sample: RendererHeapSample): void;
-      /** Trigger the system notification for a task state change */
+      /** 触发任务状态对应的系统通知 */
       showTaskNotification(payload: TaskNotificationPayload): void;
-      /** Export logs: zip ~/.zcode/v2 plus external agent logs and reveal in Finder */
+      /** 导出日志：打包 ~/.zcode/v2 及外部 agent 日志为 zip 并在 Finder 中显示 */
       exportLogs(): Promise<{
         success: boolean;
         path?: string;
         error?: string;
       }>;
-      /** Capture the current window for error feedback attachments */
+      /** 截取当前窗口，用于错误反馈携带现场画面 */
       captureWindowScreenshot?(): Promise<WindowScreenshotResult | null>;
       browserViewAttachGuest?(payload: {
         key: string;
@@ -242,7 +316,7 @@ declare global {
         sessionId?: string;
         residencyGeneration?: number;
       }): Promise<void>;
-      /** Let main precisely detach the old guest's CDP before rebuilding `<webview>`. */
+      /** 重建 `<webview>` 前让 main 精确断开旧 guest 的 CDP。 */
       browserViewDetachGuest?(payload: { key: string; webContentsId: number }): Promise<boolean>;
       browserViewCloseTab?(payload: BrowserViewCloseTabRequest): Promise<void>;
       browserViewReportResidency?(payload: BrowserViewResidencyReportPayload): Promise<void>;
@@ -251,74 +325,74 @@ declare global {
       browserViewRestoreTabs?(
         payload: BrowserViewRestoreTabsRequest,
       ): Promise<BrowserViewRestoredTabShell[]>;
-      /** Renderer-reported free-form viewport size. */
+      /** renderer 自由尺寸回写 main。 */
       browserViewUpdateViewport?(payload: {
         tabId: string;
         viewport: BrowserViewportSize | null;
       }): Promise<void>;
-      /** One-time import of embedded-browser data from an auto-discovered Chrome profile. */
+      /** 从自动发现的 Chrome Profile 一次性导入内置浏览器数据。 */
       importChromeBrowserData?(
         options?: import("@zcode/shared").ChromeBrowserDataImportOptions,
       ): Promise<ChromeBrowserDataImportResult>;
-      /** Clear embedded-browser cache or all site data. */
+      /** 清理内置浏览器缓存或全部站点数据。 */
       clearEmbeddedBrowserData?(mode: "cache" | "all"): Promise<EmbeddedBrowserDataClearResult>;
-      /** Register the new-version-downloaded callback; returns a disposer */
+      /** 注册新版本已下载完毕的回调，返回 disposer */
       onUpdateReady(callback: (version: string) => void): () => void;
-      /** Register the "manual update check" result callback; returns a disposer */
+      /** 注册"手动检查更新"结果的回调，返回 disposer */
       onUpdateCheckResult(callback: (payload: UpdateCheckResultPayload) => void): () => void;
-      /** Subscribe to auto-update progress state changes; returns a disposer */
+      /** 注册自动更新持续状态变化，返回 disposer */
       onUpdateStateChanged?(callback: (payload: UpdateStatePayload) => void): () => void;
-      /** Read the current auto-update state */
+      /** 主动读取当前自动更新状态 */
       getUpdateState?(): Promise<UpdateStatePayload>;
-      /** Start downloading the discovered update */
+      /** 开始下载当前已发现的更新 */
       downloadUpdate?(): Promise<void>;
-      /** Cancel the in-progress update download */
+      /** 取消当前正在下载的更新 */
       cancelUpdateDownload?(): Promise<void>;
-      /** Open or focus the dedicated update window */
+      /** 打开或聚焦独立更新窗口 */
       openUpdateStatusWindow?(): Promise<void>;
-      /** Read auto-update preferences */
+      /** 读取自动更新偏好 */
       getAutoUpdatePreferences?(): Promise<{
         autoDownloadAndInstallUpdates: boolean;
       }>;
-      /** Write the "download and install updates automatically" preference */
+      /** 写入“自动下载并安装更新”偏好 */
       setAutoDownloadAndInstallUpdates?(enabled: boolean): Promise<void>;
-      /** Skip the discovered update version */
+      /** 跳过当前已发现的更新版本 */
       skipUpdateVersion?(version: string): Promise<void>;
-      /** Subscribe to application locale changes; returns a disposer */
+      /** 注册应用语言变化，返回 disposer */
       onApplicationLocaleChanged?(callback: (locale: Locale) => void): () => void;
-      /** Subscribe to main-process settings-change notifications */
+      /** 订阅 main 进程修改 settings 后的通知 */
       onSettingsChanged?(callback: () => void): () => void;
-      /** Query the number of sessions running on the desktop */
+      /** 查询桌面端正在运行的会话数量 */
       getDesktopSessionActivity?(): Promise<{
         runningAgentSessionCount: number;
       }>;
-      /** Register post-update release notes; returns a disposer */
+      /** 注册更新安装后的版本说明，返回 disposer */
       onPostUpdateReleaseNotes(
         callback: (payload: PostUpdateReleaseNotesPayload) => void,
       ): () => void;
-      /** Mark the current release notes as read */
+      /** 标记当前版本说明已读 */
       acknowledgePostUpdateReleaseNotes(version: string): Promise<void>;
-      /** Quit and install the update after user confirmation */
+      /** 用户确认重启安装更新 */
       quitAndInstallUpdate(): Promise<void>;
-      /** List installed editors/terminals (with icons) */
+      /** 获取已安装的编辑器/终端列表（含图标） */
       getInstalledEditors(): Promise<EditorInfo[]>;
-      /** Get a system app icon by bundle id or structured locator */
+      /** 按兼容 bundle id 或结构化 locator 获取系统应用图标 */
       getApplicationIcon?(
         request: string | ApplicationIconRequest,
       ): Promise<ApplicationIconInfo | null>;
-      /** Open a path with the given editor */
+      /** 用指定编辑器打开路径 */
       openInEditor(
         editorId: string,
         path: string,
         options?: OpenInEditorOptions,
       ): Promise<{ success: boolean; error?: string }>;
-      /** Run a desktop-window-level command */
+      /** 执行桌面窗口级命令 */
       executeDesktopCommand(command: DesktopCommandId): Promise<void>;
-      /** Sync the application menu language */
+      /** 同步应用菜单语言 */
       setApplicationLocale(locale: Locale): Promise<void>;
-      /** Read the host system locale */
+      /** 读取宿主系统语言 */
       getSystemLocale?(): Promise<Locale>;
-      /** Sync the title-bar light/dark theme */
+      /** 同步标题栏亮暗色 */
       setTitleBarTheme(theme: DesktopTitleBarTheme): Promise<void>;
     };
   }

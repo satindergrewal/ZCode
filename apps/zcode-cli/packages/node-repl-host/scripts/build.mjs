@@ -54,6 +54,7 @@ export const buildNodeReplHostBundle = async ({
     outfile,
     platform: "node",
     target: "node24",
+    external: ["sharp"],
   });
   // Build-time guard: if the define name drifts (renamed, or swallowed by a createSharedDefines-style
   // refactor), the bundle silently falls back to an empty string and the symptom only shows in production

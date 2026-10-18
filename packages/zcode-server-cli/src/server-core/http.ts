@@ -10,6 +10,7 @@ import {
   VSBuffer,
   SocketProtocol,
   ChannelServer,
+  ChannelClient,
   LoggingChannelServer,
   type ISocket,
 } from "@zcode/rpc";
@@ -18,16 +19,17 @@ import {
   IZCodeAgentService,
   ServiceCollection,
 } from "@zcode/services";
-import { createServiceLogger } from "@zcode/services/node";
+import { createServiceLogger, type TopicResourcePeers } from "@zcode/services/node";
 import {
   SERVER_REMOTE_PROTOCOL_VERSION,
+  TOPIC_RESOURCE_RELAY_CHANNEL,
   ZCODE_RPC_HOST_CAPABILITY_HEADER,
   ZCODE_VERSION,
   type ServerRemoteInfo,
 } from "@zcode/shared";
 import { createHostCapabilityStore, type HostCapabilityStore } from "./hostCapability.js";
 
-interface CoreHttpServer {
+export interface CoreHttpServer {
   host: string;
   port: number;
   close: () => Promise<void>;
@@ -38,10 +40,9 @@ const log = createServiceLogger("server-core");
 
 async function closeWebSocketServer(wss: WebSocketServer): Promise<void> {
   for (const client of wss.clients) {
-    // HTTP server.close() does not settle already-upgraded WebSockets; live desktop
-    // continuous connections would keep Core's shutdown ack from ever being sent.
-    // Send a close frame first to give well-behaved clients a short drain window,
-    // then terminate as the fallback so the Supervisor can reclaim us in budget.
+    // HTTP server.close() 不会收敛已经 upgrade 的 WebSocket，活跃 desktop
+    // continuous 连接会让 Core 的 shutdown ack 永远发不出去。先发 close frame 给正常
+    // 客户端一个短暂排空窗口，再 terminate 兜底，保证 Supervisor 能在预算内释放资源。
     client.close(1001, "Server shutting down");
   }
   const deadline = Date.now() + WEBSOCKET_DRAIN_TIMEOUT_MS;
@@ -90,14 +91,20 @@ function exposeWebSocket(
   ws: WebSocket,
   services: ServiceCollection,
   clientMode: "desktop-continuous" | "web-remote-replayable",
+  resourcePeers?: TopicResourcePeers,
 ): void {
   const socket = wrapWebSocket(ws);
   const protocol = new SocketProtocol(socket);
   const rawServer = new ChannelServer(protocol, "server");
   const server = new LoggingChannelServer(rawServer, (...args) => log.debug(undefined, ...args));
   const agentService = services.getOptional(IZCodeAgentService);
+  const reverseClient =
+    clientMode === "desktop-continuous" && resourcePeers ? new ChannelClient(protocol) : undefined;
+  const peer = reverseClient
+    ? resourcePeers?.attach(reverseClient.getChannel(TOPIC_RESOURCE_RELAY_CHANNEL))
+    : undefined;
   const scope = agentService
-    ? createZCodeAgentConnectionScope(agentService, {
+    ? createZCodeAgentConnectionScope(peer ? peer.wrapAgent(agentService) : agentService, {
         connectionId: `server-core-ws-${randomUUID()}`,
         clientMode,
         role: clientMode === "desktop-continuous" ? "trusted-host-relay" : "terminal-client",
@@ -108,6 +115,8 @@ function exposeWebSocket(
     scope ? new Map([[IZCodeAgentService.channelName, scope.service]]) : new Map(),
   );
   socket.onClose(() => {
+    peer?.dispose();
+    reverseClient?.dispose();
     void scope?.dispose();
     rawServer.dispose();
   });
@@ -120,14 +129,14 @@ export async function createCoreHttpServer(
     port?: number;
     serverId?: string;
     hostCapabilityStore?: HostCapabilityStore;
+    topicResourcePeers?: TopicResourcePeers;
   } = {},
 ): Promise<CoreHttpServer> {
   const app = new Hono();
   const { injectWebSocket, upgradeWebSocket, wss } = createNodeWebSocket({ app });
   const host = options.host ?? "127.0.0.1";
   if (!isLoopbackHost(host)) {
-    // Only loopback/SSH-tunnel entries exist today and Core has no token middleware
-    // yet; external listeners must fail closed.
+    // R2 当前只有本机/SSH 隧道入口，Core 尚未接入 token middleware；对外监听必须 fail-closed。
     throw new Error(
       `Non-loopback host ${host} requires authentication before the server can listen`,
     );
@@ -144,9 +153,8 @@ export async function createCoreHttpServer(
       processResourceTelemetry: true,
     },
   };
-  // A bare Set cannot enforce expiresAt, so unconsumed capabilities would stay
-  // valid forever and accumulate. Use the TTL single-use store shared with
-  // packages/server so expiry/consumption semantics match the issued payload.
+  // 裸 Set 无法落实 expiresAt，未消费的 capability 会一直有效并持续累积。
+  // 使用与 packages/server 兼容的 TTL 一次性 store，使有效期和消费语义与返回信息一致。
   const capabilities = options.hostCapabilityStore ?? createHostCapabilityStore();
   app.get("/api/server-info", (context) => context.json(info));
   app.get(
@@ -168,7 +176,12 @@ export async function createCoreHttpServer(
     "/ws/host",
     upgradeWebSocket(() => ({
       onOpen(_event, socket) {
-        exposeWebSocket(socket.raw as WebSocket, services, "desktop-continuous");
+        exposeWebSocket(
+          socket.raw as WebSocket,
+          services,
+          "desktop-continuous",
+          options.topicResourcePeers,
+        );
       },
     })),
   );

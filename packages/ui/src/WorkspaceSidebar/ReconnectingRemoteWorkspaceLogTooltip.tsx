@@ -10,17 +10,18 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip.js";
 
-function scrollRemoteConnectionLogsToLatest(
+export function scrollRemoteConnectionLogsToLatest(
   viewport: Pick<HTMLElement, "scrollHeight" | "scrollTop">,
 ): void {
   viewport.scrollTop = viewport.scrollHeight;
 }
 
-function scheduleRemoteConnectionLogsScrollToLatest(
+export function scheduleRemoteConnectionLogsScrollToLatest(
   viewport: Pick<HTMLElement, "scrollHeight" | "scrollTop">,
   scheduleFrame: (callback: () => void) => number = (callback) =>
     window.requestAnimationFrame(callback),
-  cancelFrame: (frameId: number) => void = (frameId) => window.cancelAnimationFrame(frameId),
+  cancelFrame: (frameId: number) => void = (frameId) =>
+    window.cancelAnimationFrame(frameId),
 ): () => void {
   scrollRemoteConnectionLogsToLatest(viewport);
   const frameId = scheduleFrame(() => scrollRemoteConnectionLogsToLatest(viewport));
@@ -42,10 +43,10 @@ export function ReconnectingRemoteWorkspaceLogTooltip({
   const scrollLogsToLatest = useCallback((viewport: HTMLDivElement) => {
     cancelScheduledScrollRef.current();
 
-    // The tooltip re-renders the log layer on every hover, and browsers start at scrollTop=0.
-    // Connection logs must show the latest progress first: scroll on mount, then again next frame
-    // once layout settles.
-    cancelScheduledScrollRef.current = scheduleRemoteConnectionLogsScrollToLatest(viewport);
+    // Tooltip 每次 hover 都会重新展示日志浮层，浏览器默认从 scrollTop=0 开始。
+    // 连接日志需要优先看到最新进度，因此在节点挂载时先滚一次，并在下一帧布局稳定后再补滚一次。
+    cancelScheduledScrollRef.current =
+      scheduleRemoteConnectionLogsScrollToLatest(viewport);
   }, []);
 
   const setLogViewportRef = useCallback(
@@ -75,9 +76,9 @@ export function ReconnectingRemoteWorkspaceLogTooltip({
           {children ? (
             children
           ) : (
-            // While a remote workspace reconnects in the background, "connecting" alone cannot say
-            // whether it is stuck or where. Add a hover log to the connecting indicator so users
-            // see live progress without interrupting the flow.
+            // 远程 workspace 在后台重连时，用户之前只能看到“连接中”，
+            // 无法判断当前是否卡住、卡在哪一步。这里给连接中指示补充 hover 日志，
+            // 让用户在不打断流程的情况下看到实时进展。
             <div
               className="flex shrink-0 items-center gap-1 text-ui-base text-foreground-subtle"
               aria-label={intl.formatMessage({
@@ -106,7 +107,9 @@ export function ReconnectingRemoteWorkspaceLogTooltip({
               {logs.length > 0 ? (
                 logs.map((entry) => (
                   <div key={entry.id} className="flex min-w-0 items-start leading-5">
-                    <span className="shrink-0 text-tooltip-foreground/60">{entry.timestamp}</span>
+                    <span className="shrink-0 text-tooltip-foreground/60">
+                      {entry.timestamp}
+                    </span>
                     <span
                       className={cn(
                         "mx-2 shrink-0",

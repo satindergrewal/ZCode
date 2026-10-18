@@ -1,6 +1,9 @@
 import type { ConversationTurnRenderUnit } from "@/v4/conversationTurnRenderUnits.js";
 
-export type ConversationTurnNavigatorAssistantPreviewKind = "empty" | "running" | "text";
+export type ConversationTurnNavigatorAssistantPreviewKind =
+  | "empty"
+  | "running"
+  | "text";
 
 export interface ConversationTurnNavigatorItem {
   key: string;
@@ -13,7 +16,7 @@ export interface ConversationTurnNavigatorItem {
   isRunning: boolean;
 }
 
-interface BuildConversationTurnNavigatorItemsOptions {
+export interface BuildConversationTurnNavigatorItemsOptions {
   assistantEmptyPreview: string;
   assistantRunningPreview: string;
   userFallbackPreview: string;
@@ -27,7 +30,7 @@ export interface ConversationTurnNavigatorVirtualItem {
   size: number;
 }
 
-interface ResolveConversationTurnNavigatorActiveUnitIndexOptions {
+export interface ResolveConversationTurnNavigatorActiveUnitIndexOptions {
   items: readonly ConversationTurnNavigatorItem[];
   virtualItems: readonly ConversationTurnNavigatorVirtualItem[];
   scrollOffsetPx: number;
@@ -40,33 +43,33 @@ export interface ConversationTurnNavigatorQueryPosition {
   end: number;
 }
 
-interface ResolveConversationTurnNavigatorActiveQueryRowIdOptions {
+export interface ResolveConversationTurnNavigatorActiveQueryRowIdOptions {
   positions: readonly ConversationTurnNavigatorQueryPosition[];
   scrollOffsetPx: number;
   viewportHeightPx: number;
 }
 
-type ConversationTurnNavigatorBarTone = "idle" | "mid" | "near" | "peak";
-type ConversationTurnNavigatorBarColorTone = "focus" | "muted";
+export type ConversationTurnNavigatorBarTone = "idle" | "mid" | "near" | "peak";
+export type ConversationTurnNavigatorBarColorTone = "focus" | "muted";
 
-interface ConversationTurnNavigatorBarVisualState {
+export interface ConversationTurnNavigatorBarVisualState {
   colorTone: ConversationTurnNavigatorBarColorTone;
   opacity: number;
   scaleX: number;
   tone: ConversationTurnNavigatorBarTone;
 }
 
-interface ResolveConversationTurnNavigatorBarVisualStateOptions {
+export interface ResolveConversationTurnNavigatorBarVisualStateOptions {
   itemIndex: number;
   visualFocusItemIndex: number | undefined;
 }
 
-interface ResolveConversationTurnNavigatorVisualFocusItemIndexOptions {
+export interface ResolveConversationTurnNavigatorVisualFocusItemIndexOptions {
   activeItemIndex: number;
   interactionItemIndex: number | undefined;
 }
 
-const CONVERSATION_TURN_NAVIGATOR_MIN_WIDTH_PX = 864;
+export const CONVERSATION_TURN_NAVIGATOR_MIN_WIDTH_PX = 864;
 
 export type ConversationTurnNavigatorHydrationResult =
   | { status: "hydrated"; logEpoch: string }
@@ -173,24 +176,30 @@ export function buildConversationTurnNavigatorItems(
   const resolvedOptions: Required<BuildConversationTurnNavigatorItemsOptions> = {
     ...options,
     maxPreviewChars: options.maxPreviewChars ?? DEFAULT_MAX_PREVIEW_CHARS,
-    maxPreviewParagraphs: options.maxPreviewParagraphs ?? DEFAULT_MAX_PREVIEW_PARAGRAPHS,
+    maxPreviewParagraphs:
+      options.maxPreviewParagraphs ?? DEFAULT_MAX_PREVIEW_PARAGRAPHS,
   };
 
   return units.flatMap((unit, unitIndex) => {
-    // The provider/store physical role=user also carries background/goal/mailbox
-    // system context; the directory means user-initiated queries - only projection-certain realUser counts.
-    const realUserInputs = unit.visibleUserInputs.filter((row) => row.origin === "realUser");
+    // provider/store 的物理 role=user 还包含 background/goal/mailbox
+    // 等系统上下文；目录代表用户主动 query，只能使用投影明确裁决的 realUser。
+    const realUserInputs = unit.visibleUserInputs.filter(
+      (row) => row.origin === "realUser",
+    );
     if (unit.timelineOnly || realUserInputs.length === 0) {
       return [];
     }
 
-    // Directory items split per query, but the hover assistant summary keeps the legacy semantics:
-    // the owning product-turn text result, never renderer-guessed guide reply segments.
-    const { assistantPreview, assistantPreviewKind } = buildAssistantPreview(unit, resolvedOptions);
+    // 导航项按 query 拆分，但 hover 的 assistant 摘要保持旧产品语义：
+    // 取所属 product turn 的文本结果，不在 renderer 猜测 guide 回复分段。
+    const { assistantPreview, assistantPreviewKind } = buildAssistantPreview(
+      unit,
+      resolvedOptions,
+    );
     return realUserInputs.map((row, queryIndex) => ({
-      // Never directory-per-product-turn, stuffing one turn steer queries into one preview.
-      // The directory navigates user-visible queries; build items per stable row
-      // identity; turnId only positions the virtual-list container.
+      // 不能以 product turn 为目录粒度，并把同一 turn 的 steer query
+      // 全部拼进一个 preview。目录真正导航的是用户可见 query，必须用稳定 row
+      // 身份逐条建项，turnId 只负责把虚拟列表先定位到所属容器。
       key: `${unit.key}:query:${row.entityId ?? row.rowId}`,
       turnId: unit.turnId,
       unitIndex,
@@ -203,8 +212,8 @@ export function buildConversationTurnNavigatorItems(
       }),
       assistantPreview,
       assistantPreviewKind,
-      // One running product turn may hold several finished guide segments; only the last
-      // query still represents current work, so older queries never wear the running emphasis.
+      // 同一 running product turn 可能已有多个已结束 guide segment；只有最后一条
+      // query 仍代表当前工作，避免所有旧 query 一起呈现 running 强调。
       isRunning: unit.isRunning && queryIndex === realUserInputs.length - 1,
     }));
   });
@@ -226,7 +235,8 @@ export function resolveConversationTurnNavigatorActiveUnitIndex({
 
   const itemByUnitIndex = new Map(items.map((item) => [item.unitIndex, item]));
   const viewportStart = resolveFiniteNonNegative(scrollOffsetPx);
-  const viewportEnd = viewportStart + Math.max(1, resolveFiniteNonNegative(viewportHeightPx));
+  const viewportEnd =
+    viewportStart + Math.max(1, resolveFiniteNonNegative(viewportHeightPx));
 
   let activeUnitIndex: number | undefined;
   let activeDistance = Number.POSITIVE_INFINITY;
@@ -240,7 +250,8 @@ export function resolveConversationTurnNavigatorActiveUnitIndex({
     if (rowEnd < viewportStart || rowStart > viewportEnd) {
       continue;
     }
-    const distanceToViewportStart = rowStart <= viewportStart ? 0 : rowStart - viewportStart;
+    const distanceToViewportStart =
+      rowStart <= viewportStart ? 0 : rowStart - viewportStart;
     if (distanceToViewportStart < activeDistance) {
       activeUnitIndex = item.unitIndex;
       activeDistance = distanceToViewportStart;
@@ -275,7 +286,8 @@ export function resolveConversationTurnNavigatorActiveQueryRowId({
   if (positions.length === 0) return undefined;
 
   const viewportStart = resolveFiniteNonNegative(scrollOffsetPx);
-  const viewportEnd = viewportStart + Math.max(1, resolveFiniteNonNegative(viewportHeightPx));
+  const viewportEnd =
+    viewportStart + Math.max(1, resolveFiniteNonNegative(viewportHeightPx));
   const normalized = positions
     .map((position) => {
       const start = resolveFiniteNonNegative(position.start);
@@ -292,7 +304,8 @@ export function resolveConversationTurnNavigatorActiveQueryRowId({
   );
   if (visible.length > 0) {
     return visible.reduce((nearest, candidate) =>
-      Math.abs(candidate.start - viewportStart) < Math.abs(nearest.start - viewportStart)
+      Math.abs(candidate.start - viewportStart) <
+      Math.abs(nearest.start - viewportStart)
         ? candidate
         : nearest,
     ).rowId;

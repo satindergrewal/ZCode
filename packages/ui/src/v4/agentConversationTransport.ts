@@ -44,7 +44,7 @@ import {
   type AttachmentUploadOptions,
 } from "@/v4/attachmentUploadTransaction.js";
 
-interface AgentConversationTransportTarget {
+export interface AgentConversationTransportTarget {
   workspacePath: string;
   workspaceIdentity?: string;
   /** Desktop local media protocol URL; Web/remote get none and keep chunked reads. */
@@ -361,7 +361,7 @@ export function createAgentConversationTransport(
       ) {
         throw new Error("proto.independentPlanUnsupported");
       }
-      return sendWithConversationDelayE2E(() =>
+      return sendWithConversationDelayE2E(envelope, () =>
         agentService.sendConversationCommandV4({ ...workspace, envelope }),
       );
     },

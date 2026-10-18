@@ -286,7 +286,12 @@ export function projectPhaseGraph(
   for (const phase of phases) {
     // Zero-member phases drop (narrowing may strip a phase of all steps) -- an empty node has no home to point to.
     if (!members.has(phase.id)) continue;
-    phaseList.push({ id: phase.id, loc: phase.loc, name: phase.name });
+    phaseList.push({
+      id: phase.id,
+      loc: phase.loc,
+      name: phase.name,
+      ...(phase.fill === undefined ? {} : { fill: phase.fill }),
+    });
   }
   const live = new Set(phaseList.map((phase) => phase.id));
 

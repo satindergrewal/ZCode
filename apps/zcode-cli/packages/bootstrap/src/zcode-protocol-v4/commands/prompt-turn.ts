@@ -1,8 +1,8 @@
-// Native prompt-turn runner.
+// 原生 prompt turn 运行器。
 //
-// Core admission only accepts input and creates the session-scoped reservation; this file no longer owns
-// activeAbortController, nor waits for the projection commit. Any Core starting/active state after TurnStarted
-// keeps blocking a second start on the same session.
+// Core admission 只负责接受输入并建立 session-scoped reservation；本文件不再拥有
+// activeAbortController，也不等待 projection commit。这样 TurnStarted 之后的任意 Core
+// starting/active 状态都会继续挡住同一 session 的第二次 start。
 import { type TurnBackgroundAttribution, type TurnInputIntentMetadata } from "@zcode/contracts";
 import type { TurnAttachment } from "@zcode/core";
 import type { ZCodeAutomationBotDeliveryTarget } from "@zcode/shared";
@@ -10,34 +10,36 @@ import type { SendInputOptions, SendInputResult } from "../../app/types.js";
 import { runWithSessionResidencyFinalization } from "../../zcode-protocol/session-residency.js";
 import type { V4CommandCoreHost, V4SessionRecordView } from "./types.js";
 
-interface StartPromptTurnParamsBase {
+export interface StartPromptTurnParamsBase {
   content: string;
-    /** The v4 anchor: inputId=queryId=commandId (authoritative data; sourceCommandId for reconciliation). */
+  /** v4 锚点：inputId=queryId=commandId（权威数据 sourceCommandId 对账）。 */
   inputId: string;
   inputPresentation?: SendInputOptions["inputPresentation"];
-    /** Attachment command surface: AttachmentRefs already mapped to core TurnAttachments at the handler layer. */
+  /** 附件命令面：AttachmentRef 已在 handler 层映射为 core TurnAttachment。 */
   attachments?: TurnAttachment[];
   browserAmbientContext?: SendInputOptions["browserAmbientContext"];
   intent?: TurnInputIntentMetadata;
-    /** One-shot constraint of a standard Selection; never rewrites the Session Selection. */
+  /** 标准 Selection 的单次执行约束；不会改写 Session Selection。 */
   modelExecution?: SendInputOptions["modelExecution"];
   sharedContextRefs?: SendInputOptions["sharedContextRefs"];
   toolDisallowlist?: readonly string[];
-    /** sendQueuedNow already holds the Core promotion lease; this admission may only take an idle slot. */
+  /** 当前输入必须保留为未来独立 turn，不能因 admission 瞬间转为空闲而直接启动。 */
+  requireQueue?: boolean;
+  /** sendQueuedNow 已持有 Core promotion lease，要求这次 admission 只能占用空闲位。 */
   requireIdle?: boolean;
-    /** Stable callback address for bot-inbound turns; exposed to CronCreate only within this turn. */
+  /** Bot 入站 turn 的稳定回推地址；仅在本 turn 内暴露给 CronCreate。 */
   botDeliveryTarget?: ZCodeAutomationBotDeliveryTarget;
 }
 
-type StartPromptTurnParams = StartPromptTurnParamsBase & TurnBackgroundAttribution;
+export type StartPromptTurnParams = StartPromptTurnParamsBase & TurnBackgroundAttribution;
 
-interface PromptTurnStartResult {
-    /** Core admission done; no waiting for TurnStarted or the projection commit. */
+export interface PromptTurnStartResult {
+  /** Core admission 已完成；不等待 TurnStarted 或 projection commit。 */
   turnStarted: Promise<void>;
-    /** Core's real completion promise, for lifecycle cleanup only -- not part of the ACK boundary. */
+  /** Core 真实完成 promise，仅供生命周期清理使用，不属于 ACK 边界。 */
   completion?: Promise<unknown>;
   admission: SendInputResult;
-    /** Legacy-caller compatibility; the initial ACK no longer depends on messageId. */
+  /** 兼容旧调用方；初始 ACK 不再依赖 messageId。 */
   messageId?: string;
 }
 
@@ -53,9 +55,14 @@ export class V4PromptRejectedError extends Error {
   }
 }
 
+/** 旧 queue promotion 兼容谓词：新的 Core admission 不再产生 projection authority 不确定态。 */
+export function isPromptTurnStartUncertainFailure(_error: unknown): boolean {
+  return false;
+}
+
 /**
-  * The entry only validates model/persistence preconditions, then calls app -> Core admission. On Core started,
-  * the background lifecycle awaits completion to clean up turn attribution and broadcast state; the RPC returns the admission receipt at once.
+ * 入口只做模型/持久化前置校验，然后调用 app -> Core admission。Core 返回 started 时，
+ * 后台生命周期等待 completion 清理 turn 归因和广播状态；RPC 本身立即返回 admission receipt。
  */
 export async function startPromptTurn(
   host: V4CommandCoreHost,
@@ -64,12 +71,12 @@ export async function startPromptTurn(
 ): Promise<PromptTurnStartResult> {
   const usesExecutionSelection = params.modelExecution?.selectionScope === "execution";
   if (!usesExecutionSelection && record.restoreWarning) {
-        // After an app restart, cold restore can run before the provider-registry push: record creation judges "model unresolvable"
-        // and raises the warning; once the registry arrives the runtime is servable, but nobody clears that one-shot flag --
-        // sends stay rejected forever (users must manually switch models to unlock). Re-evaluate via host capability before the gate:
-        // with an available target, clear the stale warning; ensureModelReady still validates the current selection afterwards.
-        // Never swap models or wipe the persisted selection here as a fallback.
-        // Still no usable model / host unsupported -> keep rejecting.
+    // app 重启后冷恢复可能跑在 provider registry 推送
+    // 之前，record 创建时判「模型不可解析」挂上告警；registry 随后到达时 runtime
+    // 早已可服务，但这个一次性标志没人回来清——发送被永久拒（用户只能手动切模型
+    // 解锁）。闸前经宿主能力重评：已有可用目标则清除过期告警，随后仍由
+    // ensureModelReady 校验当前选择；不能在这里兜底换模型或清空持久选择。
+    // 仍无可用模型/宿主不支持 → 维持拒绝。
     if (host.hasUsableRuntimeModelTarget?.(record) === true) {
       host.logger?.info?.("v4 restoreWarning cleared by model catalog recovery", {
         sessionId: record.app.sessionId,
@@ -98,7 +105,7 @@ export async function startPromptTurn(
   );
   if (activeAutomationId) record.activeAutomationId = activeAutomationId;
   if (activeOffPeakTaskId) {
-        // Same-shape mark as off-peak dispatch rounds, letting offpeak-port reject recursive OffPeakCreate before tool execution.
+    // 闲时派发轮同型标记，供 offpeak-port 在工具执行前拒绝递归 OffPeakCreate。
     record.activeOffPeakTaskId = activeOffPeakTaskId;
   }
   record.activeBotDeliveryTarget = params.botDeliveryTarget;
@@ -111,8 +118,8 @@ export async function startPromptTurn(
         ...(params.attachments ? { attachments: params.attachments } : {}),
       },
       {
-                // The Bootstrap controller used to be treated as the Core busy truth and cleaned by the projection watchdog;
-                // Core admission now owns the reservation and Stop calls Core execution directly.
+        // Bootstrap controller 曾经被当成 Core busy 真相，并由 projection watchdog
+        // 清理它；现在 Core admission 自己持有 reservation，Stop 也直接调用 Core execution。
         delivery: "start_turn",
         ...(params.intent?.requestedDelivery === "guide"
           ? { queueDelivery: "guide" as const }
@@ -124,7 +131,7 @@ export async function startPromptTurn(
         ...(params.inputPresentation ? { inputPresentation: params.inputPresentation } : {}),
         ...turnBackgroundAttributionOf({
           automationId: activeAutomationId,
-                    // Attribute by the resolved id: resume segments falling back to the inputId prefix must still enter core loop state.
+          // 归因用解析后的 id：resume 段仅靠 inputId 前缀兜底时也要进 core loop state。
           offPeakTaskId: activeOffPeakTaskId,
           offPeakRunType: params.offPeakRunType,
         }),
@@ -132,6 +139,7 @@ export async function startPromptTurn(
         ...(params.modelExecution ? { modelExecution: params.modelExecution } : {}),
         ...(params.sharedContextRefs ? { sharedContextRefs: params.sharedContextRefs } : {}),
         ...(turnToolDisallowlist ? { toolDisallowlist: turnToolDisallowlist } : {}),
+        ...(params.requireQueue ? { requireQueue: true } : {}),
         ...(params.requireIdle ? { requireIdle: true } : {}),
         queryId: params.inputId as SendInputOptions["queryId"],
       },
@@ -208,24 +216,24 @@ function clearPromptRecordState(
   previousBotDeliveryTarget: V4SessionRecordView["activeBotDeliveryTarget"],
 ): void {
   record.activeAutomationId = previousAutomationId;
-    // Off-peak round identity is restored with the turn under the same rules as automation, so stale cross-round residue cannot misreject OffPeakCreate.
+  // 闲时轮身份与 automation 同规则随 turn 还原，防止跨轮残留误拒 OffPeakCreate。
   record.activeOffPeakTaskId = previousOffPeakTaskId;
   record.activeBotDeliveryTarget = previousBotDeliveryTarget;
 }
 
-function buildTurnToolDisallowlist(
+export function buildTurnToolDisallowlist(
   params: Pick<StartPromptTurnParams, "automationId" | "offPeakTaskId" | "toolDisallowlist">,
   activeAutomationId = params.automationId,
   activeOffPeakTaskId = params.offPeakTaskId,
 ): readonly string[] | undefined {
   const tools = new Set(params.toolDisallowlist ?? []);
   if (activeAutomationId) {
-        // When automation dispatch omits the identity, later model steps re-expose the Cron write tools.
+    // automation 派发漏传身份时，后续 model step 会重新暴露 Cron 写工具。
     for (const toolName of AUTOMATION_MUTATION_TOOL_NAMES) tools.add(toolName);
   }
   if (activeOffPeakTaskId) {
-        // Off-peak dispatch rounds hide OffPeakCreate (no recursive self-derivation); OffPeakList stays read-only.
-        // Automation rounds omit this -- cron rounds let OffPeakCreate through (scheduled derivation of off-peak tasks).
+    // 闲时派发轮隐藏 OffPeakCreate（防递归自我派生）；OffPeakList 只读保留。
+    // automation 轮不加此项——cron 轮放行 OffPeakCreate（定时派生闲时任务）。
     for (const toolName of OFF_PEAK_MUTATION_TOOL_NAMES) tools.add(toolName);
   }
   return tools.size > 0 ? [...tools] : undefined;
@@ -243,13 +251,13 @@ export function resolveTurnAutomationId(
   return automationId.length > AUTOMATION_INPUT_ID_PREFIX.length ? automationId : undefined;
 }
 
-function resolveTurnOffPeakTaskId(
+export function resolveTurnOffPeakTaskId(
   params: Pick<StartPromptTurnParams, "offPeakTaskId" | "inputId">,
 ): string | undefined {
   const explicit = params.offPeakTaskId?.trim();
   if (explicit) return explicit;
-    // Fallback: continuation-dispatch inputIds look like `offpeak-<uuid>:resume:<uuid>`; the first dispatch has no fixed prefix,
-    // so the primary signal is the explicit offPeakTaskId (host dispatch always passes it).
+  // 兜底：续跑派发的 inputId 形如 `offpeak-<uuid>:resume:<uuid>`；首段派发无固定前缀，
+  // 主信号必须是显式 offPeakTaskId（host 派发一律显式传）。
   const inputId = params.inputId.trim();
   if (!inputId.startsWith(OFF_PEAK_INPUT_ID_PREFIX)) return undefined;
   const separatorIndex = inputId.indexOf(":");
@@ -274,8 +282,8 @@ export function turnBackgroundAttributionOf(params: {
 
 const AUTOMATION_INPUT_ID_PREFIX = "automation-";
 const AUTOMATION_MUTATION_TOOL_NAMES = ["CronCreate", "CronUpdate", "CronDelete"] as const;
-// Standalone constant, never merged into AUTOMATION_MUTATION_TOOL_NAMES (cron rounds let OffPeakCreate through).
-// Same values as core turn-loop-state -- off-peak rounds also hide SendMessage / Workflow (both restart child Agents
-// outside this round's modelExecution).
+// 独立常量，绝不并入 AUTOMATION_MUTATION_TOOL_NAMES（cron 轮放行 OffPeakCreate）。
+// 与 core turn-loop-state 同值——闲时轮同时隐藏 SendMessage / Workflow（两者会在本轮
+// modelExecution 之外重启子 Agent）。
 const OFF_PEAK_INPUT_ID_PREFIX = "offpeak-";
 const OFF_PEAK_MUTATION_TOOL_NAMES = ["OffPeakCreate", "SendMessage", "Workflow"] as const;

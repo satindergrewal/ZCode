@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { attachmentSourceKindSchema } from "../attachment-source.js";
 
 /** Carries committed-content references and display metadata only; content itself never enters command/topic frames. */
 export const attachmentRefSchema = z
@@ -7,6 +8,8 @@ export const attachmentRefSchema = z
     fileName: z.string(),
     mime: z.string(),
     bytes: z.number(),
+    sourceKind: attachmentSourceKindSchema.optional(),
+    messageCount: z.number().int().nonnegative().optional(),
     previewRef: z.string().optional(),
   })
   .strict();

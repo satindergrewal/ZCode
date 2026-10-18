@@ -1,8 +1,8 @@
 /* oxlint-disable eslint(max-lines) */
 /**
- * WelcomeScreen — OAuth / API key login entry.
+ * WelcomeScreen —— OAuth / API Key 登录入口
  *
- * OAuth flow driven by the useOAuth hook.
+ * 通过 useOAuth hook 驱动 OAuth 流程。
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Loader2Icon, LoaderIcon, TriangleAlertIcon } from "lucide-react";
@@ -25,6 +25,12 @@ import { LoginApiKeyForm } from "./login/LoginApiKeyForm.js";
 import { renderOAuthProviderIcon } from "./lib/oauthProviderIcon.js";
 import { ThemeHeroVisual } from "./openWorkspacePageThemeHero.js";
 import { useZCodeStore } from "./store/StoreProvider.js";
+import { DesktopOverlayWindowControls } from "@/DesktopOverlayWindowControls.js";
+
+interface WelcomeScreenProps {
+  mode: LoginScreenMode;
+  onComplete: (reason: LoginCompleteReason) => void | Promise<void>;
+}
 
 /**
  * Login screen mode:
@@ -35,18 +41,15 @@ import { useZCodeStore } from "./store/StoreProvider.js";
  */
 export type LoginScreenMode = "startup" | "login-entry";
 
-interface WelcomeScreenProps {
-  mode: LoginScreenMode;
-  onComplete: (reason: LoginCompleteReason) => void | Promise<void>;
-}
-
 export type LoginCompleteReason = "oauth" | "apiKey" | "skip";
 
 export function WelcomeScreen({ mode, onComplete }: WelcomeScreenProps) {
   return (
     <main className="relative flex h-full min-h-dvh items-center justify-center overflow-hidden bg-background px-4 py-6 text-foreground sm:px-6">
       <ThemeHeroVisual className="absolute inset-0" />
-      <div className="pointer-events-none absolute left-0 top-0 right-0 z-10 flex h-12 w-full items-center [app-region:drag]" />
+      {/* 原生拖拽命中不受 pointer-events/z-index 约束；拖拽层必须避开窗控，且先于 no-drag 区声明。 */}
+      <div className="pointer-events-none absolute left-0 top-0 right-0 z-10 flex h-12 items-center [app-region:drag] platform-windows-desktop:right-[134px] platform-linux-desktop:right-[134px]" />
+      <DesktopOverlayWindowControls />
       <section className="relative z-10 w-full flex flex-col gap-10 max-w-sm rounded-2xl border border-popover-border bg-background p-8 text-ui-base/relaxed shadow-md sm:p-10">
         <LoginPanel mode={mode} active onComplete={onComplete} />
       </section>
@@ -65,21 +68,21 @@ interface ActiveLoginEntryAttempt {
   providerId: OAuthProviderMeta["id"];
 }
 
-function shouldCompleteProviderLoginAttempt(params: {
+export function shouldCompleteProviderLoginAttempt(params: {
   attempt: ActiveLoginEntryAttempt | null;
   successProvider: OAuthProviderMeta["id"] | null;
 }): boolean {
   return !params.attempt || params.successProvider === params.attempt.providerId;
 }
 
-function shouldCompleteLoginFromExistingUser(params: {
+export function shouldCompleteLoginFromExistingUser(params: {
   hasUser: boolean;
   attempt: ActiveLoginEntryAttempt | null;
 }): boolean {
   return params.hasUser && !params.attempt;
 }
 
-function LoginPanel({ mode, active, onComplete }: LoginPanelProps) {
+export function LoginPanel({ mode, active, onComplete }: LoginPanelProps) {
   const { intl } = useZCodeIntl();
   const {
     startLogin,
@@ -127,12 +130,11 @@ function LoginPanel({ mode, active, onComplete }: LoginPanelProps) {
     ) => {
       const activeAttempt = activeLoginEntryAttemptRef.current;
       if (activeAttempt && activeAttempt.id !== loginEntryAttemptId) {
-        // When the user starts another login flow on the unified screen, a stale purchase intent must not keep waiting.
+        // 用户在统一登录页开始另一条登录流程时，旧购买意图不能继续等待。
         finishActiveLoginEntryAttempt("cancelled");
       }
-      // A leftover store oauthError from the previous failure, if not cleared, shows the failure
-      // and waiting hints together once the new flow waits (e.g. closing the login entry after a
-      // failure, then auto-resuming from settings).
+      // 上一次失败遗留的 store oauthError 若不清掉，新流程进入等待态后
+      // 失败提示会和等待提示同屏（如失败后关闭登录入口，再从设置页自动续接登录）。
       setOAuthError(null);
       if (loginEntryAttemptId !== undefined) {
         activeLoginEntryAttemptRef.current = {
@@ -174,10 +176,9 @@ function LoginPanel({ mode, active, onComplete }: LoginPanelProps) {
 
     consumedLoginRequestRef.current = loginEntryRequest.id;
     clearLoginEntryRequest(loginEntryRequest.id);
-    // Model Provider login/connect entries used to fire OAuth directly, bypassing the unified
-    // login screen, so waiting/cancel/error states were invisible. When WelcomeScreen opens, start
-    // the requested provider automatically, reusing the entry's loading flow, with a request id
-    // guarding double-start under React StrictMode.
+    // Model Provider 的登录/连接入口以前绕过统一登录入口直接发起 OAuth，
+    // 导致用户看不到统一的等待、取消和错误状态。这里在 WelcomeScreen 打开后自动启动指定 provider，
+    // 复用登录入口的 loading 流程，同时用 request id 防止 React 严格模式下重复发起。
     void startTrackedLogin(
       loginEntryRequest.providerId,
       {
@@ -187,12 +188,12 @@ function LoginPanel({ mode, active, onComplete }: LoginPanelProps) {
     );
   }, [active, clearLoginEntryRequest, loginEntryRequest, startTrackedLogin]);
 
-  // On OAuth callback failure the Root layer writes oauthError into Zustand; this screen shows it.
+  // Root 层 OAuth 回调失败时写入 Zustand oauthError，统一登录入口负责显示错误。
   useEffect(() => {
     if (oauthError && active) {
       finishActiveLoginEntryAttempt("failed");
-      reset(); // reset useOAuth's waiting state
-      // oauthError already in the store; the UI below reads and shows it
+      reset(); // 重置 useOAuth 的 waiting 状态
+      // oauthError 已在 store 中，下方 UI 会读取并显示
     }
   }, [active, finishActiveLoginEntryAttempt, oauthError, reset]);
 
@@ -202,7 +203,7 @@ function LoginPanel({ mode, active, onComplete }: LoginPanelProps) {
     }
   }, [active, finishActiveLoginEntryAttempt, status]);
 
-  // On OAuth success the Root layer sets user and this screen closes automatically.
+  // OAuth 回调成功后 Root 层设置 user，统一登录入口自动关闭。
   useEffect(() => {
     if (
       active &&
@@ -211,9 +212,8 @@ function LoginPanel({ mode, active, onComplete }: LoginPanelProps) {
         attempt: activeLoginEntryAttemptRef.current,
       })
     ) {
-      // A pre-existing global user may come from another provider; do not mistake the just-started
-      // purchase login for success. The provider-specific attempt completes only via its matching
-      // OAuth success.
+      // 全局 user 可能来自另一个 Provider，不能把刚发起的购买登录
+      // 误判为成功；Provider-specific attempt 只由匹配的 OAuth success 完成。
       reset();
       setOAuthError(null);
       void onComplete("oauth");
@@ -239,8 +239,8 @@ function LoginPanel({ mode, active, onComplete }: LoginPanelProps) {
         successProvider: lastOAuthSuccessProvider,
       })
     ) {
-      // Provider connection reuses the login screen's visuals but never writes the App user on
-      // success; close via Root's success signal to keep the interaction unchanged.
+      // provider connection 复用同一个登录入口视觉流程，
+      // 但成功后不会写 App user；这里用 Root 的成功信号关闭登录入口，保持用户交互不变。
       finishActiveLoginEntryAttempt("succeeded");
       reset();
       setOAuthError(null);
@@ -302,75 +302,74 @@ function LoginPanel({ mode, active, onComplete }: LoginPanelProps) {
       </LoginPanelHeader>
 
       <div className="space-y-6">
-        {/* Once Root writes oauthError (poll/callback failure) the effect resets useOAuth to idle;
-            gating on status==="idle" alone would show the failure block and provider buttons
-            together, states entangled. While failing, the failure block below owns the flow
-            (retry/cancel); the provider list returns once the error clears. */}
+        {/* Bugfix: Root 层写入 oauthError（轮询/回调失败）后 effect 会把 useOAuth reset 回 idle，
+            若只判断 status==="idle" 会让失败块和渠道按钮列表同屏、状态纠缠。
+            失败期间统一由下方失败块接管（重新登录/取消），渠道列表等错误清掉后再回来。 */}
         {status === "idle" &&
           !oauthError &&
           loginMode === "providers" &&
           mode === "login-entry" && (
-          <div className="space-y-4">
-            {loadingProviders ? (
-              <div className="flex items-center justify-center gap-2 rounded-xl border border-border bg-surface px-4 py-6 text-ui-base text-foreground-subtle">
-                <Loader2Icon className="size-4 animate-spin" />
-                {intl.formatMessage({ id: "login.oauth.loadingProviders" })}
-              </div>
-            ) : null}
+            <div className="space-y-4">
+              {loadingProviders ? (
+                <div className="flex items-center justify-center gap-2 rounded-xl border border-border bg-surface px-4 py-6 text-ui-base text-foreground-subtle">
+                  <Loader2Icon className="size-4 animate-spin" />
+                  {intl.formatMessage({ id: "login.oauth.loadingProviders" })}
+                </div>
+              ) : null}
 
-            {!loadingProviders && providers.length === 0 ? (
-              <Alert
-                variant="warning"
-                className="flex items-center justify-center gap-2 text-center"
-                data-testid={TID_OAUTH_ERROR}
-              >
-                <TriangleAlertIcon className="size-4" />
-                <AlertDescription className="text-center">
-                  {intl.formatMessage({ id: "login.oauth.noProviders" })}
-                </AlertDescription>
-              </Alert>
-            ) : null}
+              {!loadingProviders && providers.length === 0 ? (
+                <Alert
+                  variant="warning"
+                  className="flex items-center justify-center gap-2 text-center"
+                  data-testid={TID_OAUTH_ERROR}
+                >
+                  <TriangleAlertIcon className="size-4" />
+                  <AlertDescription className="text-center">
+                    {intl.formatMessage({ id: "login.oauth.noProviders" })}
+                  </AlertDescription>
+                </Alert>
+              ) : null}
 
-            {!loadingProviders ? (
-              <div className="space-y-2">
-                {visibleProviders.map((provider) => (
+              {!loadingProviders ? (
+                <div className="space-y-2">
+                  {visibleProviders.map((provider) => (
+                    <Button
+                      key={provider.id}
+                      variant="default"
+                      className="h-10 w-full text-ui-base"
+                      size="lg"
+                      data-testid={
+                        provider.id === BIGMODEL_PROVIDER_ID
+                          ? TID_OAUTH_LOGIN_BUTTON
+                          : testId(TID_OAUTH_LOGIN_BUTTON, provider.id)
+                      }
+                      onClick={() => void startTrackedLogin(provider.id)}
+                    >
+                      {renderOAuthProviderIcon(provider.id, "size-4")}
+                      <span className="min-w-0 truncate">
+                        {intl.formatMessage(
+                          { id: getLoginOAuthButtonMessageId(provider.id) },
+                          { provider: provider.displayName },
+                        )}
+                      </span>
+                      <LoginOAuthRegionTag providerId={provider.id} />
+                    </Button>
+                  ))}
                   <Button
-                    key={provider.id}
-                    variant="default"
+                    variant="outline"
                     className="h-10 w-full text-ui-base"
                     size="lg"
-                    data-testid={
-                      provider.id === BIGMODEL_PROVIDER_ID
-                        ? TID_OAUTH_LOGIN_BUTTON
-                        : testId(TID_OAUTH_LOGIN_BUTTON, provider.id)
-                    }
-                    onClick={() => void startTrackedLogin(provider.id)}
+                    data-testid={TID_LOGIN_USE_API_KEY_BUTTON}
+                    onClick={() => {
+                      setLoginMode("apiKey");
+                    }}
                   >
-                    {renderOAuthProviderIcon(provider.id, "size-4")}
-                    <span className="min-w-0 truncate">
-                      {intl.formatMessage(
-                        { id: getLoginOAuthButtonMessageId(provider.id) },
-                        { provider: provider.displayName },
-                      )}
-                    </span>
-                    <LoginOAuthRegionTag providerId={provider.id} />
+                    {intl.formatMessage({ id: "login.useApiKey" })}
                   </Button>
-                ))}
-                <Button
-                  variant="outline"
-                  className="h-10 w-full text-ui-base"
-                  size="lg"
-                  data-testid={TID_LOGIN_USE_API_KEY_BUTTON}
-                  onClick={() => {
-                    setLoginMode("apiKey");
-                  }}
-                >
-                  {intl.formatMessage({ id: "login.useApiKey" })}
-                </Button>
-              </div>
-            ) : null}
-          </div>
-        )}
+                </div>
+              ) : null}
+            </div>
+          )}
 
         {status === "idle" && loginMode === "apiKey" && mode === "login-entry" ? (
           <LoginApiKeyForm
@@ -418,8 +417,8 @@ function LoginPanel({ mode, active, onComplete }: LoginPanelProps) {
               size="lg"
               data-testid={TID_OAUTH_CANCEL}
               onClick={() => {
-                // Cancel during OAuth waiting only cancels the browser authorization wait; it must
-                // not close the whole login entry, or switching methods requires reopening it.
+                // OAuth 等待态里的“取消”只应取消浏览器授权等待，
+                // 不能关闭整个登录入口，否则用户需要重新从入口打开才能换登录方式。
                 finishActiveLoginEntryAttempt("cancelled");
                 void cancel(pendingProvider ?? undefined);
               }}
@@ -438,8 +437,8 @@ function LoginPanel({ mode, active, onComplete }: LoginPanelProps) {
             >
               <TriangleAlertIcon className="size-4" />
               <AlertDescription className="text-center">
-                {/* Login failure is usually retryable/switchable, not destructive; red would
-                    misread as fatal. Use warning semantics, centered to match the panel's rhythm. */}
+                {/* Bugfix: 登录失败通常是可重试/可切换提供方的状态，不能用 destructive 红色误导为破坏性错误。
+                    这里统一用 warning 语义，并居中文案以匹配登录面板的居中视觉节奏。 */}
                 {oauthError || error}
               </AlertDescription>
             </Alert>
@@ -455,9 +454,9 @@ function LoginPanel({ mode, active, onComplete }: LoginPanelProps) {
                 if (!retryProvider) {
                   return;
                 }
-                // OAuth callback failure triggers reset(), clearing pendingProvider. Retry must
-                // reuse the provider that just failed, not fall back to providers[0] (BigModel) by
-                // declaration order. Leftover store errors are cleared by startTrackedLogin.
+                // OAuth 回调失败会触发 reset()，它会清空 pendingProvider。
+                // 重新登录必须沿用刚才失败的渠道，不能因为 providers[0] 的原始顺序退回 BigModel。
+                // store 残留错误由 startTrackedLogin 发起前统一清理。
                 void startTrackedLogin(retryProvider);
               }}
             >
@@ -469,10 +468,9 @@ function LoginPanel({ mode, active, onComplete }: LoginPanelProps) {
               size="lg"
               data-testid={TID_OAUTH_CANCEL}
               onClick={() => {
-                // The failure state must not offer only "retry" on the same provider; switching
-                // meant closing and reopening the entry, re-failing on the same path. Align with
-                // the waiting state's cancel semantics: end this failed attempt back to the
-                // provider list without closing the entry.
+                // 失败态不能只有「重新登录」沿原渠道重试：想换渠道只能关闭
+                // 登录入口重开，容易在同一条失败链路上反复失败。这里对齐等待态取消的
+                // 语义：结束本次失败流程回到渠道列表，登录入口不关闭。
                 finishActiveLoginEntryAttempt("cancelled");
                 setOAuthError(null);
                 void cancel(pendingProvider ?? undefined);
@@ -510,7 +508,7 @@ function LoginPanelHeader({
 
 function LoginPanelLogo() {
   return (
-    // The login logo shell is fixed dark; a theme-following border gets too heavy in light mode.
+    // 登录 logo 壳是固定深色底，边框不能跟随浅色主题 token，否则浅色主题下边框过重。
     <div
       className="relative mb-1 flex size-16 items-center justify-center rounded-2xl bg-[linear-gradient(180deg,#000000_0%,#151718_100%)] text-[#ffffff] shadow-lg/20 before:pointer-events-none before:absolute before:inset-0 before:rounded-2xl before:border before:border-[rgba(255,255,255,0.1)]"
       aria-label="ZCode"
@@ -560,9 +558,9 @@ function LoginOAuthRegionTag({ providerId }: { providerId: string }) {
 
 function getProviderPriority(provider: OAuthProviderMeta): number {
   switch (provider.id) {
-    // On the Windows login entry, z.ai must sort first; when BigModel ranked higher, users saw
-    // the secondary entry first. Adjust sort weight only — display order, not the OAuth provider
-    // config source.
+    // Windows 登录入口里 z.ai 入口需要固定排在最上面，
+    // 之前把 BigModel 设成更高优先级后，用户首屏会先看到次要入口。
+    // 这里直接调整排序权重，只改展示顺序，不影响 OAuth provider 的真实配置来源。
     case ZAI_PROVIDER_ID:
       return 0;
     case BIGMODEL_PROVIDER_ID:
@@ -572,15 +570,15 @@ function getProviderPriority(provider: OAuthProviderMeta): number {
   }
 }
 
-function resolveVisibleLoginProviders(providers: OAuthProviderMeta[]): OAuthProviderMeta[] {
-  // ZAI and BigModel now share the App login source of truth; when logged out, the entry must
-  // show both. Hiding BigModel temporarily would leave no way to choose it as the active provider.
+export function resolveVisibleLoginProviders(providers: OAuthProviderMeta[]): OAuthProviderMeta[] {
+  // Bugfix: ZAI / BigModel 现在共享 App 登录事实源，未登录时登录入口必须同时展示两个入口。
+  // 旧逻辑曾临时隐藏 BigModel，导致用户无法主动选择 BigModel 作为 active provider。
   return [...providers].sort((left, right) => {
     return getProviderPriority(left) - getProviderPriority(right);
   });
 }
 
-function resolveLoginRetryProvider({
+export function resolveLoginRetryProvider({
   pendingProvider,
   lastAttemptProvider,
   providers,

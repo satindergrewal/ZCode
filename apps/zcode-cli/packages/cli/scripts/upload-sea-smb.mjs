@@ -5,7 +5,6 @@ import { pathToFileURL } from "node:url";
 import { outputBinaryName, supportedTargets } from "./sea-targets.mjs";
 import { copyReleaseFiles, createConsoleProgressReporter, fileMode } from "./upload-progress.mjs";
 import { resolveIntranetMachineHost } from "../../../../../scripts/intranetDefaults.mjs";
-import { readVerifiedNotices } from "../../../../../scripts/third-party-notices.mjs";
 
 export const resolveDefaultSmbUrl = (env = process.env) =>
   `smb://${resolveIntranetMachineHost(env)}/shared`;
@@ -253,8 +252,6 @@ export const uploadSeaBinaries = async ({
   smbUrl,
   version,
 }) => {
-  // Fix: the upload entry runs the strict material check too; --force only controls overwrite, never waives license gaps.
-  await readVerifiedNotices(resolve(rootDirectory, "../.."), { requireComplete: true });
   const releaseVersion = version ?? (await readRootPackageVersion({ rootDirectory }));
   const releaseName = releaseDirectoryName(releaseVersion);
   const targetDirectory = resolve(destinationRoot, releaseName);

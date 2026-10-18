@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- remote workspace service registration stays central to preserve injection order */
+/* eslint-disable max-lines -- 远程 workspace 服务注册需集中维护，以保持依赖注入顺序 */
 import {
   ServiceCollection,
   IFileService,
@@ -8,12 +8,14 @@ import {
   ISystemService,
   ITerminalService,
   ISettingService,
+  IOnboardingRecordService,
   ICredentialService,
   IBroadcastService,
   IZCodeTaskService,
   IZCodeAgentService,
   IZCodeSessionService,
   IConversationShareService,
+  createUnsupportedConversationShareService,
   IBotsService,
   IFileWatcherService,
   IOAuthService,
@@ -33,6 +35,7 @@ import {
   ICommandsService,
   IHooksService,
   IMemoryService,
+  IOutputStyleService,
   ISettingsSyncService,
   IPromptAttachmentTransferService,
   type IServiceAccessor,
@@ -50,10 +53,12 @@ import {
   createOAuthProviderLogoutHandler,
   createAccountProviderCredentialStore,
   createAccountProviderCredentialService,
+  createAccountProjectTokenClient,
+  getAccountRequestAuthService,
   createAccountProviderRequestAuthService,
   createAccountRequestAuthService,
   resolveCurrentAccountAccess,
-  resolveAccountTeamPlanRuntimeApiKey,
+  resolveAccountTeamPlanRuntimeMaterial,
   createSettingsSyncService,
   createBotsService,
   createUsageStatsService,
@@ -63,6 +68,7 @@ import {
   createServiceLogger,
   createSubagentsService,
   createMemoryService,
+  createOutputStyleService,
   createRemoteConversationShareArtifactSource,
   OAuthCredentialRepo,
 } from "@zcode/services/node";
@@ -71,6 +77,8 @@ import {
   buildRuntimeZCodeApiUrl,
   DEFAULT_ZCODE_MODEL_CONTEXT_BUDGET_STRATEGY,
   type ProviderFamilyDomain,
+  resolveBigModelApiOrigin,
+  resolveZaiBusinessBaseUrl,
   type ZCodeSessionRuntimePreferencesResult,
   ZAI_PROVIDER_ID,
 } from "@zcode/shared";
@@ -82,11 +90,26 @@ import {
 
 const runtimePreferencesLogger = createServiceLogger("remote-runtime-preferences");
 const ZCODE_JWT_TOKEN_KEY = "zcodejwttoken";
+const conversationShareLog = createServiceLogger("conversation-share");
+
+function createUnsupportedRemoteConversationShareService(): IConversationShareService {
+  return createUnsupportedConversationShareService({
+    message: "Conversation sharing is not available for this client or remote target",
+    onRejected: (action) => {
+      conversationShareLog.warn(undefined, "conversation share action rejected", {
+        action,
+        kind: "feature_disabled",
+        reason: "server_remote_unsupported",
+      });
+    },
+  });
+}
 
 export function createRemoteWorkspaceServiceCollection(params: {
   clientConfigService: IClientConfigService;
   connectionServices: IServiceAccessor;
   sourceServices?: ServiceCollection;
+  localOnboardingRecordService: IOnboardingRecordService;
   parentPort: Parameters<typeof createBroadcastService>[0];
   createReportingRemoteZCodeTaskService: <T extends object>(service: T) => T;
   createRemotePromptAttachmentTaskService: <T extends object>(service: T) => T;
@@ -98,7 +121,12 @@ export function createRemoteWorkspaceServiceCollection(params: {
 }): ServiceCollection {
   assertLegacyRemoteWorkspaceRpcContract(params.connectionServices);
   const localSettingService = createSettingService();
-  const localCredentialService = createCredentialService();
+  let fallbackTokenClient: ReturnType<typeof createAccountProjectTokenClient> | undefined;
+  const localCredentialService = createCredentialService({
+    onDidMutate: ({ key }) => {
+      if (key.startsWith("oauth:") || key === ZCODE_JWT_TOKEN_KEY) fallbackTokenClient?.clear();
+    },
+  });
   const localAccountProviderCredentialStore = createAccountProviderCredentialStore({
     credentialService: localCredentialService,
   });
@@ -117,21 +145,12 @@ export function createRemoteWorkspaceServiceCollection(params: {
   let handleOAuthProviderLogout: ReturnType<typeof createOAuthProviderLogoutHandler> | null = null;
   const localOAuthCredentialRepo = new OAuthCredentialRepo(localCredentialService, {
     onCorruptOAuthSessionCleared: async (providers) => {
-      // The remote workspace host reads and writes this machine's OAuth credentials.
-      // Corruption recovery must clear Start/Coding Plan derived providers like the local host, so the phone remote keeps no stale key.
+      // remote workspace host 读写的是本机 OAuth 凭据。
+      // 损坏恢复必须和 local host 一样清理 Start/Coding Plan 派生 provider，避免手机 remote 残留旧 key。
       await Promise.all(
         providers.map((provider) => handleOAuthProviderLogout?.(provider) ?? Promise.resolve()),
       );
     },
-  });
-  const localAccountProviderCredentialService = createAccountProviderCredentialService({
-    credentialStore: localAccountProviderCredentialStore,
-    async loadOAuthAccessToken(family) {
-      const providerId = family === "zai" ? ZAI_PROVIDER_ID : BIGMODEL_PROVIDER_ID;
-      return (await localOAuthCredentialRepo.loadTokenSet(providerId))?.accessToken ?? null;
-    },
-    // The desktop-attached remote reuses keys already resolved locally or from legacy storage; remote refresh stays with the local account flow.
-    resolveProviderApiKey: async () => null,
   });
   const readLocalAccountProviderSettings = async () => {
     const settings = await localSettingService.get();
@@ -144,34 +163,74 @@ export function createRemoteWorkspaceServiceCollection(params: {
     const providerId = family === "zai" ? ZAI_PROVIDER_ID : BIGMODEL_PROVIDER_ID;
     return (await localOAuthCredentialRepo.loadUserProfile(providerId))?.id ?? null;
   };
-  const localAccountRequestAuthService = createAccountRequestAuthService(
-    createAccountProviderRequestAuthService({
-      resolveCurrentAccountAccess: (access) =>
-        resolveCurrentAccountAccess({
-          access,
-          readSettings: readLocalAccountProviderSettings,
-          loadAccountIdentity: loadLocalAccountIdentity,
-        }),
-      loadOAuthTokenSet: (providerId) => localOAuthCredentialRepo.loadTokenSet(providerId),
-      async loadIndividualPlanApiKey(providerId, family) {
-        const oauthProviderId = family === "zai" ? ZAI_PROVIDER_ID : BIGMODEL_PROVIDER_ID;
-        const accountIdentity = (await localOAuthCredentialRepo.loadUserProfile(oauthProviderId))
-          ?.id;
-        if (!accountIdentity) return null;
-        return localAccountProviderCredentialService.loadCodingPlanApiKey({
-          providerId,
+  const localAccountRequestAuthService =
+    (params.sourceServices ? getAccountRequestAuthService(params.sourceServices) : undefined) ??
+    (() => {
+      // 旧实现仅取磁盘 Key 且 resolve 恒为空；迁移后须复用正式 owner 或在此边界换证。
+      const tokenClient = createAccountProjectTokenClient(localApiClient, localCredentialService);
+      fallbackTokenClient = tokenClient;
+      // 401 恢复必须把失败 PAT 指纹贯穿个人/团队回调，否则缓存会再次返回被拒绝的凭据。
+      const credentialResolver = createAccountProviderCredentialService({
+        async loadOAuthAccessToken(family) {
+          const providerId = family === "zai" ? ZAI_PROVIDER_ID : BIGMODEL_PROVIDER_ID;
+          return (await localOAuthCredentialRepo.loadTokenSet(providerId))?.accessToken ?? null;
+        },
+        async resolveProviderMaterial(
           family,
+          loginToken,
           accountIdentity,
-        });
-      },
-      resolveTeamPlanApiKey: (access) =>
-        resolveAccountTeamPlanRuntimeApiKey({
-          apiClient: localApiClient,
-          credentialService: localCredentialService,
-          access,
+          rejectedProjectTokenFingerprint,
+        ) {
+          const result = await tokenClient.resolve({
+            origin:
+              family === "zai"
+                ? resolveZaiBusinessBaseUrl(process.env)
+                : resolveBigModelApiOrigin(process.env),
+            family,
+            loginToken,
+            accountId: accountIdentity,
+            rejectedProjectTokenFingerprint,
+          });
+          return result;
+        },
+      });
+      return createAccountRequestAuthService(
+        createAccountProviderRequestAuthService({
+          resolveCurrentAccountAccess: (access) =>
+            resolveCurrentAccountAccess({
+              access,
+              readSettings: readLocalAccountProviderSettings,
+              loadAccountIdentity: loadLocalAccountIdentity,
+            }),
+          loadOAuthTokenSet: (providerId) => localOAuthCredentialRepo.loadTokenSet(providerId),
+          async loadIndividualPlanMaterial(providerId, family, rejectedProjectTokenFingerprint) {
+            const oauthProviderId = family === "zai" ? ZAI_PROVIDER_ID : BIGMODEL_PROVIDER_ID;
+            const accountIdentity = (
+              await localOAuthCredentialRepo.loadUserProfile(oauthProviderId)
+            )?.id;
+            if (!accountIdentity) return null;
+            return credentialResolver.loadCodingPlanMaterial({
+              providerId,
+              family,
+              accountIdentity,
+              rejectedProjectTokenFingerprint,
+            });
+          },
+          resolveTeamPlanMaterial: async (access, rejectedProjectTokenFingerprint) => {
+            const accountIdentity = await loadLocalAccountIdentity(access.family);
+            if (!accountIdentity) return null;
+            return resolveAccountTeamPlanRuntimeMaterial({
+              apiClient: localApiClient,
+              credentialService: localCredentialService,
+              accountIdentity,
+              tokenClient,
+              access,
+              rejectedProjectTokenFingerprint,
+            });
+          },
         }),
-    }),
-  );
+      );
+    })();
   const localCodingPlanSubscriptionService = createCodingPlanSubscriptionService({
     apiClient: localApiClient,
     credentialService: localCredentialService,
@@ -180,7 +239,7 @@ export function createRemoteWorkspaceServiceCollection(params: {
     accountProviderCredentialStore: localAccountProviderCredentialStore,
   });
   const conversationShareClient = new ConversationShareHttpClient({
-    // Sharing from a remote workspace must use the real API; the local mock is unit-test-only and generates no cross-process links.
+    // 远端 workspace 的分享也必须使用真实 API；本地 Mock 仅用于单测，不生成无法跨进程访问的链接。
     apiClient: localApiClient,
     baseUrl: buildRuntimeZCodeApiUrl(process.env, "/api/v1"),
     tokenProvider: async () =>
@@ -196,8 +255,8 @@ export function createRemoteWorkspaceServiceCollection(params: {
   const reportingRemoteZCodeTaskService = params.createReportingRemoteZCodeTaskService(
     params.connectionServices.zcodeTaskService,
   );
-  // The phone remote's replayable mirror publishes user messages inside the reporting wrapper;
-  // attachment materialization must wrap reporting so the mirror and the prompt sent to the remote agent use the same remote path.
+  // 手机 remote 的 replayable mirror 在 reporting wrapper 中发布用户消息；
+  // 附件物化必须包在 reporting 外层，确保 mirror 和真正发给远端 agent 的 prompt 使用同一份远端路径。
   const remoteZCodeTaskService = params.createRemotePromptAttachmentTaskService(
     reportingRemoteZCodeTaskService,
   );
@@ -207,8 +266,8 @@ export function createRemoteWorkspaceServiceCollection(params: {
   const remoteProviderProvisioningService =
     createRemoteProviderProvisioningExecutorFromWorkspace(params);
 
-  // A desktop-attached remote runs its Agent remotely, but app-global settings authority stays with
-  // the desktop shared Host. The narrowed runtime-preferences request round-trips there; the remote never reads its own settings.
+  // desktop-attached remote 的 Agent 运行在远端，但 app-global 设置权威仍在
+  // desktop shared Host。通过窄化的 runtime-preferences 请求原路返回，避免远端读取自己的 setting。
   const { onError } = params.runtimePreferencesBridge;
   params.connectionServices.zcodeAgentService.onDynamicSessionRuntimePreferencesRequest()(
     (request) => {
@@ -220,8 +279,8 @@ export function createRemoteWorkspaceServiceCollection(params: {
         scope: request.scope,
         sessionId: request.sessionId,
       };
-      // Diagnostics: an Agent-side timeout only means no response; record whether the Host got the request
-      // and use got-request-no-response to distinguish transport loss from a stuck settings read.
+      // 诊断：Agent 侧超时只能说明没有拿到响应；这里记录 Host 是否收到请求，
+      // 用“收到但无 response”区分 transport 丢包和设置读取卡住。
       runtimePreferencesLogger.info(
         undefined,
         "runtime preferences host request received",
@@ -258,7 +317,7 @@ export function createRemoteWorkspaceServiceCollection(params: {
           | { status: "resolved"; preferences: ZCodeSessionRuntimePreferencesResult }
           | { status: "failed"; message: string };
         try {
-          // Same origin as the local Host: the fixed budget bypasses the config gateway so remote/phone preference reads never serialize on the network.
+          // 与本地 Host 同源：固定预算不依赖配置网关，远程/手机偏好响应不再串行等待网络。
           const settings = await trackStage("settings", localSettingService.get());
           const modelContextBudgetStrategy = DEFAULT_ZCODE_MODEL_CONTEXT_BUDGET_STRATEGY;
           resolution = {
@@ -269,7 +328,7 @@ export function createRemoteWorkspaceServiceCollection(params: {
               nativeSearchEnhancementsEnabled: settings.nativeSearchEnhancementsEnabled !== false,
               memoryEnabled: settings.memoryEnabled === true,
               modelContextBudgetStrategy,
-              // Keep the same scope boundary as the local Host; the first execution must not wait on client config again.
+              // remote workspace 与本地 Host 保持同一 scope 边界，首次执行不得再次等待 client config。
               ...(request.scope === "user-execution" && settings.integratedTerminalShell
                 ? { integratedTerminalShell: settings.integratedTerminalShell }
                 : {}),
@@ -286,7 +345,7 @@ export function createRemoteWorkspaceServiceCollection(params: {
             error: resolution.message,
           });
         }
-        // Encode only settings-read failures as -32603; send failures go to the final onError and must not retry the same request.
+        // 只把设置读取失败编码为 -32603；发送失败交给最终 onError 记录，不能重试同一请求。
         await params.connectionServices.zcodeAgentService.respondSessionRuntimePreferences({
           requestId: request.requestId,
           resolution,
@@ -307,10 +366,10 @@ export function createRemoteWorkspaceServiceCollection(params: {
     },
   );
 
-  // The web phone remote entering an SSH task connects only to the remote workspace host,
-  // without the desktop renderer's baseServices + remoteServices merge.
-  // So layer local global channels onto the remote workspace host here; files, terminal, and the ZCode Agent still come from the remote,
-  // while settings, credentials, OAuth, model providers, and settings-sync keep reading and writing local config.
+  // Web 手机远控进入 SSH task 时只连到 remote workspace host，
+  // 没有桌面 renderer 那层 `baseServices + remoteServices` 合并。
+  // 因此这里为 remote workspace host 补齐本地全局 channel；文件、终端、ZCode Agent 仍来自远端，
+  // 设置、凭据、OAuth、模型供应商和 settings-sync 继续读写本机配置。
   const services = new ServiceCollection()
     .register(IFileService, params.connectionServices.fileService)
     .register(IGitService, params.connectionServices.gitService)
@@ -318,6 +377,8 @@ export function createRemoteWorkspaceServiceCollection(params: {
     .register(ISystemService, params.connectionServices.systemService)
     .register(ITerminalService, params.connectionServices.terminalService)
     .register(ISettingService, localSettingService)
+    // 手机重建远程 Root 后曾因缺少此通道误弹引导；复用 Local Host owner，保持记录与登录态同源。
+    .register(IOnboardingRecordService, params.localOnboardingRecordService)
     .register(ICredentialService, localCredentialService)
     .register(IBroadcastService, localBroadcastService)
     .register(IZCodeTaskService, remoteZCodeTaskService)
@@ -332,8 +393,8 @@ export function createRemoteWorkspaceServiceCollection(params: {
         broadcastService: localBroadcastService,
         settingService: localSettingService,
         modelSelectionService: params.connectionServices.modelSelectionService,
-        // Bugfix: the remote workspace host's first paint needs only remote file/agent capabilities;
-        // a bot background task polling or calling getAll immediately would re-pull local presets and stretch SSH/Docker connect time.
+        // 修复原因：remote workspace host 首屏只需要远端文件/agent 能力；
+        // bot 启动后台任务如果立即轮询或 getAll，会重复拉本机 preset 并放大 SSH/Docker 连接耗时。
         runStartupBackgroundTasks: false,
       }),
     )
@@ -345,8 +406,8 @@ export function createRemoteWorkspaceServiceCollection(params: {
         onProviderLogout: handleOAuthProviderLogout,
       }),
     )
-    // Provider/Model facts belong to the target Environment. Remote workspace pickers and settings views
-    // must read the remote Registry directly, never the desktop-local providers.
+    // Provider/Model 事实属于目标 Environment。远端 workspace 的选择和设置视图
+    // 必须直接读取远端 Registry，不能继续显示 Desktop 本地 Provider。
     .register(IModelSelectionService, params.connectionServices.modelSelectionService)
     .register(IProviderSettingsService, params.connectionServices.providerSettingsService)
     .register(
@@ -361,25 +422,90 @@ export function createRemoteWorkspaceServiceCollection(params: {
     .register(ICodingPlanSubscriptionService, localCodingPlanSubscriptionService)
     .register(IClientConfigService, params.clientConfigService)
     .register(IClientScenesService, createClientScenesService({ apiClient: localApiClient }))
-    // A remote workspace's project-level skills/plugins/commands live on the SSH/Docker filesystem.
-    // Expose the remote services here so local services never scan remote workspacePaths against local dirs.
+    // 远端 workspace 的项目级 skills/plugins/commands 位于 SSH/Docker 文件系统。
+    // 这里必须透出远端服务，避免本机服务拿远端 workspacePath 去本机目录扫描。
     .register(ISkillsService, params.connectionServices.skillsService)
     .register(ISkillSyncService, params.connectionServices.skillSyncService)
     .register(IMcpSyncService, params.connectionServices.mcpSyncService)
     .register(IPluginSyncService, params.connectionServices.pluginSyncService)
     .register(IPluginsService, params.connectionServices.pluginsService)
-    // Plugin management in remote settings must hit the remote agent too (plugin dirs live on the remote filesystem).
+    // 远端设置页插件管理也必须打到远端 agent（插件目录在远端文件系统）。
     .register(IPluginManagementService, params.connectionServices.pluginManagementService)
     .register(ICommandsService, params.connectionServices.commandsService)
     .register(ISubagentsService, createSubagentsService({ isDesktopRuntime: true }))
     .register(IHooksService, params.connectionServices.hooksService)
     .register(IMemoryService, createMemoryService())
+    .register(IOutputStyleService, createOutputStyleService())
     .register(
       ISettingsSyncService,
       createSettingsSyncService({ settingService: localSettingService }),
     )
     .register(IPromptAttachmentTransferService, params.promptAttachmentTransferService);
   registerHostApiNetworkTransportForDispose(services, hostApiNetworkTransport);
+  registerRemoteProviderProvisioningExecutor(services, remoteProviderProvisioningService);
+  return services;
+}
+
+export function createServerRemoteWorkspaceServiceCollection(params: {
+  clientConfigService: IClientConfigService;
+  connectionServices: IServiceAccessor;
+  sourceServices?: ServiceCollection;
+}): ServiceCollection {
+  assertLegacyRemoteWorkspaceRpcContract(params.connectionServices);
+  // Server remote 连接的是一个已经运行的完整 ZCode server。
+  // Host 只做 RPC 转接，不替 server 决定 workspace/runtime/model-provider 归属。
+  const remoteProviderProvisioningService =
+    createRemoteProviderProvisioningExecutorFromWorkspace(params);
+  const services = new ServiceCollection()
+    .register(IFileService, params.connectionServices.fileService)
+    .register(
+      IMediaPreviewService,
+      params.connectionServices.mediaPreviewService ??
+        createMediaPreviewService({ fileService: params.connectionServices.fileService }),
+    )
+    .register(IGitService, params.connectionServices.gitService)
+    .register(IGitCheckpointService, params.connectionServices.gitCheckpointService)
+    .register(ISystemService, params.connectionServices.systemService)
+    .register(ITerminalService, params.connectionServices.terminalService)
+    .register(ISettingService, params.connectionServices.settingService)
+    .register(ICredentialService, params.connectionServices.credentialService)
+    .register(IBroadcastService, params.connectionServices.broadcastService)
+    .register(IZCodeTaskService, params.connectionServices.zcodeTaskService)
+    .register(IZCodeAgentService, params.connectionServices.zcodeAgentService)
+    .register(IZCodeSessionService, params.connectionServices.zcodeSessionService)
+    .register(IConversationShareService, createUnsupportedRemoteConversationShareService())
+    .register(IBotsService, params.connectionServices.botsService)
+    .register(IFileWatcherService, params.connectionServices.fileWatcherService)
+    .register(IOAuthService, params.connectionServices.oauthService)
+    .register(IModelSelectionService, params.connectionServices.modelSelectionService)
+    .register(IProviderSettingsService, params.connectionServices.providerSettingsService)
+    .register(IUsageStatsService, params.connectionServices.usageStatsService)
+    .register(
+      ICodingPlanSubscriptionService,
+      params.connectionServices.codingPlanSubscriptionService,
+    )
+    .register(IClientConfigService, params.clientConfigService)
+    .register(IClientScenesService, params.connectionServices.clientScenesService)
+    .register(ISkillsService, params.connectionServices.skillsService)
+    .register(ISkillSyncService, params.connectionServices.skillSyncService)
+    .register(IMcpSyncService, params.connectionServices.mcpSyncService)
+    .register(IPluginsService, params.connectionServices.pluginsService)
+    .register(IPluginManagementService, params.connectionServices.pluginManagementService)
+    .register(ISubagentsService, params.connectionServices.subagentsService)
+    .register(ICommandsService, params.connectionServices.commandsService)
+    .register(IHooksService, params.connectionServices.hooksService)
+    .register(IMemoryService, params.connectionServices.memoryService)
+    .register(IOutputStyleService, params.connectionServices.outputStyleService)
+    .register(ISettingsSyncService, params.connectionServices.settingsSyncService)
+    .register(
+      IPromptAttachmentTransferService,
+      params.connectionServices.promptAttachmentTransferService,
+    );
+  // Server 的设置与 OAuth 由 Server 持有，引导记录也必须透传同一服务，不能借用桌面记录。
+  // 保留 accessor 的可选能力约定；当前 RemoteServiceAccess 会提供此代理。
+  if (params.connectionServices.onboardingRecordService) {
+    services.register(IOnboardingRecordService, params.connectionServices.onboardingRecordService);
+  }
   registerRemoteProviderProvisioningExecutor(services, remoteProviderProvisioningService);
   return services;
 }

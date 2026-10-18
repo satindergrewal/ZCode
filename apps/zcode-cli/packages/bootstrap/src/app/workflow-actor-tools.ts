@@ -1,55 +1,57 @@
 // ============================================================
-// The workflow actor's tool surface (AgentRuntime tool config)
+// workflow actor 的工具面（AgentRuntime 工具配置）
 // ============================================================
 //
-// The subagent tool surface must land on the child runtime's tool registration, or the live transcript
-// shows even judge actors carrying the full interaction toolset. Two risk classes:
-//   1. Hanging: AskUserQuestion / EnterPlanMode in a headless child has no one to answer; the turn never ends;
-//   2. Escalation/recursion: CreateWorkflow lets an actor submit another workflow; ReadSessionContext reads across into the parent session.
-// This module is that missing subtraction, applied by the driver-side runtime factory when building the AgentRuntime.
+// 子代理的工具面必须落到 child runtime 的工具注册上，否则实盘 transcript
+// 里裁判 actor 也拿到了整套交互工具。两类风险：
+//   1. 悬挂：AskUserQuestion / EnterPlanMode 在 headless child 里没有人可问，turn 永远不结束；
+//      2026-09-23 起 AskUserQuestion 经父会话送达用户，已还给子代理（见减法表注释）；
+//   2. 越权与递归：CreateWorkflow 让 actor 能再提交一条工作流，ReadSessionContext 越界读父会话。
+// 本模块是那个缺失的映射，由 driver 侧的 runtime 工厂在造 AgentRuntime 时展开。
 //
-// No per-persona tool tiers: every actor gets the full work toolset minus the table below;
-// "judges don't edit files" is said in the ask text -- ordinary subagents work the same way (Explore keeps Bash,
-// read-only enforced by prompt).
+// persona 无工具档位：每个 actor 都拿完整工作工具集减去下面这份减法表；
+// 「裁判不要改文件」由 ask 文本说清——普通子代理也是这么做的（Explore 保留 Bash，
+// 只读靠提示）。
 
 import {
-  ASK_USER_QUESTION_TOOL_NAME,
   ENTER_PLAN_MODE_TOOL_NAME,
   EXIT_PLAN_MODE_TOOL_NAME,
   READ_SESSION_CONTEXT_TOOL_NAME,
   RESOLVE_WORKFLOW_QUESTION_TOOL_NAME,
 } from "@zcode/contracts";
 
-/** The tool-surface slice of AgentRuntimeConfig. */
+/** AgentRuntimeConfig 的工具面切片。 */
 interface WorkflowActorToolPolicy {
   toolDisallowlist: readonly string[];
 }
 
 /**
-  * Tools removed from the full set: the first three would block on a nonexistent human (headless child, no answerer,
-  * turn never ends); CreateWorkflow would let actors recurse; ReadSessionContext reads across into the parent.
-  * The rest (Bash / Edit / Write / search / web) stay -- the actor is there to work.
+ * 从全集里减掉的工具：plan 两件套——子代理不做待批准的计划；CreateWorkflow 会让 actor 递归
+ * 提交工作流；ReadSessionContext 越界读父会话。其余（Bash / Edit / Write / 搜索 / web）照常
+ * 保留——actor 就是要干活的。
+ *
+ * AskUserQuestion 不在表里：它走 PermissionRequested，经父 runtime 派生的 broker 与父会话镜像
+ * 送达确认窗（docs/dynamic-workflow/launch.md「Permissions inside a run」），不再悬挂。
  */
 const ACTOR_DISALLOWED_TOOLS: readonly string[] = [
-  ASK_USER_QUESTION_TOOL_NAME,
   ENTER_PLAN_MODE_TOOL_NAME,
   EXIT_PLAN_MODE_TOOL_NAME,
   "CreateWorkflow",
-    // The revision entry uses the same nested orchestration as CreateWorkflow; same root cause, same list.
+  // 修订入口与 CreateWorkflow 同一种嵌套编排，同一个根因入列。
   "AmendWorkflow",
   READ_SESSION_CONTEXT_TOOL_NAME,
-    // Subagents may not answer escalation questions on the primary's behalf.
-    // Unlike the above, the root cause is neither hanging nor cross-reading but **identity** -- escalation exists to hand the
-    // judgment to whoever created this workflow; a drive-by answer from another actor quietly degrades it to actors
-    // persuading each other. Actors ask via `escalate` (always registered); answers belong to the main session.
+  // 子代理不许替主代理回答升级问题（apps/zcode-cli/packages/dynamic-workflow/docs/execution-engine.md「Escalation」）。
+  // 与上面几条的根因不同：这不是越权读，而是**身份**——升级的整个意义是把判断权
+  // 交给创建这条工作流的那一方；让另一个 actor 顺手作答，等于把它悄悄退化成 actor 之间的
+  // 互相说服。actor 提问用 `escalate`（恒注册），作答只属于主会话。
   RESOLVE_WORKFLOW_QUESTION_TOOL_NAME,
 ];
 
 /**
-  * The workflow actor's AgentRuntime tool configuration. Pure function for the driver-side runtime factory to fold into
-  * AgentRuntimeConfig: no narrowing, only removing interaction/meta tools that would hang or cross boundaries.
+ * workflow actor 的 AgentRuntime 工具配置。纯函数，供 driver 侧 runtime 工厂展开进
+ * AgentRuntimeConfig：不收窄，只减掉 plan 与越权的元工具。
  *
-  * Covers builtin tools only; MCP/plugin tool filtering waits for the production wiring (same factory seam).
+ * 只覆盖内建工具；MCP / plugin 工具的过滤留待生产接线时处理（同一个工厂 seam）。
  */
 export function workflowActorToolPolicy(): WorkflowActorToolPolicy {
   return { toolDisallowlist: ACTOR_DISALLOWED_TOOLS };

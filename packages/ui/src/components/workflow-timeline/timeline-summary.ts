@@ -56,12 +56,19 @@ export function workflowPhasesDetail(
   graph: WorkflowCausalityGraphData | undefined,
 ): string {
   const counts = timelineCounts(model, graph);
-  return count(
+  // 还开着的留白不算阶段（docs/dynamic-workflow/presentation.md「Holes on the timeline」）：「2 个阶段 · 2 处留白」。
+  const holes = model.stations.filter(
+    (station) => station.hole !== undefined && station.hole.state !== "filled",
+  ).length;
+  const phases = count(
     format,
     "chat.toolCall.workflow.card.phase",
     "chat.toolCall.workflow.card.phases",
-    counts.phases,
+    counts.phases - holes,
   );
+  return holes === 0
+    ? phases
+    : `${phases} · ${count(format, "chat.toolCall.workflow.card.hole", "chat.toolCall.workflow.card.holes", holes)}`;
 }
 
 /** The subagents segment: while running count workers, when finished the total (max of projection and static graph). */

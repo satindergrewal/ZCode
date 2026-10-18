@@ -1,20 +1,20 @@
-// The canonical implementation of delta application semantics (pure functions).
-// Part of the protocol semantics: coalesce's "semantics preservation" is judged by this--
-// applyAll(s, coalesce(ds)) must be byte-identical to applyAll(s, ds) (golden tests).
-// Client store apply logic is a hostified rewrite of this; no extra branches allowed.
-import type { ConversationDelta } from "./delta.js";
-import type { ConversationSnapshot } from "./snapshot.js";
-import type { ConversationRow } from "./rows.js";
+// Delta 应用语义的规范实现（纯函数）。
+// 这是协议语义的一部分：coalesce 的「语义保持」就以本函数为裁判——
+// applyAll(s, coalesce(ds)) 必须与 applyAll(s, ds) 逐字节一致（黄金测试）。
+// 客户端 store 的 apply 逻辑是本函数的宿主化改写，不得引入额外分支。
 import type { StreamablePath } from "./core.js";
+import type { ConversationDelta } from "./delta.js";
+import type { ConversationRow } from "./rows.js";
+import type { ConversationSnapshot } from "./snapshot.js";
 import { applyWorkflowRunRemoved, applyWorkflowRunUpdated } from "./workflow-runs-delta.js";
 
 /**
- * For the server's batch reduction inside unpublished candidate snapshots only.
+ * 仅供服务端在未发布的候选快照内批量归约使用。
  *
- * Calling the immutable apply per event during cold recovery copies the history-growing
- * rows.window on every append/upsert and re-scans rowId linearly, degrading long sessions to O(N^2). Candidate snapshots are not yet visible,
- * so within this explicit isolation boundary the same array and an incremental index may be reused; normal clients keep the
- * immutable semantics above, keeping published snapshots safe from later events.
+ * 冷恢复逐条调用不可变 apply 时，每次 append/upsert 都复制随历史增长的
+ * rows.window，并再次线性查找 rowId，长会话因此退化为 O(N²)。候选快照尚未对外可见，
+ * 可以在这条明确的隔离边界内复用同一份数组和增量索引；普通客户端仍使用上面的
+ * 不可变语义，避免已发布快照被后续事件篡改。
  */
 export interface MutableConversationSnapshotAccumulator {
   snapshot: ConversationSnapshot;
@@ -34,9 +34,13 @@ export function createMutableConversationSnapshotAccumulator(
   };
 }
 
-// row.delta applies only to streaming rows (invariant, guaranteed server-side).
-// Per protocol semantics this implements: no-op when path/row missing (a patch hitting an unloaded row = no-op).
-function appendToRow(row: ConversationRow, path: StreamablePath, append: string): ConversationRow {
+// row.delta 只允许作用于流式态行（§4.4.4 不变量，服务端保证）。
+// 本函数按协议语义实现为：路径不存在/行不存在时 no-op（§4.3：patch 命中未加载行 = no-op）。
+function appendToRow(
+  row: ConversationRow,
+  path: StreamablePath,
+  append: string,
+): ConversationRow {
   switch (path) {
     case "text":
       if (row.kind === "assistantText" || row.kind === "reasoning") {
@@ -64,7 +68,7 @@ function appendToRow(row: ConversationRow, path: StreamablePath, append: string)
   }
 }
 
-/** Apply one delta, returning a new snapshot (inputs unmodified). */
+/** 应用单条 delta，返回新快照（入参不被修改）。 */
 export function applyConversationDelta(
   snapshot: ConversationSnapshot,
   delta: ConversationDelta,
@@ -81,15 +85,19 @@ export function applyConversationDelta(
         },
       };
     case "row.upserted": {
-      const index = snapshot.rows.window.findIndex((row) => row.rowId === delta.row.rowId);
-      // Unloaded rowId = no-op (evicted rows return only via rows/range).
+      const index = snapshot.rows.window.findIndex(
+        (row) => row.rowId === delta.row.rowId,
+      );
+      // §4.3：未加载 rowId = no-op（被逐出的行只能经 rows/range 取回）。
       if (index === -1) return snapshot;
       const window = [...snapshot.rows.window];
       window[index] = delta.row;
       return { ...snapshot, rows: { ...snapshot.rows, window } };
     }
     case "row.removed": {
-      const window = snapshot.rows.window.filter((row) => row.rowId < delta.fromRowId);
+      const window = snapshot.rows.window.filter(
+        (row) => row.rowId < delta.fromRowId,
+      );
       const removed = snapshot.rows.window.length - window.length;
       const removesEntireActiveBranch =
         snapshot.rows.firstRowId !== null && delta.fromRowId <= snapshot.rows.firstRowId;
@@ -98,9 +106,9 @@ export function applyConversationDelta(
         rows: {
           ...snapshot.rows,
           window,
-          // rowIds keep rising monotonically after the first rewind round; keeping the old firstRowId would make the UI
-          // misread the old branch's rowId holes as "load earlier". Both full and tail windows must clear active-branch
-          // pagination anchors and counts when clipping from the head; the next append establishes a new head.
+          // rewind 首轮后 rowId 继续单调递增；若保留旧 firstRowId，UI 会把
+          // 旧分支留下的 rowId 空洞误判成“加载更早”。全量和尾窗都必须在从首行
+          // 开始裁剪时清空 active-branch 分页锚点与计数，下一次 append 再建立新首行。
           totalCount: removesEntireActiveBranch
             ? 0
             : Math.max(0, snapshot.rows.totalCount - removed),
@@ -109,7 +117,9 @@ export function applyConversationDelta(
       };
     }
     case "row.delta": {
-      const index = snapshot.rows.window.findIndex((row) => row.rowId === delta.rowId);
+      const index = snapshot.rows.window.findIndex(
+        (row) => row.rowId === delta.rowId,
+      );
       const target = snapshot.rows.window[index];
       if (index === -1 || target === undefined) return snapshot;
       const window = [...snapshot.rows.window];
@@ -117,10 +127,16 @@ export function applyConversationDelta(
       return { ...snapshot, rows: { ...snapshot.rows, window } };
     }
     case "state.updated":
-      // Whole-key replace: keys present in the patch win, never a deep merge.
+      // 键级整体替换：patch 中在场的键覆盖，绝不深合并。
       return { ...snapshot, ...delta.patch };
-    // workflowRuns is the only state key with a delta hatch (why: delta.ts's comment). The rules live wholly in
-    // workflow-runs-delta.ts: both twins delegate to it, leaving no room for semantic drift.
+    case "pluginUi.resourceUpdated":
+    case "pluginUi.resourceListChanged":
+    case "pluginUi.instanceClosed":
+    case "pluginUi.appToolCall":
+      // live-only 通知 / 信箱投递：不改变快照，由 renderer 另行派发。
+      return snapshot;
+    // workflowRuns 是唯一开了增量口子的状态键（delta.ts 的注释讲了为什么）。规则整份住在
+    // workflow-runs-delta.ts：两个 twin 都只转调它，两边的语义因此没有走散的余地。
     case "workflowRun.updated":
       return {
         ...snapshot,
@@ -134,7 +150,7 @@ export function applyConversationDelta(
   }
 }
 
-/** Apply deltas in order. */
+/** 按序应用一串 delta。 */
 export function applyConversationDeltas(
   snapshot: ConversationSnapshot,
   deltas: readonly ConversationDelta[],
@@ -147,8 +163,8 @@ export function applyConversationDeltas(
 }
 
 /**
- * Apply one delta in place on an unpublished candidate snapshot; semantics must match applyConversationDelta.
- * Callers must not expose accumulator.snapshot to subscribers and keep calling this.
+ * 在未发布候选快照上原地应用单条 delta；语义必须与 applyConversationDelta 一致。
+ * 调用者不得把 accumulator.snapshot 暴露给订阅者后继续调用本函数。
  */
 export function applyConversationDeltaMutable(
   accumulator: MutableConversationSnapshotAccumulator,
@@ -196,11 +212,14 @@ export function applyConversationDeltaMutable(
       return;
     }
     case "state.updated":
-      // As the immutable one: patch-present keys replace whole, never deep-merge.
+      // 与不可变实现相同：patch 在场键整体替换，不能深合并。
       Object.assign(snapshot, delta.patch);
       return;
-    // Same pure function as the immutable path: workflowRuns is a state key, not the rows window--no "in-place append" to optimize--
-    // and accumulator.snapshot is already the candidate's own object; assigning a new container never touches published snapshots.
+    case "pluginUi.resourceUpdated":
+    case "pluginUi.resourceListChanged":
+      return;
+    // 与不可变实现调同一个纯函数：workflowRuns 是状态键不是 rows 窗口，没有「原地追加」可优化，
+    // 而 accumulator.snapshot 本来就是候选快照自己的对象，赋一个新容器不会碰到已发布的快照。
     case "workflowRun.updated":
       snapshot.workflowRuns = applyWorkflowRunUpdated(snapshot.workflowRuns, delta);
       return;
@@ -209,7 +228,7 @@ export function applyConversationDeltaMutable(
   }
 }
 
-/** Apply deltas in place, in order; unpublished candidate snapshots only. */
+/** 按序原地应用一串 delta，仅适用于未发布的候选快照。 */
 export function applyConversationDeltasMutable(
   accumulator: MutableConversationSnapshotAccumulator,
   deltas: readonly ConversationDelta[],

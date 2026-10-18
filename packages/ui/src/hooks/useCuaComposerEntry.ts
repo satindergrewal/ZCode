@@ -1,9 +1,8 @@
 /**
- * Data orchestration for the always-present CUA composer entry button.
+ * CUA 输入框常驻入口按钮的数据编排。
  *
- * Does exactly three things: aggregates the three data sources, gates the permission query,
- * and hands the results to a pure function. All decision rules live in
- * lib/cuaComposerEntryState.ts; none are duplicated here.
+ * 只做三件事：汇聚三路数据源、门控权限查询、把结果交给纯函数推导。
+ * 判定规则本身全部在 lib/cuaComposerEntryState.ts，这里不复制任何一条分支。
  */
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { isRemoteWorkspaceIdentity, ZCODE_CUA_OFFICIAL_PLUGIN_ID } from "@zcode/shared";
@@ -25,21 +24,22 @@ import { useZCodeSessionStore } from "@/store/zcodeSessionStore.js";
 import { getVisibleTaskMetas, getWorkspaceState } from "@/store/zcodeSessionStoreSelectors.js";
 import { useOptionalTabStore } from "@/store/TabStoreProvider.js";
 
-/** Same semantics as isRunningStatus in zcodeSessionStoreTaskSlice. */
+/** 与 zcodeSessionStoreTaskSlice 的 isRunningStatus 同口径。 */
 const RUNNING_TASK_STATUSES = new Set(["creating", "restoring", "streaming"]);
 
 export interface UseCuaComposerEntryParams {
   workspacePath: string;
   workspaceIdentity?: string;
   remoteSessionId?: string | null;
-  /** Phone web-remote shell; remote-control constraints render no local CUA entry. */
-  /** The composer's v4 snapshot.control.canStop -- the low-latency runtime authority. */
+  /** 手机 Web 远控壳；远控保护约束下不渲染本机 CUA 入口。 */
+  isWebRemoteControl?: boolean;
+  /** 当前 composer 的 v4 snapshot.control.canStop，作为运行态的低延迟权威。 */
   currentSessionBusy?: boolean;
 }
 
-interface CuaComposerEntryController {
+export interface CuaComposerEntryController {
   view: CuaComposerEntryView;
-  /** Button click; side effects only when view.clickAction === "open-settings". */
+  /** 点击按钮；仅在 view.clickAction === "open-settings" 时产生副作用。 */
   onActivate: () => void;
 }
 
@@ -47,6 +47,7 @@ export function useCuaComposerEntry({
   workspacePath,
   workspaceIdentity,
   remoteSessionId,
+  isWebRemoteControl = false,
   currentSessionBusy = false,
 }: UseCuaComposerEntryParams): CuaComposerEntryController {
   const platform = usePlatform();
@@ -56,24 +57,24 @@ export function useCuaComposerEntry({
 
   const macLocalDesktop = supportsLocalMacCuaPermissionOnboarding(platform);
   const windowsLocalDesktop = supportsLocalWindowsCuaEntry(platform);
-  // Same local-workspace rule as ComputerUseSection: a remote workspace's CUA would drive
-  // the remote machine's screen, which the product does not offer.
+  // 与 ComputerUseSection 同口径的本地 workspace 判定：远程 workspace 的 CUA 会操作
+  // 远端机器的屏幕，产品上不提供。
   const isLocalWorkspace =
+    !isWebRemoteControl &&
     !remoteSessionId &&
     !(workspaceIdentity?.trim() && isRemoteWorkspaceIdentity(workspaceIdentity.trim()));
 
-  // Hidden by default: show only when an explicit false was stored.
-  // Use !== false rather than === true so unloaded settings (null) and legacy users missing
-  // the field both count as hidden -- defaulting to visible would flash the button for new
-  // users before hiding it and burn a permission query in the background.
+  // 默认隐藏：只有显式存过 false 才展示。
+  // 用 !== false 而不是 === true，是因为 settings 未加载（null）或老用户缺该字段时都应按
+  // 隐藏处理——若反过来默认展示，新用户会先闪一下按钮再消失，且后台白跑一轮权限查询。
   const hiddenBySettings = settings?.computerUseComposerEntryHidden !== false;
 
   const plugins = usePluginManagementStore((state) => state.plugins);
   const togglingPluginId = usePluginManagementStore((state) => state.togglingPluginId);
   const pluginStoreError = usePluginManagementStore((state) => state.error);
-  // store.error is a plugin-surface shared field (marketplace/validate/load and any plugin
-  // setEnabled failure write it). Map it to this button's error state only when the failed
-  // operation targeted zcode-cua; attribution comes from the store's lastFailedPluginId.
+  // store.error 是插件面共享字段（marketplace/validate/load/任意插件 setEnabled
+  // 失败都写）。只有失败操作的目标是 zcode-cua 时才映射为本按钮的错误态，
+  // 归属由 store 的 lastFailedPluginId 记录。
   const lastFailedPluginId = usePluginManagementStore((state) => state.lastFailedPluginId);
   const initializePlugins = usePluginManagementStore((state) => state.initialize);
   const cuaPlugin = plugins.find((plugin) => plugin.id === ZCODE_CUA_OFFICIAL_PLUGIN_ID);
@@ -81,9 +82,8 @@ export function useCuaComposerEntry({
 
   const pluginManagementService = services.pluginManagementService;
   const platformSupported = (macLocalDesktop || windowsLocalDesktop) && isLocalWorkspace;
-  // The plugin list is a required input for the button state. The store is a global singleton
-  // and initialize dedupes in-flight calls per workspaceKey with cache reuse, so sharing the
-  // initialization path with the settings page does not amplify plugins/list requests.
+  // 插件列表是按钮状态的必要输入。store 是全局单例且 initialize 内部按 workspaceKey 做了
+  // in-flight 去重 + 缓存复用，因此与设置页共用同一条初始化路径不会放大 plugins/list 请求。
   const initializedKeyRef = useRef<string | null>(null);
   useEffect(() => {
     if (!platformSupported || hiddenBySettings || !workspacePath || !pluginManagementService) {
@@ -106,20 +106,16 @@ export function useCuaComposerEntry({
     workspacePath,
   ]);
 
-  // The composer entry carries no status display (no color dot, fixed jump to settings), so
-  // it never queries permissions at all -- a permission query starts the Helper on demand
-  // (the getStatus launch chain), and querying on mount would mean "launch the Helper by
-  // opening the app", breaking lazy-start semantics. Even gating on "button visible + mac +
-  // plugin enabled" would not change that: having the plugin enabled does not mean the user
-  // should pay the Helper startup cost right now. The permission truth is read in exactly two
-  // places: the settings page (queried on open) and the explicit grant flow.
-  // permissionStatus stays null; resolveUiState maps null to the idle neutral state (not error).
+  // 输入框入口不承载状态展示（无色点、固定跳设置页），因此**完全不再查询权限**——权限查询
+  // 会按需启动 Helper（getStatus 拉起链），挂载即查等于「打开 app 就启动 Helper」，违背懒
+  // 启动语义。哪怕加上「按钮可见 + mac + 插件已启用」的门禁也不改变这一点：用户开了插件不
+  // 等于此刻要付 Helper 启动的代价。权限真值只在两处读：设置页（打开时查询）与显式授权流。
+  // permissionStatus 恒为 null；resolveUiState 把 null 归入 idle 中性态（非 error）。
   const { status: permissionStatus } = useCuaPermissionStatus(null, workspaceIdentity);
 
-  // session-busy granularity is the workspace: switching plugins changes the toolset for
-  // every session in that workspace and invalidates prompt caches, so the affected surface
-  // and the disabled surface must match -- looking at the current task alone is not enough.
-  // Reuse getWorkspaceState's identity->path fallback instead of duplicating workspaceKey rules.
+  // session-busy 判定粒度是 workspace：切换插件会让该 workspace 全部会话的
+  // 工具集变化、prompt 缓存失效，影响面与禁用面必须一致，因此不能只看当前 task。
+  // 复用 getWorkspaceState 的 identity→path fallback，避免这里重写一份 workspaceKey 规则。
   const workspaceSessionBusy = useZCodeSessionStore((state) => {
     const workspaceState = getWorkspaceState(state, workspacePath, workspaceIdentity);
     const runtimeBusy = Object.values(workspaceState.taskRuntimeByTaskId ?? {}).some(
@@ -127,15 +123,13 @@ export function useCuaComposerEntry({
         RUNNING_TASK_STATUSES.has(runtime.status) || Boolean(runtime.activeInputId?.trim()),
     );
     if (runtimeBusy) return true;
-    // Root cause: once a V4 snapshot enters a stoppable model turn, the workspace runtime
-    // projection can briefly flip back to ready while the task index still authoritatively
-    // records persist status=running. Runtime alone would keep the CUA entry clickable
-    // mid-execution. Merge both existing truth sources; either running state locks the button.
+    // 根因：V4 snapshot 已进入可停止的模型轮次时，workspace runtime 投影可能短暂
+    // 回到 ready；task index 仍权威记录 persist status=running。只看 runtime 会让
+    // CUA 入口在真实执行中保持可点击。合并两条既有事实源，任一 running 都锁住。
     return getVisibleTaskMetas(workspaceState).some((task) => task.status === "running");
   });
-  // This pane's snapshot.control.canStop arrives before the workspace projection; OR-ing the
-  // two locks this composer immediately while keeping the shared lock for other composers in
-  // the same workspace.
+  // 当前 pane 的 snapshot.control.canStop 比 workspace 投影更早到达；两者 OR
+  // 既保证本 composer 立即锁定，也保留同 workspace 其它 composer 的共享锁。
   const sessionBusy = currentSessionBusy || workspaceSessionBusy;
 
   const view = useMemo(

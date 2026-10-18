@@ -29,6 +29,7 @@ export async function getSkillReferenceCatalog(
   // and every reference-panel open reads the current workspace catalog.
   const outcome = await listZCodeSkills({
     env: context.deps.env,
+    includeVisualize: true,
     logger: context.logger,
     workingDirectory: params.workspace.workspacePath,
   });

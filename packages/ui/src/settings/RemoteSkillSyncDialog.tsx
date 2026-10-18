@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- the remote Skill sync dialog keeps loading, selection, prechecks and results in one place; splitting adds cross-state complexity. */
+/* eslint-disable max-lines -- 远端 Skill 同步弹窗集中维护加载、选择、预检和结果状态，拆分会增加跨状态传递复杂度。 */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, UploadCloud } from "lucide-react";
 import {
@@ -12,7 +12,11 @@ import {
 } from "@zcode/shared";
 import type { ISkillSyncService } from "@zcode/services";
 import { Button } from "@/components/ui/button.js";
-import { Dialog, DialogContent, DialogHeader } from "@/components/ui/dialog.js";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+} from "@/components/ui/dialog.js";
 import { useZCodeIntl, type IntlInstance } from "@/i18n/IntlProvider.js";
 import {
   RemoteSkillSyncSelectionList,
@@ -45,7 +49,7 @@ interface RemoteSkillSyncDialogProps {
   onSynced: () => Promise<void> | void;
 }
 
-function buildRemoteSkillSyncRows(
+export function buildRemoteSkillSyncRows(
   candidates: readonly SkillSyncCandidate[],
   statuses: readonly SkillSyncRemoteStatus[],
 ): RemoteSkillSyncRow[] {
@@ -56,11 +60,15 @@ function buildRemoteSkillSyncRows(
   }));
 }
 
-function resolveDefaultRemoteSkillSyncSelection(rows: readonly RemoteSkillSyncRow[]): Set<string> {
-  return new Set(rows.filter((row) => !row.exists).map((row) => row.candidate.id));
+export function resolveDefaultRemoteSkillSyncSelection(
+  rows: readonly RemoteSkillSyncRow[],
+): Set<string> {
+  return new Set(
+    rows.filter((row) => !row.exists).map((row) => row.candidate.id),
+  );
 }
 
-function filterRemoteSkillSyncRows(
+export function filterRemoteSkillSyncRows(
   rows: readonly RemoteSkillSyncRow[],
   showExistingRemoteSkills: boolean,
 ): RemoteSkillSyncRow[] {
@@ -80,12 +88,12 @@ export function formatRemoteSkillSyncTarget(
   return workspacePath ? `${target} · ${workspacePath}` : target;
 }
 
-function formatRemoteSkillSyncError(
+export function formatRemoteSkillSyncError(
   error: unknown,
   intl: Pick<IntlInstance, "formatMessage">,
 ): string {
-  // Raw RPC byte counts and phases are not user copy;
-  // match stable codes only and phrase per stage/locale; anything else keeps the original message.
+  // RPC 原始错误中的字节数和阶段信息不能直接作为用户文案；
+  // 这里只识别稳定错误码，按阶段和当前语言生成可操作提示，其他错误保留原始信息。
   const normalizedError = normalizeUnknownError(error);
   if (normalizedError.code !== SKILL_SYNC_SIZE_LIMIT_ERROR_CODE) {
     return normalizedError.message;
@@ -136,7 +144,7 @@ function formatSkillSyncBytes(bytes: number): string {
   return `${Number.isInteger(mebibytes) ? mebibytes : mebibytes.toFixed(1)} MiB`;
 }
 
-function getRemoteSkillSyncBulkSelectionState({
+export function getRemoteSkillSyncBulkSelectionState({
   selectedCount,
   totalSelectable,
 }: {
@@ -149,7 +157,7 @@ function getRemoteSkillSyncBulkSelectionState({
   return { checked, disabled, indeterminate };
 }
 
-function RemoteSkillSyncExistingFilterCheckbox({
+export function RemoteSkillSyncExistingFilterCheckbox({
   checked,
   onCheckedChange,
 }: {
@@ -171,7 +179,7 @@ function RemoteSkillSyncExistingFilterCheckbox({
   );
 }
 
-function RemoteSkillSyncTargetRow({
+export function RemoteSkillSyncTargetRow({
   targetLabel,
   showExistingRemoteSkills,
   showExistingFilter,
@@ -187,7 +195,10 @@ function RemoteSkillSyncTargetRow({
   return (
     <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
       <p className="min-w-0 break-words font-mono text-ui-base text-foreground-subtle">
-        {intl.formatMessage({ id: "settings.skills.remoteSync.target" }, { target: targetLabel })}
+        {intl.formatMessage(
+          { id: "settings.skills.remoteSync.target" },
+          { target: targetLabel },
+        )}
       </p>
       {showExistingFilter ? (
         <div className="shrink-0">
@@ -201,7 +212,7 @@ function RemoteSkillSyncTargetRow({
   );
 }
 
-function RemoteSkillSyncBulkSelectionCheckbox({
+export function RemoteSkillSyncBulkSelectionCheckbox({
   selectedCount,
   totalSelectable,
   onSelectAll,
@@ -237,9 +248,7 @@ function RemoteSkillSyncBulkSelectionCheckbox({
         className="size-4"
         checked={selectionState.checked}
         disabled={selectionState.disabled}
-        aria-checked={
-          selectionState.indeterminate ? "mixed" : selectionState.checked ? "true" : "false"
-        }
+        aria-checked={selectionState.indeterminate ? "mixed" : selectionState.checked ? "true" : "false"}
         onChange={(event) => {
           if (event.currentTarget.checked) {
             onSelectAll();
@@ -271,7 +280,7 @@ export function RemoteSkillSyncDialog(props: RemoteSkillSyncDialogProps) {
   const [importResult, setImportResult] = useState<SkillSyncImportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const syncInFlightRef = useRef(false);
-  // Loads may span language switches; the effect closure's intl goes stale, so read the latest rendered instance for error copy.
+  // 加载请求可能跨越语言切换，effect 闭包中的 intl 会过期；错误提示必须读取最近一次渲染的实例。
   const latestIntlRef = useRef(intl);
   latestIntlRef.current = intl;
 
@@ -302,7 +311,10 @@ export function RemoteSkillSyncDialog(props: RemoteSkillSyncDialogProps) {
         if (cancelled) {
           return;
         }
-        const nextRows = buildRemoteSkillSyncRows(localResult.candidates, remoteResult.statuses);
+        const nextRows = buildRemoteSkillSyncRows(
+          localResult.candidates,
+          remoteResult.statuses,
+        );
         setRows(nextRows);
         setSelectedIds(resolveDefaultRemoteSkillSyncSelection(nextRows));
         setStep("selection");
@@ -421,8 +433,8 @@ export function RemoteSkillSyncDialog(props: RemoteSkillSyncDialogProps) {
           />
         </DialogHeader>
 
-        {/* Filtering changes visible rows; DialogContent keeps a fixed height and the list scrolls inside,
-            else the empty state shrinks and jumps the dialog and long lists push the footer offscreen. */}
+        {/* 修复原因：筛选会改变可见 rows 数量，DialogContent 固定高度后由列表区内部滚动；
+            否则空态按内容收缩会造成弹窗跳动，长列表也会把底部操作栏挤出窗口。 */}
         <div className="min-h-0 flex-1 overflow-y-auto">
           {error ? (
             <div className="mb-3 rounded-lg border border-destructive/40 bg-surface px-3 py-2 text-ui-base text-destructive">
@@ -446,7 +458,9 @@ export function RemoteSkillSyncDialog(props: RemoteSkillSyncDialogProps) {
               rows={visibleRows}
               selectedIds={selectedIds}
               emptyMessageId={
-                rows.length > 0 ? "settings.skills.remoteSync.filteredEmpty" : undefined
+                rows.length > 0
+                  ? "settings.skills.remoteSync.filteredEmpty"
+                  : undefined
               }
               onToggle={toggleSkill}
             />
@@ -457,7 +471,9 @@ export function RemoteSkillSyncDialog(props: RemoteSkillSyncDialogProps) {
               {intl.formatMessage({ id: "settings.skills.remoteSync.syncing" })}
             </div>
           ) : null}
-          {step === "complete" ? <RemoteSkillSyncResultList result={importResult} /> : null}
+          {step === "complete" ? (
+            <RemoteSkillSyncResultList result={importResult} />
+          ) : null}
         </div>
 
         <div className="flex flex-col gap-2 border-t border-border pt-3 sm:flex-row sm:items-center sm:justify-between">

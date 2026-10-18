@@ -18,12 +18,12 @@ export interface RectExpr {
   height: string;
 }
 
-interface LeafLayout {
+export interface LeafLayout {
   paneId: string;
   rect: RectExpr;
 }
 
-interface DividerLayout {
+export interface DividerLayout {
   splitId: string;
   direction: SplitDirection;
   /** Store-held current ratio (drag origin + container CSS variable initial value). */
@@ -114,7 +114,7 @@ function collectNode(
   );
 }
 
-interface WorkbenchLayout {
+export interface WorkbenchLayout {
   leaves: LeafLayout[];
   dividers: DividerLayout[];
 }

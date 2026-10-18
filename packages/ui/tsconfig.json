@@ -1,10 +1,9 @@
 {
   "extends": "../../tsconfig.base.json",
-  // The ui package keeps NodeNext ESM resolution, so intra-package imports must resolve to real
-  // file paths. ai-elements used to self-reference @zcode/ui/... from inside the package while
-  // omitting many internal .js suffixes, tripping both package-exports restrictions and NodeNext
-  // path resolution. The existing config is kept: intra-package imports are normalized onto
-  // .js-sufficed relative paths so dev, build, and typecheck agree.
+  // 修复原因：ui 包沿用 NodeNext 的 ESM 解析规则，包内导入必须能直接落到真实文件路径。
+  // 之前 ai-elements 一边从包内部自引用 @zcode/ui/...，一边大量省略内部 .js 后缀，
+  // 会同时踩中 package exports 限制和 NodeNext 的路径解析失败。
+  // 这里保留现有配置，把包内导入统一收敛到带 .js 后缀的相对路径，避免开发态、构建态和类型检查结果不一致。
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src",
@@ -14,15 +13,12 @@
       "@/*": ["./src/*"]
     }
   },
-  // Under some tsserver/incremental-project states, a directory include ("src") admits that new
-  // files exist and are expanded by CLI `tsc --showConfig`, yet the editor still briefly reports
-  // "file not in project". Explicit globs force every ts/tsx/d.ts source under the ui package into
-  // the project so newly added modules (e.g. settings helpers) are never misjudged as missing.
-  // src json files (e.g. provider-icons data under assets) are included too so resolveJsonModule
-  // imports land in the project file list.
+  // Bugfix: 某些 tsserver/增量工程状态下，目录式 include（"src"）会出现新文件已存在、
+  // 也能被 CLI `tsc --showConfig` 展开，但编辑器仍短暂报“文件不在 project file list”。
+  // 这里改成显式 glob，强制把 ui 包下的 ts/tsx/d.ts 源文件稳定纳入工程，避免设置页辅助文件这类新增模块被误判漏收录。
+  // 同时纳入 src 下的 .json（如 recommendedPlugins.json），让 resolveJsonModule 导入能被工程文件列表收录。
   "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.d.ts", "src/**/*.json"],
-  // ui consumes rpc types directly too; with the project references in place ui no longer
-  // rechecks rpc sources as its own inputs.
+  // ui 里也直接用了 rpc 的类型；补上工程引用后，ui 不会再把 rpc 源码当成自己的输入重新检查。
   "references": [
     { "path": "../provider" },
     { "path": "../shared" },

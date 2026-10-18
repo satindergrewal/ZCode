@@ -10,10 +10,10 @@ import type { WorkflowTurnDigest } from "@/v4/workflowTurnDigests.js";
 import { resolveWorkflowRunOpenToolCallId } from "@/v4/workflowRunCardJoin.js";
 
 /**
- * Turn-tail digest wiring: hook the parsed digests up to
- * host callbacks. Callback presence is the gate (invariant 7): details needs `onOpenWorkflowRun` + sessionId; Resume needs
- * `onResumeWorkflowRun` + a joined digest that says resumable; pills need `onOpenWorkflowActor` + a live projection. Wire
- * exactly like the `ToolCallRowView` tool-card path - the same run opens the same tab from both places.
+ * 轮尾摘要的落位：把解析出的摘要接上
+ * 宿主回调。回调的存在即门控（不变式 7）：打开详情要 `onOpenWorkflowRun` + sessionId；Resume 要
+ * `onResumeWorkflowRun` + 联接摘要说可恢复；药丸要 `onOpenWorkflowActor` + 活投影。与
+ * `ToolCallRowView` 给工具卡接线的路径一字不差——同一个 run 从两处打开的是同一个 tab。
  */
 export function ConversationWorkflowDigests({
   context,
@@ -25,7 +25,7 @@ export function ConversationWorkflowDigests({
   turnKey: string;
 }) {
   const { intl } = useZCodeIntl();
-  // The provider name inside the subagent model id comes from the session model list (the card never touches the store; the host passes the lookup in).
+  // 子代理模型名里的 provider 名从会话的模型清单来（卡本身不碰 store，宿主把查找函数递进去）。
   const subagentModelProviderName = useWorkflowSubagentModelProviderName(
     context.workspacePath,
     context.workspaceIdentity,
@@ -38,9 +38,9 @@ export function ConversationWorkflowDigests({
         const { runId, summary } = digest;
         const name = digest.name ?? fallbackName;
         const sessionId = context.sessionId;
-        // In-place settings turn: that one row is
-        // the entire presentation. Return early - none of the card wiring below (open, Resume, Stop, pills, "Configure") is built;
-        // those are card controls and this turn has no card.
+        // 就地生效的设置轮（docs/dynamic-workflow/presentation.md「The settings turn」）：那一行就是
+        // 全部呈现。提前返回，下面整套卡的接线（打开、Resume、Stop、药丸、「配置」）一条都不建——
+        // 那些都是卡上的控件，而这一轮没有卡。
         if (digest.rowOnly && digest.settings !== undefined) {
           return (
             <WorkflowSettingsChangeRow
@@ -53,7 +53,7 @@ export function ConversationWorkflowDigests({
             />
           );
         }
-        // The "N more" row carries an open target (see "five pills and one door"); the expand icon and question chips do not.
+        // 「还有 n 个」那一行带落点（追记「五枚药丸与一扇门」）；⤢ 与问题芯片不带。
         const onOpenRun =
           context.onOpenWorkflowRun && sessionId
             ? (landing?: { phaseId: string }) =>
@@ -69,7 +69,7 @@ export function ConversationWorkflowDigests({
           context.onResumeWorkflowRun && summary?.resumable
             ? () => context.onResumeWorkflowRun?.(runId, name)
             : undefined;
-        // Cancellation has a single path: the details page goes through the same cancelBackgroundWork {workId === runId}.
+        // 取消只有一条路径：详情页也走的 cancelBackgroundWork {workId ≡ runId}。
         const onCancel =
           context.onCancelBackgroundWork && summary?.status === "running"
             ? () => context.onCancelBackgroundWork?.(runId)
@@ -77,7 +77,7 @@ export function ConversationWorkflowDigests({
         const onOpenPill =
           context.onOpenWorkflowActor && sessionId && summary?.run
             ? (pill: TimelinePill) => {
-                // Slot identity: carry the session id when present, otherwise open a placeholder tab.
+                // 槽位身份：会话 id 有则随行，没有就开占位 tab。
                 const slot = pill.slot;
                 if (slot === undefined) return;
                 const actorSessionId = pill.instance?.sessionId;
@@ -92,7 +92,7 @@ export function ConversationWorkflowDigests({
                 });
               }
             : undefined;
-        // Script pill: same path as the tool card, opens the same tab.
+        // 脚本药丸：与工具卡同一条路，开同一个 tab。
         const onOpenWorkspace =
           context.onOpenWorkflowWorkspace && sessionId && summary?.run
             ? (pill: TimelinePill) => {
@@ -110,8 +110,8 @@ export function ConversationWorkflowDigests({
         const onOpenArtifact =
           context.onOpenWorkflowArtifact && sessionId
             ? (artifactId: string) => {
-                // The live-projection artifact digest carries the latest `contentType`, which the host uses to open html artifacts directly as browser
-                // tabs; the `sourcePath` digest is intentionally omitted (high-frequency state key) - when absent the host consults the journal itself.
+                // 活投影的产物摘要带最新版的 `contentType`，宿主据它把 html 产物直接开成浏览器
+                // tab；`sourcePath` 那份摘要刻意不带（高频状态键），缺席时宿主自己查 journal。
                 const artifact = summary?.run?.artifacts?.find(
                   (candidate) => candidate.id === artifactId,
                 );
@@ -127,8 +127,8 @@ export function ConversationWorkflowDigests({
               }
             : undefined;
         const pendingQuestions = context.workflowRunPendingQuestionsByRunId?.get(runId)?.size ?? 0;
-        // "Configure": present only when the host callback exists (read-only /
-        // rollout gates already applied host-side) and this run is configurable. The popover model list reads this session's scope.
+        // 「配置」：宿主回调在场（只读 /
+        // 灰度两道门已在宿主裁过）且这条 run 能配置时才有。弹层的模型清单按本会话的作用域读。
         const amendSettings = context.onAmendWorkflowRunSettings;
         const settingsHost: WorkflowRunSettingsHost | undefined =
           amendSettings !== undefined && isWorkflowRunConfigurable(summary?.run)
@@ -149,6 +149,7 @@ export function ConversationWorkflowDigests({
         const card = (
           <WorkflowRunDigest
             graph={digest.graph}
+            {...(digest.holeLabels === undefined ? {} : { holeLabels: digest.holeLabels })}
             key={digest.key}
             name={name}
             pendingQuestions={pendingQuestions}
@@ -165,7 +166,7 @@ export function ConversationWorkflowDigests({
             {...(settingsHost === undefined ? {} : { settingsHost })}
           />
         );
-        // Settings turn: one row above the card states what changed.
+        // 设置轮：卡上方一行说改了什么。
         if (digest.settings === undefined) return card;
         return (
           <div className="flex flex-col gap-1.5" key={digest.key}>

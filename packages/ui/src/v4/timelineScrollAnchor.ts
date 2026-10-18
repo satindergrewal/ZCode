@@ -1,33 +1,32 @@
-// Virtual-scroll core: bottom-anchor state machine for the v4 timeline (pure functions, no
-// DOM/React dependencies).
+// 虚拟滚动核心：v4 timeline 底部锚定状态机（纯函数，无 DOM/React 依赖）。
 //
-// Semantics (scrollAnchor):
-// - user at the bottom -> following=true; new content (rows/streamed deltas/height changes)
-//   keeps the view pinned;
-// - user scrolls up off the bottom -> following=false; streaming deltas must not drag the
-//   reading position, and a jump-to-bottom button appears;
-// - user scrolls back to the bottom (or clicks the button) -> following resumes.
+// 语义（scrollAnchor）：
+// - 用户位于底部 → following=true，新内容（新行 / 流式 delta / 测高变化）自动贴底；
+// - 用户上滚离底 → following=false，流式增量不得拉回阅读位置，出现「回到底部」按钮；
+// - 用户手动滚回底部（或点按钮）→ 恢复跟随。
 //
-// following is the user's scroll authority, not an instantaneous geometry snapshot: only real
-// user scroll input changes it. Scroll events from programmatic pinning, terminal collapse,
-// and virtualizer measurement compensation only update the geometry ledger.
+// following 表达用户滚动权，不是瞬时几何快照：只有真实用户滚动输入可以改变它；
+// 程序化贴底、terminal 折叠和 virtualizer 测高补偿产生的 scroll 事件只更新几何账目。
 //
 
-/** Off-bottom tolerance: closer than this counts as at the bottom. Covers subpixel scrolling and last-row padding. */
-const BOTTOM_ANCHOR_EPSILON_PX = 48;
+/** 离底判定容差：小于该距离视为「在底部」。取值覆盖亚像素滚动与最后一行 padding。 */
+export const BOTTOM_ANCHOR_EPSILON_PX = 48;
 
-interface TimelineScrollMetrics {
-  /** Scroller scrollTop. */
+export interface TimelineScrollMetrics {
+  /** 滚动容器 scrollTop。 */
   scrollTop: number;
-  /** Scroller visible height (clientHeight). */
+  /** 滚动容器可视高度（clientHeight）。 */
   viewportHeight: number;
-  /** Total content height (scrollHeight). */
+  /** 内容总高度（scrollHeight）。 */
   contentHeight: number;
 }
 
-/** Remaining scrollable distance to the bottom (0 when content is shorter than the viewport). */
+/** 距底部的剩余可滚动距离（内容不足一屏时为 0）。 */
 export function distanceToBottom(metrics: TimelineScrollMetrics): number {
-  return Math.max(0, metrics.contentHeight - metrics.viewportHeight - metrics.scrollTop);
+  return Math.max(
+    0,
+    metrics.contentHeight - metrics.viewportHeight - metrics.scrollTop,
+  );
 }
 
 export function isAtBottom(
@@ -38,22 +37,22 @@ export function isAtBottom(
 }
 
 /**
- * Following state after a scroll event. Rule: landed at the bottom iff following.
- * All three sources covered with no case split: user scrolls up (off bottom -> release),
- * user scrolls back (at bottom -> resume), programmatic pin (lands at bottom -> keep).
+ * scroll 事件后的跟随态。规则：落点在底部 ⇔ 跟随。
+ * 覆盖三种来源且无需区分：用户上滚（离底 → 解除）、用户滚回（贴底 → 恢复）、
+ * 程序化贴底（落点即底部 → 保持）。
  */
-function nextFollowingAfterScroll(
+export function nextFollowingAfterScroll(
   metrics: TimelineScrollMetrics,
   epsilonPx: number = BOTTOM_ANCHOR_EPSILON_PX,
 ): boolean {
   return isAtBottom(metrics, epsilonPx);
 }
 
-type TimelineScrollEventSource = "user" | "programmatic" | "layout";
+export type TimelineScrollEventSource = "user" | "programmatic" | "layout";
 
 /**
- * Scroll-authority verdict after a scroll event. Layout/programmatic scrolls must not change
- * user intent; only user input decides following, by the final resting point.
+ * scroll 事件后的滚动权裁决。布局/程序化 scroll 不得改变用户意图；只有用户输入
+ * 才按最终落点决定是否跟随。
  */
 export function resolveFollowingAfterScroll(input: {
   following: boolean;
@@ -66,8 +65,8 @@ export function resolveFollowingAfterScroll(input: {
 }
 
 /**
- * Action after content changes (appended rows / streaming growth / measured-height fixes):
- * following -> pin to bottom; released -> keep the reading position (never drag back).
+ * 内容变化（新行追加 / 流式 delta 撑高 / 动态测高修正）后的动作：
+ * 跟随中 → 贴底；已解除 → 保持阅读位置（绝不拉回）。
  */
 export function anchorActionAfterContentChange(
   following: boolean,
@@ -77,8 +76,8 @@ export function anchorActionAfterContentChange(
 }
 
 /**
- * Scroll-compensation verdict after virtualizer remeasures. A width resize remeasures many
- * messages across adjacent frames; compensating scrollTop per row would visibly jitter.
+ * virtualizer 动态测高后的滚动补偿裁决。
+ * 宽度 resize 会让多条消息在相邻帧分批测高；此时逐条补偿 scrollTop 会形成可见抖动。
  */
 export function shouldAdjustVirtualizerForItemSizeChange(input: {
   following: boolean;
@@ -87,25 +86,35 @@ export function shouldAdjustVirtualizerForItemSizeChange(input: {
   itemEnd: number;
   scrollTop: number;
 }): boolean {
-  if (input.suppressAdjustment || input.following || input.contentWidthChanging) {
+  if (
+    input.suppressAdjustment ||
+    input.following ||
+    input.contentWidthChanging
+  ) {
     return false;
   }
   return input.itemEnd <= input.scrollTop;
 }
 
-/** Unobserved-scroll tolerance: a scrollTop regression below this is subpixel jitter, not a user scroll-up. */
-const UNOBSERVED_SCROLL_EPSILON_PX = 2;
+/** 未观察滚动的判定容差：小于该值的 scrollTop 回退视为亚像素抖动，不算用户上滚。 */
+export const UNOBSERVED_SCROLL_EPSILON_PX = 2;
 
-export type TimelineUserScrollIntent = "none" | "awayFromBottom" | "towardBottom" | "unknown";
+export type TimelineUserScrollIntent =
+  | "none"
+  | "awayFromBottom"
+  | "towardBottom"
+  | "unknown";
 
-/** wheel deltaY shares the sign of scrollTop: negative reads earlier content, positive nears the bottom. */
-export function timelineWheelScrollIntent(deltaY: number): TimelineUserScrollIntent {
+/** wheel 的 deltaY 与 scrollTop 同向：负值阅读更早内容，正值靠近底部。 */
+export function timelineWheelScrollIntent(
+  deltaY: number,
+): TimelineUserScrollIntent {
   if (deltaY < 0) return "awayFromBottom";
   if (deltaY > 0) return "towardBottom";
   return "none";
 }
 
-/** Touch delta is inverted vs scrollTop: finger down reads earlier content. */
+/** touch 手指位移与 scrollTop 反向：手指下移表示阅读更早内容。 */
 export function timelineTouchScrollIntent(
   previousClientY: number,
   nextClientY: number,
@@ -115,17 +124,25 @@ export function timelineTouchScrollIntent(
   return "none";
 }
 
-/** Keyboard scroll intent; caret keys inside inputs are not timeline scrolling. */
+/** 键盘滚动意图；输入控件内的光标按键不属于 timeline 滚动。 */
 export function timelineKeyboardScrollIntent(input: {
   key: string;
   shiftKey: boolean;
   editableTarget: boolean;
 }): TimelineUserScrollIntent {
   if (input.editableTarget) return "none";
-  if (input.key === "ArrowUp" || input.key === "PageUp" || input.key === "Home") {
+  if (
+    input.key === "ArrowUp" ||
+    input.key === "PageUp" ||
+    input.key === "Home"
+  ) {
     return "awayFromBottom";
   }
-  if (input.key === "ArrowDown" || input.key === "PageDown" || input.key === "End") {
+  if (
+    input.key === "ArrowDown" ||
+    input.key === "PageDown" ||
+    input.key === "End"
+  ) {
     return "towardBottom";
   }
   if (input.key === " ") {
@@ -135,29 +152,28 @@ export function timelineKeyboardScrollIntent(input: {
 }
 
 /**
- * Reconciles user scroll intent before a content-change commit pins to the bottom.
+ * 内容变化 commit 贴底前，对账用户滚动意图。
  *
- * Following is driven by scroll events, which dispatch a rendered frame after the scroll: if
- * a user scroll-up (wheel) or test-programmatic scrollTop write lands inside a React commit
- // that changes totalSize/rowCount (streamed delta, ResizeObserver correction, window remeasure
- // from a composer resize), the pin effect runs with a stale following=true, drags scrollTop
- // back, and the rebound makes the subsequent scroll event judge following=true again - the
- // user's/test's scroll-up is swallowed entirely (resize/measure commits stealing scroll
- // authority).
+ * 跟随态由 scroll 事件驱动，但 scroll 事件在滚动发生后的下一渲染帧才派发：
+ * 用户上滚（wheel）或测试程序化 scrollTop 赋值之后、事件派发之前，若恰好落进一个
+ * totalSize/rowCount 变化的 React commit（流式 delta、ResizeObserver 测高修正、
+ * composer 尺寸变化引起的窗口重算），贴底 effect 会拿着**过期的 following=true**
+ * 把 scrollTop 拽回底部，且回弹落点让随后的 scroll 事件把跟随判回 true——
+ * 用户/测试的上滚被整体吞掉（“resize/测量 commit 夺走滚动权”）。
  *
- * Reconcile rules (run before the pin action; inputs are live metrics at commit time):
- * 1. definite scroll-up -> release following now; same-frame terminal/layout commits must yield too;
- * 2. no user input -> keep following as-is; virtualizer/collapse scrollTop regressions are not scroll-ups;
- * 3. unknown/downward input -> resume if resting at the bottom, release on a clear regression, else keep.
+ * 对账规则（在贴底动作之前执行，输入为 commit 时刻的实时指标）：
+ * 1. 明确向上滚动 → 立即解除跟随，同帧 terminal/layout commit 也必须让位；
+ * 2. 没有用户输入 → 原样保持 following，virtualizer/折叠导致的 scrollTop 回退不算上滚；
+ * 3. 方向未知或向下的用户输入 → 落点在底则恢复跟随，明显回退则解除，其余保持。
  */
 export function reconcileFollowingForContentAnchor(input: {
-  /** Current following state (the existing scroll-event-driven value). */
+  /** 当前跟随态（scroll 事件驱动的既有值）。 */
   following: boolean;
-  /** Live scroll metrics at commit time (before the pin action). */
+  /** commit 时刻（贴底动作前）的实时滚动指标。 */
   metrics: TimelineScrollMetrics;
-  /** The component's latest ledgered scrollTop (scroll-event value or readback after a programmatic write). */
+  /** 组件最近一次「已账目」的 scrollTop（scroll 事件读取值或程序化写入后的回读值）。 */
   lastObservedScrollTop: number;
-  /** User scroll intent captured before the current content commit; when omitted, reconcile as the legacy unknown source. */
+  /** 当前内容 commit 前捕获到的用户滚动意图；省略时按旧的未知来源对账。 */
   userScrollIntent?: TimelineUserScrollIntent;
   bottomEpsilonPx?: number;
   scrollEpsilonPx?: number;
@@ -165,53 +181,57 @@ export function reconcileFollowingForContentAnchor(input: {
   const userScrollIntent = input.userScrollIntent ?? "unknown";
   if (userScrollIntent === "awayFromBottom") return false;
   if (userScrollIntent === "none") return input.following;
-  if (isAtBottom(input.metrics, input.bottomEpsilonPx ?? BOTTOM_ANCHOR_EPSILON_PX)) {
+  if (
+    isAtBottom(input.metrics, input.bottomEpsilonPx ?? BOTTOM_ANCHOR_EPSILON_PX)
+  ) {
     return true;
   }
   const unobservedUpscroll =
     input.metrics.scrollTop <
-    input.lastObservedScrollTop - (input.scrollEpsilonPx ?? UNOBSERVED_SCROLL_EPSILON_PX);
+    input.lastObservedScrollTop -
+      (input.scrollEpsilonPx ?? UNOBSERVED_SCROLL_EPSILON_PX);
   if (unobservedUpscroll) {
     return false;
   }
   return input.following;
 }
 
-/** Jump-to-bottom button visibility: only while released from following and content exists. */
-export function shouldShowBackToBottom(following: boolean, rowCount: number): boolean {
+/** 「回到底部」按钮可见性：仅在解除跟随且确实存在内容时展示。 */
+export function shouldShowBackToBottom(
+  following: boolean,
+  rowCount: number,
+): boolean {
   return !following && rowCount > 0;
 }
 
-/** Session switch / first bind: reset to following (a opened session lands on the newest message). */
+/** 会话切换 / 首次绑定：重置为跟随（打开会话定位到最新消息）。 */
 export function initialFollowing(): boolean {
   return true;
 }
 
-// -- loadOlder: prepend scroll anchoring (the classic virtual-scroll prepend trap) --
+// ── loadOlder：prepend 滚动锚定（虚拟滚动前插的经典坑）──
 //
-// Semantics: when prepending history above the window, the row the user is reading (the
-// anchor) must not shift in the viewport. In a virtualized list prepending only grows the
-// total height (existing turns keep cached measurements by turnId; no remount/remasure), so
-// anchor restoration = shifting scrollTop by the height the prepend added.
+// 语义：向窗口顶部前插历史行时，用户正在读的行（锚点）在视口中的位置不得跳动。
+// 虚拟列表下前插只改总高度（既有 turn 按 turnId 缓存测量值，不重挂不重测），
+// 因此锚定恢复 = scrollTop 平移「前插内容撑高的那段」：
 //   scrollTop' = scrollTop + (nextTotalSize - prevTotalSize)
-// Premise: existing render-unit keys are stable (getItemKey=turnId) and no other measurement
-// fix lands in the same frame - new rows in the prepend commit have estimated heights only;
-// later ResizeObserver corrections go through the virtualizer's normal shift path, not here.
+// 前提：既有 render unit key 稳定（getItemKey=turnId）且同一帧内无其它测量修正——
+// prepend commit 里新行只有估计高度，后续 ResizeObserver 修正走 virtualizer
+// 的常规 shift 逻辑，不再经此函数。
 
 export interface PrependVirtualAnchor {
   key: string;
-  /** Anchor measurement start offset from the viewport top. */
+  /** 锚点 measurement 起点相对视口顶部的偏移。 */
   offsetTop: number;
   start: number;
 }
 
 /**
- * scrollTop correction to apply for a stable key after a prepend.
+ * 同一稳定 key 在 prepend 后需要施加的 scrollTop 修正量。
  *
- * Between the loadOlder trigger and the rows commit, a layout restore or the virtualizer may
- * rewrite scrollTop; adding only the measurement.start delta would double-count that interim
- * movement. Compute the absolute target from the viewport offset saved at trigger time, then
- // subtract live scrollTop, to restore the reading position stably.
+ * 触发 loadOlder 到 rows 提交之间，恢复布局或 virtualizer 可能先改写
+ * scrollTop；只叠加 measurement.start 的差值会把这段中间位移重复计入。以触发瞬间
+ * 保存的视口偏移计算绝对目标，再减实时 scrollTop，才能稳定恢复原阅读位置。
  */
 export function prependVirtualAnchorAdjustment(
   previous: PrependVirtualAnchor,
@@ -229,23 +249,24 @@ export function prependVirtualAnchorAdjustment(
   return next.start - previous.offsetTop - currentScrollTop;
 }
 
-interface PrependAnchorInput {
-  /** Previous commit window-head rowId (null = no rows yet). */
+export interface PrependAnchorInput {
+  /** 上一 commit 的窗口首行 rowId（null = 尚无行）。 */
   prevFirstRowId: number | null;
-  /** Current commit window-head rowId (null = rows cleared). */
+  /** 本 commit 的窗口首行 rowId（null = 行被清空）。 */
   nextFirstRowId: number | null;
-  /** Previous commit virtual-list total height. */
+  /** 上一 commit 的虚拟列表总高度。 */
   prevTotalSize: number;
-  /** Current commit virtual-list total height. */
+  /** 本 commit 的虚拟列表总高度。 */
   nextTotalSize: number;
 }
 
 /**
- * scrollTop shift after a prepend. Positive shift only when the head rowId decreased (a real
- * prepend); append/replace/clear/first frame return null (leave scrolling to the bottom-anchor
- * logic).
+ * 前插后的 scrollTop 平移量。仅当「首行 rowId 变小」（真前插）时返回正平移；
+ * 追加/替换/清空/首帧一律 null（不动滚动位置，交给底部锚定逻辑）。
  */
-export function prependScrollAdjustment(input: PrependAnchorInput): number | null {
+export function prependScrollAdjustment(
+  input: PrependAnchorInput,
+): number | null {
   if (input.prevFirstRowId === null || input.nextFirstRowId === null) {
     return null;
   }
@@ -254,20 +275,23 @@ export function prependScrollAdjustment(input: PrependAnchorInput): number | nul
   return delta > 0 ? delta : null;
 }
 
-/** Top trigger threshold: closer than this counts as at-the-top and prefetches another window. */
-const LOAD_OLDER_TRIGGER_PX = 64;
+/** 顶部触发阈值：距顶小于该距离视为「到顶」，自动拉取更早一窗。 */
+export const LOAD_OLDER_TRIGGER_PX = 64;
 
-/** Prefetch two viewports early, so network and render finish before the user reaches the window edge. */
-const LOAD_OLDER_PREFETCH_VIEWPORTS = 2;
+/** 提前两个视口补页，网络与渲染应在用户抵达窗口边界前完成。 */
+export const LOAD_OLDER_PREFETCH_VIEWPORTS = 2;
 
 export function historyPrefetchTriggerPx(viewportHeight: number): number {
   if (!Number.isFinite(viewportHeight) || viewportHeight <= 0) {
     return LOAD_OLDER_TRIGGER_PX;
   }
-  return Math.max(LOAD_OLDER_TRIGGER_PX, viewportHeight * LOAD_OLDER_PREFETCH_VIEWPORTS);
+  return Math.max(
+    LOAD_OLDER_TRIGGER_PX,
+    viewportHeight * LOAD_OLDER_PREFETCH_VIEWPORTS,
+  );
 }
 
-/** Whether a scroll event should trigger loadOlder (at top + more available + not in flight). */
+/** scroll 事件是否应触发 loadOlder（到顶 + 可拉 + 非在途）。 */
 export function shouldTriggerLoadOlder(input: {
   scrollTop: number;
   canLoadOlder: boolean;

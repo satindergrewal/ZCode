@@ -127,7 +127,7 @@ export async function updateSession(
         time_title_updated = ?,
         time_compacting = ?,
         time_archived = ?,
-        -- Path self-heal may carry pre-read times; never roll real activity time back.
+        -- 修复原因：路径自愈可能携带并发读取前的旧时间，不能回退真实活动时间。
         time_updated = max(time_updated, ?)
       where id = ?
       `,
@@ -236,9 +236,9 @@ export function claimLegacySessionWorkspace(
 ): number {
   const sessionIDs = [...new Set(input.sessionIDs)];
   if (sessionIDs.length === 0) return 0;
-  // 3.3.6 SSH/WSL sessions lack workspace_id while the 3.4 sessions-index queries strict full
-  // identity, hiding every historical task after upgrade. Accept only the exact
-  // taskId allowlist from the host tasks-index, plus real dir and NULL identity; never degenerate to path-wide claims.
+  // 3.3.6 的 SSH/WSL session 没有 workspace_id，3.4 sessions-index 又按完整
+  // identity 严格查询，升级后历史任务全部不可见。这里只认 host tasks-index 给出的精确
+  // taskId allowlist，并叠加实际目录和 NULL identity，不能退化成按路径批量认领。
   const result = db
     .prepare(
       `update session
@@ -255,8 +255,8 @@ export function repairLegacyRemoteSessionWorkspace(
   db: DatabaseSync,
   input: RepairLegacyRemoteSessionWorkspaceInput,
 ): boolean {
-  // 3.4.2 treated the WSL identity as a path, and production may have path.resolve
-  // joined it onto the real cwd before persisting. Migrate per session against the exact old dir only; no fuzzy search, no batch claims.
+  // 3.4.2 把 WSL identity 当成执行路径，生产路径还可能先被 path.resolve
+  // 拼到真实 cwd 后落库。只按单 session 和完整旧目录精确迁移，禁止模糊搜索或批量认领。
   const result = db
     .prepare(
       `update session
@@ -282,8 +282,8 @@ export function repairRemoteSessionPaths(
   db: DatabaseSync,
   input: RepairRemoteSessionPathsInput,
 ): boolean {
-  // Path self-heal once reused the full updateSession, overlaying the read snapshot's title/permissions/rollback/
-  // archive state onto concurrent newer values. Maintenance migrations own the path fields only, CASing on the old path.
+  // 路径自愈曾复用全字段 updateSession，把读取快照中的标题、权限、回滚和
+  // 归档状态覆盖到并发新值上。维护性迁移只能拥有路径字段，并用旧路径做 CAS。
   const result = db
     .prepare(
       `update session

@@ -16,15 +16,17 @@ import {
   type TimelineLayout,
 } from "./timeline-geometry.js";
 import { MarchLight } from "./WorkflowMarchLight.js";
+import { STREAM_GAP, StreamChevrons } from "./WorkflowStreamChevrons.js";
 import { stationLampClass } from "./WorkflowTimelineLedge.js";
+import { slideClass, slideStyle, type FillSlide } from "./use-fill-growth.js";
 
 /**
- * The track layer.
+ * 轨道层。
  *
- * Without bands, rail segments remain a border sliver in the header row (pixel-identical). **With bands**, the whole rail moves into the arc layer's
- * SVG: the main line on the bottom row, branch tracks above it, the band forked before and merged after, two 8px quarter-circle arcs lifting each branch
- * up and back down (branches upward). Lamps stay DOM (status classes must
- * be), absolutely positioned on their own track's row; headers move to the platform row, branch-track stations tied to their name by a dotted leader.
+ * 没有带的时间线里轨道段还是站头行里的一截 border（逐像素不动）。**有带**时整条轨道搬进弧那一层
+ * SVG：主线走最下面一行、分支轨道叠在它上面，带前分叉、带后汇合，两段 8px 的四分之一圆把分支
+ * 抬上去再放下来（分支向上）。灯仍是 DOM（状态类要
+ * 用），绝对定位落在自己那条轨道的行上；站头搬到站台行，分支轨道的站用一条点状引线接回自己的名字。
  */
 const INK_STROKE: Record<TimelineInk, string> = {
   faint: "var(--color-workflow-trace)",
@@ -32,36 +34,40 @@ const INK_STROKE: Record<TimelineInk, string> = {
   strong: "var(--color-workflow-trace-strong)",
 };
 
-/** A point on the canvas. */
+/** 画布上的一个点。 */
 export interface TimelinePoint {
   x: number;
   y: number;
 }
 
-/** A stretch of rail on screen: one path, one ink, plus the two stations it joins (test and debug handle). */
+/** 画面上的一段轨道：一条路径、一种墨，外加它接的两站（测试与调试的抓手）。 */
 export interface TimelineRailPiece {
   key: string;
   d: string;
   /**
-   * The path's two endpoints, from the same numbers as `d` — the traveling edge's light gradients across these two points (`MarchLight`),
-   * instead of parsing `d` in hindsight.
+   * 路径的首尾两点，与 `d` 出自同一组数——行进边的光要按这两点铺渐变（`MarchLight`），
+   * 而不是回头去解析 `d`。
    */
   start: TimelinePoint;
   end: TimelinePoint;
   ink: TimelineInk;
-  /** `fork` / `merge` are the band-end curves; `tail` / `stub` the main line's bit with no predecessor / merge station. */
-  kind?: "fork" | "merge" | "tail" | "stub";
+  /**
+   * `fork` / `merge` 是带两端的曲线；`tail` / `stub` 是没有前驱 / 汇合站时主线的那一小截；`stream`
+   * 是一条轨道上的流轨——路径在正中断开 `STREAM_GAP`，`chevrons` 是缺口的中心。
+   */
+  kind?: "fork" | "merge" | "tail" | "stub" | "stream";
+  chevrons?: TimelinePoint;
   from?: number;
   to?: number;
 }
 
-/** A path plus its two endpoints: in `timelineRailPieces` every kind computes these three first, then gets ink and stations. */
+/** 路径与它的首尾两点：`timelineRailPieces` 里每种段都先算出这三样，再配上墨与两站。 */
 type RailShape = Pick<TimelineRailPiece, "d" | "end" | "start">;
 
 /**
- * Rail segment -> path (pure). An ordinary segment on one track is a straight line on that row (lamp + 8 -> lamp − 8); the main line's
- * own segments pass through fork and merge points, so the main line stays one straight line. An ordinary segment with both ends in **different bands** can only be
- * the stretch between adjacent bands, drawn on the main line from the former's merge to the latter's fork. Twin segments are not drawn on the card.
+ * 轨道段 → 路径（纯函数）。一条轨道上的普通段是那一行上的一条直线（灯 + 8 → 灯 − 8）；主线的
+ * 那几条穿过分叉点与汇合点，于是主线自然是一条直线。两端都在**不同的带**里的普通段只可能是
+ * 相邻两带之间的那一段，画在主线上、从前一带的汇合点到后一带的分叉点。双线段不画在卡上。
  */
 export function timelineRailPieces(
   model: Pick<WorkflowTimelineModel, "bands" | "rails" | "stations">,
@@ -76,13 +82,13 @@ export function timelineRailPieces(
   const mergeX = (band: TimelineBand): number => bandMergeX(band, inset);
   const trackOfStation = (i: number): number => stations[i]?.track ?? 0;
 
-  /** A straight segment on one row. */
+  /** 一行上的一条直线段。 */
   const straight = (x1: number, x2: number, y: number): RailShape => ({
     d: `M${x1},${y} H${x2}`,
     end: { x: x2, y },
     start: { x: x1, y },
   });
-  // Branch track t leaves the main line at forkX − 8(t−1), two quarter-circle arcs rise to its row, then across to 8px before the first lamp.
+  // 分支轨道 t 在 forkX − 8(t−1) 处离开主线，两段四分之一圆升到自己的行，再横到第一枚灯前 8px。
   const forkPath = (band: TimelineBand, track: number, head: number): RailShape => {
     const xf = forkX(band) - 8 * (track - 1);
     const yt = rowOf(track);
@@ -92,7 +98,7 @@ export function timelineRailPieces(
       start: { x: xf, y: y0 },
     };
   };
-  // The merge mirrors the fork: across from 8px past the last lamp to xm − 8, back onto the main line. The higher the track in the band, the further left it lands.
+  // 汇合是分叉的镜像：从末站的灯后 8px 横到 xm − 8，落回主线。带里轨道越高，落点越靠左。
   const mergePath = (band: TimelineBand, track: number, tail: number): RailShape => {
     const xm = mergeX(band) - 8 * (band.tracks.length - 1 - track);
     const yt = rowOf(track);
@@ -104,8 +110,8 @@ export function timelineRailPieces(
   };
 
   const pieces: TimelineRailPiece[] = [];
-  // A band with no predecessor / no merge station grows its own ends: a small tail / stub on the main line, plus the branch curves — the model has
-  // no matching rail segment (fork and merge need that station to become a segment); ink from the track's own entry / exit.
+  // 没有前驱 / 没有汇合站的带自己长出两端：主线的一小截尾巴 / 残段，和分支轨道的曲线——模型里
+  // 没有对应的轨道段（分叉与汇合都要有那一站才成段），墨色取轨道自己的 entry / exit。
   for (const band of bands) {
     const main = band.tracks[0]!;
     if (band.pred === undefined) {
@@ -153,7 +159,7 @@ export function timelineRailPieces(
   }
 
   for (const rail of rails) {
-    // The twin segment only says "these two run in parallel"; not drawn on the card — fork and merge already said it.
+    // 双线段只说「这两站并行」，卡上不画——分叉与汇合已经把并行说清楚了。
     if (rail.kind === "twin") continue;
     const ends = { from: rail.from, ink: rail.ink, key: `${rail.from}>${rail.to}`, to: rail.to };
     if (rail.kind === "fork") {
@@ -179,14 +185,29 @@ export function timelineRailPieces(
       continue;
     }
     const yt = rowOf(trackOfStation(rail.from));
-    pieces.push({ ...ends, ...straight(lx(rail.from) + 8, lx(rail.to) - 8, yt) });
+    const x1 = lx(rail.from) + 8;
+    const x2 = lx(rail.to) - 8;
+    if (rail.kind === "stream") {
+      // 流轨（presentation.md「Stream rails」）：一条直线两笔，中间让出 chevron 的缺口。
+      const mid = (x1 + x2) / 2;
+      pieces.push({
+        ...ends,
+        chevrons: { x: mid, y: yt },
+        d: `M${x1},${yt} H${mid - STREAM_GAP / 2} M${mid + STREAM_GAP / 2},${yt} H${x2}`,
+        end: { x: x2, y: yt },
+        kind: "stream",
+        start: { x: x1, y: yt },
+      });
+      continue;
+    }
+    pieces.push({ ...ends, ...straight(x1, x2, yt) });
   }
   return pieces;
 }
 
 /**
- * Rails and leader lines, inside the arc layer's SVG (mounted with bands only). Traveling segments layer the light per the arc rule, except the layer
- * is now a **motionless** light (`MarchLight`): fading in from the segment's start, brightest at the lamp.
+ * 轨道与引线，画在弧那一层 SVG 里（只有带时才挂上）。行进的段照弧的老规矩叠一层，只是那一层
+ * 如今是**不动的**光（`MarchLight`）：从段的起点淡入、在灯那一头最亮。
  */
 export function WorkflowTimelineTracks({
   folded,
@@ -195,11 +216,11 @@ export function WorkflowTimelineTracks({
 }: {
   model: Pick<WorkflowTimelineModel, "bands" | "rails" | "stations">;
   layout: TimelineLayout;
-  /** Stations folded to a ledge: their leader fades out with the lamp. */
+  /** 折到檐上的站：它的引线跟着灯一起淡出。 */
   folded: ReadonlySet<number>;
 }) {
   const pieces = timelineRailPieces(model, layout);
-  // The track layer lives inside the arc layer's SVG, so gradient ids must be unique SVG-wide: instance prefix + segment key (minus `:` `>` and the like).
+  // 轨道层挂在弧那一层 SVG 里，渐变 id 要在整张 SVG 里唯一：实例前缀 + 段的 key（去掉 `:` `>` 这些）。
   const gradientBase = useId();
   return (
     <g>
@@ -219,7 +240,11 @@ export function WorkflowTimelineTracks({
             stroke={INK_STROKE[piece.ink]}
             strokeWidth={1}
           />
-          {piece.ink === "march" ? (
+          {piece.chevrons === undefined ? null : (
+            <StreamChevrons ink={piece.ink} x={piece.chevrons.x} y={piece.chevrons.y} />
+          )}
+          {/* 流从不叠行进的光：它的墨在 chevron 上。 */}
+          {piece.ink === "march" && piece.kind !== "stream" ? (
             <MarchLight
               d={piece.d}
               from={piece.start}
@@ -250,19 +275,22 @@ export function WorkflowTimelineTracks({
 }
 
 /**
- * Lamps (with bands): still a DOM span — status classes, glow and pulse all in CSS — just absolutely positioned on their own track's
- * row instead of following the header.
+ * 灯（有带时）：还是 DOM 的 span——状态类、光晕与搏动都在 CSS 里——只是绝对定位到自己那条轨道
+ * 的行上，而不再跟着站头排。
  */
 export function WorkflowTimelineLamps({
   draft,
   folded,
   layout,
+  slide,
   stations,
 }: {
   stations: readonly TimelineStation[];
   layout: TimelineLayout;
   folded: ReadonlySet<number>;
   draft: boolean;
+  /** 补全的生长（`use-fill-growth.ts`）：插入列右侧的灯随站滑开。 */
+  slide?: FillSlide;
 }) {
   return (
     <>
@@ -270,16 +298,18 @@ export function WorkflowTimelineLamps({
         <span
           aria-hidden
           className={cn(
-            stationLampClass(station.status),
+            stationLampClass(station.status, station.hole),
             "absolute",
             "wf-foldable",
             folded.has(i) && "wf-folded",
             draft && "wf-land",
+            slideClass(i, slide),
           )}
           data-lamp={station.status ?? "pending"}
           data-lamp-track={station.track}
           key={station.id}
           style={{
+            ...slideStyle(i, slide),
             left: lampX(i, layout.inset) - 5,
             top: (layout.rowY[station.track] ?? layout.rowY[0]!) - 5,
           }}

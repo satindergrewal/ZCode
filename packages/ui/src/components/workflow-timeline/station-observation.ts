@@ -4,9 +4,11 @@ import { phaseNameMatches } from "@/components/workflow-graph/phase-name.js";
 import type { WorkflowCausalityGraphData } from "@/components/workflow-graph/types.js";
 
 /**
- * What one station observed: the instances landing on this station, plus the **off-chart** entries spent here.
+ * 一站观察到的东西（docs/dynamic-workflow/presentation.md「The timeline model」「Past six
+ * participants」）：落在这一站站点上的实例，加上界在这一站花掉的**表外**条目。
  *
- * Like timeline-bands.ts, computes display models only — no React, DOM, or clock.
+ * 住在时间线模型之外，与 timeline-bands.ts 同一个理由（主文件的 max-lines 门），也同一条纪律：
+ * 纯函数、无 React、无 DOM、无时间。
  */
 
 export interface ObservedPhase {
@@ -14,15 +16,15 @@ export interface ObservedPhase {
   rounds: number;
   settled: number;
   observed: number;
-  /** Control flow entered this station (an entry record exists in `run.phases`). */
+  /** 控制流进入过这一站（`run.phases` 里有它的进入记录）。 */
   entered: boolean;
 }
 
 /**
- * The ones the reduction cannot list (`run.unlistedByPhase`). `actors` are subagents born at this
- * station and currently off the table — rejected at birth, evicted while queued, evicted after finishing; they have no pill,
- * no face, no transcript; `settled` is the known-finished subset, `failed ⊆ settled`; `nodesSettled` is the number of off-chart
- * **nodes** recorded as settled on this slot. Absent = not one was lost at this station.
+ * 归约列不出来的那些（`run.unlistedByPhase`，presentation.md「Reduction」）。`actors` 是这一站
+ * 出生、此刻不在表里的子代理——出生就被拒的、排队时被淘汰的、跑完被淘汰的都算，它们没有药丸、
+ * 没有脸、没有转录；`settled` 是其中已知跑完的，`failed ⊆ settled`；`nodesSettled` 是记在这一格
+ * 上的表外已结算**节点**数。缺席 = 这一站一条都没少。
  */
 export interface StationUnlisted {
   actors: number;
@@ -32,9 +34,9 @@ export interface StationUnlisted {
 }
 
 /**
- * Off-chart slots are filed by **birth-phase stamp**: bound to pills, the same `phaseBinder` as the station observation — one assignment,
- * not a broadcast. The slot without `phaseName` therefore lands on the unnamed station (same rule as stamp-less instances) instead of
- * picking an arbitrary station. Two stations re-entered under one name each take their share, matching the node algorithm.
+ * 表外那一格按**出生阶段的戳**归位：与药丸绑定、站的观察同一个 `phaseBinder`——一次划分，不是
+ * 一次广播。无 `phaseName` 的那一格因此落在无名的站上（与无戳实例同一条规则），而不是凭空
+ * 挑一站。同名再入的两站各拿一份，与节点的算法一致。
  */
 export function stationUnlisted(
   run: WorkflowRunState | undefined,
@@ -47,7 +49,7 @@ export function stationUnlisted(
   for (const bucket of buckets) {
     if (!binder.has(phaseId, bucket.phaseName)) continue;
     total.actors += bucket.actors;
-    // Zeroed subkeys stay absent on the wire: absence means "zero", not "unknown" — the not-yet-finished ones therefore remain pending.
+    // 归零的子键在线上缺席：缺席说的是「零个」，不是「不知道」——还没跑完的那些因此留在 pending。
     total.settled += bucket.actorsSettled ?? 0;
     total.failed += bucket.actorsFailed ?? 0;
     total.nodesSettled += bucket.settled;
@@ -58,8 +60,9 @@ export function stationUnlisted(
 type WorkflowRunPhaseEntry = NonNullable<WorkflowRunState["phases"]>[number];
 
 /**
- * A station's entry records: matched by name (`phaseNameMatches`, the rule shared with instance binding from phase-name.ts). Under one 128-char
- * prefix there may be two records; the exact one wins.
+ * 一站的进入记录：按名字关联（`phaseNameMatches`，docs/dynamic-workflow/presentation.md
+ * 追记 2026-09-05；规则 2026-09-09 抽到 phase-name.ts，与实例绑定共用一条）。同一个 128 字
+ * 前缀下可能有两条记录，精确的那条优先。
  */
 export function phaseEntryFor(
   run: WorkflowRunState | undefined,
@@ -74,8 +77,8 @@ export function phaseEntryFor(
 }
 
 /**
- * Station set: member steps' `source ?? id` — the may-set copy reports the station id, the same key
- * as run-status.ts's association; dropping `source` would leave copy stations "not reached" forever.
+ * 站点集合：成员 step 的 `source ?? id`——may-set 拷贝报的是站点 id，与 run-status.ts 的
+ * 关联键同源；漏掉 `source` 会让拷贝站永远「未到」。
  */
 export function siteIdsOf(
   steps: readonly WorkflowCausalityGraphData["steps"][number][],
@@ -84,9 +87,9 @@ export function siteIdsOf(
 }
 
 /**
- * Nodes a station observed: the same station is not enough — when k phases re-enter one station, k cards share the station id, so nodes must
- * also fall onto this station by the instance's birth stamp (`belongs`), else visited / rounds /
- * fraction all inflate k-fold.
+ * 一站观察到的节点：站点相同还不够——同一个站点被 k 个阶段再入时 k 张卡共享站点 id，节点还要
+ * 按实例的出生戳落到这一站（`belongs`，追记 2026-09-09「站的观察」），否则 visited / rounds /
+ * fraction 一起虚高 k 倍。
  */
 export function observePhase(
   run: WorkflowRunState | undefined,
@@ -110,12 +113,12 @@ export function observePhase(
     if (node.ordinal > result.rounds) result.rounds = node.ordinal;
     if (node.phase === "settled") result.settled += 1;
   }
-  // Off-chart settled **nodes**: raise numerator and denominator together. They really ran; only their detail lives on the bound — undercounting the
-  // denominator turns "300/300" into "1/1", a false sentence; visited / rounds stay put, those two speak for control flow.
+  // 表外已结算的**节点**：分子与分母一起抬。它们确实跑过，只是详情停在界上——少算分母会让
+  // 「300/300」变成「1/1」，那是一句假话；visited / rounds 不动，那两个说的是控制流。
   result.observed += unlisted?.nodesSettled ?? 0;
   result.settled += unlisted?.nodesSettled ?? 0;
-  // Entry records: reached = a node landed here ∨ control flow entered; rounds take the larger of the two (a single-phase loop's second
-  // pass is counted by nodes; a zero-member station's second pass is known only from the entry record).
+  // 进入记录：到过 = 有节点落在这站 ∨ 控制流进入过；轮次取两者之大（单阶段循环体的第二轮
+  // 由节点数出来，零成员站的第二轮只有进入记录知道）。
   if (entry !== undefined) {
     result.entered = true;
     result.visited = true;

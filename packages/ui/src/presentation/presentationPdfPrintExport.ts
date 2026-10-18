@@ -14,8 +14,8 @@ const STYLE_ATTRIBUTE = "data-zcode-pptx-print-style";
 /** A single-image decode failure must not block the export (the preview fails the same way); cap the overall decode wait. */
 const IMAGE_DECODE_TIMEOUT_MS = 10_000;
 
-type PrintableFontScript = "latin" | "cjk" | "symbol";
-type PrintableFontAvailability = (family: string, script: PrintableFontScript) => boolean;
+export type PrintableFontScript = "latin" | "cjk" | "symbol";
+export type PrintableFontAvailability = (family: string, script: PrintableFontScript) => boolean;
 
 const GENERIC_FONT_FAMILIES = new Set([
   "serif",
@@ -201,7 +201,7 @@ function appendGenericFallback(
  * Returns the deterministic font stack to write into the print DOM; null means the preferred
  * font already works and needs no change.
  */
-function resolvePrintableFontFamily(
+export function resolvePrintableFontFamily(
   fontFamily: string,
   text: string,
   isFontAvailable: PrintableFontAvailability,
@@ -287,7 +287,7 @@ function createCanvasFontAvailability(hostDocument: Document): PrintableFontAvai
  * not reliably keep it, leaving those glyphs out of the PDF. Patch only the one-shot print DOM,
  * promoting a truly available font to the front of the stack.
  */
-function materializePrintableFontFamilies(
+export function materializePrintableFontFamilies(
   hostDocument: Document,
   host: HTMLElement,
   isFontAvailable: PrintableFontAvailability = createCanvasFontAvailability(hostDocument),

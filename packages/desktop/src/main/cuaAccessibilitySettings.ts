@@ -1,11 +1,10 @@
-/* eslint-disable max-lines -- install verification, main-level permission sessions, and drag TOCTOU share one Helper identity */
-// The grant flow fires no native permission dialogs. Rather than having each TCC stage launch the
-// Helper via LaunchServices into prompt mode so AXIsProcessTrustedWithOptions{prompt:true} /
-// CGRequestScreenCaptureAccess self-registers it (an interrupting system dialog), only open the
-// matching settings page and let the user drag the .app into the list
-// (measured: auth_value is already 2 after drag-in -- one step fewer than the prompt, which only
-// creates the entry for the user to find and check). Stage fingerprints are session-registered
-// and consumed by the synchronous pre-dragstart compare, not a final check before open(2).
+/* eslint-disable max-lines -- 安装验签、main 级权限会话和拖拽 TOCTOU 共同维护同一 Helper identity */
+// 授权引导不触发任何 macOS 原生权限弹窗。若每个 TCC stage 先经 LaunchServices
+// 拉起 Helper 到一次性权限请求模式，由 Helper 进程内命中 AXIsProcessTrustedWithOptions{prompt:true}
+// / CGRequestScreenCaptureAccess 来让自己“自动出现在权限列表里”，代价是一个打断用户的系统对话框。
+// 只打开对应设置页，Helper 进入 TCC 列表由用户从浮窗把 .app 拖进列表完成
+// （实测拖入后 auth_value 直接为 2，比弹窗少一步——弹窗只创建条目，仍需用户自己找到并勾选）。
+// 每 stage 的验签指纹不再交给 open(2) 前的终检，而是登记到会话上，由 dragstart 前的同步比对消费。
 import { randomUUID } from "node:crypto";
 import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -22,18 +21,18 @@ import type {
 } from "@zcode/shared";
 import { createDesktopCuaHelperInstaller } from "./desktopCuaHelperInstaller.js";
 
-const MACOS_ACCESSIBILITY_SETTINGS_URL =
+export const MACOS_ACCESSIBILITY_SETTINGS_URL =
   "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility";
-const MACOS_SCREEN_RECORDING_SETTINGS_URL =
+export const MACOS_SCREEN_RECORDING_SETTINGS_URL =
   "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture";
 
-interface OpenCuaAccessibilitySettingsOptions {
+export interface OpenCuaAccessibilitySettingsOptions {
   initialPermission?: CuaPermissionKind;
   requiredPermissions?: CuaPermissionKind[];
   env?: NodeJS.ProcessEnv;
   platform?: NodeJS.Platform;
   signal?: AbortSignal;
-  /** Renderer/webContents identity injected via main IPC; repeated joins from one host grant recovery once. */
+  /** main IPC 注入的 renderer/webContents 身份；同一 host 的重复 join 只授予一次 recovery。 */
   participantKey?: string;
   sessionTimeoutMs?: number;
   settingsReturnTimeoutMs?: number;
@@ -44,15 +43,15 @@ interface OpenCuaAccessibilitySettingsOptions {
     error?: (...args: unknown[]) => void;
   };
   ensureHelperInstalled?: () => Promise<string>;
-  /** Test/host override; production resolves the bundled Helper from Electron Resources. */
+  /** 测试或宿主显式注入；生产默认从 Electron Resources 解析随包 Helper。 */
   bundledHelperAppPath?: string;
-  /** Re-run full install verification before each TCC stage; production defaults to installer.verifyInstalled. */
+  /** 每个 TCC stage 启动前重新执行完整安装验签；生产默认使用 installer.verifyInstalled。 */
   verifyHelperInstalled?: (appPath: string) => Promise<void>;
   resolveHelperIdentity?: (appPath: string) => Promise<HelperPermissionSubjectIdentity>;
   openSettingsUrl?: (url: string) => Promise<void>;
   /**
-   * Register the return signal before openSettings so a System Settings switch-away/return never lands in a listener gap.
-   * The production IPC adapter listens on Electron app/browser-window; pure unit tests can run openSettings inline.
+   * 必须先注册 return 信号，再调用 openSettings，避免 System Settings 切走/返回发生在监听器空窗。
+   * IPC 生产适配器监听 Electron app/browser-window；纯单测可立即执行 openSettings 并返回。
    */
   openSettingsAndWaitForReturn?: (options: {
     permission: CuaPermissionKind;
@@ -63,24 +62,24 @@ interface OpenCuaAccessibilitySettingsOptions {
   }) => Promise<void>;
 }
 
-// Only the machine phase (did System Settings appear?) is wall-clock bounded; once the page is
-// foreground, the user's checkbox is no longer timed -- it ends on surface cancel, origin destroyed, or app quit.
+// 这里只限制“系统设置是否成功出现”的机器阶段；一旦确认设置页在前台，用户勾选权限不再受墙钟
+// 倒计时约束，只由 surface cancel、origin destroyed 或 app quit 结束。
 const DEFAULT_SETTINGS_RETURN_TIMEOUT_MS = 2 * 60_000;
-// The legacy drag guide listed Screen Recording first, opposite of the on-screen permission order;
-// when both are missing, handle Accessibility first, then Screen Recording.
+// 旧拖拽引导把屏幕录制排在前面，与用户看到的权限列表顺序相反；
+// 两项同时缺失时统一先处理辅助功能，再处理屏幕录制。
 const PERMISSION_STAGE_ORDER: readonly CuaPermissionKind[] = ["accessibility", "screen_recording"];
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-// Drag TOCTOU gate: a .app verified during prepare can be overwritten by a same-UID attacker before
-// the drag lands, and TCC binds the dragged bundle's identity. The drag moment needs synchronous
-// bytes-unchanged-since-verify proof -- codesign over a 120MB bundle is too slow for the dragstart
-// gesture. Use a light stat fingerprint: ino/ctime/size of key files (ctime = inode change time,
-// not backdatable) -- any Mach-O/signature-manifest/Info.plist swap alters it. Snapshot at prepare,
-// compare at dragstart, reject+reprepare on mismatch; the residual window is microseconds.
-type CuaHelperBundleFingerprint = string;
+// 拖拽 TOCTOU 门：prepare 时验过的 .app，可能在用户拖入系统设置前被同 UID 攻击者覆写，
+// 而 TCC 绑定的是被拖入的 bundle 身份。拖拽当下必须有"自校验以来字节未变"的*同步*证据——但对 120MB
+// bundle 跑 codesign 太慢会错过 dragstart 手势。改用轻量字节指纹：关键文件的 ino/ctime/size（ctime 是
+// inode change time，用户态无法回拨），任何对 Mach-O / 签名清单 / Info.plist 的替换都会改变指纹。prepare
+// 时抓一次，dragstart 前同步比对，不符即拒拖 + 清缓存重新 prepare。残留仅剩比对与 startDrag 之间的
+// 微秒级窗口（与 launch 路径 verifyInstalled→launch 同源、同量级）。
+export type CuaHelperBundleFingerprint = string;
 
 function statSignature(path: string): string {
   try {
@@ -116,13 +115,13 @@ function bundleTreeFingerprint(root: string, maxEntries = 512): string {
   return parts.join(",");
 }
 
-function captureCuaHelperBundleFingerprint(appPath: string): CuaHelperBundleFingerprint {
+export function captureCuaHelperBundleFingerprint(appPath: string): CuaHelperBundleFingerprint {
   const parts = [
     `app=${statSignature(appPath)}`,
     `sig=${statSignature(join(appPath, "Contents", "_CodeSignature", "CodeResources"))}`,
     `info=${statSignature(join(appPath, "Contents", "Info.plist"))}`,
-    // ax_macos.node and the SEA-shipped runtime dylib both live in Resources. Statting only CodeResources
-    // misses in-place resource overwrites; recursive inode/ctime/size catches them before dragstart.
+    // ax_macos.node 与随 SEA 分发的 runtime dylib 都位于 Resources。只采 CodeResources 的 stat
+    // 无法发现对资源文件的原地覆写；递归采 inode/ctime/size 才能在 dragstart 同步拒绝这种 TOCTOU。
     `resources=${bundleTreeFingerprint(join(appPath, "Contents", "Resources"))}`,
   ];
   try {
@@ -230,16 +229,16 @@ interface ActiveOnboardingSession {
   acceptingRequirements: boolean;
   recoveryOwnerParticipantKeys: Set<string>;
   /**
-   * Per-stage verification fingerprint evidence, consumed by the synchronous pre-dragstart check
-   * (the dragged bundle is what TCC binds).
+   * 每个 stage 重新建立的验签指纹证据，由 dragstart 前的同步比对消费
+   * （拖入的 bundle 才是 TCC 绑定对象）。
    */
   launchFingerprint?: CuaHelperBundleFingerprint;
   promise?: Promise<CuaAccessibilitySettingsResult>;
 }
 
 /**
- * Main-process coordinator keyed by the Helper's exact authorized identity, not renderer/window/workspace:
- * TCC honors only that principal, and two concurrent native prompts for it steal focus and mid-state.
+ * main-process 级协调器。key 使用 Helper 的精确授权身份而不是 renderer/window/workspace：macOS TCC
+ * 只认这个授权主体，同一主体并发弹两组 native prompt 会互相抢焦点并产生不可恢复的中间态。
  */
 class CuaPermissionOnboardingCoordinator {
   private readonly sessions = new Map<string, ActiveOnboardingSession>();
@@ -252,9 +251,9 @@ class CuaPermissionOnboardingCoordinator {
     requiredPermissions: CuaPermissionKind[],
     options: OpenCuaAccessibilitySettingsOptions,
   ): Promise<CuaAccessibilitySettingsResult> {
-    // bundle id + displayName are not the exact Helper identity: during dev/upgrade windows two
-    // bundles with different paths/executables share both strings; merging sessions wrongly binds the
-    // later window's grant to the first app. The key covers every immutable post-verify identity field.
+    // bundle id + displayName 不是“精确 Helper 身份”。开发/升级窗口内，两份不同路径或
+    // executable 的 bundle 可以共享这两个字符串；若错误合并会话，后加入窗口会把权限结果和恢复权
+    // 绑定到第一份 app。协调 key 覆盖验签后 identity 的全部不可变字段，任何路径/可执行体变化都隔离。
     const identityKey = [
       identity.bundleId,
       identity.displayName,
@@ -274,8 +273,8 @@ class CuaPermissionOnboardingCoordinator {
         );
         return this.joinSession(existing, options.signal, options.participantKey);
       }
-      // The previous session went terminal but async cleanup of the exact-permission Helper still runs.
-      // Retry only after the identity key is truly released; never overlap LaunchServices instances.
+      // 上一会话已进入终态，但精确权限 Helper 的异步清理尚未完成。必须等 identity key 真正释放后
+      // 再重试，不能让新会话与迟到的 LaunchServices 实例交叠。
       return existing.promise.then(() => {
         if (options.signal?.aborted) {
           return this.canceledParticipantResult(existing, options.signal.reason);
@@ -327,8 +326,8 @@ class CuaPermissionOnboardingCoordinator {
         detach();
         resolve(this.canceledParticipantResult(session, signal?.reason));
         if (session.activeParticipants.size === 0 && !session.controller.signal.aborted) {
-          // A shared session cannot be owned by the first caller's signal. Each window close removes
-          // itself; only the last participant cancels the native flow, with the join gate closed first.
+          // 共享会话不能归首个 caller signal 独占。任一窗口关闭只移除自身；最后一个参与者
+          // 离开才取消 native flow，并先关闭 requirement join 门，后来的显式重试会等待精确 cleanup。
           session.acceptingRequirements = false;
           session.controller.abort(
             signal?.reason ?? new Error("all CUA permission onboarding windows closed"),
@@ -349,8 +348,8 @@ class CuaPermissionOnboardingCoordinator {
           result.success === true &&
           result.returnedFromSettings === true &&
           typeof result.sessionId === "string";
-        // Promise continuations run serially on the main loop; per renderer/webContents only one
-        // call wins recovery. Different windows have separate hosts/Helpers -- never dedupe globally.
+        // Promise continuation 在 main event loop 内串行执行。同一 renderer/webContents 的重复调用只
+        // 有一个取得恢复权；不同窗口各有独立 host/Helper，必须各自得到一次恢复权，不能全局去重。
         const ownsRecovery =
           returned && !session.recoveryOwnerParticipantKeys.has(recoveryParticipantKey);
         if (ownsRecovery) session.recoveryOwnerParticipantKeys.add(recoveryParticipantKey);
@@ -408,8 +407,8 @@ class CuaPermissionOnboardingCoordinator {
             !session.processedPermissions.has(candidate),
         );
         if (!permission) {
-          // The identity recheck after the final page still awaits; a still-open join gate would silently
-          // fold a new request into the finished loop with fake success. Close the gate synchronously.
+          // 最后一页返回后的 identity 终检仍会 await；若 join 门保持开启，新权限会在
+          // while 已结束后被静默并入并收到假 success。同步关闭 join 门，让后来请求等 cleanup 后新开会话。
           session.acceptingRequirements = false;
           break;
         }
@@ -422,13 +421,13 @@ class CuaPermissionOnboardingCoordinator {
           controller.abort(new Error("CUA permission onboarding session timed out"));
           throw controller.signal.reason;
         }
-        // ensureInstalled verification evidence cannot stay trusted across the settings-page dwell: a
-        // same-UID process can swap the install dir between stages. Re-establish per stage: snapshot ->
-        // full verify -> exact-identity recheck -> snapshot; any change fails closed.
+        // 首次 ensureInstalled 的验签证据不能跨越用户停留设置页的时间复用。同 UID 进程可在
+        // 下一 stage 前替换安装目录，导致授权落到另一 bundle。每一 stage 都以“指纹前快照 → 完整
+        // verify → 精确 identity 复核 → 指纹后快照”的顺序重新建立证据；任一处变化都 fail-closed。
         //
-        // Final pre-drag synchronous compare: TCC binds the dragged bundle, so bytes-unchanged at drag
-        // time is the real risk window. The fingerprint is session-registered for the drag cache
-        // (see desktopCuaPermissionIpc).
+        // 终检在 dragstart 前同步比对：Helper 进入 TCC 列表靠用户拖拽，
+        // 而 TCC 绑定的正是被拖入的那个 bundle，所以「拖之前字节没变」贴近
+        // 真实风险。指纹登记到会话上供拖拽缓存消费（见 desktopCuaPermissionIpc）。
         session.launchFingerprint = await verifyHelperPermissionIdentityUnchanged(
           session.identity,
           options,
@@ -461,14 +460,14 @@ class CuaPermissionOnboardingCoordinator {
           if (controller.signal.aborted) throw controller.signal.reason;
           returnedCount += 1;
         } else {
-          // The legacy API has no main return signal: keep opening the settings page, never fake return=true.
+          // 旧接口没有 main return signal：保留“打开设置页”的兼容行为，但绝不能伪造 return=true。
           await openSettings();
           if (controller.signal.aborted) throw controller.signal.reason;
         }
       }
 
-      // Helper upgrade/replacement can still happen between last-page return and restart. A background
-      // drag-cache refresh is not grant evidence: re-verify and rebind the identity before success, else fail closed.
+      // 最后一页返回与 restart 之间仍可能发生 Helper 升级/替换。IPC 后台刷新拖拽缓存不属于本次
+      // 授权证据；必须在 success 前重新验签并绑定同一 identity，变化时 fail-closed、不发恢复权。
       if (session.openedPermissions.length > 0) {
         await verifyHelperPermissionIdentityUnchanged(session.identity, options, "post-settings");
         if (controller.signal.aborted) throw controller.signal.reason;
@@ -521,12 +520,12 @@ export async function openCuaPermissionOnboarding(
   try {
     helperAppPath = await (options.ensureHelperInstalled ?? defaultInstaller!.ensureInstalled)();
   } catch (error) {
-    // Security boundary: on install/verify failure
-    // fail closed -- never fall back to an unverified exists-on-path Helper, or users would grant
-    // Accessibility/Screen Recording to an old/badly-signed/wrong-Team/replaced bundle, breaking the
-    // invariant that the Helper is an independent TeamIdentifier-pinned principal. Dev is handled
-    // inside the installer via ZCODE_CUA_HELPER_ALLOW_UNSIGNED_LOCAL: when dev verification passes,
-    // ensureInstalled returns the local app and never reaches this catch; only real failures do.
+    // Security boundary：安装/校验失败时
+    // 必须 fail-closed，绝不回退到“路径存在即用”的未验证 Helper —— 否则会引导用户把 Accessibility /
+    // Screen Recording 授权给旧版本 / 坏签名 / 错误 Team / 被替换的 bundle，破坏“Helper 是独立且受
+    // TeamIdentifier pinning 的授权主体”这一核心边界。dev 场景由 installer 内部的
+    // ZCODE_CUA_HELPER_ALLOW_UNSIGNED_LOCAL 承接：通过 dev 校验时 ensureInstalled 会正常返回本地 app，
+    // 根本不会进到这个 catch；只有真正校验失败才会到这里。
     return {
       success: false,
       error: `ZCode Computer Use is unavailable (install/verification failed): ${messageOf(error)}`,
@@ -560,15 +559,15 @@ export async function openCuaPermissionOnboarding(
   );
 }
 
-// The 2026-08 audit removed the drag flow as dead code (no renderer callers; the native prompt let the
-// Helper self-register). With the prompt gone, dragging is again the only route into the TCC list, so it
-// is restored. openCuaAccessibilitySettings (legacy confirm-dialog channel) stays removed, superseded by onboarding.
+// 2026-08 审计曾把拖拽链路当作死代码删除（当时渲染层无调用方，权限引导靠 native 弹窗让 Helper
+// 自动进入 TCC 列表）。弹窗被摘除后，拖拽重新成为 Helper 进入权限列表的**唯一**途径，
+// 故恢复本函数。openCuaAccessibilitySettings（旧确认弹窗频道）不恢复，它已被 onboarding 取代。
 
-interface PrepareCuaHelperPermissionDragOptions {
+export interface PrepareCuaHelperPermissionDragOptions {
   env?: NodeJS.ProcessEnv;
   platform?: NodeJS.Platform;
   logger?: OpenCuaAccessibilitySettingsOptions["logger"];
-  /** Shared with onboarding via the desktop installer factory install+verify. Injectable in tests. */
+  /** 与 onboarding 共用桌面 installer factory 的 install+verify。测试可注入。 */
   ensureHelperInstalled?: () => Promise<string>;
   bundledHelperAppPath?: string;
   verifyHelperInstalled?: (appPath: string) => Promise<void>;
@@ -577,20 +576,20 @@ interface PrepareCuaHelperPermissionDragOptions {
 
 export interface PrepareCuaHelperPermissionDragMainResult extends PrepareCuaHelperPermissionDragResult {
   /**
-   * Synchronous bundle fingerprint bound across this full verify. Main-memory cache only -- the IPC handler
-   * must strip it before returning to the renderer (useless cross-process, widens the attack surface).
+   * 与本次完整验签前后绑定的同步 bundle 指纹。只允许 main 内存缓存消费 —— IPC handler 必须在
+   * 返回 renderer 前剥掉此字段（跨进程暴露既无用又扩大攻击面）。
    */
   helperBundleFingerprint?: CuaHelperBundleFingerprint;
 }
 
-// Drag grant and onboarding end at the same TCC principal, so the security checks must match: a .app
-// replaced on disk by an old/badly-signed/wrong-Team/same-user-writable copy would grant the wrong
-// principal if dragged into Accessibility/Screen Recording, defeating TeamIdentifier pinning. Drags
-// therefore run the same install+verify (bundle id/version/arch/codesign/TeamIdentifier/Gatekeeper).
+// 拖拽授权与 onboarding 最终引向同一个 TCC 授权主体，安全校验必须一致：磁盘上被旧版 / 坏签名 /
+// 错误 Team / 同用户可写内容替换的 .app 若被拖进 Accessibility/Screen Recording，TCC 授权会落到
+// 错误主体，绕过整个 TeamIdentifier pinning 设计。所以拖拽前必须走同一条 install+verify
+// （bundle id / 版本 / arch / codesign / TeamIdentifier / Gatekeeper）。
 //
-// But Electron native drag requires event.sender.startDrag() synchronously inside the dragstart chain --
-// no time for this async I/O or the OS gesture is missed. So install+verify is split out: the panel
-// prewarms path+fingerprint at mount; dragstart reads the cache and compares synchronously.
+// 但 Electron 原生文件拖拽要求在 dragstart 事件链路里*同步*调用 event.sender.startDrag()，
+// 等不了这些异步 I/O（否则错过 OS 拖拽手势窗口，用户拖不出任何文件）。因此把 install+verify
+// 拆到本函数：浮窗挂载时预热并缓存已验证路径 + 指纹，dragstart 只读缓存并同步比对（见
 // desktopCuaPermissionIpc）。
 export async function prepareCuaHelperPermissionDrag(
   options: PrepareCuaHelperPermissionDragOptions = {},
@@ -615,9 +614,9 @@ export async function prepareCuaHelperPermissionDrag(
     const helperAppPath = await (
       options.ensureHelperInstalled ?? defaultInstaller!.ensureInstalled
     )();
-    // Order matters: snapshot, full verify, recheck after verify and after the identity read. A fingerprint
-    // taken after ensure/verify return lets an attacker swap the .app in between and bless malicious
-    // bytes as the verified fingerprint; only fully unchanged bytes reach the dragstart cache.
+    // 顺序关键：先抓快照，再完整 verify，验签后与 identity 读取后各复核一次。若在 ensure/verify
+    // 返回后才抓指纹，攻击者可在两者之间替换 .app，导致恶意字节反而成为“已验证指纹”。只有全程未变
+    // 的同一批字节才允许交给同步 dragstart 缓存。
     const verifiedFingerprint = captureCuaHelperBundleFingerprint(helperAppPath);
     await (options.verifyHelperInstalled ?? defaultInstaller?.verifyInstalled)?.(helperAppPath);
     if (!cuaHelperBundleFingerprintUnchanged(helperAppPath, verifiedFingerprint)) {

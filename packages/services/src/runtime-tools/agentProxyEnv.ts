@@ -29,7 +29,7 @@ const PROXY_ENV_KEYS = [
 ] as const;
 const NO_PROXY_ENV_KEYS = ["NO_PROXY", "no_proxy", ZCODE_NO_PROXY_ENV_KEY] as const;
 
-function buildAgentProxyEnv(httpProxy: string | undefined): Record<string, string> {
+export function buildAgentProxyEnv(httpProxy: string | undefined): Record<string, string> {
   const normalized = normalizeProxyValue(httpProxy);
   if (!normalized) {
     return {};
@@ -41,7 +41,7 @@ function buildAgentProxyEnv(httpProxy: string | undefined): Record<string, strin
   return env;
 }
 
-function buildAgentCaCertEnv(caCertPath: string | undefined): Record<string, string> {
+export function buildAgentCaCertEnv(caCertPath: string | undefined): Record<string, string> {
   const trimmed = caCertPath?.trim();
   if (!trimmed) {
     return {};
@@ -55,7 +55,7 @@ function buildAgentCaCertEnv(caCertPath: string | undefined): Record<string, str
   };
 }
 
-function buildAgentNoProxyEnv(noProxy: string | undefined): Record<string, string> {
+export function buildAgentNoProxyEnv(noProxy: string | undefined): Record<string, string> {
   const normalized = normalizeNoProxyValue(noProxy);
   if (!normalized) {
     return {};

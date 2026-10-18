@@ -5,46 +5,56 @@ import { logger } from "@/logger.js";
 import { useV4Conversation } from "@/v4/V4ConversationContext.js";
 
 /**
- * Data fetching for preset boards.
+ * 预置看板的取数。
  *
- * Invariant: **the board is a projection of the journal.** This reads journal rows with
- * `kind = "report"` and a matching `artifact_id`; the pure `applyArtifactItems` then folds them
- * into charts / tables / tiles / boards -- every surface (side-pane card, full tab, cold
- * recovery) derives the same picture from the same rows.
+ * 不变式：**看板是 journal 的投影**。这里读的是 `kind = "report"` 且 `artifact_id` 相符的
+ * journal 行，纯函数 `applyArtifactItems` 再把它们折成图 / 表 / 瓦片 / 看板——任何表面
+ * （侧板小卡、全尺寸 tab、冷恢复）从同一批行得到同一幅图。
  *
  * ```
- * projection artifacts[id].itemCount rises
- *        │  (refresh signal, may overcount by one -- see the 3a note)
+ * 投影 artifacts[id].itemCount 抬升
+ *        │  （刷新信号，可能多算一个——见 3a 的说明）
  *        ▼
- *  workflowRunArtifactData({ afterSequence: sequence of last received item })
+ *  workflowRunArtifactData({ afterSequence: 已收到的最后一条的 sequence })
  *        │
- *        ▼  keep paging while hasMore, until drained
- *   items[] appended  ──▶  applyArtifactItems  ──▶  one more point on the line
+ *        ▼  hasMore 为真就继续翻，直到排空
+ *   items[] 追加  ──▶  applyArtifactItems  ──▶  折线多一个点
  * ```
  */
 
 /**
- * Max pages per drain. `REPORT_CAPS` is 256 items per run with page size 200, so normally two
- * pages at most; this cap only stops an implementation that never returns `hasMore: false` from
- * locking up the renderer thread.
- */
-const MAX_PAGES_PER_DRAIN = 16;
-
-/**
- * Max follow-up rounds before settling when `itemCount` rises mid-drain (see `pendingRef`).
- * Each round is an incremental read resuming from the local tail; normally one round drains.
+ * 一次拉取途中 `itemCount` 又抬升时，收尾前最多补拉几轮（见 `pendingRef`）。
+ * 每一轮都是一次「从本地末尾续上」的增量读，正常情形一轮就排空。
  */
 const MAX_FOLLOW_UP_ROUNDS = 8;
 
 interface WorkflowRunArtifactDataState {
   items: readonly ArtifactItem[];
   loading: boolean;
-  /** The session does not support artifact data queries (old CLI): boards cannot render. Distinct from "no data yet". */
+  /** 会话不支持产物取数（老 CLI）：看板画不出来，与「还没有数据」区分。 */
   unavailable: boolean;
   error: string | null;
 }
 
-/** Same capability-missing test as `useWorkflowRunArtifacts`: past JSON-RPC only the message is reliable. */
+/**
+ * 老 CLI 不认 `fields`：它的 strict schema 把整条请求拒掉，错误跨 JSON-RPC 之后只剩 zod 的
+ * message（`unrecognized_keys` 与键名）。认出它就退回取整条 item 重试。
+ */
+function isFieldsParamUnsupported(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes("unrecognized_keys") && message.includes("fields");
+}
+
+/**
+ * 已知不认 `fields` 的会话（远程 workspace 的 CLI 可能比桌面旧）。记在模块级：同一会话的每块
+ * 看板、每次取数都不必再撞一次拒绝。以 sessionId 为键——一个会话对应一个 CLI。
+ */
+const sessionsWithoutFieldReads = new Set<string>();
+
+/** 字段路径列表的稳定键：调用方每次渲染给一个新数组时，不因此重取。 */
+const FIELD_KEY_SEPARATOR = "\u0000";
+
+/** 能力缺席的判据同 `useWorkflowRunArtifacts`：跨 JSON-RPC 之后只剩 message 可靠。 */
 function isWorkflowRunArtifactDataCapabilityMissing(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return message.includes("capabilityUnsupported") || message.includes("ArtifactItems");
@@ -59,49 +69,52 @@ export function useWorkflowRunArtifactData(options: {
   runId: string;
   artifactId: string;
   /**
-   * Refresh signal = the id's `itemCount` in the projection. A rise triggers an incremental
-   * fetch; it may **overcount by one** (the deliberate trade-off recorded in 3a), so treat it
-   * only as "maybe more", never as a count -- the real count is `items.length`.
+   * 刷新信号 = 投影里该 id 的 `itemCount`。抬升即增量拉取；它可能**多算一个**
+   * （3a 记录的有意取舍），所以只当「也许还有」用，绝不当条目数用——真正的条数是
+   * `items.length`。
    */
   itemCount?: number;
   enabled?: boolean;
+  /**
+   * 看板会读到的字段路径（`artifactPresetFieldPaths`）。给了它就只让 CLI 取这些字段，一条 1 MiB
+   * 的 item 不会整条进渲染器；缺省取整条 item。
+   */
+  fields?: readonly string[];
 }): WorkflowRunArtifactDataState {
   const { workflowRunArtifactData } = useV4Conversation();
   const [state, setState] = useState<WorkflowRunArtifactDataState>(emptyState);
   const requestVersionRef = useRef(0);
   const inFlightRef = useRef(false);
-  /** A new refresh signal arrived mid-drain: a follow-up round is required before settling, or the final point never appears. */
+  /** 一次拉取途中又来了新的刷新信号：收尾前必须补拉，否则最后那个点永远不出现。 */
   const pendingRef = useRef(false);
   /**
-   * `sequence` of the last received item -- the incremental-read cursor.
+   * 已收到的最后一条的 `sequence`——增量读的游标。
    *
-   * Deliberately a ref instead of reading the tail of `state.items`: after `setState`, `state`
-   * only updates on the next render, and the follow-up runs inside the **same async function**,
-   * where reading state would yield the previous round's tail and append the same sequence
-   * range twice.
+   * 刻意用 ref 而不是从 `state.items` 末尾现读：`setState` 之后 `state` 要到下一次渲染
+   * 才更新，而补拉发生在**同一个 async 函数里**，读 state 会拿到上一轮的末尾并把同一段
+   * sequence 追加两次。
    */
   const cursorRef = useRef<number | undefined>(undefined);
   /**
-   * The `itemCount` the previous append resumed from. `undefined` = no baseline yet this round
-   * (mount / artifact switch); that frame's fetch is handled by the full refetch, and the
-   * incremental effect just records the baseline and exits -- otherwise every mounted board
-   * would fire one guaranteed-empty incremental query for nothing.
+   * 上一次据以续拉的 `itemCount`。`undefined` = 这一轮还没定基线（挂载 / 刚切产物），
+   * 那一帧的取数归整份重取管，增量 effect 只记下基线就退场——否则每挂载一个看板都会白发
+   * 一次必然返回空的增量查询。
    */
   const lastDrainedCountRef = useRef<number | undefined>(undefined);
 
   const { artifactId, runId, sessionId } = options;
+  const fieldsKey = options.fields?.join(FIELD_KEY_SEPARATOR);
+  const fields = useMemo(() => fieldsKey?.split(FIELD_KEY_SEPARATOR), [fieldsKey]);
   const enabled =
     options.enabled !== false && sessionId.length > 0 && runId.length > 0 && artifactId.length > 0;
 
   /**
-   * Page from the cursor until drained. `replace` is a full refetch (artifact/run switch);
-   * `append` is an incremental tail append.
+   * 从游标一路翻到排空。`replace` 是整份重取（切产物 / 切 run），`append` 是增量追加。
    *
-   * Single-flight gate (`inFlightRef`): `itemCount` rising mid-drain is normal (one report per
-   * script round); re-entry would append the same sequence range twice. A blocked call is not
-   * dropped -- it is recorded in `pendingRef` and the running drain repeats before settling.
-   * Otherwise a run's **final** report would never render (no later `itemCount` change remains
-   * to trigger another fetch).
+   * 单飞门（`inFlightRef`）：`itemCount` 在一次拉取途中再抬升是常态（脚本每轮 report 一次），
+   * 重入会让同一段 sequence 被追加两次。被挡下的那一次**不丢弃**，而是记在 `pendingRef` 上，
+   * 由正在跑的这一次在收尾前补拉——否则一个 run 的**最后一条** report 会永远画不出来
+   * （它之后不会再有 `itemCount` 变化来触发下一次拉取）。
    */
   const drain = useCallback(
     async (mode: "replace" | "append") => {
@@ -120,19 +133,35 @@ export function useWorkflowRunArtifactData(options: {
           pendingRef.current = false;
           const collected: ArtifactItem[] = [];
           let cursor = currentMode === "append" ? cursorRef.current : undefined;
-          for (let page = 0; page < MAX_PAGES_PER_DRAIN; page += 1) {
-            const result = await workflowRunArtifactData({
+          // 一直翻到存储层说没有了为止。修复前这里最多翻 16 页（3,200 条）：report 上限还是
+          // 256 条时那是一道防死循环的保险，上限提到 65,536 之后它成了静默截断——一个已结束、
+          // 打了 5,000 条标签的 run，看板永远只画出前 3,200 条，而之后不会再有 itemCount 变化
+          // 来触发续拉。防死循环改由「游标必须前进」来保证：一页没有让游标变大就停。
+          for (;;) {
+            const request = {
               sessionId,
               runId,
               artifactId,
               ...(cursor === undefined ? {} : { afterSequence: cursor }),
               limit: WORKFLOW_ARTIFACT_LIMITS.defaultItemsPerPage,
-            });
+            };
+            const withFields = fields !== undefined && !sessionsWithoutFieldReads.has(sessionId);
+            let result;
+            try {
+              result = await workflowRunArtifactData(withFields ? { ...request, fields } : request);
+            } catch (caught) {
+              if (!withFields || !isFieldsParamUnsupported(caught)) throw caught;
+              sessionsWithoutFieldReads.add(sessionId);
+              logger.info("[workflow-artifacts] CLI 不支持只取字段，退回取整条条目", { sessionId });
+              result = await workflowRunArtifactData(request);
+            }
             if (requestVersion !== requestVersionRef.current) return;
             collected.push(...result.items);
             const lastSequence = result.items.at(-1)?.sequence;
+            const advanced =
+              lastSequence !== undefined && (cursor === undefined || lastSequence > cursor);
             if (lastSequence !== undefined) cursor = lastSequence;
-            if (!result.hasMore || result.items.length === 0) break;
+            if (!result.hasMore || !advanced) break;
           }
           if (requestVersion !== requestVersionRef.current) return;
           cursorRef.current = cursor;
@@ -159,7 +188,7 @@ export function useWorkflowRunArtifactData(options: {
           return;
         }
         const message = caught instanceof Error ? caught.message : String(caught);
-        logger.warn("[workflow-artifacts] Failed to load board items", {
+        logger.warn("[workflow-artifacts] 读取看板条目失败", {
           artifactId,
           error: message,
           runId,
@@ -171,11 +200,10 @@ export function useWorkflowRunArtifactData(options: {
         pendingRef.current = false;
       }
     },
-    [artifactId, enabled, runId, sessionId, workflowRunArtifactData],
+    [artifactId, enabled, fields, runId, sessionId, workflowRunArtifactData],
   );
 
-  // Artifact/run switch or disabled->enabled: clear first, then refetch in full. Another
-  // board's points must never remain on this canvas.
+  // 切产物 / 切 run / 从关到开：先清空再整份重取。别的看板的点绝不能留在这块画布上。
   useEffect(() => {
     requestVersionRef.current += 1;
     cursorRef.current = undefined;
@@ -185,17 +213,15 @@ export function useWorkflowRunArtifactData(options: {
     void drain("replace");
   }, [drain, enabled]);
 
-  // Incremental: an `itemCount` rise triggers the append.
+  // 增量：`itemCount` 抬升即续拉。
   //
-  // The gate deliberately has no "skip while the local list is empty" rule: a board declared at
-  // the top of the script and fed by later reports is empty at mount, and gating on emptiness
-  // would prevent its first point from ever rendering. The duplicate trigger at mount is absorbed
-  // by the single-flight gate (the refetch effect runs first and holds it).
+  // 门里**没有**「本地一条都还没有就不拉」这一条：一个在脚本顶部声明、之后每轮才被 report
+  // 喂数据的看板，挂载那一刻本地就是空的，用空判据挡下来等于让它永远画不出第一个点。
+  // 挂载时那次重复触发由单飞门吞掉（重取 effect 先跑，已经占住了门）。
   const itemCount = options.itemCount ?? 0;
   useEffect(() => {
     if (!enabled) return;
-    // First frame of this round: the full refetch is running; record the baseline only. Effect
-    // declaration order guarantees the refetch effect runs first.
+    // 本轮的第一帧：整份重取正在跑，这里只记基线。effect 的声明顺序保证重取那一个先跑。
     if (lastDrainedCountRef.current === undefined) {
       lastDrainedCountRef.current = itemCount;
       return;

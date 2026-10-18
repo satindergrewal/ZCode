@@ -15,7 +15,7 @@ export function isZCodeCuaToolName(value: string | null | undefined): boolean {
   return normalized === "computer-use" || normalized.includes("computer-use");
 }
 
-function didReturnFromCuaPermissionSettings(
+export function didReturnFromCuaPermissionSettings(
   result: CuaAccessibilitySettingsResult | null | undefined,
 ): boolean {
   // main sets this only once every staged pane finished and the ZCode app regained focus. Renderer

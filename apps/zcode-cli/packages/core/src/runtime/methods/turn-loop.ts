@@ -1,3 +1,5 @@
+import { getTurnTools } from "./turn-tool-visibility.js";
+import { appendRuntimeAgentListing } from "../helpers/agent-listing.js";
 import { beginLocalTurnPreparation } from "@zcode/contracts";
 import {
   CompactPhase,
@@ -23,17 +25,16 @@ import {
 import type { AgentRuntimeInternal } from "../internal.js";
 import { runModelBackedTurnStep } from "./turn-model-step.js";
 import {
-  AUTOMATION_MUTATION_TOOL_NAMES,
   evaluateRapidRefill,
-  isAutomationMutationRestrictedTurn,
-  isOffPeakCreateRestrictedTurn,
   MAX_CONSECUTIVE_RAPID_REFILLS,
-  OFF_PEAK_MUTATION_TOOL_NAMES,
   RAPID_REFILL_TOOL_TURN_THRESHOLD,
   recordCompactHistoryRound,
   recordCompactSuccess,
 } from "./turn-loop-state.js";
 import type { RegularTurnLoopState } from "./turn-loop-state.js";
+import { consumeSettledProjectMemoryRecall } from "../helpers/project-memory-recall.js";
+import { consumePendingProjectMemoryUpdate } from "../helpers/project-memory-dream.js";
+import { ACTIVE_PROJECT_MEMORY_RETRIEVAL_BRANCH } from "../../memory/project-memory-retrieval-branch.js";
 import {
   appendTurnRequestEntries,
   commitTurnRequestEntries,
@@ -47,8 +48,8 @@ export async function runRegularTurnLoop(
   while (true) {
     throwIfTurnAborted(state.turnAbortSignal);
     const outputTokenRecoveryActive = state.turnRequestState.outputTokenContinuationCount > 0;
-    // Only full tool-result batches set this one-shot diagnostic; plain queues are not
-    // consumed at roundtrip start; future stays out of this product turn.
+    // guide 只允许由完整 tool result batch 设置这个一次性诊断；普通 queue 不在
+    // model roundtrip 起点消费，避免把未来 turn 错并入当前 product turn。
     const drainedSteerForNextRequest = state.drainedSteerForNextRequest;
     state.drainedSteerForNextRequest = undefined;
 
@@ -62,6 +63,15 @@ export async function runRegularTurnLoop(
         state.repeatedToolCallSignature = undefined;
         state.repeatedToolCallStreakCount = 0;
       }
+    }
+
+    if (state.completedRealToolResultBatch && !outputTokenRecoveryActive) {
+      state.completedRealToolResultBatch = false;
+      const recallEntry = consumeSettledProjectMemoryRecall(
+        this,
+        ACTIVE_PROJECT_MEMORY_RETRIEVAL_BRANCH,
+      );
+      appendTurnRequestEntries(state.turnRequestState, recallEntry ? [recallEntry] : []);
     }
 
     const compactPhase =
@@ -80,6 +90,7 @@ export async function runRegularTurnLoop(
       state.events,
       state.turnAbortSignal,
       {
+        getAgentListingTools: () => getTurnTools(this, state),
         compactReason: CompactReason.ContextLimit,
         modelStepIndex: state.modelStepCount,
         phase: compactPhase,
@@ -104,19 +115,16 @@ export async function runRegularTurnLoop(
 
     const finishMcp = beginLocalTurnPreparation(state.turnTraceContext, "mcp");
     await this.initializeMcp(state.turnTraceContext);
+    // tools/list_changed 只在回合开始前生效。
+    await this.refreshMcpToolsIfChanged(state.turnTraceContext);
     finishMcp();
     throwIfTurnAborted(state.turnAbortSignal);
     const finishTools = beginLocalTurnPreparation(state.turnTraceContext, "tools");
-    const turnDisallowedTools = buildTurnDisallowedTools(state);
-    // Automation onto a live session or retry-restore may lose entry metadata,
-    // yet queryId stays automation-*; the provider boundary hard-filters
-    // automation write tools by queryId, or the model mutates task definitions first.
-    const tools = state.automationCreateLimitReached
-      ? []
-      : turnDisallowedTools
-        ? this.getTools(state.model).filter((tool) => !turnDisallowedTools.has(tool.name))
-        : this.getTools(state.model);
+    const tools = getTurnTools(this, state);
     finishTools();
+    if (!outputTokenRecoveryActive) {
+      await appendRuntimeAgentListing(this, state.turnRequestState, tools, state.turnTraceContext);
+    }
     if (!outputTokenRecoveryActive && this.needsPlanModeExitReminder) {
       this.needsPlanModeExitReminder = false;
       commitTurnRequestEntries(this, state.turnRequestState, [
@@ -159,16 +167,23 @@ export async function runRegularTurnLoop(
         ? buildRuntimeOutputStyleReminderBody(state.turnOutputStyle)
         : null;
     if (outputStyleReminderBody) {
-      // output_style is a provider-visible current-turn attachment;
-      // it enters memory history for later deltas, never the session.
+      // output_style 是 provider-visible 的当前 turn runtime attachment，
+      // 需要进入内存历史参与后续 request 的增量轨迹；但不把它落 session。
       commitTurnRequestEntries(this, state.turnRequestState, [
         systemReminderAttachmentEntry("output_style", outputStyleReminderBody),
       ]);
     }
+    // （2026-09-12）：原"回合开始注入 plugin_ui_state reminder"已删除，插件给模型的信息
+    // 一律走 ui/update-model-context。
     const providerEntries = [...state.turnRequestState.entries];
-    const requestEntries = providerEntries;
-    // The user-ordering projection moves the final latest-user slot;
-    // set cache-control after it, or raw synthetic entries take the anchor.
+    // Dream 可能在同一 turn 的首个模型请求期间完成；每次 attachment collection 都检查，
+    // 才能把一次性更新放进紧随其后的模型请求，而不是延迟到下一次用户输入。
+    const memoryUpdate = outputTokenRecoveryActive
+      ? undefined
+      : consumePendingProjectMemoryUpdate(this);
+    const requestEntries = memoryUpdate ? [...providerEntries, memoryUpdate] : providerEntries;
+    // 修复原因：provider-visible user ordering projection 会改变最终 latest user 落点，
+    // cache-control 必须在 projection 后统一设置，避免 raw synthetic entry 抢占缓存锚点。
     const providerProjection = buildRuntimeProviderRequestMessages(this, {
       entries: requestEntries,
       applyCacheControl: true,
@@ -191,8 +206,8 @@ export async function runRegularTurnLoop(
       ),
     );
 
-    // Production needs the crossed-provider fact; log request metadata only,
-    // no prompts, bodies or chunks — privacy and volume.
+    // 生产包需要知道 Turn 是否已经跨过 provider 边界；这里只记录请求元数据，
+    // 不记录 prompt、消息内容或 streaming chunk，避免泄露内容并控制日志量。
     this.logger?.info("Model request started", {
       ...traceContextToLogContext(state.turnTraceContext),
       event: "model.request.started",
@@ -216,23 +231,4 @@ export async function runRegularTurnLoop(
       break;
     }
   }
-}
-
-function buildTurnDisallowedTools(state: RegularTurnLoopState): Set<string> | null {
-  const tools = new Set(state.toolDisallowlist ?? []);
-  if (isAutomationMutationRestrictedTurn(state)) {
-    // A cron run executes the task prompt; it manages no definition.
-    // CronList stays for reads; mutations hide at the provider boundary.
-    for (const toolName of AUTOMATION_MUTATION_TOOL_NAMES) {
-      tools.add(toolName);
-    }
-  }
-  if (isOffPeakCreateRestrictedTurn(state)) {
-    // Off-peak runs create no off-peak tasks (no recursion); OffPeakList stays read-only.
-    // Automation runs skip this branch — cron turns allow OffPeakCreate.
-    for (const toolName of OFF_PEAK_MUTATION_TOOL_NAMES) {
-      tools.add(toolName);
-    }
-  }
-  return tools.size > 0 ? tools : null;
 }

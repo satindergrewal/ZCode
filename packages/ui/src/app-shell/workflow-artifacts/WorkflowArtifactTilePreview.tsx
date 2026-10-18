@@ -6,6 +6,7 @@ import {
   isArtifactPresetKind,
 } from "@/app-shell/workflow-artifacts/artifactPresentation.js";
 import { ArtifactPresetBody } from "@/app-shell/workflow-artifacts/ArtifactPresetBody.js";
+import { artifactPresetFieldPaths } from "@/app-shell/workflow-artifacts/presets/spec.js";
 import { cn } from "@/components/lib/utils.js";
 import {
   ArtifactSheetGlyph,
@@ -17,29 +18,25 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import type { Theme } from "@/useTheme.js";
 
 /**
- * The artifact tile's preview area (shared with the side-panel gallery): a thumbnail of the
- * artifact **itself**.
+ * 产物瓦片的预览区（侧板画廊同用）：产物**本身**的缩略。
  *
- * - markdown / plain text: the document head laid out at 2x width then `scale(0.5)` - a thumbnail
- *   of the content, not a smaller UI font;
- * - CSV: a mini table of the first rows;
- * - image: the render itself;
- * - chart / table / metrics / board: `ArtifactPresetBody` compact, centered in the frame at natural
- *   size, growing live with report entries;
- * - everything else (PDF / binary / oversized): page glyph + extension badge.
+ * - markdown / 纯文本：文档开头按 2× 宽排版再 `scale(0.5)`——是内容的缩略，不是把界面字号调小；
+ * - CSV：前几行的迷你表格；
+ * - 图片：渲染本身；
+ * - chart / table / metrics / board：`ArtifactPresetBody` compact，按自然尺寸在框里居中，随 report
+ *   条目实时长；
+ * - 其余（PDF / 二进制 / 超大文件）：纸页字形 + 扩展名徽字。
  *
- * Both frames share one tier and one treatment: the deliverable row frame (160 x 100) and the side
- * panel gallery tile (130-180px columns). No smaller tier - a preview is either legible or not
- * drawn.
+ * 两处框同一档、同一画法：交付物行的框（160 × 100）与侧板画廊的瓦片框（130–180px 一列）。没有更小
+ * 的档——预览要么读得清，要么不画。
  *
- * Until bytes arrive the whole block stays blank (no skeleton flash, no glyph swapped out later).
- * Bytes stream through the same chunked reader as the artifact tab (journal-backed, cold restore
- * included); beyond the cap nothing is read - the card is part of the transcript and must not pull
- * the whole chain for a 20 MiB artifact.
+ * 字节还没到时整块留空白（不闪骨架屏，也不先画一张字形再换掉）。字节走与产物 tab 同一条
+ * 分块读取（journal-backed，冷恢复也在）；上限之外不读——卡是转录的一部分，不该为一份 20 MiB
+ * 的产物拉整条链路。
  */
 const TEXT_PREVIEW_MAX_BYTES = 256 * 1024;
 const IMAGE_PREVIEW_MAX_BYTES = 4 * 1024 * 1024;
-/** Document thumbnails decode at most this many leading bytes: one screen of thumbnail holds no more; decoding all is wasted work. */
+/** 文档缩略只解码开头这么多字节：一屏缩略装不下更多，整份解码是白算。 */
 const TEXT_DECODE_BYTES = 8 * 1024;
 const TEXT_PREVIEW_CHARS = 1_600;
 const CSV_PREVIEW_ROWS = 6;
@@ -48,7 +45,7 @@ const CSV_CELL_MAX_CHARS = 28;
 
 type PreviewMode = "markdown" | "csv" | "text" | "image";
 
-function previewModeFor(artifact: {
+export function previewModeFor(artifact: {
   kind: WorkflowCompletionArtifact["kind"];
   contentType?: string;
   bytes?: number;
@@ -67,8 +64,8 @@ function previewModeFor(artifact: {
   return undefined;
 }
 
-/** Minimal CSV reader: commas and paired quotes only, enough for a thumbnail; not a parser. */
-function csvPreviewRows(text: string): string[][] {
+/** 最小的 CSV 读法：只认逗号与成对引号，够画一张缩略；不是解析器。 */
+export function csvPreviewRows(text: string): string[][] {
   const rows: string[][] = [];
   for (const line of text.split(/\r?\n/u)) {
     if (line.trim().length === 0) continue;
@@ -102,12 +99,12 @@ function decodeHead(bytes: Uint8Array): string {
     .slice(0, TEXT_PREVIEW_CHARS);
 }
 
-/** Blank placeholder: bytes in flight. Tests and callers use it to distinguish not-yet from unrenderable. */
+/** 空白占位：字节在路上。测试与调用方据它区分「还没到」与「画不了」。 */
 function Pending() {
   return <span className="absolute inset-0" data-testid="workflow-artifact-preview-pending" />;
 }
 
-/** Document thumbnails fade into the panel color at the bottom: a truncated document reads as more below, not cut off. Boards and images skip it. */
+/** 文档缩略底部渐隐到面板色：截断的文档看起来是「还有」，不是「断了」。看板与图片不要它。 */
 function Fade() {
   return (
     <span
@@ -139,12 +136,21 @@ export function WorkflowArtifactTilePreview({
     version: artifact.version ?? 1,
     enabled: mode !== undefined,
   });
+  // 看板只让 CLI 取 spec 点名的字段；spec 还没到或画不了时不取数——预览此时本来也画不出图。
+  const fields = useMemo(
+    () =>
+      isArtifactPresetKind(artifact.kind)
+        ? artifactPresetFieldPaths(artifact.kind, artifact.spec)
+        : undefined,
+    [artifact.kind, artifact.spec],
+  );
   const dataState = useWorkflowRunArtifactData({
     sessionId,
     runId,
     artifactId: artifact.id,
     ...(artifact.itemCount === undefined ? {} : { itemCount: artifact.itemCount }),
-    enabled: preset,
+    enabled: fields !== undefined,
+    ...(fields === undefined ? {} : { fields }),
   });
   const labels = useMemo(
     () => buildPresetLabels((descriptor, values) => intl.formatMessage(descriptor, values)),
@@ -166,7 +172,7 @@ export function WorkflowArtifactTilePreview({
   const glyph = <ArtifactSheetGlyph {...(badge === undefined ? {} : { badge })} />;
 
   if (preset) {
-    // The spec only arrives via the journal; until then stay quietly blank, with no cannot-render flash. Speak only when it arrived broken.
+    // spec 只有 journal 带得回来；还没到时安静留白，不闪一句「无法渲染」。到了但坏了才说。
     if (artifact.spec === undefined) return <Pending />;
     return (
       <div
@@ -250,7 +256,7 @@ export function WorkflowArtifactTilePreview({
         data-testid="workflow-artifact-preview-body"
       >
         {mode === "markdown" ? (
-          // markdown must be passed the **theme** (the renderer picks code-block colors from it).
+          // markdown 必须**传 theme**（渲染器按 theme 选代码块配色）。
           <MessageResponse className="w-full min-w-0 break-words text-foreground" theme={theme}>
             {text ?? ""}
           </MessageResponse>

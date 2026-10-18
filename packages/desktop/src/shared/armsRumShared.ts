@@ -36,7 +36,7 @@ export function parseArmsViewName(url: string): string {
 /** Renderer Browser SDK init config (endpoint/env/version aligned with main). */
 export function buildArmsBrowserInitConfig(runtimeEnv: ZCodeRuntimeEnv) {
   return {
-    enable: true,
+    enable: ZCODE_ARMS_RUM_ENDPOINT !== "",
     version: ZCODE_VERSION,
     endpoint: ZCODE_ARMS_RUM_ENDPOINT,
     env: mapZCodeEnvToArmsRumEnv(runtimeEnv),

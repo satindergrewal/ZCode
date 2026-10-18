@@ -1,10 +1,10 @@
 import { access, cp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, posix } from "node:path";
 
 export const DEV_ELECTRON_PROTOCOL_SCHEME = "zcode";
 export const DEV_ELECTRON_APP_NAME = "ZCode Dev";
 export const DEV_ELECTRON_APP_BUNDLE_ID = "dev.zcode.app.development";
-// Copy layout version; see the stamp notes in prepareDevElectronAppBundle.
+// 副本布局版本，见 prepareDevElectronAppBundle 中的指纹说明。
 export const DEV_ELECTRON_BUNDLE_FORMAT = 2;
 
 function escapeXml(value) {
@@ -37,9 +37,9 @@ function appendProtocolDeclaration(plist) {
 }
 
 /**
- * Writes product identity and the zcode URL scheme into the macOS local dev runtime.
- * Raw Electron's Info.plist has no CFBundleURLTypes, so the OS hands zcode to com.github.Electron;
- * only the launch copy is modified, leaving node_modules' Electron untouched.
+ * 为 macOS 本地 Dev runtime 写入产品身份和 zcode URL scheme。
+ * raw Electron 的 Info.plist 没有 CFBundleURLTypes，系统只能把 zcode 交给
+ * com.github.Electron；这里仅修改启动副本，避免污染 node_modules 中的 Electron。
  */
 export function patchDevElectronInfoPlist(plist) {
   let patched = replacePlistString(plist, "CFBundleDisplayName", DEV_ELECTRON_APP_NAME);
@@ -49,7 +49,7 @@ export function patchDevElectronInfoPlist(plist) {
 }
 
 export function resolveDevElectronAppBundlePath({ runtimeRoot, electronVersion, arch }) {
-  return join(runtimeRoot, `${electronVersion}-${arch}`, `${DEV_ELECTRON_APP_NAME}.app`);
+  return posix.join(runtimeRoot, `${electronVersion}-${arch}`, `${DEV_ELECTRON_APP_NAME}.app`);
 }
 
 export async function prepareDevElectronAppBundle({
@@ -59,20 +59,20 @@ export async function prepareDevElectronAppBundle({
   arch,
 }) {
   const appPath = resolveDevElectronAppBundlePath({ runtimeRoot, electronVersion, arch });
-  const infoPlistPath = join(appPath, "Contents", "Info.plist");
-  const sourceExecutablePath = join(electronAppPath, "Contents", "MacOS", "Electron");
-  const existingExecutablePath = join(appPath, "Contents", "MacOS", "Electron");
-  // Source-binary identity stamp, kept outside the .app: putting it in Contents would pollute the bundle layout.
-  const sourceStampPath = join(dirname(appPath), ".zcode-dev-electron-source.json");
-  // This previously read both Electron executables (~100MB+ each) fully into memory for an equals check,
-  // paying a full disk read per dev start. The source binary is an npm package extraction, so its size+mtime
-  // stamp decides recopying; semantically equivalent at constant cost.
+  const infoPlistPath = posix.join(appPath, "Contents", "Info.plist");
+  const sourceExecutablePath = posix.join(electronAppPath, "Contents", "MacOS", "Electron");
+  const existingExecutablePath = posix.join(appPath, "Contents", "MacOS", "Electron");
+  // 源二进制的身份指纹，写在 .app 外面：放进 Contents 会污染 bundle 结构。
+  const sourceStampPath = posix.join(dirname(appPath), ".zcode-dev-electron-source.json");
+  // 修复原因：这里原本把两个 Electron 可执行文件（各 ~100MB+）整份读进内存做 equals，
+  // 每次 dev 启动都要付一次全量读盘。源二进制由 npm 包解压产出，记录它的 size+mtime
+  // 即可判定是否需要重拷，语义等价而开销是常数级。
   //
-  // Do not compare source vs copy mtime directly: cp rounds mtimes to milliseconds even with preserveTimestamps,
-  // losing sub-ms precision, so the two sides never compare equal and the cache would be useless.
+  // 不直接比较「源与副本」的 mtime：cp 即使开 preserveTimestamps 也会把 mtime
+  // 四舍五入到毫秒，源的亚毫秒精度必然丢失，两边永远不相等 —— 那等于没有缓存。
   //
-  // The format field is the copy's layout version; bump it on layout fixes (e.g. symlink policy changes)
-  // so an existing stale copy is recopied even when the source binary is unchanged.
+  // format 字段记录副本的布局版本：布局修复（例如符号链接策略变更）时递增，
+  // 让已存在的旧副本在源二进制没变的情况下也能被判定为需要重拷。
   const sourceStats = await stat(sourceExecutablePath).catch(() => undefined);
   const sourceStamp = sourceStats
     ? JSON.stringify({
@@ -92,28 +92,28 @@ export async function prepareDevElectronAppBundle({
       sourceStamp === undefined ||
       existingStamp !== sourceStamp;
   } catch {
-    // Dir missing or not a bundle produced by this tool: fall through to a full copy.
+    // 目录不存在、来源不是本工具生成的 bundle，下面走一次完整复制。
   }
 
   if (needsCopy) {
-    // Delete only this tool's ignored runtime dir; never touch node_modules or user data.
+    // 只删除本次生成的 ignored runtime 目录，绝不触碰 node_modules 或用户数据。
     await rm(appPath, { recursive: true, force: true });
     await rm(sourceStampPath, { force: true });
     await mkdir(dirname(appPath), { recursive: true });
-    // verbatimSymlinks is required: Electron Framework.framework is organized by relative symlinks
-    // (Resources -> Versions/Current/Resources, Current -> A). fs.cp by default rewrites
-    // relative links to absolute node_modules paths; the main process still reads, but sandboxed
-    // subprocesses (GPU/network) may only read this bundle, so following links out gets blocked as
-    // icudtl.dat-not-found-in-bundle, then GPU-process-is-not-usable goodbye.
+    // verbatimSymlinks 必须开：Electron Framework.framework 内部靠相对符号链接
+    // （Resources -> Versions/Current/Resources、Current -> A）组织。fs.cp 默认会把
+    // 相对链接改写成指向 node_modules 的绝对路径，主进程仍能读到，但 GPU / network
+    // 等 macOS 沙箱子进程只允许读本 bundle 目录，顺链接出去会被拦，表现为
+    // "icudtl.dat not found in bundle" 然后 "GPU process isn't usable. Goodbye."。
     await cp(electronAppPath, appPath, { recursive: true, verbatimSymlinks: true });
     const patchedInfoPlist = patchDevElectronInfoPlist(await readFile(infoPlistPath, "utf8"));
     await writeFile(infoPlistPath, patchedInfoPlist, "utf8");
-    // Write the stamp last: on mid-copy failure the next run still sees a recopy as needed, never a half-made cache.
+    // 指纹最后写：中途失败时下次仍会判定为需要重拷，不会留下半成品缓存。
     if (sourceStamp !== undefined) await writeFile(sourceStampPath, sourceStamp, "utf8");
   }
 
   return {
     appPath,
-    executablePath: join(appPath, "Contents", "MacOS", "Electron"),
+    executablePath: posix.join(appPath, "Contents", "MacOS", "Electron"),
   };
 }

@@ -149,7 +149,7 @@ export function WorkflowFeedbackContent({
  * provides the position); in-flight rows from the 2nd draft on. Run cards, launch summaries and the
  * confirmation dialog bypass this and never show an ordinal.
  */
-function workflowDraftOrdinalShown(
+export function workflowDraftOrdinalShown(
   draft: WorkflowDraftPosition | undefined,
   phase: { compileErrors: boolean; inFlight: boolean },
 ): number | undefined {
@@ -158,7 +158,7 @@ function workflowDraftOrdinalShown(
   return phase.inFlight && draft.ordinal >= 2 ? draft.ordinal : undefined;
 }
 
-function WorkflowDraftOrdinal({ ordinal }: { ordinal: number }) {
+export function WorkflowDraftOrdinal({ ordinal }: { ordinal: number }) {
   const { intl } = useZCodeIntl();
   return (
     <span className="shrink-0 whitespace-nowrap tabular-nums" data-testid="workflow-draft-ordinal">
@@ -175,7 +175,7 @@ function WorkflowDraftOrdinal({ ordinal }: { ordinal: number }) {
  * owed (warning color on the latest draft, fading to neutral once a newer draft exists).
  * `wf-lamp` transitions the color change instead of jumping.
  */
-function WorkflowDraftLamp({ superseded }: { superseded: boolean }) {
+export function WorkflowDraftLamp({ superseded }: { superseded: boolean }) {
   return (
     <span
       aria-hidden

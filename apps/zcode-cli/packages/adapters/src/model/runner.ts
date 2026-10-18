@@ -1,3 +1,4 @@
+import type { ModelRequestSecurityState } from "./request-security.js";
 // ============================================================
 // Vercel AI SDK model runner
 // ============================================================
@@ -31,6 +32,7 @@ import {
   type AiSdkModelRetryOptions,
   type ResolvedAiSdkModelRetryOptions,
 } from "./retry-policy.js";
+import { resolveRetryOptionsForBudget } from "./retry-budget.js";
 import { DEFAULT_MODEL_STREAM_IDLE_TIMEOUT_MS } from "./stream-idle-timeout.js";
 import { runGenerateText } from "./runner-generate.js";
 import { runStreamText } from "./runner-stream.js";
@@ -42,6 +44,7 @@ import {
   type ResolvedAiSdkModel,
 } from "./runner-runtime.js";
 import { createModel, type ModelExecutionRequest } from "./model.js";
+import { refreshOffPeakRequestAuth } from "./off-peak-request-auth.js";
 
 export type { AiSdkModelRetryOptions } from "./retry-policy.js";
 export type {
@@ -56,6 +59,8 @@ export { normalizeUsage, toModelStreamEvent } from "./runner-normalization.js";
 
 export interface AiSdkModelAdapterOptions {
   defaultHeaders?: AiSdkModelExecutionConfig["defaultHeaders"];
+  requestSecurityState?: ModelRequestSecurityState;
+  endpointRoutingPort?: import("@zcode/contracts").ProviderEndpointRoutingPort;
   network?: AiSdkNetworkConfig;
   runtime?: AiSdkModelRuntime;
   env?: EnvRecord;
@@ -92,10 +97,16 @@ export class AiSdkModelAdapter {
     this.execution = new AiSdkModelExecution(
       {
         defaultHeaders: options.defaultHeaders,
+        ...(options.endpointRoutingPort
+          ? { endpointRoutingPort: options.endpointRoutingPort }
+          : {}),
         ...(options.network ? { network: options.network } : {}),
         ...(options.env ? { env: options.env } : {}),
       },
       {
+        ...(options.requestSecurityState
+          ? { requestSecurityState: options.requestSecurityState }
+          : {}),
         ...(options.logger ? { logger: options.logger } : {}),
       },
     );
@@ -121,8 +132,8 @@ export class AiSdkModelAdapter {
     }
     this.statusSink = {
       async publish(event) {
-        // Sinks run independently: one failure must not affect the others
-        // nor block the original call chain.
+        // 多个 sink 必须独立执行：任一 sink 失败不得连带影响其他 sink，
+        // 也不能阻塞原有调用链。
         const results = await Promise.allSettled([
           Promise.resolve().then(() => current.publish(event)),
           Promise.resolve().then(() => sink.publish(event)),
@@ -161,12 +172,18 @@ export class AiSdkModelAdapter {
       const shouldAttachReasoningTelemetry = request.options.reasoningLevel !== undefined;
       const selectedReasoningLevel = request.options.reasoningLevel;
       const requestAuthDependency = options.requestDependencies?.requestAuth;
+      // Bug 根因：加速卡（highspeed）与 Off-Peak 同为 Coding Plan 派生模式，本轮动态鉴权
+      // （zcode JWT + Coding Plan 双 JWT + X-Highspeed-Card-ID，见 docs/highspeed/highspeed-card-spec.md
+      // §2.2）经 modelExecution.requestAuth 下发到执行作用域 Source。若门禁只认 off-peak，highspeed
+      // 会落到下面的账号 runtime-header 刷新分支，把整包 requestAuth（含卡 ID）丢弃，加速请求因缺卡 ID/
+      // 错误鉴权被 /api/v1/highspeed 网关判 401。两种派生免签模式必须同样消费执行作用域 Source。
       const requestAuthRequired =
         options.providerConfig.access.type === "zhipu-account" &&
-        options.providerConfig.access.mode === "off-peak";
-      // The per-call runtime header port serves only account Models with full Account Access;
-      // API-key Models consuming it would push static creds to Host refresh and fail pre-request.
-      // Off-Peak Models always use the execution-scope source injected at creation, never the account service.
+        (options.providerConfig.access.mode === "off-peak" ||
+          options.providerConfig.access.mode === "highspeed");
+      // 调用级 runtime header Port 只服务绑定完整 Account Access 的账号型 Model；
+      // 普通 API-key Model 若也消费该 Port，会把静态鉴权误送到 Host 刷新并在请求前失败。
+      // 派生模式保留执行作用域票据/卡身份；Off-Peak 的 PAT 仍逐请求向原账号 owner 刷新。
       const refreshRuntimeHeadersBeforeAttempt = requestAuthRequired
         ? async (input: ModelRequestAuthSourceInput) => {
             const requestAuth = await requestAuthDependency?.source?.resolve(input);
@@ -176,7 +193,17 @@ export class AiSdkModelAdapter {
                 `Model request auth is unavailable: ${resolved.providerId}/${resolved.modelId}`,
               );
             }
-            return { headersApplied: true, requestAuth };
+            const refreshedAuth =
+              options.providerConfig.access.type === "zhipu-account" &&
+              options.providerConfig.access.mode === "off-peak"
+                ? await refreshOffPeakRequestAuth({
+                    auth: requestAuth,
+                    input,
+                    accountAccess: options.providerConfig.access,
+                    refresh: contextRefreshRuntimeHeadersBeforeAttempt,
+                  })
+                : requestAuth;
+            return { headersApplied: true, requestAuth: refreshedAuth };
           }
         : options.providerConfig.access.type === "zhipu-account"
           ? (contextRefreshRuntimeHeadersBeforeAttempt ??
@@ -200,8 +227,8 @@ export class AiSdkModelAdapter {
                 ...invocationContext.modelCall,
                 reasoning: {
                   ...invocationContext.modelCall?.reasoning,
-                  // Guessing enabled/disabled from tier names like none/off made Telemetry
-                  // treat provider dialect as unified semantics. Record only the public tier the request chose.
+                  // 过去按 none/off 等档位名称猜测 enabled/disabled，导致 Telemetry
+                  // 把 Provider 方言当成统一语义。这里只记录请求实际选择的公开档位。
                   ...(selectedReasoningLevel ? { requestedLevel: selectedReasoningLevel } : {}),
                 },
               },
@@ -299,7 +326,7 @@ export class AiSdkModelAdapter {
       request: projectedRequest,
       resolveModel,
       resolved,
-      retry: this.retry,
+      retry: resolveRetryOptionsForBudget(this.retry, projectedRequest.modelRetryBudget),
       runtime: this.runtime,
       statusSink: this.statusSink,
       modelIoFullRetentionEnabled: this.modelIoFullRetentionEnabled,
@@ -319,7 +346,8 @@ export class AiSdkModelAdapter {
       request: projectedRequest,
       resolveModel,
       resolved,
-      retry: this.retry,
+      // single-attempt 预算（带 selectionFallback 的执行作用域句柄）把 maxAttempts 收敛为 1。
+      retry: resolveRetryOptionsForBudget(this.retry, projectedRequest.modelRetryBudget),
       runtime: this.runtime,
       statusSink: this.statusSink,
       streamIdleTimeoutMs: this.streamIdleTimeoutMs,
@@ -361,9 +389,9 @@ function projectRequestHistory(
 ): AiSdkModelTextRequest {
   if (resolved.providerKind !== "anthropic") return request;
 
-  // Structural normalization used to run in the serializer every physical request passes; signature-fix retries
-  // thereby re-deleted the assistant placeholder restored the turn before and merged users. The logical entry projects once;
-  // later attempts reuse or derive from that request-local history.
+  // 结构归一化过去位于每次物理请求都会经过的 serializer，签名修复重试
+  // 因而会再次删除上一轮刚补出的 assistant 占位并合并 user。逻辑请求入口只投影一次，
+  // 后续 attempt 只能复用或从这份 request-local history 派生。
   const messages = normalizeReasoningHistory(request.messages, {
     providerId: resolved.providerId,
     modelId: resolved.modelId,

@@ -41,6 +41,12 @@ interface WorkflowRunArtifactBytesState {
   totalBytes: number | null;
   loading: boolean;
   error: string | null;
+  /**
+   * `bytes` 属于哪一版。换版本后、effect 清空旧状态之前有一帧 `version` 已是新值而 `bytes`
+   * 还是旧版的；查看器闪一帧无妨，但「作为文件打开」的副本只写一次，拿错字节就永久错了——
+   * 这类消费方必须核对它，而不是信任「当前渲染的 version」。
+   */
+  bytesVersion: number | null;
 }
 
 function emptyState(): WorkflowRunArtifactBytesState {
@@ -52,6 +58,7 @@ function emptyState(): WorkflowRunArtifactBytesState {
     totalBytes: null,
     loading: false,
     error: null,
+    bytesVersion: null,
   };
 }
 
@@ -165,6 +172,7 @@ export function useWorkflowRunArtifactBytes(options: {
           totalBytes,
           loading: false,
           error: null,
+          bytesVersion: version,
         });
       } catch (caught) {
         if (!alive) return;

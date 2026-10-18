@@ -1,35 +1,37 @@
-// Virtual-scroll core: the v4 timeline row-height cache (pure data, no DOM/React).
+// 虚拟滚动核心：v4 timeline 行高缓存（纯数据结构，无 DOM/React 依赖）。
 //
-// Why: the @tanstack/react-virtual measurementsCache keys by itemKey and survives window unmount/remount;
-// but streaming rows that keep growing lose everything when the virtualizer resets
-// (rows array rebuilt, StrictMode remount, error-to-timeline switch): caches fall back to the fixed
-// estimateSize, jumping the scrollbar and the bottom anchor. This adds a per-component-instance persistent
-// cache keyed by the stable render-unit key (turnId), keeping measured heights across row remounts.
+// 为什么需要它：@tanstack/react-virtual 自身的 measurementsCache 按 itemKey 缓存，
+// 行在窗口内卸载/重挂不丢测量；但流式行高度持续增长时，virtualizer 重置
+// （rows 数组重建、组件 StrictMode 重挂、error 态 ↔ timeline 切换）会把缓存清回
+// estimateSize 的固定值，导致滚动条跳动与底部锚定抖动。这里以 render unit 的稳定
+// key（turnId）为键做一层组件实例内持久缓存，保证「行卸载重挂保测高缓存」。
 //
 
-/** Fallback estimate for unmeasured rows (same as the legacy ConversationTimeline ROW_ESTIMATE_PX). */
+/** 未测量行的兜底估计高度（与旧 ConversationTimeline 的 ROW_ESTIMATE_PX 一致）。 */
 export const DEFAULT_ROW_HEIGHT_ESTIMATE_PX = 72;
 
-/** Cache cap: bounds memory on very long sessions; evict the least-recently-written row (write order ~ row order, oldest first). */
-const MAX_ROW_HEIGHT_CACHE_ENTRIES = 4000;
+/** 缓存上限：超长会话防内存膨胀；淘汰最久未写入的行（写入序 ≈ 行序，旧行先淘汰）。 */
+export const MAX_ROW_HEIGHT_CACHE_ENTRIES = 4000;
 
-type TimelineRowHeightCacheKey = string | number;
+export type TimelineRowHeightCacheKey = string | number;
 
 export class TimelineRowHeightCache {
   private readonly sizes = new Map<TimelineRowHeightCacheKey, number>();
 
-  constructor(private readonly maxEntries: number = MAX_ROW_HEIGHT_CACHE_ENTRIES) {}
+  constructor(
+    private readonly maxEntries: number = MAX_ROW_HEIGHT_CACHE_ENTRIES,
+  ) {}
 
   get size(): number {
     return this.sizes.size;
   }
 
-  /** Records one real measurement. Rewrites refresh the eviction order (active rows survive). */
+  /** 记录一次真实测量。重复写入会刷新淘汰顺序（活跃行不被淘汰）。 */
   set(key: TimelineRowHeightCacheKey, heightPx: number): void {
     if (!Number.isFinite(heightPx) || heightPx <= 0) {
       return;
     }
-    // Map iteration order = insertion order; delete-then-set moves the row to the newest end.
+    // Map 迭代序 = 插入序；先删再插把该行移到「最新」端。
     this.sizes.delete(key);
     this.sizes.set(key, heightPx);
     while (this.sizes.size > this.maxEntries) {
@@ -43,7 +45,7 @@ export class TimelineRowHeightCache {
     return this.sizes.get(key);
   }
 
-  /** The estimateSize entry: measured value when present, estimate otherwise. */
+  /** estimateSize 入口：有测量用测量，无测量回落估计值。 */
   estimate(
     key: TimelineRowHeightCacheKey | undefined,
     fallbackPx: number = DEFAULT_ROW_HEIGHT_ESTIMATE_PX,
@@ -52,7 +54,7 @@ export class TimelineRowHeightCache {
     return this.sizes.get(key) ?? fallbackPx;
   }
 
-  /** Whole-map reset on session switch (turnId is not globally unique across sessions). */
+  /** 会话切换时整体重置（turnId 在不同 session 间也不能假设全局唯一）。 */
   clear(): void {
     this.sizes.clear();
   }

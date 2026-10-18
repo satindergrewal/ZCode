@@ -102,3 +102,7 @@ export function buildPromptCompletionUsageFallback(
     used: Math.min(contextWindow, Math.max(currentUsage?.used ?? 0, usage.totalTokens)),
   };
 }
+
+export function resetTaskContextUsageUpdateRecordsForTest() {
+  taskContextUsageUpdateKeys.clear();
+}

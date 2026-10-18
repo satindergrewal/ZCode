@@ -1,4 +1,4 @@
-/* oxlint-disable eslint(max-lines) - legacy message/ARMS builders share one prompt lifecycle and clock; splitting the fact state machine adds cross-module drift. */
+/* oxlint-disable eslint(max-lines) -- 旧 message/ARMS builders 共用同一 prompt 生命周期与时钟；拆散 fact 状态机会增加跨模块同步漂移。 */
 import {
   legacyTelemetryModelValue,
   legacyTelemetryProviderId,
@@ -68,42 +68,42 @@ type TelemetryPlatform = Pick<IPlatformService, "reportArmsCustomEvent" | "repor
 
 export interface ConversationPromptTelemetrySeed {
   localTtft?: import("@zcode/shared").LocalTtftContext;
-  /** Renderer clock at the user-triggered original send. */
+  /** 用户触发原始发送动作的 renderer 时钟。 */
   sendTime: number;
-  /** Legacy model/mode/plan fields frozen at send time. */
+  /** 发送瞬间冻结的旧版模型/模式/套餐字段。 */
   extraDetail: Record<string, string>;
   /**
-   * Send-funnel correlation id, pairing send_click <-> send_result. Only real composer clicks mint it;
-   * background seeds (off_peak / automation) carry none and skip reporting at settle.
+   * 发送漏斗关联 ID，配对 send_click ↔ send_result。仅 composer 真实点击产生；
+   * 后台任务（off_peak / automation）seed 无此字段，落定时直接跳过不报。
    */
   sendClickId?: string;
-  /** Whether the queue-confirm dialog appeared mid-flight (its send_cost_ms includes user dwell). */
+  /** 是否中途经过队列二次确认弹窗（该子集的 send_cost_ms 含用户停留时间）。 */
   queueConfirmed?: boolean;
 }
 
-/** Failure reason recorded at send settle. */
-type ConversationSendFailureReason = SendFunnelReasonCode;
+/** 发送落定的失败原因，取值口径见 docs/monitoring/composer-send-funnel-telemetry.md。 */
+export type ConversationSendFailureReason = SendFunnelReasonCode;
 
-interface AcceptedConversationPromptTelemetrySeed extends ConversationPromptTelemetrySeed {
-  /** The toggle recorded by the CLI session; missing stays unknown, never backfilled from live settings. */
+export interface AcceptedConversationPromptTelemetrySeed extends ConversationPromptTelemetrySeed {
+  /** CLI 会话记录的开关；缺失保持未知，不能用实时设置补齐。 */
   memoryEnabled?: boolean;
   sessionId: string;
   sourceCommandId: string;
-  /** Completion source of a standalone background wake, frozen at TurnStarted admission. */
+  /** 独立 background wake 的 completion 来源在 TurnStarted admission 时冻结。 */
   completionMessageSource?: PromptMessageSource;
 }
 
-/** Queue-confirm ACK reasonCode: reuse the same seed once the user decides; not a terminal state. */
+/** 队列二次确认的 ACK reasonCode，语义是「等用户裁决后复用同一 seed 重发」，不是终态。 */
 const HELD_QUEUE_CONFIRMATION_STALE_REASON = "guard.heldQueueConfirmationStale";
 
-/** From click to send: past this duration with no rendered user message, judge timeout. */
-const SEND_RENDER_WAIT_TIMEOUT_MS = 30_000;
+/** 从点击发送起算，超过这个时长仍未渲染出用户消息就判超时。 */
+export const SEND_RENDER_WAIT_TIMEOUT_MS = 30_000;
 
 /**
- * ACK disposition: either move to awaiting-render (accepted, user message not drawn yet)
- * or settle as failure at once. null: neither this time.
+ * ACK 的处置：要么转入待渲染等待（命令被受理，但用户消息还没画出来），
+ * 要么立即落定为失败。返回 null 表示本次两者都不做。
  */
-type ConversationSendAckOutcome =
+export type ConversationSendAckOutcome =
   | { kind: "awaitRender"; ackStatus: string }
   | {
       kind: "settle";
@@ -113,28 +113,28 @@ type ConversationSendAckOutcome =
     };
 
 /**
- * Folds a CommandAck into the send_result disposition; null = no settle this time.
- * Pure so dispatchCommand only calls and the branches stay unit-testable.
+ * 把 CommandAck 折算成 send_result 的处置口径，返回 null 表示本次不落定。
+ * 抽成纯函数是为了让 dispatchCommand 只负责调用，分支逻辑可单测。
  */
 export function resolveSendAckSettlement(ack: {
   status: string;
   reasonCode?: string;
 }): ConversationSendAckOutcome | null {
-  // Must precede the status check: this ACK status is itself non-accepted,
-  // and settling first would let first-wins eat the real post-confirm outcome.
+  // 必须先于 status 判断：这条 ACK 的 status 本身非 accepted，
+  // 一旦落定，first-wins 会把用户确认后的真实成败结果吃掉。
   if (ack.reasonCode === HELD_QUEUE_CONFIRMATION_STALE_REASON) return null;
-  // accepted/duplicate only means the Host took the command; nothing is on screen yet;
-  // without optimistic rendering, success is the projected userInput row, nothing earlier.
+  // accepted/duplicate 只代表 Host 收下了命令，此时屏幕上还什么都没有；
+  // z-code 没有乐观渲染，要等投影回流出 userInput row 才算发送成功。
   if (ack.status === "accepted" || ack.status === "duplicate") {
     return { kind: "awaitRender", ackStatus: ack.status };
   }
   const reasonCode: ConversationSendFailureReason =
     ack.status === "rejected" || ack.status === "stale" ? ack.status : "failed";
-  // noop gets no dedicated reason_code; user-wise it just did not send; the raw value stays in ackStatus.
+  // noop 不单列 reason_code，用户视角就是没发出去；原始值保留在 ackStatus 供下钻。
   return { kind: "settle", status: "fail", ackStatus: ack.status, reasonCode };
 }
 
-/** Pending record after ACK accepted, waiting for the user message to render. */
+/** ACK 已受理、等待用户消息渲染出来的一条待落定记录。 */
 interface PendingSendRenderWait {
   seed: ConversationPromptTelemetrySeed;
   sessionId: string | null;
@@ -193,8 +193,8 @@ function backgroundSeedFromTurnStarted(
 }
 
 /**
- * Per-agent_step source fields (same values as completion). Only attribution fields: seed model/plan
- * dimensions are not step-contract; scheduled_at / schedule_lag_ms describe the whole run and ride completion only.
+ * 冻结到每条 agent_step 的来源字段（与 completion 同值）。只挑来源归因字段：seed 里的模型/套餐
+ * 维度不属于 step 契约，scheduled_at / schedule_lag_ms 描述整次运行、只随 completion 上报。
  */
 const STEP_SOURCE_DETAIL_KEYS = [
   "memory_enabled",
@@ -227,7 +227,7 @@ interface PromptLifecycle {
   completionMessageSource?: PromptMessageSource;
   hasForegroundSubagentResult: boolean;
   hasBackgroundSubagentResult: boolean;
-  /** This turn consumed a dynamic-workflow run notification (the wf dimension of agent_composition). */
+  /** 本轮消费过 dynamic-workflow run 的通知（agent_composition 的 wf 维度）。 */
   hasWorkflowResult: boolean;
   startedToolCallIds: Set<string>;
   stepSourceDetail: Record<string, string>;
@@ -254,15 +254,15 @@ interface ForegroundSubagentUsage {
 }
 
 /**
- * The telemetry ledger of one detached child session. Two origins share it:
- * - background: the Agent-tool background subagent, registered from `subagent.lifecycle`, settled by the child
- *   `turn.terminal` or `subagent.lifecycle(stopped)`;
- * - workflow: the dynamic-workflow subagent, registered from `workflow.lifecycle(actor-spawned)`, settled ONLY by
- *   `workflow.lifecycle(run-settled)` - each child turn.terminal ends one ask.
+ * 一个 detached 子会话的埋点账本。两种来源共用：
+ * - `background`：Agent 工具的后台子代理，登记自 `subagent.lifecycle`，终态是子会话自己的
+ *   `turn.terminal` 或 `subagent.lifecycle(stopped)`；
+ * - `workflow`：动态工作流子代理，登记自 `workflow.lifecycle(actor-spawned)`，终态**只有**
+ *   `workflow.lifecycle(run-settled)`——子会话的每次 turn.terminal 只是一次 ask 的结束。
  */
 interface BackgroundSubagentTelemetry {
   kind: "background" | "workflow";
-  /** Workflow only: the owning run (settles the summary-step tool_call_id). */
+  /** 仅 workflow：所属 run（终态汇总 step 的 tool_call_id 用它收尾）。 */
   runId?: string;
   parentSessionId: string;
   sourceCommandId: string;
@@ -297,7 +297,7 @@ interface DeferredTerminal {
   foregroundAtReceipt: boolean;
 }
 
-interface ConversationTelemetryWorkspaceDetail {
+export interface ConversationTelemetryWorkspaceDetail {
   workspace_kind: "local" | "remote";
   remote_kind: RemoteWorkspaceIdentityKind | "";
 }
@@ -341,7 +341,7 @@ function toLegacyNetworkEvent(
     modelId: fact.modelId,
     providerKind: fact.providerKind,
     transport: fact.transport,
-    // The legacy messageTelemetry entry takes baseURL only; facts are pre-cut to hostname, rewrapping widens no privacy surface.
+    // messageTelemetry 的旧入口只接受 baseURL；fact 已提前裁成 hostname，重新包装不扩大隐私面。
     baseURL: fact.providerHostname ? `https://${fact.providerHostname}` : undefined,
     querySource: fact.querySource,
     attempt: fact.attempt,
@@ -365,7 +365,7 @@ function scopedSubagentToolCallId(agentId: string, childToolCallId: string): str
   return `tool_subagent_${agentId}_${childToolCallId}`;
 }
 
-/** Detached-child steps carry a source prefix: Agent-tool subagent `tool_subagent_`, workflow subagent `tool_workflow_`. */
+/** detached 子会话的 step 用来源前缀区分：Agent 工具子代理 `tool_subagent_`，工作流子代理 `tool_workflow_`。 */
 function scopedChildToolCallId(
   child: BackgroundSubagentTelemetry,
   childToolCallId: string,
@@ -375,7 +375,7 @@ function scopedChildToolCallId(
     : scopedSubagentToolCallId(child.agentId, childToolCallId);
 }
 
-/** Closing id of the summary step: background = the parent Agent tool call, workflow = the run. */
+/** 终态汇总 step 的收尾 id：后台子代理是父 Agent 工具调用，工作流子代理是 run。 */
 function terminalToolCallIdOf(child: BackgroundSubagentTelemetry): string {
   return child.kind === "workflow"
     ? (child.runId ?? child.parentToolCallId)
@@ -386,7 +386,7 @@ function childAgentRole(child: BackgroundSubagentTelemetry): AgentStepRole {
   return child.kind === "workflow" ? "workflow subagent" : "background subagent";
 }
 
-/** Attribution fields on a step. */
+/** step 上的归属字段。 */
 function childStepExtraDetail(child: BackgroundSubagentTelemetry): Record<string, string> {
   if (child.kind === "workflow") {
     return {
@@ -401,7 +401,7 @@ function childStepExtraDetail(child: BackgroundSubagentTelemetry): Record<string
   };
 }
 
-/** Inputs of the detached-child summary: trigger (eventId), outcome, raw error. */
+/** detached 子会话终态汇总的输入：谁触发（eventId）、成败、错误原文。 */
 interface DetachedChildTerminalOutcome {
   eventId: string;
   success: boolean;
@@ -526,10 +526,10 @@ function createSendClickId(): string {
 }
 
 /**
- * The renderer workspace-level live telemetry state machine.
+ * renderer workspace 级 live telemetry 状态机。
  *
- * It reads no rows/snapshot and never dies with a pane lease; React owns only attachment and
- * foreground refs; every high-frequency fact enters this imperative object, so streaming never triggers renders.
+ * 它不读取 rows/snapshot，也不跟随 pane lease 销毁；React 只负责 attachment 和
+ * foreground 引用，所有高频 fact 都进入这个命令式对象，避免 streaming 触发渲染。
  */
 export class ConversationTelemetrySupervisor {
   private readonly platform: TelemetryPlatform;
@@ -551,7 +551,7 @@ export class ConversationTelemetrySupervisor {
     string,
     ForegroundSubagentUsage
   >();
-  /** Child sessions registered per in-flight run (settled one by one on run-settled). */
+  /** 每个在飞 run 已登记的子代理会话（run-settled 时逐个结算）。 */
   private readonly workflowActorsByRun = new Map<string, Set<string>>();
   private readonly backgroundSubagentTelemetryByChildSession = new Map<
     string,
@@ -585,9 +585,9 @@ export class ConversationTelemetrySupervisor {
   }
 
   /**
-   * A real user click/focus on the input. Programmatic autofocus (new task, session switch, mount refocus,
-   * post-chip-removal refocus) is intercepted composer-side and never enters here, or switches pollute clicks.
-   * Separate from recordComposerFocus: that one only timestamps for send_btn; this one only reports.
+   * 用户真实点击/聚焦输入框。程序性自动聚焦（新建任务、切会话、挂载回焦、上下文块移除后回焦）
+   * 由 composer 侧拦截，不得进入本方法，否则「点击输入框」会被切会话动作污染。
+   * 与 recordComposerFocus 是两条独立链路：后者只写时间戳喂 send_btn，本方法只负责上报。
    */
   recordComposerFocusClick(input: { sessionId: string | null }): void {
     if (this.disposed) return;
@@ -595,9 +595,9 @@ export class ConversationTelemetrySupervisor {
   }
 
   /**
-   * The instant a send click/Enter passes the send gates. Returns the seed with sendClickId filled,
-   * to carry through to settle, keeping send_click/send_result strictly 1:1.
-   * Queue-confirm reuse of an existing seed must not call this again (one click, one event).
+   * 用户点击发送键 / Enter 提交并通过发送门禁的瞬间。返回补齐 sendClickId 的 seed，
+   * 调用方需把它一路带到落定处，保证 send_click 与 send_result 严格 1:1。
+   * 队列二次确认复用既有 seed 时不得再调本方法（否则一次点击报两条）。
    */
   recordSendClick(input: {
     sessionId: string | null;
@@ -620,8 +620,8 @@ export class ConversationTelemetrySupervisor {
   }
 
   /**
-   * Send settle (user message rendered, ACK failure, product-guard rejection, transport error, render timeout).
-   * Dedupe by sendClickId first-wins: ACK and catch may each fire per click; only the first result counts.
+   * 发送落定（用户消息渲染完成、ACK 失败、产品 guard 拒绝、传输异常、等待渲染超时）。
+   * 按 sendClickId first-wins 去重：ACK 与 catch 可能对同一次点击各调一次，只认最先到达的结果。
    */
   settleSendResult(input: {
     seed: ConversationPromptTelemetrySeed;
@@ -630,14 +630,14 @@ export class ConversationTelemetrySupervisor {
     status: "success" | "fail";
     ackStatus?: string;
     reasonCode?: ConversationSendFailureReason;
-    /** The click-to-ACK segment; absent on failure paths without an ACK. */
+    /** 「点击发送 → 收到 ACK」那一段；未拿到 ACK 的失败路径不传。 */
     ackCostMs?: number;
-    /** Covers end-to-end duration; only the timeout fallback sets it (now beyond 30s, pinned to the threshold). */
+    /** 覆盖端到端耗时；只有超时兜底会用（此时 now 已越过 30s 上限，需钉死在阈值上）。 */
     costMs?: number;
   }): void {
     if (this.disposed) return;
     const sendClickId = input.seed.sendClickId;
-    // Background auto-task seeds have no click origin; settle must not fake a user send.
+    // 后台自动任务的 seed 没有点击来源，落定不能伪造成用户发送。
     if (!sendClickId || !this.settledSendClickIds.remember(sendClickId)) return;
     reportSendFunnelSendResult({
       sessionId: input.sessionId,
@@ -654,8 +654,8 @@ export class ConversationTelemetrySupervisor {
   }
 
   /**
-   * ACK accepted/duplicate: the Host took the command, the user message is not drawn yet.
-   * Register pending + arm the timeout; whichever of notifyUserInputRendered/timeout lands first settles.
+   * ACK 已 accepted/duplicate：命令被 Host 收下了，但用户消息还没画到屏幕上。
+   * 登记待渲染并挂超时定时器，等 notifyUserInputRendered 或超时任一先到再落定。
    */
   awaitSendRender(input: {
     seed: ConversationPromptTelemetrySeed;
@@ -664,11 +664,11 @@ export class ConversationTelemetrySupervisor {
     ackStatus: string;
   }): void {
     if (this.disposed) return;
-    // Background auto-tasks have no click origin; on duplicate commandId registration keep the first (timer included).
+    // 后台自动任务无点击来源；同一 commandId 重复登记时保留首次（含其定时器）。
     if (!input.seed.sendClickId) return;
     if (this.pendingSendRenderWaits.has(input.commandId)) return;
     const ackCostMs = Math.max(0, this.now() - input.seed.sendTime);
-    // The timeout runs from click, so the remainder subtracts the time already spent to ACK.
+    // 超时口径从点击发送起算，故剩余时长要扣掉已经花在 ACK 上的那一段。
     const remainingMs = Math.max(0, SEND_RENDER_WAIT_TIMEOUT_MS - ackCostMs);
     const timer = setTimeout(() => {
       const wait = this.pendingSendRenderWaits.get(input.commandId);
@@ -695,8 +695,8 @@ export class ConversationTelemetrySupervisor {
   }
 
   /**
-   * The user message rendered into history (projected userInput row + React committed).
-   * Unknown commandIds are ignored - history backfill and session reload push many rows.
+   * 用户消息已渲染进对话历史（投影回流出 userInput row，且 React 完成 commit）。
+   * 没登记过的 commandId 直接忽略——历史消息回填、切会话重载都会推一堆 row 过来。
    */
   notifyUserInputRendered(commandId: string): void {
     if (this.disposed) return;
@@ -714,7 +714,7 @@ export class ConversationTelemetrySupervisor {
     });
   }
 
-  /** The seed exists only once ACK accepted; duplicate/retry/promotion never re-report send_btn. */
+  /** ACK=accepted 后才建立 seed；duplicate/retry/promotion 不会重复上报 send_btn。 */
   acceptPromptSeed(
     seed: AcceptedConversationPromptTelemetrySeed,
     options: { reportSendButton?: boolean } = {},
@@ -771,7 +771,7 @@ export class ConversationTelemetrySupervisor {
     this.drainPendingFacts(seed.sourceCommandId);
   }
 
-  /** One visible foreground per session however many panes; different sessions may be visible at once. */
+  /** 同一 session 多 pane 可见仍只记一份 foreground；不同 session 可同时可见。 */
   attachForeground(owner: object, sessionId: string): () => void {
     if (this.disposed) return () => undefined;
     const previous = this.foregroundOwnerSessions.get(owner);
@@ -786,8 +786,8 @@ export class ConversationTelemetrySupervisor {
   }
 
   handleFact(fact: ConversationTelemetryFact): void {
-    // Main-session and detached-child eventIds are unique per session only;
-    // eventId-only dedupe lets a same-numbered child fact be killed by main-session facts.
+    // 主 session 与 detached child 的 eventId 都只保证各自 session 内唯一；
+    // 若只按 eventId 去重，同号 child fact 会在 renderer 再次被主会话事实误杀。
     const eventKey = `${fact.sessionId}\0${fact.eventId}`;
     if (this.disposed || !this.eventIds.remember(eventKey)) {
       return;
@@ -795,7 +795,7 @@ export class ConversationTelemetrySupervisor {
     const receivedAt = this.now();
     const foregroundAtReceipt = this.isForeground(fact.sessionId);
 
-    // plan_request needs only real model network facts; reports foreground or background, no local prompt seed.
+    // plan_request 只依赖真实模型网络事实，可前后台上报，也不要求本地 prompt seed。
     if (fact.kind === "model.request.status") {
       reportPlanUsageModelRequestStartedToArms(this.platform, toLegacyNetworkEvent(fact));
     }
@@ -827,8 +827,8 @@ export class ConversationTelemetrySupervisor {
     if (fact.kind === "turn.started") {
       const backgroundSeed = backgroundSeedFromTurnStarted(fact);
       if (backgroundSeed) {
-        // Reason: background tasks bypass the renderer ACK; build the seed from the Host-admission body-less fact,
-        // but never fake a user-only send_btn.
+        // 原因：后台任务不经过 renderer ACK；用 Host admission 透传的无正文事实建 seed，
+        // 但不能伪造只代表用户点击的 send_btn。
         this.acceptPromptSeed(
           { ...backgroundSeed, memoryEnabled: fact.memoryEnabled },
           { reportSendButton: false },
@@ -875,7 +875,7 @@ export class ConversationTelemetrySupervisor {
           childSessionId: fact.childSessionId,
           agentId: fact.agentId,
           taskKey: this.taskKey(fact.childSessionId),
-          // Child start facts may precede the parent message ACK; reuse the same-origin parent facts, never losing the toggle.
+          // child 启动事实可能早于父消息 ACK；直接使用同源父会话事实，避免丢失开关。
           stepSourceDetail: parentLifecycle?.stepSourceDetail ?? {
             memory_enabled: fact.memoryEnabled === undefined ? "" : fact.memoryEnabled ? "1" : "0",
           },
@@ -937,8 +937,8 @@ export class ConversationTelemetrySupervisor {
       this.flushDeferredTerminal(child.parentCommandId);
       return;
     }
-    // mirror and lifecycle are different event streams; after stopped, an already-emitted child tool
-    // terminal can still arrive. Keep the map to settle into the parent message, so late tools still get child model/agent_id.
+    // mirror 与 lifecycle 分属不同 event stream，stopped 之后仍可能收到已发出的 child tool
+    // 终态。保留映射到父 message 收口，保证迟到工具仍能取得 child model 与 agent_id。
     this.syncForegroundSubagentToolAttribution(child);
     child.stopped = true;
     const lifecycle = this.lifecyclesByCommandId.get(child.parentCommandId);
@@ -966,8 +966,8 @@ export class ConversationTelemetrySupervisor {
     if (fact.requestId && !child.requestIds.includes(fact.requestId)) {
       child.requestIds.push(fact.requestId);
     }
-    // A subagent runtime model is fixed within one synchronous Agent call; the usage-fact request identity
-    // is closer to the real provider request than the spawned config, so on arrival it overrides the same-origin predecessor.
+    // Subagent 的 runtime model 在一次同步 Agent 调用内固定；usage fact 的 request identity
+    // 比 spawned 配置更接近真实 provider 请求，因此到达时覆盖前一请求的同源值。
     if (fact.providerId || fact.modelId) {
       child.modelName = runtimeTelemetryModelName(fact.providerId, fact.modelId);
       child.modelProvider = fact.providerId ?? child.modelProvider;
@@ -1046,8 +1046,8 @@ export class ConversationTelemetrySupervisor {
         return;
       }
       case "turn.terminal":
-        // A workflow child session serves many asks, one ask = one turn: this terminal ends one ask,
-        // the summary step waits for run-settled.
+        // 工作流子代理会话承接多次 ask，每次 ask 是一个 turn：这里的终态只是一次 ask 结束，
+        // 汇总 step 等 run-settled。
         if (child.kind === "workflow") return;
         this.reportBackgroundAgentUsage(child, terminalOutcomeOf(fact), receivedAt);
         this.cleanupBackgroundSubagentTelemetry(child);
@@ -1061,17 +1061,17 @@ export class ConversationTelemetrySupervisor {
   }
 
   /**
-   * Registration and settle of dynamic-workflow subagents. Shares the detached
-   * ledger with background subagents; differences: the registering fact, settle timing, step attribution fields.
+   * 动态工作流子代理的登记与结算。与后台子代理共用同一本
+   * detached 账本，差异只在登记事实、终态时机与 step 上的归属字段。
    */
   private handleWorkflowLifecycle(
     fact: Extract<ConversationTelemetryFact, { kind: "workflow.lifecycle" }>,
     receivedAt: number,
   ): void {
     if (fact.phase === "actor-spawned") {
-      // No anchor (pre-upgrade run) or no child identity: guess nothing, report nothing.
+      // 缺锚点（升级前的 run）或缺子会话身份：不猜测归属，不上报。
       if (!fact.sourceCommandId || !fact.childSessionId || !fact.agentId) return;
-      // resume re-emits actor-created; a child ledger is created once.
+      // resume 会再发一遍 actor-created；同一子会话的账本只建一次。
       if (this.backgroundSubagentTelemetryByChildSession.has(fact.childSessionId)) return;
       const parentLifecycle = this.lifecyclesByCommandId.get(fact.sourceCommandId);
       const child: BackgroundSubagentTelemetry = {
@@ -1083,7 +1083,7 @@ export class ConversationTelemetrySupervisor {
         childSessionId: fact.childSessionId,
         agentId: fact.agentId,
         taskKey: this.taskKey(fact.childSessionId),
-        // Child start facts may precede the parent message ACK; reuse the same-origin parent facts, never losing the toggle.
+        // child 启动事实可能早于父消息 ACK；直接使用同源父会话事实，避免丢失开关。
         stepSourceDetail: parentLifecycle?.stepSourceDetail ?? {
           memory_enabled: fact.memoryEnabled === undefined ? "" : fact.memoryEnabled ? "1" : "0",
         },
@@ -1111,7 +1111,7 @@ export class ConversationTelemetrySupervisor {
       return;
     }
 
-    // run-settled: terminals of every child of the run. One summary step per child, then drain late tool terminals and clean up.
+    // run-settled：该 run 全部子代理的终态。每个子代理一条汇总 step，然后排空迟到工具终态后清理。
     const actors = this.workflowActorsByRun.get(fact.runId);
     if (!actors) return;
     this.workflowActorsByRun.delete(fact.runId);
@@ -1136,14 +1136,14 @@ export class ConversationTelemetrySupervisor {
     outcome: DetachedChildTerminalOutcome,
     receivedAt: number,
   ): void {
-    // Bug root cause: waiting for child terminal alone misses preparation failures/cancels; stopped must settle too.
-    // Parity with the foreground known-usage snapshot: the first terminal reports once, later usage never back-fills.
+    // Bug 根因：只等 child terminal 会漏掉准备阶段失败/取消；stopped 也必须结算。
+    // 对齐 foreground 的已知 usage 快照：首个终态只报一次，后续不补算迟到 usage。
     if (child.usageReported) return;
     child.usageReported = true;
-    // No usage does not mean no call; the real terminal still reports, missing tokens take the foreground-builder zeros.
+    // 无 usage 不代表调用未发生；真实终态仍上报，缺失 token 沿用 foreground builder 的零值。
     const toolId = scopedChildToolCallId(child, terminalToolCallIdOf(child));
-    // Bug root cause: background reported internal tools only and dropped usage, leaving the outer Agent no token owner.
-    // Settle once via the shared builder on child terminal; internal tools keep per-item reporting, never double-counting.
+    // Bug 根因：后台只报内部工具并丢弃 usage，缺少 foreground 外层 Agent 的 token owner。
+    // 在 child 终态用共享 builder 结算一次；内部工具继续逐条上报，避免重复计算同一份 token。
     recordAgentStepTelemetryEvent({
       taskId: child.taskKey,
       event: {
@@ -1194,7 +1194,7 @@ export class ConversationTelemetrySupervisor {
     fact: Extract<ConversationTelemetryFact, { kind: "tool.lifecycle" }>,
     receivedAt: number,
   ): void {
-    // After stopped, drain only started tools, so replay/late events never re-create closed steps.
+    // stopped 后仅排空已经开始的工具，避免重放/迟到事件重新创建已收口的 step。
     if (child.usageReported && !child.openToolCallIds.has(fact.toolCallId)) return;
     const hasStarted = child.startedToolCallIds.has(fact.toolCallId);
     child.startedToolCallIds.add(fact.toolCallId);
@@ -1253,7 +1253,7 @@ export class ConversationTelemetrySupervisor {
   }
 
   private maybeCleanupBackgroundSubagentTelemetry(child: BackgroundSubagentTelemetry): void {
-    // Summary reporting and tool draining split: stopped loses neither the summary nor late tool terminals.
+    // 汇总上报与工具排空分开：stopped 不再丢汇总，也不丢已开始工具的迟到终态。
     if (child.usageReported && child.openToolCallIds.size === 0) {
       this.cleanupBackgroundSubagentTelemetry(child);
     }
@@ -1326,12 +1326,12 @@ export class ConversationTelemetrySupervisor {
     });
   }
 
-  /** For the bounded-cache unit test only; no logic depends on this value. */
+  /** 仅供有界缓存单测观察；业务逻辑不依赖此值。 */
   getPendingCommandCountForTest(): number {
     return this.pendingFactsByCommandId.size;
   }
 
-  /** For focused tests awaiting the serialized reporter to drain. */
+  /** 仅供 focused tests 等待串行 reporter 清空。 */
   async flushReportsForTest(): Promise<void> {
     await this.reportTail;
   }
@@ -1346,7 +1346,7 @@ export class ConversationTelemetrySupervisor {
     for (const child of this.backgroundSubagentTelemetryByChildSession.values()) {
       discardPromptTelemetry(child.taskKey);
     }
-    // Pending-render timers left running would fire after unmount, settling meaningless render timeouts.
+    // 待渲染的定时器不清会在卸载后继续跑，落定一批没有意义的 render_timeout。
     for (const wait of this.pendingSendRenderWaits.values()) {
       clearTimeout(wait.timer);
     }
@@ -1371,9 +1371,9 @@ export class ConversationTelemetrySupervisor {
   private enqueueReport(payload: Parameters<typeof reportAppTelemetryEvent>[1]): void {
     const report = () =>
       reportAppTelemetryEvent(this.platform, payload, "v4-conversation-telemetry");
-    // Fix reason: renderer emission order is step -> completion, but the two async IPCs run
-    // concurrently in main and net.fetch occasionally flips. Serialize the final reporter per workspace supervisor
-    // while keeping the first emission immediate, never delaying send_btn.
+    // 修复原因：renderer 发起顺序虽然是 step → completion，但两个异步 IPC 会在 main
+    // 并发执行，最终 net.fetch 偶发反序。workspace supervisor 内串行化最终 reporter，
+    // 同时保持第一条立即发起，避免额外推迟 send_btn。
     const queued = this.reportTail ? this.reportTail.then(report) : report();
     this.reportTail = queued;
     void queued.then(() => {
@@ -1415,7 +1415,7 @@ export class ConversationTelemetrySupervisor {
       return;
     }
     this.foregroundSessionCounts.delete(sessionId);
-    // Wall-clock time while backgrounded must not read as a stream stall on return.
+    // 切走期间的墙钟时间不能被下一次回前台误判为 stream stall。
     clearStreamStallTracking(this.taskKey(sessionId));
   }
 
@@ -1430,8 +1430,8 @@ export class ConversationTelemetrySupervisor {
     const current = this.pendingFactsByCommandId.get(commandId) ?? [];
     current.push(buffered);
     if (current.length > MAX_BUFFERED_FACTS_PER_COMMAND) {
-      // On a very slow ACK, prune ordinary follow-up chunks only; turn.started, firstChunk, real model state, tools, and
-      // terminal are lifecycle anchors of the legacy metrics, never crowded out by body copy.
+      // ACK 极慢时只优先裁普通后续 chunk；turn.started、firstChunk、真实模型状态、工具和
+      // terminal 都是旧指标的生命周期锚，不能被高频正文挤掉。
       const ordinaryChunkIndex = current.findIndex(
         (item) => item.fact.kind === "stream.chunk" && !item.fact.firstChunk,
       );
@@ -1441,7 +1441,7 @@ export class ConversationTelemetrySupervisor {
           : current.findIndex((item) => item.fact.kind !== "turn.started");
       current.splice(removableIndex >= 0 ? removableIndex : 0, 1);
     }
-    // Map insertion order is the LRU: on command hit, delete-then-set so the longest-unfactored group evicts first.
+    // Map 的插入顺序即 LRU：命中 command 时先删除再写回，保证最久未收到事实的整组先淘汰。
     this.pendingFactsByCommandId.delete(commandId);
     this.pendingFactsByCommandId.set(commandId, current);
     if (this.pendingFactsByCommandId.size > MAX_BUFFERED_COMMANDS) {
@@ -1600,7 +1600,7 @@ export class ConversationTelemetrySupervisor {
         return;
 
       case "turn.terminal":
-        // The active-loop has no TurnStarted of its own; composition updates as consumption facts land with terminals.
+        // active-loop 没有独立 TurnStarted；消费事实随终态到达后再更新本轮 composition。
         if (fact.backgroundSubagentResultConsumed) {
           lifecycle.hasBackgroundSubagentResult = true;
         }
@@ -1675,8 +1675,8 @@ export class ConversationTelemetrySupervisor {
             this.applyForegroundSubagentAttribution(step, foregroundChild);
             immediate.push(step);
           } else {
-            // Bug root cause: the parent Agent-tool terminal may precede child usage. Non-timeout terminals keep freezing,
-            // and the Runtime SubagentStopped back-fills the child final total, never losing tokens.
+            // Bug 根因：父 Agent 工具终态可能早于 child usage。非 timeout 终态继续冻结，
+            // 等 Runtime 的 SubagentStopped 后以 child 最终累计值回填，避免丢 token。
             foregroundChild.pendingFinalizedSteps.push({ step, extraDetail });
           }
         } else {
@@ -1685,8 +1685,8 @@ export class ConversationTelemetrySupervisor {
       }
       this.reportFinalizedSteps(lifecycle, immediate, extraDetail);
       if (timeoutWon) {
-        // The outer Agent timeout is a real Runtime terminal; whichever of it/SubagentStopped lands first closes,
-        // with no extra telemetry grace; a late stopped only hits an already-closed lifecycle.
+        // 外层 Agent timeout 是 Runtime 的真实终态；与 SubagentStopped 谁先到谁收口，
+        // 不再额外等待 telemetry grace，迟到 stopped 只会命中已完成生命周期。
         foregroundChild.stopped = true;
         this.flushDeferredTerminal(foregroundChild.parentCommandId);
       }
@@ -1750,8 +1750,8 @@ export class ConversationTelemetrySupervisor {
     );
     if (hasRunningForegroundChild) {
       if (this.deferredTerminalsByCommandId.has(lifecycle.sourceCommandId)) return;
-      // The normal parent-stream order is Agent tool terminal -> turn terminal. Handle only
-      // transport reordering: wait for the real SubagentStopped or Agent tool terminal; either flushes at once.
+      // 同一 parent stream 正常顺序是 Agent tool terminal -> turn terminal。这里只处理
+      // transport 反序：等待真实 SubagentStopped 或 Agent tool terminal，二者都能立即 flush。
       this.deferredTerminalsByCommandId.set(lifecycle.sourceCommandId, {
         lifecycle,
         fact,
@@ -1763,8 +1763,8 @@ export class ConversationTelemetrySupervisor {
     const terminalKey = `${fact.sessionId}\u0000${lifecycle.sourceCommandId}\u0000message_completion`;
     if (!this.terminalKeys.remember(terminalKey)) return;
     const status = terminalStatus(fact.status);
-    const terminalEvent = // Fix: the legacy adapter projected every TurnComplete (incl. cancelled) as
-      // task_complete; the UI then re-labeled completion user_interrupt.
+    const terminalEvent = // 修复原因：旧 adapter 把所有 TurnComplete（包括 cancelled）先投影成
+      // task_complete；UI 再单独把 completion 标成 user_interrupt。
       (
         fact.status === "success" || fact.resultType !== undefined
           ? {
@@ -1809,8 +1809,8 @@ export class ConversationTelemetrySupervisor {
         elementName: "message_completion",
         eventRegion: "app",
         eventType: "agent_trace",
-        // Fix reason: the workspace scenario dimension must reach the final report with completion/step,
-        // not stay in the attachment isolation key, or the DWH cannot tell local from remote conversations.
+        // 修复原因：workspace 场景维度必须和 completion/step 一起出现在最终 report，
+        // 不能只停留在 attachment 的隔离 key，否则数仓无法区分本地与远程对话。
         eventExtraDetail: this.withWorkspaceTelemetryDetail(completion.eventExtraDetail),
         talkId: fact.sessionId,
         messageId: lifecycle.sourceCommandId,
@@ -1830,7 +1830,7 @@ export class ConversationTelemetrySupervisor {
     }
     clearStreamStallTracking(lifecycle.taskKey);
     this.deferredTerminalsByCommandId.delete(lifecycle.sourceCommandId);
-    // finalize cleared the active entry; later same-session queued seeds still wait for promotion - never drop the task.
+    // finalize 已清当前 active；同 session 后续 queued seed 仍需等待 promotion，不能整 task 丢弃。
     this.activeCommandBySessionId.delete(fact.sessionId);
     this.lifecyclesByCommandId.delete(lifecycle.sourceCommandId);
     if (lifecycle.turnId) {
@@ -1917,7 +1917,7 @@ export class ConversationTelemetrySupervisor {
   ): void {
     const dedupeKey = `${fact.sessionId}\u0000${fact.operationId}\u0000context_compaction`;
     if (!this.compactionKeys.remember(dedupeKey)) return;
-    // Compaction decides foreground only at terminal arrival; a background arrival followed by return never back-reports.
+    // compaction 只按 terminal 到达瞬间是否前台决定；后台到达后切回不能补报。
     if (!foregroundAtReceipt) return;
     const timeline: ZCodeContextCompactionTimelineMeta = {
       version: 1,

@@ -12,23 +12,24 @@ import {
   type TimelineLayout,
 } from "./timeline-geometry.js";
 import { MarchLight } from "./WorkflowMarchLight.js";
+import { STREAM_GAP, StreamChevrons } from "./WorkflowStreamChevrons.js";
 
 /**
- * The arc layer: the timeline's single SVG layer, drawing only
- * non-adjacent edges. Up from the source's lamp into its air lane, across to the target, down onto the target's lamp, arrow pointing down. A station's arc terminals —
- * landing and takeoff alike — each take one slot, 10px apart (`arcTerminalOffsets`: far-end-left on the left, far-end-right on the right,
- * within each side the lowest lane outermost), so an outgoing vertical never crosses an incoming arrow. On first appearance, drawn from source to target
- (`pathLength=1` makes dashoffset geometry-independent); afterwards only the ink changes; the traveling edge adds a motionless light
- (`MarchLight`: brightening toward the lamp); the motion belongs to the lamp alone.
+ * 弧层：时间线唯一的一层 SVG，只画
+ * 非相邻的边。从源站的灯升到自己的弧道、横到目标站、落回目标的灯上，箭头朝下。一站的弧端——
+ * 落地与起飞一视同仁——各占一个槽、槽距 10px（`arcTerminalOffsets`：远端在左的在左、在右的在右，
+ * 每一侧车道最低的在最外面），于是出去的竖段不会穿过进来的箭头。首次出现时从源画到目标
+ * （`pathLength=1` 让 dashoffset 与几何无关）；之后只换墨色；正在走的边叠一层不动的光
+ * （`MarchLight`：朝着灯那一头渐亮），动作留给灯自己。
  *
- * With bands, a band is **one node**: a source inside takes off from the band's merge point, a target inside
- * lands on the band's fork point (landing pulled 4px earlier — no lamp to rest on there). An arc's height comes from its own **air** (`arc.air`): same-track
- * arcs live in that track's air; cross-track and band-level arcs always in the topmost air. Rail segments move into this layer too (`children`).
+ * 有带时带是**一个节点**：源在带里就从带的汇合点起飞，目标在带里
+ * 就落在带的分叉点上（落点提前到 4px，那里没有灯可停）。弧的高度来自它自己的**空**（`arc.air`）：带内同轨道
+ * 的弧住在那条轨道的空里，跨轨道与带级的弧一律住在最上面那层空里。轨道段也搬进这一层（`children`）。
  *
- * Band-level arcs run their verticals all the way to the **endpoint's own row**: a station source takes off from its lamp's row, a band source from the merge point
- * on the main line; landings likewise — the main line's fork point or the target lamp's row. The Loops board's rule three says verticals "cross branch rows through their
- * empty columns" — stopping beside the topmost track row would cross nothing, while between a main-line lamp and its arc a whole row would gape,
- * reading as disconnected. The design canvas's generator stopping at `rowY[R−1] is laziness, not design.
+ * 带级的弧的竖段一路走到**端点自己的行**：源是站就从它的灯那一行起飞，源是带就从主线上的汇合点
+ * 起飞；落点同理，是主线上的分叉点或目标的灯那一行。Loops 板的规则三说竖段「穿过分支行、走那些
+ * 行空着的列」——停在最上面那条轨道行边上就什么也没穿过，主线上的灯与自己的弧之间反而空出一整行，
+ * 读起来是断开的。设计画布的生成器停在 `rowY[R−1]` 是省事，不是设计。
  */
 const INK_STROKE: Record<TimelineInk, string> = {
   faint: "var(--color-workflow-trace)",
@@ -48,7 +49,7 @@ export function WorkflowTimelineArcs({
 }: {
   arcs: readonly TimelineArc[];
   bands: readonly TimelineBand[];
-  /** All stations (not just the draft-cut prefix): arc indices point into it, and every station's track must be readable. */
+  /** 全部的站（不是草稿切过的那一段）：弧的下标指向它，要读每一站的轨道。 */
   stations: readonly TimelineStation[];
   layout: TimelineLayout;
   width: number;
@@ -60,10 +61,12 @@ export function WorkflowTimelineArcs({
   const { inset, rowY } = layout;
   const rowOf = (track: number): number => rowY[track] ?? rowY[0]!;
   const trackOf = (index: number): number => stations[index]?.track ?? 0;
+  // 整层是装饰，不接指针。修复原因（2026-09-29 实测）：这层 SVG 铺满整张时间线、又画在补全的头之后，
+  // 头那一行的悬停与点击全被它吞掉——框点不亮，点头也开不了侧板。站与药丸画在它之上，所以此前没人发现。
   return (
     <svg
       aria-hidden
-      className="absolute left-0 top-0 overflow-visible"
+      className="pointer-events-none absolute left-0 top-0 overflow-visible"
       height={height}
       viewBox={`0 0 ${width} ${height}`}
       width={width}
@@ -86,12 +89,12 @@ export function WorkflowTimelineArcs({
       </defs>
       {children}
       {arcs.map((arc, j) => {
-        // An arc within one track of a band lives entirely in that track's air, both ends lamps; every other arc treats the band as one node (`arcEnds`).
+        // 带内同一条轨道的弧整条住在那条轨道的空里，两端仍是灯；其余的弧把带当一个节点（`arcEnds`）。
         const { fromBand, toBand } = arcEnds(arc, bands, stations);
         const source = bandAt(bands, arc.from);
         const target = bandAt(bands, arc.to);
         const ly = rowOf(arc.air) - ARC_BASE - ARC_LANE * arc.lane;
-        // Lamp-bound ends each take their slot; fork and merge are points, not rows of lamps, and take no slot (offset constant 0).
+        // 灯上的两端各就各的槽；分叉点与汇合点是一个点，不是一排灯，不占槽（偏移恒为 0）。
         const xa =
           fromBand && source !== undefined
             ? bandMergeX(source, inset)
@@ -101,16 +104,22 @@ export function WorkflowTimelineArcs({
             ? bandForkX(target, inset)
             : lampX(arc.to, inset) + terminals.landing[j]!;
         const sign = xb < xa ? -1 : 1;
-        // Takeoff and landing hug the **endpoint's own row**: a band is the merge / fork point on the main line, a station its lamp's row.
+        // 起飞与落地都贴着**端点自己的行**：带是主线上的汇合点 / 分叉点，站是它的灯那一行。
         const ya = fromBand ? rowY[0]! - 3 : rowOf(trackOf(arc.from)) - 7;
         const yb = toBand ? rowY[0]! - 4 : rowOf(trackOf(arc.to)) - 9;
         const tail = `V${yb}`;
-        const path = `M${xa},${ya} V${ly + 8} Q${xa},${ly} ${xa + 8 * sign},${ly} H${xb - 8 * sign} Q${xb},${ly} ${xb},${ly + 8} ${tail}`;
+        // 流弧（presentation.md「Stream rails」）：横段在正中断开，让出朝弧的方向的一组 chevron。
+        const mid = (xa + xb) / 2;
+        const across = arc.stream
+          ? `H${mid - (STREAM_GAP / 2) * sign} M${mid + (STREAM_GAP / 2) * sign},${ly} H${xb - 8 * sign}`
+          : `H${xb - 8 * sign}`;
+        const path = `M${xa},${ya} V${ly + 8} Q${xa},${ly} ${xa + 8 * sign},${ly} ${across} Q${xb},${ly} ${xb},${ly + 8} ${tail}`;
         const ink = arc.ink === "march" ? "strong" : arc.ink;
         return (
           <g
             data-arc-from={arc.from}
             data-arc-ink={arc.ink}
+            data-arc-stream={arc.stream ? "true" : undefined}
             data-arc-to={arc.to}
             data-testid="workflow-timeline-arc"
             key={`${arc.from}-${arc.to}-${arc.air}`}
@@ -124,8 +133,16 @@ export function WorkflowTimelineArcs({
               stroke={INK_STROKE[ink]}
               strokeWidth={1}
             />
-            {arc.ink === "march" ? (
-              // The traveling edge's light is 6px short at the end, stopping at the arrow's root.
+            {arc.stream ? (
+              <StreamChevrons
+                direction={sign < 0 ? "left" : "right"}
+                ink={arc.ink}
+                x={mid}
+                y={ly}
+              />
+            ) : null}
+            {arc.ink === "march" && !arc.stream ? (
+              // 行进边的光短 6px 收住，停在箭头根部。
               <MarchLight
                 d={`${path.slice(0, -tail.length)}V${yb - 6}`}
                 from={{ x: xa, y: ya }}

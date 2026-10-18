@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- WorkspaceFileTree centralizes data, virtualization, sticky headers, and entry-point actions. */
+/* eslint-disable max-lines -- WorkspaceFileTree 需要集中编排数据、虚拟列表、吸顶和入口操作状态。 */
 import {
   useCallback,
   useEffect,
@@ -78,7 +78,7 @@ import type {
   WorkspaceFileTreeStickyFolderItem,
 } from "@/workspace-file-tree/types.js";
 
-function getWorkspaceFileTreeDirectoryLoadDepth(
+export function getWorkspaceFileTreeDirectoryLoadDepth(
   workspacePath: string,
   directoryPath: string,
 ): number {
@@ -125,7 +125,9 @@ export function WorkspaceFileTree({
     enableWorkspaceFeatures: !temporaryExternalDirectory,
   });
   const { installedEditors } = useInstalledFileTreeEditors();
-  const isRemoteWorkspaceFileTree = Boolean(workspaceRemoteSessionId || workspaceIdentity);
+  const isRemoteWorkspaceFileTree = Boolean(
+    workspaceRemoteSessionId || workspaceIdentity,
+  );
   const { remoteTarget } = useWorkspaceOpenInEditorTarget({
     workspacePath,
     workspaceIdentity,
@@ -142,9 +144,13 @@ export function WorkspaceFileTree({
           }).availableEditors,
     [installedEditors, isRemoteWorkspaceFileTree, remoteTarget],
   );
-  const wslFileManagerEditor = resolveWorkspaceFileManagerEditor(availableEditors, remoteTarget);
+  const wslFileManagerEditor = resolveWorkspaceFileManagerEditor(
+    availableEditors,
+    remoteTarget,
+  );
   const canOpenInFileManager =
-    Boolean(wslFileManagerEditor) || (canOpenLocalFileManager && !isRemoteWorkspaceFileTree);
+    Boolean(wslFileManagerEditor) ||
+    (canOpenLocalFileManager && !isRemoteWorkspaceFileTree);
   const hasFileSearchQuery = fileSearchQuery.trim().length > 0;
   const searchIndex = useWorkspaceFileSearchIndex({
     workspacePath,
@@ -171,7 +177,9 @@ export function WorkspaceFileTree({
   const visibleRows = useMemo(() => {
     if (hasFileSearchQuery) {
       return showChangedOnly
-        ? searchRows.filter((row) => getWorkspaceFileGitStatus(treeData.gitStatusByPath, row.path))
+        ? searchRows.filter((row) =>
+            getWorkspaceFileGitStatus(treeData.gitStatusByPath, row.path),
+          )
         : searchRows;
     }
     return filterWorkspaceFileTreeRows({
@@ -226,10 +234,14 @@ export function WorkspaceFileTree({
       return;
     }
     lastNonBlockingRootErrorRef.current = errorMessage;
-    // With cached root content, refresh failures stay non-blocking toasts; a blocking error page would hide the retained tree.
-    toast(`${intl.formatMessage({ id: "workspaceFileTree.readFailed" })}: ${errorMessage}`);
+    // Bugfix: 根目录已有缓存时，刷新失败只能作为非阻塞提示；阻塞错误页会把保留的旧文件树隐藏掉。
+    toast(
+      `${intl.formatMessage({ id: "workspaceFileTree.readFailed" })}: ${errorMessage}`,
+    );
   }, [intl, rootError, rootLoaded]);
-  const gitStatusLabelByStatus = useMemo<Record<WorkspaceFileGitStatus, string>>(
+  const gitStatusLabelByStatus = useMemo<
+    Record<WorkspaceFileGitStatus, string>
+  >(
     () => ({
       added: intl.formatMessage({ id: "git.kind.added" }),
       deleted: intl.formatMessage({ id: "git.kind.deleted" }),
@@ -270,7 +282,8 @@ export function WorkspaceFileTree({
     return {
       WebkitMaskImage:
         "linear-gradient(to bottom, black 0px, black calc(100% - 32px), transparent 100%)",
-      maskImage: "linear-gradient(to bottom, black 0px, black calc(100% - 32px), transparent 100%)",
+      maskImage:
+        "linear-gradient(to bottom, black 0px, black calc(100% - 32px), transparent 100%)",
       WebkitMaskRepeat: "no-repeat",
       maskRepeat: "no-repeat",
       WebkitMaskSize: "100% 100%",
@@ -284,11 +297,17 @@ export function WorkspaceFileTree({
 
   useEffect(() => {
     const previewPath = revealPath?.trim() || activePreviewPath?.trim();
-    if (!previewPath || !isWorkspaceFilePathInside(workspacePath, previewPath)) {
+    if (
+      !previewPath ||
+      !isWorkspaceFilePathInside(workspacePath, previewPath)
+    ) {
       return;
     }
     let disposed = false;
-    const ancestorDirectories = getWorkspaceFileAncestorDirectories(workspacePath, previewPath);
+    const ancestorDirectories = getWorkspaceFileAncestorDirectories(
+      workspacePath,
+      previewPath,
+    );
     const directoryPathsToExpand = revealPath?.trim()
       ? [...ancestorDirectories, previewPath]
       : ancestorDirectories;
@@ -328,7 +347,10 @@ export function WorkspaceFileTree({
     if (
       !isWorkspaceFilePathInside(workspacePath, previewPath) ||
       !pendingActivePreviewRevealPathRef.current ||
-      !areWorkspaceFilePathsEqual(pendingActivePreviewRevealPathRef.current, previewPath)
+      !areWorkspaceFilePathsEqual(
+        pendingActivePreviewRevealPathRef.current,
+        previewPath,
+      )
     ) {
       return;
     }
@@ -339,7 +361,13 @@ export function WorkspaceFileTree({
       rowVirtualizer.scrollToIndex(activeRowIndex, { align: "auto" });
       pendingActivePreviewRevealPathRef.current = null;
     }
-  }, [activePreviewPath, revealPath, rowVirtualizer, visibleRows, workspacePath]);
+  }, [
+    activePreviewPath,
+    revealPath,
+    rowVirtualizer,
+    visibleRows,
+    workspacePath,
+  ]);
 
   useEffect(() => {
     const revealDirectoryPath = pendingSearchDirectoryRevealPathRef.current;
@@ -362,16 +390,16 @@ export function WorkspaceFileTree({
     }
     const contentNode = scrollNode.firstElementChild;
     const updateScrollMask = () => {
-      // The virtualizer's scrollOffset only updates through a React render, so the mask lags a
-      // frame while dragging the scrollbar. The native scroll callback writes the CSS variable
-      // directly, painting in sync with the browser scroll.
+      // virtualizer 的 scrollOffset 需要经过 React 重渲染，拖拽滚动条时
+      // mask 会落后一帧。原生 scroll 回调直接更新 CSS 变量，与浏览器滚动同步绘制。
       listRef.current?.style.setProperty(
         WORKSPACE_FILE_TREE_MASK_OFFSET_PROPERTY,
         `${scrollNode.scrollTop}px`,
       );
       const hasOverflow = scrollNode.scrollHeight > scrollNode.clientHeight + 1;
       const isAtBottom =
-        scrollNode.scrollTop + scrollNode.clientHeight >= scrollNode.scrollHeight - 1;
+        scrollNode.scrollTop + scrollNode.clientHeight >=
+        scrollNode.scrollHeight - 1;
       setHasScrollableFileTree(hasOverflow);
       setShowScrollBottomMask(hasOverflow && !isAtBottom);
     };
@@ -427,7 +455,7 @@ export function WorkspaceFileTree({
         })
       : await platform.openInFileManager(workspacePath);
     if (!result.success) {
-      logger.warn("[WorkspaceFileTree] Failed to open workspace path", {
+      logger.warn("[WorkspaceFileTree] 打开 workspace 路径失败", {
         path: workspacePath,
         error: result.error ?? "unknown-error",
       });
@@ -445,7 +473,7 @@ export function WorkspaceFileTree({
 
   const handleCopyPath = useCallback(async () => {
     if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) {
-      logger.warn("[WorkspaceFileTree] Failed to copy workspace path", {
+      logger.warn("[WorkspaceFileTree] 复制 workspace 路径失败", {
         path: workspacePath,
         error: "clipboard-unavailable",
       });
@@ -453,11 +481,11 @@ export function WorkspaceFileTree({
     }
     try {
       await navigator.clipboard.writeText(workspacePath);
-      logger.info("[WorkspaceFileTree] Workspace path copied", {
+      logger.info("[WorkspaceFileTree] workspace 路径已复制", {
         path: workspacePath,
       });
     } catch (error) {
-      logger.warn("[WorkspaceFileTree] Failed to copy workspace path", {
+      logger.warn("[WorkspaceFileTree] 复制 workspace 路径失败", {
         path: workspacePath,
         error: error instanceof Error ? error.message : String(error),
       });
@@ -481,9 +509,8 @@ export function WorkspaceFileTree({
         return next;
       });
       if (!row.expanded) {
-        // compact folders store the compressed visual depth on row.depth; it must not be used
-        // for newly loaded nodes. Load with the physical path depth, then subtract the compact
-        // offset during flattening so children do not land at their parent's level.
+        // compact folders 的 row.depth 是压缩后的视觉深度，不能用于写入新加载节点。
+        // 使用物理路径深度后，flatten 阶段再扣除 compact offset，子内容才不会与父目录同级。
         void treeData.loadDirectory(
           row.path,
           getWorkspaceFileTreeDirectoryLoadDepth(workspacePath, row.path),
@@ -513,9 +540,8 @@ export function WorkspaceFileTree({
         }
         return next;
       });
-      // Search results are a flat listWorkspaceFiles index, not driven by expandedPaths.
-      // Leave search mode first, then load ancestors level by level, so the target directory
-      // exists and stays expanded in the lazily loaded tree.
+      // 搜索结果是 listWorkspaceFiles 的平铺索引，不受 expandedPaths 驱动。
+      // 目录点击必须先回到树态，再逐级加载祖先目录，目标目录才会在懒加载树中可见并保持展开。
       setFileSearchQuery("");
       void (async () => {
         for (const directoryPath of directoryPathsToExpand) {
@@ -550,8 +576,8 @@ export function WorkspaceFileTree({
           getWorkspaceFileGitStatus(treeData.gitStatusByPath, row.path),
         )
       ) {
-        // Fix: deleted rows come from Git status completion and no file exists behind them.
-        // If any future entry point calls preview directly, the parent still blocks opening.
+        // 修复：deleted 文件行来自 Git 状态补全，不对应现存文件。
+        // 即使未来有其它入口直接调用预览，也要在父级兜底阻止打开。
         return;
       }
       onOpenPreview?.(createCodeViewerSourceForWorkspaceFile(row.path));
@@ -572,15 +598,25 @@ export function WorkspaceFileTree({
         }
         return;
       }
-      if (event.key === "ArrowLeft" && row.type === "directory" && row.expanded) {
+      if (
+        event.key === "ArrowLeft" &&
+        row.type === "directory" &&
+        row.expanded
+      ) {
         event.preventDefault();
         handleToggleDirectory(row);
       }
     },
-    [handleDirectoryAction, handleOpenPreview, handleToggleDirectory, hasFileSearchQuery],
+    [
+      handleDirectoryAction,
+      handleOpenPreview,
+      handleToggleDirectory,
+      hasFileSearchQuery,
+    ],
   );
 
-  const hasActiveFileTreeFilter = fileSearchQuery.trim().length > 0 || showChangedOnly;
+  const hasActiveFileTreeFilter =
+    fileSearchQuery.trim().length > 0 || showChangedOnly;
   const virtualItems = rowVirtualizer.getVirtualItems();
   const scrollOffset = rowVirtualizer.scrollOffset ?? 0;
   const stickyFolderItems = useWorkspaceFileTreeStickyFolders({
@@ -721,7 +757,9 @@ export function WorkspaceFileTree({
             </Button>
           </ControlHintTooltip>
         ) : null}
-        <ControlHintTooltip title={intl.formatMessage({ id: "workspaceFileTree.refresh" })}>
+        <ControlHintTooltip
+          title={intl.formatMessage({ id: "workspaceFileTree.refresh" })}
+        >
           <Button
             type="button"
             variant="ghost"
@@ -732,7 +770,9 @@ export function WorkspaceFileTree({
             disabled={treeData.refreshingLoadedDirectories}
             onClick={handleRefresh}
           >
-            <RefreshCw className={cn("size-3.5", refreshInProgress && "animate-spin")} />
+            <RefreshCw
+              className={cn("size-3.5", refreshInProgress && "animate-spin")}
+            />
           </Button>
         </ControlHintTooltip>
       </div>
@@ -762,7 +802,8 @@ export function WorkspaceFileTree({
           <WorkspaceFileTreeList
             rootError={hasFileSearchQuery ? searchIndexError : blockingRootError}
             showInitialLoading={
-              showInitialLoading || (hasFileSearchQuery && searchIndexLoading && !searchIndexLoaded)
+              showInitialLoading ||
+              (hasFileSearchQuery && searchIndexLoading && !searchIndexLoaded)
             }
             rows={visibleRows}
             virtualItems={virtualItems}
@@ -795,7 +836,7 @@ export function WorkspaceFileTree({
   );
 }
 
-function getWorkspaceFileTreeBlockingRootError({
+export function getWorkspaceFileTreeBlockingRootError({
   rootLoaded,
   rootError,
 }: {

@@ -7,7 +7,7 @@ import type {
 } from "./session-resident-pool.js";
 import type { ZCodeProtocolAgentServerContext } from "./server-types.js";
 
-interface SessionResidencyFinalizationOwner {
+export interface SessionResidencyFinalizationOwner {
   residencyFinalizationCount?: number;
 }
 
@@ -16,7 +16,7 @@ interface SessionResidencyFinalizationOwner {
  * Prompt admission's busy/idle authority belongs to Core now; activeAbortController is a legacy-command
  * compatibility handle only and must never act as the prompt scheduling lock.
  */
-function acquireSessionResidencyFinalization(
+export function acquireSessionResidencyFinalization(
   record: SessionResidencyFinalizationOwner,
 ): () => void {
   record.residencyFinalizationCount = (record.residencyFinalizationCount ?? 0) + 1;
@@ -50,7 +50,7 @@ export function runWithSessionResidencyFinalization<T>(
  * concurrently touch the same session resources. Synchronous removal and async close must therefore be composed by the pool's in-flight gate
  * into a single lifecycle transaction.
  */
-async function deactivateSessionRecord(
+export async function deactivateSessionRecord(
   context: ZCodeProtocolAgentServerContext,
   sessionId: string,
 ): Promise<void> {

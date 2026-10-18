@@ -21,8 +21,8 @@ function normalizeAxisDelta(rawDelta: number, event: WheelEvent, pageSize: numbe
   return clampForwardedDelta(rawDelta * scale);
 }
 
-/** Normalizes trackpad, wheel, and Shift+wheel into the CSS-pixel 2D delta the host canvas consumes. */
-function normalizeEmbeddedBrowserWheelDelta(
+/** 将触控板、滚轮和 Shift+滚轮统一成宿主画布使用的 CSS pixel 二维 delta。 */
+export function normalizeEmbeddedBrowserWheelDelta(
   event: WheelEvent,
   targetWindow: Window,
 ): EmbeddedBrowserWheelBoundaryPayload {
@@ -63,7 +63,7 @@ function canElementConsumeDelta(
       : element.scrollTop > SCROLL_BOUNDARY_EPSILON;
   }
 
-  // Chromium RTL scrollLeft is 0 at the right edge and negative when scrolled leftward.
+  // Chromium 的 RTL scrollLeft 在最右侧为 0，向左移动后为负值。
   if (style.direction === "rtl") {
     return delta > 0
       ? element.scrollLeft < -SCROLL_BOUNDARY_EPSILON
@@ -94,8 +94,8 @@ function guestCanConsumeDelta(
 }
 
 /**
- * Electron guest wheel events do not bubble to the embedder DOM. Forward only axes the guest cannot
- * consume; blanket forwarding breaks the page's own lists, tables, carousels, and nested scrollers.
+ * Electron 的 guest wheel 不会冒泡到 embedder DOM。这里只转交 guest 无法继续消费的轴，
+ * 避免无条件转发破坏网页自己的列表、表格、轮播和嵌套滚动容器。
  */
 export function installEmbeddedBrowserWheelForwarding(
   targetWindow: Window,
@@ -111,7 +111,7 @@ export function installEmbeddedBrowserWheelForwarding(
       : normalized.deltaY;
     if (deltaX === 0 && deltaY === 0) return;
 
-    // Defer to the end of this dispatch so later-registered preventDefault gesture handlers win.
+    // 延迟到本轮事件派发结束，尊重网页后注册的 preventDefault 自定义手势处理器。
     targetWindow.queueMicrotask(() => {
       if (event.defaultPrevented) return;
       sendToHost(EmbeddedBrowserWebviewChannels.WheelBoundary, { deltaX, deltaY });

@@ -1,21 +1,25 @@
 /**
- * SQLite JournalStorePort (dwf_* tables).
+ * `JournalStorePort` 的 SQLite 实现（dwf_* 表）。
  *
- * The port is synchronous and repository-shaped, matching node:sqlite DatabaseSync, so the engine needs no
- * async seams for persistence and replay determinism is storage-independent.
+ * 端口是同步的、仓储式的，正好贴合 node:sqlite 的 DatabaseSync——引擎因此不必为持久化
+ * 引入异步缝隙，replay 的确定性也就不受存储实现影响。
  *
- * Dependency direction vs @zcode/dynamic-workflow: type-only imports. The port belongs to the domain package;
- * this file is one adapter and the runtime takes no values from it (implements erases at compile time).
+ * 与 @zcode/dynamic-workflow 的依赖方向：只 `import type`。端口属于领域包，本文件是它的
+ * 一个 adapter；运行时不得从领域包取任何值（`implements` 在编译期被抹除）。
  *
- * Transactionality is not on the port: scenarios needing atomicity with session writes compose via driver begin immediate.
+ * 事务性不在端口面上：需要与 session 写入同原子的场景由 driver 用 `begin immediate` 组合。
  */
 
 import type { DatabaseSync } from "node:sqlite";
 import type {
   ActorRecord,
   Caps,
+  GetNodeOptions,
   JournalStorePort,
+  ListActorsOptions,
   ListEventsOptions,
+  ListNodesOptions,
+  NodeKind,
   NodeRecord,
   RunEvent,
   RunRecord,
@@ -24,24 +28,31 @@ import type {
   StoredEvent,
 } from "@zcode/dynamic-workflow";
 import { encodeJson } from "../json.js";
-// Artifact readers are their own module: one db handle, no shared state with run/actor/node/event writes,
-// and each query carries a full rationale for source, ordering and cursor.
+// 产物读面自成一个模块：它只要一个 db 句柄，与 run/actor/node/event 的写入-读取无共享状态，
+// 而它的两条查询各自带着一大段「为什么是这个取数源、这个排序、这个游标」的论证。
 import {
+  countTaggedReports,
   listArtifactItems,
   listArtifactRows,
   type DwfArtifactItem,
   type DwfArtifactItemsQuery,
 } from "./dwf-journal-artifacts.js";
+import { listEventPage, type DwfEventPageQuery } from "./dwf-journal-pages.js";
+import {
+  countNodeRows,
+  getNodeRow,
+  listActorRows,
+  listEventRows,
+  listNodeRows,
+  sumResultBytes,
+} from "./dwf-journal-reads.js";
 import {
   decodeActor,
-  decodeEvent,
-  decodeNode,
   decodeRun,
   encodeResultJson,
   encodeRunSettlement,
   type DwfActorRow,
   type DwfEventRow,
-  type DwfNodeRow,
   type DwfWorldNodeRow,
   type DwfRunDetailRow,
   type DwfRunListItem,
@@ -63,8 +74,8 @@ import {
 } from "./dwf-journal-introspection.js";
 
 export type { DwfArtifactItem, DwfArtifactItemsQuery } from "./dwf-journal-artifacts.js";
-// Run introspection readers (DwfRunIntrospectionQueries and SQL) live in dwf-journal-introspection.ts
-// (max-lines split); types still export from here so importers keep their paths.
+// run 内省读面（DwfRunIntrospectionQueries 及其 SQL）住在 dwf-journal-introspection.ts
+//（max-lines 拆分）；类型仍从本文件导出，既有 importer 不必改路径。
 export type {
   DwfListRunsQuery,
   DwfNodeStatusCounts,
@@ -77,7 +88,7 @@ class SqliteDwfJournalStore implements JournalStorePort, DwfRunIntrospectionQuer
 
   createRun(record: RunRecord): void {
     const now = Date.now();
-    // Logical -> physical (zero-migration terminal encoding, see the dwf-journal-codecs.ts header).
+    // 逻辑 → 物理（零迁移终态编码，见 dwf-journal-codecs.ts 文件头）。
     const settlement = encodeRunSettlement(record.status, record);
     try {
       this.db
@@ -94,21 +105,21 @@ class SqliteDwfJournalStore implements JournalStorePort, DwfRunIntrospectionQuer
           record.runId,
           record.parentSessionId ?? null,
           record.cwd ?? null,
-          // name rides the same metadata path as scriptText/cwd: written once at run creation,
-          // never touched again (updateRunStatus deliberately omits the column).
+          // name 与 scriptText / cwd 同一条元数据路：只在建 run 这一刻写入，此后没有任何
+          // 写入者碰它（updateRunStatus 刻意不列这一列）。
           record.name ?? null,
           record.scriptText ?? null,
           record.scriptHash ?? null,
           record.toolCallId ?? null,
-          // args ride the same metadata path as scriptText: written once at creation, never touched;
-          // resume must replay exactly the approved copy.
+          // 实参与 scriptText 同一条元数据路：只在建 run 这一刻写入，此后没有任何写入者
+          // 碰它——resume 读回来重放的必须是被批准的那一份。
           encodeJson(record.args),
-          // lineage joins the write-once metadata path: an amend supersedes, predecessor rows untouched,
-          // so amended-from is writable only at creation.
+          // lineage 同属这条只写一次的元数据路：修订是 supersede，前驱行零触碰，
+          // 所以「本 run 修订自谁」只有建 run 这一刻能写下。
           record.resumedFrom ?? null,
-          // caps differ from the columns above: not write-once. updateRunCaps is the column's second
-          // writer: a max_concurrency-only amend edits the living run in place, while resume
-  // keeps the row's value.
+          // caps 与上面几列**不**同路：它不是只写一次的元数据。`updateRunCaps` 是这一列的第二个
+          // 写入者——一次只改 `max_concurrency` 的修订就地作用在活着的 run 上，而 resume 沿用
+          // 行里的值（docs/dynamic-workflow/concurrency.md「Two bounds on a run」）。
           record.caps.maxConcurrency,
           record.spentTokens,
           settlement.status,
@@ -118,7 +129,7 @@ class SqliteDwfJournalStore implements JournalStorePort, DwfRunIntrospectionQuer
           now,
         );
     } catch (error) {
-      // A duplicate run is a caller contract error worth a readable message; other failures (FK, disk, constraints) bubble.
+      // 重复 run 是调用方的契约错误，值得一条能直接读懂的消息；其余失败（FK、磁盘、约束）原样上抛。
       if (this.getRun(record.runId) !== undefined) {
         throw new Error(`dwf journal: run already exists: ${record.runId}`, { cause: error });
       }
@@ -135,10 +146,10 @@ class SqliteDwfJournalStore implements JournalStorePort, DwfRunIntrospectionQuer
 
   updateRunStatus(runId: string, status: RunStatus, settlement?: RunSettlementRecord): void {
     const now = Date.now();
-    // Non-terminal = no settlement: flipping a run back to running on resume must clear the previous life's failure_json/
-    // result_json. The engine's resume carries no settlement bag, and absent-key-means-no-touch would leave the
-    // orphan-convergence Interrupted failure alongside running. Contradictory bags (terminal fields on non-terminal)
-    // are cleared likewise (pinned by contract tests, both implementations).
+    // 非终态 = 无 settlement：resume 把 run 翻回 running 时必须清掉上一世的 failure_json /
+    // result_json——引擎的 resume 分支不带结算袋，「缺席键 = 不触碰」的终态语义会让孤儿收敛
+    // 写下的 Interrupted 失败与 running 并存。矛盾的结算袋（非终态却携带 failure/result）
+    // 同样按清空处理（契约测钉住，两实现同语义）。
     if (status === "pending" || status === "running") {
       const { changes } = this.db
         .prepare(
@@ -155,17 +166,17 @@ class SqliteDwfJournalStore implements JournalStorePort, DwfRunIntrospectionQuer
       this.assertRunTouched(changes, runId);
       return;
     }
-    // Terminal and artifact in one stroke: two UPDATEs open a crash window producing completed runs with
-    // empty result_json, exactly the loss class 0020's column closes.
+    // 终态与产物**一笔写**：分两条 UPDATE 会开出崩溃窗口，造出「completed 但 result_json
+    // 为空」的 run——正是 0020 这一列要关死的损失类别。
     //
-    // failure_json is rewritten wholesale (no coalesce). A second desktop instance's orphan
-    // convergence writes failed+Interrupted over a run this engine still has alive; the engine then completes normally, and
-    // coalesce would leave the foreign failure, the row claiming completed and interrupted at once. The settlement bag is
-    // the whole truth at that moment: stopped always writes the envelope, errored its failure (absent = NULL, the truth),
-    // completed NULL.
+    // `failure_json` **整列改写**（不 coalesce）。第二个桌面实例的孤儿
+    // 收敛在本进程引擎仍活着的 run 上写下 failed + Interrupted；引擎随后正常 completed，而
+    // coalesce 让那份外来失败原样留了下来——行同时说「完成了」和「被打断了」。结算袋是那一刻
+    // 失败的**全部真相**：stopped 恒写信封、errored 写它自己的失败（缺席即 NULL，那就是真相）、
+    // completed 写 NULL。
     //
-    // result_json keeps coalesce: artifact semantics are absent-means-no-touch (contract case
-    // keeps an already-settled artifact when a later write omits it); a settlement without artifact must not erase it.
+    // `result_json` 保留 coalesce：产物的语义是「缺席 = 不触碰」（契约用例「keeps an
+    // already-settled artifact when a later write omits it」），一次不带产物的重复结算不该抹掉它。
     const encoded = encodeRunSettlement(status, settlement);
     const { changes } = this.db
       .prepare(
@@ -190,10 +201,10 @@ class SqliteDwfJournalStore implements JournalStorePort, DwfRunIntrospectionQuer
   }
 
   /**
-   * In-place update of the run's concurrency cap.
-   * A narrow write kin to updateRunUsage: only caps_max_concurrency is listed; status, usage and the settlement
-   * envelope have their own paths, and mixing them in would let a cap tweak roll back a settlement.
-   * Zero migration: the column long exists; this method is merely its second writer.
+   * 本 run 并发上界的就地更新（docs/dynamic-workflow/concurrency.md「Two bounds on a run」）。
+   * 与 `updateRunUsage` 同族的窄写入：**只列 caps_max_concurrency**，状态、用量与结算信封
+   * 都不在这条语句里——它们各有自己的写入路径，混进来就会让一次改上界顺手回退一个结算。
+   * 零迁移：列早已存在，本方法只是它的第二个写入者。
    */
   updateRunCaps(runId: string, caps: Caps): void {
     const { changes } = this.db
@@ -203,18 +214,33 @@ class SqliteDwfJournalStore implements JournalStorePort, DwfRunIntrospectionQuer
   }
 
   /**
-   * Every non-terminal run of one parent session. Deliberately not on JournalStorePort: the engine never finds
-   * runs by parent; this serves host-side orphan convergence only, since a killed process' run sticks at running
-   * until the next app construction of the same session converges it
-   * (bootstrap/src/app/dynamic-workflow-run-service.ts, via capability probe).
+   * 把**有效脚本**写回 run 行（docs/execution-engine.md「Holes」→「The engine's part」）。它是
+   * `script_text` / `script_hash` 两列在 `createRun` 之后的第二个写入者：一次补全把留白的函数体
+   * 接进脚本，此后 resume 拿行里的哈希对行里的文本，所以两列**必须同一条 UPDATE**——分两笔写会
+   * 开出一个「文本是新的、哈希是旧的」的崩溃窗口，resume 撞上它就是 ScriptHashMismatch。
+   * 与 `updateRunUsage` 同族的窄写入：状态、用量、上界与结算袋都不在这条语句里。零迁移：两列
+   * 早已存在，本方法只是它们的第二个写入者。
+   */
+  updateRunScript(runId: string, scriptText: string, scriptHash: string): void {
+    const { changes } = this.db
+      .prepare("update dwf_run set script_text = ?, script_hash = ?, time_updated = ? where id = ?")
+      .run(scriptText, scriptHash, Date.now(), runId);
+    this.assertRunTouched(changes, runId);
+  }
+
+  /**
+   * 某个父会话名下所有**非终态**的 run。刻意不在 `JournalStorePort` 上：引擎从不按父会话找
+   * run，这条查询只服务于宿主侧的孤儿收敛——一个进程被杀掉的 run 会永远停在 `running`，
+   * 由下一次同会话的 app 构造把它收敛掉（`bootstrap/src/app/dynamic-workflow-run-service.ts`，
+   * 按能力探测调用本方法）。
    *
-   * SQL only: the terminal set here is an index-friendly prefilter; the service is the authority
-   * (it re-checks against its own terminal set). parent_session_id must be in the predicate or a sweep would
-   * kill sibling sessions' in-flight runs (one sqlite, separate in-memory registries). SQL =? never matches
-   // NULL, so parentless rows belong to no session and no convergence touches them.
+   * 本方法只出 SQL：终态集在这里是**索引友好的预筛**，判定权威留在 service 侧（它拿到记录后
+   * 按自己的终态集再过一遍）。`parent_session_id` 必须入条件——不带它的清扫会把同进程兄弟
+   * 会话**正在飞**的 run 标死（同一个 sqlite，各自独立的内存注册表）。SQL 的 `= ?` 天然不匹配
+   * `NULL`，所以父会话缺席的行不属于任何会话，也就不会被任何一次收敛碰到。
    */
   listNonTerminalRuns(parentSessionId: string): RunRecord[] {
-    // Physical terminal set (failed/cancelled store logical errored/stopped; never migrated).
+    // 物理终态集（failed / cancelled 是逻辑 errored / stopped 的落库形态，不迁移）。
     const rows = this.db
       .prepare(
         `
@@ -228,7 +254,7 @@ class SqliteDwfJournalStore implements JournalStorePort, DwfRunIntrospectionQuer
     return rows.map(decodeRun);
   }
 
-  // ---- Host-side run introspection: SQL and rationale in dwf-journal-introspection.ts; delegate only.
+  // ---- 宿主侧 run 内省读面：SQL 与论证住在 dwf-journal-introspection.ts，这里只做委托。
 
   listRuns(query: DwfListRunsQuery): DwfRunListItem[] {
     return listRuns(this.db, query);
@@ -291,15 +317,12 @@ class SqliteDwfJournalStore implements JournalStorePort, DwfRunIntrospectionQuer
     return row ? decodeActor(row) : undefined;
   }
 
-  listActors(runId: string): ActorRecord[] {
-    const rows = this.db
-      .prepare("select * from dwf_actor where run_id = ? order by id")
-      .all(runId) as unknown as DwfActorRow[];
-    return rows.map(decodeActor);
+  listActors(runId: string, opts: ListActorsOptions): ActorRecord[] {
+    return listActorRows(this.db, runId, opts);
   }
 
   putNode(record: NodeRecord): void {
-    // Admit (running), settle, stats backfill: one upsert keyed (run_id, site_id, ordinal).
+    // 准入（running）→ 结算 → 统计回填都走同一条 upsert，键是 (run_id, site_id, ordinal)。
     const now = Date.now();
     this.db
       .prepare(
@@ -338,37 +361,50 @@ class SqliteDwfJournalStore implements JournalStorePort, DwfRunIntrospectionQuer
         encodeResultJson(record.result),
         encodeJson(record.error),
         encodeJson(record.stats),
-        // Driver-backfill column kin to stats_json: the upsert replaces whole rows, so the backfiller must
-        // getNode then rewrite the full record (contract tests pin this read-modify-write shape).
+        // 与 stats_json 同族的 driver 补写列：upsert 整条替换，所以补写方必须先 getNode
+        // 再把整条记录铺开重写（契约测钉住这个读改写形状）。
         record.messageBoundary ?? null,
-        // artifact_id and kind are engine-carried identity columns on both writes (admit running and settle
-        // completed/failed write the same id); the upsert replaces whole rows, so omitting it once
-        // erases the settled row's artifact attribution from the this-run's-artifacts reader.
+        // 产物 id 与 kind 同属**引擎在两次写里都带着**的身份列（准入 running 与结算
+        // completed/failed 写的是同一个 id）：upsert 整条替换，所以少写一次就等于把
+        // 结算行的产物归属抹掉，那条发布在「本 run 有哪些产物」的读面上直接消失。
         record.artifactId ?? null,
-        // 0030: bounded input joins kind/artifact_id as engine-carried on both writes; upsert replaces whole rows,
-        // so a settlement missing it NULLs the admitted op/args.
+        // 0030：有界输入与 kind / artifact_id 同属「引擎两次写都带着」的列——upsert 整条替换，
+        // 结算漏写一次就把准入记下的 op / args 抹回 NULL。
         encodeJson(record.input),
         now,
         now,
       );
   }
 
-  getNode(runId: string, siteId: string, ordinal: number): NodeRecord | undefined {
-    const row = this.db
-      .prepare("select * from dwf_node where run_id = ? and site_id = ? and ordinal = ?")
-      .get(runId, siteId, ordinal) as DwfNodeRow | undefined;
-    return row ? decodeNode(row) : undefined;
+  // ---- 节点 / 事件 / actor 的列表读：SQL 与论证住在 dwf-journal-reads.ts（读面选项全部下推）。
+
+  getNode(
+    runId: string,
+    siteId: string,
+    ordinal: number,
+    opts?: GetNodeOptions,
+  ): NodeRecord | undefined {
+    return getNodeRow(this.db, runId, siteId, ordinal, opts);
   }
 
-  listNodes(runId: string): NodeRecord[] {
-    const rows = this.db
-      .prepare("select * from dwf_node where run_id = ? order by id")
-      .all(runId) as unknown as DwfNodeRow[];
-    return rows.map(decodeNode);
+  listNodes(runId: string, opts: ListNodesOptions): NodeRecord[] {
+    return listNodeRows(this.db, runId, opts);
+  }
+
+  countNodes(runId: string, kind: NodeKind): number {
+    return countNodeRows(this.db, runId, kind);
+  }
+
+  sumResultBytes(runId: string, kind: NodeKind): number {
+    return sumResultBytes(this.db, runId, kind);
   }
 
   listArtifactRows(runId: string): NodeRecord[] {
     return listArtifactRows(this.db, runId);
+  }
+
+  countTaggedReports(runId: string): ReadonlyMap<string, number> {
+    return countTaggedReports(this.db, runId);
   }
 
   listWorldNodes(runId: string): DwfWorldNodeRow[] {
@@ -379,16 +415,23 @@ class SqliteDwfJournalStore implements JournalStorePort, DwfRunIntrospectionQuer
     runId: string,
     artifactId: string,
     query: DwfArtifactItemsQuery,
-  ): DwfArtifactItem[] {
+  ): { items: DwfArtifactItem[]; hasMore: boolean } {
     return listArtifactItems(this.db, runId, artifactId, query);
   }
 
+  listEventPage(
+    runId: string,
+    query: DwfEventPageQuery,
+  ): { events: StoredEvent[]; hasMore: boolean } {
+    return listEventPage(this.db, runId, query);
+  }
+
   appendEvent(runId: string, event: RunEvent): StoredEvent {
-    // The time written into time_created must return to the caller verbatim: decodeEvent yields the same
-    // number on read, else a just-written event has no time until read back, a two-faced invariant.
+    // 写进 time_created 的那一刻要原样回给调用方：读回这一行时 decodeEvent 给的是同一个数，
+    // 追加路径却拿不到它，就会出现「刚写的事件没有时刻、读回来才有」这种两面不一致。
     const timeCreated = Date.now();
-    // Sequence assignment and insert must be one statement: a separate MAX(sequence)+1 read races across
-    // processes (WAL lets several agents share one DB) into duplicate sequences.
+    // 序号分配与写入必须是同一条语句：MAX(sequence)+1 单独读一次再插入，会在多进程
+    // （WAL 下 zcode 允许多个 Agent 共享同一个库）之间竞争出重复序号。
     const row = this.db
       .prepare(
         `
@@ -410,27 +453,17 @@ class SqliteDwfJournalStore implements JournalStorePort, DwfRunIntrospectionQuer
     return { sequence: row.sequence, event, timeCreated };
   }
 
-  listEvents(runId: string, opts?: ListEventsOptions): StoredEvent[] {
-    // cursor and limit push down into SQL: fetch-all-then-slice reads the whole journal per page,
-    // exactly what paging avoids. Cursor means strictly-greater (in-memory impl same).
-    const after = opts?.afterSequence;
-    const limit = opts?.limit;
-    const where = after === undefined ? "run_id = ?" : "run_id = ? and sequence > ?";
-    const params: Array<string | number> = after === undefined ? [runId] : [runId, after];
-    // limit -1 is SQLite's unlimited form, so default and explicit limit share one statement shape.
-    const rows = this.db
-      .prepare(`select * from dwf_event where ${where} order by sequence limit ?`)
-      .all(...params, limit === undefined ? -1 : Math.max(0, limit)) as unknown as DwfEventRow[];
-    return rows.map(decodeEvent);
+  listEvents(runId: string, opts: ListEventsOptions): StoredEvent[] {
+    return listEventRows(this.db, runId, opts);
   }
 
-  /** Zero updated rows means unknown-run; SQLite does not raise, so detect and fail loudly. */
+  /** UPDATE 影响 0 行即"未知 run"——SQLite 不会为此报错，必须显式检出并大声失败。 */
   private assertRunTouched(changes: number | bigint, runId: string): void {
     if (Number(changes) === 0) throw new Error(`dwf journal: unknown run: ${runId}`);
   }
 }
 
-/** Opens a dwf journal view over an existing session DB; tables come from migration 0019_dwf_journal. */
+/** 在既有 session 库上开一个 dwf journal 视图；表由 migration `0019_dwf_journal` 建立。 */
 export function createDwfJournalStore(db: DatabaseSync): JournalStorePort {
   return new SqliteDwfJournalStore(db);
 }

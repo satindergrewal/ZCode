@@ -1,16 +1,6 @@
 import { ingestToolExecResource } from "./desktopResourceTelemetry.js";
 import { ingestMcpResourceSamples } from "./processResourceMcpTelemetrySource.js";
-/* eslint-disable max-lines -- the host process centralizes main-host lifecycle, logs, and the ZCode Agent; keep cross-process messaging in one place until it splits. */
-import { bindDatabaseStartupRelay } from "./databaseStartupRelay.js";
-import { randomUUID } from "node:crypto";
-import { join } from "node:path";
-import {
-  app,
-  BrowserWindow,
-  MessageChannelMain,
-  utilityProcess as electronUtilityProcess,
-} from "electron";
-import type { MessagePortMain, UtilityProcess as ElectronUtilityProcess } from "electron";
+/* eslint-disable max-lines -- host process 统一处理 main↔host 生命周期、日志、ZCode Agent，拆分前先保持跨进程消息收口。 */
 import {
   type HostAgentProcessErrorResponse,
   type HostAgentProcessExceptionResponse,
@@ -20,41 +10,57 @@ import {
   type HostCuaOperationStateResponse,
   type HostMcpTelemetryResponse,
   type HostSessionCreateTelemetryResponse,
+  type RemoteTarget,
   type TaskRealtimeHostDeliveryKind,
+  type WorkspacePurpose,
   formatZCodeHostProcessName,
   HostMessageTypes,
-  HostResponseTypes,
   hostResponseMessageSchema,
+  HostResponseTypes,
   InternalChannels,
   LAUNCH_MARKS_QUERY_KEY,
   RUNTIME_ZCODE_DEBUG,
   serializeLaunchMarks,
-  type RemoteTarget,
-  type WorkspacePurpose,
   ZCODE_DESKTOP_CONTEXT_PROMPT_ENABLED_ENV,
   ZCODE_MISSION_CONTINUATION_ENV_KEY,
 } from "@zcode/shared";
-import { getMainLaunchPartialMarks } from "./desktopLaunchMarks.js";
+import type {
+  PluginSandboxHandle,
+  PluginSandboxRegisterRequestPayload,
+  PluginSandboxRegisterResultPayload,
+} from "@zcode/shared/mcp-apps";
+import type { UtilityProcess as ElectronUtilityProcess, MessagePortMain } from "electron";
+import {
+  app,
+  BrowserWindow,
+  utilityProcess as electronUtilityProcess,
+  MessageChannelMain,
+} from "electron";
+import { randomUUID } from "node:crypto";
+import { join } from "node:path";
 import { BroadcastHub } from "./broadcastHub.js";
-import type { TaskRealtimeBus } from "./taskRealtimeBus.js";
+import { bindDatabaseStartupRelay } from "./databaseStartupRelay.js";
+import { getMainLaunchPartialMarks } from "./desktopLaunchMarks.js";
+import { ingestHostNetworkObservations } from "./desktopNetworkTelemetry.js";
+import {
+  buildHostProcessEnv,
+  hostModulePath,
+  resolveBundledGlmBinaryPath,
+} from "./desktopRuntimeEnv.js";
+import { ingestHostNetworkCapture } from "./resourceManagerNetwork.js";
+import { buildHostE2ECoverageEnv } from "./e2eCoverage.js";
+import { createFeedbackLogArchiveFromExportLogs } from "./exportLogs.js";
 import { createHostLogRelay } from "./hostLogRelay.js";
+import { ingestCliResourceSample } from "./processResourceCliSource.js";
+import { ingestHostSelfResourceSample } from "./processResourceSelfHeapSource.js";
+import { resolveHostResourceUsageResult } from "./resourceManagerHostSampling.js";
 import {
   registerHostAgentProcess,
   registerHostProcess,
   unregisterHostAgentProcess,
   unregisterHostProcess,
 } from "./resourceManagerWindow.js";
-import { resolveHostResourceUsageResult } from "./resourceManagerHostSampling.js";
-import {
-  buildHostProcessEnv,
-  hostModulePath,
-  resolveBundledGlmBinaryPath,
-} from "./desktopRuntimeEnv.js";
-import { ingestHostNetworkObservations } from "./desktopNetworkTelemetry.js";
-import { ingestCliResourceSample } from "./processResourceCliSource.js";
-import { ingestHostSelfResourceSample } from "./processResourceSelfHeapSource.js";
-import { createFeedbackLogArchiveFromExportLogs } from "./exportLogs.js";
-import { buildHostE2ECoverageEnv } from "./e2eCoverage.js";
+import type { TaskRealtimeBus } from "./taskRealtimeBus.js";
 
 export interface WindowBootstrapOptions {
   restoreSession?: boolean;
@@ -80,13 +86,13 @@ export interface HostInitMessage {
     workspaceIdentity?: string;
   }>;
   agentSpawnFallbackCwd?: string;
-  /* /** Main-resolved ZCode Built-in Provider Config path; Host/Services never see the Electron install layout. */
+  /** Main 解析后的 ZCode Built-in Provider Config 路径；Host/Services 不感知 Electron 安装布局。 */
   zcodeBuiltinProviderConfigFilePath: string;
-  /* /** Machine runtime env collected and filtered by main ahead of time; only passed to InitLocal. */
+  /** Main 提前异步采集并过滤的本机 runtime 环境；只允许传给 InitLocal。 */
   runtimeProcessEnvPatch?: Record<string, string>;
 }
 
-interface SpawnHostProcessOptions {
+export interface SpawnHostProcessOptions {
   internalChannel?: typeof InternalChannels.ServicePort | typeof InternalChannels.ScopedServicePort;
   internalPayload?: unknown;
   registerBroadcast?: boolean;
@@ -96,7 +102,7 @@ interface SpawnHostProcessOptions {
     onHostId?: (hostId: string) => void;
   };
   onPortReady?: (port: MessagePortMain) => void;
-  /* /** Shared SSH/WSL Host init creates no special first-workspace RPC port. */
+  /** 共享 SSH/WSL Host 初始化时不创建特殊的首个 workspace RPC port。 */
   attachInitialServicePort?: boolean;
 }
 
@@ -134,7 +140,7 @@ export function loadWindow(
     });
   }
 
-  // // Packaged builds must not trust inherited dev-server addresses, or a local dev session hijacks the window into a blank page.
+  // 生产包不能信任继承环境中的开发服务器地址，否则会被本机开发会话劫持为空白页。
   if (!app.isPackaged && process.env["ELECTRON_RENDERER_URL"]) {
     const base = process.env["ELECTRON_RENDERER_URL"];
     const url = new URL(page === "login" ? `${base}/login.html` : base);
@@ -155,7 +161,7 @@ export function spawnHostProcess(
   initMessage: HostInitMessage,
   dependencies: {
     hostProcessLocalEnv: Record<string, string>;
-    /* /** Main owns the server-side rollout decision; the Host consumes this snapshot without requesting or bucketing. */
+    /** Main 进程已完成服务端灰度裁决；Host 只消费这个快照，不自行请求或分桶。 */
     desktopContextPromptEnabled?: () => boolean;
     /** Task-list-driven autonomous continuation switch; the Host forwards it to the Agent spawn env. */
     missionContinuationEnabled?: () => boolean;
@@ -208,7 +214,7 @@ export function spawnHostProcess(
       workspaceIdentity: string;
       target: RemoteTarget;
     }) => Promise<{ ok: boolean; port?: MessagePortMain; error?: string }>;
-    /* /** host-to-main: cron dispatch outcome, forwarded to the cron scheduler to settle its state machine. */
+    /** host → main：定时任务派发结果，转交给 cron scheduler 结算调度状态机。 */
     onCronRunResult?: (result: {
       runId: string;
       ok: boolean;
@@ -217,7 +223,7 @@ export function spawnHostProcess(
       error?: string;
       failureKind?: "transient" | "permanent";
     }) => void;
-    /* /** host-to-main: off-peak dispatch outcome for the scheduler to settle (independent of cron). */
+    /** host → main：闲时任务派发结果，转交给 scheduler 结算（与 cron 独立）。 */
     onOffPeakRunResult?: (result: {
       offPeakTaskId: string;
       ok: boolean;
@@ -226,11 +232,11 @@ export function spawnHostProcess(
       error?: string;
       failureKind?: "transient" | "permanent";
     }) => void;
-    /* /** host asks main to wake the scheduler as soon as a manual run persists. */
+    /** host 中 manual run 落库后请求 main 立即唤醒 scheduler。 */
     onCronSchedulerWakeRequested?: (automationId: string) => void;
-    /* /** host asks main to wake the scheduler once an off-peak task turns schedulable. */
+    /** host 中闲时任务翻 schedulable 后请求 main 立即唤醒 scheduler。 */
     onOffPeakSchedulerWakeRequested?: (offPeakTaskId?: string) => void;
-    // // browser-use: main executes one command via WebContentsView+CDP. Host-injected; default backend_unavailable.
+    // browser-use：main 用 WebContentsView+CDP 执行一条命令。实现由宿主注入；缺省则 backend_unavailable。
     handleBrowserExecuteRequest?: (params: {
       win: BrowserWindow;
       requestId: string;
@@ -246,8 +252,12 @@ export function spawnHostProcess(
       sessionContext?: "live" | "cached";
       command: unknown;
     }) => Promise<{ ok: boolean; [k: string]: unknown }>;
-    /* /** After the Host authorizes the attachment, main adds the local video realpath to the exact protocol allowset. */
+    /** Host 已完成附件授权后，由 Main 将本地视频 realpath 加入精确协议授权集合。 */
     authorizeLocalMediaPreviewPath?: (path: string) => Promise<string>;
+    /** Host 校验完插件 UI HTML 后交给 Main 沙箱注册表登记，返回句柄。 */
+    registerPluginSandbox?: (
+      input: PluginSandboxRegisterRequestPayload,
+    ) => PluginSandboxHandle | Promise<PluginSandboxHandle>;
   },
   options?: SpawnHostProcessOptions,
 ): ElectronUtilityProcess {
@@ -297,8 +307,8 @@ export function spawnHostProcess(
     `[spawnHostProcess] BIGMODEL_OAUTH_APP_SECRET source: ${process.env.BIGMODEL_OAUTH_APP_SECRET ? "process" : dependencies.hostProcessLocalEnv.BIGMODEL_OAUTH_APP_SECRET ? "dotenv" : "fallback"}`,
   );
 
-  // // Remote connections share the window Host with local services; process stdout carries no request identity.
-  // // Connection progress reports via HostResponseTypes.RemoteWorkspaceConnectionLog keyed by requestId.
+  // 远程连接与本地服务共享 window Host，进程级 stdout 没有请求身份。
+  // 连接进度改由 HostResponseTypes.RemoteWorkspaceConnectionLog 按 requestId 上报。
   const hostLogRelay = createHostLogRelay(
     label,
     dependencies.logger as Parameters<typeof createHostLogRelay>[1],
@@ -332,8 +342,11 @@ export function spawnHostProcess(
       ingestHostNetworkObservations(result.data.observations);
       return;
     }
-
-    // // CLI self-sampled 60s data: services-assigned lanes map to cli_chat / cli_aux roles.
+    if (result.data.type === HostResponseTypes.NetworkCaptureBatch) {
+      ingestHostNetworkCapture(result.data.batch, child.pid ?? 0);
+      return;
+    }
+    // CLI 自采的 60 秒样本：按 services 打的 lane 归入 cli_chat / cli_aux 角色。
     if (result.data.type === HostResponseTypes.AgentResourceSample) {
       ingestCliResourceSample(
         result.data.sample,
@@ -343,7 +356,7 @@ export function spawnHostProcess(
       return;
     }
 
-    // // Host self-sampled 60s data: main takes heap only, feeding the heap dim of host-role events.
+    // Host 自采的 60 秒样本：main 只取 heap 作 host 角色事件的 heap 维度。
     if (result.data.type === HostResponseTypes.HostResourceSample) {
       ingestHostSelfResourceSample(result.data.sample);
       return;
@@ -410,8 +423,34 @@ export function spawnHostProcess(
       return;
     }
 
+    if (result.data.type === HostResponseTypes.PluginSandboxRegisterRequest) {
+      const request = result.data;
+      const register = dependencies.registerPluginSandbox;
+      const reply = (payload: PluginSandboxRegisterResultPayload) =>
+        child.postMessage({ type: HostMessageTypes.PluginSandboxRegisterResult, ...payload });
+      if (!register || win.isDestroyed() || request.ownerWebContentsId !== win.webContents.id) {
+        reply({
+          requestId: request.requestId,
+          ok: false,
+          error: "Plugin UI sandbox is unavailable.",
+        });
+        return;
+      }
+      void Promise.resolve()
+        .then(() => register(request))
+        .then((handle) => reply({ requestId: request.requestId, ok: true, ...handle }))
+        .catch((error: unknown) =>
+          reply({
+            requestId: request.requestId,
+            ok: false,
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        );
+      return;
+    }
+
     if (result.data.type === HostResponseTypes.CuaOperationState) {
-      // // Main only projects Host-decided turn state; never re-parse session/tool events here.
+      // Main 只投影 Host 已经判定的 turn 状态，不在这里重复解析 session/tool 业务事件。
       dependencies.onCuaOperationStateChanged?.(child, result.data);
       return;
     }
@@ -440,8 +479,8 @@ export function spawnHostProcess(
     }
 
     if (result.data.type === HostResponseTypes.BrowserExecuteRequest) {
-      // // browser-use: main runs the command via WebContentsView+CDP (handleBrowserExecuteRequest).
-      // // Without an implementation, return backend_unavailable: channel proven, nothing blocked.
+      // browser-use：main 用 WebContentsView+CDP 执行命令（handleBrowserExecuteRequest）。
+      // 缺省实现时返回 backend_unavailable，保证通道打通但不阻塞。
       const requestId = result.data.requestId;
       const handler = dependencies.handleBrowserExecuteRequest;
       const fallback = {
@@ -584,8 +623,8 @@ export function spawnHostProcess(
           type: HostMessageTypes.BotRemoteWorkspaceReconnectResult,
           requestId: request.requestId,
           ok: false,
-          // // Bugfix: /reconnect needs the main-side bridge; a missing handler must return a precise reason, not a generic unreachable.
-          error: "Bot remote workspace reconnect handler not injected.",
+          // Bugfix: /reconnect 需要 main 侧 bridge，缺 handler 时返回明确原因，避免继续显示笼统的不可访问。
+          error: "未注入 Bot 远端 workspace 重连处理器。",
         });
         return;
       }
@@ -625,7 +664,7 @@ export function spawnHostProcess(
           type: HostMessageTypes.BotRemoteWorkspaceConnectionStatusResult,
           requestId: request.requestId,
           ok: false,
-          error: "Bot remote workspace connection-state handler not injected.",
+          error: "未注入 Bot 远端 workspace 连接状态处理器。",
         });
         return;
       }
@@ -665,9 +704,9 @@ export function spawnHostProcess(
           type: HostMessageTypes.BotRemoteWorkspaceRuntimePort,
           requestId: request.requestId,
           ok: false,
-          // // Bugfix: a remote Bot must not fall back to the local ZCode Agent without its runtime bridge,
-          // // or remote-workspace tasks get written locally with the wrong model.
-          error: "Bot remote workspace runtime handler not injected.",
+          // Bugfix: 远端 Bot 不能在缺少 runtime bridge 时回落到本地 ZCode Agent，
+          // 否则会把 remote workspace 的任务写到本地并触发错误模型。
+          error: "未注入 Bot 远端 workspace runtime 处理器。",
         });
         return;
       }
@@ -760,7 +799,7 @@ export function spawnHostProcess(
 
   child.on("exit", (code) => {
     exitedHostProcesses.add(child);
-    // // Host exit is the fail-hidden authority; never rely on a dying Host to emit inactive late.
+    // Host exit 是 fail-hidden 权威边界；不能依赖即将退出的 Host 再补发 inactive。
     dependencies.onCuaOperationStateSourceExited?.(child);
     hostLogRelay.flushRawLogs();
     dependencies.logger.info(`[spawnHostProcess] host process (${label}) exited with code ${code}`);
@@ -805,8 +844,8 @@ export function disposeHostProcess(
     logger.warn(`[disposeHostProcess] failed to post dispose to (${label}):`, error);
   }
 
-  // // After Dispose, the host waits for the agent tree's SIGTERM/SIGKILL fallback to finish.
-  // Killing the host at 150/300ms makes it exit first and orphans zcode-cli/app-server to init.
+  // host 收到 Dispose 后需要等待 agent 进程树的 SIGTERM/SIGKILL 兜底完成。
+  // 如果 main 仍按 150/300ms 强杀 host，host 会先退出，zcode-cli/app-server 子进程就可能被 init 接管成孤儿。
   const effectiveForceKillDelayMs = Math.max(forceKillDelayMs, 3_500);
   const killTimer = setTimeout(() => {
     disposingHostProcessTimers.delete(child);
@@ -838,9 +877,9 @@ export function disposeHostProcessAndWait(
     waitTimeoutMs?: number;
   } = {},
 ): Promise<void> {
-  // // Electron UtilityProcess is not a Node ChildProcess and has no exitCode field.
-  // Electron UtilityProcess is not a Node ChildProcess and has no exitCode field.
-  // Dock quit runs before-quit -> disposeHostProcessAndWait; the old check read a running host's
+  // Electron UtilityProcess 不是 Node ChildProcess，没有 exitCode 字段。
+  // 右键 Dock 退出会走 before-quit -> disposeHostProcessAndWait；旧判断把运行中的 host
+  // 的 undefined exitCode 当成“已退出”。这里改为记录 exit 事件，避免第一次退出漏发 Dispose。
   if (exitedHostProcesses.has(child)) {
     return Promise.resolve();
   }

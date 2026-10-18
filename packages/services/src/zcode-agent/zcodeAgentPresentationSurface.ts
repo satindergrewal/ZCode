@@ -2,7 +2,7 @@ import type { ServiceAuthorityMode } from "@zcode/shared";
 
 export type ZCodeAgentPresentationSurface = "desktop";
 
-interface ZCodeAgentPresentationHostFacts {
+export interface ZCodeAgentPresentationHostFacts {
   runtimeSurface?: "desktop_local_host" | "remote_workspace_host";
   serviceAuthorityMode?: ServiceAuthorityMode;
   /** Main already decided server-side feature gating; when absent, legacy host assembly applies. */

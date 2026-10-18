@@ -1,4 +1,9 @@
-/* eslint-disable max-lines -- Root concentrates startup and workspace shell wiring; keep the entry consolidated so cross-layer state is not shredded. */
+import {
+  RequestSecurityHost,
+  RequestSecurityWorkspaceBridge,
+  setRequestSecurityReporter,
+} from "@/request-security-edition/index.js";
+/* eslint-disable max-lines -- Root 当前集中编排启动和 workspace shell wiring，先保持入口收口避免跨层状态拆散。 */
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LucideProvider, RefreshCw } from "lucide-react";
 import {
@@ -11,7 +16,10 @@ import { TooltipProvider } from "@/components/ui/tooltip.js";
 import { Button } from "@/components/ui/button.js";
 import { PlatformProvider } from "@/hooks/usePlatform.js";
 import { ServiceProvider } from "@/hooks/useServices.js";
-import { useDynamicWorkflowAvailabilityLoader } from "@/hooks/useDynamicWorkflowAvailability.js";
+import {
+  useDynamicWorkflowAvailabilityLoader,
+  useDynamicWorkflowUserModeSync,
+} from "@/hooks/useDynamicWorkflowAvailability.js";
 import { DirectoryBrowser } from "@/DirectoryBrowser.js";
 import { useTabPersistence } from "@/hooks/useTabPersistence.js";
 import { useTokenRefresh } from "@/hooks/useTokenRefresh.js";
@@ -20,6 +28,7 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { SSHDialog } from "@/SSHDialog.js";
 import { SettingsPage } from "@/SettingsPage.js";
 import { CodingPlanUpgradeDialogProvider } from "@/settings/CodingPlanUpgradeDialogProvider.js";
+import { RewardsProvider } from "@/rewards/RewardsProvider.js";
 import { WelcomeScreen, type LoginCompleteReason } from "@/WelcomeScreen.js";
 import { setDefaultFileDisplayBasePath } from "@/lib/fileDisplay.js";
 import { readRendererLaunchTimings, shouldReportLaunchToInput } from "@/lib/launchToInputReport.js";
@@ -59,8 +68,21 @@ import { registerBaseWorkspaceServices } from "@/store/remoteWorkspaceSessionSto
 import type { RootProps } from "@/root/types.js";
 import { DiffsWorkerPoolProvider } from "@/root/DiffsWorkerPoolProvider.js";
 import { useGlobalTaskList } from "@/hooks/useGlobalTaskList.js";
+import {
+  buildWebRemoteControlTaskRuntimeByWorkspaceKey,
+  buildWebRemoteControlTaskTargets,
+} from "@/lib/webRemoteControlTaskIndex.js";
+import {
+  logDeferredWebRemoteControlTaskSnapshot,
+  shouldSyncWebRemoteControlTaskSnapshot,
+} from "@/lib/webRemoteControlTaskSync.js";
 import { ScopedErrorBoundary } from "@/ErrorBoundary.js";
+import {
+  WebRemoteControlFeatureProvider,
+  useWebRemoteControlFeatureEnabled,
+} from "@/WebRemoteControlFeatureProvider.js";
 import { useRemoteConnectionLogs } from "@/hooks/useRemoteConnectionLogs.js";
+import { useWebRemoteControlStatus } from "@/hooks/useWebRemoteControlStatus.js";
 import {
   CODE_COMMENT_REMOVE_BROADCAST_CHANNEL,
   CODE_COMMENT_PREVIEW_RESTORE_BROADCAST_CHANNEL,
@@ -69,6 +91,7 @@ import {
   markCodeCommentRemoved,
 } from "@/lib/codeCommentContext.js";
 import { useCodeCommentPreviewStore } from "@/store/codeCommentPreviewStore.js";
+import { MarketingTouchProvider } from "@/components/marketing-touch/MarketingTouchProvider.js";
 import { setUiPerfArmsReporter } from "@/lib/uiPerfArmsTelemetry.js";
 import { setSessionOpenArmsReporter } from "@/lib/sessionOpenArmsTelemetry.js";
 import { setSendFunnelArmsReporter } from "@/lib/sendFunnelArmsTelemetry.js";
@@ -83,6 +106,7 @@ import {
   disposeConversationTelemetrySupervisors,
   reconcileConversationTelemetryWorkspaceScopes,
 } from "@/v4/telemetry/ConversationTelemetryAttachment.js";
+import { installConversationTelemetryParityE2EBridge } from "@/v4/telemetry/conversationTelemetryParityE2E.js";
 
 const DEFAULT_LUCIDE_STROKE_WIDTH = 1.5;
 interface RemoteConnectionOpenPreference {
@@ -97,26 +121,128 @@ type WelcomeScreenOpenReason =
   | "logout-provider-required"
   | "session-expired";
 
+function WebRemoteControlTaskSync({
+  syncWebRemoteControlTasks,
+  workspaceTabs,
+}: {
+  syncWebRemoteControlTasks: NonNullable<RootProps["platform"]["syncWebRemoteControlTasks"]>;
+  workspaceTabs: WorkspaceTabState[];
+}) {
+  const workspaceStates = useZCodeSessionStore((state) => state.workspaces);
+  const timelineTaskList = useGlobalTaskList({
+    kind: "timeline",
+    workspaceTabs,
+    sortBy: "updated",
+    searchQuery: "",
+    expanded: true,
+    collapsedLimit: 100,
+  });
+  const pinnedTaskList = useGlobalTaskList({
+    kind: "pinned",
+    workspaceTabs,
+    sortBy: "updated",
+    searchQuery: "",
+    expanded: true,
+    collapsedLimit: 100,
+  });
+  const archivedTaskList = useGlobalTaskList({
+    kind: "archived",
+    workspaceTabs,
+    sortBy: "updated",
+    searchQuery: "",
+    expanded: true,
+    collapsedLimit: 100,
+  });
+  const taskTargets = useMemo(() => {
+    const runtimeByWorkspaceKey = buildWebRemoteControlTaskRuntimeByWorkspaceKey(workspaceStates);
+    // Bugfix: Web remote 未开启时不应让 Root 订阅整张 workspace 表。
+    // 远控 task 索引只在该组件挂载后运行，避免桌面 continuous 流式更新唤醒 Root/App/Shell 主链路。
+    // Bugfix: 手机远控首页之前只同步 timeline，而 timeline 查询会过滤 pinned=1。
+    // 这里把 sqlite pinned 列表单独同步给手机端，避免置顶任务从远控任务列表消失。
+    const pinnedTargets = buildWebRemoteControlTaskTargets({
+      workspaceTabs,
+      tasks: pinnedTaskList.items,
+      taskRuntimeByWorkspaceKey: runtimeByWorkspaceKey,
+      pinned: true,
+    });
+    const timelineTargets = buildWebRemoteControlTaskTargets({
+      workspaceTabs,
+      tasks: timelineTaskList.items,
+      taskRuntimeByWorkspaceKey: runtimeByWorkspaceKey,
+    });
+    // Bugfix: 宽屏 Web 远控归档视图以前退回当前 bridge workspace 查询，
+    // 因为同步给 remote 的任务索引没有 archived 成员。归档目标只作为远控列表数据，不改变桌面任务区。
+    const archivedTargets = buildWebRemoteControlTaskTargets({
+      workspaceTabs,
+      tasks: archivedTaskList.items,
+      taskRuntimeByWorkspaceKey: runtimeByWorkspaceKey,
+      archived: true,
+    });
+
+    return [...pinnedTargets, ...timelineTargets, ...archivedTargets].sort((left, right) => {
+      if (right.updatedAt !== left.updatedAt) {
+        return right.updatedAt - left.updatedAt;
+      }
+      if (right.createdAt !== left.createdAt) {
+        return right.createdAt - left.createdAt;
+      }
+      return right.taskId.localeCompare(left.taskId);
+    });
+  }, [
+    archivedTaskList.items,
+    pinnedTaskList.items,
+    timelineTaskList.items,
+    workspaceStates,
+    workspaceTabs,
+  ]);
+  const shouldSyncTasks = shouldSyncWebRemoteControlTaskSnapshot({
+    archivedLoading: archivedTaskList.loading,
+    enabled: true,
+    pinnedLoading: pinnedTaskList.loading,
+    timelineLoading: timelineTaskList.loading,
+  });
+
+  useEffect(() => {
+    if (!shouldSyncTasks) {
+      logDeferredWebRemoteControlTaskSnapshot(logger, {
+        pinnedLoading: pinnedTaskList.loading,
+        archivedLoading: archivedTaskList.loading,
+        timelineLoading: timelineTaskList.loading,
+      });
+      return;
+    }
+
+    syncWebRemoteControlTasks(taskTargets);
+  }, [
+    archivedTaskList.loading,
+    pinnedTaskList.loading,
+    shouldSyncTasks,
+    syncWebRemoteControlTasks,
+    taskTargets,
+    timelineTaskList.loading,
+  ]);
+
+  return null;
+}
+
 /**
- * Root — application root component.
+ * Root —— 应用根组件
  *
- * Outer layer mounts StoreProvider (broadcast connection service) + TabStoreProvider; the inner
- * layer handles auth and routing.
+ * 外层挂载 StoreProvider（连接广播服务）+ TabStoreProvider，内层处理认证和路由。
  */
 export function Root(props: RootProps) {
   return (
     <LucideProvider strokeWidth={DEFAULT_LUCIDE_STROKE_WIDTH}>
       {/*
-       * Icons used to be wrapped per-icon in lucide.tsx pinning strokeWidth to 1.5. With the
-       * wrapper gone, Lucide icons in buttons/lists/toolbars fall back to 2 without a root-level
-       * default, looking bolder/cramped at the same size classes. Use the official
-       * LucideProvider for the default while keeping per-icon strokeWidth overrides working.
+       * 之前通过 lucide.tsx 包装每个图标，把默认 strokeWidth 固定成 1.5。
+       * 现在移除包装文件后，如果不在根层统一注入，按钮、列表和工具栏里的 Lucide 图标会回退到 2，
+       * 导致同一套 size class 下视觉显得更粗、更挤。这里改用官方 LucideProvider 保持默认值，
+       * 同时保留个别图标显式传入 strokeWidth 时的覆盖能力。
        */}
       <TooltipProvider>
         {/*
-         * Conversation UI spawns many tooltips. A Provider per tooltip instance would build an
-         * equally large Radix context tree synchronously on task click-switch; one root-level
-         * shared provider keeps the zero-latency config.
+         * 大会话消息动作里会出现大量 tooltip。Provider 如果跟随每个 tooltip 实例创建，
+         * React 点击切换任务时会同步构造数量级相同的 Radix 上下文树；根层共享一次即可保留零延迟配置。
          */}
         <ServiceProvider services={props.services}>
           <PlatformProvider platform={props.platform}>
@@ -126,13 +252,20 @@ export function Root(props: RootProps) {
             >
               <TabStoreProvider>
                 <DiffsWorkerPoolProvider>
-                  <AssistantCodeCommentFeatureProvider
-                    enabled={props.assistantCodeCommentCardsEnabled}
-                  >
-                    <CodingPlanUpgradeDialogProvider>
-                      <RootInner {...props} />
-                    </CodingPlanUpgradeDialogProvider>
-                  </AssistantCodeCommentFeatureProvider>
+                  <WebRemoteControlFeatureProvider enabled={props.webRemoteControlFeatureEnabled}>
+                    <AssistantCodeCommentFeatureProvider
+                      enabled={props.assistantCodeCommentCardsEnabled}
+                    >
+                      <CodingPlanUpgradeDialogProvider>
+                        <RewardsProvider desktop={props.isDesktop === true}>
+                          <RequestSecurityHost />
+                          <MarketingTouchProvider desktop={props.isDesktop === true}>
+                            <RootInner {...props} />
+                          </MarketingTouchProvider>
+                        </RewardsProvider>
+                      </CodingPlanUpgradeDialogProvider>
+                    </AssistantCodeCommentFeatureProvider>
+                  </WebRemoteControlFeatureProvider>
                 </DiffsWorkerPoolProvider>
               </TabStoreProvider>
             </StoreProvider>
@@ -160,17 +293,22 @@ function RootInner({
   preferDirectoryBrowser,
   supportsEmbeddedBrowser: explicitSupportsEmbeddedBrowser,
   allowRemoteWorkspace = true,
+  webRemoteControlWorkspaceSwitcher,
+  initialWebRemoteControlMobileNavigationIntent,
+  initialWebRemoteControlWorkspaceList,
+  webRemoteControlTerminalTransportState,
   initialWorkspaceLoadingFallback,
 }: RootProps) {
   useEffect(() => {
+    setRequestSecurityReporter(platform);
     setMcpStorePlatform(platform);
-    // Conversation UI perf instrumentation is desktop-continuous only; web/mobile never install the reporter even when they can see authoritative state.
+    // 对话 UI perf 只属于 desktop-continuous；Web/mobile 即使能看到权威状态也不装 reporter。
     setUiPerfArmsReporter(isDesktop ? platform : null);
     setSessionOpenArmsReporter(isDesktop ? platform : null);
-    // Same for the send funnel: report only from Electron desktop; reportArmsCustomEvent is a
-    // no-op on web/mobile.
+    // 发送漏斗同理：只在 Electron 桌面端上报，Web/mobile 的 reportArmsCustomEvent 是空实现。
     setSendFunnelArmsReporter(isDesktop ? platform : null);
     return () => {
+      setRequestSecurityReporter(null);
       setMcpStorePlatform(null);
       setUiPerfArmsReporter(null);
       setSessionOpenArmsReporter(null);
@@ -179,16 +317,24 @@ function RootInner({
   }, [isDesktop, platform]);
 
   useEffect(
+    () =>
+      installConversationTelemetryParityE2EBridge({
+        platform,
+        isDesktop: isDesktop === true,
+      }),
+    [isDesktop, platform],
+  );
+
+  useEffect(
     () => () => {
       disposeConversationTelemetrySupervisors();
     },
     [],
   );
 
-  // Single fetch point for the dynamic-workflow rollout snapshot:
-  // read once at the app-level ServiceProvider; the automations page and run panel only read.
-  // Consumers may live inside a workspace-level ServiceProvider (remote host accessor); fetching
-  // there would return another host's answer.
+  // 动态工作流灰度快照的唯一取数点：
+  // 放在 app 级 ServiceProvider 这一层取一次，自动化页与 run 面板只读。消费方可能位于
+  // 工作区级 ServiceProvider 内（远程 Host 的 accessor），由它们取数会拿到另一台 Host 的答案。
   useDynamicWorkflowAvailabilityLoader(services.codingPlanSubscriptionService);
 
   const { intl, locale } = useZCodeIntl();
@@ -206,6 +352,14 @@ function RootInner({
     refresh: refreshAppSettings,
     update: updateAppSettings,
   } = useSettings();
+  // docs/dynamic-workflow/launch.md「The user's choice」：设置里的动态工作流选择变化后，通知本窗口
+  // 的 Host 重发 CLI 策略（并转发给远程 Host），再重读灰度快照。
+  useDynamicWorkflowUserModeSync({
+    settingsLoaded: Boolean(appSettings),
+    userMode: appSettings?.dynamicWorkflowMode,
+    zcodeAgentService: services.zcodeAgentService,
+    codingPlanSubscriptionService: services.codingPlanSubscriptionService,
+  });
   const [welcomeScreenOpenReason, setWelcomeScreenOpenReason] =
     useState<WelcomeScreenOpenReason | null>(() =>
       consumeZcodeJwtInvalidRestartMarker() ? "session-expired" : null,
@@ -263,17 +417,17 @@ function RootInner({
           message.payload,
         );
         if (!parsed.success) {
-          logger.warn("[settings] Discarding invalid runtime preference broadcast", {
+          logger.warn("[settings] 丢弃无效的运行时偏好广播", {
             issues: parsed.error.issues,
           });
           return;
         }
         void refreshAppSettings();
         void services.zcodeAgentService.syncAppRuntimePreferences(parsed.data).catch((error) => {
-          logger.warn("[settings] Failed to sync cross-window runtime preferences", error);
+          logger.warn("[settings] 同步跨窗口运行时偏好失败", error);
         });
         void services.botsService.syncAppRuntimePreferences(parsed.data).catch((error) => {
-          logger.warn("[settings] Failed to sync cross-window bot runtime preferences", error);
+          logger.warn("[settings] 同步跨窗口 Bot 运行时偏好失败", error);
         });
         return;
       }
@@ -297,9 +451,8 @@ function RootInner({
         return;
       }
 
-      // Closing a file tab unmounts PreviewPane, so it can no longer listen for cross-window
-      // cleanup itself. Clean the renderer-level preview store within the Root lifecycle, or
-      // reopening the file after send restores stale comments.
+      // 关闭文件 tab 后 PreviewPane 会卸载，不能再依赖 PreviewPane 自己监听跨窗口清理事件。
+      // 这里在 Root 生命周期内同步清理 renderer 级 preview store，避免发送后重新打开文件又恢复旧 comment。
       markCodeCommentRemoved(message.payload);
       useCodeCommentPreviewStore.getState().removeCommentBySource(message.payload);
     });
@@ -325,7 +478,7 @@ function RootInner({
         modelIoFullRetentionEnabled: appSettings.modelIoFullRetentionEnabled === true,
       })
       .catch((error) => {
-        logger.warn("[settings] Failed to initialize runtime preferences", error);
+        logger.warn("[settings] 初始化运行时偏好失败", error);
       });
     void services.botsService
       .syncAppRuntimePreferences({
@@ -334,7 +487,7 @@ function RootInner({
         modelIoFullRetentionEnabled: appSettings.modelIoFullRetentionEnabled === true,
       })
       .catch((error) => {
-        logger.warn("[settings] Failed to initialize bot runtime preferences", error);
+        logger.warn("[settings] 初始化 Bot 运行时偏好失败", error);
       });
   }, [
     appSettings?.askUserQuestionAutoResolutionEnabled,
@@ -359,7 +512,7 @@ function RootInner({
     activeWorkspaceTab,
     activeWorkspacePath,
     activeWorkspaceIdentity,
-    // While a Settings tab overrides the workspace, keep the overridden tab's full remote identity so notifications and the sidebar do not double-subscribe.
+    // Settings 覆盖时仍使用被覆盖 tab 的完整远程身份，避免通知与侧栏建立重复订阅。
     workspaceTabs: windowWorkspaceTabs,
   });
   const workspaceScopedServices = useWorkspaceServices(
@@ -390,6 +543,22 @@ function RootInner({
   const addTab = useTabStore((state) => state.addTab);
   const activateTabByPath = useTabStore((state) => state.activateTabByPath);
   const tabStoreApi = useTabStoreApi();
+  const webRemoteControlFeatureEnabled = useWebRemoteControlFeatureEnabled();
+  // Bugfix: WebRemoteControlDialog 只是可开关的展示入口，不能由它的本地 state 决定全局远控状态。
+  // Root 直接轮询 main 进程状态，确保任务快照同步只跟真实远控会话 running/active 绑定。
+  const webRemoteControlStatus = useWebRemoteControlStatus({
+    enabled: Boolean(
+      webRemoteControlFeatureEnabled && isDesktop && platform.syncWebRemoteControlTasks,
+    ),
+  });
+  const webRemoteControlSessionActive =
+    webRemoteControlStatus.status === "running" || webRemoteControlStatus.status === "active";
+  const webRemoteControlTaskSyncEnabled = Boolean(
+    webRemoteControlFeatureEnabled &&
+    webRemoteControlSessionActive &&
+    isDesktop &&
+    platform.syncWebRemoteControlTasks,
+  );
   const refreshProviderState = useRootProviderStateRefresh(services);
   useRootProviderSettingsSnapshot(services);
   useEffect(() => {
@@ -399,7 +568,7 @@ function RootInner({
       try {
         await ensureProviderFamilyDomainMigration(services);
       } catch (error) {
-        logger.warn("[Root] provider family domain migration failed; continuing startup", {
+        logger.warn("[Root] provider family domain 迁移失败，继续启动", {
           error,
         });
       } finally {
@@ -409,7 +578,7 @@ function RootInner({
             await refreshAppSettings();
             await refreshProviderState();
           } catch (refreshError) {
-            logger.warn("[Root] Failed to refresh state after provider family domain migration", {
+            logger.warn("[Root] provider family domain 迁移后刷新状态失败", {
               error: refreshError,
             });
           }
@@ -433,8 +602,11 @@ function RootInner({
     modelSelectionViewHydrated:
       rootProviderAvailability.hydrated || rootModelSelectionRead.state.status === "error",
   });
+  const isWebRemoteControlRoot = Boolean(webRemoteControlWorkspaceSwitcher);
   const providerAvailabilityLoginEntryGuardEnabled =
-    shouldEnableProviderAvailabilityLoginEntryGuard();
+    shouldEnableProviderAvailabilityLoginEntryGuard({
+      isWebRemoteControlRoot,
+    });
   const { startupCheckCompleted: providerAvailabilityStartupCheckCompleted } =
     useProviderAvailabilityLoginEntryGuard({
       enabled: providerAvailabilityLoginEntryGuardEnabled,
@@ -453,32 +625,30 @@ function RootInner({
           if (open) {
             return "startup-provider-required";
           }
-          // After a JWT-expiry notice is confirmed, session-expired is written and the provider
-          // startup gate closes with open=false. Clearing unconditionally here would overwrite
-          // the re-login page and bounce back to the workspace. A gate may only close the
-          // startup-login state it owns, not reasons from other interactions.
+          // JWT 过期提示确认后会先写入 session-expired，随后 provider
+          // 启动门禁以 open=false 收尾。这里若无条件清空，会覆盖重新登录页并回到工作区。
+          // 门禁只能关闭自己拥有的启动登录态，不能清理其它交互来源的 reason。
           return currentReason === "startup-provider-required" ? null : currentReason;
         });
       },
     });
   const isResolvingProviderStartupState = shouldResolveProviderStartupState({
+    isWebRemoteControlRoot,
     providerStartupSyncPending,
     providerAvailabilityStartupCheckCompleted,
   });
   const isStartupProviderLoginEntryOpen = welcomeScreenOpenReason === "startup-provider-required";
-  // On fresh installs the provider-login gate resolves after workspace injection, so ChatView
-  // mounts first and triggers draft prewarm. Include the provider startup check in the workspace
-  // restore gate to avoid starting a ZCode session before an account is connected.
+  // 首次安装时 provider 登录入口判定晚于 workspace 注入，ChatView 会先 mount 并触发草稿预热。
+  // 这里把 provider 启动检查纳入 workspace 恢复门禁，避免未连接账号前启动 ZCode session。
   const canRestoreWorkspaceSession =
     !isResolvingStartupAuthState &&
     !isResolvingProviderStartupState &&
     !isStartupProviderLoginEntryOpen;
 
   useEffect(() => {
-    // Cross-workspace task lists need a stable "local/root services" entry. Desktop renderer
-    // registers once at startup, but web and test entries also mount Root directly; re-register
-    // from Root props as a fallback so the local list never uses a remote host while a remote
-    // workspace is active.
+    // 跨 workspace 任务列表需要一个稳定的“本地/root services”入口。
+    // 桌面端 renderer 启动时会注册一次，但 Web 和测试入口也会直接挂 Root；
+    // 这里再以 Root props 兜底注册，避免当前激活远端 workspace 时本地列表误用远端 host。
     registerBaseWorkspaceServices(services);
   }, [services]);
 
@@ -530,6 +700,9 @@ function RootInner({
     },
     userId: user?.id,
     onOpenRemoteConnection: allowRemoteWorkspace ? handleOpenRemoteConnection : undefined,
+    workbenchGroupClientMode: isWebRemoteControlRoot
+      ? "web-remote-replayable"
+      : "desktop-continuous",
   });
   const handleRemoteWorkspaceActivated = useCallback(
     ({
@@ -562,9 +735,8 @@ function RootInner({
     platform,
     supportsSettings,
     allowRemoteWorkspace,
-    // The conversation backing workspace belongs to the local desktop primary restore path only;
-    // remote windows and phone shared-host attachment must not spawn a separate local runtime or
-    // alter the replayable boundary because of it.
+    // conversation backing workspace 只属于本地桌面主恢复链路；远程窗口和手机
+    // shared-host attachment 不能因此创建独立本地 runtime 或改变 replayable 边界。
     ensureConversationWorkspaceOnRestore: isDesktop && restoreSession && !initialWorkspaceIdentity,
     deferInactiveWorkspaceRestore: isDesktop && restoreSession && !initialWorkspaceIdentity,
     unavailableWorkspacePath,
@@ -575,10 +747,37 @@ function RootInner({
   });
 
   useEffect(() => {
-    // Without a basePath, fileDisplay must fall back to the active workspace. The pure util used
-    // to have no window-level workspace context and degraded to absolute paths, making
-    // mention/file previews verbose in the input. Root mirrors the current context on workspace
-    // switch: keeps the util reusable without hardcoding a Zustand dependency into it.
+    if (!platform.onWebRemoteControlReconnectWorkspace) {
+      return;
+    }
+
+    return platform.onWebRemoteControlReconnectWorkspace(async (request) => {
+      try {
+        await handleReconnectRemoteWorkspace(request.workspaceKey, {
+          activateWorkspaceAfterReconnect: false,
+          showErrorToast: false,
+          throwOnFailure: true,
+        });
+        return {
+          requestId: request.requestId,
+          workspaceKey: request.workspaceKey,
+          success: true,
+        };
+      } catch (error) {
+        return {
+          requestId: request.requestId,
+          workspaceKey: request.workspaceKey,
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    });
+  }, [handleReconnectRemoteWorkspace, platform]);
+
+  useEffect(() => {
+    // Bugfix: fileDisplay 默认不传 basePath 时需要落到“当前激活 workspace”。
+    // 之前纯工具层拿不到窗口内的 workspace 上下文，只能退回绝对路径，导致 mention / 文件展示在输入框里不够简洁。
+    // 这里由 Root 在 workspace 切换时同步一份当前上下文，既保留工具层复用性，也不把 Zustand 依赖硬塞进工具函数。
     setDefaultFileDisplayBasePath(activeWorkspacePath);
   }, [activeWorkspacePath]);
 
@@ -592,9 +791,8 @@ function RootInner({
 
   const { isRestoring, hasCompletedInitialRestore, hasCompletedFullRestore } = useTabPersistence({
     settingService: supportsSettings ? services.settingService : undefined,
-    // With no account connected, the provider-login gate resolves after workspace restore; if the
-    // workspace restores first, ChatView mount prewarms a draft session and errors behind the
-    // login page.
+    // 首次安装未连接账号时，provider 登录入口判定会晚于 workspace 恢复。
+    // 如果这里先恢复 workspace，ChatView mount 会触发草稿 session 预热并在登录页背后报错。
     restoreSession: restoreSession && canRestoreWorkspaceSession,
     persistSession: restoreSession && canRestoreWorkspaceSession,
     restorePersistedSession,
@@ -603,9 +801,8 @@ function RootInner({
 
   useEffect(() => {
     if (!isDesktop || !hasCompletedFullRestore) return;
-    // Bug: the active-first single workspace is only the renderer's first-paint projection; if
-    // synced externally immediately, it briefly revokes other workspaces' telemetry scope. Publish
-    // the full set only once it is complete.
+    // Bug 原因：active-first 的单 workspace 只是 Renderer 首屏投影，若立刻对外同步，
+    // 会短暂撤销其他 workspace 的 telemetry scope。完整补齐后才能发布全量集合。
     reconcileConversationTelemetryWorkspaceScopes(
       windowWorkspaceTabs.map((tab) => ({
         workspacePath: tab.workspacePath,
@@ -615,12 +812,29 @@ function RootInner({
     );
   }, [hasCompletedFullRestore, isDesktop, windowWorkspaceTabs]);
 
+  const webRemoteControlTaskSyncNode =
+    hasCompletedFullRestore &&
+    webRemoteControlTaskSyncEnabled &&
+    platform.syncWebRemoteControlTasks ? (
+      <WebRemoteControlTaskSync
+        syncWebRemoteControlTasks={platform.syncWebRemoteControlTasks}
+        workspaceTabs={windowWorkspaceTabs}
+      />
+    ) : null;
+
+  // Bug 原因（2026-08-16 web 远控卡死）：Start Plan 请求校验应答方曾只随桌面正在展示的
+  // session pane 挂载，web 远控新建会话时桌面没有对应 pane、web 端无应答方，
+  // headers 请求永远滞留 pending，任务永久「工作中」。应答方必须常驻桌面窗口、
+  // 覆盖每个打开的 workspace tab，与展示状态解耦；Web 端保持零订阅，桌面仍是唯一权威。
+  const requestSecurityBridgeNode = isDesktop ? (
+    <RequestSecurityWorkspaceBridge workspaceTabs={windowWorkspaceTabs} />
+  ) : null;
+
   const { tryRefresh, clearCredentials } = useTokenRefresh();
   void tryRefresh;
   void clearCredentials;
-  // The startup block is a desktop-window protection period; phone web remote control already
-  // has pairing/loading pages before Root. Keeping the gate on web would render an empty
-  // RootShell before workspace tabs are injected, exposing the browser's white background.
+  // 启动阻塞是桌面窗口保护期，手机 Web 远控在进入 Root 前已有配对/加载页。
+  // Web 端继续使用该 gate 会在 workspace tab 注入前渲染空 RootShell，露出浏览器白底。
   const isStartupRenderBlocked = shouldShowRootStartupLoading({
     isDesktop,
     welcomeScreenOpen: Boolean(welcomeScreenOpenReason),
@@ -644,7 +858,7 @@ function RootInner({
     launchReportedRef.current = true;
     const timings = readRendererLaunchTimings();
     if (!timings || !timings.marks) {
-      return; // anchor missing (non-desktop / marks not injected): skip the whole batch
+      return; // 锚点缺失(非桌面/未注入 marks),整批跳过
     }
     reportUiLaunchToInput({
       marks: timings.marks,
@@ -660,9 +874,9 @@ function RootInner({
     initialWorkspaceIdentity,
     initialWorkspacePurpose,
     initialTaskId,
-    // When a system right-click/Service cold-start passes initialWorkspacePath, restore historical
-    // tabs first, then merge and activate the target workspace. addTab-first would be wholly
-    // replaced by restoreTabs; disabling restoreSession instead would drop every other workspace.
+    // 系统右键/Service 冷启动传入 initialWorkspacePath 时，必须先恢复历史 tabs，
+    // 再把目标 workspace 合并并激活。否则先 addTab 会被 restoreTabs 整体替换掉；
+    // 直接禁用 restoreSession 又会让其他 workspace 全部消失。
     canBootstrapInitialWorkspace: canRestoreWorkspaceSession && hasCompletedInitialRestore,
     addTab,
     setIsBootstrappingInitialWorkspace,
@@ -684,6 +898,8 @@ function RootInner({
     reconnectingRemoteWorkspaceKeys,
     remoteWorkspaceErrorByWorkspaceKey,
     totalUnreadTaskCount,
+    webRemoteControlFeatureEnabled,
+    webRemoteControlSessionActive,
     hasCompletedFullTabRestore: hasCompletedFullRestore,
     intl,
     isRestoringOAuthSession: isResolvingStartupAuthState || providerStartupSyncPending,
@@ -701,9 +917,8 @@ function RootInner({
         return;
       }
 
-      // Broadcast the close request to the workspace layer first to close a side pane's active
-      // tab; only when no visible workspace or closable side pane tab exists fall back to
-      // closing the window.
+      // 关闭请求先广播给 workspace 层判断 side pane active tab。
+      // 没有可见 workspace 或没有可关闭的 side pane tab 时，才回落到关窗口语义。
       void platform.executeDesktopCommand(DesktopCommandIds.CloseWindow);
     });
   }, [platform]);
@@ -730,7 +945,7 @@ function RootInner({
   useEffect(
     () =>
       platform.onPostUpdateReleaseNotes((payload) => {
-        logger.info("[Root] Release notes received; switching to silent ack", {
+        logger.info("[Root] 收到更新说明，改为静默确认", {
           version: payload.version,
           title: payload.title,
         });
@@ -738,21 +953,20 @@ function RootInner({
           return;
         }
 
-        // Every auto-update hit with pending release notes lands here. Root used to feed the
-        // payload straight into dialog state, force-interrupting users on each update. This
-        // change only removes the dialog: ack silently on receipt, leaving the "update ready"
-        // button/menu/install path intact and avoiding pending state surviving into the next
-        // launch and retriggering.
+        // 自动更新每次命中待展示 release notes 都会走到这里，
+        // 之前 Root 会立刻把 payload 送进对话框状态，导致用户每次更新都被强制弹窗打断。
+        // 这次需求只移除弹窗本身，因此这里改成收到后直接静默 ack，
+        // 既不影响“更新已下载”按钮/菜单/安装链路，也避免 pending 状态残留到下次启动后再次触发。
         acknowledgingReleaseNotesVersionRef.current = payload.version;
         void platform
           .acknowledgePostUpdateReleaseNotes(payload.version)
           .then(() => {
-            logger.info("[Root] Release notes silently acknowledged", {
+            logger.info("[Root] 更新说明已静默确认", {
               version: payload.version,
             });
           })
           .catch((error) => {
-            logger.error("[Root] Failed to ack release notes silently", {
+            logger.error("[Root] 更新说明静默确认失败", {
               version: payload.version,
               error,
             });
@@ -777,9 +991,8 @@ function RootInner({
       return;
     }
 
-    // macOS nativeTheme affects window vibrancy. Allow syncing only one round after
-    // RootStartupLoading actually exits into the main UI/settings, so the startup shell background
-    // is not repainted by the app theme too early.
+    // macOS nativeTheme 会影响窗口 vibrancy。这里等 RootStartupLoading
+    // 真正退出并进入主界面/设置页后一轮再允许同步，避免启动壳背景被应用主题提前改写。
     setHasEnteredNativeThemeSyncSurface(true);
   }, [canEnterNativeThemeSyncSurface]);
 
@@ -816,18 +1029,17 @@ function RootInner({
 
     didRequestFallbackWorkspaceRef.current = true;
     setIsCreatingFallbackWorkspace(true);
-    // The tab store's default empty state used to route Root into the open-workspace interstitial.
-    // After the full-page flow was removed, startup must fall back to the default workspace in
-    // Root when restore is empty or no initialWorkspacePath was passed, so users never see the
-    // interstitial or a blank page. Do not use this effect's cleanup as the async cancel flag:
-    // setIsCreatingFallbackWorkspace or a post-addTab workspaceShellPath change runs cleanup
-    // first, and skipping finally on that basis would leave the startup loading gate true forever.
+    // 以前 tab store 的默认空态会把 Root 带到打开工作区中间页。
+    // 删除整页流程后，启动恢复为空或入口没有传 initialWorkspacePath 时必须在 Root
+    // 兜底落到默认 workspace，避免用户先看到一张“打开工作区”中间页或空白页。
+    // 这里不能用当前 effect 的 cleanup 作为异步取消标记：setIsCreatingFallbackWorkspace
+    // 或 addTab 后的 workspaceShellPath 变化都会让 React 先跑 cleanup，若因此跳过 finally，
+    // 启动 loading gate 会永远保持 true。
     services.fileService
       .ensureConversationWorkspace()
       .then((result) => {
-        // Fallback directory creation may start before session restore and finish after it
-        // returns. Re-check the tab store's latest active workspace on return so a late default
-        // project cannot steal the restored tabs.
+        // 启动兜底创建目录可能早于会话恢复发起、晚于恢复完成返回。
+        // 返回后必须按 tab store 最新 active workspace 再判一次，避免迟到的默认项目抢走上次恢复的 tab。
         if (
           !shouldOpenFallbackWorkspaceAfterCreate({
             isMounted: rootInnerMountedRef.current,
@@ -842,7 +1054,7 @@ function RootInner({
         if (!rootInnerMountedRef.current) {
           return;
         }
-        logger.error("[Root] Failed to create fallback default workspace", { error });
+        logger.error("[Root] 启动兜底创建默认 workspace 失败", { error });
         setWorkspaceActionError(error instanceof Error ? error.message : String(error));
       })
       .finally(() => {
@@ -879,9 +1091,8 @@ function RootInner({
     if (!loginEntryRequest) {
       return;
     }
-    // The login entry collapsed from a modal into WelcomeScreen. Provider connection requests
-    // must still exit the first-run onboarding state, or a default workspace gets created after
-    // connecting.
+    // 登录入口已从模态弹窗收敛为 WelcomeScreen。
+    // provider 连接请求仍要先退出首次启动引导语义，避免连接完成后误创建默认 workspace。
     setWelcomeScreenOpenReason("provider-request");
   }, [loginEntryRequest]);
 
@@ -903,7 +1114,7 @@ function RootInner({
       try {
         await handleEnsureConversationWorkspace();
       } catch (error) {
-        logger.error("[Root] Failed to create default workspace after login", {
+        logger.error("[Root] 登录后创建默认 workspace 失败", {
           error,
           reason,
         });
@@ -972,6 +1183,7 @@ function RootInner({
     isDesktop,
     isMacDesktop,
     isWindowsDesktop,
+    isWebRemoteControl: Boolean(webRemoteControlWorkspaceSwitcher),
     captionWorkspacePath: activeWorkspacePath,
     onBack: activeWorkspacePath ? handleBackFromSettings : undefined,
     onCreateTask: handleCreateTask,
@@ -987,12 +1199,13 @@ function RootInner({
     return (
       <RootShell>
         {rootModelSelectionErrorNode}
+        {webRemoteControlTaskSyncNode}
+        {requestSecurityBridgeNode}
         {remoteConnectionDialog}
         {directoryBrowserDialog}
-        {/* The HTML boot shell already shows the ZCode SVG, but React replacing the root swaps the
-            old shell wholesale; blocked tab restore/initial workspace injection used to re-render
-            plain "loading" text, hence two loading systems. Reuse the same SVG splash and keep the
-            copy only in aria-label: visually continuous without losing accessibility. */}
+        {/* 修复原因：HTML 启动壳已经展示 ZCode SVG，但 React 接管 root 后旧壳会被整棵替换。
+            之前阻塞恢复 tab / 初始 workspace 注入时重新渲染纯文字“加载中...”，所以启动被拆成两套 loading。
+            这里复用同一套 SVG 启动画面，只把文案保留到 aria-label，保证视觉始终连续且不牺牲可访问性。 */}
         <RootStartupLoading label={loadingLabel} />
       </RootShell>
     );
@@ -1002,6 +1215,8 @@ function RootInner({
     return (
       <RootShell>
         {rootModelSelectionErrorNode}
+        {webRemoteControlTaskSyncNode}
+        {requestSecurityBridgeNode}
         {remoteConnectionDialog}
         {directoryBrowserDialog}
         <WelcomeScreen
@@ -1023,12 +1238,13 @@ function RootInner({
     initialWorkspaceAbsPath &&
     initialWorkspaceLoadingFallback
   ) {
-    // Non-desktop entries get their workspace tab via effect; the first frame must not return null.
-    // Keep the entry loading until the task list has a workspaceShellPath, avoiding the browser's
-    // white background.
+    // 非桌面入口的 workspace tab 由 effect 注入，首帧不能返回 null。
+    // 这里延续入口 loading，等任务列表有 workspaceShellPath 后再切换，避免露出浏览器白底。
     return (
       <RootShell>
         {rootModelSelectionErrorNode}
+        {webRemoteControlTaskSyncNode}
+        {requestSecurityBridgeNode}
         {initialWorkspaceLoadingFallback}
         {directoryBrowserDialog}
       </RootShell>
@@ -1038,6 +1254,8 @@ function RootInner({
   return (
     <RootShell>
       {rootModelSelectionErrorNode}
+      {webRemoteControlTaskSyncNode}
+      {requestSecurityBridgeNode}
       {remoteConnectionDialog}
       {directoryBrowserDialog}
       <OccupationOnboarding
@@ -1046,7 +1264,7 @@ function RootInner({
         isMacDesktop={isMacDesktop}
         isWindowsDesktop={isWindowsDesktop}
       >
-        {/* The new onboarding is an app-level preference; mount it even with no project so it can respond to manual opens from settings. */}
+        {/* 新引导属于应用级偏好；无项目时也要挂载，才能响应设置页的手动打开请求。 */}
         {!workspaceShellPath ? (
           isSettingsTabActive ? (
             <ScopedErrorBoundary
@@ -1094,6 +1312,12 @@ function RootInner({
             }
             remoteConnectionLogs={remoteConnectionLogs}
             allowOpenWorkspace={allowOpenWorkspace}
+            webRemoteControlWorkspaceSwitcher={webRemoteControlWorkspaceSwitcher}
+            initialWebRemoteControlMobileNavigationIntent={
+              initialWebRemoteControlMobileNavigationIntent
+            }
+            initialWebRemoteControlWorkspaceList={initialWebRemoteControlWorkspaceList}
+            webRemoteControlTerminalTransportState={webRemoteControlTerminalTransportState}
             isDesktop={isDesktop}
             isMacDesktop={isMacDesktop}
             isWindowsDesktop={isWindowsDesktop}

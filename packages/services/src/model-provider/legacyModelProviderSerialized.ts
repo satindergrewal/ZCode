@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- the shipped legacy provider store is modeled only at the one-way importer boundary. */
+/* eslint-disable max-lines -- 已发布旧 Provider store 只在单向 importer 边界建模。 */
 import { z } from "zod";
 
 export interface ClaudeModelMapping {
@@ -9,27 +9,29 @@ export interface ClaudeModelMapping {
 }
 
 /**
- * Model slot mapping per ZCode Agent provider (keyed by provider).
- * Only claude today; add fields here when extending to other providers.
+ * 各 ZCode Agent Provider 的模型槽位映射（按 provider 区分）。
+ * 目前只实现 claude，后续扩展其他 provider 时在此加字段。
  */
 export interface ProviderModelMappings {
   [provider: string]: unknown;
-  /** @deprecated Claude slots are no longer written to the v2 provider store; read-then-migrate cleanup only. */
+  /** @deprecated Claude 槽位不再写入 v2 provider store，仅用于读取旧配置后迁移清理。 */
   claude?: ClaudeModelMapping;
 }
 
 export interface ModelProviderEndpoints {
-  /** @deprecated Legacy provider config reads only; the new store uses baseURL + paths. */
+  /** @deprecated 仅用于读取旧 provider 配置；新 store 使用 baseURL + paths。 */
   anthropic?: string;
-  /** @deprecated Legacy provider config reads only; the new store uses baseURL + paths. */
+  /** @deprecated 仅用于读取旧 provider 配置；新 store 使用 baseURL + paths。 */
   openai?: string;
-  /** @deprecated Gemini custom providers unified onto endpoints.openai + compat; legacy-data read compat only. */
+  /** @deprecated Gemini custom provider 已统一走 endpoints.openai + compat，仅保留旧数据兼容读取。 */
   gemini?: string;
-  /** v2 catalog endpoint base URL; legacy field kept for migration-era UI/connectivity reads. */
+  /** v2 catalog endpoint base URL；旧字段保留给迁移期 UI/连通性代码读取。 */
   baseURL?: string;
-  /** v2 catalog endpoint paths, keyed by the public runtime kind. */
+  /** v2 catalog endpoint paths，key 使用公开 runtime kind。 */
   paths?: Partial<Record<ModelProviderKind, string>>;
 }
+
+export type RemoteProviderSchema = "anthropic" | "openai:chat" | "openai:messages" | "gemini";
 
 export type ModelProviderSupportedFormat = "anthropic" | "openai" | "responses" | "gemini";
 
@@ -79,6 +81,22 @@ export interface ModelProviderCatalogModel {
   priority?: number;
 }
 
+export interface ModelProviderCatalogProvider {
+  id: string;
+  name: string;
+  endpoints: {
+    baseURL: string;
+    paths: Partial<Record<ModelProviderKind, string>>;
+  };
+  defaultKind?: ModelProviderKind;
+  models: ModelProviderCatalogModel[];
+}
+
+export interface ModelProviderCatalogFile {
+  schemaVersion: "zcode.model-providers.v1";
+  providers: ModelProviderCatalogProvider[];
+}
+
 export interface ModelProviderModelConfig extends ModelProviderCatalogModel {
   disabledReason?: string;
   supportsTools?: boolean;
@@ -101,11 +119,11 @@ export type ModelProviderSystemDisabledReason =
 export interface ModelProviderConfig {
   id: string;
   name: string;
-  /** Absent means enabled; false only hides from the chat model list, never deletes the provider config. */
+  /** 缺省等同启用；false 时仅从聊天框模型列表隐藏，不删除供应商配置。 */
   enabled?: boolean;
   /**
-   * Why the system auto-disabled the provider. enabled=false with empty field means the user did it manually,
-   * and later entitlement success must not re-enable it.
+   * 系统自动关闭 provider 的原因。enabled=false 且该字段为空时表示用户手动关闭，
+   * 后续权益校验成功也不能自动打开。
    */
   systemDisabledReason?: ModelProviderSystemDisabledReason;
   endpoints: ModelProviderEndpoints;
@@ -121,13 +139,18 @@ export interface ModelProviderConfig {
   apiKeyUrl?: string;
   models: ModelProviderModelEntry[];
   defaultKind?: ModelProviderKind;
-  /** @deprecated The legacy model display-name map serves v1 auto-migration only. */
+  /** @deprecated 旧模型显示名 map 只用于 v1 自动迁移。 */
   modelDisplayNames?: Record<string, string>;
-  /** @deprecated The legacy model format map serves v1 auto-migration only. */
+  /** @deprecated 旧模型格式 map 只用于 v1 自动迁移。 */
   modelSupportedFormats?: Record<string, ModelProviderSupportedFormat[]>;
   providerMappings?: ProviderModelMappings;
   createdAt: number;
   updatedAt: number;
+}
+
+export interface ModelProviderStoreFile {
+  schemaVersion: "zcode.model-providers.v2";
+  providers: ModelProviderConfig[];
 }
 
 const claudeModelMappingSchema = z.object({
@@ -155,13 +178,13 @@ export const modelProviderKindSchema = z.enum(["anthropic", "openai", "openai-co
 
 export const modelProviderCatalogSourceIdSchema = z.enum(["china-llm-zcode-dev"]);
 
-const modelProviderModalitySchema = z.enum(["text", "image", "video", "audio", "pdf"]);
+export const modelProviderModalitySchema = z.enum(["text", "image", "video", "audio", "pdf"]);
 
 const providerOptionsPatchOperationSchema = z.object({
   path: z.array(z.string().min(1)).min(1),
 });
 
-const providerOptionsPatchSchema = z.object({
+export const providerOptionsPatchSchema = z.object({
   set: z.array(providerOptionsPatchOperationSchema.extend({ value: z.unknown() })).optional(),
   unset: z.array(providerOptionsPatchOperationSchema).optional(),
 });
@@ -174,14 +197,17 @@ export const modelProviderReasoningSpecSchema = z.object({
   ),
 });
 
-const modelProviderEndpointPathsSchema = z.partialRecord(modelProviderKindSchema, z.string());
+export const modelProviderEndpointPathsSchema = z.partialRecord(
+  modelProviderKindSchema,
+  z.string(),
+);
 
 const modelProviderCatalogEndpointSchema = z.object({
   baseURL: z.string(),
   paths: modelProviderEndpointPathsSchema,
 });
 
-const modelProviderCatalogModelSchema = z.object({
+export const modelProviderCatalogModelSchema = z.object({
   id: z.string().min(1),
   name: z.string().optional(),
   kinds: z.array(modelProviderKindSchema),
@@ -197,7 +223,7 @@ const modelProviderCatalogModelSchema = z.object({
   priority: z.number().finite().optional(),
 });
 
-const modelProviderCatalogProviderSchema = z.object({
+export const modelProviderCatalogProviderSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   endpoints: modelProviderCatalogEndpointSchema,
@@ -210,7 +236,7 @@ export const modelProviderCatalogFileSchema = z.object({
   providers: z.array(modelProviderCatalogProviderSchema),
 });
 
-const modelProviderModelConfigSchema = modelProviderCatalogModelSchema.extend({
+export const modelProviderModelConfigSchema = modelProviderCatalogModelSchema.extend({
   disabledReason: z.string().optional(),
   supportsTools: z.boolean().optional(),
   supportsStructuredOutput: z.boolean().optional(),
@@ -242,7 +268,7 @@ export const modelProviderEndpointsSchema = legacyModelProviderEndpointsSchema.e
   paths: modelProviderEndpointPathsSchema.optional(),
 });
 
-const legacyModelProviderConfigSchema = z.object({
+export const legacyModelProviderConfigSchema = z.object({
   id: z.string(),
   name: z.string(),
   enabled: z.boolean().optional(),
@@ -266,7 +292,7 @@ const legacyModelProviderConfigSchema = z.object({
 
 export const legacyModelProviderListSchema = z.array(legacyModelProviderConfigSchema);
 
-const modelProviderConfigSchema = z.object({
+export const modelProviderConfigSchema = z.object({
   id: z.string(),
   name: z.string(),
   enabled: z.boolean().optional(),
@@ -291,7 +317,7 @@ const modelProviderConfigSchema = z.object({
   updatedAt: z.number(),
 });
 
-const modelProviderListSchema = z.array(modelProviderConfigSchema);
+export const modelProviderListSchema = z.array(modelProviderConfigSchema);
 
 export const modelProviderStoreFileSchema = z.object({
   schemaVersion: z.literal("zcode.model-providers.v2"),
@@ -310,15 +336,16 @@ export function stripLegacyClaudeProviderMappings(
     return undefined;
   }
   const { claude: _legacyClaudeMapping, ...remainingMappings } = providerMappings;
-  // The v2 store no longer persists legacy Claude slots, but providerMappings itself stays
-  // for future providers' slot configs; drop legacy subfields only, keep unknown later keys.
+  // v2 store 不再持久化旧 Claude 槽位，但 providerMappings 本身要保留给
+  // 后续 ZCode CLI 等 provider 的槽位配置；这里只删历史子字段，未知后续 key 原样保留。
   return remainingMappings;
 }
 
 export const MODEL_PROVIDER_NEW_MODEL_CONTEXT_WINDOW = 200_000;
-// Models without reliable catalog facts (legacy config, missing metadata) share the settings page's
-// conservative default, so agent registry and UI-added models never split on 128k/200k.
+// 老配置和缺 metadata 的模型没有可靠 catalog 事实时，应和设置页新增模型
+// 使用同一个保守默认值，避免 agent registry 与 UI 新增模型出现 128k/200k 分歧。
 const LEGACY_MODEL_CONTEXT_WINDOW = MODEL_PROVIDER_NEW_MODEL_CONTEXT_WINDOW;
+export const MODEL_ONE_MILLION_CONTEXT_WINDOW = 1_000_000;
 
 export function resolveModelProviderContextWindow(contextWindow: number | undefined): number {
   if (typeof contextWindow !== "number" || !Number.isFinite(contextWindow)) {
@@ -344,8 +371,8 @@ export function getModelProviderModelIds(
 
   return (
     provider.models
-      // Deleted models now persist as tombstones in provider.models for persistence/remote merge;
-      // every optional/push model catalog must treat tombstones as absent, or chat and CLI keep listing deleted models.
+      // 模型删除现在以 tombstone 保留在 provider.models 中用于持久化和远端合并；
+      // 所有可选/下发模型目录都必须把 tombstone 当成不存在，避免聊天框和 CLI 继续看到已删模型。
       .filter((model) => !isModelProviderModelConfig(model) || model.deleted !== true)
       .map((model) => (isModelProviderModelConfig(model) ? model.id.trim() : model.trim()))
       .filter((modelId) => modelId.length > 0)
@@ -461,7 +488,9 @@ export function resolveModelProviderKindApiFormat(kind: ModelProviderKind): Mode
   }
 }
 
-function mapModelProviderApiFormatToKind(apiFormat: ModelProviderApiFormat): ModelProviderKind {
+export function mapModelProviderApiFormatToKind(
+  apiFormat: ModelProviderApiFormat,
+): ModelProviderKind {
   switch (apiFormat) {
     case "anthropic-messages":
       return "anthropic";
@@ -512,8 +541,8 @@ function collapseDuplicatedAbsoluteRuntimeBaseUrl(value: string): string {
     const firstUrl = normalized.slice(0, secondMarkerIndex).replace(/\/+$/, "");
     const secondUrl = normalized.slice(secondMarkerIndex).replace(/\/+$/, "");
     if (firstUrl === secondUrl) {
-      // The legacy settings page could append the runtime baseURL as a path again,
-      // yielding https://host/path/https://host/path; fold only exact duplicates, the safe shape.
+      // 旧设置页保存时可能把 runtime baseURL 当作 path 再拼一次，
+      // 形成 https://host/path/https://host/path；这里只折叠完全重复的安全形态。
       return firstUrl;
     }
   } catch {
@@ -530,8 +559,8 @@ function joinBaseUrlAndPath(baseURL: string, path: string): string {
     return trimmedBase;
   }
   if (isAbsoluteHttpUrl(trimmedPath)) {
-    // Legacy endpoints.paths may already hold a full runtime baseURL.
-    // Then never stack endpoints.baseURL again, or the duplicate URL persists.
+    // 旧 endpoints.paths 可能已保存成完整 runtime baseURL。
+    // 这种情况下不能再叠加 endpoints.baseURL，否则会写回重复 URL。
     return trimmedPath;
   }
   if (!trimmedBase) {
@@ -552,8 +581,8 @@ export function normalizeModelProviderBaseUrlForKind(
 ): string {
   const suffixes: Record<ModelProviderKind, string[]> = {
     anthropic: ["/v1/messages", "/messages"],
-    // The OpenAI Responses SDK baseURL usually includes /v1; runtime appends /responses only.
-    // Never strip the whole /v1/responses, or a user-entered https://host/v1 displays/persists as https://host.
+    // OpenAI Responses 的 SDK baseURL 通常包含 /v1，运行时只会追加 /responses。
+    // 不能把 /v1/responses 整段剥掉，否则用户填写 https://host/v1 会被展示/落盘成 https://host。
     openai: ["/responses"],
     "openai-compatible": ["/chat/completions"],
   };
@@ -568,8 +597,8 @@ export function normalizeModelProviderBaseUrlForKind(
 }
 
 export function normalizeModelProviderConfiguredBaseUrl(baseURL: string): string {
-  // Settings-page and config.json Base URL are explicit user values; never auto-strip
-  // /v1, /responses, or /chat/completions by API format. Only safe duplicate-URL folding and trailing cleanup here.
+  // 设置页和 config.json 的 Base URL 是用户显式配置值，不能按 API 格式
+  // 自动删除 /v1、/responses 或 /chat/completions 等路径段；这里只做安全的重复 URL 折叠和收尾清理。
   return collapseDuplicatedAbsoluteRuntimeBaseUrl(baseURL).replace(/\/+$/, "");
 }
 
@@ -582,15 +611,35 @@ export function resolveModelProviderRuntimeBaseUrl(
   if (!provider.endpoints.baseURL?.trim() && !provider.endpoints.paths) {
     return "";
   }
-  // baseURL is a common prefix; only kinds declared in paths mean a usable protocol.
-  // Otherwise OpenAI-only providers get misprobed/synced as Anthropic-capable.
+  // baseURL 只是公共前缀，只有 paths 显式声明的 kind 才代表可用协议。
+  // 否则 OpenAI-only provider 会被错误探测/同步成 Anthropic 可用。
   if (paths[kind] === undefined) {
     return "";
   }
-  // catalog baseURL + path is the full request URL, while OpenAI/Anthropic
-  // runtime SDKs take an API base and append /chat/completions, /responses, or /messages themselves.
-  // Passing the full request URL through would send .../chat/completions/chat/completions.
+  // catalog 的 baseURL + path 表示完整请求地址，而 OpenAI/Anthropic
+  // runtime SDK 接收的是 API base URL，会自行追加 /chat/completions、/responses 或 /messages。
+  // 若直接透传完整请求地址，真实发送会拼成 .../chat/completions/chat/completions。
   return normalizeModelProviderBaseUrlForKind(joinBaseUrlAndPath(baseURL, paths[kind] ?? ""), kind);
+}
+
+export function getModelProviderEndpointKinds(
+  endpoints: ModelProviderEndpoints,
+): ModelProviderKind[] {
+  const kinds: ModelProviderKind[] = [];
+  const paths = endpoints.paths;
+  if (endpoints.baseURL?.trim() || paths) {
+    if (paths?.anthropic !== undefined) {
+      kinds.push("anthropic");
+    }
+    if (paths?.openai !== undefined) {
+      kinds.push("openai");
+    }
+    if (paths?.["openai-compatible"] !== undefined) {
+      kinds.push("openai-compatible");
+    }
+    return kinds;
+  }
+  return [];
 }
 
 function pathFromModelProviderEndpointUrl(url: URL): string {
@@ -671,8 +720,8 @@ export function migrateLegacyModelProviderConfig(
   provider: z.infer<typeof legacyModelProviderConfigSchema>,
 ): ModelProviderConfig {
   const defaultKind = resolveLegacyModelProviderDefaultKind(provider);
-  // Legacy providers may configure Anthropic and OpenAI together; migration keeps historical paths,
-  // later the service storage boundary converges to a single kind per OpenCode runtime config.
+  // 旧 provider 可能同时配置 Anthropic 与 OpenAI，迁移阶段先保留历史路径，
+  // 后续服务层存储边界会按 runtime config 收敛为单一 kind。
   const legacyEntries: Array<[ModelProviderKind, string]> = [];
   const anthropicEndpoint = provider.endpoints.anthropic?.trim();
   if (anthropicEndpoint) {
@@ -733,6 +782,14 @@ export function migrateLegacyModelProviderConfig(
   };
 }
 
+export function migrateLegacyModelProviderListToStoreFile(raw: unknown): ModelProviderStoreFile {
+  const providers = legacyModelProviderListSchema.parse(raw);
+  return {
+    schemaVersion: "zcode.model-providers.v2",
+    providers: providers.map(migrateLegacyModelProviderConfig),
+  };
+}
+
 export function getDefaultModelSupportedFormatsFromEndpoints(
   endpoints: Partial<
     Pick<ModelProviderEndpoints, "anthropic" | "openai" | "gemini" | "baseURL" | "paths">
@@ -784,8 +841,8 @@ export function resolveModelProviderApiFormat(
     return resolveModelProviderKindApiFormat(provider.defaultKind);
   }
 
-  // Legacy data may declare several protocols; without explicit defaultKind/apiFormat
-  // prefer the Anthropic-compatible main line, so Claude-semantic providers stay off OpenAI.
+  // 旧迁移数据可能同时声明多个协议，未显式 defaultKind/apiFormat 时
+  // 仍按 Anthropic-compatible 主链路优先，避免 Anthropic 协议 provider 被误切到 OpenAI。
   if (provider.endpoints.paths?.anthropic !== undefined) {
     return "anthropic-messages";
   }
@@ -801,4 +858,24 @@ export function resolveModelProviderApiFormat(
   return "anthropic-messages";
 }
 
-/** Connectivity-test error classification */
+export function resolveModelProviderBaseUrl(
+  provider: Pick<ModelProviderConfig, "apiFormat" | "endpoints"> &
+    Partial<Pick<ModelProviderConfig, "defaultKind">>,
+): string {
+  const kind = mapModelProviderApiFormatToKind(resolveModelProviderApiFormat(provider));
+  const runtimeBaseURL = resolveModelProviderRuntimeBaseUrl(provider, kind);
+  if (runtimeBaseURL) {
+    // 修复原因：设置页输入框展示的是 SDK/runtime baseURL。
+    // 内部 endpoints.baseURL 只是公共前缀时，必须结合固定 operation path 还原展示值。
+    return runtimeBaseURL;
+  }
+  const baseURL = provider.endpoints.baseURL?.trim();
+  if (baseURL) {
+    // Bugfix: 早期设置页会把 Chat Completions 的完整请求地址保存进 baseURL。
+    // Base URL 输入框应展示 SDK 的 API base URL，避免用户再次保存时延续错误形态。
+    return normalizeModelProviderBaseUrlForKind(baseURL, kind);
+  }
+  return resolveModelProviderRuntimeBaseUrl(provider, kind);
+}
+
+/** 连通性测试错误分类 */

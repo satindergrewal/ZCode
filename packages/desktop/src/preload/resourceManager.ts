@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import { PlatformChannels, formatZCodeRendererProcessName } from "@zcode/shared";
 import type {
   ResourceUsageSnapshot,
+  NetworkCaptureBridge,
   StorageCleanRequest,
   StorageCleanResult,
   StorageManagementBridge,
@@ -28,6 +29,11 @@ const storage: StorageManagementBridge = {
   },
 };
 
+const network: NetworkCaptureBridge = {
+  getSnapshot: () => ipcRenderer.invoke(PlatformChannels.GetNetworkCaptureSnapshot),
+  clear: () => ipcRenderer.invoke(PlatformChannels.ClearNetworkCapture),
+};
+
 /**
  * Resource-manager-window preload -- resource snapshot polling plus storage management commands.
  * No MessagePort forwarding: the resource manager uses no RPC services and stays off the desktop continuous path;
@@ -39,4 +45,5 @@ contextBridge.exposeInMainWorld("resourceManager", {
   getSnapshot: (): Promise<ResourceUsageSnapshot> =>
     ipcRenderer.invoke(PlatformChannels.GetResourceUsageSnapshot),
   storage,
+  network,
 });

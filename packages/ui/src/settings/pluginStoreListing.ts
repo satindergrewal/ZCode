@@ -11,11 +11,13 @@ import {
   compareDocumentPluginPriority,
   resolvePluginStoreCategory as resolveStoreCategory,
   FALLBACK_PLUGIN_STORE_CATEGORY as FALLBACK_CATEGORY,
+  formatCanonicalPluginName,
   isPublicStoreMarketplaceId,
   resolveLocalizedText,
   resolvePluginDisplayName,
   ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID,
 } from "@zcode/shared";
+import { DEFAULT_MARKETPLACE_ID } from "@/settings/recommendedPlugins.js";
 import { pluginSearchMatches } from "@/settings/pluginSearch.js";
 
 export {
@@ -24,8 +26,8 @@ export {
   resolvePluginDisplayName,
 } from "@zcode/shared";
 
-export { isTrustedImageUrl } from "@/lib/trustedImageUrl.js";
 export { isPublicStoreMarketplaceId };
+export { isTrustedImageUrl } from "@/lib/trustedImageUrl.js";
 
 /**
  // Fall back to resolving a listing from a directory entry only when the name is unique.
@@ -102,6 +104,10 @@ export function resolveLocalizedList(
   return base && base.length > 0 ? base : undefined;
 }
 
+export function formatCanonicalMarketplaceName(name: string, locale: string): string {
+  return formatCanonicalPluginName(name, locale);
+}
+
 export function resolveItemDisplayName(item: StorePluginItem, locale: string): string {
   return resolvePluginDisplayName(item, locale);
 }
@@ -137,12 +143,12 @@ export const KNOWN_CATEGORY_LABEL_IDS: Record<string, string> = {
 };
 
 export {
+  resolvePluginStoreCategory as resolveStoreCategory,
   FALLBACK_PLUGIN_STORE_CATEGORY as FALLBACK_CATEGORY,
   PLUGIN_STORE_CATEGORY_ORDER as KNOWN_CATEGORY_ORDER,
-  resolvePluginStoreCategory as resolveStoreCategory,
 } from "@zcode/shared";
 
-interface StoreCategoryGroup {
+export interface StoreCategoryGroup {
   category: string;
   items: StorePluginItem[];
 }
@@ -154,7 +160,10 @@ export interface PersonalMarketplaceGroup {
   items: StorePluginItem[];
 }
 
-const OFFICIAL_MARKETPLACE_ORDER: readonly string[] = [ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID];
+const OFFICIAL_MARKETPLACE_ORDER = [
+  ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID,
+  DEFAULT_MARKETPLACE_ID,
+] as const;
 
 /**
  // Marketplace-source ordering: official pinned first; custom by last-refresh desc, never-refreshed last.

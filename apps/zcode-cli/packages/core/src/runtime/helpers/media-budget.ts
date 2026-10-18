@@ -23,9 +23,9 @@ import {
   type MediaCapabilityProjection,
 } from "./media-capability.js";
 
-// A standalone video budget cannot bound the request total; all media counts toward 40MiB by encoded size,
-// reserving room for body text and other non-media content. Per-file raw byte limits belong to the attachment-input/Read layer.
-const DEFAULT_MODEL_REQUEST_MEDIA_BUDGET_BYTES = 40 * 1024 * 1024;
+// 独立的视频预算无法约束请求总量；所有媒体统一按编码后的体积计入 40MiB，
+// 为正文等非媒体内容预留空间。单文件原始字节限制由附件输入/Read 层负责。
+export const DEFAULT_MODEL_REQUEST_MEDIA_BUDGET_BYTES = 40 * 1024 * 1024;
 
 interface MediaBlockRef {
   blockIndex: number;
@@ -42,7 +42,7 @@ export interface MediaBudgetProjection {
   totalMediaBytes: number;
 }
 
-interface ModelMediaPolicyProjection {
+export interface ModelMediaPolicyProjection {
   capabilityProjection: MediaCapabilityProjection;
   mediaBudgetProjection: MediaBudgetProjection;
   messages: ModelInputMessage[];
@@ -53,8 +53,8 @@ export function projectMessagesForModelMediaPolicy(
   inputFormat: ModelInputFormat,
   options: { latestRealUserMessageIndex?: number } = {},
 ): ModelMediaPolicyProjection {
-  // Direct-Model helper paths once filled capability but skipped the aggregate budget; both stages must be
-  // chained at one request-policy boundary, so new consumers cannot hand-roll half of it.
+  // 直接调用 Model 的辅助链路曾只补 capability、漏掉聚合预算；两阶段必须
+  // 在同一个请求策略边界串联，避免新增消费者继续手工拼装而遗漏其中一半。
   const capabilityProjection = projectMessagesForInputFormat(messages, inputFormat);
   const mediaBudgetProjection = projectMessagesForMediaBudget(capabilityProjection.messages, {
     latestRealUserMessageIndex: options.latestRealUserMessageIndex,
@@ -112,8 +112,8 @@ export function projectMessagesForMediaBudget(
         recoverable: true,
       },
     );
-    // A generic INVALID_INPUT across processes loses localized semantics; request-total errors
-    // must use the unified attachment code, or PDFs/mixed attachments get misreported as image/video errors.
+    // 跨进程只传通用 INVALID_INPUT 会丢失本地化语义；请求总量错误
+    // 必须使用统一附件码，避免把 PDF 或混合附件误报成图片/视频错误。
     error.code = errorCode;
     throw error;
   }
@@ -154,8 +154,8 @@ function resolveLatestRealUserMessageIndex(
   messages: ModelInputMessage[],
   latestRealUserMessageIndex: number | undefined,
 ): number {
-  // cacheControl is now a provider cache marker; the latest-real-user identity rides the
-  // request-local index from provider projection; -1 explicitly means no real user, and only absence falls back to text heuristics.
+  // cacheControl 现在是 provider cache marker，latest real user 身份由
+  // provider projection 传入的 request-local index 承接；-1 明确表示没有真实用户，缺失时才回退到文本启发式。
   if (
     latestRealUserMessageIndex !== undefined &&
     Number.isInteger(latestRealUserMessageIndex) &&
