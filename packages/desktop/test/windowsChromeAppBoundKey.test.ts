@@ -213,7 +213,7 @@ describe("windowsChromeAppBoundKey", () => {
       }),
     ).rejects.toMatchObject({ code: "chrome_cookie_app_bound_decryption_failed" });
     expect(logger.warn).toHaveBeenCalledWith(
-      "[browser-data] Windows Chrome App-Bound helper 返回失败",
+      "[browser-data] Windows Chrome App-Bound helper returned failure",
       { reason: "cng_failed" },
     );
   });
@@ -241,7 +241,7 @@ describe("windowsChromeAppBoundKey", () => {
       }),
     ).rejects.toMatchObject({ code: "chrome_cookie_app_bound_decryption_failed" });
     expect(logger.warn).toHaveBeenCalledWith(
-      "[browser-data] Windows Chrome App-Bound helper 返回失败",
+      "[browser-data] Windows Chrome App-Bound helper returned failure",
       { reason: "service_channel_failed" },
     );
   });
@@ -273,7 +273,7 @@ describe("windowsChromeAppBoundKey", () => {
       }),
     ).rejects.toMatchObject({ code: "chrome_cookie_app_bound_decryption_failed" });
     expect(logger.warn).toHaveBeenCalledWith(
-      "[browser-data] Windows Chrome App-Bound helper 返回失败",
+      "[browser-data] Windows Chrome App-Bound helper returned failure",
       { reason: "invalid_response" },
     );
     expect(JSON.stringify(logger.warn.mock.calls)).not.toContain(secretMarker);
@@ -303,7 +303,7 @@ describe("windowsChromeAppBoundKey", () => {
       }),
     ).rejects.toMatchObject({ code: "chrome_cookie_app_bound_decryption_failed" });
     expect(logger.warn).toHaveBeenCalledWith(
-      "[browser-data] Windows Chrome App-Bound helper 返回失败",
+      "[browser-data] Windows Chrome App-Bound helper returned failure",
       { reason: "invalid_response" },
     );
     expect(JSON.stringify(logger.warn.mock.calls)).not.toContain(rawResponse);

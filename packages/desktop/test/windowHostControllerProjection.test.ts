@@ -226,7 +226,7 @@ describe("WindowHostControllerProjection", () => {
 
     expect(row).toMatchObject({ sourceAvailability: "offline", liveStatus: "running" });
     await expect(projection.mutate(row.address, { kind: "pin", pinned: true })).rejects.toThrow(
-      "远程 source 当前离线",
+      "Remote source is currently offline",
     );
     expect(remoteMutate).not.toHaveBeenCalled();
     expect(localMutate).not.toHaveBeenCalled();
@@ -376,7 +376,7 @@ describe("WindowHostControllerProjection", () => {
         { ...address, workspaceIdentity: "remote:ssh:wrong:/work/demo" },
         { kind: "archive", archived: true },
       ),
-    ).rejects.toThrow("没有与任务地址匹配的 source");
+    ).rejects.toThrow("No source matches the task address");
     expect(localMutate).not.toHaveBeenCalled();
   });
 

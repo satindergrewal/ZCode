@@ -98,7 +98,7 @@ it("DB109-01/09/10/13：八表内容保留，旧版读取新增/更新任务无�
     );
     expect((await automation.get("old"))?.prompt).toBe("回滚后的正文");
     await expect(automation.getModelSelectionForDispatch("old", "ssh:a:/same")).rejects.toThrow(
-      "重新选择",
+      "Automation model selection unavailable",
     );
     expect((await offPeak.get("idle"))?.serverTicketId).toBe("ticket");
     expect(db.prepare("SELECT * FROM tasks_schema_migration").all()).toEqual(ledger);

@@ -236,7 +236,7 @@ describe("GitCommitMessageGenerator", () => {
     ).rejects.toMatchObject({
       name: "GitCommitMessageGenerationError",
       reason: "invalid-output",
-      message: "模型没有返回可用的 Conventional Commit 提交消息。",
+      message: "The model returned no usable Conventional Commit message.",
     } satisfies Partial<GitCommitMessageGenerationError>);
   });
 
@@ -260,7 +260,7 @@ describe("GitCommitMessageGenerator", () => {
       }),
     ).rejects.toMatchObject({
       reason: "model-unavailable",
-      message: "未读取到当前模型。",
+      message: "No model available.",
     } satisfies Partial<GitCommitMessageGenerationError>);
     expect(textGenerator.generateText).not.toHaveBeenCalled();
   });

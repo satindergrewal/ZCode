@@ -224,7 +224,7 @@ describe("SSHBackend", () => {
 
     backend.dispose();
 
-    await expect(backend.exec("true")).rejects.toThrow("SSH backend 已释放");
+    await expect(backend.exec("true")).rejects.toThrow("SSH backend disposed");
     expect(fakeClient.connect).not.toHaveBeenCalled();
   });
 
@@ -253,7 +253,7 @@ describe("SSHBackend", () => {
     backend.dispose();
     fakeClient.emit("ready");
 
-    await expect(detecting).rejects.toThrow("SSH backend 已释放");
+    await expect(detecting).rejects.toThrow("SSH backend disposed");
     expect(fakeClient.exec).not.toHaveBeenCalled();
   });
 
@@ -311,7 +311,7 @@ describe("SSHBackend", () => {
           level: "client-timeout",
         }),
       );
-      await expect(detecting).rejects.toThrow("SSH 连接握手超时");
+      await expect(detecting).rejects.toThrow("SSH handshake timed out");
 
       backend.dispose();
 
@@ -347,7 +347,7 @@ describe("SSHBackend", () => {
     const executing = backend.exec("true");
     backend.dispose();
 
-    await expect(executing).rejects.toThrow("SSH backend 已释放");
+    await expect(executing).rejects.toThrow("SSH backend disposed");
     expect(fakeClient.exec).not.toHaveBeenCalled();
   });
 

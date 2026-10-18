@@ -114,7 +114,7 @@ describe("AutomationRepo 调度状态机", () => {
         ).run(raw, "unrecognized-old-model", "glm", created.automationId);
         await expect(
           repo.getModelSelectionForDispatch(created.automationId, created.workspaceKey),
-        ).rejects.toThrow("Automation 模型选择不可用");
+        ).rejects.toThrow("Automation model selection unavailable");
       }
       // 新版明确跟随是合法产品意图；保留的旧列仅供回滚，不得重新带回旧选择。
       db.prepare("UPDATE automations SET model_selection = 'null' WHERE automation_id = ?").run(

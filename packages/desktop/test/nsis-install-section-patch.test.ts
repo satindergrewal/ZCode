@@ -96,7 +96,7 @@ describe("NSIS installSection template patch", () => {
 
   it("模板结构变化时应立即失败，而不是静默生成缺少诊断的安装器", () => {
     expect(() => patchNsisInstallSectionSource("InitPluginsDir\n")).toThrow(
-      "electron-builder installSection.nsh 缺少预期锚点",
+      "electron-builder installSection.nsh is missing expected anchor",
     );
   });
 });

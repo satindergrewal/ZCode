@@ -89,7 +89,7 @@ describe("useAutomationTemplates", () => {
     expect(result.current.scheduled).toEqual([]);
     expect(result.current.offPeak).toEqual([]);
     expect(loggerWarn).toHaveBeenCalledWith(
-      "[automation-templates] Client Scenes 请求失败，保留手动创建入口",
+      "[automation-templates] Client Scenes request failed; keeping manual create",
       { error: "offline" },
     );
   });

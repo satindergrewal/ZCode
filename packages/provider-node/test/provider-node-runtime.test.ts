@@ -243,7 +243,7 @@ describe("@zcode/provider-node", () => {
       resolveNodeProviderRuntimePaths({
         [ZCODE_BUILTIN_PROVIDER_CONFIG_FILE_ENV]: "/zcodeBuiltin.json",
       }),
-    ).toThrow("必须同时提供");
+    ).toThrow("must be provided together");
     expect(
       resolveNodeProviderRuntimePaths({
         [ZCODE_BUILTIN_PROVIDER_CONFIG_FILE_ENV]: " /zcodeBuiltin.json ",

@@ -226,7 +226,7 @@ describe("desktop Linux deep link registration helpers", () => {
         'Exec="/home/alice/Applications/ZCode.AppImage" %U',
       );
       expect(
-        warnings.some(([message]) => message === "[deep-link] Linux AppImage 图标安装失败，已降级"),
+        warnings.some(([message]) => message === "[deep-link] Linux AppImage icon install failed; degraded"),
       ).toBe(true);
       expect(commandCalls).toEqual([
         {
@@ -323,7 +323,7 @@ describe("desktop Linux deep link registration helpers", () => {
         },
       ]);
       expect(
-        infos.some(([message]) => message === "[deep-link] Linux 系统级 desktop entry 已存在"),
+        infos.some(([message]) => message === "[deep-link] Linux system-level desktop entry already present"),
       ).toBe(true);
     } finally {
       rmSync(tempRoot, { force: true, recursive: true });
@@ -369,7 +369,7 @@ describe("desktop Linux deep link registration helpers", () => {
       expect(
         warnings.some(
           ([message]) =>
-            message === "[deep-link] Linux 用户级 zcode.desktop 非本应用写入，保留不清理",
+            message === "[deep-link] user-level zcode.desktop not owned by this app; kept",
         ),
       ).toBe(true);
     } finally {
@@ -522,7 +522,7 @@ describe("desktop Linux deep link registration helpers", () => {
       expect(
         warnings.some(
           ([message]) =>
-            message === "[deep-link] Linux 用户级 zcode.desktop 非本应用写入，保留不清理",
+            message === "[deep-link] user-level zcode.desktop not owned by this app; kept",
         ),
       ).toBe(true);
       // 归属识别失败只降级，协议注册命令仍完整执行。
@@ -588,7 +588,7 @@ describe("desktop Linux deep link registration helpers", () => {
       expect(existsSync(desktopFilePath)).toBe(false);
       expect(
         infos.some(
-          ([message]) => message === "[deep-link] 已清理遗留的用户级 zcode.desktop，恢复系统级条目",
+          ([message]) => message === "[deep-link] removed legacy user-level zcode.desktop; system entry restored",
         ),
       ).toBe(true);
     } finally {
@@ -645,7 +645,7 @@ describe("desktop Linux deep link registration helpers", () => {
 
         expect(existsSync(desktopFilePath)).toBe(true);
         expect(
-          warnings.some(([message]) => message === "[deep-link] 清理遗留用户级 zcode.desktop 失败"),
+          warnings.some(([message]) => message === "[deep-link] failed to clean legacy user-level zcode.desktop"),
         ).toBe(true);
         expect(commandCalls).toEqual([
           {

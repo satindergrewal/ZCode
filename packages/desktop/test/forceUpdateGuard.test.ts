@@ -302,7 +302,7 @@ describe("forceUpdateGuard", () => {
 
     expect(requirement).toBeNull();
     expect(logger.warn).toHaveBeenCalledWith(
-      "[force-update] 读取远端强制升级配置失败，跳过强制升级校验",
+      "[force-update] failed to read remote force-update config, skipping the check",
       expect.objectContaining({ error: expect.any(Error) }),
     );
   });
@@ -351,7 +351,7 @@ describe("forceUpdateGuard", () => {
     expect(requirement).toBeNull();
     expect(request.abort).toHaveBeenCalledOnce();
     expect(logger.warn).toHaveBeenCalledWith(
-      "[force-update] 读取远端强制升级配置失败，跳过强制升级校验",
+      "[force-update] failed to read remote force-update config, skipping the check",
       expect.objectContaining({ error: expect.any(Error) }),
     );
   });

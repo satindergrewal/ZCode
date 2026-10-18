@@ -862,7 +862,7 @@ describe("reconnectRemoteWorkspaceHistoryEntry", () => {
     expect(commitRemoteWorkspaceSessionMutation).not.toHaveBeenCalled();
     expect(toast).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledWith(
-      "[Root] 远程 workspace 在重连过程中已被移除，跳过恢复并回收 session",
+      "[Root] Remote workspace removed during reconnect; skipping restore and recycling the session",
       expect.objectContaining({
         workspacePath: "/workspace/demo",
       }),
@@ -1264,7 +1264,7 @@ describe("reconnectRemoteWorkspaceByKey", () => {
         getRemoteSessions: () => [createRemoteWorkspaceSessionEntry()],
         runReconnectRemoteWorkspace,
       }),
-    ).rejects.toThrow("远程 workspace 不在当前窗口中，无法重连: missing");
+    ).rejects.toThrow("Remote workspace not in this window; cannot reconnect: missing");
 
     expect(runReconnectRemoteWorkspace).not.toHaveBeenCalled();
   });

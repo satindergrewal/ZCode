@@ -160,7 +160,7 @@ describe("Todo104 分发同文件原子边界", () => {
       credentialFilePath: join(directory, "credentials.json"),
       personalConfigFilePath: filePath,
     });
-    await expect(source.read("stale-read")).rejects.toThrow("无法同步");
+    await expect(source.read("stale-read")).rejects.toThrow("Local Personal Provider Config cannot sync");
     expect((await read()).defaultModelSelection?.modelId).toBe("new-default");
   });
 
@@ -192,7 +192,7 @@ describe("Todo104 分发同文件原子边界", () => {
     expect(result).not.toHaveProperty("configuredDefault");
     expect(result).not.toHaveProperty("sourceRevision");
     await writeFile(filePath, "{broken");
-    await expect(source.read("read-bad")).rejects.toThrow("无法同步");
+    await expect(source.read("read-bad")).rejects.toThrow("Local Personal Provider Config cannot sync");
     expect(await readFile(filePath, "utf8")).toBe("{broken");
   });
 

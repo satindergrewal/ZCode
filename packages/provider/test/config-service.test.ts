@@ -160,7 +160,7 @@ describe("ProviderConfigService", () => {
             service.savePersonalProviderOverlay("account", new ProviderConfig({}), undefined, {
               enabled: false,
             }),
-          ).rejects.toThrow(/Account Provider.*禁用/);
+          ).rejects.toThrow(/Account provider cannot be disabled/);
           expect(personal.current).toBe(before);
           await service.savePersonalProviderOverlay("account", new ProviderConfig({}), undefined, {
             providerName: "renamed",
@@ -244,9 +244,9 @@ describe("ProviderConfigService", () => {
     });
     try {
       await expect(service.renamePersonalModel("p", "A", "renamed")).rejects.toThrow(
-        "Built-in Model",
+        "Built-in model",
       );
-      await expect(service.deletePersonalModel("p", "A")).rejects.toThrow("Built-in Model");
+      await expect(service.deletePersonalModel("p", "A")).rejects.toThrow("Built-in model");
       await service.addPersonalModel("p", "C", new ModelConfig({}));
       expect(personal.current.providers.get("p")?.modelOrder).toEqual(["NEW", "B", "A", "C"]);
     } finally {
@@ -274,7 +274,7 @@ describe("ProviderConfigService", () => {
       expect(personal.current.models.getExact("account", "D")?.enabled).toBe(true);
       const before = personal.current;
       await expect(service.addPersonalModel("account", "A", new ModelConfig({}))).rejects.toThrow(
-        "Model 已存在",
+        "Model already exists",
       );
       await expect(service.addPersonalModel("deleted", "A", new ModelConfig({}))).rejects.toThrow(
         "Provider",
@@ -327,7 +327,7 @@ describe("ProviderConfigService", () => {
         "manual-provider-model",
       );
       await expect(service.setPersonalModelEnabled("custom", "missing", true)).rejects.toThrow(
-        "Model 不存在",
+        "Model not found",
       );
     } finally {
       service.dispose();
@@ -435,9 +435,9 @@ describe("ProviderConfigService", () => {
           personalConfig: {},
           basedOnRevision: facade.getView().revision,
         }),
-      ).rejects.toThrow("不能重命名");
+      ).rejects.toThrow("cannot be renamed");
       await expect(facade.addPersonalModel("account", "glm-next", {})).rejects.toThrow(
-        "Model 已存在",
+        "Model already exists",
       );
       await Promise.all([
         facade.savePersonalModelDraft({
@@ -514,7 +514,7 @@ describe("ProviderConfigService", () => {
           personalConfig: {},
           basedOnRevision: facade.getView().revision,
         }),
-      ).rejects.toThrow("Model 不存在");
+      ).rejects.toThrow("Model not found");
     } finally {
       registry.dispose();
       service.dispose();
@@ -668,7 +668,7 @@ describe("ProviderConfigService", () => {
         "personal",
         createApiKeyProviderConfig({ group: "standard-personal", apiKey: "late-key" }),
       ),
-    ).rejects.toThrow("尚未创建");
+    ).rejects.toThrow("not created yet");
     expect(personal.current.providers.has("personal")).toBe(false);
   });
 
@@ -699,7 +699,7 @@ describe("ProviderConfigService", () => {
         "account:bigmodel-individual-coding-plan",
         createApiKeyProviderConfig({ group: null, apiKey: "family-key" }),
       ),
-    ).rejects.toThrow("固定 Account Provider 的 Access");
+    ).rejects.toThrow("Pinned-account access");
     expect(personal.current.providers.has("account:bigmodel-individual-coding-plan")).toBe(false);
   });
 
@@ -733,7 +733,7 @@ describe("ProviderConfigService", () => {
         undefined,
         { providerName: "  dEMo  " },
       ),
-    ).rejects.toThrow("Provider 名称已存在");
+    ).rejects.toThrow("Provider name already exists");
   });
 
   it("历史重名不阻断未引入新重名的 Provider 保存", async () => {
@@ -1162,10 +1162,10 @@ describe("ProviderConfigService", () => {
 
     await expect(
       service.addPersonalModel("personal", "builtin-model", completeModelConfig()),
-    ).rejects.toThrow("Model 已存在: personal/builtin-model");
+    ).rejects.toThrow("Model already exists: personal/builtin-model");
     await expect(
       service.addPersonalModel("personal", "personal-model", completeModelConfig()),
-    ).rejects.toThrow("Model 已存在: personal/personal-model");
+    ).rejects.toThrow("Model already exists: personal/personal-model");
   });
 
   it("模型重命名拒绝覆盖 Built-in 或已有 Personal 成员", async () => {
@@ -1188,7 +1188,7 @@ describe("ProviderConfigService", () => {
     });
 
     await expect(service.renamePersonalModel("personal", "model-a", "model-b")).rejects.toThrow(
-      "Model 已存在: personal/model-b",
+      "Model already exists: personal/model-b",
     );
   });
 

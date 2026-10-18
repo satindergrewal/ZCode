@@ -408,12 +408,12 @@ describe("ProviderConfigResolver", () => {
     expect(result.resolvedProviders[0]?.providerIssues).toContainEqual({
       code: "missing-template",
       path: ["providers", "missing-template-provider", "templateId"],
-      message: "Provider Template 不存在: missing-template",
+      message: "Provider template not found: missing-template",
     });
     expect(result.issues).toContainEqual({
       code: "missing-template",
       path: ["providers", "missing-template-provider", "templateId"],
-      message: "Provider Template 不存在: missing-template",
+      message: "Provider template not found: missing-template",
     });
   });
 
@@ -764,7 +764,7 @@ describe("ProviderConfigResolver", () => {
     expect(result.issues).toContainEqual({
       code: "required-field-missing",
       path: ["providers", "missing-key", "access"],
-      message: "缺少必填配置 providers.missing-key.access",
+      message: "Missing required config providers.missing-key.access",
     });
   });
 

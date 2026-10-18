@@ -81,7 +81,7 @@ it("损坏字节码在 CLI 执行前失败且不污染 stdout", async () => {
   ).rejects.toMatchObject({
     code: 1,
     stdout: "",
-    stderr: expect.stringContaining("字节码摘要不匹配"),
+    stderr: expect.stringContaining("bytecode digest mismatch"),
   });
 });
 
@@ -95,7 +95,7 @@ it("不同 V8 运行时在反序列化前失败", async () => {
   ).rejects.toMatchObject({
     code: 1,
     stdout: "",
-    stderr: expect.stringContaining("字节码运行时不匹配"),
+    stderr: expect.stringContaining("bytecode runtime mismatch"),
   });
 });
 

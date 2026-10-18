@@ -355,7 +355,7 @@ describe("WindowHostControllerService", () => {
         },
         mutation: { kind: "delete" },
       }),
-    ).rejects.toThrow("远程 source 当前离线");
+    ).rejects.toThrow("Remote source is currently offline");
     expect(remote.deleteTask).not.toHaveBeenCalled();
   });
 
@@ -455,7 +455,9 @@ describe("WindowHostControllerService", () => {
       taskId: "remote",
     });
     online = false;
-    await expect(runtime.service.deleteArchivedTask({ address })).rejects.toThrow("离线");
+    await expect(runtime.service.deleteArchivedTask({ address })).rejects.toThrow(
+      "Remote source is currently offline",
+    );
     expect(remote.deleteArchivedTask).toHaveBeenCalledTimes(1);
   });
 
@@ -531,7 +533,7 @@ describe("WindowHostControllerService", () => {
           workspaceIdentity: remoteIdentity,
         },
       }),
-    ).rejects.toThrow("列表 mutation 与 remote attachment source 不匹配");
+    ).rejects.toThrow("List mutation does not match the remote attachment source");
     expect(remote.listTasks).not.toHaveBeenCalled();
     expect(remote.setTaskUnread).not.toHaveBeenCalled();
   });

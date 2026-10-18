@@ -572,24 +572,43 @@ describe("desktopRuntimeEnv buildHostProcessEnv", () => {
     expect(env.NODE_ENV).toBeUndefined();
   });
 
-  // 根因：bundledCuaHelperAppPath 只在 darwin 上计算（desktopRuntimeEnv.ts:474 直接
-  // `process.platform !== "darwin" ? undefined : ...`），其他平台不写这个键，继承值原样穿透。
-  // Windows CUA 走独立的 Node Helper，不使用 .app bundle，所以下面几条 dev bundle 断言
-  // 只在 darwin 上有意义。
+  // Root cause: bundledCuaHelperAppPath is only computed on darwin (desktopRuntimeEnv.ts
+  // `process.platform !== "darwin" ? undefined : ...`); other platforms never write the key and
+  // inherited values pass through untouched. Windows CUA uses the standalone Node Helper without
+  // an .app bundle, so the dev-bundle assertions below only apply on darwin.
+  // buildHostProcessEnv lets real process.env win over the argument record, so ambient
+  // developer-shell variables would leak into these assertions; pin the two CUA keys.
+  async function withPinnedCuaHelperEnv(run: () => Promise<void>) {
+    const savedPath = process.env.ZCODE_CUA_BUNDLED_HELPER_APP_PATH;
+    const savedAllowUnsigned = process.env.ZCODE_CUA_HELPER_ALLOW_UNSIGNED_LOCAL;
+    delete process.env.ZCODE_CUA_BUNDLED_HELPER_APP_PATH;
+    delete process.env.ZCODE_CUA_HELPER_ALLOW_UNSIGNED_LOCAL;
+    try {
+      await run();
+    } finally {
+      if (savedPath === undefined) delete process.env.ZCODE_CUA_BUNDLED_HELPER_APP_PATH;
+      else process.env.ZCODE_CUA_BUNDLED_HELPER_APP_PATH = savedPath;
+      if (savedAllowUnsigned === undefined) delete process.env.ZCODE_CUA_HELPER_ALLOW_UNSIGNED_LOCAL;
+      else process.env.ZCODE_CUA_HELPER_ALLOW_UNSIGNED_LOCAL = savedAllowUnsigned;
+    }
+  }
+
   it.skipIf(process.platform !== "darwin")(
     "本地免签 CUA 使用 dev Helper bundle，且不回退网络下载",
     async () => {
       const { buildHostProcessEnv } = await import("../src/main/desktopRuntimeEnv.js");
 
-      const env = buildHostProcessEnv({
-        ZCODE_HOME: "/tmp/zcode-cua-dev-home",
-        ZCODE_CUA_PRODUCT_HELPER: "1",
-        ZCODE_CUA_HELPER_ALLOW_UNSIGNED_LOCAL: "1",
-      });
+      await withPinnedCuaHelperEnv(async () => {
+        const env = buildHostProcessEnv({
+          ZCODE_HOME: "/tmp/zcode-cua-dev-home",
+          ZCODE_CUA_PRODUCT_HELPER: "1",
+          ZCODE_CUA_HELPER_ALLOW_UNSIGNED_LOCAL: "1",
+        });
 
-      expect(env.ZCODE_CUA_BUNDLED_HELPER_APP_PATH).toBe(
-        join("/tmp/zcode-cua-dev-home", "computer-use", "dev", "ZCode Computer Use Dev.app"),
-      );
+        expect(env.ZCODE_CUA_BUNDLED_HELPER_APP_PATH).toBe(
+          join("/tmp/zcode-cua-dev-home", "computer-use", "dev", "ZCode Computer Use Dev.app"),
+        );
+      });
     },
   );
 
@@ -598,16 +617,18 @@ describe("desktopRuntimeEnv buildHostProcessEnv", () => {
     async () => {
       const { buildHostProcessEnv } = await import("../src/main/desktopRuntimeEnv.js");
 
-      const env = buildHostProcessEnv({
-        ZCODE_HOME: "/tmp/zcode-cua-dev-home",
-        ZCODE_CUA_PRODUCT_HELPER: "1",
-        ZCODE_CUA_HELPER_ALLOW_UNSIGNED_LOCAL: "1",
-        ZCODE_CUA_BUNDLED_HELPER_APP_PATH: "/tmp/new-helper/ZCode Computer Use Dev.app",
-      });
+      await withPinnedCuaHelperEnv(async () => {
+        const env = buildHostProcessEnv({
+          ZCODE_HOME: "/tmp/zcode-cua-dev-home",
+          ZCODE_CUA_PRODUCT_HELPER: "1",
+          ZCODE_CUA_HELPER_ALLOW_UNSIGNED_LOCAL: "1",
+          ZCODE_CUA_BUNDLED_HELPER_APP_PATH: "/tmp/new-helper/ZCode Computer Use Dev.app",
+        });
 
-      expect(env.ZCODE_CUA_BUNDLED_HELPER_APP_PATH).toBe(
-        "/tmp/new-helper/ZCode Computer Use Dev.app",
-      );
+        expect(env.ZCODE_CUA_BUNDLED_HELPER_APP_PATH).toBe(
+          "/tmp/new-helper/ZCode Computer Use Dev.app",
+        );
+      });
     },
   );
 
@@ -616,16 +637,18 @@ describe("desktopRuntimeEnv buildHostProcessEnv", () => {
     async () => {
       const { buildHostProcessEnv } = await import("../src/main/desktopRuntimeEnv.js");
 
-      const env = buildHostProcessEnv({
-        ZCODE_HOME: "/tmp/zcode-cua-dev-home",
-        ZCODE_CUA_PRODUCT_HELPER: "1",
-        ZCODE_CUA_HELPER_ALLOW_UNSIGNED_LOCAL: "1",
-        ZCODE_CUA_BUNDLED_HELPER_APP_PATH: "   ",
-      });
+      await withPinnedCuaHelperEnv(async () => {
+        const env = buildHostProcessEnv({
+          ZCODE_HOME: "/tmp/zcode-cua-dev-home",
+          ZCODE_CUA_PRODUCT_HELPER: "1",
+          ZCODE_CUA_HELPER_ALLOW_UNSIGNED_LOCAL: "1",
+          ZCODE_CUA_BUNDLED_HELPER_APP_PATH: "   ",
+        });
 
-      expect(env.ZCODE_CUA_BUNDLED_HELPER_APP_PATH).toBe(
-        join("/tmp/zcode-cua-dev-home", "computer-use", "dev", "ZCode Computer Use Dev.app"),
-      );
+        expect(env.ZCODE_CUA_BUNDLED_HELPER_APP_PATH).toBe(
+          join("/tmp/zcode-cua-dev-home", "computer-use", "dev", "ZCode Computer Use Dev.app"),
+        );
+      });
     },
   );
 

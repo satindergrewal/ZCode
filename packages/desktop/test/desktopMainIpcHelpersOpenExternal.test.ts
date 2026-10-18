@@ -24,7 +24,7 @@ describe("openPathInDefaultApp", () => {
 
     expect(h.shellOpenPath).toHaveBeenCalledWith("E:\\项目\\preview page.html");
     expect(result).toEqual({ success: true });
-    expect(logger.info).toHaveBeenCalledWith("[open-external] 本地文件打开成功", {
+    expect(logger.info).toHaveBeenCalledWith("[open-external] local file opened", {
       path: "E:\\项目\\preview page.html",
     });
   });
@@ -40,7 +40,7 @@ describe("openPathInDefaultApp", () => {
       success: false,
       error: "No application is associated with the specified file",
     });
-    expect(logger.warn).toHaveBeenCalledWith("[open-external] 本地文件打开失败", {
+    expect(logger.warn).toHaveBeenCalledWith("[open-external] failed to open local file", {
       path: "E:\\preview.html",
       error: "No application is associated with the specified file",
     });

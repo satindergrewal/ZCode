@@ -193,7 +193,7 @@ describe("ProviderRuntime", () => {
       (await configRuntime.configService.read()).personalProviders.has(created.providerId),
     ).toBe(true);
     runtime.dispose();
-    expect(() => runtime.start()).toThrow("已 dispose");
+    expect(() => runtime.start()).toThrow("ProviderRuntime disposed");
   });
 
   it("释放组合根拥有的 Account Source", async () => {

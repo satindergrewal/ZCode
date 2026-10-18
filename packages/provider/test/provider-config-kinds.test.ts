@@ -162,7 +162,7 @@ describe("ProviderConfig access / api boundaries", () => {
     expect(hidden.validateComplete(["providers", "account:zai-offpeak-idle-plan"])).toContainEqual({
       code: "required-field-missing",
       path: ["providers", "account:zai-offpeak-idle-plan", "api", "baseUrl"],
-      message: "缺少必填配置 providers.account:zai-offpeak-idle-plan.api.baseUrl",
+      message: "Missing required config providers.account:zai-offpeak-idle-plan.api.baseUrl",
     });
     expect(() =>
       parseProviderConfig({
@@ -205,7 +205,7 @@ describe("ProviderConfig access / api boundaries", () => {
     expect(zcodeBuiltin.validateComplete(["providers", "plan"])).toContainEqual({
       code: "required-field-missing",
       path: ["providers", "plan", "access", "entitled"],
-      message: "缺少必填配置 providers.plan.access.entitled",
+      message: "Missing required config providers.plan.access.entitled",
     });
     expect(zcodeBuiltin.overlay(account).validateComplete()).toEqual([]);
   });
@@ -224,7 +224,7 @@ describe("ProviderConfig access / api boundaries", () => {
     expect(incomplete.validateComplete(["providers", "api"])).toContainEqual({
       code: "required-field-missing",
       path: ["providers", "api", "access", "apiKey"],
-      message: "缺少必填配置 providers.api.access.apiKey",
+      message: "Missing required config providers.api.access.apiKey",
     });
   });
 
@@ -247,7 +247,7 @@ describe("ProviderConfig access / api boundaries", () => {
     expect(providers.get("broken")?.validateComplete(["providers", "broken"])).toContainEqual({
       code: "invalid-url",
       path: ["providers", "broken", "api", "baseUrl"],
-      message: "配置 providers.broken.api.baseUrl 必须是有效 URL",
+      message: "Config providers.broken.api.baseUrl must be a valid URL",
     });
   });
 

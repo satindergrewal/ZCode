@@ -264,7 +264,7 @@ describe("ZCode Built-in Release", () => {
     ).resolves.toBe("unchanged");
     await expect(
       source.applyRemoteRelease(decodeZCodeBuiltinRelease(releaseObject(2, "different"))),
-    ).rejects.toThrow("相同 revision");
+    ).rejects.toThrow("maps to different content");
     await expect(
       source.applyRemoteRelease(decodeZCodeBuiltinRelease(releaseObject(1, "old"))),
     ).resolves.toBe("stale");

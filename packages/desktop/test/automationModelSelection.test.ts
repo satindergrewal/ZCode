@@ -86,7 +86,7 @@ describe("resolveAutomationSubmissionModelSelection", () => {
             }),
           },
         }),
-      ).rejects.toThrow("Automation 模型选择不可用");
+      ).rejects.toThrow("Automation model selection unavailable");
     }
   });
 
@@ -117,6 +117,6 @@ describe("resolveAutomationSubmissionModelSelection", () => {
           getView: vi.fn().mockResolvedValue({ revision: 3, providers: [] }),
         },
       }),
-    ).rejects.toThrow("Automation 无法从目标 Host 解析首选模型");
+    ).rejects.toThrow("Automation cannot resolve the preferred model from the target Host");
   });
 });

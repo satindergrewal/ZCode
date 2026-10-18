@@ -1088,7 +1088,7 @@ describe("export logs archive", () => {
       expect(entries.get("logs/stable.log")).toBe("stable-log");
       expect(entries.has("logs/transient.log")).toBe(false);
       expect(loggerMock.warn).toHaveBeenCalledWith(
-        "[export-logs] 检测到不可读日志文件，已在导出时自动跳过",
+        "[export-logs] unreadable log files skipped during export",
         expect.objectContaining({
           skippedCount: 1,
           skippedFiles: expect.arrayContaining([
@@ -1155,7 +1155,7 @@ describe("export logs archive", () => {
         expect(entries.get("logs/stable.log")).toBe("stable-log");
         expect(entries.has("logs/blocked/secret.log")).toBe(false);
         expect(loggerMock.warn).toHaveBeenCalledWith(
-          "[export-logs] 日志目录不可读，已在导出时自动跳过",
+          "[export-logs] unreadable log dir skipped during export",
           expect.objectContaining({
             absolutePath: blockedDir,
             archivePath: "logs/blocked",
@@ -1232,7 +1232,7 @@ describe("export logs archive", () => {
         expect(entries.get("logs/stable.log")).toBe("stable-log");
         expect(entries.has("logs/unreadable.log")).toBe(false);
         expect(loggerMock.warn).toHaveBeenCalledWith(
-          "[export-logs] 检测到不可读日志文件，已在导出时自动跳过",
+          "[export-logs] unreadable log files skipped during export",
           expect.objectContaining({
             skippedCount: 1,
             skippedFiles: expect.arrayContaining([

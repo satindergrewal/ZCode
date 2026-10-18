@@ -73,7 +73,7 @@ describe("Windows Deep Link 启动参数边界", () => {
 
     registerDeepLinkProtocol(logger);
 
-    expect(logger.warn).toHaveBeenCalledWith("[deep-link] 注册协议失败", { scheme: "zcode" });
+    expect(logger.warn).toHaveBeenCalledWith("[deep-link] protocol registration failed", { scheme: "zcode" });
     expect(logger.info).not.toHaveBeenCalled();
   });
 

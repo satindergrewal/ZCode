@@ -355,7 +355,7 @@ describe("hooksService", () => {
       expect(result.hooks[0]?.workspaceHook?.trustState).not.toBe("trusted_persistent");
       expect(logger.warn).toHaveBeenCalledWith(
         undefined,
-        "Workspace Hook Trust store 不可读，已 fail-closed 忽略全部持久信任记录",
+        "Workspace Hook Trust store unreadable; fail-closed, ignoring all persisted trust records",
         expect.objectContaining({ path: expect.stringContaining("workspace-hook-trust-v1.json") }),
       );
       expect(consoleWarn).not.toHaveBeenCalled();

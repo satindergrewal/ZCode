@@ -26,6 +26,6 @@ describe("ModelSelection value", () => {
   });
 
   it("rejects values without an explicit provider", () => {
-    expect(() => parseModelPickerValue("model-only")).toThrow("模型选择缺少 Provider");
+    expect(() => parseModelPickerValue("model-only")).toThrow("Model selection missing provider");
   });
 });

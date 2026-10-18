@@ -82,7 +82,7 @@ describe("cron run lifecycle", () => {
       }),
     ).resolves.toBeUndefined();
     expect(logWarn).toHaveBeenCalledWith(
-      expect.stringContaining("释放 manual automation claim 失败"),
+      expect.stringContaining("Failed to release manual automation claim"),
       expect.any(Error),
     );
   });

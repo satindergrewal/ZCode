@@ -161,7 +161,7 @@ describe("归档批次跨 UI / Controller 的刷新边界", () => {
       online = false;
       await expect(
         runtime.service.deleteArchivedTasks({ address, taskIds: ["task-1"] }),
-      ).rejects.toThrow("离线");
+      ).rejects.toThrow("Remote source is currently offline");
       online = true;
       remoteSessionId = "remote-2";
       await expect(

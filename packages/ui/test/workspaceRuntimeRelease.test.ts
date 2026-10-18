@@ -60,7 +60,7 @@ describe("releaseWorkspaceRuntimeAfterProjectRemoval", () => {
     await Promise.resolve();
 
     expect(logger.error).toHaveBeenCalledWith(
-      "[WorkspaceSidebarItem] 移除 workspace 后释放 runtime 失败",
+      "[WorkspaceSidebarItem] Failed to release runtime after workspace removal",
       {
         workspaceKey: "C:/repo/locked",
         error,

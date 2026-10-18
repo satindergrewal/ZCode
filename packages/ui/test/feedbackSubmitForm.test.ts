@@ -257,7 +257,7 @@ describe("FeedbackSubmitForm", () => {
         type: "feature",
         severity: "P3-低",
         module: "其它",
-        description: expect.stringContaining("反馈类型: feature"),
+        description: expect.stringContaining("Feedback type: feature"),
       }),
       expect.objectContaining({
         operationId: expect.stringMatching(/^feedback-create-/),

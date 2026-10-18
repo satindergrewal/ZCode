@@ -66,9 +66,9 @@ describe("about", () => {
 
     expect(options).toMatchObject({
       applicationName: "ZCode Desktop App",
-      applicationVersion: "版本 0.1.7",
-      copyright: "版权所有 © 2026 ZCode。",
-      credits: "已针对 Apple Silicon 优化。",
+      applicationVersion: "Version 0.1.7",
+      copyright: "Copyright © 2026 ZCode.",
+      credits: "Optimized for Apple silicon.",
     });
   });
 
@@ -124,6 +124,6 @@ describe("about", () => {
 
   it("版权年份可按调用方传入覆盖", () => {
     expect(formatAboutCopyright(2027, "en-US")).toBe("Copyright © 2027 ZCode.");
-    expect(formatAboutCopyright(2027, "zh-CN")).toBe("版权所有 © 2027 ZCode。");
+    expect(formatAboutCopyright(2027, "zh-CN")).toBe("Copyright © 2027 ZCode.");
   });
 });

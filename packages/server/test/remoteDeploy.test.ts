@@ -2275,7 +2275,7 @@ describe("deployServer legacy agent node-script bundle deployment", () => {
 
     expect(
       warnings.some((message) =>
-        message.includes("修复旧 builtin plugin 目录权限失败"),
+        message.includes("failed to repair legacy builtin plugin dir permissions"),
       ),
     ).toBe(true);
     expect(installRequests).toEqual([
@@ -2751,7 +2751,7 @@ describe("deployServer legacy agent node-script bundle deployment", () => {
           remoteCacheDir: "/tmp/zcode-remote-cache",
         },
       ),
-    ).rejects.toThrow(/remoteCdnBaseUrl 版本不匹配/);
+    ).rejects.toThrow(/remoteCdnBaseUrl version mismatch/);
   });
 
   it("生产态 manifest 存在时应优先下载组件产物并写入 cache（不走 legacy 整包）", async () => {
@@ -6050,6 +6050,6 @@ describe("deployServer legacy agent node-script bundle deployment", () => {
           mockCdnDir: "/tmp/unused",
         },
       ),
-    ).rejects.toThrow(/暂不支持 Windows 原生远程主机/);
+    ).rejects.toThrow(/Windows native remote hosts are not supported/);
   });
 });

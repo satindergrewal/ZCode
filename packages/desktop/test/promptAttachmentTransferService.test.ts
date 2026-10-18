@@ -94,7 +94,7 @@ describe("remote prompt attachment transfer service", () => {
     await vi.waitFor(() => expect(upload).toHaveBeenCalledTimes(1));
     await service.cancel("attachment-2");
 
-    await expect(staging).rejects.toThrow("远端附件上传失败");
+    await expect(staging).rejects.toThrow("Remote attachment upload failed");
     expect(phases).toContain("canceled");
     expect(vi.mocked(upload).mock.calls[0]?.[2]?.signal?.aborted).toBe(true);
   });

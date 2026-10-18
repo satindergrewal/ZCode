@@ -91,7 +91,7 @@ describe("sessionsIndexRegistry scope endpoint mismatch 观测", () => {
 
     expect(lifecycleWarn).toHaveBeenCalledTimes(1);
     expect(lifecycleWarn).toHaveBeenCalledWith(
-      "[v4-sessions-index] scope endpoint 与远程代理归属不一致",
+      "[v4-sessions-index] scope endpoint disagrees with the remote proxy owner",
       expect.objectContaining({
         event: "v4.sessions_index.scope_endpoint_mismatch",
         endpointKey: "__base__",
@@ -126,7 +126,7 @@ describe("sessionsIndexRegistry scope endpoint mismatch 观测", () => {
 
     expect(lifecycleWarn).toHaveBeenCalledTimes(1);
     expect(lifecycleWarn).toHaveBeenCalledWith(
-      "[v4-sessions-index] scope endpoint 与远程代理归属不一致",
+      "[v4-sessions-index] scope endpoint disagrees with the remote proxy owner",
       expect.objectContaining({ endpointKey: "remote-session-other", remoteSessionId }),
     );
 

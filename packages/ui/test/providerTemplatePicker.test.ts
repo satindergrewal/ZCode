@@ -118,7 +118,7 @@ describe("ProviderTemplatePicker", () => {
       "创建供应商失败：个人供应商配置格式无效",
     );
     expect(loggerMock.error).toHaveBeenCalledWith(
-      "[ProviderTemplatePicker] 创建供应商失败",
+      "[ProviderTemplatePicker] Failed to create provider",
       expect.any(Error),
     );
 

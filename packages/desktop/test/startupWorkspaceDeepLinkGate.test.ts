@@ -96,7 +96,7 @@ describe("startup workspace deep link gate", () => {
 
     expect(bootstrap).toBeNull();
     expect(electronMocks.showMessageBoxSync).toHaveBeenCalled();
-    expect(logger.warn).toHaveBeenCalledWith("[deep-link] 用户取消打开外部链接工作区", {
+    expect(logger.warn).toHaveBeenCalledWith("[deep-link] user cancelled external workspace open", {
       path: workspacePath,
     });
     expect(consumptionGate.shouldHandleReadyProtocolUrl(protocolUrl)).toBe(false);
@@ -116,9 +116,7 @@ describe("startup workspace deep link gate", () => {
     expect(bootstrap).toBeNull();
     expect(fsMocks.statSync).not.toHaveBeenCalled();
     expect(electronMocks.showMessageBoxSync).not.toHaveBeenCalled();
-    expect(logger.warn).toHaveBeenCalledWith("[deep-link] 网络工作区路径已拒绝", {
-      path: "\\\\attacker\\share",
-    });
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 
   it("--open-workspace 冷启动参数保持原有受信入口行为", async () => {

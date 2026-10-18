@@ -106,7 +106,7 @@ describe("desktop second-instance workspace deep link routing", () => {
     expect(electronMocks.showMessageBoxSync).toHaveBeenCalledWith(
       targetWindow,
       expect.objectContaining({
-        buttons: ["打开文件夹", "取消"],
+        buttons: ["Open Folder", "Cancel"],
       }),
     );
     expect(targetWindow.webContents.send).toHaveBeenCalledWith(
@@ -181,7 +181,7 @@ describe("desktop second-instance workspace deep link routing", () => {
 
     expect(handled).toBe(true);
     expect(targetWindow.webContents.send).not.toHaveBeenCalled();
-    expect(logger.warn).toHaveBeenCalledWith("[deep-link] 用户取消打开外部链接工作区", {
+    expect(logger.warn).toHaveBeenCalledWith("[deep-link] user cancelled external workspace open", {
       path: workspacePath,
     });
   });
@@ -224,7 +224,7 @@ describe("desktop second-instance workspace deep link routing", () => {
     expect(fsMocks.statSync).not.toHaveBeenCalled();
     expect(electronMocks.showMessageBoxSync).not.toHaveBeenCalled();
     expect(targetWindow.webContents.send).not.toHaveBeenCalled();
-    expect(logger.warn).toHaveBeenCalledWith("[deep-link] 网络工作区路径已拒绝", {
+    expect(logger.warn).toHaveBeenCalledWith("[deep-link] network workspace path rejected", {
       path: "\\\\attacker\\share",
     });
   });

@@ -98,18 +98,18 @@ describe("sshAuth", () => {
 
   it("client-authentication 错误应转换为可读信息", () => {
     const error = normalizeSSHConnectError({ level: "client-authentication" });
-    expect(error.message).toContain("SSH 认证失败");
+    expect(error.message).toContain("SSH authentication failed");
   });
 
   it("client-timeout 错误应说明是 SSH 连接握手超时", () => {
     const error = normalizeSSHConnectError({ level: "client-timeout" });
     expect(error.message).toBe(
-      "SSH 连接握手超时：未能在 60 秒内建立 SSH 会话，请检查网络、服务器 SSH 服务或终端 SSH 配置差异",
+      "SSH handshake timed out: no SSH session within 60s. Check the network, the server's sshd, or terminal SSH config differences",
     );
   });
 
   it("私钥缺少口令的错误文案变体应统一转换为可读提示", () => {
-    const expectedMessage = "SSH 私钥需要口令：检测到加密私钥，但当前未提供私钥口令";
+    const expectedMessage = "SSH private key requires a passphrase: the key is encrypted but no passphrase was provided";
     const cases = [
       "Encrypted private OpenSSH key detected, but no passphrase given",
       "Encrypted OpenSSH private key detected, but no passphrase given",
@@ -122,7 +122,7 @@ describe("sshAuth", () => {
   });
 
   it("私钥口令错误应转换为可读提示", () => {
-    const expectedMessage = "SSH 私钥口令错误：无法解密私钥，请检查私钥口令是否正确";
+    const expectedMessage = "SSH private key passphrase is incorrect: the key could not be decrypted; check the passphrase";
     const cases = [
       "OpenSSH key integrity check failed -- bad passphrase?",
       "PPK private key integrity check failed -- bad passphrase?",

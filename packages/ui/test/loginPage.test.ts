@@ -74,7 +74,9 @@ describe("WelcomeScreen", () => {
     oauthState.loadingProviders = true;
 
     const { WelcomeScreen } = await import("@/WelcomeScreen.js");
-    const html = renderToStaticMarkup(createElement(WelcomeScreen, { onComplete: vi.fn() }));
+    const html = renderToStaticMarkup(
+      createElement(WelcomeScreen, { mode: "login-entry", onComplete: vi.fn() }),
+    );
 
     expect(html).toContain("overflow-hidden bg-background");
     expect(html).toContain("absolute inset-0");
@@ -92,7 +94,9 @@ describe("WelcomeScreen", () => {
     oauthState.loadingProviders = false;
 
     const { WelcomeScreen } = await import("@/WelcomeScreen.js");
-    const html = renderToStaticMarkup(createElement(WelcomeScreen, { onComplete: vi.fn() }));
+    const html = renderToStaticMarkup(
+      createElement(WelcomeScreen, { mode: "login-entry", onComplete: vi.fn() }),
+    );
 
     expect(html).toContain("border-warning/40");
     expect(html).toContain("bg-warning/10");
@@ -116,7 +120,9 @@ describe("WelcomeScreen", () => {
     ];
 
     const { WelcomeScreen } = await import("@/WelcomeScreen.js");
-    const html = renderToStaticMarkup(createElement(WelcomeScreen, { onComplete: vi.fn() }));
+    const html = renderToStaticMarkup(
+      createElement(WelcomeScreen, { mode: "login-entry", onComplete: vi.fn() }),
+    );
 
     expect(html).toContain("border-primary-foreground/30");
     expect(html).toContain("text-primary-foreground/60");

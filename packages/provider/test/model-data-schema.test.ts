@@ -75,7 +75,7 @@ describe("Model schema 的完整/稀疏派生合同", () => {
           expect(result.issues).toContainEqual({
             code: "required-field-missing",
             path: ["test-model", ...path],
-            message: `缺少必填配置 test-model.${path.join(".")}`,
+            message: `Missing required config test-model.${path.join(".")}`,
           });
       }
     },

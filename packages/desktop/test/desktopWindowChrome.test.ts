@@ -1093,13 +1093,13 @@ describe("desktopWindowChrome", () => {
       -1,
     )?.[0] as Electron.MenuItemConstructorOptions[];
     expect(template.filter((item) => item.role).map((item) => item.label)).toEqual([
-      "撤销",
-      "重做",
-      "剪切",
-      "复制",
-      "粘贴",
-      "删除",
-      "全选",
+      "Undo",
+      "Redo",
+      "Cut",
+      "Copy",
+      "Paste",
+      "Delete",
+      "Select All",
     ]);
     expect(template[0]).toMatchObject({ role: "undo", enabled: true });
     expect(template[1]).toMatchObject({ role: "redo", enabled: false });

@@ -216,7 +216,7 @@ describe("WorkspaceHookPendingBanner（软门禁 D4）", () => {
 
     await waitFor(() => {
       expect(loggerMock.warn).toHaveBeenCalledWith(
-        "[workspace-hook-pending] requestWorkspaceHookReview 发送失败",
+        "[workspace-hook-pending] requestWorkspaceHookReview failed",
         expect.objectContaining({
           bundleDigest: sampleAdmission.bundleDigest,
           sessionId: "sess-1",

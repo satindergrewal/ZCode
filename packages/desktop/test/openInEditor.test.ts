@@ -323,7 +323,7 @@ describe("openInEditor", () => {
     expect(execFileMock).not.toHaveBeenCalled();
     expect(openPathMock).not.toHaveBeenCalled();
     expect(loggerWarnMock).toHaveBeenCalledWith(
-      "[editors] 解析默认 WSL distro 失败",
+      "[editors] failed to resolve default WSL distro",
       { error: "wsl unavailable" },
     );
   });
@@ -521,7 +521,7 @@ describe("openInEditor", () => {
     );
     expect(openPathMock).not.toHaveBeenCalled();
     expect(loggerWarnMock).toHaveBeenCalledWith(
-      "[editors] 打开 WSL 工作区资源管理器失败",
+      "[editors] failed to open WSL workspace in Explorer",
       {
         path: "/workspace/demo",
         candidates: [

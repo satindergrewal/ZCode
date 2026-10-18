@@ -170,7 +170,7 @@ describe("buildWslArgs", () => {
       await disposing;
 
       expect(child.kill).toHaveBeenCalledTimes(1);
-      await expect(detectionError).resolves.toMatchObject({ message: "WSL backend 已释放，无法启动新命令" });
+      await expect(detectionError).resolves.toMatchObject({ message: "WSL backend disposed; cannot start new commands" });
     } finally {
       vi.useRealTimers();
     }
@@ -181,7 +181,7 @@ describe("buildWslArgs", () => {
 
     await backend.disposeAndWait();
 
-    await expect(backend.exec("zcode-server")).rejects.toThrow("WSL backend 已释放");
+    await expect(backend.exec("zcode-server")).rejects.toThrow("WSL backend disposed");
     expect(mocks.spawn).not.toHaveBeenCalled();
   });
 
@@ -201,7 +201,7 @@ describe("buildWslArgs", () => {
     await backend.disposeAndWait();
     resumeDiscovery(true);
 
-    await expect(executing).rejects.toThrow("WSL backend 已释放");
+    await expect(executing).rejects.toThrow("WSL backend disposed");
     expect(mocks.spawn).not.toHaveBeenCalled();
   });
 

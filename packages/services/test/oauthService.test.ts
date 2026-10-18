@@ -340,11 +340,11 @@ describe("oauthService", () => {
     ).resolves.toEqual({ kind: "duplicate", provider: ZAI_PROVIDER_ID });
     await expect(
       service.handleCallback("zcode://oauth/callback?state=different-state&code=late-code"),
-    ).rejects.toThrow("OAuth state 不匹配或已过期");
+    ).rejects.toThrow("OAuth state mismatch or expired");
     now += 30_000;
     await expect(
       service.handleCallback(`zcode://oauth/callback?state=${started.state}&code=too-late-code`),
-    ).rejects.toThrow("OAuth state 不匹配或已过期");
+    ).rejects.toThrow("OAuth state mismatch or expired");
     await expect(service.pollPendingOAuth()).resolves.toBeNull();
     expect(mockFetch).toHaveBeenCalledTimes(6);
   });
@@ -466,7 +466,7 @@ describe("oauthService", () => {
 
     await expect(
       service.handleCallback(`zcode://oauth/callback?state=${started.state}&code=late-code`),
-    ).rejects.toThrow("OAuth state 不匹配或已过期");
+    ).rejects.toThrow("OAuth state mismatch or expired");
     expect(exchangeToken).not.toHaveBeenCalled();
     expect(credentialStore.get("oauth:zai:access_token")).toBe("existing-token");
   });
@@ -559,7 +559,7 @@ describe("oauthService", () => {
     });
 
     await expect(service.startOAuthWithPolling(ZAI_PROVIDER_ID)).rejects.toThrow(
-      "OAuth flow 初始化响应无效",
+      "Invalid OAuth flow init response",
     );
     await expect(service.pollPendingOAuth()).resolves.toBeNull();
   });
@@ -596,7 +596,7 @@ describe("oauthService", () => {
     });
 
     await service.startOAuthWithPolling(ZAI_PROVIDER_ID);
-    await expect(service.pollPendingOAuth()).rejects.toThrow("OAuth flow 查询响应无效");
+    await expect(service.pollPendingOAuth()).rejects.toThrow("Invalid OAuth flow status response");
     await expect(service.pollPendingOAuth()).resolves.toBeNull();
   });
 
@@ -660,7 +660,7 @@ describe("oauthService", () => {
       ),
     );
 
-    await expect(oldStart).rejects.toThrow("OAuth flow 已被新的登录请求替换");
+    await expect(oldStart).rejects.toThrow("OAuth flow replaced by a newer login request");
     await expect(service.pollPendingOAuth()).resolves.toBeNull();
     expect(polledUrls).toEqual([expect.stringContaining("/poll/new-flow")]);
   });
@@ -694,7 +694,7 @@ describe("oauthService", () => {
       ),
     );
 
-    await expect(start).rejects.toThrow("OAuth flow 已被新的登录请求替换");
+    await expect(start).rejects.toThrow("OAuth flow replaced by a newer login request");
     await expect(service.pollPendingOAuth()).resolves.toBeNull();
   });
 
@@ -898,7 +898,7 @@ describe("oauthService", () => {
     });
 
     await service.startOAuthWithPolling(ZAI_PROVIDER_ID);
-    await expect(service.pollPendingOAuth()).rejects.toThrow("OAuth flow 授权失败");
+    await expect(service.pollPendingOAuth()).rejects.toThrow("OAuth flow authorization failed");
     await expect(service.pollPendingOAuth()).resolves.toBeNull();
     expect(credentialStore.get("oauth:zai:access_token")).toBeUndefined();
   });
@@ -1088,7 +1088,7 @@ describe("oauthService", () => {
       service.handleCallback(
         `zcode://oauth/callback?state=${state}&channel_id=duplicate&utm_source=duplicate`,
       ),
-    ).rejects.toThrow("OAuth 归因回调已处理");
+    ).rejects.toThrow("OAuth attribution callback already handled");
     expect(await credentialServiceStub.load("oauth:login_attribution")).toBe(
       JSON.stringify({ channel_id: "google_ads", utm_source: "google" }),
     );
@@ -1117,7 +1117,7 @@ describe("oauthService", () => {
 
     await expect(
       service.handleCallback(`zcode://oauth/callback?authCode=old-code&state=${first.state}`),
-    ).rejects.toThrow("OAuth state 不匹配或已过期");
+    ).rejects.toThrow("OAuth state mismatch or expired");
     expect(second.state).not.toBe(first.state);
     await service.cancelPending();
   });
@@ -1134,7 +1134,7 @@ describe("oauthService", () => {
 
     await expect(
       service.handleCallback(`zcode://oauth/callback?authCode=late-code&state=${state}`),
-    ).rejects.toThrow("OAuth state 不匹配或已过期");
+    ).rejects.toThrow("OAuth state mismatch or expired");
   });
 
   // Windows 机器上设置了 ZAI_TEST_OAUTH_ORIGIN 等环境变量，会覆盖测试预期的 test 端点值
@@ -2229,7 +2229,7 @@ describe("oauthService", () => {
 
     await expect(
       service.handleCallback(`zcode://oauth/callback?authCode=auth-code-missing&state=${state}`),
-    ).rejects.toThrow(/缺少 data.token/);
+    ).rejects.toThrow(/response missing data\.token/);
     expect(await credentialServiceStub.load("oauth:bigmodel:access_token")).toBeNull();
     expect(await credentialServiceStub.load("zcodejwttoken")).toBeNull();
   });
@@ -3477,7 +3477,7 @@ describe("oauthService", () => {
 
     await credentialServiceStub.save("oauth:active_provider", BIGMODEL_PROVIDER_ID);
 
-    await expect(service.refreshToken()).rejects.toThrow(/请重新登录/);
+    await expect(service.refreshToken()).rejects.toThrow(/sign in again/);
   });
 
   it("bigmodel zcode token 非 2xx 时会抛出统一的 ApiError", async () => {

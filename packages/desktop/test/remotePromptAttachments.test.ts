@@ -168,7 +168,7 @@ describe("remote prompt attachment materialization", () => {
         },
         { backend: { exec, upload } },
       ),
-    ).rejects.toThrow("远端附件上传失败：secret.txt");
+    ).rejects.toThrow("Remote attachment upload failed: secret.txt");
   });
 
   it("builds private safe remote paths", () => {

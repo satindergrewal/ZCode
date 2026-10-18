@@ -170,7 +170,7 @@ describe("browserDataManager", () => {
       maxRetries: 5,
       retryDelay: 100,
     });
-    expect(logger.warn).toHaveBeenCalledWith("[browser-data] Chrome helper 临时目录清理失败", {
+    expect(logger.warn).toHaveBeenCalledWith("[browser-data] Chrome helper temp dir cleanup failed", {
       name: "Error",
       code: "ENOTEMPTY",
     });
@@ -249,7 +249,7 @@ describe("browserDataManager", () => {
     const cookieDetails = set.mock.calls[0]?.[0];
     expect(cookieDetails?.expirationDate).toBeGreaterThan(importedAt + 399 * 24 * 60 * 60);
     expect(flushStore).toHaveBeenCalledOnce();
-    expect(logger.info).toHaveBeenCalledWith("[browser-data] Chrome Cookie 写入完成", {
+    expect(logger.info).toHaveBeenCalledWith("[browser-data] Chrome cookie write complete", {
       importedCount: 1,
       skippedCount: 0,
       failedCount: 0,
@@ -304,7 +304,7 @@ describe("browserDataManager", () => {
     expect(set).toHaveBeenCalledOnce();
     expect(failingBackup.getCallCount()).toBe(2);
     expect(logger.warn).toHaveBeenCalledWith(
-      "[browser-data] Chrome Cookie 在线备份不可用，回退 WAL 文件快照",
+      "[browser-data] Chrome cookie online backup unavailable, falling back to WAL file snapshot",
       { name: "Error", code: "ERR_SQLITE_ERROR" },
     );
   });
@@ -444,7 +444,7 @@ describe("browserDataManager", () => {
     expect(flushStore).not.toHaveBeenCalled();
     expect(localStorageImporter).not.toHaveBeenCalled();
     expect(logger.warn).toHaveBeenCalledWith(
-      "[browser-data] Chrome 数据导入已取消：macOS 钥匙串授权被拒绝",
+      "[browser-data] Chrome import cancelled: macOS keychain access denied",
     );
   });
 

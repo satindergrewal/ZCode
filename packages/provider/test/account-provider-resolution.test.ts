@@ -339,7 +339,7 @@ describe("resolveAccountProviderConfigs", () => {
           },
         ],
       }),
-    ).toThrow("Account 连接指向非 Account Provider: api-provider");
+    ).toThrow("Account connection references a non-account provider: api-provider");
   });
 
   it("普通 api-key Provider 不属于 Account Overlay", () => {
@@ -369,6 +369,6 @@ describe("resolveAccountProviderConfigs", () => {
         previousProviders: ProviderConfigMap.empty(),
         connections: [{ providerId: "generic-api", status: "available" }],
       }),
-    ).toThrow("Account 连接指向非 Account Provider: generic-api");
+    ).toThrow("Account connection references a non-account provider: generic-api");
   });
 });

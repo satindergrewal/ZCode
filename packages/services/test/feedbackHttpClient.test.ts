@@ -450,7 +450,7 @@ describe("FeedbackHttpClient", () => {
     );
     expect(logger.info).toHaveBeenCalledWith(
       undefined,
-      "反馈 HTTP 请求开始",
+      "Feedback HTTP request started",
       expect.objectContaining({
         url: "https://zcode.z.ai/api/v1/feedback/ticket/:ticketId/message",
       }),
@@ -639,7 +639,7 @@ describe("FeedbackHttpClient", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(logger.warn).toHaveBeenCalledWith(
       undefined,
-      "反馈 HTTP 请求网络失败",
+      "Feedback HTTP request network failure",
       expect.objectContaining({
         attemptCount: 3,
         errorCodes: ["UND_ERR_CONNECT_TIMEOUT"],
@@ -732,7 +732,7 @@ describe("FeedbackHttpClient", () => {
       ]);
       expect(logger.info).toHaveBeenCalledWith(
         undefined,
-        "反馈 HTTP 请求开始",
+        "Feedback HTTP request started",
         expect.objectContaining({
           url: `http://127.0.0.1:${server.port}/feedback/attachment/upload-credential`,
           body: expect.objectContaining({

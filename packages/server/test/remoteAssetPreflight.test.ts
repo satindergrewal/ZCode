@@ -111,7 +111,7 @@ describe("detectRemoteAssetTools", () => {
         new PreflightBackend("download=\ntar=tar\nsha256=sha256sum\n"),
         { log: () => undefined },
       ),
-    ).rejects.toThrow("远端服务器缺少 curl 或 wget");
+    ).rejects.toThrow("has neither curl nor wget");
   });
 
   it("fails clearly when tar is missing", async () => {
@@ -120,7 +120,7 @@ describe("detectRemoteAssetTools", () => {
         new PreflightBackend("download=curl\ntar=\nsha256=sha256sum\n"),
         { log: () => undefined },
       ),
-    ).rejects.toThrow("远端服务器缺少 tar");
+    ).rejects.toThrow("has no tar");
   });
 
   it("fails clearly when no checksum tool exists", async () => {
@@ -129,7 +129,7 @@ describe("detectRemoteAssetTools", () => {
         new PreflightBackend("download=curl\ntar=tar\nsha256=\n"),
         { log: () => undefined },
       ),
-    ).rejects.toThrow("远端服务器缺少 sha256sum、shasum 或 openssl");
+    ).rejects.toThrow("has no sha256sum");
   });
 
   it("does not hang when close fires before stdout end", async () => {

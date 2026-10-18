@@ -288,9 +288,9 @@ describe("ProviderConfigMap overlay", () => {
   });
 
   it.each([
-    { values: [], message: "reasoningLevel.values 不能为空" },
-    { values: ["low", ""], message: "reasoningLevel.values 必须是非空字符串" },
-    { values: ["low", "low"], message: "reasoningLevel.values 不能重复" },
+    { values: [], message: "reasoningLevel.values must not be empty" },
+    { values: ["low", ""], message: "reasoningLevel.values must be non-empty strings" },
+    { values: ["low", "low"], message: "reasoningLevel.values must not repeat" },
   ])("拒绝不完整的 Reasoning 档位：$message", ({ values, message }) => {
     const spec = new EnumOptionSpecConfig({ values, map: "{}" });
 
@@ -365,12 +365,12 @@ describe("ProviderConfigMap overlay", () => {
     expect(effective.validateComplete(["models", "example"])).toContainEqual({
       code: "required-field-missing",
       path: ["models", "example", "properties", "contextWindow"],
-      message: "缺少必填配置 models.example.properties.contextWindow",
+      message: "Missing required config models.example.properties.contextWindow",
     });
     expect(effective.validateComplete(["models", "example"])).toContainEqual({
       code: "required-field-missing",
       path: ["models", "example", "properties", "requiresMfjsToolSchema"],
-      message: "缺少必填配置 models.example.properties.requiresMfjsToolSchema",
+      message: "Missing required config models.example.properties.requiresMfjsToolSchema",
     });
   });
 

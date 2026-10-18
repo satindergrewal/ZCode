@@ -116,16 +116,17 @@ describe("readPersistentWorkspaceHookTrustDigests corrupt 检测（#7）", () =>
       workspacePath: workspace,
     });
 
-    // fail-closed：即使记录本应匹配，损坏文件不返回任何 digest，hook 回退 pending_trust。
+    // Fail-closed: even if a record would otherwise match, a corrupt file returns no
+    // digests and the hook falls back to pending_trust.
     expect(loaded.hooks[0]?.workspaceHook?.trustState).toBe("pending_trust");
     expect(loaded.trustStoreCorrupt).toBe(true);
     expect(warnSpy).toHaveBeenCalled();
-    // 统一 ServiceLogger 会把 scope、消息和结构化路径分成三个参数。
-    // CR-01 后非法 JSON 统一走 schema 解析分支，文案为"结构不符合 schema"
-    // （与 runtime/adapters 对同类文件的 corrupt 判定对齐）。
+    // The unified ServiceLogger splits scope, message and structured path across three args.
+    // Since CR-01, malformed JSON resolves through the schema-parse branch, whose message is
+    // "fails schema" (aligned with runtime/adapters corrupt verdicts for similar files).
     expect(warnSpy.mock.calls[0]).toEqual([
       expect.stringContaining("[hooks-service]"),
-      expect.stringContaining("Workspace Hook Trust store 结构不符合 schema"),
+      expect.stringContaining("Workspace Hook Trust store fails schema"),
       expect.objectContaining({ path: expect.stringContaining("workspace-hook-trust") }),
     ]);
   });

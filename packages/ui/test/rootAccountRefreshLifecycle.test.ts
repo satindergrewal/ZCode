@@ -54,7 +54,8 @@ describe("Root 账号刷新生命周期", () => {
     );
     try {
       await waitFor(() =>
-        expect(logger.warn).toHaveBeenCalledWith("[Root] 启动账号配置刷新失败，继续观察后续更新", {
+        expect(logger.warn).toHaveBeenCalledWith(
+          "[Root] Startup account config refresh failed; watching later updates", {
           error: expect.any(Error),
         }),
       );

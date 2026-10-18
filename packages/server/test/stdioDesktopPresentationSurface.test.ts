@@ -228,6 +228,9 @@ describe("stdio Desktop presentation surface", () => {
         args: ["zcode.cjs", "app-server", "--stdio", "--surface", "desktop"],
         command: process.execPath,
         cwd: "/workspace/project",
+        // The env-override command reuses the packaged bundle for Host storage preparation.
+        storagePreparationEntry: expect.any(String),
+        supportsStorageStartup: true,
       });
     } finally {
       // 等待服务异步落盘与回收结束，避免清理临时目录时后台重新创建文件。

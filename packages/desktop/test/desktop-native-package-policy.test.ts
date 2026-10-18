@@ -44,10 +44,10 @@ describe("desktop native package policy", () => {
 
     expect(findDesktopNativePackageViolations(entries, "darwin-arm64")).toEqual([
       expect.stringContaining("Canvas native"),
-      expect.stringContaining("平台源包"),
-      expect.stringContaining("安装机生成"),
-      expect.stringContaining("非目标平台"),
-      expect.stringContaining("packed payload"),
+      expect.stringContaining("Platform source used only to prepare prebuilds"),
+      expect.stringContaining("Packaging-host-built node-pty artifact"),
+      expect.stringContaining("non-target-platform prebuild"),
+      expect.stringContaining("packed into app.asar payload"),
     ]);
   });
 });

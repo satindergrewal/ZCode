@@ -199,7 +199,7 @@ describe("useOAuth", () => {
       providers: [provider],
     });
     expect(mocks.logger.warn).toHaveBeenCalledWith(
-      "[useOAuth] 加载 active provider 凭据失败，已按未登录处理:",
+      "[useOAuth] failed to load active provider credentials; treating as signed out:",
       decryptError,
     );
 
@@ -236,7 +236,10 @@ describe("useOAuth", () => {
       providers: [],
     });
     expect(mocks.logger.warn).not.toHaveBeenCalled();
-    expect(mocks.logger.error).toHaveBeenCalledWith("[useOAuth] 加载 provider 列表失败:", rpcError);
+    expect(mocks.logger.error).toHaveBeenCalledWith(
+      "[useOAuth] failed to load provider list:",
+      rpcError,
+    );
 
     act(() => {
       root.unmount();

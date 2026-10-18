@@ -69,9 +69,9 @@ describe("desktopOAuthDeepLink workspace open routing", () => {
     const zhCopy = resolveExternalWorkspaceOpenDialogCopy("zh-CN");
     const enCopy = resolveExternalWorkspaceOpenDialogCopy("en-US");
 
-    expect(zhCopy.buttons).toEqual(["打开文件夹", "取消"]);
-    expect(zhCopy.title).toBe("打开外部 ZCode 链接？");
-    expect(zhCopy.detail("/tmp/project")).toContain("只打开你信任来源的文件夹");
+    expect(zhCopy.buttons).toEqual(["Open Folder", "Cancel"]);
+    expect(zhCopy.title).toBe("Open external ZCode link?");
+    expect(zhCopy.detail("/tmp/project")).toContain("Only open folders from trusted sources");
     expect(enCopy.buttons).toEqual(["Open folder", "Cancel"]);
   });
 
@@ -90,7 +90,7 @@ describe("desktopOAuthDeepLink workspace open routing", () => {
     expect(handled).toBe(true);
     expect(targetWindow.webContents.send).not.toHaveBeenCalled();
     expect(logger.warn).toHaveBeenCalledWith(
-      "[deep-link] 工作区打开请求命中未就绪窗口，先缓存等待 renderer ready",
+      "[deep-link] workspace open hit a not-ready window; buffered until renderer ready",
       { windowId: 7, path: workspacePath },
     );
     expect(electronMocks.showMessageBoxSync).toHaveBeenCalled();
@@ -171,8 +171,8 @@ describe("desktopOAuthDeepLink workspace open routing", () => {
     expect(electronMocks.showMessageBoxSync).toHaveBeenCalledWith(
       targetWindow,
       expect.objectContaining({
-        buttons: ["打开文件夹", "取消"],
-        title: "打开外部 ZCode 链接？",
+        buttons: ["Open Folder", "Cancel"],
+        title: "Open external ZCode link?",
       }),
     );
     expect(targetWindow.webContents.send).toHaveBeenCalledWith(
@@ -200,7 +200,7 @@ describe("desktopOAuthDeepLink workspace open routing", () => {
       }),
     );
     expect(logger.warn).toHaveBeenCalledWith(
-      "[deep-link] 工作区打开请求暂未命中窗口，先缓存等待 renderer ready",
+      "[deep-link] workspace open matched no window; buffered until renderer ready",
       { path: workspacePath },
     );
 
@@ -226,7 +226,7 @@ describe("desktopOAuthDeepLink workspace open routing", () => {
 
     expect(handled).toBe(true);
     expect(electronMocks.showMessageBoxSync).toHaveBeenCalledWith(expect.any(Object));
-    expect(logger.warn).toHaveBeenCalledWith("[deep-link] 用户取消打开外部链接工作区", {
+    expect(logger.warn).toHaveBeenCalledWith("[deep-link] user cancelled external workspace open", {
       path: workspacePath,
     });
 
@@ -253,7 +253,7 @@ describe("desktopOAuthDeepLink workspace open routing", () => {
 
     expect(handled).toBe(true);
     expect(targetWindow.webContents.send).not.toHaveBeenCalled();
-    expect(logger.warn).toHaveBeenCalledWith("[deep-link] 用户取消打开外部链接工作区", {
+    expect(logger.warn).toHaveBeenCalledWith("[deep-link] user cancelled external workspace open", {
       path: workspacePath,
     });
   });
@@ -276,7 +276,7 @@ describe("desktopOAuthDeepLink workspace open routing", () => {
     expect(fsMocks.statSync).not.toHaveBeenCalled();
     expect(electronMocks.showMessageBoxSync).not.toHaveBeenCalled();
     expect(targetWindow.webContents.send).not.toHaveBeenCalled();
-    expect(logger.warn).toHaveBeenCalledWith("[deep-link] 网络工作区路径已拒绝", {
+    expect(logger.warn).toHaveBeenCalledWith("[deep-link] network workspace path rejected", {
       path: workspacePath,
     });
   });
@@ -293,7 +293,7 @@ describe("desktopOAuthDeepLink workspace open routing", () => {
     const handled = handleOpenWorkspacePath(workspacePath, logger);
 
     expect(handled).toBe(false);
-    expect(logger.warn).toHaveBeenCalledWith("[deep-link] 工作区打开请求暂未命中窗口，已忽略", {
+    expect(logger.warn).toHaveBeenCalledWith("[deep-link] workspace open matched no window; ignored", {
       path: workspacePath,
     });
 
@@ -321,7 +321,7 @@ describe("desktopOAuthDeepLink workspace open routing", () => {
     expect(handled).toBe(true);
     expect(onWorkspaceOpenBlocked).toHaveBeenCalledWith(workspacePath);
     expect(targetWindow.webContents.send).not.toHaveBeenCalled();
-    expect(logger.warn).toHaveBeenCalledWith("[deep-link] 工作区打开请求被当前启动 gate 阻止", {
+    expect(logger.warn).toHaveBeenCalledWith("[deep-link] workspace open blocked by startup gate", {
       path: workspacePath,
     });
 
@@ -368,7 +368,7 @@ describe("desktopOAuthDeepLink OAuth routing", () => {
       ).toBe(false);
       expect(targetWindow.webContents.send).not.toHaveBeenCalled();
       expect(logger.warn).toHaveBeenLastCalledWith(
-        "[deep-link] OAuth 回调未命中目标窗口，先缓存等待 renderer ready",
+        "[deep-link] OAuth callback matched no window; buffered until renderer ready",
         {
           state: "state-001",
           hasRouteTarget: false,

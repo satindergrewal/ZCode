@@ -131,7 +131,7 @@ describe("terminal composed input fallback is platform gated", () => {
     expect(source).toContain("isWindowsDesktop = false");
     expect(source).toContain("const textarea =");
     expect(source).toContain("isWindowsDesktop &&");
-    expect(source).toContain("Windows desktop 下某些输入法");
+    expect(source).toContain("Windows IME fallback");
     expect(source).toContain("isWindowsDesktop,");
   });
 });

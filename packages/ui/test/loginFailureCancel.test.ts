@@ -79,7 +79,7 @@ vi.mock("@/store/StoreProvider.js", () => ({
 
 async function renderWelcomeScreen() {
   const { WelcomeScreen } = await import("@/WelcomeScreen.js");
-  const view = render(createElement(WelcomeScreen, { onComplete: vi.fn() }));
+  const view = render(createElement(WelcomeScreen, { mode: "login-entry", onComplete: vi.fn() }));
   return { view, WelcomeScreen };
 }
 
@@ -142,7 +142,7 @@ describe("登录失败态的取消交互", () => {
     oauthState.status = "idle";
     oauthState.error = null;
     storeState.oauthError = null;
-    view.rerender(createElement(WelcomeScreen, { onComplete: vi.fn() }));
+    view.rerender(createElement(WelcomeScreen, { mode: "login-entry", onComplete: vi.fn() }));
 
     expect(screen.getByTestId(TID_OAUTH_LOGIN_BUTTON)).toBeTruthy();
     expect(screen.queryByTestId(TID_OAUTH_ERROR)).toBeNull();

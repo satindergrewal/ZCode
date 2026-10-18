@@ -384,7 +384,7 @@ setInterval(() => {}, 1000);
 
       expect(
         warnMessages.some((message) =>
-          message.includes("查询 runtime 后代进程失败"),
+          message.includes("Failed to query runtime descendants"),
         ),
       ).toBe(true);
       // 修复原因：首次查询失败后即使 PATH 已恢复，force timer 也不能沿裸 PID

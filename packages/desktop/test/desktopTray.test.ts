@@ -46,8 +46,8 @@ describe("desktop tray log export", () => {
       });
 
       const labels = () => captured.template.map((item) => item.label).filter(Boolean);
-      expect(labels()).not.toContain("清除所有数据");
-      expect(labels().slice(-3)).toEqual(["关于 ZCode", "导出日志", "退出"]);
+      expect(labels()).not.toContain("Clear All Data");
+      expect(labels().slice(-3)).toEqual(["About ZCode", "Export Logs", "Quit"]);
       locale = "en-US";
       updateWindowsDesktopTrayMenu();
       expect(labels()).not.toContain("Clear all data");
