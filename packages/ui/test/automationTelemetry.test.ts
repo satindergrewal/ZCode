@@ -14,7 +14,7 @@ describe("automation telemetry", () => {
     ["fetch failed", "network"],
     ["Unauthorized: Authorization: Bearer FAKE_SECRET", "auth"],
     ["Invalid automation mode: FAKE_SECRET", "validation"],
-    ["Automation 模型选择不可用，请重新选择模型与思考档位", "validation"],
+    ["Automation model selection unavailable; reselect model and thought level", "validation"],
     ["unexpected FAKE_SECRET /Users/private/file", "unknown"],
     ["[FAKE_SECRET] failed", "unknown"],
     [null, "unknown"],

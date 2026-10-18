@@ -96,8 +96,8 @@ describe("WorkspaceSidebar task view switcher", () => {
     expect(source).toContain("!groupedTaskGroupIdsHydrated");
     expect(source).toContain("lastNonEmptyGroupedTaskGroupIds.length > 0");
     expect(source).toContain("collapsedGroupedTaskGroupIds.size > 0");
-    expect(source).toContain("重启后首进 Group");
-    expect(source).toContain("不能当成“所有 group 已删除”");
+    expect(source).toContain("first entry after restart");
+    expect(source).toContain("not all-groups-deleted");
   });
 
   it("Idle-time 收敛后由 grouped 树承载，侧栏不再独立渲染系统分组（D48-A）", () => {

@@ -3,7 +3,7 @@ import type { ConversationShareCapabilities } from "@zcode/shared";
 import type { ConversationRow } from "@zcode/shared/zcode-protocol-v4";
 import type { ConversationShareFailureIssue } from "./conversationShare.js";
 
-/** 内嵌图片转为既有 artifact；预检和发布使用同一份确定性转换，不新增文件读取通道。 */
+/** Inline images become existing artifacts; preview and publish share one deterministic conversion with no new file-read path. */
 export function materializeConversationShareInlineImages(
   sourceRows: readonly ConversationRow[],
   capabilities: ConversationShareCapabilities,
@@ -64,7 +64,7 @@ export function materializeConversationShareInlineImages(
         continue;
       }
       const bytes = Buffer.from(image.base64, "base64");
-      // Buffer.from 对非法 base64 宽松容错，必须复核，避免分享一个已损坏的图片文件。
+      // Buffer.from tolerates malformed base64, so re-validate and never share a corrupted image.
       if (
         !bytes.length ||
         bytes.toString("base64").replace(/=+$/u, "") !== image.base64.replace(/=+$/u, "")

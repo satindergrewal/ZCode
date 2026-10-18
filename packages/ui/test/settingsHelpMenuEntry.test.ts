@@ -17,7 +17,7 @@ describe("settings help menu entry", () => {
     );
     expect(settingsPageSource).toContain("relative flex flex-col");
     expect(settingsPageSource).toContain("absolute right-2.5 top-2.5");
-    expect(settingsPageSource).toContain("在内容面板内定位");
+    expect(settingsPageSource).toContain("inside the content panel");
     expect(settingsPageSource).not.toContain("mr-[165px]");
     expect(settingsPageSource).not.toContain('isWindowsDesktop && "h-12"');
   });
@@ -45,6 +45,6 @@ describe("settings help menu entry", () => {
 
     expect(footerIndex).toBeGreaterThan(-1);
     expect(footerUsage).toContain("isDesktop={isDesktop}");
-    expect(footerUsage).toContain("头像菜单是 WorkspaceSidebarFooter 的共享菜单");
+    expect(footerUsage).toContain("WorkspaceSidebarFooter's shared menu");
   });
 });

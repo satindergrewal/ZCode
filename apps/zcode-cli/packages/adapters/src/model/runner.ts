@@ -132,8 +132,8 @@ export class AiSdkModelAdapter {
     }
     this.statusSink = {
       async publish(event) {
-        // 多个 sink 必须独立执行：任一 sink 失败不得连带影响其他 sink，
-        // 也不能阻塞原有调用链。
+        // Sinks run independently: one failure must not affect the others
+        // nor block the original call chain.
         const results = await Promise.allSettled([
           Promise.resolve().then(() => current.publish(event)),
           Promise.resolve().then(() => sink.publish(event)),
@@ -172,18 +172,18 @@ export class AiSdkModelAdapter {
       const shouldAttachReasoningTelemetry = request.options.reasoningLevel !== undefined;
       const selectedReasoningLevel = request.options.reasoningLevel;
       const requestAuthDependency = options.requestDependencies?.requestAuth;
-      // Bug 根因：加速卡（highspeed）与 Off-Peak 同为 Coding Plan 派生模式，本轮动态鉴权
-      // （zcode JWT + Coding Plan 双 JWT + X-Highspeed-Card-ID，见 docs/highspeed/highspeed-card-spec.md
-      // §2.2）经 modelExecution.requestAuth 下发到执行作用域 Source。若门禁只认 off-peak，highspeed
-      // 会落到下面的账号 runtime-header 刷新分支，把整包 requestAuth（含卡 ID）丢弃，加速请求因缺卡 ID/
-      // 错误鉴权被 /api/v1/highspeed 网关判 401。两种派生免签模式必须同样消费执行作用域 Source。
+      // Root cause: speed-up (highspeed) and Off-Peak are both Coding-Plan-derived modes; this turn's dynamic auth
+      // (zcode JWT + Coding Plan dual JWT + X-Highspeed-Card-ID, docs/highspeed/highspeed-card-spec.md
+      // 2.2) reaches the execution-scope Source via modelExecution.requestAuth. A gate recognizing only off-peak drops
+      // highspeed into the account runtime-header branch, discarding the whole requestAuth (card ID included), and the speed-up request
+      // 401s at the /api/v1/highspeed gateway for missing card ID / wrong auth. Both derived keyless modes must consume the execution-scope Source.
       const requestAuthRequired =
         options.providerConfig.access.type === "zhipu-account" &&
         (options.providerConfig.access.mode === "off-peak" ||
           options.providerConfig.access.mode === "highspeed");
-      // 调用级 runtime header Port 只服务绑定完整 Account Access 的账号型 Model；
-      // 普通 API-key Model 若也消费该 Port，会把静态鉴权误送到 Host 刷新并在请求前失败。
-      // 派生模式保留执行作用域票据/卡身份；Off-Peak 的 PAT 仍逐请求向原账号 owner 刷新。
+      // The per-call runtime header port serves only account Models with full Account Access;
+      // API-key Models consuming it would push static creds to Host refresh and fail pre-request.
+      // Derived modes keep the execution-scope ticket/card identity; Off-Peak's PAT still refreshes per request against the origin account owner.
       const refreshRuntimeHeadersBeforeAttempt = requestAuthRequired
         ? async (input: ModelRequestAuthSourceInput) => {
             const requestAuth = await requestAuthDependency?.source?.resolve(input);
@@ -227,8 +227,8 @@ export class AiSdkModelAdapter {
                 ...invocationContext.modelCall,
                 reasoning: {
                   ...invocationContext.modelCall?.reasoning,
-                  // 过去按 none/off 等档位名称猜测 enabled/disabled，导致 Telemetry
-                  // 把 Provider 方言当成统一语义。这里只记录请求实际选择的公开档位。
+                  // Guessing enabled/disabled from tier names like none/off made Telemetry
+                  // treat provider dialect as unified semantics. Record only the public tier the request chose.
                   ...(selectedReasoningLevel ? { requestedLevel: selectedReasoningLevel } : {}),
                 },
               },
@@ -346,7 +346,7 @@ export class AiSdkModelAdapter {
       request: projectedRequest,
       resolveModel,
       resolved,
-      // single-attempt 预算（带 selectionFallback 的执行作用域句柄）把 maxAttempts 收敛为 1。
+      // The single-attempt budget (an execution-scope handle with selectionFallback) collapses maxAttempts to 1.
       retry: resolveRetryOptionsForBudget(this.retry, projectedRequest.modelRetryBudget),
       runtime: this.runtime,
       statusSink: this.statusSink,
@@ -389,9 +389,9 @@ function projectRequestHistory(
 ): AiSdkModelTextRequest {
   if (resolved.providerKind !== "anthropic") return request;
 
-  // 结构归一化过去位于每次物理请求都会经过的 serializer，签名修复重试
-  // 因而会再次删除上一轮刚补出的 assistant 占位并合并 user。逻辑请求入口只投影一次，
-  // 后续 attempt 只能复用或从这份 request-local history 派生。
+  // Structural normalization used to run in the serializer every physical request passes; signature-fix retries
+  // thereby re-deleted the assistant placeholder restored the turn before and merged users. The logical entry projects once;
+  // later attempts reuse or derive from that request-local history.
   const messages = normalizeReasoningHistory(request.messages, {
     providerId: resolved.providerId,
     modelId: resolved.modelId,

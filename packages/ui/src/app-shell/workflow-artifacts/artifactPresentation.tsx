@@ -256,9 +256,9 @@ export function canRevealArtifactInWorkspace(params: {
 }
 
 /**
- * 「作为文件打开」副本的文件名。`markdown` 恒为 `<id>.md`（id 已限定在 `[A-Za-z0-9_.-]`）；
- * `file` 取**这一版**的 `sourcePath` 基名——扩展名决定系统用哪个 App 打开，而同一个 id 的
- * 不同版本可以来自不同路径。拿不到出处时退回 id。
+ * File name for the open-as-file copy. `markdown` is always `<id>.md` (id limited to [A-Za-z0-9_.-]);
+ * `file` uses this version's `sourcePath` basename, the extension decides which app the OS opens, and
+ * different versions of one id may come from different paths. Falls back to the id when provenance is missing.
  */
 export function artifactOpenAsFileName(
   artifact: {

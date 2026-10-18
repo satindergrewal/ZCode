@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 宽屏远控任务索引同时承载索引加载、分组视图和 hover 动作分发；行级 JSX 已拆到 WebRemoteControlTaskIndexRow。 */
+/* eslint-disable max-lines -- the wide-screen task index owns index loading, grouping, and hover actions; row JSX lives in WebRemoteControlTaskIndexRow. */
 import {
   useCallback,
   useEffect,
@@ -161,69 +161,70 @@ export function WebRemoteControlTaskIndex({
     [activeWorkspaceIdentity, result.workspaces],
   );
   const workspaceServiceLookup = useMemo(
-    () =>
-      buildWorkspaceServiceLookup(
-        mutationWorkspaceTargets,
-        baseServices,
-        serviceResolverState,
-      ),
+    () => buildWorkspaceServiceLookup(mutationWorkspaceTargets, baseServices, serviceResolverState),
     [baseServices, mutationWorkspaceTargets, serviceResolverState],
   );
 
-  const loadTasks = useCallback(async (isCancelled: () => boolean = () => false) => {
-    setLoading(true);
-    setLoadError(null);
-    try {
-      for (
-        let attempt = 0;
-        attempt <= WEB_REMOTE_CONTROL_TASK_INDEX_EMPTY_RETRY_MAX_ATTEMPTS;
-        attempt += 1
-      ) {
-        const nextResult = await switcher.listWorkspaces();
-        if (isCancelled()) {
-          return;
-        }
-
-        setResult(nextResult);
-        if (
-          !shouldRetryWebRemoteControlTaskIndexLoad({
-            activeTaskId,
-            attempt,
-            maxAttempts: WEB_REMOTE_CONTROL_TASK_INDEX_EMPTY_RETRY_MAX_ATTEMPTS,
-            taskCount: nextResult.tasks?.length ?? 0,
-          })
+  const loadTasks = useCallback(
+    async (isCancelled: () => boolean = () => false) => {
+      setLoading(true);
+      setLoadError(null);
+      try {
+        for (
+          let attempt = 0;
+          attempt <= WEB_REMOTE_CONTROL_TASK_INDEX_EMPTY_RETRY_MAX_ATTEMPTS;
+          attempt += 1
         ) {
-          return;
-        }
+          const nextResult = await switcher.listWorkspaces();
+          if (isCancelled()) {
+            return;
+          }
 
-        // Bugfix: 跨 workspace 切换时 Web Root 会先连上新 bridge，
-        // 但 desktop renderer 的全窗口任务快照可能还在 loading；空快照不是最终事实，短暂重试后再展示空态。
-        logger.debug("[WebRemoteControlTaskIndex] 远控任务索引为空，等待桌面任务快照同步", {
-          activeTaskId,
-          activeWorkspaceIdentity,
-          activeWorkspacePath,
-          attempt,
-        });
-        await waitForWebRemoteControlTaskIndexRetry();
+          setResult(nextResult);
+          if (
+            !shouldRetryWebRemoteControlTaskIndexLoad({
+              activeTaskId,
+              attempt,
+              maxAttempts: WEB_REMOTE_CONTROL_TASK_INDEX_EMPTY_RETRY_MAX_ATTEMPTS,
+              taskCount: nextResult.tasks?.length ?? 0,
+            })
+          ) {
+            return;
+          }
+
+          // Bugfix: across workspace switches the web root attaches the new bridge while
+          // the desktop task snapshot may still load; empty is not final, retry briefly before the empty state.
+          logger.debug(
+            "[WebRemoteControlTaskIndex] task index empty; waiting for desktop snapshot sync",
+            {
+              activeTaskId,
+              activeWorkspaceIdentity,
+              activeWorkspacePath,
+              attempt,
+            },
+          );
+          await waitForWebRemoteControlTaskIndexRetry();
+          if (isCancelled()) {
+            return;
+          }
+        }
+      } catch (err) {
         if (isCancelled()) {
           return;
         }
+        const message = err instanceof Error ? err.message : String(err);
+        logger.error("[WebRemoteControlTaskIndex] failed to load remote task index", {
+          error: message,
+        });
+        setLoadError(message);
+      } finally {
+        if (!isCancelled()) {
+          setLoading(false);
+        }
       }
-    } catch (err) {
-      if (isCancelled()) {
-        return;
-      }
-      const message = err instanceof Error ? err.message : String(err);
-      logger.error("[WebRemoteControlTaskIndex] 加载远程 task 索引失败", {
-        error: message,
-      });
-      setLoadError(message);
-    } finally {
-      if (!isCancelled()) {
-        setLoading(false);
-      }
-    }
-  }, [activeTaskId, activeWorkspaceIdentity, activeWorkspacePath, switcher]);
+    },
+    [activeTaskId, activeWorkspaceIdentity, activeWorkspacePath, switcher],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -235,8 +236,8 @@ export function WebRemoteControlTaskIndex({
 
   useEffect(() => {
     return switcher.onWorkspaceListUpdated?.((nextResult) => {
-      // Bugfix: 桌面端归档/置顶后会把最新任务索引推到 Web 远控。
-      // 这里直接采用 desktop renderer 同步后的 snapshot，避免宽屏远控继续展示另一端已隐藏的 task。
+      // Bugfix: desktop archive/pin pushes the newest task index to web remote;
+      // adopt the desktop-synced snapshot so tasks hidden on the other end never linger here.
       setResult(nextResult);
       setLoadError(null);
       setLoading(false);
@@ -248,10 +249,7 @@ export function WebRemoteControlTaskIndex({
   }, [onWorkspaceGroupKeysChange, workspaceGroupKeys]);
 
   const updateTaskMembership = useCallback(
-    (
-      task: WebRemoteControlTaskTarget,
-      membership: { pinned: boolean; archived: boolean },
-    ) => {
+    (task: WebRemoteControlTaskTarget, membership: { pinned: boolean; archived: boolean }) => {
       setResult((current) =>
         applyWebRemoteControlTaskMembershipUpdate({
           result: current,
@@ -300,7 +298,7 @@ export function WebRemoteControlTaskIndex({
           updateTaskMembership(task, { pinned, archived: false });
         })
         .catch((error) => {
-          logger.warn("[WebRemoteControlTaskIndex] 更新远控任务置顶状态失败", {
+          logger.warn("[WebRemoteControlTaskIndex] failed to update remote task pin state", {
             error: error instanceof Error ? error.message : String(error),
             taskId: task.taskId,
             workspaceKey: taskWorkspaceKey,
@@ -320,7 +318,7 @@ export function WebRemoteControlTaskIndex({
       event.stopPropagation();
       const rowKey = buildWebRemoteControlTaskRowKey(task);
       if (pendingArchiveTaskKey !== rowKey) {
-        // Bugfix: 宽屏远控之前没有 hover 操作；归档补齐时保留桌面端二次确认，避免远控页面误触直接隐藏任务。
+        // Bugfix: wide remote had no hover actions; archiving keeps the desktop confirm against mis-taps.
         setPendingArchiveTaskKey(rowKey);
         return;
       }
@@ -343,7 +341,7 @@ export function WebRemoteControlTaskIndex({
           updateTaskMembership(task, { pinned: false, archived: true });
         })
         .catch((error) => {
-          logger.warn("[WebRemoteControlTaskIndex] 归档远控任务失败", {
+          logger.warn("[WebRemoteControlTaskIndex] failed to archive remote task", {
             error: error instanceof Error ? error.message : String(error),
             taskId: task.taskId,
             workspaceKey: taskWorkspaceKey,
@@ -354,12 +352,7 @@ export function WebRemoteControlTaskIndex({
           setMutatingTaskKey((current) => (current === rowKey ? null : current));
         });
     },
-    [
-      intl,
-      pendingArchiveTaskKey,
-      updateTaskMembership,
-      workspaceServiceLookup,
-    ],
+    [intl, pendingArchiveTaskKey, updateTaskMembership, workspaceServiceLookup],
   );
 
   const handleUnarchiveTask = useCallback(
@@ -385,7 +378,7 @@ export function WebRemoteControlTaskIndex({
           updateTaskMembership(task, { pinned: false, archived: false });
         })
         .catch((error) => {
-          logger.warn("[WebRemoteControlTaskIndex] 取消归档远控任务失败", {
+          logger.warn("[WebRemoteControlTaskIndex] failed to unarchive remote task", {
             error: error instanceof Error ? error.message : String(error),
             taskId: task.taskId,
             workspaceKey: taskWorkspaceKey,
@@ -429,12 +422,12 @@ export function WebRemoteControlTaskIndex({
             workspacePath: task.workspacePath,
             ...(task.workspaceIdentity ? { workspaceIdentity: task.workspaceIdentity } : {}),
           });
-          // Bugfix: Web 远控归档列表删除任务后没有本地 query cache 兜底刷新，
-          // 必须直接从当前 workspace-list snapshot 中移除，避免已删除归档项继续停留到下一次桌面推送。
+          // Bugfix: archive deletion had no local query-cache fallback, so removed entries lingered
+          // until the next desktop push. Remove from the current workspace-list snapshot directly.
           removeTaskFromIndex(task);
           removeTaskState(task.workspacePath, task.taskId, task.workspaceIdentity);
         } catch (error) {
-          logger.warn("[WebRemoteControlTaskIndex] 删除归档远控任务失败", {
+          logger.warn("[WebRemoteControlTaskIndex] failed to delete archived remote task", {
             error: error instanceof Error ? error.message : String(error),
             taskId: task.taskId,
             workspaceKey: taskWorkspaceKey,
@@ -448,10 +441,7 @@ export function WebRemoteControlTaskIndex({
   );
 
   const renderTaskRow = useCallback(
-    (
-      task: WebRemoteControlTaskTarget,
-      options: { showWorkspaceLabel?: boolean } = {},
-    ) => {
+    (task: WebRemoteControlTaskTarget, options: { showWorkspaceLabel?: boolean } = {}) => {
       const taskWorkspaceKey = resolveWebRemoteControlWorkspaceKey(task);
       return (
         <WebRemoteControlTaskIndexRow
@@ -496,8 +486,8 @@ export function WebRemoteControlTaskIndex({
 
   return (
     <section className="flex min-h-0 flex-col gap-2 px-2">
-      {/* Bugfix: Workspace 视图的置顶任务需要跟随滑块/筛选工具栏之后展示。
-          父级仍提供工具栏插槽，远控任务事实源和 replayable 恢复边界不变。 */}
+      {/* Bugfix: pinned tasks in the workspace view render below the slider/filter toolbar.
+          The parent keeps the toolbar slot; task source of truth and replayable resume bounds unchanged. */}
       {renderBeforePinnedTasks ? renderBeforePinnedTasks() : null}
       {taskViewMode === "archived" ? (
         <DeleteAllArchivedTasksButton
@@ -534,9 +524,7 @@ export function WebRemoteControlTaskIndex({
           <div className="px-2 py-1 text-ui-base text-foreground-subtlest">
             {intl.formatMessage({ id: "taskList.pinnedSection" })}
           </div>
-          <ul className="space-y-0.5">
-            {model.pinnedTasks.map((task) => renderTaskRow(task))}
-          </ul>
+          <ul className="space-y-0.5">{model.pinnedTasks.map((task) => renderTaskRow(task))}</ul>
         </div>
       ) : null}
       {loading && visibleTaskCount === 0 ? (

@@ -32,7 +32,7 @@ export function commandHash(command: string): string {
 
 export function classifyCommand(command: string): string {
   // Bugfix: a Bash command may embed a huge heredoc/inline script; telemetry classifies on a bounded prefix,
- // never copying/scanning the whole command, and keeps body strings like "npm test" from skewing the class.
+  // never copying/scanning the whole command, and keeps body strings like "npm test" from skewing the class.
   const normalized = command.slice(0, COMMAND_CLASSIFY_PREFIX_CHARS).trimStart().toLowerCase();
   if (!normalized) return "empty";
   if (/\b(?:npm|pnpm|yarn|bun)\s+(?:test|run\s+test|vitest|jest)\b/u.test(normalized)) {
@@ -54,7 +54,7 @@ export function classifySafeCommandIdentity(
   command: string,
 ): Pick<CommandExecutionTelemetry, "count" | "name"> {
   // Class and hash are bounded, but the safe-command name would still hand a full heredoc/inline script to
- // the parser; telemetry must not add O(n) CPU/memory per huge command -- skip the count instead.
+  // the parser; telemetry must not add O(n) CPU/memory per huge command -- skip the count instead.
   if (command.length > MAX_COMMAND_IDENTITY_PARSE_CHARS) {
     return { name: "other" };
   }
@@ -74,7 +74,7 @@ export function classifySafeCommandIdentity(
   return {
     count: commandCount,
     // Privacy boundary: only static executable names from the public command table reach remote traces;
- // custom script names and undecidable dynamic expressions degrade; never upload raw tokens.
+    // custom script names and undecidable dynamic expressions degrade; never upload raw tokens.
     name: Object.hasOwn(BASH_COMMAND_REGISTRY, executable) ? executable : "other",
   };
 }
@@ -87,9 +87,7 @@ export function fileByteCount(content: string): number {
   return Buffer.byteLength(content, "utf8");
 }
 
-export function readToolExecutionTelemetry(
-  output: unknown,
-): ToolExecutionTelemetry | undefined {
+export function readToolExecutionTelemetry(output: unknown): ToolExecutionTelemetry | undefined {
   if (typeof output !== "object" || output === null || Array.isArray(output)) {
     return undefined;
   }

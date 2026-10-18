@@ -62,7 +62,10 @@ describe("ResolveWorkflowQuestion handler", () => {
   });
 
   it.each([
-    ["unknown_question", "未知的问题 id dwfq-nope-9。用 GetWorkflowRun 读 run 的 pendingQuestions。"],
+    [
+      "unknown_question",
+      "未知的问题 id dwfq-nope-9。用 GetWorkflowRun 读 run 的 pendingQuestions。",
+    ],
     ["already_resolved", "这个问题已经被回答过了，提问的子代理早已带着那次答案继续。"],
     ["run_not_in_flight", "这个 qid 所属的 run 已经不在飞行中，没有人在等这个答案。"],
   ] as const)("passes the %s refusal message through verbatim", async (reason, message) => {

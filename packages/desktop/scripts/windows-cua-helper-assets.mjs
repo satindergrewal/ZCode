@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- staging 与 afterPack verifier 共用同一发布契约，保持同模块避免 schema/PE 规则漂移。 */
+/* eslint-disable max-lines -- staging and the afterPack verifier share one release contract; a single module keeps schema/PE rules from drifting. */
 import { createHash, randomUUID } from "node:crypto";
 import { cp, lstat, mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import {
@@ -60,8 +60,8 @@ export function resolveElectronBuilderWindowsTarget({
     configuredTargetPlatform?.arch !== actualTarget.arch ||
     configuredTargetPlatform?.key !== actualTarget.key
   ) {
-    // 根因：交叉构建时 process.env 目标可能与 electron-builder 实际 context 不同；
-    // 继续使用全局目标会让 afterPack 跳过或按错误架构验收。
+    // Root cause: under cross-builds the process.env target can differ from electron-builder's
+    // actual context; trusting the global target makes afterPack skip or validate the wrong arch.
     throw new Error(
       `[windows-cua-helper-assets] configured target ${String(configuredTargetPlatform?.key)} does not match electron-builder target ${actualTarget.key}`,
     );
@@ -109,8 +109,9 @@ export async function readRegularFileSnapshot(
     );
   }
   try {
-    // TOCTOU 根因：校验/哈希后再次按源路径复制，可能把变化后的另一组字节写入产物。
-    // 这里只读取一次确定快照；后续校验、落盘和 manifest 都沿用这组字节。
+    // TOCTOU: copying again from the source path after verify/hash can write changed bytes into
+    // the artifact. Read the snapshot once; verification, disk writes and the manifest all use
+    // exactly those bytes.
     return await readFileOperation(path);
   } catch (error) {
     throw new Error(`[windows-cua-helper-assets] cannot snapshot ${artifact}: ${path}`, {
@@ -180,7 +181,7 @@ export async function renameDirectoryWithRetries(
       if (!transientWindowsErrors.has(error?.code) || attempt === maxAttempts) {
         throw error;
       }
-      // Windows Defender 或索引器可能在原子目录切换的瞬间短暂持有文件句柄。
+      // Windows Defender or the indexer can hold handles briefly during the atomic dir swap.
       await delay(retryDelayMs * attempt);
     }
   }
@@ -247,7 +248,7 @@ function isCanonicalRelativeArtifactPath(artifact) {
         !segment ||
         segment === "." ||
         segment === ".." ||
-        // Windows 会把冒号解释成 ADS、把 NUL 当作路径终止符，必须在进入文件系统前拒绝。
+        // Windows reads colon as an ADS separator and NUL as a terminator; reject before touching the filesystem.
         segment.includes(":") ||
         segment.includes("\0"),
     )
@@ -273,11 +274,12 @@ function resolveCanonicalPackagedArtifact(root, artifact, label) {
   return artifactPath;
 }
 
-// 2026-08-18：把「契约不满足」拆成逐条可读的判定。原来十一个条件挤在一个 if 里、只抛一句
-// "invalid zcodeCuaRuntime Windows artifact path contract"，看不出是 producer 少给了契约、
-// 还是仓库读错了目录。本次审计正是被这条报错误导：node_modules 停在改 pin 之前的旧提交
-// （git 依赖改 pin 不会自动重装），旧包没有 zcodeCuaRuntime，于是被误读成 producer 回归。
-// 报错必须自证：谁（包名@版本）、在哪（源目录）、缺哪一条。
+// 2026-08-18: split contract violations into per-item readable checks. Eleven conditions used
+// to share one if throwing a single "invalid zcodeCuaRuntime Windows artifact path contract",
+// unable to tell a producer contract gap from the repo reading the wrong dir. This audit was
+// misled by exactly that: node_modules pinned at a pre-repin commit (repins do not reinstall
+// git deps), the old package lacked zcodeCuaRuntime, and it read as a producer regression.
+// Errors must self-identify: who (name@version), where (source dir), which item failed.
 function describeRuntimeContractViolation(packageJson) {
   if (!isPlainRecord(packageJson)) return "source package.json is not a JSON object";
   if (packageJson.name !== EXPECTED_PACKAGE_NAME) {
@@ -446,7 +448,7 @@ async function verifyPackagedRuntimeDependencyClosure({
 }
 
 /**
- * electron-builder 完成资源复制后，按发布 manifest 重新验证最终安装目录。
+ * Re-verify the final install dir against the release manifest after electron-builder copies assets.
  */
 async function inspectPackagedWindowsCuaHelper({
   resourcesDir,
@@ -492,7 +494,7 @@ async function inspectPackagedWindowsCuaHelper({
     realpathOperation(resourcesDir),
     realpathOperation(root),
   ]);
-  // 根因：root 自身不是链接并不能排除父级 tools 是 junction；整棵 Helper 树仍可能落到 resources 外。
+  // A non-link root does not preclude a junctioned parent tools dir; the whole Helper tree could still land outside resources.
   assertPhysicalContainment(physicalResourcesDir, physicalRoot, "packaged root");
 
   const manifestPath = resolve(root, RUNTIME_MANIFEST);
@@ -594,8 +596,9 @@ async function inspectPackagedWindowsCuaHelper({
     moduleTypePackageJson.type !== "module" ||
     moduleTypePackageJson.version !== manifest.packageVersion
   ) {
-    // 根因：entry 是 ESM；缺 module 声明或声明成 commonjs 时，模块类型只能靠 detect-module
-    // 探测兜底，安装盘链上的杂散 package.json 会直接把 fork 打成 SyntaxError exit 1。
+    // Root cause: entry is ESM; without a module field (or declared commonjs) the module type
+    // falls back to detect-module probing, and any stray package.json on the install-drive chain
+    // can hard-fail the fork with SyntaxError exit 1.
     throw new Error(
       `[windows-cua-helper-assets] ${MODULE_TYPE_PACKAGE_JSON} must declare {"type":"module"} and carry the same version as ${RUNTIME_MANIFEST}: ${moduleTypePackageJsonPath}`,
     );
@@ -617,8 +620,8 @@ async function inspectPackagedWindowsCuaHelper({
     realpathOperation(entryPath),
     realpathOperation(addonPath),
   ]);
-  // 根因：manifest 的词法路径即使位于 root 内，也可能经 junction/reparse point 指向 root 外。
-  // afterPack 必须同时验证 realpath containment，不能只依赖 resolve/relative 的字符串检查。
+  // Root cause: manifest's lexical paths can sit inside root yet escape via junction/reparse
+  // points; afterPack must also verify realpath containment, not just resolve/relative strings.
   assertPhysicalContainment(physicalRoot, physicalEntryPath, "entry");
   assertPhysicalContainment(physicalRoot, physicalAddonPath, "addon");
 
@@ -636,8 +639,9 @@ async function inspectPackagedWindowsCuaHelper({
       `[windows-cua-helper-assets] PE machine mismatch: expected 0x${expectedMachine.toString(16)}, got 0x${peMachine.toString(16)}`,
     );
   }
-  // 根因：extraResources 会跳过 from 根目录下的 node_modules；仅校验 entry/addon 会让
-  // “Helper 主树存在但 express/Sharp 闭包缺失”的安装包通过 afterPack。
+  // Root cause: extraResources skips node_modules directly under the from root; checking only
+  // entry/addon lets an installer with a Helper main tree but missing express/Sharp closure pass
+  // afterPack.
   await verifyPackagedRuntimeDependencyClosure({
     root,
     physicalRoot,
@@ -672,7 +676,8 @@ function toPackagedVerificationResult(inspection) {
 }
 
 /**
- * electron-builder 完成资源复制后，按发布 manifest 严格验证最终安装目录。
+ * After electron-builder copies assets, strictly verify the final install dir against the
+ * release manifest.
  */
 export async function verifyPackagedWindowsCuaHelper(options) {
   const inspection = await inspectPackagedWindowsCuaHelper({
@@ -683,8 +688,8 @@ export async function verifyPackagedWindowsCuaHelper(options) {
 }
 
 /**
- * Windows extraResources 的原生文件在复制阶段完成签名；签名会改变字节，必须在 afterPack
- * 仅刷新最终产物哈希，然后用同一严格 verifier 再次闭环验证。
+ * Windows extraResources natives are signed during copy; signing changes bytes, so afterPack may
+ * only refresh final-artifact hashes, then re-close the loop with the same strict verifier.
  */
 export async function finalizePackagedWindowsCuaHelper({
   writeFileOperation = writeFile,
@@ -732,8 +737,9 @@ export async function resolveWindowsCuaHelperSourceRoot({
   if (!isAbsolute(servicesPackageRoot)) {
     throw new Error("[windows-cua-helper-assets] servicesPackageRoot must be absolute");
   }
-  // servicesPackageRoot 固定对应当前仓库的 packages/services；禁止向上扫描到用户目录
-  // 或另一个仓库，否则当前 workspace 缺包时可能误用上级同名 alias。
+  // servicesPackageRoot is pinned to this repo's packages/services; never scan upward into the
+  // user dir or another repo, or a missing package in this workspace could silently bind to a
+  // same-named alias above.
   const workspaceRoot = resolve(servicesPackageRoot, "..", "..");
   const workspaceMarkerPath = resolve(workspaceRoot, "pnpm-workspace.yaml");
   let markerStats;
@@ -813,7 +819,8 @@ export async function prepareWindowsCuaHelperAssets({
     );
   }
   const physicalSourceRoot = await realpathOperation(sourceRoot);
-  // 根因：只检查 sourceRoot 叶子会漏掉父级 junction；显式构建根必须已经解析到物理目录。
+  // Checking sourceRoot leaves only misses junctioned parents; the explicit build root must
+  // already resolve to a physical directory.
   if (!samePhysicalPath(sourceRoot, physicalSourceRoot)) {
     throw new Error(
       `[windows-cua-helper-assets] source root physical path does not match its configured location: ${sourceRoot}`,
@@ -837,8 +844,9 @@ export async function prepareWindowsCuaHelperAssets({
       `[windows-cua-helper-assets] invalid package version: ${String(packageJson.version)}`,
     );
   }
-  // 根因：消费端固定版本号和 artifact 目录会让生产者每次独立发版都必须同步改 ZCode。
-  // package.json 的严格契约才是兼容边界；version 只作为安装产物的来源追踪信息。
+  // Root cause: consumer-pinned versions and artifact dirs would force every producer release to
+  // update ZCode in lockstep; the package.json contract is the compatibility boundary, and version
+  // stays mere provenance metadata for the installed artifact.
   const producerContract = readProducerRuntimeContract(packageJson, sourceRoot);
 
   const entryPath = resolveCanonicalPackagedArtifact(
@@ -865,7 +873,8 @@ export async function prepareWindowsCuaHelperAssets({
     realpathOperation(entryPath),
     realpathOperation(addonPath),
   ]);
-  // 根因：规范相对路径仍可穿过中间 junction，必须在读取快照后核对最终物理位置。
+  // Root cause: a spec-relative path can still traverse intermediate junctions; after reading the
+  // snapshot, confirm the final physical location.
   assertPhysicalContainment(physicalSourceRoot, physicalEntryPath, "entry");
   assertPhysicalContainment(physicalSourceRoot, physicalAddonPath, "addon");
   const actualMachine = parsePeMachine(addonBytes, addonPath);
@@ -911,8 +920,8 @@ export async function prepareWindowsCuaHelperAssets({
       arch: targetPlatform.arch,
     });
     const sharpModuleNameSet = new Set(sharpModuleNames);
-    // Sharp 声明了所有平台的 optionalDependencies；这里只保留当前目标集合，
-    // 避免把其他架构的原生包带进安装包和签名面。
+    // Sharp declares optionalDependencies for every platform; keep only the current target set so
+    // foreign-arch natives never enter the installer or its signing surface.
     const sharpEntries = collectRuntimeModuleClosureEntries(
       sharpModuleNames,
       moduleLookupRoots,
@@ -957,11 +966,13 @@ export async function prepareWindowsCuaHelperAssets({
       `${JSON.stringify(manifest, null, 2)}\n`,
       "utf8",
     );
-    // 根因（ZCT-2093176018262081536）：entry 是含裸 import 的 ESM，staging 只拷 entry/addon
-    // 时把 producer 的 package.json 留在了源目录，安装目录的模块类型解析只能退到盘符根。
-    // Node ≥22.7 的 detect-module 兜底了默认场景，但安装盘链上任何带 "type" 的杂散
-    // package.json 都会禁用探测，fork 将以 SyntaxError exit 1 变成 broker_unavailable。
-    // 在运行时根落一份显式 module 声明，让 entry 的模块类型不依赖探测、不受外部目录影响。
+    // Root cause (ZCT-2093176018262081536): entry is ESM with bare imports; when staging copied
+    // only entry/addon, the producer's package.json stayed in the source dir and module-type
+    // resolution on the install drive fell back to the drive root. Node >= 22.7's detect-module
+    // covers the default case, but any stray package.json with "type" on the install chain
+    // disables probing and the fork dies with SyntaxError exit 1 as broker_unavailable.
+    // Land an explicit module declaration in the runtime root so the entry's module type never
+    // depends on probing or external dirs.
     const moduleTypePackageJson = {
       name: "@zcode/zcode-cua-helper-runtime",
       version: producerContract.packageVersion,

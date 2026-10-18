@@ -172,10 +172,13 @@ export function useEnterpriseCodingPlanProducts({
             error: message,
           }));
           if (!isRemoteWorkspaceDisconnectedError(pricingError)) {
-            logger.warn("[useEnterpriseCodingPlanProducts] Failed to load enterprise live pricing", {
-              authenticated,
-              error: message,
-            });
+            logger.warn(
+              "[useEnterpriseCodingPlanProducts] Failed to load enterprise live pricing",
+              {
+                authenticated,
+                error: message,
+              },
+            );
           }
           return;
         }
@@ -196,20 +199,26 @@ export function useEnterpriseCodingPlanProducts({
           staticResult.status === "rejected" &&
           !isRemoteWorkspaceDisconnectedError(staticResult.reason)
         ) {
-          logger.warn("[useEnterpriseCodingPlanProducts] Team static config failed; falling back to live pricing", {
-            authenticated,
-            error: normalizeErrorMessage(staticResult.reason),
-          });
+          logger.warn(
+            "[useEnterpriseCodingPlanProducts] Team static config failed; falling back to live pricing",
+            {
+              authenticated,
+              error: normalizeErrorMessage(staticResult.reason),
+            },
+          );
         }
       } catch (error) {
         const message = normalizeErrorMessage(error);
         // The remote workspace shell can render briefly before attachment binding; a disconnected-proxy
         // error is then an expected initialization wait, not a pricing failure. Real RPC errors keep warn.
         if (!isRemoteWorkspaceDisconnectedError(error)) {
-          logger.warn("[useEnterpriseCodingPlanProducts] Failed to load enterprise Coding Plan products", {
-            authenticated,
-            error: message,
-          });
+          logger.warn(
+            "[useEnterpriseCodingPlanProducts] Failed to load enterprise Coding Plan products",
+            {
+              authenticated,
+              error: message,
+            },
+          );
         }
         setState((current) => ({
           // Clearing the snapshot on pricing failure would leave the team plan page with only

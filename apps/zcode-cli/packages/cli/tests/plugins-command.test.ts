@@ -126,7 +126,10 @@ test("plugins list --json surfaces unattributable error diagnostics on stderr wi
   const payload = JSON.parse(failing.stdout.output()) as Array<Record<string, unknown>>;
   assert.equal(Array.isArray(payload), true);
   assert.deepEqual(payload[0]?.diagnostics, []);
-  assert.match(failing.stderr.output(), /zcode-plugins-official plugin_marketplace_refresh_failed: git fetch failed/);
+  assert.match(
+    failing.stderr.output(),
+    /zcode-plugins-official plugin_marketplace_refresh_failed: git fetch failed/,
+  );
   assert.match(failing.stderr.output(), /plugin_manifest_invalid: orphan/);
 
   const warning = context([]);
@@ -169,7 +172,9 @@ test("plugins list --available merges the marketplace catalog", async () => {
         ],
         installedPlugins: [],
         restorableBuiltins: [],
-        diagnostics: [{ code: "plugin_marketplace_invalid", message: "stale", severity: "warning" }],
+        diagnostics: [
+          { code: "plugin_marketplace_invalid", message: "stale", severity: "warning" },
+        ],
       })) as never,
     },
     ["list"],
@@ -206,7 +211,11 @@ test("plugins install resolves a bare name across marketplaces and maps project 
       })) as never,
       installPlugin: (async (options: Record<string, unknown>) => {
         received = options;
-        return { dependencyClosure: ["hello@market"], installedPlugins: [installed()], diagnostics: [] };
+        return {
+          dependencyClosure: ["hello@market"],
+          installedPlugins: [installed()],
+          diagnostics: [],
+        };
       }) as never,
     },
     ["install", "hello"],
@@ -233,7 +242,10 @@ test("plugins install rejects ambiguous bare names and unknown plugins", async (
   })) as never;
   const ambiguous = context([]);
   assert.equal(
-    await runPluginsCommand(ambiguous, TEXT, { getPluginsOverview: overview }, ["install", "hello"]),
+    await runPluginsCommand(ambiguous, TEXT, { getPluginsOverview: overview }, [
+      "install",
+      "hello",
+    ]),
     1,
   );
   assert.match(ambiguous.stderr.output(), /ambiguous.*hello@a, hello@b/);
@@ -279,7 +291,10 @@ test("plugins scope validation rejects local and unknown scopes", async () => {
     await runPluginsCommand(local, TEXT, {}, ["install", "hello@market"], { scope: "local" }),
     1,
   );
-  assert.match(local.stderr.output(), /Scope 'local' is not supported by zcode\. Use: user, project/);
+  assert.match(
+    local.stderr.output(),
+    /Scope 'local' is not supported by zcode\. Use: user, project/,
+  );
 
   const bogus = context([]);
   assert.equal(await runPluginsCommand(bogus, TEXT, {}, ["enable", "hello"], { scope: "team" }), 1);
@@ -318,14 +333,24 @@ test("plugins disable --all disables every enabled plugin and rejects mixed usag
     ctx,
     TEXT,
     {
-      // 有状态的 mock：写 user 层后复查 effective 态要能看到插件真的关掉了。
-      listPlugins: (() => ({ commandRoots: [], diagnostics: [], mcpServers: {}, plugins, skillRoots: [] })) as never,
+      // Stateful mock: after writing the user layer, re-reading the effective state must show the plugin actually disabled.
+      listPlugins: (() => ({
+        commandRoots: [],
+        diagnostics: [],
+        mcpServers: {},
+        plugins,
+        skillRoots: [],
+      })) as never,
       setPluginEnabled: (async (options: { plugin: string; enabled: boolean }) => {
         disabled.push(options.plugin);
         assert.equal(options.enabled, false);
         const target = plugins.find((plugin) => plugin.id === options.plugin);
         if (target) target.enabled = false;
-        return { enabled: false, path: "/home/u/.zcode/config.json", plugin: loadedPlugin({ id: options.plugin, enabled: false }) };
+        return {
+          enabled: false,
+          path: "/home/u/.zcode/config.json",
+          plugin: loadedPlugin({ id: options.plugin, enabled: false }),
+        };
       }) as never,
     },
     ["disable"],
@@ -340,7 +365,10 @@ test("plugins disable --all disables every enabled plugin and rejects mixed usag
   assert.match(mixed.stderr.output(), /Cannot use --all with a specific plugin/);
 
   const scoped = context([]);
-  assert.equal(await runPluginsCommand(scoped, TEXT, {}, ["disable"], { all: true, scope: "user" }), 1);
+  assert.equal(
+    await runPluginsCommand(scoped, TEXT, {}, ["disable"], { all: true, scope: "user" }),
+    1,
+  );
   assert.match(scoped.stderr.output(), /Cannot use --scope with --all/);
 
   const none = context([]);
@@ -349,19 +377,29 @@ test("plugins disable --all disables every enabled plugin and rejects mixed usag
 });
 
 test("plugins disable --all reports plugins still enabled by a higher-priority config layer", async () => {
-  // workspace 层 enabledPlugins[id]=true 盖过 user 层的 false：写入“成功”但 effective 态仍是启用。
+  // workspace-level enabledPlugins[id]=true overrides the user-level false: the write "succeeds" while the effective state stays enabled.
   const plugins = [
     loadedPlugin(),
     loadedPlugin({ id: "pinned@market", name: "pinned" }),
     loadedPlugin({ id: "broken@market", name: "broken" }),
   ] as Array<{ id: string; enabled: boolean }>;
   const deps = {
-    listPlugins: (() => ({ commandRoots: [], diagnostics: [], mcpServers: {}, plugins, skillRoots: [] })) as never,
+    listPlugins: (() => ({
+      commandRoots: [],
+      diagnostics: [],
+      mcpServers: {},
+      plugins,
+      skillRoots: [],
+    })) as never,
     setPluginEnabled: (async (options: { plugin: string }) => {
       if (options.plugin === "broken@market") throw new Error("config write failed");
       const target = plugins.find((plugin) => plugin.id === options.plugin);
       if (target && options.plugin !== "pinned@market") target.enabled = false;
-      return { enabled: false, path: "/home/u/.zcode/config.json", plugin: loadedPlugin({ id: options.plugin, enabled: false }) };
+      return {
+        enabled: false,
+        path: "/home/u/.zcode/config.json",
+        plugin: loadedPlugin({ id: options.plugin, enabled: false }),
+      };
     }) as never,
   };
 
@@ -369,8 +407,14 @@ test("plugins disable --all reports plugins still enabled by a higher-priority c
   assert.equal(await runPluginsCommand(human, TEXT, deps, ["disable"], { all: true }), 1);
   assert.match(human.stdout.output(), /Disabled plugin ios-dev@zcode-plugins-official/);
   assert.doesNotMatch(human.stdout.output(), /Disabled plugin pinned@market/);
-  assert.match(human.stderr.output(), /pinned@market is still enabled by a higher-priority config layer/);
-  assert.match(human.stderr.output(), /Failed to disable plugin broken@market: config write failed/);
+  assert.match(
+    human.stderr.output(),
+    /pinned@market is still enabled by a higher-priority config layer/,
+  );
+  assert.match(
+    human.stderr.output(),
+    /Failed to disable plugin broken@market: config write failed/,
+  );
 
   for (const plugin of plugins) plugin.enabled = true;
   const json = context([]);
@@ -400,7 +444,11 @@ test("plugins uninstall --keep-data forwards keepData and resolves bare names", 
       listPlugins: listOutcome([loadedPlugin()]),
       uninstallPlugin: (async (options: Record<string, unknown>) => {
         received = options;
-        return installed({ id: "ios-dev@zcode-plugins-official", name: "ios-dev", marketplace: "zcode-plugins-official" });
+        return installed({
+          id: "ios-dev@zcode-plugins-official",
+          name: "ios-dev",
+          marketplace: "zcode-plugins-official",
+        });
       }) as never,
     },
     ["uninstall", "ios-dev"],
@@ -430,7 +478,10 @@ test("plugins update reports version transitions and up-to-date state", async ()
     ["update", "hello@market"],
   );
   assert.equal(code, 0);
-  assert.match(changed.stdout.output(), /Updated plugin hello@market from 1\.2\.0 to 2\.0\.0\. Restart zcode to apply\./);
+  assert.match(
+    changed.stdout.output(),
+    /Updated plugin hello@market from 1\.2\.0 to 2\.0\.0\. Restart zcode to apply\./,
+  );
 
   const same = context([]);
   await runPluginsCommand(
@@ -482,11 +533,23 @@ test("plugins marketplace add/list/remove/update route to bootstrap", async () =
   const deps = {
     addMarketplace: (async (options: { source: string; sparsePaths?: string[] }) => {
       calls.push(`add:${options.source}:${(options.sparsePaths ?? []).join("+")}`);
-      return { id: "market", name: "market", source: { source: "git", url: "x" }, pluginCount: 3, isOfficial: false };
+      return {
+        id: "market",
+        name: "market",
+        source: { source: "git", url: "x" },
+        pluginCount: 3,
+        isOfficial: false,
+      };
     }) as never,
     getPluginsOverview: (() => ({
       marketplaces: [
-        { id: "market", name: "market", source: { source: "git", url: "https://x/y.git" }, pluginCount: 3, isOfficial: false },
+        {
+          id: "market",
+          name: "market",
+          source: { source: "git", url: "https://x/y.git" },
+          pluginCount: 3,
+          isOfficial: false,
+        },
       ],
       availablePlugins: [],
       installedPlugins: [],
@@ -499,7 +562,9 @@ test("plugins marketplace add/list/remove/update route to bootstrap", async () =
     updateMarketplace: (async (options: { marketplace?: string }) => {
       calls.push(`update:${options.marketplace ?? "*"}`);
       return {
-        marketplaces: [{ id: "market", name: "market", source: {}, pluginCount: 4, isOfficial: false }],
+        marketplaces: [
+          { id: "market", name: "market", source: {}, pluginCount: 4, isOfficial: false },
+        ],
         diagnostics: [],
       };
     }) as never,
@@ -507,7 +572,9 @@ test("plugins marketplace add/list/remove/update route to bootstrap", async () =
 
   const add = context([]);
   assert.equal(
-    await runPluginsCommand(add, TEXT, deps, ["marketplace", "add", "owner/repo"], { sparse: ["plugins"] }),
+    await runPluginsCommand(add, TEXT, deps, ["marketplace", "add", "owner/repo"], {
+      sparse: ["plugins"],
+    }),
     0,
   );
   assert.match(add.stdout.output(), /Added marketplace market \(3 plugins\)/);
@@ -520,7 +587,10 @@ test("plugins marketplace add/list/remove/update route to bootstrap", async () =
   assert.equal(await runPluginsCommand(remove, TEXT, deps, ["marketplace", "remove", "market"]), 0);
 
   const updateOne = context([]);
-  assert.equal(await runPluginsCommand(updateOne, TEXT, deps, ["marketplace", "update", "market"]), 0);
+  assert.equal(
+    await runPluginsCommand(updateOne, TEXT, deps, ["marketplace", "update", "market"]),
+    0,
+  );
   assert.match(updateOne.stdout.output(), /Updated marketplace market \(4 plugins\)/);
   const updateAll = context([]);
   assert.equal(await runPluginsCommand(updateAll, TEXT, deps, ["marketplace", "update"]), 0);

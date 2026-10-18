@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 外部 relay terminal transport 需要集中维护握手、配对、请求等待和重连状态机。 */
+/* eslint-disable max-lines -- the external relay terminal transport keeps handshake, pairing, request waits and reconnect state in one place. */
 import {
   WebRemoteControlRelayPayloadSerializer,
   type WebRemoteControlPayloadSendResult,
@@ -165,7 +165,9 @@ function webSocketDataByteLength(data: unknown): number {
   return new TextEncoder().encode(String(data)).byteLength;
 }
 
-async function parseRelayMessage(data: unknown): Promise<WebRemoteControlRelayIncomingMessage | null> {
+async function parseRelayMessage(
+  data: unknown,
+): Promise<WebRemoteControlRelayIncomingMessage | null> {
   try {
     const text = await readWebSocketData(data);
     if (text === null) return null;
@@ -176,7 +178,10 @@ async function parseRelayMessage(data: unknown): Promise<WebRemoteControlRelayIn
   }
 }
 
-function createFailure(reason: WebRemoteControlFailure["reason"], message?: string): WebRemoteControlFailure {
+function createFailure(
+  reason: WebRemoteControlFailure["reason"],
+  message?: string,
+): WebRemoteControlFailure {
   return { reason, message };
 }
 
@@ -278,8 +283,8 @@ export class WebRemoteControlTerminalTransport {
         return;
       }
       const negotiatedExtensions = typeof socket.extensions === "string" ? socket.extensions : "";
-      // Bugfix: 手机端运行在浏览器 WebSocket API 下，无法主动传 perMessageDeflate 配置。
-      // 只能通过标准 extensions 字段确认 relay 是否真的完成压缩协商，避免误以为业务代码可强制开启。
+      // Bugfix: the phone side is on the browser WebSocket API and cannot pass perMessageDeflate options.
+      // Confirm negotiated compression via the standard extensions field only; app code cannot force it.
       this.emitDiagnostic({
         type: "socket-extensions",
         state: this.state,
@@ -338,9 +343,9 @@ export class WebRemoteControlTerminalTransport {
         return;
       }
       if (this.hadPairedSession) {
-        // Bugfix: 手机浏览器后台恢复、网络切换或 relay 短抖会关闭已配对 socket。
-        // 旧逻辑直接刷新整页，导致用户丢失当前 workspace/task 视图；这里改为原地重连，
-        // 让上层在重新 paired 后按 mobile view state 恢复。
+        // Bugfix: background resume, network switches or relay blips close the paired socket.
+        // A full page reload lost the user's workspace/task view; reconnect in place instead,
+        // letting the upper layer restore mobile view state once paired again.
         this.scheduleReconnect();
         return;
       }
@@ -400,15 +405,15 @@ export class WebRemoteControlTerminalTransport {
       this.wasPaired &&
       this.socket?.readyState === this.WebSocketCtor.OPEN
     ) {
-      // Bugfix: hidden/pagehide 只说明手机页面暂停过，不代表 WebSocket 一定坏了。
-      // 先用原 socket 做一次 pair_status 探测，避免短暂切后台也强制断开重连。
+      // Bugfix: hidden/pagehide proves only a pause, not a broken WebSocket.
+      // Probe pair_status on the live socket first; a background blip must not force a reconnect.
       this.setState("reconnecting");
       if (this.sendPairStatusQuery()) {
         try {
           await this.waitForPaired(this.options.healthCheckTimeoutMs ?? 3_000);
           return;
         } catch {
-          // 探测超时后再重建 socket；这里不直接失败，避免把短暂恢复慢误判为桌面断开。
+          // Rebuild the socket only after the probe times out; do not fail straight away and misread slow recovery as desktop loss.
         }
       }
     }
@@ -421,8 +426,8 @@ export class WebRemoteControlTerminalTransport {
     if (this.intentionallyClosed || this.state === "paired" || this.state === "kicked") {
       return;
     }
-    // Bugfix: 手机端长时间后台恢复可能超过 recoverConnection 的单次等待窗口。
-    // 这里继续原地重连，不把当前页面切成错误页，保证用户正在输入的草稿不被卸载。
+    // Bugfix: long-background recovery can exceed one recoverConnection wait window.
+    // Keep reconnecting in place, never swapping to a failure screen, so drafts survive.
     this.clearReconnectTimer();
     this.clearWaitingTimer();
     this.clearStaleWaitingRecoveryTimer();
@@ -446,7 +451,9 @@ export class WebRemoteControlTerminalTransport {
   }
 
   private async handleMessage(data: unknown): Promise<void> {
-    if (webSocketDataByteLength(data) > WEB_REMOTE_CONTROL_RPC_TRANSPORT_LIMITS.maxPhysicalFrameBytes) {
+    if (
+      webSocketDataByteLength(data) > WEB_REMOTE_CONTROL_RPC_TRANSPORT_LIMITS.maxPhysicalFrameBytes
+    ) {
       this.options.onRawTransportFault?.("remote.rpcFrame.envelopeTooLarge");
       return;
     }
@@ -489,9 +496,9 @@ export class WebRemoteControlTerminalTransport {
     this.emitDiagnostic({ type: "pair-status", pairStatus: status, state: this.state });
     if (status === "waiting") {
       if (this.wasPaired) {
-        // Bugfix: zcode-remote-hub 的 waiting 是合法配对状态，表示当前 device 不在 hub 里，
-        // 不是 terminal WS 损坏信号。已配对后降级为 waiting 时保持同一条手机端 WS，
-        // 继续轻量查询，避免把桌面端短暂重连放大成手机端反复踢旧连接。
+        // Bugfix: zcode-remote-hub waiting is a legal pairing state - the device is merely absent from the hub,
+        // not a broken terminal WS. After pairing, degrading to waiting keeps the same phone socket,
+        // polling lightly, so a brief desktop reconnect never cascades into phone-side kick loops.
         this.staleWaitingCount = 0;
         this.clearStaleWaitingRecoveryTimer();
         this.clearReconnectTimer();
@@ -540,9 +547,9 @@ export class WebRemoteControlTerminalTransport {
       return;
     }
     if (code === "DEVICE_OFFLINE") {
-      // Bugfix: 桌面端打开远控或 relay 短暂重连时，手机可能先收到一次 DEVICE_OFFLINE。
-      // 旧逻辑会立刻渲染“电脑端离线”终态页，实际桌面 1~2 秒后就恢复 paired。
-      // 这里先进入可恢复重连窗口，超过宽限时间仍未 paired 才认定桌面真正离线。
+      // Bugfix: on desktop remote-control start or relay blips the phone may see DEVICE_OFFLINE once.
+      // The old code rendered the desktop-offline terminal page at once though pairing returned in a second or two.
+      // Enter the recoverable window first and declare desktop offline only after the grace lapses unpaired.
       this.recoverFromDeviceOffline(message || code);
       return;
     }
@@ -555,8 +562,8 @@ export class WebRemoteControlTerminalTransport {
         this.enterWaitingForDeviceAfterRelayError(message || code);
         return;
       }
-      // Bugfix: relay 在桌面/手机快速重连切换时会短暂回 INTERNAL。
-      // 这类错误大多可恢复，直接抛失败页会迫使用户手动重开远控；改为原地重连恢复。
+      // Bugfix: the relay briefly returns INTERNAL during desktop/phone reconnect hand-offs.
+      // Mostly recoverable; throwing a failure page would force a manual restart, so recover in place.
       this.recoverFromRelayInternal(message || code);
       return;
     }
@@ -590,8 +597,8 @@ export class WebRemoteControlTerminalTransport {
           return;
         }
         this.sendPairStatusQuery();
-        // Bugfix: 固定 setInterval 会让同一批同时配对的设备长期同相发送心跳；
-        // 每次发送后重新抽样有界 jitter，只打散调度相位，不改变平均 10 秒周期。
+        // Bugfix: a fixed setInterval keeps simultaneously paired devices phase-locked on heartbeats;
+        // re-sample bounded jitter per send to spread phase only, keeping the 10s average.
         this.scheduleHeartbeat();
       },
       getWebRemoteControlHeartbeatDelayMs(
@@ -613,8 +620,8 @@ export class WebRemoteControlTerminalTransport {
       if (this.state !== "paired" && this.state !== "waiting") {
         return;
       }
-      // Bugfix: ACK deadline 必须独立于下一次 jittered heartbeat；否则随机间隔会把
-      // 原本 30 秒的失联判定漂移到 32~36 秒，并在半开 WebSocket 上继续黑洞发送。
+      // Bugfix: the ACK deadline must not ride the next jittered heartbeat, or random gaps drift
+      // the 30s loss threshold to 32-36s while a half-open socket black-holes sends.
       this.reconnectAfterStaleWaiting(this.getReconnectJitterMs());
     }, this.options.heartbeatAckTimeoutMs ?? WEB_REMOTE_CONTROL_HEARTBEAT_ACK_TIMEOUT_MS);
   }
@@ -681,12 +688,10 @@ export class WebRemoteControlTerminalTransport {
     this.staleWaitingRecoveryTimer = setTimeout(() => {
       this.staleWaitingRecoveryTimer = undefined;
       if (
-        (
-          this.state === "paired" ||
+        (this.state === "paired" ||
           this.state === "reconnecting" ||
           this.state === "connecting" ||
-          this.state === "authenticating"
-        ) &&
+          this.state === "authenticating") &&
         this.staleWaitingCount > 0
       ) {
         this.reconnectAfterStaleWaiting();
@@ -708,9 +713,9 @@ export class WebRemoteControlTerminalTransport {
     this.clearWaitingTimer();
     this.clearReconnectTimer();
     this.staleWaitingCount = 0;
-    // Bugfix: 已配对手机在恢复时可能先拿到 auth_ack: waiting。
-    // 这里不能清掉 wasPaired，否则下一跳 waiting 会被当成首次未匹配并进入失败页；
-    // 保留已配对语义，让状态机继续按可恢复短断连重试到 matched。
+    // Bugfix: a paired phone may see auth_ack waiting first during recovery.
+    // Keep wasPaired or the next waiting reads as never-paired and hits the failure page;
+    // keep paired semantics so the state machine retries the short drop to matched.
     if (reconnectDelayMs > 0) {
       const staleSocket = this.socket;
       this.socket = undefined;
@@ -742,9 +747,7 @@ export class WebRemoteControlTerminalTransport {
     if (this.reconnectTimer) {
       return;
     }
-    const delayMs = options?.immediate
-      ? 0
-      : Math.min(10_000, 500 * 2 ** this.reconnectAttempt);
+    const delayMs = options?.immediate ? 0 : Math.min(10_000, 500 * 2 ** this.reconnectAttempt);
     this.reconnectAttempt += 1;
     this.setState("reconnecting");
     this.emitDiagnostic({ type: "recover-scheduled", state: this.state });
@@ -795,9 +798,9 @@ export class WebRemoteControlTerminalTransport {
   }
 
   private enterWaitingForDeviceAfterRelayError(message: string): void {
-    // Bugfix: zcode-remote-hub 在已认证连接上转发 data 找不到 device 时只返回 INTERNAL，
-    // 不会关闭当前 terminal WS。这里保持手机端 WS，降级为 waiting 并继续查询配对状态，
-    // 避免把“桌面端暂时不在”放大成手机端反复重连。
+    // Bugfix: on authenticated links the hub returns INTERNAL when the target device is missing,
+    // without closing the terminal WS. Keep the phone socket, degrade to waiting, keep polling,
+    // and never amplify a desktop absence into a reconnect loop.
     this.options.onError(new Error(message));
     this.clearWaitingTimer();
     this.clearStaleWaitingRecoveryTimer();
@@ -921,8 +924,8 @@ export class WebRemoteControlTerminalTransport {
     if (!this.traceRelayMessages) {
       return;
     }
-    // Bugfix: 远控 relay 消息量高，生产环境打印正文会快速放大日志体积并暴露敏感内容。
-    // 这里只在开发态输出摘要字段，排查链路足够且不会污染线上日志。
+    // Bugfix: remote relay volume is high; logging bodies in production balloons logs and leaks payloads.
+    // Log summary fields in dev only - enough to trace, without polluting production logs.
     console.info("[web-remote-control][relay-message]", {
       direction,
       ...fields,
@@ -937,8 +940,7 @@ export class WebRemoteControlTerminalTransport {
       }
       this.lastPairStatusDiagnostic = nextPairStatusDiagnostic;
     }
-    const visibilityState =
-      typeof document === "undefined" ? "unknown" : document.visibilityState;
+    const visibilityState = typeof document === "undefined" ? "unknown" : document.visibilityState;
     const hiddenDurationMs =
       this.hiddenStartedAt && visibilityState !== "hidden"
         ? Date.now() - this.hiddenStartedAt
@@ -987,15 +989,13 @@ function isRecoverableRelayRequestFailure(
   );
 }
 
-export function createWebRemoteControlRelayRequestRecovery(
-  recoverConnection: () => Promise<void>,
-) {
+export function createWebRemoteControlRelayRequestRecovery(recoverConnection: () => Promise<void>) {
   let recoveryPromise: Promise<void> | undefined;
 
   async function recoverRelayRequestPath(): Promise<void> {
     if (!recoveryPromise) {
-      // Bugfix: 多个请求同时撞上 relay suspect 窗口时必须共用一次恢复。
-      // 否则每个请求都会触发 recoverConnection，容易把短暂抖动放大成连续重连。
+      // Bugfix: requests hitting the suspect window together must share one recovery.
+      // Otherwise each triggers recoverConnection and a blip becomes a reconnect storm.
       recoveryPromise = recoverConnection().finally(() => {
         recoveryPromise = undefined;
       });
@@ -1054,9 +1054,9 @@ export function createWebRemoteControlAppPayloadRequester({
           timer,
         });
         if (!sendPayload(payload)) {
-          // Bugfix: 之前非 paired / suspect 状态下 sendPayload 会静默丢弃，
-          // requester 仍等到超时并误报“桌面未响应”。这里立即按链路不可发送失败，
-          // 让上层可以选择等待重连或重放幂等请求。
+          // Bugfix: sendPayload used to drop silently when not paired/suspect,
+          // leaving requesters to timeout and misreport desktop silence. Fail no-link sends immediately
+          // so callers can wait for reconnect or replay idempotently.
           clearTimeout(timer);
           pending.delete(payload.requestId);
           reject(
@@ -1074,13 +1074,10 @@ export function createWebRemoteControlAppPayloadRequester({
         (payload.zcode_type === "app-error" || payload.zcode_type === "workspace-bridge-error") &&
         payload.requestId
       ) {
-        // Bugfix: remote session 关闭这类异步 bridge error 会带合成 requestId，
-        // 但它不是某个 pending request 的响应。只有真正命中 pending 时才消费，
-        // 否则交给上层按 bridge 失效事件触发重连/降级 UI。
-        return rejectRequest(
-          payload.requestId,
-          createFailure(payload.reason, payload.error),
-        );
+        // Bugfix: async bridge errors like remote session close carry a synthetic requestId,
+        // matching no pending request. Consume only on a real pending hit;
+        // else let the upper layer react to bridge-loss with reconnect/degraded UI.
+        return rejectRequest(payload.requestId, createFailure(payload.reason, payload.error));
       }
 
       for (const [requestId, request] of pending) {

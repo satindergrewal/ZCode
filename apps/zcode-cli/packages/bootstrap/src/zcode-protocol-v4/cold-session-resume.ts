@@ -1,13 +1,13 @@
-// 冷恢复协调器：订阅落在「不在内存注册表、但可能已持久化」的会话时
-// （CLI 重启后打开历史会话），经宿主钩子把 record 拉起来，再回到既有
-// gateway READY hydration 路径。从 v4-gateway 拆出（单一职责 + max-lines）。
+// Cold-resume coordinator: when subscribing to a session that is not in the in-memory registry but may be persisted
+// (opening history after a CLI restart), pull the record up via the host hook, then rejoin the existing
+// gateway READY hydration path. Split from v4-gateway (single responsibility + max-lines).
 //
-// 语义要点：
-// - 这里只保留既有 runtime activation 单飞；完整 READY 水位由 gateway 负责；
-// - 错误分型（项目规范：不靠错误文本分流）：
-//   fault.subscribe.sessionNotFound（store 里也没有 / 宿主不支持恢复）
-//   vs fault.subscribe.resumeFailed（恢复中途失败，保留原始 cause）。
-//   message 附带 reasonCode——renderer 订阅错误块直显 lastError，无需 UI 改动即透出。
+// Semantic notes:
+// - Only the existing runtime-activation single-flight lives here; the full READY watermark is the gateway's job;
+// - error typing (project rule: never branch on error text):
+//   fault.subscribe.sessionNotFound (not in the store either / host does not support resume)
+//   vs fault.subscribe.resumeFailed (resume failed midway, original cause preserved).
+//   message carries the reasonCode -- the renderer's subscription error block shows lastError directly, no UI change needed.
 
 import type { MessageWithParts } from "@zcode/contracts";
 import type { ZCodeWorkspaceRef } from "@zcode/shared";
@@ -16,7 +16,7 @@ export type ColdSessionResumeOutcome =
   | { status: "resumed"; persistedMessages?: MessageWithParts[] }
   | { status: "notFound" };
 
-/** 协调器需要的宿主能力窄面（与 V4GatewayHost 同形，避免循环 import）。 */
+/** The narrow host-capability surface the coordinator needs (shaped like V4GatewayHost, avoiding a cyclic import). */
 export interface ColdSessionResumeHost {
   resumePersistedSession?(
     sessionId: string,
@@ -27,7 +27,7 @@ export interface ColdSessionResumeHost {
   onError?(scope: string, error: unknown, context?: Record<string, unknown>): void;
 }
 
-/** 订阅不可用会话的结构化错误（reasonCode 见文件头）。 */
+/** Structured error for unresumable sessions (reasonCodes in the file header). */
 export class V4SubscribeSessionUnavailableError extends Error {
   constructor(
     readonly sessionId: string,
@@ -41,7 +41,7 @@ export class V4SubscribeSessionUnavailableError extends Error {
 }
 
 export class ColdSessionResumeCoordinator {
-  /** sessionId → 进行中的 runtime activation；settle 后立即释放。 */
+  /** sessionId -> in-flight runtime activation; released as soon as it settles. */
   private readonly flights = new Map<string, Promise<MessageWithParts[] | undefined>>();
 
   constructor(private readonly host: ColdSessionResumeHost) {}

@@ -1,4 +1,4 @@
-// Promise / thenable 不可序列化 —— 拒绝。
+// Promises and thenables are not serializable -- reject.
 interface WithPromise {
   later: Promise<string>;
 }

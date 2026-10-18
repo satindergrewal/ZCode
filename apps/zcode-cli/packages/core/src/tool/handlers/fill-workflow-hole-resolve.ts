@@ -1,12 +1,12 @@
 // ============================================================
-// FillWorkflowHole：确认之前的一切（resolveInput 与它的结构化失败）
+// FillWorkflowHole: everything before confirmation (resolveInput and its structured failures)
 // ============================================================
 // docs/dynamic-workflow/launch.md「The `FillWorkflowHole` tool」→「Input and output」「Approval」。
 //
-// 从 fill-workflow-hole.ts 拆出（与 amend-workflow-resolve.ts 同一条分法）：那边是 handler 与工具
-// 声明，这里是**全流程唯一一次读端口**——把模型的入参归一成「将要发生的执行事实」：函数体的字节
-// （内联或读文件）、留白是不是这个 run 正在等的、它归不归本会话、草稿在哪。此后权限、确认窗与
-// handler 面对的只有一份函数体与一个 `hole` 事实块。
+// Split from fill-workflow-hole.ts (same split as amend-workflow-resolve.ts): that side is handler and tool
+// declaration; here is the flow's **only port read** — the model's input becomes "the execution facts that will happen": the body's bytes
+// (inline or file), whether the hole is awaiting this run, whether it belongs to this session, where the draft is. Past this, permission, dialog, and
+// handler faces one body and one `hole` facts block.
 
 import { readFile } from "node:fs/promises";
 import {
@@ -29,9 +29,9 @@ import { workflowRunNotFoundFailure } from "./workflow-run-introspection.js";
 import { describeWorkflowScriptPath } from "./workflow-script-path.js";
 
 /**
- * 本地失败码表。数值只是日志位（executor 投影成 `code: "N"`），判别键在 message 前缀；
- * `run_not_found` 复用内省表的同键同码。从 31 起编只为与内省表（1/2）、ResumeWorkflowRun（11–15）、
- * ResolveWorkflowQuestion（21–24）、AmendWorkflow（21–29）视觉不撞车——各表的数值空间互相独立。
+ * Local failure-code table. Numbers are log bits (the executor projects `code: "N"`); the discriminator is the message prefix.
+ * `run_not_found` reuses the introspection table's same-key same-code. Numbering from 32 keeps it visually distinct from the introspection table (1/2),
+ * ResumeWorkflowRun (11-15), ResolveWorkflowQuestion (21-24), and AmendWorkflow (21-29) — each table's number space is independent.
  */
 export const FILL_WORKFLOW_HOLE_ERROR_CODE = {
   FILL_UNAVAILABLE: 31,
@@ -42,12 +42,12 @@ export const FILL_WORKFLOW_HOLE_ERROR_CODE = {
   BODY_UNAVAILABLE: 36,
 } as const;
 
-/** 入参级违规（来源不是恰好一个）的码，与 CreateWorkflow / AmendWorkflow 的同一个 400。 */
+/** Input-level violation (not exactly one source) code, the same 400 as CreateWorkflow / AmendWorkflow. */
 const FILL_WORKFLOW_HOLE_INPUT_FAILURE_CODE = 400;
 
 /**
- * 函数体来源**恰好一个**，只对模型发出的入参成立（归一化之后 `script` 与 `path` 同时在场是合法
- * 执行态：`path` 的字节读进了 `script`）。两个都不给也是违规——没有可沿用的函数体。
+ * Exactly-one body source holds only for model-issued input (after normalization, `script` and `path` both present is a legal
+ * execution state: `path`'s bytes were read into `script`). Neither given is also a violation — nothing to inherit.
  */
 export function validateFillWorkflowHoleSource(
   input: unknown,
@@ -64,11 +64,11 @@ export function validateFillWorkflowHoleSource(
 }
 
 // ------------------------------------------------------------
-// 上一次被拒绝的尝试（docs/dynamic-workflow/launch.md 的 `fill_unchanged`）
+// The last rejected attempt (docs/dynamic-workflow/launch.md's `fill_unchanged`)
 // ------------------------------------------------------------
-// 「一个 `path` 的字节等于这个留白上一次被拒的那份」是忘了编辑，要在开窗之前抓住。每会话一张表，
-// 键是 (session, run, hole)：handler 在端口报 `compile_failed` 时记下那份字节，resolveInput 对
-// `path` 提交比对。只对 `path` 成立——内联再贴一遍会铸一个新的 fill 文件，那是另一种错误，由诊断说。
+// "A `path` whose bytes equal this hole's last-rejected copy" means the edit was forgotten; catch it before the dialog. Per-session table,
+// keyed (session, run, hole): the handler records the bytes when the port reports `compile_failed`; resolveInput compares
+// `path` submissions. Holds for `path` only — re-pasting inline mints a new fill file, a different error, told by the diagnostics.
 
 const rejectedFills = new Map<string, string>();
 
@@ -85,20 +85,20 @@ export function rememberRejectedFill(
   rejectedFills.set(rejectionKey(sessionId, runId, holeId), body);
 }
 
-/** 测试用：清空「上一次被拒」表，让用例之间互不看见。 */
+/** Test hook: clear the last-rejected table so cases stay independent. */
 export function resetFillWorkflowHoleRejectionsForTests(): void {
   rejectedFills.clear();
   preview = undefined;
 }
 
 // ------------------------------------------------------------
-// 确认窗的预览（docs/dynamic-workflow/launch.md「Approval」）
+// The confirm dialog's preview (docs/dynamic-workflow/launch.md "Approval")
 // ------------------------------------------------------------
-// prepareApproval 是同步的、只拿得到入参，而有效脚本要读端口（run 的脚本）才拼得出来。所以
-// resolveInput 拼好之后记在一个**单槽**里，prepareApproval 按 (run, hole, body) 认领——与
-// workflow-script-analysis.ts 的单槽记忆同一种姿态：值得收敛的重复只有这组紧邻的前后调用。
+// prepareApproval is synchronous and sees only the input, while the valid script needs a port read (the run's script). So
+// resolveInput builds it and records it in a **single slot**; prepareApproval claims it by (run, hole, body) — the same posture as
+// workflow-script-analysis.ts's single-slot memo: the only duplication worth converging is this adjacent call pair.
 
-/** 单槽里的一份预览：有效脚本，加上 run 的模型绑定表（prepareApproval 据它判断函数体点名的模型）。 */
+/** One preview in the single slot: the valid script plus the run's model-binding table (prepareApproval judges body-named models from it). */
 export interface FillPreview {
   effectiveScript: string;
   modelBindings: Record<string, string>;
@@ -106,7 +106,7 @@ export interface FillPreview {
 
 let preview: ({ runId: string; holeId: string; body: string } & FillPreview) | undefined;
 
-/** prepareApproval 取预览：入参对得上就给有效脚本与绑定表，否则 `undefined`（窗照开，只是没图）。 */
+/** prepareApproval takes the preview: matching input yields the valid script and bindings, else `undefined` (the dialog still opens, just without a graph). */
 export function takeFillPreview(
   runId: string,
   holeId: string,
@@ -123,14 +123,14 @@ export function takeFillPreview(
 // ------------------------------------------------------------
 
 /**
- * 全流程唯一一次读端口：把 `run_id` + `hole_id` 解析成 `hole` 事实块回填进入参。
+ * The flow's single port read: resolve `run_id` + `hole_id` into the `hole` facts block backfilled into the input.
  *
- * 顺序不能换：run 查找（不存在就是 `run_not_found`，与函数体无关）→ 留白是不是在等（终态 run、
- * 未知 id、已补过都在这里收口——不弹一次注定失败的确认窗）→ 落定函数体（读文件；读不出来点名文件）
- * → 比字节（`fill_unchanged`）→ 回填事实块、拼预览。**无条件覆盖**模型给的任何 `hole`：伪造无效。
+ * Order is fixed: run lookup (missing = `run_not_found`, unrelated to the body) -> is the hole being waited on (terminal run,
+ * unknown id, already filled all settle here — never a dialog destined to fail) -> settle the body (read the file; name it when unreadable)
+ * -> byte compare (`fill_unchanged`) -> backfill facts, build preview. **Unconditionally override** any `hole` the model supplied: forged is invalid.
  *
- * 端口缺席（未接线的宿主）时函数体照常落定、原样放行：handler 会回「本会话不能补全」的结构化失败，
- * 权限侧读不到 `hole` 就照常 ask。
+ * With the port absent (unwired host) the body still settles and passes through: the handler returns the structured "cannot fill in this session" failure,
+ * and permission reads no `hole` and asks as usual.
  */
 export async function resolveFillWorkflowHoleInput(
   input: unknown,
@@ -186,10 +186,10 @@ function runNotFoundFailure(runId: string): ToolHandlerFailure {
 }
 
 /**
- * 这个留白是不是 run 正在等的。三种「不是」都回 `hole_not_waiting`，message 说明是哪一种
- * （docs/dynamic-workflow/launch.md 的拒绝表）：run 不在飞（停了就指向 ResumeWorkflowRun——恢复后
- * 留白会重新提问）、id 未知或还没到达、已经补过。快照没有 `holes` 表（老宿主）时回 `undefined`：
- * 无从判断，交给端口。
+ * Is this hole one the run is waiting on? All three "no" cases return `hole_not_waiting`, the message saying which
+ * (docs/dynamic-workflow/launch.md rejection table): the run is not in flight (stopped -> point to ResumeWorkflowRun — after resume
+ * the hole asks again), the id is unknown or not yet reached, or it is already filled. Without a `holes` table (older hosts) return `undefined`:
+ * undecidable — leave it to the port.
  */
 function findWaitingHole(
   snapshot: DynamicWorkflowRunSnapshot,
@@ -244,8 +244,8 @@ function unchangedFillFailure(
 }
 
 /**
- * `hole` 事实块。`owned_by_this_session` 已折进 amend 规则的两个条件（本会话发起、且不是用户亲手
- * 停下的）——权限服务只读这一位（docs/dynamic-workflow/launch.md「Approval」）。
+ * The `hole` facts block. `owned_by_this_session` folded into the amend rule's two conditions (initiated by this session, and not
+ * user-stopped) — the permission service reads only that bit (docs/dynamic-workflow/launch.md "Approval").
  */
 function describeHole(
   snapshot: DynamicWorkflowRunSnapshot,
@@ -266,14 +266,14 @@ function describeHole(
   };
 }
 
-/** 归一化出来的函数体字段（两条来源同形），外加模型面该看到的文件写法。 */
+/** The normalized body fields (both sources, same shape) plus the file wording the model should see. */
 type FillBodyResolution =
   | { result: true; fields: { script: string; path?: string }; described?: string }
   | ToolHandlerFailure;
 
 /**
- * 两条来源归一成同一组字段。`path` 逐字节读（不剥任何元数据块：fill 文件装的就是语句本身），
- * 读在 resolveInput 而不在 handler——确认窗要画将要拼入的那份字节，hook 与项目规则也要匹配到它。
+ * Both sources normalize to one field set. `path` is read byte-for-byte (no metadata blocks stripped: a fill file is nothing but statements),
+ * in resolveInput not the handler — the dialog must draw the exact bytes to be spliced, and hooks/project rules must match them too.
  */
 async function resolveFillBody(
   model: FillWorkflowHoleInput,
@@ -307,7 +307,7 @@ function fillFileFailure(detail: string): ToolHandlerFailure {
   };
 }
 
-/** 拼一次有效脚本记进单槽（读不到 run 的脚本、拼不了都只是没有预览，绝不失败）。 */
+/** Splice the valid script once into the single slot (unreadable run script or unsplicable body just means no preview, never a failure). */
 async function rememberFillPreview(
   port: DynamicWorkflowRunPort,
   runId: string,
@@ -326,6 +326,6 @@ async function rememberFillPreview(
   if (stored === undefined || stored.length === 0) return;
   const effectiveScript = spliceHoleBodyPreview(stored, holeId, body);
   if (effectiveScript === undefined) return;
-  // 绑定表缺席即 run 没点名过模型（快照的 `modelBindings` 只在点名过时在场）。
+  // No binding table means the run never named a model (the snapshot's `modelBindings` exists only when it did).
   preview = { runId, holeId, body, effectiveScript, modelBindings: snapshot.modelBindings ?? {} };
 }

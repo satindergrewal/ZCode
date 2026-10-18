@@ -111,7 +111,7 @@ describe("connectRemote", () => {
       },
     });
     const stream = backend.stream!;
-    // hello-ack 是文本握手；反向 RPC 复用它之后的原始字节流。
+    // hello-ack is a text handshake; the reverse RPC reuses the raw byte stream that follows it.
     const stdin = stream.stdin as PassThrough;
     const buffered = stdin.read() as Buffer;
     const boundary = buffered.indexOf(10) + 1;
@@ -134,7 +134,7 @@ describe("connectRemote", () => {
       connection.dispose();
     }
   });
-  it("透传 Desktop SP 灰度结果到远端 server，但不透传未列入白名单的变量", () => {
+  it("forwards Desktop SP rollout results to the remote server but drops non-allowlisted vars", () => {
     expect(
       pickRemoteRuntimeEnv({
         ZCODE_DESKTOP_CONTEXT_PROMPT_ENABLED: "1",
@@ -145,9 +145,9 @@ describe("connectRemote", () => {
     });
   });
 
-  // DWG-06（docs/dynamic-workflow/launch.md「Gray release」）：Dynamic Workflow 的档位由
-  // Desktop Main 写定，远端 Host 必须拿到同一个值，preview 包的远程工作区才与本地一致。
-  it("透传 Desktop Main 写定的 Dynamic Workflow 灰度档位", () => {
+  // DWG-06 (docs/dynamic-workflow/launch.md "Gray release"): the Dynamic Workflow tier is
+  // written by Desktop Main and the remote Host must observe the same value so preview-package remote workspaces match local.
+  it("forwards the Desktop Main Dynamic Workflow rollout tier", () => {
     expect(
       pickRemoteRuntimeEnv({
         ZCODE_DYNAMIC_WORKFLOW_MODE: "alwaysOn",
@@ -156,11 +156,11 @@ describe("connectRemote", () => {
     ).toEqual({
       ZCODE_DYNAMIC_WORKFLOW_MODE: "alwaysOn",
     });
-    // Main 在 production 包里已经删掉这个键，远端因此什么也收不到。
+    // Main drops this key in production builds, so the remote receives nothing.
     expect(pickRemoteRuntimeEnv({})).toEqual({});
   });
 
-  it("连接初始化失败时释放 backend", async () => {
+  it("releases the backend when connection setup fails", async () => {
     const backend = new FakeConnectBackend();
     vi.spyOn(backend, "detect").mockRejectedValueOnce(new Error("detect failed"));
 
@@ -170,7 +170,7 @@ describe("connectRemote", () => {
     expect(backend.disposeCount).toBe(1);
   });
 
-  it("取消未完成的连接初始化时立即拒绝并释放 backend", async () => {
+  it("rejects immediately and releases the backend when setup is cancelled mid-flight", async () => {
     const backend = new FakeConnectBackend();
     vi.spyOn(backend, "detect").mockImplementationOnce(() => new Promise(() => undefined));
     const controller = new AbortController();
@@ -201,7 +201,7 @@ describe("connectRemote", () => {
     expect(backend.disposeCount).toBe(1);
   });
 
-  it("取消后迟到的 detect 结果不得继续启动远端 server", async () => {
+  it("never starts the remote server from a late detect result after cancellation", async () => {
     const backend = new FakeConnectBackend();
     let resolveDetect!: (value: { platform: string; arch: string }) => void;
     vi.spyOn(backend, "detect").mockImplementationOnce(
@@ -227,7 +227,7 @@ describe("connectRemote", () => {
     expect(backend.commands).toEqual([]);
   });
 
-  it("disposeAndWait 先关闭 stdin，再等待远端 stdio close", async () => {
+  it("closes stdin first in disposeAndWait, then awaits the remote stdio close", async () => {
     const backend = new FakeConnectBackend();
     const connection = await connectRemote(backend, {
       clientId: "test-client",
@@ -249,7 +249,7 @@ describe("connectRemote", () => {
     expect(backend.disposeCount).toBe(1);
   });
 
-  it("disposeAndWait 等待超时后强制释放 backend", async () => {
+  it("force-releases the backend when the disposeAndWait wait times out", async () => {
     vi.useFakeTimers();
     try {
       const backend = new FakeConnectBackend();
@@ -268,7 +268,7 @@ describe("connectRemote", () => {
     }
   });
 
-  it("启动远端 server 时不再注入退役 proxy runtime 环境变量", async () => {
+  it("no longer injects the retired proxy runtime env vars when starting the remote server", async () => {
     const backend = new FakeConnectBackend();
     const retiredProxyEnvName = ["ZCODE", `${"A"}${"CP"}`, "PROXY", "RUNTIME", "PATH"].join("_");
 
@@ -282,7 +282,7 @@ describe("connectRemote", () => {
     expect(backend.commands[0]).not.toContain(retiredProxyEnvName);
   });
 
-  it("启动 desktop attached 远端 server 时注入服务权威模式", async () => {
+  it("injectes the service-authoritative mode for desktop-attached remote servers", async () => {
     const backend = new FakeConnectBackend();
 
     const connection = await connectRemote(backend, {
@@ -294,7 +294,7 @@ describe("connectRemote", () => {
     expect(backend.commands[0]).toContain('ZCODE_SERVICE_AUTHORITY_MODE="desktop-attached-remote"');
   });
 
-  it("启动远端 server 时 shell quote 注入 app version", async () => {
+  it("shell-quotes the app version when injecting it into the remote server command", async () => {
     const backend = new FakeConnectBackend();
 
     const connection = await connectRemote(backend, {
@@ -307,7 +307,7 @@ describe("connectRemote", () => {
     expect(backend.commands[0]).toContain(`ZCODE_APP_VERSION='2.13.1+build'"'"'7'`);
   });
 
-  it("启动远端 server 时只注入受控的测试环境 endpoint 变量", async () => {
+  it("injects only allowlisted test-env endpoint vars into the remote server", async () => {
     const backend = new FakeConnectBackend();
 
     const connection = await connectRemote(backend, {
@@ -331,7 +331,7 @@ describe("connectRemote", () => {
     expect(backend.commands[0]).not.toContain("must-not-cross-ssh");
   });
 
-  it("只把显式 WSL 运行时代理注入远端 server 命令", async () => {
+  it("injects only the explicit WSL runtime proxy into the remote server command", async () => {
     const backend = new FakeConnectBackend();
     const resolveRuntimeProxy = vi
       .spyOn(backend, "resolveRuntimeProxy")
@@ -354,7 +354,7 @@ describe("connectRemote", () => {
     expect(backend.commands[0]).toContain("ZCODE_REMOTE_NO_PROXY='localhost,127.0.0.1'");
   });
 
-  it("backend 断连时即使 stdio 未关闭也应上报远端关闭", async () => {
+  it("reports the remote close on backend loss even while stdio stays open", async () => {
     const backend = new FakeConnectBackend();
     const closeEvents: Array<{ code: number }> = [];
 
@@ -373,7 +373,7 @@ describe("connectRemote", () => {
     connection.dispose();
   });
 
-  it("backend 断连和 stdio close 同时到达时只上报一次", async () => {
+  it("reports once when backend loss and stdio close land together", async () => {
     const backend = new FakeConnectBackend();
     const closeEvents: Array<{ code: number }> = [];
 
@@ -393,7 +393,7 @@ describe("connectRemote", () => {
     connection.dispose();
   });
 
-  it("backend error 断连时应记录错误详情", async () => {
+  it("logs error details on backend-error disconnects", async () => {
     const backend = new FakeConnectBackend();
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
@@ -415,7 +415,7 @@ describe("connectRemote", () => {
     }
   });
 
-  it("远端 server 握手前退出时应把 stderr 和退出码带到错误信息", async () => {
+  it("surfaces stderr and the exit code when the remote server dies before the handshake", async () => {
     const backend = new FakeConnectBackend({
       code: 126,
       stderr: "/bin/sh: 1: /root/.zcode/server/node: Text file busy\n",

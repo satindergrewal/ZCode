@@ -13,20 +13,20 @@ import {
 } from "./server-types.js";
 
 /**
- * 一个 server context 的 broker 状态。同一 context 里 broker 被造两次——进程级 node_repl broker 用的
- * 那个（server.ts）与每个 app 的 runtime 端口（server-operations.ts）——状态必须共享。
+ * One server context's broker state. The broker is built twice per context — the process-level node_repl broker takes
+ // the one in server.ts and each app's runtime port (server-operations.ts) — state must be shared.
  *
- * Bug 根因（2026-09-30）：连接记忆原来存在各自的闭包里。node_repl 的 execute 记在进程级实例，
- * runtime 的 turnEnded / closeSession 走 app 实例，那里只见过 app 实例自己发的命令（轮尾截图），
- * 于是生命周期只在恰好截过图的轮次才到达桌面（桌面日志 2026-09-30：会话 sess_fc6b0f61 用了
- * Browser，一条 turnEnded 都没有）。子会话登记同理：actor runtime 在 app 实例上登记，actor 的浏览器
- * 请求却经进程级实例到达。
+ // Root cause (2026-09-30): connection memory lived in separate closures. node_repl's execute recorded on the process-level instance,
+ // while the runtime's turnEnded / closeSession hit the app instance, which only ever saw the app's own commands (end-of-turn screenshots),
+ // so lifecycle reached the desktop only in the exact turn that screenshotted (desktop log 2026-09-30: session sess_fc6b0f61 opened
+ // Browser, zero turnEnded). Child registration alike: the actor registers on the app instance while the actor's browser
+ // requests while arriving via the process-level instance.
  */
 interface ProtocolBrowserBrokerState {
   connectionsBySession: Map<string, Map<string, { browserId: string; browserGeneration: number }>>;
-  /** 客户端不认识的子会话（dwf / core Agent 子代理）→ 发起它的客户端会话。只由 forChildSession 写入。 */
+  /** Child sessions unknown to the client (dwf / core Agent subagents) -> the client session that spawned them. Written only by forChildSession. */
   childSessionParents: Map<string, string>;
-  /** 以父会话为 tab 归属的子会话（core Agent 子代理，tabOwner: "parent"）。 */
+  /** Child sessions whose tab owner is the parent (core Agent subagents, tabOwner: parent). */
   parentTabOwnerChildren: Set<string>;
 }
 
@@ -49,11 +49,11 @@ function brokerState(context: ZCodeProtocolAgentServerContext): ProtocolBrowserB
 }
 
 /**
- * ProtocolBrowserControlBroker —— agent 侧 BrowserControlPort 实现。
+ * ProtocolBrowserControlBroker -- the agent-side BrowserControlPort implementation.
  *
- * browser-client 的 agent.browsers.* 每个调用经此把一条 BrowserCommand 变成
- * ZCode Protocol 的 interaction/browserExecute 反向请求，由 app（host→main WebContentsView/CDP）
- * 执行并返回结果。与 permission broker 并列注入（server-operations 的 createWorkspaceZCodeApp options）。
+ * Each browser-client agent.browsers.* call turns a BrowserCommand into a ZCode Protocol
+ * interaction/browserExecute reverse request here, executed by the app (host -> main WebContentsView/CDP)
+ * with the result returned. Injected alongside the permission broker (server-operations createWorkspaceZCodeApp options).
  */
 export function createProtocolBrowserControlBroker(
   context: ZCodeProtocolAgentServerContext,
@@ -116,13 +116,13 @@ export function createProtocolBrowserControlBroker(
         turnId,
         traceContext,
       });
-      // 先过会话校验再记连接：被拒的请求（未登记 / 已关闭的子会话）不得在共享状态里留下条目。
-      // 连接记在实际下发的 tab 归属下：共用父会话 tab 的子代理，其连接要由父会话的生命周期收尾。
+      // Validate the session before recording the connection: a rejected request (unregistered / closed child) never leaves an entry in shared state.
+      // Recorded under the tab ownership actually handed out: a subagent sharing the parent's tab is closed down by the parent's lifecycle.
       rememberConnection(requestContext.sessionId, browserId, browserGeneration);
       const cancelBackendRequest = () => {
-        // 只取消 agent 侧 requestClient 会让 host/main 的 CDP 动作继续执行。
-        // 这里用同一 backend/generation 发送内部 cancelRequest，main 再按原 requestId 中断 waiter；
-        // 已下发动作无法证明无副作用时由 manager 返回 uncertain 标记。
+        // Cancelling only the agent-side requestClient would let the host/main CDP action keep running.
+        // Send an internal cancelRequest with the same backend/generation; main interrupts the waiter by the original requestId;
+        // when a dispatched action cannot be proven side-effect-free, the manager returns an uncertain marker.
         void context
           .requestClient(
             zcodeProtocolMethods.interactionBrowserExecute,
@@ -174,8 +174,8 @@ export function createProtocolBrowserControlBroker(
           childSessionParents.delete(childSessionId);
           state.parentTabOwnerChildren.delete(childSessionId);
         };
-        // tab 属于当前对话：子代理的轮次结束或运行结束都不能替父会话结束 / 关闭 tab，
-        // 那会把用户正在看的 tab 释放掉。收尾由父会话自己的 turnEnded / closeSession 负责。
+        // The tab belongs to the current conversation: neither subagent turn-end nor run-end may close the parent's tab,
+        // that would release a tab the user is watching. Teardown belongs to the parent's own turnEnded / closeSession.
         return {
           list: port.list,
           execute: port.execute,
@@ -191,7 +191,7 @@ export function createProtocolBrowserControlBroker(
         turnEnded: port.turnEnded,
         async closeSession({ sessionId, turnId }) {
           try {
-            // 子会话永远不会作为对话回来认领 tab：保留的 view 无人可见，只会挂着 guest。
+            // A child session never comes back as a conversation to claim the tab: the retained view is visible to no one and just holds a guest.
             await sendLifecycle(sessionId, turnId, { method: "closeSession", closeTabs: true });
           } finally {
             connectionsBySession.delete(sessionId);
@@ -215,9 +215,9 @@ function buildBrowserRequestContext(
     traceContext?: TraceContext;
   },
 ) {
-  // 子会话的 workspace / clientMode 取发起它的客户端会话；下发的 sessionId 是桌面 browser scope 的
-  // tab 归属，不是路由身份（docs/zcode-protocol-model-backed-control-requests.md 契约 4）：dwf 子代理用
-  // 子会话自己的，core Agent 子代理用父会话的。没有登记就按原 id 找，找不到即拒。
+  // The child session's workspace / clientMode come from the originating client session; the handed-out sessionId is the desktop browser scope's
+  // tab ownership, not the routing identity (docs/zcode-protocol-model-backed-control-requests.md contract 4): dwf subagents use
+  // the child session's own id; core Agent subagents the parent's. Unregistered falls back to the raw id; not found rejects.
   const parentSessionId = state.childSessionParents.get(input.sessionId);
   const record = requireSession(context, parentSessionId ?? input.sessionId);
   const workspaceIdentity = record.workspace.workspaceIdentity?.trim() || undefined;
@@ -226,8 +226,8 @@ function buildBrowserRequestContext(
 
   return {
     requestId: randomUUID(),
-    // core Agent 子代理共用父会话的 tab：桌面按 sessionId 判断 tab 归属与面板展开，
-    // 子会话 id 桌面不认识，用它开的 tab 既不展开面板、也不出现在任何对话里。
+    // core Agent subagents share the parent's tab: the desktop keys tab ownership and panel expansion on sessionId,
+    // a child-session id is unknown to the desktop; tabs opened with it neither expand the panel nor appear in any conversation.
     sessionId:
       parentSessionId !== undefined && state.parentTabOwnerChildren.has(input.sessionId)
         ? parentSessionId
@@ -235,8 +235,8 @@ function buildBrowserRequestContext(
     ...((input.turnId ?? input.traceContext?.turnId)
       ? { turnId: String(input.turnId ?? input.traceContext?.turnId) }
       : {}),
-    // workspacePath 可能在不同 remote workspace 中相同，隔离 key 必须优先使用
-    // workspaceIdentity，避免 browser backend/tab ownership 跨工作区串线。
+    // workspacePath can collide across remote workspaces; the isolation key must prefer
+    // workspaceIdentity so browser backend/tab ownership never crosses workspaces.
     workspaceKey: workspaceIdentity ?? workspacePath,
     workspacePath,
     ...(workspaceIdentity ? { workspaceIdentity } : {}),

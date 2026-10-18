@@ -186,25 +186,30 @@ export function applyAt(
 }
 
 /**
- * 留白在时序走查里的样子（docs/analysis.md「Sites」的 Hole sites 段）。
+ * A hole in the temporal walk (docs/analysis.md "Sites", Hole sites).
  *
- * **开放的留白是一步，也是一个阶段。** 一步：`issue` 一次，落在它**所站的**阶段里（当前阶段），
- * 于是 await 屏障、settle、控制依赖对它与对 ask 一视同仁。一个阶段：id 就是站点 id、名字是
- * 字面量，**没有成员**——它只是一个站，轨道要在 run 之前就画出来。为了让它出现在控制流投影
- * 的阶段表上并接上前后的边，走查在 issue 之后发一条 `mark`：先 issue 再 mark，于是商图里
- * 是「所站阶段 → 留白 → 下一阶段」而不是一次回到所站阶段的往返。
+ * **An open hole is both a step and a phase.** A step: `issue` once, landing in the phase it
+ * **stands in** (the current phase), so await barriers, settles and control edges treat it
+ * exactly like an ask. A phase: the id is the site id and the name the literal, with **no
+ * members** — it is only a station, and the rail must be drawn before the run. To appear in the
+ * control flow projection's phase table and take the edges on either side, the walk emits a
+ * `mark` after the issue: issue then mark, so the quotient graph reads
+ * "standing phase -> hole -> next phase" instead of a there-and-back loop to the standing phase.
  *
- * **已补全的留白不是一步，只是一个阶段。** 它的阶段认领函数体里第一个标记之前的站点；体内
- * 的标记是站在它之后的阶段，各自带 `fill` 指回这个留白；留白自己的阶段带的 `fill` 是**包着
- * 它的**留白（顶层没有）——嵌套关系只记在这里，id 里没有（hole-id.ts）。
+ * **A filled hole is not a step, only a phase.** Its phase claims the sites before the first
+ * marker in the body; markers in the body are phases standing after it, each carrying `fill`
+ * back to this hole; the hole's own phase carries the `fill` of the hole **enclosing it**
+ * (absent at the top level) — nesting lives only here, never in the id (hole-id.ts).
  *
- * 它的阶段还有一个 mark 节点，与开放的留白一样。修复原因：2026-09-28 之前已补全的留白没有
- * mark，函数体以 `phase()` 开头时留白自己的阶段没有成员，控制流投影就把它丢了——接龙的每一步
- * 名字因此从阶段表、侧栏与 run 的 `phaseNames` 里消失，只剩时间轴的头还叫得出它。
+ * Its phase also gets a mark node, like an open hole's. Fix rationale: before 2026-09-28 a
+ * filled hole had no mark, so when its body opened with `phase()` the hole's own phase had no
+ * members and the control flow projection dropped it — every later step's name vanished from
+ * the phase table, the sidebar and the run's `phaseNames`; only the timeline header still named
+ * it.
  *
- * 函数体像 `future` 的一样是一个进入过的、once 的、不延迟的回调——taint 解释器把它记成调用点
- * 上的 `argument` 应用，这里照神谕内联；它是 async 的，所以是一条 strand，外面的 `await` 在
- * 屏障处 join 它。
+ * The body, like a `future`'s, is an entered, once, non-deferred callback — the taint interpreter
+ * records it as an `argument` application at the call site, and this walk inlines it per the
+ * oracle; being async it is a strand, and the outer `await` joins it at the barrier.
  */
 function walkHole(
   state: TraceState,
@@ -232,7 +237,7 @@ function walkHole(
   state.currentPhase = outer;
 }
 
-/** 留白的阶段按首次到达铸一次（helper 里的留白每次调用都到达，阶段只有一个）。 */
+/** A hole's phase is minted once, on first arrival (a hole in a helper is reached on every call; the phase is one). */
 function mintHolePhase(
   state: TraceState,
   site: HoleSite,

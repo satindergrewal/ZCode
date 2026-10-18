@@ -1,7 +1,7 @@
 /**
-  * The schema subsystem's shared vocabulary: the JSON Schema subset we emit, and the
-  * violation model the validator produces. This {@link JsonSchema} is not general JSON Schema -- it
-  * matches exactly the keyword set {@link synthesizeAskSchemas} produces, and the validator knows only that subset.
+ * The schema subsystem's shared vocabulary: the JSON Schema subset we emit, and the
+ * violation model the validator produces. This {@link JsonSchema} is not general JSON Schema -- it
+ * matches exactly the keyword set {@link synthesizeAskSchemas} produces, and the validator knows only that subset.
  */
 
 /** Any legal JSON value. Literals in const/enum/default are expressed with it. */
@@ -24,12 +24,12 @@ export type JsonSchemaType =
   | "object";
 
 /**
-  * The JSON Schema subset we emit. Fields are the union of optional keywords: a concrete schema uses only
-  * those relevant to its shape (an object schema uses properties/required/additionalProperties;
-  * a union uses enum or anyOf). The validator handles only the keywords here.
+ * The JSON Schema subset we emit. Fields are the union of optional keywords: a concrete schema uses only
+ * those relevant to its shape (an object schema uses properties/required/additionalProperties;
+ * a union uses enum or anyOf). The validator handles only the keywords here.
  */
 export interface JsonSchema {
-    // structure
+  // structure
   type?: JsonSchemaType | JsonSchemaType[];
   const?: JsonValue;
   enum?: JsonValue[];
@@ -43,34 +43,34 @@ export interface JsonSchema {
   prefixItems?: JsonSchema[];
   minItems?: number;
   maxItems?: number;
-    // string constraints
+  // string constraints
   minLength?: number;
   maxLength?: number;
   pattern?: string;
   format?: string;
-    // number constraints
+  // number constraints
   minimum?: number;
   maximum?: number;
   exclusiveMinimum?: number;
   exclusiveMaximum?: number;
-    // annotations
+  // annotations
   description?: string;
   default?: JsonValue;
-    // recursion: the ref and definition table
+  // recursion: the ref and definition table
   $ref?: string;
   $defs?: Record<string, JsonSchema>;
 }
 
 /**
-  * One validator violation, shaped to enter a repair tool_result directly: one line, with
-  * the JSON path, expected, and got.
+ * One validator violation, shaped to enter a repair tool_result directly: one line, with
+ * the JSON path, expected, and got.
  */
 export interface Violation {
-    /** JSON path of the violation, like the root, a property, or an item. */
+  /** JSON path of the violation, like the root, a property, or an item. */
   path: string;
-    /** Short description of the expected shape/value. */
+  /** Short description of the expected shape/value. */
   expected: string;
-    /** Short description of the got value. */
+  /** Short description of the got value. */
   got: string;
 }
 
@@ -78,13 +78,13 @@ export interface Violation {
 export const SCHEMA_DIAGNOSTIC_CODE = 9002;
 
 /**
-  * Union member cap. Beyond it: a pathologically wide union, diagnosed at the ask site.
+ * Union member cap. Beyond it: a pathologically wide union, diagnosed at the ask site.
  *
-  * 100: roomy for reasonable enums (status and country codes sit far below) while catching
-  * runaway types. Applies to literal unions (to enum) and general unions (to anyOf) alike.
+ * 100: roomy for reasonable enums (status and country codes sit far below) while catching
+ * runaway types. Applies to literal unions (to enum) and general unions (to anyOf) alike.
  *
-  * In practice the trigger is rarely a hand-written giant union but the checker expanding template
-  * literal types into a Cartesian product -- a two-dimensional cross
-  * already explodes into a literal union of every combination.
+ * In practice the trigger is rarely a hand-written giant union but the checker expanding template
+ * literal types into a Cartesian product -- a two-dimensional cross
+ * already explodes into a literal union of every combination.
  */
 export const MAX_UNION_MEMBERS = 100;

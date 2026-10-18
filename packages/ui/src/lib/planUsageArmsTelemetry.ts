@@ -154,13 +154,13 @@ export function reportPlanUsageRequestToArms(
 
   try {
     void Promise.resolve(reporter.reportArmsCustomEvent(payload)).catch((error) => {
-      logger.warn("[plan-usage] ARMS 上报失败", {
+      logger.warn("[plan-usage] ARMS report failed", {
         providerId,
         error: error instanceof Error ? error.message : String(error),
       });
     });
   } catch (error) {
-    logger.warn("[plan-usage] ARMS 上报异常", {
+    logger.warn("[plan-usage] ARMS report threw", {
       providerId,
       error: error instanceof Error ? error.message : String(error),
     });

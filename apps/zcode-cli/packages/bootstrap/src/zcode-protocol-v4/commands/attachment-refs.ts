@@ -62,7 +62,7 @@ function decodeDataUrlText(content: string): string | undefined {
 async function mapAttachmentRef(app: ZCodeApp, ref: AttachmentRef): Promise<TurnAttachment> {
   const displayMeta = displayMetaOf(ref);
   if (!isUriAttachmentRef(ref.ref)) {
-        // Local-path reference: handed to core's file/image read chain (thresholds and degradation built in).
+    // Local-path reference: handed to core's file/image read chain (thresholds and degradation built in).
     if (isVideoRef(ref)) {
       return { path: ref.ref, type: "video", ...displayMeta };
     }
@@ -73,23 +73,23 @@ async function mapAttachmentRef(app: ZCodeApp, ref: AttachmentRef): Promise<Turn
     };
   }
   if (ref.sourceKind === "topic-history" || ref.sourceKind === "clipboard-text") {
-    // 文本材料必须保留 durable 引用；按普通小文件解码会重新隐藏注入整份历史。
+    // Text material must keep its durable reference; decoding it as a plain small file would re-hide-inject the whole history.
     return { content: ref.ref, type: "file", ...displayMeta };
   }
   if (isImageRef(ref)) {
-        // Image URI ref: content carries the artifact URI, read back by resolveAttachmentDataUrl at model-request time
-        // (same shape as externalizePromptAttachments' output, so no re-externalization ever happens).
+    // Image URI ref: content carries the artifact URI, read back by resolveAttachmentDataUrl at model-request time
+    // (same shape as externalizePromptAttachments' output, so no re-externalization ever happens).
     return { content: ref.ref, path: ref.fileName, type: "image", ...displayMeta };
   }
   if (isVideoRef(ref)) {
-        // video URI ref: same shape as images -- content carries the artifact URI, read back to a data URL at model-request time.
+    // video URI ref: same shape as images -- content carries the artifact URI, read back to a data URL at model-request time.
     return { content: ref.ref, path: ref.fileName, type: "video", ...displayMeta };
   }
   if (isPdfRef(ref)) {
-        // PDF URI refs must keep the durable URI for core to read the data URL; never decode as UTF-8 text.
+    // PDF URI refs must keep the durable URI for core to read the data URL; never decode as UTF-8 text.
     return { content: ref.ref, path: ref.fileName, type: "pdf", ...displayMeta };
   }
-    // Non-image URI ref: restore <=64KiB text content per the legacy decodeTextProtocolAttachment semantics.
+  // Non-image URI ref: restore <=64KiB text content per the legacy decodeTextProtocolAttachment semantics.
   if (ref.bytes > INLINE_TEXT_ATTACHMENT_MAX_BYTES) {
     return { type: "file", ...displayMeta };
   }
@@ -100,14 +100,14 @@ async function mapAttachmentRef(app: ZCodeApp, ref: AttachmentRef): Promise<Turn
       ? { content: text, path: ref.fileName, type: "file", ...displayMeta }
       : { type: "file", ...displayMeta };
   } catch {
-        // Broken reference (TTL eviction/write failure): keep the display metadata, never fail the whole send.
+    // Broken reference (TTL eviction/write failure): keep the display metadata, never fail the whole send.
     return { type: "file", ...displayMeta };
   }
 }
 
 /**
-  * Shared by sendText/createSession/editUserQuery: attachment ref arrays -> core TurnAttachment[].
-  * Empty/missing -> undefined (sendInput semantics: no attachments means no field).
+ * Shared by sendText/createSession/editUserQuery: attachment ref arrays -> core TurnAttachment[].
+ * Empty/missing -> undefined (sendInput semantics: no attachments means no field).
  */
 export async function mapAttachmentRefsToTurnAttachments(
   app: ZCodeApp,

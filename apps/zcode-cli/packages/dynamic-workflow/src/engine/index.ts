@@ -1,5 +1,5 @@
 /**
-  * Module exports of the @zcode/dynamic-workflow execution-engine core.
+ * Module exports of the @zcode/dynamic-workflow execution-engine core.
  */
 
 export { WorkflowEngine, type EngineConfig, type RunSettlement } from "./engine.js";

@@ -273,7 +273,7 @@ describe("CreateWorkflow tool", () => {
     // 不上箭头。
     const output = await run({
       script: [
-        'interface Flaky { findings: string[] }',
+        "interface Flaky { findings: string[] }",
         'const f = await agent("a").ask<Flaky>("f");',
         "for (let i = 0; i < 2; i++) {",
         '  const u = await agent("b").ask<string>(`use ${f.findings[0]}`);',
@@ -385,9 +385,27 @@ describe("CreateWorkflow tool", () => {
     expect(output.ok).toBe(true);
     const graph = output.causalityGraph!;
     expect(graph.participants).toEqual([
-      { id: "phase#1:actor#1[0]", phase: "phase#1", lane: "actor#1", steps: ["ask#1"], member: { index: 0, of: 3 } },
-      { id: "phase#1:actor#1[1]", phase: "phase#1", lane: "actor#1", steps: ["ask#1"], member: { index: 1, of: 3 } },
-      { id: "phase#1:actor#1[2]", phase: "phase#1", lane: "actor#1", steps: ["ask#1"], member: { index: 2, of: 3 } },
+      {
+        id: "phase#1:actor#1[0]",
+        phase: "phase#1",
+        lane: "actor#1",
+        steps: ["ask#1"],
+        member: { index: 0, of: 3 },
+      },
+      {
+        id: "phase#1:actor#1[1]",
+        phase: "phase#1",
+        lane: "actor#1",
+        steps: ["ask#1"],
+        member: { index: 1, of: 3 },
+      },
+      {
+        id: "phase#1:actor#1[2]",
+        phase: "phase#1",
+        lane: "actor#1",
+        steps: ["ask#1"],
+        member: { index: 2, of: 3 },
+      },
       { id: "phase#1:actor#2", phase: "phase#1", lane: "actor#2", steps: ["ask#2"] },
     ]);
     expect(graph.handoffs).toEqual([
@@ -415,7 +433,8 @@ describe("CreateWorkflow tool", () => {
       { from: "unphased:actor#1", to: "unphased:actor#2", types: ["Draft"] },
       { from: "unphased:actor#2", to: "unphased:actor#3", types: ["string[]"] },
     ]);
-    for (const participant of graph.participants) expect(Object.hasOwn(participant, "member")).toBe(false);
+    for (const participant of graph.participants)
+      expect(Object.hasOwn(participant, "member")).toBe(false);
     expectReferentialIntegrity(graph);
   });
 
@@ -476,15 +495,11 @@ describe("CreateWorkflow tool", () => {
       ...byPhase("phase#5"),
     ]);
     const lanes = new Map(graph.lanes.map((lane) => [lane.id, lane.name]));
-    expect(["actor#1", "actor#2", "actor#4", "actor#5", "actor#6", "actor#7", "actor#8"].map((id) => lanes.get(id))).toEqual([
-      "architect",
-      "harness",
-      "fixer",
-      "jury-a",
-      "jury-b",
-      "jury-c",
-      "polisher",
-    ]);
+    expect(
+      ["actor#1", "actor#2", "actor#4", "actor#5", "actor#6", "actor#7", "actor#8"].map((id) =>
+        lanes.get(id),
+      ),
+    ).toEqual(["architect", "harness", "fixer", "jury-a", "jury-b", "jury-c", "polisher"]);
     const members = graph.participants.filter((p) => p.lane === "actor#3");
     expect(members.map((p) => p.member)).toEqual(
       Array.from({ length: 5 }, (_, index) => ({ index, of: 5 })),
@@ -652,7 +667,9 @@ describe("CreateWorkflow tool", () => {
     expect(graph.phaseEdges).toEqual([{ from: "phase#1", to: "phase#2" }]);
     expect(graph.exits).toEqual(["phase#2"]);
     for (const step of graph.steps) expect(step.phase).toBe("phase#1");
-    expect(graph.participants.map((p) => [p.id, p.steps.length])).toEqual([["phase#1:actor#1", 64]]);
+    expect(graph.participants.map((p) => [p.id, p.steps.length])).toEqual([
+      ["phase#1:actor#1", 64],
+    ]);
     expectReferentialIntegrity(graph);
   });
 
@@ -1150,9 +1167,9 @@ describe("CreateWorkflow tool", () => {
   it("rejects Node globals to enforce script purity", async () => {
     const output = await run({ script: "process.exit(1);" });
     expect(output.ok).toBe(false);
-    expect(output.diagnostics.some((diagnostic) => diagnostic.message.includes("Cannot find name"))).toBe(
-      true,
-    );
+    expect(
+      output.diagnostics.some((diagnostic) => diagnostic.message.includes("Cannot find name")),
+    ).toBe(true);
   });
 
   it("rejects input missing the script field", async () => {
@@ -1598,7 +1615,12 @@ describe("boundCausalityGraph — 对损坏输入的引用完整性", () => {
     // 仍留在 `steps`（运行状态照常关联）。任一丢弃置 truncated。
     const handoff: HandoffGraph = {
       participants: [
-        { id: "unphased:actor#1", phase: "unphased", lane: "actor#1", steps: ["ask#1", "ask#ghost"] },
+        {
+          id: "unphased:actor#1",
+          phase: "unphased",
+          lane: "actor#1",
+          steps: ["ask#1", "ask#ghost"],
+        },
         { id: "unphased:actor#9", phase: "unphased", lane: "actor#9", steps: ["ask#1"] },
         { id: "unphased:workspace", phase: "unphased", lane: "workspace", steps: ["ask#ghost"] },
       ],

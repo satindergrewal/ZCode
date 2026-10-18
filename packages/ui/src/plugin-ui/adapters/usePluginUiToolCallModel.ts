@@ -44,7 +44,7 @@ const host_resourceShowInline = (handle: PluginSandboxHandle | null) =>
   handle?.resourceMeta?.showInline === true;
 const INLINE_ONLY: readonly McpAppsDisplayMode[] = ["inline"];
 
-/** 工具行到插件 UI 的适配；React 生命周期与宿主动作集中于此，视图只接收展示模型。 */
+/** Tool row to plugin-UI adaptation; React lifecycle and host actions concentrate here, the view gets a display model. */
 export function usePluginUiToolCallModel(
   context: ToolCallBlockRenderContext,
 ): Omit<PluginUiToolCallViewProps, "fallback"> {
@@ -58,7 +58,7 @@ export function usePluginUiToolCallModel(
   const toolCall = context.toolCallNode.toolCall;
   const [width, setWidth] = useState(0);
   const [displayMode, setDisplayMode] = useState<McpAppsDisplayMode>("inline");
-  // 资源级 showInline 只随句柄到达；经 ref 读避免把 host 结果卷进渲染期的派生。
+  // Resource-level showInline arrives with the handle; read via ref so host results stay out of render-time derives.
   const hostHandleRef = useRef<PluginSandboxHandle | null>(null);
   const sessionId = scope?.sessionId ?? "";
   const toolScope = useMemo<PluginUiScopeRef>(
@@ -80,7 +80,7 @@ export function usePluginUiToolCallModel(
     surfaceTarget,
     resolvePluginUiLogicalScope(presentation ?? {}, toolScope),
   );
-  // 面板路由目标：工具声明了 surface 时，"侧栏是否已接管"看面板 tab 而不是工具卡片 tab。
+  // Pane routing target: when the tool declares a surface, pane-taken-over is judged on the pane tab, not the tool-card tab.
   const routedSurfaceKey = presentation?.surface
     ? buildPluginUiSurfaceKey(surfaceTarget, { kind: "surface", surfaceId: presentation.surface })
     : null;
@@ -97,7 +97,7 @@ export function usePluginUiToolCallModel(
     () => buildPluginUiToolResult(toolCall, presentation),
     [presentation, toolCall],
   );
-  // 4b-1：时间线推导的展示裁决（被替代 / 强制常驻）与用户手动固定状态。
+  // 4b-1: timeline-derived verdicts (superseded/forced-inline) plus the user's manual pin state.
   const disposition = useSyncExternalStore(
     subscribePluginUiInstances,
     () => getPluginUiRowDisposition(sessionId, toolCall.toolId),
@@ -120,7 +120,7 @@ export function usePluginUiToolCallModel(
     if (!presentation) return;
 
     onOpenSidePane?.({
-      // surface 工具打开的是面板 tab（结果随后路由进面板），普通工具打开工具卡片 tab。
+      // surface tools open the pane tab (results route there); plain tools open the tool-card tab.
       ...(presentation.surface
         ? { surfaceId: presentation.surface, serverName: presentation.serverName }
         : { toolCallId: toolCall.toolId, serverName: presentation.serverName }),
@@ -153,15 +153,15 @@ export function usePluginUiToolCallModel(
     [context.onOpenBrowserUrl],
   );
 
-  // MCP 的业务失败仍可能是 completed 且带 UI 元数据；只检查有结果会让错误行争抢同一页面并留下空白卡片。
-  // 展示条件：失败/取消只留普通记录，不能建锚点或自动开侧栏；原始 tool-result 不改写。
+  // MCP business failures can still be completed with UI metadata; result-only checks let error rows fight over one page and leave blanks.
+  // Display rule: failed/cancelled stay plain records -- no anchor, no auto-pane; the raw tool-result is untouched.
   const supportedScope =
     Boolean(presentation && scope?.sessionId) &&
     toolCall.status !== "failed" &&
     !isPluginUiToolCancelled(toolCall) &&
     presentation?.isError !== true;
-  // 页面握手声明的 availableDisplayModes 是硬约束（规范 MUST NOT）：不含 fullscreen 时不给侧栏入口、不自动打开。
-  // 能力在 initialized 后才到，先按"都支持"起步；到达后经 availableDisplayModes 变化推 host-context-changed。
+  // availableDisplayModes from the page handshake is a hard constraint (spec MUST NOT): no pane entry, no auto-open without fullscreen.
+  // Capabilities arrive at initialized; assume both until then, then push host-context-changed on changes.
   const [appAllowsFullscreen, setAppAllowsFullscreen] = useState(true);
   const canOpenSidePane = Boolean(onOpenSidePane) && appAllowsFullscreen;
   const interactions = useMemo(
@@ -176,8 +176,8 @@ export function usePluginUiToolCallModel(
         : undefined,
     [presentation, scope, toolScope],
   );
-  // 侧栏接管时内联撤掉展示锚点，管理器继续持有同一个活页面。
-  // 被替代的行只留普通记录；结果未就绪（pending / running）时只占位，沙箱在结果到达后才建。
+  // On pane takeover the inline anchor detaches; the manager keeps the same live page.
+  // Superseded rows stay plain records; pending/running results placeholder only -- sandboxes wait for results.
   const resultReady = toolResult !== undefined;
   const inlineActive = supportedScope && !sidePaneActive && !superseded && resultReady;
   const host = usePluginUiHost({
@@ -196,7 +196,7 @@ export function usePluginUiToolCallModel(
     toolResult,
     toolCancelled: isPluginUiToolCancelled(toolCall),
     hostVersion: "zcode",
-    // 没有侧栏入口（如只读 / 非桌面壳）或页面不支持 fullscreen 时只声明 inline。
+    // Without a pane entry (read-only/non-desktop shells) or without fullscreen support, declare inline only.
     availableDisplayModes: canOpenSidePane ? INLINE_AND_FULLSCREEN : INLINE_ONLY,
     onDisplayModeRequest: handleDisplayModeRequest,
     onOpenExternal: handleOpenExternal,
@@ -208,7 +208,7 @@ export function usePluginUiToolCallModel(
   useEffect(() => {
     setAppAllowsFullscreen(appAllowsDisplayMode(host.appCapabilities, "fullscreen"));
   }, [host.appCapabilities]);
-  // 资源级 showInline（随句柄到达）：没有手动记录时写成固定，之后折叠边界据此重算。
+  // Resource-level showInline (with the handle): pin when no manual record exists; collapse bounds recompute from it.
   useEffect(() => {
     if (!supportedScope || host.handle?.resourceMeta?.showInline !== true || !sessionId) return;
     if (getPluginUiManualPin(sessionId, toolCall.toolId) === undefined) {
@@ -221,9 +221,9 @@ export function usePluginUiToolCallModel(
     return claimPluginUiSurface(toolSurfaceKey, "inline");
   }, [inlineActive, host.supported, toolSurfaceKey]);
 
-  // preferredDisplayMode: fullscreen → 工具卡片一出现就自动打开侧栏一次。
-  // 不等结果：replay / 极快模型下结果到达与回合收起可能在同一批提交，等结果会让 effect 永远没机会跑。
-  // 结果稍后由侧栏从实时投影按 toolCallId / surfaceId 自行读取。
+  // preferredDisplayMode fullscreen: auto-open the pane once, when the card appears.
+  // Do not wait for results: on replay/blazing models the result and turn-collapse can land in one commit and the effect would never run.
+  // Results are read later by the pane from the live projection via toolCallId/surfaceId.
   const autoOpenKey =
     presentation?.preferredDisplayMode === "fullscreen"
       ? buildPluginUiSurfaceKey(surfaceTarget, { kind: "toolCall", toolCallId: toolCall.toolId })
@@ -236,14 +236,14 @@ export function usePluginUiToolCallModel(
   useEffect(() => {
     if (
       !supportedScope ||
-      // 历史展开会重新挂载旧 fullscreen 行；必须同步禁止自动打开，否则旧卡片会抢回侧栏。
+      // History expansion remounts old fullscreen rows; suppress auto-open synchronously or old cards steal the pane back.
       superseded ||
       !host.supported ||
       !autoOpenKey ||
       !canOpenSidePane
     )
       return;
-    // 已经在侧栏的调用也要消费；否则关闭后重新挂载会补触发，覆盖用户关闭状态。
+    // Consume already-pane'd calls too, or remount after close re-fires and overrides the user's close.
     if (!claimPluginUiSidePaneAutoOpen(sidePaneMemoryKey, autoOpenKey)) return;
     if (getPluginUiSurface(routedSurfaceKey ?? toolSurfaceKey) === "side-pane") return;
     openInSidePane();
@@ -265,7 +265,7 @@ export function usePluginUiToolCallModel(
     preferredDisplayMode: presentation?.preferredDisplayMode ?? "inline",
     sidePaneActive,
     host,
-    // 资源级声明优先，工具级兜底，都没有默认画边框。
+    // Resource-level declaration wins, tool-level falls back, neither draws the default border.
     prefersBorder: host.handle?.resourceMeta?.prefersBorder ?? presentation?.prefersBorder ?? true,
     superseded,
     ...(supportedScope && !superseded ? { pinned, onTogglePin: togglePin } : {}),

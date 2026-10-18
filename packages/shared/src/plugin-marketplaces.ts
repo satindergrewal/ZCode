@@ -10,12 +10,12 @@ export interface DefaultPluginMarketplace {
 export const ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID = "zcode-plugins-official";
 
 /**
- * Claude Code 官方市场（GitHub git 源）。它不是 ZCode 的强依赖：GitHub 不可达时刷新必然失败，
- * 该失败不应作为错误提示打扰用户，UI 侧按此 id 静默处理其刷新失败（任何原因）。
+ * The Claude Code official marketplace (GitHub git source). Not a hard dependency: with GitHub unreachable refresh
+ * always fails, and that failure must not surface as an error -- the UI silences its refresh failures (any cause) by this id.
  */
 export const CLAUDE_OFFICIAL_PLUGIN_MARKETPLACE_ID = "claude-plugins-official";
 
-/** Settings 三类资源发现共用；Bootstrap 单测与官方 definition 的 defaultEnabled 机械对照。 */
+/** Shared by the three Settings resource discoveries; the bootstrap test mechanically checks defaultEnabled against the official definition. */
 export const DEFAULT_ENABLED_OFFICIAL_PLUGIN_IDS: ReadonlySet<string> = new Set([
   "browser-use@zcode-plugins-official",
   "image-search@zcode-plugins-official",
@@ -23,25 +23,25 @@ export const DEFAULT_ENABLED_OFFICIAL_PLUGIN_IDS: ReadonlySet<string> = new Set(
   "pdf@zcode-plugins-official",
   "presentations@zcode-plugins-official",
   "spreadsheets@zcode-plugins-official",
-  // node_repl 宿主：不进市场、不对用户露出，也不贡献任何 skill/command/subagent，但必须
-  // 始终可用 —— node_repl 的注册门禁是「Browser Use 或 Computer Use 任一启用」，宿主自己
-  // 不参与那个判断。Browser Use 默认开着，宿主若默认关就等于它上来就没有宿主。
+  // node_repl host: not in the marketplace, not user-visible, contributes no skill/command/subagent -- yet must
+  // always exist: its registration gate is Browser Use or Computer Use enabled, and the host itself
+  // takes no part in that check. Browser Use defaults on; a default-off host would leave it hostless.
   "node-repl-host@zcode-plugins-official",
   "skill-creator@zcode-plugins-official",
   "plugin-creator@zcode-plugins-official",
   "zcode-guide@zcode-plugins-official",
-  // visualize（交互视图）随 UI 插件合入时 CLI 定义已标 defaultEnabled，但这里漏加，
-  // Settings 会把它当成默认关闭，与 CLI 实际启用状态不一致。
+  // visualize (interactive views) shipped defaultEnabled in the CLI definition alongside the UI plugin but was missed here,
+  // so Settings read it default-off, diverging from the CLI's actual state.
   "visualize@zcode-plugins-official",
-  // 电脑控制回退为默认关闭，故 computer-use 不在此名单内。
-  // 该集合必须与 official-plugin-definitions.ts 里标了 defaultEnabled 的插件逐一对应，
-  // bootstrap 的「Settings 默认启用集合与 CLI 的官方插件声明一致」单测机械对照两者。
+  // Computer control defaults off, so computer-use is not in this list.
+  // This set must map 1:1 onto plugins marked defaultEnabled in official-plugin-definitions.ts;
+  // the bootstrap test checks the two mechanically.
 ]);
 
 export const DEFAULT_PLUGIN_MARKETPLACES: DefaultPluginMarketplace[] = [
   {
-    // ZCode 官方唯一市场：本地 seed 分片与 CDN 分片在 Agent storage 内合并。
-    // CDN manifest 的 name 必须与该 canonical id 一致。
+    // ZCode's single official marketplace: local seed shards and CDN shards merge inside Agent storage.
+    // The CDN manifest's name must equal this canonical id.
     id: ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID,
     source: "https://cdn-zcode.z.ai/zcode/official-plugin/marketplace.json",
     name: ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID,
@@ -54,12 +54,12 @@ export const DEFAULT_PLUGIN_MARKETPLACES: DefaultPluginMarketplace[] = [
     name: CLAUDE_OFFICIAL_PLUGIN_MARKETPLACE_ID,
     description:
       "Directory of popular Claude Code extensions including development tools, productivity plugins, and MCP integrations",
-    // 只内置官方 catalog 来源，不把远端 manifest 快照打包进仓库；首次刷新前数量未知。
+    // Only the official catalog source is built in; remote manifest snapshots are not committed -- counts unknown before the first refresh.
     pluginCount: 0,
   },
 ];
 
-// 商店「公开」分段只有一个 ZCode 官方市场 id，内置与 CDN 不再拆分身份。
+// The store's public section has exactly one ZCode official market id; built-in and CDN no longer split identities.
 export const PUBLIC_STORE_MARKETPLACE_IDS = [ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID] as const;
 
 export function isPublicStoreMarketplaceId(id: string): boolean {

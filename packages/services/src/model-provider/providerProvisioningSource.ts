@@ -129,7 +129,7 @@ async function readProvisioningCredentials(
   // those are not this sync's facts and their corruption never blocks legal account credentials.
   // allowlist entries keep string+decrypt validation, so unknown content never ships as a Secret.
   for (const [key, encrypted] of Object.entries(parsed)) {
-    // OAuth 换证不再依赖旧账号 Key；它的坏密文也不能阻断远端登录态同步。
+    // OAuth refresh no longer uses the legacy account key; its corrupted ciphertext must not block remote auth sync.
     if (!allowedKeys.has(key)) continue;
     if (typeof encrypted !== "string") {
       throw new Error(`Credential allowlist value must be a string: ${key}`);

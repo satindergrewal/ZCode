@@ -1,26 +1,14 @@
-/* eslint-disable max-lines -- grouped row 同时承载 drag overlay 与常规交互，状态徽标需共用同一渲染语义。 */
+/* eslint-disable max-lines -- the grouped row hosts drag overlay and normal interaction; status badges share one render semantic. */
 import { memo, useState } from "react";
 import type { KeyboardEvent, MouseEvent } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import type { UniqueIdentifier } from "@dnd-kit/core";
 import { isCronTask, isOffPeakTask, type ZCodeTaskMeta } from "@zcode/shared";
-import {
-  ArrowUpToLine,
-  Clock,
-  Cloud,
-  Folder,
-  ListTree,
-  LoaderIcon,
-  Moon,
-  X,
-} from "lucide-react";
+import { ArrowUpToLine, Clock, Cloud, Folder, ListTree, LoaderIcon, Moon, X } from "lucide-react";
 import { cn } from "@/components/lib/utils.js";
 import { Badge } from "@/components/ui/badge.js";
 import { toast } from "@/components/ui/toast.js";
-import {
-  ContextMenu,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu.js";
+import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu.js";
 import {
   Tooltip,
   TooltipContent,
@@ -85,11 +73,7 @@ function GroupedTaskRowComponent({
   activeTaskId: string | null;
   mobileActiveTaskKey?: string | null;
   workspaceLabel: string;
-  onSelectTask: (
-    workspacePath: string,
-    taskId: string,
-    workspaceIdentity?: string,
-  ) => void;
+  onSelectTask: (workspacePath: string, taskId: string, workspaceIdentity?: string) => void;
   onCloseTask: (task: ZCodeTaskMeta) => void;
   onOpenFileTree?: (task: ZCodeTaskMeta) => void;
   onMoveTaskToGroup: (task: ZCodeTaskMeta, groupId: string | null) => void;
@@ -109,30 +93,22 @@ function GroupedTaskRowComponent({
   const workspaceActionsDisabledReason = workspaceActionsDisabled
     ? intl.formatMessage({ id: "workspaceSidebar.unavailableLocalDirectory" })
     : undefined;
-  const snoozeInteractionAutoResolution =
-    useTaskInteractionAutoResolutionSnooze({
-      workspacePath: task.workspacePath,
-      ...(task.workspaceIdentity
-        ? { workspaceIdentity: task.workspaceIdentity }
-        : {}),
-      ...(remoteSessionId ? { remoteSessionId } : {}),
-      sessionId: task.taskId,
-    });
-  const workspaceKey = buildTaskWorkspaceKey(
-    task.workspacePath,
-    task.workspaceIdentity,
-  );
+  const snoozeInteractionAutoResolution = useTaskInteractionAutoResolutionSnooze({
+    workspacePath: task.workspacePath,
+    ...(task.workspaceIdentity ? { workspaceIdentity: task.workspaceIdentity } : {}),
+    ...(remoteSessionId ? { remoteSessionId } : {}),
+    sessionId: task.taskId,
+  });
+  const workspaceKey = buildTaskWorkspaceKey(task.workspacePath, task.workspaceIdentity);
   const taskActivity = getTaskListRowActivity(task);
   const taskAttention = getTaskListAttention(task);
-  // 交互胶囊是当前最高优先级的右侧状态；无论来自 sessions-index 摘要还是
-  // activity attention，都不应再并排显示相对时间并挤压任务标题。
-  const hasPendingInteraction =
-    Boolean(task.pendingInteraction) || taskAttention !== null;
-  // Bugfix：远端 session 未就绪时打开文件树必然会被 resolver 拒绝，因此不要暴露
-  // 无效 action；本地 task 不需要 remoteSessionId，仍保持入口可用。
+  // The interaction pill is the top-priority right status; from sessions-index summary or
+  // activity attention, never beside a relative time that squeezes the title.
+  const hasPendingInteraction = Boolean(task.pendingInteraction) || taskAttention !== null;
+  // Bugfix: with the remote session not ready the file tree is rejected, so hide the
+  // dead action; local tasks need no remoteSessionId and keep theirs.
   const canOpenFileTree =
-    Boolean(onOpenFileTree) &&
-    (!task.workspaceIdentity?.trim() || Boolean(remoteSessionId));
+    Boolean(onOpenFileTree) && (!task.workspaceIdentity?.trim() || Boolean(remoteSessionId));
   const taskAttentionLabel = taskAttention
     ? intl.formatMessage({
         id: taskAttention.kind === "userInput" ? "taskList.userInputTag" : "taskList.permissionTag",
@@ -149,33 +125,28 @@ function GroupedTaskRowComponent({
   const taskTitle =
     task.title ||
     intl.formatMessage({
-      id: task.forkedFromTaskId
-        ? "taskList.forkedUntitled"
-        : "taskList.untitled",
+      id: task.forkedFromTaskId ? "taskList.forkedUntitled" : "taskList.untitled",
     });
-  const taskChangeParts = formatGroupedTaskHoverChangeParts(
-    getTaskChangeSummary(task),
-  );
+  const taskChangeParts = formatGroupedTaskHoverChangeParts(getTaskChangeSummary(task));
   const taskTimeLabel = formatTaskRelativeTime(task.updatedAt, intl);
   const isTaskCron = isCronTask(task);
-  // 月亮身份改为持久 meta 标记判断；off-peak store 反查在任务被删除后会丢失
-  // 会话溯源，且让每一行多背一个全局 store 订阅。
+  // Moon identity comes from persisted meta now: the store lookback loses provenance
+  // once a task is deleted and costs each row a global subscription.
   const isTaskOffPeak = isOffPeakTask(task);
   const isActive =
-    buildTaskWorkspaceKey(activeWorkspacePath, activeWorkspaceIdentity) ===
-      workspaceKey && activeTaskId === task.taskId;
-  const isMobileActive =
-    mobileActiveTaskKey === `${workspaceKey}:${task.taskId}`;
+    buildTaskWorkspaceKey(activeWorkspacePath, activeWorkspaceIdentity) === workspaceKey &&
+    activeTaskId === task.taskId;
+  const isMobileActive = mobileActiveTaskKey === `${workspaceKey}:${task.taskId}`;
   const statusDotClassName =
     leadingIndicator === "error"
       ? "bg-destructive"
       : leadingIndicator === "unread"
-        ? // Bugfix: grouped task 未读点需要和普通 task list 共用 sky 色，避免 brand 色在不同主题下表达漂移。
+        ? // Bugfix: the grouped unread dot shares the plain list's sky color; brand drifts across themes.
           "bg-sky-500 dark:bg-sky-400"
         : null;
   const canShowHoverActions = !dragOverlay;
-  // 工作流运行行：分组行同样长在标题下；
-  // drag overlay 只是纯展示，不挂确认副作用与点击入口。
+  // The workflow run line also grows under the title;
+  // the drag overlay is display-only, no confirm side effects or click targets.
   const workflowRunLinesNode =
     taskActivity?.workflowActivity && !dragOverlay ? (
       <TaskWorkflowRunLines
@@ -194,18 +165,14 @@ function GroupedTaskRowComponent({
     <div
       role={dragOverlay ? undefined : "button"}
       tabIndex={dragOverlay ? undefined : 0}
-      data-mobile-active-task={
-        !dragOverlay && isMobileActive ? "true" : undefined
-      }
+      data-mobile-active-task={!dragOverlay && isMobileActive ? "true" : undefined}
       className={cn(
         "group/task-row",
         TASK_GROUP_ROW_CLASS,
         dragOverlay
           ? "pointer-events-none cursor-grabbing border border-border bg-background shadow-lg opacity-100"
           : "cursor-pointer",
-        isActive
-          ? "bg-selected"
-          : canShowHoverActions && "hover:bg-surface-hover",
+        isActive ? "bg-selected" : canShowHoverActions && "hover:bg-surface-hover",
         dragging && "opacity-0",
       )}
     >
@@ -215,7 +182,7 @@ function GroupedTaskRowComponent({
           className="text-foreground"
           title={dragOverlay ? undefined : taskTitle}
         >
-          {/* Bugfix: grouped task 标题超出时不要显示省略号，右侧渐隐能保留标题连续性，避免和右侧状态元信息挤在一起。 */}
+          {/* Bugfix: no ellipsis on overflow; a right fade keeps the title continuous, clear of status meta. */}
           {taskTitle}
         </TaskTitleOverflowText>
         <span className="ml-auto flex shrink-0 items-center gap-1.5 text-ui-sm text-foreground-subtle">
@@ -223,9 +190,7 @@ function GroupedTaskRowComponent({
             <TaskInteractionBadge
               interaction={task.pendingInteraction}
               formatMessage={(id) => intl.formatMessage({ id })}
-              onSnoozeCountdown={
-                dragOverlay ? undefined : snoozeInteractionAutoResolution
-              }
+              onSnoozeCountdown={dragOverlay ? undefined : snoozeInteractionAutoResolution}
             />
           ) : taskAttentionDisplay ? (
             <Badge
@@ -246,17 +211,12 @@ function GroupedTaskRowComponent({
             {leadingIndicator === "loading" ? (
               <LoaderIcon className="size-3.5 animate-spin text-foreground-subtle" />
             ) : statusDotClassName ? (
-              <span
-                aria-hidden="true"
-                className="flex size-4 shrink-0 items-center justify-center"
-              >
-                <span
-                  className={cn("size-1.5 rounded-full", statusDotClassName)}
-                />
+              <span aria-hidden="true" className="flex size-4 shrink-0 items-center justify-center">
+                <span className={cn("size-1.5 rounded-full", statusDotClassName)} />
               </span>
             ) : null}
             {!hasPendingInteraction && isTaskCron ? (
-              // drag overlay 也复用 grouped row 元信息；clock 放时间前面，不能跟未读点互斥。
+              // Overlay reuses row meta; clock before the time, never exclusive with the unread dot.
               <Clock
                 data-cron-task-icon="true"
                 aria-label={intl.formatMessage({ id: "taskList.cronTaskLabel" })}
@@ -269,16 +229,14 @@ function GroupedTaskRowComponent({
                 className="size-3.5 shrink-0"
               />
             ) : null}
-            {!hasPendingInteraction ? (
-              <span className="mr-1">{taskTimeLabel}</span>
-            ) : null}
+            {!hasPendingInteraction ? <span className="mr-1">{taskTimeLabel}</span> : null}
           </span>
         </span>
       </span>
     </div>
   );
 
-  // DragOverlay 高频渲染时只返回纯展示节点，避免隐藏 action tooltip 的 Radix ref 循环和 task 路径 RPC。
+  // DragOverlay renders display-only: no tooltip ref loops, no task-path RPCs.
   if (dragOverlay) return taskRow;
 
   const [contextMenuOpen, setContextMenuOpen] = useState(false);
@@ -371,8 +329,7 @@ function GroupedTaskRowComponent({
     event.preventDefault();
     handleSelect();
   };
-  const dragDisabled =
-    workspaceActionsDisabled || !dragId || contextMenuOpen || dragOverlay;
+  const dragDisabled = workspaceActionsDisabled || !dragId || contextMenuOpen || dragOverlay;
   const draggable = useDraggable({
     id: dragId ?? `disabled:${workspaceKey}:${task.taskId}`,
     disabled: dragDisabled,
@@ -388,16 +345,15 @@ function GroupedTaskRowComponent({
     draggable.setNodeRef(element);
     droppable.setNodeRef(element);
   };
-  const groupedTaskDomKey =
-    typeof dragId === "string" ? encodeURIComponent(dragId) : undefined;
-  // Bug 原因：CSS hidden → flex 会让 action trigger 在 pointer 到达时才获得布局尺寸，
-  // Tooltip Portal 可能先以未定位坐标绘制。改为交互状态决定 action 是否挂载，
-  // 同时保留键盘、触摸设备和手机远控 active task 的入口。
+  const groupedTaskDomKey = typeof dragId === "string" ? encodeURIComponent(dragId) : undefined;
+  // Bug: hidden->flex sized triggers late, so the tooltip portal could paint
+  // unpositioned. Mount actions by interaction state;
+  // keep entries for keyboard, touch, and phone-remote active tasks.
   const shouldMountHoverActions =
     !task.pendingInteraction &&
     (taskRowHovered || taskRowFocusWithin || isHoverNone || isMobileActive);
-  // 触屏端 isHoverNone 只负责常驻 action；时间、状态点和 cron/off-peak 元信息
-  // 仍应保留，仅在真实 hover / focus 交互时让位，避免手机端永久丢失任务状态。
+  // On touch, isHoverNone hides actions only; time/status/cron meta stay
+  // and yield only on real hover/focus, so phones keep task state.
   const shouldSuppressTaskMetadata = taskRowHovered || taskRowFocusWithin;
 
   const interactiveTaskRow = (
@@ -428,12 +384,8 @@ function GroupedTaskRowComponent({
       )}
     >
       <span className={TASK_GROUP_ROW_LINE_CLASS}>
-        <TaskTitleOverflowText
-          as="span"
-          className="text-foreground"
-          title={taskTitle}
-        >
-          {/* Bugfix: grouped task 标题超出时不要显示省略号，右侧渐隐能保留标题连续性，避免和右侧状态元信息挤在一起。 */}
+        <TaskTitleOverflowText as="span" className="text-foreground" title={taskTitle}>
+          {/* Bugfix: no ellipsis on overflow; a right fade keeps the title continuous, clear of status meta. */}
           {taskTitle}
         </TaskTitleOverflowText>
         <span className="ml-auto flex shrink-0 items-center gap-1.5 text-ui-sm text-foreground-subtle">
@@ -444,9 +396,7 @@ function GroupedTaskRowComponent({
               onSnoozeCountdown={snoozeInteractionAutoResolution}
             />
           ) : taskAttentionDisplay && !shouldSuppressTaskMetadata ? (
-            <Badge
-              className="h-5 border-transparent bg-success/14 px-2 text-ui-base font-medium text-success dark:bg-success/18"
-            >
+            <Badge className="h-5 border-transparent bg-success/14 px-2 text-ui-base font-medium text-success dark:bg-success/18">
               {taskAttentionDisplay}
             </Badge>
           ) : null}
@@ -459,14 +409,12 @@ function GroupedTaskRowComponent({
                   aria-hidden="true"
                   className="flex size-4 shrink-0 items-center justify-center"
                 >
-                  <span
-                    className={cn("size-1.5 rounded-full", statusDotClassName)}
-                  />
+                  <span className={cn("size-1.5 rounded-full", statusDotClassName)} />
                 </span>
               ) : null}
               {!hasPendingInteraction && isTaskCron ? (
-                // 可交互 grouped row 之前漏渲染 clock，导致 Projects 分组里的定时任务没有 icon。
-                // 这里和普通 task list 一样放在时间前面，同时不再被未读/运行状态顶掉。
+                // Interactive rows missed the clock: scheduled tasks had no icon.
+                // As in the plain list: before the time, never displaced by unread/running.
                 <Clock
                   data-cron-task-icon="true"
                   aria-label={intl.formatMessage({ id: "taskList.cronTaskLabel" })}
@@ -479,9 +427,7 @@ function GroupedTaskRowComponent({
                   className="size-3.5 shrink-0"
                 />
               ) : null}
-              {!hasPendingInteraction ? (
-                <span className="mr-1">{taskTimeLabel}</span>
-              ) : null}
+              {!hasPendingInteraction ? <span className="mr-1">{taskTimeLabel}</span> : null}
             </span>
           ) : null}
           {shouldMountHoverActions ? (
@@ -520,19 +466,17 @@ function GroupedTaskRowComponent({
     </div>
   );
 
-  // grouped row 不能用原生 button 承载整行；行内还有菜单、关闭、文件树等 button，外层继续用 role=button，避免嵌套 button 破坏键盘和右键菜单语义。
+  // No native button host: inner menus/close/file-tree buttons force role=button, keeping semantics.
   return (
     <ContextMenu onOpenChange={setContextMenuOpen}>
       {tooltipsDisabled ? (
-        // overlay 拖拽时指针下方的真实 row 仍可能被 Radix 识别为 hover，跳过 TooltipTrigger 避免底层 row 或 action 弹出悬浮提示。
+        // Overlay drags leave the row under the pointer hover-ish; skip TooltipTrigger.
         <ContextMenuTrigger asChild>{interactiveTaskRow}</ContextMenuTrigger>
       ) : (
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
-              <ContextMenuTrigger asChild>
-                {interactiveTaskRow}
-              </ContextMenuTrigger>
+              <ContextMenuTrigger asChild>{interactiveTaskRow}</ContextMenuTrigger>
             </TooltipTrigger>
             <TooltipContent side="right" align="center" sideOffset={6}>
               {remoteSessionId ? (
@@ -540,9 +484,7 @@ function GroupedTaskRowComponent({
               ) : (
                 <Folder aria-hidden="true" className="size-3.5 shrink-0" />
               )}
-              <span className="min-w-0 max-w-48 truncate">
-                {workspaceLabel}
-              </span>
+              <span className="min-w-0 max-w-48 truncate">{workspaceLabel}</span>
               {taskChangeParts.length > 0 ? (
                 <>
                   <span className="text-tooltip-foreground/60">·</span>
@@ -550,11 +492,7 @@ function GroupedTaskRowComponent({
                     {taskChangeParts.map((part) => (
                       <span
                         key={part}
-                        className={
-                          part.startsWith("+")
-                            ? "text-diff-added"
-                            : "text-diff-removed"
-                        }
+                        className={part.startsWith("+") ? "text-diff-added" : "text-diff-removed"}
                       >
                         {part}
                       </span>
@@ -567,7 +505,7 @@ function GroupedTaskRowComponent({
         </TooltipProvider>
       )}
       {contextMenuOpen ? (
-        // 右键菜单内容带 Radix Presence/Portal，拖拽重排时常驻挂载会触发嵌套更新循环；仅在菜单打开时挂载内容，配合路径懒加载避免拖拽过程刷 task path RPC。
+        // Menu content (Radix Presence/Portal) mounts only while open; lazy paths avoid drag-time RPC storms.
         <GroupedTaskContextMenuContent
           task={task}
           currentGroupId={currentGroupId}
@@ -582,9 +520,7 @@ function GroupedTaskRowComponent({
           onStartRenameTask={onStartRenameTask}
           onArchiveTask={onArchiveTask}
           onMarkTaskAsUnread={onMarkTaskAsUnread}
-          onOpenTaskPathInFileManager={() =>
-            void handleOpenTaskPathInFileManager()
-          }
+          onOpenTaskPathInFileManager={() => void handleOpenTaskPathInFileManager()}
           onCopyText={(label, text) => void handleCopyText(label, text)}
           onOpenProviderConfig={() => void handleOpenProviderConfig()}
           onOpenTaskFeedback={() => void handleOpenTaskFeedback()}

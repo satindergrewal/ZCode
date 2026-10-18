@@ -226,7 +226,9 @@ describe("desktop Linux deep link registration helpers", () => {
         'Exec="/home/alice/Applications/ZCode.AppImage" %U',
       );
       expect(
-        warnings.some(([message]) => message === "[deep-link] Linux AppImage icon install failed; degraded"),
+        warnings.some(
+          ([message]) => message === "[deep-link] Linux AppImage icon install failed; degraded",
+        ),
       ).toBe(true);
       expect(commandCalls).toEqual([
         {
@@ -323,7 +325,9 @@ describe("desktop Linux deep link registration helpers", () => {
         },
       ]);
       expect(
-        infos.some(([message]) => message === "[deep-link] Linux system-level desktop entry already present"),
+        infos.some(
+          ([message]) => message === "[deep-link] Linux system-level desktop entry already present",
+        ),
       ).toBe(true);
     } finally {
       rmSync(tempRoot, { force: true, recursive: true });
@@ -588,7 +592,9 @@ describe("desktop Linux deep link registration helpers", () => {
       expect(existsSync(desktopFilePath)).toBe(false);
       expect(
         infos.some(
-          ([message]) => message === "[deep-link] removed legacy user-level zcode.desktop; system entry restored",
+          ([message]) =>
+            message ===
+            "[deep-link] removed legacy user-level zcode.desktop; system entry restored",
         ),
       ).toBe(true);
     } finally {
@@ -645,7 +651,10 @@ describe("desktop Linux deep link registration helpers", () => {
 
         expect(existsSync(desktopFilePath)).toBe(true);
         expect(
-          warnings.some(([message]) => message === "[deep-link] failed to clean legacy user-level zcode.desktop"),
+          warnings.some(
+            ([message]) =>
+              message === "[deep-link] failed to clean legacy user-level zcode.desktop",
+          ),
         ).toBe(true);
         expect(commandCalls).toEqual([
           {

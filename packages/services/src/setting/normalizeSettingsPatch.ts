@@ -93,8 +93,8 @@ export function normalizeSettingsPatch(patch: Partial<AppSettings>): Partial<App
     "dynamicWorkflowMode" in normalizedPatch &&
     (normalizedPatch.dynamicWorkflowMode as string | undefined) === ""
   ) {
-    // docs/dynamic-workflow/launch.md「The user's choice」：选回服务端提供的模式等于删除选择，
-    // 安装才能继续跟随服务端翻转。RPC 会吞掉 undefined，这里把空串哨兵归一成删除。
+    // docs/dynamic-workflow/launch.md 'The user's choice': re-selecting the served mode deletes the override,
+    // letting installs follow server flips again. RPC drops undefined, so normalize the empty-string sentinel into a delete.
     normalizedPatch.dynamicWorkflowMode = undefined;
   }
 

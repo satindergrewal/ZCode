@@ -242,7 +242,8 @@ export async function checkLifecycle(
           ).every((count) => count === 0),
         );
       assert.equal(env.countGuests(), 0);
-      // Renderer 释放本地监听不代表异步退订 RPC 已应答；等待真实 ACK，避免跨进程完成顺序造成误报。
+      // Renderer-side listener removal does not mean the async unsubscribe RPC answered; wait for
+      // the real ACK so cross-process completion order cannot false-positive.
       await Promise.all(
         active.map((owner) =>
           env.events.wait(

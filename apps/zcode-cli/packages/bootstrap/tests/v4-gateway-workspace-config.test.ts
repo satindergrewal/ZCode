@@ -90,9 +90,7 @@ describe("v4 gateway workspace-config topic", () => {
 
     gateway.setConnectionFlowState({ connectionId: "mobile-config", state: "saturated" });
     gateway.publishWorkspaceConfig("ws-1", configB);
-    expect(stub.frames.map((frame) => frame.subscriptionId)).toEqual([
-      desktop.ack.subscriptionId,
-    ]);
+    expect(stub.frames.map((frame) => frame.subscriptionId)).toEqual([desktop.ack.subscriptionId]);
 
     gateway.setConnectionFlowState({ connectionId: "mobile-config", state: "drained" });
     expect(stub.frames.map((frame) => frame.subscriptionId)).toEqual([

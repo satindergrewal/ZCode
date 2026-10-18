@@ -1,10 +1,10 @@
 /**
-  * scheduler.ts sat at oxlint's max-lines cap (400); Boundary B's two upward reports
-  * (submit_result arrival, turn end) plus their repair / nudge budgets and submit normalization live here;
-  * the public surface still exports from scheduler.ts.
+ * scheduler.ts sat at oxlint's max-lines cap (400); Boundary B's two upward reports
+ * (submit_result arrival, turn end) plus their repair / nudge budgets and submit normalization live here;
+ * the public surface still exports from scheduler.ts.
  *
-  * Free functions reach the scheduler's live node table and both settlement entries via {@link SubmitSeam}; on AskScheduler,
-  * submitAttempted / turnEnded are thin delegates.
+ * Free functions reach the scheduler's live node table and both settlement entries via {@link SubmitSeam}; on AskScheduler,
+ * submitAttempted / turnEnded are thin delegates.
  */
 
 import type { AskNode, SchedulerHost } from "./scheduler-types.js";
@@ -14,7 +14,7 @@ import { REPAIR_ATTEMPTS, WorkflowError } from "./types.js";
 /** The minimal seam the report handlers get: look up live nodes, settle by result. */
 export interface SubmitSeam {
   readonly host: SchedulerHost;
-    /** Live node by instance (undefined once out of liveNodes). */
+  /** Live node by instance (undefined once out of liveNodes). */
   liveNode(instance: InstanceRef): AskNode | undefined;
   settleOk(node: AskNode, artifact: unknown): void;
   settleFailed(node: AskNode, error: WorkflowError): void;
@@ -27,7 +27,7 @@ export function handleSubmitAttempted(
 ): void {
   const node = seam.liveNode(instance);
   if (node === undefined || node.settled) return;
-    // Untyped asks provide no submit_result; even on receipt, never settle by it.
+  // Untyped asks provide no submit_result; even on receipt, never settle by it.
   if (!node.spec.typed) return;
 
   const { value, violations } = normalizeSubmit(seam.host, node.spec.schema, payload);
@@ -55,17 +55,17 @@ export function handleSubmitAttempted(
 }
 
 /**
-  * Lenient submit-payload normalization: validate the raw value first; only when it fails and is a string, one JSON.parse
-  * then re-validate -- on success the parsed value wins (both the verdict and the journal).
+ * Lenient submit-payload normalization: validate the raw value first; only when it fails and is a string, one JSON.parse
+ * then re-validate -- on success the parsed value wins (both the verdict and the journal).
  *
-  * Field finding (GLM-5.3 via the Anthropic-compatible endpoint): real models often serialize submit_result's result parameter as a
-  * JSON string (a quoted object) instead of a JSON object, so the validator correctly reports expected-object-got-string and
-  * the run fails after 3 repairs. legacy script-workflow's parseStructuredResponse long tolerated this via lenient JSON parsing;
-  * this adds the same tolerance, schema-aware:
-  *   1. Raw value passes -> use it, never parse (a legal string result survives; under a string-or-null schema a quoted 42 stays a string).
-  *   2. Raw fails and is a string -> a single JSON.parse (no recursion, no double parse; the legacy single-extraction precedent), revalidate, take the parsed value on pass.
-  *   3. Otherwise -> raw value plus original violations, handed to the model for repair.
-  * The engine is a pure package; JSON.parse is pure, deterministic, IO-free -- safe here.
+ * Field finding (GLM-5.3 via the Anthropic-compatible endpoint): real models often serialize submit_result's result parameter as a
+ * JSON string (a quoted object) instead of a JSON object, so the validator correctly reports expected-object-got-string and
+ * the run fails after 3 repairs. legacy script-workflow's parseStructuredResponse long tolerated this via lenient JSON parsing;
+ * this adds the same tolerance, schema-aware:
+ *   1. Raw value passes -> use it, never parse (a legal string result survives; under a string-or-null schema a quoted 42 stays a string).
+ *   2. Raw fails and is a string -> a single JSON.parse (no recursion, no double parse; the legacy single-extraction precedent), revalidate, take the parsed value on pass.
+ *   3. Otherwise -> raw value plus original violations, handed to the model for repair.
+ * The engine is a pure package; JSON.parse is pure, deterministic, IO-free -- safe here.
  */
 function normalizeSubmit(
   host: SchedulerHost,
@@ -79,13 +79,13 @@ function normalizeSubmit(
       const parsed = JSON.parse(payload);
       const after = host.validate(schema, parsed);
       if (after.length === 0) return { value: parsed, violations: [] };
-            // Bug: when parsing succeeded but the parsed value still failed, the reported violations were the
-            // pre-parse direct ones (expected object, got string) -- the model faces a decoded object it cannot repair, so it
-            // re-quotes / double-encodes / degenerates to an empty object, exhausting the repair budget. Repair violations must describe
-            // a value the model can change, hence after (path-level violations on the parsed object); the single-parse contract stands.
+      // Bug: when parsing succeeded but the parsed value still failed, the reported violations were the
+      // pre-parse direct ones (expected object, got string) -- the model faces a decoded object it cannot repair, so it
+      // re-quotes / double-encodes / degenerates to an empty object, exhausting the repair budget. Repair violations must describe
+      // a value the model can change, hence after (path-level violations on the parsed object); the single-parse contract stands.
       return { value: parsed, violations: after };
     } catch {
-            // Non-JSON string: JSON.parse throws; fall back to the raw-value violations for model repair.
+      // Non-JSON string: JSON.parse throws; fall back to the raw-value violations for model repair.
     }
   }
   return { value: payload, violations: direct };

@@ -42,9 +42,9 @@ interface WorkflowRunArtifactBytesState {
   loading: boolean;
   error: string | null;
   /**
-   * `bytes` 属于哪一版。换版本后、effect 清空旧状态之前有一帧 `version` 已是新值而 `bytes`
-   * 还是旧版的；查看器闪一帧无妨，但「作为文件打开」的副本只写一次，拿错字节就永久错了——
-   * 这类消费方必须核对它，而不是信任「当前渲染的 version」。
+   * Which version `bytes` belongs to: between versions one frame has new version/old bytes.
+   * Viewer flicker is fine, but open-as-file writes once; wrong bytes are permanent.
+   # Such consumers must check, not trust the rendered version.
    */
   bytesVersion: number | null;
 }

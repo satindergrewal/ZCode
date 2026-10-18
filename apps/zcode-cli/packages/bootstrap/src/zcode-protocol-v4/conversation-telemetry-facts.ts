@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 八类 strict telemetry fact 的同源归一集中维护，避免 privacy allowlist 分叉。 */
+/* eslint-disable max-lines -- one home for eight strict telemetry-fact normalizations, so the privacy allowlist cannot fork. */
 import type {
   CompactLifecyclePayload,
   DynamicWorkflowRunProgressPayload,
@@ -162,8 +162,8 @@ function eventTimestamp(event: SessionEvent): number {
 function automationAdmission(inputId: string | undefined, automationId: string | undefined) {
   if (!inputId || !automationId) return {};
   const parsed = parseAutomationRunId(inputId);
-    // When inputId is not this automation's runId (legacy entries missing it, exceptions passed through), do not guess the trigger:
-    // keep only the correlation id -- never mislabel plain input as schedule or slice a fake scheduledAt from unrelated strings.
+  // When inputId is not this automation's runId (legacy entries missing it, exceptions passed through), do not guess the trigger:
+  // keep only the correlation id -- never mislabel plain input as schedule or slice a fake scheduledAt from unrelated strings.
   if (!parsed || parsed.automationId !== automationId) return { automationId };
   return {
     automationId,
@@ -255,8 +255,8 @@ function modelRequestQueueKey(sessionId: string, querySource: string | undefined
 }
 
 function isStepUsageQuerySource(querySource: string | undefined): boolean {
-    // `workflow_child`: dynamic-workflow subagents.
-    // This source must be allowed through, or subagent tokens never reach business telemetry.
+  // `workflow_child`: dynamic-workflow subagents.
+  // This source must be allowed through, or subagent tokens never reach business telemetry.
   return (
     querySource === undefined ||
     querySource === "main_turn" ||
@@ -286,9 +286,9 @@ function compactTerminalStatus(
 }
 
 /**
-  * Normalizes turn start/terminal from this process's live SessionEvents into `turn.started` / `turn.terminal` facts
-  * so App/server can count in-flight sessions. Facts carry no bodies, only the admission inputId and a terminal summary.
-  * The class reads no transcript/snapshot, so it cannot fabricate events during hydration/recovery.
+ * Normalizes turn start/terminal from this process's live SessionEvents into `turn.started` / `turn.terminal` facts
+ * so App/server can count in-flight sessions. Facts carry no bodies, only the admission inputId and a terminal summary.
+ * The class reads no transcript/snapshot, so it cannot fabricate events during hydration/recovery.
  */
 export class ConversationTelemetryFactNormalizer {
   private readonly firstStreamChunks = new BoundedKeySet();
@@ -329,7 +329,7 @@ export class ConversationTelemetryFactNormalizer {
           payload.backgroundSource === "workflow"
             ? payload.backgroundSource
             : undefined;
-                // User turns and background wakes alike get inputId from admission; never mix in persisted messageIds.
+        // User turns and background wakes alike get inputId from admission; never mix in persisted messageIds.
         const inputId = optionalString(payload.inputId);
         if (turnKey && inputId) this.sourceCommandByTurn.set(turnKey, inputId);
         return conversationTelemetryFactSchema.parse({
@@ -348,8 +348,8 @@ export class ConversationTelemetryFactNormalizer {
       }
       case SessionEventType.ModelNetworkStatus: {
         const payload = event.payload as ModelNetworkStatusPayload;
-                // The two ends of admission waiting are not provider request states:
-                // the fact status enum does not include them, so skip explicitly instead of letting schema.parse throw.
+        // The two ends of admission waiting are not provider request states:
+        // the fact status enum does not include them, so skip explicitly instead of letting schema.parse throw.
         if (payload.type === "model_request_queued" || payload.type === "model_request_admitted") {
           return null;
         }
@@ -477,9 +477,9 @@ export class ConversationTelemetryFactNormalizer {
         const error =
           event.type === SessionEventType.ToolCallError ? (payload as ToolCallErrorPayload) : null;
         const display = recordValue(result?.result.display);
-                // The runtime turned perf into a nested detail while the legacy normalizer
-                // still stuffed it verbatim into the flat strict fact, dropping the whole tool terminal state. Map via an explicit
-                // allowlist only -- never pass through detail or the locally-diagnostic command.hash.
+        // The runtime turned perf into a nested detail while the legacy normalizer
+        // still stuffed it verbatim into the flat strict fact, dropping the whole tool terminal state. Map via an explicit
+        // allowlist only -- never pass through detail or the locally-diagnostic command.hash.
         const performance = toToolPerformanceFact(result?.result.perf);
         const phase =
           event.type === SessionEventType.ToolCallStarted
@@ -512,8 +512,8 @@ export class ConversationTelemetryFactNormalizer {
             : {}),
           ...(result?.result.error ? { errorMessage: result.result.error.message } : {}),
           ...skillTelemetryFactFields(toolName, error?.skillMetadata ?? result?.skillMetadata),
-                    // The subagent mirror puts parent/child linkage at the top level of the tool event payload; the legacy normalizer
-                    // read only result.display, silently dropping agent_id and friends before agent_step.
+          // The subagent mirror puts parent/child linkage at the top level of the tool event payload; the legacy normalizer
+          // read only result.display, silently dropping agent_id and friends before agent_step.
           ...mirroredSubagentToolFields(rawPayload, display),
           ...(performance ? { performance } : {}),
         });
@@ -572,9 +572,9 @@ export class ConversationTelemetryFactNormalizer {
         } else {
           this.completedModelRequests.delete(requestQueueKey);
         }
-                // The title sidecar reuses the current turnId; converting its ModelComplete into
-                // usage.delta too would make the renderer accumulate every turn's 64/8 title tokens into the main conversation completion.
-                // This round only main-turn and subagent-request usage passes; sidecar/compact/tool_internal stay internal.
+        // The title sidecar reuses the current turnId; converting its ModelComplete into
+        // usage.delta too would make the renderer accumulate every turn's 64/8 title tokens into the main conversation completion.
+        // This round only main-turn and subagent-request usage passes; sidecar/compact/tool_internal stay internal.
         if (!isStepUsageModelComplete(payload)) return null;
         const usage = recordValue(payload.usage);
         return conversationTelemetryFactSchema.parse({
@@ -604,8 +604,8 @@ export class ConversationTelemetryFactNormalizer {
         });
       }
       case SessionEventType.DynamicWorkflowRunProgress: {
-                // Dynamic-workflow subagent attribution facts: actor-created registers,
-                // run-settled settles; other engine events never reach telemetry.
+        // Dynamic-workflow subagent attribution facts: actor-created registers,
+        // run-settled settles; other engine events never reach telemetry.
         return workflowLifecycleFactFromProgress(
           base,
           event.payload as DynamicWorkflowRunProgressPayload,
@@ -632,7 +632,7 @@ export class ConversationTelemetryFactNormalizer {
             : {}),
           background: payload.background === true,
           ...(optionalString(payload.status) ? { status: optionalString(payload.status) } : {}),
-                    // stopped can close out background telemetry on its own; keep the Runtime's existing error so failure summaries keep the cause.
+          // stopped can close out background telemetry on its own; keep the Runtime's existing error so failure summaries keep the cause.
           ...(event.type === SessionEventType.SubagentStopped && optionalString(payload.error)
             ? { errorMessage: optionalString(payload.error) }
             : {}),

@@ -1,18 +1,18 @@
 // ============================================================
-// run 的活体控制面：一次命令同时落到引擎与座位闸门
+// The run's live control plane: one command lands on both the engine and the seat gate
 // ============================================================
-// docs/dynamic-workflow/concurrency.md「The control path」。一个在飞 run 的两个执行点住在不同的
-// 层里——调度器在引擎（`@zcode/dynamic-workflow`），座位闸门在 driver 之下（本包）——而发命令的
-// 那一侧（run service 的 `retuneConcurrency`）两个都够不着：引擎是 harness 在子进程装配起来之后
-// 才存在的，闸门是 launch 造的。
+// docs/dynamic-workflow/concurrency.md "The control path". A live run's two execution points live in different
+// different layers -- the scheduler in the engine (`@zcode/dynamic-workflow`), the seat gate below the driver (this package) -- while the
+// command-issuing side (run service's `retuneConcurrency`) reaches neither: the engine exists only after the harness
+// assembles the subprocess, and the gate is created by launch.
 //
-// 所以 run service 先造一个**空的**句柄放进注册表条目，两边各自在自己出生的那一刻把自己接上去：
-// harness 拿到 `bind(engine)`（与 `signal` 同一条缝递进去），launch 拿到 `bindSeatGate(gate)`。
-// 句柄本身不判断任何事：存活判定、no-op 语义与落库全在引擎的 `setMaxConcurrency` 里，闸门只在
-// 引擎说"这次真的改了"之后才跟着换上界——两个执行点因此不可能各执一词。
+// So the run service first puts an **empty** handle into the registry entry, and each side wires itself up at birth:
+// the harness gets `bind(engine)` (handed in through the same seam as `signal`), launch gets `bindSeatGate(gate)`.
+// The handle itself decides nothing: liveness, no-op semantics, and persistence live in the engine's `setMaxConcurrency`; the gate only
+// follows once the engine says "really changed this time" -- the two execution points cannot end up with different bounds.
 //
-// 顺序是载荷性的：**引擎先**。引擎的布尔值就是这次命令的裁决（已结算 / 值没变 ⇒ false，什么也
-// 没发生），闸门若抢在前面换了上界，一个已经结算的 run 就会留下一个与 journal 行不符的内存上界。
+// Ordering is load-bearing: **engine first**. The engine's boolean is the verdict for this command (settled / value unchanged => false, nothing
+// happens); if the gate swapped the bound first, a settled run would keep an in-memory bound inconsistent with the journal row.
 
 import type { FillHoleResult, HoleFill, OpenHole } from "@zcode/dynamic-workflow";
 import type { RunControlBinding } from "@zcode/dynamic-workflow-runtime";
@@ -21,30 +21,30 @@ import type { WorkflowRunSeatGate } from "./workflow-seat-gate.js";
 
 export interface WorkflowRunControl extends RunControlBinding {
   /**
-   * 就地改本 run 自己的并发上界。返回**这次是否真的改了**：`false` 即什么也没发生——引擎还没
-   * 接上（launch 之前的那几个微任务）、run 已结算，或新值与当前值相同。调用方据此回落。
+   * Retunes this run's own concurrency bound in place. Returns **whether anything really changed**: `false` means nothing happened -- engine not
+   * attached yet (the microtasks before launch), run already settled, or the new value equals the current one. Callers fall back accordingly.
    */
   setMaxConcurrency(maxConcurrency: number): boolean;
   /**
-   * launch 造好座位闸门之后接上去；缺席即这个 run 只有调度器一个执行点。launch 递进来的不是闸门
-   * 本身，而是「换闸门上界 + 在治理器上重新登记本 run 的上界」这一手（docs/dynamic-workflow/
-   * concurrency.md「The control path」），所以一次 retune 同时挪动闸门与增长上限。
+   * Attached after launch builds the seat gate; absent, the run's only execution point is the scheduler. Launch passes not the gate itself
+   // but "raise the gate bound + re-register this run's bound on the governor" (docs/dynamic-workflow/
+   // concurrency.md "The control path"), so one retune moves gate and growth limit together.
    */
   bindSeatGate(gate: Pick<WorkflowRunSeatGate, "setLimit">): void;
   /**
-   * 给一处正在等的留白送去有效脚本里它的函数体（docs/execution-engine.md「The engine's part」）。
-   * 引擎还没接上时回 `undefined`——与 `setMaxConcurrency` 的 false 同义：这一刻没有引擎可命令，
-   * 调用方（补全服务）据此报 `hole_not_waiting`。留白只有引擎一个执行点，闸门不参与。
+   * Delivers the valid script's body to a waiting hole (docs/execution-engine.md "The engine's part").
+   // Returns `undefined` while no engine is attached — same meaning as setMaxConcurrency's false: no engine to command this instant;
+   // the caller (fill service) reports hole_not_waiting. The engine is the hole's only execution point; the gate plays no part.
    */
   fillHole(fill: HoleFill): FillHoleResult | undefined;
   /**
-   * 引擎此刻停驻的留白（快照投影 `waiting` 的唯一来源，docs/execution-engine.md「The run
-   * snapshot」）。引擎还没接上时回 `undefined`，与「没有引擎在等」对读面是同一件事。
+   * The hole the engine is parked at (the only source of the snapshot's `waiting`, docs/execution-engine.md "The run
+   // snapshot"). `undefined` while no engine is attached — to the read face, same as "no engine waiting".
    */
   openHoles(): readonly OpenHole[] | undefined;
 }
 
-/** 控制面握着的引擎切面：两条命令（上界、补全）与一条查询（停驻的留白）。 */
+/** The engine slice the control face holds: two commands (bound, fill) and one query (parked hole). */
 type BoundEngine = Parameters<RunControlBinding["bind"]>[0];
 
 export function createWorkflowRunControl(): WorkflowRunControl {
@@ -69,9 +69,9 @@ export function createWorkflowRunControl(): WorkflowRunControl {
 }
 
 /**
- * launch 交给 {@link WorkflowRunControl.bindSeatGate} 的那一手：一次 retune 同时换座位闸门的上界，
- * 并在进程级治理器上重新登记本 run 的上界（它抬本 run 用过的 key 的增长上限，
- * docs/dynamic-workflow/concurrency.md「The governor」）。治理器缺席即只有闸门。
+ * The handle handed to {@link WorkflowRunControl.bindSeatGate}: one retune raises the seat gate's bound and
+ // re-registers the run's bound on the process governor (raising the growth cap of the key this run uses,
+ // docs/dynamic-workflow/concurrency.md "The governor"). No governor means gate only.
  */
 export function runBoundTarget(
   seatGate: Pick<WorkflowRunSeatGate, "setLimit">,

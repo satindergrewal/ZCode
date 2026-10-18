@@ -31,9 +31,7 @@ export interface CreateMcpOAuthTokenProviderInput {
  * Never hand an OAuthClientProvider to the runtime transport: adaptOAuthProvider wraps it, 401 goes through
  * SDK handleOAuthUnauthorized -> auth(), bypassing the refresh lock; the concurrency bug returns immediately.
  */
-export function createMcpOAuthTokenProvider(
-  input: CreateMcpOAuthTokenProviderInput,
-): AuthProvider {
+export function createMcpOAuthTokenProvider(input: CreateMcpOAuthTokenProviderInput): AuthProvider {
   const refreshInput = {
     credentialStore: input.credentialStore,
     ...(input.fetchFn ? { fetchFn: input.fetchFn } : {}),

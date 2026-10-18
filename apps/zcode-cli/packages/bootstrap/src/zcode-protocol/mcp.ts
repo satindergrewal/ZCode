@@ -60,9 +60,9 @@ export async function listMcpServers(
   const explicitRuntimeMcp = protocolMcpServersToRuntimeMcpConfig(params.mcpServers);
   const configuredMcpServers = {
     ...pluginOutcome.mcpServers,
-        // The settings page's local MCP list is resolved by the desktop main's `.zcode` / `.agents` fallback,
-        // and the session runtime uses those params.mcpServers too. mcp/list can no longer rely on agent createConfig alone,
-        // or `.agents` fallback rows lack status snapshots and the UI marks them red.
+    // The settings page's local MCP list is resolved by the desktop main's `.zcode` / `.agents` fallback,
+    // and the session runtime uses those params.mcpServers too. mcp/list can no longer rely on agent createConfig alone,
+    // or `.agents` fallback rows lack status snapshots and the UI marks them red.
     ...(explicitMcpServersProvided
       ? (explicitRuntimeMcp?.servers ?? {})
       : configResult.config.mcp.servers),
@@ -71,13 +71,13 @@ export async function listMcpServers(
     configuredMcpServers,
     pluginOutcome.mcpServers,
   );
-    // Product decision: workspace MCP works out of the box -- project-scoped MCP is trusted by default and auto-connected.
+  // Product decision: workspace MCP works out of the box -- project-scoped MCP is trusted by default and auto-connected.
   const untrustedProjectMcpServers = new Set<string>();
   const mcpPort = context.deps.mcpPort;
   if (mcpPort) {
     if (params.mode === "status") {
-            // The OAuth poll only reads current runtime state. Passing a pending subset would hit
-            // connectConfiguredServers' replace semantics and disconnect unlisted MCP servers.
+      // The OAuth poll only reads current runtime state. Passing a pending subset would hit
+      // connectConfiguredServers' replace semantics and disconnect unlisted MCP servers.
       const statuses = await listMcpServerStatuses(
         mcpPort,
         configuredMcpServers,
@@ -86,11 +86,11 @@ export async function listMcpServers(
       return zcodeMcpListResultSchema.parse({ statuses });
     }
 
-        // The OAuth poll is isolated by mode=status; default/connect must still run the replace convergence,
-        // or any pending-auth server makes config add/remove and stale-MCP cleanup skip.
-        // default/connect serves re-probe flows such as the settings refresh, while mcpPort is the process-level
-        // `protocol-settings` lease; without revalidate the pool reuses the old entry and returns a stale snapshot,
-        // leaving stopped HTTP MCPs shown as connected forever (see adapters/src/mcp/pool.ts revalidateEntry).
+    // The OAuth poll is isolated by mode=status; default/connect must still run the replace convergence,
+    // or any pending-auth server makes config add/remove and stale-MCP cleanup skip.
+    // default/connect serves re-probe flows such as the settings refresh, while mcpPort is the process-level
+    // `protocol-settings` lease; without revalidate the pool reuses the old entry and returns a stale snapshot,
+    // leaving stopped HTTP MCPs shown as connected forever (see adapters/src/mcp/pool.ts revalidateEntry).
     const connectPromise = mcpPort.connectConfiguredServers(
       omitMcpServers(
         configuredMcpServers,

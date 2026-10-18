@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- skill 发现 + 校验 + 状态 + 通用目录管理在同一服务里聚合，分层后跳转成本更高 */
+/* eslint-disable max-lines -- skill discovery, validation, state, and general-dir management live in one service; splitting raises navigation cost */
 import {
   access,
   appendFile,
@@ -40,9 +40,9 @@ interface ParsedFrontmatter {
   name: string;
   description: string;
   body: string;
-  /** frontmatter 中出现过的顶层 key，保留给后续能力判断，不再作为 warning 暴露。 */
+  /** Top-level keys seen in frontmatter, kept for later capability checks; no longer surfaced as warnings. */
   keys: string[];
-  /** 严格 YAML 解析是否成功；失败时仍可能有 looseFields。 */
+  /** Whether strict YAML parsing succeeded; looseFields may still exist on failure. */
   parseOk: boolean;
 }
 
@@ -58,7 +58,7 @@ const ZCODE_PLUGIN_MANIFEST_PATH = join(".zcode-plugin", "plugin.json");
 const CLAUDE_PLUGIN_MANIFEST_PATH = join(".claude-plugin", "plugin.json");
 const CODEX_PLUGIN_MANIFEST_PATH = join(".codex-plugin", "plugin.json");
 
-/** 对齐 apps/zcode-cli/packages/adapters/src/skills/index.ts:19 */
+/** Mirrors apps/zcode-cli/packages/adapters/src/skills/index.ts:19 */
 const MAX_DESCRIPTION_LENGTH = 1024;
 function resolveUserHomeDir() {
   const envHome = process.env.HOME?.trim() || process.env.USERPROFILE?.trim();
@@ -69,22 +69,22 @@ interface SkillsServiceOptions {
   isDesktopRuntime?: boolean;
 }
 
-/** ZCode Agent 工作区级技能目录。 */
+/** ZCode Agent workspace-level skills dirs. */
 function getWorkspaceZcodeSkillRoot(workspacePath: string): string {
   return join(workspacePath, ".zcode", "skills");
 }
 
-/** 兼容目录: workspace 级 `.agents/skills`, 仅在同层 `.zcode/skills` 没读到技能时 fallback。 */
+/** Compat dir: workspace `.agents/skills`, used only when the sibling `.zcode/skills` yields none. */
 function getWorkspaceAgentsSkillRoot(workspacePath: string): string {
   return join(workspacePath, ".agents", "skills");
 }
 
-/** ZCode Agent 用户级技能目录。 */
+/** ZCode Agent user-level skills dirs. */
 function getUserZcodeSkillRoot(): string {
   return join(resolveUserHomeDir(), ".zcode", "skills");
 }
 
-/** 兼容目录: 用户级 `~/.agents/skills`。 */
+/** Compat dir: user-level ~/.agents/skills. */
 function getUserAgentsSkillRoot(): string {
   return join(resolveUserHomeDir(), ".agents", "skills");
 }
@@ -132,10 +132,10 @@ async function isUserAgentsSkillCoveredByZcode(params: {
 }
 
 /**
- * 从 workspacePath 向上走到 worktree 根（含 .git 标记），把每一层的
- * `.zcode/skills` 与 `.agents/skills` 都收集起来。
- * 对齐 apps/zcode-cli/packages/adapters/src/skills/roots.ts:60-72。
- * 找不到 .git 时退回 workspacePath 自身。
+ * Walk up from workspacePath to the worktree root (.git marker), collecting each level's
+ * .zcode/skills and .agents/skills.
+ * Mirrors apps/zcode-cli/packages/adapters/src/skills/roots.ts:60-72.
+ * Without .git, stop at workspacePath itself.
  */
 async function resolveAncestorWorkspaceRoots(workspacePath: string): Promise<string[]> {
   const worktreeRoot = await findWorktreeRoot(workspacePath);
@@ -154,9 +154,9 @@ async function resolveAncestorWorkspaceRoots(workspacePath: string): Promise<str
   }
   const roots: string[] = [];
   for (const dir of baseDirectories) {
-    // Agent runtime 会合并扫描两个 workspace skill 根。UI 之前把 `.agents`
-    // 当成 `.zcode` 的 fallback，导致同层 `.zcode` 只要有一个技能，`/`、`$` 和设置页
-    // 就会整根漏掉 `.agents` 技能，形成“模型可执行但 UI 无法引用”的发现语义分裂。
+    // The agent runtime scans both workspace skill roots merged. The UI used to treat .agents
+    // as a fallback for .zcode, so one skill in .zcode hid every .agents skill from /, $, and settings,
+    // splitting discovery into executable-but-unreferenceable.
     roots.push(getWorkspaceZcodeSkillRoot(dir));
     roots.push(getWorkspaceAgentsSkillRoot(dir));
   }
@@ -186,9 +186,9 @@ function normalizeScanRootPath(path: string): string {
 }
 
 /**
- * 去掉会被「已存在」的更深层扫描根完全覆盖的祖先目录。
- * 同一目录被不同路径形式扫到时，同一 SKILL.md 会因路径字符串不同重复出现。
- * 若子目录尚不存在，仍保留父目录以兼容非标准布局。
+ * Drops ancestors fully covered by deeper existing scan roots.
+ * The same dir reached via different path forms would list one SKILL.md twice.
+ * Keep the parent when the child is absent, tolerating non-standard layouts.
  */
 async function filterNestedScanRoots(paths: string[]): Promise<string[]> {
   const existing = new Set<string>();
@@ -256,7 +256,7 @@ function collectMentionedSkillNames(prompt: string): Set<string> {
 function escapeXmlAttribute(value: string): string {
   return value
     .replaceAll("&", "&amp;")
-    .replaceAll("\"", "&quot;")
+    .replaceAll('"', "&quot;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;");
 }
@@ -294,8 +294,8 @@ async function appendSkillsAuditLog(params: {
 }
 
 function readFrontmatter(content: string): ParsedFrontmatter {
-  // SKILL.md 可能来自 Windows 或其他工具链，换行符不一定是 \n。
-  // 先统一换行，再把 frontmatter 字段交给 YAML 解析，兼容多行 description。
+  // SKILL.md may come from Windows or other toolchains with non-\n line endings.
+  // Normalize newlines before YAML so multiline descriptions survive.
   const normalized = content.replace(/\r\n|\r/g, "\n");
   const frontmatterMatch = /^---\n([\s\S]*?)\n---(?:\n|$)/.exec(normalized);
   if (!frontmatterMatch) {
@@ -319,8 +319,8 @@ function readFrontmatter(content: string): ParsedFrontmatter {
   const looseFields = readLooseFrontmatterFields(frontmatterParts.metadataText);
   const looseKeys = extractLooseFrontmatterKeys(frontmatterParts.metadataText);
   if (hasYamlUnsafeLooseInlineField(frontmatterParts.metadataText)) {
-    // 历史中文 description 常写成未加引号的 `触发场景: ...`。
-    // `: ` 在 YAML plain scalar 中会被当成映射分隔符，严格解析只会报错；这里直接采用宽松读取结果，避免全量并发测试里反复进入失败解析路径。
+    // Legacy descriptions often use unquoted `key: value` prose.
+    // A bare colon reads as a mapping separator and strict parsing just errors; prefer the loose read so bulk concurrent tests never re-enter the failing path.
     return {
       hasFrontmatter: true,
       ...looseFields,
@@ -333,8 +333,8 @@ function readFrontmatter(content: string): ParsedFrontmatter {
   try {
     parsed = parseYaml(frontmatterParts.metadataText);
   } catch {
-    // 历史 skill 里存在 closing --- 前混入正文的非严格 YAML。
-    // YAML 解析失败时回退到宽松字段读取，避免中文 description 等已存在 metadata 丢失。
+    // Legacy skills mix body into pre---- non-strict YAML.
+    // On strict failure, fall back to loose field reads so existing metadata survives.
     return {
       hasFrontmatter: true,
       ...looseFields,
@@ -371,8 +371,8 @@ function splitFrontmatterAndLeakedBody(frontmatterText: string): {
   const leakedBodyStartIndex = lines.findIndex(
     (line, index) =>
       index > 0 &&
-      // 部分历史 skill 把正文标题写在 closing --- 之前。
-      // 遇到 Markdown 标题时，将这一段从 frontmatter 挪回 body，避免说明内容被解析阶段吞掉。
+      // Some legacy skills put body headings before the closing ---.
+      // Move heading-onward segments back to the body so prose survives parsing.
       /^#{1,6}\s+\S/.test(line),
   );
   if (leakedBodyStartIndex < 0) {
@@ -423,8 +423,8 @@ function readLooseFrontmatterFields(frontmatterText: string): {
 }
 
 /**
- * 只收集 frontmatter 顶层 key（缩进行视为子字段，跳过）。
- * 用来给 unknown-key 诊断与 YAML 解析失败时的回退提供 keys 列表。
+ * Collect frontmatter top-level keys only (indentation means child fields; skip).
+ * Feeds unknown-key diagnostics and the parse-failure fallback.
  */
 function extractLooseFrontmatterKeys(frontmatterText: string): string[] {
   const keys: string[] = [];
@@ -457,7 +457,7 @@ function hasYamlUnsafeLooseInlineField(frontmatterText: string): boolean {
     const rawValue = line.slice(colonIndex + 1).trim();
     if (
       rawValue.length === 0 ||
-      rawValue.startsWith("\"") ||
+      rawValue.startsWith('"') ||
       rawValue.startsWith("'") ||
       rawValue.startsWith("|") ||
       rawValue.startsWith(">")
@@ -511,7 +511,7 @@ async function readSkillMetadata(skillPath: string): Promise<SkillMetadata | und
     }
     return Object.keys(metadata).length > 0 ? metadata : undefined;
   } catch {
-    // _meta.json 是 skill 安装器的附加信息，损坏时不应影响 SKILL.md 本体展示。
+    // _meta.json is installer metadata; corruption must not hide the SKILL.md itself.
     return undefined;
   }
 }
@@ -564,11 +564,11 @@ async function writeSkillEnabledMap(next: Record<string, boolean>): Promise<void
   for (const [path, enable] of Object.entries(next).sort(([left], [right]) =>
     left.localeCompare(right),
   )) {
-    // 技能开关之前分散在 workspace/provider/context 状态文件，导致同一技能在不同入口表现不一致。
-    // 现在只按 SKILL.md 路径写入 CLI config 的 skills 字段，避免额外迁移或旧文件副作用。
+    // Skill toggles used to scatter across workspace/provider/context state, diverging per entry point.
+    // Now key CLI config skills by SKILL.md path, with no extra migration or legacy side effects.
     const normalizedPath = normalizeSkillConfigPath(path);
     if (enable) {
-      // 开启态是默认值，不应落盘成 `{ enable: true }`；删除 override 才能跟随插件/默认配置变化。
+      // Enabled is the default: never persist {enable:true}; delete the override to follow plugin/defaults.
       delete skillsConfig[normalizedPath];
     } else {
       skillsConfig[normalizedPath] = { enable };
@@ -804,9 +804,9 @@ async function resolvePluginSkillRootDescriptors(): Promise<SkillRootDescriptor[
       continue;
     }
     const pluginId = `${manifest.name}@${candidate.marketplace}`;
-    // 内置官方插件被「卸载」后只在 CLI config 写入 suppressedBuiltins；desktop 直接扫
-    // 官方 cache 时不经过 CLI resolve 的过滤，需要在这里同样跳过，否则被卸载的内置插件
-    // 仍会从 cache 贡献技能。
+    // Uninstalling builtin plugins only writes suppressedBuiltins in CLI config; the desktop scans
+    // the official cache without the CLI resolve filter, so suppressed builtins would
+    // still contribute skills from cache.
     if (
       candidate.marketplace === ZCODE_OFFICIAL_PLUGIN_MARKETPLACE &&
       config.suppressedBuiltins.includes(pluginId)
@@ -823,9 +823,9 @@ async function resolvePluginSkillRootDescriptors(): Promise<SkillRootDescriptor[
     if (!enabled) {
       continue;
     }
-    // agent runtime 已经从 plugin manifest 注入 skillRoots，但 UI 的 skillsService
-    // 之前只扫描内置官方 cache/手动目录，漏掉 marketplace installed_plugins.json 中的
-    // 个人来源市场（claude-plugins-official、自建市场等）插件，导致插件详情页只有技能数量、没有技能名。
+    // The agent runtime injects skillRoots from plugin manifests, but the UI skillsService
+    // scanned only the builtin cache and manual dirs, missing marketplaces in installed_plugins.json
+    // (claude-plugins-official, private markets), leaving plugin detail pages count-only.
     for (const rootPath of resolvePluginSkillRoots({ manifest, rootPath: candidate.rootPath })) {
       descriptors.push({
         scope: "plugin",
@@ -845,16 +845,14 @@ async function discoverSkills(params: {
   includeUserSkills: boolean;
   provider: ZCodeProvider;
 }): Promise<DiscoverResult> {
-  const workspaceRoots = dedupeRoots(
-    await resolveAncestorWorkspaceRoots(params.workspacePath),
-  );
+  const workspaceRoots = dedupeRoots(await resolveAncestorWorkspaceRoots(params.workspacePath));
   const roots: SkillRootDescriptor[] = workspaceRoots.map((rootPath) => ({
     scope: "workspace" as const,
     rootPath,
   }));
   if (params.includeUserSkills) {
-    // 用户级技能是全局资源，`.zcode/skills` 里只要存在一个技能就截断
-    // `.agents/skills` 会导致外部 Agent 的全局技能在导入后从设置页消失。
+    // User-level skills are global: truncating .agents/skills whenever .zcode/skills has one entry
+    // would hide imported external-agent skills in settings.
     roots.push({
       scope: "user" as const,
       rootPath: getUserZcodeSkillRoot(),
@@ -910,10 +908,7 @@ async function discoverSkills(params: {
         diagnostics.push({
           code: "skill_read_failed",
           severity: "warning",
-          message:
-            error instanceof Error
-              ? error.message
-              : `Failed to read skill: ${skillPath}`,
+          message: error instanceof Error ? error.message : `Failed to read skill: ${skillPath}`,
           path: skillPath,
         });
         continue;
@@ -921,8 +916,8 @@ async function discoverSkills(params: {
       const parsed = readFrontmatter(markdown);
       const skillFolderName = basename(dirname(skillPath));
 
-      // name 校验只要求非空；大小写/下划线等是其它 skill 生态的合法显示名，不应产出噪音诊断。
-      // 缺少 frontmatter 的手写 skill 不应显示不可操作的诊断；用目录名兜底，metadata 字段留空。
+      // Name validation is non-empty only; case/underscores are legal elsewhere and must not warn.
+      // Handwritten skills without frontmatter get no dead-end diagnostic: fall back to the dir name, blank metadata.
       const rawName = parsed.hasFrontmatter ? parsed.name.trim() : skillFolderName;
       const resolvedName = rawName || skillFolderName;
       if (!resolvedName) {
@@ -947,8 +942,8 @@ async function discoverSkills(params: {
         continue;
       }
 
-      // frontmatter 扩展字段通常来自不同 skill 生态的元信息。
-      // 这些字段不影响 ZCode 读取 name/description，继续报 warning 只会制造无操作价值的噪音。
+      // Extra frontmatter fields are usually foreign-ecosystem metadata.
+      // They never block name/description; more warnings would be unactionable noise.
 
       const body = parsed.body.trim();
       const metadata = await readSkillMetadata(skillPath);
@@ -962,11 +957,11 @@ async function discoverSkills(params: {
         name: resolvedName,
         description,
         body,
-        // SkillSummary.path 之前存的是技能目录，前端在生成 skill mention 链接时拿不到标准文件路径，
-        // 最终只能得到 `[$skill](.../skill-dir)` 这种不完整引用。这里直接返回 `SKILL.md` 文件路径，
-        // 让 UI、日志和后续技能跳转都能共享同一份标准定位信息。
+        // SkillSummary.path held the skill dir, so mention links lacked a canonical file path
+        // and degraded to [$skill](.../skill-dir). Return the SKILL.md path so UI, logs, and jumps
+        // share one canonical locator.
         path: canonicalSkillPath,
-        // 原始扫描路径（未 realpath）。软链技能删除时用它定位链接本体，避免误删目标目录。
+        // Raw scan path (pre-realpath): lets deletes target the link itself, not the target dir.
         sourcePath: skillPath,
         scope: root.scope,
         enabled: true,
@@ -993,18 +988,15 @@ async function collectSkillMarkdownPaths(
   rootPath: string,
   diagnostics: SkillDiagnostic[],
 ): Promise<string[]> {
-  // 复用共享的有界遍历：支持分组目录，但排除 node_modules 等内容目录、限制深度、对软链按 realpath 去重，
-  // 避免 Windows junction / 巨型依赖目录把单次扫描放大到数十秒。
+  // Reuse the shared bounded walk: grouped dirs yes, content-dir exclusion, depth cap, realpath dedupe for links,
+  // so junctions and huge dependency trees cannot stretch a scan to tens of seconds.
   const discovered = new Set<string>();
   for await (const skillPath of walkSkillMarkdownPaths(rootPath, {
     onError: (path, error) => {
       diagnostics.push({
         code: "skill_scan_failed",
         severity: "warning",
-        message:
-          error instanceof Error
-            ? error.message
-            : `Failed to scan skill directory: ${path}`,
+        message: error instanceof Error ? error.message : `Failed to scan skill directory: ${path}`,
         path,
       });
     },
@@ -1015,8 +1007,7 @@ async function collectSkillMarkdownPaths(
 }
 
 function resolveCapabilities(options?: SkillsServiceOptions): SkillsCapability {
-  const isDesktopRuntime =
-    options?.isDesktopRuntime ?? Boolean(process.env.ZCODE_PROCESS_LABEL);
+  const isDesktopRuntime = options?.isDesktopRuntime ?? Boolean(process.env.ZCODE_PROCESS_LABEL);
   if (isDesktopRuntime) {
     return { userScopeAvailable: true };
   }
@@ -1113,8 +1104,8 @@ export function createSkillsService(options?: SkillsServiceOptions): ISkillsServ
       }
 
       const activatedSkillNames = activatedSkills.map((skill) => skill.name);
-      // 技能目录是可见资源，但不能在每次 session 发送时全量注入。
-      // 只有用户在 prompt 中显式提到且当前启用的技能才进入上下文，避免技能状态从 UI 列表泄漏到 agent 核心 session。
+      // Skill dirs are visible resources but must not inject wholesale per send.
+      // Only explicitly mentioned, enabled skills enter context, keeping UI list state out of the core session.
       await appendSkillsAuditLog({
         workspacePath: params.workspacePath,
         workspaceIdentity: params.workspaceIdentity,
@@ -1131,7 +1122,7 @@ export function createSkillsService(options?: SkillsServiceOptions): ISkillsServ
       workspaceIdentity?: string;
       skillId: string;
     }): Promise<{ newPath: string }> {
-      // 从所有 provider 扫描结果中找目标 skill（list 已经扫过全量路径）
+      // Find the target among all provider scans (list already walked everything)
       const { skills } = await this.list({
         workspacePath: params.workspacePath,
         workspaceIdentity: params.workspaceIdentity,
@@ -1141,15 +1132,17 @@ export function createSkillsService(options?: SkillsServiceOptions): ISkillsServ
         throw new Error(`Skill not found: ${params.skillId}`);
       }
       const sourceDir = dirname(skill.path);
-      // 通用目录根据 skill 原 scope 确定 user 还是 workspace 级
+      // General-dir level follows the skill's original scope (user vs workspace)
       const commonRoot =
         skill.scope === "workspace"
           ? getWorkspaceZcodeSkillRoot(params.workspacePath)
           : getUserZcodeSkillRoot();
       const targetDir = join(commonRoot, basename(sourceDir));
-      // 不覆盖已有目录
+      // Never overwrite an existing dir
       if (await exists(targetDir)) {
-        throw new Error(`通用目录已存在同名技能: ${basename(sourceDir)}`);
+        throw new Error(
+          `A skill with this name already exists in the general dir: ${basename(sourceDir)}`,
+        );
       }
       await mkdir(commonRoot, { recursive: true });
       await cp(sourceDir, targetDir, { recursive: true });
@@ -1177,7 +1170,7 @@ export function createSkillsService(options?: SkillsServiceOptions): ISkillsServ
       const inUserCommon = normalizedPath.includes(`${userCommonRoot}/`);
       const inWorkspaceCommon = normalizedPath.includes(`${workspaceCommonRoot}/`);
       if (!inUserCommon && !inWorkspaceCommon) {
-        throw new Error("该技能不在通用目录中");
+        throw new Error("Skill is not in a general dir");
       }
       await rm(dirname(skill.path), { recursive: true, force: true });
     },
@@ -1195,52 +1188,49 @@ export function createSkillsService(options?: SkillsServiceOptions): ISkillsServ
       if (!skill) {
         throw new Error(`Skill not found: ${params.skillId}`);
       }
-      // plugin 作用域的技能由其所属插件管理，应通过卸载插件移除，这里拒绝单独删除。
+      // Plugin-scoped skills belong to their plugin; remove them by uninstalling. No standalone deletes.
       if (skill.scope === "plugin") {
-        throw new Error("插件提供的技能不可单独删除，请卸载对应插件");
+        throw new Error("Plugin-provided skills cannot be deleted directly; uninstall the plugin");
       }
 
-      // 用发现阶段命中的原始路径（sourcePath，未 realpath）定位技能目录项。
-      // 软链导入的技能 skill.path 是 realpath 后的目标文件，dirname 会指向目标目录；
-      // sourcePath 才指向 `~/.zcode/skills/<name>` 下的目录项本身。
+      // Locate the entry via the discovery-time raw path (sourcePath, pre-realpath).
+      // For symlinked imports skill.path is the realpathed target, so dirname aims at the target;
+      // sourcePath aims at the entry under ~/.zcode/skills/<name>.
       const skillDir = dirname(skill.sourcePath ?? skill.path);
       const skillLeafName = basename(skillDir);
-      // 只解析父目录，不解析叶子本身：
-      // - 叶子若是软链（正常导入场景），保持不解析，删除时才只删链接、不动目标；
-      // - 父目录 realpath 后，任何“软链/junction 祖先”都会被展开到真实位置，
-      //   随后越界校验就能拦住“经由祖先软链删到受控根之外”的数据丢失路径。
+      // Realpath the parent, never the leaf:
+      // a symlinked leaf stays unresolved so deletes remove the link, not the target;
+      // once the parent is realpathed, symlinked/junction ancestors expand to real locations
+      // and the containment check catches deletes escaping controlled roots through ancestors.
       const canonicalParent = await realpath(dirname(skillDir)).catch(() => null);
       if (!canonicalParent) {
-        throw new Error(`该技能不可删除: ${skill.path}`);
+        throw new Error(`Skill cannot be deleted: ${skill.path}`);
       }
 
-      // 安全护栏：删除是 `rm -rf` 目录的破坏性操作，仅允许命中受控技能根。
-      // 收集工作区各层级（沿 worktree 向上）的 .zcode/skills 与 .agents/skills，外加用户级两根。
+      // Guardrail: deletion rm -rf's directories, so only controlled skill roots qualify.
+      // Collect workspace-level .zcode/skills and .agents/skills up the worktree, plus both user roots.
       const allowedRootCandidates = await resolveAncestorWorkspaceRoots(params.workspacePath);
       allowedRootCandidates.push(getUserZcodeSkillRoot());
       allowedRootCandidates.push(getUserAgentsSkillRoot());
 
-      // 用 realpath 后的父目录与 realpath 后的根比较：父目录必须落在（或等于）某个受控根内。
-      // 两侧都 realpath，`/tmp`→`/private/tmp` 这类系统软链会在两侧抵消，不会误判越界。
+      // Compare realpathed parent against realpathed roots: the parent must sit inside (or equal) one.
+      // Realpathing both sides cancels system links (/tmp to /private/tmp), preventing false escapes.
       let contained = false;
       for (const root of allowedRootCandidates) {
         const canonicalRoot = await realpath(root).catch(() => root);
         const relativePath = relative(canonicalRoot, canonicalParent);
-        // 父目录等于根（叶子直接位于根下）也是合法的常见场景，故允许 "".
-        if (
-          relativePath === "" ||
-          (!relativePath.startsWith("..") && !isAbsolute(relativePath))
-        ) {
+        // An empty rel means the parent is the root itself; legal and common.
+        if (relativePath === "" || (!relativePath.startsWith("..") && !isAbsolute(relativePath))) {
           contained = true;
           break;
         }
       }
 
       if (!contained) {
-        throw new Error(`该技能不可删除: ${skill.path}`);
+        throw new Error(`Skill cannot be deleted: ${skill.path}`);
       }
-      // 删除 `<真实父目录>/<叶子名>`：父目录已是真实路径，不会经由祖先软链穿越；
-      // 叶子仍是原目录项，是软链就只删链接、是普通目录就整目录删除。
+      // Delete <realparent>/<leaf>: the parent is real, so no ancestor-symlink traversal;
+      // the leaf stays as-found: links unlink, plain dirs remove recursively.
       await rm(join(canonicalParent, skillLeafName), {
         recursive: true,
         force: true,
@@ -1249,7 +1239,7 @@ export function createSkillsService(options?: SkillsServiceOptions): ISkillsServ
   };
 }
 
-// 仅供测试/调试，便于在 vitest 里直接 fixture 出诊断结果。
+// Test/debug hook: lets vitest fixture diagnostics directly.
 export const __INTERNAL__ = {
   discoverSkills,
   readFrontmatter,

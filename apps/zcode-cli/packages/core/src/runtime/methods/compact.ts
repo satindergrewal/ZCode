@@ -244,7 +244,7 @@ export async function autoCompactIfNeeded(
     return "rapid_refill_blocked";
   }
 
-  // 跳过压缩时无需构建 listing 工具合同；读取失败仍向上抛出，不计入压缩失败。
+  // When compaction is skipped, no listing tool contract is built; read failures still propagate and never count as compaction failures.
   const agentListingTools = context.getAgentListingTools?.();
   this.logger?.info("Auto compact started", {
     ...traceContextToLogContext(turnTraceContext),

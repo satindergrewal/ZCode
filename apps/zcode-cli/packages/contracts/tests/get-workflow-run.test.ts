@@ -243,8 +243,23 @@ describe("GetWorkflowRun output schema", () => {
     const withPhases = {
       ...RUNNING,
       phases: [
-        { name: "collect", state: "done" as const, rounds: 1, nodesSettled: 2, nodesRunning: 0, enteredAt: 1, exitedAt: 2 },
-        { name: "judge", state: "current" as const, rounds: 1, nodesSettled: 3, nodesRunning: 2, enteredAt: 2 },
+        {
+          name: "collect",
+          state: "done" as const,
+          rounds: 1,
+          nodesSettled: 2,
+          nodesRunning: 0,
+          enteredAt: 1,
+          exitedAt: 2,
+        },
+        {
+          name: "judge",
+          state: "current" as const,
+          rounds: 1,
+          nodesSettled: 3,
+          nodesRunning: 2,
+          enteredAt: 2,
+        },
         { name: "verify", state: "ahead" as const, rounds: 0, nodesSettled: 0, nodesRunning: 0 },
       ],
     };
@@ -281,7 +296,12 @@ describe("GetWorkflowRun output schema", () => {
             toolCalls: 7,
             lastTool: { name: "Read", target: "packages/net/retry.spec.ts", at: 1_755_000_001_000 },
           },
-          wait: { cause: "backoff" as const, reason: "429", retryAfterMs: 20_000, since: 1_755_000_000_900 },
+          wait: {
+            cause: "backoff" as const,
+            reason: "429",
+            retryAfterMs: 20_000,
+            since: 1_755_000_000_900,
+          },
           parkedOn: "dwfq-1",
           stepsSettled: 2,
           stepsFailed: 1,
@@ -298,7 +318,9 @@ describe("GetWorkflowRun output schema", () => {
     }
     // 花名册恒在场，一个 actor 都没有的 run 是空数组（与 phases 的「无则缺席」刻意不同）。
     expect(GetWorkflowRunOutputSchema.parse({ ...RUNNING, subagents: [] }).subagents).toEqual([]);
-    expect(GetWorkflowRunOutputSchema.safeParse({ ...RUNNING, subagents: undefined }).success).toBe(false);
+    expect(GetWorkflowRunOutputSchema.safeParse({ ...RUNNING, subagents: undefined }).success).toBe(
+      false,
+    );
   });
 
   it("closes the subagent state and wait-cause enums", () => {
@@ -320,9 +342,18 @@ describe("GetWorkflowRun output schema", () => {
         subagents: Array.from({ length: 65 }, () => subagent),
       }).success,
     ).toBe(false);
-    const phase = { name: "p", state: "done" as const, rounds: 1, nodesSettled: 0, nodesRunning: 0 };
+    const phase = {
+      name: "p",
+      state: "done" as const,
+      rounds: 1,
+      nodesSettled: 0,
+      nodesRunning: 0,
+    };
     expect(
-      GetWorkflowRunOutputSchema.safeParse({ ...RUNNING, phases: Array.from({ length: 33 }, () => phase) }).success,
+      GetWorkflowRunOutputSchema.safeParse({
+        ...RUNNING,
+        phases: Array.from({ length: 33 }, () => phase),
+      }).success,
     ).toBe(false);
   });
 
@@ -354,7 +385,9 @@ describe("GetWorkflowRun output schema", () => {
   });
 
   it("marks a clamped roster with a literal-true flag only", () => {
-    expect(GetWorkflowRunOutputSchema.parse({ ...RUNNING, subagentsTruncated: true }).subagentsTruncated).toBe(true);
+    expect(
+      GetWorkflowRunOutputSchema.parse({ ...RUNNING, subagentsTruncated: true }).subagentsTruncated,
+    ).toBe(true);
     expect(
       GetWorkflowRunOutputSchema.safeParse({ ...RUNNING, subagentsTruncated: false }).success,
     ).toBe(false);
@@ -362,8 +395,12 @@ describe("GetWorkflowRun output schema", () => {
 
   // 摘要是 handler 拼出来的一句话，不是模型写的散文：上界拦住「又一份报告」。
   it("bounds the summary at 400 characters", () => {
-    expect(GetWorkflowRunOutputSchema.safeParse({ ...RUNNING, summary: "x".repeat(400) }).success).toBe(true);
-    expect(GetWorkflowRunOutputSchema.safeParse({ ...RUNNING, summary: "x".repeat(401) }).success).toBe(false);
+    expect(
+      GetWorkflowRunOutputSchema.safeParse({ ...RUNNING, summary: "x".repeat(400) }).success,
+    ).toBe(true);
+    expect(
+      GetWorkflowRunOutputSchema.safeParse({ ...RUNNING, summary: "x".repeat(401) }).success,
+    ).toBe(false);
   });
 
   it("carries the primary flag on a published artifact as a literal true only", () => {
@@ -376,8 +413,10 @@ describe("GetWorkflowRun output schema", () => {
     });
     // strict + literal: a non-deliverable is the absence of the key, never `false`.
     expect(
-      GetWorkflowRunOutputSchema.safeParse({ ...RUNNING, artifacts: [{ ...artifact, primary: false }] })
-        .success,
+      GetWorkflowRunOutputSchema.safeParse({
+        ...RUNNING,
+        artifacts: [{ ...artifact, primary: false }],
+      }).success,
     ).toBe(false);
   });
 

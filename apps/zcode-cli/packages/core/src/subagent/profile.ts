@@ -39,7 +39,7 @@ export function createBuiltInExploreAgentProfile(
 export function isBuiltInExploreAgentProfile(
   profile: Pick<AgentProfile, "name" | "source">,
 ): boolean {
-  // 用户/项目 profile 可以同名覆盖内置 Explore，不能只按名称套用内置行为。
+  // User/project profiles may shadow built-in Explore by name; built-in behavior must not be applied by name alone.
   return profile.name === EXPLORE_AGENT_TYPE && profile.source === "built-in";
 }
 
@@ -76,7 +76,7 @@ export function createBuiltInGeneralPurposeAgentProfile(
     name: DEFAULT_SUBAGENT_TYPE,
     description:
       "General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you.",
-    // 内置子智能体使用显式身份色，避免 UI 按名称 hash 后把 general-purpose 显示为红色。
+    // Built-in subagents use explicit identity colors so UI name-hashing cannot render general-purpose red.
     color: "blue",
     injectAgentsMd: true,
     ...(options.modelSelection ? { modelSelection: options.modelSelection } : {}),

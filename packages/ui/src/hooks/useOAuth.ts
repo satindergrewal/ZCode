@@ -54,7 +54,10 @@ export function useOAuth() {
         // The active provider is just the signed-in pointer; the service layer cleans up
         // OAuth credentials on decrypt failure. The provider list still works — never show
         // "no login methods".
-        logger.warn("[useOAuth] failed to load active provider credentials; treating as signed out:", err);
+        logger.warn(
+          "[useOAuth] failed to load active provider credentials; treating as signed out:",
+          err,
+        );
         setActiveProvider(null);
       }
     } catch (err) {

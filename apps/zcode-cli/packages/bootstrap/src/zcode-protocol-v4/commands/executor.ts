@@ -1,8 +1,8 @@
-// v4 命令原生执行器。
+// Native executor for v4 commands.
 //
-// 逐命令原生化的推进方式：handlers/ 注册表列出已原生的命令；binder 只在 supports
-// 命中时走本执行器，未命中回落旧桥（binder 侧回落，随每条命令原生化逐条消失）。
-// 完成定义：原生 handler + L2 闭环 + L3 e2e，且写路径不经旧协议代码。
+// Command-by-command nativization: the handlers/ registry lists natively handled commands; the binder routes
+// through this executor on a supports hit and falls back to the legacy bridge otherwise (that fallback shrinks as each command nativeizes).
+// Done means: native handler + L2 coverage + L3 e2e, with write paths never touching legacy protocol code.
 import type { CommandEnvelope, CommandResult } from "@zcode/shared/zcode-protocol-v4";
 import { NATIVE_HANDLERS } from "./handlers/index.js";
 import type { V4CommandCoreHost } from "./types.js";
@@ -21,7 +21,7 @@ export class V4SelectionSideChatRestrictedCommandError extends Error {
   readonly reasonCode = "guard.selectionSideChatRestrictedCommand";
 
   constructor(command: CommandEnvelope["type"]) {
-    super(`selection_side_chat 不允许执行 ${command}`);
+    super(`selection_side_chat does not allow executing ${command}`);
     this.name = "V4SelectionSideChatRestrictedCommandError";
   }
 }
@@ -31,7 +31,7 @@ export { V4SessionNotFoundError } from "./record-access.js";
 export class V4CommandExecutor {
   constructor(private readonly host: V4CommandCoreHost) {}
 
-  /** 已原生化的命令集（binder 据此分流；全部命中后旧桥整体删除）。 */
+  /** The nativized command set (the binder routes on it; once all hit, the legacy bridge is deleted). */
   supports(type: CommandEnvelope["type"]): boolean {
     return type in NATIVE_HANDLERS;
   }
@@ -67,7 +67,7 @@ export interface V4CommandAdmission {
 }
 
 export interface V4CommandExecutionContext {
-  /** 内部 auto-drain 必须在 reserve 前由 handler 原子校验 Core idle。 */
+  /** Internal auto-drain must have the handler atomically verify Core idle before reserve. */
   autoDrainPromotion?: true;
 }
 

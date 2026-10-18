@@ -45,11 +45,11 @@ export interface PersistHighspeedTimingInput {
   outputTokens?: number;
   durationMs?: number;
   /**
-   * live 投影中该 Turn 已产生的卡失效降级时刻。它只存在于 live 投影，终态持久化若不把它一并写入
-   * transcript，HighspeedMetricsUpdated 与 cold hydration 都会丢掉它（spec §5）。
+   * In the live projection, the moment this Turn's card expired into fallback. Lives only in the live projection; if terminal persistence omits it,
+   // both HighspeedMetricsUpdated and cold hydration lose it (spec 5).
    */
   fallbackAt?: number;
-  /** 与 fallbackAt 同源的降级原因；同一规则只增不删，缺省时冷恢复按卡过期文案处理。 */
+  /** Fallback reason, same source as fallbackAt; the rule set is add-only, absent reads as card-expiry copy on cold restore. */
   fallbackReason?: HighspeedMessageMetadata["fallbackReason"];
   traceId: string;
   now?: () => number;
@@ -58,8 +58,8 @@ export interface PersistHighspeedTimingInput {
 }
 
 /**
- * turn 终态由 CLI 自己把真实拆分落到 transcript，renderer 不在场也不会丢失耗时。
- * 该阶段不要求 healthy TPS；卡到期后 renderer/后续 CLI 流程再补齐卡级指标。
+ * The turn terminal state has the CLI itself persist the real split into the transcript, so elapsed time survives renderer absence.
+ // That stage does not require healthy TPS; card-level metrics are backfilled by renderer/later CLI flows after expiry.
  */
 export async function persistHighspeedTiming(input: PersistHighspeedTimingInput): Promise<void> {
   const sessionId = input.sessionId as SessionId;
@@ -84,7 +84,7 @@ export async function persistHighspeedTiming(input: PersistHighspeedTimingInput)
     ...(input.outputTokens !== undefined ? { outputTokens: input.outputTokens } : {}),
     ...(input.durationMs !== undefined ? { durationMs: input.durationMs } : {}),
     ...input.timing,
-    // 只增不删：transcript 已持久化的 fallbackAt 优先；缺失时才补写 live 投影的值。
+    // Add-only: a persisted transcript fallbackAt wins; the live projection's value fills only when absent.
     ...(current.data.fallbackAt === undefined && input.fallbackAt !== undefined
       ? { fallbackAt: input.fallbackAt }
       : {}),
@@ -129,7 +129,7 @@ export async function persistHighspeedTiming(input: PersistHighspeedTimingInput)
   }
 }
 
-/** transcript 是 Highspeed 完成态统计的持久权威；event 只推进 live/replayable 投影。 */
+/** The transcript is the durable authority for Highspeed terminal stats; events only advance the live/replayable projection. */
 export async function persistHighspeedMetrics(input: PersistHighspeedMetricsInput): Promise<void> {
   const sessionId = input.sessionId as SessionId;
   const messages = await input.sessionStore.messages({ sessionID: sessionId });

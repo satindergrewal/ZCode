@@ -53,7 +53,7 @@ export interface AskSite {
   id: string;
   order: number;
   label: string;
-    /** When label falls to the fallback string: the inline agent() receiver's template shape; see askLabelPattern. */
+  /** When label falls to the fallback string: the inline agent() receiver's template shape; see askLabelPattern. */
   labelPattern?: NamePattern;
   loc: ScriptLoc;
   /** The `x.ask(...)` call. */
@@ -68,7 +68,7 @@ export interface ActorSite {
   id: string;
   order: number;
   name: string | undefined;
-    /** Static shape when name is absent and the first arg is a template; see actorNamePattern. */
+  /** Static shape when name is absent and the first arg is a template; see actorNamePattern. */
   namePattern?: NamePattern;
   loc: ScriptLoc;
   /** The `agent(...)` call. */
@@ -118,8 +118,8 @@ export interface ReportSite {
  * An `artifact.*(...)` call site: one publish (`file` / `markdown`) or one preset
  * declaration (`chart` / `table` / `metrics` / `board`).
  *
-  * ⚠ Terminology: artifact here is the **user-facing deliverable** (output the script publishes to the user), not the same-named engine-internal
-  * notion (the top-level return value / a site's typed output; see analysis/artifact-types.ts).
+ * ⚠ Terminology: artifact here is the **user-facing deliverable** (output the script publishes to the user), not the same-named engine-internal
+ * notion (the top-level return value / a site's typed output; see analysis/artifact-types.ts).
  *
  * Like {@link ReportSite} it is **sited but drawn in neither graph**: a publish is a
  * deliverable, not a step other steps can wait for, so there is nothing an edge could
@@ -240,36 +240,38 @@ export interface IterationCandidate {
 
 /**
  * A `hole<T>(name, prompt?, body?)` call site: a typed gap the main agent fills with code
- * while the run waits at it (docs/dynamic-workflow/authoring.md「Holes」, docs/analysis.md
- * 「Sites」). Its id is the key of its NAME (`hole#<hash>`, hole-id.ts), the same at any
+ * while the run waits at it (docs/dynamic-workflow/authoring.md "Holes", docs/analysis.md
+ * "Sites"). Its id is the key of its NAME (`hole#<hash>`, hole-id.ts), the same at any
  * nesting depth, so every existing id stays unchanged when a fill inserts code; it consumes
  * the global `order` like every other site. A hole whose name is not a literal (9012) falls
  * back to a positional `hole#N`, which never reaches a run.
  *
- * 留白的函数体（`body`）在收集时以**全新的一套 per-kind 计数器**走查，体内铸出的 id 一律带
- * `<holeId>/` 前缀（见 {@link SiteCounters}）；体内的 `return` 不是顶层 return——它从留白
- * 返回。补全前后，体外的每个 id 逐字不变，这是活 run 能被补全的全部理由。
+ * A hole's body (`body`) is walked at collection time with a **brand-new set of per-kind
+ * counters**; every id minted inside carries the `<holeId>/` prefix (see {@link SiteCounters});
+ * a `return` inside the body is not a top-level return — it returns from the hole. Across a
+ * fill, every id outside the body stays verbatim; that is the whole reason a live run can be
+ * filled.
  */
 export interface HoleSite {
   id: string;
-  /** 包着这个留白的那个（已补全的）留白的 id；顶层留白没有。嵌套关系只记在这里，不在 id 里。 */
+  /** The id of the (filled) hole enclosing this one; absent for top-level holes. Nesting is recorded only here, never in the id. */
   fill?: string;
   order: number;
-  /** 留白名（也是它的阶段名）——只在首参是无洞字面量时设置。 */
+  /** The hole's name (also its phase name) — set only when the first argument is a hole-free literal. */
   name?: string;
-  /** 名字实参原样保留：9012 的诊断按它定位。 */
+  /** The name argument, kept raw: the 9012 diagnostics position on it. */
   nameExpr: ts.Expression | undefined;
-  /** 显式类型实参的源码文本（`hole<Plan>` 的 `Plan`）；缺席即 9012。 */
+  /** Source text of the explicit type argument (`Plan` of `hole<Plan>`); absent means 9012. */
   typeText?: string;
   typeArg?: ts.TypeNode;
-  /** 给主代理的提示（第二实参，非函数体时）；taint 趟把它当 sink。 */
+  /** The prompt for the main agent (second argument, when not the body); the taint pass reads it as a sink. */
   prompt?: ts.Expression;
-  /** 已补全的留白的函数体（最后一个实参的内联函数字面量）；开放的留白没有。 */
+  /** A filled hole's body (the inline function literal among the last arguments); an open hole has none. */
   body?: ts.ArrowFunction | ts.FunctionExpression;
   loc: ScriptLoc;
   /** The `hole(...)` call. */
   call: ts.CallExpression;
-  /** 调用是顶层 `return` 的（await 过的）操作数：脚本的结尾开着，run 的结果就是补全的返回值。 */
+  /** The call is the (awaited) operand of a top-level `return`: the script's ending is open, and the run's result is the fill's return value. */
   tail: boolean;
 }
 
@@ -319,8 +321,9 @@ export function collectSites(workflow: WorkflowProgram): SiteTable {
 
   const locOf = (node: ts.Node): ScriptLoc => toScriptLoc(node.getStart(scriptFile));
 
-  // `ids` 是当前作用域的 per-kind 计数器组：顶层一套，每个留白函数体一套新的（带前缀）。
-  // 返回值只在收到一个**带函数体的留白**时非空：walk 据此给函数体换计数器。
+  // `ids` is the current scope's per-kind counter set: one at the top level, a fresh
+  // (prefixed) set per hole body. The return value is non-empty only for a **hole with a
+  // body**: walk uses it to swap in body counters.
   const classify = (node: ts.Node, funcDepth: number, ids: SiteCounters): HoleSite | undefined => {
     if (ts.isReturnStatement(node)) {
       if (funcDepth === 0) {
@@ -353,9 +356,9 @@ export function collectSites(workflow: WorkflowProgram): SiteTable {
           });
           return;
         }
-                // Artifact members are decided before the world-read check; the two tables are disjoint (one container+member pair
-                // cannot be in both). Identity again comes from the **declaring container**, not the name: artifact.table vs the script's own
-                // table method is tellable only by the declaration.
+        // Artifact members are decided before the world-read check; the two tables are disjoint (one container+member pair
+        // cannot be in both). Identity again comes from the **declaring container**, not the name: artifact.table vs the script's own
+        // table method is tellable only by the declaration.
         const artifact = artifactRowOfSymbol(propSymbol);
         if (artifact !== undefined) {
           const idExpr = node.arguments[0];
@@ -428,7 +431,7 @@ export function collectSites(workflow: WorkflowProgram): SiteTable {
     const fn = siteProducingFunctionOfSymbol(calleeSymbol);
     if (fn === "agent") {
       const name = actorName(node);
-            // The pattern is computed only when no name is truly available: literal and bound names are **names**; reconstructions never override them.
+      // The pattern is computed only when no name is truly available: literal and bound names are **names**; reconstructions never override them.
       const namePattern = name === undefined ? actorNamePattern(node) : undefined;
       table.actors.push({
         call: node,
@@ -441,9 +444,9 @@ export function collectSites(workflow: WorkflowProgram): SiteTable {
       return;
     }
     if (fn === "report") {
-            // The second arg is the **artifact label**: only hole-free literals count;
-            // the rest (identifiers, holey templates) are left to the artifacts diagnostic pass via artifactIdExpr -- never
-            // guess an id here: that would let a report pointing at a nonexistent dashboard pass compile silently.
+      // The second arg is the **artifact label**: only hole-free literals count;
+      // the rest (identifiers, holey templates) are left to the artifacts diagnostic pass via artifactIdExpr -- never
+      // guess an id here: that would let a report pointing at a nonexistent dashboard pass compile silently.
       const tagExpr = node.arguments[1];
       const tag = literalText(tagExpr);
       table.reports.push({
@@ -458,9 +461,11 @@ export function collectSites(workflow: WorkflowProgram): SiteTable {
       return;
     }
     if (fn === "hole") {
-      // 留白（docs/analysis.md「Sites」的 Hole sites 段）：id 是名字键（hole-id.ts），占全局 order；
-      // 带函数体时交回给 walk，让函数体在一套**全新的、带前缀的**计数器下走查。名字不是字面量
-      // 时（9012，脚本提交不了）退回位置计数器，只为让诊断有个可定位的站点。
+      // A hole (docs/analysis.md "Sites", Hole sites): the id is the name key (hole-id.ts), and
+      // it takes the global order; with a body, hand the site back to walk so the body is walked
+      // under a **brand-new, prefixed** counter set. A non-literal name (9012, script
+      // unsubmittable) falls back to the positional counter, only so the diagnostic has a
+      // locatable site.
       const holeName = literalText(node.arguments[0]);
       const holeId = holeName === undefined ? ids.next("hole") : holeSiteId(holeName);
       const site = holeSiteOf(node, holeId, order++, locOf(node), funcDepth, ids.holeId);
@@ -489,7 +494,8 @@ export function collectSites(workflow: WorkflowProgram): SiteTable {
       walk(child, childDepth, hole !== undefined && child === hole.body ? ids.child(hole.id) : ids),
     );
   };
-  // 顶层一套计数器贯穿整个脚本体（每个语句都用同一套！）；留白函数体各自换一套带前缀的。
+  // One counter set spans the whole top-level script body (every statement shares it!); each
+  // hole body swaps to its own prefixed set.
   const topLevel = new SiteCounters();
   for (const statement of body.statements) walk(statement, 0, topLevel);
 

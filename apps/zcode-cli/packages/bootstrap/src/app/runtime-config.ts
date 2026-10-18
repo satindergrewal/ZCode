@@ -62,13 +62,13 @@ export function resolveAppRuntimeConfig(input: {
   } = input;
   const userInstructions = options.runtimeConfig?.userInstructions ?? { workingDirectory };
   const registrySelection = resolveInitialRegistrySelection(options);
-    // Restoring history is not starting execution: invalid/missing selections stay unbound, never backfilled from the configured default.
+  // Restoring history is not starting execution: invalid/missing selections stay unbound, never backfilled from the configured default.
   const initialModelSelection = options.resume
     ? registrySelection?.selection
     : (options.runtimeConfig?.modelSelection ?? registrySelection?.selection);
-    // A blank session is created first, then this submission's selection applies; forcing the initial default model
-    // would make users without a configured default fail at creation before any switch/send. An unbound Runtime is legal:
-    // actual execution is still validated by admission/ModelFactory against a complete selection -- never silently pick the first Registry entry here.
+  // A blank session is created first, then this submission's selection applies; forcing the initial default model
+  // would make users without a configured default fail at creation before any switch/send. An unbound Runtime is legal:
+  // actual execution is still validated by admission/ModelFactory against a complete selection -- never silently pick the first Registry entry here.
   const requestedTitleGeneration = options.runtimeConfig?.titleGeneration;
   const requestedTitleModelSelection = requestedTitleGeneration?.modelSelection;
   const titleGeneration =
@@ -76,21 +76,21 @@ export function resolveAppRuntimeConfig(input: {
       ? undefined
       : {
           ...requestedTitleGeneration,
-                    // The title-generation sidecar's default 15s times out easily on slow models/proxy chains;
-                    // the entry layer raises it to 60s so the legacy core default or an empty config cannot leave desktop on 15s.
+          // The title-generation sidecar's default 15s times out easily on slow models/proxy chains;
+          // the entry layer raises it to 60s so the legacy core default or an empty config cannot leave desktop on 15s.
           timeoutMs: requestedTitleGeneration.timeoutMs ?? 60_000,
-                    // Empty titleGeneration means default title generation is on, and its model must follow the session's current model.
-                    // Fixing another title model at draft-session creation would mean later switches update only the main path,
-                    // while the first-send generate-title sidecar keeps the pre-switch provider/model.
+          // Empty titleGeneration means default title generation is on, and its model must follow the session's current model.
+          // Fixing another title model at draft-session creation would mean later switches update only the main path,
+          // while the first-send generate-title sidecar keeps the pre-switch provider/model.
           ...(requestedTitleModelSelection
             ? {
                 modelSelection: requestedTitleModelSelection,
               }
             : {}),
         };
-    // mcp.servers from Protocol session/create carries only user config from the UI MCP settings,
-    // not MCP registered by plugins. The host builtin server merges last and keeps its identity, so users or third
-    // parties cannot hijack mcp__node_repl__* with a same-name config; plain plugin MCP still allows explicit user override.
+  // mcp.servers from Protocol session/create carries only user config from the UI MCP settings,
+  // not MCP registered by plugins. The host builtin server merges last and keeps its identity, so users or third
+  // parties cannot hijack mcp__node_repl__* with a same-name config; plain plugin MCP still allows explicit user override.
   const configuredMcpServers = {
     ...pluginMcpServers,
     ...(options.runtimeConfig?.mcp?.servers ?? configResult.config.mcp.servers),
@@ -102,12 +102,12 @@ export function resolveAppRuntimeConfig(input: {
   );
   const cuaBridgeServerNames = new Set(trustedOfficialCuaServerNames);
   if (pluginRuntimeFeatures?.computerUse === true && configuredMcpServers.node_repl) {
-        // node_repl needs broker injection but is not a CUA MCP server. Injection eligibility and the official CUA image
-        // authority must stay separate; cramming it into trustedOfficialCuaServerNames would push the whole
-        // generic node_repl result into the exact-raster gate, failing browser screenshots and console logs alike.
+    // node_repl needs broker injection but is not a CUA MCP server. Injection eligibility and the official CUA image
+    // authority must stay separate; cramming it into trustedOfficialCuaServerNames would push the whole
+    // generic node_repl result into the exact-raster gate, failing browser screenshots and console logs alike.
     cuaBridgeServerNames.add("node_repl");
   }
-    // Product decision: workspace MCP works out of the box -- project-scoped MCP is trusted by default and auto-connected.
+  // Product decision: workspace MCP works out of the box -- project-scoped MCP is trusted by default and auto-connected.
   const untrustedProjectMcpServers = new Set<string>();
   const autoConnectMcpServers = omitMcpServers(
     configuredMcpServers,
@@ -124,10 +124,10 @@ export function resolveAppRuntimeConfig(input: {
       resolveBashTimeoutPolicy(options.env ?? process.env),
     mode: options.runtimeConfig?.mode ?? persistedMode ?? configResult.config.permission.mode,
     modelSelection: initialModelSelection,
-        // Accept only explicitly passed session-level tool surfaces (ZCode Protocol session/create or CLI
-        // --allowed-tools/--disallowed-tools). Never fall back to config.permission.allowedTools:
-        // that key's established meaning is "approval-free list"; projecting it onto the registry surface would make users
-        // who listed a few allowedTools suddenly lose every other tool.
+    // Accept only explicitly passed session-level tool surfaces (ZCode Protocol session/create or CLI
+    // --allowed-tools/--disallowed-tools). Never fall back to config.permission.allowedTools:
+    // that key's established meaning is "approval-free list"; projecting it onto the registry surface would make users
+    // who listed a few allowedTools suddenly lose every other tool.
     toolAllowlist: options.runtimeConfig?.toolAllowlist,
     toolDisallowlist: options.runtimeConfig?.toolDisallowlist,
     embeddedSearchBackend:

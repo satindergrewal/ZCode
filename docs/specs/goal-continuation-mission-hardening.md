@@ -120,13 +120,13 @@ indistinguishable from a mysterious stop after the fact.
 
 ## State Owners
 
-| State | Single Owner |
-| ----- | ------------ |
-| Continuation decision + streaks/counters | `runActiveTargetContinuationLoop` in `apps/zcode-cli/packages/core/src/runtime/methods/target-continuation-loop.ts` |
-| Outcome classification (executed / completed / deferred-background / verifier-failed / skipped) | `executeTargetContinuationWithOutcome` in `methods/target.ts` |
-| Goal-pause suppression flag | `suppressGoalPauseOnCancel` on `ActiveForegroundExecutionState`, set by `stopActiveForegroundExecution` |
-| Verifier contract text | `formatGoalCompletionVerificationPrompt` + `formatGoalContinuationPrompt` in `apps/zcode-cli/packages/contracts/src/tools/target.ts` |
-| Tunables | `AgentRuntimeConfig.targetCompletionVerification.{maxFailureContinuations, requiredCompletionConfirmations, backgroundDeferralTimeoutMs}` and `missionContinuation.{enabled, idleContinuationCap}` in `runtime/types.ts` |
+| State                                                                                           | Single Owner                                                                                                                                                                                                             |
+| ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Continuation decision + streaks/counters                                                        | `runActiveTargetContinuationLoop` in `apps/zcode-cli/packages/core/src/runtime/methods/target-continuation-loop.ts`                                                                                                      |
+| Outcome classification (executed / completed / deferred-background / verifier-failed / skipped) | `executeTargetContinuationWithOutcome` in `methods/target.ts`                                                                                                                                                            |
+| Goal-pause suppression flag                                                                     | `suppressGoalPauseOnCancel` on `ActiveForegroundExecutionState`, set by `stopActiveForegroundExecution`                                                                                                                  |
+| Verifier contract text                                                                          | `formatGoalCompletionVerificationPrompt` + `formatGoalContinuationPrompt` in `apps/zcode-cli/packages/contracts/src/tools/target.ts`                                                                                     |
+| Tunables                                                                                        | `AgentRuntimeConfig.targetCompletionVerification.{maxFailureContinuations, requiredCompletionConfirmations, backgroundDeferralTimeoutMs}` and `missionContinuation.{enabled, idleContinuationCap}` in `runtime/types.ts` |
 
 ## Interfaces
 

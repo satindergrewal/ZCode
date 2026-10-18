@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- subagent runtime wiring 集中衔接 child runtime、tool pool、权限、MCP 与 activity watchdog，拆分需单独迁移。 */
+/* eslint-disable max-lines -- subagent runtime wiring ties child runtime, tool pool, permissions, MCP and the activity watchdog together; splitting needs its own migration. */
 import {
   RESPOND_TO_COORDINATOR_TOOL_NAME,
   SESSION_ENTRY_MODEL_SELECTION,
@@ -111,7 +111,7 @@ export function createDefaultSubagentPort(
       });
       const modelOverride = options?.modelOverride;
       const inheritedModel = !modelOverride && !hasConcreteModel ? options?.model : undefined;
-      // Core Server override 优先于持久化 profile 与父模型继承，但仍只是标准 Selection。
+      // A Core Server override outranks persisted profiles and parent-model inheritance, but is still just a standard Selection.
       const childSelection = inheritedModel
         ? modelSelectionFromActiveModel(inheritedModel)
         : profileChildSelection;
@@ -142,8 +142,8 @@ export function createDefaultSubagentPort(
         traceContext: request.traceContext,
         workspaceRoot: request.workspaceRoot,
       });
-      // 空 agent prompt 不是一个语义段；先硬拼 `\n\n` 会把缺失段的边界
-      // 泄漏到 persistent Memory 开头。这里只组合非空正文，block 左边界由 builder 统一添加。
+      // An empty agent prompt is not a semantic segment; hard-joining \n\n would leak the missing
+      // segment boundary into persistent Memory's head. Compose non-empty bodies only; block edges are the builder's job.
       const agentPrompt = [baseAgentPrompt, persistentMemory?.prompt]
         .filter((part): part is string => typeof part === "string" && part.length > 0)
         .join("\n\n");
@@ -209,8 +209,8 @@ export function createDefaultSubagentPort(
           ? childModel
           : baseChildModelFactory(target);
       const parentToolCallId = traceStringAttribute(request.traceContext, "parentToolCallId");
-      // 对外交互端口（permission broker + provider runtime headers）：与 dwf actor、legacy
-      // workflow child 共用同一条派生，路由身份统一落到本 runtime 的会话。
+      // Outward interaction ports (permission broker + provider runtime headers): one derivation shared with dwf actors and legacy
+      // workflow children; routing identity lands on this runtime's session.
       const childClientPorts = deriveChildClientPorts(
         {
           permissionBroker: this.permissionBroker,
@@ -230,9 +230,9 @@ export function createDefaultSubagentPort(
             : { parentTurnId: request.traceContext.turnId }),
         },
       );
-      // Browser Use：子代理与当前对话共用 tab（tabOwner: "parent"），用户能在面板里看到它开的 tab，
-      // 它也能看到对话里已有的 tab；workspace / clientMode 经 forChildSession 登记回父会话解析。
-      // 子代理结束只撤销登记，不关 tab。端口没有 forChildSession（CLI headless）时退回子会话自己的 scope。
+      // Browser Use: the subagent shares tabs with the conversation (tabOwner: "parent") so the user sees its tabs in the panel
+      // and it sees the conversation's; workspace/clientMode register back through forChildSession for parent-side resolution.
+      // Subagent end only deregisters, never closes tabs. Without forChildSession (CLI headless) fall back to the child session's own scope.
       const childBrowserControlPort =
         this.browserControlPort?.forChildSession?.({
           childSessionId: request.sessionId,
@@ -254,27 +254,27 @@ export function createDefaultSubagentPort(
       const childRuntime = new AgentRuntime(
         request.sessionId,
         {
-          // 旧 plan 枚举不包含基础权限；拆分后继承完整状态，避免被构造器回退成 build。
+          // The legacy plan enum lacks the base permission; inherit the full state post-split so the constructor cannot fall back to build.
           mode: childMode === "plan" ? this.config.mode : childMode,
           planEnabled: childMode === "plan",
-          // 模型选择的影响不只在最终 request.model：MCS、内建搜索与 token/media 预算会在
-          // child runtime 内按 default model 预先塑形。同步 child 因此必须把整套执行
-          // 配置都指向父 turn 快照；runner 禁止它转后台，provider registry 则由父 turn
-          // finally 清理，快照不会成为可恢复的 session 配置。
+          // Model choice reaches beyond request.model: MCS, builtin search and token/media budgets pre-shape inside the
+          // child runtime by default model. A synchronous child must point its whole execution
+          // config at the parent turn's snapshot; the runner may not background it, and the provider registry is cleaned in the parent turn's
+          // finally, so the snapshot never becomes restorable session config.
           modelSelection: cloneModelSelection(childSelection),
           modelContextBudgetStrategy: this.config.modelContextBudgetStrategy,
           workingDirectory: request.workingDirectory,
-          // 执行模型只由 child Active Model 投影进 Context；envInfo 不保存第二份模型事实。
+          // The execution model reaches Context only via the child Active Model; envInfo keeps no second copy of model facts.
           envInfo: childRuntimeEnvInfo,
-          // Explore 子运行时之前没有继承主会话的流式配置，Protocol 桌面端虽已默认
-          // 开启 modelStreaming，子请求仍会退回 generateText。部分 OpenAI-compatible 端点在
-          // 非流式请求里也返回 SSE `data:` 帧，generateText 会按普通 JSON 解析并报
-          // Invalid JSON response；继承父配置可让子 agent 与主链路走同一 streamText 语义。
+          // Explore child runtimes never inherited the main session's streaming config: Protocol desktop defaults
+          // modelStreaming on, yet child requests fell back to generateText. Some OpenAI-compatible endpoints return SSE data: frames on
+          // non-streaming too, which generateText parses as plain JSON and reports
+          // Invalid JSON response; inheriting the parent config puts the child on the same streamText semantics as the main line.
           modelStreaming: this.config.modelStreaming,
           bashTimeoutPolicy: this.config.bashTimeoutPolicy,
           midConversationSystem: this.config.midConversationSystem,
           bashShellSelection,
-          // child 只复用父 runtime 已解析的 instructions snapshot；Project Context 仍不继承。
+          // The child reuses only the parent runtime's resolved instructions snapshot; Project Context is not inherited.
           currentDate: this.contextSourceSnapshot?.currentDate ?? this.config.currentDate,
           subagentContext: {
             agentPrompt: agentPrompt ?? "",
@@ -284,19 +284,19 @@ export function createDefaultSubagentPort(
           maxTurns: request.maxTurns ?? this.config.subagents?.maxTurns ?? 4,
           parentSessionId: this.sessionId,
           taskType: "subagent_child",
-          // 动态工作流灰度门必须结构性继承：
-          // 父会话关着而子代理开着，等于 Agent 工具变成绕过灰度的后门。默认路径（child 继承
-          // 父 registry 可见的工具名）本来就够，但**自定义 agent profile 显式写
-          // `allowedTools: ["CreateWorkflow"]` 时会跳过那次交集**，只剩这一道能挡住。
+          // The dynamic-workflow rollout gate must inherit structurally:
+          // parent off + child on turns the Agent tool into a rollout-bypass backdoor. The default path (child inherits the parent registry's
+          // visible tool names) suffices, but a CUSTOM agent profile writing explicit
+          // allowedTools: ["CreateWorkflow"] skips that intersection; this is the only remaining gate.
           dynamicWorkflowEnabled: this.config.dynamicWorkflowEnabled,
-          // launch.md「On demand: activation」Children 段：子代理继承父会话**此刻**的工具面——
-          // 父未激活则子也按需（子会话里没有 `/workflow` 入口，实际等于没有工作流工具）；
-          // 父已激活则子出生即注册。
+          // launch.md "On demand: activation", Children: a subagent inherits the parent's CURRENT tool surface --
+          // parent unactivated -> child on-demand too (no /workflow entry in the child session; effectively no workflow tools);
+          // parent activated -> child born registered.
           dynamicWorkflowToolsOnDemand:
             this.config.dynamicWorkflowToolsOnDemand === true &&
             !this.dynamicWorkflowToolsActivated,
-          // 修复原因：默认 subagent 已从 Explore 调整为 general-purpose。
-          // toolset 不能再依赖 DEFAULT_SUBAGENT_TYPE，否则默认通用 agent 会被误降级为只读搜索工具面。
+          // Fix rationale: the default subagent moved from Explore to general-purpose.
+          // The toolset must not key off DEFAULT_SUBAGENT_TYPE, or the default general agent would downgrade to the read-only search toolset.
           toolset: builtInExplore ? "explore" : "main",
           toolAllowlist: childToolAllowlist,
           toolDisallowlist: this.config.toolDisallowlist,
@@ -311,20 +311,20 @@ export function createDefaultSubagentPort(
         {
           agentTelemetry: this.agentTelemetry.port,
           agentTelemetryCausation: this.agentTelemetry.captureCausation(),
-          // 前台 child 的生命周期被父 Agent Tool await，使用真实父子 Span；后台 child
-          // 可能晚于父 Tool/Turn 结束，只能作为独立 Trace 用 Link 保留因果关系。
+          // A foreground child's lifetime is awaited by the parent Agent tool: real parent/child spans. A background child
+          // may outlive the parent Tool/Turn: keep causality as an independent Trace via Link.
           agentTelemetryCausationMode: request.background ? "linked_root" : "child",
           eventStore: this.eventStore,
           sessionStore: deps.sessionStore,
-          // 子 runtime 继承父的模型请求准入端口：subagent 的请求 provider 同样看得见，
-          // 它们该与父一样喂治理器信号（父是 observer 则子也是 observer）。
+          // The child runtime inherits the parent's model-request admission port: the subagent's request providers are equally visible and
+          // must feed governor signals like the parent (parent observer -> child observer).
           modelRequestAdmission: this.modelRequestAdmission,
           modelFactory: childModelFactory,
           resolveEffectiveModelSelection: deps.resolveEffectiveModelSelection,
-          // 子 runtime 自己仍使用 request.sessionId 做事件持久化和 trace 归档；对外阻塞交互
-          // （permission / AskUserQuestion / provider runtime headers）一律路由回父 session——
-          // 桌面 UI 只认识父 task 的 sessionId。派生收敛在 deriveChildClientPorts 一处，
-          // dwf actor 与 legacy workflow child 走同一条。
+          // The child runtime still uses request.sessionId for event persistence and trace filing; blocking interactions
+          // (permission / AskUserQuestion / provider runtime headers) route to the parent session --
+          // the desktop UI only knows the parent task's sessionId. Derivation converges in deriveChildClientPorts;
+          // dwf actors and legacy workflow children share the road.
           ...childClientPorts,
           ...(childBrowserControlPort === undefined
             ? {}
@@ -336,15 +336,15 @@ export function createDefaultSubagentPort(
             parentToolCallId,
             enqueue: (input) => this.enqueueSubagentMessage(input),
           }),
-          // Explore 使用独立只读权限配置；general-purpose 和自定义 agent 继承父权限服务。
+          // Explore uses its own read-only permission config; general-purpose and custom agents inherit the parent permission service.
           permissionService: builtInExplore
             ? new PermissionService(defaultPermissionConfig)
             : this.permissionService,
           toolScheduler: deps.toolScheduler ?? defaultScheduler,
           executionPort: deps.executionPort,
           fileSystemPort: deps.fileSystemPort,
-          // Explore 子运行时会暴露 WebFetch，但之前没有继承主 runtime 的
-          // HTTP client port，导致工具在真正发请求前抛出配置错误，而不是网络请求失败。
+          // Explore child runtimes expose WebFetch but never inherited the main runtime's
+          // HTTP client port, so the tool threw a config error before any request instead of a network failure.
           httpClientPort: deps.httpClientPort,
           imageProcessorPort: deps.imageProcessorPort,
           pdfDocumentPort: deps.pdfDocumentPort,
@@ -356,11 +356,10 @@ export function createDefaultSubagentPort(
           eventSink: {
             onSessionEvent: async (event) => {
               request.reportActivity?.();
-              // child runtime 的事件已经按 childSessionId 落库，但旧链路只把
-              // 少量工具事件镜像给 parent sink，导致 UI 订阅 child topic 后只能拿到打开时
-              // 的 hydration，后续流式内容不会更新。raw child event 只通知父 runtime 的
-              // 外部 sinks，不再次 append，因此不会重复持久化；bootstrap 再按 event.sessionId
-              // 把它路由到 child publisher。
+              // Child events already persist under childSessionId, but the legacy path mirrored only a few tool
+              // events to the parent sink: subscribing to the child topic yielded only opening-time hydration, no live updates. Raw child events merely
+              // notify the parent runtime's external sinks without re-appending, so nothing double-persists; bootstrap routes
+              // by event.sessionId into the child publisher.
               await this.notifyEventSinks(event, {
                 ...request.traceContext,
                 sessionId: request.sessionId,
@@ -378,8 +377,8 @@ export function createDefaultSubagentPort(
               });
               if (!mirroredEvent) return;
 
-              // parent mirror 保留原语义：父会话只看到 subagent 摘要/工具活动，raw child
-              // 正文不会污染父 timeline。
+              // The parent mirror keeps its semantics: the parent sees subagent summaries/tool activity only; raw child
+              // bodies never pollute the parent timeline.
               await this.notifyEventSinks(mirroredEvent, {
                 ...request.traceContext,
                 sessionId: this.sessionId,
@@ -397,7 +396,7 @@ export function createDefaultSubagentPort(
         const persistedMessages = await this.sessionStore?.messages({
           sessionID: request.sessionId,
         });
-        // terminal resume 只恢复已有历史；模型初始化前失败不能变成一次空 session 创建。
+        // Terminal resume restores existing history only; a pre-model-init failure must not become an empty session creation.
         if (!persistedMessages?.length) {
           throw createCoreError(
             CoreErrorType.SessionNotFound,
@@ -414,14 +413,14 @@ export function createDefaultSubagentPort(
           persistedMessages,
           traceContext: request.traceContext,
         });
-        // 恢复只导入历史；本轮 profile 选出的模型仍是执行权威，并更新冷恢复所用的选择记录。
+        // Recovery imports history only; the profile-chosen model stays the execution authority and updates the cold-recovery selection record.
         await persistRuntimeModelSelection(
           childRuntime as unknown as AgentRuntimeInternal,
           childSelection,
         );
       } else {
-        // 父会话过去先发布 SubagentSpawned，child 的首轮 executeTurn 才落库。
-        // 并发派生时目录查询会在两者之间读到少一个 child。这里把持久化提升为发布前闸门。
+        // The parent used to publish SubagentSpawned before the child's first executeTurn persisted.
+        // Concurrent derivation would read the catalog one child short in between; persistence is now the pre-publish gate.
         await childRuntime.ensureSessionPersistedForExternalActivity(request.prompt, {
           traceContext: request.traceContext,
         });
@@ -431,7 +430,7 @@ export function createDefaultSubagentPort(
         !resumesExistingChild ||
         (previousSelection && !sameModelSelection(previousSelection, childSelection))
       ) {
-        // 同模型恢复不重复插入分隔线；配置变化复用现有事件和 transcript 记录。
+        // Same-model resumes do not re-insert the divider; config changes reuse the existing event and transcript record.
         childRuntime.recordPendingModelChange({
           ...(previousSelection
             ? {
@@ -453,8 +452,8 @@ export function createDefaultSubagentPort(
       try {
         return await childRuntime.executeTurn(request.prompt, undefined, {
           abortSignal: options?.signal,
-          // 子 Runtime 的首轮输入来自父 Agent，而不是真实用户直接输入；保留源事实，避免
-          // Subagent Turn 在 Trace 和成功率报表里被误归类为 user。
+          // A child Runtime's first input comes from the parent Agent, not a real user; keep the source fact so the
+          // Subagent Turn is not misclassified as user in Trace and success-rate reports.
           inputSource: "subagent",
           inputPresentation: "coordinator_input",
           traceContext: request.traceContext,
@@ -503,8 +502,8 @@ export function createInheritedSubagentModelFactory(
       target.selection.modelId === inheritedSelection.modelId &&
       target.selection.options?.reasoningLevel === inheritedSelection.options?.reasoningLevel
     ) {
-      // Selection 保持显式意图的稀疏形态；不能拿它和 Active Model 的完整 effective
-      // options 比较，否则默认值必然导致复用失败并让 child 重新解释可变 Registry。
+      // Keep Selection's explicit-intent sparse shape; comparing it with Active Model's full effective
+      // options would fail reuse on defaults and make the child re-interpret the mutable Registry.
       return inheritedModel;
     }
     return fallbackFactory(target);
@@ -574,8 +573,8 @@ function resolveSubagentToolAllowlist(
     );
     const availableToolNames = [
       ...this.getTools()
-        // child MCP 必须与 parent 启动 snapshot 使用同一批 descriptor，
-        // 不能从另一份 registry 视图重新推导。
+        // Child MCP must use the same descriptors as the parent's startup snapshot,
+        // never re-derived from another registry view.
         .filter((tool) => tool.permission?.permission !== "mcp")
         .map((tool) => tool.name),
       ...parentAllowedMcpToolNames,
@@ -612,7 +611,7 @@ function appendCoordinatorResponseTool(toolNames: readonly string[]): readonly s
     return toolNames;
   }
 
-  // child 控制通道不受 profile 工具列表约束；全局 toolDisallowlist 仍在 runtime 注册边界生效。
+  // The child control channel is not bound by profile tool lists; the global toolDisallowlist still applies at the runtime registration boundary.
   return [...toolNames, RESPOND_TO_COORDINATOR_TOOL_NAME];
 }
 
@@ -647,7 +646,7 @@ async function resolveSubagentMcpAccess(
     };
   }
 
-  // child 不拥有连接生命周期，只能复用 parent constructor 已创建的启动快照。
+  // The child owns no connection lifecycle; reuse the startup snapshot the parent constructor built.
   const parentStartupSnapshot = await this.mcpStartupPromise;
   if (!parentStartupSnapshot) {
     if (scopedServerNames) {
@@ -894,8 +893,8 @@ class FilteredSkillPort implements SkillPort {
         },
       );
     }
-    // 可见 skills 列表会把 plugin skill 展示为 qualified name，并声明 bare alias 也可加载。
-    // 子 agent 按 bare alias 调用时，先绑定回过滤后的 metadata，避免父端按全局同名 skill 误加载。
+    // The visible-skills list shows plugin skills as qualified names and states bare aliases also load.
+    // When the child calls by bare alias, bind back to the filtered metadata first, so the parent does not load a global same-name skill.
     return matches[0]?.qualifiedName ?? matches[0]?.name;
   }
 }

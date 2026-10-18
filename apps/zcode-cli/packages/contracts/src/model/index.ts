@@ -33,14 +33,17 @@ export const ModelRequestSessionType = {
 } as const;
 
 /**
- * 模型请求的重试预算档位（runtime-only）。
- * - `default`：adapter 构造时解析出的 maxAttempts（默认 10 次重试）。
- * - `unbounded`：**瞬态**失败无上限重试（退避曲线不变、封顶 60s 后无限探测），永久失败照旧立即抛。
- *   给 workflow actor（taskType workflow_child / nested_workflow_child）使用：模型错误绝不是
- *   workflow 错误，唯一出口是用户 cancel。
- * - `single-attempt`：本次请求 maxAttempts 收敛为 1，瞬态失败也不重试、首次失败即上抛。
- *   给带 selectionFallback 声明的执行作用域 Selection（如 Highspeed 加速卡）使用：失败后由 core
- *   退回会话模型继续本轮，适配层再按默认 10 次退避重试只会把降级拖到数分钟之后。
+ * Retry budget tiers of a model request (runtime-only).
+ * - `default`: maxAttempts resolved at adapter construction (10 retries by default).
+ * - `unbounded`: **transient** failures retry without cap (same backoff curve, probing forever
+ *   after the 60s ceiling); permanent failures still throw immediately. For workflow actors
+ *   (taskType workflow_child / nested_workflow_child): a model error is never a workflow error;
+ *   the only exit is user cancel.
+ * - `single-attempt`: this request's maxAttempts collapses to 1; even transient failures do not
+ *   retry - first failure throws. For execution-scope Selections carrying a selectionFallback
+ *   declaration (e.g. the Highspeed card): on failure core falls back to the session model for
+ *   the turn, and the adapter's default 10-retry backoff would only postpone the downgrade by
+ *   minutes.
  */
 export const ModelRetryBudget = {
   Default: "default",
@@ -51,33 +54,38 @@ export const ModelRetryBudget = {
 export type ModelRetryBudget = (typeof ModelRetryBudget)[keyof typeof ModelRetryBudget];
 
 /**
- * 一次模型请求尝试的准入票据（runtime-only）。
+ * Admission ticket of one model-request attempt (runtime-only).
  *
- * 它同时是**这一次尝试**的状态事件汇：runner 把该尝试的 ModelNetworkStatus 事件
- * （`model_request_started` / `model_request_completed` / `model_request_failed` /
- * `model_retry_scheduled`）原样也投递给它，治理器据此判定这次请求的结果（成功 / 限流 / 瞬态失败 /
- * 终结），不需要 runner 在每个失败分支上另写一遍结果。`release()` 是兜底：尝试无论如何结束（成功、
- * 抛出、消费者提前放弃流）runner 都在 finally 里调一次；未见终结事件即按终结处理。**幂等**。
+ * It is also the status-event sink of **this attempt**: the runner feeds the attempt's
+ * ModelNetworkStatus events (`model_request_started` / `model_request_completed` /
+ * `model_request_failed` / `model_retry_scheduled`) straight into it, and the governor decides
+ * the request's outcome (success / throttled / transient failure / terminal) from them, so the
+ * runner need not restate the outcome on every failure branch. `release()` is the backstop:
+ * however the attempt ends (success, throw, consumer abandoning the stream) the runner calls it
+ * once in finally; no terminal event means treated as terminal. **Idempotent**.
  */
 export interface ModelRequestAdmissionTicket extends ModelStatusSink {
   release(): void;
 }
 
 /**
- * 模型请求的准入端口（runtime-only）。runner 在**每一次尝试发出前**先试同步快路径
- * `tryAcquire`，未命中再 `acquire` 排队；拿到票据后才发请求；尝试结束即 `release`，退避 sleep 期间
- * 不持票——所以进程级并发 cap 约束的是 provider 真正看到的在飞请求数。`signal` 被 abort 时
- * `acquire` 以 `signal.reason` reject。
+ * Admission port for model requests (runtime-only). Before **every attempt** the runner tries the
+ * synchronous fast path `tryAcquire`, and on miss queues via `acquire`; the request goes out only
+ * once the ticket is held; `release` as soon as the attempt ends - no ticket during backoff
+ * sleeps - so the process-level concurrency caps what the provider actually sees in flight. When
+ * `signal` aborts, `acquire` rejects with `signal.reason`.
  *
- * `tryAcquire` 未命中是 runner 发 `model_request_queued` / `model_request_admitted` 的唯一依据
- * 没有快路径的实现 runner 无法分辨「排了队」与「立即放行」，一律不发这两条事件。
+ * A `tryAcquire` miss is the runner's only basis for emitting `model_request_queued` /
+ * `model_request_admitted`: without a fast path the runner cannot tell "queued" from "admitted
+ * immediately" and emits neither.
  *
- * 端口绑定在 runtime 的模型工厂上：runtime 交出的每一个模型句柄——turn step、工具内部
- * 的模型调用、压缩、标题 sidecar——都带它；缺席即不设闸门（runner 行为逐字不变）。主代理拿的是
- * 治理器的 observer 实现：`tryAcquire` 总命中、只喂信号。
+ * The port binds to the runtime's model factory: every model handle the runtime hands out - turn
+ * step, in-tool model calls, compaction, title sidecar - carries it; absent means no gate
+ * (runner behavior verbatim unchanged). The main agent gets the governor's observer impl:
+ * `tryAcquire` always hits, signals only.
  */
 export interface ModelRequestAdmission {
-  /** 同步快路径：闸门开着且无人排队即给票；否则 undefined，runner 转 `acquire` 并报排队。 */
+  /** Synchronous fast path: ticket when the gate is open and nobody queues; else undefined and the runner falls to `acquire`, reporting queued. */
   tryAcquire?(input: { model: ModelRequestTarget }): ModelRequestAdmissionTicket | undefined;
   acquire(input: {
     model: ModelRequestTarget;
@@ -86,8 +94,9 @@ export interface ModelRequestAdmission {
 }
 
 /**
- * 准入端口看到的模型身份：配额键的最小事实。既不是 Selection（那是执行意图），也不是
- * Active Model（那带完整配置）——treaty 只要 provider/model 两段。
+ * Model identity as the admission port sees it: the minimal fact of the quota key. Neither a
+ * Selection (execution intent) nor Active Model (full config) - the treaty needs only
+ * provider/model.
  */
 export interface ModelRequestTarget {
   providerId: string;
@@ -132,9 +141,9 @@ export const ModelRetryReason = {
   StreamIdleTimeout: "stream_idle_timeout",
   StaleConnection: "stale_connection",
   AuthRefresh: "auth_refresh",
-  /** Anthropic 明确拒绝历史 thinking signature 后，对请求副本清理并立即重试一次。 */
+  /** After Anthropic explicitly rejects a historical thinking signature: clean the request copy and retry once immediately. */
   ReasoningSignatureRepair: "reasoning_signature_repair",
-  /** off-peak 闲时排队（429/3105+Retry-After）：豁免重试预算、无限探测（仅 idle plan provider）。 */
+  /** Off-peak idle queueing (429/3105+Retry-After): exempt from retry budget, probe without cap (idle-plan providers only). */
   OffpeakQueued: "offpeak_queued",
 } as const;
 
@@ -173,8 +182,9 @@ interface ModelNetworkStatusBase {
   transport: ModelTransportKind;
   attempt: number;
   /**
-   * 本次请求的重试预算总尝试数（含首次）。**`0` = 无上限**（`ModelRetryBudget.Unbounded`）：`Infinity` 不可序列化，而 0 不占用任何既有合法值。
-   * 消费方渲染「第 n/N 次」或推导 maxRetries 时必须特判 0。
+   * Total attempts allowed by this request's retry budget (first included). **`0` = unbounded**
+   * (`ModelRetryBudget.Unbounded`): `Infinity` is not serializable and 0 collides with no legal
+   * value. Consumers rendering "n/N" or deriving maxRetries must special-case 0.
    */
   maxAttempts: number;
   streamRecovery?: ModelStreamRecoveryStatus;
@@ -198,9 +208,10 @@ export interface ModelRequestStartedStatusEvent extends ModelNetworkStatusBase {
 }
 
 /**
- * 准入等待的两端：runner 的 `tryAcquire` 未命中
- * 即发 `queued`，拿到票即发 `admitted`（带排队时长）。它们是 runtime 观测——driver 据此报「等待槽位」，
- * 工具执行器据此暂停工具超时——不进 provider 请求；协议侧凡枚举状态类型的消费方显式忽略。
+ * The two ends of admission waiting: a `tryAcquire` miss emits `queued`, a held ticket emits
+ * `admitted` (with queue time). Runtime observability - drivers report "waiting for a slot" and
+ * tool executors pause tool timeouts on them; they never enter the provider request. Protocol
+ * consumers enumerating status kinds ignore them explicitly.
  */
 export interface ModelRequestQueuedStatusEvent extends ModelNetworkStatusBase {
   type: "model_request_queued";
@@ -264,15 +275,15 @@ export interface ModelStreamStalledStatusEvent extends ModelNetworkStatusBase {
 }
 
 /**
- * 仅供实时观测 Sink 消费的 Provider 里程碑。它们不进入 SessionEvent/回放协议，
- * 避免为了 Trace 事件扩大产品状态面。
+ * Provider milestones for the live-observation sink only. They stay out of SessionEvent/replay
+ * protocols, keeping the product state surface from growing for trace events.
  */
 export interface ModelTelemetryMilestoneStatusEvent extends ModelNetworkStatusBase {
   type: "model_first_provider_event" | "model_first_content" | "model_first_text";
   elapsedMs: number;
 }
 
-/** 仅投递进程内 telemetry statusSink，不进入请求 UI 事件；字段不得携带凭据或用户内容。 */
+/** Delivered only to the in-process telemetry statusSink, never into request UI events; fields must carry no credentials or user content. */
 export type ModelRequestObservation = Readonly<{
   kind: string;
   [field: string]: string | number | boolean | undefined;
@@ -297,8 +308,9 @@ export type ModelNetworkStatusEvent =
 export interface ModelStatusSink {
   publish(event: ModelNetworkStatusEvent): void | Promise<void>;
   /**
-   * Transport 捕获失败时可把原始异常直接交给进程级观测 Sink。产品 SessionEvent/日志仍只消费
-   * publish(event)，避免原始异常对象和消息正文进入持久化领域状态。
+   * Transport-captured failures may hand the raw exception straight to the process-level
+   * observation sink. Product SessionEvents/logs still consume only
+   * publish(event), keeping raw exception objects and message bodies out of persisted domain state.
    */
   publishFailure?(event: ModelRequestFailedStatusEvent, error: unknown): void | Promise<void>;
 }
@@ -385,7 +397,7 @@ export interface ModelFileContentBlock {
   source?: AttachmentRef;
 }
 
-/** 视频输入内容块（provider-neutral，与 image 同构；只承载 base64 dataUrl）。 */
+/** Video input content block (provider-neutral, same shape as image; base64 dataUrl only). */
 export interface ModelVideoContentBlock {
   type: "video";
   mediaType: string;
@@ -484,7 +496,7 @@ export interface ModelToolContract {
   providerNative?: ProviderNativeToolSpec;
   inputSchema: JsonSchema;
   outputSchema?: JsonSchema;
-  /** 见 ToolContractDeclaration.strict：严格模式的资格声明，adapter 按 provider/model 落地。 */
+  /** See ToolContractDeclaration.strict: strict-mode eligibility declaration, landed per provider/model by the adapter. */
   strict?: boolean;
   readOnly?: boolean;
   destructive?: boolean;
@@ -562,8 +574,8 @@ export function getModelUsageInputWindowTokens(usage?: ModelUsage): number | und
 
   const inputTokens = positiveInteger(usage.inputTokens);
   if (inputTokens !== undefined) {
-    // AI SDK v6 的 Anthropic inputTokens 已经是普通输入 + cache read/write 的 total input。
-    // 这里再叠 cacheReadTokens 会把 context meter 和 compact 阈值放大一截。
+    // AI SDK v6's Anthropic inputTokens is already total input: plain input + cache read/write.
+    // Adding cacheReadTokens again would inflate the context meter and the compact threshold.
     return inputTokens;
   }
 
@@ -667,33 +679,35 @@ export interface ModelTextRequest extends ModelRequestSettings {
    * Runtime-only trace context. Serialized requests should pass trace ids through metadata.
    */
   traceContext?: TraceContext;
-  /** Runtime-only、强类型的模型 API 调用分类；不会进入 Provider 请求。 */
+  /** Runtime-only, strongly-typed model API call classification; never enters the provider request. */
   modelCall?: ModelApiCallObservation;
   /**
-   * Runtime-only 的宿主 session 粗分类。Adapter 将它写入受控归因 header；
-   * 不允许调用方通过 provider 静态 headers 覆盖。
+   * Runtime-only coarse classification of the hosting session. The adapter writes it into a
+   * controlled attribution header; callers may not override it via provider static headers.
    */
   modelRequestSessionType?: ModelRequestSessionType;
   /**
-   * Runtime-only 重试预算档位（见 {@link ModelRetryBudget}）。与 modelRequestSessionType 同族：
-   * 不进 JSON schema、不进 provider 请求。缺省即 `default`。
+   * Runtime-only retry budget tier (see {@link ModelRetryBudget}). Same family as
+   * modelRequestSessionType: not in the JSON schema, not in the provider request. Default `default`.
    */
   modelRetryBudget?: ModelRetryBudget;
   /**
-   * Runtime-only 准入端口（见 {@link ModelRequestAdmission}）：在场时 runner 每次尝试先 acquire、
-   * 结束即 release。与 statusSink 同族：不进 JSON schema、不进 provider 请求。
+   * Runtime-only admission port (see {@link ModelRequestAdmission}): when present the runner
+   * acquires per attempt and releases at the end. Same family as statusSink: not in the JSON
+   * schema, not in the provider request.
    */
   modelRequestAdmission?: ModelRequestAdmission;
   /**
-   * Runtime-only SSE idle timeout 递增序号。0/undefined 表示首请求；
-   * 每重试一次在 adapter base timeout 上加 30000ms。
+   * Runtime-only SSE idle-timeout increment ordinal. 0/undefined = first request; each retry adds
+   * 30000ms on top of the adapter base timeout.
    */
   streamIdleTimeoutRetryNumber?: number;
-  /** Runtime-only recovery attribution；只进入 status/telemetry，不发送给 Provider。 */
+  /** Runtime-only recovery attribution; status/telemetry only, never sent to the provider. */
   streamRecovery?: ModelStreamRecoveryStatus;
   /**
-   * Runtime-only provider stream 边界开关。compact 隐藏流用它保留首个真实 provider event
-   * 与 content block provenance；tool input 提交不受此开关控制，所有请求都等待 AI SDK end。
+   * Runtime-only provider stream boundary switch. The compact-hiding stream uses it to keep the
+   * first real provider event and content-block provenance; tool-input commit is not gated by it -
+   * all requests wait for the AI SDK end.
    */
   preserveProviderStreamBoundaries?: boolean;
 }
@@ -735,9 +749,9 @@ export type ModelStreamEvent =
     }
   | {
       /**
-       * Compact-only replay boundary。Adapter 从 raw provider stream 提炼真实边界；
-       * 无 raw provenance 的 direct tool-call 校验失败可补一个 inferred commit。
-       * 事件不携带 provider 正文，也不进入 session/UI streaming。
+       * Compact-only replay boundary. The adapter distills the real boundary from the raw
+       * provider stream; a direct tool-call validation failure without raw provenance may add an
+       * inferred commit. The event carries no provider bodies and never enters session/UI streaming.
        */
       type: "compact_stream_boundary";
       boundary: "provider_response_start" | "inferred_content_block_stop";
@@ -749,7 +763,7 @@ export type ModelStreamEvent =
       index: number | null;
     }
   | {
-      /** Raw delta 只携带 provenance type，不携带正文。 */
+      /** Raw delta carries provenance type only, never body text. */
       type: "compact_stream_boundary";
       boundary: "provider_content_block_delta";
       deltaType: string | null;
@@ -761,7 +775,7 @@ export type ModelStreamEvent =
       index: number | null;
     }
   | {
-      /** 每个 provider message_delta 覆盖当前 stop reason 状态，后续 null 会清掉先前值。 */
+      /** Each provider message_delta overwrites the current stop reason; a later null clears the previous value. */
       type: "compact_stream_boundary";
       boundary: "provider_stop_reason";
       present: boolean;
@@ -1036,7 +1050,7 @@ export const modelNetworkStatusEventJsonSchema = {
     model: modelSelectionJsonSchema,
     transport: { enum: Object.values(ModelTransportKind) },
     attempt: { type: "number", minimum: 1 },
-    // 0 = 无上限重试预算，故下界是 0 而不是 1。
+    // 0 = unbounded retry budget, hence the lower bound 0 not 1.
     maxAttempts: { type: "number", minimum: 0 },
     delayMs: { type: "number", minimum: 0 },
     durationMs: { type: "number", minimum: 0 },

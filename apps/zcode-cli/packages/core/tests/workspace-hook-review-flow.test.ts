@@ -181,5 +181,4 @@ describe("WorkspaceHookReviewFlowRegistry", () => {
     });
     expect(registry.getCurrent("session-1")?.state).toBe("pending");
   });
-
 });

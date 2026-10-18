@@ -308,9 +308,7 @@ describe("ListWorkflowRuns registration", () => {
     registerBuiltInTools(registry);
 
     expect(registry.has(LIST_WORKFLOW_RUNS_TOOL_NAME)).toBe(true);
-    expect(registry.toContracts().map((tool) => tool.name)).toContain(
-      LIST_WORKFLOW_RUNS_TOOL_NAME,
-    );
+    expect(registry.toContracts().map((tool) => tool.name)).toContain(LIST_WORKFLOW_RUNS_TOOL_NAME);
   });
 
   // plan / build 模式的只读直通（permission/service.ts 的 mode.plan.readOnly 分支）：

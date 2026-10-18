@@ -21,12 +21,14 @@ import { stationLampClass } from "./WorkflowTimelineLedge.js";
 import { slideClass, slideStyle, type FillSlide } from "./use-fill-growth.js";
 
 /**
- * 轨道层。
+ * Rail layer.
  *
- * 没有带的时间线里轨道段还是站头行里的一截 border（逐像素不动）。**有带**时整条轨道搬进弧那一层
- * SVG：主线走最下面一行、分支轨道叠在它上面，带前分叉、带后汇合，两段 8px 的四分之一圆把分支
- * 抬上去再放下来（分支向上）。灯仍是 DOM（状态类要
- * 用），绝对定位落在自己那条轨道的行上；站头搬到站台行，分支轨道的站用一条点状引线接回自己的名字。
+ * Without a branch, rail segments remain a border stub in the station-header row (pixel-identical). With
+ * a branch the whole rail moves into the arc layer SVG: main line on the bottom row, branch rails above,
+ * forking before the branch and merging after it, two 8px quarter-circles lifting the branch and setting
+ * it back (branches rise). Dots stay DOM (status classes
+ * need to), absolutely positioned on their own rail's row; headers move to the platform row, and a branch
+ * station is tied back to its name by a dotted leader.
  */
 const INK_STROKE: Record<TimelineInk, string> = {
   faint: "var(--color-workflow-trace)",
@@ -34,26 +36,27 @@ const INK_STROKE: Record<TimelineInk, string> = {
   strong: "var(--color-workflow-trace-strong)",
 };
 
-/** 画布上的一个点。 */
+/** A point on the canvas. */
 export interface TimelinePoint {
   x: number;
   y: number;
 }
 
-/** 画面上的一段轨道：一条路径、一种墨，外加它接的两站（测试与调试的抓手）。 */
+/** A rail piece on screen: one path, one ink, plus the two stations it joins (a handle for tests and debugging). */
 export interface TimelineRailPiece {
   key: string;
   d: string;
   /**
-   * 路径的首尾两点，与 `d` 出自同一组数——行进边的光要按这两点铺渐变（`MarchLight`），
-   * 而不是回头去解析 `d`。
+   * The path's end points, from the same numbers as `d` — the marching light lays its gradient from
+   * these two points instead of parsing `d` back.
    */
   start: TimelinePoint;
   end: TimelinePoint;
   ink: TimelineInk;
   /**
-   * `fork` / `merge` 是带两端的曲线；`tail` / `stub` 是没有前驱 / 汇合站时主线的那一小截；`stream`
-   * 是一条轨道上的流轨——路径在正中断开 `STREAM_GAP`，`chevrons` 是缺口的中心。
+   * `fork` / `merge` are the branch-end curves; `tail` / `stub` the main line's stub with no predecessor /
+   * merge station; `stream` is a rail's stream segment — the path breaks mid-way by `STREAM_GAP`, with
+   * `chevrons` the gap's center.
    */
   kind?: "fork" | "merge" | "tail" | "stub" | "stream";
   chevrons?: TimelinePoint;
@@ -61,13 +64,14 @@ export interface TimelineRailPiece {
   to?: number;
 }
 
-/** 路径与它的首尾两点：`timelineRailPieces` 里每种段都先算出这三样，再配上墨与两站。 */
+/** Path plus end points: every kind in `timelineRailPieces` computes these three first, then adds ink and stations. */
 type RailShape = Pick<TimelineRailPiece, "d" | "end" | "start">;
 
 /**
- * 轨道段 → 路径（纯函数）。一条轨道上的普通段是那一行上的一条直线（灯 + 8 → 灯 − 8）；主线的
- * 那几条穿过分叉点与汇合点，于是主线自然是一条直线。两端都在**不同的带**里的普通段只可能是
- * 相邻两带之间的那一段，画在主线上、从前一带的汇合点到后一带的分叉点。双线段不画在卡上。
+ * Rail segment to path (pure). A plain segment on one rail is a straight line on that row (dot + 8 to
+ * dot - 8); the main line's pieces pass through fork and merge points, so it stays straight. A plain
+ * segment with both ends in different branches can only be the stretch between adjacent branches, drawn
+ * on the main line from the former's merge point to the latter's fork. Double segments never draw on the card.
  */
 export function timelineRailPieces(
   model: Pick<WorkflowTimelineModel, "bands" | "rails" | "stations">,
@@ -82,13 +86,13 @@ export function timelineRailPieces(
   const mergeX = (band: TimelineBand): number => bandMergeX(band, inset);
   const trackOfStation = (i: number): number => stations[i]?.track ?? 0;
 
-  /** 一行上的一条直线段。 */
+  /** A straight segment on one row. */
   const straight = (x1: number, x2: number, y: number): RailShape => ({
     d: `M${x1},${y} H${x2}`,
     end: { x: x2, y },
     start: { x: x1, y },
   });
-  // 分支轨道 t 在 forkX − 8(t−1) 处离开主线，两段四分之一圆升到自己的行，再横到第一枚灯前 8px。
+  // Branch rail t leaves the main line at forkX − 8(t−1), two quarter-circles rise to its row, then across to 8px before the first dot.
   const forkPath = (band: TimelineBand, track: number, head: number): RailShape => {
     const xf = forkX(band) - 8 * (track - 1);
     const yt = rowOf(track);
@@ -98,7 +102,7 @@ export function timelineRailPieces(
       start: { x: xf, y: y0 },
     };
   };
-  // 汇合是分叉的镜像：从末站的灯后 8px 横到 xm − 8，落回主线。带里轨道越高，落点越靠左。
+  // The merge mirrors the fork: across from 8px past the last dot to xm − 8, back onto the main line. The higher the rail, the further left it lands.
   const mergePath = (band: TimelineBand, track: number, tail: number): RailShape => {
     const xm = mergeX(band) - 8 * (band.tracks.length - 1 - track);
     const yt = rowOf(track);
@@ -110,8 +114,9 @@ export function timelineRailPieces(
   };
 
   const pieces: TimelineRailPiece[] = [];
-  // 没有前驱 / 没有汇合站的带自己长出两端：主线的一小截尾巴 / 残段，和分支轨道的曲线——模型里
-  // 没有对应的轨道段（分叉与汇合都要有那一站才成段），墨色取轨道自己的 entry / exit。
+  // A branch with no predecessor / no merge station grows its own ends: a tail / stub of main line and
+  // the branch rails' curves — the model has no matching segment (fork and merge need that station to
+  // form one), so ink comes from the rail's own entry / exit.
   for (const band of bands) {
     const main = band.tracks[0]!;
     if (band.pred === undefined) {
@@ -159,7 +164,7 @@ export function timelineRailPieces(
   }
 
   for (const rail of rails) {
-    // 双线段只说「这两站并行」，卡上不画——分叉与汇合已经把并行说清楚了。
+    // A double segment only says these two run in parallel; the card does not draw it — fork and merge already said it.
     if (rail.kind === "twin") continue;
     const ends = { from: rail.from, ink: rail.ink, key: `${rail.from}>${rail.to}`, to: rail.to };
     if (rail.kind === "fork") {
@@ -188,7 +193,7 @@ export function timelineRailPieces(
     const x1 = lx(rail.from) + 8;
     const x2 = lx(rail.to) - 8;
     if (rail.kind === "stream") {
-      // 流轨（presentation.md「Stream rails」）：一条直线两笔，中间让出 chevron 的缺口。
+      // Stream rail (presentation.md "Stream rails"): one straight line in two strokes, a gap left for the chevrons.
       const mid = (x1 + x2) / 2;
       pieces.push({
         ...ends,
@@ -206,8 +211,9 @@ export function timelineRailPieces(
 }
 
 /**
- * 轨道与引线，画在弧那一层 SVG 里（只有带时才挂上）。行进的段照弧的老规矩叠一层，只是那一层
- * 如今是**不动的**光（`MarchLight`）：从段的起点淡入、在灯那一头最亮。
+ * Rails and leader lines, drawn in the arc layer SVG (mounted only with a branch). Marching segments
+ * keep the arc's old trick of an extra layer, except theirs is now still light (`MarchLight`): fading in
+ * from the segment's start, brightest at the dot end.
  */
 export function WorkflowTimelineTracks({
   folded,
@@ -216,11 +222,11 @@ export function WorkflowTimelineTracks({
 }: {
   model: Pick<WorkflowTimelineModel, "bands" | "rails" | "stations">;
   layout: TimelineLayout;
-  /** 折到檐上的站：它的引线跟着灯一起淡出。 */
+  /** Stations folded to a ledge: their leader fades with the dot. */
   folded: ReadonlySet<number>;
 }) {
   const pieces = timelineRailPieces(model, layout);
-  // 轨道层挂在弧那一层 SVG 里，渐变 id 要在整张 SVG 里唯一：实例前缀 + 段的 key（去掉 `:` `>` 这些）。
+  // The rail layer lives inside the arc layer SVG; gradient ids must be unique across it: instance prefix plus segment key (chars like : > stripped).
   const gradientBase = useId();
   return (
     <g>
@@ -243,7 +249,7 @@ export function WorkflowTimelineTracks({
           {piece.chevrons === undefined ? null : (
             <StreamChevrons ink={piece.ink} x={piece.chevrons.x} y={piece.chevrons.y} />
           )}
-          {/* 流从不叠行进的光：它的墨在 chevron 上。 */}
+          {/* The stream never layers march light: its ink is on the chevron. */}
           {piece.ink === "march" && piece.kind !== "stream" ? (
             <MarchLight
               d={piece.d}
@@ -275,8 +281,8 @@ export function WorkflowTimelineTracks({
 }
 
 /**
- * 灯（有带时）：还是 DOM 的 span——状态类、光晕与搏动都在 CSS 里——只是绝对定位到自己那条轨道
- * 的行上，而不再跟着站头排。
+ * Dots (with a branch): still a DOM span — status classes, halo and pulse in CSS — just absolutely
+ * positioned onto their own rail's row instead of following the header.
  */
 export function WorkflowTimelineLamps({
   draft,
@@ -289,7 +295,7 @@ export function WorkflowTimelineLamps({
   layout: TimelineLayout;
   folded: ReadonlySet<number>;
   draft: boolean;
-  /** 补全的生长（`use-fill-growth.ts`）：插入列右侧的灯随站滑开。 */
+  /** Fill growth (`use-fill-growth.ts`): dots right of the inserted column slide with their stations. */
   slide?: FillSlide;
 }) {
   return (

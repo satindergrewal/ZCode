@@ -39,7 +39,7 @@ async function waitForStableFile(path: string, signal: AbortSignal): Promise<boo
   }
 }
 
-/** 一个配置范围串行吸收文件变化，RPC 只消费上层已完成的 snapshot。 */
+/** One config scope absorbs file changes serially; RPCs consume only completed snapshots. */
 export function createSubagentConfigScope<T>(options: {
   root: string;
   file?: string;
@@ -84,8 +84,8 @@ export function createSubagentConfigScope<T>(options: {
     const changedPaths = new Set<string>();
     draining = (async () => {
       while (!disposed) {
-        // 子文件 unlink 可能早于 unlinkDir；发布空范围前确认目录，避免立即重建后
-        // 原生库不再识别旧目录已删除。每个删除批次仅检查一次，不额外读取 Markdown。
+        // Child unlinks can beat unlinkDir; confirm the dir before publishing an empty scope, or a quick recreate
+        // leaves native watchers blind to the deletion. One check per delete batch, no extra Markdown reads.
         if ([...pending.values()].includes("remove")) await checkWatch();
         await binding;
         if (disposed || (!reset && !pending.size)) break;
@@ -102,7 +102,7 @@ export function createSubagentConfigScope<T>(options: {
         try {
           const next = await options.load(value, full ? undefined : changes, {
             signal: controller.signal,
-            // 新 watcher 的初次扫描不经过 awaitWriteFinish；仅目录恢复补扫显式等待稳定。
+            // Fresh watcher initial scans skip awaitWriteFinish; only recovery rescans wait for stability.
             waitForStableFile: (path) =>
               needsStability ? waitForStableFile(path, controller.signal) : Promise.resolve(true),
           });
@@ -119,13 +119,17 @@ export function createSubagentConfigScope<T>(options: {
             if (full) reset = true;
           } else {
             failed = true;
-            logger.warn(undefined, "Subagent 配置读取失败，使用内置定义并等待文件变化", {
-              path: root,
-              error: String(error),
-            });
+            logger.warn(
+              undefined,
+              "Subagent config read failed; using builtin definitions until files change",
+              {
+                path: root,
+                error: String(error),
+              },
+            );
           }
         } finally {
-          // 某个候选读取失败时，同时取消该补扫中其他文件的稳定等待。
+          // One candidate failure also cancels the stability waits of its batch siblings.
           controller.abort();
           if (loadController === controller) loadController = undefined;
         }
@@ -135,7 +139,7 @@ export function createSubagentConfigScope<T>(options: {
       if (!disposed) {
         options.onSettled();
         if (changedPaths.size)
-          logger.info(undefined, "Subagent 配置文件更新完成", {
+          logger.info(undefined, "Subagent config files updated", {
             path: root,
             changedPaths: [...changedPaths],
             fallback: failed,
@@ -216,8 +220,8 @@ export function createSubagentConfigScope<T>(options: {
         anchorStats = stats;
         const direct = anchor === root;
         const parent = dirname(anchor);
-        // 祖先枚举会返回磁盘真实大小写，字符串筛选会误丢 AGENTS。直接以配置路径监听，
-        // 缺失时的浅层父监听只负责发现目录，不比较目标分支名称，也不扫描其内容。
+        // Ancestor walks report on-disk casing and string filters drop AGENTS. Watch the config path itself;
+        // while missing, a shallow parent watcher only detects the dir, never matching names or scanning contents.
         const current = watch(anchor, {
           persistent: true,
           ignoreInitial: true,
@@ -240,8 +244,8 @@ export function createSubagentConfigScope<T>(options: {
         current.on("raw", () => {
           if (!direct && !disposed && watcher === current) void checkWatch();
         });
-        // Windows 不报告空目录自身的移动；父目录只订阅原生结构事件，不枚举其内容。
-        // 与 Chokidar 的文件索引分离，避免 AGENTS 被误当作逻辑 agents 的删除事件。
+        // Windows won't report empty-dir moves; the parent watches raw structure events without enumeration.
+        // Keep it separate from the Chokidar index so AGENTS isn't read as a logical-agents deletion.
         if (parent !== anchor) {
           const controller = new AbortController();
           parentWatch = controller;
@@ -252,7 +256,7 @@ export function createSubagentConfigScope<T>(options: {
             }
           })().catch((error) => {
             if (!controller.signal.aborted && !disposed)
-              logger.warn(undefined, "Subagent 父目录监听异常，显式重载可重建监听", {
+              logger.warn(undefined, "Subagent parent watcher error; explicit reload rebuilds it", {
                 path: parent,
                 error: String(error),
               });
@@ -268,7 +272,7 @@ export function createSubagentConfigScope<T>(options: {
           current.once("ready", ready);
           current.on("error", (error) => {
             if (disposed || watcher !== current) return;
-            logger.warn(undefined, "Subagent 文件监听异常，显式重载可重建监听", {
+            logger.warn(undefined, "Subagent file watcher error; explicit reload rebuilds it", {
               path: root,
               error: String(error),
             });
@@ -276,20 +280,24 @@ export function createSubagentConfigScope<T>(options: {
           });
         });
         releaseReady = undefined;
-        // 补上检查目录与监听就绪之间的空窗，不依赖轮询或延时猜测。
+        // Cover the gap between the dir check and watcher readiness without polling or timed guesses.
         checkRequested = true;
       }
     })()
       .catch((error) => {
         if (!disposed)
-          logger.warn(undefined, "Subagent 文件监听初始化失败，显式重载可重建监听", {
-            path: root,
-            error: String(error),
-          });
+          logger.warn(
+            undefined,
+            "Subagent file watcher failed to start; explicit reload rebuilds it",
+            {
+              path: root,
+              error: String(error),
+            },
+          );
       })
       .finally(() => {
         binding = undefined;
-        // 无关父目录事件只检查位置，不能反复推迟已经排队的配置更新。
+        // Unrelated parent events only check location; never keep postponing queued config updates.
         if (!timer) schedule();
         if (!disposed) options.onSettled();
       });
@@ -333,7 +341,7 @@ export function createSubagentConfigScope<T>(options: {
       const current = watcher;
       watcher = undefined;
       void current?.close().catch((error) =>
-        logger.warn(undefined, "Subagent 文件监听关闭失败", {
+        logger.warn(undefined, "Failed to close the subagent file watcher", {
           path: root,
           error: String(error),
         }),

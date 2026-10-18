@@ -51,7 +51,7 @@ export function findLatestMemoryRecallQuery(
     if (entry.message.role !== "user") continue;
     if (entry.message.toolCallId || entry.message.toolName) continue;
     const text = modelMessageContentToText(entry.message.content);
-    // 修复原因：显式 real_user 已经是非 meta 的事实来源，文本前缀只用于兼容缺少 metadata 的旧历史。
+    // Why: an explicit real_user is already the non-meta source of truth; the text prefix exists only for old histories without metadata.
     if (entry.metadata) {
       if (entry.metadata.source !== "real_user") continue;
     } else if (text.trimStart().startsWith("<system-reminder>")) {
@@ -108,7 +108,7 @@ export async function runMemorySelector(input: {
     request.abortSignal = input.abortSignal;
     request.options = { ...request.options, ...auxiliaryModelOptions(input.model) };
     const response = await input.model.generateText(request);
-    // 修复原因：provider 可能忽略 abort 并返回迟到结果；已取消的 selector 不能污染 sticky conversation。
+    // Why: a provider may ignore abort and return late; a cancelled selector must not pollute the sticky conversation.
     if (input.abortSignal?.aborted) return emptySelectorResult();
     const parsed = parseSelectorResponse(response.text);
     if (!parsed) return emptySelectorResult();

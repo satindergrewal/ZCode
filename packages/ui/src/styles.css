@@ -6,12 +6,12 @@
 @import "katex/dist/katex.min.css";
 @import "./highspeed/highspeed-activation.css";
 @import "./highspeed/highspeed-share.css";
-@source "../../../node_modules/streamdown/dist/*.js"; /* 感觉这行也是不好使呢*/
+@source "../../../node_modules/streamdown/dist/*.js"; /* kept despite doubts that it does anything */
 
 @plugin "@tailwindcss/typography";
 @plugin "../lucide-colors.mjs";
 
-/* Hero 可为任意图片/视频/iframe，不能用 App 主题推断关闭图标对比度。 */
+/* The hero may be any image/video/iframe; close-icon contrast cannot be inferred from the app theme. */
 .cloud-content-dialog {
   --media-close-surface: rgb(0 0 0 / 50%);
   --media-close-surface-hover: rgb(0 0 0 / 65%);
@@ -26,42 +26,43 @@
   background-color: var(--media-close-surface-hover);
 }
 
-/* Bugfix: KaTeX 会同时输出 MathML 辅助层和 HTML 视觉层；缺少 katex CSS 时两层都会显示，
- * 行内公式和块级公式就会看起来“渲染一遍又普通文本一遍”。 */
+/* Bugfix: KaTeX emits both a MathML aux layer and the HTML visual layer; without the katex CSS both
+ * show, and formulas read as rendered-once-plus-plain-text-again. */
 
-/* Bugfix: Linux desktop 的窗口标题栏由 renderer 自绘，部分 overlay 需要只在该平台避开标题栏点击区。 */
+/* Bugfix: Linux desktop draws its own titlebar; some overlays must avoid its click area on that platform only. */
 @custom-variant platform-linux-desktop (&:where(.platform-linux-desktop, .platform-linux-desktop *));
 @custom-variant platform-linux-window-maximized (&:where(.platform-linux-desktop.window-maximized, .platform-linux-desktop.window-maximized *));
 
-/* Bugfix: macOS desktop 使用 hidden 原生标题栏，右上角浮层操作必须避开其原生命中区域。 */
+/* Bugfix: macOS desktop hides the native titlebar; top-right overlays must avoid its native hit area. */
 @custom-variant platform-mac-desktop (&:where(.platform-mac-desktop, .platform-mac-desktop *));
 
-/* Bugfix: Windows desktop 的原生 titleBarOverlay 占用右上角，图片 lightbox 等深层 overlay
- * 通过独立平台 variant 使用真实 Window Controls Overlay 安全区；普通 Web 不继承该规则。 */
+/* Bugfix: the Windows native titleBarOverlay owns the top-right corner; deep overlays like the image
+ * lightbox use a platform variant keyed to the real Window Controls Overlay inset. Plain Web does not
+ * inherit the rule. */
 @custom-variant platform-windows-desktop (&:where(.platform-windows-desktop, .platform-windows-desktop *));
 
 /*
- * 修复原因：当前 UI 直接使用了 shadcn 的 radix-mira 风格组件源码，这些组件大量依赖
- * data-active / data-horizontal / data-vertical 这类语义 variant。
- * 上游并不是靠单个组件手写 data-[state=active]，而是通过 shadcn/tailwind.css 里的
- * @custom-variant 把 Radix 的 data-state、data-orientation 统一映射过来。
- * 之前仓库只引了 tailwindcss，本地编译就只会匹配裸 data-active 属性，
- * 导致 Tabs、Separator、ScrollArea、ButtonGroup 等一批组件样式“类名在、效果不在”。
- * 这里按官方 registry 的接法补上 shadcn/tailwind.css 和 tw-animate-css，
- * 让这批组件一次性恢复和上游一致的编译语义与动画工具类。
+ * Fix rationale: the UI vendors shadcn radix-mira-style component sources, which lean on semantic
+ * variants like data-active / data-horizontal / data-vertical. Upstream does not hand-write
+ * data-[state=active] per component; shadcn/tailwind.css maps Radix data-state and data-orientation
+ * through @custom-variant. With only tailwindcss installed, builds matched bare data-active and left
+ * Tabs, Separator, ScrollArea, ButtonGroup and friends with classes but no effect. Adding
+ * shadcn/tailwind.css and tw-animate-css per the official registry restores upstream compile semantics
+ * and animation utilities in one stroke.
  */
 
 /*
- * 修复原因：styles.css 是从 @zcode/ui 包里被 web/desktop 间接引入的，Tailwind v4 在这种工作区场景下
- * 仅靠 source(".") 不能稳定把 UI 包里的 TSX 组件都加入扫描，像 Select 这类新组件用到的
- * bg-popover、shadow-md、overflow-x-hidden 等 utility 会直接缺席，页面就只剩下一部分“碰巧命中”的通用类。
- * 这里显式补一条 @source，让 Tailwind 始终扫描 UI 包源码，避免下拉框、菜单这类组件渲染成半残状态。
+ * Fix rationale: styles.css reaches web/desktop indirectly through @zcode/ui. Under a workspace setup
+ * Tailwind v4 source(".") alone unreliably scans the UI package TSX, so utilities like bg-popover,
+ * shadow-md or overflow-x-hidden used by newer components such as Select go missing and pages render
+ * with whichever generic classes happen to hit. An explicit @source over the UI package keeps dropdowns
+ * and menus from rendering half-styled.
  */
 @source "./**/*.{ts,tsx}";
-/* 云端模板常用样式的构建保障，不是运行时 class 白名单。 */
+/* Build-time guarantee for cloud-template utility classes, not a runtime class allowlist. */
 @source inline("text-center text-ui-base/relaxed text-foreground-subtle font-semibold font-normal text-foreground whitespace-nowrap underline decoration-foreground-subtle decoration-dashed underline-offset-4");
 
-/* 磨砂玻璃效果：html/body 需要透明背景，让 Electron vibrancy 透出来 */
+/* Frosted glass: html/body keep transparent backgrounds so Electron vibrancy shows through */
 html,
 body,
 #root {
@@ -81,9 +82,11 @@ body {
   overflow: hidden;
 }
 
-/* Bug 根因：窗口 hidden 时 CSS 动画无法结算，DocumentTimeline 会持有期间被移除的元素及整棵子树，
- * 后台流式输出时内存无上限累积、恢复可见才释放。hidden 期间禁用动画，不再创建新的动画对象。
- * 标记由 installDocumentHiddenMotionPause 维护，见 docs/performance/hidden-document-motion-pause.md。 */
+/* Bug root cause: while the window is hidden CSS animations cannot settle, and DocumentTimeline holds
+ * every element removed in that window plus its whole subtree; background streaming accumulates memory
+ * without bound until visibility returns. Disable animations while hidden so no new animation objects
+ * appear. The flag is maintained by installDocumentHiddenMotionPause, see
+ * docs/performance/hidden-document-motion-pause.md. */
 html[data-document-hidden] *,
 html[data-document-hidden] *::before,
 html[data-document-hidden] *::after {
@@ -91,8 +94,9 @@ html[data-document-hidden] *::after {
   animation: none !important;
 }
 
-/* Bugfix：中文模板描述按单字断行会拆开“简报”等词组，并把标点挤到下一行。
- * Chromium 支持时启用短语级换行；其它环境保留正常断行，避免 keep-all 在窄屏产生溢出。 */
+/* Bugfix: per-character line breaking in CJK template descriptions splits words like briefings and
+ * shoves punctuation to the next line. Enable phrase-level wrapping where Chromium supports it; elsewhere
+ * keep normal wrapping so keep-all cannot overflow narrow screens. */
 .text-wrap-phrase {
   overflow-wrap: break-word;
   word-break: normal;
@@ -134,16 +138,17 @@ html[data-document-hidden] *::after {
 }
 
 #root {
-  /* Bugfix: Windows 桌面窗口拉伸后，根节点如果只靠内容撑开，Chromium 偶发会把新尺寸区域留给宿主底层。
-   * 这里把 React 挂载点固定成完整动态视口，让桌面/Web/手机端都从根节点开始明确铺满可视区。 */
+  /* Bugfix: after a Windows desktop resize, a root sized by content alone lets Chromium occasionally
+   * leave the new area to the host beneath. Pin the React mount point to the full dynamic viewport so
+   * desktop, web and mobile all fill the visual area from the root. */
   height: 100dvh;
   overflow: hidden;
 }
 
 /*
- * Bugfix: 部分浏览器 / Electron 运行环境会在 focus-visible 时叠加系统级高亮边框，
- * 表现为和产品主题无关的黄色描边，看起来像“随机冒出来的无障碍样式”。
- * 这里在全局层同时清掉 outline 和 focus ring 对应的 box-shadow，避免系统高亮和组件局部 ring 混用。
+ * Bugfix: some browser and Electron stacks stack a system-level focus highlight on focus-visible, an
+ * off-theme yellow ring reading as a random accessibility style. Clear both the outline and the focus
+ * ring box-shadow globally so the system highlight never mixes with a component ring.
  */
 *:focus,
 *:focus-visible {
@@ -160,11 +165,12 @@ html[data-document-hidden] *::after {
   }
 }
 
-/* === 主题变量 === */
+/* Theme tokens */
 
 @theme {
-  /* 修复原因：Windows 的 Consolas 不含中文字形，Tailwind 默认栈最终会让中文落到宋体。
-   * 保留各平台西文等宽字体，并在通用 monospace 前显式加入各平台 CJK 无衬线字体。 */
+  /* Fix rationale: Windows Consolas carries no CJK glyphs, so the Tailwind default stack eventually
+   * drops CJK into a serif. Keep each platform Latin mono and put an explicit platform CJK sans ahead of
+   * the generic monospace. */
   --font-mono:
     ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
     "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", monospace;
@@ -174,12 +180,12 @@ html[data-document-hidden] *::after {
   --text-ui-caption: calc(var(--ui-font-size) - 1px);
   --text-ui-sm: calc(var(--ui-font-size) - 2px);
   --text-ui-xs: calc(var(--ui-font-size) - 4px);
-  /* 例外刻度：仅限工作流图轴面（刻度标签、通道码、单位后缀），不得用于内容文本。
-   * 见 DESIGN.md「UI font tokens」与 docs/dynamic-workflow/presentation.md。 */
+  /* Exception scale: axis-surface only in the workflow graph (tick labels, channel codes, unit suffixes),
+   * never content text. See DESIGN.md UI font tokens and docs/dynamic-workflow/presentation.md. */
   --text-ui-2xs: calc(var(--ui-font-size) - 5px);
-  /* 大写等宽微标签（CAUSALITY GRAPH / TIMEBASE / KEY）在 9-10px 需要加宽字距。 */
+  /* Uppercase mono micro-labels (CAUSALITY GRAPH / TIMEBASE / KEY) need tracking at 9-10px. */
   --tracking-wf-label: 0.09em;
-  /* iOS Safari 会缩放小于 16px 的聚焦输入；该平台下限不能跟随界面字号降低。 */
+  /* iOS Safari zooms focused inputs under 16px; that floor must not follow the UI scale down. */
   --text-mobile-input-safe: 16px;
   --animated-gradient-text-strong: rgba(10, 10, 10, 1);
   --animated-gradient-text-soft: rgba(10, 10, 10, 0.22);
@@ -194,8 +200,8 @@ html[data-document-hidden] *::after {
   --color-trajectory-reasoning: #7c3aed;
   --color-trajectory-tool-call: #d97706;
   --color-trajectory-tool-result: #0284c7;
-  /* 工作流因果图仪表化渲染（docs/dynamic-workflow/presentation.md）：
-   * rule 比 --color-border 更弱——刻度与空闲轨道每图重复约 40 次，10% 会积成灰雾。 */
+  /* Instrumented rendering for the workflow causal graph (docs/dynamic-workflow/presentation.md):
+   * rules weaker than --color-border; ticks and idle rails repeat ~40x per graph and 10% accrues to haze. */
   --color-workflow-rule: color-mix(in oklab, var(--color-neutral-950) 5.5%, transparent);
   --color-workflow-trace: color-mix(in oklab, var(--color-neutral-950) 30%, transparent);
   --color-workflow-trace-strong: color-mix(in oklab, var(--color-neutral-950) 55%, transparent);
@@ -216,7 +222,7 @@ html[data-document-hidden] *::after {
   --color-card-selected: var(--color-neutral-200);
   --color-card-border: var(--color-border);
   --color-popover: var(--color-white);
-  /* 修复：浮层组件已使用 text-popover-foreground，但变量缺失会让暗色主题日志浮层继承黑色文本。 */
+  /* Fix: floating layers already use text-popover-foreground; a missing variable left dark-theme log popovers inheriting black text. */
   --color-popover-foreground: var(--color-foreground);
   --color-popover-header: var(--color-neutral-100);
   --color-popover-border: var(--color-border);
@@ -247,14 +253,14 @@ html[data-document-hidden] *::after {
   --color-terminal-bright-magenta: var(--color-fuchsia-500);
   --color-terminal-bright-cyan: var(--color-cyan-500);
   --color-terminal-bright-white: var(--color-neutral-950);
-  /* 应用用量图表使用独立色板，避免复用终端 ANSI 色造成红黄绿高饱和堆叠。 */
+  /* App usage charts use a dedicated palette; reusing terminal ANSI colors piled saturated red/yellow/green. */
   --color-usage-chart-1: var(--color-sky-600);
   --color-usage-chart-2: var(--color-teal-600);
   --color-usage-chart-3: var(--color-violet-600);
   --color-usage-chart-4: var(--color-rose-500);
   --color-usage-chart-5: var(--color-indigo-500);
   --color-usage-chart-6: var(--color-cyan-600);
-  /* Context breakdown 使用接近参考 UI 的单一蓝色阶，避免小弹窗里出现高饱和彩虹色。 */
+  /* Context breakdown uses a single blue ramp near the reference UI, keeping tiny popovers free of saturated rainbow. */
   --color-context-breakdown-1: var(--color-sky-600);
   --color-context-breakdown-2: var(--color-sky-500);
   --color-context-breakdown-3: var(--color-sky-400);
@@ -262,7 +268,7 @@ html[data-document-hidden] *::after {
   --color-context-breakdown-5: var(--color-sky-200);
   --color-context-breakdown-6: var(--color-sky-100);
   --color-context-breakdown-7: color-mix(in oklab, var(--color-sky-100) 72%, var(--color-white));
-  /* Bugfix: 热力图之前复用 brand 色，Zai 主题下 brand 是黑/白，无法保持 sky 语义。 */
+  /* Bugfix: the heatmap reused brand, which under the Zai theme is black/white and cannot carry the sky semantic. */
   --color-usage-heatmap-0: color-mix(in oklab, var(--color-sky-500) 0%, var(--color-surface));
   --color-usage-heatmap-1: color-mix(in oklab, var(--color-sky-500) 18%, var(--color-surface));
   --color-usage-heatmap-2: color-mix(in oklab, var(--color-sky-500) 36%, var(--color-surface));
@@ -737,7 +743,7 @@ html[data-document-hidden] *::after {
   --color-idle-task: #7b5ce5;
   --color-idle-task-surface: #160d38;
   --color-destructive: #ff5c5c;
-  /* 修复原因：Zai Dark 曾把 destructive 前景设为黑色，与红色危险按钮的固定白字设计冲突。 */
+  /* Fix rationale: Zai Dark once set destructive foreground black, clashing with the fixed white-on-red danger button. */
   --color-destructive-foreground: #ffffff;
   --color-warning: #ff8a30;
   --color-feedback-privacy-hint: var(--color-yellow-300);
@@ -783,9 +789,9 @@ html[data-document-hidden] *::after {
 }
 
 /*
- * 修复原因：之前只有 task 列表单独定制了滚动条，其他面板、下拉列表、代码区仍然保留系统默认样式，
- * 同一套界面里会出现粗细、圆角和轨道背景都不一致的问题。这里把这套透明轨道 + 圆角 thumb
- * 提升成全局原生滚动条样式，让 desktop/web、明暗主题下的视觉表现保持统一。
+ * Fix rationale: only the task list had a custom scrollbar; panels, dropdowns and code areas kept the
+ * OS default, so one UI showed mixed weights, radii and track grounds. Promoting this transparent-track
+ * rounded-thumb set to the global native scrollbar keeps desktop/web and light/dark uniform.
  */
 * {
   scrollbar-width: auto;
@@ -815,8 +821,8 @@ html[data-document-hidden] *::after {
 }
 
 /*
- * 修复原因：xterm 自己的 viewport 会吃到全局滚动条样式，在终端右侧露出一条独立滚动条。
- * 终端滚动仍交给 xterm 内部处理，这里只隐藏原生滚动条，避免终端面板出现额外视觉噪音。
+ * Fix rationale: xterm's own viewport picks up the global scrollbar styling, showing a second bar at the
+ * terminal's right. Scrolling stays inside xterm; hide the native bar so the pane carries no extra chrome.
  */
 .terminal-xterm-shell .xterm-viewport {
   scrollbar-width: none;
@@ -829,9 +835,9 @@ html[data-document-hidden] *::after {
 }
 
 /*
- * 修复原因：pptx 幻灯片按固有尺寸渲染后用 transform 缩放展示，文本框等内部元素的轻微溢出
- * 会命中上面的全局滚动条样式，在幻灯片内部露出滚动条。幻灯片内容不存在用户滚动交互，
- * 这里整体隐藏渲染表面内部的原生滚动条。
+ * Fix rationale: pptx slides render at intrinsic size and scale via transform, and slight overflow from
+ * text boxes hit the global scrollbar styling, showing bars inside the slide. Slides have no user
+ * scrolling, so hide native scrollbars across the render surface.
  */
 [data-zcode-pptx-render-surface] * {
   scrollbar-width: none;
@@ -879,13 +885,9 @@ html[data-document-hidden] *::after {
   }
 
   .highspeed-animated-gradient-text .animated-gradient-text {
-    /* Bug 根因：accelerated turn 只改了工时文案，内部思考和工具仍继承普通扫光色。 */
+    /* Bug root cause: accelerated turns changed only the time copy; thinking and tools kept the normal sweep color. */
     --animated-gradient-text-strong: var(--color-icon-purple);
-    --animated-gradient-text-soft: color-mix(
-      in srgb,
-      var(--color-icon-purple) 22%,
-      transparent
-    );
+    --animated-gradient-text-soft: color-mix(in srgb, var(--color-icon-purple) 22%, transparent);
   }
 
   .cua-group-gradient-text {
@@ -940,7 +942,7 @@ html[data-document-hidden] *::after {
   }
 }
 
-/* 工具摘要行细进度条的 indeterminate 扫光（ToolCallProgressIndicator，第三批 R7）。 */
+/* Indeterminate sweep for the tool summary row's thin progress bar (ToolCallProgressIndicator, batch three R7). */
 .tool-call-progress-indeterminate {
   animation: tool-call-progress-indeterminate 1.2s ease-in-out infinite;
 }
@@ -1053,9 +1055,9 @@ html[data-document-hidden] *::after {
   will-change: opacity;
 }
 
-/* Bugfix: Radix Collapsible 在测量 closed 高度时会写入 inline animation-name:none。
-   assistant 历史区自动结束收起需要在延迟卸载期间继续播放高度动画，
-   所以这里用 !important 覆盖 Radix 的 inline style，只作用于显式标记的收起窗口。 */
+/* Bugfix: Radix Collapsible writes inline animation-name:none while measuring the closed height. The
+   assistant history auto-finish-collapse must keep animating height through the delayed unmount, so
+   override the inline style with !important, scoped to the explicitly marked collapse window. */
 [data-zcode-collapsible-animate-close="true"][data-state="closed"] {
   animation: zcode-collapsible-up 300ms ease-in-out forwards !important;
 }
@@ -1095,8 +1097,9 @@ html[data-document-hidden] *::after {
   }
 }
 
-/* 点赞/点踩选中时的反馈动画：参考微信/X 的做法，只做图标回弹 + 细小粒子飞散两段，
-   粒子用 box-shadow 画在 ::after 上且跟随 currentColor，零额外 DOM、不引入新颜色。 */
+/* Feedback animation for like/dislike selection, in the WeChat/X mold: icon bounce plus a tiny particle
+   burst, nothing more. Particles are box-shadows on ::after following currentColor, so zero extra DOM
+   and no new colors. */
 .zcode-reaction-burst {
   position: relative;
   display: inline-flex;
@@ -1274,8 +1277,9 @@ html[data-document-hidden] *::after {
 }
 
 /*
- * Bugfix: 通用 animate-pulse 只让 14px 的 SVG 以 2 秒周期改变透明度，运行时虽然处于 running，
- * 但视觉上几乎像静止。把专用呼吸动画挂到图标外层，同时改变透明度和缩放，确保操作状态可感知。
+ * Bugfix: generic animate-pulse only faded a 14px SVG on a 2s cycle, so running read as frozen. The
+ * dedicated breathing animation sits on the icon wrapper and moves opacity and scale together, making
+ * the running state perceptible.
  */
 @keyframes browser-use-operation-breathe {
   0%,
@@ -1297,8 +1301,9 @@ html[data-document-hidden] *::after {
 }
 
 /*
- * Browser Use 执行期间发生 resize 时，直接降低 webview guest 的亮度，让提示不会只浮在复杂网页上。
- * filter 不增加点击遮罩，地址栏也不在该节点内，因此自动操作与用户控制仍保持可用。
+ * While Browser Use runs, a resize dims the webview guest so the notice never floats alone over a busy
+ * page. The filter adds no click shield and the address bar lives outside the node: automation and user
+ * control stay live.
  */
 .browser-use-viewport {
   transition: filter 160ms ease-out;
@@ -1363,20 +1368,22 @@ html[data-document-hidden] *::after {
   border-radius: 0.5rem;
 }
 
-/* Bug 原因：走马灯文字从两侧进出时只保留右侧渐隐，左边缘会出现硬切。 */
+/* Bug: marquee text fading only on the right hard-clips at the left edge. */
 @media (hover: hover) and (prefers-reduced-motion: no-preference) {
   .task-title-marquee:hover .task-title-marquee-track {
     will-change: transform;
   }
 }
 
-/* 工作流图·行进边（docs/dynamic-workflow/presentation.md「Rails and arcs」）：控制流进入正在运行的站所走的
- * 那条边**亮着、不动**——它说的是过去（控制流走了这条边），动作属于正在运行的灯（下面的 wf-beat）。
- * 光是灯的颜色，在灯那一头最亮、朝控制流来的方向淡去，像灯照亮了自己来的路。之前是一条沿边滚动的
- * 警示色虚线，读起来像「还在从上一站往这一站赶路」。
- * 平轨道是一条 border，光叠在 ::after 上：1.5px、圆头，从远端的全透明到 80% 处的满色，右端越过轨道
- * 末端 4px 好贴到光晕上。SVG 里的边（弧、分叉与汇合曲线、脊线的曲线）由 WorkflowMarchLight.tsx 画一条
- * .wf-lit 路径，描边是沿路径首尾铺的渐变。全是静止的墨，reduced-motion 下无需改动。 */
+/* Workflow graph, the travelled edge (docs/dynamic-workflow/presentation.md "Rails and arcs"): the edge
+ * control flow took into the running station stays lit and still. It speaks of the past; motion belongs
+ * to the running lamp (wf-beat below). The light is the lamp color, brightest at the lamp and fading
+ * back along the direction of travel, as if the lamp lit the road it came by; the earlier warning dashes
+ * crawling along the edge read as still en route.
+ * A flat rail is a border; the light layers on ::after at 1.5px, round caps, transparent from the far end
+ * to full at 80%, overshooting the rail end 4px to meet the halo. Edges inside SVG (arcs, fork/merge
+ * curves, spine curves) get a .wf-lit path from WorkflowMarchLight with a gradient laid along the stroke.
+ * All ink is static; reduced-motion needs no change. */
 .wf-rail-march::after {
   content: "";
   position: absolute;
@@ -1393,10 +1400,11 @@ html[data-document-hidden] *::after {
   stroke-linecap: round;
 }
 
-/* 流轨（docs/dynamic-workflow/presentation.md「Stream rails」）：站头行上的流轨把 border 变透明，线改由
- * ::before 画，正中留出 22px 的缺口给三枚 chevron（WorkflowStreamChevrons.tsx）。线本身不动、不亮；
- * 正在流的 chevron 沿流向依次亮起（wf-stream-flow，每枚相隔 0.15s）——这是边上唯一允许的动作，因为
- * 它说的正是「东西此刻正从上一站往下一站走」。reduced-motion 下停在满色。 */
+/* Stream rail (docs/dynamic-workflow/presentation.md "Stream rails"): on the header row the border goes
+ * transparent and ::before draws the line, a 22px gap at center for the three chevrons
+ * (WorkflowStreamChevrons.tsx). The line never moves or glows; streaming chevrons light in flow order
+ * (wf-stream-flow, 0.15s apart), the only motion allowed on an edge because it says exactly that
+ * something is en route right now. reduced-motion rests at full color. */
 .wf-rail-stream {
   border-top-color: transparent;
 }
@@ -1430,9 +1438,11 @@ html[data-document-hidden] *::after {
   }
 }
 
-/* 侧栏脊线（docs/dynamic-workflow/presentation.md「The spine」）：行进段是两截 1.5px 的竖条，按
- * data-rail-position 选渐变——上一节的下半截从透明淡入到七成，运行那一节的上半截从七成涨到满、一直亮进
- * 灯里，整节穿过的 full 是平的七成。脊线的灯与卡上的灯同一个类（wf-lamp-running），一起搏动。 */
+/* Sidebar spine (docs/dynamic-workflow/presentation.md "The spine"): the travelled stretch is two 1.5px
+ * bars with a gradient picked by data-rail-position. The lower half of the previous section fades in to
+ * 70%, the upper half of the running section rises 70% to full and stays lit into the lamp, and full
+ * crossing a whole section is flat 70%. The spine lamp shares wf-lamp-running with the card and pulses
+ * in step. */
 .wf-spine-march[data-rail-position="below"] {
   background: linear-gradient(
     180deg,
@@ -1451,16 +1461,17 @@ html[data-document-hidden] *::after {
   background: color-mix(in oklab, var(--color-warning) 70%, transparent);
 }
 
-/* 工作流时间线·运动词汇（docs/dynamic-workflow/presentation.md「The pill」）：四个时长
- * 一条曲线，卡片、确认窗与侧栏清单共用。到场 / 弹入 / 展开 / 换词只动 opacity 与 transform，
- * 灯与墨迹只动颜色；从不动布局属性。reduced-motion 下全部归零，循环停在静止帧。 */
+/* Workflow timeline motion vocabulary (docs/dynamic-workflow/presentation.md "The pill"): four durations,
+ * one curve, shared by card, confirmation window and sidebar list. Arrive/pop/expand/word-swap touch only
+ * opacity and transform; lamp and ink touch only color; layout properties never move. reduced-motion
+ * zeroes everything and loops rest on their final frame. */
 .wf-motion {
   --wf-t-fast: 120ms;
   --wf-t-base: 160ms;
   --wf-t-enter: 200ms;
   --wf-t-ink: 320ms;
   --wf-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
-  /* 正在运行的灯的心跳周期；脊线与卡共用。 */
+  /* The running lamp heartbeat period; spine and card share it. */
   --wf-beat: 1.6s;
 }
 .wf-pill {
@@ -1492,7 +1503,7 @@ html[data-document-hidden] *::after {
   box-shadow: inset 0 0 0 1px
     color-mix(in oklab, var(--wf-avatar, var(--color-border-hover)) 35%, transparent);
 }
-/* 代理胶囊仅用底色反馈悬停，避免彩色描边抢占状态层级。 */
+/* Agent pills signal hover with ground color alone; a colored border would outshout the status hierarchy. */
 .wf-agent-pill:hover {
   box-shadow: none;
 }
@@ -1515,8 +1526,9 @@ html[data-document-hidden] *::after {
   transform: none;
   color: var(--color-foreground-subtle);
 }
-/* 产物药丸的方形瓦片（追记「产物药丸」）：墨灰，悬停时抬到 hover 色、字形转前景色；不像头像那样
- * 放大——形状说「什么」，不抢颜色说「谁」的戏。 */
+/* Artifact pill square tile (the artifact-pill postscript): ink gray; hover lifts it to the hover color
+ * and the glyph to foreground. No avatar-style scaling, because the shape says what and refuses to steal
+ * the color job of saying who. */
 .wf-pill-tile {
   transition:
     background-color var(--wf-t-base) var(--wf-ease),
@@ -1527,7 +1539,7 @@ html[data-document-hidden] *::after {
   background-color: var(--color-hover);
   color: var(--color-foreground);
 }
-/* 尾槽里 ↗ 顶替状态标记：标记缩出、箭头缩入，同一格、同一拍。 */
+/* In the tail slot the arrow replaces the status mark: mark out, arrow in, one cell, one beat. */
 .wf-pill-open:hover .wf-mark,
 .wf-pill-open:focus-visible .wf-mark {
   opacity: 0;
@@ -1536,8 +1548,9 @@ html[data-document-hidden] *::after {
 .wf-pill-open:active {
   transform: scale(0.985);
 }
-/* 「还有 n 个」那一行（追记「五枚药丸与一扇门」）：三张脸叠成一叠、各带一圈底色描边好分开，悬停时
- * 扇开两格。它是一扇门不是状态，所以 ↗ 不等悬停就在（没有状态标记可让位，空尾槽读作「没东西」）。 */
+/* The n-more row (the five-pills-one-door postscript): three faces stacked with ground-colored rings to
+ * separate them, fanning two cells on hover. It is a door, not a status, so the arrow shows without
+ * hover: no status mark to yield to, and an empty tail slot reads as nothing. */
 .wf-more-face {
   border-radius: 35%;
   box-shadow: 0 0 0 1.5px var(--color-background);
@@ -1554,15 +1567,17 @@ html[data-document-hidden] *::after {
   opacity: 1;
   transform: none;
 }
-/* 迷你量条（追记「阶段名册」）的段宽随计数过渡，读作「又结算了几个」。 */
+/* The mini meter (phase-roster postscript) tweens segment widths with the count: a few more settled. */
 .wf-meter-seg {
   transition: flex-grow var(--wf-t-ink) var(--wf-ease);
 }
-/* 完成卡的产物瓦片（docs/dynamic-workflow/transcript-and-notifications.md「Artifact tiles」）：悬停时预览框的边
- * 抬到 hover 色、说明行的 kind 瓦片与名字转前景、尾槽里 ↗ 顶替版本号——与药丸同一套语法，
- * 只是「抬起」落在预览框上而不是整块底色上。
- * 结构（WorkflowArtifactTile 文件头的 Bug 原因）：预览框是按钮的**兄弟**，按钮用 ::after 铺满整张瓦片
- * 接住点击；所以框的悬停态从瓦片容器上用 :has() 读按钮的状态，焦点环也画在容器上。 */
+/* Completion card artifact tiles (docs/dynamic-workflow/transcript-and-notifications.md "Artifact tiles"):
+ * on hover the preview frame border lifts to the hover color, the meta row kind tile and name turn
+ * foreground, and the tail arrow replaces the version. The pill grammar, with the lift on the frame
+ * rather than a full ground.
+ * Structure (bug note atop WorkflowArtifactTile): the preview frame is the button sibling; the button
+ * ::after covers the tile to catch clicks, so the frame hover state reads the button via :has() on the
+ * tile container, and the focus ring draws there too. */
 .wf-tile-hit::after {
   content: "";
   position: absolute;
@@ -1602,10 +1617,11 @@ html[data-document-hidden] *::after {
 .wf-tile:has(.wf-tile-open:active) .wf-tile-frame {
   transform: scale(0.99);
 }
-/* 产物索引的行（docs/dynamic-workflow/transcript-and-notifications.md「The index」）：交付物行之后的其余产物是一行行
- * 文字，不是框。悬停 / 聚焦时整行填 surface-hover（像侧栏行），kind 图标转前景，尾槽里 ↗ 顶替版本号——
- * 与药丸同一套语法，只是没有底色也没有描边：一行文字的抬起只需要一层填色。「还有 N 个」那一行是
- * 一扇门，↗ 不等悬停就在（wf-pill-go-rest）。 */
+/* Artifact index rows (docs/dynamic-workflow/transcript-and-notifications.md "The index"): artifacts past
+ * the deliverable are lines of text, not cards. Hover or focus fills the row with surface-hover
+ * (sidebar-like), the kind icon turns foreground, the tail arrow replaces the version. Pill grammar
+ * without ground or border, since a text line lift is one fill. The n-more row is a door: the arrow
+ * shows before hover (wf-pill-go-rest). */
 .wf-line {
   transition: background-color var(--wf-t-base) var(--wf-ease);
 }
@@ -1631,8 +1647,9 @@ html[data-document-hidden] *::after {
   opacity: 0;
   transform: scale(0.6);
 }
-/* 预览区里的文档缩略：按 2× 排版再缩到一半——是内容的缩略，不是把界面字号调小。
- * 盒子的宽**和高**都按倍数放大再缩回框内：只放宽不放高，缩后的盒子只盖住框的上半截，下半截空白。 */
+/* The preview pane document thumbnail: laid out at 2x then scaled down, a thumbnail of the content rather
+ * than a smaller UI font. The box width and height both scale up and back into the frame; width-only
+ * leaves the shrunken box covering the top half with blank below. */
 .wf-preview-doc {
   position: absolute;
   top: 0;
@@ -1654,17 +1671,19 @@ html[data-document-hidden] *::after {
     border-color var(--wf-t-ink) var(--wf-ease),
     box-shadow var(--wf-t-base) var(--wf-ease);
 }
-/* 正在运行的灯（presentation.md「Lamps」）：常亮的 3px 光晕，加每 1.6s 一下心跳（wf-beat）——灯鼓到 1.12 倍
- * 再落回，同时从光晕边缘放出一圈环，涨到灯外 8px 时淡尽。环是第二层 box-shadow，静止时透明；灯是页面上
- * 唯一在走时钟的东西。reduced-motion 下只剩常亮的光晕。 */
+/* The running lamp (presentation.md "Lamps"): a steady 3px halo plus a 1.6s heartbeat (wf-beat). The lamp
+ * swells to 1.12x and settles, releasing a ring from the halo edge that fades by 8px out; the ring is a
+ * second box-shadow, transparent at rest. The lamp is the page only clock-driven thing. reduced-motion
+ * keeps the steady halo alone. */
 .wf-lamp-running {
   box-shadow:
     0 0 0 3px color-mix(in oklab, var(--color-warning) 20%, transparent),
     0 0 0 3px transparent;
 }
-/* 留白（docs/dynamic-workflow/presentation.md「Holes on the timeline」）：等待中的虚线灯带 3px **常亮**的
- * 警示色光晕——不搏动，那里没有东西在跑，run 在等主代理写代码。尾巴留白的残段向右淡出：脚本的结尾
- * 还没写下。补全行草稿线上的邻站 40% 墨：它们只是上下文。 */
+/* Holes (docs/dynamic-workflow/presentation.md "Holes on the timeline"): a waiting dashed lamp wears a
+ * steady 3px warning halo, no pulse; nothing runs there, the run waits for the lead to write code. The
+ * tail void stub fades rightward, the script ending unwritten. Neighbors on a fill draft line sit at 40%
+ * ink: context, nothing more. */
 .wf-lamp-hole-waiting {
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-warning) 20%, transparent);
 }
@@ -1675,10 +1694,12 @@ html[data-document-hidden] *::after {
 .wf-ghost {
   opacity: 0.4;
 }
-/* 补全的框（docs/dynamic-workflow/presentation.md「Filled with phases」「The stroke」）：一根 1px、轨道同墨的线，
- * 路径 pathLength = 1。静止时透明、虚线偏移 1；指针或键盘焦点落在头上（data-fill-on）时偏移 420ms 走到 0——
- * 一笔从名字的右端画出、收在笔上；离开时整根线 160ms 淡出，淡完才把偏移、颜色与线宽拨回去（不倒着擦掉）。
- * 新鲜的两秒是动画而不是过渡：框在那一帧刚挂载，已经是亮的，没有「之前」可过渡。 */
+/* The fill frame (presentation.md "Filled with phases", "The stroke"): a 1px line in rail ink, pathLength
+ * 1. At rest transparent with dash offset 1; pointer or keyboard focus on the head (data-fill-on) runs the
+ * offset to 0 over 420ms, one stroke from the name right end closing on the pen. On leave the whole line
+ * fades 160ms and only then do offset, color and width reset, never erased backwards. The fresh two
+ * seconds are an animation, not a transition: the frame mounts already lit, with no before to transition
+ * from. */
 .wf-fill-frame {
   fill: none;
   stroke: var(--color-workflow-trace);
@@ -1732,7 +1753,7 @@ html[data-document-hidden] *::after {
     fill var(--wf-t-ink) var(--wf-ease),
     border-color var(--wf-t-ink) var(--wf-ease);
 }
-/* 入场动画不带 fill：只声明 from 帧，播完即交还给悬停过渡（标记让位、按下缩放）。 */
+/* Entrance animations declare no fill: from-frame only, handing back to hover transitions when done (mark yield, press scale). */
 .wf-arrive {
   animation: wf-arrive var(--wf-t-enter) var(--wf-ease);
 }
@@ -1758,7 +1779,7 @@ html[data-document-hidden] *::after {
 .wf-caret {
   animation: wf-caret 1s step-end infinite;
 }
-/* 草稿的笔（追记「书写效果」）：轨道段从左伸出、灯落地，然后名字逐字写出。 */
+/* The draft pen (writing-effects postscript): the rail segment extends from the left, the lamp lands, then the name types out. */
 .wf-rail-grow {
   transform-origin: left center;
   animation: wf-rail-grow var(--wf-t-base) var(--wf-ease);
@@ -1766,19 +1787,21 @@ html[data-document-hidden] *::after {
 .wf-land {
   animation: wf-land var(--wf-t-enter) var(--wf-ease);
 }
-/* 补全的生长（docs/dynamic-workflow/presentation.md「Holes on the timeline」的「Growth」）：插入列右侧的站
- * 从 −插入宽度（`--wf-slide`）滑到布局位置，320ms；播完即是布局位置，无需再提交。 */
+/* Fill growth (presentation.md "Holes on the timeline", "Growth"): stations right of the inserted column
+ * slide from minus the inserted width (--wf-slide) to layout over 320ms, ending exactly at layout, no
+ * further commit. */
 .wf-slide {
   animation: wf-slide 320ms var(--wf-ease);
 }
-/* 轮尾摘要（追记「轮尾摘要」）：展开 / 收起时外框高度在两个值之间过渡；展开时药丸挂载、依次
- * 落地（wf-arrive + 30 ms 错位），收起时只收高度。 */
+/* Run-tail digest (its own postscript): expand/collapse tweens the frame height between two values; on
+ * expand pills mount and land in sequence (wf-arrive, 30ms stagger), on collapse only the height collapses. */
 .wf-digest-plot {
   transition: height var(--wf-t-ink) var(--wf-ease);
 }
-/* 边檐（docs/dynamic-workflow/presentation.md「Overflow: the ledge」）：时间线自由滚动，原生滚动条隐藏；
- * 折到檐上的站在内容里淡出（160 ms 后 visibility 才切，淡出期间不可点也不可聚焦）；檐上的灯悬停
- * 放大 1.25；底部 2px 滚动条静止时隐形，指针在时间线上或正在滚 / 拖时露出，悬停轨道加粗到 4px。 */
+/* Ledges (presentation.md "Overflow: the ledge"): the timeline scrolls freely, native scrollbar hidden.
+ * Folded stations fade in place (visibility flips only after 160ms; unclickable and unfocusable while
+ * fading); ledge lamps scale 1.25 on hover; the 2px bottom scrollbar hides at rest and shows under the
+ * pointer or while scrolling or dragging, track thickening to 4px on hover. */
 .wf-scroller {
   scrollbar-width: none;
 }
@@ -1824,18 +1847,18 @@ html[data-document-hidden] *::after {
     animation: wf-beat var(--wf-beat, 1.6s) var(--wf-ease, ease-in-out) infinite;
   }
 }
-/* 工作区 transcript（docs/dynamic-workflow/presentation.md「The pill」视觉修订）：
- * 条目依次到场（wf-arrive + 每张错 24 ms，封顶 360 ms）；章头的横线从左长出；命令输出的尾巴
- * 与展开面板从上方落下；落点那个条目到位后底色亮一下再退回（一次，不是常驻的焦点带）；
- * 运行中的动词扫光；状态词换值时旧词退场新词进场（wf-swap）。全部只动 opacity / transform /
- * background-color；reduced-motion 下到场、落点与扫光都归零。 */
+/* Workspace transcript (the pill visual revision): entries arrive in sequence (wf-arrive, 24ms stagger,
+ * 360ms cap); section rules grow from the left; command-output tails and expanded panels drop from above;
+ * the landed entry flashes its ground once and settles, once, not a persistent focus band; running verbs
+ * sweep; status words swap old-out-new-in (wf-swap). Only opacity, transform and background-color move;
+ * reduced-motion zeroes arrival, landing and sweep. */
 .wf-ws-entry {
   transition: background-color var(--wf-t-base) var(--wf-ease);
 }
 .wf-ws-landed {
   animation: wf-ws-land 1.4s var(--wf-ease) 1;
 }
-/* 详情页的落点（追记「五枚药丸与一扇门」）：节头到位后底色持 400 ms 再用 800 ms 退回，一次。 */
+/* Detail-page landing (five-pills-one-door postscript): the section header holds its ground 400ms then releases over 800ms, once. */
 .wf-landed {
   animation: wf-land 1.2s var(--wf-ease) 1;
 }
@@ -1913,7 +1936,7 @@ html[data-document-hidden] *::after {
     background: none;
   }
 }
-/* 瓦片脸：身份色不随表情改变，动作只作用于眼睛，机身始终静止。 */
+/* Tile faces: identity color never changes with expression; animation touches the eyes only, the body stays still. */
 .wf-face {
   min-width: 20px;
   min-height: 20px;
@@ -2185,14 +2208,14 @@ html[data-document-hidden] *::after {
   .wf-sb {
     transition: none;
   }
-  /* 框的亮态选择器更具体，得单独关掉：reduced-motion 下框整根出现、整根消失，不画笔。 */
+  /* The frame lit selector is more specific and needs its own off switch: under reduced-motion the frame appears and disappears whole, no drawing pen. */
   .wf-fill-frame[data-fill-on="true"] {
     transition: none;
   }
   .wf-preview-doc {
     animation: none;
   }
-  /* 瓦片脸：动作归零、不跟随指针；表情本身仍按状态显示——它是信息不是装饰。 */
+  /* Tile faces: motion zeroed, no pointer tracking; the expression itself still shows state, information not decoration. */
   .wf-face [data-eye-expression="dots"] circle,
   .wf-face-body,
   .wf-face-lids,
@@ -2204,7 +2227,7 @@ html[data-document-hidden] *::after {
   }
 }
 
-/* Mention 图标不进入 TextNode DOM，避免首部 img/svg 截断 Lexical 原生选区映射。 */
+/* Mention icons stay out of the TextNode DOM, or a leading img/svg truncates the Lexical native selection mapping. */
 .prompt-mention::before {
   content: "";
   width: 1rem;

@@ -24,11 +24,7 @@ import type {
   ToolInputValidationResult,
   ToolPersistedModelContentInput,
 } from "../types.js";
-import {
-  formatCompactFileSize,
-  projectTask,
-  throwIfAborted,
-} from "./task-output-projection.js";
+import { formatCompactFileSize, projectTask, throwIfAborted } from "./task-output-projection.js";
 
 const TASK_OUTPUT_DEFAULT_LENGTH = 32_000;
 const TASK_OUTPUT_MAX_LENGTH = 160_000;
@@ -62,8 +58,8 @@ const taskOutputHandler: ToolHandler = async (input, context) => {
     }
     const projectedTask = await projectTask(initialTask, context);
     // notified claims successful delivery of the completion; writing it before projection would swallow a
- // later completion on read failure or abort. Async projection cannot be force-stopped by outer cancel
- races, so re-check the signal after the await, then claim.
+    // later completion on read failure or abort. Async projection cannot be force-stopped by outer cancel
+    // races, so re-check the signal after the await, then claim.
     throwIfAborted(context.abortSignal);
     markTaskNotified(initialTask, context);
     return taskOutputResult("success", projectedTask);
@@ -187,7 +183,7 @@ export function formatTaskOutputModelContent(output: unknown): string {
     }
     if (task.output.trim()) {
       // Without a real full file, task_id is not a readable path -- do not disguise it as "Full output";
- // keep the verbatim text and let the outer large-result artifact path handle it.
+      // keep the verbatim text and let the outer large-result artifact path handle it.
       const content = (
         task.outputFile ? truncateTaskOutput(task.output, task.outputFile) : task.output
       ).trimEnd();

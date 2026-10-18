@@ -101,7 +101,8 @@ app
       assert.equal(params.sessionId, scope.sessionId);
       assert.equal(params.serverName, scope.serverName);
       if (method === "prepareSandbox") {
-        // 同一逻辑页面并发初始化经过生产 bridge，必须只有一次 MCP read 与 Main register。
+        // Concurrent init of one logical page through the production bridge must yield exactly one
+        // MCP resources/read and one Main register.
         const [a, b] = await Promise.all([
           bridge.prepareSandbox(params),
           bridge.prepareSandbox(params),
@@ -270,7 +271,8 @@ app
           await agent.respond(request, "allow");
           await pending;
           assert.equal(executed("late-approval"), 0);
-          // 旧 dispose 到达新登记之后，也不能拆掉替换页面。
+          // Even a late dispose arriving after the new registration must not dismantle the
+          // replacement page.
           await win.webContents.executeJavaScript(
             `window.harness.dispose(${JSON.stringify(old.sandboxId)},${old.initId})`,
           );
@@ -312,7 +314,8 @@ app
             ["workspace-b", "fixture"],
             ["workspace-a", "fixture", "fixture-other-workspace"],
           ]) {
-            // 连接命令、参数、资源、surface 完全相同，每次只改变一个身份维度。
+            // Connection command, args, resources and surface identical; one identity dimension
+            // changes per case.
             const otherScope = await agent.session(
               join(root, workspace!),
               "source-a",

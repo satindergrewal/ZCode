@@ -47,7 +47,9 @@ export function useStartPlanRecommendation(
         if ((await services.settingService.get()).startPlanRecommendationDismissed)
           return selection;
       } catch (error) {
-        logger.warn("[StartRecommendation] failed to read preference; keeping original selection", { error });
+        logger.warn("[StartRecommendation] failed to read preference; keeping original selection", {
+          error,
+        });
         return selection;
       }
       let dismissed = false;

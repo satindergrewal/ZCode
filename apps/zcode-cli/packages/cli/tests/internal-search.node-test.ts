@@ -106,7 +106,7 @@ async function readPidFile(path: string): Promise<number> {
         return pid;
       }
     } catch {
-      // 子进程启动后才写 pid 文件；轮询能让测试稳定等待到真实 native child。
+      // The pid file appears only after the child starts; polling lets the test wait deterministically for the real native child.
     }
     await delay(20);
   }
@@ -275,8 +275,8 @@ nativeSearchTest("internal grep exits quietly when downstream pipe closes early"
 
   const result = await runShell(
     [
-      // Bug 根因：硬编码 workspace 层的 tsx shim 会在 pnpm filtered install 下不存在；
-      // 复用当前 Node 与相同 loader，测试才不依赖 node_modules 的物理铺设方式。
+      // Bug root cause: a hardcoded workspace-level tsx shim does not exist under pnpm filtered install;
+      // reusing the current Node and loader keeps the test independent of the node_modules layout.
       shellQuote(process.execPath),
       "--import",
       shellQuote(tsxLoaderPath),

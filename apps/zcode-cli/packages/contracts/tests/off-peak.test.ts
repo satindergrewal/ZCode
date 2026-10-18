@@ -7,25 +7,24 @@ import {
   OffPeakTaskSummarySchema,
 } from "../src/tools/off-peak.js";
 
-describe("OffPeakCreateInputSchema（D49-4 参数面）", () => {
-  it("title/prompt 必填，其余可选", () => {
-    expect(
-      OffPeakCreateInputSchema.safeParse({ title: "t", prompt: "p" }).success,
-    ).toBe(true);
+describe("OffPeakCreateInputSchema (D49-4 input surface)", () => {
+  it("title/prompt required, rest optional", () => {
+    expect(OffPeakCreateInputSchema.safeParse({ title: "t", prompt: "p" }).success).toBe(true);
     expect(OffPeakCreateInputSchema.safeParse({ title: "t" }).success).toBe(false);
     expect(OffPeakCreateInputSchema.safeParse({ prompt: "p" }).success).toBe(false);
     expect(OffPeakCreateInputSchema.safeParse({ title: "  ", prompt: "p" }).success).toBe(false);
   });
 
-  it("prompt 参数描述进入模型可见 schema，必须是 D50 绑定会话语义（机审 CR-01）", () => {
-    const properties = (OffPeakCreateInputJsonSchema as { properties: Record<string, { description?: string }> })
-      .properties;
+  it("prompt description reaches the model-visible schema as D50 bound-session semantics (review CR-01)", () => {
+    const properties = (
+      OffPeakCreateInputJsonSchema as { properties: Record<string, { description?: string }> }
+    ).properties;
     const description = properties.prompt?.description ?? "";
     expect(description).toContain("continues THIS conversation");
     expect(description).not.toMatch(/fresh|without relying|self-contained|NEW session/);
   });
 
-  it("permissionMode 只接受产品四档词表", () => {
+  it("permissionMode accepts only the four-value product vocabulary", () => {
     for (const mode of ["build", "edit", "plan", "yolo"]) {
       expect(
         OffPeakCreateInputSchema.safeParse({ title: "t", prompt: "p", permissionMode: mode })
@@ -41,7 +40,7 @@ describe("OffPeakCreateInputSchema（D49-4 参数面）", () => {
     ).toBe(false);
   });
 
-  it("strict：拒绝未知键（workspace/凭证不是模型入参）", () => {
+  it("strict: unknown keys refused (workspace/credentials are not model input)", () => {
     expect(
       OffPeakCreateInputSchema.safeParse({
         title: "t",
@@ -52,8 +51,8 @@ describe("OffPeakCreateInputSchema（D49-4 参数面）", () => {
   });
 });
 
-describe("OffPeak 输出与列表 schema", () => {
-  it("任务快照最小面：不含 serverTicketId 等跨边界字段", () => {
+describe("OffPeak output and list schemas", () => {
+  it("task snapshot minimal surface: no cross-boundary fields like serverTicketId", () => {
     const parsed = OffPeakTaskSummarySchema.safeParse({
       offPeakTaskId: "offpeak-1",
       title: "t",
@@ -65,7 +64,7 @@ describe("OffPeak 输出与列表 schema", () => {
     expect(parsed.success).toBe(false);
   });
 
-  it("create 输出 = task + message", () => {
+  it("create output = task + message", () => {
     expect(
       OffPeakCreateOutputSchema.safeParse({
         task: { offPeakTaskId: "offpeak-1", title: "t", status: "queued", createdAt: 1 },
@@ -74,7 +73,7 @@ describe("OffPeak 输出与列表 schema", () => {
     ).toBe(true);
   });
 
-  it("list 无参数", () => {
+  it("list takes no arguments", () => {
     expect(OffPeakListInputSchema.safeParse({}).success).toBe(true);
     expect(OffPeakListInputSchema.safeParse({ status: "queued" }).success).toBe(false);
   });

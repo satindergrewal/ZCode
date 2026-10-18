@@ -4,7 +4,12 @@ import {
   createCoreError,
   formatCompactSummary,
 } from "../deps.js";
-import type { CompactTimelinePayload, SessionEvent, SessionEventType, TraceContext } from "../deps.js";
+import type {
+  CompactTimelinePayload,
+  SessionEvent,
+  SessionEventType,
+  TraceContext,
+} from "../deps.js";
 import {
   buildProviderRequestMessages,
   createModelContextExceededFinishError,
@@ -16,29 +21,24 @@ import type { AgentRuntimeInternal } from "../internal.js";
 import type { RuntimeMessageEntry } from "../../agent/message-history.js";
 
 export const COMPACT_TOOL_USE_DENIAL_MESSAGE = "Tool use is not allowed during compaction";
-export const COMPACT_TOOL_USE_DENIAL_REASON =
-  "compaction agent should only produce text summary";
+export const COMPACT_TOOL_USE_DENIAL_REASON = "compaction agent should only produce text summary";
 
 export function createCompactPromptTooLongError(options: {
   attempt: number;
   cause?: unknown;
   preCompactTokenCount: number;
 }): Error {
-  return createCoreError(
-    CoreErrorType.ModelContextExceeded,
-    COMPACT_PROMPT_TOO_LONG_USER_MESSAGE,
-    {
-      cause: options.cause instanceof Error ? options.cause : undefined,
-      context: {
-        compactPromptTooLongAttempts: options.attempt,
-        preCompactTokenCount: options.preCompactTokenCount,
-      },
-      recoverable: true,
-      // 修复原因：compact 内部已经完成最多 3 次旧轮次截断重试；
-      // 最终仍超窗时不能再被 auto compact 外层重试放大成 3x3。
-      retryable: false,
+  return createCoreError(CoreErrorType.ModelContextExceeded, COMPACT_PROMPT_TOO_LONG_USER_MESSAGE, {
+    cause: options.cause instanceof Error ? options.cause : undefined,
+    context: {
+      compactPromptTooLongAttempts: options.attempt,
+      preCompactTokenCount: options.preCompactTokenCount,
     },
-  );
+    recoverable: true,
+    // Why: compaction has already exhausted its 3 retries on older-turn truncation;
+    // a final overflow must not be amplified 3x3 by the outer auto-compact retry.
+    retryable: false,
+  });
 }
 
 export function createCompactContextExceededFinishError(
@@ -59,8 +59,8 @@ export function createCompactContextExceededFinishError(
 }
 
 function isCompactEmptyLengthFinish(result: RuntimeModelTextResult): boolean {
-  // GLM/Z.AI compact 可能以 length + 空文本完成，真实含义是没有可保存的 summary；
-  // 仅在 compact 路径把它归类为超窗压力，复用已有 prompt-too-long 降输入重试。
+  // GLM/Z.AI compact can finish length + empty text, really no savable summary;
+  // only compact classifies it as overflow pressure, reusing prompt-too-long input-shrinking retries.
   return result.finishReason.trim().toLowerCase() === "length" && result.text.trim().length === 0;
 }
 
@@ -83,10 +83,7 @@ export function buildCompactSummaryRequestMessages(
   options: { useMidConversationSystem?: boolean } = {},
 ): RunModelTextRequestOptions["messages"] {
   return buildProviderRequestMessages({
-    entries: [
-      ...entriesForSummary,
-      { message: { role: "user" as const, content: compactPrompt } },
-    ],
+    entries: [...entriesForSummary, { message: { role: "user" as const, content: compactPrompt } }],
     applyCacheControl: true,
     skipCacheWrite: true,
     useMidConversationSystem: options.useMidConversationSystem,

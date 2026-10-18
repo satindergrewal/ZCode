@@ -436,10 +436,9 @@ describe("replayRunProgress — 结算按行铸造", () => {
 
     // 归约面：两条缓存结算都归到子代理名下；最后一条是本 run 的重放命中，sessionId 指回本 run。
     const run = reduce("dwfrun-cached");
-    expect(run.nodes.filter((node) => node.actorSiteId === "actor#1").map((node) => node.siteId)).toEqual([
-      "ask#1",
-      "ask#2",
-    ]);
+    expect(
+      run.nodes.filter((node) => node.actorSiteId === "actor#1").map((node) => node.siteId),
+    ).toEqual(["ask#1", "ask#2"]);
     expect(run.actors[0]?.sessionId).toBe(own);
   });
 

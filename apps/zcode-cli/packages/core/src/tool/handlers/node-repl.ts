@@ -115,7 +115,7 @@ function buildInjectedGlobals(
             signal: active.abortSignal,
           });
           // Backends may miss the abort window. Post-reset late results must not pollute the new cell's
- response meta, nor hand old JS continuations tab results the new generation still uses.
+          // response meta, nor hand old JS continuations tab results the new generation still uses.
           assertCurrentRuntime();
           if (result.ok && command.method === "screenshot" && result.image) {
             onBrowserScreenshot(result.image);
@@ -223,7 +223,7 @@ async function persistBrowserScreenshotPaths(
         paths.push(isAbsolute(artifact.path) ? artifact.path : resolve(artifact.path));
     } catch (error) {
       // The path is a screenshot side-output; artifact failure must not flip an already-successful
- // Browser command to failed -- but request cancellation keeps the tool's cancel semantics.
+      // Browser command to failed -- but request cancellation keeps the tool's cancel semantics.
       if (context.abortSignal.aborted) throw error;
     }
   }
@@ -335,7 +335,7 @@ function buildJsToolDescription(options: NodeReplToolOptions = {}): string {
     "from its contents. " +
     "`tab.snapshot()` plus ref actions remain only as a z-code compatibility fallback. For ordinary navigation, reading, search, and forms, " +
     // Models may skip the lookup docs and end on screenshot(), dumping PNG bytes as Uint8Array text;
- // so while "to screenshot" stays on-demand, once taken the emitImage output contract must sit in the tool doc.
+    // so while "to screenshot" stays on-demand, once taken the emitImage output contract must sit in the tool doc.
     "use DOM snapshots only: opening a page is not a reason to capture a screenshot, and do not request both a snapshot " +
     "and screenshot in the same observation by default. Use a screenshot only when the user explicitly requests one, " +
     "visual layout/rendering/image content must be judged, or the required target is absent from the DOM snapshot (for " +

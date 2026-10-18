@@ -2,26 +2,28 @@ import ts from "typescript";
 import type { HoleSite } from "../analysis/sites.js";
 
 /**
- * 留白的降级（execution-engine.md「From script to sandbox input: lowering」的两行 hole，
- * 与「The vm cell」）：
+ * Lowering of holes (the two-line hole in execution-engine.md "From script to sandbox input:
+ * lowering", and "The vm cell"):
  *
  *   hole<T>(n, p?)                 -> __host.hole("hole#1", n, p ?? void 0, (__src) => eval(__src))
  *   hole<T>(n, p?, async () => …)  -> __host.hole("hole#1", n, p ?? void 0, (__src) => eval(__src),
  *                                                 async () => { …lowered body… })
  *
- * 最后那个 `(__src) => eval(__src)` 是**在站点处**发出的求值器：它的 `eval` 是直接调用，所以
- * 补全的文本在留白的词法作用域里求值——能读到留白之前的每个绑定、`__host` 也在内；每次到达
- * 都新造一个求值器，循环里的留白因此拿到每一轮的绑定。已补全的留白把函数体当第五个实参传过
- * 去，cell 直接调用它、不发消息。
+ * The trailing `(__src) => eval(__src)` is the evaluator emitted at the site: its `eval` is a
+ * direct call, so the fill text is evaluated in the hole's lexical scope — every binding before
+ * the hole is readable, `__host` included; a fresh evaluator is built on each arrival, so a hole
+ * inside a loop sees each round's bindings. A filled hole passes its body as the fifth argument;
+ * the cell calls it directly instead of messaging.
  *
- * 从 lower.ts 拆出（max-lines 门），且刻意只做纯函数：改写按站点表给的节点身份走，与其余
- * 站点同一趟 transform，不再识别第二遍。
+ * Split out of lower.ts (max-lines gate) and deliberately a pure function: the rewrite keys off
+ * the node identity the site table provides, one transform pass alongside the other sites, no
+ * second recognition pass.
  */
 
-/** 求值器的形参名：cell 把补全文本喂给它。 */
+/** The evaluator's parameter name: the cell feeds the fill text to it. */
 const EVALUATOR_PARAM = "__src";
 
-/** 两趟降级共用的擦除选项：主体与留白函数体必须由**同一套**参数产出（execution-engine.md「The text that runs」）。 */
+/** Erasure options shared by both lowering passes: the body and hole bodies must be produced by the **same** options (execution-engine.md "The text that runs"). */
 export const TRANSPILE_OPTIONS: ts.CompilerOptions = {
   isolatedModules: false,
   module: ts.ModuleKind.ESNext,
@@ -30,7 +32,7 @@ export const TRANSPILE_OPTIONS: ts.CompilerOptions = {
   target: ts.ScriptTarget.ES2022,
 };
 
-/** 一次留白调用的改写；已补全的留白把改写后的函数体记进 `bodies`，供 {@link printHoleBodies} 打印。 */
+/** Rewrites one hole call; a filled hole records its rewritten body into `bodies` for {@link printHoleBodies} to print. */
 export function lowerHoleCall(
   call: ts.CallExpression,
   site: HoleSite,
@@ -63,12 +65,14 @@ export function lowerHoleCall(
 }
 
 /**
- * 每个已补全留白的函数体，作为**打印过、擦除过类型**的文本 `(async () => {\n…\n})`：活的补全
- * 让 cell 对它 `eval`，之后的 replay 则跑主体里内联的同一份改写——两条路的每个站点都带同样的
- * `hole#<hash>/…` id，因为文本来自同一趟 transform（execution-engine.md「The text that runs」）。
+ * Each filled hole's body as **printed, type-erased** text `(async () => {\n…\n})`: a live fill
+ * has the cell `eval` it, while a later replay runs the same rewrite inlined in the body — both
+ * paths carry the same `hole#<hash>/…` id per site, because the text comes from one transform
+ * pass (execution-engine.md "The text that runs").
  *
- * 打印成表达式语句再擦除，尾随的 `;\n` 是 transpile 加的语句结束，去掉——留下的就是一个可以
- * 直接 `eval` 成函数值的括号表达式。
+ * Printed as an expression statement and then erased: the trailing `;\n` is the statement
+ * terminator transpile adds, so strip it — what remains is a parenthesized expression that
+ * `eval`s straight to a function value.
  */
 export function printHoleBodies(
   bodies: ReadonlyMap<string, ts.Expression>,

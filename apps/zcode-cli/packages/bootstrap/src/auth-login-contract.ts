@@ -40,7 +40,7 @@ export interface LoginZCodeCliResult {
   user: CliOAuthUser;
 }
 
-// BigModel 与 Z.ai 共用服务端轮询登录，只是 providerId 固定为 bigmodel。
+// BigModel and Z.ai share the server-side polling login; only the providerId is pinned to bigmodel.
 export type LoginBigmodelCodingPlanOptions = Omit<LoginZCodeCliOptions, "providerId">;
 export type LoginBigmodelCodingPlanResult = LoginZCodeCliResult & { providerId: "bigmodel" };
 

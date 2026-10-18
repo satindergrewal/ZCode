@@ -3,33 +3,40 @@ import { holePrefixOf } from "./hole-id.js";
 import type { SiteTable } from "./sites.js";
 
 /**
- * 补全服务的两件纯文本工具（execution-engine.md「The fill service's checks」）：把函数体拼进
- * 留白调用、以及补全前后站点表的稳定性复核。两者都不碰引擎与 journal，run service 按序调用。
+ * The fill service's two plain-text tools (execution-engine.md "The fill service's checks"):
+ * splicing a body into a hole call, and the pre/post-fill stability re-check of the site table.
+ * Neither touches the engine or the journal; the run service calls them in order.
  */
 
-/** 拼接结果：新文本、第一行插入行的脚本行号（1-based）与插入的行数。 */
+/** The splice result: the new text, the script line (1-based) of the first inserted line, and the number of inserted lines. */
 export interface SplicedHoleBody {
   text: string;
   insertedAtLine: number;
   insertedLines: number;
 }
 
-/** 函数体相对调用缩进再多缩的空格数。 */
+/** Extra spaces the body is indented beyond the call's indentation. */
 const BODY_EXTRA_INDENT = 2;
 
 /**
- * 把 `body` 作为最后一个实参拼进留白调用：紧接在**最后一个实参的末尾**插入 `, async () => {\n<body>\n}`，
- * 函数体每行按调用所在行的缩进再加两格，右花括号取调用的缩进。返回 `undefined` 当留白不在表里
- * 或已经有函数体——补全一个已补全的留白不是拼接能表达的事。
+ * Splice `body` into the hole call as its last argument: insert `, async () => {\n<body>\n}`
+ * right after the **end of the last argument**, each body line indented to the call's line plus
+ * two spaces, the closing brace at the call's indentation. Returns `undefined` when the hole is
+ * not in the table or already has a body — filling an already-filled hole is not something a
+ * splice can express.
  *
- * 插入点是最后一个实参的末尾而不是右括号之前：2026-09-28 首次实测里主代理按 prettier 的习惯写了
- * `hole<T>(\n  "名",\n  \`提示\`,\n);`——提示后面带一个尾随逗号——在右括号前插入就得到 `, , async`，
- * 四条语法错误全锚在草稿上，而草稿并没有错。接在实参末尾之后，原来的尾随逗号与换行留在函数体
- * 之后（`}, \n)`），仍是合法调用；实参与右括号之间的注释同样原样保留。
+ * The insertion point is the end of the last argument, not before the closing paren: in the
+ * first live trial (2026-09-28) the main agent wrote, prettier-style,
+ * `hole<T>(\n  "name",\n  \`prompt\`,\n);` — a trailing comma after the prompt — and inserting
+ * before the closing paren yields `, , async`, four syntax errors all anchored on a draft that
+ * was not wrong. Attached after the last argument, the original trailing comma and newline stay
+ * behind the body (`}, \n)`), still a legal call; comments between the last argument and the
+ * closing paren are preserved as is.
  *
- * `insertedAtLine` 是第一条函数体行在新脚本里的行号（`, async () => {` 留在最后一个实参结束的那一
- * 行上），`insertedLines` 是新增的换行数（函数体行数 + 右花括号那一行）：诊断按这两个数分到「补全
- * 文件内」与「草稿内」。
+ * `insertedAtLine` is the line number of the first body line in the new script (`,
+ * async () => {` stays on the line where the last argument ends), `insertedLines` the number of
+ * added newlines (body lines + the closing-brace line): diagnostics use the two to split
+ * findings between "in the fill file" and "in the draft".
  */
 export function spliceHoleBody(
   scriptText: string,
@@ -53,11 +60,11 @@ export function spliceHoleBody(
   ];
   const before = scriptText.slice(0, insertAt);
   const text = `${before}${inserted.join("\n")}${scriptText.slice(insertAt)}`;
-  const callLine = before.split("\n").length; // 最后一个实参结束的那一行（1-based）
+  const callLine = before.split("\n").length; // the line where the last argument ends (1-based)
   return { insertedAtLine: callLine + 1, insertedLines: inserted.length - 1, text };
 }
 
-/** 稳定性复核的结果：通过，或一句说明是哪个 id 在哪儿变了。 */
+/** The stability verdict: pass, or one sentence on which id moved where. */
 export type SiteStability = { ok: true } | { ok: false; detail: string };
 
 interface LocatedSite {
@@ -78,14 +85,16 @@ function everySite(table: SiteTable): LocatedSite[] {
 }
 
 /**
- * 补全前后站点表的稳定性（docs/analysis.md「Sites」的站点 id 稳定性规则，延伸到「加函数体」）：
- * `before` 的每个 id（全部种类）都在 `after` 里，位置不变或——落在插入点之后时——行号整体后移
- * `insertedLines`；`after` 里 `before` 没有的每个 id 都是这次补全写下的：带 `<holeSiteId>/`
- * 前缀，或者是函数体里新留的留白（`fill` 链通到 `holeSiteId`）及其体内的站点。哪条不成立都是
- * 宿主的错（分析器的编号规则被打破了），run 不能拿到它接不上的 id。
+ * Site-table stability across a fill (docs/analysis.md "Sites", the site id stability rule,
+ * extended to "adding a body"): every id in `before` (all kinds) is in `after`, at the same
+ * position or — when at or after the insertion point — shifted by `insertedLines`; every id in
+ * `after` absent from `before` was written by this fill: carrying the `<holeSiteId>/` prefix, or
+ * being a hole left inside the body (a `fill` chain reaching `holeSiteId`) plus the sites inside
+ * it. Any violation is the host's fault (the analyzer's numbering rules were broken); the run
+ * must not receive an id it cannot join.
  *
- * 与插入点同一行、插入点之后的站点（`await hole(...); agent("a")` 写在一行）行号后移但列号
- * 变了：那一行只比对行号。
+ * A site on the insertion line after the insertion point (`await hole(...); agent("a")` on one
+ * line) shifts lines but changes column: that line compares line numbers only.
  */
 export function checkSiteStability(
   before: SiteTable,
@@ -115,7 +124,8 @@ export function checkSiteStability(
     }
   }
   const known = new Set(everySite(before).map((site) => site.id));
-  // 这次补全写下的留白：`fill` 链一路通到被补全的留白（体内再留的、以及体内内联填好的）。
+  // The holes this fill wrote down: the `fill` chain reaches the filled hole all the way
+  // (holes left inside the body, and ones filled inline within it).
   const fillOf = new Map(after.holes.map((hole) => [hole.id, hole.fill]));
   const writtenByFill = (holeId: string): boolean => {
     for (let cur: string | undefined = holeId; cur !== undefined; cur = fillOf.get(cur)) {

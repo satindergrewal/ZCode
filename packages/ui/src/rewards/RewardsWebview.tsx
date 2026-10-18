@@ -60,7 +60,7 @@ export function RewardsWebview({ onClose }: { onClose: () => void }) {
   const injectedIdentity = useRef<string | null | undefined>(undefined);
   const authSnapshot = useRef({ fingerprint: "", revision: 0 });
   const latest = useRef({ theme, locale, userId });
-  // 读取后的身份比较覆盖 React effect 尚未执行的窗口，不能让旧账号写入新页面。
+  // Post-read identity check covers the window before effects run; no stale writes.
   latest.current = { theme, locale, userId };
   const [error, setError] = useState(false);
   const [navigation, setNavigation] = useState({ loading: true, back: false, forward: false });
@@ -73,7 +73,7 @@ export function RewardsWebview({ onClose }: { onClose: () => void }) {
       const href = element.getURL();
       if (!isTrustedRewardsUrl(href, policy)) return;
       if (injectedIdentity.current !== identity) {
-        // 切账号不能等异步凭据读取完才清旧账号，先撤销当前页面登录态。
+        // On account switch revoke the page session at once; no waiting for credentials.
         await element.executeJavaScript(
           createRewardsInjectionScript(
             {
@@ -150,7 +150,7 @@ export function RewardsWebview({ onClose }: { onClose: () => void }) {
     const stop = () => {
       sync();
       setNavigation((s) => ({ ...s, loading: false }));
-      // Next 语言路由会触发 loading，但同文档导航没有新的 dom-ready；恢复桥接就绪。
+      // Next locale routes trigger loading without a new dom-ready; restore bridge-ready.
       ready.current = true;
       void injectRef.current();
     };
@@ -171,7 +171,7 @@ export function RewardsWebview({ onClose }: { onClose: () => void }) {
     element.addEventListener("did-fail-load", failed);
     cleanup.current = () => {
       ++generation.current;
-      // 除显式关闭外，Root 卸载也要撤销凭据；销毁中的 guest 失败可忽略。
+      // Revoke on Root unmount too; failures on a dying guest are fine.
       if (ready.current) {
         try {
           void element
@@ -192,7 +192,7 @@ export function RewardsWebview({ onClose }: { onClose: () => void }) {
             )
             .catch(() => {});
         } catch {
-          /* guest 已销毁。 */
+          /* Guest already destroyed. */
         }
       }
       ready.current = false;
@@ -226,7 +226,7 @@ export function RewardsWebview({ onClose }: { onClose: () => void }) {
           ),
         );
     } catch {
-      /* WebView 已销毁时不阻塞关闭。 */
+      /* Destroyed WebView never blocks closing. */
     }
     onClose();
   };
@@ -265,7 +265,7 @@ export function RewardsWebview({ onClose }: { onClose: () => void }) {
           </Button>
         </div>
       )}
-      {/* 网页视口必须铺满窗口；限宽交给网站内容，否则滚动条也会被居中内缩。 */}
+      {/* The viewport fills the window; width limits belong to the site, or the scrollbar insets. */}
       <webview
         ref={attach}
         src={url}

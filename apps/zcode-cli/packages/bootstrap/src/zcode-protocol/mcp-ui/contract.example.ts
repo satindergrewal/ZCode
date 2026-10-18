@@ -5,7 +5,7 @@ import type {
 } from "./contract.js";
 import { McpUiNotSupportedError } from "./resourceContract.js";
 
-/** 一个只认识单个 server 的内存 session 视图，供契约测试与示例使用。 */
+/** An in-memory session view knowing a single server, for contract tests and examples. */
 export function createExampleSessionAccess(): McpUiSessionAccess {
   const html: McpUiReadResourceResult = {
     contents: [
@@ -19,13 +19,13 @@ export function createExampleSessionAccess(): McpUiSessionAccess {
   const echo: McpUiCallToolResult = { content: [{ type: "text", text: "pong" }] };
   return {
     hasMcpServer: async (serverName) => serverName === "plugin:example-plugin:widget",
-    // H03：echo_app_only 只给页面调；ping 两者可见；其它工具不存在。
+    // H03: echo_app_only is page-only; ping is visible to both; other tools do not exist.
     getToolVisibility: async (_serverName, toolName) =>
       toolName === "echo_app_only" ? ["app"] : toolName === "ping" ? ["model", "app"] : null,
     readResource: async () => html,
     callTool: async () => echo,
     readResourceForUi: async () => html,
-    // 4b-2：示例 server 只有一份静态资源，不支持订阅。
+    // 4b-2: the example server has one static resource and supports no subscription.
     listResourcesForUi: async () => ({
       resources: [
         {

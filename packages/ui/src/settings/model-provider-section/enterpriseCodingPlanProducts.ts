@@ -236,7 +236,7 @@ export function buildEnterpriseCodingPlanCreateOrderRequest({
 export function buildEnterpriseCodingPlanPaymentContent(
   order: Pick<EnterpriseCodingPlanCreateOrderResponse, "alipayJumpSchema" | "payUrl">,
 ): string {
-  // Bugfix: 企业套餐 PC 扫码二维码按接口文档使用 payUrl；alipayJumpSchema 是移动端拉起支付宝的 schema，内容过长时会导致二维码生成失败。
+  // Bugfix: the enterprise PC QR code uses payUrl per the API doc; alipayJumpSchema is the mobile Alipay schema and is too long for QR generation.
   return order.payUrl?.trim() || order.alipayJumpSchema?.trim() || "";
 }
 
@@ -246,8 +246,8 @@ export function isEnterpriseCodingPlanThirdPartyPaymentRequired(
     "alipayJumpSchema" | "payUrl" | "thirdPayAmount"
   >,
 ): boolean {
-  // Bugfix: 企业套餐使用赠金/余额全额抵扣时，后端会创建无三方支付内容的订单。
-  // 这种订单不应该进入支付宝二维码页，否则用户会卡在“当前支付页完成支付”。
+  // Bugfix: when gift credit/balance covers the full amount, the backend creates an order without third-party payment content.
+  // Such orders must not enter the Alipay QR page, or users stick on finish-payment page. -- typo alipay
   return order.thirdPayAmount > 0 || buildEnterpriseCodingPlanPaymentContent(order) !== "";
 }
 
@@ -261,8 +261,8 @@ export function buildEnterpriseCodingPlanEstimateFromPendingOrder(
     totalOriginalAmount: order.totalAmount,
     campaignDiscountAmount: discountAmount,
     totalPayAmount: order.amount,
-    // Bugfix: 待支付订单列表接口没有 thirdPayAmount 字段，确认页必须用待支付实付金额占位；
-    // 真正拉起支付时会再用继续支付接口返回的 thirdPayAmount 刷新二维码弹窗金额。
+    // Bugfix: the pending-orders API has no thirdPayAmount field; the confirm page must placeholder with the pending payable amount,
+    // and the real payment flow refreshes the QR dialog amount from continue-pay's thirdPayAmount.
     thirdPayAmount: order.amount,
   };
 }
@@ -337,8 +337,8 @@ export function calculateEnterpriseCodingPlanPricingDiscountAmount({
   }
   const periodCount = product.subscribeMode === "ONE_TIME" ? Math.max(1, duration) : 1;
   return roundCurrencyAmount(
-    // 修复原因：企业 pricing 的 discountAmount 可能为 0，真实年付折扣体现在 originalAmount 与 renewAmount 差额；
-    // 这里按卡片展示价还原单席位优惠金额，参与确认/支付明细。
+    // Fix rationale: enterprise pricing's discountAmount may be 0; the real yearly discount is the originalAmount-renewAmount gap,
+    // so the per-seat discount is reconstructed from the card display price for confirm/payment detail.
     displayDiscountAmount * Math.max(1, maxSeats) * periodCount,
   );
 }
@@ -397,8 +397,8 @@ function normalizePricingCampaignDiscountDetails(
     return [
       {
         ...detail,
-        // 修复原因：企业 pricing 返回的是单席位/单周期活动信息，试算/下单返回的是当前席位和时长的总优惠；
-        // 展示时保留 pricing 的活动名与说明，但金额必须使用当前订单总优惠，避免多席位采购折扣显示偏小。
+        // Fix rationale: enterprise pricing returns per-seat/per-period promo data while quote/order return the total for current seats x duration;
+        // keep pricing's promo name and copy but use the order's total discount, or multi-seat discounts render too small.
         campaignDiscountAmount: amount,
       },
     ];

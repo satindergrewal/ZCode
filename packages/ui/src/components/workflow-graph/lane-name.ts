@@ -98,7 +98,7 @@ function anonymousLaneIndexes(lanes: readonly WorkflowLaneData[]): Map<string, n
       lane.name === undefined &&
       formatNamePattern(lane.namePattern) === undefined &&
       laneClassOf(lane.id) === "agent" &&
-      // 主代理的车道从不画出来：算进来，唯一一条真匿名车道就会平白带上「1」。
+      // The main agent's lane never draws; counting it would strap a 1 onto the only truly anonymous lane.
       lane.id !== MAIN_LANE_ID,
   );
   if (anonymous.length < 2) return new Map();

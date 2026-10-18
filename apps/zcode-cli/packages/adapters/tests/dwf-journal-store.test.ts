@@ -43,7 +43,6 @@ afterAll(() => {
   }
 });
 
-
 runJournalStoreContract(() => openJournalDb().journal);
 
 const CAPS: Caps = { maxConcurrency: 4 };
@@ -116,7 +115,9 @@ describe("SQLite dwf journal store", () => {
       // 事件序号跨重开继续增长（engine-assigned、monotonic across resumes）。
       // 断言用 toMatchObject：追加还会带回写入时刻（StoredEvent.timeCreated），而这条用例
       // 说的是序号，不是时钟——时钟由契约套件的 timeCreated 用例钉住。
-      expect(resumed.appendEvent(RUN.runId, { type: "log", message: "after resume" })).toMatchObject({
+      expect(
+        resumed.appendEvent(RUN.runId, { type: "log", message: "after resume" }),
+      ).toMatchObject({
         sequence: 2,
         event: { type: "log", message: "after resume" },
       });
@@ -282,15 +283,15 @@ describe("SQLite dwf journal store", () => {
     journal.createRun(RUN);
     journal.updateRunStatus(RUN.runId, "completed", { result: "artifact text" });
 
-    const row = db.prepare("select status, result_json from dwf_run where id = ?").get(RUN.runId) as
-      | { result_json: string | null; status: string }
-      | undefined;
+    const row = db
+      .prepare("select status, result_json from dwf_run where id = ?")
+      .get(RUN.runId) as { result_json: string | null; status: string } | undefined;
     expect(row?.status).toBe("completed");
     expect(row?.result_json).toBe(JSON.stringify("artifact text"));
   });
 
   // `kind` 的 CHECK 含 'report'——只有对着真库才能验，内存实现连 CHECK 都没有。
-  it("dwf_node 接受 kind:\"report\" 并原样回读", () => {
+  it('dwf_node 接受 kind:"report" 并原样回读', () => {
     const { journal } = openJournalDb();
     journal.createRun(RUN);
     const report: NodeRecord = {
@@ -327,9 +328,8 @@ describe("SQLite dwf journal store", () => {
     ).toThrow();
   });
 
-
   // `kind` 的 CHECK 含 'world-run'（world.run 的 journal 化命令执行，docs/dynamic-workflow/authoring.md）。
-  it("dwf_node 接受 kind:\"world-run\" 并原样回读", () => {
+  it('dwf_node 接受 kind:"world-run" 并原样回读', () => {
     const { journal } = openJournalDb();
     journal.createRun(RUN);
     const worldRun: NodeRecord = {
@@ -493,12 +493,13 @@ describe("SQLite dwf journal store", () => {
     expect("resultCount" in rows[2]!).toBe(false);
     expect("exitCode" in rows[2]!).toBe(false);
     // 失败行没有正文：什么摘要都没有，只有 error。
-    expect(rows[3]).toMatchObject({ status: "failed", error: { code: "DriverError", message: "boom" } });
+    expect(rows[3]).toMatchObject({
+      status: "failed",
+      error: { code: "DriverError", message: "boom" },
+    });
     expect("resultBytes" in rows[3]!).toBe(false);
     expect("exitCode" in rows[3]!).toBe(false);
   });
-
-
 
   // dwf_event 上的表达式索引不只要存在，还得**真的被用上**：它存在的全部理由是让看板取数
   // 不必扫完一条长 run 的整张事件表（那是最大的一张表）。查询计划变了这里就会响。
@@ -833,8 +834,18 @@ describe("SQLite dwf journal store — listRuns", () => {
     // 的全局变体不按 cwd 过滤，把该名字在所有项目里的历史一并取出，行带 cwd 供 GUI 标项目
     // （docs/dynamic-workflow/launch.md「Data path」）。
     const { db, journal } = openIntrospectableJournal();
-    seedRun(db, journal, { runId: "run_a", cwd: "/repo/one", name: "deep-research", timeUpdated: 3 });
-    seedRun(db, journal, { runId: "run_b", cwd: "/repo/two", name: "deep-research", timeUpdated: 2 });
+    seedRun(db, journal, {
+      runId: "run_a",
+      cwd: "/repo/one",
+      name: "deep-research",
+      timeUpdated: 3,
+    });
+    seedRun(db, journal, {
+      runId: "run_b",
+      cwd: "/repo/two",
+      name: "deep-research",
+      timeUpdated: 2,
+    });
     seedRun(db, journal, { runId: "run_c", cwd: "/repo/one", name: "other", timeUpdated: 5 });
     seedRun(db, journal, { runId: "run_cwdless", name: "deep-research", timeUpdated: 1 });
 
@@ -845,12 +856,14 @@ describe("SQLite dwf journal store — listRuns", () => {
     expect(byId.get("run_a")?.cwd).toBe("/repo/one");
     expect(byId.get("run_b")?.cwd).toBe("/repo/two");
     // cwd 为 NULL 的行不带 cwd 键（新列不回填，缺席可分辨）。
-    expect(byId.get("run_cwdless") !== undefined && "cwd" in (byId.get("run_cwdless") ?? {})).toBe(false);
+    expect(byId.get("run_cwdless") !== undefined && "cwd" in (byId.get("run_cwdless") ?? {})).toBe(
+      false,
+    );
 
     // 给了 cwd 就仍只回本项目那份（与全局变体互斥，行为逐字不变）。
-    expect(journal.listRuns({ cwd: "/repo/one", limit: 20, name: "deep-research" }).map((r) => r.runId)).toEqual([
-      "run_a",
-    ]);
+    expect(
+      journal.listRuns({ cwd: "/repo/one", limit: 20, name: "deep-research" }).map((r) => r.runId),
+    ).toEqual(["run_a"]);
   });
 
   it("枚举行带 args（实参是小 JSON 袋，中枢的运行历史要展示它）；无实参的行键缺席", () => {
@@ -1967,7 +1980,9 @@ describe("SQLite dwf journal store — listRunLifeSpans", () => {
     stampEvent(db, 1, 5_000);
     stampEvent(db, 2, 61_000);
 
-    expect(journal.listRunLifeSpans(RUN_ID)).toEqual([{ startedAt: 1_000, lastActivityAt: 61_000 }]);
+    expect(journal.listRunLifeSpans(RUN_ID)).toEqual([
+      { startedAt: 1_000, lastActivityAt: 61_000 },
+    ]);
   });
 
   it("多世：每一世各算一段，世与世之间的空档不出现在任何一段里", () => {

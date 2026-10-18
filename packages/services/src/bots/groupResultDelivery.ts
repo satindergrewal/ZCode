@@ -11,7 +11,7 @@ interface GroupDeliveryDependencies {
   delay?(milliseconds: number): Promise<void>;
 }
 
-/** 只保存和发送已生成结果；不持有任务执行或输入队列。 */
+/** Only persists and delivers finished results; owns no execution or input queue. */
 export function createGroupResultDelivery(deps: GroupDeliveryDependencies) {
   const inFlight = new Map<string, Promise<void>>();
   const deliver = (result: BotGroupDelivery, retry = false): Promise<void> => {
@@ -28,7 +28,7 @@ export function createGroupResultDelivery(deps: GroupDeliveryDependencies) {
           await deps.write({ ...attemptResult, status: "invalidated", updatedAt: Date.now() });
           return;
         }
-        // 请求前落盘 unknown，进程中断后不得把不确定结果当作未发送。
+        // Persist unknown before the request: after a crash an uncertain result must not count as unsent.
         await deps.write({ ...attemptResult, status: "unknown", updatedAt: Date.now() });
         try {
           const sent = await deps.send(attemptResult);
@@ -53,7 +53,7 @@ export function createGroupResultDelivery(deps: GroupDeliveryDependencies) {
             lastError: error instanceof Error ? error.message : String(error),
             updatedAt: Date.now(),
           });
-          // 只有明确拒绝才降级；普通群去掉引用，话题最多退到根锚点，群目标仍由闭包固定。
+          // Degrade only on explicit rejection: plain groups drop the quote, topics fall back at most to the root anchor, and the group target stays pinned by the closure.
           if (rejected && details?.deliveryReplyUnavailable) {
             const fallback = getUnavailableReplyFallback(attemptResult);
             if (fallback) {
@@ -85,7 +85,7 @@ export function createGroupResultDelivery(deps: GroupDeliveryDependencies) {
   };
   return Object.assign(deliver, {
     isInFlight: (id: string) => inFlight.has(id),
-    // Bug 原因：崩溃恢复用的 unknown 曾直接触发 UI 告警；活跃发送只投影 pending，不能改写恢复记录。
+    // Bug: the crash-recovery unknown used to raise a UI alert; active sends only project pending and must not rewrite recovery records.
     project: (result: BotGroupDelivery): BotGroupDelivery =>
       inFlight.has(result.id) ? { ...result, status: "pending" } : result,
   });

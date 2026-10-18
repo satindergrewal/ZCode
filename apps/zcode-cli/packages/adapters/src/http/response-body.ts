@@ -1,8 +1,8 @@
 import { createHttpClientError } from "@zcode/contracts";
 
 /**
- * 读正文所需的最小形状：原生 fetch 的 `Response` 与 adapter 自己读出的 `IncomingResponse` 都满足它。
- * 不要求是 `Response`：后者表示不了 200–599 之外的状态码（network/incoming-response.ts）。
+ * The minimal shape body reading needs: native fetch's `Response` and the adapter's own `IncomingResponse` both satisfy it.
+ // Not required to be a `Response`: that cannot express statuses outside 200-599 (network/incoming-response.ts).
  */
 export interface ResponseLike {
   status: number;
@@ -38,7 +38,7 @@ export async function readResponseBody(
     }
   }
 
-  // 没有正文流只发生在无正文状态（204 / 304 …）：正文就是空的。
+  // A missing body stream only occurs for bodyless statuses (204 / 304 ...): the body is empty.
   if (!response.body) return new Uint8Array(0);
 
   const reader = response.body.getReader();

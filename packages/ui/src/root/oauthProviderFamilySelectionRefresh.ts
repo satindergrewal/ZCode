@@ -193,7 +193,9 @@ export async function refreshRestoredOAuthProviderFamilyAfterStartup(params: {
     try {
       await params.services.providerSettingsService.refresh("oauth-restore-entitlement");
     } catch (error) {
-      logger.warn("[Root] Startup account refresh failed; keeping the original connection", { error });
+      logger.warn("[Root] Startup account refresh failed; keeping the original connection", {
+        error,
+      });
     }
     return saved;
   }

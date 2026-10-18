@@ -72,7 +72,7 @@ export async function hydrateMessageHistoryFromSession(input: {
     partCount = 0;
 
   for (const message of activeMessages) {
-    // 旧话题背景已由可查看文本附件替代；保留存储记录，但恢复时不能重新隐藏注入。
+    // Legacy topic background was replaced by viewable text attachments; keep the stored record but never re-hide the injection on restore.
     if (
       message.info.role === "user" &&
       message.info.synthetic &&

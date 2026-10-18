@@ -9,19 +9,19 @@ describe("RespondToCoordinator contract", () => {
   it("accepts only summary and message as provider input", () => {
     expect(
       RespondToCoordinatorInputSchema.parse({
-        summary: "进度更新",
-        message: "已完成入口定位，正在验证异常路径。",
+        summary: "progress",
+        message: "Entry located; verifying error paths.",
       }),
     ).toEqual({
-      summary: "进度更新",
-      message: "已完成入口定位，正在验证异常路径。",
+      summary: "progress",
+      message: "Entry located; verifying error paths.",
     });
 
     for (const routingField of ["to", "agentId", "childSessionId", "parentSessionId"]) {
       expect(() =>
         RespondToCoordinatorInputSchema.parse({
-          summary: "进度更新",
-          message: "继续检查。",
+          summary: "progress",
+          message: "Still checking.",
           [routingField]: "model_supplied_route",
         }),
       ).toThrow();

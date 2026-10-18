@@ -1103,7 +1103,12 @@ describe("PermissionService alwaysAsk", () => {
     const service = new PermissionService();
 
     const decision = service.checkPermission(
-      { input: { script: "return 1;" }, mode: "yolo", riskLevel: "low", toolName: "CreateWorkflow" },
+      {
+        input: { script: "return 1;" },
+        mode: "yolo",
+        riskLevel: "low",
+        toolName: "CreateWorkflow",
+      },
       alwaysAskCapability,
       { deny: [{ toolName: "CreateWorkflow" }], version: 1 },
     );
@@ -1146,7 +1151,11 @@ describe("PermissionService session grant", () => {
     },
   ];
 
-  function check(mode: PermissionContext["mode"], service: PermissionService, toolName = "CreateWorkflow") {
+  function check(
+    mode: PermissionContext["mode"],
+    service: PermissionService,
+    toolName = "CreateWorkflow",
+  ) {
     return service.checkPermission(
       { input: { script: "return 2;" }, mode, riskLevel: "low", toolName },
       alwaysAskCapability,
@@ -1207,7 +1216,12 @@ describe("PermissionService session grant", () => {
 
     expect(
       service.checkPermission(
-        { input: { script: "return 2;" }, mode: "yolo", riskLevel: "low", toolName: "CreateWorkflow" },
+        {
+          input: { script: "return 2;" },
+          mode: "yolo",
+          riskLevel: "low",
+          toolName: "CreateWorkflow",
+        },
         alwaysAskCapability,
         { deny: [{ toolName: "CreateWorkflow" }], version: 1 },
       ),

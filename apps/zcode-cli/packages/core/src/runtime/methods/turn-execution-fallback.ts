@@ -34,13 +34,13 @@ export interface ExecutionSelectionFallbackResult {
 }
 
 /**
- * 纯解析：退回目标候选按优先级排序（docs/highspeed/highspeed-card-spec.md §2.2）。
- * - 先取发起方声明的 `target`（抽卡时的提交选择，即会话原模型），再取 runtime 会话常驻 Selection。
- *   Bug 根因：退回目标曾只依赖会话常驻 Selection，而它只在 runtime 内存里——冷恢复落在 Registry
- *   刚就绪、账号权益未解析的窗口时校验失败不绑定，之后只发加速轮也不会再绑定，3402 时降级静默跳过、
- *   整轮失败弹错。发起方抽卡时明确知道原模型，由它声明目标后不再押注 runtime 状态。
- * - 候选不能是本轮 execution provider 本身：退回同一个失败端点只会再失败一次。
- * - 两个候选相同只保留一个，避免同一目标建模失败记两次。
+ * Pure resolution: order fallback candidates by priority (docs/highspeed/highspeed-card-spec.md 2.2).
+ * - Take the initiator-declared `target` first (the submission choice at card time, i.e. the session's original model), then the runtime's resident Selection.
+ *   Root cause: the target used to rely only on the resident Selection, which lives in runtime memory — on cold restore, hitting the window where the Registry
+ *   is ready but entitlements unresolved, validation failed without binding, later speed rounds never re-bound, and at 3402 the fallback silently skipped,
+ *   failing the turn with a banner. The initiator knew the original model at card time; once it declares the target, stop betting on runtime state.
+ * - A candidate may not be this turn's execution provider: falling back to the same failed endpoint just fails again.
+ * - Deduplicate identical candidates so one target's resolution failure is not recorded twice.
  */
 export function resolveExecutionFallbackCandidates(input: {
   declaredTarget: ModelSelection | undefined;
@@ -65,11 +65,11 @@ export function resolveExecutionFallbackCandidates(input: {
 }
 
 /**
- * 纯匹配：本次模型请求失败是否命中执行 Selection 的退回声明（docs/highspeed/highspeed-card-spec.md §2.2）。
- * - 只看本轮 step 实际使用的模型 provider 是否就是声明 provider；失败必须明确归因到该 provider/network 边界。
- * - 用户取消与上下文超窗不参与退回：取消按取消收口，超窗交给 reactive compact（退回同模型同窗口只会再超一次）。
- * - 规则按声明顺序匹配，缺省 providerErrorCode 的规则匹配任意上游请求失败；core 不自行解释 provider 错误码，
- *   也不按 provider id 前缀、模型名或错误文案硬编码。
+ * Pure matching: does this model-request failure hit the execution Selection's fallback declaration (docs/highspeed/highspeed-card-spec.md 2.2)?
+ * - Only when the step's actual model provider is the declared one; failures must attribute cleanly to that provider/network boundary.
+ * - User cancel and context overflow are not fallback paths: cancel closes as a cancel; overflow goes to reactive compact (same model + same window would overflow again).
+ * - Rules match in declaration order; a rule without providerErrorCode matches any upstream request failure; core never interprets provider error codes itself,
+ *   nor hardcodes on provider id prefixes, model names, or error text.
  */
 export function matchExecutionSelectionFallback(input: {
   error: unknown;
@@ -82,8 +82,8 @@ export function matchExecutionSelectionFallback(input: {
   if (input.executionProviderId !== fallback.providerId) return undefined;
   if (isModelContextExceededError(input.error)) return undefined;
   const attribution = projectExecutionErrorPayload(input.error).attribution;
-  // Bug 根因：无错误码兜底规则过去也接收无归因异常，stream 事件落库失败会被误判成 provider
-  // 请求失败并触发第二次模型请求。只有 adapter 明确归因到本轮 provider/network 边界的失败才能退回。
+  // Root cause: catch-all rules used to accept unattributed errors too, so a failed stream-event persist was misread as a provider
+  // request failure and triggered a second model request. Only failures the adapter attributes to this turn's provider/network boundary may fall back.
   if (
     (attribution?.source !== "provider" && attribution?.source !== "network") ||
     attribution.providerId !== fallback.providerId
@@ -105,8 +105,8 @@ export function matchExecutionSelectionFallback(input: {
 }
 
 /**
- * 退回原模型继续本轮：保留已提交历史，只替换后续请求的模型，且只退一次。
- * 即使无处可退，也先返回已接受工具的 settlement 事实，让调用方保留原错误终止且不重复 abandon。
+ * Fall back to the original model for this turn: keep committed history, swap only the remaining requests' model, and fall back at most once.
+ * Even with nowhere to fall back, return the settlement facts of accepted tools so the caller keeps the original error termination without double-abandon.
  */
 export async function applyExecutionSelectionFallback(
   runtime: AgentRuntimeInternal,
@@ -130,7 +130,7 @@ export async function applyExecutionSelectionFallback(
   const executionProviderId = String(executionModelSelection.providerId);
   const declaredTarget = state.selectionFallback?.target;
   const sessionSelection = runtime.getSessionModelSelection();
-  // 退回请求走用户自己的常规鉴权，因此不再携带本次执行的 requestDependencies，重试预算也回到默认档。
+  // The fallback request uses the user's regular auth, so it no longer carries this execution's requestDependencies and the retry budget returns to default.
   const candidates = resolveExecutionFallbackCandidates({
     declaredTarget,
     executionProviderId,
@@ -145,8 +145,8 @@ export async function applyExecutionSelectionFallback(
   let resolved: { candidate: ExecutionFallbackCandidate; model: Model } | undefined;
   for (const candidate of candidates) {
     try {
-      // 目标在当前 Registry 不可解析（例如 provider 未发布）时建模会抛错：只跳到下一候选，
-      // 不能让建模错误替换掉真实的加速失败原因。
+      // When the target is unresolvable in the current Registry (e.g. provider unpublished) modeling throws: skip to the next candidate;
+      // a modeling error must not replace the real speed-up failure reason.
       resolved = { candidate, model: createTurnModel(runtime, { selection: candidate.selection }) };
       break;
     } catch (error) {
@@ -165,15 +165,15 @@ export async function applyExecutionSelectionFallback(
       : {}),
     errorMessage: input.error instanceof Error ? input.error.message : String(input.error),
   };
-  // Bug 根因：旧实现把工具 settlement 放在目标解析成功之后；无目标时调用方又禁止同模型 recovery，
-  // 最终只执行 abandon，导致真实结果丢失且 durable ToolPart 停在 pending/running。是否闭合已接受工具
-  // 与是否能继续请求模型是两个决定，必须先由 coordinator 统一提交 live/durable/cold history。
+  // Root cause: the old code settled tools only after target resolution succeeded; with no target and same-model recovery forbidden,
+  // only abandon ran, losing real results and leaving durable ToolParts pending/running. Whether accepted tools close
+  // and whether another model request may proceed are two decisions; the coordinator must commit live/durable/cold history first.
   const settledAcceptedTools = await input.streamingToolCoordinator.settleForModelFallback(
     input.assistantCreatedAt,
   );
   if (!resolved) {
-    // 无处可退只能让本轮按真实错误失败，但必须留痕：这个分支过去完全静默，用户只看到整轮失败的横幅，
-    // 日志里无法区分「没降级」和「降级后原模型又失败」。
+    // With nowhere to fall back the turn fails on the real error, but leave a trace: this branch used to be silent, the user saw only a turn-failure banner,
+    // and logs could not tell "no fallback" from "fell back, then the original model failed too".
     runtime.logger?.warn(
       "Execution model request failed but no fallback target could be resolved",
       {
@@ -194,8 +194,8 @@ export async function applyExecutionSelectionFallback(
   }
   const fallbackSelection = resolved.candidate.selection;
   const fallbackModel = resolved.model;
-  // 降级会掩盖加速端点的真实故障（例如少发 Coding Plan 头导致的 401），留一条带归因的 warn 让回归
-  // 仍可从日志发现；只记录归因字段，不记录鉴权材料与请求体。
+  // Falling back masks real speed-up endpoint failures (e.g. a 401 from a missing Coding Plan header); keep one attributed warn so regressions
+  // remain visible in logs. Record attribution fields only, never auth material or request bodies.
   runtime.logger?.warn("Execution model request failed; falling back to the original model", {
     ...traceContextToLogContext(input.modelTraceContext),
     event: "model.execution_selection.fallback",
@@ -216,8 +216,8 @@ export async function applyExecutionSelectionFallback(
     input.assistantCreatedAt,
     {
       completed: Date.now(),
-      // Bug 根因：仅写 completed 会让进程在退回答案落盘前退出时，被冷恢复误判为成功。
-      // 复用统一 discarded 契约，表示该 attempt 已作废但整个用户请求仍等待后续 assistant。
+      // Root cause: writing only completed let cold restore misread an exit before the fallback answer persisted as a success.
+      // Reuse the unified discarded contract: this attempt is void, but the user request still awaits a later assistant.
       error: {
         name: STREAM_RECOVERY_DISCARDED_ERROR_NAME,
         data: {
@@ -246,7 +246,7 @@ export async function applyExecutionSelectionFallback(
   await runtime.appendEvent(fallbackEvent, state.turnTraceContext);
   state.events.push(fallbackEvent);
   state.model = fallbackModel;
-  // 只降级一次：退回后的普通模型若再失败，必须让整轮按真实错误失败。
+  // Fall back at most once: if the post-fallback plain model fails too, the turn must fail on the real error.
   state.selectionFallback = undefined;
   if (!settledAcceptedTools) {
     state.modelResponse = "";

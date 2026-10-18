@@ -47,22 +47,22 @@ export type ZCodeAgentMoveSavedWorkflowParams = ZCodeAgentWorkspaceTarget & {
   name: string;
 };
 
-// 完成卡的「直接保存」与「已保存」判定（docs/dynamic-workflow/transcript-and-notifications.md
-// 「Saving the run, and running it again」）。两者都**必带 workspace**，全局档也不例外：要存的
-// 脚本在那个 agent 的 journal 里，载体不能由 services 另选一个本机运行时。
+// Completion-card save/already-saved decisions (docs/dynamic-workflow/transcript-and-notifications.md
+// 'Saving the run, and running it again'). Both MUST carry a workspace, global runs included: the journal
+// being saved lives in that agent's journal, so services never pick another local runtime as the carrier.
 export type ZCodeAgentSaveSavedWorkflowFromRunParams = ZCodeAgentWorkspaceTarget & {
-  /** 要保存的那次 run；脚本取它实际执行的那一份。 */
+  /** The run to save; the script comes from the copy that actually executed. */
   runId: string;
   name: string;
   meta: ZCodeSavedWorkflowMeta;
-  /** 缺省 `project`。 */
+  /** Defaults to `project`. */
   scope?: ZCodeSavedWorkflowScope;
-  /** 只有在已经把覆盖警告摆给用户看过之后才传 true。 */
+  /** Pass true only after the overwrite warning was shown to the user. */
   overwrite?: boolean;
 };
 
 export type ZCodeAgentFindSavedWorkflowForRunParams = ZCodeAgentWorkspaceTarget & {
   runId: string;
-  /** 转写自对话的候选（模型存过并认领了这次 run）；最多 8 个，由 agent 再解析一遍。 */
+  /** Transcript-derived candidates (model saved and claimed this run); at most 8, re-resolved by the agent. */
   candidates?: readonly ZCodeWorkflowsForRunCandidate[];
 };

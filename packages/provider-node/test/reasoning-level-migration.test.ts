@@ -57,7 +57,7 @@ function view(modelId: string, level: string, personalModels = ModelConfigRules.
       },
     },
   };
-  // 真实 Built-in 规则和 Resolver；补入模型成员用于独立覆盖 GLM 的不同代际。
+  // Real Built-in rules and Resolver; model members are added to cover GLM generations independently.
   const resolution = new ProviderConfigResolver().resolve({
     ...config,
     accountProviders: account.providers,
@@ -108,17 +108,17 @@ function view(modelId: string, level: string, personalModels = ModelConfigRules.
   return { result: facade.getView(undefined, undefined, { selection }), selection, facade };
 }
 
-describe("Todo95C 来源限定的只读关闭档位改名", () => {
-  it("保留 25 条历史来源，只恢复当前规则仍合法的关闭值", () => {
+describe("Todo95C source-scoped read-only disabled-tier rename", () => {
+  it("keeps all 25 legacy sources and restores only disabled values still legal under current rules", () => {
     expect(legacyReasoningLevelRenames).toHaveLength(25);
     for (const entry of legacyReasoningLevelRenames) {
       const rule = builtin.models
         .rules()
         .find((rule) => rule.type === "model" && rule.modelMatch === entry.modelMatch);
       expect(rule?.config.optionSpecs?.reasoningLevel?.values).not.toContain(entry.oldLevel);
-      // 仅测试生成代表型号；实际迁移从不从正则反推名字。
+      // Generated rep models for the test only; the real migration never reverse-engineers names from regexes.
       const modelId = entry.modelMatch.slice(2).split("(?:")[0]!.replaceAll("\\.", ".");
-      // Todo113 核实 K2.7 Code 不支持关闭；旧改名表不能越过当前值域重新启用关闭档。
+      // Todo113 confirmed K2.7 Code has no disabled tier; the legacy rename table must not re-enable it outside the current range.
       if (modelId === "kimi-k2.7-code") {
         expect(rule?.config.optionSpecs?.reasoningLevel?.values).toEqual(["enabled"]);
         expect(view(modelId, entry.oldLevel).result.selectionIssue).toBe(
@@ -150,15 +150,15 @@ describe("Todo95C 来源限定的只读关闭档位改名", () => {
     ["GLM-5.2", "off"],
     ["GLM-5.3", "none"],
     ["GLM-5.3", "typo"],
-  ])("不猜 %s / %s", (id, old) => {
+  ])("guesses nothing for %s / %s", (id, old) => {
     expect(view(id!, old!).result.selectionIssue).toBe("reasoning-level-not-supported");
   });
-  it("后续 Built-in values 覆盖旧规则时不恢复被覆盖的关闭值", () => {
+  it("restores no shadowed disabled values when later Built-in values replace old rules", () => {
     expect(view("GLM-5.3-Flash", "off").result.selectionIssue).toBe(
       "reasoning-level-not-supported",
     );
   });
-  it("Personal 原值合法则保留；自定义值域不套用内置别名", () => {
+  it("keeps legal personal values as-is and never applies built-in aliases to custom ranges", () => {
     const personal = (values: string[]) =>
       new ModelConfigRules([
         {

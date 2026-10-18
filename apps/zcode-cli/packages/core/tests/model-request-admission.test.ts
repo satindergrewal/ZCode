@@ -32,7 +32,11 @@ describe("AgentRuntime model requests carry modelRequestAdmission", () => {
     const seen: unknown[] = [];
     const runtime = createTestAgentRuntime(
       createSessionId("runtime-admission-present"),
-      { agentName: "zcode-general-purpose", modelStreaming: "off", workingDirectory: "/tmp/runtime-admission" },
+      {
+        agentName: "zcode-general-purpose",
+        modelStreaming: "off",
+        workingDirectory: "/tmp/runtime-admission",
+      },
       {
         eventStore: createTestSessionEventStore(),
         modelRequestAdmission: admission,
@@ -52,7 +56,11 @@ describe("AgentRuntime model requests carry modelRequestAdmission", () => {
     const seen: Array<boolean> = [];
     const runtime = createTestAgentRuntime(
       createSessionId("runtime-admission-absent"),
-      { agentName: "zcode-general-purpose", modelStreaming: "off", workingDirectory: "/tmp/runtime-admission" },
+      {
+        agentName: "zcode-general-purpose",
+        modelStreaming: "off",
+        workingDirectory: "/tmp/runtime-admission",
+      },
       {
         eventStore: createTestSessionEventStore(),
         modelFactory: createTestModelFactory({

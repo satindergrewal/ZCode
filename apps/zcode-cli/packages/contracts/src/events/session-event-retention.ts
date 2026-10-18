@@ -27,11 +27,14 @@ export function isTransientSessionEvent(event: Pick<SessionEvent, "type">): bool
 }
 
 /**
- * sealed turn 淘汰时 `model_request` 驻留副本的元数据瘦身（spec 同上"model_request 元数据瘦身"）。
- * Bug 根因：`messages` 是每次模型请求的完整上下文，每个工具迭代一条且作为非瞬态永久驻留；
- * compact 只截断后续请求，不回收已驻留事件，长会话实测 event store 驻留随轮次线性涨约 150MB。
- * 内存 store 的读者只用 `messages.length`，live sink（debug JSONL）拿的是 append 返回的完整对象，
- * 因此只把驻留副本换成 `messageCount`，事件 id / seq / 其它 payload 字段保持不变。
+ * Metadata slimming for the retained `model_request` copy when a sealed turn is evicted
+ * (spec: "model_request metadata slimming", same doc).
+ * Root cause of the bug: `messages` is the full context of every model request, one per tool
+ * iteration, retained permanently as non-transient; compact only truncates later requests and
+ * never reclaims retained events - long sessions measured event-store retention growing
+ * linearly, about 150MB. Readers of the in-memory store only use `messages.length`, and the
+ * live sink (debug JSONL) gets the full object returned by append, so the retained copy is
+ * replaced by `messageCount`; event id / seq / other payload fields stay untouched.
  */
 export function slimRetainedModelRequest(event: SessionEvent): SessionEvent {
   if (event.type !== SessionEventType.ModelRequest) {

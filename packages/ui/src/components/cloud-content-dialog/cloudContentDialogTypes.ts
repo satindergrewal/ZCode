@@ -5,7 +5,7 @@ export type CloudImageHero = Extract<WireHero, { type: "image" }>;
 export type CloudVideoHero = Extract<WireHero, { type: "video" }>;
 export type CloudLottieHero = Extract<WireHero, { type: "lottie" }>;
 type WireBundleHero = Extract<WireHero, { type: "interactive_bundle" }>;
-/** 仅宿主设置 resolvedUrl；随 App 打包的可信资源不伪装成云端 ZIP。 */
+/** Only the host sets resolvedUrl; app-bundled trusted assets never masquerade as a cloud ZIP. */
 export type CloudInteractiveBundleHero = Omit<WireBundleHero, "bundle"> &
   (
     | { bundle: WireBundleHero["bundle"]; resolvedUrl?: string }

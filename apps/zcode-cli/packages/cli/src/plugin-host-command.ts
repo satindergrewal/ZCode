@@ -53,8 +53,8 @@ export async function runPluginHostCommand(ctx: RunContext, argv: string[]): Pro
 
     const originalArgv = process.argv;
     const originalBrokerSocket = process.env[ZCODE_CUA_BROKER_SOCKET_ENV_KEY];
-        // shared node_repl restores the same credential set into the environment for the broker bridge; the old standalone CUA
-        // MCP no longer owns an execution entry.
+    // shared node_repl restores the same credential set into the environment for the broker bridge; the old standalone CUA
+    // MCP no longer owns an execution entry.
     process.argv = [process.execPath, serverPath, ...serverArgs];
     if (capturedBrokerCredentials.socket && process.env[ZCODE_CUA_NODE_REPL_HOST_ENV_KEY] === "1") {
       process.env[ZCODE_CUA_BROKER_SOCKET_ENV_KEY] = capturedBrokerCredentials.socket;
@@ -85,14 +85,14 @@ function assertCapturedBrokerLaunchIsAuthorized(credentials: CapturedBrokerCrede
   if (!hasCapturedCredentials) return;
 
   const pluginId = process.env[ZCODE_PLUGIN_ID_ENV_KEY]?.trim().toLowerCase();
-    // The credential set no longer carries a token: the broker switched to identity mode on all platforms (the Helper adjudicates connections by peer code signature),
-    // and shared/runtimeEnv.ts's CapturedCuaBrokerCredentials only has socket + pluginAuthority
-    // (+ refreshMarker). Do not read credentials.token here; the token left the set,
-    // and leftover readers surface only via the CLI's own typecheck (the root pnpm typecheck excludes apps/zcode-cli).
-    // socket + pluginAuthority must be paired (the authority is a provenance nonce bootstrap writes into the node_repl config,
-    // by which core recognizes the official server); the capture side only snapshots paired sets and clears half-sets fail-closed.
-    // Validation must not require a token either -- identity-mode credentials have none, and strict checks would make the node_repl host
-    // exit at startup (connection closed during the server/discover probe) with an empty tool surface.
+  // The credential set no longer carries a token: the broker switched to identity mode on all platforms (the Helper adjudicates connections by peer code signature),
+  // and shared/runtimeEnv.ts's CapturedCuaBrokerCredentials only has socket + pluginAuthority
+  // (+ refreshMarker). Do not read credentials.token here; the token left the set,
+  // and leftover readers surface only via the CLI's own typecheck (the root pnpm typecheck excludes apps/zcode-cli).
+  // socket + pluginAuthority must be paired (the authority is a provenance nonce bootstrap writes into the node_repl config,
+  // by which core recognizes the official server); the capture side only snapshots paired sets and clears half-sets fail-closed.
+  // Validation must not require a token either -- identity-mode credentials have none, and strict checks would make the node_repl host
+  // exit at startup (connection closed during the server/discover probe) with an empty tool surface.
   if (
     credentials.socket === undefined ||
     credentials.pluginAuthority === undefined ||

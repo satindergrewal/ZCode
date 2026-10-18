@@ -13,7 +13,7 @@ import type { JournalStorePort, RunEvent, StoredEvent } from "@zcode/dynamic-wor
 export function createJournalSequenceCapture(journal: JournalStorePort): {
   journal: JournalStorePort;
   sequenceOf: (event: RunEvent) => number;
-  /** 同一条事件落库时盖的戳（`StoredEvent.timeCreated`）；引用不相等时不猜，回 `undefined`。 */
+  /** The stamp set when the same event was persisted (`StoredEvent.timeCreated`); with unequal references, no guess — return `undefined`. */
   timeCreatedOf: (event: RunEvent) => number | undefined;
 } {
   let lastStored: StoredEvent | undefined;
@@ -27,14 +27,14 @@ export function createJournalSequenceCapture(journal: JournalStorePort): {
       journal.updateRunStatus(runId, status, settlement),
     updateRunUsage: (runId, spentTokens) => journal.updateRunUsage(runId, spentTokens),
     updateRunCaps: (runId, caps) => journal.updateRunCaps(runId, caps),
-    // 补全把有效脚本写回 run 行（docs/execution-engine.md「Holes」）；与其余写入同样原样转发。
+    // The fill writes the valid script back to the run row (docs/execution-engine.md "Holes"); forwarded verbatim like every other write.
     updateRunScript: (runId, scriptText, scriptHash) =>
       journal.updateRunScript(runId, scriptText, scriptHash),
     putActor: (record) => journal.putActor(record),
     getActor: (runId, siteId, ordinal) => journal.getActor(runId, siteId, ordinal),
-    // 读面选项必须原样转发（docs/execution-engine.md「Reading the journal」）：TS 允许实现的形参
-    // 比签名少，`(runId) => journal.listNodes(runId, <固定选项>)` 这种写法照样编译通过，却把调用方
-    // 的过滤悄悄换掉，引擎的窄读就退化回整表读。
+    // Read-face options must be forwarded verbatim (docs/execution-engine.md "Reading the journal"): TS allows an implementation's
+    // params to be narrower than the signature, so `(runId) => journal.listNodes(runId, <fixed options>)` compiles fine while silently
+    // replacing the caller's filter, degrading the engine's narrow read to a full-table scan.
     listActors: (runId, opts) => journal.listActors(runId, opts),
     putNode: (record) => journal.putNode(record),
     getNode: (runId, siteId, ordinal, opts) => journal.getNode(runId, siteId, ordinal, opts),
@@ -52,8 +52,8 @@ export function createJournalSequenceCapture(journal: JournalStorePort): {
     journal: wrapped,
     sequenceOf: (event) =>
       lastStored?.event === event ? lastStored.sequence : (lastStored?.sequence ?? 0),
-    // 与 sequenceOf 同一条回落：内存 journal 在存储边界上深拷贝事件（引用不等），而「刚 append 的
-    // 就是正在 emit 的」是引擎 record() 的契约，所以这里按最后一次 append 的戳给。
+    // Same fallback as sequenceOf: the in-memory journal deep-copies events at the store boundary (unequal references), and "just
+    // appended = being emitted" is the engine record() contract, so stamp by the last append.
     timeCreatedOf: () => lastStored?.timeCreated,
   };
 }

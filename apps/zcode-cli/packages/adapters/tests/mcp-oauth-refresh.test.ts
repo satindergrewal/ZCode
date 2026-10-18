@@ -251,11 +251,10 @@ describe("MCP OAuth refresh single-flight", () => {
       reason: "invalid_grant",
     });
     // tokens 按 canonical CAS 失效；client 保留作为重新授权的种子。
-    await expect(loadCanonicalCredentials(seeded.credentialStore, seeded.keyPrefix)).resolves
-      .toBeUndefined();
     await expect(
-      seeded.credentialStore.load(`${seeded.keyPrefix}:tokens`),
-    ).resolves.toBeNull();
+      loadCanonicalCredentials(seeded.credentialStore, seeded.keyPrefix),
+    ).resolves.toBeUndefined();
+    await expect(seeded.credentialStore.load(`${seeded.keyPrefix}:tokens`)).resolves.toBeNull();
     await expect(
       seeded.credentialStore.load(`${seeded.keyPrefix}:client_information`),
     ).resolves.toContain("seeded-client");
@@ -277,8 +276,9 @@ describe("MCP OAuth refresh single-flight", () => {
       reason: "invalid_client",
     });
     // client 与 token 必须整对丢弃：单独保留任一半都会在下次授权拼出错配身份。
-    await expect(loadCanonicalCredentials(seeded.credentialStore, seeded.keyPrefix)).resolves
-      .toBeUndefined();
+    await expect(
+      loadCanonicalCredentials(seeded.credentialStore, seeded.keyPrefix),
+    ).resolves.toBeUndefined();
     await expect(seeded.credentialStore.load(`${seeded.keyPrefix}:tokens`)).resolves.toBeNull();
     await expect(
       seeded.credentialStore.load(`${seeded.keyPrefix}:client_information`),
@@ -325,8 +325,9 @@ describe("MCP OAuth refresh single-flight", () => {
 
     // proactive：token 还没被资源服务器拒绝，返回现值让请求继续走，401 路径保留最终裁决权。
     await expect(provider.token()).resolves.toBe("seeded-access-token");
-    await expect(loadCanonicalCredentials(seeded.credentialStore, seeded.keyPrefix)).resolves
-      .toMatchObject({ tokens: { access_token: "seeded-access-token" } });
+    await expect(
+      loadCanonicalCredentials(seeded.credentialStore, seeded.keyPrefix),
+    ).resolves.toMatchObject({ tokens: { access_token: "seeded-access-token" } });
   });
 
   it("raises a temporary failure instead of interactive authorization on a reactive refresh network error", async () => {
@@ -345,8 +346,9 @@ describe("MCP OAuth refresh single-flight", () => {
     await expect(provider.onUnauthorized?.({} as never)).rejects.toMatchObject({
       code: MCP_OAUTH_TEMPORARY_REFRESH_FAILURE_ERROR_CODE,
     });
-    await expect(loadCanonicalCredentials(seeded.credentialStore, seeded.keyPrefix)).resolves
-      .toMatchObject({ tokens: { refresh_token: "seeded-refresh-token" } });
+    await expect(
+      loadCanonicalCredentials(seeded.credentialStore, seeded.keyPrefix),
+    ).resolves.toMatchObject({ tokens: { refresh_token: "seeded-refresh-token" } });
   });
 
   it("demands interactive authorization when no refresh token is available", async () => {

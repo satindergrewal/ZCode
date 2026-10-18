@@ -47,11 +47,11 @@ import type { SavedWorkflowLaunchError } from "@/settings/saved-workflows/useSav
 
 interface SavedWorkflowLaunchDialogProps {
   entry: ZCodeSavedWorkflowEntry | null;
-  /** 作用域徽标与「将立即在 X 的新会话中运行」文案都要它；也决定启动命令的 scope。 */
+  /** Needed by the scope badge and the runs-now-in-a-new-session copy; also sets the launch scope. */
   scope: "project" | "global";
   /**
-   * 「将立即在 {project} 的新会话中运行」里的项目名：项目档 = 所属项目名；全局档 = 未选到
-   * 「运行于」时的兜底名（选到后用选中项目 label）。
+   * Project name in runs-now-in-{project}: project scope = the owning project; global scope =
+   * the fallback before Run-in is chosen (the chosen label once selected).
    */
   projectLabel: string;
   onOpenChange: (open: boolean) => void;
@@ -61,28 +61,28 @@ interface SavedWorkflowLaunchDialogProps {
     target?: AutomationWorkspaceOption,
   ) => void;
   /**
-   * 「运行于」项目候选（仅全局工作流传入）。传入即渲染选择器；
-   * 空数组表示没有本地项目可跑——渲染提示并禁用提交。undefined 时窗口与项目档逐字一致。
+   * Run-in candidates (global workflows only). Present renders the selector;
+   * an empty array = no local project can run it: show the note, disable submit. Undefined keeps the project-scope layout verbatim.
    */
   targets?: readonly AutomationWorkspaceOption[];
-  /** 默认选中的项目 key（活动项目）；不在候选里时回落到首个候选。 */
+  /** Initially selected project key (the active one); falls back to the first candidate when absent. */
   defaultTargetKey?: string | null;
   /**
-   * 预填实参：完成卡的「再次运行」传这次 run 跑过的那一份（journal 给的）。声明里没有的键忽略；
-   * 缺席即按声明的默认值铺（中枢自己的「运行」就是这条）。
+   * Prefilled args: Run again passes the args that run used (from the journal); unknown keys are ignored;
+   * absent lays out from declared defaults (the hub's own Run does exactly this).
    */
   initialArgs?: Record<string, unknown>;
-  /** 正在启动：主按钮 loading + 禁用，防重复点击（launcher.pending）。 */
+  /** Launching: primary button loading + disabled against double clicks (launcher.pending). */
   pending?: boolean;
-  /** 启动失败：行内错误区展示（title 按 reason + 服务端 message）；成功由组关窗清空。 */
+  /** Launch failure: shown in the inline error area (title from reason + server message); success clears as the group closes. */
   error?: SavedWorkflowLaunchError | null;
 }
 
 /**
- * 实参窗：头部 = Workflow 图标 + 名字（mono）
- * + 作用域徽标 + 说明；「运行于」（全局档）；实参表；一句「将立即在 X 的新会话中运行」；主按钮
- * 「运行」。点「运行」= GUI 直接启动（无模型回合、无确认窗）：loading 期禁用，失败在行内错误区
- * 显示、窗口留着，成功由组关窗并切到新会话。无实参的项目档不弹本窗（组直接启动）。
+ * Args dialog: header = Workflow icon + name (mono)
+ * + scope badge + description; Run-in (global scope); args table; one runs-now-in line; primary button
+ * Run. Run launches directly via the GUI (no model turn, no confirm): disabled while loading, failures inline,
+ * dialog stays; success closes via the group and switches to the new session. Project scope without args skips this dialog.
  */
 export function SavedWorkflowLaunchDialog({
   entry,
@@ -106,7 +106,7 @@ export function SavedWorkflowLaunchDialog({
     setErrors({});
   }, [entry, initialArgs]);
 
-  // 候选变化时保留仍有效的选择，否则回落到默认项目、首个候选或 null（reconcile 同一套规则）。
+  // Keep still-valid selections across candidate changes; otherwise fall back to default project, first candidate, or null (reconcile's rules).
   useEffect(() => {
     if (!targets) {
       setTargetKey(null);
@@ -125,7 +125,7 @@ export function SavedWorkflowLaunchDialog({
   const selectedTarget = targets
     ? findAutomationWorkspaceOptionByKey(targets, targetKey)
     : undefined;
-  // 「将立即在 {project} 的新会话中运行」：全局档用选中的「运行于」项目名，项目档用所属项目名。
+  // The runs-now-in line: global scope uses the selected Run-in project, project scope the owning project.
   const noteProject = selectedTarget?.label ?? projectLabel;
 
   const scopeBadge = intl.formatMessage({

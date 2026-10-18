@@ -60,8 +60,8 @@ const FALLBACK_MANIFEST: BrowserApiManifest = {
           kind: "method" as const,
           signature: `${name}(...)`,
         })),
-                // open() is the default navigation entry (same-site reuse + activate + in-place goto); undeclared, hideUnknown
-                // proxies would hide it and agent.browsers.open becomes undefined in the REPL (kept in sync with plugin docs/api.json).
+        // open() is the default navigation entry (same-site reuse + activate + in-place goto); undeclared, hideUnknown
+        // proxies would hide it and agent.browsers.open becomes undefined in the REPL (kept in sync with plugin docs/api.json).
         {
           name: "open",
           kind: "method" as const,
@@ -514,7 +514,7 @@ export class BrowserApiPolicy {
     if (supported && member.declarations?.length) {
       supported = member.declarations.some((declaration) => this.supportsRequirement(declaration));
     }
-        // Connection-level overrides are the final word; used for gradual rollouts or precise per-adapter capability fixes.
+    // Connection-level overrides are the final word; used for gradual rollouts or precise per-adapter capability fixes.
     return this.descriptor.apiSupportOverrides?.[key] ?? supported;
   }
 
@@ -554,7 +554,7 @@ export class BrowserApiPolicy {
         if (scope === "browser") return !this.browserCapabilities.has(id);
         if (scope === "tab") return !this.tabCapabilities.has(id);
       }
-            // Compatibility with legacy manifest capability ids without scope; new ones should use browser:/tab: explicitly.
+      // Compatibility with legacy manifest capability ids without scope; new ones should use browser:/tab: explicitly.
       return !this.browserCapabilities.has(capability) && !this.tabCapabilities.has(capability);
     });
   }
@@ -576,7 +576,7 @@ export function createBrowserApiProxy<T extends object>(
     get(current, property, receiver) {
       if (isHidden(property)) return undefined;
       const value = Reflect.get(current, property, receiver);
-            // The strict facade hides internal helpers/fields; public methods bind the raw object so their internal reads bypass the proxy.
+      // The strict facade hides internal helpers/fields; public methods bind the raw object so their internal reads bypass the proxy.
       return options.hideUnknown && typeof value === "function" ? value.bind(current) : value;
     },
     has(current, property) {

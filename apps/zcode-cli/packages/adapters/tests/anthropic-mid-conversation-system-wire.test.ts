@@ -4,8 +4,9 @@ import { createAnthropicCompatFetch } from "../src/model/anthropic-stream-compat
 
 describe("Anthropic mid-conversation system wire shape", () => {
   it("restores a single plain text system block to string without changing other surfaces", async () => {
-    const baseFetch = vi.fn(async () =>
-      new Response("{}", { headers: { "content-type": "application/json" }, status: 400 }),
+    const baseFetch = vi.fn(
+      async () =>
+        new Response("{}", { headers: { "content-type": "application/json" }, status: 400 }),
     );
     const fetch = createAnthropicCompatFetch(baseFetch as typeof globalThis.fetch);
     const topLevelSystem = [

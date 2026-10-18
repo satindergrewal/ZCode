@@ -1,8 +1,8 @@
 // Planner-Reviewer 工作流: 为 3D HTML 小游戏生成经过评审的开发计划
 
 interface TechStack {
-  renderer: string;        // 渲染方案, 如 "Three.js (CDN)"
-  libraries: string[];     // 依赖库及引入方式
+  renderer: string; // 渲染方案, 如 "Three.js (CDN)"
+  libraries: string[]; // 依赖库及引入方式
   fileStructure: string[]; // 文件/模块结构
 }
 
@@ -67,29 +67,36 @@ const MAX_ROUNDS = 3;
 log("第 1 轮: Planner 生成初版计划");
 let plan: GamePlan = await planner.ask<GamePlan>(
   "请为一个 3D HTML 小游戏制定完整开发计划: 自选一个具体游戏概念并说明理由, " +
-  "覆盖玩法核心循环、机制、技术栈(Three.js CDN)、操作、难度进程、美术风格、UI、" +
-  "里程碑、风险与验收标准。输出 GamePlan。"
+    "覆盖玩法核心循环、机制、技术栈(Three.js CDN)、操作、难度进程、美术风格、UI、" +
+    "里程碑、风险与验收标准。输出 GamePlan。",
 );
 
 log("第 1 轮: Reviewer 评审");
 let verdict: ReviewVerdict = await reviewer.ask<ReviewVerdict>(
-  "请评审以下游戏开发计划:\n" + JSON.stringify(plan, null, 2)
+  "请评审以下游戏开发计划:\n" + JSON.stringify(plan, null, 2),
 );
 
 let round = 1;
 while (verdict.verdict !== "approve" && round < MAX_ROUNDS) {
   round = round + 1;
   log(
-    "Reviewer 要求修订(得分 " + verdict.score + "/10, " +
-    verdict.issues.length + " 个问题), 进入第 " + round + " 轮"
+    "Reviewer 要求修订(得分 " +
+      verdict.score +
+      "/10, " +
+      verdict.issues.length +
+      " 个问题), 进入第 " +
+      round +
+      " 轮",
   );
   plan = await planner.ask<GamePlan>(
     "根据评审反馈修订计划, 重点解决 focusNext 与 blocker/major 问题, 保持 GamePlan 结构:\n" +
-    "评审反馈:\n" + JSON.stringify(verdict, null, 2) +
-    "\n\n当前计划:\n" + JSON.stringify(plan, null, 2)
+      "评审反馈:\n" +
+      JSON.stringify(verdict, null, 2) +
+      "\n\n当前计划:\n" +
+      JSON.stringify(plan, null, 2),
   );
   verdict = await reviewer.ask<ReviewVerdict>(
-    "请评审第 " + round + " 轮修订后的游戏开发计划:\n" + JSON.stringify(plan, null, 2)
+    "请评审第 " + round + " 轮修订后的游戏开发计划:\n" + JSON.stringify(plan, null, 2),
   );
 }
 

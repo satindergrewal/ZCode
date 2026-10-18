@@ -43,7 +43,7 @@ test("resolves the development ZCode Built-in Config and shared Personal Config"
   const zcodeBuiltinFilePath = join(root, "config/provider/zcode-builtin.json");
   await mkdir(dirname(entrypoint), { recursive: true });
   await mkdir(dirname(zcodeBuiltinFilePath), { recursive: true });
-  // 随包配置按入口真实路径（解析软链接后）定位，入口文件必须真实存在。
+  // The bundled config is located by the entry's real path (symlinks resolved); the entry file must exist.
   await writeFile(entrypoint, "");
   await writeFile(zcodeBuiltinFilePath, EMPTY_RELEASE);
 
@@ -81,7 +81,7 @@ test("resolves the development ZCode Built-in Config and shared Personal Config"
     platform: "test-platform",
   });
   assert.equal(logoutPrepared[ZCODE_BUILTIN_PROVIDER_CONFIG_FILE_ENV], activeFilePath);
-  // 临时目录本身可能经过软链接（macOS 的 /tmp、/var），随包配置报告的是真实路径。
+  // The temp dir itself may be behind a symlink (macOS /tmp, /var); the bundled config reports the real path.
   assert.equal(
     prepared.ZCODE_BUILTIN_PROVIDER_BUNDLED_CONFIG_FILE,
     await realpath(zcodeBuiltinFilePath),
@@ -160,7 +160,7 @@ async function temporaryDirectory(): Promise<string> {
 
 function assertActiveConfigPath(filePath: string | undefined, dataBaseDir: string): void {
   assert.ok(filePath);
-  // 不能用斜杠正则误拒绝 Windows；逐层校验仍包含环境、平台、版本和 Endpoint。
+  // A slash regex must not misreject Windows; the layer checks still cover env, platform, version, and endpoint.
   assert.equal(
     dirname(dirname(filePath)),
     join(dataBaseDir, ".zcode", "v2", "runtime", "provider", "test-platform", "test-version"),

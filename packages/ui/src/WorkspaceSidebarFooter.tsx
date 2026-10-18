@@ -1,4 +1,4 @@
-/* oxlint-disable eslint(max-lines) -- footer 聚合账户、主题、模式和快捷键菜单。 */
+/* oxlint-disable eslint(max-lines) -- the footer aggregates account, theme, mode, and shortcut menus. */
 import type { Locale, UserInfo } from "@zcode/shared";
 import { memo, useCallback, useEffect, useState, type ReactNode } from "react";
 import {
@@ -166,9 +166,9 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
             avatarFallbackText
           ) : showAuthRestoreLoading ? (
             <>
-              {/* Bugfix: OAuth 启动恢复未落定前，footer 之前会直接显示未登录头像，
-                  用户很容易把“还在校验”误判成“已经退出”。
-                  这里用 loading 图标明确表达“状态确认中”，等恢复成功或失败后再展示最终状态。 */}
+              {/* Bugfix: before OAuth restore settles the footer showed signed-out chrome,
+                  reading as logged-out.
+                  A loading icon says checking; final state waits for the result. */}
               <Loader2 className="size-4 animate-spin" />
               <span className="sr-only">{intl.formatMessage({ id: "common.loading" })}</span>
             </>
@@ -230,14 +230,14 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
   const canZoomOut = desktopZoomLevel > DESKTOP_ZOOM_MIN_LEVEL;
 
   return (
-    // footer 被 Settings 复用，页面专属边距由调用方传入，避免修改共享默认样式。
+    // Settings reuses the footer; page-specific padding comes from the caller.
     <footer className={cn("flex shrink-0 flex-col gap-2.5 px-4 pt-2 pb-4", className)}>
       {banner}
       <div className="flex min-w-0 gap-2">
         <DropdownMenu open={profileMenuOpen} onOpenChange={setProfileMenuOpen}>
           <DropdownMenuTrigger asChild>
-            {/* Bugfix: 头像和 Login 之前直接绑定到登录动作，导致用户无法从这里打开偏好设置。
-              现在把这一块改成统一的设置菜单入口，登录/退出留在菜单项里，交互职责更清晰。 */}
+            {/* Bugfix: avatar/login bound straight to sign-in, hiding preferences.
+              One settings menu entry now; sign in/out live as items. */}
             <Button
               type="button"
               variant="ghost"
@@ -246,12 +246,12 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
               data-testid={TID_LOGIN_TRIGGER}
               aria-label={profileBadge}
             >
-              {/* Bugfix: Button 默认 shrink-0 且带 whitespace-nowrap，超长用户名会把 footer 撑出 sidebar。
-                这里让触发按钮和文本列都允许收缩，并只在用户名自身做单行截断。 */}
+              {/* Bugfix: Button shrink-0 + nowrap pushed long names out of the sidebar;
+                trigger and text column shrink; only the name truncates to one line. */}
               {profileContent}
             </Button>
           </DropdownMenuTrigger>
-          {/* Bugfix: 菜单内容保持挂载，避免每次点击头像菜单都重建 footer 内部状态。 */}
+          {/* Bugfix: keep menu content mounted; per-click remount reset footer state. */}
           <DropdownMenuContent
             align="start"
             className="w-max min-w-50 max-w-[calc(100vw-2rem)]"
@@ -387,12 +387,12 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
                 </DropdownMenuRadioGroup>
               </DropdownMenuSubContent>
             </DropdownMenuSub>
-            {/* 快捷键设置（a58fdef 一系）：缩放子菜单 label 读生效表，设置页改绑后即时跟随 */}
-            {/* Bugfix: ecc6952 收口重复缩放子菜单时误留了语言之后的那份，导致菜单顺序变成
-                语言→缩放→主题；账户菜单分组顺序固定为 语言→主题→界面模式→缩放→用量→登录/登出，
-                这里把唯一一份（读生效表）挪回用量摘要之前。
-                staging 的 1d3179cb83 独立做过同一处移动（位置一致、缺本注释与 JSX 缩进），
-                合并时保留本版本，不要再补第二份缩放子菜单。 */}
+            {/* Shortcut settings (a58fdef): the zoom submenu label reads the live bindings */}
+            {/* Bugfix: ecc6952 left a duplicate zoom submenu after language, ordering
+                language->zoom->theme; the account menu is fixed
+                language->theme->appearance->zoom->usage->sign in/out;
+                staging 1d3179cb83 moved the same one (same spot, no comment/indent),
+                keep this version on merge, never add a second zoom submenu. */}
             {isDesktop ? (
               <DropdownMenuSub>
                 <DropdownMenuSubTrigger>
@@ -427,7 +427,7 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
                 </DropdownMenuSubContent>
               </DropdownMenuSub>
             ) : null}
-            {/* Bugfix: 升级入口状态不再以菜单开关为生命周期边界。 */}
+            {/* Bugfix: the updater entry no longer lives and dies with the menu toggle. */}
             <WorkspaceSidebarFooterUsageSummaryContent
               state={usageSummaryState}
               onUsageClick={usageButtonClick}

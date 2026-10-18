@@ -12,103 +12,101 @@ import {
   WORLD_RUN_LITERAL_CODE,
 } from "../src/index.js";
 
-// 段拆分（docs/dynamic-workflow/authoring.md「The facade」）承诺：FACADE_DTS 由段
-// 拼接后逐字节确定。哈希在每次**有意的** facade 文本变更时更新（更新历史即 facade 的
-// 变更账本），任何段级编辑都会撞上这条——那是有意的：改 facade 文本必须是一次显式决定，
-// 而不是重排段落时的静默漂移。
-//   - dfd383f3…（2026-08-26）：段拆分落地，对拆分前逐字节不变。
-//   - fb2d9943…（2026-08-26）：world.run 段加入（docs/dynamic-workflow/authoring.md）。
-//   - 7f7d36ee…（2026-08-27）：phase 段加入（docs/dynamic-workflow/presentation.md）。
-//   - 198475cc…（2026-08-28）：args 段加入（docs/dynamic-workflow/launch.md）。
-//   - 807e4b79…（2026-08-29）：merge 重算——feat/dynamic-workflow 的 phase 段与
-//     dwf-reusable 的 args 段会师后的组合哈希（两侧各自的哈希均已不再是当前文本）。
-//   - e7da7b7b…（2026-08-29）：phase 段 JSDoc 重写——提示层强制（必填 + 阶段名人类
-//     可读、跟随会话语言），见 docs/dynamic-workflow/authoring.md「Phases」与
-//     docs/dynamic-workflow/authoring.md「The skill」；声明集（declare 行）不变。
-//   - 877a78c3…（2026-08-31）：actor 段 `agent()` JSDoc 重写——「name 是展示标签」改成
-//     「非空名必须 run 内唯一，且是修订续跑（resume_from）缓存匹配的身份键」，含 fan-out
-//     里静态名的教改写；phase 段那句「不像 actor 名，那只是展示标签」同批改口径。见
-//     docs/execution-engine.md「Amend-resume」。声明集（declare 行）不变。
-//   - 05c3401c…（2026-09-04）：artifact 段加入 + report 签名加第二实参
-//     （docs/dynamic-workflow/authoring.md）。这一条**动了声明集**：新增 `declare const artifact`
-//     与七个 spec 接口，`report` 变为 `(item: unknown, artifactId?: string)`。
-//   - 499c4179…（2026-09-04）：`BoardSpec.title` 改名 `cardTitle`。原名与继承自
-//     `ArtifactOptions` 的 `title`（看板自己的卡片标题）撞在同一个键上，两者都是 string 所以
-//     TS 收下了它——代价是一个看板永远说不出「这块板叫内存回归，每张卡拿 name 字段当标题」。
-//     spec 同日改名（docs/dynamic-workflow/authoring.md「The facade」）。
-//   - 540a2054…（2026-09-04）：**纯散文**——actor 段的 artifact → result／output value，
-//     把这个词让给 artifact.*。旧措辞（`Node<T>` 的「producing a typed artifact」、
-//     `Agent.ask` 的「T is the task's output artifact」）说的是引擎内部那一义，而产物段
-//     就在同一份 .d.ts 里用同一个词说用户面产物——模型一次看到两义。同批改的还有
-//     CreateWorkflow 的 RULES 与 dynamic-workflows 技能正文，见
-//     docs/dynamic-workflow/authoring.md「The guidance」 与 docs/dynamic-workflow/authoring.md「Artifacts: what the user keeps」 的
-//     「术语」表。声明集（declare 行）不变。
-//   - 0dd165d5…（2026-09-05）：**纯散文**——phase 段加「每个阶段至少含一次 ask 或一次
-//     world.run」的规则与改写后的 Idiom 句（docs/dynamic-workflow/presentation.md 同日追记：
-//     空阶段一闪而过、看不到进度，模型被教导不要写它）。声明集（declare 行）不变。
-//   - 99abaa45…（2026-09-05）：**纯散文**——`ToolProfile` 与 `AgentPersona.tools` / `model` 的
-//     JSDoc 重写：「"none" suits cheap judge/extract personas」改成「只在 ask 文本已含全部所需
-//     时用 none；要核对文件、追引用、跑东西的用 readonly/default，无工具的子代理遇到那种 ask
-//     会升级而不是假装」。起因是实盘 `tools:"none"` 的 GLM 子代理被要求核对磁盘内容后发出
-//     `escalate("placeholder")`，见 docs/execution-engine.md与
-//     docs/dynamic-workflow/authoring.md「The skill」。声明集（declare 行）不变。
-//   - 23aef592…（2026-09-05）：上两条在两条分支上各自重钉；合并（dwf-visual-redesign ⇄
-//     feat/dynamic-workflow）后两段散文同在，按合并结果重钉。声明集（declare 行）不变。
-//   - b500809e…（2026-09-05）：**纯散文**——`artifact` 段的总说明重写为两条习惯：每个 run 发布
-//     其**交付物**（用户要网页/PDF 就是那个文件走 file()；要的是结论就是报告的长版，通常是
-//     markdown()；一行答案除外）、看板是给盯着 run 的人看的（只在有值得盯的中途状态时声明）；
-//     外加两条「值不值一张卡」的检验（用户会单独打开吗、是否重复另一产物）。`markdown()` 的
-//     JSDoc 由「不是 return 的复制」改成「报告型交付物的常见形态」。与 SKILL.md §9 /
-//     examples.md 同批。声明集（declare 行）不变。
-//   - f94af7c0…（2026-09-07）：**纯散文**——phase 段的命名规则加一句回声：「像告诉同事现在
-//     在做什么那样说」，附一对中文正反例（"确认测试仍然通过"，不是 "执行测试验证任务"）。
-//     同段重排行宽以守住 max-lines 400（模板字面量里的行算代码行，不算注释）。
-//     教法从「三个禁用词」改为「一条原则 + 成对例子」（docs/dynamic-workflow/presentation.md
-//     2026-09-07 裁决；完整例子表在 SKILL.md「Write for the user」一节）。声明集（declare 行）不变。
-//   - 853ae664…（2026-09-11）：**动了声明集**——`declare type ModelTier` 与 `AgentPersona.model`
-//     退场（docs/dynamic-workflow/authoring.md）：宿主没有 lite 模型来源，档位早已是
-//     空转的旋钮，却仍占着 facade 的篇幅。子代理一律跑父会话当前模型。
-//   - fe83dea7…（2026-09-11）：**动了声明集**——`ToolProfile` 收成 `"default" | "readonly"`，
-//     `"none"` 退场（同一决策记录）：它比 readonly 多买到的只有「不去读文件」，而这靠 ask 文本
-//     就能做到；它另外带来了唯一一族退化升级与三处按档位分支的提示。`ToolProfile` 与
-//     `AgentPersona.tools` 的 JSDoc 同批改写为两档的说法。
-//   - dee40f0b…（2026-09-12）：**动了声明集**——`declare type ToolProfile` 与 `AgentPersona.tools`
-//     整个退场（同一决策记录，第二轮）：档位买到的只有「裁判不能改文件」，普通子代理也不靠
-//     档位保证这一点，ask 文本说清即可；`AgentPersona` 只剩 `system`，JSDoc 说明每个 actor 都有
-//     完整工作工具集。
-//   - c19c9310…（2026-09-14）：只改一句 JSDoc——createActor 名字注释里的「CreateWorkflow with
-//     resume_from」改为「AmendWorkflow」（修订入口拆成独立工具，docs/dynamic-workflow/launch.md）。
-//   - 21cb21e1…（2026-09-14）：**动了声明集**——`ArtifactOptions.primary?: boolean`
-//     （docs/dynamic-workflow/authoring.md「Ids, tags and versions」）：脚本标出 run 的交付物，完成卡与 run 侧板
-//     以它带头。`description` 补 JSDoc（它现在会显示在交付物那一行旁边）；`artifact` 的散文加一句
-//     「发布多于一件时给交付物标 primary」。
-//   - abeaec0a…（2026-09-15）：合并 dwf-better-artifacts——上两条（AmendWorkflow JSDoc 与
-//     `ArtifactOptions.primary`）同时在场，哈希取并集后的文本。
-//   - 7478845e…（2026-09-22）：**动了声明集**——stream 段加入（docs/dynamic-workflow/authoring.md
-//     「Streams」）：`Channel<T>`、`channel()`、`future()`，两个 facade 都含。段文本住在
-//     facade/dts-stream.ts（dts.ts 顶在行数上限），仍由 dts.ts 拼接。
-//   - 7fd6b30e…（2026-09-26）：**动了声明集**——子代理模型回到 persona（docs/dynamic-workflow/
-//     authoring.md「Choosing a model per subagent」）：`ModelRef`（私有构造器的 class）、`model()`、
-//     `AgentPersona.model?: ModelRef | string`。只在 actor 段，snippet 不含。
-//   - 4f79960c…（2026-09-26）：只改一句 JSDoc——`report()` 的条数上限由 256 改为 65,536
-//     （docs/execution-engine.md「Progressive results: `report`」与「Reading the journal」）。
-//     声明集（declare 行）不变。
-//   - 7f7dc6df…（2026-09-26）：只改一句 JSDoc——`report()` 的单条上限由 32KB 改为 1 MiB，并加上
-//     run 级 1 GiB 的字节总数上限（docs/execution-engine.md「Progressive results: `report`」）。
-//     声明集（declare 行）不变。
-//   - a82956e9…（2026-09-26）：合并 dwf-report-limit——上三条（persona 的 `ModelRef`/`model()` 与
-//     `report()` 两句上限 JSDoc）同时在场，哈希取并集后的文本。
-//   - f1990146…（2026-09-28）：**动了声明集**——hole 段加入（docs/dynamic-workflow/authoring.md
-//     「Holes: `hole<T>()`」）：`hole<T>(name, prompt?)` / `hole<T>(name, body)` /
-//     `hole<T>(name, prompt, body)` 三个重载。段文本住在 facade/dts-hole.ts，拼在 phase 段之后；
-//     **只进完整 facade**，snippet 不含（片段没有 run，也就没有可等主代理补全的东西）。
-//   - b47c6183…（2026-09-28）：只改一句 JSDoc——hole 段的禁区收窄为「数组方法的 fan-out 回调」
-//     （for...of 体允许：顺序循环里第一轮停在留白、补全后每轮跑函数体），并加上「函数体必须
-//     内联」一句。声明集（declare 行）不变。
-//   - 278970c4…（2026-09-30）：**纯散文**——注释收成参考层（docs/dynamic-workflow/authoring.md
-//     「The facade」）：判断层（阶段怎么命名、交付物两条习惯、门控惯用法、流水线阶段的写法等）
-//     删去，只留在技能正文里；其余注释按脚本作者的读法改写（actor → subagent、journaled → recorded、
-//     hole 的读者就是主代理所以称「你」）；facade 23 275 → 13 598 字节。声明集（declare 行）不变。
+// Segment splitting (docs/dynamic-workflow/authoring.md, "The facade") promises: FACADE_DTS is byte-deterministic
+// once assembled from segments. The hash updates on every intentional facade text change (this history is the
+// facade's change ledger); any segment-level edit collides with this -- deliberately: facade text changes must be
+// explicit decisions, never silent drift while reshuffling segments.
+//   - dfd383f3... (2026-08-26): segment split lands, byte-identical to the pre-split text.
+//   - fb2d9943... (2026-08-26): world.run segment added (docs/dynamic-workflow/authoring.md).
+//   - 7f7d36ee... (2026-08-27): phase segment added (docs/dynamic-workflow/presentation.md).
+//   - 198475cc... (2026-08-28): args segment added (docs/dynamic-workflow/launch.md).
+//   - 807e4b79... (2026-08-29): merge re-pin -- the combined hash after feat/dynamic-workflow's phase segment
+//     met dwf-reusable's args segment (neither side's hash matches the current text anymore).
+//   - e7da7b7b... (2026-08-29): phase segment JSDoc rewritten -- prompt-layer enforcement (required + human-readable
+//     phase names following the session language); see docs/dynamic-workflow/authoring.md "Phases" and
+//     docs/dynamic-workflow/authoring.md "The skill". Declaration set (declare lines) unchanged.
+//   - 877a78c3... (2026-08-31): actor segment agent() JSDoc rewritten -- "name is a display label" became
+//     "non-empty names must be unique per run and are the identity key for amend-resume cache matching",
+//     including the static-name-in-fan-out guidance; the phase segment's unlike-actor-names line reworded in the
+//     same pass. See docs/execution-engine.md, "Amend-resume". Declaration set unchanged.
+//   - 05c3401c... (2026-09-04): artifact segment added and report gained a second parameter
+//     (docs/dynamic-workflow/authoring.md). This one changed the declaration set: new declare const artifact
+//     plus seven spec interfaces; report became (item: unknown, artifactId?: string).
+//   - 499c4179... (2026-09-04): BoardSpec.title renamed cardTitle. The old name collided on the same key with
+//     ArtifactOptions' inherited title (the board's own card title); both strings, so TS accepted it -- the cost being
+//     a board that could never say "this board is the memory regression; every card takes name as its title".
+//     Renamed in the spec the same day (docs/dynamic-workflow/authoring.md, "The facade").
+//   - 540a2054... (2026-09-04): prose only -- the actor segment's artifact became result/output value,
+//     yielding the word to artifact.*. The old phrasings (Node<T>'s "producing a typed artifact",
+//     Agent.ask's "T is the task's output artifact") meant the engine-internal sense while the artifact segment
+//     used the same word for user-facing products in the same .d.ts -- two senses in one view. Also in the same
+//     pass: CreateWorkflow's RULES and the dynamic-workflows skill body; see docs/dynamic-workflow/authoring.md
+//     "The guidance" and "Artifacts: what the user keeps", the terminology table. Declaration set unchanged.
+//   - 0dd165d5... (2026-09-05): prose only -- the phase segment gained the every-phase-needs-an-ask-or-world.run
+//     rule and the rewritten Idiom line (docs/dynamic-workflow/presentation.md, same day: empty phases flash by
+//     invisibly, so models are taught not to write them). Declaration set unchanged.
+//   - 99abaa45... (2026-09-05): prose only -- ToolProfile and AgentPersona.tools/model JSDoc rewritten:
+//     "none suits cheap judge/extract personas" became "use none only when the ask text already carries everything
+//     needed; use readonly/default to check files, chase references, or run things; toolless subagents escalate
+//     rather than pretend on such asks". Root cause: a production tools:"none" GLM subagent asked to verify disk
+//     content emitted escalate("placeholder"); see docs/execution-engine.md and
+//     docs/dynamic-workflow/authoring.md "The skill". Declaration set unchanged.
+//   - 23aef592... (2026-09-05): the previous two re-pinned on both branches; after merging
+//     dwf-visual-redesign and feat/dynamic-workflow both prose blocks coexist, re-pinned on the merge result.
+//     Declaration set unchanged.
+//   - b500809e... (2026-09-05): prose only -- the artifact segment's overview rewritten as two habits: every run
+//     publishes its deliverable (web/PDF means that file via file(); a conclusion means the long-form report,
+//     usually markdown(); one-line answers excepted), and boards are for humans watching the run (declare only
+//     when there is a mid-flight state worth watching); plus two is-this-card-worth-it checks (would the user open
+//     it standalone; does it duplicate another artifact). markdown()'s JSDoc went from "not a copy of return" to
+//     "the common shape of report-like deliverables". Same pass as SKILL.md s9 / examples.md. Declaration set unchanged.
+//   - f94af7c0... (2026-09-07): prose only -- the phase naming rule gained an echo: "say it like you would tell a
+//     teammate what you are doing now", with a paired good/bad example. The same segment's line wraps reflowed to
+//     hold max-lines 400 (template-literal lines count as code, not comments). The teaching went from three banned
+//     words to one principle plus paired examples (docs/dynamic-workflow/presentation.md, 2026-09-07 ruling; the
+//     full example table lives in SKILL.md, Write for the user). Declaration set unchanged.
+//   - 853ae664... (2026-09-11): declaration set changed -- declare type ModelTier and AgentPersona.model retired
+//     (docs/dynamic-workflow/authoring.md): the host has no lite model source; tiers were a dead knob occupying
+//     facade space. Subagents run on the parent session's current model.
+//   - fe83dea7... (2026-09-11): declaration set changed -- ToolProfile narrowed to "default" | "readonly", "none"
+//     retired (same decision record): over readonly it only bought not-reading-files, achievable in ask text; it also
+//     brought the only degraded-escalation family and three prompt branches per tier. ToolProfile and
+//     AgentPersona.tools JSDoc rewritten to the two-tier wording in the same pass.
+//   - dee40f0b... (2026-09-12): declaration set changed -- declare type ToolProfile and AgentPersona.tools retired
+//     entirely (same decision record, round two): tiers only ever bought judges-not-editing-files, which normal
+//     subagents never relied on either -- say it in the ask text. AgentPersona is system-only now, JSDoc noting every
+//     actor gets the full work toolset.
+//   - c19c9310... (2026-09-14): one JSDoc line -- createActor's name note changed CreateWorkflow with
+//     resume_from to AmendWorkflow (the amend entry is its own tool now; docs/dynamic-workflow/launch.md).
+//   - 21cb21e1... (2026-09-14): declaration set changed -- ArtifactOptions.primary?: boolean
+//     (docs/dynamic-workflow/authoring.md, Ids tags and versions): scripts flag the run's deliverable; the completion
+//     card and run sidebar lead with it. description gained JSDoc (now displayed beside the deliverable row); the
+//     artifact prose gained mark-primary-when-publishing-more-than-one.
+//   - abeaec0a... (2026-09-15): merged dwf-better-artifacts -- the previous two (AmendWorkflow JSDoc and
+//     ArtifactOptions.primary) coexist; hash taken over the union text.
+//   - 7478845e... (2026-09-22): declaration set changed -- the stream segment added (docs/dynamic-workflow/authoring.md,
+//     Streams): Channel<T>, channel(), future(), in both facades. Segment text lives in facade/dts-stream.ts
+//     (dts.ts is at the line cap) and is still assembled by dts.ts.
+//   - 7fd6b30e... (2026-09-26): declaration set changed -- subagent models return to persona
+//     (docs/dynamic-workflow/authoring.md, Choosing a model per subagent): ModelRef (a class with a private
+//     constructor), model(), AgentPersona.model?: ModelRef | string. Actor segment only; snippets exclude it.
+//   - 4f79960c... (2026-09-26): one JSDoc line -- report()'s count cap went 256 -> 65,536
+//     (docs/execution-engine.md, Progressive results: report, and Reading the journal). Declaration set unchanged.
+//   - 7f7dc6df... (2026-09-26): one JSDoc line -- report()'s per-item cap went 32KB -> 1 MiB, plus a run-level
+//     1 GiB byte total (docs/execution-engine.md, Progressive results: report). Declaration set unchanged.
+//   - a82956e9... (2026-09-26): merged dwf-report-limit -- the previous three (persona ModelRef/model() and the
+//     two report cap JSDoc lines) coexist; hash taken over the union text.
+//   - f1990146... (2026-09-28): declaration set changed -- the hole segment added (docs/dynamic-workflow/authoring.md,
+//     Holes): hole<T>(name, prompt, body) overloads, snippet included. Segment text lives in facade/dts-hole.ts,
+//     spliced after the phase segment. Full facade only -- snippets have no run, hence nothing for the main agent to fill.
+//   - b47c6183... (2026-09-28): one JSDoc line -- the hole segment's restricted zone narrowed to array-method
+//     fan-out callbacks (for...of bodies are fine: the first lap parks at the hole, later laps run the body after the
+//     fill), plus a bodies-must-be-inlined line. Declaration set unchanged.
+//   - 278970c4... (2026-09-30): prose only -- comments narrowed to the reference layer (docs/dynamic-workflow/authoring.md,
+//     The facade): judgment material (phase naming, the two deliverable habits, the gating idiom, how to write pipeline
+//     stages and the like) deleted here, kept only in the skill body; remaining comments rewritten for script authors
+//     (actor -> subagent, journaled -> recorded, the hole reader is the main agent so it says you); facade
+//     23275 -> 13598 bytes. Declaration set unchanged.
 const PINNED_FACADE_SHA256 = "278970c47a2b3e5225d8e993320193221b42bd524121228e363f84ee4654609d";
 
 describe("facade dts segments", () => {
@@ -117,16 +115,16 @@ describe("facade dts segments", () => {
     expect(hash).toBe(PINNED_FACADE_SHA256);
   });
 
-  // 注释只写参考层：做什么、返回什么、何时拒绝或让 run 失败、上限、实参的编译期规则
-  // （docs/dynamic-workflow/authoring.md「The facade」）。判断层在技能正文里只说一次；facade
-  // 只经技能 §16.2 进上下文，注释复述正文等于每次写作会话付两遍，且是会漂移的那一份。
-  // 2026-09-30 去重前是 23 275 字节，其中约 2 万是注释。
+  // Comments carry the reference layer only: what it does, what it returns, when it rejects or fails the run, caps,
+  // compile-time argument rules (docs/dynamic-workflow/authoring.md, The facade). Judgment material is stated once
+  // in the skill body; the facade enters context only via skill 16.2, and comments restating it would be paid twice
+  // per writing session and be the drift-prone copy. Before the 2026-09-30 dedup: 23275 bytes, ~20k of them comments.
   it("stays a reference: FACADE_DTS is under 14 000 bytes", () => {
     expect(Buffer.byteLength(FACADE_DTS, "utf8")).toBeLessThan(14_000);
   });
 
-  // args 在**两个** facade 里都在：snippet 的「逐字可迁移」不变式要求一段引用 args 的
-  // saved 脚本能原样丢进 EvalWorkflowSnippet 编译（运行时它是 `{}`）。
+  // args exists in both facades: the snippet's verbatim-portable invariant requires a saved script referencing args
+  // to compile unmodified in EvalWorkflowSnippet (where it is {} at runtime).
   it("SNIPPET_FACADE_DTS keeps world reads, world.run, log and args, drops actors/report/artifact/phase", () => {
     expect(SNIPPET_FACADE_DTS).toContain("declare const args");
     expect(FACADE_DTS).toContain("declare const args");
@@ -134,22 +132,22 @@ describe("facade dts segments", () => {
     expect(SNIPPET_FACADE_DTS).toContain("declare const git");
     expect(SNIPPET_FACADE_DTS).toContain("declare const world");
     expect(SNIPPET_FACADE_DTS).toContain("declare function log");
-    // stream 段在两个 facade 里都在：流水线的纯逻辑正是片段要排练的东西。
+    // The stream segment exists in both facades: pipeline mechanics are exactly what snippets rehearse.
     expect(SNIPPET_FACADE_DTS).toContain("declare function channel");
     expect(SNIPPET_FACADE_DTS).toContain("declare function future");
     expect(SNIPPET_FACADE_DTS).toContain("declare interface Channel<T>");
     expect(SNIPPET_FACADE_DTS).not.toContain("declare function agent");
     expect(SNIPPET_FACADE_DTS).not.toContain("declare function report");
     expect(SNIPPET_FACADE_DTS).not.toContain("declare function phase");
-    // 模型声明属于 actor：snippet 里没有子代理，也就没有可选的模型。
+    // Model declarations belong to the actor: snippets have no subagents, hence no optional model.
     expect(FACADE_DTS).toContain("declare function model");
     expect(SNIPPET_FACADE_DTS).not.toContain("declare function model");
     expect(SNIPPET_FACADE_DTS).not.toContain("ModelRef");
-    // 产物是「run 交给用户的产出」，而 snippet 没有 run：整段刻意缺席，连类型都不留。
+    // Artifacts are what a run hands the user; snippets have no run, so the segment is deliberately absent, types included.
     expect(FACADE_DTS).toContain("declare const artifact");
     expect(SNIPPET_FACADE_DTS).not.toContain("declare const artifact");
     expect(SNIPPET_FACADE_DTS).not.toContain("ArtifactRef");
-    // 留白只在完整 facade 里（docs/dynamic-workflow/authoring.md「Holes」）：片段没有 run。
+    // Holes exist in the full facade only (docs/dynamic-workflow/authoring.md, Holes): snippets have no run.
     expect(FACADE_DTS).toContain(
       "declare function hole<T>(name: string, prompt?: string): Promise<T>;",
     );
@@ -163,7 +161,7 @@ describe("facade dts segments", () => {
   });
 
   it("rejects hole() in the snippet facade at compile time (TS2304)", () => {
-    const workflow = createWorkflowProgram(`return await hole<string>("决定");`, {
+    const workflow = createWorkflowProgram(`return await hole<string>("decide");`, {
       facadeDts: SNIPPET_FACADE_DTS,
     });
     const diagnostics = collectDiagnostics(workflow.program);
@@ -171,7 +169,7 @@ describe("facade dts segments", () => {
     expect(diagnostics[0]?.message).toContain("Cannot find name 'hole'");
   });
 
-  // docs/dynamic-workflow/authoring.md「What the facade does not have」：脚本 facade 里没有 budget 标识符。
+  // docs/dynamic-workflow/authoring.md, What the facade does not have: no budget identifier in the script facade.
   it("neither facade declares budget", () => {
     expect(FACADE_DTS).not.toContain("budget");
     expect(SNIPPET_FACADE_DTS).not.toContain("budget");
@@ -205,9 +203,8 @@ describe("snippet compilation (scratch facade)", () => {
     }
   });
 
-  // facade 身份按声明文件名判定（registry / sites / misuse / lowering 五处）；scratch
-  // facade 若换了文件名，站点收集会静默变空、files.glob 不再降级到 __host.worldRead——
-  // snippet 编译通过却什么都不做。这条钉住「同名注入」的不变量。
+  // Facade identity is judged by declaration file name (registry/sites/misuse/lowering, five places); a renamed
+  // scratch facade would silently empty site collection and stop degrading files.glob to __host.worldRead --
   it("lowers files.glob in a snippet to a world-read site (facade filename invariant)", () => {
     const workflow = compileSnippet(`return await files.glob("*.ts");`);
     expect(collectDiagnostics(workflow.program)).toEqual([]);
@@ -217,8 +214,8 @@ describe("snippet compilation (scratch facade)", () => {
   });
 });
 
-// 产物的**类型面**（docs/dynamic-workflow/authoring.md「Two families」）：两族成员的语义
-// 不对称必须在类型上就成立——内容成员可 await 出 ArtifactRef，预置成员是 void。
+// The artifact type surface (docs/dynamic-workflow/authoring.md, Two families): the two families' semantic
+// asymmetry must hold at the type level -- content members await an ArtifactRef, predeclared members are void.
 describe("artifact facade (type surface)", () => {
   const diagnosticsOf = (scriptText: string) =>
     collectDiagnostics(createWorkflowProgram(scriptText).program);
@@ -257,10 +254,10 @@ describe("artifact facade (type surface)", () => {
   it("lets a board name itself and its cards separately (the cardTitle rename)", () => {
     expect(
       diagnosticsOf(
-        `artifact.board("b", { title: "内存回归", key: "id", status: "state", columns: ["todo"], cardTitle: "name" });`,
+        `artifact.board("b", { title: "memory regression", key: "id", status: "state", columns: ["todo"], cardTitle: "name" });`,
       ),
     ).toEqual([]);
-    // 旧名字不再是 BoardSpec 的字段名之外的东西：写 title 就是给板子起名，不是给卡片取标题。
+    // The old name means nothing outside BoardSpec's fields: title names the board, never a card.
     expect(FACADE_DTS).toContain("cardTitle?: string");
   });
 
@@ -339,7 +336,7 @@ describe("world.run (compile side)", () => {
     expect(diagnostics[0]?.code).toBe(WORLD_RUN_LITERAL_CODE);
     expect(diagnostics[0]?.line).toBe(2);
     expect(diagnostics[0]?.message).toContain("string literal");
-    // analyzeWorkflowScript 把它与 misuse 同席（ok:false）。
+    // analyzeWorkflowScript surfaces it alongside misuse (ok:false).
     const analyzed = analyzeWorkflowScript(
       `const cmd = "lean";\nconst r = await world.run(cmd, []);\nreturn r.exitCode;`,
     );
@@ -365,8 +362,7 @@ describe("world.run (compile side)", () => {
   });
 });
 
-// args 的降级（docs/dynamic-workflow/launch.md「Running a saved workflow」）：
-// 它是 facade 里唯一一个**值**而不是可调用物，所以走标识符级改写而不是站点。
+// args lowering (docs/dynamic-workflow/launch.md, Running a saved workflow): the only facade value rather than
 describe("args lowering", () => {
   it("lowers a facade args read to __host.args, with no site of its own", () => {
     const workflow = createWorkflowProgram(`const target = String(args.target);\nreturn target;`);
@@ -374,7 +370,7 @@ describe("args lowering", () => {
     const table = collectSites(workflow);
     const lowered = lowerWorkflow(workflow, table);
     expect(lowered.code).toContain("__host.args.target");
-    // 读一个值不是等待点：它不占 site id，也就不会长出因果图节点。
+    // Reading a value is no wait point: no site id, hence no causality node.
     expect(lowered.siteIds).toEqual([]);
   });
 
@@ -387,8 +383,8 @@ describe("args lowering", () => {
     expect(lowered.code).toContain("__host.args.x");
   });
 
-  // 判定按 checker 解析结果，不按名字：脚本自己声明的 args 解析到脚本文件的符号。
-  // 名字启发式会把这段改写成 `const __host.args = ...`，一个运行期 SyntaxError。
+  // The verdict follows the checker's resolution, not names: a script-declared args resolves to the script file's
+  // symbol; a name heuristic would rewrite this into const __host.args = ..., a runtime SyntaxError.
   it("leaves a script-declared local `args` alone", () => {
     const workflow = createWorkflowProgram(`const args = { local: 1 };\nreturn args.local;`);
     expect(collectDiagnostics(workflow.program)).toEqual([]);
@@ -410,7 +406,7 @@ describe("args lowering", () => {
     expect(lowered.code).not.toContain("__host.args");
   });
 
-  // 一段同时用 args 和 ask 的脚本：改写不能破坏站点，站点也不能吞掉 args。
+  // A script using both args and ask: the rewrite must not break sites, and sites must not swallow args.
   it("coexists with ask sites", () => {
     const workflow = createWorkflowProgram(
       `const r = await agent("w").ask(String(args.topic));\nreturn r;`,

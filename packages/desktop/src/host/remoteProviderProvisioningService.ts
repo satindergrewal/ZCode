@@ -45,9 +45,11 @@ export function createRemoteProviderProvisioningExecutor(options: {
       const envelope = await options.source.read(syncId);
       errorCode = "target-call-failed";
       const { errorCode: remoteErrorCode, ...result } = await options.target.apply(envelope);
-      // 成功结果不携带诊断字段，避免未知错误码使 Main 丢弃本已成功的回包。
+      // Success results carry no diagnostic fields, so an unknown errorCode cannot make Main
+      // discard an already-successful response.
       if (result.status === "applied" || result.status === "already-applied") return result;
-      // 旧目标没有阶段码，任意远端也可能返回自由文本；只能透传本地 allowlist。
+      // Legacy targets have no stage codes and any remote may return free text; only the local
+      // allowlist passes through.
       const parsedCode = providerProvisioningErrorCodeSchema.safeParse(remoteErrorCode);
       return { ...result, errorCode: parsedCode.success ? parsedCode.data : "target-apply-failed" };
     } catch (error) {

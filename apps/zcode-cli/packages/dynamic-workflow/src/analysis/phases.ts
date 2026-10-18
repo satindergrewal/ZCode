@@ -1,14 +1,14 @@
 /**
-  * Compile-time validation of phase markers.
+ * Compile-time validation of phase markers.
  *
-  * Two rules, one reason -- **a marker must state what it refers to before submit**. The name is a compile-time literal
-  * because the phase set is shown in the confirmation dialog (same posture as world.run's cmd: a runtime-formed name has
-  * nothing showable); the call must be a standalone statement because the marker means from-here-to-block-end -- one buried in an initializer /
-  * argument / ternary arm has no range to refer to. Both are **pinning diagnostics**, not runtime fallbacks: the teaching
-  * happens on the cheap side.
+ * Two rules, one reason -- **a marker must state what it refers to before submit**. The name is a compile-time literal
+ * because the phase set is shown in the confirmation dialog (same posture as world.run's cmd: a runtime-formed name has
+ * nothing showable); the call must be a standalone statement because the marker means from-here-to-block-end -- one buried in an initializer /
+ * argument / ternary arm has no range to refer to. Both are **pinning diagnostics**, not runtime fallbacks: the teaching
+ * happens on the cheap side.
  *
-  * Alias escape (const p = phase) is not here: phase is a facade function declaration, and facade-misuse's
-  * pass 1 already rejects any reference outside a direct call.
+ * Alias escape (const p = phase) is not here: phase is a facade function declaration, and facade-misuse's
+ * pass 1 already rejects any reference outside a direct call.
  */
 
 import ts from "typescript";
@@ -36,10 +36,10 @@ const STATEMENT_MESSAGE =
   "the steps it names.";
 
 /**
-  * Validate the collected phase markers. Non-empty means the script cannot be submitted (handled alongside misuse /
-  * world.run in analyzeWorkflowScript).
+ * Validate the collected phase markers. Non-empty means the script cannot be submitted (handled alongside misuse /
+ * world.run in analyzeWorkflowScript).
  *
-  * One marker can break both rules (const x = phase(bad)); report both, so one look shows every needed fix.
+ * One marker can break both rules (const x = phase(bad)); report both, so one look shows every needed fix.
  */
 export function collectPhaseMarkerDiagnostics(
   workflow: WorkflowProgram,
@@ -51,7 +51,7 @@ export function collectPhaseMarkerDiagnostics(
   };
 
   for (const marker of table.phases) {
-        // The name's diagnostic lands on **the offending expression** (the call site when absent): that is what the author edits.
+    // The name's diagnostic lands on **the offending expression** (the call site when absent): that is what the author edits.
     const nameLoc =
       marker.nameExpr === undefined
         ? marker.loc

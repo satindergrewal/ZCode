@@ -1,4 +1,5 @@
-// 独立 MCP 进程：控制 socket 只用于可重复地安排完成顺序，不替代 MCP 数据链路。
+// Standalone MCP process: the control socket exists only to schedule completion order
+// deterministically; it never replaces the MCP data path.
 import { createInterface } from "node:readline";
 import { connect } from "node:net";
 import { readFile } from "node:fs/promises";
@@ -51,7 +52,8 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
   if (message.method === "notifications/cancelled") {
     const call = [...pending.entries()].find(([, value]) => value.id === message.params.requestId);
     if (call) sendEvent({ type: "cancelled", key: call[0] });
-    // 故意允许控制端晚回结果，验证 Agent 不接受取消后的写入，也不会重放。
+    // Deliberately let the control side answer late: proves the agent accepts no writes after
+    // cancellation and does not replay.
     return;
   }
   if (message.id === undefined) return;

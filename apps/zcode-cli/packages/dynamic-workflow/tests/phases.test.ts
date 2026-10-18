@@ -9,8 +9,7 @@ import { FACADE_SITING_CODE } from "../src/analysis/facade-misuse.js";
 import { analyzeWorkflowScript } from "../src/index.js";
 import { corpusDiagnostics } from "./helpers/analysis-corpus.js";
 
-// phase() 标记的编译面（docs/analysis.md「Phases」）：
-// 收集（无站点、不占计数器）、诊断（9004 的三条规则）、与 facade-siting 的分工。
+// The compile side of phase() markers (docs/analysis.md, Phases):
 
 const markers = (scriptText: string) => {
   const workflow = createWorkflowProgram(scriptText);
@@ -24,7 +23,7 @@ describe("phase marker collection", () => {
     expect(table.phases).toHaveLength(1);
     expect(table.phases[0]?.name).toBe("preflight");
     expect(table.phases[0]?.loc).toEqual({ column: 1, line: 1 });
-    // 标记不是站点：actor 的 per-kind id 与全局 order 都从"第一个真站点"开始。
+    // Markers are not sites: per-kind ids and the global order start at the first real site.
     expect(table.actors[0]?.id).toBe("actor#1");
     expect(table.actors[0]?.order).toBe(0);
   });
@@ -42,7 +41,7 @@ describe("phase marker collection", () => {
   });
 
   it("ignores a script-local function that happens to be named phase", () => {
-    // 身份按声明判定，与 sites.ts 的其余分支同一机制：别人的 `phase` 是别人的函数。
+    // Identity follows the declaration, same mechanism as the rest of sites.ts: someone else's phase is their function.
     const { table, diagnostics } = markers(
       `function phase(x: number): void { log(\`\${x}\`); }\nphase(1);\nreturn 1;`,
     );
@@ -50,9 +49,7 @@ describe("phase marker collection", () => {
     expect(diagnostics).toEqual([]);
   });
 
-  // site-id stability（docs/analysis.md 的 "Sites"）：加标记
-  // 不许挪动任何站点的 id，**连全局 order 都不许挪**——这比 report 当年的豁免更强，而
-  // 标记没有 id 可排，所以这条不变量是免费的。这里逐字节比对两份站点表的 (id, order)。
+  // site-id stability (docs/analysis.md, Sites): adding markers must not move any site id -- not even the
   it("moves no site id and no discovery order when markers are added", () => {
     const identity = (scriptText: string): string[] => {
       const { table } = markers(scriptText);
@@ -86,9 +83,7 @@ describe("phase marker diagnostics (9004)", () => {
     expected: { column: number; line: number; contains: string },
   ): void {
     const { diagnostics } = markers(scriptText);
-    const match = diagnostics.find(
-      (d) => d.line === expected.line && d.column === expected.column,
-    );
+    const match = diagnostics.find((d) => d.line === expected.line && d.column === expected.column);
     expect(
       match,
       `expected a 9004 diagnostic at ${expected.line}:${expected.column}; got ${JSON.stringify(diagnostics)}`,
@@ -114,7 +109,11 @@ describe("phase marker diagnostics (9004)", () => {
   });
 
   it("rejects an empty name, and one that is only whitespace", () => {
-    expectRejected(`phase("");\nreturn 1;`, { column: 7, contains: "has no name to show", line: 1 });
+    expectRejected(`phase("");\nreturn 1;`, {
+      column: 7,
+      contains: "has no name to show",
+      line: 1,
+    });
     expectRejected(`phase("  \\t ");\nreturn 1;`, {
       column: 7,
       contains: "has no name to show",
@@ -141,7 +140,7 @@ describe("phase marker diagnostics (9004)", () => {
   });
 
   it("reports both rules for one marker that breaks both", () => {
-    // `const x = phase(n)`：非字面量名 + 非语句位置。作者一次看全要改什么。
+    // const x = phase(n): non-literal name plus non-statement position. One pass, full fix list.
     const { diagnostics } = markers(`const n = "g";\nconst x = phase(n);\nreturn x;`);
     expect(diagnostics).toHaveLength(2);
     expect(diagnostics.map((d) => d.code)).toEqual([PHASE_MARKER_CODE, PHASE_MARKER_CODE]);
@@ -165,8 +164,7 @@ describe("phase marker diagnostics (9004)", () => {
   });
 
   it("accepts an effect-free marker (block-final, and two in a row)", () => {
-    // 无效果的标记合法、无害、不诊断（spec 的「无效果 marker」行）：块尾标记什么都不认领，
-    // 连续两个标记里前一个立刻被后一个取代。两者都是陈旧编辑，不是错误。
+    // Effect-free markers are legal, harmless, and undiagnosed (the spec's no-effect marker row):
     const { diagnostics } = markers(
       `phase("a");\n` +
         `phase("b");\n` +
@@ -183,8 +181,7 @@ describe("phase marker diagnostics (9004)", () => {
 
 describe("phase markers in analyzeWorkflowScript", () => {
   it("withholds both views on a 9004 diagnostic (ok: false)", () => {
-    // 与 world.run 的字面量检查同席：诊断非空即**不提交**，图与因果视图一并扣下——
-    // 半张图比没有图更坏（handler 只在 ok 时才走 submit）。
+    // Same channel as the world.run literal check: any diagnostic blocks submission, withholding graph
     const result = analyzeWorkflowScript(`const n = "g";\nphase(n);\nreturn 1;`);
     expect(result.ok).toBe(false);
     expect(result.graph).toBeUndefined();
@@ -202,7 +199,10 @@ describe("phase markers in analyzeWorkflowScript", () => {
       expect(result.ok, script).toBe(false);
       expect(result.graph, script).toBeUndefined();
       expect(result.causality, script).toBeUndefined();
-      expect(result.diagnostics.some((d) => d.code === PHASE_MARKER_CODE), script).toBe(true);
+      expect(
+        result.diagnostics.some((d) => d.code === PHASE_MARKER_CODE),
+        script,
+      ).toBe(true);
     }
   });
 
@@ -215,7 +215,7 @@ describe("phase markers in analyzeWorkflowScript", () => {
   });
 
   it("analyzes a marked script cleanly, and the markers change nothing in the graph (WP1)", () => {
-    // WP1 收集但不投影：阶段词汇表是 WP2。这条钉住「加标记不动因果图」。
+    // WP1 collects without projecting; the phase vocabulary is WP2. Pins markers-never-touch-the-causality-graph.
     const bare = `const a = agent("a");\nconst x = await a.ask<string>("go");\nreturn x;`;
     const marked = `phase("work");\nconst a = agent("a");\nconst x = await a.ask<string>("go");\nreturn x;`;
     const bareResult = analyzeWorkflowScript(bare);
@@ -228,9 +228,7 @@ describe("phase markers in analyzeWorkflowScript", () => {
   });
 
   it("rejects aliasing the marker via facade-siting (9001), not via 9004", () => {
-    // `phase` 是 facade 函数声明，所以 misuse pass 1 已经覆盖别名逃逸——9004 那一趟不必
-    // 重实现它。反过来说：pass 2（"产生站点却没被 site 掉"）绝不能误伤合法的直接调用，
-    // 这正是 phase 不进 SITE_PRODUCING_FUNCTIONS 的原因。
+    // phase is a facade function declaration, so misuse pass 1 already covers alias escapes -- 9004 need
     const result = analyzeWorkflowScript(`const p = phase;\np("gate");\nreturn 1;`);
     expect(result.ok).toBe(false);
     expect(result.diagnostics).toHaveLength(1);

@@ -130,7 +130,9 @@ describe("desktop final ARMS custom E2E bridge", () => {
       controller.configure({
         suppressedEventNames: Array.from({ length: 101 }, (_, index) => `event-${index}`),
       }),
-    ).toThrow("最多 100 项");
-    expect(() => controller.configure({ suppressedEventNames: [""] })).toThrow("空值");
+    ).toThrow("at most 100 items");
+    expect(() => controller.configure({ suppressedEventNames: [""] })).toThrow(
+      "empty or oversized event name",
+    );
   });
 });

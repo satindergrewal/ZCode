@@ -61,10 +61,13 @@ export function useSavedWorkflowsDirectoryWatch({
         });
       })
       .catch((error: unknown) => {
-        logger.debug("[SavedWorkflows] Failed to watch .zcode/workflows (directory may not exist yet)", {
-          path: directoryPath,
-          error: error instanceof Error ? error.message : String(error),
-        });
+        logger.debug(
+          "[SavedWorkflows] Failed to watch .zcode/workflows (directory may not exist yet)",
+          {
+            path: directoryPath,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        );
       });
     return () => {
       disposed = true;

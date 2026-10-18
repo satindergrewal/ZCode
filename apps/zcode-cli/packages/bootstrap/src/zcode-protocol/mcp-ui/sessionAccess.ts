@@ -3,8 +3,8 @@ import type { McpUiPluginScope, McpUiSessionAccess } from "./contract.js";
 import { mcpUiInstances } from "./instances.js";
 
 /**
- * 把 session record 收窄成处理器需要的最小视图。归属真相是本 session 的 MCP server 表
- * （插件 server 与普通 MCP server 同一张表），任何已配置的 server 都能渲染 MCP App。
+ * Narrows the session record to the view the handlers need. Ownership truth is this session's MCP server table
+ // (plugin and plain servers alike); any configured server may render an MCP App.
  */
 export function createMcpUiSessionAccess(
   record: ZCodeProtocolSessionRecord,

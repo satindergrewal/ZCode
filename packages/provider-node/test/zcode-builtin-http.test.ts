@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 import { expect, it, vi } from "vitest";
 import { downloadZCodeBuiltinRelease } from "../src/zcode-builtin-download.js";
 
-it("真实 HTTP 响应头已返回但正文不结束时，20 秒总预算关闭连接且下一次可重试", async () => {
+it("closes the connection at the 20s budget when headers landed but the body stalls, leaving the next try free", async () => {
   let closed = false;
   let finish = false;
   const release = {
@@ -46,7 +46,7 @@ it("真实 HTTP 响应头已返回但正文不结束时，20 秒总预算关闭�
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
   const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  // 只替换测试传输目的地，不放宽生产 CDN 的 HTTPS 校验；本例验证真实 socket/body 取消。
+  // Only the test transport destination is swapped; production HTTPS checks stay. This case proves real socket/body cancellation.
   const options = {
     endpointOrigin: origin,
     appVersion: "test",

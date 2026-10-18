@@ -3,10 +3,10 @@
 // ============================================================
 // Workflow actors (child AgentRuntime) submit this ask's structured terminal result. Handler hands it to
 // the injected WorkflowSubmitPort and blocks on the engine verdict:
- //   - accept -> success output; the executor attaches turnControl to end the turn.
- //   - reject -> ToolHandlerFailure with the violation list; it becomes an error tool_result without
- //     turnControl, the loop continues, and the model retries in-session -- the repair channel.
- // The per-ask schema is not in the tool declaration; it rides the ask epilogue (frozen-tool cache
+//   - accept -> success output; the executor attaches turnControl to end the turn.
+//   - reject -> ToolHandlerFailure with the violation list; it becomes an error tool_result without
+//     turnControl, the loop continues, and the model retries in-session -- the repair channel.
+// The per-ask schema is not in the tool declaration; it rides the ask epilogue (frozen-tool cache
 // invariant). This handler only forwards; schema validation happens engine-side at the port.
 
 import {
@@ -35,8 +35,8 @@ const submitResultHandler: ToolHandler = async (input, context) => {
   const parsed = SubmitResultInputSchema.parse(input) as SubmitResultInput;
 
   // Gate: workflowSubmitPort is injected only in workflow-actor sessions. Not keyed on runtimeScope -- the
- // workflow actor is taskType "workflow_child" whose runtimeScope is currently "main"; port presence is
-// the taskType-independent test.
+  // workflow actor is taskType "workflow_child" whose runtimeScope is currently "main"; port presence is
+  // the taskType-independent test.
   if (!context.workflowSubmitPort) {
     throw createCoreError(
       CoreErrorType.ConfigurationError,
@@ -62,7 +62,7 @@ const submitResultHandler: ToolHandler = async (input, context) => {
   }
 
   // reject: returned as ToolHandlerFailure; call-runner turns it into an error tool_result, the violation
-// list survives as modelContent, no turnControl -- loop continues, model repairs in-session.
+  // list survives as modelContent, no turnControl -- loop continues, model repairs in-session.
   return submitResultRejection(verdict.violations);
 };
 

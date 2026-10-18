@@ -1,30 +1,33 @@
 // ============================================================
-// Dynamic Workflow Run Port：工作区 transcript 的读面类型
+// Dynamic Workflow Run Port: read-surface types of the workspace transcript
 // ============================================================
-// docs/dynamic-workflow/transcript-and-notifications.md。与情势截面
-// （dynamic-workflow-run-roster.port.ts）、retune（dynamic-workflow-run-retune.port.ts）同一条
-// 拆分理由：dynamic-workflow-run.port.ts 顶到 oxlint max-lines 上限（400 行），而这六个类型
-// 自成一组（一次 `files.*` / `git.*` / `world.run` 调用的清单行与正文）。公开面不变——那边
-// 原样再导出，`@zcode/contracts` 的导入路径一字不改。
+// docs/dynamic-workflow/transcript-and-notifications.md. Same split rationale as the situation
+// cross-section (dynamic-workflow-run-roster.port.ts) and retune
+// (dynamic-workflow-run-retune.port.ts): dynamic-workflow-run.port.ts hits the oxlint max-lines
+// ceiling (400); these six types form a group of their own (listing row and body of one
+// `files.*` / `git.*` / `world.run` call). Public surface unchanged - re-exported verbatim
+// there, `@zcode/contracts` import paths untouched.
 
-// 结构化失败的形状留在主文件上（本组的两个字段引用它），所以这里反向 import 一个类型：
-// 纯类型、无运行时边，两个文件各自只描述自己那一组。
+// The structured-failure shape stays in the main file (two fields here reference it), so a type
+// is imported back: types only, no runtime edge; each file describes its own group.
 import type { DynamicWorkflowRunError } from "./dynamic-workflow-run.port.js";
 
-/** 工作区节点的种类：journal `dwf_node.kind` 的两个 world 值。 */
+/** Kind of workspace node: the two world values of journal `dwf_node.kind`. */
 export type DynamicWorkflowRunWorkspaceNodeKind = "world-read" | "world-run";
 
-/** 节点行的状态，= journal 的 `NodeRecordStatus`（刻意在这里重申，理由同 lifecycle status）。 */
+/** Row status, = journal's `NodeRecordStatus` (deliberately restated here, same rationale as lifecycle status). */
 export type DynamicWorkflowRunWorkspaceNodeStatus = "running" | "completed" | "failed";
 
 /**
- * 清单上一行的**摘要**：不把正文解出来就能报的那几个数。由存储层用 SQLite 的 JSON 函数在
- * 查询里算出（`resultBytes` / `resultCount` / `exitCode` / `stdoutBytes` / `stderrBytes`），
- * 端口原样透传。哪个字段在场取决于 op：数组正文（glob / grep / changedFiles）有 `resultCount`，
- * `world.run` 有 exitCode 与两路输出的字节数，字符串正文只有 `resultBytes`。
+ * The **summary** of a listing row: the few numbers reportable without decoding the body,
+ * computed by the storage layer in-query via SQLite JSON functions
+ * (`resultBytes` / `resultCount` / `exitCode` / `stdoutBytes` / `stderrBytes`), passed
+ * through by the port. Which fields appear depends on op: array bodies (glob / grep /
+ * changedFiles) have `resultCount`; `world.run` has exitCode and both output byte counts;
+ * string bodies only `resultBytes`.
  */
 export interface DynamicWorkflowRunWorkspaceNodeSummary {
-  /** 正文序列化后的 UTF-8 字节数。 */
+  /** UTF-8 bytes of the serialized body. */
   resultBytes: number;
   resultCount?: number;
   exitCode?: number;
@@ -33,10 +36,12 @@ export interface DynamicWorkflowRunWorkspaceNodeSummary {
 }
 
 /**
- * 工作区 transcript 的一行：一次 `files.*` / `git.*` / `world.run` 调用，**不带正文**。
+ * One row of the workspace transcript: one `files.*` / `git.*` / `world.run` call, **body not
+ * included**.
  *
- * `op` / `args` 来自迁移 0030 加的 `input_json`（admission 时写下、≤ 4 KB）；升级前的历史行
- * 两者缺席，UI 退回静态图上的步标签。`inputTruncated` 表示 args 是逐项字符串预览而不是原值。
+ * `op` / `args` come from `input_json` (migration 0030; written at admission, <= 4KB); legacy
+ * pre-upgrade rows lack both and the UI falls back to the static graph's step label.
+ * `inputTruncated` means args are per-item string previews, not raw values.
  */
 export interface DynamicWorkflowRunWorkspaceNode {
   siteId: string;
@@ -46,27 +51,27 @@ export interface DynamicWorkflowRunWorkspaceNode {
   args?: readonly unknown[];
   inputTruncated?: true;
   status: DynamicWorkflowRunWorkspaceNodeStatus;
-  /** failed 行的结构化失败（journal `error_json` 的 code + message；其余字段不出端口）。 */
+  /** Structured failure of a failed row (journal `error_json` code + message; no other fields cross the port). */
   error?: DynamicWorkflowRunError;
-  /** 结算成功的行才有。 */
+  /** Settled-successful rows only. */
   summary?: DynamicWorkflowRunWorkspaceNodeSummary;
-  /** journal 行的建立 / 最近更新时刻（epoch 毫秒）；二者之差就是这一步的耗时。 */
+  /** Row created / last-updated (epoch ms); their difference is this step's duration. */
   createdAt: number;
   updatedAt: number;
 }
 
-/** {@link import("./dynamic-workflow-run.port.js").DynamicWorkflowRunPort.readWorkspaceNodeResult} 的分页袋：正文的字节上限。 */
+/** Pagination bag of {@link import("./dynamic-workflow-run.port.js").DynamicWorkflowRunPort.readWorkspaceNodeResult}: the body's byte cap. */
 export interface DynamicWorkflowRunWorkspaceNodeResultQuery {
-  /** 必填；端口按它**有界化**正文（截断而不是拒绝——这是审计面，不是脚本的取数面）。 */
+  /** Required; the port **bounds** the body by it (truncate, never refuse - an audit surface, not the script's data path). */
   maxBytes: number;
 }
 
 /**
- * 一个工作区节点的正文：按形状有界化过的 `result`。
+ * The body of one workspace node: the `result`, shape-preserving bounded.
  *
- * 截断是**保形**的：字符串切尾、数组去尾、`world.run` 的 stdout / stderr 各自切尾，
- * `truncated` 说明发生过截断，`totalBytes` 是截断前的字节数。running 行没有正文；failed 行
- * 只有 `error`。
+ * Truncation is **shape-preserving**: strings tail-cut, arrays tail-dropped, `world.run`'s
+ * stdout / stderr cut each; `truncated` says it happened and `totalBytes` is the pre-cut size.
+ * running rows have no body; failed rows only `error`.
  */
 export interface DynamicWorkflowRunWorkspaceNodeResult {
   status: DynamicWorkflowRunWorkspaceNodeStatus;

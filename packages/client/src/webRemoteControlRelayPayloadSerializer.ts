@@ -16,11 +16,11 @@ export interface SerializedWebRemoteControlRelayPayload {
 }
 
 /**
- * 为同一个 immutable app payload 固定唯一 final relay JSON。
+ * Pin one final relay JSON per immutable app payload.
  *
- * Bugfix：旧路径在 meter 与 send 时分别调用 Date.now()/JSON.stringify，导致 replay accounting
- * 记录的并非 WebSocket 实际写入 bytes。WeakMap 让 cache 生命周期跟随 adapter 持有的 frame，
- * cumulative ACK 释放 frame 后即可被 GC，不形成第二个 replay owner。
+ * Bugfix: the old path called Date.now()/JSON.stringify separately in meter and send, so replay accounting
+ * recorded bytes the WebSocket never wrote. The WeakMap ties cache lifetime to the adapter-held frame,
+ * letting GC reclaim it once the cumulative ACK releases the frame, with no second replay owner.
  */
 export class WebRemoteControlRelayPayloadSerializer {
   private readonly cache = new WeakMap<object, SerializedWebRemoteControlRelayPayload>();

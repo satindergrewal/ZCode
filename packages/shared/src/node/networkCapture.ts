@@ -8,12 +8,12 @@ import {
 } from "../networkCapture.js";
 
 const excluded = new AsyncLocalStorage<boolean>();
-/** MCP 的 HTTP/SSE/OAuth 共用此异步上下文，不影响原 fetch 的代理与证书策略。 */
+/** Shared async context for MCP HTTP/SSE/OAuth; leaves the original fetch proxy and certificate policy untouched. */
 export function withoutNetworkCapture<T>(operation: () => T): T {
   return excluded.run(true, operation);
 }
 
-/** 仅订阅请求创建事件；不开启时不持有监听器或定时器，不读取流。 */
+/** Subscribes to request-create events only; when off, holds no listeners or timers and reads no streams. */
 export function createNodeNetworkCapture(
   processType: NetworkRequestRecord["processType"],
   onBatch: (batch: NetworkCaptureBatch) => void,
@@ -28,11 +28,11 @@ export function createNodeNetworkCapture(
     const batch = { captureId, records, dropped };
     records = [];
     dropped = 0;
-    // 诊断消费者退出或抛错不能破坏业务请求。
+    // A diagnostic consumer exiting or throwing must never break the business request.
     try {
       onBatch(batch);
     } catch {
-      /* 仅丢弃观测 */
+      /* Only the observation is dropped */
     }
   };
   const record = (method: string, rawUrl: string) => {
@@ -63,13 +63,13 @@ export function createNodeNetworkCapture(
         url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
       record(request.method, url.href);
     } catch {
-      /* 非标准客户端的诊断事件不影响请求 */
+      /* Diagnostic events from non-standard clients never affect the request */
     }
   };
   const http = (message: unknown) => {
     try {
       const { request } = message as { request: ClientRequest };
-      // forward proxy 的 path 已是绝对 URL；不可把代理地址当作目标地址。
+      // The forward-proxy path is already an absolute URL; never treat the proxy address as the target.
       const url = new URL(
         request.path,
         `${request.protocol}//${String(request.getHeader("host") ?? request.host)}`,
@@ -78,7 +78,7 @@ export function createNodeNetworkCapture(
         url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
       record(request.method, url.href);
     } catch {
-      /* 仅忽略不可识别的元数据 */
+      /* Only unrecognized metadata is ignored */
     }
   };
   return {

@@ -25,7 +25,7 @@ export interface AccountProviderCredentialService {
   ): Promise<ProjectAccessTokenMaterial | null>;
 }
 
-/** 旧方法名兼容私有调用契约；返回值现在是请求期 Token，绝不读写长期 Key 缓存。 */
+/** Legacy name kept for the private call contract; returns request-time tokens only, never the long-term key cache. */
 export function createAccountProviderCredentialService(
   options: AccountProviderCredentialServiceOptions,
 ): AccountProviderCredentialService {
@@ -37,7 +37,7 @@ export function createAccountProviderCredentialService(
     async loadCodingPlanMaterial(input) {
       const loginToken = (await options.loadOAuthAccessToken(input.family))?.trim();
       if (!loginToken) return null;
-      // Map 仅存进程内并发状态；登录态变化不能加入旧账号请求。
+      // The Map holds in-flight state only; an auth change must not join the old account's request.
       const key = JSON.stringify([
         input.family,
         input.accountIdentity,
@@ -54,7 +54,7 @@ export function createAccountProviderCredentialService(
           input.rejectedProjectTokenFingerprint,
         );
         if ((await options.loadOAuthAccessToken(input.family))?.trim() !== loginToken) {
-          log.warn(undefined, "项目 Token 签发期间登录态变化，丢弃结果", {
+          log.warn(undefined, "Auth changed while issuing the project token; discarding result", {
             family: input.family,
           });
           throw new Error("project_token_scope_invalidated");

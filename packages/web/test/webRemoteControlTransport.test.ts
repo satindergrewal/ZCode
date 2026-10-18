@@ -149,8 +149,8 @@ afterEach(async () => {
       const sockets = serverSockets.get(server);
       serverSockets.delete(server);
       for (const socket of sockets ?? []) {
-        // Bugfix: 失败的异步断言会跳过 transport.dispose()，只 close server 会等待仍存活的 WS。
-        // 测试清理阶段直接终止客户端连接，避免全量单测里 afterEach 因悬挂连接超时。
+        // Bugfix: a failed async assert skips transport.dispose(); closing the server alone waits on live WS.
+        // Terminate client sockets in cleanup so afterEach never hangs on dangling connections in full runs.
         socket.terminate();
       }
       return new Promise<void>((resolve) => {
@@ -336,8 +336,8 @@ describe("WebRemoteControlTerminalTransport", () => {
     });
 
     transport.start();
-    // Bugfix: permessage-deflate 握手和大 payload 压缩都走真实 ws/socket，CI 全量并发时
-    // event loop 可能被其它用例挤压；这里放宽等待并标注阶段，避免 500ms 抖动误报且便于定位。
+    // Bugfix: permessage-deflate handshake and big-payload compression use real sockets; under full CI concurrency
+    // the loop starves; widen the wait and label the phase so 500ms jitter never false-fails and trips are greppable.
     await waitUntil(
       () => relay.messages.some((message) => message.type === "auth_response"),
       2_000,
@@ -459,8 +459,8 @@ describe("WebRemoteControlTerminalTransport", () => {
     });
 
     transport.start();
-    // Bugfix: 服务端收到第 2 次 heartbeat 不代表客户端已经处理 matched ACK。
-    // 这里直接等待 onSendReady，避免全量并发测试时断言抢在 WebSocket message 回调前执行。
+    // Bugfix: a second server-side heartbeat does not prove the client processed the matched ACK.
+    // Await onSendReady directly so assertions never outrun WebSocket message callbacks in parallel runs.
     await waitUntil(() => sendReady.mock.calls.length === 1, 2_000);
 
     expect(sendReady).toHaveBeenCalledOnce();
@@ -517,7 +517,11 @@ describe("WebRemoteControlTerminalTransport", () => {
 
     transport.start();
     await waitUntil(() => heartbeatCount >= 2, 5_000, "second pair status heartbeat");
-    await waitUntil(() => states.at(-1) === "paired", 5_000, "paired again after waiting heartbeat");
+    await waitUntil(
+      () => states.at(-1) === "paired",
+      5_000,
+      "paired again after waiting heartbeat",
+    );
 
     expect(failures).toEqual([]);
     expect(states).toContain("waiting");

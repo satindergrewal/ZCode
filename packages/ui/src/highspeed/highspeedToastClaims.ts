@@ -1,7 +1,7 @@
 const fallbackToastClaimsByCommandId = new Set<string>();
 
 /**
- * 降级事件可能因 snapshot 重放或 SessionPane 重挂载被观察多次；模块级 claim 保证 Toast 只提示一次。
+ * Fallback events can be observed repeatedly (snapshot replay, SessionPane remount); a module-level claim keeps the Toast single-shot.
  */
 export function claimHighspeedFallbackToast(sourceCommandId: string): boolean {
   if (fallbackToastClaimsByCommandId.has(sourceCommandId)) return false;

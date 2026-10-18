@@ -24,8 +24,8 @@ export async function admitPrompt(
   options?: PromptAdmissionOptions,
 ): Promise<PromptAdmissionReceipt> {
   if (options?.requireQueue === true) {
-    // Bug 根因：Highspeed 临时 provider 只能在独立 turn 的提升边界安装。如果仅依据
-    // Bootstrap 的 busy 快照决定是否排队，状态在跨层 await 期间转为空闲会误用普通模型启动。
+    // Root cause: a transient Highspeed provider may only be installed at a standalone turn's promotion boundary. Deciding on
+    // Bootstrap's busy snapshot alone misroutes when the state flips to idle across an await, starting on the plain model.
     return await this.enqueueDeferredInput({
       attachments,
       commandKind: options.commandKind,

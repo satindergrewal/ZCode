@@ -1,9 +1,8 @@
 /**
- * 用户面产物（docs/dynamic-workflow/authoring.md）的编译侧：站点身份、lowering、编译期诊断与
- * `declaredArtifacts` 清单。引擎侧在 tests/engine/engine-artifacts.test.ts。
+ * The compile side of user-facing artifacts (docs/dynamic-workflow/authoring.md): site identity, lowering,
+ * compile-time diagnostics, and the declaredArtifacts list. Engine side: tests/engine/engine-artifacts.test.ts.
  *
- * ⚠ 术语：本文件的 artifact 一律指**用户面产物**（脚本发布给用户看的产出），不是引擎内部
- * 同名的顶层返回值（`RunSettlement.artifact`）。
+ * Terminology: artifact here always means the user-facing product (what the script publishes), not the
  */
 
 import { describe, expect, it } from "vitest";
@@ -22,7 +21,7 @@ import { FACADE_SITING_CODE } from "../src/analysis/facade-misuse.js";
 
 const CHART = '{ x: { field: "round" }, y: { field: "ms" } }';
 
-/** 编译 + 收集站点（脚本必须先干净通过 typecheck——否则站点表不可信）。 */
+/** Compiles and collects sites (the script must typecheck clean first, or the site table is untrustworthy). */
 function sites(scriptText: string) {
   const workflow = createWorkflowProgram(scriptText);
   expect(collectDiagnostics(workflow.program)).toEqual([]);
@@ -34,7 +33,7 @@ function lower(scriptText: string): string {
   return lowerWorkflow(workflow, table).code;
 }
 
-/** 只取产物相关的三个诊断码（其余 authoring 诊断不在本文件的射程内）。 */
+/** Only the three artifact diagnostics (other authoring codes are out of scope here). */
 function artifactDiagnostics(scriptText: string) {
   const analyzed = analyzeWorkflowScript(scriptText);
   return analyzed.diagnostics.filter(
@@ -67,7 +66,7 @@ describe("artifact sites", () => {
     ]);
   });
 
-  // site-id stability：加产物调用不得挪动任何既有 id（journal 的键就是这些 id）。
+  // site-id stability: adding artifact calls must not move any existing id (journal keys are these ids).
   it("leaves ask/actor/report/world-read ids byte-identical", () => {
     const withoutArtifacts = [
       `const a = agent("w");`,
@@ -108,7 +107,7 @@ describe("artifact sites", () => {
       ].join("\n"),
     );
     expect(table.reports.map((s) => s.artifactId)).toEqual(["perf", undefined, undefined]);
-    // 非字面量标签有表达式、无值；无标签两者皆无——诊断趟据此区分「写错了」与「没写」。
+    // Non-literal tags have an expression and no value; no tag has neither -- how the diagnostic pass separates
     expect(table.reports.map((s) => s.artifactIdExpr !== undefined)).toEqual([true, true, false]);
   });
 
@@ -151,7 +150,7 @@ describe("artifact lowering", () => {
   it("leaves log and phase on their own host members", () => {
     const code = lower(`phase("gate");\nlog("hi");\nawait artifact.markdown("n", "x");`);
     expect(code).toContain("__host.log(");
-    // 标记不再抹成 void 0：它改写成 enterPhase（docs/execution-engine.md「From script to sandbox input: lowering」）。
+    // Markers no longer collapse to void 0: they rewrite to enterPhase (the lowering section of the engine doc).
     expect(code).toContain('__host.enterPhase("gate")');
     expect(code).toContain("__host.publishArtifact(");
   });
@@ -279,14 +278,13 @@ describe("preset hoisting diagnostics", () => {
     expect(diagnostics[0]?.message).toContain("conditional branch");
   });
 
-  // 回归（2026-09-29 testfield 实测）：补全的函数体被拼进 `hole(name, prompt, async () => {…})` 的箭头里，
-  // 旧规则把一切箭头都当回调，于是任何补全都声明不了看板——主代理只好放弃那块看板。
+  // Regression (2026-09-29, testfield): a fill's body is spliced into the hole(name, prompt, async () => {...})
   const BOARD = '{ key: "module", status: "status", columns: ["done", "concerns"] }';
 
   it("lets a fill declare a preset: the hole's body runs where the hole stands", () => {
     expect(
       artifactDiagnostics(
-        `return await hole<number>("第1步：施工", "p", async () => {\n` +
+        `return await hole<number>("step 1 build", "p", async () => {\n` +
           `  artifact.board("modules", ${BOARD});\n` +
           `  report({ module: "lexer", status: "done" }, "modules");\n` +
           `  return 1;\n` +
@@ -298,8 +296,8 @@ describe("preset hoisting diagnostics", () => {
   it("lets a fill nested in a tail chain declare a preset too", () => {
     expect(
       artifactDiagnostics(
-        `return await hole<number>("第1步：施工", "p", async () => {\n` +
-          `  return await hole<number>("第2步：验收", "q", async () => {\n` +
+        `return await hole<number>("step 1 build", "p", async () => {\n` +
+          `  return await hole<number>("step 2 review", "q", async () => {\n` +
           `    artifact.chart("perf", ${CHART});\n` +
           `    return 2;\n` +
           `  });\n` +
@@ -311,7 +309,7 @@ describe("preset hoisting diagnostics", () => {
   it("still sees the loop around a hole whose fill declares a preset", () => {
     const diagnostics = artifactDiagnostics(
       `for (const p of ["a", "b"]) {\n` +
-        `  await hole<void>("每轮怎么做", p, async () => {\n` +
+        `  await hole<void>("per-lap policy", p, async () => {\n` +
         `    artifact.board("modules", ${BOARD});\n` +
         `  });\n` +
         `}`,
@@ -322,7 +320,7 @@ describe("preset hoisting diagnostics", () => {
 
   it("still flags a real callback inside a fill", () => {
     const diagnostics = artifactDiagnostics(
-      `return await hole<number>("第1步：施工", "p", async () => {\n` +
+      `return await hole<number>("step 1 build", "p", async () => {\n` +
         `  ["a"].forEach(() => {\n    artifact.board("modules", ${BOARD});\n  });\n` +
         `  return 1;\n` +
         `});`,
@@ -424,14 +422,13 @@ describe("declaredArtifacts", () => {
 });
 
 /**
- * 诊断的**去处**（2026-09-04 裁决）：产物诊断必须与 world.run 的非字面量 cmd 走**同一条**
- * authoring 通道——也就是 `analyzeWorkflowScript` 的 `{ ok, diagnostics }`。
+ * Where diagnostics land (2026-09-04 ruling): artifact diagnostics must ride the same authoring channel as
  *
- * 那条通道有三个消费方，都在 core 侧读同一个 `analyzeScript(...)`：CreateWorkflow handler
- * （`!ok` ⇒ 把每条诊断渲染成 `L{line}:C{column} {message}` 回给模型自修，且**不执行**）、
- * SaveWorkflow（`!ok` ⇒ 不落盘）、以及中枢直接启动（`!ok || diagnostics.length > 0` ⇒
- * compile_failed）。所以"被收集到了"不等于"被看见了"：`ok` 必须被清掉，诊断必须带位置。
- * 本组用例把这两件事与 world.run 的先例并排钉住。
+ * the world.run non-literal-cmd diagnostics: the analyzeWorkflowScript {ok, diagnostics} channel.
+ * It has three consumers over the same core analyzeScript(...): the CreateWorkflow handler (!ok renders
+ * each diagnostic as L{line}:C{column} {message} for the model to fix, without executing), SaveWorkflow
+ * (!ok skips the write), and hub direct-launch (!ok or any diagnostic -> compile_failed). Collected is not
+ * seen: ok must clear and diagnostics must carry positions. Both pinned beside the world.run precedent.
  */
 describe("authoring diagnostics channel", () => {
   const BAD_ARTIFACT = `const id = "book";\nawait artifact.file(id, "b.pdf");`;
@@ -471,7 +468,7 @@ describe("authoring diagnostics channel", () => {
     const analyzed = analyzeWorkflowScript(BAD_ARTIFACT);
     expect(analyzed.causality).toBeUndefined();
     expect(analyzed.graph).toBeUndefined();
-    // 清单本身仍然给出（它是从站点表直接读的事实，不依赖解释）——只是这一条 id 读不出来。
+    // The list itself still renders (read straight off the site table, no interpretation) -- this one id is unreadable.
     expect(analyzed.declaredArtifacts).toEqual([]);
   });
 
@@ -485,7 +482,7 @@ describe("authoring diagnostics channel", () => {
       ].join("\n"),
     );
     expect(analyzed.ok).toBe(false);
-    // 一趟报全：作者一次就能看全要改什么（与 world.run / phase 同席的理由）。
+    // One pass, every finding: the author sees the full fix list at once (same reasoning as world.run/phase).
     const codes = new Set(analyzed.diagnostics.map((d) => d.code));
     expect(codes.has(ARTIFACT_DECLARATION_CODE)).toBe(true);
     expect(codes.size).toBeGreaterThan(1);

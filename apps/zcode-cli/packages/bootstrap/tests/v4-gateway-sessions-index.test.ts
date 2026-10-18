@@ -889,7 +889,11 @@ describe("ConversationV4Gateway sessions-index 工作流进度节流", () => {
   const WINDOW_MS = 250;
   const RUN_ID = "dwfrun-1";
 
-  function progress(seq: number, eventType: string, payload: Record<string, unknown>): SessionEvent {
+  function progress(
+    seq: number,
+    eventType: string,
+    payload: Record<string, unknown>,
+  ): SessionEvent {
     return event("live-1", seq, SessionEventType.DynamicWorkflowRunProgress, {
       runId: RUN_ID,
       toolCallId: "tc-1",

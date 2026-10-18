@@ -5,7 +5,10 @@
 import { describe, expect, it } from "vitest";
 import type { ModelToolContract } from "@zcode/contracts";
 import { toAiSdkTools } from "../src/model/index.js";
-import { isAnthropicFirstPartyModelId, toStrictToolSchema } from "../src/model/strict-tool-schema.js";
+import {
+  isAnthropicFirstPartyModelId,
+  toStrictToolSchema,
+} from "../src/model/strict-tool-schema.js";
 
 /** dwf 合成器会发射的一份典型 mono 子代理 schema（外层 `{ result }` 由 contracts 包起来）。 */
 const REVIEW_SCHEMA = {

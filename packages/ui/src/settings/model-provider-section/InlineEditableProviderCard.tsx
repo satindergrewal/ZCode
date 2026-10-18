@@ -479,9 +479,12 @@ export function InlineEditableProviderCard({
       if (cleanupAction === "skip-delete") {
         // Confirming delete unmounts the detail card; a cleanup draft-save afterwards would
         // re-create the deleted provider via save-after-delete.
-        logger.info("[ModelProviderSection] Skipping cleanup draft save for provider being deleted", {
-          providerId: provider.providerId,
-        });
+        logger.info(
+          "[ModelProviderSection] Skipping cleanup draft save for provider being deleted",
+          {
+            providerId: provider.providerId,
+          },
+        );
         return;
       }
       if (selfSaveRequestedRef.current) {
@@ -700,7 +703,8 @@ export function InlineEditableProviderCard({
 
   const handleModelEnabledChange = useCallback(
     async (modelId: string, enabled: boolean) => {
-      if (!onSetPersonalModelEnabled) throw new Error("This settings entry has no model enable/disable capability");
+      if (!onSetPersonalModelEnabled)
+        throw new Error("This settings entry has no model enable/disable capability");
       await runSaveOperation(
         () =>
           onSetPersonalModelEnabled(provider.providerId, modelId, enabled).then(() => undefined),
@@ -712,7 +716,8 @@ export function InlineEditableProviderCard({
 
   const handleAddModel = useCallback(
     async (model: ProviderSettingsFormModel) => {
-      if (!onAddPersonalModel) throw new Error("This settings entry has no personal model creation capability");
+      if (!onAddPersonalModel)
+        throw new Error("This settings entry has no personal model creation capability");
       const added = { ...model, modelId: model.modelId.trim(), hasPersonalConfig: true };
       if (!added.modelId) return;
       await runSaveOperation(

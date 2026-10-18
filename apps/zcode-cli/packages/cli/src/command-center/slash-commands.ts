@@ -15,13 +15,13 @@ import { isWorkflowModeEnabled } from "../workflow-mode.js";
 const WORKFLOW_COMMAND_NAME = "workflow";
 
 export type SlashCommandSurfaceOptions = {
-  /** 缺席不设门（单测、嵌入方）；CLI 入口总会传入解析后的 `--workflow-mode`。 */
+  /** Absent means no gate (unit tests, embedders); the CLI entry always passes the parsed `--workflow-mode`. */
   workflowMode?: DynamicWorkflowMode;
 };
 
 /**
- * 命令面（建议、`/help`、未知命令提示）共用的可见集合：`disabled` 下去掉 `/workflow`，
- * 与 builtin resolver 不展开它是同一个结论（launch.md「The standalone CLI: `--workflow-mode`」）。
+ * Visible set shared by the command surface (suggestions, `/help`, unknown-command hints): with `disabled`, `/workflow` is removed,
+ * matching the builtin resolver's non-expansion of it (launch.md, "The standalone CLI: `--workflow-mode`").
  */
 function visibleHelpEntries(
   options?: SlashCommandSurfaceOptions,
@@ -110,8 +110,8 @@ export function parseSlashCommand(input: string): SlashCommand | null {
     };
   }
 
-    // /workflow and /init are both builtin prompt commands expanded by bootstrap: here we only match the name;
-    // the body is produced by builtin-prompt-command.ts. Under headless, known non-expert/goal names take the plain prompt path.
+  // /workflow and /init are both builtin prompt commands expanded by bootstrap: here we only match the name;
+  // the body is produced by builtin-prompt-command.ts. Under headless, known non-expert/goal names take the plain prompt path.
   if (rawName === "workflow") {
     return {
       args,

@@ -320,7 +320,9 @@ export class ProviderConfigResolver {
             modelId,
           ]);
           if (!result.ok)
-            throw new Error(`Inconsistent Registry model completeness result: ${providerId}/${modelId}`);
+            throw new Error(
+              `Inconsistent Registry model completeness result: ${providerId}/${modelId}`,
+            );
           return Object.freeze({ modelId, config: result.config });
         });
       if (validModels.length === 0) continue;

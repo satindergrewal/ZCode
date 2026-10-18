@@ -59,8 +59,8 @@ export function parseAgentProfileFromMarkdown(input: {
   const modelSelection = parseSubagentMarkdownSelection(frontmatter);
   const color = normalizeColor(scalarString(frontmatter.color));
   const parsedPermissionMode = normalizePermissionMode(scalarString(frontmatter.permissionMode));
-  // 修复原因：项目级 subagent markdown 属于仓库输入，不能通过 frontmatter 把
-  // child runtime 提升到 bypass/yolo；权限模式只接受用户级或受信插件配置。
+  // Fix rationale: project-level subagent markdown is repo input; its frontmatter must not be able to escalate the
+  // child runtime to bypass/yolo. Permission modes accept only user-level or trusted-plugin config.
   const permissionMode = input.source === "project" ? undefined : parsedPermissionMode;
   const maxTurns = normalizePositiveInteger(frontmatter.maxTurns);
   const memory = parseAgentMemoryScope(frontmatter.memory);

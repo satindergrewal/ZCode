@@ -82,7 +82,7 @@ export function WindowsCaptionMenuButton({
       const payload = await platform.getUpdateState();
       setUpdateState(payload);
     } catch (error) {
-      logger.warn("[WindowsCaptionMenuButton] 同步自动更新状态失败", { error });
+      logger.warn("[WindowsCaptionMenuButton] failed to sync updater state", { error });
     }
   }, [platform]);
 
@@ -96,7 +96,7 @@ export function WindowsCaptionMenuButton({
       const state = await platform.getZCodeStdioTapDevState();
       setStdioTapDevState({ enabled: state.enabled, visible: state.visible });
     } catch (error) {
-      logger.warn("[WindowsCaptionMenuButton] 同步 stdio tap 状态失败", { error });
+      logger.warn("[WindowsCaptionMenuButton] failed to sync stdio tap state", { error });
       setStdioTapDevState({ enabled: false, visible: false });
     }
   }, [platform]);
@@ -150,8 +150,8 @@ export function WindowsCaptionMenuButton({
     void (async () => {
       await platform.executeDesktopCommand(command);
       if (command === DesktopCommandIds.CheckForUpdates) {
-        // Bugfix: 这个 Windows 合并菜单才是截图里的入口。
-        // 点击后菜单会关闭，重新打开前主动拉取 main 中的 updater 状态，避免一直显示静态“检查更新”。
+        // Bugfix: this merged Windows menu is the entry from the screenshots.
+        // Menus close on click; refetch updater state on reopen, no stale check row.
         await syncUpdateState();
       }
     })();
@@ -195,8 +195,8 @@ export function WindowsCaptionMenuButton({
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="end"
-        // Bugfix: Windows titleBarOverlay 的原生窗口按钮宽度会受 DPI / 系统主题 / Electron 取整影响，
-        // 菜单右对齐到 45px 自绘入口时，浮层边缘可能压到最小化按钮下方；轻微左移只影响这颗 caption 菜单。
+        // Bugfix: titleBarOverlay button width varies with DPI/theme/Electron rounding;
+        // a right-aligned menu can cover minimize. A small left shift touches only this menu.
         alignOffset={WINDOWS_CAPTION_MENU_ALIGN_OFFSET}
         side="bottom"
         sideOffset={8}
@@ -297,7 +297,7 @@ export function WindowsCaptionMenuButton({
             </DropdownMenuItem>
           </>
         ) : null}
-        {/* Bugfix: 批量会话压测下线后，Windows 自绘标题栏菜单不能再暴露旧开关。 */}
+        {/* Bugfix: with load-test sessions retired the menu drops the legacy switch. */}
 
         <DropdownMenuSeparator />
 

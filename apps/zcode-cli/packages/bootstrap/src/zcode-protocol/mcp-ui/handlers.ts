@@ -30,14 +30,14 @@ import {
 } from "./contract.js";
 
 /**
- * 进行中的 UI 工具调用，键 = sessionId + callId。唯一 owner；调用结束即删。
- * 模块级而不是 handlers 实例级：protocol.ts 每次请求都新建 handlers，取消请求必须能找到别的请求登记的调用。
+ * In-flight UI tool calls, keyed sessionId + callId. Single owner; deleted on completion.
+ // Module-level, not per handlers instance: protocol.ts rebuilds handlers per request, and cancel must find calls registered by other requests.
  */
 const activeUiToolCalls = new Map<string, AbortController>();
 const finishedUiToolCalls = new Set<string>();
 const uiToolCallKey = (sessionId: string, callId: string) => `${sessionId}\u0000${callId}`;
 
-/** 供 session 关闭时清理：abort 该 session 全部进行中的 UI 调用。 */
+/** For session close: abort every in-flight UI call of the session. */
 export function abortMcpUiToolCallsForSession(sessionId: string): number {
   for (const key of finishedUiToolCalls)
     if (key.startsWith(`${sessionId}\u0000`)) finishedUiToolCalls.delete(key);
@@ -55,7 +55,7 @@ export interface CreateMcpUiHandlersOptions {
   logger?: Logger;
 }
 
-/** 归属校验 fail closed：serverName 不在本 session 的 MCP server 表里一律 -32602；pluginId 不参与判定。 */
+/** Ownership fails closed: serverName outside the session's MCP server table is always -32602; pluginId never decides. */
 export async function assertMcpUiServerScope(
   access: McpUiSessionAccess,
   scope: McpUiPluginScope,
@@ -82,7 +82,7 @@ export function createMcpUiHandlers(options: CreateMcpUiHandlersOptions = {}): M
       callOptions,
     ): Promise<McpUiCallToolResult> {
       const startedAt = Date.now();
-      // H08-a：带 callId 的调用登记 AbortController，宿主卸载卡片时经 mcp/uiCancelCall abort 到 MCP client。
+      // H08-a: calls with a callId register an AbortController; host unmount aborts to the MCP client via mcp/uiCancelCall.
       const cancel = new AbortController();
       const key = uiToolCallKey(params.sessionId, `${params.instance.token}:${params.callId}`);
       if (activeUiToolCalls.has(key) || finishedUiToolCalls.has(key))
@@ -93,7 +93,7 @@ export function createMcpUiHandlers(options: CreateMcpUiHandlersOptions = {}): M
         : cancel.signal;
       try {
         await assertMcpUiServerScope(access, params);
-        // H03：归属之外还要看调用方资格——model-only 工具不给页面调，权限仍由现有宿主策略判断。
+        // H03: beyond ownership, eligibility too — model-only tools are not page-callable; permission stays with existing host policy.
         const visibility = await access.getToolVisibility(params.serverName, params.toolName);
         if (!visibility) {
           throw new McpUiToolAccessError("tool_not_found", params.serverName, params.toolName);
@@ -110,7 +110,7 @@ export function createMcpUiHandlers(options: CreateMcpUiHandlersOptions = {}): M
           signal,
         });
         signal?.throwIfAborted();
-        // UI 调用复用宿主权限链，结果保留原始 MCP 形状，不生成对话回合。
+        // UI calls reuse the host permission chain; results keep the raw MCP shape and never create a conversation turn.
         logger?.info("MCP UI tool call completed", {
           event: "mcp.ui.tool.call",
           pluginId: params.pluginId,
@@ -169,7 +169,7 @@ export function createMcpUiHandlers(options: CreateMcpUiHandlersOptions = {}): M
       const result = await translateUnsupported(params.serverName, "resources/list", () =>
         access.listResourcesForUi(params.serverName, params.cursor, callOptions),
       );
-      // 只给页面标准描述符；`_meta` 是 MCP Resource 的标准字段，保留（宿主也靠它回退读资源级 csp）。
+      // Hand the page the standard descriptor only; `_meta` is a standard MCP Resource field, kept (the host also falls back to resource-level csp through it).
       return {
         resources: result.resources.map(({ uri, name, title, description, mimeType, _meta }) => ({
           uri,
@@ -281,8 +281,8 @@ async function translateUnsupported<T>(
 }
 
 /**
- * 页面读资源的边界：总大小（text 按 UTF-8、blob 按 base64 解码后）≤ 8 MiB，mimeType 必须在白名单；
- * blob 没有 mimeType 视为不可判定，一律拒绝；去掉 `_meta`。超限不截断——半个 GLB / 图片没有意义。
+ * Page resource-read bounds: total size (text as UTF-8, blob decoded from base64) <= 8 MiB and an allowlisted mimeType;
+ // blob without mimeType is undecidable, always rejected; _meta dropped. Over-limit is not truncated — half a GLB / image is useless.
  */
 function boundUiResourceContents(
   uri: string,
@@ -318,7 +318,7 @@ function boundUiResourceContents(
   return { contents: bounded, bytes };
 }
 
-/** 页面的凭证终结时释放幂等账本；旧凭证已经不可再执行。 */
+/** Releases the idempotency ledger when the page's credential terminates; stale credentials never execute again. */
 export function clearMcpUiInstanceCalls(sessionId: string, token: string): void {
   const prefix = `${sessionId}\u0000${token}:`;
   for (const [key, controller] of activeUiToolCalls)

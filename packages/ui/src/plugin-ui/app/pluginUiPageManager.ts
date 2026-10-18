@@ -1,4 +1,4 @@
-/** 窗口级页面 owner。视图只持锚点租约，切位置不会销毁 controller 或活页面。 */
+/** Window-level page owner. Views hold anchor leases only; moves never kill controllers or live pages. */
 export interface ManagedPluginPage {
   readonly key: string;
   readonly task: string;
@@ -76,7 +76,7 @@ export class PluginUiPageManager<T extends ManagedPluginPage> {
         if (candidate.visible || candidate.busy()) continue;
         if ((await candidate.suspend()) === false) continue;
         this.allocated.delete(candidate);
-        // 回收等待期间任务可能被删除；旧 admission 不得重新占用已经撤销的槽位。
+        // Tasks may be deleted during reclaim waits; stale admission must not re-take a revoked slot.
         if (this.pages.get(page.key) !== page) throw new Error("MCP App page was removed");
         this.allocated.add(page);
         return;

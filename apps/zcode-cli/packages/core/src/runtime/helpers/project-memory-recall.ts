@@ -51,7 +51,7 @@ export function startProjectMemoryRecallPrefetch(
   if (retrievalBranch !== "semantic-recall") return;
   if (runtime.memoryRecallPrefetch) return;
   if (!runtime.memoryRoot || !runtime.fileSystemPort) return;
-  // Selector 必须得到严格 JSON Schema；禁止因能力不足另选一个隐式 Provider/Model。
+  // The selector must receive strict JSON Schema; never pick an implicit provider/model because of capability gaps.
   if (!input.model.properties.supportsJsonSchemaOutput) return;
   if (!canStartMemoryRecall(runtime.memoryRecallState)) return;
 
@@ -113,7 +113,7 @@ export function consumeSettledProjectMemoryRecall(
   const memories = matchPrefetchedMemories(prefetch.memories, eligibleEntries);
   if (memories.length === 0) return undefined;
 
-  // 修复原因：Recall 正文对模型等价于一次读取，必须在实际注入时同步既有 read-state，供后续 Edit/Write 使用。
+  // Why: recall text is model-equivalent to a read; sync existing read-state at actual injection time for later Edit/Write.
   const readAt = new Date();
   for (const memory of memories) {
     runtime.readFileState.set(createReadFileStateKey(memory.filePath, undefined, memory.limit), {
@@ -157,8 +157,8 @@ export function invalidateProjectMemoryRecallPaths(
   paths: readonly string[],
 ): void {
   if (paths.length === 0) return;
-  // Dream 修改文件时，已完成但尚未消费的 prefetch 仍持有旧正文；先丢弃它，
-  // 避免后续 tool batch 把更新前的内容重新注入 provider context。
+  // While Dream rewrites files, completed-but-unconsumed prefetch still holds the old body; drop it first
+  // so a later tool batch does not re-inject pre-update content into the provider context.
   disposeProjectMemoryRecallPrefetch(runtime);
   const touchedPathKeys = new Set(paths.map((path) => createReadFileStatePathKey(path)));
 

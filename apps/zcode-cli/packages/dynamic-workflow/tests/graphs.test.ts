@@ -53,9 +53,13 @@ const MARKER_CALL = /(^|[^.\w])(phase\s*\(|hole\s*<)/;
  *    the pre-phase snapshots byte-identical (a regression that emitted `phases: []` instead
  *    of nothing would pass the snapshots and break the UI's view-switch condition);
  *  - at least one marker → all three present, and every step carries exactly one phase
- *    drawn from the phase list — the spec's「划分是全的」invariant, mechanized.
+ *    drawn from the phase list -- the spec's coverage-is-total invariant, mechanized.
  */
-function assertPhaseVocabulary(source: string, causality: CausalityGraph, flow: ControlFlowGraph): void {
+function assertPhaseVocabulary(
+  source: string,
+  causality: CausalityGraph,
+  flow: ControlFlowGraph,
+): void {
   if (!MARKER_CALL.test(source)) {
     expect(causality.phases).toBeUndefined();
     expect(causality.phaseEdges).toBeUndefined();
@@ -103,9 +107,8 @@ describe("site graph fixtures", () => {
       const source = readFileSync(join(graphsDir, fixture), "utf8");
       const result = analyzeWorkflowScript(source);
       expect(corpusDiagnostics(result.diagnostics)).toEqual([]);
-      // `ok` 不在这里断言：语料里 26 个 fan-out fixture 用静态 actor 名，那是 9006
-      // （不可提交但完全可分析，见 tests/helpers/analysis-corpus.ts）。真正的断言是下面
-      // 两行——图与因果图都必须产出。
+      // (unsubmittable yet fully analyzable; see tests/helpers/analysis-corpus.ts). The real assertions are
+      // the next two lines -- both the graph and the causality graph must exist.
       const graph = result.graph;
       if (graph === undefined) throw new Error("expected a graph for a clean script");
       const causality = result.causality;
@@ -120,9 +123,13 @@ describe("site graph fixtures", () => {
       assertPhaseVocabulary(source, causality, flow);
       if (!DEAD_CODE_FIXTURES.has(base)) {
         const detached = core.trace.regions.filter((region) => region.detached === true);
-        expect(detached, `${fixture}: only dead code may be swept to a detached region`).toEqual([]);
+        expect(detached, `${fixture}: only dead code may be swept to a detached region`).toEqual(
+          [],
+        );
       }
-      await expect(serializeGraph(graph)).toMatchFileSnapshot(join(graphsDir, "expected", `${base}.txt`));
+      await expect(serializeGraph(graph)).toMatchFileSnapshot(
+        join(graphsDir, "expected", `${base}.txt`),
+      );
       await expect(serializeActorGraph(toActorGraph(graph))).toMatchFileSnapshot(
         join(graphsDir, "expected", `${base}.actor.txt`),
       );
@@ -169,7 +176,9 @@ describe("mermaid rendering", () => {
       if (graph === undefined || causality === undefined) {
         throw new Error("expected graphs for a clean script");
       }
-      await expect(siteGraphToMermaid(graph)).toMatchFileSnapshot(join(graphsDir, "expected", `${base}.site.mmd`));
+      await expect(siteGraphToMermaid(graph)).toMatchFileSnapshot(
+        join(graphsDir, "expected", `${base}.site.mmd`),
+      );
       await expect(actorGraphToMermaid(toActorGraph(graph))).toMatchFileSnapshot(
         join(graphsDir, "expected", `${base}.actor.mmd`),
       );
@@ -192,7 +201,8 @@ describe("phase mermaid rendering", () => {
     expect(corpusDiagnostics(result.diagnostics)).toEqual([]);
     const causality = result.causality;
     const flow = result.flow;
-    if (causality === undefined || flow === undefined) throw new Error("expected graphs for a clean script");
+    if (causality === undefined || flow === undefined)
+      throw new Error("expected graphs for a clean script");
     await expect(phaseGraphToMermaid(causality)).toMatchFileSnapshot(
       join(graphsDir, "expected", "phase-jsonl-db.phase.mmd"),
     );
@@ -220,7 +230,11 @@ const CFG_MERMAID_FIXTURES = [
   "control-flow-throw-in-catch",
   "all-catch",
 ];
-const HANDOFF_MERMAID_FIXTURES = ["handoff-earth-v5", "handoff-family-to-family", "handoff-mayset-two-cards"];
+const HANDOFF_MERMAID_FIXTURES = [
+  "handoff-earth-v5",
+  "handoff-family-to-family",
+  "handoff-mayset-two-cards",
+];
 
 describe("control-flow mermaid rendering", () => {
   for (const base of CFG_MERMAID_FIXTURES) {
@@ -230,7 +244,9 @@ describe("control-flow mermaid rendering", () => {
       expect(corpusDiagnostics(result.diagnostics)).toEqual([]);
       const flow = result.flow;
       if (flow === undefined) throw new Error("expected a control-flow graph for a clean script");
-      await expect(controlFlowToMermaid(flow)).toMatchFileSnapshot(join(graphsDir, "expected", `${base}.cfg.mmd`));
+      await expect(controlFlowToMermaid(flow)).toMatchFileSnapshot(
+        join(graphsDir, "expected", `${base}.cfg.mmd`),
+      );
     });
   }
 });
@@ -243,7 +259,8 @@ describe("hand-off mermaid rendering", () => {
       expect(corpusDiagnostics(result.diagnostics)).toEqual([]);
       const causality = result.causality;
       const handoff = result.handoff;
-      if (causality === undefined || handoff === undefined) throw new Error("expected graphs for a clean script");
+      if (causality === undefined || handoff === undefined)
+        throw new Error("expected graphs for a clean script");
       await expect(handoffGraphToMermaid(handoff, causality)).toMatchFileSnapshot(
         join(graphsDir, "expected", `${base}.handoff.mmd`),
       );

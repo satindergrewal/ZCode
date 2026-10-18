@@ -62,7 +62,7 @@ function provider(
   };
 }
 
-describe("当前有效选择只读解析", () => {
+describe("read-only resolution of the current effective selection", () => {
   const classifyProvider = (id: string) =>
     ["old-account", "new-account"].includes(id)
       ? ("account-plan" as const)
@@ -86,42 +86,42 @@ describe("当前有效选择只读解析", () => {
       accountStates: { [current]: { availability: "available", entitled: true, current: true } },
     });
 
-  it("即使旧账号仍在候选中，也按当前账号保留同模型同档位；原意图不改", () => {
+  it("keeps the same model and tier per current account even when the old account is still candidates; intent untouched", () => {
     const result = resolve([provider("old-account", "same"), provider("new-account", "same")]);
     expect(result).toEqual({ effectiveSelection: { ...original, providerId: "new-account" } });
     expect(original.providerId).toBe("old-account");
     expect(result.effectiveSelection?.options).not.toBe(original.options);
   });
 
-  it("只缺档位时保留模型，不按位置或最高值替换", () => {
+  it("keeps the model when only the tier is missing, never substituting by position or top tier", () => {
     expect(resolve([provider("new-account", "same", ["low", "max"])])).toEqual({
       effectiveSelection: { providerId: "new-account", modelId: "same" },
       selectionIssue: "reasoning-level-not-supported",
     });
   });
 
-  it("缺同模型时留空，不找首模型、不归一大小写", () => {
+  it("leaves it empty when the same model is gone: no first-model fallback, no case folding", () => {
     expect(resolve([provider("new-account", "SAME")])).toEqual({
       effectiveSelection: null,
       selectionIssue: "model-not-found",
     });
   });
 
-  it("普通供应商不会因账号切换而替换", () => {
+  it("never swaps plain providers on account switches", () => {
     const selection = { ...original, providerId: "personal" };
     expect(
       resolve([provider("personal", "same"), provider("new-account", "same")], selection),
     ).toEqual({ effectiveSelection: selection });
   });
 
-  it("暂时缺模型再恢复时始终从原意图重算", () => {
+  it("always recomputes from the original intent once a temporarily missing model returns", () => {
     expect(resolve([]).effectiveSelection).toBeNull();
     expect(resolve([provider("new-account", "same")]).effectiveSelection?.options).toEqual(
       original.options,
     );
   });
 
-  it("原意图为空不采用其他模型，未知账号 ID 不猜成正式账号", () => {
+  it("adopts no other model on empty intent and never guesses unknown account ids into real accounts", () => {
     const registry = { revision: 1, providers: [provider("new-account", "same")] };
     expect(resolveEffectiveModelSelection({ registry, selection: null, classifyProvider })).toEqual(
       { effectiveSelection: null, selectionIssue: "selection-missing" },
@@ -132,7 +132,7 @@ describe("当前有效选择只读解析", () => {
     });
   });
 
-  it("当前账号不唯一时不任选一个", () => {
+  it("picks nothing arbitrary when the current account is ambiguous", () => {
     expect(
       resolveEffectiveModelSelection({
         registry: {
@@ -149,7 +149,7 @@ describe("当前有效选择只读解析", () => {
     ).toEqual({ effectiveSelection: null, selectionIssue: "account-connection-unavailable" });
   });
 
-  it("闲时只能解析原 hidden 身份，不切到当前普通账号；普通 hidden 仍不可选", () => {
+  it("resolves off-peak only from the original hidden identity, never the current plain account; plain hidden stays unselectable", () => {
     const hidden = {
       ...provider("idle", "same"),
       config: createApiKeyProviderConfig({ visibility: "hidden" }),
@@ -167,7 +167,7 @@ describe("当前有效选择只读解析", () => {
 });
 
 describe("ProviderRegistry", () => {
-  it("初始与替换快照保留 Provider 元数据，后续改名或清除不污染旧快照", () => {
+  it("keeps provider metadata in initial and replaced snapshots; later renames or clears never pollute them", () => {
     const original = { ...provider("A", "a"), providerName: "Original", templateId: "template-a" };
     const registry = new ProviderRegistry([original]);
     const oldView = registry.getView();
@@ -200,7 +200,7 @@ describe("ProviderRegistry", () => {
     ).toEqual({ ok: true });
   });
 
-  it("旧关闭值只在意图解析中迁移，精确执行校验不能接受别名", () => {
+  it("migrates legacy disabled values only in intent parsing; exact execution validation accepts no aliases", () => {
     const registry = new ProviderRegistry([provider("A", "a", ["disabled", "enabled"])]);
     const original = { providerId: "A", modelId: "a", options: { reasoningLevel: "off" } };
     const resolved = resolveEffectiveModelSelection({
@@ -220,7 +220,7 @@ describe("ProviderRegistry", () => {
     });
     expect(unsupported.selectionIssue).toBe("reasoning-level-not-supported");
   });
-  it("原子替换有序 View、索引和 revision，并让旧快照保持不变", () => {
+  it("atomically swaps the ordered View, indexes and revision while old snapshots stay frozen", () => {
     const registry = new ProviderRegistry([provider("A", "a")]);
     const oldView = registry.getView();
     const listener = vi.fn();
@@ -241,7 +241,7 @@ describe("ProviderRegistry", () => {
     dispose();
   });
 
-  it("返回稳定的 ModelSelection 校验结果", () => {
+  it("returns a stable ModelSelection validation result", () => {
     const registry = new ProviderRegistry([provider("A", "a")]);
 
     expect(registry.validateSelection({ providerId: "A", modelId: "a" })).toEqual({

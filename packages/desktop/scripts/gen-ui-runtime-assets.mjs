@@ -7,7 +7,7 @@ const source = new URL(
   import.meta.url,
 );
 
-/** Inline 和导出共用实际资源文件，避免维护另一份有细节差异的运行时。 */
+/** Inline builds and the export share the same physical assets, avoiding a second subtly-different runtime. */
 export async function copyGenUiRuntimeAssets(destination) {
   const manifest = JSON.parse(await readFile(new URL("vendor/manifest.json", source), "utf8"));
   const vendorFiles = new Map();
@@ -15,7 +15,7 @@ export async function copyGenUiRuntimeAssets(destination) {
     vendorFiles.set(resource.file, resource.sha256);
     vendorFiles.set(resource.licenseFile, resource.licenseSha256);
   }
-  // 离线运行依赖完整的固定快照；构建时发现缺失或漂移，不能把失败留到用户首次打开。
+  // Offline runs need the complete pinned snapshot; missing or drifted files fail the build, never the user's first open.
   await Promise.all(
     [...vendorFiles].map(async ([file, expectedHash]) => {
       if (!/^[a-zA-Z0-9.-]+$/.test(file)) throw new Error(`Invalid Gen UI vendor file: ${file}`);

@@ -15,7 +15,7 @@ import { type PluginUiSessionScope } from "@/plugin-ui/contract.js";
 export interface PluginUiInteractionScope extends PluginUiSessionScope {
   sessionId: string;
   pluginId: string;
-  /** 工具卡片或面板；决定 widgetState 的 surfaceKey 以及来源标记 / 上下文 id。 */
+  /** Tool card or pane; determines the widgetState surfaceKey and source/context ids. */
   scope: PluginUiScopeRef;
 }
 
@@ -26,7 +26,7 @@ function rpcError(code: number, message: string): Error & { code: number } {
   return Object.assign(new Error(message), { code });
 }
 
-/** H11-b / S3：image 块校验失败 → -32602 unsupported_content，带上原因供页面排错。 */
+/** H11-b/S3: image validation failure answers -32602 unsupported_content with the reason. */
 function readImagesOrThrow(content: readonly Record<string, unknown>[] | undefined) {
   const images = readPluginUiImageBlocks(content);
   if (images.ok) return images.images;
@@ -39,17 +39,17 @@ function readImagesOrThrow(content: readonly Record<string, unknown>[] | undefin
   throw rpcError(-32602, `unsupported_content: ${detail}`);
 }
 
-/** 来源 / 上下文标记里的作用域 id：工具卡片沿用裸 toolCallId（兼容），面板用 `surface:<id>`。 */
+/** Scope id inside source/context markers: tool cards keep the bare toolCallId (compat), panes use surface:<id>. */
 function scopeMarker(scope: PluginUiScopeRef): string {
   return scope.kind === "toolCall" ? scope.toolCallId : buildPluginSandboxScopeId(scope);
 }
 
 /**
- * 第二、三批宿主回调：
- * - sendFollowUpMessage：有用户手势直接以用户身份发送；无手势弹可编辑确认框，取消回 -32000。
- *   ：structuredContent 以 ```json 块拼在文本后面；来源只进 metadata `source`。
- * - updateModelContext：投递到当前会话 composer 的插件上下文块；没有 composer 接住回 -32601。
- * widgetState 由窗口页面管理器唯一写入。
+ * Second/third host callback batches:
+ * - sendFollowUpMessage: with a gesture, send as the user; without, editable confirm, cancel answers -32000.
+ *   structuredContent joins as a json fence; provenance only in metadata source.
+ * - updateModelContext: delivers the plugin context block to the session composer; without one, -32601.
+ * widgetState is written solely by the window page manager.
  */
 export function createPluginUiInteractions(
   input: PluginUiInteractionScope,
@@ -61,7 +61,7 @@ export function createPluginUiInteractions(
       const actions = getPluginUiSessionActions(input);
       if (!actions)
         throw rpcError(JSON_RPC_UNAVAILABLE, "Follow-up messages are not available here");
-      // H11-a：structuredContent 拼进 prompt（```json 块），确认框里用户看到并可编辑的就是最终发送内容。
+      // H11-a: structuredContent joins the prompt as a json fence; the confirm box shows exactly what will send.
       const built = buildPluginUiFollowUpPrompt(payload.prompt, payload.structuredContent);
       if (!built.ok) {
         throw rpcError(
@@ -84,7 +84,7 @@ export function createPluginUiInteractions(
         }
         prompt = confirmed.trim();
       }
-      // 修复：确认弹窗等待期间可能已经切换或关闭会话，不能使用捕获的旧命令入口。
+      // Fix: the session may have switched/closed while the confirm waited; never reuse the captured command entry.
       if (getPluginUiSessionActions(input) !== actions)
         throw rpcError(JSON_RPC_UNAVAILABLE, "Session binding is no longer available");
       context.assertCurrent();

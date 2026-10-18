@@ -118,7 +118,7 @@ async function readRunningBashOutputFile(
   maxBytes: number,
 ): Promise<TaskOutputFileRead> {
   // Running Bash reuses the generic 8 MiB tail read, so the model would see only the output tail;
- // read the first 30000 bytes here, then let TaskOutput apply the final char budget.
+  // read the first 30000 bytes here, then let TaskOutput apply the final char budget.
   if (!outputFile) {
     return { available: false, content: "", truncated: false };
   }

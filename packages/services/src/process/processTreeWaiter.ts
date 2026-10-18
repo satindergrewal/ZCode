@@ -176,7 +176,10 @@ export async function waitForProcessTreeTermination(
       forceWaitTimer = setTimeout(() => {
         const remainingPids = collectRemainingPids();
         if (remainingPids.length > 0) {
-          warn(options, `runtime process tree still has leftovers after force reclaim pid=${remainingPids.join(",")}`);
+          warn(
+            options,
+            `runtime process tree still has leftovers after force reclaim pid=${remainingPids.join(",")}`,
+          );
         }
         settle(remainingPids);
       }, waitAfterForceMs);
@@ -195,7 +198,10 @@ export async function waitForProcessTreeTermination(
       cleanupDeadlineTimer = setTimeout(() => {
         const remainingPids = collectRemainingPids();
         if (remainingPids.length > 0) {
-          warn(options, `runtime process tree leftovers past the absolute deadline pid=${remainingPids.join(",")}`);
+          warn(
+            options,
+            `runtime process tree leftovers past the absolute deadline pid=${remainingPids.join(",")}`,
+          );
         }
         settle(remainingPids);
       }, windowsCleanupDeadlineMs);

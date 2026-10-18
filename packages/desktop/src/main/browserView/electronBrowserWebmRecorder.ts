@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- Electron capture authority、renderer 消息协议与文件清理属于同一个录制事务，拆开会让 abort/close 状态跨模块竞态。 */
+/* eslint-disable max-lines -- capture authority, renderer messaging, and file cleanup form one recording transaction; splitting races abort/close across modules. */
 import { randomUUID } from "node:crypto";
 import { mkdir, open, rm, writeFile, type FileHandle } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -43,8 +43,8 @@ function deferred<T>(): Deferred<T> {
     resolvePromise = resolve;
     rejectPromise = reject;
   });
-  // 某个阶段提前失败时，后续阶段 deferred 仍会被 reject；预挂 catch 防止未进入该阶段的
-  // Promise 触发 unhandled rejection，真正的 await 仍会收到原始 rejection。
+  // When an early stage fails, later deferreds still reject; pre-attached catches keep not-yet-entered
+  // promises from raising unhandled rejections while the real await still sees the original.
   void promise.catch(() => undefined);
   return {
     promise,
@@ -182,9 +182,9 @@ function recorderHtml(): string {
                   if (!chunkEvent.data || chunkEvent.data.size === 0) return;
                   chunkQueue = chunkQueue.then(async () => {
                     const bytes = await chunkEvent.data.arrayBuffer();
-                    // Bug 原因：DOM MessagePort → Electron MessagePortMain 对 ArrayBuffer transfer
-                    // 在部分 Electron 平台会静默丢弃整条消息；让 structured clone 复制分片才能
-                    // 保证 dataavailable 与后续 stopped 都按序抵达 main。
+                    // Root cause: DOM MessagePort -> Electron MessagePortMain drops ArrayBuffer transfer
+                    // on some platforms; structured-clone copies make both dataavailable and the later
+                    // stopped arrive at main in order.
                     port.postMessage({ type: "chunk", data: bytes });
                   });
                 });
@@ -251,7 +251,7 @@ function closePort(port: MessagePortMain): void {
   try {
     port.close();
   } catch {
-    // 远端 renderer 已退出时 close 允许幂等失败。
+    // close may fail idempotently once the remote renderer is gone.
   }
 }
 
@@ -263,13 +263,13 @@ function clearDisplayMediaHandler(recorderSession: Session): void {
   try {
     recorderSession.setDisplayMediaRequestHandler(null);
   } catch {
-    // session 可能已随 renderer 销毁；handler 没有其它调用方。
+    // The session may die with the renderer; the handler has no other callers.
   }
 }
 
 /**
- * 使用 Electron 自带 Chromium 捕获指定 IAB WebFrameMain，并把 MediaRecorder 的 WebM 分片
- * 顺序写入主进程临时文件。这里不启动外部进程，也不读取 PATH。
+ * * Captures the given IAB WebFrameMain with Electron's Chromium and streams MediaRecorder WebM chunks
+ * sequentially into a main-process temp file. No child processes, no PATH reads.
  */
 export async function createElectronBrowserWebmRecorder(
   input: BrowserWebmRecorderFactoryInput,
@@ -391,7 +391,7 @@ export async function createElectronBrowserWebmRecorder(
       try {
         mainPort.postMessage({ type: "cancel" });
       } catch {
-        // renderer/port 已销毁时继续回收 main 资源。
+        // Reclaim main-side resources even when renderer/port are gone.
       }
     }
     await writeChain.catch(() => undefined);
@@ -432,7 +432,11 @@ export async function createElectronBrowserWebmRecorder(
     await recorderWindow.loadFile(recorderDocumentPath);
     await rm(recorderDocumentPath, { force: true }).catch(() => undefined);
     recorderWindow.webContents.postMessage(RECORDER_PORT_CHANNEL, null, [rendererPort]);
-    await withTimeout(ready.promise, RECORDER_START_TIMEOUT_MS, "recorder renderer did not become ready");
+    await withTimeout(
+      ready.promise,
+      RECORDER_START_TIMEOUT_MS,
+      "recorder renderer did not become ready",
+    );
     mainPort.postMessage({
       type: "start",
       fps: input.fps,
@@ -468,6 +472,6 @@ export async function createElectronBrowserWebmRecorder(
   return recorder;
 }
 
-// 保持标准 factory 类型出口，调用方不注入诊断时不会产生按分片日志。
+// Keep the standard factory type; without injected diagnostics, no per-chunk logging.
 export const defaultElectronBrowserWebmRecorder: BrowserWebmRecorderFactory =
   createElectronBrowserWebmRecorder;

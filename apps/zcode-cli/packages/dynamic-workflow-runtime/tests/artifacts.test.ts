@@ -1,10 +1,10 @@
 /**
- * 用户面产物（docs/dynamic-workflow/authoring.md）穿过整条管线：真实脚本 → lowering → 沙箱
- * 子进程 → NDJSON 线协议 → 引擎核心 → driver。本文件钉的是**线协议那一段**：两族成员各
- * 走哪条通道、标签能不能过界、拒绝能不能被脚本 catch。
+ * User-facing artifacts (docs/dynamic-workflow/authoring.md) cross the whole pipeline: real script -> lowering -> sandbox
+ * child -> NDJSON wire protocol -> engine core -> driver. This file pins the wire-protocol segment: which channel each family takes,
+ * whether tags cross, and whether rejections are catchable.
  *
- * ⚠ 术语：这里的 artifact 是用户面产物；`settlement.artifact` 是脚本的顶层返回值——同一个
- * 词的两个意思在一个文件里同时出现，正是 spec 的「术语」表存在的理由。
+ * Terminology: artifact here is the user-facing product; settlement.artifact is the script's top-level return --
+ * one word, two senses in one file -- exactly why the spec keeps a terminology table.
  */
 
 import { describe, expect, it } from "vitest";
@@ -14,12 +14,12 @@ import { runScript } from "./helpers.js";
 const RUN = "run";
 const CHART = '{ x: { field: "round" }, y: { field: "ms" } }';
 
-describe("e2e — 预置产物与打标签的 report", () => {
-  it("声明经事件通道先行到达，随后每条标签 report 都落到那个 id 上", async () => {
+describe("e2e -- predeclared artifacts and tagged reports", () => {
+  it("declarations arrive first via the event channel and every tagged report lands on that id", async () => {
     const script = [
       `artifact.chart("perf", ${CHART});`,
       "for (const round of [1, 2, 3]) {",
-      "  report({ round, ms: round * 10 }, \"perf\");",
+      '  report({ round, ms: round * 10 }, "perf");',
       "}",
       "return { rounds: 3 };",
     ].join("\n");
@@ -27,13 +27,13 @@ describe("e2e — 预置产物与打标签的 report", () => {
     const { settlement, journal, driver } = await runScript(script);
     expect(settlement.status).toBe("completed");
 
-    // 声明落一行 artifact 节点，带 artifact_id 与 spec。
+    // The declaration journals an artifact node with artifact_id and spec.
     const declaration = journal.getNode(RUN, "artifact#1", 1);
     expect(declaration?.kind).toBe("artifact");
     expect(declaration?.artifactId).toBe("perf");
     expect((declaration?.result as ArtifactVersionRecord | undefined)?.kind).toBe("chart");
 
-    // 三条 report 行都带同一个 artifact_id——「看板 = journal 的投影」的落点。
+    // All three report rows carry the same artifact_id -- where board-equals-journal-projection lands.
     const reports = journal
       .listNodes(RUN, { kinds: "all", withResult: true })
       .filter((node) => node.kind === "report");
@@ -44,12 +44,12 @@ describe("e2e — 预置产物与打标签的 report", () => {
       "perf",
     ]);
 
-    // 事件顺序：artifact-published 必须早于第一条 report（同一条 FIFO 事件通道）。
+    // Event order: artifact-published precedes the first report (one shared FIFO event channel).
     const types = driver.events.map((event) => event.type);
     expect(types.indexOf("artifact-published")).toBeLessThan(types.indexOf("report"));
   });
 
-  it("同一份 spec 重复声明是幂等 no-op，run 照常完成", async () => {
+  it("redeclaring the same spec is an idempotent no-op and the run completes", async () => {
     const script = [
       `artifact.chart("perf", ${CHART});`,
       `artifact.chart("perf", ${CHART});`,
@@ -65,7 +65,7 @@ describe("e2e — 预置产物与打标签的 report", () => {
     ).toHaveLength(1);
   });
 
-  it("标签指向未声明的 id 让整个 run 失败（void 返回没有拒绝通道）", async () => {
+  it("a tag naming an undeclared id fails the run (void returns have no rejection channel)", async () => {
     const { settlement } = await runScript(`report({ a: 1 }, "perf");\nreturn 1;`);
     expect(settlement.status).toBe("errored");
     if (settlement.status !== "errored") return;
@@ -73,8 +73,8 @@ describe("e2e — 预置产物与打标签的 report", () => {
   });
 });
 
-describe("e2e — 内容产物", () => {
-  it("经 request/response 过界，实参按位置透传，ref 回到脚本", async () => {
+describe("e2e -- content artifacts", () => {
+  it("crosses via request/response with positional args and the ref returns to the script", async () => {
     const script = [
       'const ref = await artifact.file("book", "out/book.pdf", { title: "Book" });',
       'const notes = await artifact.markdown("notes", "# hi");',
@@ -87,10 +87,12 @@ describe("e2e — 内容产物", () => {
       artifact: { id: "book", version: 1, notes: "notes" },
     });
 
-    expect(driver.artifactPublishes.map((r) => [r.op, r.id, r.version, r.path, r.content])).toEqual([
-      ["file", "book", 1, "out/book.pdf", undefined],
-      ["markdown", "notes", 1, undefined, "# hi"],
-    ]);
+    expect(driver.artifactPublishes.map((r) => [r.op, r.id, r.version, r.path, r.content])).toEqual(
+      [
+        ["file", "book", 1, "out/book.pdf", undefined],
+        ["markdown", "notes", 1, undefined, "# hi"],
+      ],
+    );
     expect(driver.artifactPublishes[0]?.opts).toEqual({ title: "Book" });
     expect(journal.getNode(RUN, "artifact#1", 1)?.status).toBe("completed");
     expect(driver.eventsOfType("artifact-published").map((e) => e.artifact.id)).toEqual([
@@ -99,7 +101,7 @@ describe("e2e — 内容产物", () => {
     ]);
   });
 
-  it("同 id 再发布是新版本", async () => {
+  it("re-publishing the same id yields a new version", async () => {
     const script = [
       'const a = await artifact.markdown("notes", "one");',
       'const b = await artifact.markdown("notes", "two");',
@@ -109,34 +111,34 @@ describe("e2e — 内容产物", () => {
     expect(settlement).toEqual({ status: "completed", artifact: [1, 2] });
   });
 
-  it("driver 的拒绝以结构化错误过界，脚本能 catch 并继续", async () => {
+  it("driver rejections cross as structured errors the script catches and continues", async () => {
     const script = [
-      "let code = \"none\";",
+      'let code = "none";',
       "try {",
       '  await artifact.file("book", "out/missing.pdf");',
       "} catch (e) {",
-      "  code = (e as { code?: string }).code ?? \"no-code\";",
+      '  code = (e as { code?: string }).code ?? "no-code";',
       "}",
       "return code;",
     ].join("\n");
 
     const { settlement, journal, driver } = await runScript(script, {
       artifacts: () => {
-        throw new WorkflowError("ArtifactSourceMissing", "out/missing.pdf 不存在");
+        throw new WorkflowError("ArtifactSourceMissing", "out/missing.pdf does not exist");
       },
     });
-    // 门控习语跑通：脚本拿到结构化 code，run 正常完成。
+    // The gating idiom works: the script gets the structured code and the run completes.
     expect(settlement).toEqual({ status: "completed", artifact: "ArtifactSourceMissing" });
     expect(journal.getNode(RUN, "artifact#1", 1)?.status).toBe("failed");
     expect(journal.getNode(RUN, "artifact#1", 1)?.error?.code).toBe("ArtifactSourceMissing");
-    // 失败走 artifact-failed，不冒充一个节点结算（产物站点在图里没有节点）。
+    // Failure rides artifact-failed, never posing as a node settlement (artifact sites have no graph node).
     expect(driver.eventsOfType("artifact-failed").map((e) => [e.id, e.op, e.error.code])).toEqual([
       ["book", "file", "ArtifactSourceMissing"],
     ]);
     expect(driver.eventsOfType("node-settled")).toEqual([]);
   });
 
-  it("与 ask 混跑：子代理写出的路径由脚本交出去", async () => {
+  it("mixes with asks: the subagent-written path is handed over by the script", async () => {
     const script = [
       'const writer = agent("writer");',
       'const path = await writer.ask("write the book");',

@@ -1,4 +1,4 @@
 {
-  "$comment": "默认个人市场 id（客户端精选推荐区已下线，pluginNames 策展名单随之下线）。",
+  "$comment": "Default personal market id (the client curated Recommended section was retired, along with the pluginNames list).",
   "marketplace": "claude-plugins-official"
 }

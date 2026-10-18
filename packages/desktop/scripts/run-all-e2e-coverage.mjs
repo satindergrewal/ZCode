@@ -19,13 +19,13 @@ const SSH_E2E_EXCLUDES = [
   "./test/e2e/conversation-session/conversation-session-ssh-remote*.test.ts",
   "./test/e2e/conversation-session/manual-review/**/conversation-session-ssh-remote*.test.ts",
 ];
-// 仓库不提供供应商地址与 key：两者只来自 shell 或本机 .env.e2e.local，示例文件值留空不参与判断。
+// The repo ships no provider address or keys: both come from the shell or local .env.e2e.local; empty example values never count.
 const PROVIDER_ENV_FILES = [
   resolve(DESKTOP_DIR, ".env.e2e.local"),
   resolve(REPO_ROOT, ".env.e2e.local"),
 ];
 
-// 真实 provider smoke 走 capture，需要环境变量同时给出上游地址与真实 key（回放占位 key 不算）。
+// Real-provider smoke runs in capture mode and needs both the upstream address and a real key via env (replay placeholder keys do not count).
 export function hasRealUpstreamProviderConfig(env = process.env, envFiles = PROVIDER_ENV_FILES) {
   const read = (key) =>
     env[key]?.trim() || envFiles.map((envFile) => readEnvValue(envFile, key)).find(Boolean) || "";

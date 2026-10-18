@@ -1,29 +1,34 @@
 /**
- * 留白站点 id（docs/analysis.md「Sites」的 Hole sites 段）：`hole#<8 位十六进制>`，键是留白的
- * **名字**（FNV-1a 32 位，按 Unicode 码点，名字先 trim），与它嵌套在哪一层无关。
+ * Hole site ids (docs/analysis.md "Sites", the Hole sites section): `hole#<8 hex digits>`, keyed
+ * by the hole's **name** (FNV-1a 32-bit, over Unicode code points, name trimmed first), whatever
+ * the nesting depth.
  *
- * 为什么不是位置计数器：补全在脚本中间插入代码，任何按位置编号的方案都会让插入点之后的留白
- * 改号，而 journal 键、ask spec、站点阶段表都靠 id 在补全后幸存。为什么不再是外层 id 前缀
- * （2026-09-28 之前的 `hole#1/hole#1/ask#1`）：每嵌套一层长 7 个字符，接龙式补全（每一步在
- * 结尾再留一个留白）八九步就顶到协议里 64 字符的 id 上界，而这条上界是对的——协议载荷必须
- * 有界。名字在整个有效脚本里唯一（9012），所以名字键既在补全前后稳定，又不随深度增长。两个
- * 不同名字撞到同一哈希由 9012 报出（32 位、一个脚本至多几十个留白，概率约 1e-7），从不猜。
+ * Why not a position counter: a fill inserts code mid-script, and any position-numbered scheme
+ * renumbers the holes after the insertion point — while journal keys, ask specs and the site
+ * phase table all need ids to survive a fill. Why no outer-id prefix anymore (the pre-2026-09-28
+ * `hole#1/hole#1/ask#1`): each nesting level adds 7 characters, and chained fills (each step
+ * leaving one more hole at the end) hit the protocol's 64-character id cap within about eight
+ * steps — and that cap is correct; protocol payloads must be bounded. The name is unique across
+ * the whole valid script (9012), so the name key is stable across fills and does not grow with
+ * depth. Two distinct names colliding on one hash is reported by 9012 (32 bits, a few dozen
+ * holes per script at most, about 1e-7); never guess.
  *
- * 函数体里的站点仍带 `<holeId>/` 前缀（`hole#a91f3c07/ask#1`），但只带**一层**：体内再留的
- * 留白自己又是 `hole#<hash>`，它体内的站点带它自己的前缀。嵌套关系不再写在 id 里，而是站点
- * 表上的 `fill` 字段（HoleSite.fill：包着它的那个留白）。
+ * Sites inside a body still carry the `<holeId>/` prefix (`hole#a91f3c07/ask#1`) — but exactly
+ ** one level**: a hole left inside the body is itself `hole#<hash>`, and the sites in its body
+ * carry its prefix. Nesting is no longer encoded in the id; it lives in the site table's `fill`
+ * field (HoleSite.fill: the hole enclosing this one).
  */
 
 const FNV_OFFSET = 0x811c9dc5;
 const FNV_PRIME = 0x01000193;
 
-/** 留白 id 里十六进制的位数；协议侧的 id 上界（64）与它无关，这里只是让 id 短而固定。 */
+/** Hex digits in a hole id; the protocol side's id cap (64) is unrelated — this just keeps the id short and fixed. */
 export const HOLE_ID_HEX_LENGTH = 8;
 
-/** 留白站点 id 的形状。UI 与稳定性复核靠它认出「这个 id 是一个留白」。 */
+/** The shape of a hole site id. The UI and the stability check use it to recognize "this id is a hole". */
 export const HOLE_SITE_ID_PATTERN = /^hole#[0-9a-f]{8}$/u;
 
-/** 从留白的名字铸站点 id。名字先 trim（唯一性也按 trim 后比较）。 */
+/** Mint a hole's site id from its name. The name is trimmed first (uniqueness compares trimmed too). */
 export function holeSiteId(name: string): string {
   let hash = FNV_OFFSET;
   for (const char of name.trim()) {
@@ -38,8 +43,9 @@ export function isHoleSiteId(id: string): boolean {
 }
 
 /**
- * 一个站点 id 所属的留白：`hole#x/ask#1` → `hole#x`；一个留白自己的 id 或体外的 id → undefined。
- * 只看一层前缀（id 里只有一层）；留白自己属于哪个留白要问站点表的 `fill`。
+ * The hole a site id belongs to: `hole#x/ask#1` -> `hole#x`; a hole's own id or an id outside any
+ * body -> undefined. Only one prefix level is read (an id carries at most one); which hole a hole
+ * itself belongs to is the site table's `fill`.
  */
 export function holePrefixOf(siteId: string): string | undefined {
   const cut = siteId.indexOf("/");

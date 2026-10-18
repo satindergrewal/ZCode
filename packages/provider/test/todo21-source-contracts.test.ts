@@ -7,7 +7,7 @@ import {
 } from "../src/index.js";
 
 describe("Todo 21 source contracts", () => {
-  it("ZCode Built-in Provider 只接受 Account Family Provider", () => {
+  it("lets the ZCode built-in provider accept only account-family providers", () => {
     const providers = parseZCodeBuiltinProviderConfigMap([
       {
         providerId: "builtin",
@@ -41,7 +41,7 @@ describe("Todo 21 source contracts", () => {
     ).toThrow();
   });
 
-  it("Account Provider 只能投影账号约束字段", () => {
+  it("lets Account Providers project account-constraint fields only", () => {
     const providers = parseAccountProviderConfigMap({
       account: {
         access: { type: "zhipu-account", entitled: true },
@@ -67,7 +67,7 @@ describe("Todo 21 source contracts", () => {
     expect(() => parseAccountProviderConfigMap({ account: { group: "zai-family" } })).toThrow();
   });
 
-  it("Personal Provider 不能写 builtinModelIds，根 group 只能是 standard-personal", () => {
+  it("forbids builtinModelIds on Personal Providers and pins the root group to standard-personal", () => {
     const providers = parsePersonalProviderConfigMap({
       providerRules: [
         {
@@ -104,7 +104,7 @@ describe("Todo 21 source contracts", () => {
     ).toThrow("Pinned-account access");
   });
 
-  it("Personal Provider 缺失 access 时保持不完整，不从 group 推断 Access", () => {
+  it("keeps Personal Providers incomplete without access and never infers it from the group", () => {
     const providers = parsePersonalProviderConfigMap({
       providerRules: [
         { providerId: "personal", config: { group: "standard-personal" } },
@@ -116,7 +116,7 @@ describe("Todo 21 source contracts", () => {
     expect(providers.get("overlay")?.access).toBeUndefined();
   });
 
-  it("智谱产品模式属于 Provider Access", () => {
+  it("treats the Zhipu product mode as Provider Access", () => {
     const providers = parseZCodeBuiltinProviderConfigMap([
       {
         providerId: "offpeak",
@@ -140,7 +140,7 @@ describe("Todo 21 source contracts", () => {
     });
   });
 
-  it("Model 没有 visibility", () => {
+  it("gives models no visibility field", () => {
     expect(() =>
       parsePersonalModelConfigRules([
         {

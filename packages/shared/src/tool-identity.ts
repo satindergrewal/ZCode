@@ -28,14 +28,14 @@ export const ZCODE_KNOWN_TOOL_NAMES = [
   "Task",
   "Skill",
   "CreateWorkflow",
-  // 修订入口：登记进 workflow family 让确认窗
-  // 按 family 选中运行确认块；工具行侧则按名先分流（resolveRenderer.ts），family 兜底不会吞掉它。
+  // Revision entry: registered into the workflow family so the confirm dialog
+  // picks the run confirmation block by family; the tool row routes by name first (resolveRenderer.ts), family is the fallback.
   "AmendWorkflow",
-  // 留白补全（docs/dynamic-workflow/launch.md「The `FillWorkflowHole` tool」）：同 AmendWorkflow 登记进
-  // workflow family——确认窗按 family 选运行确认块；工具行侧按名先分流到 CreateWorkflow 渲染器换留白词汇。
+  // Hole fill (docs/dynamic-workflow/launch.md, 'The `FillWorkflowHole` tool'): registered into the
+  // workflow family like AmendWorkflow -- the confirm dialog matches by family; the tool row routes by name to the CreateWorkflow renderer for hole wording.
   "FillWorkflowHole",
-  // wire 名就是 snake_case 的 submit_result（仓库里唯一一个），下划线必须字面在场：
-  // 未登记时 UI identity 退回 unknown，动态工作流 actor 的提交会落到 raw fallback renderer。
+  // The wire name is the snake_case submit_result (the only one in the repo); the underscore must be present literally:
+  // unregistered, UI identity degrades to unknown and the dynamic-workflow actor's submission lands in the raw fallback renderer.
   "submit_result",
 ] as const;
 
@@ -76,13 +76,13 @@ const TOOL_FAMILY_BY_NAME: Record<ZCodeKnownToolName, ZCodeToolFamily> = {
   SendMessage: "message",
   RespondToCoordinator: "message",
   TaskOutput: "task-control",
-  // TaskStop 未登记时 UI identity 会退回 unknown，最终落到 raw fallback renderer。
+  // An unregistered TaskStop degrades UI identity to unknown, ending in the raw fallback renderer.
   TaskStop: "task-control",
   js: "node-repl",
   js_reset: "node-repl",
   js_add_node_module_dir: "node-repl",
-  // node_repl 由 MCP 暴露，进入 UI 的工具名因此带 MCP 前缀。
-  // 若这里只登记旧 built-in 名称，专用 REPL renderer 会退回 unknown fallback。
+  // node_repl is exposed via MCP, so the UI-facing tool name carries the MCP prefix.
+  // Registering only the legacy built-in name here would drop the dedicated REPL renderer to the unknown fallback.
   mcp__node_repl__js: "node-repl",
   mcp__node_repl__js_reset: "node-repl",
   mcp__node_repl__js_add_node_module_dir: "node-repl",

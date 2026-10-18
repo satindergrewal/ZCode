@@ -82,8 +82,8 @@ export async function readDesktopContinuousSessionRestoreSnapshot(params: {
   model?: ModelSelection;
   thoughtLevel?: string;
 }): Promise<DesktopContinuousSessionRestoreSnapshot> {
-  // Bugfix: session/read 只能读取 runtime 里的活跃 session。
-  // 历史 task 首次打开时必须先 resume 激活，再按 desktop continuous 读取限流快照。
+  // Bugfix: session/read reaches only the runtime's active session.
+  // A history task's first open must resume-activate first, then read rate-limited snapshots per desktop continuous.
   const startedAt = Date.now();
   let resumedSessionSnapshot: ZCodeSessionStateSnapshot;
   try {
@@ -92,12 +92,12 @@ export async function readDesktopContinuousSessionRestoreSnapshot(params: {
       workspacePath: params.workspacePath,
       workspaceIdentity: params.workspaceIdentity,
       sessionId: params.sessionId,
-      // Bugfix: 历史 task 首次打开时必须带上 task meta 里的模型。
-      // 同时带 task-local thoughtLevel，避免 draft/workspace 默认思考强度污染同模型 active task。
+      // Bugfix: a history task's first open must carry the task meta's model
+      // plus the task-local thoughtLevel, so draft/workspace defaults never pollute a same-model active task.
       ...(params.model ? { model: params.model } : {}),
       ...(params.thoughtLevel ? { thoughtLevel: params.thoughtLevel } : {}),
     });
-    logger.info("[zcodeSessionRestore] desktop resumeSession 完成", {
+    logger.info("[zcodeSessionRestore] desktop resumeSession completed", {
       durationMs: Date.now() - resumeStartedAt,
       messageLimit: params.messageLimit ?? null,
       sessionId: params.sessionId,
@@ -117,7 +117,7 @@ export async function readDesktopContinuousSessionRestoreSnapshot(params: {
     const runtimeModelUnavailable = isRuntimeModelUnavailableError(error);
     if (runtimeModelUnavailable) {
       logger.info(
-        "[zcodeSessionRestore][diag:model-unavailable] desktop resumeSession 模型不可用",
+        "[zcodeSessionRestore][diag:model-unavailable] desktop resumeSession model unavailable",
         {
           messageLimit: params.messageLimit ?? null,
           requestedModelId: params.model?.modelId ?? null,
@@ -129,9 +129,9 @@ export async function readDesktopContinuousSessionRestoreSnapshot(params: {
         },
       );
     }
-    // Bugfix: 旧 ACP task 缺少 protocol session，或历史 task 的模型已从当前 registry 删除时，
-    // 都不能继续伪造 active session。这里退回 task facade 的 snapshot 读取，只恢复历史显示；
-    // 真正续聊必须等用户显式选择当前可用模型。
+    // Bugfix: legacy ACP tasks without a protocol session, or history models dropped from the registry, must not
+    // keep faking an active session. Fall back to the task facade's snapshot read, restoring display only;
+    // real continues wait for an explicit usable-model choice.
     const legacyStartedAt = Date.now();
     const legacySnapshot = await params.zcodeTaskService.getTaskSnapshot({
       taskId: params.sessionId,
@@ -143,7 +143,7 @@ export async function readDesktopContinuousSessionRestoreSnapshot(params: {
     if (!legacySnapshot) {
       throw error;
     }
-    logger.info("[zcodeSessionRestore] desktop legacy 快照读取完成", {
+    logger.info("[zcodeSessionRestore] desktop legacy snapshot read completed", {
       durationMs: Date.now() - legacyStartedAt,
       messageCount: legacySnapshot.messages.length,
       messageLimit: params.messageLimit ?? null,
@@ -176,7 +176,7 @@ export async function readDesktopContinuousSessionRestoreSnapshot(params: {
   const readDurationMs = Date.now() - readStartedAt;
   const projectionStartedAt = Date.now();
   const snapshot = zcodeSessionSnapshotToZCodeTaskSnapshot(readSessionSnapshot);
-  logger.info("[zcodeSessionRestore] desktop readSession 快照转换完成", {
+  logger.info("[zcodeSessionRestore] desktop readSession snapshot conversion completed", {
     durationMs: Date.now() - startedAt,
     messageLimit: params.messageLimit ?? null,
     projectionDurationMs: Date.now() - projectionStartedAt,
@@ -208,8 +208,8 @@ export async function readWebRemoteReplayableSessionConfigOptions(params: {
   try {
     if (params.model) {
       const resumeStartedAt = Date.now();
-      // Bugfix: 手机 replayable 配置读取会早于后续 resumeTask。
-      // 先带历史模型激活 session，避免 readSession 读取到被默认模型污染的 settings/context window。
+      // Bugfix: the mobile replayable config read lands before the later resumeTask.
+      // Activate with the history model first, or readSession sees default-polluted settings/context.
       const resumed = await params.zcodeSessionService.resumeSession({
         workspacePath: params.workspacePath,
         workspaceIdentity: params.workspaceIdentity,
@@ -217,7 +217,7 @@ export async function readWebRemoteReplayableSessionConfigOptions(params: {
         model: params.model,
         ...(params.thoughtLevel ? { thoughtLevel: params.thoughtLevel } : {}),
       });
-      logger.info("[zcodeSessionRestore] replayable task 配置读取前 resumeSession 完成", {
+      logger.info("[zcodeSessionRestore] resumeSession completed before the replay config read", {
         durationMs: Date.now() - resumeStartedAt,
         requestedModelId: params.model.modelId,
         requestedProviderId: params.model.providerId,
@@ -236,7 +236,7 @@ export async function readWebRemoteReplayableSessionConfigOptions(params: {
       messageLimit: 1,
     });
     const options = zcodeSessionSettingsToConfigOptions(snapshot.settings);
-    logger.info("[zcodeSessionRestore] replayable task 配置读取完成", {
+    logger.info("[zcodeSessionRestore] replayable task config read completed", {
       configOptionCount: options.length,
       durationMs: Date.now() - startedAt,
       sessionId: params.sessionId,
@@ -247,7 +247,7 @@ export async function readWebRemoteReplayableSessionConfigOptions(params: {
     return options;
   } catch (error) {
     if (isSessionMissingError(error)) {
-      logger.info("[zcodeSessionRestore] replayable task 配置读取跳过，session 不活跃", {
+      logger.info("[zcodeSessionRestore] replayable task config read skipped; session inactive", {
         durationMs: Date.now() - startedAt,
         sessionId: params.sessionId,
         workspaceIdentity: params.workspaceIdentity ?? null,

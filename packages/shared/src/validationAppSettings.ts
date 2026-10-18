@@ -37,8 +37,8 @@ const nonEmptyStringSchema = z.string().trim().min(1);
 export const localeSchema = z.enum(["zh-CN", "en-US"]);
 export const localePreferenceSchema = z.enum(["system", "zh-CN", "en-US"]);
 const zcodeInteractionBehaviorSchema = z.enum(["queue", "guide"]);
-// launch.md「The user's choice」：读文件时未知取值（降级后读到新版本写的值）按「跟随」处理，
-// 不能让一个偏好字段把整份设置读坏。
+// launch.md 'The user's choice': unknown stored values (e.g. a newer version's value read after a downgrade) count as follow,
+// so one preference field can never poison the whole settings load.
 const dynamicWorkflowModeSettingSchema = z.enum(DYNAMIC_WORKFLOW_MODES).optional().catch(undefined);
 const electronReleaseChannelSchema = z.enum(["stable", "preview"]);
 const desktopZoomLevelSchema = z.number().int().min(-3).max(5);
@@ -60,7 +60,7 @@ export const integratedTerminalShellSelectionSchema = z.discriminatedUnion("mode
   }),
 ]);
 const enabledBuiltinAgentCliProvidersSchema = z
-  // 兼容旧 settings：历史列表可能残留三方 CLI provider，解析后统一归一为 ZCode Agent。
+  // Legacy settings compat: historical lists can still name third-party CLI providers; normalize them to ZCode Agent after parsing.
   .array(z.enum(["claude", "opencode", "gemini", "codex", "glm"]))
   .transform(() => [...ZCODE_ENABLED_AGENT_PROVIDERS]);
 const providerFamilyDomainSchema = z.enum(["zai", "bigmodel"]);
@@ -292,9 +292,9 @@ function migrateLegacyBuiltinAgentCliProviders(value: unknown): unknown {
     enabledBuiltinAgentCliProviders?: unknown;
   };
 
-  // Bugfix: 单 ZCode Agent 迁移后，旧 setting.json 可能还保存已移除的第三方 CLI provider
-  // 的启用状态。若这些值继续进入 UI / bot 的 provider 选项，会和 server 侧唯一 glm 状态打架。
-  // 这里在 schema 入口统一归一到 ZCode Agent，让核心 provider 状态只有一个事实源。
+  // Bugfix: after the single-ZCode-Agent migration, an old settings.json can still hold enabled flags for removed
+  // third-party CLI providers. If those reach UI/bot provider options they clash with the single server-side glm state.
+  // Normalize to ZCode Agent at the schema entry so core provider state keeps a single source of truth.
   return {
     ...raw,
     enabledBuiltinAgentCliProviders: [...ZCODE_ENABLED_AGENT_PROVIDERS],
@@ -483,7 +483,7 @@ const appSettingsObjectSchema = z.object({
   taskAutoArchiveOlderThanDays: z.number().int().positive().max(365).default(7),
   closeToTrayOnWindows: z.boolean().default(true),
   closeToTrayOnWindowsMigrationInitialized: z.boolean().default(true),
-  // default(false)：新装与存量用户首次启动都视为未归位，由 main 进程按平台决定是否迁移。
+  // default(false): fresh installs and existing users alike start unmigrated; main decides per platform whether to migrate.
   closeToTrayLinuxMigrationInitialized: z.boolean().default(false),
   keepAwakeWhileRunning: z.boolean().default(false),
   desktopZoomLevel: desktopZoomLevelSchema.optional(),
@@ -576,7 +576,7 @@ export const appSettingsPatchSchema = z.object({
   zcodeInteractionBehavior: zcodeInteractionBehaviorSchema.optional(),
   askUserQuestionAutoResolutionEnabled: z.boolean().optional(),
   modelIoFullRetentionEnabled: z.boolean().optional(),
-  // 空串是「删除选择、回到跟随」的哨兵：RPC 会吞掉 undefined，normalizeSettingsPatch 把它归一成删除。
+  // Empty string is the 'clear choice, back to follow' sentinel: RPC swallows undefined, so normalizeSettingsPatch normalizes it to a removal.
   dynamicWorkflowMode: z.union([z.enum(DYNAMIC_WORKFLOW_MODES), z.literal("")]).optional(),
   enabledBuiltinAgentCliProviders: enabledBuiltinAgentCliProvidersSchema.optional(),
   startPlanRecommendationDismissed: z.boolean().optional(),

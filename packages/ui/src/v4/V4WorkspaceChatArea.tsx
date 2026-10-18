@@ -1,4 +1,4 @@
-/* oxlint-disable eslint(max-lines) -- V4WorkspaceChatArea 是分屏 workbench 宿主，集中管理 pane layout/focus/session binding；拆散会让 store action 和 shell binding 链路跨文件跳转。 */
+/* oxlint-disable eslint(max-lines) - V4WorkspaceChatArea is the split workbench host, owning pane layout/focus/session binding; splitting would force store-action and shell-binding chains across files. */
 import { useCallback, useMemo, useRef, type CSSProperties, type ReactNode } from "react";
 import type {
   GitChangeSourceId,
@@ -69,27 +69,27 @@ function dragPayloadSessionTarget(payload: WorkbenchSessionDragPayload): Workben
 export interface V4WorkspaceChatAreaProps {
   workspacePath: string;
   workspaceIdentity?: string;
-  /** Prompt 模板埋点当前仅覆盖 Desktop；Web / 手机远控保留 UI 行为但不触发该事件。 */
+  /** Prompt-template telemetry covers Desktop only; Web/phone remote keep the UI behavior without emitting the event. */
   isDesktop?: boolean;
   readOnly?: boolean;
-  /** Settings 等覆盖层打开时为 false，隐藏 Pane 不得消费一次性 Composer 请求。 */
+  /** False while overlays like Settings are open; a hidden pane must not consume one-shot Composer requests. */
   foregroundEnabled?: boolean;
   remoteSessionId?: string;
   compactForRemoteControl?: boolean;
-  /** primary pane 绑定的 CLI session（既有选择态 activeTaskId）；null = draft。 */
+  /** The CLI session bound to the primary pane (the existing activeTaskId selection); null = draft. */
   sessionId: string | null;
   activeSelectionSideChatSessionId?: string | null;
   provider?: ZCodeProvider;
-  /** primary pane createSession/fork 后接入既有选择路径（handleSelectTask）。 */
+  /** Primary pane joins the existing selection path (handleSelectTask) after createSession/fork. */
   onSessionCreated?: (sessionId: string) => void;
-  /** primary pane 会话删除后回 draft（shell 起新草稿）。 */
+  /** Primary pane returns to draft once its session is deleted (the shell starts a new draft). */
   onSessionDeleted?: () => void;
   /**
-   * 草稿态 composer contextHeader（m5：workspace 菜单 + Git 分支），
-   * 仅下发给 primary pane——其余 pane 的 draft 不承载壳级 workspace 切换。
+   * Draft-state composer contextHeader (m5: workspace menu + Git branch),
+   * handed to the primary pane only - other panes drafts carry no shell-level workspace switch.
    */
   draftComposerHeader?: ReactNode;
-  /** 桌面轻量草稿标题栏复用主草稿 composer 的 drop controller。 */
+  /** The desktop lightweight draft title bar reuses the main draft composer drop controller. */
   onPrimaryDraftDropTargetControllerChange?: (
     controller: ConversationDropTargetController | null,
   ) => void;
@@ -128,17 +128,17 @@ export interface V4WorkspaceChatAreaProps {
 }
 
 /**
- * 分屏 workspace 主聊天区：多 pane 跨 workspace 工作台
+ * Split-workspace main chat area: the multi-pane cross-workspace workbench.
  *
- * - 布局：paneLayoutStore 的二叉分割树 → 绝对定位 rect（CSS 变量驱动占比）；
- *   叶子扁平渲染（key = paneId），拆分/关闭不重挂任何存活 pane。
- * - 数据面：每个 pane 一个 V4PaneConversationProvider——连接经
- *   workspaceConnectionRegistry 按 endpoint+workspaceKey 引用计数复用
- *   （同 workspace 的 pane 共享一条 transport + SessionDataLayer）。
- * - primary pane 绑定沿用 activeTaskId（shell props，随 workspace tab 切换）；
- *   其余 pane 绑定归 paneLayoutStore，自带 workspaceScope、跨 tab 常驻。
- * - Focus 层：快捷键（Esc stop）/add-to-chat 只路由到 focused pane。
- * - 恢复守卫：restoredUnvalidated pane 各自经其 scope 的 sessions-index 验证。
+ * - Layout: the paneLayoutStore binary split tree -> absolute rects (CSS-variable-driven ratios);
+ *   leaves render flattened (key = paneId); split/close remounts no living pane.
+ * - Data plane: one V4PaneConversationProvider per pane - connections refcount-reuse per
+ *   endpoint+workspaceKey via workspaceConnectionRegistry
+ *   (panes on one workspace share a transport + SessionDataLayer).
+ * - The primary keeps the activeTaskId binding (shell prop, follows workspace tabs);
+ *   other pane bindings live in paneLayoutStore with their own workspaceScope, persisting across tabs.
+ * - Focus layer: shortcuts (Esc stop) / add-to-chat route to the focused pane only.
+ * - Recovery guard: restoredUnvalidated panes validate against their own scope sessions-index.
  */
 export function V4WorkspaceChatArea({
   workspacePath,
@@ -189,11 +189,11 @@ export function V4WorkspaceChatArea({
   onSearchResultHighlightDone,
 }: V4WorkspaceChatAreaProps) {
   const shellWorkspaceKey = workspaceIdentity?.trim() || workspacePath;
-  // selector 返回 store 内既有引用/派生原语，未变化不触发重渲染。
+  // The selector returns existing references/primitives from the store; no re-render while unchanged.
   const paneRoot = usePaneLayoutStore((state) => state.root);
   const paneBindings = usePaneLayoutStore((state) => state.panes);
   const paneFocusedPaneId = usePaneLayoutStore((state) => effectiveFocusedPaneId(state));
-  // zustand action 引用稳定。
+  // Zustand action references are stable.
   const splitPaneAction = usePaneLayoutStore((state) => state.splitPane);
   const closePaneAction = usePaneLayoutStore((state) => state.closePane);
   const confirmRestoredPaneSessionAction = usePaneLayoutStore(
@@ -238,10 +238,10 @@ export function V4WorkspaceChatArea({
     );
   }, [activeGroup, compactForRemoteControl, paneBindings, sessionId, shellWorkspaceKey]);
   // 修复原因：primary draft 没有自己的 sessionId；拖入 session 时 shell active
-  // 可能已经切到右侧 pane 的 session，不能再把这个 sessionId 下发给 primary。
+  // may already sit on the right panes session - never hand that sessionId to the primary too.
   const primaryPaneSessionId = shellSessionOwnedBySplitPane ? null : sessionId;
 
-  // 占比接线：store 值只在提交（pointerup/恢复）时变化；拖动中由分隔条直写 CSS 变量。
+  // Ratio wiring: the store value changes only on commit (pointerup/restore); while dragging, the divider writes CSS variables directly.
   const containerStyle = useMemo<CSSProperties>(() => {
     const style: Record<string, string> = {};
     for (const divider of layout.dividers) {
@@ -277,8 +277,8 @@ export function V4WorkspaceChatArea({
       compactForRemoteControl,
       readOnly,
       sessionId: primaryPaneSessionId,
-      // primaryPaneSessionId 在 active task 被 split pane 接管时会刻意置空，
-      // 辅助对话划词路由仍需保留 shell 真正的 active task id。
+      // primaryPaneSessionId is deliberately emptied while a split pane owns the active task;
+      // auxiliary-conversation selection routing still needs the shell real active task id.
       activeSessionId: sessionId,
       activeSelectionSideChatSessionId,
       provider,
@@ -394,8 +394,8 @@ export function V4WorkspaceChatArea({
       if (!binding || binding.readOnly) {
         return;
       }
-      // readOnly subagent pane 只是 workbench 内观察视图，不是左侧
-      // task 导航目标；反写 shell activeTaskId 会让左侧高亮/乐观 task 误切到 child。
+      // A readOnly subagent pane is an observation view inside the workbench, not a left
+      // task-navigation target; writing back shell activeTaskId would mis-highlight or switch to the child.
       onPaneActiveSessionChange?.(binding.workspaceScope, binding.sessionId);
     },
     [onPaneActiveSessionChange],
@@ -432,8 +432,8 @@ export function V4WorkspaceChatArea({
                 : activeGroup.primaryBinding
             : null;
         closeGroupPaneAction(activeGroup.id, paneId);
-        // close store 只负责布局塌缩；若被关 pane 正是 focused pane，
-        // shell activeTaskId 必须回到关闭后的可导航 session，不能继续停在已关闭 session。
+        // The close store only collapses layout; when the closed pane is the focused one,
+        // shell activeTaskId must return to a still-navigable session, never stay on the closed one.
         syncShellActiveSession(nextActiveBinding);
       } else {
         const nextActiveBinding =
@@ -486,10 +486,10 @@ export function V4WorkspaceChatArea({
       if (paneId === V4_PRIMARY_PANE_ID) {
         const sourceLayout = usePaneLayoutStore.getState();
         if (Object.keys(sourceLayout.panes).length > 0) {
-          // draft primary 本身不在 paneLayout.panes 中。首发 accepted 后若只让
-          // shell 记住新 session，focus 已绑定的 secondary 会覆盖 shell activeTaskId，
-          // primary 随即丢失身份并回到 draft。这里先以新 session 作为 primaryBinding
-          // 原子提升可见布局，再由上层同步 shell active，两个 pane 都有稳定 owner。
+          // A draft primary has no entry in paneLayout.panes. Once a first-send is accepted, letting
+          // only the shell remember the new session lets the bound secondary override shell activeTaskId
+          // and the primary loses identity back to draft. Promote the visible layout with the new
+          // session as primaryBinding first, then let the upper layer sync the shell active; both panes keep a stable owner.
           const promoted = promotePaneLayoutToGroupAction(
             { workspaceScope: shellScope, sessionId: createdSessionId },
             sourceLayout,
@@ -508,17 +508,17 @@ export function V4WorkspaceChatArea({
       if (!sessionId) {
         return false;
       }
-      // 非 primary draft 首发会先产生新 session；若此时直接
-      // 反写 shell activeTaskId，primary pane 仍由 shell.sessionId 驱动，
-      // 会跟着显示右侧新 session。先把当前 paneLayout 提升为 group，
-      // 用 primaryBinding 固定原 session，再允许 shell active 跟随新 pane。
+      // A non-primary draft first-send mints a new session; writing shell activeTaskId directly
+      // would drag the primary (still driven by shell.sessionId) to the new right-hand session.
+      // Promote the current paneLayout to a group first,
+      // pin the original session via primaryBinding, then let the shell active follow the new pane.
       const promoted = promotePaneLayoutToGroupAction(
         { workspaceScope: shellScope, sessionId },
         usePaneLayoutStore.getState(),
       );
       if (promoted) {
-        // promotion 是布局 owner 转移，不是复制后双写。group 已持有完整
-        // workspace scope/binding 后立即消费 source，避免刷新或 group GC 时旧 split 复活。
+        // Promotion transfers layout ownership; it is not copy-then-double-write. Once the group holds the full
+        // workspace scope/binding, consume the source immediately so a refresh or group GC cannot revive the old split.
         resetPaneLayoutAction();
       }
       return promoted;
@@ -563,9 +563,9 @@ export function V4WorkspaceChatArea({
           key={leaf.paneId}
           paneId={leaf.paneId}
           rect={leaf.rect}
-          // Settings 只把 workspace 设为 inert，Pane 之前仍保留 focused=true，
-          // 会在隐藏状态提前消费 Plugin 试用的一次性预填。可见性并入 focus 后，
-          // 请求只会由返回 workspace 后真正可交互的 Composer 消费。
+          // Settings only marks the workspace inert while the pane stayed focused=true, which would
+          // consume the Plugin trial one-shot prefill while hidden. With visibility folded into focus,
+          // only the Composer interactive again after returning to the workspace consumes the request.
           focused={foregroundEnabled && focusedPaneId === leaf.paneId}
           showFocusIndicator={showFocusIndicator}
           canSplit={canSplit}

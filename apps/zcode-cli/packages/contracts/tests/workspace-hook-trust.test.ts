@@ -38,7 +38,7 @@ function canonicalEntry() {
 }
 
 describe("workspace hook trust contracts", () => {
-  it("固化 project provenance 与真实 Hook schema exhaustive lock", () => {
+  it("pins project provenance and exhaustive real Hook schema lock", () => {
     expect(HookSourceKind.Project).toBe("project");
     expect(WORKSPACE_HOOK_SCHEMA_FIELDS).toEqual({
       root: ["enabled", "timeoutMs", "maxOutputBytes", "events"],
@@ -66,7 +66,7 @@ describe("workspace hook trust contracts", () => {
     });
   });
 
-  it("固化 state/admission/effective/reason 唯一映射", () => {
+  it("pins the unique state/admission/effective/reason mapping", () => {
     expect(WORKSPACE_HOOK_STATE_ADMISSION_MAP).toEqual({
       not_applicable: {
         admissionClass: "not_applicable",
@@ -122,7 +122,7 @@ describe("workspace hook trust contracts", () => {
     ).toBe(false);
   });
 
-  it("固化 immutable snapshot 与两层 digest", () => {
+  it("pins the immutable snapshot and two-layer digest", () => {
     expect(canonicalWorkspaceHookEntrySchema.parse(canonicalEntry())).toMatchObject({
       hookDeclarationDigest: DIGEST_A,
       configuredEnabled: true,
@@ -154,7 +154,7 @@ describe("workspace hook trust contracts", () => {
     expect(Object.isFrozen(snapshot.hooks)).toBe(true);
   });
 
-  it("固化 generation supersede 状态约束", () => {
+  it("pins generation-supersede state constraints", () => {
     expect(
       workspaceHookReviewFlowStateSchema.safeParse({
         reviewFlowId: "flow-1",
@@ -187,7 +187,7 @@ describe("workspace hook trust contracts", () => {
 });
 
 describe("workspace hook trust phase 2 contracts", () => {
-  it("固化 Trust store record、唯一 key 与私有诊断 metadata", async () => {
+  it("pins the trust-store record, unique key, and private diagnostic metadata", async () => {
     const {
       WORKSPACE_HOOK_TRUST_STORE_SCHEMA_VERSION,
       workspaceHookTrustRecordSchema,
@@ -218,7 +218,7 @@ describe("workspace hook trust phase 2 contracts", () => {
     ).toBe(false);
   });
 
-  it("固化 managed policy，临时授权不再属于 Workspace Hook 契约", async () => {
+  it("pins managed policy; temporary grants left the Workspace Hook contract", async () => {
     const { workspaceHookPolicySchema } = await import("../src/hooks/index.js");
 
     expect(

@@ -18,7 +18,7 @@ import {
   decodeZCodeBuiltinRelease,
 } from "../src/index.js";
 
-it("更新只改变后续 Registry 消费，Personal 覆盖/历史选择与已取得模型配置不被代写", async () => {
+it("makes updates affect only later Registry consumption, never ghost-writing personal overrides, history or fetched model configs", async () => {
   const root = await mkdtemp(join(tmpdir(), "builtin-consumption-"));
   const bundled = join(root, "bundled.json");
   const active = join(root, "active.json");

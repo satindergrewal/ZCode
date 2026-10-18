@@ -33,8 +33,8 @@ export function formatEnterpriseTier(
   const fallback = normalized.charAt(0).toUpperCase() + normalized.slice(1).toLowerCase();
   const messageId = resolveEnterpriseTierMessageId(upper);
   if (messageId && formatMessage) {
-    // Bugfix: 企业 pricing 只返回 PRO/MAX 这类技术档位，展示名必须走 i18n 文案。
-    // 不能在 helper 里写死中文，否则团队套餐状态卡和购买页无法随 locale/运营命名一起更新。
+    // Bugfix: enterprise pricing returns only technical tiers such as PRO/MAX; display names must come from i18n copy.
+    // No hardcoded zh in helpers, or the team status card and purchase page cannot follow locale/naming updates.
     return formatMessage(messageId, fallback);
   }
   return fallback;

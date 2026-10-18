@@ -158,9 +158,7 @@ describe("WorkspaceHookTrustCoordinator", () => {
     });
     const revoked = coordinator.getSecurityRevision(WORKSPACE);
     expect(revoked.counter).toBeGreaterThan(granted.counter);
-    expect(
-      coordinator.evaluateSnapshot({ snapshot: snapshot() }).items[0],
-    ).toMatchObject({
+    expect(coordinator.evaluateSnapshot({ snapshot: snapshot() }).items[0]).toMatchObject({
       trustState: "revoked",
       admissionClass: WORKSPACE_HOOK_STATE_ADMISSION_MAP.revoked.admissionClass,
       effectiveRunnable: false,

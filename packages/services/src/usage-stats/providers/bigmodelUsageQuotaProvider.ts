@@ -757,9 +757,7 @@ export class BigModelUsageQuotaProvider {
     });
   }
 
-  async getCodingPlanRegularTps(
-    request: CodingPlanRegularTpsRequest,
-  ): Promise<number | undefined> {
+  async getCodingPlanRegularTps(request: CodingPlanRegularTpsRequest): Promise<number | undefined> {
     const startedAt = Date.now();
     let requestUrl: string | undefined;
     let responseHeaders: Record<string, string> = {};
@@ -823,13 +821,11 @@ export class BigModelUsageQuotaProvider {
         EMPTY_MODEL_PERFORMANCE_PAYLOAD,
         { allowMissingData: true },
       );
-      return data.proMaxDecodeSpeed?.findLast(
-        (value) => Number.isFinite(value) && value > 0,
-      );
+      return data.proMaxDecodeSpeed?.findLast((value) => Number.isFinite(value) && value > 0);
     } catch (error) {
-      // Bug 原因：Highspeed 仅在 Renderer 记录了 TPS 读取失败文案，Host 层丢失了
-      // monitor 的 HTTP status 和 request id，无法与后端日志对账。只输出 ApiError 中的安全诊断头。
-      log.warn(undefined, "Highspeed 普通 TPS 健康检查失败", {
+      // Bug: highspeed TPS failures were logged only renderer-side, losing the monitor's
+      // HTTP status and request id for backend reconciliation. Log only the safe diagnostic headers from ApiError.
+      log.warn(undefined, "Highspeed standard TPS health check failed", {
         error: error instanceof Error ? error.message : String(error),
         providerId: request.preferredProviderId,
         durationMs: Date.now() - startedAt,

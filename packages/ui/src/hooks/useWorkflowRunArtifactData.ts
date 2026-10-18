@@ -5,40 +5,40 @@ import { logger } from "@/logger.js";
 import { useV4Conversation } from "@/v4/V4ConversationContext.js";
 
 /**
- * 预置看板的取数。
+ * Data plumbing for the preset dashboard.
  *
- * 不变式：**看板是 journal 的投影**。这里读的是 `kind = "report"` 且 `artifact_id` 相符的
- * journal 行，纯函数 `applyArtifactItems` 再把它们折成图 / 表 / 瓦片 / 看板——任何表面
- * （侧板小卡、全尺寸 tab、冷恢复）从同一批行得到同一幅图。
+ * Invariant: the dashboard is a projection of the journal. Journal rows with
+ * `kind = "report"` and matching `artifact_id` are folded by the pure `applyArtifactItems` into
+ * chart/table/tile/board, so every surface (side card, full tab, cold restore) draws the same picture.
  *
  * ```
- * 投影 artifacts[id].itemCount 抬升
- *        │  （刷新信号，可能多算一个——见 3a 的说明）
+ * projected artifacts[id].itemCount bump
+ *        │  (refresh signal; may overcount by one, see 3a)
  *        ▼
- *  workflowRunArtifactData({ afterSequence: 已收到的最后一条的 sequence })
+ *  workflowRunArtifactData({ afterSequence: sequence of the last row received })
  *        │
- *        ▼  hasMore 为真就继续翻，直到排空
- *   items[] 追加  ──▶  applyArtifactItems  ──▶  折线多一个点
+ *        ▼  keep paging while hasMore, until drained
+ *   items[] appended  ──▶  applyArtifactItems  ──▶  one more chart point
  * ```
  */
 
 /**
- * 一次拉取途中 `itemCount` 又抬升时，收尾前最多补拉几轮（见 `pendingRef`）。
- * 每一轮都是一次「从本地末尾续上」的增量读，正常情形一轮就排空。
+ * Catch-up rounds allowed before settling when itemCount rises mid-fetch (see `pendingRef`).
+ * Each round resumes from the local tail; the normal case drains in one.
  */
 const MAX_FOLLOW_UP_ROUNDS = 8;
 
 interface WorkflowRunArtifactDataState {
   items: readonly ArtifactItem[];
   loading: boolean;
-  /** 会话不支持产物取数（老 CLI）：看板画不出来，与「还没有数据」区分。 */
+  /** The session cannot fetch artifacts (old CLI): no dashboard, distinct from no-data-yet. */
   unavailable: boolean;
   error: string | null;
 }
 
 /**
- * 老 CLI 不认 `fields`：它的 strict schema 把整条请求拒掉，错误跨 JSON-RPC 之后只剩 zod 的
- * message（`unrecognized_keys` 与键名）。认出它就退回取整条 item 重试。
+ * Old CLIs reject `fields`: the strict schema fails the whole request and, across JSON-RPC, only
+ * zod's message (`unrecognized_keys` plus key names) survives. Detect and retry with full items.
  */
 function isFieldsParamUnsupported(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
@@ -46,15 +46,15 @@ function isFieldsParamUnsupported(error: unknown): boolean {
 }
 
 /**
- * 已知不认 `fields` 的会话（远程 workspace 的 CLI 可能比桌面旧）。记在模块级：同一会话的每块
- * 看板、每次取数都不必再撞一次拒绝。以 sessionId 为键——一个会话对应一个 CLI。
+ * Sessions known to reject `fields` (remote CLIs can lag desktop), module-level so each
+ * dashboard/fetch of the same session skips the repeat rejection. Keyed by sessionId: one CLI per session.
  */
 const sessionsWithoutFieldReads = new Set<string>();
 
-/** 字段路径列表的稳定键：调用方每次渲染给一个新数组时，不因此重取。 */
+/** Stable key for the field-path list; a fresh array per render must not refetch. */
 const FIELD_KEY_SEPARATOR = "\u0000";
 
-/** 能力缺席的判据同 `useWorkflowRunArtifacts`：跨 JSON-RPC 之后只剩 message 可靠。 */
+/** Same absence test as `useWorkflowRunArtifacts`: across JSON-RPC only message survives. */
 function isWorkflowRunArtifactDataCapabilityMissing(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return message.includes("capabilityUnsupported") || message.includes("ArtifactItems");
@@ -69,15 +69,15 @@ export function useWorkflowRunArtifactData(options: {
   runId: string;
   artifactId: string;
   /**
-   * 刷新信号 = 投影里该 id 的 `itemCount`。抬升即增量拉取；它可能**多算一个**
-   * （3a 记录的有意取舍），所以只当「也许还有」用，绝不当条目数用——真正的条数是
+   * Refresh signal = projected `itemCount` for the id; a bump triggers the incremental fetch. It may
+   * overcount by one (deliberate, 3a), so treat it as maybe-more, never as a count.
    * `items.length`。
    */
   itemCount?: number;
   enabled?: boolean;
   /**
-   * 看板会读到的字段路径（`artifactPresetFieldPaths`）。给了它就只让 CLI 取这些字段，一条 1 MiB
-   * 的 item 不会整条进渲染器；缺省取整条 item。
+   * Field paths the dashboard reads (`artifactPresetFieldPaths`). When set, the CLI fetches only
+   * those fields, keeping 1 MiB items out of the renderer; default fetches the whole item.
    */
   fields?: readonly string[];
 }): WorkflowRunArtifactDataState {
@@ -85,20 +85,20 @@ export function useWorkflowRunArtifactData(options: {
   const [state, setState] = useState<WorkflowRunArtifactDataState>(emptyState);
   const requestVersionRef = useRef(0);
   const inFlightRef = useRef(false);
-  /** 一次拉取途中又来了新的刷新信号：收尾前必须补拉，否则最后那个点永远不出现。 */
+  /** A new refresh signal mid-fetch: catch up before settle, or the last point never appears. */
   const pendingRef = useRef(false);
   /**
-   * 已收到的最后一条的 `sequence`——增量读的游标。
+   * `sequence` of the last row received: the incremental-read cursor.
    *
-   * 刻意用 ref 而不是从 `state.items` 末尾现读：`setState` 之后 `state` 要到下一次渲染
-   * 才更新，而补拉发生在**同一个 async 函数里**，读 state 会拿到上一轮的末尾并把同一段
-   * sequence 追加两次。
+   * A ref, not re-read from `state.items`: after `setState` state updates only on the next render,
+   * while the catch-up runs inside the same async function; reading state would take the previous
+   * tail and append the same sequence twice.
    */
   const cursorRef = useRef<number | undefined>(undefined);
   /**
-   * 上一次据以续拉的 `itemCount`。`undefined` = 这一轮还没定基线（挂载 / 刚切产物），
-   * 那一帧的取数归整份重取管，增量 effect 只记下基线就退场——否则每挂载一个看板都会白发
-   * 一次必然返回空的增量查询。
+   * The `itemCount` the last resume baselined on. `undefined` = no baseline yet (mount/switch):
+   * that frame's fetch belongs to the full refetch; the incremental effect records the baseline
+   * and exits, or every mounted dashboard fires one guaranteed-empty incremental query.
    */
   const lastDrainedCountRef = useRef<number | undefined>(undefined);
 
@@ -109,12 +109,12 @@ export function useWorkflowRunArtifactData(options: {
     options.enabled !== false && sessionId.length > 0 && runId.length > 0 && artifactId.length > 0;
 
   /**
-   * 从游标一路翻到排空。`replace` 是整份重取（切产物 / 切 run），`append` 是增量追加。
+   * Page from the cursor to drained. `replace` = full refetch (artifact/run switch); `append` = incremental.
    *
-   * 单飞门（`inFlightRef`）：`itemCount` 在一次拉取途中再抬升是常态（脚本每轮 report 一次），
-   * 重入会让同一段 sequence 被追加两次。被挡下的那一次**不丢弃**，而是记在 `pendingRef` 上，
-   * 由正在跑的这一次在收尾前补拉——否则一个 run 的**最后一条** report 会永远画不出来
-   * （它之后不会再有 `itemCount` 变化来触发下一次拉取）。
+   * Single-flight gate (`inFlightRef`): a mid-fetch bump is normal (per-round report), and
+   * reentry would append the same sequence twice. The blocked call is remembered in `pendingRef`,
+   * and the running fetch catches up before settle, or a run's final report never draws
+   * (nothing raises `itemCount` after it to trigger another fetch).
    */
   const drain = useCallback(
     async (mode: "replace" | "append") => {
@@ -133,10 +133,10 @@ export function useWorkflowRunArtifactData(options: {
           pendingRef.current = false;
           const collected: ArtifactItem[] = [];
           let cursor = currentMode === "append" ? cursorRef.current : undefined;
-          // 一直翻到存储层说没有了为止。修复前这里最多翻 16 页（3,200 条）：report 上限还是
-          // 256 条时那是一道防死循环的保险，上限提到 65,536 之后它成了静默截断——一个已结束、
-          // 打了 5,000 条标签的 run，看板永远只画出前 3,200 条，而之后不会再有 itemCount 变化
-          // 来触发续拉。防死循环改由「游标必须前进」来保证：一页没有让游标变大就停。
+          // Page until the store says dry. The old 16-page cap (3,200 rows) guarded against loops
+          // when reports capped at 256; at 65,536 it silently truncates: a finished run tagged
+          // 5,000 times draws only its first 3,200 points, with no later itemCount bump
+          // to resume from. Loop safety = the cursor must advance; stop when a page does not.
           for (;;) {
             const request = {
               sessionId,
@@ -152,7 +152,10 @@ export function useWorkflowRunArtifactData(options: {
             } catch (caught) {
               if (!withFields || !isFieldsParamUnsupported(caught)) throw caught;
               sessionsWithoutFieldReads.add(sessionId);
-              logger.info("[workflow-artifacts] CLI 不支持只取字段，退回取整条条目", { sessionId });
+              logger.info(
+                "[workflow-artifacts] CLI lacks field selection; retrying with full items",
+                { sessionId },
+              );
               result = await workflowRunArtifactData(request);
             }
             if (requestVersion !== requestVersionRef.current) return;
@@ -188,7 +191,7 @@ export function useWorkflowRunArtifactData(options: {
           return;
         }
         const message = caught instanceof Error ? caught.message : String(caught);
-        logger.warn("[workflow-artifacts] 读取看板条目失败", {
+        logger.warn("[workflow-artifacts] failed to load dashboard items", {
           artifactId,
           error: message,
           runId,
@@ -203,7 +206,7 @@ export function useWorkflowRunArtifactData(options: {
     [artifactId, enabled, fields, runId, sessionId, workflowRunArtifactData],
   );
 
-  // 切产物 / 切 run / 从关到开：先清空再整份重取。别的看板的点绝不能留在这块画布上。
+  // Artifact/run switch or closed->open: clear, then refetch fully; no other dashboard's points here.
   useEffect(() => {
     requestVersionRef.current += 1;
     cursorRef.current = undefined;
@@ -213,15 +216,15 @@ export function useWorkflowRunArtifactData(options: {
     void drain("replace");
   }, [drain, enabled]);
 
-  // 增量：`itemCount` 抬升即续拉。
+  // Incremental: an itemCount bump resumes fetching.
   //
-  // 门里**没有**「本地一条都还没有就不拉」这一条：一个在脚本顶部声明、之后每轮才被 report
-  // 喂数据的看板，挂载那一刻本地就是空的，用空判据挡下来等于让它永远画不出第一个点。
-  // 挂载时那次重复触发由单飞门吞掉（重取 effect 先跑，已经占住了门）。
+  // No empty-local skip: a dashboard declared at the top and reported only in later rounds
+  // is empty at mount; an empty-check would permanently hide its first point.
+  // The mount-time duplicate fire is absorbed by the single-flight gate (refetch runs first).
   const itemCount = options.itemCount ?? 0;
   useEffect(() => {
     if (!enabled) return;
-    // 本轮的第一帧：整份重取正在跑，这里只记基线。effect 的声明顺序保证重取那一个先跑。
+    // First frame: the refetch is in flight; record the baseline only. Declaration order runs it first.
     if (lastDrainedCountRef.current === undefined) {
       lastDrainedCountRef.current = itemCount;
       return;

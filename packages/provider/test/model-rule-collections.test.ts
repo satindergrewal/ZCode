@@ -46,8 +46,8 @@ const input = {
   baseUrl: "https://API.EXAMPLE.COM:443/v1/",
 };
 
-describe("Todo104 规则集合读写与应用", () => {
-  it("五层往返保留分组和组内顺序，按固定层次覆盖", () => {
+describe("Todo104 rule collection IO and application", () => {
+  it("preserves grouping and in-group order across the five-layer round trip with fixed layering", () => {
     const source = {
       modelRules: [
         { modelMatch: ".*", config: complete },
@@ -100,7 +100,7 @@ describe("Todo104 规则集合读写与应用", () => {
     ).toBe(20_000);
   });
 
-  it("手动配置保留系统叶子，用户可编辑叶子固定", () => {
+  it("keeps system leaves in manual configs and pins user-editable ones", () => {
     const builtin = parseZCodeBuiltinModelConfigRules({
       ...emptyBuiltin,
       modelRules: [{ modelMatch: ".*", config: complete }],
@@ -127,7 +127,7 @@ describe("Todo104 规则集合读写与应用", () => {
     expect(ModelConfigRules.composeEffective(builtin, cleared).resolve(input).enabled).toBeNull();
   });
 
-  it("切换模式只移动条目到对应集合，普通启停更新不改变模式", () => {
+  it("moves entries between collections on mode switches; plain toggles never change the mode", () => {
     let rules = ModelConfigRules.empty().setExact(
       "p",
       "model-x",
@@ -162,7 +162,7 @@ describe("Todo104 规则集合读写与应用", () => {
     });
   });
 
-  it("不接受旧持久化 type/模式布尔和宽泛层条件", () => {
+  it("rejectes legacy persisted type/mode booleans and loose layer conditions", () => {
     expect(() =>
       parseZCodeBuiltinModelConfigRules({
         ...emptyBuiltin,
@@ -185,7 +185,7 @@ describe("Todo104 规则集合读写与应用", () => {
     ).toThrow();
   });
 
-  it("真实 Builtin 越层规则按精确 Endpoint 接回，Start 搜索保留", async () => {
+  it("re-anchors real Builtin cross-layer rules by exact endpoint and keeps Start search", async () => {
     const release = JSON.parse(
       await readFile(
         new URL("../../../config/provider/zcode-builtin.json", import.meta.url),

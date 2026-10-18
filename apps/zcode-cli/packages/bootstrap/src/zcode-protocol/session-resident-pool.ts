@@ -33,8 +33,8 @@ export interface SessionResidentPoolHost {
   listSessionIds(): string[];
   readResidencyFacts(sessionId: string): SessionResidencyFacts | null;
   /**
-      * The first synchronous slice must remove the session from the resident registry; the returned Promise waits only for
-      * async wind-down such as app.close.
+   * The first synchronous slice must remove the session from the resident registry; the returned Promise waits only for
+   * async wind-down such as app.close.
    */
   deactivate(sessionId: string): Promise<void>;
   onDeactivated?(sessionId: string, decision: SessionDeactivationDecision): void;
@@ -91,25 +91,20 @@ export class SessionResidentPool {
   }
 
   /**
-      * Acquires the protocol-request lease. A process-wide count keeps async workspace operations and the sampler's
-      * reclamation from racing across sessions; the per-session count expresses exact ownership and feeds that session's eligibility.
+   * Acquires the protocol-request lease. A process-wide count keeps async workspace operations and the sampler's
+   * reclamation from racing across sessions; the per-session count expresses exact ownership and feeds that session's eligibility.
    */
-  async acquireOperation(
-    sessionIdsInput?: string | readonly string[],
-  ): Promise<() => void> {
+  async acquireOperation(sessionIdsInput?: string | readonly string[]): Promise<() => void> {
     const sessionIds = [
       ...new Set(
-        (typeof sessionIdsInput === "string" ? [sessionIdsInput] : sessionIdsInput ?? []).filter(
+        (typeof sessionIdsInput === "string" ? [sessionIdsInput] : (sessionIdsInput ?? [])).filter(
           (sessionId) => sessionId.length > 0,
         ),
       ),
     ];
     this.activeOperationCount += 1;
     for (const sessionId of sessionIds) {
-      this.operationLeaseCounts.set(
-        sessionId,
-        (this.operationLeaseCounts.get(sessionId) ?? 0) + 1,
-      );
+      this.operationLeaseCounts.set(sessionId, (this.operationLeaseCounts.get(sessionId) ?? 0) + 1);
     }
 
     let released = false;
@@ -144,12 +139,12 @@ export class SessionResidentPool {
     if (previous === undefined || usedAt > previous) {
       this.lastTouchedAt.set(sessionId, usedAt);
     }
-        // The idle TTL means "continuous idle since last use": once a protocol request reuses the session the
-        // clock restarts -- never keep an eligible window that was about to expire before the touch.
+    // The idle TTL means "continuous idle since last use": once a protocol request reuses the session the
+    // clock restarts -- never keep an eligible window that was about to expire before the touch.
     this.eligibleSinceAt.delete(sessionId);
   }
 
-    /** The TTL / high-low watermark convergence entry shared by the sampler and request-release. */
+  /** The TTL / high-low watermark convergence entry shared by the sampler and request-release. */
   rebalance(): void {
     if (this.activeOperationCount > 0 || this.rebalancing) return;
     this.rebalancing = true;
@@ -170,8 +165,8 @@ export class SessionResidentPool {
       let residentCount = initialResidentIds.length;
       for (const candidate of expiredCandidates) {
         if (this.activeOperationCount > 0) break;
-                // Between candidate collection and execution, re-subscribes or background tasks may appear; even an expired TTL must not bypass
-                // the fresh-facts and eligibleSince re-checks.
+        // Between candidate collection and execution, re-subscribes or background tasks may appear; even an expired TTL must not bypass
+        // the fresh-facts and eligibleSince re-checks.
         const freshFacts = this.host.readResidencyFacts(candidate.sessionId);
         if (!freshFacts || !this.isEligible(candidate.sessionId, freshFacts)) {
           this.eligibleSinceAt.delete(candidate.sessionId);
@@ -202,8 +197,8 @@ export class SessionResidentPool {
 
       for (const candidate of highWaterCandidates) {
         if (residentCount <= this.targetCount || this.activeOperationCount > 0) break;
-                // New facts (subscriptions/background tasks) may appear between candidate collection and execution. Re-read before acting:
-                // a stale LRU snapshot must never cancel a running session.
+        // New facts (subscriptions/background tasks) may appear between candidate collection and execution. Re-read before acting:
+        // a stale LRU snapshot must never cancel a running session.
         const freshFacts = this.host.readResidencyFacts(candidate.sessionId);
         if (!freshFacts || !this.isEligible(candidate.sessionId, freshFacts)) {
           this.eligibleSinceAt.delete(candidate.sessionId);

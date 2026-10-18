@@ -48,9 +48,9 @@ export async function settleToolResults(
   },
 ): Promise<void> {
   const { results, toolParts, toolCallById, streamedResultsById } = options;
-  // 根因：工具调用已进入历史，但旧逻辑在异步保存之后逐项加入结果；中途失败会
-  // 留下缺失结果的调用。整批真实结果必须在任何异步收尾之前同步进入两份模型历史。
-  // 这只保证当前进程历史完整，恢复锚点仍以各项持久化成功为前提。
+  // Root cause: the tool call was already in history, but the old logic appended results item-by-item after the async save; a mid-way failure
+  // left calls without results. The whole batch of real results must enter both model histories synchronously before any async finalization.
+  // This guarantees in-process history only; restore anchors still depend on per-item persistence success.
   commitTurnRequestEntries(
     this,
     state.turnRequestState,
@@ -150,8 +150,8 @@ export async function settleToolResults(
                 status: "error",
                 input: persisted.input,
                 error: result.error?.message ?? content,
-                // 修复原因：state.error 面向 UI / 日志，可能比模型实际收到的
-                // modelContent 更笼统；仅附加保存 string 内容供冷恢复精确重放。
+                // Why: state.error faces UI / logs and may differ from what the model actually received.
+                // the model got; attach the raw string for exact cold replay.
                 metadata: {
                   ...mcpToolPartMetadata(
                     this.registry.getMetadata(result.toolName)?.mcpPresentation,
@@ -176,8 +176,8 @@ export async function settleToolResults(
       contentLength: content.length,
     });
     try {
-      // 修复原因：checkpoint 是 tool result 闭合后的附加操作。Stop 若在这里
-      // 触发，必须先完成所有 sibling 的持久化收尾，不能提前进入 reminder flush。
+      // Why: the checkpoint is post-closure extra work. If Stop fires here it must
+      // finish persisting every sibling first, never enter reminder flush early.
       await this.emitFileMutationCheckpoint({
         abortSignal: state.turnAbortSignal,
         events: state.events,
@@ -267,8 +267,8 @@ async function enqueueFollowUpUserInputFromToolResult(
     return;
   }
 
-  // 修复原因：ExitPlanMode 审批反馈必须升级成真实 user message；
-  // 如果这里被拒绝，说明 active turn 状态异常或输入超过 steer 限制，不能静默吞掉。
+  // Why: ExitPlanMode approval feedback must escalate into a real user message;
+  // rejection here means broken state or over-limit input; never swallow it.
   this.logger?.warn("Failed to queue follow-up user input from tool result", {
     ...traceContextToLogContext(traceContext),
     activeTurnId: steerResult.activeTurnId,

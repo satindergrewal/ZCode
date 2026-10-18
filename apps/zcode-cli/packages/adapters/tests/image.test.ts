@@ -89,9 +89,7 @@ describe("Jimp image processor adapter", () => {
     expect(result.width).toBeLessThanOrEqual(2048);
     expect(result.height).toBeLessThanOrEqual(2048);
     expect(result.originalSizeBytes).toBe(input.byteLength);
-    expect(result.transformedSizeBytes).toBe(
-      Buffer.from(result.data).byteLength,
-    );
+    expect(result.transformedSizeBytes).toBe(Buffer.from(result.data).byteLength);
   });
 
   it("tries compression candidates until model image byte budgets fit", async () => {
@@ -110,9 +108,7 @@ describe("Jimp image processor adapter", () => {
     expect(result.resized).toBe(false);
     expect(result.originalSizeBytes).toBe(input.byteLength);
     expect(result.transformedSizeBytes).toBeLessThanOrEqual(maxRawBytes);
-    expect(Buffer.from(result.data).byteLength).toBe(
-      result.transformedSizeBytes,
-    );
+    expect(Buffer.from(result.data).byteLength).toBe(result.transformedSizeBytes);
   });
 
   it("switches an over-budget PNG to JPEG without reducing dimensions when JPEG fits", async () => {
@@ -125,9 +121,7 @@ describe("Jimp image processor adapter", () => {
       deflateStrategy: 3,
     });
     const jpegCandidates = await Promise.all(
-      [80, 60, 40, 20].map((quality) =>
-        image.getBuffer(JimpMime.jpeg, { quality }),
-      ),
+      [80, 60, 40, 20].map((quality) => image.getBuffer(JimpMime.jpeg, { quality })),
     );
     const firstFittingJpeg = jpegCandidates.find(
       (candidate) => candidate.byteLength < optimizedPng.byteLength,
@@ -192,13 +186,9 @@ describe("Jimp image processor adapter", () => {
     const transformed = Buffer.from(result.data);
 
     expect(input.toString("base64").length).toBeGreaterThan(maxBase64Bytes);
-    expect(transformed.toString("base64").length).toBeLessThanOrEqual(
-      maxBase64Bytes,
-    );
+    expect(transformed.toString("base64").length).toBeLessThanOrEqual(maxBase64Bytes);
     expect(transformed.byteLength).toBeLessThanOrEqual(maxRawBytes);
-    expect(Math.max(result.width ?? 0, result.height ?? 0)).toBeLessThanOrEqual(
-      maxDimension,
-    );
+    expect(Math.max(result.width ?? 0, result.height ?? 0)).toBeLessThanOrEqual(maxDimension);
     expect(result.compressed).toBe(true);
     expect(result.mediaType).toBe("image/jpeg");
   });
@@ -237,11 +227,7 @@ describe("Jimp image processor adapter", () => {
   });
 });
 
-async function createPng(
-  width: number,
-  height: number,
-  color: number,
-): Promise<Buffer> {
+async function createPng(width: number, height: number, color: number): Promise<Buffer> {
   const image = new Jimp({ color, height, width });
   return await image.getBuffer(JimpMime.png);
 }

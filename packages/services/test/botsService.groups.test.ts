@@ -537,7 +537,7 @@ describe("Feishu group sessions", () => {
     const { send, taskService } = setup(false, true);
     await send("/enable");
     const replies = await send("hello", "oc_a", "ou_member", "omt_model");
-    expect(replies[0]?.text).toContain("Submission");
+    expect(replies[0]?.text).toContain("Failed to resolve the submission model");
     expect(replies[0]?.mentionedUserIds).toEqual(["ou_user"]);
     expect(taskService.submitBotGroupInput).not.toHaveBeenCalled();
     expect((await send("retry", "oc_a", "ou_other", "omt_model"))[0]?.mentionedUserIds).toEqual([]);

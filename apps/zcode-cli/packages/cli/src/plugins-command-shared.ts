@@ -11,8 +11,8 @@ export type PluginDiagnostic = PluginListOutcome["diagnostics"][number];
 export type PluginScope = "user" | "workspace";
 
 /**
-  * CLI dependency name -> bootstrap export name. Tests inject fakes by dependency name; production lazy-loads bootstrap by export name,
-  * so light commands such as zcode plugins list never pull the whole bootstrap graph upfront.
+ * CLI dependency name -> bootstrap export name. Tests inject fakes by dependency name; production lazy-loads bootstrap by export name,
+ * so light commands such as zcode plugins list never pull the whole bootstrap graph upfront.
  */
 export const BOOTSTRAP_EXPORTS = {
   addMarketplace: "addZCodePluginMarketplace",
@@ -28,8 +28,7 @@ export const BOOTSTRAP_EXPORTS = {
 } as const satisfies Record<string, keyof BootstrapModule>;
 
 export type PluginDepName = keyof typeof BOOTSTRAP_EXPORTS;
-export type PluginDepFn<K extends PluginDepName> =
-  BootstrapModule[(typeof BOOTSTRAP_EXPORTS)[K]];
+export type PluginDepFn<K extends PluginDepName> = BootstrapModule[(typeof BOOTSTRAP_EXPORTS)[K]];
 
 export type PluginsCommandOverrides = { [K in PluginDepName]?: PluginDepFn<K> };
 

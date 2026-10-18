@@ -59,7 +59,7 @@ export function useStartPlanPreview(options?: { enabled?: boolean }) {
       // Start Plan preview and the plan list share client/configs.
       // Even HTML/non-JSON replies must not surface raw parse errors in the upgrade panel.
       const message = normalizeCodingPlanErrorMessage(error);
-            logger.warn("[useStartPlanPreview] failed to load Start Plan preview", {
+      logger.warn("[useStartPlanPreview] failed to load Start Plan preview", {
         error: message,
       });
       setState({
@@ -85,9 +85,7 @@ export function clearStartPlanPreviewCacheForTest() {
   previewRequest = null;
 }
 
-export function primeStartPlanPreviewCacheForTest(
-  preview: StartPlanPreviewConfig | null,
-) {
+export function primeStartPlanPreviewCacheForTest(preview: StartPlanPreviewConfig | null) {
   previewCache = {
     preview,
     expiresAt: Date.now() + START_PLAN_PREVIEW_CACHE_TTL_MS,

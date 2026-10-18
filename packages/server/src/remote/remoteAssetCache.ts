@@ -518,10 +518,10 @@ async function fetchRemoteAssetManifest(
   );
   remoteAssetManifestLocks.set(lockKey, task);
   if (shouldRefreshCachedResult) {
-  // Multiple remote sessions can check content-addressed component SHAs at
-  // once. The fresh manifest must single-flight too, or the same batch of
-  // sessions duplicates requests and can even observe different snapshots
-  // across a publish switchover.
+    // Multiple remote sessions can check content-addressed component SHAs at
+    // once. The fresh manifest must single-flight too, or the same batch of
+    // sessions duplicates requests and can even observe different snapshots
+    // across a publish switchover.
     remoteAssetManifestRefreshLocks.set(lockKey, task);
     void task.then(
       () => {
@@ -871,9 +871,9 @@ async function ensureRemoteComponentDirFromCdnInternal(
     options.platformArch,
   );
   if (forceRefresh) {
-  // A changed app version is a new asset release boundary: even on GLM SHA cache
-  // hit, re-download, verify, and swap atomically so a local upload cannot redeploy
-  // a stale cache to the remote.
+    // A changed app version is a new asset release boundary: even on GLM SHA cache
+    // hit, re-download, verify, and swap atomically so a local upload cannot redeploy
+    // a stale cache to the remote.
     loggers.logWarn(
       `[remote-assets] forced component refresh: component=${component.id} path=${componentDir}`,
     );
@@ -1720,10 +1720,10 @@ function createRemoteAssetProgressReporter(
       return;
     }
 
-  // The production download phase used to log only "downloading URL", leaving
-  // slow-network users unable to tell stall from progress. Emit a throttled
-  // progress snapshot (percent/MB/rate) so SSH connection logs show download
-  // moving.
+    // The production download phase used to log only "downloading URL", leaving
+    // slow-network users unable to tell stall from progress. Emit a throttled
+    // progress snapshot (percent/MB/rate) so SSH connection logs show download
+    // moving.
     if (totalMB != null && percent != null) {
       loggers.log(
         `[remote-assets] download progress: ${percent.toFixed(1)}% (${transferredMB.toFixed(1)}/${totalMB.toFixed(1)} MB, ${speedMBPerSecond.toFixed(2)} MB/s)`,

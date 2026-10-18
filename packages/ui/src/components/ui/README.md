@@ -1,1 +1,1 @@
-不要检查这个目录，因为这是三方库，不需要修改
+Do not review this directory: it is vendored third-party code and needs no changes.

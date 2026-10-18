@@ -9,7 +9,7 @@ describe("web Vite config", () => {
   });
 
   it.each([undefined, "", "   ", " 3.12.9-beta.1 "])(
-    "构建版本使用手动值或 package 默认值：%s",
+    "build version uses the manual value or the package default: %s",
     async (override) => {
       vi.stubEnv("WEB_REMOTE_FRONTEND_VERSION", override);
       const webRoot = resolve(import.meta.dirname, "..");
@@ -28,7 +28,7 @@ describe("web Vite config", () => {
     },
   );
 
-  it("非法手动版本在构建配置加载时失败", async () => {
+  it("fails config load on an invalid manual version", async () => {
     vi.stubEnv("WEB_REMOTE_FRONTEND_VERSION", "../latest");
     const webRoot = resolve(import.meta.dirname, "..");
     await expect(
@@ -43,7 +43,7 @@ describe("web Vite config", () => {
 
   it("loads during bootstrap without executing the shared root entry", async () => {
     const webRoot = resolve(import.meta.dirname, "..");
-    // normalize 确保路径分隔符一致，避免 Windows/Unix 不一致
+    // normalize keeps separators identical across Windows/Unix
     const configFile = normalize(resolve(webRoot, "vite.config.ts"));
 
     const result = await loadConfigFromFile(
@@ -57,7 +57,7 @@ describe("web Vite config", () => {
       webRoot,
       "silent",
     );
-    // 比较时统一路径格式
+    // compare on a single path format
     expect(normalize(result!.path)).toBe(configFile);
   });
 
@@ -81,7 +81,7 @@ describe("web Vite config", () => {
     );
   });
 
-  it("显式 ZCODE_ENV=production 时注入生产 ZAI OAuth 和 API 链接", async () => {
+  it("injects production ZAI OAuth and API links when ZCODE_ENV=production", async () => {
     vi.stubEnv("ZCODE_ENV", "production");
     const webRoot = resolve(import.meta.dirname, "..");
     const configFile = resolve(webRoot, "vite.config.ts");
@@ -103,7 +103,7 @@ describe("web Vite config", () => {
     });
   });
 
-  // Windows 跳过：环境配置差异导致断言失败，需要 CI 环境统一配置
+  // Windows skip: env drift breaks assertions until CI standardizes the environment
   const isWindows = process.platform === "win32";
 
   (isWindows ? it.skip : it)(

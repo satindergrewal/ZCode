@@ -23,9 +23,9 @@ import type {
 } from "@zcode/contracts";
 
 /**
-  * Memory kept for retired qids. **Bounded**: a long-lived session can Q&A arbitrarily often; an unbounded history table is
-  * one more silently growing allocation. Once evicted, `resolveQuestion` answers `unknown_question` -- an honest
-  * degradation ("unknown id"), not a wrong answer.
+ * Memory kept for retired qids. **Bounded**: a long-lived session can Q&A arbitrarily often; an unbounded history table is
+ * one more silently growing allocation. Once evicted, `resolveQuestion` answers `unknown_question` -- an honest
+ * degradation ("unknown id"), not a wrong answer.
  */
 const RETIRED_HISTORY_LIMIT = 256;
 
@@ -33,9 +33,9 @@ const RETIRED_HISTORY_LIMIT = 256;
 export interface ParkedQuestionInput {
   qid: string;
   runId: string;
-    /** The asking actor, `refToString` form (e.g. `actor#1@1`). */
+  /** The asking actor, `refToString` form (e.g. `actor#1@1`). */
   actor: string;
-    /** The actor's effective name (the `"poet"` of `agent("poet")`); absent for anonymous actors, no fallback label synthesized. */
+  /** The actor's effective name (the `"poet"` of `agent("poet")`); absent for anonymous actors, no fallback label synthesized. */
   actorName?: string;
   question: string;
   context?: string;
@@ -47,22 +47,22 @@ type RetiredReason = "resolved" | "withdrawn";
 
 export interface WorkflowEscalationRegistry {
   /**
-      * Registers a parked question. `settle` is driver-provided and resolves the deferred when the answer arrives.
+   * Registers a parked question. `settle` is driver-provided and resolves the deferred when the answer arrives.
    *
-      * Callers must first ensure the qid is free via {@link isTaken} (the driver's minting loop does) --
-      * a duplicate registration would silently overwrite the earlier park, the very cause of mismatched answers.
+   * Callers must first ensure the qid is free via {@link isTaken} (the driver's minting loop does) --
+   * a duplicate registration would silently overwrite the earlier park, the very cause of mismatched answers.
    */
   park(entry: ParkedQuestionInput, settle: (answer: string) => void): void;
-    /** Whether the qid is taken (parked or retired); the driver's minting loop uses it for global uniqueness. */
+  /** Whether the qid is taken (parked or retired); the driver's minting loop uses it for global uniqueness. */
   isTaken(qid: string): boolean;
   /**
-      * Withdraw a park **without answering**: the driver calls it when the ask is cancelled / the turn fails (the driver
-      * rejects its own deferred side). Later resolves of the qid get `run_not_in_flight`.
+   * Withdraw a park **without answering**: the driver calls it when the ask is cancelled / the turn fails (the driver
+   * rejects its own deferred side). Later resolves of the qid get `run_not_in_flight`.
    */
   withdraw(qid: string): void;
-    /** Settles a parked entry. The three structured rejections each state the situation and the next step. */
+  /** Settles a parked entry. The three structured rejections each state the situation and the next step. */
   resolve(qid: string, answer: string): DynamicWorkflowResolveQuestionResult;
-    /** Questions currently parked on a run, in ask order. Feeds the snapshot's `pendingQuestions`. */
+  /** Questions currently parked on a run, in ask order. Feeds the snapshot's `pendingQuestions`. */
   pendingFor(runId: string): DynamicWorkflowRunPendingQuestion[];
 }
 
@@ -71,7 +71,7 @@ interface ParkedQuestion extends ParkedQuestionInput {
 }
 
 export function createWorkflowEscalationRegistry(): WorkflowEscalationRegistry {
-    // The Map's insertion order is ask order (pendingFor relies on it; no separate sequence stored).
+  // The Map's insertion order is ask order (pendingFor relies on it; no separate sequence stored).
   const parked = new Map<string, ParkedQuestion>();
   const retired = new Map<string, RetiredReason>();
 
@@ -79,7 +79,7 @@ export function createWorkflowEscalationRegistry(): WorkflowEscalationRegistry {
     parked.delete(qid);
     retired.set(qid, reason);
     while (retired.size > RETIRED_HISTORY_LIMIT) {
-            // Map iteration is insertion order, so the first key is the oldest.
+      // Map iteration is insertion order, so the first key is the oldest.
       const oldest = retired.keys().next();
       if (oldest.done === true) break;
       retired.delete(oldest.value);
@@ -96,8 +96,8 @@ export function createWorkflowEscalationRegistry(): WorkflowEscalationRegistry {
     },
 
     withdraw(qid) {
-            // Meaningful for parked entries only: an already-resolved qid must not degrade to `run_not_in_flight`
-            // (that rewrites "answer delivered" into "nobody waiting" -- two different facts for the primary).
+      // Meaningful for parked entries only: an already-resolved qid must not degrade to `run_not_in_flight`
+      // (that rewrites "answer delivered" into "nobody waiting" -- two different facts for the primary).
       if (!parked.has(qid)) return;
       retire(qid, "withdrawn");
     },
@@ -137,8 +137,8 @@ export function createWorkflowEscalationRegistry(): WorkflowEscalationRegistry {
         };
       }
       retire(qid, "resolved");
-            // settle after retirement: it resolves the actor-side deferred synchronously, and any re-entry on that chain
-            // (e.g. another escalate in the same turn) must see a table already without this qid.
+      // settle after retirement: it resolves the actor-side deferred synchronously, and any re-entry on that chain
+      // (e.g. another escalate in the same turn) must see a table already without this qid.
       entry.settle(answer);
       return { ok: true, qid };
     },

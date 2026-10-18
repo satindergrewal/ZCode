@@ -7,7 +7,7 @@ export function formatJsModelContent(output: unknown): ModelMessageContent {
     const errorHeader = `${o.error.name}: ${o.error.message}`;
     parts.push(errorHeader);
     // Error.stack's first line already repeats name/message; the full stack would show the model the
- // same error twice. message can carry multi-line locator context, so strip the whole header, not just line one.
+    // same error twice. message can carry multi-line locator context, so strip the whole header, not just line one.
     const stackFrames = o.error.stack
       ? o.error.stack.startsWith(`${errorHeader}\n`)
         ? o.error.stack.slice(errorHeader.length + 1).trimEnd()

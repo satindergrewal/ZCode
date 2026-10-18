@@ -407,7 +407,7 @@ export function enrichCachedClaudeMarketplaceIconsForOverview(
   options: ResolveZCodePluginsOptions = {},
 ): void {
   const { pluginStorageRoot } = resolvePluginContext(options);
-  // 图标是可选展示增强：overview 不等待网络；仅写回阶段进入 storage lock。
+  // Icons are optional display candy: overview never waits on the network; only the write-back phase takes the storage lock.
   void enrichCachedClaudeMarketplaceIcons(pluginStorageRoot, (write) =>
     withPluginStorageLock(pluginStorageRoot, write),
   );

@@ -17,7 +17,8 @@ app
     const goodHtml = await readFile(htmlPath, "utf8");
     const env = await managedEnvironment(root, node, cli);
     try {
-      // 真实等待握手时限；不伪造 controller 的错误态或直接卸载 webview。
+      // Wait out the real handshake deadline; never fake the controller's error state nor unload
+      // the webview directly.
       await writeFile(
         htmlPath,
         '<!doctype html><script>throw new Error("fixture startup failure")</script>',

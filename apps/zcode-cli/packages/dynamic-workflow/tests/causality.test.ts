@@ -65,7 +65,12 @@ describe("worked example 1: the full vocabulary (planner-reviewer)", () => {
   });
 
   it("makes actors lanes, never nodes, and marks the fan-out lane a family", () => {
-    expect(graph.lanes.map((lane) => lane.id)).toEqual(["actor#1", "actor#2", "actor#3", "actor#4"]);
+    expect(graph.lanes.map((lane) => lane.id)).toEqual([
+      "actor#1",
+      "actor#2",
+      "actor#3",
+      "actor#4",
+    ]);
     expect(graph.lanes.find((lane) => lane.id === "actor#4")?.families).toEqual(["fanout#1"]);
   });
 });
@@ -94,11 +99,15 @@ describe("worked example 4: the motivating pair", () => {
 
   it("gives the sequential form a self-arrow and the concurrent form none", () => {
     expect(arrows(sequential)).toContain("ask#1 -carry-> ask#1");
-    expect(arrows(concurrent).filter((arrow) => arrow.includes("ask#1 -carry-> ask#1"))).toEqual([]);
+    expect(arrows(concurrent).filter((arrow) => arrow.includes("ask#1 -carry-> ask#1"))).toEqual(
+      [],
+    );
   });
 
   it("agrees on everything else — same lanes, same data edge", () => {
-    expect(concurrent.lanes.map((lane) => lane.id)).toEqual(sequential.lanes.map((lane) => lane.id));
+    expect(concurrent.lanes.map((lane) => lane.id)).toEqual(
+      sequential.lanes.map((lane) => lane.id),
+    );
     expect(arrows(concurrent)).toContain("world-read#1 -data-> ask#1");
     expect(arrows(sequential)).toContain("world-read#1 -data-> ask#1");
   });
@@ -157,10 +166,7 @@ describe("worked example 8: nested fan-outs multiply", () => {
 describe("worked example 9: the workspace is a lane", () => {
   it("gives every world read its own step, positioned in time", () => {
     const graph = causalityOf("actor-agent-to-workspace");
-    expect(arrows(graph)).toEqual([
-      "ask#1 -data-> world-read#1",
-      "world-read#1 -data-> ask#2",
-    ]);
+    expect(arrows(graph)).toEqual(["ask#1 -data-> world-read#1", "world-read#1 -data-> ask#2"]);
     expect(graph.steps.map((step) => step.lane)).toEqual(["actor#1", "workspace", "actor#2"]);
   });
 });
@@ -367,8 +373,9 @@ describe("phase-1 scope", () => {
 
   it("emits no `parallel` or `shared` regions (parallel stays derived)", () => {
     const graph = causalityOf("planner-reviewer");
-    expect(graph.regions.every((region) => region.kind !== "parallel" && region.kind !== "shared"))
-      .toBe(true);
+    expect(
+      graph.regions.every((region) => region.kind !== "parallel" && region.kind !== "shared"),
+    ).toBe(true);
   });
 });
 
@@ -404,7 +411,7 @@ describe("may-set lane expansion", () => {
         source: "ask#1",
       });
       // One textual ask, so one `loc` — this is what tells the reader they are copies.
-      expect(step.loc).toEqual({ column: 40, line: 12 });
+      expect(step.loc).toEqual({ column: 39, line: 12 });
     }
   });
 
@@ -416,10 +423,7 @@ describe("may-set lane expansion", () => {
     const copies = graph.steps.filter((step) => step.source === "ask#2");
     expect(copies.map((step) => step.certainty)).toEqual(["maybe", "maybe"]);
     // No enclosing iteration region, so nothing carries: a plain data fan-out.
-    expect(arrows(graph)).toEqual([
-      "ask#1 -data-> ask#2~actor#1",
-      "ask#1 -data-> ask#2~actor#2",
-    ]);
+    expect(arrows(graph)).toEqual(["ask#1 -data-> ask#2~actor#1", "ask#1 -data-> ask#2~actor#2"]);
     expect(copies.every((step) => step.repeat === undefined)).toBe(true);
   });
 
@@ -470,9 +474,7 @@ describe("may-set lane expansion", () => {
       const copies = new Set(
         graph.steps.filter((step) => step.source !== undefined).map((step) => step.id),
       );
-      const incident = graph.edges.filter(
-        (edge) => copies.has(edge.from) || copies.has(edge.to),
-      );
+      const incident = graph.edges.filter((edge) => copies.has(edge.from) || copies.has(edge.to));
       expect(incident.length).toBeGreaterThan(0);
       expect(incident.filter((edge) => edge.certainty !== "maybe")).toEqual([]);
     }
@@ -601,9 +603,9 @@ describe("typed transitive reduction", () => {
   });
 
   it("drops a data edge a pure data path implies", () => {
-    expect(
-      shown([edge("a", "b", "data"), edge("b", "c", "data"), edge("a", "c", "data")]),
-    ).toEqual(["a-data->b", "b-data->c"]);
+    expect(shown([edge("a", "b", "data"), edge("b", "c", "data"), edge("a", "c", "data")])).toEqual(
+      ["a-data->b", "b-data->c"],
+    );
   });
 
   it("drops a seq edge any longer path implies", () => {

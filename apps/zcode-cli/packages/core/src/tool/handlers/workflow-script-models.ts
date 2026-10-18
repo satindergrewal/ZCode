@@ -1,18 +1,18 @@
 // ============================================================
-// 脚本点名的模型：解析成绑定表、解不出来的报成 9011（CreateWorkflow / AmendWorkflow / 直接启动 / GUI 配置共用）
+// Script-named models: resolve to a binding table, report unresolvable as 9011 (shared by CreateWorkflow / AmendWorkflow / direct launch / GUI settings)
 // ============================================================
-// 见 docs/dynamic-workflow/launch.md「Models the script names」与
+// See docs/dynamic-workflow/launch.md "Models the script names" and
 // docs/dynamic-workflow/authoring.md「Choosing a model per subagent」。
 //
-// 编译器保证脚本能交给子代理的模型名是一个封闭集合（9010），分析结果以 `modelReferences` 交出来。
-// 这里做编译器做不了的那一半——对着**本机**的模型目录解析每个名字：
+// The compiler guarantees the set of models a script may hand to subagents is closed (9010), delivered as `modelReferences`.
+// This is the half the compiler cannot do — resolve every name against **this machine's** model catalog:
 //
-//   - `resolveInput` 把解出来的写进入参的 `model_bindings`（名字逐字 → 规范串）；
-//   - `prepareApproval` 看到有名字没绑定就不开窗；
-//   - handler 把没绑定的名字报成 9011 诊断，走「编不过」那条路（文件行、改文件、`path` 重交）。
+//   - `resolveInput` writes the resolved ones into the input's `model_bindings` (verbatim name -> canonical string);
+//   - `prepareApproval` skips the dialog when a name lacks a binding;
+//   - the handler reports unbound names as 9011 diagnostics on the compile-failure path (file/line, edit the file, resubmit via `path`).
 //
-// 解不出来的名字**不是**调用的业务失败（不像解不出来的 `subagent_model`）：它写在脚本里，改的是
-// 脚本文件，所以它该长得和编译错误一模一样，而不是一句让模型去改参数的话。
+// An unresolvable name is **not** a business failure of the call (unlike an unresolvable `subagent_model`): it lives in the script file, so it must
+// look exactly like a compile error, not a "change your params" hint.
 
 import {
   MODEL_UNRESOLVED_CODE,
@@ -25,17 +25,17 @@ import type { ToolInputResolutionResult } from "../types.js";
 import { analyzeScript } from "./workflow-script-analysis.js";
 import { resolveModelReference } from "./model-reference.js";
 
-/** 名字 → 规范串 `providerId/modelId[$level]`。 */
+/** Name -> canonical `providerId/modelId[$level]` string. */
 export type ScriptModelBindings = Record<string, string>;
 
-/** 宿主没有模型目录时，每个名字的 9011 文案（脚本侧的改法，不是参数侧的）。 */
+/** With no host model catalog, the per-name 9011 copy (the script-side fix, not a param-side one). */
 export const SCRIPT_MODELS_UNAVAILABLE =
   "This host cannot choose models; remove `model` from the personas (the subagents then run on the run's subagent model).";
 
 /**
- * 解析一个名字的结果。`inherited` 在场说明绑定是从前驱沿用来的（`AmendWorkflow` / GUI 配置）：
- * 那一支解的是前驱记下的规范串，失败文案要说清是「沿用的那个模型没了」，否则模型会去改一个
- * 它根本没写错的名字。
+ * Result of resolving one name. `inherited` present means the binding came from the predecessor (`AmendWorkflow` / GUI settings):
+ * that branch resolves the recorded canonical string, and the failure copy must say "the inherited model is gone", or the model edits
+ * a name it never wrote wrong.
  */
 type NameResolution = { ok: true; canonical: string } | { ok: false; message: string };
 
@@ -48,8 +48,8 @@ function resolveName(
   const entries = catalog.listModels();
   const previous = inherited?.[name];
   if (previous !== undefined) {
-    // 沿用前驱的绑定：解的是它记下的规范串（命中第一档），不是名字本身——用户在前驱的确认窗
-    // 里给这个名字换过模型的话，重新解析名字会悄悄把那次选择撤掉。
+    // Inheriting the predecessor's binding resolves the recorded canonical string (first tier), not the name — if the user swapped that
+    // name's model in the predecessor's dialog, re-resolving the name would silently undo that choice.
     const resolution = resolveModelReference(previous, entries);
     if (resolution.ok) return { ok: true, canonical: resolution.canonical };
     return {
@@ -65,14 +65,14 @@ function resolveName(
   };
 }
 
-/** 去重后的名字，按第一次出现的顺序（确认窗画行、结果文案列名字都用这个序）。 */
+/** Deduped names in first-occurrence order (the dialog draws rows and the result copy lists names in this order). */
 export function distinctModelNames(references: readonly ModelReference[]): string[] {
   return [...new Set(references.map((reference) => reference.name))];
 }
 
 /**
- * 把脚本点名的每个名字解析成绑定表。只收解得出来的；解不出来的不进表——`prepareApproval` 与
- * handler 都以「有名字没绑定」为准，所以失败不需要第二个载体。
+ * Resolve every script-named name into the binding table. Only resolvable ones enter; unresolvable do not — both `prepareApproval`
+ * and the handler key on "a name lacks a binding", so failure needs no second carrier.
  */
 export function resolveScriptModelBindings(
   names: readonly string[],
@@ -88,9 +88,9 @@ export function resolveScriptModelBindings(
 }
 
 /**
- * `resolveInput` 的最后一步：编译归一化后的脚本（单槽记忆让后面两次编译免费），把 `model_bindings`
- * 写进入参。**无条件覆盖**模型给的值（与 `adjustable_settings` 同一个姿态：伪造它是无效的）；脚本
- * 编不过或没点名任何模型时整个键缺席。
+ * Last step of `resolveInput`: compile the normalized script (the single-slot memo makes the next two compiles free) and write `model_bindings`
+ * into the input. **Unconditionally override** the model's value (the same posture as `adjustable_settings`: forged is invalid); a script that
+ * fails to compile or names no models leaves the whole key absent.
  */
 export function withScriptModelBindings(
   input: Record<string, unknown>,
@@ -109,7 +109,7 @@ export function withScriptModelBindings(
   return Object.keys(bindings).length === 0 ? rest : { ...rest, model_bindings: bindings };
 }
 
-/** {@link withScriptModelBindings} 套在一次归一化结果上：失败原样放行，成功的入参补上绑定表。 */
+/** Wrapped over one normalization result by {@link withScriptModelBindings}: failure passes through, success gains the binding table. */
 export function withScriptModelBindingsResolved(
   resolution: ToolInputResolutionResult,
   catalog: ModelCatalogPort | undefined,
@@ -124,7 +124,7 @@ export function withScriptModelBindingsResolved(
   };
 }
 
-/** 入参里的绑定表（`resolveInput` 写的那一张；hook 若改坏了形状就当没有）。 */
+/** The input's binding table (written by `resolveInput`; a hook-mangled shape counts as absent). */
 export function readScriptModelBindings(input: unknown): ScriptModelBindings {
   if (typeof input !== "object" || input === null) return {};
   const raw = (input as { model_bindings?: unknown }).model_bindings;
@@ -136,7 +136,7 @@ export function readScriptModelBindings(input: unknown): ScriptModelBindings {
   return bindings;
 }
 
-/** 脚本点名的名字是否全都有绑定（`prepareApproval` 据此决定开不开窗）。 */
+/** Are all script-named names bound? (`prepareApproval` decides the dialog from this.) */
 export function allScriptModelsBound(
   analysis: AnalyzeResult,
   bindings: ScriptModelBindings,
@@ -145,9 +145,9 @@ export function allScriptModelsBound(
 }
 
 /**
- * 没有绑定的名字 → 9011 诊断，**每个名字一条**，落在它第一次出现的位置。每处都报会把最长四十行的
- * 候选清单重复 N 遍；改一处就改对了的名字，报一处就够。文案重新解析一遍得来（handler 手里有目录），
- * 所以 `resolveInput` 不必把失败文案塞进入参。
+ * Unbound name -> 9011 diagnostic, **one per name**, at its first occurrence. Reporting every site would repeat a forty-line
+ * candidate list N times; a name fixed by one edit needs one report. The copy comes from re-resolution (the handler holds the catalog),
+ * so `resolveInput` need not stuff failure copy into the input.
  */
 export function unresolvedScriptModelDiagnostics(
   analysis: AnalyzeResult,
@@ -165,8 +165,8 @@ export function unresolvedScriptModelDiagnostics(
       code: MODEL_UNRESOLVED_CODE,
       line: reference.line,
       column: reference.column,
-      // 到这里却解得出来，只可能是目录在 resolveInput 之后变了（provider 刚被加回来）。仍然报：
-      // 用户批准的窗（或没开的窗）不含这个模型，悄悄用上它就是一个没人看过的选择。
+      // Resolving here despite the earlier miss means the catalog changed after resolveInput (provider re-added). Still report:
+      // the approved dialog (or absent one) did not include this model; silently using it is an unseen choice.
       message: resolution.ok
         ? `The model "${reference.name}" became available only after this call was checked; submit the script again.`
         : resolution.message,
@@ -175,7 +175,7 @@ export function unresolvedScriptModelDiagnostics(
   return diagnostics;
 }
 
-/** 绑定表 → 端口要的结构化选择。解不开的规范串是接线故障（`resolveInput` 写的一定解得开）。 */
+/** Binding table -> the structured selection the port wants. An unresolvable canonical string is a wiring fault (`resolveInput` only writes resolvable ones). */
 export function scriptModelSelections(
   bindings: ScriptModelBindings,
 ): Record<string, ModelSelection> | undefined {
@@ -195,8 +195,8 @@ export function scriptModelSelections(
 }
 
 /**
- * 结果文案里的那句话（docs/dynamic-workflow/launch.md「Models the script names」）：说的是规范串，
- * 模型可以原样贴进下一次调用。只在表非空时出现；以空格开头，接在设置句后面。
+ * The sentence in the result copy (docs/dynamic-workflow/launch.md "Models the script names"): canonical strings,
+ * pasteable into the next call. Present only when the table is non-empty; leading space, appended after the settings sentence.
  */
 export function describeScriptModelBindings(bindings: ScriptModelBindings): string {
   const entries = Object.entries(bindings);
@@ -206,8 +206,8 @@ export function describeScriptModelBindings(bindings: ScriptModelBindings): stri
 }
 
 /**
- * 不经确认窗的两条启动路（中枢直接启动、GUI 配置）一步做完：解析全部名字，交出端口要的选择与
- * 没绑定的名字的 9011。`unbound` 非空时调用方拒绝，`selections` 不用。
+ * The two no-dialog launch paths (hub direct launch, GUI settings) finish in one step: resolve every name, hand over the port's selections and
+ * 9011 for unbound names. Caller rejects when `unbound` is non-empty; `selections` unused then.
  */
 export function bindScriptModels(
   analysis: AnalyzeResult,

@@ -1,5 +1,5 @@
 import type { MarkdownSelectionTarget } from "@/lib/conversationSelectionReference.js";
-/* eslint-disable max-lines -- PreviewPane 当前同时承载文件读取、图片与 Office 预览、markdown/code 渲染和顶部路径面包屑；后续需按 header/body 边界继续拆分。 */
+/* eslint-disable max-lines -- PreviewPane spans file reads, image/Office preview, markdown/code render, and the path breadcrumb; split along header/body later. */
 import {
   Fragment,
   type CSSProperties,
@@ -29,10 +29,7 @@ import { TID_PREVIEW_PANE } from "@zcode/shared";
 import { useWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
 import { usePptxFileWatch } from "@/hooks/usePptxFileWatch.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
-import {
-  usePdfViewerLabels,
-  usePptxViewerLabels,
-} from "@/hooks/usePreviewViewerLabels.js";
+import { usePdfViewerLabels, usePptxViewerLabels } from "@/hooks/usePreviewViewerLabels.js";
 import {
   FILE_VIEWER_MAX_TEXT_BYTES,
   createDiffSourceFilePreviewSource,
@@ -240,9 +237,9 @@ function getFileImageMediaType(path?: string): string | null {
   return mediaType && mediaType !== "image/svg+xml" ? mediaType : null;
 }
 
-// 与 service 层 readFileRange 的默认分段大小对齐，一次 range 请求对应一次 RPC 调用。
+// Aligned with the service readFileRange default chunk: one range request, one RPC.
 const PDF_RANGE_CHUNK_BYTES = 256 * 1024;
-// 小 PDF 直接循环拉全量（少量往返、渲染路径最简单）；超过阈值交给 pdf.js range 按需分段加载。
+// Small PDFs loop-fetch in full (few round trips); larger ones use pdf.js range loading.
 const PDF_FULL_READ_MAX_BYTES = 2 * 1024 * 1024;
 export const PPTX_MAX_FILE_BYTES = 64 * 1024 * 1024;
 
@@ -258,8 +255,8 @@ function PreviewPaneDeferredHeavyContent({ style }: { style?: CSSProperties }) {
       data-preview-pane-heavy-content-deferred="true"
       style={style}
     >
-      {/* Bugfix: resize/sliver 阶段不能展示大文件 CodeViewer，但只放空白会明显闪烁。
-          这里用少量静态 code-line 纹理保留预览区的视觉重量，不让千行 Shadow DOM 参与可见布局。 */}
+      {/* Bugfix: resize/sliver frames cannot host the big CodeViewer, but blank space flickers;
+          a few static code-line stripes keep visual weight with no huge Shadow DOM in layout. */}
       <div
         className="sticky top-0 flex h-full min-h-0 flex-col gap-1.5 overflow-hidden p-3"
         data-preview-pane-heavy-content-placeholder="true"
@@ -386,7 +383,7 @@ function isPlainCodeSource(source: CodeViewerSource | null): boolean {
       !isMarkdownFilePath(source.path) &&
       !isSvgFilePath(source.path) &&
       !getFileImageMediaType(source.path) &&
-      // PDF、Office 和 PPTX 走专用只读预览，没有源码视图，也不该出现自动换行开关。
+      // PDF/Office/PPTX use dedicated read-only previews: no source view, no wrap toggle.
       !isPdfPreviewPath(source.path) &&
       !getOfficeFilePreviewKind(source.path) &&
       !isPptxPreviewPath(source.path)
@@ -609,8 +606,8 @@ export function PreviewPane({
     [source, sourceWorkspacePath],
   );
   const codeComments = useCodeCommentPreviewStore((state) =>
-    // code-review 不读取 Composer 评论 store，但这里每次 selector 求值都不能返回新的 []，
-    // 否则会破坏 useSyncExternalStore 的稳定 snapshot 契约并触发无限更新。
+    // Never return a fresh [] per selector run
+    // or useSyncExternalStore's stable-snapshot contract breaks into infinite updates.
     codeCommentBucket ? state.getComments(codeCommentBucket) : EMPTY_CODE_COMMENT_PREVIEWS,
   );
   const addCodeCommentPreview = useCodeCommentPreviewStore((state) => state.addComment);
@@ -662,8 +659,8 @@ export function PreviewPane({
     }),
     [intl],
   );
-  // PDF / PPTX 的标签与 dwf 的 workflow-artifact tab 共用一份（见该 hook 的注释）：
-  // 两个 labels 接口都是必填全字段，各写一份漏的不会是类型错误，而是一句没翻译的文案。
+  // These labels are shared with dwf's workflow-artifact tab (see its comment):
+  // both records are total, so a missing key is a silent untranslated string, not a type error.
   const pdfViewerLabels = usePdfViewerLabels();
   const pptxViewerLabels = usePptxViewerLabels();
 
@@ -680,7 +677,7 @@ export function PreviewPane({
         setInstalledEditors(editors);
       })
       .catch((platformError) => {
-        logger.warn("[PreviewPane] 获取已安装编辑器列表失败", {
+        logger.warn("[PreviewPane] failed to list installed editors", {
           error: platformError instanceof Error ? platformError.message : String(platformError),
         });
       });
@@ -795,8 +792,8 @@ export function PreviewPane({
       return;
     }
 
-    // 交互说明：长路径首次打开时，用户最关心的是末尾文件名。
-    // 这里在 breadcrumb 内容变更后只初始化滚到最右侧，后续用户手动滚动不再强行回弹。
+    // Long paths: the tail filename matters on first open.
+    // Scroll right once per content change; never snap back during manual scrolling.
     const frameId = requestAnimationFrame(() => {
       viewport.scrollLeft = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
     });
@@ -894,9 +891,9 @@ export function PreviewPane({
       };
     }
 
-    // 把传输分块直接当成多个文档解码和渲染，会在 UTF-8 字符中间产生乱码，
-    // 同时让每块行号从 1 重置。文本预览现在只读取 service 允许的完整上限；
-    // 非二进制结果返回 truncated 时丢弃局部文本并提示文件过大，不再拼接分块。
+    // Decoding transport chunks as separate documents garbles split UTF-8 and
+    // resets each chunk's line numbers. Text preview reads one service-capped load;
+    // on a truncated non-binary result, drop the partial text and show too-large.
     void fileService
       .readTextFile({
         path: fileSource.path,
@@ -917,7 +914,7 @@ export function PreviewPane({
           return;
         }
 
-        logger.error(`[PreviewPane] 读取文件失败 path=${fileSource.path}:`, readError);
+        logger.error(`[PreviewPane] failed to read file path=${fileSource.path}:`, readError);
         setError(
           isPreviewPaneMissingFileError(readError)
             ? intl.formatMessage({ id: "codeViewer.fileMissing" })
@@ -966,7 +963,10 @@ export function PreviewPane({
           return;
         }
 
-        logger.error(`[PreviewPane] 读取图片预览失败 path=${imageSource.path}:`, previewError);
+        logger.error(
+          `[PreviewPane] failed to load image preview path=${imageSource.path}:`,
+          previewError,
+        );
         setError(
           isPreviewPaneMissingFileError(previewError)
             ? intl.formatMessage({ id: "codeViewer.fileMissing" })
@@ -1050,7 +1050,7 @@ export function PreviewPane({
       })
       .catch((previewError: unknown) => {
         if (disposed || generation !== mediaPreviewGenerationRef.current) return;
-        logger.error("[PreviewPane] 读取媒体预览失败", {
+        logger.error("[PreviewPane] failed to load media preview", {
           path: mediaSource.path,
           error: previewError instanceof Error ? previewError.message : String(previewError),
         });
@@ -1135,7 +1135,7 @@ export function PreviewPane({
     try {
       mediaElement.currentTime = restore.currentTime;
     } catch {
-      // 媒体元数据尚未完全就绪时由浏览器稍后继续处理，不阻断播放器加载。
+      // Metadata pending: the browser resumes later; do not block the player.
     }
     if (!restore.paused) void mediaElement.play().catch(() => undefined);
     mediaPlaybackRestoreRef.current = null;
@@ -1170,7 +1170,7 @@ export function PreviewPane({
           return null;
         }
         if (chunk.length === 0) {
-          // 读取期间文件被截断时按已读部分返回，交给 pdf.js 判定完整性，避免死循环
+          // Truncated mid-read: return the read part, let pdf.js judge completeness; no loop.
           break;
         }
         chunks.push(chunk);
@@ -1192,8 +1192,8 @@ export function PreviewPane({
       }
 
       if (typeof fileStat.size !== "number") {
-        // 版本偏差兜底：旧远端 stat 不返回 size，也一定没有 readFileRange，
-        // 回退整档 base64 的旧通道（保留其 8MB 上限，超限走 catch 报错文案）。
+        // Version skew: a stat without size implies no readFileRange;
+        // fall back to legacy whole-file base64 (8MB cap; over-cap hits the catch copy).
         const preview = await fileService.readMediaPreview({ path });
         if (disposed) {
           return;
@@ -1221,7 +1221,7 @@ export function PreviewPane({
           return;
         }
 
-        logger.error(`[PreviewPane] 读取 PDF 预览失败 path=${path}:`, previewError);
+        logger.error(`[PreviewPane] failed to load PDF preview path=${path}:`, previewError);
         setError(
           isPreviewPaneMissingFileError(previewError)
             ? intl.formatMessage({ id: "codeViewer.fileMissing" })
@@ -1268,7 +1268,7 @@ export function PreviewPane({
           return;
         }
 
-        logger.error("[PreviewPane] 读取 Office 文件预览失败", {
+        logger.error("[PreviewPane] failed to load Office preview", {
           path: source.path,
           error: previewError instanceof Error ? previewError.message : String(previewError),
         });
@@ -1354,7 +1354,7 @@ export function PreviewPane({
       }
 
       if (typeof fileStat.size !== "number") {
-        // 兼容旧远端：旧 Host 没有 size/range 能力，只能使用现有 8MB base64 通道。
+        // Legacy remote hosts lack size/range; the existing 8MB base64 path is the only option.
         const preview = await fileService.readMediaPreview({ path });
         if (!disposed) {
           setPptxPreviewData(decodeBase64ToArrayBuffer(preview.dataBase64));
@@ -1376,8 +1376,8 @@ export function PreviewPane({
         return;
       }
 
-      // 文件可能在分段读取期间被替换成另一个大小不同的版本；再次 stat 可以阻止把旧版本的
-      // 前缀当作完整 PPTX 解析。相同大小的内容替换仍需 Host 提供 fingerprint 才能检测，暂不扩展现有协议。
+      // The file can be replaced by a different-size version mid-read; re-stat avoids
+      // parsing a stale prefix as full PPTX. Same-size swaps need a Host fingerprint; out of scope.
       const currentFileStat = await fileService.stat({ path });
       if (disposed) {
         return;
@@ -1396,17 +1396,17 @@ export function PreviewPane({
         }
 
         if (isPptxPreviewIncompleteFileError(previewError)) {
-          logger.warn("[PreviewPane] PPTX 文件读取不完整，已阻止解析残缺数据", {
+          logger.warn("[PreviewPane] incomplete PPTX read; blocking parse of partial data", {
             path,
             expectedBytes: previewError.expectedBytes,
             actualBytes: previewError.actualBytes,
             observedFileSize: previewError.observedFileSize,
           });
         } else {
-          logger.error(`[PreviewPane] 读取 PPTX 预览失败 path=${path}:`, previewError);
+          logger.error(`[PreviewPane] failed to load PPTX preview path=${path}:`, previewError);
         }
-        // 旧 Host 的 8MB base64 通道会把绝对路径拼进英文超限错误；原样展示既误导
-        // 用户又泄漏远端目录。这里保留真实的 8MB 兼容边界，并对其它错误只展示文件名。
+        // The legacy 8MB path bakes the absolute remote path into the over-cap error,
+        // misleading and leaking directories. Keep the 8MB bound; other errors show the name only.
         setError(
           resolvePptxPreviewReadErrorMessage(previewError, {
             sourcePath: path,
@@ -1485,8 +1485,8 @@ export function PreviewPane({
     }
 
     try {
-      // 远程能力过滤产生的 fallback 只用于本次打开；不能把它写回面板偏好，
-      // 否则同一 PreviewPane 切回本地文件时仍会错误沿用远程 VS Code。
+      // The remote-capability fallback applies to this open only; never persist it,
+      // or the pane misuses remote VS Code after returning to local files.
       const result = await platform.openInEditor(selectedEditor.id, source.path, {
         pathKind: "file",
         remoteTarget: openInEditorRemoteTarget,
@@ -1496,13 +1496,13 @@ export function PreviewPane({
         return;
       }
 
-      logger.warn("[PreviewPane] 用编辑器打开文件失败", {
+      logger.warn("[PreviewPane] failed to open file in editor", {
         editorId: selectedEditor.id,
         path: source.path,
         error: result.error ?? "unknown-error",
       });
     } catch (platformError) {
-      logger.warn("[PreviewPane] 打开文件失败", {
+      logger.warn("[PreviewPane] failed to open file", {
         path: source.path,
         error: platformError instanceof Error ? platformError.message : String(platformError),
       });
@@ -1592,7 +1592,7 @@ export function PreviewPane({
               </span>
             </Button>
           ) : null}
-          {/* Bugfix: 图片和 patch 这类预览没有任何显示选项，继续渲染触发器会打开空菜单，所以只在存在菜单项时显示更多按钮。 */}
+          {/* Bugfix: image/patch previews have no display options; an empty menu trigger is noise, so render more-button only with items. */}
           {hasMoreMenu || source.path ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -1698,7 +1698,7 @@ export function PreviewPane({
               </DropdownMenuContent>
             </DropdownMenu>
           ) : null}
-          {/* 第一期 PPTX 明确为只读预览，不展示任何编辑入口。 */}
+          {/* Phase-one PPTX is read-only; no edit entry. */}
           <Button
             type="button"
             size="icon-md"
@@ -1795,8 +1795,8 @@ export function PreviewPane({
             codeCommentLabels={codeCommentLabels}
             onSubmitCodeComment={handleSubmitCodeComment}
             onDeleteCodeComment={handleDeleteCodeComment}
-            // PreviewPane 外层只是 flex 壳，真实滚动发生在具体内容组件的 overflow 容器。
-            // 折叠侧边面板卸载重内容前必须保存该容器的位置。
+            // The pane shell is a flex host; scrolling happens in each content's overflow container.
+            // Save that container's position before collapse unmounts heavy content.
             onScroll={handlePreviewContentScroll}
             scrollContainerRef={scrollContainerRef}
           />

@@ -79,7 +79,7 @@ function unwrapIpv6CarrierAddress(address: ipaddr.IPv4 | ipaddr.IPv6): ipaddr.IP
   if (address.isIPv4MappedAddress()) return address.toIPv4Address();
 
   // NAT64/DNS64 well-known prefix encodes IPv4 private addresses as IPv6;
- // restore the low 32-bit IPv4 before applying the same public egress policy.
+  // restore the low 32-bit IPv4 before applying the same public egress policy.
   const bytes = address.toByteArray();
   if (bytes.length !== 16) return undefined;
   if (!DNS64_WELL_KNOWN_PREFIX.every((byte, index) => bytes[index] === byte)) return undefined;
@@ -93,7 +93,7 @@ function isPublicIpv4(address: ipaddr.IPv4): boolean {
 
 function isPublicIpv6(address: ipaddr.IPv6): boolean {
   // ipaddr.js classes some special-use IPv6 prefixes as unicast;
- // WebFetch's public-egress boundary must exclude those non-public ranges explicitly.
+  // WebFetch's public-egress boundary must exclude those non-public ranges explicitly.
   if (SPECIAL_USE_IPV6_NETWORKS.some((network) => address.match(network))) return false;
   return address.range() === "unicast";
 }

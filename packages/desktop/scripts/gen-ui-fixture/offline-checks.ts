@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { app } from "electron";
 
-/** 独立 profile 中，在第一次导航前禁网；不覆盖生产 onBeforeRequest 闸门。 */
+/** In a dedicated profile, block the network before the first navigation; never overrides the production onBeforeRequest gate. */
 export function installOfflineChecks() {
   const localScripts = new Set<string>();
   const networkRequests: string[] = [];

@@ -180,7 +180,11 @@ function collectInlineHookEvents(value: unknown): string[] {
 }
 
 //** Default dir conventions plus manifest string/array paths, merged into a deduped scan list. */
-function collectComponentDirs(rootPath: string, manifestField: unknown, defaultDir: string): string[] {
+function collectComponentDirs(
+  rootPath: string,
+  manifestField: unknown,
+  defaultDir: string,
+): string[] {
   const dirs: string[] = [];
   const seen = new Set<string>();
   const add = (raw: string): void => {

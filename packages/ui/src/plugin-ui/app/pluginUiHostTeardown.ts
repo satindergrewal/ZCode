@@ -4,8 +4,8 @@ import { MCP_APPS_TEARDOWN_TIMEOUT_MS } from "@zcode/shared/mcp-apps";
 import type { PluginUiHostBridge } from "./pluginUiHostBridge.js";
 
 /**
- * 实例卸载的收尾顺序：已握手的实例先给页面 `ui/resource-teardown` 的清理窗口（回包或超时），再关桥与端口、
- * 按捕获的 sandboxId/initId 释放旧登记，不能影响新凭证创建的页面。
+ * Teardown order: handshaken instances get a ui/resource-teardown window (reply or timeout), then bridge/port close,
+ * releasing old registrations by captured sandboxId/initId, never touching pages on newer credentials.
  */
 export function runPluginUiHostTeardown(input: {
   bridge: PluginUiHostBridge | null;

@@ -88,7 +88,8 @@ const realSetTimeout = window.setTimeout.bind(window),
   realClearTimeout = window.clearTimeout.bind(window);
 const fakeIds = new Map<number, () => void>();
 let nextTimer = -1;
-// 只控制产品的五分钟保活期限；握手、teardown、v4 keep-warm 仍用真实完成事件/时钟。
+// Only the product's five-minute keep-alive is controlled; handshake, teardown and v4
+// keep-warm still run on real completion events/clock.
 window.setTimeout = ((run: () => void, ms: number, ...args: any[]) => {
   if (ms !== 300_000) return realSetTimeout(run, ms, ...args);
   const id = nextTimer--;
@@ -217,7 +218,8 @@ const layout = () =>
   width: number,
 ) => {
   Object.assign(config, { theme, locale, width });
-  // fixture 没有应用主题样式表，提供宿主 token 以验证 reader → hostContext → 页面颜色。
+  // The fixture has no app theme stylesheet; host tokens are provided to verify the
+  // reader -> hostContext -> page color path.
   for (const [token, values] of Object.entries({
     "--color-background": ["#ffffff", "#17191c"],
     "--color-panel": ["#f4f5f6", "#23272c"],

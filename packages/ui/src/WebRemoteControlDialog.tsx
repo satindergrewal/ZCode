@@ -1,11 +1,7 @@
 import { memo, useEffect, useMemo, useState } from "react";
 import QRCode from "qrcode";
-/* eslint-disable max-lines -- Web 远程控制弹层集中处理启动、状态轮询、二维码和错误文案，后续稳定后再拆分子组件。 */
-import type {
-  BotProvider,
-  WebRemoteControlFailure,
-  WebRemoteControlStatus,
-} from "@zcode/shared";
+/* eslint-disable max-lines -- the web remote dialog owns startup, status polling, QR, and error copy; split once stable. */
+import type { BotProvider, WebRemoteControlFailure, WebRemoteControlStatus } from "@zcode/shared";
 import { resolveWebRemoteControlWorkspaceKey } from "@zcode/shared";
 import {
   Bot as BotIcon,
@@ -34,10 +30,7 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { logger } from "@/logger.js";
 import { getBotProviderRegionTagLabelId } from "@/botsUi.js";
 
-type RemoteControlBotProvider = Extract<
-  BotProvider,
-  "weixin" | "feishu" | "lark" | "telegram"
->;
+type RemoteControlBotProvider = Extract<BotProvider, "weixin" | "feishu" | "lark" | "telegram">;
 
 const REMOTE_CONTROL_BOT_ENTRIES: Array<{
   provider: RemoteControlBotProvider;
@@ -58,9 +51,9 @@ export function isSameWebRemoteControlTarget(
     return false;
   }
 
-  // Bugfix: 之前这里仅凭 sessionId 存在就判定“同一目标”，会把其他 workspace 的旧会话误复用，
-  // 导致当前 workspace 打开弹层时不触发 start，状态长期卡在 starting。
-  // 这里改为严格比较 workspaceKey(identity 优先) + remoteSessionId，确保会话和目标一一对应。
+  // Bugfix: treating any sessionId presence as the same target reused stale sessions from other workspaces,
+  // leaving the dialog stuck in starting on open.
+  // Compare workspaceKey (identity first) + remoteSessionId strictly; session and target stay 1:1.
   const statusWorkspacePath = status.workspacePath?.trim();
   if (!statusWorkspacePath) {
     return false;
@@ -87,17 +80,15 @@ export function isSameWebRemoteControlTarget(
   return Boolean(status.windowControlSessionId ?? status.sessionId);
 }
 
-export function isReusableWebRemoteControlSession(
-  status: WebRemoteControlStatus,
-): boolean {
+export function isReusableWebRemoteControlSession(status: WebRemoteControlStatus): boolean {
   if (status.status === "idle" || status.status === "error") {
     return false;
   }
 
-  // Bugfix: 打开桌面弹层只是查看/管理 window 级远控入口，不能因为当前桌面 workspace
-  // 和手机已 bridge 的 workspace 不一致就重启 device relay 会话；否则会主动给手机发
-  // desktop-disconnected。只有已经连上手机的会话才跨 workspace 复用，避免未连接的旧二维码
-  // 继续把新扫码用户带回旧默认 workspace。
+  // Bugfix: the desktop dialog only inspects a window-level entry; a mismatch between the desktop
+  // workspace and the phone-bridged one must not restart the relay, or the phone gets a
+  // desktop-disconnected push. Only connected sessions span workspaces, so a stale QR never
+  // drags a new scanner into the old default workspace.
   return Boolean(status.mobileConnected && (status.windowControlSessionId ?? status.sessionId));
 }
 
@@ -159,8 +150,7 @@ export function getWebRemoteControlStatusTagLabel(
   formatMessage: ReturnType<typeof useZCodeIntl>["intl"]["formatMessage"],
 ): string {
   const deviceName =
-    status.mobileDeviceInfo?.browserPlatform?.trim() ||
-    status.mobileDeviceInfo?.name?.trim();
+    status.mobileDeviceInfo?.browserPlatform?.trim() || status.mobileDeviceInfo?.name?.trim();
 
   if (deviceName) {
     return deviceName;
@@ -194,10 +184,8 @@ function isSameWebRemoteControlStatus(
     left.mobileConnected === right.mobileConnected &&
     left.mobileDeviceInfo?.updatedAt === right.mobileDeviceInfo?.updatedAt &&
     left.mobileDeviceInfo?.userAgent === right.mobileDeviceInfo?.userAgent &&
-    left.mobileDeviceInfo?.viewport?.width ===
-      right.mobileDeviceInfo?.viewport?.width &&
-    left.mobileDeviceInfo?.viewport?.height ===
-      right.mobileDeviceInfo?.viewport?.height &&
+    left.mobileDeviceInfo?.viewport?.width === right.mobileDeviceInfo?.viewport?.width &&
+    left.mobileDeviceInfo?.viewport?.height === right.mobileDeviceInfo?.viewport?.height &&
     left.qrUrl === right.qrUrl &&
     left.connectUrl === right.connectUrl &&
     left.workspacePath === right.workspacePath &&
@@ -280,8 +268,7 @@ export const WebRemoteControlDialog = memo(function WebRemoteControlDialogCompon
   const [loading, setLoading] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [botsDialogOpen, setBotsDialogOpen] = useState(false);
-  const [botEntryProvider, setBotEntryProvider] =
-    useState<RemoteControlBotProvider | null>(null);
+  const [botEntryProvider, setBotEntryProvider] = useState<RemoteControlBotProvider | null>(null);
 
   const statusLabel = useMemo(
     () => getStatusLabel(status, intl.formatMessage),
@@ -331,15 +318,15 @@ export const WebRemoteControlDialog = memo(function WebRemoteControlDialogCompon
             remoteSessionId,
             initialTaskId,
           });
-          // 兼容仍可返回 cancelled 的平台实现；当前 Desktop 不再叠加原生确认。
+          // Tolerate platform impls still returning cancelled; desktop adds no native confirm anymore.
           nextStatus = startResult.status === "cancelled" ? { status: "idle" } : startResult;
         }
-        // Bugfix: 手机端默认主题已统一收敛到 dark，不再依赖二维码 URL 透传 theme。
-        // 这里去掉启动参数里的 theme，避免桌面端主题无意义地参与远控链路。
+        // Bugfix: the phone default theme is dark and the QR URL no longer carries theme;
+        // drop theme from start args so desktop theming stays out of the remote path.
 
         if (!cancelled) {
           setStatus(nextStatus);
-          logger.info("[WebRemoteControlDialog] Web 远程控制状态已同步", {
+          logger.info("[WebRemoteControlDialog] web remote control state synced", {
             workspacePath,
             workspaceIdentity: workspaceIdentity ?? "none",
             remoteSessionId: remoteSessionId ?? "none",
@@ -357,14 +344,9 @@ export const WebRemoteControlDialog = memo(function WebRemoteControlDialogCompon
             remoteSessionId,
             error: message,
           });
-          toast(
-            intl.formatMessage(
-              { id: "webRemoteControl.startFailed" },
-              { error: message },
-            ),
-          );
+          toast(intl.formatMessage({ id: "webRemoteControl.startFailed" }, { error: message }));
         }
-        logger.error("[WebRemoteControlDialog] 启动 Web 远程控制失败", {
+        logger.error("[WebRemoteControlDialog] failed to start web remote control", {
           workspacePath,
           workspaceIdentity: workspaceIdentity ?? "none",
           remoteSessionId: remoteSessionId ?? "none",
@@ -383,15 +365,7 @@ export const WebRemoteControlDialog = memo(function WebRemoteControlDialogCompon
     return () => {
       cancelled = true;
     };
-  }, [
-    intl,
-    open,
-    platform,
-    remoteSessionId,
-    workspaceIdentity,
-    workspacePath,
-    initialTaskId,
-  ]);
+  }, [intl, open, platform, remoteSessionId, workspaceIdentity, workspacePath, initialTaskId]);
 
   useEffect(() => {
     if (!open) {
@@ -422,14 +396,12 @@ export const WebRemoteControlDialog = memo(function WebRemoteControlDialogCompon
         }
 
         setStatus((currentStatus) =>
-          isSameWebRemoteControlStatus(currentStatus, nextStatus)
-            ? currentStatus
-            : nextStatus,
+          isSameWebRemoteControlStatus(currentStatus, nextStatus) ? currentStatus : nextStatus,
         );
       } catch {
-        // Bugfix: Web 远程控制的状态变化发生在 main / relay 侧，
-        // 如果弹层只在打开时同步一次，状态会长期停在“等待连接”。
-        // 这里用轻量轮询补齐状态刷新；单次失败时静默忽略，避免打断用户操作。
+        // Bugfix: web remote state changes happen main/relay-side, so a sync-on-open
+        // dialog stalls in waiting.
+        // Poll lightly; swallow one-off failures to stay out of the user's way.
       }
     };
 
@@ -463,7 +435,7 @@ export const WebRemoteControlDialog = memo(function WebRemoteControlDialogCompon
       })
       .catch((error: unknown) => {
         const message = error instanceof Error ? error.message : String(error);
-        logger.error("[WebRemoteControlDialog] 生成二维码失败", message);
+        logger.error("[WebRemoteControlDialog] failed to generate QR code", message);
       });
 
     return () => {
@@ -479,29 +451,21 @@ export const WebRemoteControlDialog = memo(function WebRemoteControlDialogCompon
     try {
       await navigator.clipboard.writeText(status.connectUrl);
       toast(intl.formatMessage({ id: "webRemoteControl.copyLink.copied" }));
-      logger.info("[WebRemoteControlDialog] 已复制 Web 远程控制链接", {
+      logger.info("[WebRemoteControlDialog] web remote control link copied", {
         workspacePath,
         remoteSessionId: remoteSessionId ?? "none",
         sessionId: status.sessionId ?? "none",
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      toast(
-        intl.formatMessage(
-          { id: "webRemoteControl.copyLinkFailed" },
-          { error: message },
-        ),
-      );
-      logger.error(
-        "[WebRemoteControlDialog] 复制 Web 远程控制链接失败",
-        message,
-      );
+      toast(intl.formatMessage({ id: "webRemoteControl.copyLinkFailed" }, { error: message }));
+      logger.error("[WebRemoteControlDialog] failed to copy web remote control link", message);
     }
   };
 
   const handleRefreshQr = async () => {
-    // Bugfix: 刷新二维码会废弃之前复制或扫码得到的 sid/hash 链接。
-    // 之前按钮和复制链接并排，误触会让已发出的手机链接立即失效；这里先用统一确认弹窗保护。
+    // Bugfix: a QR refresh invalidates any sid/hash link already copied or scanned.
+    // The button sits beside copy-link, so guard regeneration behind a confirm dialog.
     const confirmed = await confirmDialog({
       title: intl.formatMessage({ id: "webRemoteControl.refreshQr.confirmTitle" }),
       description: intl.formatMessage({
@@ -522,14 +486,14 @@ export const WebRemoteControlDialog = memo(function WebRemoteControlDialogCompon
         initialTaskId,
       });
       if (nextStatus.status === "cancelled") {
-        // 兼容可取消的平台实现：保持当前运行状态，不显示成功或失败反馈。
+        // Tolerate cancellable platform impls: keep the running state, no success/failure feedback.
         return;
       }
-      // Bugfix: 泄露后的旧二维码包含 sid/hash，单纯重新绘制图片只会更新时间戳。
-      // 这里走平台层 reset，确保 main 清掉持久化配对材料后重新注册 relay 设备。
+      // Bugfix: a leaked old QR carries sid/hash; repainting only bumps the timestamp.
+      // Reset via the platform layer so main clears pairing material and re-registers the device.
       setStatus(nextStatus);
       toast(intl.formatMessage({ id: "webRemoteControl.refreshQr.success" }));
-      logger.info("[WebRemoteControlDialog] 已刷新 Web 远程控制二维码", {
+      logger.info("[WebRemoteControlDialog] web remote control QR refreshed", {
         workspacePath,
         workspaceIdentity: workspaceIdentity ?? "none",
         remoteSessionId: remoteSessionId ?? "none",
@@ -538,13 +502,8 @@ export const WebRemoteControlDialog = memo(function WebRemoteControlDialogCompon
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      toast(
-        intl.formatMessage(
-          { id: "webRemoteControl.refreshQr.failed" },
-          { error: message },
-        ),
-      );
-      logger.error("[WebRemoteControlDialog] 刷新 Web 远程控制二维码失败", {
+      toast(intl.formatMessage({ id: "webRemoteControl.refreshQr.failed" }, { error: message }));
+      logger.error("[WebRemoteControlDialog] failed to refresh web remote control QR", {
         workspacePath,
         workspaceIdentity: workspaceIdentity ?? "none",
         remoteSessionId: remoteSessionId ?? "none",
@@ -563,26 +522,21 @@ export const WebRemoteControlDialog = memo(function WebRemoteControlDialogCompon
       setStatus({ status: "idle" });
       onOpenChange(false);
       toast(intl.formatMessage({ id: "webRemoteControl.stopSuccess" }));
-      logger.info("[WebRemoteControlDialog] 已关闭 Web 远程控制", {
+      logger.info("[WebRemoteControlDialog] web remote control closed", {
         workspacePath,
         remoteSessionId: remoteSessionId ?? "none",
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      toast(
-        intl.formatMessage(
-          { id: "webRemoteControl.stopFailed" },
-          { error: message },
-        ),
-      );
-      logger.error("[WebRemoteControlDialog] 关闭 Web 远程控制失败", message);
+      toast(intl.formatMessage({ id: "webRemoteControl.stopFailed" }, { error: message }));
+      logger.error("[WebRemoteControlDialog] failed to close web remote control", message);
     } finally {
       setLoading(false);
     }
   };
 
   const handleDialogOpenChange = (nextOpen: boolean) => {
-    logger.info("[WebRemoteControlDialog] 弹层开关状态变化", {
+    logger.info("[WebRemoteControlDialog] dialog open state changed", {
       workspacePath,
       remoteSessionId: remoteSessionId ?? "none",
       nextOpen,
@@ -591,7 +545,7 @@ export const WebRemoteControlDialog = memo(function WebRemoteControlDialogCompon
   };
 
   const handleDismiss = () => {
-    logger.info("[WebRemoteControlDialog] 用户点击右上角关闭按钮", {
+    logger.info("[WebRemoteControlDialog] header close clicked", {
       workspacePath,
       remoteSessionId: remoteSessionId ?? "none",
       sessionId: status.sessionId ?? "none",
@@ -624,9 +578,9 @@ export const WebRemoteControlDialog = memo(function WebRemoteControlDialogCompon
       <Dialog open={open} onOpenChange={handleDialogOpenChange}>
         <DialogContent
           showCloseButton={false}
-          // Bugfix: Mobile Remote Control 弹窗之前比 Remote Connect 更宽也更贴近窗口边缘，
-          // 启动二维码和 Bot Channel 内容时会显得层级不一致。这里复用 Remote Connect 的外层尺寸，
-          // 但不强制撑满高度；远控内容比 Remote Connect 少，内容自适应能避免窗口显得空。
+          // Bugfix: this dialog used to run wider/closer to the edge than Remote Connect,
+          // making the QR/bot-channel content feel off-layer. Reuse the Remote Connect outer size
+          // without forcing full height; content sizing keeps the window from looking hollow.
           className="max-h-[calc(100vh-6rem)] max-w-4xl gap-0 overflow-hidden rounded-2xl p-0"
         >
           <Button
@@ -655,9 +609,7 @@ export const WebRemoteControlDialog = memo(function WebRemoteControlDialogCompon
                   <MonitorSmartphone className="size-5" />
                 </div>
                 <div className="space-y-1">
-                  <DialogTitle>
-                    {intl.formatMessage({ id: "webRemoteControl.title" })}
-                  </DialogTitle>
+                  <DialogTitle>{intl.formatMessage({ id: "webRemoteControl.title" })}</DialogTitle>
                   <DialogDescription>
                     {intl.formatMessage({ id: "webRemoteControl.description" })}
                   </DialogDescription>
@@ -728,17 +680,14 @@ export const WebRemoteControlDialog = memo(function WebRemoteControlDialogCompon
                   {failureDescription ? (
                     <div className="mt-3 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-ui-base/relaxed text-destructive">
                       <p>{failureDescription}</p>
-                      {status.failure?.message &&
-                      status.failure.message !== failureDescription ? (
+                      {status.failure?.message && status.failure.message !== failureDescription ? (
                         <p className="mt-1 text-ui-xs/relaxed opacity-80">
                           {status.failure.message}
                         </p>
                       ) : null}
                     </div>
                   ) : status.error ? (
-                    <p className="mt-3 text-ui-base/relaxed text-destructive">
-                      {status.error}
-                    </p>
+                    <p className="mt-3 text-ui-base/relaxed text-destructive">{status.error}</p>
                   ) : null}
                   <div
                     data-testid="web-remote-control-copy-link-row"
@@ -811,9 +760,7 @@ export const WebRemoteControlDialog = memo(function WebRemoteControlDialogCompon
                 </div>
                 <div className="grid min-h-0 flex-1 gap-3">
                   {REMOTE_CONTROL_BOT_ENTRIES.map((entry) => {
-                    const regionTagLabelId = getBotProviderRegionTagLabelId(
-                      entry.provider,
-                    );
+                    const regionTagLabelId = getBotProviderRegionTagLabelId(entry.provider);
 
                     return (
                       <button
@@ -825,10 +772,7 @@ export const WebRemoteControlDialog = memo(function WebRemoteControlDialogCompon
                         {/* Bugfix: the Bot Channel entries used generic lucide icons — WeChat, Feishu and
                             Telegram were indistinguishable. Reuse the BotsDialog channel logos with no
                             extra wrapper so the brand mark itself does the recognition. */}
-                        <ProviderIcon
-                          provider={entry.provider}
-                          className="size-12 shrink-0"
-                        />
+                        <ProviderIcon provider={entry.provider} className="size-12 shrink-0" />
                         <span className="min-w-0 flex-1 space-y-1">
                           <span className="flex min-w-0 items-center gap-1.5 text-ui-base font-medium text-foreground">
                             <span className="min-w-0 truncate">

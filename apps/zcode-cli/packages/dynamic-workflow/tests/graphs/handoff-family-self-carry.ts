@@ -1,8 +1,15 @@
 // 交接图：fan-out 里的 ask 带 carry 自环（`Promise.all(map(async …))` 的包装对象让它按串行
 // 记账），展开成成员卡后**不得**变成成员两两互连的回边——家族成员之间没有交接。
-interface Finding { id: string; title: string; }
-interface ResearchResult { findings: Finding[]; }
-interface Report { markdown: string; }
+interface Finding {
+  id: string;
+  title: string;
+}
+interface ResearchResult {
+  findings: Finding[];
+}
+interface Report {
+  markdown: string;
+}
 
 const ANGLES = [
   { key: "history", name: "research-history", brief: "history" },

@@ -67,11 +67,7 @@ beforeEach(() => {
     ) => {
       const child = new EventEmitter();
       queueMicrotask(() => {
-        callback(
-          null,
-          Buffer.from("Ubuntu-24.04\ntester\n/home/tester"),
-          Buffer.alloc(0),
-        );
+        callback(null, Buffer.from("Ubuntu-24.04\ntester\n/home/tester"), Buffer.alloc(0));
         child.emit("close", 0);
       });
       return child as never;
@@ -85,7 +81,7 @@ afterEach(() => {
 });
 
 describe("buildWslArgs", () => {
-  it("disposeAndWait 回收 detect 阶段由 execFile 创建的 wsl.exe", async () => {
+  it("reaps via disposeAndWait the wsl.exe that execFile spawned during detect", async () => {
     let child!: EventEmitter & { kill: ReturnType<typeof vi.fn>; stdin: null };
     mocks.execFile.mockImplementationOnce(
       (
@@ -132,7 +128,7 @@ describe("buildWslArgs", () => {
     }
   });
 
-  it("disposeAndWait 回收 distro list 阶段由 execFile 创建的 wsl.exe", async () => {
+  it("reaps via disposeAndWait the wsl.exe that execFile spawned for the distro list", async () => {
     let child!: EventEmitter & { kill: ReturnType<typeof vi.fn>; stdin: null };
     mocks.execFile.mockImplementationOnce(
       (
@@ -170,13 +166,15 @@ describe("buildWslArgs", () => {
       await disposing;
 
       expect(child.kill).toHaveBeenCalledTimes(1);
-      await expect(detectionError).resolves.toMatchObject({ message: "WSL backend disposed; cannot start new commands" });
+      await expect(detectionError).resolves.toMatchObject({
+        message: "WSL backend disposed; cannot start new commands",
+      });
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("回收开始后拒绝启动新的 WSL 子进程", async () => {
+  it("refuses to start new WSL children once disposal began", async () => {
     const backend = new WSLBackend({ kind: "wsl", distro: "Ubuntu-24.04" });
 
     await backend.disposeAndWait();
@@ -185,7 +183,7 @@ describe("buildWslArgs", () => {
     expect(mocks.spawn).not.toHaveBeenCalled();
   });
 
-  it("discovery pending 时完成回收后不再启动 WSL 子进程", async () => {
+  it("starts no WSL children after disposal completes with discovery pending", async () => {
     const backend = new WSLBackend({ kind: "wsl", distro: "Ubuntu-24.04" });
     await backend.resolveIdentity();
     let resumeDiscovery!: (available: boolean) => void;
@@ -205,7 +203,7 @@ describe("buildWslArgs", () => {
     expect(mocks.spawn).not.toHaveBeenCalled();
   });
 
-  it("disposeAndWait 只回收当前 backend 创建的 wsl.exe 子进程", async () => {
+  it("reaps only the wsl.exe children this backend created", async () => {
     let usingFakeTimers = false;
     try {
       let child!: ReturnType<typeof createSpawnChild>;
@@ -233,7 +231,7 @@ describe("buildWslArgs", () => {
     }
   });
 
-  it("子进程在 EOF 后正常退出时不执行 kill", async () => {
+  it("skips kill when the child exits cleanly after EOF", async () => {
     let child!: ReturnType<typeof createSpawnChild>;
     mocks.spawn.mockImplementationOnce(() => {
       child = createSpawnChild();
@@ -286,7 +284,7 @@ describe("buildWslArgs", () => {
     ]);
   });
 
-  it("WSL NAT 下把不可达的 loopback 代理转换为宿主网关地址", async () => {
+  it("rewrites unreachable loopback proxies to the host gateway under WSL NAT", async () => {
     mocks.execFile.mockImplementation(
       (
         _command: string,
@@ -317,7 +315,7 @@ describe("buildWslArgs", () => {
     );
   });
 
-  it("WSL mirrored 或代理可达时保留 loopback 代理地址", async () => {
+  it("keeps the loopback proxy under WSL mirrored networking or when it is reachable", async () => {
     mocks.execFile.mockImplementation(
       (
         _command: string,
@@ -344,7 +342,7 @@ describe("buildWslArgs", () => {
     );
   });
 
-  it("非 loopback 代理和代理认证信息保持不变", async () => {
+  it("leaves non-loopback proxies and proxy credentials untouched", async () => {
     const backend = new WSLBackend({ kind: "wsl", distro: "Ubuntu-24.04" });
 
     await expect(
@@ -353,7 +351,7 @@ describe("buildWslArgs", () => {
     expect(mocks.execFile).not.toHaveBeenCalled();
   });
 
-  it("WSL 网关探测无法确认端口时保留 loopback 配置", async () => {
+  it("keeps the loopback config when the gateway probe cannot confirm the port", async () => {
     mocks.execFile.mockImplementation(
       (
         _command: string,
@@ -382,7 +380,7 @@ describe("buildWslArgs", () => {
     );
   });
 
-  it("systemd-resolved 的 loopback stub 不会阻断 resolv.conf 回退", async () => {
+  it("lets the systemd-resolved loopback stub fall through to the resolv.conf fallback", async () => {
     mocks.execFile.mockImplementation(
       (
         _command: string,
@@ -413,7 +411,7 @@ describe("buildWslArgs", () => {
     );
   });
 
-  it("自定义公网 DNS 不会被当成宿主网关探测", async () => {
+  it("never probes custom public DNS as the host gateway", async () => {
     mocks.execFile.mockImplementation(
       (
         _command: string,
@@ -447,7 +445,7 @@ describe("buildWslArgs", () => {
     ).toBe(false);
   });
 
-  it("带 progress 选项时走 wsl exec pipe 并上报字节", async () => {
+  it("streams via wsl exec pipe and reports bytes with the progress option", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "wsl-upload-progress-"));
     const localPath = join(tempDir, "attachment.bin");
     await writeFile(localPath, Buffer.alloc(80 * 1024, "a"));
@@ -478,7 +476,7 @@ describe("buildWslArgs", () => {
     });
   });
 
-  it("预取消 signal 不启动上传进程", async () => {
+  it("never starts the upload process for an already-cancelled signal", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "wsl-upload-abort-"));
     const localPath = join(tempDir, "attachment.bin");
     await writeFile(localPath, "attachment");

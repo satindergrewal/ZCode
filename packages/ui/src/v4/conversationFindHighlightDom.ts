@@ -33,8 +33,7 @@ export function ensureConversationFindHighlightStyle() {
     return;
   }
 
-  const style =
-    document.getElementById(FIND_STYLE_ID) ?? document.createElement("style");
+  const style = document.getElementById(FIND_STYLE_ID) ?? document.createElement("style");
   style.id = FIND_STYLE_ID;
   if (style.textContent !== FIND_HIGHLIGHT_STYLE) {
     // Dev HMR reuses the old style node; sync its content on change.
@@ -83,10 +82,7 @@ function shouldSkipTextNode(textNode: Text): boolean {
   );
 }
 
-function collectTextRangesInElement(
-  element: HTMLElement,
-  normalizedQuery: string,
-): Range[] {
+function collectTextRangesInElement(element: HTMLElement, normalizedQuery: string): Range[] {
   const ranges: Range[] = [];
   const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
     acceptNode(node) {
@@ -121,10 +117,7 @@ function collectTextRangesInElement(
   return ranges;
 }
 
-function getMountedRowElement(
-  root: HTMLElement,
-  rowId: number,
-): HTMLElement | null {
+function getMountedRowElement(root: HTMLElement, rowId: number): HTMLElement | null {
   return root.querySelector<HTMLElement>(`[data-row-id="${rowId}"]`);
 }
 
@@ -169,10 +162,7 @@ export function applyConversationFindHighlights({
     ? getMountedConversationFindRange(root, query, activeMatch)
     : null;
 
-  support.highlights.set(
-    FIND_HIGHLIGHT_NAME,
-    createHighlight(support.Highlight, ranges, 0),
-  );
+  support.highlights.set(FIND_HIGHLIGHT_NAME, createHighlight(support.Highlight, ranges, 0));
   support.highlights.set(
     ACTIVE_FIND_HIGHLIGHT_NAME,
     createHighlight(support.Highlight, activeRange ? [activeRange] : [], 1),

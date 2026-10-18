@@ -1,6 +1,6 @@
 /**
- * 端到端管线：真实脚本 → lowering → 沙箱子进程 → 引擎 → AutoDriver。断言最终 artifact、
- * journal 内容（节点 actorSeq / inputHash / result）、事件流合理性。见 docs/execution-engine.md。
+ * End-to-end pipeline: real script -> lowering -> sandbox child -> engine -> AutoDriver. Asserts the final artifact,
+ * journal contents (per-node actorSeq/inputHash/result), and event-stream sanity. See docs/execution-engine.md.
  */
 
 import { describe, expect, it } from "vitest";
@@ -32,7 +32,7 @@ describe("e2e — single typed ask", () => {
 
     expect(settlement).toEqual({ status: "completed", artifact });
 
-    // journal：ask 节点已 completed，带 actorSeq / inputHash / stats / actor 归属。
+    // Journal: the ask node completed, with actorSeq/inputHash/stats and actor attribution.
     const node = journal.getNode(RUN, "ask#1", 1);
     expect(node?.status).toBe("completed");
     expect(node?.kind).toBe("ask");
@@ -42,12 +42,12 @@ describe("e2e — single typed ask", () => {
     expect(node?.stats?.tokens).toBe(42);
     expect(node?.actorSiteId).toBe("actor#1");
 
-    // actor 落库。
+    // The actor is recorded.
     const actor = journal.getActor(RUN, "actor#1", 1);
     expect(actor?.name).toBe("worker");
     expect(actor?.persona?.system).toBe("You summarize repos.");
 
-    // 事件流合理性：run-started → actor-created → node dispatched → settled(ok) → run-settled(completed)。
+    // Event-stream sanity: run-started -> actor-created -> node dispatched -> settled(ok) -> run-settled(completed).
     const types = driver.events.map((e) => e.type);
     expect(types[0]).toBe("run-started");
     expect(types).toContain("actor-created");
@@ -75,13 +75,13 @@ describe("e2e — world reads + typed ask", () => {
     const seenArgs: unknown[][] = [];
     const { settlement, journal } = await runScript(script, {
       worldReads: (op, args) => {
-        // Boundary A 送到 driver 的是**位置实参数组**（lowering 原样打包，不看 op）。
+        // Boundary A hands the driver positional arrays (packed verbatim by lowering, op-agnostic).
         seenArgs.push(args);
         return op === "glob" ? files.glob : files.read;
       },
       asks: {
         "ask#1": ({ message }) => {
-          // 指令里应插值了 glob 的首个结果，证明 world-read 结果确实回流进脚本。
+          // The instruction must have the glob's first result interpolated, proving world-read results flow back.
           expect(message.instructions).toContain("src/a.ts");
           return { type: "submit", payload: { approved: true, reason: "ok" } };
         },
@@ -96,19 +96,19 @@ describe("e2e — world reads + typed ask", () => {
     const glob = journal.getNode(RUN, "world-read#1", 1);
     expect(glob?.kind).toBe("world-read");
     expect(glob?.result).toEqual(files.glob);
-    // inputHash 覆盖 {op, args}：脚本实参跨沙箱边界后仍是位置数组。
+    // inputHash covers {op, args}: script args stay positional across the sandbox boundary.
     expect(glob?.inputHash).toBe(inputHash({ op: "glob", args: ["src/**/*.ts"] }));
     const read = journal.getNode(RUN, "world-read#2", 1);
     expect(read?.result).toBe(files.read);
     expect(read?.inputHash).toBe(inputHash({ op: "read", args: ["src/a.ts"] }));
-    // 数组穿过 NDJSON 线协议后逐元素保真（protocol.ts 的 args 与 child-source 的镜像一致）。
+    // The array survives NDJSON element-for-element (protocol.ts args matching the child-source mirror).
     expect(seenArgs).toEqual([["src/**/*.ts"], ["src/a.ts"]]);
   });
 
   it("carries multi-arg and optional-arg ops through the wire unchanged", async () => {
-    // 线协议的形状**没变**（op 串 + args 数组），所以新增的 grep / git.* 走的是同一条路。
-    // 这条用例证明它：一份同时用到多参、可选缺省、无参、以及与顶层 `log()` 撞名的
-    // `git.log` 的脚本，跨沙箱边界后 driver 收到的 (op, args) 逐个对得上。
+    // The wire shape is unchanged (op string + args array), so the newer grep/git.* ops ride the same path.
+    // This case proves it: a script using multi-arg, optional-default, zero-arg, and a git.log that
+    // shadows the top-level log() -- every (op, args) the driver receives matches across the boundary.
     const script = [
       'const hits = await files.grep("TODO", "*.ts");',
       'const narrow = await files.grep("FIXME");',
@@ -154,7 +154,7 @@ describe("e2e — world reads + typed ask", () => {
       status: "completed",
       artifact: { hits: 2, changed: 2, diffBytes: 12, commits: ["abc"] },
     });
-    // 缺省的尾部可选实参到达时是**更短的数组**，不是一个 undefined 洞。
+    // An omitted trailing optional arrives as a shorter array, not an undefined hole.
     expect(seen).toEqual([
       { op: "grep", args: ["TODO", "*.ts"] },
       { op: "grep", args: ["FIXME"] },
@@ -163,7 +163,7 @@ describe("e2e — world reads + typed ask", () => {
       { op: "git-status", args: [] },
       { op: "git-log", args: [3] },
     ]);
-    // 六个 world-read 站点共用一个 per-kind 计数器；`log(...)` 一个站点都不占。
+    // Six world-read sites share one per-kind counter; log(...) occupies none.
     expect(journal.getNode(RUN, "world-read#6", 1)?.inputHash).toBe(
       inputHash({ op: "git-log", args: [3] }),
     );
@@ -177,8 +177,8 @@ describe("e2e — fan-out over Promise.all", () => {
       "interface Verdict { approved: boolean; reason: string; }",
       'const paths = await files.glob("src/**/*.ts");',
       "const verdicts = await Promise.all(",
-      // 逐元素名：fan-out 里每个元素都是一个新 actor，共用一个静态名会撞运行期的
-      // DuplicateActorName（编译期另有 9005 的 fan-out 子句，见 analysis/actor-names.ts）。
+      // Per-element names: each fan-out element is a new actor; a shared static name hits the runtime
+      // DuplicateActorName (the compiler has its own 9005 fan-out clause; see analysis/actor-names.ts).
       "  paths.map((p) => agent(`reviewer-${p}`).ask<Verdict>(`Security-review ${p}`)),",
       ");",
       "return verdicts.filter((v) => !v.approved).map((v) => v.reason);",
@@ -188,7 +188,7 @@ describe("e2e — fan-out over Promise.all", () => {
     const { settlement, journal, driver } = await runScript(script, {
       worldReads: () => paths,
       asks: {
-        // 按指令里的路径决定裁决：b 不通过。
+        // Verdict keyed on the path in the instruction: b fails.
         "ask#1": ({ message }) => {
           const approved = !message.instructions.includes("src/b.ts");
           return {
@@ -201,14 +201,14 @@ describe("e2e — fan-out over Promise.all", () => {
 
     expect(settlement).toEqual({ status: "completed", artifact: ["vuln in b"] });
 
-    // 三个 ask 实例（ask#1@1..3），三个 actor（actor#1@1..3），全部 completed。
+    // Three ask instances (ask#1@1..3), three actors (actor#1@1..3), all completed.
     const askNodes = journal
       .listNodes(RUN, { kinds: "all", withResult: true })
       .filter((n) => n.kind === "ask");
     expect(askNodes).toHaveLength(3);
     expect(askNodes.every((n) => n.status === "completed")).toBe(true);
     expect(driver.sessionCreations).toHaveLength(3);
-    // ok 结算 = 3 个 ask + 1 个 glob world-read。
+    // The ok settlement = 3 asks + 1 glob world-read.
     expect(driver.eventsOfType("node-settled").filter((e) => e.outcome === "ok")).toHaveLength(4);
   });
 });
@@ -233,9 +233,9 @@ describe("e2e — untyped ask (final text)", () => {
 
 describe("e2e — report (progressive results)", () => {
   it("journals each reported item and emits it, without deadlocking the child", async () => {
-    // report 走**事件通道**而不是 request/response：脚本从不 await 它，所以子进程发完就继续跑。
-    // 这条用例同时是那件事的活性证明——若父进程误以为需要回一个 response，脚本会永远停在
-    // 第一个 report 上，run 卡死在超时里而不是完成。
+    // report rides the event channel, not request/response: never awaited, so the child continues right after sending.
+    // This case is also the liveness proof for that -- if the parent believed a response was required, the script would wait
+    // forever at the first report and the run would die in a timeout instead of completing.
     const script = [
       "interface Plan { steps: string[]; }",
       'const planner = agent("planner");',
@@ -253,7 +253,7 @@ describe("e2e — report (progressive results)", () => {
 
     expect(settlement).toEqual({ status: "completed", artifact: 2 });
 
-    // 三条报告：report#1 一次 + report#2 两次（循环体内同一站点，ordinal 递增）。
+    // Three reports: report#1 once plus report#2 twice (same site in a loop, ordinal increasing).
     const reports = journal
       .listNodes(RUN, { kinds: "all", withResult: true })
       .filter((n) => n.kind === "report");
@@ -262,7 +262,7 @@ describe("e2e — report (progressive results)", () => {
       "report#2@1",
       "report#2@2",
     ]);
-    // 一次写、已结算、无 actor 归属、result 即 item、inputHash 覆盖 item。
+    // Written once, settled, no actor attribution, result is the item, inputHash covers it.
     expect(reports.every((n) => n.status === "completed" && n.actorSeq === undefined)).toBe(true);
     expect(reports[0]?.result).toEqual({ phase: "planned", steps: ["a", "b"] });
     expect(reports[0]?.inputHash).toBe(inputHash({ phase: "planned", steps: ["a", "b"] }));
@@ -272,13 +272,13 @@ describe("e2e — report (progressive results)", () => {
       { phase: "step", step: "b" },
     ]);
 
-    // Boundary C：每条未被跳过的报告恰好一个事件，且按到达顺序（事件通道的 FIFO 是承重的）。
+    // Boundary C: exactly one event per unskipped report, in arrival order (the event channel's FIFO is load-bearing).
     expect(driver.eventsOfType("report").map((e) => e.item)).toEqual(reports.map((n) => n.result));
   });
 
   it("carries the reported items even though the run fails afterwards", async () => {
-    // report 存在的理由：一个死在第十二个 ask 上的 run 仍然做完了十一个 ask 的活。
-    // 报告必须在 journal 里活下来，而不是随失败一起蒸发。
+    // Why report exists: a run dying on its twelfth ask still did eleven asks' work.
+    // Reports must survive in the journal, not evaporate with the failure.
     const script = [
       'const scout = agent("scout");',
       'const a = await scout.ask<string>("first");',
@@ -304,8 +304,8 @@ describe("e2e — report (progressive results)", () => {
   });
 
   it("emits nothing on replay: a resumed run never shows an item twice", async () => {
-    // resume 时脚本重跑，所以每个 report 调用都会再执行一次。已 journal 的 (siteId, ordinal)
-    // 静默跳过——这就是 report 与 log 的全部差别，也是它要落 journal 的唯一理由。
+    // Resume re-runs the script, so every report call executes again. Already-journalled (siteId, ordinal)
+    // pairs skip silently -- the entire report/log difference and the only reason report journals.
     const script = [
       'const scout = agent("scout");',
       'const a = await scout.ask<string>("first");',
@@ -323,9 +323,9 @@ describe("e2e — report (progressive results)", () => {
 
     const resumed = await runScript(script, {
       journal,
-      // resume 必须零派发：ask 从 journal 命中短路，report 从 journal 去重。
+      // Resume must dispatch nothing: asks short-circuit on journal hits, reports dedupe from the journal.
       onStartAsk: (instance) => {
-        throw new Error(`resume 不该派发任何 ask，却派发了 ${instance.siteId}`);
+        throw new Error(`resume must not dispatch asks, dispatched ${instance.siteId}`);
       },
     });
 
@@ -337,8 +337,8 @@ describe("e2e — report (progressive results)", () => {
   });
 
   it("fails the run on the item past the 65,536-item cap, keeping every item before it", async () => {
-    // 条数上限（docs/execution-engine.md「Progressive results: `report`」）走完整条沙箱链路：
-    // 第 65,537 条让整个 run 失败，前 65,536 条全部落 journal；脚本的 try/catch 接不到它。
+    // The count cap (docs/execution-engine.md, "Progressive results: report") traverses the whole sandbox path:
+    // number 65,537 fails the run, the first 65,536 journal fine, and no try/catch sees it.
     const script = [
       "try {",
       "  for (let i = 0; i < 65537; i += 1) report(i);",
@@ -356,8 +356,8 @@ describe("e2e — report (progressive results)", () => {
   }, 120_000);
 
   it("carries an item just under the 1 MiB per-item cap through the sandbox intact", async () => {
-    // 单条上限 1 MiB（docs/execution-engine.md「Progressive results: `report`」）：一条接近上限的
-    // item 必须原样穿过沙箱边界、落进 journal，run 正常结束。
+    // The 1MiB per-item cap (same section): a near-cap
+    // item must cross verbatim, journal intact, run completing normally.
     const script = ['report({ n: 1, big: "y".repeat(1000000) });', 'return "done";'].join("\n");
 
     const { settlement, journal } = await runScript(script);
@@ -368,8 +368,8 @@ describe("e2e — report (progressive results)", () => {
   });
 
   it("fails the run when a reported item exceeds the per-item cap", async () => {
-    // 上限失败的是**整个 run**（`report` 返回 void，没有可拒绝进去的通道），所以这里断言的是
-    // run 结算而不是一个被 catch 的异常——脚本里那句 try/catch 什么也接不到。
+    // A cap breach fails the whole run (report returns void; there is no channel to reject into), so the assertion
+    // targets the run settlement, not a caught error -- the script's try/catch receives nothing.
     const script = [
       'const big = "x".repeat(1100000);',
       "try {",
@@ -391,11 +391,11 @@ describe("e2e — report (progressive results)", () => {
 });
 
 describe("e2e — Promise.race with a losing in-flight ask", () => {
-  // Bug 回归（engine.complete 不中止在飞 ask）：race 胜者结算、脚本返回、子进程发 complete
-  // 之后，败者的 ask 原先继续留在 liveNodes——它的 turn 在宿主进程接着跑、turn 结束还会被
-  // nudge 进新一轮模型调用，node-settled/usage-updated 事件全部落在 run-settled 之后。
-  // complete 现在与 cancel/failRun 一样同步 abortInFlight：败者被 driver 侧取消、
-  // run-settled 是事件流最后一条。
+  // Bug regression (engine.complete leaving in-flight asks alive): the race winner settles, the script returns, the child sends complete --
+  // and the loser's ask used to stay in liveNodes, its turn running on in the host process, nudged into
+  // another model call at turn end, node-settled/usage-updated landing after run-settled.
+  // complete now abortInFlight synchronously like cancel/failRun: the loser is cancelled driver-side and
+  // run-settled is the stream's final event.
   it("completes with the winner and aborts the loser at the driver", async () => {
     const script = [
       'const fast = agent("fast");',
@@ -409,23 +409,23 @@ describe("e2e — Promise.race with a losing in-flight ask", () => {
 
     const { settlement, journal, driver } = await runScript(script, {
       asks: {
-        // ask<string> 是 untyped（末轮文本即结果）：胜者以 turn-end 文本结算。
+        // ask<string> is untyped (last-turn text is the result): the winner settles with its turn-end text.
         "ask#1": () => ({
           type: "text",
           finalText: "won",
           stats: { tokens: 5, toolCalls: 0, turns: 1 },
         }),
-        // 败者：无任何动作——ask 永远悬着，模拟一个仍在跑的慢 turn。
+        // Loser: no actions at all -- the ask hangs, a slow turn still running.
         "ask#2": () => [],
       },
     });
 
     expect(settlement).toEqual({ status: "completed", artifact: "won" });
 
-    // 败者在 driver 侧被取消（宿主进程不再挂着它的 turn）。
+    // The loser is cancelled driver-side (the host process no longer holds its turn).
     expect(driver.cancels.some((i) => i.siteId === "ask#2")).toBe(true);
 
-    // 事件流不变量：run-settled 是最后一条；败者的 node-settled(cancelled) 在它之前。
+    // Stream invariant: run-settled is last, the loser's node-settled(cancelled) before it.
     const types = driver.events.map((e) => e.type);
     expect(types.at(-1)).toBe("run-settled");
     const loserSettled = driver
@@ -433,14 +433,14 @@ describe("e2e — Promise.race with a losing in-flight ask", () => {
       .find((e) => e.instance.siteId === "ask#2");
     expect(loserSettled?.outcome).toBe("cancelled");
 
-    // journal：胜者 completed；败者停在准入时的 running 记录（与 cancel 的 resume 语义对齐）。
+    // Journal: winner completed; loser keeps its admission-time running row (aligned with cancel's resume semantics).
     expect(journal.getNode(RUN, "ask#1", 1)?.status).toBe("completed");
     expect(journal.getNode(RUN, "ask#2", 1)?.status).toBe("running");
   });
 });
 
-// 阶段标记（docs/dynamic-workflow/presentation.md）：lowering 把 phase("…")
-// 改写成 __host.enterPhase，子进程经事件通道交给引擎，引擎发 phase-entered。
+// Phase markers (docs/dynamic-workflow/presentation.md): lowering rewrites phase("...")
+// into __host.enterPhase; the child hands it to the engine over the event channel, which emits phase-entered.
 describe("e2e — phase markers", () => {
   const script = [
     'phase("Prepare");',
@@ -464,7 +464,7 @@ describe("e2e — phase markers", () => {
       { type: "phase-entered", name: "Ask", ordinal: 2 },
       { type: "phase-entered", name: "Wrap up", ordinal: 1 },
     ]);
-    // 到达顺序承重：进入 Ask 先于它里面那次 ask 的派发。
+    // Arrival order is load-bearing: enter-Ask precedes dispatching the ask inside it.
     const order = driver.events
       .filter((e) => e.type === "phase-entered" || e.type === "node-queued")
       .map((e) =>
@@ -480,7 +480,7 @@ describe("e2e — phase markers", () => {
       "node:ask#1@2",
       "phase:Wrap up@1",
     ]);
-    // 标记不是站点：journal 里没有它的行。
+    // Markers are not sites: no journal row.
     expect(journal.listNodes(RUN, { kinds: "all", withResult: true }).map((n) => n.kind)).toEqual([
       "ask",
       "ask",
@@ -497,7 +497,7 @@ describe("e2e — phase markers", () => {
     const resumed = await runScript(script, {
       journal,
       onStartAsk: (instance) => {
-        throw new Error(`resume 不该派发任何 ask，却派发了 ${instance.siteId}`);
+        throw new Error(`resume must not dispatch asks, dispatched ${instance.siteId}`);
       },
     });
     expect(resumed.settlement.status).toBe("completed");

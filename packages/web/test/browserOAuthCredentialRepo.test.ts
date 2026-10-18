@@ -83,8 +83,8 @@ describe("BrowserOAuthCredentialRepo", () => {
     expect(localStorage.getItem("oauth:zai:user_info")).toBeNull();
   });
 
-  // private 分享的 owner 身份是 provider 特定的（bigmodel 是数字 ID，z.ai 是 UUID），
-  // 所以 BigModel 登录必须能独立存取，不能被 zai 的 key 段和判定挡掉。
+  // Private-share owner identity is provider-specific (BigModel numeric id, z.ai UUID),
+  // so BigModel logins must stand alone and never be blocked by the zai key segment or predicate.
   it("saves and restores a complete BigModel web session", () => {
     const localStorage = new MemoryStorage();
     const sessionStorage = new MemoryStorage();
@@ -101,11 +101,11 @@ describe("BrowserOAuthCredentialRepo", () => {
     });
     expect(repo.loadZCodeJwtToken()).toBe("jwt-token");
     expect(localStorage.getItem("oauth:bigmodel:access_token")).toBe("bigmodel-token");
-    // 不能污染 zai 的 key 段
+    // never pollute the zai key segment
     expect(localStorage.getItem("oauth:zai:access_token")).toBeNull();
   });
 
-  it("切换 provider 时清掉上一个身份的残片", () => {
+  it("clears the previous identity's remnants on provider switch", () => {
     const localStorage = new MemoryStorage();
     const sessionStorage = new MemoryStorage();
     const repo = new BrowserOAuthCredentialRepo({ localStorage, sessionStorage });
@@ -124,7 +124,7 @@ describe("BrowserOAuthCredentialRepo", () => {
     expect(repo.loadCachedSession()?.id).toBe("53291785835589288");
   });
 
-  it("记住并归还本次跳出去登录用的 provider", () => {
+  it("remembers and hands back the provider used for the outbound login", () => {
     const localStorage = new MemoryStorage();
     const sessionStorage = new MemoryStorage();
     const repo = new BrowserOAuthCredentialRepo({ localStorage, sessionStorage });
@@ -132,7 +132,7 @@ describe("BrowserOAuthCredentialRepo", () => {
     expect(repo.loadPendingProvider()).toBeNull();
     repo.savePendingProvider("bigmodel");
     expect(repo.loadPendingProvider()).toBe("bigmodel");
-    // 只进 sessionStorage，不落 localStorage
+    // sessionStorage only, never localStorage
     expect(localStorage.getItem("oauth_pending_provider")).toBeNull();
     repo.clearPendingProvider();
     expect(repo.loadPendingProvider()).toBeNull();

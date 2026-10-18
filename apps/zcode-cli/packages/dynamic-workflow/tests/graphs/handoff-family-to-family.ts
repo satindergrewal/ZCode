@@ -8,6 +8,8 @@ interface Draft {
 const PAIR = ["a", "b"];
 const CRITICS = ["x", "y"] as const;
 const drafts = await Promise.all(PAIR.map((t) => agent(`writer-${t}`).ask<Draft>(`write ${t}`)));
-const reviews = await Promise.all(CRITICS.map((c) => agent(`critic-${c}`).ask<string>(`critique ${JSON.stringify(drafts)}`)));
+const reviews = await Promise.all(
+  CRITICS.map((c) => agent(`critic-${c}`).ask<string>(`critique ${JSON.stringify(drafts)}`)),
+);
 const echoes = await Promise.all(drafts.map((d) => agent("echo").ask<string>(`echo ${d.text}`)));
 return [...reviews, ...echoes];

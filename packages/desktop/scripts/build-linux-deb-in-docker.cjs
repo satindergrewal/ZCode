@@ -48,7 +48,9 @@ const MAINTAINER = "ZCode <dev@zcode.z.ai>";
 const sh = (cmd) => execSync(cmd, { stdio: "inherit" });
 
 if (!fs.existsSync(path.join(UNPACKED, "zcode"))) {
-  console.error(`missing ${UNPACKED}/zcode — run the electron-builder --linux dir --x64 step first`);
+  console.error(
+    `missing ${UNPACKED}/zcode — run the electron-builder --linux dir --x64 step first`,
+  );
   process.exit(1);
 }
 if (!fs.existsSync(PTY_PREBUILD_SRC)) {
@@ -71,7 +73,10 @@ sh(`chmod -R u+rwX,go+rX,go-w "${dataDir}"`);
 
 // Linux node-pty prebuild: the darwin prebuilds in the dir output are inert here; the
 // linux-x64 binary is required for the Host to spawn a PTY at all.
-const ptyPrebuilds = path.join(appDir, "resources/app.asar.unpacked/node_modules/node-pty/prebuilds");
+const ptyPrebuilds = path.join(
+  appDir,
+  "resources/app.asar.unpacked/node_modules/node-pty/prebuilds",
+);
 fs.rmSync(path.join(ptyPrebuilds, "linux-arm64"), { recursive: true, force: true });
 fs.mkdirSync(path.join(ptyPrebuilds, "linux-x64"), { recursive: true });
 fs.copyFileSync(PTY_PREBUILD_SRC, path.join(ptyPrebuilds, "linux-x64", "pty.node"));
@@ -85,7 +90,9 @@ for (const tool of ["bfs", "ripgrep", "ugrep"]) {
   if (fs.existsSync(toolPath)) {
     const header = Buffer.from(fs.readFileSync(toolPath).subarray(0, 4));
     if (!header.equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46]))) {
-      console.error(`FATAL: ${toolPath} is not a Linux ELF binary — rebuild with ZCODE_TARGET_OS=linux ZCODE_TARGET_ARCH=x64`);
+      console.error(
+        `FATAL: ${toolPath} is not a Linux ELF binary — rebuild with ZCODE_TARGET_OS=linux ZCODE_TARGET_ARCH=x64`,
+      );
       process.exit(1);
     }
   }
@@ -110,7 +117,9 @@ fs.mkdirSync(path.join(dataDir, "usr/share/applications"), { recursive: true });
 fs.writeFileSync(path.join(dataDir, "usr/share/applications/zcode.desktop"), desktopEntry);
 
 fs.mkdirSync(path.join(dataDir, "usr/share/icons/hicolor/256x256/apps"), { recursive: true });
-sh(`cp "${REPO}/packages/desktop/build/icon.png" "${dataDir}/usr/share/icons/hicolor/256x256/apps/zcode.png"`);
+sh(
+  `cp "${REPO}/packages/desktop/build/icon.png" "${dataDir}/usr/share/icons/hicolor/256x256/apps/zcode.png"`,
+);
 
 // ---- control ----
 const depends = [

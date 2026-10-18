@@ -53,22 +53,22 @@ async function runTwoTurns(
 }
 
 describe("InMemorySessionEventStore", () => {
-  it("RET-002 序号严格递增，淘汰后 getLatestSequenceNumber 不回退，getEvents 按 seq 有序", async () => {
+  it("RET-002 sequence strictly grows; getLatestSequenceNumber never regresses after eviction; getEvents ordered by seq", async () => {
     const store = new InMemorySessionEventStore();
     const appended = await runTwoTurns(store);
     const seqs = appended.map((e) => e.sequenceNumber);
     expect(seqs).toEqual(seqs.map((_, i) => i + 1));
 
     const retained = await store.getEvents(S);
-    // turn 1 的 3 条 delta 已淘汰，其余全部保留；顺序仍按 seq。
+    // turn 1's three deltas evicted, everything else kept; still ordered by seq.
     expect(retained.map((e) => e.sequenceNumber)).toEqual(seqs.filter((seq) => seq < 3 || seq > 5));
     expect(await store.getLatestSequenceNumber(S)).toBe(seqs.length);
-    // 淘汰后追加仍从计数器继续，不会复用 seq。
+    // Appends after eviction continue the counter; seq never reused.
     const next = await store.append(event(S, SessionEventType.ModelComplete, "t2"));
     expect(next.sequenceNumber).toBe(seqs.length + 1);
   });
 
-  it("RET-003 getEventsAfter 只含窗口内瞬态与全部非瞬态；deleteSession 后统计归零", async () => {
+  it("RET-003 getEventsAfter: in-window transient plus all non-transient; stats zero after deleteSession", async () => {
     const store = new InMemorySessionEventStore();
     await runTwoTurns(store);
     const after = await store.getEventsAfter(S, 1);
@@ -80,7 +80,7 @@ describe("InMemorySessionEventStore", () => {
     ).toHaveLength(3);
     expect(after.some((e) => e.type === SessionEventType.ModelComplete)).toBe(true);
 
-    // 11 条追加（SessionCreated + 2×TurnStarted + 6 delta + ModelComplete + TurnComplete），淘汰 turn 1 的 3 条 delta。
+    // 11 appends (SessionCreated + 2xTurnStarted + 6 deltas + ModelComplete + TurnComplete); turn 1's 3 deltas evicted.
     expect(store.getStats()).toEqual({
       sessions: 1,
       events: 8,
@@ -97,7 +97,7 @@ describe("InMemorySessionEventStore", () => {
     expect(await store.getLatestSequenceNumber(S)).toBe(0);
   });
 
-  it("RET-004 unbounded 与 turn-window 对同一序列产生完全相同的非瞬态事件与 seq", async () => {
+  it("RET-004 unbounded vs turn-window yield identical non-transient events and seqs", async () => {
     const bounded = new InMemorySessionEventStore();
     const unbounded = new InMemorySessionEventStore({ retention: "unbounded" });
     eventCounter = 0;
@@ -117,7 +117,7 @@ describe("InMemorySessionEventStore", () => {
     expect(unbounded.getStats().evictedEvents).toBe(0);
   });
 
-  it("RET-005 多 turn 长会话下驻留事件数有界：非瞬态 + 最多两个 turn 的瞬态", async () => {
+  it("RET-005 long multi-turn sessions keep resident events bounded: non-transient + at most two turns of transient", async () => {
     const store = new InMemorySessionEventStore();
     const turns = 50;
     const deltas = 200;
@@ -137,14 +137,14 @@ describe("InMemorySessionEventStore", () => {
     expect(await store.getLatestSequenceNumber(S)).toBe(turns * (deltas + 3));
   });
 
-  it("显式 sequenceNumber 优先，计数器取最大值", async () => {
+  it("explicit sequenceNumber wins; counter takes the max", async () => {
     const store = new InMemorySessionEventStore();
     await store.append(event(S, SessionEventType.SessionCreated, undefined, 10));
     const next = await store.append(event(S, SessionEventType.TurnStarted, "t1"));
     expect(next.sequenceNumber).toBe(11);
   });
 
-  it("接受自定义策略工厂，每个 session 各自一份状态", async () => {
+  it("accepts a custom policy factory; per-session state", async () => {
     let created = 0;
     const store = new InMemorySessionEventStore({
       retention: () => {
@@ -160,7 +160,7 @@ describe("InMemorySessionEventStore", () => {
 });
 
 describe("InMemorySessionEventStore · pruneTransientEvents", () => {
-  it("RET-009 一次性 session 的瞬态事件在 grace 后被时间兜底淘汰，序号不回退", async () => {
+  it("RET-009 one-shot session transient evicted by the time backstop after grace; sequence never regresses", async () => {
     let nowMs = 0;
     const store = new InMemorySessionEventStore({ now: () => nowMs });
     const child = "sess_subagent_child" as SessionId;
@@ -180,7 +180,7 @@ describe("InMemorySessionEventStore · pruneTransientEvents", () => {
     expect(store.pruneTransientEvents(200_000)).toBe(0);
   });
 
-  it("RET-009 进行中 turn 的瞬态事件不受时间兜底影响", async () => {
+  it("RET-009 in-flight turn transient untouched by the time backstop", async () => {
     const store = new InMemorySessionEventStore({ now: () => 0 });
     await store.append(event(S, SessionEventType.TurnStarted, "t1"));
     await store.append(event(S, SessionEventType.ModelStreaming, "t1"));
@@ -189,7 +189,7 @@ describe("InMemorySessionEventStore · pruneTransientEvents", () => {
   });
 });
 
-describe("InMemorySessionEventStore · model_request 元数据瘦身", () => {
+describe("InMemorySessionEventStore model_request metadata slimming", () => {
   function modelRequest(turnId: string, messageCount: number): SessionEvent {
     const base = event(S, SessionEventType.ModelRequest, turnId);
     return {
@@ -220,7 +220,7 @@ describe("InMemorySessionEventStore · model_request 元数据瘦身", () => {
     return appended;
   }
 
-  it("RET-011 下一 turn 开始后淘汰的 turn 只保留 messageCount，进行中 turn 与 append 返回值保持完整", async () => {
+  it("RET-011 turns evicted at next-turn start keep only messageCount; in-flight turn and append return stay intact", async () => {
     const store = new InMemorySessionEventStore();
     const appended = await runTwoTurnsWithRequests(store);
     const requests = (await store.getEvents(S)).filter(
@@ -237,11 +237,11 @@ describe("InMemorySessionEventStore · model_request 元数据瘦身", () => {
       toolCount: 3,
     });
     expect((open?.payload as { messages: unknown[] }).messages).toHaveLength(6);
-    // live sink 拿到的是 append 返回值，必须仍含完整上下文（debug JSONL 依赖）。
+    // The live sink gets append's return value and must still hold the full context (debug JSONL depends on it).
     expect((appended[1]?.payload as { messages: unknown[] }).messages).toHaveLength(4);
   });
 
-  it("RET-011 时间兜底淘汰一次性 session 时同样瘦身", async () => {
+  it("RET-011 the time backstop slims one-shot sessions too", async () => {
     let now = 0;
     const store = new InMemorySessionEventStore({ now: () => now });
     await store.append(event(S, SessionEventType.TurnStarted, "t1"));
@@ -256,7 +256,7 @@ describe("InMemorySessionEventStore · model_request 元数据瘦身", () => {
     expect(request?.payload).toMatchObject({ messageCount: 2 });
   });
 
-  it("RET-011 unbounded 模式不瘦身", async () => {
+  it("RET-011 unbounded mode never slims", async () => {
     const store = new InMemorySessionEventStore({ retention: "unbounded" });
     await runTwoTurnsWithRequests(store);
     const requests = (await store.getEvents(S)).filter(

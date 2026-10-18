@@ -37,8 +37,8 @@ export interface ModelFailureHost {
 }
 
 /**
-  * Model-side containment for rejected turns: driver and runner share one policy table. false = not a model-layer error
-  * (inspect returned undefined), handled by the caller as a driver-side failure; true = handled per policy.
+ * Model-side containment for rejected turns: driver and runner share one policy table. false = not a model-layer error
+ * (inspect returned undefined), handled by the caller as a driver-side failure; true = handled per policy.
  */
 export function handleModelTurnFailure(
   host: ModelFailureHost,
@@ -50,11 +50,11 @@ export function handleModelTurnFailure(
   if (inspected === undefined) return false;
   switch (inspected.policy.decision) {
     case "stop":
-            // A deterministic model-side error: stop the whole run (stopped(provider), recoverable) without settling the node.
+      // A deterministic model-side error: stop the whole run (stopped(provider), recoverable) without settling the node.
       host.sink.stopRun(providerStopError(state, inspected, error));
       return true;
     case "context_exceeded":
-            // Core compaction failed: the ask itself is too large -- the script's fault. The node fails ContextLimit, catchable by the script.
+      // Core compaction failed: the ask itself is too large -- the script's fault. The node fails ContextLimit, catchable by the script.
       host.sink.askFailed(
         instance,
         new WorkflowError(
@@ -66,17 +66,17 @@ export function handleModelTurnFailure(
       );
       return true;
     default:
-            // retry / cancelled: transient failures passed through by the runner (stream-recovery exhausted, ...) --
-            // share the runner's backoff curve, wait it out, then start a continuation turn; only cancel ends it.
+      // retry / cancelled: transient failures passed through by the runner (stream-recovery exhausted, ...) --
+      // share the runner's backoff curve, wait it out, then start a continuation turn; only cancel ends it.
       scheduleTransientRedrive(host, state, instance, inspected, error);
       return true;
   }
 }
 
 /**
-  * Driver-side re-drive for transient failures: per-ask count, 2s->60s jittered backoff (Retry-After first), announce via
-  * `askWaiting(backoff)` before waiting, honor cancellation while waiting, then send one continuation turn on the same persistent runtime
-  * (the nudge mechanism). Unbounded -- the run-level stall clock is what makes the waiting visible.
+ * Driver-side re-drive for transient failures: per-ask count, 2s->60s jittered backoff (Retry-After first), announce via
+ * `askWaiting(backoff)` before waiting, honor cancellation while waiting, then send one continuation turn on the same persistent runtime
+ * (the nudge mechanism). Unbounded -- the run-level stall clock is what makes the waiting visible.
  */
 function scheduleTransientRedrive(
   host: ModelFailureHost,
@@ -109,7 +109,7 @@ function scheduleTransientRedrive(
   state.cancelRedrive?.();
   state.cancelRedrive = schedule(() => {
     state.cancelRedrive = undefined;
-        // The ask was cancelled / settled / reassigned while waiting: this continuation has no listener.
+    // The ask was cancelled / settled / reassigned while waiting: this continuation has no listener.
     if (
       host.isDisposed() ||
       state.cancelled ||

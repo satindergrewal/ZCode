@@ -129,9 +129,7 @@ describe("project MCP config", () => {
       });
 
       await app.submitPrompt("hello");
-      expect(connectedServerSets).toEqual([
-        ["plugin:ios-dev:ios-simulator", "node_repl"],
-      ]);
+      expect(connectedServerSets).toEqual([["plugin:ios-dev:ios-simulator", "node_repl"]]);
       expect(connectedConfigs[0]?.["plugin:ios-dev:ios-simulator"]).toMatchObject({
         args: [join(pluginRoot, "server.js")],
         command: "node",
@@ -254,9 +252,7 @@ describe("project MCP config", () => {
       expect(statuses.shared?.status).toBe("disconnected");
 
       await app.submitPrompt("hello");
-      expect(connectedServerSets).toEqual([
-        ["project-only", "shared", "node_repl"],
-      ]);
+      expect(connectedServerSets).toEqual([["project-only", "shared", "node_repl"]]);
       expect(connectedConfigs[0]?.["project-only"]).toMatchObject({
         command: "project-only-server",
         type: "stdio",
@@ -586,7 +582,8 @@ describe("project MCP config", () => {
       else process.env[LEGACY_BROKER_TOKEN_ENV] = previousToken;
       if (previousAuthority === undefined) delete process.env[ZCODE_CUA_PLUGIN_AUTHORITY_ENV_KEY];
       else process.env[ZCODE_CUA_PLUGIN_AUTHORITY_ENV_KEY] = previousAuthority;
-      if (previousRefreshMarker === undefined) delete process.env["ZCODE_CUA_PERMISSION_BROKER_REFRESH_MARKER"];
+      if (previousRefreshMarker === undefined)
+        delete process.env["ZCODE_CUA_PERMISSION_BROKER_REFRESH_MARKER"];
       else process.env["ZCODE_CUA_PERMISSION_BROKER_REFRESH_MARKER"] = previousRefreshMarker;
       if (previousUnavailable === undefined) delete process.env[ZCODE_CUA_BROKER_UNAVAILABLE_ENV];
       else process.env[ZCODE_CUA_BROKER_UNAVAILABLE_ENV] = previousUnavailable;

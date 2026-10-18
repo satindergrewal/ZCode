@@ -28,7 +28,7 @@ export async function appendRuntimeAgentListing(
 ): Promise<void> {
   const entry = collectRuntimeAgentListing(runtime, state.entries, tools);
   if (!entry) return;
-  // 持久化成功后才提交到权威历史，失败不能让后续请求误判为已通知。
+  // Commit to the authoritative history only after persistence succeeds; a failure must not let later requests assume already-notified.
   await runtime.persistSyntheticUserNoticeForSession({
     messageID: createMessageId(),
     sessionId: runtime.sessionId,

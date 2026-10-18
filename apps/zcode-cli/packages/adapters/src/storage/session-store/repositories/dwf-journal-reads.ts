@@ -1,12 +1,12 @@
 /**
- * `JournalStorePort` 读面的 SQL（docs/execution-engine.md「Reading the journal」）：kinds / types
- * 过滤、`withResult` / `withPersona` 列裁剪、`countNodes`、`reportItems` 剥离，全部下推 SQLite。
+ // The `JournalStorePort` read face's SQL (docs/execution-engine.md, "Reading the journal"): kinds / types
+ // filters, `withResult` / `withPersona` column pruning, `countNodes`, `reportItems` stripping — all pushed into SQLite.
  *
- * 拆出原因：dwf-journal.ts 顶到 oxlint max-lines 上限（400 行）；这几条读各自带着「为什么这样
- * 取数」的论证，与写入路径没有共享状态，只要一个 db 句柄。
+ // Split reason: dwf-journal.ts hit oxlint's max-lines cap (400); each read carries its own "why fetched
+ // this way" argument, shares no state with writes, and needs only a db handle.
  *
- * 列裁剪用 `null as <列>` 而不是省掉列：解码器（dwf-journal-codecs.ts）对 NULL 一律解成缺席的
- * 键，所以「没读」与「读到 NULL」在行上同形，解码器不必知道这次读选了哪些列。
+ // Column pruning uses `null as <col>` instead of dropping the column: the decoder (dwf-journal-codecs.ts) maps NULL to an absent
+ // key, so "not read" and "read as NULL" are row-shape identical and the decoder need not know this read's column set.
  */
 
 import type { DatabaseSync } from "node:sqlite";
@@ -29,7 +29,7 @@ import {
   type DwfNodeRow,
 } from "./dwf-journal-codecs.js";
 
-/** SQLite 的「不限」写法：缺省与显式 limit 共用同一条语句形状。 */
+/** SQLite's "no limit" spelling: default and explicit limit share one statement shape. */
 const UNBOUNDED = -1;
 
 const NODE_COLUMNS_BEFORE_RESULT =
@@ -90,9 +90,9 @@ export function listNodeRows(
 }
 
 /**
- * `maxResultBytes` 的读法：先在 `octet_length(result_json)` 上开窗算出前缀和，定下哪几行进页，
- * 再只为这几行取整行。`octet_length` 从行头读长度、不碰结果本身，所以没进页的行（包括一条
- * 1 MiB 的报告）一个字节都不读——与事件分页（dwf-journal-pages.ts）同一种查询。
+ // The `maxResultBytes` read: window a prefix sum over `octet_length(result_json)` to pick the page's rows,
+ // then fetch whole rows only for those. octet_length reads the header-stored length, never the result itself, so out-of-page rows
+ // (a 1 MiB report included) are not read at all — the same query shape as event paging (dwf-journal-pages.ts).
  */
 function listNodeRowsWithinBytes(
   db: DatabaseSync,
@@ -140,9 +140,9 @@ export function countNodeRows(db: DatabaseSync, runId: string, kind: NodeKind): 
 }
 
 /**
- * 该 kind 各行 `result_json` 的字节数之和。`octet_length` 让 SQLite 只读行头里记的长度：实测
- * 1.5 GB 的结果求和 0.7 ms，而 `length()` 要逐字符数、541 ms。resume 恢复报告的 run 级字节
- * 计数靠它，一条 item 都不读出来。
+ // Sum of `result_json` bytes across the kind's rows. octet_length reads the header-stored length: measured
+ // 1.5 GB of results sums in 0.7 ms while length() counts chars for 541 ms. The resume report's run-level byte
+ // count rests on this, not one item read.
  */
 export function sumResultBytes(db: DatabaseSync, runId: string, kind: NodeKind): number {
   const row = db
@@ -171,14 +171,14 @@ export function listActorRows(
 }
 
 /**
- * 事件读。`types` / cursor / `limit` 下推成 WHERE 与 LIMIT；`reportItems: {limit: N}` 先取本 run
- * 第 N 条 report 事件的 sequence 作为分界（一条走 `(run_id, sequence)` 唯一索引、最多读 N 行的
- * 查询），主查询再把分界之后的 report 载荷交给 `json_remove(payload_json, '$.item')`。
+ // Event read. `types` / cursor / `limit` push down into WHERE and LIMIT; `reportItems: {limit: N}` first takes the run's
+ // Nth report sequence as the cutover (one query on the (run_id, sequence) unique index, <= N rows),
+ // then the main query hands post-cutover report payloads to `json_remove(payload_json, $.item)`.
  *
- * 为什么是两条查询而不是一条 `row_number()` 窗口：窗口函数要先把子查询的行（连同 payload）物化
- * 进临时表再编号，一个报了 65,536 条的 run 会把约 2 GiB 的载荷抄一遍进 temp store——正是本读面要
- * 避免的那种按总字节付费。分界 sequence 让主查询保持流式，`CASE` 又是惰性的，未剥离的行不会被
- * 解析。
+ * Why two queries, not one row_number() window: a window function must first materialize the subquery's rows (payload included)
+ // into a temp table to number them — a 65,536-report run copies ~2 GiB of payload into temp store, exactly the
+ // pay-per-total-byte cost this read exists to avoid. The cutover keeps the main query streaming, and CASE is lazy, so unstripped rows
+ // are never parsed.
  */
 export function listEventRows(
   db: DatabaseSync,
@@ -213,10 +213,10 @@ export function listEventRows(
 }
 
 /**
- * report item 的分界 sequence：sequence 大于它的 report 事件剥掉 item。`undefined` = 不剥
- * （`reportItems: "all"`，或本 run 的 report 事件不足 N 条）。N = 0 时分界是 -1：一条不留。
+ // The report items' cutover sequence: report events beyond it drop their item. `undefined` = none
+ // (`reportItems: all`, or fewer than N reports). N = 0 makes the cutover -1: nothing survives.
  *
- * 排名按**全 run** 计，与 types / cursor / limit 无关（端口契约）。
+ // The rank counts over the **whole run**, independent of types / cursor / limit (port contract).
  */
 function reportCutoff(
   db: DatabaseSync,
@@ -224,7 +224,7 @@ function reportCutoff(
   opts: ListEventsOptions,
 ): number | undefined {
   if (opts.reportItems === "all") return undefined;
-  // 本次读根本不含 report 事件时，分界无从生效，省掉那条查询。
+  // When this read contains no report events at all, the cutover is moot; skip that query.
   if (opts.types !== "all" && !opts.types.includes("report")) return undefined;
   const keep = Math.max(0, opts.reportItems.limit);
   if (keep === 0) return -1;

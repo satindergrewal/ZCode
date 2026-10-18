@@ -67,7 +67,7 @@ test("terminal Shift+Tab cycles modes with an empty or populated composer", asyn
   const terminal = await fixture();
   try {
     await terminal.action(() => terminal.renderOnce());
-    // 循环顺序以 TUI_SWITCHABLE_MODES 为准：staging 新增 guarded 并把 edit 移出 Shift+Tab 循环。
+    // The cycle order follows TUI_SWITCHABLE_MODES: staging adds guarded and moves edit out of the Shift+Tab cycle.
     for (const mode of TUI_SWITCHABLE_MODES) {
       await terminal.action(() => terminal.mockInput.pressTab({ shift: true }));
       assert.equal(terminal.modes.at(-1), mode);

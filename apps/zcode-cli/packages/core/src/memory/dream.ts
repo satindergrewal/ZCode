@@ -54,7 +54,7 @@ export async function acquireDreamLock(input: {
     const parsedPid = Number.parseInt(content.trim(), 10);
     if (Number.isFinite(parsedPid)) priorPid = parsedPid;
   } catch {
-    // 不存在或不可读都按无 owner 处理，后续 write-readback 决定所有权。
+    // Missing or unreadable both count as no owner; the later write-readback decides ownership.
   }
 
   if (

@@ -1,9 +1,9 @@
 import recommendedPluginsConfig from "@/settings/recommendedPlugins.json" with { type: "json" };
 
-// 客户端精选「推荐」区已下线（产品决策：个人分段不再置顶策展名单）；
-// 这里只保留默认市场 id——它是官方之外的默认个人市场，多个视图据此做归属判断。
-// 策展名单如需恢复，git 历史里有完整的 selectRecommendedPlugins 实现。
+// The client-side curated Recommended section is retired (product call: no curated list pinned in the personal segment);
+// only the default market id remains -- the default non-official personal market, which several views use for ownership checks.
+// To revive the list, the full selectRecommendedPlugins lives in git history.
 
-/** 默认市场 id：UI 默认就展示该市场，并据此匹配推荐插件。 */
+/** Default market id: shown by default and used to match recommended plugins. */
 export const DEFAULT_MARKETPLACE_ID = (recommendedPluginsConfig as { marketplace: string })
   .marketplace;

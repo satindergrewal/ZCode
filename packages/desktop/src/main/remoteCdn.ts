@@ -4,7 +4,7 @@ declare const __ZCODE_REMOTE_CDN_RELEASE_ROOTS__: readonly string[] | undefined;
 
 const REMOTE_CDN_RELEASE_ROOTS = {
   domestic: "https://cdn.codegeex.cn/zcode/electron/releases",
-  // 开发构建未注入 CDN_DOMAIN 时也须使用当前发布域名，避免仍请求旧域名。
+  // Dev builds without CDN_DOMAIN injected must still use the current release domain, not the old one.
   overseas: "https://cdn-zcode.z.ai/zcode/electron/releases",
 } as const;
 const TEST_REMOTE_CDN_RELEASE_ROOT = "http://intranet.example.invalid:12345/ssh-remote-assets";
@@ -63,8 +63,9 @@ export function resolveRemoteCdnBaseUrls(options: ResolveRemoteCdnOptions = {}):
       ? []
       : __ZCODE_REMOTE_CDN_RELEASE_ROOTS__;
   if (configuredReleaseRoots.length > 0) {
-    // Bugfix：remote runtime 的 manifest/components 下载根不能继续写死旧 CDN。
-    // 构建期按 CI 的 CDN_DOMAIN/OSS_PATH_PREFIX 注入有序列表，切换时只改 CI 变量。
+    // Bugfix: the remote runtime manifest/components download root must not hardcode the old CDN.
+    // The ordered list is injected at build time from CI's CDN_DOMAIN/OSS_PATH_PREFIX; switching
+    // means changing CI variables only.
     return configuredReleaseRoots.map(
       (releaseRoot) => `${normalizeBaseUrl(releaseRoot)}/${version}`,
     );
@@ -109,8 +110,8 @@ function resolveTimeZoneOffsetMinutes(timeZone: string, now: Date): number | nul
       return null;
     }
 
-    // 这里把目标时区“格式化后的人类时间”反算成 UTC，得到该时区相对 UTC 的真实偏移。
-    // 不能只按常见亚洲城市白名单判断，否则 UTC+8 但非中国命名的时区会被误判。
+    // Reverse the target timezone's formatted wall time back to UTC to get its true offset from
+    // UTC; a whitelist of common Asian cities would misjudge UTC+8 zones with non-Chinese names.
     const targetUtcMs = Date.UTC(year, month - 1, day, hour, minute, second);
     const currentUtcMs = now.getTime();
     return Math.round((targetUtcMs - currentUtcMs) / 60_000);

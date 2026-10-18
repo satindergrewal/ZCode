@@ -185,7 +185,8 @@ function formatLocalWorkflowTaskNotification(input: TaskNotificationInput): stri
   // Progressive artifacts go after result / error: the run's outcome is read first; artifacts are supplementary.
   // The order also sets who the 120k total truncation cuts first — this section, not the run's result.
   if (input.reports !== undefined) {
-    const shown = input.reports.shown < input.reports.count ? ` shown="${input.reports.shown}"` : "";
+    const shown =
+      input.reports.shown < input.reports.count ? ` shown="${input.reports.shown}"` : "";
     lines.push(
       `<reports count="${input.reports.count}"${shown}>`,
       escapeXml(input.reports.preview),
@@ -275,7 +276,9 @@ function workflowDeliveryGuidance(input: {
       // With a file, add "edit it, pass `path`": this branch's whole argument is "you stopped in order to change the script,"
       // and the cheapest edit is Edit on that file, not re-pasting the entire script.
       `You stopped this workflow with TaskStop. If you stopped it to fix the script, do that now: call AmendWorkflow with this run's ID and the corrected script — everything that settled before the stop is imported as cache, and the sooner the fix runs the less it re-pays. (Next time, amend the running run directly: AmendWorkflow stops it for you.)${
-        scriptPath === undefined ? "" : ` Its script is at ${scriptPath}: edit that file and pass \`path\`.`
+        scriptPath === undefined
+          ? ""
+          : ` Its script is at ${scriptPath}: edit that file and pass \`path\`.`
       }`,
       "Otherwise present what it finished: the reported items above are finished findings — show them individually with their evidence. Resume it unchanged only if that is what the user wants.",
       ...artifactsShort,

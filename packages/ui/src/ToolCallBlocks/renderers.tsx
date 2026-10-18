@@ -37,7 +37,8 @@ export function renderDiffCount(
           role="text"
           title={`+${changeStat.added}`}
         >
-          +{/* Perf fix: the projection already carries true per-second counts; the number runs one short count-up, no per-row rAF catch-up. */}
+          +
+          {/* Perf fix: the projection already carries true per-second counts; the number runs one short count-up, no per-row rAF catch-up. */}
           <FlipMetricValue
             value={String(changeStat.added)}
             animateInitial={options?.animateInitial}

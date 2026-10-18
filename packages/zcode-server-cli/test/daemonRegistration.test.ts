@@ -12,12 +12,12 @@ const serviceMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("node:child_process", async (importOriginal) => ({
-  ...await importOriginal<typeof import("node:child_process")>(),
+  ...(await importOriginal<typeof import("node:child_process")>()),
   fork: serviceMocks.fork,
 }));
 
 vi.mock("../src/platform/serviceManager.js", async (importOriginal) => ({
-  ...await importOriginal<typeof import("../src/platform/serviceManager.js")>(),
+  ...(await importOriginal<typeof import("../src/platform/serviceManager.js")>()),
   registerService: serviceMocks.registerService,
   unregisterService: serviceMocks.unregisterService,
 }));
@@ -29,8 +29,8 @@ import { resolveCanonicalServerLayout, resolveServerLayout } from "../src/runtim
 import { DataRootLock } from "../src/runtime/lock.js";
 
 async function writeStatusSnapshot(statusFile: string, status: unknown): Promise<void> {
-  // Bug 原因：直接 writeFile(status.json) 会先截断再写入，waitForServerStopped 可能在中间态读到无效 JSON。
-  // 使用和生产 status persister 相同的临时文件 + rename 原子替换，避免测试伪造生产不会出现的损坏快照。
+  // Bug cause: a plain writeFile(status.json) truncates before writing, so waitForServerStopped can read invalid JSON mid-flight.
+  // Use the same temp-file-plus-rename atomic swap as the production status persister so tests never fabricate corruption production cannot produce.
   const temporary = `${statusFile}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.test.tmp`;
   await writeFile(temporary, `${JSON.stringify(status)}\n`, "utf8");
   try {
@@ -79,8 +79,10 @@ describe("daemon service registration", () => {
   it("stops and unregisters a same-root legacy service before registering the root-scoped identity", async () => {
     const root = await mkdtemp(join(process.platform === "win32" ? tmpdir() : "/tmp", "zdr-"));
     const layout = resolveServerLayout(join(root, "server"));
-    const platform = process.platform === "darwin" || process.platform === "linux" ? process.platform : "win32";
-    const kind = platform === "darwin" ? "launchd" : platform === "linux" ? "systemd" : "task-scheduler";
+    const platform =
+      process.platform === "darwin" || process.platform === "linux" ? process.platform : "win32";
+    const kind =
+      platform === "darwin" ? "launchd" : platform === "linux" ? "systemd" : "task-scheduler";
     const legacyDescriptor = createServiceDescriptor({
       platform,
       command: join(layout.stableBinDir, platform === "win32" ? "zcode.cmd" : "zcode"),
@@ -122,8 +124,8 @@ describe("daemon service registration", () => {
       commands.push(request.command);
       if (request.command === "status") return readyStatus;
       if (request.command === "stop") {
-        // 修复原因：旧 fixture fire-and-forget 写 status，测试 teardown 后 rename 仍可能执行，
-        // 在 Windows 形成未处理 EPERM，并让 CLI 等不到 lock 释放。显式持有完整停止生命周期。
+        // Fix reason: the old fixture fired and forgot the status write, so the rename could still run after teardown,
+        // raising an unhandled EPERM on Windows and starved the CLI's lock wait. Hold the full stop lifecycle explicitly.
         stopCompleted = new Promise((resolve) => setTimeout(resolve, 100)).then(async () => {
           await writeStatusSnapshot(layout.statusFile, {
             ...readyStatus,

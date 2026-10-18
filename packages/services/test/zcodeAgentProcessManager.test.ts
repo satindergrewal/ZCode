@@ -242,7 +242,7 @@ describe("resolveDefaultZCodeAgentCommand", () => {
     process.chdir(root);
     expect(() =>
       resolveDefaultZCodeAgentCommand({ workspacePath: root, workspaceKey: root }),
-    ).toThrow(/字节码入口缺失/);
+    ).toThrow(/bytecode entry missing/);
   });
 
   it("Desktop surface 会显式传给默认 app-server 命令", () => {

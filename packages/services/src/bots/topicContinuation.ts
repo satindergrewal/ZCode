@@ -1,8 +1,8 @@
 interface TopicContinuationPorts<T> {
   readRunningRun(): Promise<string | undefined>;
-  /** 必须等到指定 run 的权威终态；停止 RPC 返回不等于运行已经结束。 */
+  /** Wait for the given run's authoritative terminal state; a stop RPC returning does not mean the run ended. */
   stopAndWait(runId: string): Promise<void>;
-  /** 只提交到既有 CLI admission，不能在这里另建 accepted queue。 */
+  /** Submit only to the existing CLI admission; never build a second accepted queue here. */
   submit(messages: T[]): Promise<void>;
   failed(messageIds: string[], error: unknown): void | Promise<void>;
 }
@@ -13,7 +13,7 @@ interface Pending<T> {
   prepared: Promise<Prepared<T>>;
 }
 
-/** 仅协调未提交的材料；run 的权威状态仍由调用方从 CLI 获取。 */
+/** Coordinates uncommitted material only; the run's authority stays with the caller's CLI reads. */
 export function createTopicContinuation<T>(ports: TopicContinuationPorts<T>) {
   let pending: Pending<T>[] = [];
   let generation = 0;
@@ -32,7 +32,7 @@ export function createTopicContinuation<T>(ports: TopicContinuationPorts<T>) {
       try {
         const runId = await Promise.race([ports.readRunningRun(), cancelled.then(() => undefined)]);
         if (currentGeneration !== generation) continue;
-        // 旧实现串行等待附件，导致后来的输入无法及时停止运行。先停止，再等材料。
+        // Waiting on attachments serially used to delay stops; stop first, then gather material.
         if (runId) await Promise.race([ports.stopAndWait(runId), cancelled]);
         if (currentGeneration !== generation) continue;
         let batch: Pending<T>[] = [];
@@ -44,7 +44,7 @@ export function createTopicContinuation<T>(ports: TopicContinuationPorts<T>) {
             cancelled.then(() => []),
           ]);
           if (currentGeneration !== generation) break;
-          // 等附件期间到达的消息也属于下一轮，保留到达顺序而非完成顺序。
+          // Inputs arriving while attachments load belong to the next turn; keep arrival order, not completion order.
         } while (batch.length !== pending.length);
         if (currentGeneration !== generation) continue;
         pending.splice(0, batch.length);

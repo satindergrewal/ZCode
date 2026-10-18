@@ -14,7 +14,7 @@ import {
 
 const roots: string[] = [];
 const owners: NodePersonalProviderConfigRepository[] = [];
-// Windows 无开发者模式时创建 symlink 会 EPERM；symlink 主题用例按能力探测跳过
+// Windows EPERMs symlink creation without developer mode; capability-probe skips the symlink-themed cases
 const canCreateSymlink = await (async () => {
   const probeRoot = await mkdtemp(join(tmpdir(), "zcode-symlink-probe-"));
   try {
@@ -93,7 +93,7 @@ describe("NodeModelSelectionConfigRepository", () => {
     repository.dispose();
   });
 
-  it("损坏 Personal 读取降级但保留原文件，禁止默认保存覆盖它", async () => {
+  it("degrades corrupt Personal reads but keeps the original file, and bars default saves from overwriting it", async () => {
     const root = await mkdtemp(join(tmpdir(), "zcode-model-selection-config-"));
     roots.push(root);
     const filePath = join(root, "provider_config.json");

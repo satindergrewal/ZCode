@@ -1,7 +1,7 @@
 import { createLucideIcon, type IconNode } from "lucide-react";
 
-// 动态工作流三个模式的图标（docs/dynamic-workflow/launch.md「The user's choice」）：都从 Lucide
-// Workflow 的两个方框与连线出发，用 Lucide 渲染以继承主题前景色、全局线宽与层级透明度。
+// Icons for the three dynamic-workflow modes (docs/dynamic-workflow/launch.md The user's choice): all grown
+// from Lucide Workflow's boxes and edges, rendered via Lucide to inherit theme foreground, stroke width and layer opacity.
 const WORKFLOW_FIRST_BOX_AND_LINK: IconNode = [
   ["rect", { width: "8", height: "8", x: "3", y: "3", rx: "2", key: "first" }],
   ["path", { d: "M7 11v4a2 2 0 0 0 2 2h4", key: "link" }],
@@ -11,13 +11,13 @@ const WORKFLOW_SECOND_BOX: IconNode[number] = [
   { width: "8", height: "8", x: "13", y: "13", rx: "2", key: "second" },
 ];
 
-/** 始终开启：完整的工作流。 */
+/** Always on: the full workflow. */
 export const DynamicWorkflowAlwaysOnIcon = createLucideIcon("DynamicWorkflowAlwaysOn", [
   ...WORKFLOW_FIRST_BOX_AND_LINK,
   WORKFLOW_SECOND_BOX,
 ]);
 
-/** 通过命令启用：第二个方框虚线，表示要等命令才落地。 */
+/** Enabled via command: second box dashed, lands only once commanded. */
 export const DynamicWorkflowOnCommandIcon = createLucideIcon("DynamicWorkflowOnCommand", [
   ...WORKFLOW_FIRST_BOX_AND_LINK,
   [
@@ -26,7 +26,7 @@ export const DynamicWorkflowOnCommandIcon = createLucideIcon("DynamicWorkflowOnC
   ],
 ]);
 
-/** 关闭：工作流加一道斜线。 */
+/** Off: the workflow plus a slash. */
 export const DynamicWorkflowOffIcon = createLucideIcon("DynamicWorkflowOff", [
   ...WORKFLOW_FIRST_BOX_AND_LINK,
   WORKFLOW_SECOND_BOX,

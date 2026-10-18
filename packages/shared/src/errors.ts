@@ -92,10 +92,10 @@ export function isZCodeFileLockTimeoutError(error: unknown): boolean {
 }
 
 /**
- * 不可自动重试的 workspace ZCode Agent 预热错误模式列表。
+ * Non-auto-retryable workspace ZCode Agent warmup error patterns.
  *
- * 这些错误代表确定性的配置/安装/鉴权问题，继续重试不会变好。
- * 同时用于 MCP-fallback 降级判断：命中这些模式时不做 MCP 降级，因为错误与 MCP 无关。
+ * These are deterministic configuration/install/auth failures; retrying does not improve them.
+ * Also the MCP-fallback downgrade test: on match, no MCP downgrade -- the error is not MCP's.
  */
 export const NON_RETRYABLE_WORKSPACE_PREPARE_ERROR_PATTERNS = [
   "binary 未找到",
@@ -116,9 +116,9 @@ export const NON_RETRYABLE_WORKSPACE_PREPARE_ERROR_PATTERNS = [
 ] as const;
 
 /**
- * 额外的不可 MCP-fallback 降级的错误模式。
+ * Extra error patterns excluded from MCP fallback.
  *
- * session/new 超时属于 agent 自身启动/登录卡住，和 MCP 无关，降级也没用。
+ * A session/new timeout is the agent's own startup/login stall; MCP is unrelated and downgrading is useless.
  */
 export const NON_MCP_FALLBACK_EXTRA_ERROR_PATTERNS = ["session/new 超时"] as const;
 
@@ -132,7 +132,7 @@ const OPENCODE_RUNTIME_CRASH_ERROR_PATTERNS = [
 ] as const;
 
 /**
- * 判断错误消息是否代表确定性失败，不应自动重试 workspace ZCode Agent 预热。
+ * Whether the error message is a deterministic failure that must not auto-retry the workspace ZCode Agent warmup.
  */
 export function isNonRetryableWorkspacePrepareError(errorMessage: string): boolean {
   const normalizedMessage = errorMessage.toLowerCase();
@@ -142,10 +142,10 @@ export function isNonRetryableWorkspacePrepareError(errorMessage: string): boole
 }
 
 /**
- * 判断 OpenCode 是否命中 Bun/运行时崩溃。
+ * Whether the error matches OpenCode's Bun/runtime-crash class.
  *
- * 这类错误不同于配置缺失：短时间内重建进程可能恢复，但连续出现时应停止自动重试，
- * 避免 UI 只显示泛化的 “connection closed” 并把用户拖进 5/5 的无意义等待。
+ * Unlike missing config, a quick process rebuild may recover -- but repeated hits stop the auto-retry, sparing the
+ * user a generic connection closed and a meaningless 5/5 wait.
  */
 export function isOpenCodeRuntimeCrashError(errorMessage: string): boolean {
   const normalizedMessage = errorMessage.toLowerCase();

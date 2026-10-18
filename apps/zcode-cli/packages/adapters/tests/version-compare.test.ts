@@ -100,4 +100,3 @@ describe("comparePluginUpdate", () => {
     ).toBe("none");
   });
 });
-

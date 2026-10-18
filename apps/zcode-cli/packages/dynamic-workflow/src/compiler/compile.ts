@@ -30,8 +30,8 @@ export const WORKFLOW_FUNCTION_NAME = "__workflowScript__";
 // statement (TS2355), but scripts may legitimately end without one.
 const SCRIPT_PRELUDE = `async function ${WORKFLOW_FUNCTION_NAME}() {\n`;
 /**
- * 包装前缀的长度：wrapped 源码里的位置减去它就是作者原文里的偏移。留白补全的拼接
- * （analysis/hole-splice.ts）要按站点表里的节点位置在原文上插入文本，走的正是这条换算。
+ * Length of the wrap prefix: a wrapped-source position minus this is the offset in the author's text.
+ * Hole-fill splicing (analysis/hole-splice.ts) inserts at node positions from the site table via this.
  */
 export const SCRIPT_PRELUDE_LENGTH = SCRIPT_PRELUDE.length;
 const SCRIPT_EPILOGUE = "\n}\nexport {};\n";
@@ -77,10 +77,10 @@ export interface WorkflowProgram {
 }
 
 /**
-  * Options of {@link createWorkflowProgram}. facadeDts injectes a **replacement facade text**
-  * (the snippet-eval scratch facade); it always enters the virtual host under the
-  * {@link FACADE_FILE_NAME} name -- facade identity is decided by declaration filename in registry / sites /
-  * facade-misuse / lowering; a different name silently empties site collection.
+ * Options of {@link createWorkflowProgram}. facadeDts injectes a **replacement facade text**
+ * (the snippet-eval scratch facade); it always enters the virtual host under the
+ * {@link FACADE_FILE_NAME} name -- facade identity is decided by declaration filename in registry / sites /
+ * facade-misuse / lowering; a different name silently empties site collection.
  */
 export interface CreateWorkflowProgramOptions {
   facadeDts?: string;

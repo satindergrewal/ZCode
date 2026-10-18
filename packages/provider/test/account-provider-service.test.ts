@@ -15,7 +15,7 @@ import {
   createApiKeyProviderConfig,
 } from "./provider-config-fixtures.js";
 
-// 此组专测刷新编排，账号状态行为由 account-provider-resolution 测试覆盖。
+// This suite covers refresh orchestration only; account-state behavior lives in the account-provider-resolution tests.
 function configOnlyResolver(
   resolve: (input: AccountProviderResolveInput) => Promise<ProviderConfigMap>,
 ): AccountProviderResolver {
@@ -75,7 +75,7 @@ function configSnapshot(
 }
 
 describe("AccountProviderService", () => {
-  it("重建期间 Built-in/凭据变化，旧结果不发布，重算当前快照", async () => {
+  it("drops stale results and recomputes when built-in/credentials change mid-rebuild", async () => {
     const configSource = new MutableConfigSource(configSnapshot("config-1", ["model-a"]));
     let release!: () => void;
     const resolve = vi.fn(async () => ({ providers: ProviderConfigMap.empty(), states: {} }));
@@ -102,7 +102,7 @@ describe("AccountProviderService", () => {
     expect(published).toEqual(["config-3"]);
     service.dispose();
   });
-  it("只从 ZCode Built-in Provider Config 解析 Account Provider Config", async () => {
+  it("resolves the Account Provider Config solely from the ZCode built-in provider config", async () => {
     const configSource = new MutableConfigSource(configSnapshot("config-1", ["model-a"]));
     const resolve = vi.fn(async ({ configuredProviders, reasons }) => {
       expect(reasons).toEqual(["start"]);
@@ -138,7 +138,7 @@ describe("AccountProviderService", () => {
     service.dispose();
   });
 
-  it("不把 Personal Provider Config 交给账号解析器", async () => {
+  it("never feeds Personal Provider Config into the account resolver", async () => {
     const snapshot = configSnapshot("config-1", ["builtin-model"]);
     const configSource = new MutableConfigSource({
       ...snapshot,
@@ -179,7 +179,7 @@ describe("AccountProviderService", () => {
     service.dispose();
   });
 
-  it("Config 变化后刷新 Account Snapshot 并通知 Registry", async () => {
+  it("refreshes the Account Snapshot on config changes and notifies the Registry", async () => {
     const configSource = new MutableConfigSource(configSnapshot("config-1", ["model-a"]));
     const service = new AccountProviderService({
       configSource,
@@ -219,7 +219,7 @@ describe("AccountProviderService", () => {
     service.dispose();
   });
 
-  it("Built-in revision 变化时即使 Overlay 内容相同也发布新来源快照", async () => {
+  it("publishes a new sourced snapshot on built-in revision bumps even when Overlay content is identical", async () => {
     const configSource = new MutableConfigSource(configSnapshot("builtin-1", ["model-a"]));
     const service = new AccountProviderService({
       configSource,
@@ -250,7 +250,7 @@ describe("AccountProviderService", () => {
     service.dispose();
   });
 
-  it("刷新失败时保留上一份成功的 Account Snapshot", async () => {
+  it("keeps the last good Account Snapshot when a refresh fails", async () => {
     const configSource = new MutableConfigSource(configSnapshot("config-1", ["model-a"]));
     let shouldFail = false;
     const service = new AccountProviderService({
@@ -281,7 +281,7 @@ describe("AccountProviderService", () => {
     service.dispose();
   });
 
-  it("当前刷新失败后继续处理执行期间到达的刷新事件", async () => {
+  it("processes refresh events that arrive mid-run even after the current refresh fails", async () => {
     const configSource = new MutableConfigSource(configSnapshot("config-1", ["model-a"]));
     let releaseFailedRefresh!: () => void;
     const failedRefreshBlocked = new Promise<void>((resolve) => {
@@ -330,7 +330,7 @@ describe("AccountProviderService", () => {
     service.dispose();
   });
 
-  it("首次解析失败时发布与 Built-in 对齐的 fail-closed Account Overlay", async () => {
+  it("publishes a fail-closed Account Overlay aligned to built-in on first-resolution failure", async () => {
     const initial = configSnapshot("config-1", ["model-a"]);
     const offPeakProviderId = "account:zai-offpeak-idle-plan";
     const configSource = new MutableConfigSource({
@@ -374,7 +374,7 @@ describe("AccountProviderService", () => {
     service.dispose();
   });
 
-  it("允许 Account Source 为执行期鉴权的 Built-in Provider 发布 entitlement Overlay", async () => {
+  it("lets the Account Source publish an entitlement Overlay for built-in providers authenticating at runtime", async () => {
     const initial = configSnapshot("config-1", ["model-a"]);
     const offPeakProviderId = "account:zai-offpeak-idle-plan";
     const configSource = new MutableConfigSource({
@@ -417,7 +417,7 @@ describe("AccountProviderService", () => {
     service.dispose();
   });
 
-  it("刷新进行中发起的 refresh 等待本次请求之后开始的一轮，不复用进行中轮的结果", async () => {
+  it("makes a refresh issued mid-run await the next round instead of reusing the in-flight one", async () => {
     const configSource = new MutableConfigSource(configSnapshot("config-1", ["model-a"]));
     let releaseStaleRefresh!: () => void;
     const staleRefreshBlocked = new Promise<void>((resolve) => {
@@ -427,9 +427,11 @@ describe("AccountProviderService", () => {
     const resolve = vi.fn(async ({ configuredProviders }: AccountProviderResolveInput) => {
       attempt += 1;
       if (attempt === 2) {
-        // 模拟进行中的一轮在收尾校验时发现账号身份被后来的写入改变而丢弃结果。
+        // Simulate an in-flight round discarding its result because final validation sees the account identity changed by a later write.
         await staleRefreshBlocked;
-        throw new Error("账号查询期间连接或身份发生变化，丢弃过期结果");
+        throw new Error(
+          "connection or identity changed during the account query; discarding the stale result",
+        );
       }
       return new ProviderConfigMap([
         [
@@ -448,11 +450,11 @@ describe("AccountProviderService", () => {
 
     const stale = service.refresh("settings:providerFamilyDomain");
     await vi.waitFor(() => expect(resolve).toHaveBeenCalledTimes(2));
-    // 调用方在进行中轮开始之后才完成自己的写入并请求刷新，它需要的是覆盖这些写入的新一轮。
+    // The caller finished its writes and requested the refresh after the in-flight round started; it needs a fresh round covering those writes.
     const requested = service.refresh("provider-provisioning");
     releaseStaleRefresh();
 
-    await expect(stale).rejects.toThrow("账号查询期间连接或身份发生变化");
+    await expect(stale).rejects.toThrow("connection or identity changed");
     await expect(requested).resolves.toMatchObject({
       providers: expect.any(ProviderConfigMap),
     });

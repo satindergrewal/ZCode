@@ -187,8 +187,8 @@ export function restoreChatComposerAttachment(
   if (!attachment.dataBase64) {
     if (mimeType.startsWith("image/")) {
       if (!attachment.localPath && sizeBytes <= INLINE_IMAGE_ATTACHMENT_MAX_BYTES) {
-        // 修复原因：小图片 metadata-only 状态没有 File/base64/localPath，后续发送一定不可读；
-        // 恢复阶段直接结构化拒绝，避免 UI 显示一个看似可发送但最终失败的附件 chip。
+        // Fix: a metadata-only small image has no File/base64/localPath -- a later send could not read it;
+        // reject structurally during restore so the chip never looks sendable yet fails.
         throw new MissingInlineImageContentError({
           filename: attachment.filename,
           sizeBytes,
@@ -230,8 +230,8 @@ export function restoreChatComposerAttachment(
   const hasImageBase64 = mimeType.startsWith("image/") && Boolean(attachment.dataBase64);
   const hasVideoBase64 = mimeType.startsWith("video/") && Boolean(attachment.dataBase64);
   const hasPdfBase64 = mimeType.split(";", 1)[0]?.trim().toLowerCase() === PDF_MIME_TYPE;
-  // Bug 根因：video 恢复最初复用了只为 image 计算的 effectiveSizeBytes，导致可选或低报的
-  // sizeBytes 绕过解码前上限。inline 媒体统一以正文长度为准，metadata 只提供下限。
+  // Root cause: video restore reused the image-only effectiveSizeBytes, letting optional/understated
+  // sizeBytes skip the pre-decode cap. Inline media keys on body length; metadata is a floor only.
   const estimatedSizeBytes =
     hasImageBase64 || hasVideoBase64 || hasPdfBase64
       ? estimateDecodedBase64Bytes(attachment.dataBase64)
@@ -240,8 +240,8 @@ export function restoreChatComposerAttachment(
 
   if (hasImageBase64 && effectiveSizeBytes > INLINE_IMAGE_ATTACHMENT_MAX_BYTES) {
     if (attachment.localPath) {
-      // 修复原因：有 localPath 的图片最终由 agent/core 按真实文件大小决定是否降级为路径引用；
-      // renderer 恢复 composer chip 时不应为了旧草稿里残留的超大 dataBase64 再完整解码一次。
+      // Fix: localPath images are downgraded to path references by agent/core from the real file size;
+      // the renderer restoring a composer chip must not fully decode a stale huge dataBase64 again.
       return {
         id: nanoid(),
         filename: attachment.filename,
@@ -250,8 +250,8 @@ export function restoreChatComposerAttachment(
         sizeBytes: effectiveSizeBytes,
       };
     }
-    // 修复原因：草稿/预填恢复也在 renderer 内执行，且历史/跨端附件的 sizeBytes 是可选字段；
-    // 必须在 atob 前用 base64 长度兜底拦截超大内联图片，避免旧草稿仍产生解码内存峰值。
+    // Fix: draft/prefill restore also runs in the renderer, and legacy/cross-device sizeBytes is optional;
+    // gate huge inline images by base64 length before atob, or legacy drafts spike decode memory again.
     throw new OversizedInlineImageAttachmentError({
       filename: attachment.filename,
       maxSizeBytes: INLINE_IMAGE_ATTACHMENT_MAX_BYTES,
@@ -259,7 +259,7 @@ export function restoreChatComposerAttachment(
     });
   }
 
-  // video 与 image 同理由的超限拦截；有 localPath 的交给 agent 侧按真实大小降级。
+  // Same oversize guard as images; localPath ones downgrade agent-side by real size.
   if (hasVideoBase64 && effectiveSizeBytes > VIDEO_INPUT_MAX_BYTES) {
     if (attachment.localPath) {
       return {

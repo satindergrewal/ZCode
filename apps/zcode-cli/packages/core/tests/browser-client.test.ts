@@ -350,7 +350,9 @@ describe("browser-client facade", () => {
     });
 
     it("does not reuse a parent/child-host tab", async () => {
-      const { calls, facade } = reuseFacade([{ tabId: "t-1", url: "https://shop.example.com/cart" }]);
+      const { calls, facade } = reuseFacade([
+        { tabId: "t-1", url: "https://shop.example.com/cart" },
+      ]);
       const tab = await facade.open("https://example.com");
       expect(tab.id).toBe("t-new");
       expect(calls).toEqual([
@@ -389,7 +391,12 @@ describe("browser-client facade", () => {
         if (command.method === "newTab") {
           return {
             ok: true,
-            tab: { tabId: "t-new", url: "about:blank", title: "", viewport: { width: 1280, height: 720 } },
+            tab: {
+              tabId: "t-new",
+              url: "about:blank",
+              title: "",
+              viewport: { width: 1280, height: 720 },
+            },
             elapsedMs: 1,
           } satisfies BrowserCommandResult;
         }

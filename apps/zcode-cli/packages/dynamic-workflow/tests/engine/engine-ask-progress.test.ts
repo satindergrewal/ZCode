@@ -1,9 +1,9 @@
 /**
- * ask 的两条「它在干什么」事实（docs/execution-engine.md「Events」/「Progress within an ask」）：
- *   - ask 的 `node-queued` 带上作者指令的开头（`instructionsHead`，≤ 240 字符，不加省略号）；
- *   - driver 的 `askProgress` 被引擎**原样** record 成 `node-progress`——不改调度、不写 dwf_node，
- *     且与 usage 同规：run 结算后到达的观察被丢掉。
- * fixture 姿态照 engine-concurrency-observations.test.ts。
+ * The ask's two what-is-it-doing facts (docs/execution-engine.md, Events / Progress within an ask):
+ *   - the ask node-queued carries the instruction head (instructionsHead, <= 240 chars, no ellipsis);
+ *   - driver askProgress is recorded verbatim as node-progress -- no scheduling changes, no dwf_node write,
+ *     and, like usage, observations after run settlement are dropped.
+ * Fixture posture follows engine-concurrency-observations.test.ts.
  */
 
 import { describe, expect, it } from "vitest";
@@ -34,20 +34,20 @@ function setup() {
   return { journal, driver, engine };
 }
 
-describe("node-queued 上的 instructionsHead", () => {
-  it("短指令原样带上（去两端空白）", async () => {
+describe("instructionsHead on node-queued", () => {
+  it("carries short instructions verbatim, trimmed", async () => {
     const { engine, driver } = setup();
     const actor = engine.createActor("actor#1");
-    const p = engine.ask("ask#1", actor, "  审一遍 auth 模块的错误路径  ");
+    const p = engine.ask("ask#1", actor, "  Review the auth module error paths  ");
     await flush();
     expect(driver.eventsOfType("node-queued")[0]?.instructionsHead).toBe(
-      "审一遍 auth 模块的错误路径",
+      "Review the auth module error paths",
     );
     engine.askTurnEnded(inst("ask#1"), "done");
     await expect(p).resolves.toBe("done");
   });
 
-  it("长指令截到上限且**不**加省略号（省略号是渲染的事，不是载荷的事）", async () => {
+  it("truncates long instructions at the cap with no ellipsis (ellipsis is rendering, not payload)", async () => {
     const { engine, driver } = setup();
     const actor = engine.createActor("actor#1");
     const long = "x".repeat(INSTRUCTIONS_HEAD_MAX_CHARS + 50);
@@ -58,7 +58,7 @@ describe("node-queued 上的 instructionsHead", () => {
     expect(head?.endsWith("…")).toBe(false);
   });
 
-  it("空指令让键缺席，而不是落一个空串（缺席才诚实）", async () => {
+  it("omits the key for empty instructions rather than writing an empty string", async () => {
     const { engine, driver } = setup();
     const actor = engine.createActor("actor#1");
     void engine.ask("ask#1", actor, "   \n  ");
@@ -66,7 +66,7 @@ describe("node-queued 上的 instructionsHead", () => {
     expect(driver.eventsOfType("node-queued")[0]).not.toHaveProperty("instructionsHead");
   });
 
-  it("world read 的 node-queued 不带它（那里没有作者指令可言）", async () => {
+  it("leaves it off world-read node-queued (there is no author instruction there)", async () => {
     const { engine, driver } = setup();
     void engine.worldRead("world#1", "files.glob", ["**/*.ts"]);
     await flush();
@@ -76,8 +76,8 @@ describe("node-queued 上的 instructionsHead", () => {
   });
 });
 
-describe("askProgress → node-progress（纯透传）", () => {
-  it("原样落事件，且先于同一次 turn 的 usage-updated", async () => {
+describe("askProgress to node-progress (pure passthrough)", () => {
+  it("records the event verbatim, before that turn's usage-updated", async () => {
     const { engine, driver } = setup();
     const actor = engine.createActor("actor#1");
     const p = engine.ask("ask#1", actor, "A");
@@ -103,7 +103,7 @@ describe("askProgress → node-progress（纯透传）", () => {
     await expect(p).resolves.toBe("R");
   });
 
-  it("lastTool 缺席时事件上也缺席", async () => {
+  it("omits lastTool from the event when absent", async () => {
     const { engine, driver } = setup();
     const actor = engine.createActor("actor#1");
     void engine.ask("ask#1", actor, "A");
@@ -112,7 +112,7 @@ describe("askProgress → node-progress（纯透传）", () => {
     expect(driver.eventsOfType("node-progress")[0]).not.toHaveProperty("lastTool");
   });
 
-  it("不改任何调度：不写 dwf_node 行，不动 ask 的结算", async () => {
+  it("touches no scheduling: no dwf_node row, ask settlement untouched", async () => {
     const { engine, driver, journal } = setup();
     const actor = engine.createActor("actor#1");
     const p = engine.ask("ask#1", actor, "A");
@@ -126,7 +126,7 @@ describe("askProgress → node-progress（纯透传）", () => {
     expect(journal.getNode(RUN, "ask#1", 1)?.status).toBe("completed");
   });
 
-  it("落 journal，与实时轨拿到同一条", async () => {
+  it("journal rows match the live track object-for-object", async () => {
     const { engine, journal } = setup();
     const actor = engine.createActor("actor#1");
     void engine.ask("ask#1", actor, "A");
@@ -139,7 +139,7 @@ describe("askProgress → node-progress（纯透传）", () => {
     expect(stored[0]?.event).toMatchObject({ turn: 1, toolCalls: 1, lastTool: { name: "Bash" } });
   });
 
-  it("run 结算之后到达的观察被丢掉（与 usage 同规：不给完结的 run 长尾巴）", async () => {
+  it("drops observations after run settlement, same as usage (no long tail on finished runs)", async () => {
     const { engine, driver } = setup();
     const actor = engine.createActor("actor#1");
     const p = engine.ask("ask#1", actor, "A");

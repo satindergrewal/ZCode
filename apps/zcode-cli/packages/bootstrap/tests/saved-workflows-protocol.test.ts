@@ -402,10 +402,36 @@ describe("workflows/* protocol methods", () => {
       listNodes: (runId: string) =>
         runId === "run_2"
           ? [
-              { runId, siteId: "report#1", ordinal: 1, kind: "report", inputHash: "h", status: "completed", artifactId: "perf", result: {} },
-              { runId, siteId: "report#2", ordinal: 2, kind: "report", inputHash: "h", status: "completed", artifactId: "perf", result: {} },
+              {
+                runId,
+                siteId: "report#1",
+                ordinal: 1,
+                kind: "report",
+                inputHash: "h",
+                status: "completed",
+                artifactId: "perf",
+                result: {},
+              },
+              {
+                runId,
+                siteId: "report#2",
+                ordinal: 2,
+                kind: "report",
+                inputHash: "h",
+                status: "completed",
+                artifactId: "perf",
+                result: {},
+              },
               // 无标签的 report 不计入任何产物。
-              { runId, siteId: "report#3", ordinal: 3, kind: "report", inputHash: "h", status: "completed", result: {} },
+              {
+                runId,
+                siteId: "report#3",
+                ordinal: 3,
+                kind: "report",
+                inputHash: "h",
+                status: "completed",
+                result: {},
+              },
             ]
           : [],
     };

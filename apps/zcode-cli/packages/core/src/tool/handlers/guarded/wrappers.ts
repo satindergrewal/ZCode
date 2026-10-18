@@ -19,7 +19,7 @@ export function unwrapCommand(input: CommandWord[], windows: boolean): CommandWo
     const name = commandBasename(words[0]!, windows);
     if (!name) return undefined;
     if (!(name in WRAPPERS)) return words;
-    // wrapper 的未知选项决定真实命令从哪个词开始，猜不出只能整体放弃。
+    // A wrapper's unknown options decide where the real command starts; unguessable means give up entirely.
     const parsed = parseOptions(
       words.slice(1),
       WRAPPERS[name as keyof typeof WRAPPERS],

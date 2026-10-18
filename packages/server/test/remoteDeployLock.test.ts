@@ -74,10 +74,10 @@ describe("acquireRemoteDeployLock", () => {
     expect(resolved).toBe(false);
 
     const command = backend.commands[0]!;
-    // WSL 会在 bash -lc 参数边界提前展开未转义的局部 `$var`；lock-holder 必须先落盘再执行。
+    // WSL expands unescaped local `$var` early at bash -lc argument boundaries; the lock holder must persist state before executing.
     expect(command).toContain("printf '%b'");
     expect(command).toContain(".holder-owner-test.sh");
-    // Alpine/BusyBox 只有 POSIX sh；锁脚本不能把 bash 当成远端必备依赖。
+    // Alpine/BusyBox only ship POSIX sh; the lock script must not treat bash as a mandatory remote dependency.
     expect(command).toMatch(/\nsh .*\.holder-owner-test\.sh'/u);
     expect(command).not.toMatch(/\nbash .*\.holder-owner-test\.sh'/u);
     expect(command).not.toContain('owner_file="$lock_dir/owner"');
@@ -94,14 +94,10 @@ describe("acquireRemoteDeployLock", () => {
     expect(handle.ownerToken).toBe("owner-test");
 
     const stdinChunks: string[] = [];
-    backend.stdin.on("data", (chunk: Buffer) =>
-      stdinChunks.push(chunk.toString()),
-    );
+    backend.stdin.on("data", (chunk: Buffer) => stdinChunks.push(chunk.toString()));
     const releasePromise = handle.release();
     await vi.waitFor(() =>
-      expect(stdinChunks.join("")).toContain(
-        "zcode-deploy-lock-release:owner-test",
-      ),
+      expect(stdinChunks.join("")).toContain("zcode-deploy-lock-release:owner-test"),
     );
     backend.closeEmitter.fire(0);
     await expect(releasePromise).resolves.toBeUndefined();
@@ -168,9 +164,7 @@ describe("acquireRemoteDeployLock", () => {
       expect(releaseSettled).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(1);
 
-      await expect(releasePromise).rejects.toThrow(
-        /timed out after 20ms.*owner=owner-timeout/u,
-      );
+      await expect(releasePromise).rejects.toThrow(/timed out after 20ms.*owner=owner-timeout/u);
       expect(backend.stdin.destroyed).toBe(true);
       expect(backend.stdout.destroyed).toBe(true);
       expect(backend.stderr.destroyed).toBe(true);

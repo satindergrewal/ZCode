@@ -2,10 +2,7 @@ import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, delimiter, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import {
-  buildMcpStdioEnv,
-  prependRunningNodeDirectory,
-} from "../src/mcp/network.js";
+import { buildMcpStdioEnv, prependRunningNodeDirectory } from "../src/mcp/network.js";
 
 describe("MCP stdio environment", () => {
   it("prepends the running Node directory so portable node commands work remotely", () => {

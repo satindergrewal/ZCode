@@ -5,7 +5,7 @@ import { webContents, type BrowserWindow } from "electron";
 import { getGenUiOutputDirectory } from "@zcode/shared/node";
 
 export async function prepareOutputFiles(root: string) {
-  // 回归：打开 Home 一类包含应用数据目录的工作区，固定 Gen UI 输出仍须可读。
+  // Regression: opening a workspace that contains the app-data dir (like Home) must keep pinned Gen UI output readable.
   const workspacePath = root;
   const outputRoot = join(root, "user-data", "visualizations");
   const directory = getGenUiOutputDirectory(outputRoot, {
@@ -16,7 +16,7 @@ export async function prepareOutputFiles(root: string) {
   await mkdir(directory, { recursive: true });
   const path = join(directory, "demo.html");
   await copyFile(join(root, "demo.html"), path);
-  // fork 保留父会话的 HTML 路径；第二个会话应直接读取同一文件，不需要复制产物。
+  // Fork keeps the parent session's HTML path; the second session reads the same file, no artifact copy.
   const paths: Record<string, string> = { fixture: path, "second-task": path };
   return { workspacePath, outputRoot, paths };
 }

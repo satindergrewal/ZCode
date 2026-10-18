@@ -54,7 +54,7 @@ const permissionRequest = (toolName: string) =>
   }) as never;
 
 // —————————————————————————————————————————————————————————————
-// 审批旁路（headless broker）
+// Approval bypass (headless broker)
 // —————————————————————————————————————————————————————————————
 
 test("headless broker allows CreateWorkflow", async () => {
@@ -64,8 +64,8 @@ test("headless broker allows CreateWorkflow", async () => {
 });
 
 test("headless broker leaves every other tool at today's deny semantics", async () => {
-  // 回归钉：旁路必须是按工具名的一个洞，不是一把开关。文案也钉住——它来自 core 的
-  // deny broker，旁路只委托、不复写，所以这里的断言同时证明"没有第二份文案"。
+  // Regression pin: the bypass is a per-tool-name hole, not a switch. The copy is pinned too -- it comes from core's
+  // deny broker and the bypass only delegates, never restates, so this assertion also proves there is no second copy.
   const broker = createHeadlessPermissionBroker();
   for (const toolName of ["Bash", "Write", "Edit", "Agent", "Workflow"]) {
     const result = await broker.requestPermission(permissionRequest(toolName));
@@ -76,11 +76,14 @@ test("headless broker leaves every other tool at today's deny semantics", async 
 });
 
 // —————————————————————————————————————————————————————————————
-// stream-json 定型行
+// stream-json typed line
 // —————————————————————————————————————————————————————————————
 
 test("dwf progress events are recognised, other session events are not", () => {
-  assert.equal(isDynamicWorkflowRunProgressEvent(progressEvent({ eventType: "run-started" })), true);
+  assert.equal(
+    isDynamicWorkflowRunProgressEvent(progressEvent({ eventType: "run-started" })),
+    true,
+  );
   assert.equal(
     isDynamicWorkflowRunProgressEvent(
       progressEvent({ eventType: "run-started" }, { type: SessionEventType.AssistantMessage }),
@@ -90,10 +93,10 @@ test("dwf progress events are recognised, other session events are not", () => {
 });
 
 test("the CLI-private stream type stays out of the v3 protocol enum", () => {
-  // 绊线：定型行的 type 刻意不是 zcodeSessionEventTypeSchema 的成员。那个 enum 是闭集
-  // 且喂给 zcodeSessionEventSchema 的 discriminated union，加值等于让 v3 app-server 在
-  // 类型面上宣告一个它永不发出的事件（协议路径在 mapSessionEventForProtocol 里就已经
-  // 把这个事件剥掉了）。谁把映射搬进协议枚举，这条先红。
+  // Tripwire: the typed line's type is deliberately not a zcodeSessionEventTypeSchema member. That enum is closed
+  // and feeds a discriminated union in zcodeSessionEventSchema; adding a value would make the v3 app-server declare,
+  // at the type level, an event it never emits (the protocol path already strips it in mapSessionEventForProtocol).
+  // Whoever moves the mapping into the protocol enum sees this fail first.
   assert.equal(
     zcodeSessionEventTypeSchema.options.includes(WORKFLOW_RUN_PROGRESS_STREAM_TYPE as never),
     false,
@@ -112,18 +115,18 @@ test("the typed stream-json line carries its own type and the bounded payload ve
 
   const line = mapWorkflowRunProgressStreamLine(event);
 
-  // 定型：独立 type，不是 catch-all session.updated。
+  // Typed: its own type, not the catch-all session.updated.
   assert.equal(line.type, WORKFLOW_RUN_PROGRESS_STREAM_TYPE);
   assert.notEqual(line.type as string, "session.updated");
-  // 信封与 mapSessionEvent 对齐（同样的 String()/getTime() 规范化）。
+  // Envelope matches mapSessionEvent (same String()/getTime() normalization).
   assert.equal(line.eventId, "evt-dwf-1");
   assert.equal(line.sessionId, "session-test");
   assert.equal(line.traceId, "trace-test");
   assert.equal(line.seq, 7);
   assert.equal(line.timestamp, 1_700_000_000_000);
-  // dwf 事件是出回合的，信封里没有 turnId 键（不是 undefined 值）。
+  // dwf events are out-of-turn: the envelope has no turnId key (not an undefined value).
   assert.equal("turnId" in line, false);
-  // payload 原样：不重塑字段名，读端按 eventType 解释。
+  // payload verbatim: no field renaming; readers interpret via eventType.
   assert.deepEqual(line.payload, {
     runId: "dwfrun-abc",
     sequence: 12,
@@ -132,12 +135,12 @@ test("the typed stream-json line carries its own type and the bounded payload ve
     payload: { instance: { siteId: "ask#1", ordinal: 2 }, outcome: "ok" },
     truncated: true,
   });
-  // 一行 NDJSON 必须能独立 parse。
+  // Each NDJSON line must parse standalone.
   assert.doesNotThrow(() => JSON.parse(JSON.stringify(line)));
 });
 
 // —————————————————————————————————————————————————————————————
-// text 模式的 stderr 进度
+// stderr progress in text mode
 // —————————————————————————————————————————————————————————————
 
 const collectProgress = (
@@ -164,7 +167,7 @@ test("run lifecycle and log lines are never throttled away", () => {
       progressEvent({ eventType: "log", payload: { message: "asking reviewer" } }),
       progressEvent({ eventType: "run-settled", payload: { status: "completed" } }),
     ],
-    // 时钟不动：任何按时间的节流都会在这里吃掉后三条——这正是这条用例要挡住的退步。
+    // Frozen clock: any time-based throttle would eat the last three here -- exactly the regression this case guards.
     { clock: [0, 0, 0, 0] },
   );
   assert.deepEqual(lines, [
@@ -203,11 +206,14 @@ test("node phase transitions are throttled but the first one gets through", () =
   const nodeEvent = (eventType: string, ordinal: number) =>
     progressEvent({
       eventType,
-      payload: { instance: { siteId: "ask#1", ordinal }, ...(eventType === "node-settled" ? { outcome: "ok" } : {}) },
+      payload: {
+        instance: { siteId: "ask#1", ordinal },
+        ...(eventType === "node-settled" ? { outcome: "ok" } : {}),
+      },
     });
-  // 节流对**所有**节点相位一视同仁，`node-settled` 也会被吃掉——刻意如此：run 的
-  // 端点由 run-settled 保证（上面那条用例），节点级的完成不是必达面，否则一个
-  // 100 节点的 run 在 text 模式下会刷屏。
+  // The throttle treats every node phase alike; `node-settled` is swallowed too -- deliberate: run
+  // endpoints are guaranteed by run-settled (the case above); per-node completion is not must-arrive, or a
+  // 100-node run would flood text mode.
   const lines = collectProgress(
     [
       nodeEvent("node-queued", 1),
@@ -226,7 +232,10 @@ test("node phase transitions are throttled but the first one gets through", () =
 test("counting-only and non-transition events produce no progress line", () => {
   const lines = collectProgress([
     progressEvent({ eventType: "usage-updated", payload: { spentTokens: 12 } }),
-    progressEvent({ eventType: "actor-created", payload: { actor: { siteId: "actor#1", ordinal: 1 } } }),
+    progressEvent({
+      eventType: "actor-created",
+      payload: { actor: { siteId: "actor#1", ordinal: 1 } },
+    }),
     progressEvent({ eventType: "compaction", payload: {} }),
     progressEvent({ eventType: "log", payload: {} }),
     progressEvent({ eventType: "run-started" }, { type: SessionEventType.AssistantMessage }),
@@ -235,7 +244,7 @@ test("counting-only and non-transition events produce no progress line", () => {
 });
 
 // —————————————————————————————————————————————————————————————
-// 经 run() 的端到端接线（headless prompt 路径）
+// End-to-end wiring through run() (headless prompt path)
 // —————————————————————————————————————————————————————————————
 
 type CapturedWriteStream = NodeJS.WriteStream & { output: () => string };
@@ -274,7 +283,12 @@ const turnEvents: readonly SessionEvent[] = [
     },
     { id: "evt-2", sequenceNumber: 8 },
   ),
-  { ...progressEvent({ eventType: "run-started" }), id: "evt-3", type: SessionEventType.TurnComplete, payload: {} } as SessionEvent,
+  {
+    ...progressEvent({ eventType: "run-started" }),
+    id: "evt-3",
+    type: SessionEventType.TurnComplete,
+    payload: {},
+  } as SessionEvent,
 ];
 
 const createRunDeps = (): RunDependencies & { appOptions: () => unknown } => {
@@ -366,12 +380,12 @@ test("stream-json emits the typed workflow line and still terminates with the re
     workflowLines.map((line) => line.payload?.eventType),
     ["run-started", "node-settled"],
   );
-  // 回归钉：这两条今天漏成 catch-all session.updated。
+  // Regression pin: these two used to leak through as catch-all session.updated.
   assert.equal(
     lines.some((line) => line.type === "session.updated"),
     false,
   );
-  // 非 dwf 事件仍走 mapSessionEvent，result 行仍是流的终止符。
+  // Non-dwf events still go through mapSessionEvent, and the result line remains the stream terminator.
   assert.equal(lines.at(-2)?.type, "turn_complete");
   assert.equal(lines.at(-1)?.type, "result");
 });
@@ -415,7 +429,7 @@ test("stream-json does not duplicate progress onto stderr", async () => {
 });
 
 // —————————————————————————————————————————————————————————————
-// 等待结算（在飞 run + 通知驱动回合）
+// Settlement wait (in-flight run plus notification-driven turns)
 // —————————————————————————————————————————————————————————————
 
 const abortedSignal = (): AbortSignal => {
@@ -441,8 +455,8 @@ test("the wait returns immediately when the runtime reports no work", async () =
 });
 
 test("the wait polls until both busy facts clear", async () => {
-  // 谓词是"或"：后台任务先清空，但通知回合还在队列里，等待必须继续。
-  // 两个计数器各自独立，因为谓词短路——后台任务为真时根本不问回合工作。
+  // The predicate is an OR: the background task clears first while the notification turn is still queued, so the wait continues.
+  // The two counters stay independent because the predicate short-circuits -- while the task flag is true, turn work is never asked.
   let backgroundCalls = 0;
   let turnWorkCalls = 0;
   let sleeps = 0;
@@ -462,7 +476,7 @@ test("the wait polls until both busy facts clear", async () => {
       sleeps += 1;
     },
   });
-  // 2 轮等后台 + 1 轮等通知回合，第 4 轮两者都清空才退出。
+  // Two polls for the background task plus one for the notification turn; round four clears both and exits.
   assert.equal(sleeps, 3);
   assert.equal(backgroundCalls, 4);
 });
@@ -496,14 +510,17 @@ test("aborting mid-wait breaks the loop even while the runtime stays busy", asyn
 });
 
 /**
- * 一个会「起 dwf run、结算、再由通知驱动一个回合」的 app 替身。
+ * An app test double that starts a dwf run, settles it, then runs a notification-driven turn.
  *
- * 关键点：`submitPrompt` 把事件**同时**扇给常驻订阅的 sink 与 `options.onEvent`——真实
- * runtime 在两者都装上时就是这个行为。于是"恰好一次"这件事在这个装配下是可证的：
- * 若 prompt-command 两个都装，每条事件就会出现两行。
+ * Key point: `submitPrompt` fans each event to both the resident-subscription sink and `options.onEvent` -- the real
+ * runtime behaves this way when both are mounted. That makes exactly-once provable in this assembly:
+ * if prompt-command mounted both, every event would appear twice.
  */
 const createWaitingRunDeps = (
-  script: { busyPolls: number; notificationTurns?: readonly { turnId: string; response: string }[] } = {
+  script: {
+    busyPolls: number;
+    notificationTurns?: readonly { turnId: string; response: string }[];
+  } = {
     busyPolls: 2,
   },
 ): RunDependencies & { pollCount: () => number } => {
@@ -541,7 +558,7 @@ const createWaitingRunDeps = (
             void submitOptions?.onEvent?.(event);
           };
           for (const event of turnEvents) emit(event);
-          // 通知驱动的回合在等待期到达：sleep(100) 之前这个 0ms timer 必然先触发。
+          // The notification-driven turn lands during the wait: this 0ms timer fires before the sleep(100) elapses.
           setTimeout(() => {
             for (const turn of script.notificationTurns ?? []) {
               emit({
@@ -589,9 +606,9 @@ test("text mode waits for settle and prints every turn, ending with the post-set
   });
   assert.equal(await run(ctx, deps), 0);
 
-  // 等待真的发生了（谓词被轮询过不止一次）。
+  // The wait really happened (the predicate was polled more than once).
   assert.ok(deps.pollCount() >= 3, `expected repeated polling, got ${deps.pollCount()}`);
-  // 两个回合按到达序，最后一段是结算后的总结。
+  // Both turns in arrival order; the last segment is the post-settlement summary.
   assert.equal(ctx.stdout.output(), "starting the workflow\n\nthe workflow produced 42\n");
 });
 
@@ -619,8 +636,8 @@ test("json mode reports the last turn as response and every turn in turnResponse
 });
 
 test("a late turn_complete for the first turn is not counted twice", async () => {
-  // 首个回合的文本来自 submitPrompt 的返回值。它的 turn_complete 若在等待期才到达，
-  // 必须被 turnId 挡住——否则 response 会退回第一个回合的文本。
+  // The first turn's text comes from submitPrompt's return. If its turn_complete lands during the wait,
+  // the turnId must block it -- otherwise response falls back to the first turn's text.
   const ctx = createContext([
     "--workflow-mode",
     "alwaysOn",
@@ -644,8 +661,8 @@ test("a late turn_complete for the first turn is not counted twice", async () =>
 });
 
 test("every event reaches stdout exactly once even though both sinks are offered", async () => {
-  // 这条钉的是重复行：替身把每条事件同时扇给常驻 sink 与 options.onEvent。
-  // prompt-command 必须二选一——两个都装的话每条事件就是两行。
+  // This pins duplicated lines: the double fans every event to both the resident sink and options.onEvent.
+  // prompt-command must pick one -- mounting both duplicates every event line.
   const ctx = createContext([
     "--workflow-mode",
     "alwaysOn",
@@ -672,7 +689,7 @@ test("every event reaches stdout exactly once even though both sinks are offered
     new Set(eventIds).size,
     `duplicate NDJSON lines for the same event: ${eventIds.join(", ")}`,
   );
-  // 通知回合的事件也在流里（常驻订阅跨回合），且 result 行仍是唯一的终止符。
+  // Notification-turn events are in the stream too (the resident subscription spans turns), and the result line stays the only terminator.
   assert.equal(
     lines.some((line) => line.eventId === "evt-turn-notify"),
     true,
@@ -682,10 +699,10 @@ test("every event reaches stdout exactly once even though both sinks are offered
 });
 
 test("a resolvable custom command waits for settle instead of early-returning", async () => {
-  // Bug 回归钉：自定义命令解析出来是 type === "unknown"，过去因此早退进 command-center，
-  // 第一个回合结束就退出进程，把在飞的 run 孤儿化成 stopped(interrupted)。现在能解析成真实
-  // 自定义命令的走普通 prompt 路径，于是等待与"最后一个回合"语义都生效；提交给 app 的是
-  // 原文（展开由 facade 负责）。示例命令是一个项目自定义命令（`/workflow` 已是内置保留名，见下一条）。
+  // Bug regression pin: custom commands resolve to type === "unknown" and used to early-exit into command-center,
+  // exiting after the first turn and orphaning the in-flight run as stopped(interrupted). Now anything resolvable as a real
+  // custom command takes the plain prompt path, so the wait and last-turn semantics apply; the app receives the
+  // raw text (expansion is the facade's job). The sample is a project custom command (`/workflow` is a builtin reserved name, see next case).
   const ctx = createContext([
     "--workflow-mode",
     "alwaysOn",
@@ -722,10 +739,10 @@ test("a resolvable custom command waits for settle instead of early-returning", 
 });
 
 test("the builtin /workflow command rides the plain prompt path without a custom command lookup", async () => {
-  // `/workflow` 现在是 CLI 内置 prompt 命令（bootstrap/src/builtin-workflow-command.ts）：
-  // 解析成 known 且不是 expert/goal，直接进普通 prompt 路径，不再探测自定义命令；原文交给
-  // facade 展开。dwf 结算等待与"最后一个回合"语义与自定义命令一致。独立 CLI 缺省 disabled
-  // （launch.md「The standalone CLI: `--workflow-mode`」），所以这里显式开启。
+  // `/workflow` is now a CLI builtin prompt command (bootstrap/src/builtin-workflow-command.ts):
+  // resolved known and not expert/goal, it goes straight down the plain prompt path with no custom-command probe; the raw text goes
+  // to the facade for expansion. The dwf settlement wait and last-turn semantics match the custom-command path. The standalone CLI
+  // (launch.md, "The standalone CLI: `--workflow-mode`"); enabled explicitly here.
   const ctx = createContext([
     "--prompt",
     "/workflow build me a plan",
@@ -754,7 +771,7 @@ test("the builtin /workflow command rides the plain prompt path without a custom
 test("a run with no workflow activity never polls and stays byte-identical", async () => {
   const ctx = createContext(["--prompt", "hi"]);
   const deps = createWaitingRunDeps({ busyPolls: 99 });
-  // 把 dwf 活动从回合事件里摘掉：没有触发证据就绝不进等待。
+  // Strips dwf activity from the turn events: with no trigger evidence, never enter the wait.
   const quietDeps = {
     ...deps,
     createZCodeApp: ((options?: unknown) => {

@@ -1,6 +1,6 @@
-// report vs log 在同一份降级产物里各归其位：report 有站点（__host.report(siteId, item)），
-// log 没有（__host.log(msg)）。这与 git.log/顶层 log 那一组是同一条判定——身份按声明，
-// 不按拼写；差别只在 report 是**顶层无容器**的产生站点函数。
+// report vs log land correctly in one lowered output: report sites (via __host.report(siteId, item)) while
+// log does not (via __host.log(msg)). Same verdict as the git.log/top-level-log pair -- identity by
+// declaration, not spelling; the only difference is that report is a container-less site producer.
 interface Finding {
   path: string;
   note: string;

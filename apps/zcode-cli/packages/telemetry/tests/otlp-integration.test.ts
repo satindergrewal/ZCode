@@ -12,7 +12,7 @@ afterEach(async () => {
 });
 
 describe("ARMS-compatible OTLP/HTTP V4", () => {
-  it("gzip 批量上报真实 Trace，并携带三条独立版本轴和写入 Header", async () => {
+  it("exports real traces gzipped in batches with three independent version axes and write headers", async () => {
     const requests: Array<{
       body: Buffer;
       headers: Record<string, string | string[] | undefined>;
@@ -39,7 +39,7 @@ describe("ARMS-compatible OTLP/HTTP V4", () => {
       endpoint: `http://127.0.0.1:${address.port}/v1/traces`,
       headers: { "x-arms-license-key": "write-only-test" },
       metricEndpoint: `http://127.0.0.1:${address.port}/v1/metrics`,
-      // 集成测试需要稳定拿到完整 Trace；生产默认采样率由独立配置测试覆盖。
+      // The integration test needs the full trace deterministically; production sampling defaults are covered by dedicated config tests.
       traceSampleRatio: 1,
       resource: {
         buildCommitId: "abcdef1234567",
@@ -213,7 +213,7 @@ describe("ARMS-compatible OTLP/HTTP V4", () => {
     );
   });
 
-  it("Trace 未采样时仍完整导出 Metric", async () => {
+  it("still exports metrics in full when the trace is unsampled", async () => {
     const requestUrls: string[] = [];
     const server = createServer((request, response) => {
       request.on("data", () => undefined);

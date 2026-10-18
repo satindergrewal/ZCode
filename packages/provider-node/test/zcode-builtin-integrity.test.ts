@@ -13,7 +13,7 @@ import {
 import { describe, expect, it } from "vitest";
 import { NodeZCodeBuiltinProviderConfigSource } from "../src/index.js";
 
-// 发布验证必须指向最终上传的那份文件，而不是默认悄悄检查仓库源文件。
+// Release verification must target the final uploaded file, never quietly check repo sources by default.
 const zcodeBuiltinProviderConfigFilePath =
   process.env.ZCODE_BUILTIN_RELEASE_TEST_FILE?.trim() ||
   fileURLToPath(new URL("../../../config/provider/zcode-builtin.json", import.meta.url));
@@ -25,9 +25,9 @@ function reasoningPatch(map: string, reasoningLevel: string) {
   );
 }
 
-describe("ZCode Built-in Provider Config 完整性", () => {
+describe("ZCode Built-in Provider Config integrity", () => {
   it.each(["anthropic-messages", "openai-chat-completions", "openai-responses"] as const)(
-    "未知模型在 %s 下拥有完整两档兜底并可进入 Registry",
+    "unknown models keep the full two-tier fallback under %s and stay Registry-eligible",
     async (apiType) => {
       const source = new NodeZCodeBuiltinProviderConfigSource({
         bundledFilePath: zcodeBuiltinProviderConfigFilePath,
@@ -76,7 +76,7 @@ describe("ZCode Built-in Provider Config 完整性", () => {
       }
     },
   );
-  it("GLM-5.3-Flash 的媒体输入能力及 GLM-5.3 的套餐桥接保持明确", async () => {
+  it("keeps GLM-5.3-Flash media inputs and the GLM-5.3 plan bridge explicit", async () => {
     const source = new NodeZCodeBuiltinProviderConfigSource({
       bundledFilePath: zcodeBuiltinProviderConfigFilePath,
       watch: false,
@@ -117,13 +117,13 @@ describe("ZCode Built-in Provider Config 完整性", () => {
       ] as const;
       for (const templateId of apiTemplateIds) {
         const modelIds = snapshot.providerTemplates?.get(templateId)?.config.builtinModelIds ?? [];
-        expect(modelIds, `${templateId} 必须同时提供 GLM-5.3 系列`).toEqual(
+        expect(modelIds, `${templateId} must provide the GLM-5.3 family as well`).toEqual(
           expect.arrayContaining(["GLM-5.3", "GLM-5.3-Flash"]),
         );
       }
       for (const providerId of accountProviderIds) {
         const modelIds = snapshot.providers.get(providerId)?.builtinModelIds ?? [];
-        expect(modelIds, `${providerId} 必须提供 GLM-5.3-Flash`).toContain("GLM-5.3-Flash");
+        expect(modelIds, `${providerId} must provide GLM-5.3-Flash`).toContain("GLM-5.3-Flash");
       }
 
       for (const providerId of [
@@ -150,8 +150,8 @@ describe("ZCode Built-in Provider Config 完整性", () => {
         });
       }
 
-      // 加速卡换端点不换模型，能力事实必须与同 Family Coding Plan 站点逐项一致；
-      // 否则同一会话里普通轮与加速轮的 system 折叠、WebSearch 暴露和附件合法性会互相打脸。
+      // The high-speed tier swaps endpoints, not models: capability facts must match the same-family Coding Plan site item by item;
+      // otherwise plain and high-speed turns in one session would disagree on system folding, WebSearch exposure and attachment validity.
       for (const [highspeedProviderId, planProviderId] of [
         ["account:zai-highspeed-card", "account:zai-individual-coding-plan"],
         ["account:bigmodel-highspeed-card", "account:bigmodel-individual-coding-plan"],
@@ -171,15 +171,15 @@ describe("ZCode Built-in Provider Config 完整性", () => {
           const planModel = resolveAt(planProviderId, modelId);
           expect(
             highspeedModel.properties?.inputFormat.toJSON(),
-            `${highspeedProviderId}/${modelId} 输入形态偏离 Coding Plan 站点`,
+            `${highspeedProviderId}/${modelId} input shape drifts from the Coding Plan site`,
           ).toEqual(planModel.properties?.inputFormat.toJSON());
           expect(
             highspeedModel.properties?.supportsMidConversationSystem,
-            `${highspeedProviderId}/${modelId} MCS 偏离 Coding Plan 站点`,
+            `${highspeedProviderId}/${modelId} MCS drifts from the Coding Plan site`,
           ).toBe(planModel.properties?.supportsMidConversationSystem);
           expect(
             highspeedModel.properties?.supportsNativeWebSearch,
-            `${highspeedProviderId}/${modelId} 原生搜索偏离 Coding Plan 站点`,
+            `${highspeedProviderId}/${modelId} native search drifts from the Coding Plan site`,
           ).toBe(planModel.properties?.supportsNativeWebSearch);
         }
       }
@@ -190,7 +190,7 @@ describe("ZCode Built-in Provider Config 完整性", () => {
           templateId: "zai-api",
           modelId,
           apiType: "anthropic-messages",
-          // 模型层自身能力与 §6.3.1 已批准的站点覆盖分开验证。
+          // Model-level capabilities are verified separately from the §6.3.1-approved site overrides.
           baseUrl: "https://other.example.com/anthropic",
         });
       const glm53 = resolve("glm-5.3").toJSON();
@@ -233,7 +233,7 @@ describe("ZCode Built-in Provider Config 完整性", () => {
     }
   });
 
-  it("按当前官方证据声明各厂商主推模型和关键静态属性", async () => {
+  it("declares each vendor's flagship models and key static facts per current official evidence", async () => {
     const source = new NodeZCodeBuiltinProviderConfigSource({
       bundledFilePath: zcodeBuiltinProviderConfigFilePath,
       watch: false,
@@ -374,7 +374,7 @@ describe("ZCode Built-in Provider Config 完整性", () => {
     }
   });
 
-  it("聚合供应商按维护清单提供独立模板，不复用上游 Provider 配置", async () => {
+  it("gives aggregated vendors their own templates per the maintenance list, never reusing upstream provider configs", async () => {
     const source = new NodeZCodeBuiltinProviderConfigSource({
       bundledFilePath: zcodeBuiltinProviderConfigFilePath,
       watch: false,
@@ -399,7 +399,7 @@ describe("ZCode Built-in Provider Config 完整性", () => {
     }
   });
 
-  it("聚合供应商同型号命中模型规则和 API Map，保留完整 ID 且每家至少启用一个代表型号", async () => {
+  it("matches aggregated vendors' shared models via rules and API maps, keeps full ids, and enables one rep model per vendor", async () => {
     const source = new NodeZCodeBuiltinProviderConfigSource({
       bundledFilePath: zcodeBuiltinProviderConfigFilePath,
       watch: false,
@@ -467,7 +467,7 @@ describe("ZCode Built-in Provider Config 完整性", () => {
     }
   });
 
-  it("每个 Provider 的默认 enabled 模型形成成员前缀，历史或 alias 型号默认关闭", async () => {
+  it("makes every provider's default-enabled models a membership prefix with legacy/alias models off by default", async () => {
     const source = new NodeZCodeBuiltinProviderConfigSource({
       bundledFilePath: zcodeBuiltinProviderConfigFilePath,
       watch: false,
@@ -500,16 +500,17 @@ describe("ZCode Built-in Provider Config 完整性", () => {
       for (const [ownerId, owner] of memberships) {
         const states = (owner.builtinModelIds ?? []).map((modelId) => {
           const enabled = exactEnabled.get(`${ownerId}\0${modelId}`);
-          expect(enabled, `${ownerId}/${modelId} 必须显式声明 Built-in 默认 enabled`).toBeTypeOf(
-            "boolean",
-          );
+          expect(
+            enabled,
+            `${ownerId}/${modelId} must declare the Built-in default enabled explicitly`,
+          ).toBeTypeOf("boolean");
           return enabled!;
         });
         const firstDisabled = states.indexOf(false);
         if (firstDisabled >= 0) {
           expect(
             states.slice(firstDisabled).every((enabled) => !enabled),
-            `${ownerId} 的 enabled 成员必须在 disabled 成员之前`,
+            `${ownerId} enabled members must precede disabled members`,
           ).toBe(true);
         }
       }
@@ -523,7 +524,7 @@ describe("ZCode Built-in Provider Config 完整性", () => {
     }
   });
 
-  it("按产品分组声明 Zhipu 系统 Provider 与外部主流 Provider", async () => {
+  it("declares Zhipu system providers and external major providers by product group", async () => {
     const source = new NodeZCodeBuiltinProviderConfigSource({
       bundledFilePath: zcodeBuiltinProviderConfigFilePath,
       watch: false,
@@ -568,18 +569,21 @@ describe("ZCode Built-in Provider Config 完整性", () => {
       for (const [templateId, template] of snapshot.providerTemplates?.entries() ?? []) {
         expect(
           template.templateNameMap["zh-CN"]?.trim(),
-          `${templateId} 缺少中文 Template 名称`,
+          `${templateId} missing the Chinese template name`,
         ).toBeTruthy();
         expect(
           template.templateNameMap["en-US"]?.trim(),
-          `${templateId} 缺少英文 Template 名称`,
+          `${templateId} missing the English template name`,
         ).toBeTruthy();
-        expect(template.config.logo, `${templateId} 缺少 Built-in Logo 引用`).toMatchObject({
+        expect(
+          template.config.logo,
+          `${templateId} missing the Built-in logo reference`,
+        ).toMatchObject({
           type: "builtin",
         });
       }
       for (const [providerId, provider] of snapshot.providers.entries()) {
-        expect(provider.logo, `${providerId} 缺少 Built-in Logo 引用`).toMatchObject({
+        expect(provider.logo, `${providerId} missing the Built-in logo reference`).toMatchObject({
           type: "builtin",
         });
       }
@@ -652,7 +656,7 @@ describe("ZCode Built-in Provider Config 完整性", () => {
     }
   });
 
-  it("按模型家族连续排列 Rule，且不保留语义等价的重复 matcher", async () => {
+  it("orders rules contiguously per model family and keeps no semantically-equal duplicate matchers", async () => {
     const source = new NodeZCodeBuiltinProviderConfigSource({
       bundledFilePath: zcodeBuiltinProviderConfigFilePath,
       watch: false,
@@ -670,8 +674,8 @@ describe("ZCode Built-in Provider Config 完整性", () => {
       );
       expect(new Set(selectorKeys).size).toBe(selectorKeys.length);
 
-      // 分组后“模型家族连续”只约束 Model Rule 本组；把 Model/API/Site 三组拼起来会
-      // 人为制造重复家族，无法再验证原本想检查的书写顺序。
+      // After grouping, family-contiguity constrains only the Model Rule group; concatenating Model/API/Site
+      // manufactures duplicate families and destroys the authoring order under test.
       const rawRelease = JSON.parse(await readFile(zcodeBuiltinProviderConfigFilePath, "utf8")) as {
         config: { modelConfigRules: { modelRules: readonly { modelMatch: string }[] } };
       };
@@ -696,7 +700,7 @@ describe("ZCode Built-in Provider Config 完整性", () => {
     }
   });
 
-  it("Reasoning 公开档位按语义强度从低到高排列", async () => {
+  it("orders public reasoning tiers low-to-high by semantic strength", async () => {
     const source = new NodeZCodeBuiltinProviderConfigSource({
       bundledFilePath: zcodeBuiltinProviderConfigFilePath,
       watch: false,
@@ -723,11 +727,11 @@ describe("ZCode Built-in Provider Config 完整性", () => {
         const ranks = values.map((value) => levelRank[value]);
         expect(
           ranks.every((rank) => rank !== undefined),
-          `${rule.modelMatch} 存在未知 Reasoning 档位，需先声明其顺序语义`,
+          `${rule.modelMatch} has an unknown reasoning tier; declare its order semantics first`,
         ).toBe(true);
         expect(
           ranks.every((rank, index) => index === 0 || rank! >= ranks[index - 1]!),
-          `${rule.modelMatch} 的 Reasoning 档位必须从低到高排列`,
+          `${rule.modelMatch} reasoning tiers must be ordered low to high`,
         ).toBe(true);
       }
     } finally {
@@ -735,7 +739,7 @@ describe("ZCode Built-in Provider Config 完整性", () => {
     }
   });
 
-  it("解析 OpenAI Responses 与 Anthropic Messages 的模型事实和 reasoning 映射", async () => {
+  it("resolves model facts and reasoning maps for OpenAI Responses and Anthropic Messages", async () => {
     const source = new NodeZCodeBuiltinProviderConfigSource({
       bundledFilePath: zcodeBuiltinProviderConfigFilePath,
       watch: false,
@@ -826,7 +830,7 @@ describe("ZCode Built-in Provider Config 完整性", () => {
       });
       expect(grok43.properties?.contextWindow).toBe(1_000_000);
       expect(grok43.optionSpecs?.reasoningLevel?.toJSON()).toMatchObject({
-        // 此模型未声明专用档位，继续继承 Model 通用兜底。
+        // This model declares no dedicated tiers and keeps inheriting the model-level generic fallback.
         values: ["disabled", "enabled"],
       });
       expect(reasoningPatch(grok43.optionSpecs!.reasoningLevel!.map!, "disabled")).toEqual({
@@ -904,7 +908,7 @@ describe("ZCode Built-in Provider Config 完整性", () => {
     }
   });
 
-  it("每个 Built-in Provider 与模型成员都完整，启用成员在补齐访问材料后进入正式 Registry", async () => {
+  it("keeps every Built-in provider and model member complete, with enabled members Registry-ready once access material lands", async () => {
     const source = new NodeZCodeBuiltinProviderConfigSource({
       bundledFilePath: zcodeBuiltinProviderConfigFilePath,
       watch: false,
@@ -922,9 +926,10 @@ describe("ZCode Built-in Provider Config 完整性", () => {
 
       for (const [providerId, provider] of snapshot.providers.entries()) {
         const builtinModelIds = provider.builtinModelIds ?? [];
-        expect(new Set(builtinModelIds).size, `${providerId} 存在重复 Built-in 模型成员`).toBe(
-          builtinModelIds.length,
-        );
+        expect(
+          new Set(builtinModelIds).size,
+          `${providerId} has duplicate Built-in model members`,
+        ).toBe(builtinModelIds.length);
         const enabledModelIds = builtinModelIds.filter((modelId) => {
           const model = snapshot.models.resolve({
             providerId,
@@ -950,9 +955,10 @@ describe("ZCode Built-in Provider Config 完整性", () => {
       for (const [templateId, template] of snapshot.providerTemplates?.entries() ?? []) {
         const providerId = `template:${templateId}`;
         const builtinModelIds = template.config.builtinModelIds ?? [];
-        expect(new Set(builtinModelIds).size, `${templateId} 存在重复 Template 模型成员`).toBe(
-          builtinModelIds.length,
-        );
+        expect(
+          new Set(builtinModelIds).size,
+          `${templateId} has duplicate Template model members`,
+        ).toBe(builtinModelIds.length);
         const enabledModelIds = builtinModelIds.filter((modelId) => {
           const model = snapshot.models.resolve({
             providerId,
@@ -967,7 +973,10 @@ describe("ZCode Built-in Provider Config 完整性", () => {
         expectedModelIds.set(providerId, enabledModelIds);
         expect(["api-key", "zhipu-coding-plan-api-key"]).toContain(template.config.access?.type);
         if (template.config.access?.type !== "zhipu-account") {
-          expect(template.config.access.apiKey, `${templateId} 不得保存 API Key`).toBeUndefined();
+          expect(
+            template.config.access.apiKey,
+            `${templateId} must not persist an API key`,
+          ).toBeUndefined();
         }
         personalProviders.push({
           providerId,
@@ -1028,7 +1037,7 @@ describe("ZCode Built-in Provider Config 完整性", () => {
       for (const provider of resolution.registryProviders) {
         expect(
           provider.models.map(({ modelId }) => modelId),
-          `${provider.providerId} 的 Registry 模型成员必须与 Built-in Config 一致`,
+          `${provider.providerId} Registry model members must match the Built-in Config`,
         ).toEqual(expectedModelIds.get(provider.providerId));
         for (const model of provider.models) {
           expect(
@@ -1059,7 +1068,7 @@ describe("ZCode Built-in Provider Config 完整性", () => {
     }
   });
 
-  it("正式 Built-in JSON 不携带旧模型能力字段", async () => {
+  it("keeps legacy model-capability fields out of the official Built-in JSON", async () => {
     const document = JSON.parse(
       await readFile(zcodeBuiltinProviderConfigFilePath, "utf8"),
     ) as unknown;
@@ -1069,7 +1078,7 @@ describe("ZCode Built-in Provider Config 完整性", () => {
     expect(keys).not.toContain("modalities");
     expect(keys).not.toContain("magic_name");
     expect(keys).not.toContain("supportsImages");
-    // Todo104：supportsPdf/Video 是 inputFormat 内的正式字段，不能因同名误判成旧扁平能力。
+    // Todo104: supportsPdf/Video are official fields inside inputFormat; the name overlap must not read as legacy flat capabilities.
     for (const key of [
       "input_format",
       "output_format",

@@ -32,7 +32,7 @@ import { clearMcpUiInstanceCalls, createMcpUiHandlers } from "./handlers.js";
 import { mcpUiInstances } from "./instances.js";
 import { createMcpUiSessionAccess } from "./sessionAccess.js";
 
-/** `mcp/readResource`：插件 UI 的 `ui://` 资源读取，走 session 自己的 mcpPort。 */
+/** `mcp/readResource`: the plugin UI's `ui://` resource read, via the session's own mcpPort. */
 export async function readMcpUiResource(
   context: ZCodeProtocolAgentServerContext,
   rawParams: unknown,
@@ -56,7 +56,7 @@ export async function readMcpUiResource(
   );
 }
 
-/** `mcp/uiCallTool`：插件 UI 回调本插件工具；复用工具授权路径，不产生 transcript row。 */
+/** `mcp/uiCallTool`: plugin UI calling its own plugin's tools; reuses the tool approval path, no transcript row. */
 export async function callMcpUiTool(
   context: ZCodeProtocolAgentServerContext,
   rawParams: unknown,
@@ -73,7 +73,7 @@ export async function callMcpUiTool(
   );
 }
 
-/** `mcp/uiCancelCall`（）：取消 `mcp/uiCallTool` 带 callId 的进行中调用；同样 fail closed 校验归属。 */
+/** `mcp/uiCancelCall`(): cancels a `mcp/uiCallTool` in-flight call by callId; same fail-closed ownership check. */
 export async function cancelMcpUiToolCall(
   context: ZCodeProtocolAgentServerContext,
   rawParams: unknown,
@@ -88,7 +88,7 @@ export async function cancelMcpUiToolCall(
   );
 }
 
-/** `mcp/uiListResources` / `mcp/uiListResourceTemplates`（同插件服务器，分页游标透传）。 */
+/** `mcp/uiListResources` / `mcp/uiListResourceTemplates` (same-plugin servers, paging cursor passthrough). */
 export async function listMcpUiResources(
   context: ZCodeProtocolAgentServerContext,
   rawParams: unknown,
@@ -123,7 +123,7 @@ export async function listMcpUiResourceTemplates(
   );
 }
 
-/** `mcp/uiSubscribeResource` / `mcp/uiUnsubscribeResource`；订阅者 = sessionId + scopeId + generation。 */
+/** `mcp/uiSubscribeResource` / `mcp/uiUnsubscribeResource`; subscriber = sessionId + scopeId + generation. */
 export async function subscribeMcpUiResource(
   context: ZCodeProtocolAgentServerContext,
   rawParams: unknown,
@@ -162,7 +162,7 @@ export async function unsubscribeMcpUiResource(
   return {};
 }
 
-/** `mcp/uiReadResource`：插件页面发起的 resources/read（A7）；限同插件服务器、8 MiB、mimeType 白名单。 */
+/** `mcp/uiReadResource`: page-initiated resources/read (A7); same-plugin servers, 8 MiB, mimeType allowlist. */
 export async function readMcpUiResourceForUi(
   context: ZCodeProtocolAgentServerContext,
   rawParams: unknown,
@@ -294,7 +294,7 @@ export async function closeMcpUiInstance(
 ) {
   const params = parseParams(zcodeMcpUiCloseInstanceParamsSchema, rawParams);
   const active = mcpUiInstances.find(params.instance.token);
-  // 清理允许连接已经断开，但不能用另一来源或会话的凭证撤销当前实例。
+  // Teardown may run with the connection gone, but never revoke this instance with another origin's or session's credential.
   if (active) mcpUiInstances.validate(params.instance, params, active.source);
   if (params.onlyIfIdle && mcpUiInstances.isBusy(params.instance)) return { closed: false };
   if (mcpUiInstances.close(params.instance)) {

@@ -172,19 +172,14 @@ describe("plugins/resolveSuggestedReference protocol", () => {
   });
 
   it("rejects non-official stable IDs without refreshing any marketplace", async () => {
-    const result = await resolveSuggestedPluginReference(
-      protocolContext(),
-      {
-        workspace: WORKSPACE,
-        stableId: "document-skills@personal",
-        ...DESKTOP_BOUNDARY,
-      },
-    );
+    const result = await resolveSuggestedPluginReference(protocolContext(), {
+      workspace: WORKSPACE,
+      stableId: "document-skills@personal",
+      ...DESKTOP_BOUNDARY,
+    });
 
     expect(result.status).toBe("unavailable");
-    expect(result.diagnostics[0]?.code).toBe(
-      "plugin_suggested_reference_untrusted_source",
-    );
+    expect(result.diagnostics[0]?.code).toBe("plugin_suggested_reference_untrusted_source");
     expect(mocks.updateZCodePluginMarketplace).not.toHaveBeenCalled();
     expect(() => zcodePluginsResolveSuggestedReferenceResultSchema.parse(result)).not.toThrow();
   });
@@ -192,37 +187,41 @@ describe("plugins/resolveSuggestedReference protocol", () => {
   it.each([
     ["ready", true],
     ["disabled", false],
-  ] as const)("returns %s for an installed official plugin without refreshing", async (status, enabled) => {
-    entries = [catalogEntry({ enabled })];
-    mocks.getZCodePluginsOverview.mockReturnValue({
-      availablePlugins: [
-        overviewCandidate({
-          installed: true,
-          listing: { icon: "https://cdn.example/document-skills.svg" },
-        }),
-      ],
-      diagnostics: [],
-      installedPlugins: [],
-      marketplaces: [],
-      restorableBuiltins: [],
-    });
+  ] as const)(
+    "returns %s for an installed official plugin without refreshing",
+    async (status, enabled) => {
+      entries = [catalogEntry({ enabled })];
+      mocks.getZCodePluginsOverview.mockReturnValue({
+        availablePlugins: [
+          overviewCandidate({
+            installed: true,
+            listing: { icon: "https://cdn.example/document-skills.svg" },
+          }),
+        ],
+        diagnostics: [],
+        installedPlugins: [],
+        marketplaces: [],
+        restorableBuiltins: [],
+      });
 
-    const result = await resolveSuggestedPluginReference(
-      protocolContext(),
-      { workspace: WORKSPACE, stableId: STABLE_ID, ...DESKTOP_BOUNDARY },
-    );
+      const result = await resolveSuggestedPluginReference(protocolContext(), {
+        workspace: WORKSPACE,
+        stableId: STABLE_ID,
+        ...DESKTOP_BOUNDARY,
+      });
 
-    expect(result).toMatchObject({
-      stableId: STABLE_ID,
-      status,
-      marketplace: "zcode-plugins-official",
-      pluginName: "document-skills",
-      sourceTrust: "official",
-      icon: "https://cdn.example/document-skills.svg",
-    });
-    expect(mocks.updateZCodePluginMarketplace).not.toHaveBeenCalled();
-    expect(notify).not.toHaveBeenCalled();
-  });
+      expect(result).toMatchObject({
+        stableId: STABLE_ID,
+        status,
+        marketplace: "zcode-plugins-official",
+        pluginName: "document-skills",
+        sourceTrust: "official",
+        icon: "https://cdn.example/document-skills.svg",
+      });
+      expect(mocks.updateZCodePluginMarketplace).not.toHaveBeenCalled();
+      expect(notify).not.toHaveBeenCalled();
+    },
+  );
 
   it("refreshes only zcode-plugins-official before exposing a missing candidate", async () => {
     mocks.getZCodePluginsOverview.mockReturnValue({
@@ -235,16 +234,13 @@ describe("plugins/resolveSuggestedReference protocol", () => {
       restorableBuiltins: [],
     });
 
-    const result = await resolveSuggestedPluginReference(
-      protocolContext(),
-      {
-        workspace: WORKSPACE,
-        stableId: STABLE_ID,
-        operationId: "suggested-2",
-        clientMode: "desktop-continuous",
-        deliveryKind: "desktop-continuous",
-      },
-    );
+    const result = await resolveSuggestedPluginReference(protocolContext(), {
+      workspace: WORKSPACE,
+      stableId: STABLE_ID,
+      operationId: "suggested-2",
+      clientMode: "desktop-continuous",
+      deliveryKind: "desktop-continuous",
+    });
 
     expect(mocks.updateZCodePluginMarketplace).toHaveBeenCalledOnce();
     expect(mocks.updateZCodePluginMarketplace).toHaveBeenCalledWith(
@@ -314,10 +310,11 @@ describe("plugins/resolveSuggestedReference protocol", () => {
       restorableBuiltins: [],
     });
 
-    const result = await resolveSuggestedPluginReference(
-      protocolContext(),
-      { workspace: WORKSPACE, stableId: STABLE_ID, ...DESKTOP_BOUNDARY },
-    );
+    const result = await resolveSuggestedPluginReference(protocolContext(), {
+      workspace: WORKSPACE,
+      stableId: STABLE_ID,
+      ...DESKTOP_BOUNDARY,
+    });
 
     expect(result.status).toBe("unavailable");
     expect(result.diagnostics[0]?.code).toBe("marketplace_refresh_failed");
@@ -335,10 +332,11 @@ describe("plugins/resolveSuggestedReference protocol", () => {
 
     vi.useFakeTimers();
     try {
-      const pending = resolveSuggestedPluginReference(
-        protocolContext(),
-        { workspace: WORKSPACE, stableId: STABLE_ID, ...DESKTOP_BOUNDARY },
-      );
+      const pending = resolveSuggestedPluginReference(protocolContext(), {
+        workspace: WORKSPACE,
+        stableId: STABLE_ID,
+        ...DESKTOP_BOUNDARY,
+      });
       await Promise.resolve();
       expect(refreshSignal).toBeInstanceOf(AbortSignal);
 
@@ -381,10 +379,11 @@ describe("plugins/resolveSuggestedReference protocol", () => {
       return { diagnostics: [], marketplaces: [] };
     });
 
-    const result = await resolveSuggestedPluginReference(
-      protocolContext(),
-      { workspace: WORKSPACE, stableId: STABLE_ID, ...DESKTOP_BOUNDARY },
-    );
+    const result = await resolveSuggestedPluginReference(protocolContext(), {
+      workspace: WORKSPACE,
+      stableId: STABLE_ID,
+      ...DESKTOP_BOUNDARY,
+    });
 
     expect(mocks.resolveZCodePlugins).toHaveBeenCalledTimes(2);
     expect(result.status).toBe("ready");
@@ -399,10 +398,11 @@ describe("plugins/resolveSuggestedReference protocol", () => {
       restorableBuiltins: [],
     });
 
-    const result = await resolveSuggestedPluginReference(
-      protocolContext(),
-      { workspace: WORKSPACE, stableId: STABLE_ID, ...DESKTOP_BOUNDARY },
-    );
+    const result = await resolveSuggestedPluginReference(protocolContext(), {
+      workspace: WORKSPACE,
+      stableId: STABLE_ID,
+      ...DESKTOP_BOUNDARY,
+    });
 
     expect(result.status).toBe("unavailable");
     expect(result.diagnostics[0]?.code).toBe("plugin_suggested_reference_not_listed");

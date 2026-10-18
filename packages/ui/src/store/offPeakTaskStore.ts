@@ -15,13 +15,13 @@ import type {
 } from "@zcode/services";
 import { logger } from "@/logger.js";
 
-// 闲时任务管理 store（与 automationManagementStore 独立）：走 IOffPeakTaskService RPC。
-// 位次/状态靠列表轮询刷新（host offPeakTaskSync 写 sqlite，renderer 只读快照）。
+// Off-peak task store (independent of automationManagementStore); goes through IOffPeakTaskService RPC.
+// Queue position/status refresh via list polling (host offPeakTaskSync writes sqlite; renderer reads snapshots).
 
 export interface CreateOffPeakTaskInput {
   title: string;
   prompt: string;
-  /** 权限四档（build/edit/plan/yolo）；类型收窄在服务端入参处完成。 */
+  /** The four permission modes (build/edit/plan/yolo); narrowing happens at the service entry. */
   permissionMode: string;
   modelSelection: ModelSelection;
   workspacePath: string;
@@ -35,7 +35,7 @@ export interface UpdateOffPeakTaskInput {
   modelSelection?: ModelSelection | null;
 }
 
-/** New task 页模板卡点击后携带到 Automations 创建表单的预填草稿（模板=预填）。 */
+/** Prefill draft carried from a New Task template-card click into the Automations create form (template = prefill). */
 export interface OffPeakCreateDraft {
   title?: string;
   prompt?: string;
@@ -45,7 +45,7 @@ export interface OffPeakCreateDraft {
   };
 }
 
-/** availability 的请求状态与服务端额度快照分离；只有 ready + canTakeNumber=true 才能放行。 */
+/** Request state kept separate from the server quota snapshot; only ready + canTakeNumber=true admits creation. */
 export type OffPeakTakeNumberAvailabilityStatus = "idle" | "loading" | "ready" | "error";
 
 interface OffPeakTaskState {
@@ -53,17 +53,17 @@ interface OffPeakTaskState {
   loading: boolean;
   error: string | null;
   operationId: string | null;
-  /** 灰度配置：null=未加载。未命中/关闭时入口整体不渲染。 */
+  /** Rollout config: null = not loaded. When off/unmatched the entry is not rendered at all. */
   grayConfig: OffPeakClientConfig | null;
-  /** 当前 selected provider/connection 的脱敏凭证支持快照；不含 JWT/API Key。 */
+  /** Redacted-credential support snapshot for the selected provider/connection; no JWT/API keys inside. */
   codingPlanSupport: OffPeakCodingPlanSupport | null;
-  /** 服务端取号额度即时快照；null=尚无成功响应。 */
+  /** Live server queue-quota snapshot; null = no successful response yet. */
   takeNumberAvailability: OffPeakTakeNumberAvailability | null;
-  /** loading/idle/error 均禁入，避免把依赖异常误当成可创建。 */
+  /** loading/idle/error all block entry so dependency failures never read as creatable. */
   takeNumberAvailabilityStatus: OffPeakTakeNumberAvailabilityStatus;
-  /** New task 页横幅本次会话是否已被用户关闭（关闭后下次登录/重启再开）。 */
+  /** Whether the New Task page banner was dismissed this session (returns next login/restart). */
   newTaskBannerDismissed: boolean;
-  /** 模板卡→创建表单的预填草稿（跨视图导航一次性携带）。 */
+  /** Template card -> create form prefill draft (carried once across navigation). */
   pendingCreateDraft: OffPeakCreateDraft | null;
   initialize(deps: {
     offPeakTaskService: IOffPeakTaskService;
@@ -87,7 +87,7 @@ interface OffPeakTaskState {
   deleteTask(offPeakTaskId: string, service: IOffPeakTaskService): Promise<void>;
   deleteHistory(offPeakTaskId: string, service: IOffPeakTaskService): Promise<void>;
   dismissNewTaskBanner(): void;
-  /** 模板卡点击：暂存预填草稿供 Automations 创建表单消费（consume 后清空）。 */
+  /** Template card click: stage the prefill draft for the Automations form (cleared on consume). */
   setPendingCreateDraft(draft: OffPeakCreateDraft): void;
   consumePendingCreateDraft(): OffPeakCreateDraft | null;
 }
@@ -96,7 +96,7 @@ function toErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** support 必须仍对应 renderer 当前选择；切换连接后的旧 true 快照不能短暂放开创建。 */
+/** support must match the renderer's current selection; a stale true after a switch must not reopen creation. */
 export function isCurrentOffPeakCodingPlanSupported(
   support: OffPeakCodingPlanSupport | null,
   settings:
@@ -117,7 +117,7 @@ export function isCurrentOffPeakCodingPlanSupported(
   return false;
 }
 
-/** 服务端 3103（取号超限）只按结构化分类识别，不再解析跨 RPC 的错误文本。 */
+/** Server 3103 (queue limit) is detected via the structured kind only; no cross-RPC error text parsing. */
 export function isOffPeakQuotaError(result: OffPeakTaskCreateResult | null | undefined): boolean {
   return (
     result?.ok === false && result.errorCategory === "quota_3103" && result.errorCode === "3103"
@@ -129,7 +129,7 @@ export type OffPeakCreateErrorMessageId =
   | "offPeak.error.unavailable"
   | "offPeak.error.generic";
 
-/** 创建失败只按服务端明确业务码映射；原始 RPC 文本仅留日志，不直接展示给用户。 */
+/** Creation failures map only from explicit server business codes; raw RPC text stays in logs, not the UI. */
 export function resolveOffPeakCreateErrorMessageId(
   result: OffPeakTaskCreateResult | null | undefined,
 ): OffPeakCreateErrorMessageId {
@@ -165,12 +165,12 @@ export const useOffPeakTaskStore = create<OffPeakTaskState>((set, get) => ({
   pendingCreateDraft: null,
 
   async initialize({ offPeakTaskService, codingPlanSubscriptionService }) {
-    // Bug 原因：New Task 与 Automations 在页面切换时可能短暂重叠挂载，两个 initialize
-    // 会并发请求同一个 Team Plan availability，后到的全局 429 可能覆盖先到的成功结果。
-    // Store 级 single-flight 保证所有入口共用一次完整准入检查。
+    // Bug: New Task and Automations can stay mounted in brief overlap across navigation, so two
+    // initializes request the same Team Plan availability concurrently and a later global 429 can
+    // overwrite the earlier success. Store-level single-flight shares one full admission check.
     if (initializeInFlight) return initializeInFlight;
     set({ loading: true, error: null });
-    // 初始化和后续通知共用资格检查；灰度先就绪，资格与额度不能由两条异步链分别写入。
+    // Init and later notifications share one eligibility check; never write eligibility/quota from two async chains.
     initializationReady = Promise.all([
       codingPlanSubscriptionService
         .getOffPeakClientConfig({ forceRefresh: true })
@@ -207,7 +207,7 @@ export const useOffPeakTaskStore = create<OffPeakTaskState>((set, get) => ({
   },
 
   refreshCodingPlanSupport(service, freshnessKey) {
-    // 两个入口收到同一 Registry/连接通知只检查一次；手动刷新无 key，始终重查。
+    // Both entries dedupe a shared Registry/connection notification to one check; manual refresh has no key and always rechecks.
     if (
       freshnessKey !== undefined &&
       lastEligibilityTrigger?.service === service &&
@@ -224,8 +224,8 @@ export const useOffPeakTaskStore = create<OffPeakTaskState>((set, get) => ({
       takeNumberAvailabilityStatus: "loading",
     });
     if (eligibilityInFlight) return eligibilityInFlight;
-    // 旧代码的 support/availability 独立请求会乱序覆盖。串行 drain 合并在途变化，
-    // 旧成功、旧失败均丢弃；只有一代完整资格与额度能够一起发布。
+    // The old independent support/availability requests could overwrite out of order. A serial drain merges
+    // in-flight changes and drops stale results; only one complete eligibility+quota generation publishes.
     eligibilityInFlight = Promise.resolve().then(async () => {
       try {
         while (pendingEligibilityService) {
@@ -261,7 +261,7 @@ export const useOffPeakTaskStore = create<OffPeakTaskState>((set, get) => ({
           }
         }
       } finally {
-        // 在 drain 同一微任务中释放，避免 finally 排队期间新请求挂到已结束的检查上。
+        // Released in the drain's own microtask so callers queued behind never attach to a finished check.
         eligibilityInFlight = null;
       }
     });
@@ -282,7 +282,7 @@ export const useOffPeakTaskStore = create<OffPeakTaskState>((set, get) => ({
         await Promise.all([get().refresh(service), get().refreshTakeNumberAvailability(service)]);
         return result;
       }
-      // 创建失败说明之前的准入快照已不足以继续放行；只保存稳定分类，不把 raw error 放进 UI 状态。
+      // A create failure means the earlier admission snapshot no longer suffices; store the stable kind, never the raw error.
       set({
         error: result.errorCategory,
         takeNumberAvailability: null,
@@ -298,8 +298,8 @@ export const useOffPeakTaskStore = create<OffPeakTaskState>((set, get) => ({
       }
       return result;
     } catch (error) {
-      // Host/RPC transport 仍可能在结构化服务结果之外失败；统一收敛为 network，
-      // toast 只消费稳定分类，禁止解析 raw error。
+      // Host/RPC transport can still fail outside structured results; normalize to "network" and
+      // let toasts consume only the stable kind, never raw error text.
       const result = {
         ok: false,
         failureStage: "ticket_request",

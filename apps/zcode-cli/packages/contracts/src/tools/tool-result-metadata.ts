@@ -192,10 +192,11 @@ export const nodeReplImageToolResultDisplayPayloadSchema = z
   .strict();
 
 /**
- * 插件 UI 元数据。
- * contracts 仍在 zod v3，无法直接复用 `@zcode/shared/mcp-apps` 的 zod v4 schema 对象，这里按同一常量
- * 手写一份；字段集合与 `mcpToolDisplayUiSchema` 必须一致，由 core/tests/mcp-ui-display.test.ts 用同一
- * fixture 双侧 parse 锁住。
+ * Plugin UI metadata.
+ * contracts is still on zod v3 and cannot reuse the zod v4 schema objects from
+ * `@zcode/shared/mcp-apps`, so a copy is handwritten here from the same constants; the field set
+ * must match `mcpToolDisplayUiSchema`, locked by core/tests/mcp-ui-display.test.ts parsing the
+ * same fixture on both sides.
  */
 export const mcpToolDisplayUiPayloadSchema = z
   .object({
@@ -212,15 +213,15 @@ export const mcpToolDisplayUiPayloadSchema = z
       .optional(),
     structuredContent: z.string().max(MCP_APPS_STRUCTURED_CONTENT_MAX_BYTES).optional(),
     widgetMeta: z.string().max(MCP_APPS_WIDGET_META_MAX_BYTES).optional(),
-    // 原始 content 数组 JSON（≤ 32 KiB）与被省略字节数；与 shared mcpToolDisplayUiSchema 同步。
+    // Raw content array JSON (<= 32 KiB) plus omitted-byte count; kept in sync with shared mcpToolDisplayUiSchema.
     content: z.string().max(MCP_APPS_CONTENT_MAX_BYTES).optional(),
     truncated: z.boolean().optional(),
     truncatedBytes: z.number().int().nonnegative().optional(),
-    // MCP isError 结果（调用完成但工具报错），与 shared 同步。
+    // MCP isError result (call completed but the tool errored); kept in sync with shared.
     isError: z.literal(true).optional(),
-    // 工具级强制常驻，与 shared 同步。
+    // Tool-level forced inline pin; kept in sync with shared.
     showInline: z.literal(true).optional(),
-    // 与 shared mcpToolDisplayUiSchema 同步；已删 widgetStateVisibility。
+    // Kept in sync with shared mcpToolDisplayUiSchema; widgetStateVisibility was removed.
     surface: z
       .string()
       .min(1)
@@ -245,7 +246,7 @@ export const mcpToolResultDisplayPayloadSchema = z
       .object({ code: z.enum(OFFICIAL_MCP_TOOL_ERROR_CODES) })
       .strict()
       .optional(),
-    // 与 `@zcode/shared` v4 toolDisplay 的 mcp_tool.ui 同步；两侧都是 strict，缺一处会被 zod 静默 strip。
+    // Mirrors `@zcode/shared` v4 toolDisplay mcp_tool.ui; both sides strict - a missing side is silently stripped by zod.
     ui: mcpToolDisplayUiPayloadSchema.optional(),
   })
   .strict();

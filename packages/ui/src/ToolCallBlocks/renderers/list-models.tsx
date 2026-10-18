@@ -204,10 +204,7 @@ function levelWord(level: string, formatMessage: FormatMessage): string {
  * the next line. The canonical id exists for machine backfill of `subagent_model` and belongs only
  * here (same division of labor as subagent-model-label.ts).
  */
-function listModelsRowTooltip(
-  model: ListModelsEntryView,
-  formatMessage: FormatMessage,
-): string {
+function listModelsRowTooltip(model: ListModelsEntryView, formatMessage: FormatMessage): string {
   let levelsLine: string;
   if (model.reasoningLevels.length === 0) {
     levelsLine = formatMessage({ id: "chat.toolCall.workflow.models.noLevels" });

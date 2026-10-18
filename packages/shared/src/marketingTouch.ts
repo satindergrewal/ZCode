@@ -75,7 +75,7 @@ const button = z.object({
   action: marketingActionSchema,
   theme: cloudButtonThemeSchema.nullish(),
 });
-// Banner 允许空格式；若复用弹窗约束会丢弃有效投放，仅在此按纯文本归一。
+// Banner allows an empty format; reusing dialog constraints would drop valid placements, so normalize as plain text here only.
 const bannerButton = button.omit({ theme: true }).extend({
   text: text.extend({
     format: z
@@ -138,7 +138,7 @@ const banner = z
       value.buttons.filter((b) => b.action.type !== "close").length <= 1,
   );
 const deliveryBase = { campaign_id: id, priority: z.number().int().min(0).max(100) };
-// 服务端已将旧 card 改名为 banner；判别值与内容字段必须同步，否则有效投放会被丢弃。
+// The server renamed legacy card to banner; discriminator and payload must move together or valid placements get dropped.
 export const marketingDeliverySchema = z.discriminatedUnion("resource_position", [
   z.object({ ...deliveryBase, resource_position: z.literal("banner"), banner }),
   z.object({ ...deliveryBase, resource_position: z.literal("popup"), popup: marketingPopupSchema }),
@@ -161,7 +161,7 @@ export type MarketingBannerDelivery = Extract<MarketingDelivery, { resource_posi
 export type MarketingPopupDelivery = Extract<MarketingDelivery, { resource_position: "popup" }>;
 export type MarketingTouchSnapshot = ReturnType<typeof parseMarketingTouchResponse>;
 
-/** 单条坏投放不影响其他资源位；外层失败不能伪装成成功空结果。 */
+/** One bad placement must not affect other slots; outer failures must not masquerade as an empty success. */
 export function parseMarketingTouchResponse(input: unknown) {
   const { data } = envelope.parse(input);
   const deliveries: MarketingDelivery[] = [];

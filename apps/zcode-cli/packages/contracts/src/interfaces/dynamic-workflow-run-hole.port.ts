@@ -1,83 +1,90 @@
 // ============================================================
-// Dynamic Workflow Run Port - 留白（hole）的读面与补全面
+// Dynamic Workflow Run Port - read and fill surfaces of holes
 // ============================================================
-// 从 dynamic-workflow-run.port.ts 拆出（oxlint max-lines 400 行门），照 retune 的先例
-// （dynamic-workflow-run-retune.port.ts）：快照上的留白条目、`fillHole` 的请求与结果住在这里，端口
-// 方法本身仍在 DynamicWorkflowRunPort 上；公开名一个不改，主端口文件 `export type *` 再导出。
-// spec：docs/dynamic-workflow/launch.md「The `FillWorkflowHole` tool」；
-// apps/zcode-cli/packages/dynamic-workflow/docs/execution-engine.md「Holes」。
+// Split from dynamic-workflow-run.port.ts (the oxlint max-lines 400 gate), following the retune
+// precedent (dynamic-workflow-run-retune.port.ts): snapshot hole entries and the `fillHole`
+// request/result live here while the method stays on DynamicWorkflowRunPort; no public name
+// changes, the main port file re-exports via `export type *`.
+// spec: docs/dynamic-workflow/launch.md "The `FillWorkflowHole` tool";
+// apps/zcode-cli/packages/dynamic-workflow/docs/execution-engine.md "Holes".
 
 import type { SessionId, ToolCallId } from "./shared.js";
 import type { TraceContext } from "../tracing/tracer.js";
 
 /**
- * 一处留白在快照上的投影（apps/zcode-cli/packages/dynamic-workflow/docs/execution-engine.md「The run snapshot」）：
- * 由 `hole-reached` / `hole-filled` 事件加引擎内存里的停驻表投影——**`waiting` 只在引擎说它在等时**
- * 成立（进程亡故后没有 promise 在等，单靠事件会把一个没人问的留白报成在等），`filled` 来自事件。
- * 零条时整字段缺席，≤32。
+ * One hole as projected into the snapshot
+ * (apps/zcode-cli/packages/dynamic-workflow/docs/execution-engine.md "The run snapshot"): built
+ * from `hole-reached` / `hole-filled` events plus the engine's in-memory parked table -
+ * **`waiting` holds only while the engine says it waits** (after process death no promise waits;
+ * events alone would report an unwaited hole as waiting); `filled` comes from events. The whole
+ * field is absent when none, <=32.
  *
- * `line` / `before` / `after` 是留白通知（core 的进度发射器）要念的三样：留白调用在草稿里的行、
- * 它前后的阶段名，都来自编译产物；读不到时缺席，通知随之省略那一句。草稿路径不在这里——它就是
- * 快照的 `scriptPath`。
+ * `line` / `before` / `after` are the three things the hole notification (core's progress
+ * emitter) reads: the hole call's line in the draft and the phase names around it, all from
+ * compiled artifacts; absent when unreadable, and the notification omits that clause. The draft
+ * path is not here - it is the snapshot's `scriptPath`.
  */
 export interface DynamicWorkflowRunHole {
-  /** 留白的站点 id（`hole#21b40fca`，名字键）；`fillHole` 只认它。 */
+  /** Hole site id (`hole#21b40fca`, name key); the only key `fillHole` accepts. */
   siteId: string;
-  /** 这一处的序号（同一站点在循环里可以到达多次）。 */
+  /** Ordinal of this occurrence (one site may be reached repeatedly in a loop). */
   ordinal: number;
-  /** 留白的字面名。 */
+  /** The hole's literal name. */
   name: string;
-  /** 类型实参原文（`Verdict`），照脚本写法。 */
+  /** Type argument verbatim (`Verdict`), as written in the script. */
   type: string;
   state: "waiting" | "filled";
-  /** 到达时刻（epoch ms）；`waiting` 时在场。 */
+  /** Reached-at (epoch ms); present while `waiting`. */
   since?: number;
-  /** 补全时刻（epoch ms）；`filled` 时在场。 */
+  /** Filled-at (epoch ms); present when `filled`. */
   filledAt?: number;
-  /** 补全它的会话（`fillHole` 请求的 `parentSessionId`）。 */
+  /** Session that filled it (the `fillHole` request's `parentSessionId`). */
   filledBy?: string;
-  /** 留白调用在 run 草稿里的行号（1 起）。 */
+  /** Line of the hole call in the run draft (1-based). */
   line?: number;
-  /** 留白之前的阶段名。 */
+  /** Phase name before the hole. */
   before?: string;
-  /** 留白之后的阶段名。 */
+  /** Phase name after the hole. */
   after?: string;
 }
 
 /**
- * {@link DynamicWorkflowRunPort.fillHole} 的请求（docs/dynamic-workflow/launch.md「The `FillWorkflowHole`
- * tool」；引擎文档「The fill service's checks」）。`body` 是留白函数体的**语句**，逐字节；拼接、编译、
- * 站点稳定性检查与草稿改写都在端口实现侧。
+ * Request of {@link DynamicWorkflowRunPort.fillHole}
+ * (docs/dynamic-workflow/launch.md "The `FillWorkflowHole` tool"; engine docs
+ * "The fill service's checks"). `body` is the hole function body's **statements**, verbatim;
+ * splicing, compilation, site-stability checks, and draft rewrite all happen implementation-side.
  */
 export interface DynamicWorkflowRunFillHoleRequest {
   runId: string;
-  /** 留白的站点 id（`hole#21b40fca`，名字键）。 */
+  /** Hole site id (`hole#21b40fca`, name key). */
   holeId: string;
   body: string;
-  /** 补全的会话，落进 `hole-filled.filledBy`。 */
+  /** Filling session, recorded into `hole-filled.filledBy`.
   parentSessionId?: SessionId | string;
-  /** 发起这次补全的 FillWorkflowHole 工具调用。 */
+  /** FillWorkflowHole tool call that requested the fill. */
   toolCallId?: ToolCallId | string;
   trace: TraceContext;
 }
 
 /**
- * 补全被拒的结构化理由。四者对模型是四个不同的下一步：换 run id / 看 run 的状态（停了就先
- * ResumeWorkflowRun）/ 改 fill 文件再交 `path` / 什么都别改，这是宿主的故障。
+ * Structured refusal reasons of a fill. Four different next steps for the model: another run id
+ * / check the run's state (ResumeWorkflowRun first if stopped) / fix the fill file and pass
+ * `path` / change nothing, this is a host fault.
  */
 export type DynamicWorkflowRunFillHoleRefusalReason =
-  /** journal 里没有这个 run。 */
+  /** No such run in the journal. */
   | "run_not_found"
-  /** run 不在飞，或这个留白不是它正在等的（已补过、还没到、未知 id）；message 说明是哪一种。 */
+  /** Run not in flight, or this is not the hole it waits on (already filled, not yet reached, unknown id); `message` says which. */
   | "hole_not_waiting"
-  /** 有效脚本编不过；`diagnostics` 在场。什么都没拼、没记、留白照旧在等。 */
+  /** The valid script does not compile; `diagnostics` present. Nothing spliced, nothing recorded; the hole keeps waiting. */
   | "compile_failed"
-  /** 编好的有效脚本给某个既有站点换了号：分析器的编号规则被打破，是宿主故障而非模型的错；留白照旧在等。 */
+  /** The compiled valid script renumbered an existing site: the analyzer's numbering rule broke - a host fault, not the model's; the hole keeps waiting. */
   | "fill_ids_unstable";
 
 /**
- * 一条补全诊断。`inFill` 为真时 `line` / `column` 是**函数体内**的坐标（拼进去的那一段），否则是
- * 脚本坐标——工具层据此把它锚到 fill 文件或 run 的草稿。
+ * One fill diagnostic. When `inFill`, `line` / `column` are **inside the function body** (the
+ * spliced segment), else script coordinates - the tool layer anchors it to the fill file or the
+ * run draft accordingly.
  */
 export interface DynamicWorkflowRunFillHoleDiagnostic {
   line: number;
@@ -88,9 +95,10 @@ export interface DynamicWorkflowRunFillHoleDiagnostic {
 }
 
 /**
- * `fillHole` 的结构化结果。成功时 `scriptText` 是**有效脚本**（已拼入函数体、已落库的那一份），
- * 工具层据它铸 display；`scriptPath` 是 run 的草稿（已被就地改写成有效脚本；run 原本没有草稿时
- * 由实现侧铸一份）；`phasesAdded` 是函数体带来的阶段名。
+ * Structured result of `fillHole`. On success `scriptText` is the **valid script** (body
+ * spliced in, the stored copy) from which the tool layer mints display; `scriptPath` is the
+ * run's draft (rewritten in place into valid script; minted by the implementation when the run
+ * had none); `phasesAdded` lists phase names the body introduced.
  */
 export type FillWorkflowHoleResult =
   | { ok: true; phasesAdded: string[]; scriptPath?: string; scriptText: string }

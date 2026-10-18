@@ -13,7 +13,7 @@ export const examplePresentation: PluginUiPresentation = {
   prefersBorder: true,
 };
 
-/** 内联卡片 / 面板入口请求打开侧栏时的载荷，以及据此创建的 tab。 */
+/** Payload when an inline card/pane entry asks for the side pane, plus the tab it creates. */
 export function exampleOpenSideTab(request: OpenPluginUiSideTabRequest): PluginUiSidePaneTab {
   const scope = readPluginUiScopeRef(request);
   if (!scope) throw new Error("request needs toolCallId or surfaceId");

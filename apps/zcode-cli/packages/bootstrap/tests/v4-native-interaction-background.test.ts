@@ -1530,7 +1530,10 @@ describe("broker × v4 竞速", () => {
     });
     const result = await pending;
     expect(result.decision).toBe("allow");
-    expect(result.inputAdjustments).toEqual({ subagent_model: "openai/gpt-5", max_concurrency: null });
+    expect(result.inputAdjustments).toEqual({
+      subagent_model: "openai/gpt-5",
+      max_concurrency: null,
+    });
   });
 
   it("AmendWorkflow：allowSession + content → 会话授权与调整同时成立", async () => {
@@ -2241,9 +2244,7 @@ describe("v4 conversation workflowRunArtifactRead query", () => {
       expect(read).toHaveBeenCalledTimes(1);
       // 缓存不改变分块结果：三块拼回原始字节。
       expect(
-        Buffer.concat(
-          [first, second, third].map((page) => Buffer.from(page.dataBase64, "base64")),
-        ),
+        Buffer.concat([first, second, third].map((page) => Buffer.from(page.dataBase64, "base64"))),
       ).toEqual(Buffer.from(bytes));
       expect(third.nextOffset).toBeNull();
     });
@@ -2330,7 +2331,6 @@ describe("v4 conversation workflowRunArtifactRead query", () => {
     expect(calls).toEqual(["resume", "read"]);
   });
 });
-
 
 describe("v4 原生 resumeWorkflowRun", () => {
   function makeRecord(app: Record<string, unknown>): V4SessionRecordView {

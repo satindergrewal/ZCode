@@ -11,7 +11,7 @@ import {
 } from "../src/index.js";
 
 describe("ProviderConfig access / api boundaries", () => {
-  it("把访问资格与 API 协议解析成两个独立的 Config Overlay", () => {
+  it("resolves access entitlement and API protocol into two independent Config Overlays", () => {
     const config = parseProviderConfig({
       access: { type: "api-key", apiKey: "secret" },
       api: {
@@ -33,7 +33,7 @@ describe("ProviderConfig access / api boundaries", () => {
     });
   });
 
-  it("递归 Overlay Provider、Access 与 API 字段", () => {
+  it("overlays provider, Access and API fields recursively", () => {
     const zcodeBuiltin = new ProviderConfig({
       group: "standard-personal",
       logo: { type: "builtin", key: "deepseek" },
@@ -53,7 +53,7 @@ describe("ProviderConfig access / api boundaries", () => {
 
     const effective = zcodeBuiltin.overlay(personal);
 
-    // 名称由规则外层 overlay 测试覆盖；此处只验证执行配置。
+    // Name behavior is covered by the rule-outer overlay tests; here only execution config is asserted.
     expect(effective.logo).toEqual({ type: "builtin", key: "deepseek" });
 
     expect(zcodeBuiltin.overlay(new ProviderConfig({ logo: null })).logo).toBeNull();
@@ -70,7 +70,7 @@ describe("ProviderConfig access / api boundaries", () => {
     expect(effective.validateComplete()).toEqual([]);
   });
 
-  it("接受开放的 Built-in Logo key，拒绝未知 Logo 类型", () => {
+  it("accepts open Built-in logo keys and rejects unknown logo types", () => {
     expect(
       parseProviderConfig({ logo: { type: "builtin", key: "future-provider-logo" } }).toJSON(),
     ).toEqual({ logo: { type: "builtin", key: "future-provider-logo" } });
@@ -79,7 +79,7 @@ describe("ProviderConfig access / api boundaries", () => {
     ).toThrow();
   });
 
-  it("智谱账号 Access 使用独立 Schema 且不能携带 API Key", () => {
+  it("gives Zhipu account Access its own schema with no API key", () => {
     const providers = parseProviderConfigMap([
       {
         providerId: "plan",
@@ -114,7 +114,7 @@ describe("ProviderConfig access / api boundaries", () => {
     ).toThrow();
   });
 
-  it("Provider Config 不接受关闭 Usage 的执行开关", () => {
+  it("lets no Provider Config toggle usage off at the execution layer", () => {
     expect(() =>
       parseProviderConfig({
         access: { type: "api-key", apiKey: "test-key" },
@@ -123,7 +123,7 @@ describe("ProviderConfig access / api boundaries", () => {
     ).toThrow();
   });
 
-  it("把隐藏性与智谱闲时模式解析为正式 Provider 配置", () => {
+  it("resolves hiddenness and the Zhipu off-peak mode into the official Provider config", () => {
     const config = parseProviderConfig({
       group: "zai-family",
       visibility: "hidden",
@@ -150,7 +150,7 @@ describe("ProviderConfig access / api boundaries", () => {
     });
   });
 
-  it("hidden 不放宽 Provider 完整性，旧 executionOnly 中间格式不再接受", () => {
+  it("keeps hidden from relaxing provider completeness and drops the legacy executionOnly shape", () => {
     const hidden = new ProviderConfig({
       group: "zai-family",
       visibility: "hidden",
@@ -173,7 +173,7 @@ describe("ProviderConfig access / api boundaries", () => {
     ).toThrow();
   });
 
-  it("visibility 遵循 Provider Overlay 顺序并默认可见", () => {
+  it("follows Provider Overlay order for visibility and defaults to visible", () => {
     const builtIn = new ProviderConfig({ visibility: "hidden" });
 
     expect(new ProviderConfig().visibility).toBeUndefined();
@@ -183,7 +183,7 @@ describe("ProviderConfig access / api boundaries", () => {
     );
   });
 
-  it("Account 层可以在最后补入账号约束和模型成员", () => {
+  it("lets the Account layer append account constraints and model membership last", () => {
     const zcodeBuiltin = new ProviderConfig({
       group: "zai-family",
       access: new ZhipuAccountAccessConfig({
@@ -210,7 +210,7 @@ describe("ProviderConfig access / api boundaries", () => {
     expect(zcodeBuiltin.overlay(account).validateComplete()).toEqual([]);
   });
 
-  it("API Key Access 必须在最终 Overlay 后取得 API Key", () => {
+  it("requires API-key Access to hold a key after the final Overlay", () => {
     const incomplete = new ProviderConfig({
       group: "standard-personal",
       access: new ApiKeyAccessConfig(),
@@ -228,7 +228,7 @@ describe("ProviderConfig access / api boundaries", () => {
     });
   });
 
-  it("Personal Provider 允许暂存非法 endpoint，并在完整性校验时 fail-closed", () => {
+  it("lets Personal Providers stage invalid endpoints and fail closed at completeness checks", () => {
     const providers = parsePersonalProviderConfigMap({
       providerRules: [
         {
@@ -251,7 +251,7 @@ describe("ProviderConfig access / api boundaries", () => {
     });
   });
 
-  it("后层显式切换 Access 类型时整体采用新的访问方式", () => {
+  it("switches the whole access kind when a later layer changes the Access type explicitly", () => {
     const zcodeBuiltin = new ProviderConfigMap([
       [
         "provider",
@@ -278,7 +278,7 @@ describe("ProviderConfig access / api boundaries", () => {
     });
   });
 
-  it("Team Account Access 只保存静态 family 与 mode", () => {
+  it("stores only static family and mode on Team Account Access", () => {
     const access = new ZhipuAccountAccessConfig({
       accountType: "bigmodel",
       mode: "team-coding-plan",
@@ -294,7 +294,7 @@ describe("ProviderConfig access / api boundaries", () => {
     });
   });
 
-  it("正式 Access Schema 拒绝 execution-provided 与伪通用协议字段", () => {
+  it("rejectes execution-provided and fake-generic protocol fields in the official Access schema", () => {
     expect(() => parseProviderConfig({ access: { type: "execution-provided" } })).toThrow();
     for (const field of ["planKind", "challenge", "requestSigning", "executionProtocol"]) {
       expect(() =>

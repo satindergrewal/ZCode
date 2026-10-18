@@ -4,40 +4,40 @@ import type { ICodingPlanSubscriptionService } from "@zcode/services";
 import { logger } from "@/logger.js";
 
 // ============================================================
-// 动态工作流灰度快照在 renderer 的唯一副本
+// The renderer's single copy of the dynamic-workflow rollout snapshot.
 // ============================================================
 //
-// Host 是唯一的决策者，这里只缓存它给出的那一份 `{ mode, enabled, source }`：
-//   - 一个 app 会话只取一次。发请求的是 Root 里的 loader（唯一 owner），
-//     自动化页与 run 面板只读，不各自再发一次；
-//   - 不带 forceRefresh。Host 用同一份 1h 快照推导发给 CLI 的工具策略，
-//     renderer 单独 force 一次会让「界面有入口 / 模型没工具」这类分歧成为可能；
-//     要强制重取走 refresh()；
-//   - 请求失败按 disabled 处理（fail-closed，与 resolveDynamicWorkflowClientConfig 同一裁决），
-//     但**不记住失败**：换一份 service 实例会重试。手机 `/remote` 在工作区桥接前拿到的是
-//     unsupported 代理，必然抛错，桥接完成后 accessor 会换一份，那一次必须能纠正回来。
+// The host is the sole decision maker; only the one `{ mode, enabled, source }` it emits is cached:
+//   - Fetched once per app session. The Root loader is the only requester (single owner);
+//     the automations page and run panel only read, never firing their own requests;
+//   - No forceRefresh. The host derives the CLI tool policy from the same 1h snapshot;
+//     a renderer-side force could split "UI shows the entry / model has no tools";
+//     call refresh() to force a re-fetch;
+//   - Failures count as disabled (fail-closed, same ruling as resolveDynamicWorkflowClientConfig),
+//     but failures are not memorized: a fresh service instance retries. Phone `/remote` gets an
+//     unsupported proxy that throws until bridging completes; the swapped accessor must recover.
 
 export type DynamicWorkflowAvailabilityStatus = "loading" | "ready";
 
 export interface DynamicWorkflowAvailabilitySnapshot {
   readonly status: DynamicWorkflowAvailabilityStatus;
-  /** loading 期间恒为 false：未知即不提供，入口宁可晚半拍出现也不闪一下再收起。 */
+  /** Always false while loading: unknown means not offered; a late entry beats flash-then-collapse. */
   readonly enabled: boolean;
   /**
-   * 未就绪或取数失败时为 null；`source` 只用于观测，区分「服务端关」与「本地覆盖」。
-   * `offeredMode` 是服务端提供的模式（设置行是否出现、哪个选项标「默认」），`mode` 是生效模式。
+   * Null while not ready or on fetch failure; `source` is observability only: "server off" vs "local override".
+   * `offeredMode` is what the server offers (settings row, "default" badge); `mode` is the effective one.
    */
   readonly config: DynamicWorkflowClientConfig | null;
 }
 
 interface DynamicWorkflowAvailabilityState extends DynamicWorkflowAvailabilitySnapshot {
-  /** 首次取数；同一个 service 出过结果后是 no-op，并发调用共用同一次请求。 */
+  /** First fetch; a no-op once this service has a result, and concurrent calls share one request. */
   ensureLoaded(service: ICodingPlanSubscriptionService): Promise<void>;
-  /** 绕过闩与 Host 的 1h 快照缓存重取（forceRefresh）。 */
+  /** Re-fetch bypassing the latch and the host's 1h snapshot cache (forceRefresh). */
   refresh(service: ICodingPlanSubscriptionService): Promise<void>;
   /**
-   * 绕过闩但不 forceRefresh：用户改了动态工作流选择、Host 重发策略之后重读生效值
-   * （launch.md「The user's choice」）。服务端的「提供」没变，不需要重拉 client/configs。
+   * Bypass the latch without forceRefresh: re-read the effective value after the user changes their
+   * dynamic-workflow choice or the host re-pushes policy (launch.md "The user's choice"); no refetch.
    */
   reload(service: ICodingPlanSubscriptionService): Promise<void>;
 }
@@ -49,7 +49,7 @@ const INITIAL_SNAPSHOT: DynamicWorkflowAvailabilitySnapshot = {
 };
 
 let inFlight: Promise<void> | null = null;
-/** 已经出过结果（成功或失败）的 service 实例；同一实例不再重复请求。 */
+/** Service instances that already produced a result (success or failure); never requested again. */
 let settledService: ICodingPlanSubscriptionService | null = null;
 
 type PublishSnapshot = (snapshot: DynamicWorkflowAvailabilitySnapshot) => void;
@@ -64,7 +64,7 @@ async function loadDynamicWorkflowConfig(
     publish({ status: "ready", enabled: config.enabled === true, config });
   } catch (error) {
     logger.warn(
-      "[dynamic-workflow] 灰度快照读取失败，按未命中处理",
+      "[dynamic-workflow] rollout snapshot read failed; treating as no match",
       error instanceof Error ? error.message : String(error),
     );
     publish({ status: "ready", enabled: false, config: null });
@@ -80,8 +80,8 @@ export const useDynamicWorkflowAvailabilityStore = create<DynamicWorkflowAvailab
     ensureLoaded(service): Promise<void> {
       if (settledService === service) return Promise.resolve();
       if (inFlight) {
-        // 在途的可能是另一份 service（手机 `/remote` 桥接期间 accessor 会换）：排在它后面再判一次。
-        // 若在途的就是这一份，那时 settledService 已等于它，递归会立即命中上面的 no-op。
+        // The in-flight call may be a different service (phone `/remote` swaps accessors mid-bridge): queue behind it and re-check.
+        // If it is this same instance, settledService already equals it and the recursion hits the no-op above.
         return inFlight.then(() => get().ensureLoaded(service));
       }
       const run = loadDynamicWorkflowConfig(service, {}, set).finally(() => {
@@ -101,7 +101,7 @@ export const useDynamicWorkflowAvailabilityStore = create<DynamicWorkflowAvailab
   }),
 );
 
-/** 测试用：清掉快照与「已出结果」闩。 */
+/** Test-only: clear the snapshot and the produced-result latch. */
 export function resetDynamicWorkflowAvailabilityStoreForTests(): void {
   inFlight = null;
   settledService = null;

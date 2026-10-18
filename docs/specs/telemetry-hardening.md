@@ -9,12 +9,12 @@
 
 ## State Owners
 
-| State | Single Owner | Notes |
-| ----- | ------------ | ----- |
-| Telemetry master switch | `ZCODE_TELEMETRY_ENABLED` in `packages/shared/src/env.ts` | Sole gate for data-warehouse events and ARMS RUM; compiled to `false` |
-| Agent OTLP telemetry | `prepareModelTelemetryEnv` in `apps/zcode-cli/packages/telemetry/src/bootstrap.ts` | Build constant short-circuits: no identity prep, no SDK load |
-| Desktop local OTLP outlets | `packages/desktop/src/main/index.ts` | When the master switch is off, exporters receive an empty env; endpoint resolution fails and they are never created |
-| Auto-update | `initAutoUpdater` call in `packages/desktop/src/main/index.ts` | `enabled: false`, reusing the existing flavor-disabled path |
+| State                      | Single Owner                                                                       | Notes                                                                                                               |
+| -------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Telemetry master switch    | `ZCODE_TELEMETRY_ENABLED` in `packages/shared/src/env.ts`                          | Sole gate for data-warehouse events and ARMS RUM; compiled to `false`                                               |
+| Agent OTLP telemetry       | `prepareModelTelemetryEnv` in `apps/zcode-cli/packages/telemetry/src/bootstrap.ts` | Build constant short-circuits: no identity prep, no SDK load                                                        |
+| Desktop local OTLP outlets | `packages/desktop/src/main/index.ts`                                               | When the master switch is off, exporters receive an empty env; endpoint resolution fails and they are never created |
+| Auto-update                | `initAutoUpdater` call in `packages/desktop/src/main/index.ts`                     | `enabled: false`, reusing the existing flavor-disabled path                                                         |
 
 ## Interfaces
 

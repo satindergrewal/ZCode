@@ -31,9 +31,9 @@ async function loadNodePtyModule(): Promise<NodePtyModule> {
     nodePtyModulePromise = import("node-pty").catch((error: unknown) => {
       nodePtyModulePromise = null;
       const message = error instanceof Error ? error.message : String(error);
-      // remote server 启动时会先创建所有服务，之前这里顶层 import node-pty，
-      // 只要当前平台缺少 pty.node，就会在服务注册阶段直接崩掉，整条远程连接链路都失败。
-      // 改成延迟加载后，server 可以先完成握手，仅在真正创建终端时再暴露“terminal 不可用”的错误。
+      // The remote server instantiates every service at startup; a top-level node-pty import here
+      // crashed registration whenever pty.node was missing, failing the whole remote link.
+      // Lazy loading lets the handshake finish and surfaces the terminal-unavailable error only at creation.
       throw new Error(`node-pty is unavailable in this runtime: ${message}`);
     }) as Promise<NodePtyModule>;
   }
@@ -126,10 +126,10 @@ function ensureNodePtySpawnHelperExecutable(): void {
     accessSync(helperPath, constants.X_OK);
     return;
   } catch {
-    // 当前环境里的 node-pty spawn-helper 丢了执行权限，
-    // child_process.spawn 还能工作，但 node-pty 在 macOS 上启动伪终端时会先调用这个 helper，
-    // helper 不可执行就会直接报 posix_spawnp failed。
-    // 这里在真正 spawn 前把 helper 修正为 0755，避免终端因为安装产物权限漂移而无法打开。
+    // A node-pty spawn-helper without the exec bit
+    // still lets child_process.spawn work, but node-pty calls the helper first on macOS,
+    // and a non-executable helper fails with posix_spawnp failed.
+    // chmod 0755 the helper before spawn so package permission drift cannot block terminals.
   }
 
   try {
@@ -199,25 +199,25 @@ export function resolveTerminalEnv(env: NodeJS.ProcessEnv = process.env): NodeJS
   const nextEnv = { ...env };
   const fallbackLocale = resolveFallbackUtf8Locale(env);
 
-  // macOS 从 Dock/Finder/登录项启动 Electron 时，父进程通常只带 /usr/bin:/bin:/usr/sbin:/sbin，
-  // 甚至缺失 PATH；内置终端虽然打开了登录 shell，但 zsh/bash 仍会先继承这个过窄 PATH，
-  // 导致 ls 以外的 npm/node/pnpm 等常用命令找不到，部分用户的 profile 又不会重新补齐。
-  // 这里仅在传给 terminal 的环境里补常见 Homebrew 与系统路径，不改全局 process.env，并保留用户已有顺序。
+  // Electron launched from Dock/Finder/login items inherits a minimal /usr/bin:/bin:/usr/sbin:/sbin PATH,
+  // or none. Login shells still start from that narrow PATH,
+  // so npm/node/pnpm vanish (ls survives) and some profiles never repair it.
+  // Append common Homebrew/system paths to the terminal env only, leaving global process.env and user order intact.
   if (process.platform === "darwin") {
     nextEnv.PATH = resolveDarwinTerminalPath(env);
   }
 
-  // runtime 登录 shell 环境采集会用 TERM=dumb / CI=1 来避免 profile 脚本进入交互分支，
-  // 但真实 terminal panel 必须作为交互终端启动，否则 starship、p10k、颜色能力检测等会降级成无样式输出。
+  // Runtime login-shell probes set TERM=dumb/CI=1 to keep rc files out of interactive branches,
+  // but the real panel must boot interactive or starship/p10k/color probes degrade to plain output.
   nextEnv.TERM = "xterm-256color";
   nextEnv.COLORTERM = nextEnv.COLORTERM?.trim() || "truecolor";
   if (nextEnv.CI === "1" && env.TERM === "dumb") {
     delete nextEnv.CI;
   }
 
-  // Electron 从 GUI 启动时 host process 可能继承不到登录 shell 的 UTF-8 locale，
-  // 子 shell 会落到 C/POSIX locale，中文路径会被 zsh/bash 显示成 \M-^ 这类转义乱码。
-  // 这里只在 locale 缺失或明确为 C/POSIX 时补 UTF-8，保留用户已经配置好的 UTF-8 locale。
+  // GUI-laoused hosts can miss the login shell's UTF-8 locale,
+  // leaving C/POSIX children where zsh/bash renders non-ASCII paths as \M-^ escapes.
+  // Fill in UTF-8 only when missing or C/POSIX; user-configured UTF-8 locales stay untouched.
   if (isMissingOrCLocale(nextEnv.LANG)) {
     nextEnv.LANG = fallbackLocale;
   }
@@ -272,9 +272,9 @@ function spawnTerminalProcess(params: {
       throw error;
     }
 
-    // Windows 下开启 node-pty 的实验性 useConptyDll 时，某些 Electron/安装包环境会在 shell 真正启动前
-    // 就因为 conpty.node / conpty.dll 的原生模块定位失败直接报错，导致终端整个打不开。
-    // 这里仅在命中这类 DLL 加载错误时回退到系统内置 ConPTY，既保留新版路径的优先级，也避免把普通启动失败误判成可重试。
+    // With node-pty's experimental useConptyDll, some Electron/installer combos fail before the shell starts
+    // while resolving conpty.node/conpty.dll, leaving terminals unopenable.
+    // Fall back to the OS ConPTY only on those DLL errors, keeping the new path preferred without misreading ordinary failures as retryable.
     return nodePty.spawn(shell, [], {
       ...windowsBaseOptions,
       useConptyDll: false,
@@ -284,8 +284,8 @@ function spawnTerminalProcess(params: {
 
 export function resolveTerminalShell(): string {
   if (process.platform === "win32") {
-    // Windows PowerShell 5.1 的 PSReadLine 在 ConPTY 下更容易把输入行空白重绘成 ANSI black 背景。
-    // PowerShell 7+ 的终端兼容性更接近桌面端，优先使用已安装的 pwsh，找不到再回退到系统自带 shell。
+    // PowerShell 5.1's PSReadLine repaints input whitespace with an ANSI black background under ConPTY.
+    // PS7+ matches desktop behavior better: prefer an installed pwsh, else the system shell.
     const candidates = ["pwsh.exe", "powershell.exe", process.env.ComSpec, "cmd.exe"];
 
     for (const candidate of candidates) {
@@ -295,9 +295,9 @@ export function resolveTerminalShell(): string {
     throw new Error("No usable Windows shell found for terminal startup");
   }
 
-  // 之前直接信任 SHELL 环境变量，外部环境如果残留了一个不存在的 shell 路径，
-  // node-pty 底层会把这个坏路径直接交给 posix_spawnp，终端创建时就会报错。
-  // 这里先校验 SHELL 是否真的可执行，不可用时再按常见 shell 顺序回退，避免启动直接失败。
+  // Trusting SHELL blindly breaks startup when the env keeps a dead path;
+  // node-pty hands it to posix_spawnp and creation fails.
+  // Verify SHELL is executable, else fall back through common shells.
   const candidates = [process.env.SHELL, "/bin/zsh", "/bin/bash", "/bin/sh"];
 
   for (const candidate of candidates) {
@@ -308,9 +308,9 @@ export function resolveTerminalShell(): string {
 }
 
 export function resolveTerminalCwd(cwd?: string): string {
-  // 修复原因：工作区目录可能已经被删除、移动，或者启动时传进来的是一个失效路径。
-  // 之前把这个 cwd 原样传给 node-pty，同样会在 spawn 阶段失败。
-  // 这里优先使用传入目录，不可用时回退到 HOME / 系统 home / 根目录，保证终端还能拉起。
+  // Fix: workspace dirs can be deleted/moved or arrive stale.
+  // Passing such a cwd to node-pty fails at spawn.
+  // Prefer the given dir, else HOME/system home/root, so a terminal still opens.
   const candidates = [cwd, process.env.HOME, homedir(), "/"];
 
   for (const candidate of candidates) {
@@ -325,8 +325,8 @@ export function createTerminalService(dependencies: {
 }): ITerminalService {
   const terminals = new Map<string, TerminalInstance>();
   let nextId = 0;
-  // 内存诊断计数器：客户端断连不回收 pty 时
-  // 这里会只增不减。
+  // Memory-diagnostic counters: if a disconnect leaves the pty alive
+  // these only ever grow.
   const memoryDiagnostics = registerMemoryDiagnosticsProvider("terminal", () => ({
     open: terminals.size,
   }));
@@ -350,11 +350,7 @@ export function createTerminalService(dependencies: {
   }
 
   const service: ITerminalService & { disposeAll(): void } = {
-    async create(params: {
-      cols: number;
-      rows: number;
-      cwd?: string;
-    }): Promise<{
+    async create(params: { cols: number; rows: number; cwd?: string }): Promise<{
       id: string;
       shell: string;
       fontFamily: string;
@@ -367,12 +363,10 @@ export function createTerminalService(dependencies: {
       const shell = resolveTerminalShell();
       const cwd = resolveTerminalCwd(params.cwd);
       const env = resolveTerminalEnv();
-      const terminalProfileSettings = await dependencies.settingService
-        .get()
-        .catch(() => ({
-          terminalFontFamily: undefined,
-          terminalInheritSystemProfile: true,
-        }));
+      const terminalProfileSettings = await dependencies.settingService.get().catch(() => ({
+        terminalFontFamily: undefined,
+        terminalInheritSystemProfile: true,
+      }));
       const fontProfile = resolveTerminalFontProfile({
         settings: terminalProfileSettings,
         env: process.env,
@@ -393,7 +387,9 @@ export function createTerminalService(dependencies: {
           env,
         });
       } catch (error) {
-        throw new Error(`Failed to start terminal with shell '${shell}' in '${cwd}': ${getErrorMessage(error)}`);
+        throw new Error(
+          `Failed to start terminal with shell '${shell}' in '${cwd}': ${getErrorMessage(error)}`,
+        );
       }
 
       p.onData((data) => dataEmitter.fire(data));
@@ -438,8 +434,8 @@ export function createTerminalService(dependencies: {
 
     disposeAll(): void {
       memoryDiagnostics.dispose();
-      // app 关闭时 host process 以前只会结束自身，terminal 里的子 shell 没有逐个显式 kill。
-      // 这里补一个本地清理入口，让 host 在退出链路里能同步回收所有仍存活的终端进程。
+      // On app close the host used to exit without killing child shells,
+      // so add a local cleanup the shutdown path calls to reap every live terminal.
       for (const id of Array.from(terminals.keys())) {
         cleanupTerminal(id);
       }

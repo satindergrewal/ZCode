@@ -193,7 +193,9 @@ describe("bundled dynamic-workflows skill", () => {
     expect(skill).toContain("## 16. Tool reference");
     expect(skill).toContain("refuses\nto run until this skill has been loaded");
     expect(skill).toContain("**Three sources; pass exactly one.**");
-    expect(skill).toContain("Running a saved workflow\n  is the one call that does not need this skill loaded");
+    expect(skill).toContain(
+      "Running a saved workflow\n  is the one call that does not need this skill loaded",
+    );
     expect(skill).toContain("`max_concurrency`");
     expect(skill).toContain("`subagent_model`");
     expect(skill).toContain("do not imitate it");
@@ -230,7 +232,9 @@ describe("bundled dynamic-workflows skill", () => {
     // 描述矛盾；描述收短后技能是唯一出处，两处必须同一个说法。
     expect(skill).toContain("**How the cache works.**");
     expect(skill).toContain("Asks that only\nanswered keep settling from the cache");
-    expect(skill).not.toContain("every ask to any subagent runs live even if its text is unchanged");
+    expect(skill).not.toContain(
+      "every ask to any subagent runs live even if its text is unchanged",
+    );
     expect(skill).toContain("### 16.5 `SaveWorkflow`");
     expect(skill).toContain("Never unsolicited");
     expect(skill).toContain("`script_path`");
@@ -438,7 +442,9 @@ describe("bundled dynamic-workflows skill", () => {
     const movedExample = await readSkillFile("examples.md");
     expect(movedExample).toContain("## 5. Changed-file review with confirmation as reviews land");
     expect(movedExample).toContain("confirmer-${p}-${index}");
-    expect(movedExample).not.toContain('phase("Confirm each kept finding independently and report it")');
+    expect(movedExample).not.toContain(
+      'phase("Confirm each kept finding independently and report it")',
+    );
     // 过时的缓存关门说法（工具档位 2026-09-12 已退场）不得回来。
     for (const { name, text } of await readAllContent()) {
       expect(text, name).not.toMatch(/first subagent with tools/i);

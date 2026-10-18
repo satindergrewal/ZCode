@@ -105,29 +105,32 @@ describe("escalate handler", () => {
   it.each([
     ["budget_exhausted", "升级预算已尽，请自行以最佳判断推进。"],
     ["no_active_ask", "当前没有在飞的 ask，升级的问题无处停驻，也不会有人作答。"],
-  ] as const)("renders the %s refusal as an ordinary result carrying the port's message", async (
-    reason,
-    message,
-  ) => {
-    const port: WorkflowEscalatePort = {
-      escalate: async () => ({ kind: "refused", reason, message }),
-    };
+  ] as const)(
+    "renders the %s refusal as an ordinary result carrying the port's message",
+    async (reason, message) => {
+      const port: WorkflowEscalatePort = {
+        escalate: async () => ({ kind: "refused", reason, message }),
+      };
 
-    const output = await escalateToolEntry.handler(
-      { question: "anything" },
-      toolContext({ workflowEscalatePort: port }),
-    );
+      const output = await escalateToolEntry.handler(
+        { question: "anything" },
+        toolContext({ workflowEscalatePort: port }),
+      );
 
-    // 关键断言：这是一个成功形状的结果，不是 ToolHandlerFailure（后者带 `result: false`）。
-    expect(output).toEqual({ status: "refused", message, reason });
-    expect(output).not.toHaveProperty("result", false);
-  });
+      // 关键断言：这是一个成功形状的结果，不是 ToolHandlerFailure（后者带 `result: false`）。
+      expect(output).toEqual({ status: "refused", message, reason });
+      expect(output).not.toHaveProperty("result", false);
+    },
+  );
 
   it("rejects an input without a question", async () => {
     await expect(
-      escalateToolEntry.handler({ context: "no question here" }, toolContext({
-        workflowEscalatePort: answeringPort("unused"),
-      })),
+      escalateToolEntry.handler(
+        { context: "no question here" },
+        toolContext({
+          workflowEscalatePort: answeringPort("unused"),
+        }),
+      ),
     ).rejects.toThrow();
   });
 
@@ -172,7 +175,11 @@ describe("escalate executor surface", () => {
     });
 
     const result = await executor.execute(
-      { id: createToolCallId("escalate-refused"), input: { question: "again?" }, name: ESCALATE_TOOL_NAME },
+      {
+        id: createToolCallId("escalate-refused"),
+        input: { question: "again?" },
+        name: ESCALATE_TOOL_NAME,
+      },
       { traceContext },
     );
 

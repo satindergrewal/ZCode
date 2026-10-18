@@ -146,7 +146,8 @@ app
           assert.ok((await sample("read-only")).error);
           await ui("window.setSamplingEnabled(true)");
           assert.equal(env.model.requests.history.length, count);
-          // 官方 SDK 在宿主 handler 前过滤非协议字段；它们不能覆盖绑定模型。
+          // The official SDK filters non-protocol fields in front of the host handler; they must not
+          // override the bound model.
           assert.equal(
             (await sample("ignored-provider", { ...request, providerId: "other" })).result.model,
             "gpt-4o",

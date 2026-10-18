@@ -32,7 +32,7 @@ beforeAll(async () => {
 });
 afterAll(() => source.dispose());
 
-// 基线取自 a56dc32c26 的专用表达式，按相同表达式分组但逐条验证规则，不能随美化更新预期。
+// Baseline expressions from a56dc32c26, grouped identically but asserted rule by rule; prettifying must never move expectations.
 const levels = [
   ["low", "high", "max"],
   ["low", "high", "max"],
@@ -72,11 +72,11 @@ const bases = [
   },
 ];
 
-describe("Todo95 专用 Map 合法请求等价", () => {
+describe("Todo95 dedicated-map valid-request equivalence", () => {
   for (const [group, entry] of baseline.entries()) {
     for (const reference of entry.rules) {
       it(`${reference.scope}[${reference.index}] ${reference.modelMatch} ${reference.apiMatch}`, () => {
-        // 规则重组会改变下标；按完整匹配条件定位，基线表达式及请求断言不变。
+        // Reordering rules shifts indices; locate by full match conditions, keeping baseline expressions and request asserts.
         const matches = rules[reference.scope]!.filter(
           (rule) =>
             rule.modelMatch === reference.modelMatch &&
@@ -98,7 +98,7 @@ describe("Todo95 专用 Map 合法请求等价", () => {
         for (const reasoningLevel of levels[group]!) {
           for (const base of bases) {
             const options = { reasoningLevel, maxOutputTokens: 32000 };
-            // C 改名比较旧输入/旧 Map 与新输入/新 Map；A/B 的请求基线保持不变。
+            // C renames compare old input/old map against new input/new map; A/B request baselines stay frozen.
             const renamed =
               reasoningLevel === "off" || reasoningLevel === "nothink"
                 ? "disabled"
@@ -112,9 +112,9 @@ describe("Todo95 专用 Map 合法请求等价", () => {
       });
     }
   }
-  it("历史专用 Map 不遗漏；新增型号与 Go 站点由独立配置及 wire 验证承接", () => {
+  it("misses none of the legacy dedicated maps; new models and the Go site are covered by dedicated config and wire tests", () => {
     const newModelMatchers = new Set([
-      // OpenRouter 的无预算 enabled 修复由 openrouter-reasoning-contract.test.ts 独立验收。
+      // The OpenRouter budget-less enabled fix is accepted separately in openrouter-reasoning-contract.test.ts.
       ".*(?:glm-|deepseek-|kimi-k2|qwen|mimo-).*",
       ".*gpt-6-astra(?:[.\\-:/\\[].*)?",
       ".*claude-(?:fable|mythos)-5[.-]1(?:[.\\-:/\\[].*)?",
@@ -129,7 +129,7 @@ describe("Todo95 专用 Map 合法请求等价", () => {
       rules[scope]!.flatMap((rule) =>
         rule.modelMatch !== ".*" &&
         !newModelMatchers.has(rule.modelMatch) &&
-        // Go 新站点不属于 Todo95 历史基线；成员/档位/请求由 opencode-go 独立用例验证。
+        // The new Go site is outside the Todo95 baseline; members/tiers/requests are covered in opencode-go.
         !(
           scope === "providerSiteRules" && rule.baseUrlMatch === "https://opencode\\.ai/zen/go/v1/?"
         ) &&
@@ -150,13 +150,13 @@ describe("Todo95 专用 Map 合法请求等价", () => {
   });
 });
 
-describe("Todo95 API Schema 兜底", () => {
+describe("Todo95 API Schema fallback", () => {
   for (const apiType of [
     "anthropic-messages",
     "openai-chat-completions",
     "openai-responses",
   ] as const) {
-    it(`${apiType} 未知模型仅加档位即可继承 Map，Personal Map 保持权威`, () => {
+    it(`${apiType} unknown models inherit the map by adding a tier only, Personal maps stay authoritative`, () => {
       const original = snapshot.models.resolve({
         providerId: "unknown",
         modelId: "future-unknown-model",
@@ -248,8 +248,8 @@ describe("Todo95 API Schema 兜底", () => {
   }
 });
 
-describe("Todo138 Model 层兜底与专用档位", () => {
-  it("没有 API 信息也有 Model 两档；API 通用规则不声明档位", () => {
+describe("Todo138 model-level fallback and dedicated tiers", () => {
+  it("keeps two model-level tiers with no API info; API-generic rules declare no tiers", () => {
     const result = snapshot.models.resolve({
       providerId: "unknown",
       modelId: "future-unknown-model",
@@ -263,7 +263,7 @@ describe("Todo138 Model 层兜底与专用档位", () => {
   it.each([
     ["gpt-5.4", ["none", "low", "medium", "high", "xhigh"]],
     ["GLM-5.3", ["low", "high", "max"]],
-  ])("%s 专用档位在三种 API 下保持", (modelId, values) => {
+  ])("%s keeps its dedicated tiers across all three APIs", (modelId, values) => {
     for (const apiType of [
       "anthropic-messages",
       "openai-chat-completions",

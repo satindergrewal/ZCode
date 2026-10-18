@@ -25,11 +25,13 @@ import type { OpenAiCompatApi, ZcodeAliasApi } from "./aliasApi.js";
 import { createOpenAiCompatApi, readOpenAiGlobals } from "./openaiAlias.js";
 
 /**
- * 插件 iframe 内 `window.zcode` / `window.openai` 别名的运行时：官方 ext-apps `App` 上的薄封装，协议、握手、
- * 错误码全部来自 SDK，自己不持有 JSON-RPC。纯逻辑（消息经注入的 App 收发），alias.ts 负责接 DOM。
+ * Runtime behind the in-iframe `window.zcode` / `window.openai` aliases: a thin wrapper over the
+ * official ext-apps `App`. Protocol, handshake and error codes all come from the SDK; no JSON-RPC
+ * of our own. Pure logic (messages via the injected App); alias.ts owns the DOM wiring.
  *
- * 懒连接：别名脚本注入到每个插件页面，而用官方 SDK 自建 `App` 的页面（官方示例）不会碰 `window.zcode`；
- * 首次访问任一成员才握手，避免同一页面对宿主发两次 ui/initialize。
+ * Lazy connect: the alias ships into every plugin page, while pages building their own official
+ * `App` never touch `window.zcode`; handshake waits for the first member access so one page never
+ * sends ui/initialize twice.
  */
 export interface AliasAppLike {
   connect(transport?: Transport, options?: RequestOptions): Promise<void>;
@@ -46,7 +48,7 @@ export interface AliasAppLike {
   }): Promise<CallToolResult>;
   readServerResource(params: { uri: string }): Promise<ReadResourceResult>;
   listServerResources(params?: { cursor?: string }): Promise<ListResourcesResult>;
-  /** 规范方法（resources/templates/list、resources/subscribe…）与 ZCode 扩展方法走基类 request。 */
+  /** Spec methods (resources/templates list, resources/subscribe, ...) and ZCode extensions all go through the base request. */
   request(
     request: { method: string; params?: Record<string, unknown> },
     resultSchema: unknown,
@@ -75,18 +77,19 @@ export const ZCODE_GLOBALS_EVENT = "zcode:globals";
 export interface PluginSandboxAliasRuntime {
   zcode: ZcodeAliasApi;
   openai: OpenAiCompatApi;
-  /** 是否已经（或正在）握手；诊断用。 */
+  /** Handshake done or in flight; diagnostics only. */
   readonly connecting: boolean;
   /**
-   * 页面自建的官方 `App` 已在与宿主通信（别名尚未握手前就看到宿主发来的 JSON-RPC）：别名放弃握手。
-   * 同一页面两个 `App` 共用一条 postMessage 通道会撞请求 id（都从 0 起）并让宿主收到两次 initialized。
+   * A page-owned official `App` is already talking to the host (host JSON-RPC seen before the
+   * alias handshake): the alias stands down. Two `App`s on one page sharing the postMessage
+   * channel would collide request ids (both from 0) and deliver initialized twice.
    */
   markForeignApp(): void;
 }
 
 export function createPluginSandboxAliasRuntime(options: {
   app: AliasAppLike;
-  /** 官方 App 的 connect 缺省用 window.parent 的 PostMessageTransport；这里注入以便控制目标窗口。 */
+  /** The official App connect defaults to window.parent's PostMessageTransport; inject to control the target window. */
   transport?: Transport;
   protocolVersion: string;
   onChange?: (globals: Record<string, unknown>) => void;
@@ -132,7 +135,7 @@ export function createPluginSandboxAliasRuntime(options: {
     for (const listener of resourceListChangedListeners) listener();
   });
 
-  /** 失败只记录一次，后续访问不重试（与页面自建 App 的失败语义一致）。 */
+  /** Record failure once; later accesses never retry (same failure semantics as a page-owned App). */
   const ready = (): Promise<void> => {
     if (foreignApp && !connectPromise) {
       return Promise.reject(
@@ -144,7 +147,7 @@ export function createPluginSandboxAliasRuntime(options: {
     if (!connectPromise) {
       connectPromise = app.connect(options.transport).then(
         () => {
-          // widgetState 初值随握手经 hostContext 扩展键下发（宿主只在创建桥时带一次）。
+          // The widgetState initial value arrives with the handshake via the hostContext extension key (the host sends it once, at bridge creation).
           if (!widgetStateSeeded) {
             widgetStateSeeded = true;
             const seeded = (app.getHostContext() as Record<string, unknown> | undefined)?.[
@@ -188,7 +191,7 @@ export function createPluginSandboxAliasRuntime(options: {
       return hostContext()?.displayMode ?? null;
     },
     get maxHeight() {
-      // SDK 把 containerDimensions 建成 height|maxHeight 的联合，两个分支都可能带值，按对象读。
+      // The SDK types containerDimensions as a height|maxHeight union where both branches can carry values; read it as an object.
       const dimensions = hostContext()?.containerDimensions as
         | { height?: number; maxHeight?: number }
         | undefined;
@@ -286,7 +289,7 @@ export function createPluginSandboxAliasRuntime(options: {
     },
     ready,
   };
-  // 任一成员首次被访问即触发握手（读 toolInput 也算：页面通常先读再等事件）。
+  // The first access of any member triggers the handshake (reading toolInput counts: pages typically read first, then await events).
   const lazy = <T extends object>(target: T): T =>
     new Proxy(Object.freeze(target), {
       get(object, key, receiver) {

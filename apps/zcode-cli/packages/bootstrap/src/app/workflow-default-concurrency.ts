@@ -1,31 +1,31 @@
 // ============================================================
-// workflow 默认并发：CPU 推导值的唯一实现
+// Workflow default concurrency: the single implementation of the CPU-derived value
 // ============================================================
 // docs/dynamic-workflow/concurrency.md「Two bounds on a run」：`max(4, min(16, availableParallelism() − 2))`
-// 是**默认并发** D——没设 `max_concurrency` 的 run 的上界、进程级治理器每个 provider 桶的起点与
-// 空闲重置落点、legacy `Workflow` 工具与 snippet 的并发。它是起点，**不是**上限：用户给的
-// `max_concurrency` 高于低于都照用，桶的自动增长到 2D 为止（再往上只随在飞 run 的上界）。
+// is the **default concurrency** D — the bound for runs without `max_concurrency`, the governor's per-provider bucket seed and
+// idle reset point, and the legacy `Workflow` tool / snippet concurrency. A floor, **not** a cap: a user's
+// `max_concurrency` is honored above or below; bucket auto-growth stops at 2D (beyond that only a run's own bound raises it).
 //
-// 此前这个数叫「天花板」，run 自己的上界被钳在它之下；用户反馈小机器 / 小远端上只给两个子代理，
-// 而子代理等的是远端 provider 而不是本地核——于是去掉上限语义、把地板从 1 抬到 4。
-// 公式复制在多处会各自漂移，收敛成这一个函数。
+// This number used to be called the "ceiling", clamping a run's own bound under it; user feedback: small machines / remotes got two subagents,
+// while subagents wait on remote providers, not local cores — hence dropping the ceiling semantics and raising the floor from 1 to 4.
+// A formula copied in N places drifts N ways; it converges into this one function.
 
 import { availableParallelism as osAvailableParallelism } from "node:os";
 
-/** 默认并发的硬顶（沿用 legacy 并发式）。只管默认值，不管用户给的上界。 */
+/** Hard cap of the default concurrency (inherited from the legacy formula). Governs the default only, never user-set bounds. */
 export const WORKFLOW_DEFAULT_CONCURRENCY_MAX = 16;
-/** 地板：核数少的机器与小远端上 `cores − 2` 只剩一两个，而子代理的瓶颈不在本地核。 */
+/** Floor: on small-core machines and small remotes, cores - 2 leaves one or two, and the subagent bottleneck is not local cores. */
 const WORKFLOW_DEFAULT_CONCURRENCY_FLOOR = 4;
-/** 给主代理与宿主进程留出的核数。 */
+/** Cores reserved for the main agent and the host process. */
 const RESERVED_PARALLELISM = 2;
 /**
- * 治理器桶的自动增长倍数：没有在飞 run 要求更多时，cap 靠探测最多爬到 `2 × D`
+ * Governor bucket auto-growth multiple: with no in-flight run demanding more, the cap probes up to `2 x D`
  * （docs/dynamic-workflow/concurrency.md「The governor」）。
  */
 export const WORKFLOW_CONCURRENCY_AUTO_GROWTH_FACTOR = 2;
 
 /**
- * CPU 推导的默认并发。`availableParallelism` 可注入，供测试固定核数（地板/硬顶两条用例）。
+ * CPU-derived default concurrency. `availableParallelism` is injectable for tests (floor/cap cases).
  */
 export function resolveWorkflowDefaultConcurrency(
   availableParallelism: () => number = osAvailableParallelism,
@@ -37,14 +37,14 @@ export function resolveWorkflowDefaultConcurrency(
 }
 
 /**
- * 请求的并发上界 → 本 run 实际生效的上界（docs/dynamic-workflow/concurrency.md「Two bounds on a run」）。
+ * Requested concurrency bound -> the bound effective for this run (docs/dynamic-workflow/concurrency.md "Two bounds on a run").
  *
- * **没有上限**：高于默认与低于默认同样照用——用户要 40 个就给 40 个，provider 的承受力是治理器
- * 的事。缺席 / 非有限数读作「不设自己的界」= 默认并发；非整数向下取整（要「3.7 个在飞的 ask」没有
- * 意义，而向上取整会偷偷越过用户说的数）；地板 1。
+ * **No ceiling**: above or below default, the number is honored — 40 requested means 40; provider capacity is the governor's
+ // business. Absent / non-finite reads as "no bound of its own" = default concurrency; non-integers floor (fractional
+ // in-flight asks are meaningless, and ceiling would quietly exceed the given number); floor 1.
  *
- * 提交时定上界与中途 retune 走的**必须**是同一条规则（否则同一个 `max_concurrency` 经两条路会
- * 落成两个数），而那两条路分居 run service 与 retune 两个模块，所以它住在这里。
+ * The submit-time bound and mid-flight retune **must** share one rule (else one `max_concurrency` yields two numbers via two paths),
+ // and those paths live in run service and retune — so the rule lives here.
  */
 export function normalizeRunConcurrency(
   requested: number | undefined,

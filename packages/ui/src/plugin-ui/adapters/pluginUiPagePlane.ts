@@ -12,7 +12,7 @@ function parkingRoot(): HTMLElement {
   return root;
 }
 
-/** 实例与锚点分离；普通内联与正文在同一滚动树内，不用屏幕坐标追赶滚动。 */
+/** Instance and anchor separate; plain inline cards share the scroll tree, no screen-coordinate chasing. */
 export function createPluginUiPagePlane(events: {
   onVisibility(visible: boolean): void;
   onCrash(): void;
@@ -41,7 +41,7 @@ export function createPluginUiPagePlane(events: {
     if (root.parentElement === parent) return;
     if (!frame) parent.append(root);
     else {
-      // appendChild 会触发 Electron guest 的断开重建。preload 为沙箱注册移动回调后才允许迁移。
+      // appendChild disconnect-rebuilds Electron guests; migrate only after preload registers the move callback.
       if (
         typeof parent.moveBefore !== "function" ||
         typeof (frame as HTMLElement & { connectedMoveCallback?: unknown })
@@ -52,7 +52,7 @@ export function createPluginUiPagePlane(events: {
     }
   };
   const resetStyle = () => {
-    // webview 释放后容器仍可能覆盖错误态按钮；容器只负责定位，点击由 webview 显式接收。
+    // After release the container can still cover the error button; the container positions, the webview receives clicks.
     root.style.cssText =
       "display:flow-root;position:relative;width:100%;height:100%;margin:0;border:0;padding:0;overflow:hidden;pointer-events:none";
   };
@@ -79,7 +79,7 @@ export function createPluginUiPagePlane(events: {
     preview = null;
   };
   const track = (node: HTMLElement, update: () => void) => {
-    // 承载层尺寸完全由锚点决定；反向观察承载层会在 popover 切换时形成 ResizeObserver 回环。
+    // Carrier size is anchor-driven; observing the carrier back would loop ResizeObservers on popover flips.
     const stop = autoUpdate(node, root, update, { elementResize: false });
     const resize = new ResizeObserver(update);
     resize.observe(node);
@@ -155,7 +155,7 @@ export function createPluginUiPagePlane(events: {
         anchors.delete(token);
         if (![...anchors.values()].some((a) => a.placement.node === placement.node))
           intersection.unobserve(placement.node);
-        // 必须同步迁移，再让 React 删除锚点；不能放到 RAF / passive effect。
+        // Move synchronously before React removes the anchor; never in a RAF/passive effect.
         layout();
       };
     },

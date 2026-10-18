@@ -1,5 +1,4 @@
-// world-read / world-run 节点的有界输入（docs/dynamic-workflow/transcript-and-notifications.md）：
-// 小输入原样、原类型；超限逐项截成预览并置 truncated；不可序列化的实参走同一条预览路。
+// Bounded inputs for world-read/world-run nodes (docs/dynamic-workflow/transcript-and-notifications.md):
 import { describe, expect, it } from "vitest";
 import { WORLD_READ_INPUT_MAX_BYTES } from "../../src/engine/types.js";
 import { boundWorldReadInput } from "../../src/engine/world-read-input.js";
@@ -25,7 +24,7 @@ describe("boundWorldReadInput", () => {
     expect(input.truncated).toBe(true);
     expect(input.args).toHaveLength(3);
     expect(input.args[0]).toBe("node");
-    // 数组实参变成 JSON 预览、切尾加省略号；序列化后整体落在上限之内。
+    // Array args become a JSON preview, tail-elided, the whole thing within the cap once serialized.
     expect(typeof input.args[1]).toBe("string");
     expect((input.args[1] as string).endsWith("…")).toBe(true);
     expect(new TextEncoder().encode(JSON.stringify(input)).length).toBeLessThanOrEqual(

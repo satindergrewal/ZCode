@@ -13,12 +13,12 @@ const TRACE_ID = "1234567890abcdef1234567890abcdef";
 const SPAN_ID = "1234567890abcdef";
 
 describe("OTLP ARMS cost controls", () => {
-  it("默认把 Metric 周期降为 5 分钟，并把 Root Trace 稳定采样为 10%", () => {
+  it("defaults the metric interval to 5 minutes and samples root traces at a steady 10%", () => {
     expect(AGENT_METRIC_EXPORT_INTERVAL_MS).toBe(300_000);
     expect(AGENT_TRACE_SAMPLE_RATIO).toBe(0.1);
   });
 
-  it("Trace 子 Span 继承父 Span 的采样决定，不形成残缺 Trace 树", () => {
+  it("child spans inherit the parent sampling decision, keeping the trace tree intact", () => {
     const sampler = createAgentTraceSampler(0);
     const sampledParent = trace.setSpanContext(ROOT_CONTEXT, {
       isRemote: false,
@@ -63,7 +63,7 @@ describe("OTLP ARMS cost controls", () => {
     ).toBe(SamplingDecision.RECORD_AND_SAMPLED);
   });
 
-  it("Histogram 关闭 Min/Max，且每项最多保留 10 个 Bucket", () => {
+  it("disables Histogram Min/Max and keeps at most 10 buckets per instrument", () => {
     const histogramViews = metricViews().filter(
       (view) => view.aggregation?.type === AggregationType.EXPLICIT_BUCKET_HISTOGRAM,
     );

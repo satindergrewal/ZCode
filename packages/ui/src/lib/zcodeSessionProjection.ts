@@ -344,8 +344,8 @@ export function zcodeSessionSnapshotToZCodeTaskSnapshot(
     messages,
     fileChanges: [],
     configOptions: zcodeSessionSettingsToConfigOptions(snapshot.settings),
-    // Bugfix: session/read 已经通过协议返回 `/compact` 等 slashCommands。
-    // 历史 task restore 会消费这里投影出的 task snapshot；如果不透传，UI 回填 store 时只能拿到空列表。
+    // Bugfix: session/read already returns `/compact` and other slashCommands via the protocol.
+    // Historical task restore consumes the task snapshot projected here; without pass-through the store backfill gets an empty list.
     slashCommands: snapshot.slashCommands ?? [],
     runtime: {
       activeTurnKind: snapshot.runtime.activeTurnKind,
@@ -368,8 +368,8 @@ export function zcodeSessionSnapshotToZCodeTaskSnapshot(
           (event): event is Extract<ZCodeStreamEvent, { type: "elicitation_request" }> =>
             event !== null,
         ),
-      // Bugfix: agent 恢复历史 session 时会从 DB 读取 todo；UI 的 todo 面板不能再只依赖
-      // 当前 renderer 内存里的 plan 事件，否则从历史打开会丢失持久 todo。
+      // Bugfix: agent session restore reads todos from the DB; the UI todo panel can no longer rely only on
+      // in-memory renderer plan events, or persisted todos vanish for history-opened sessions.
       plan: sessionTodosToPlanSteps(snapshot.todos),
       goalStats: sessionGoalStatsToRuntime(snapshot.goalStats),
       goalVerifications: snapshot.runtime.goalVerifications ?? null,
@@ -495,8 +495,8 @@ function logCompactionProjectionDiagnostic(
     return;
   }
 
-  // 修复排查：auto compact 之后曾出现 DB 有 assistant 但 GUI 不显示。
-  // 这里只记录消息身份、长度和 timeline 元数据，避免把用户正文落进 UI 日志。
+  // Debugging note: after auto compact the DB had assistant messages the GUI did not show.
+  // Log only message identity/length/timeline metadata -- never user body text -- in the UI log.
   logger.info("[conversationSessionTimelineDiag] projection compact snapshot", {
     sessionId: snapshot.session.sessionId,
     status: snapshot.session.status,
@@ -536,8 +536,8 @@ function restoreGoalCommandUserMessages(
     changed = true;
     return {
       ...message,
-      // Bugfix: /goal set 的 agent snapshot 已经持久化了一条可见 user message，
-      // 但正文只保留 objective。这里按 target 创建时间恢复命令前缀，避免首轮 query 丢失 "/goal"。
+      // Bugfix: a /goal set agent snapshot already persists a visible user message,
+      // but the body keeps only the objective. Restore the command prefix by target creation time so the first query keeps its /goal.
       content: `/goal ${objective}`,
     };
   });
@@ -571,9 +571,9 @@ function addGoalObjectiveSnapshotFallback(
   }
 
   const continuationMessage = snapshot.messages.find(isZCodeGoalContinuationReminderMessage);
-  // Bugfix: /goal 续跑会把目标包进 model-only system-reminder，shared 可见过滤会正确隐藏内部 XML。
-  // 但历史恢复如果没有原始用户 turn，聊天区会只剩 assistant 回复；这里补回用户实际输入的命令形态，
-  // 避免首轮 query 被瘦身成 objective 后丢失 "/goal" 上下文。
+  // Bugfix: /goal continuations wrap the goal in a model-only system-reminder; shared-visible filtering hides the inner XML correctly.
+  // But history restore without the original user turn leaves only the assistant reply; re-add the command form the user actually typed
+  // so the slimmed first query keeps its /goal context.
   return [
     {
       role: "user",
@@ -607,8 +607,8 @@ function addSessionForkSnapshotFallback(
       role: "user",
       content: "",
       timestamp: snapshot.session.createdAt,
-      // Bugfix: 旧的纯对话 fork 没有落库 synthetic notice，只能从 session.parentSessionId
-      // 恢复一个不可跳转的分割线，避免历史 fork 会话完全看不到来源边界。
+      // Bugfix: legacy plain-conversation forks never persisted a synthetic notice; recover a non-navigable divider from
+      // session.parentSessionId so historical forks are not blind to their origin boundary.
       syntheticTimeline: {
         version: 1,
         kind: "synthetic",
@@ -646,8 +646,8 @@ function addGoalVerificationTimelineSnapshotFallback(
       role: "assistant",
       content: "",
       timestamp: item.startedAt ?? item.updatedAt,
-      // 修复原因：goal verifier lifecycle 是 agent event-store 持久事实，不在 message history 内；
-      // snapshot 恢复时必须按 target+iteration 和 anchor 补成边界 divider，避免同一轮校验重复追加或漂到下一轮。
+      // Fix: the goal-verifier lifecycle is persisted agent event-store fact, not message history;
+      // on snapshot restore rebuild boundary dividers from target+iteration and anchor, or one turn's checks duplicate or drift into the next.
       syntheticTimeline: item,
     }));
   if (timelineMessages.length === 0) {
@@ -705,8 +705,8 @@ function normalizeGoalVerificationTimelineMessageOrder(
   if (timelineMessages.length === 0) {
     return messages;
   }
-  // 修复原因：agent history 里已经持久化的 goal verifier divider 可能晚于下一条
-  // user query 才到达；snapshot projection 必须重新按 anchor 归位，不能只修 fallback divider。
+  // Fix: a persisted goal-verifier divider can land after the next
+  // user query; snapshot projection must re-anchor it, not just patch the fallback divider.
   return insertGoalVerificationTimelineMessages(
     messages.filter((message) => message.syntheticTimeline?.type !== "goal_verification"),
     timelineMessages,
@@ -830,8 +830,8 @@ export function zcodeSessionEventToZCodeStreamEvents(params: {
   const activePromptInputId = getActivePromptInputId(state, event.sessionId);
   const toolProjectionMemory = ensureProjectionToolMemory(state);
   const toolNameById = toolProjectionMemory?.toolNameById;
-  // 修复原因：UI 消费的 traceId 表示一次用户输入到本轮回复结束的轮次标识。
-  // runtime trace 只在没有 inputId 时兜底，保证同一轮 chunk、工具调用和 complete 归到同一组。
+  // Fix: the UI-facing traceId identifies one input-to-reply turn.
+  // The runtime trace is fallback-only when no inputId exists, keeping a turn's chunks/tools/complete in one group.
   const eventInputId = inputId ?? activePromptInputId;
   const traceId = eventInputId ?? protocolTraceId;
   const turnKey = `${event.sessionId}:${event.turnId ?? eventInputId ?? traceId}`;
@@ -940,8 +940,8 @@ export function zcodeSessionEventToZCodeStreamEvents(params: {
         );
       }
       if (isUserInputBackedPermissionToolName(stringValue(payload.toolName))) {
-        // 修复原因：AskUserQuestion/ExitPlanMode 的 permission.requested 只是 runtime 等待态；
-        // 真正的问题会从 interaction/requestUserInput 映射成 elicitation_request。
+        // Fix: AskUserQuestion/ExitPlanMode permission.requested is only a runtime wait state;
+        // the real question arrives as elicitation_request via interaction/requestUserInput.
         return [];
       }
       return [permissionPayloadToStreamEvent(taskId, traceId, eventInputId, payload)];
@@ -954,8 +954,8 @@ export function zcodeSessionEventToZCodeStreamEvents(params: {
         toolNameById,
       );
     case "turn.steerQueued": {
-      // 修复原因：desktop continuous 的 raw session event 不经过 service adapter；
-      // 这里漏传 source 会把 ExitPlanMode 审批反馈误投影成普通手动 steer。
+      // Fix: desktop-continuous raw session events bypass the service adapter;
+      // dropping source here projects an ExitPlanMode approval as a plain manual steer.
       const source = turnSteerSourceValue(payload.source);
       return [
         {
@@ -1043,8 +1043,8 @@ export function zcodeSessionEventToZCodeStreamEvents(params: {
           ),
         ];
       }
-      // 修复原因：旧 turn.failed → task_error 投影只保留文案/code/detail，live telemetry
-      // 无法看到 adapter 已确认的 provider/network 事实；校验后透传安全归因字段。
+      // Fix: the old turn.failed -> task_error projection kept copy/code/detail only, hiding adapter-confirmed
+      // provider/network facts from live telemetry; pass through the safe attribution fields after validation.
       const attribution = errorAttributionSchema.safeParse(errorPayload.attribution);
       return [
         {
@@ -1080,8 +1080,8 @@ export function zcodeSessionEventToZCodeStreamEvents(params: {
         mapSessionInfoLikePayload(taskId, traceId, eventInputId, event.eventId, payload, state),
       );
     case "streamRecovery.updated":
-      // 修复原因：SSE 断流恢复的权威进度先通过 streamRecovery.updated 到达。
-      // 只依赖后续 model_request_started 会让部分会话看不到输入栏重试次数。
+      // Fix: authoritative SSE-recovery progress arrives via streamRecovery.updated first.
+      // Waiting for a later model_request_started leaves some sessions without the input retry count.
       return trackProjectionApiRetryEvents(
         state,
         event.sessionId,
@@ -1098,8 +1098,8 @@ function ensureProjectionToolMemory(
   if (!state) {
     return undefined;
   }
-  // 修复原因：前台 useTaskStreamEvents 曾漏初始化这个 Map，导致 Write 输入 delta
-  // 每次都从空字符串重新解析，界面只能看到首段和最终完整 tool_call，无法实时递增行数。
+  // Fix: foreground useTaskStreamEvents skipped initializing this Map, so Write input deltas
+  // re-parsed from empty each time -- the UI showed only the first chunk and final tool_call, no live line growth.
   return ensureZCodeToolProjectionMemory(state);
 }
 
@@ -1155,8 +1155,8 @@ function takeProjectionApiRetryClearOnModelProgress(
   ) {
     return null;
   }
-  // 修复原因：普通 adapter retry 的 request_started 只是开始重试，立即清理会让输入栏闪烁；
-  // 等到 retry attempt 真正产出模型内容时再清理，才表示用户可见的连接已经恢复。
+  // Fix: a plain adapter retry's request_started only begins the retry; clearing then flickers the input bar --
+  // clear only when the retry attempt produces model content, which is when the connection is user-visibly back.
   state.activeApiRetrySessionIds.delete(sessionId);
   return {
     type: "session_info_update",
@@ -1302,8 +1302,8 @@ function backgroundTaskNotificationToolUpdateFromInput(params: {
     toolId: parsed.toolUseId,
     status,
     content: parsed.notification.result ?? parsed.notification.summary,
-    // 修复原因：ToolLayout 的既有失败 hover 只读取 toolCall.error；notification
-    // 原先只更新 status/raw，导致“执行失败”没有可展示的详情。
+    // Fix: ToolLayout's failure hover reads toolCall.error only, while the notification
+    // used to touch status/raw -- leaving nothing to show for the failure.
     ...(status === "failed" && parsed.notification.error
       ? { error: parsed.notification.error }
       : {}),
@@ -1359,7 +1359,7 @@ function zcodeMessageToZCodePersistedMessage(
     role: message.info.role,
     content: projectionPolicy === "timelineOnly" ? "" : textFromParts(message.parts),
     timestamp: message.info.time.created,
-    // 未绑定恢复的历史消息可以没有模型来源；展示消息不能依赖可执行选型。
+    // Unbound restored history may lack a model origin; display never depends on a selectable model.
     model: message.info.model ? formatModelPickerValue(message.info.model) : undefined,
     ...(syntheticTimeline ? { syntheticTimeline } : {}),
     ...(attachments ? { attachments } : {}),
@@ -1397,8 +1397,8 @@ function mapPromptAttachmentFromFilePart(
   const dataBase64 = dataBase64FromDataUrl(part.url);
   const localPath = localPathFromAttachmentPart(part.url, metadata);
 
-  // Bugfix: desktop-continuous 历史恢复走 session projection，不经过 legacy task adapter。
-  // file part 若不反投影成 attachments，用户发送过的图片/文件会在恢复 UI 里消失。
+  // Bugfix: desktop-continuous history restore goes through the session projection, not the legacy task adapter.
+  // Without projecting file parts back to attachments, sent images/files vanish in the restored UI.
   if (mimeType.startsWith("image/")) {
     return {
       kind: "image",
@@ -1550,8 +1550,8 @@ function synthesizeCompactionTimeline(
   const operationId = stringValue(metadata.operationId) ?? part.partId;
   const status = timelineStatusValue(metadata.timelineStatus);
   if (!status && !part.summaryMessageId) {
-    // 修复原因：compact 成功后 summary user message 也会携带 compaction 元数据，
-    // 但它只是模型上下文边界，不是 UI timeline。只有 lifecycle part 才渲染横线。
+    // Fix: after a successful compact the summary user message carries compaction metadata too,
+    // but that is a model-context boundary, not UI timeline; only lifecycle parts draw the divider.
     return undefined;
   }
   const trigger = timelineTriggerValue(metadata.trigger) ?? (part.auto ? "auto" : "manual");
@@ -1607,8 +1607,8 @@ function mapCompactTimelinePayload(
     traceId,
     ...(inputId ? { inputId } : {}),
     ...(messageId ? { messageId } : {}),
-    // Bugfix: compact lifecycle 是结构化状态事件，不是 assistant 正文。
-    // 即使上游误带 text，也不能把内部 summary/prompt 投影到聊天区。
+    // Bugfix: the compact lifecycle is a structured state event, not assistant body text.
+    // Even if upstream erroneously includes text, internal summary/prompt must not reach the chat.
     content: "",
     zcodeTimeline: timeline,
   };
@@ -1638,8 +1638,8 @@ function mapSyntheticTimelinePartPayload(
     ...(inputId ? { inputId } : {}),
     ...(messageId ? { messageId } : {}),
     content: "",
-    // Bugfix: fork notice 是 part.upserted 里的结构化 synthetic text，不是模型正文 delta。
-    // 这里提前投成 timeline divider，避免 UI 按普通消息渲染后丢掉横线。
+    // Bugfix: the fork notice is structured synthetic text in part.upserted, not a model body delta.
+    // Project it to a timeline divider early, or the UI renders it as a plain message and loses the divider.
     zcodeTimeline: timeline,
   };
 }
@@ -1770,15 +1770,15 @@ function mapToolPart(
 ): ZCodePersistedToolCall {
   const state = part.state;
   const taskNotification = backgroundTaskNotifications?.get(part.callId);
-  // 修复原因：ZCode Protocol 的 part.callId 是实时流和终态 snapshot 共同的工具身份。
-  // 以前只保存 metadata 会丢掉 toolCallId，手机 replayable 里 result-only 临时工具就无法被终态快照覆盖。
+  // Fix: the ZCode Protocol part.callId is the shared tool identity across live stream and final snapshot.
+  /// Saving metadata alone dropped the toolCallId, so result-only temp tools in mobile replayable were never overwritten by the final snapshot.
   const raw = attachZCodeBackgroundTaskNotificationToRaw(
     attachToolCallIdToRaw("metadata" in state ? (state.metadata ?? state) : state, part.callId),
     taskNotification,
   );
   if (state.status === "completed") {
-    // 修复原因：background Agent 的 completed 只代表 launch ACK；匹配的 failed
-    // notification 才能在本次错误修复中覆盖它，不能顺带改变 stopped 等既有恢复语义。
+    // Fix: a background agent completed means launch-ACK only; the matching failed
+    // notification overwrites it in this fix, without touching existing recovery semantics such as stopped.
     const notificationStatus = taskNotification?.status
       ? zcodeBackgroundTaskNotificationToolUpdateStatus(taskNotification.status)
       : undefined;
@@ -1938,8 +1938,8 @@ function mapToolInputStreaming(
         toolName,
       })
     ) {
-      // 性能优化：后台任务和高频 active delta 只更新 tombstone buffer。
-      // 完整参数会在预算点、tool_input_end、最终 tool_call 或切回 active 后再落到消息树。
+      // Perf: background tasks and high-frequency active deltas touch only the tombstone buffer.
+      /// Full args land in the message tree at budget points, tool_input_end, the final tool_call, or on return to active.
       return null;
     }
     const preview = buildZCodeStreamingToolInputPreview(state.rawInput);
@@ -2020,8 +2020,8 @@ function mapToolInputStreaming(
       title: previewTitle,
       toolName: previewToolName,
       kind: previewTitle,
-      // 性能修复：tool_input_end 和紧随其后的 tool_call 过去会连续解析同一份大 JSON。
-      // end 只表达流式参数结束，完整 input 由最终 tool_call 一次性 materialize。
+      // Perf fix: tool_input_end and the following tool_call used to parse the same large JSON twice in a row.
+      // end only closes the streamed args; the final tool_call materializes the full input once.
       raw: buildRaw(undefined, state.rawInput),
     };
   }
@@ -2041,8 +2041,8 @@ function mapToolInputStreaming(
       finalizeZCodeToolProjectionInput(toolId, preview.input, toolProjectionMemory);
     }
     streamingToolInputById?.set(toolId, {
-      // 性能修复：最终 tool_call 后，消息树已经持有完整 input；projection tombstone 不再保留
-      // 大 raw JSON，避免长任务并发时后台 state 持续占用 renderer 内存。
+      // Perf fix: after the final tool_call the message tree holds the full input; the projection tombstone no longer
+      // keeps the large raw JSON, so long concurrent tasks stop pinning renderer memory.
       rawInput: "",
       deltaCount: state?.deltaCount,
       lastPreviewAt: Date.now(),
@@ -2148,8 +2148,8 @@ function logStreamingToolInputProjectionSample(details: {
     streamingToolInputProjectionLogBuckets.delete(key);
   }
 
-  // 性能优化：工具输入投影跟工具调用数量同级，生产 info 落盘会放大深度检索的 renderer 开销。
-  // 这里保留 debug 采样，排查时仍能打开细节。
+  // Perf: tool-input projection scales with tool-call count; info-level logging would multiply renderer cost in deep dives.
+  // Debug sampling stays, so details remain available when investigating.
   logger.debug("[streamingToolInput] projection sampled", {
     ...details,
     event: "ui.zcode_session.streaming_tool_input.projection_sampled",
@@ -2401,8 +2401,8 @@ function toolResultStatus(
     return "failed";
   }
   if (isBackgroundAgentLaunchResult(toolName, result)) {
-    // 修复原因：Agent 后台启动 ACK 只说明子 agent 已经开始运行；
-    // replay/snapshot 投影不能把它当成最终完成，否则运行中会被前端显示为 completed。
+    /// Fix: an agent background-start ACK only proves the subagent began running;
+    // replay/snapshot projection must not treat it as final completion, or a running agent shows completed.
     return "in_progress";
   }
   return "completed";
@@ -2435,8 +2435,8 @@ function isBackgroundAgentLaunchResult(
 }
 
 function isBackgroundAgentLaunchAcknowledgement(content: string): boolean {
-  // 修复原因：session projection 可能直接消费 replay/snapshot 结果，不能只依赖消息层兜底；
-  // 新的 async_launched ACK 对齐 provider-visible output_file 文案，旧 session 仍保留 outputFile/backgroundTaskId 文案。
+  // Fix: the session projection may consume replay/snapshot results directly -- message-layer fallback alone is not enough;
+  // the new async_launched ACK matches the provider-visible output_file copy, while old sessions keep outputFile/backgroundTaskId copy.
   return (
     isLegacyBackgroundAgentLaunchAcknowledgement(content) ||
     isPreviousBackgroundAgentLaunchAcknowledgement(content) ||
@@ -2500,8 +2500,8 @@ function omitRepeatedToolInputFromRaw(payload: Record<string, unknown>): Record<
 }
 
 function parentToolUseIdFromToolPayload(payload: Record<string, unknown>): string | null {
-  // 修复原因：前端 replay/snapshot projection 可能绕过 services adapter；
-  // 这里和服务层保持同一套 parentToolCallId -> parentToolUseId 归一规则。
+  // Fix: the frontend replay/snapshot projection can bypass the services adapter;
+  /// keep the same parentToolCallId -> parentToolUseId normalization as the service layer.
   return (
     stringValue(payload.parentToolUseId) ??
     stringValue(payload.parentToolCallId) ??
@@ -2641,8 +2641,8 @@ function permissionResolvedPayloadToStreamEvents(
     return [permissionResponse];
   }
 
-  // 修复原因：Plan mode 等运行时拒绝会先发 permission.resolved，
-  // 但不一定有对应 tool.updated(error) 实时事件；只清权限请求会让已 started 的工具卡一直转。
+  // Fix: runtime rejections such as Plan mode emit permission.resolved first
+  /// with no matching tool.updated(error) live event; clearing only the request leaves started tool cards spinning.
   return [
     permissionResponse,
     {
@@ -2778,8 +2778,8 @@ export function syncZCodeSessionBackgroundTaskProjectionFromSnapshot(
   state: ZCodeSessionEventProjectionState | undefined,
   snapshot: ZCodeSessionStateSnapshot,
 ) {
-  // Bugfix: 单 task completion 是增量 payload，必须以同一订阅收到的完整 snapshot
-  // 作为 merge 基线；否则切走/切回后新 projection state 会把 peer running task 清掉。
+  /// Bugfix: a single-task completion is a delta payload; merge it onto the full snapshot from the same subscription,
+  /// or the post-switch projection state drops peer running tasks.
   syncZCodeSessionBackgroundTaskProjection(
     state,
     snapshot.session.sessionId,
@@ -2943,8 +2943,8 @@ function mapSessionInfoLikePayload(
       taskId,
       traceId,
       ...(inputId ? { inputId } : {}),
-      // Bugfix: EnterPlanMode 写入的 SessionModeChanged 会经 bootstrap 投影成 session.updated；
-      // 这里把 mode payload 转成 UI 现有事件，避免菜单仍显示进入 plan 前的模式。
+      /// Bugfix: EnterPlanMode's SessionModeChanged surfaces via bootstrap as session.updated;
+      /// translate the mode payload into the existing UI event or the menu keeps the pre-plan mode.
       currentModeId: normalizeAvailableZCodeMode(mode as ZCodeSessionMode),
       availableModes: getZCodeAgentAvailableModes(),
     });
@@ -3022,8 +3022,8 @@ function goalVerificationFromPayload(
   }
   const parsed = parseJsonObjectFromText(content);
   if (!parsed) {
-    // 修复原因：历史/实时投影可能只拿到 verifier 的原始模型文本；格式错误属于裁判链路故障，
-    // 与 contracts 层保持 fail-open，避免恢复后又把已完成 goal 显示成未完成。
+    /// Fix: history/live projection may hold only the verifier's raw model text; malformed output is a judge-chain failure --
+    /// stay fail-open like contracts, or a restored completed goal reads as incomplete.
     return {
       passed: true,
       reason: "The completion verifier did not return valid JSON.",
@@ -3077,8 +3077,8 @@ function taskTokenUsageDeltaFromPayload(
   }
   const querySource = stringValue(payload.querySource);
   const queryId = stringValue(payload.queryId);
-  // 修复原因：累计 Token 要跟随每次模型完成实时更新，而不是等 task_complete 的整轮汇总；
-  // eventId 是 protocol 流的稳定单事件标识，用它去重可避免前后台 monitor 重复记账。
+  /// Fix: cumulative tokens must update on every model completion, not wait for the task_complete rollup;
+  /// the eventId is the protocol stream's stable per-event id -- dedup on it so foreground/background monitors never double-count.
   const eventKey =
     eventId ??
     `${traceId}:${inputId ?? "no-input"}:${queryId ?? "no-query"}:${querySource ?? "unknown"}:${usage.inputTokens}:` +
@@ -3154,8 +3154,8 @@ function contextUsageFromRuntime(
   if (!runtimeUsage || runtimeUsage.size <= 0 || runtimeUsage.used <= 0) {
     return null;
   }
-  // Bugfix: session resume 时 protocol projection 可能还没重放主轮次 usage。
-  // runtime.contextUsage 来自持久化 assistant token 记录，应优先用于恢复旧 task UI。
+  /// Bugfix: on session resume the protocol projection may not have replayed main-turn usage yet.
+  /// runtime.contextUsage comes from persisted assistant token records and wins when restoring old task UIs.
   return {
     used: runtimeUsage.used,
     size: runtimeUsage.size,
@@ -3174,16 +3174,16 @@ function contextUsageFromPayload(payload: Record<string, unknown>): ContextUsage
   const modelUsageUsed = useModelUsageForContext ? contextUsageTokensFromPayload(usage) : undefined;
   const used =
     modelUsageUsed ??
-    // 修复原因：主轮次模型返回 usage 时必须以真实网络 token 统计为准；
-    // context window 是 input + output 共享窗口，不能再只用 inputTokens 渲染 meter。
-    // projection.contextUsed 是 runtime 估算/恢复事实源，只在缺少 usage 时兜底。
+    /// Fix: when the main-turn model reports usage, the real network token counts win;
+    /// the context window is shared input+output, so the meter can no longer render inputTokens alone.
+    /// projection.contextUsed is the runtime estimate/restoration truth, fallback only when usage is missing.
     explicitUsed;
   if (size === undefined || size <= 0) {
     return null;
   }
-  // Bugfix: ZCode Protocol session.updated 承载的是 projection 事实源；
-  // 旧 task UI 只认识 usage_update，必须在迁移桥里把 contextUsed/contextWindow 显式转出来。
-  // used=0 只表示初始化或异常兜底，不能渲染成可用的 context meter。
+  /// Bugfix: the ZCode Protocol session.updated carries projection truth;
+  /// the legacy task UI knows only usage_update, so the migration bridge must translate contextUsed/contextWindow explicitly.
+  /// used=0 means init or fallback, not a usable context meter.
   if (used === undefined || used <= 0) {
     return null;
   }
@@ -3206,8 +3206,8 @@ function optionalContextUsageBreakdownFromPayload(
 function contextUsageTokensFromPayload(usage: Record<string, unknown>): number | undefined {
   const inputTokens = positiveIntegerValue(usage.inputTokens ?? usage.input);
   if (inputTokens !== undefined) {
-    // 修复原因：AI SDK v6 已把 Anthropic cache read/write 并入 inputTokens。
-    // projection 兼容层只加 output，避免 replayable 恢复时把 cache read 重复计入 context meter。
+    /// Fix: AI SDK v6 folds Anthropic cache read/write into inputTokens.
+    /// The projection shim adds output only, so replayable restore never double-counts cache reads in the meter.
     return inputTokens + (nonNegativeIntegerValue(usage.outputTokens ?? usage.output) ?? 0);
   }
 
@@ -3234,8 +3234,8 @@ function optionalContextCacheUsageFromPayload(
 
 function shouldUseModelUsageForContext(payload: Record<string, unknown>): boolean {
   const querySource = stringValue(payload.querySource);
-  // 修复原因：只有主会话模型请求的 inputTokens 才代表当前可见上下文。
-  // 标题、压缩、prompt enhance 等 sidecar 请求即使带 contextWindow，也不能覆盖输入栏 context meter。
+  /// Fix: only the main conversation model request's inputTokens reflects the visible context.
+  /// Sidecar requests (title, compact, prompt enhance) must not override the input context meter even with a contextWindow.
   return querySource === undefined || querySource === "main_turn";
 }
 
@@ -3289,8 +3289,8 @@ function contextCacheUsageFromPayload(
         : inputTokens > 0
           ? cacheReadTokens / inputTokens
           : null,
-    // 修复原因：context usage 的缓存命中率是 agent/app 协议字段；
-    // projection 兼容层只做一次归一化，避免 UI 组件各自重复推导。
+    /// Fix: the context-usage cache-hit ratio is an agent/app protocol field;
+    /// normalize once in the projection shim instead of re-deriving per UI component.
     hitRate:
       explicitHitRate !== undefined
         ? Math.max(0, explicitHitRate)
@@ -3433,8 +3433,8 @@ function rememberRewindControlTurn(
     return;
   }
   const rewindControlTurnKeys = state.rewindControlTurnKeys ?? new Set<string>();
-  // 修复原因：编辑/重试会通过内部 `/rewind conversation <messageId>` 控制命令回滚上下文。
-  // 该命令的 TurnComplete.response 只是协议 ACK，不是 assistant 回复；不能合成聊天气泡。
+  /// Fix: edit/retry rolls context back via the internal `/rewind conversation <messageId>` control command.
+  /// That command's TurnComplete.response is a protocol ACK, not an assistant reply -- never synthesize a bubble from it.
   if (isConversationRewindControlInput(input)) {
     rewindControlTurnKeys.add(turnKey);
   } else {

@@ -10,9 +10,7 @@ import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-const v4Dir = fileURLToPath(
-  new URL("../src/zcode-protocol-v4/", import.meta.url),
-);
+const v4Dir = fileURLToPath(new URL("../src/zcode-protocol-v4/", import.meta.url));
 
 function collectTsFiles(dir: string): string[] {
   const files: string[] = [];

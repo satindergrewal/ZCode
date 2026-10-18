@@ -21,19 +21,19 @@ export function buildAvailableKinds(options: {
   isLocalDevelopmentRuntime: boolean;
 }): RemoteKind[] {
   const kinds: RemoteKind[] = ["ssh"];
-  // Bugfix: Server remote 目前只是本地开发能力。之前无条件放入可选列表，
-  // 导致 production-mode 打包也会露出未对外开放的入口。
+  // Bugfix: server remote is a dev-only capability; unconditional listing
+  // leaked the entry into production builds.
   if (options.isLocalDevelopmentRuntime) {
     kinds.push("server");
   }
-  // Bugfix: 远程连接入口里 WSL 和 SSH 同属主机类连接。
-  // Windows 下先放 WSL 再放 Docker，避免 WSL 被 Docker 隔开后在选择页显得离 SSH 很远。
+  // Bugfix: WSL and SSH are both host-type connections.
+  // WSL before Docker on Windows keeps it near SSH in the picker.
   if (options.isWindowsDesktop) {
     kinds.push("wsl");
   }
-  // Docker入口之前完全依赖预探测结果决定是否展示。
-  // 当探测能力暂时不可用、或用户还没切到 Docker 时，入口会直接消失，
-  // 用户甚至不知道这里支持 Docker 连接。改为始终展示入口，切换后再懒加载探测结果。
+  // Docker entry used to appear only on probe success, vanishing when
+  // probes were unavailable or Docker unselected, hiding the capability.
+  // Always show; probe lazily after switching.
   kinds.push("docker");
   return kinds;
 }
@@ -159,8 +159,8 @@ export function useRemoteConnectionForm({
 
         if (!result.error) {
           setDockerContainers(result.dockerContainers);
-          // 下拉刷新后旧容器可能已经停止。之前只更新列表不清空选中值，
-          // 触发器仍会显示已不存在的容器；成功刷新后必须让选中值受最新运行中列表约束。
+          // After refresh, stopped containers may be gone; keeping the old selection
+          // left a phantom name on the trigger. Restrain it to the running list.
           setDockerContainer((currentContainer) =>
             resolveDockerContainerSelectionAfterRefresh({
               currentContainer,
@@ -321,8 +321,8 @@ export function useRemoteConnectionForm({
       const nextUsername = aliasOption.username?.trim() ?? "";
       const nextPrivateKeyPath = aliasOption.privateKeyPath?.trim() ?? "";
 
-      // 切换 alias 时之前只覆盖“有值字段”，缺失字段会残留上一个 alias/手动输入值。
-      // 这里改为全量覆盖：所有 SSH 字段都按当前 alias 重建，缺失值统一置空，避免状态串用。
+      // Alias switch used to overwrite filled fields only, leaking the previous
+      // alias/manual values. Rebuild all SSH fields per alias, emptying gaps.
       setHostState(nextHost);
       setPortState(nextPort);
       setUsernameState(nextUsername);
@@ -382,8 +382,8 @@ export function useRemoteConnectionForm({
     setServerName,
     setServerToken,
     setServerWorkspacePath,
-    // Bugfix: Docker 容器列表是运行态数据，之前只在进入 Docker 页时拉一次。
-    // 下拉每次打开都通过这个回调按需刷新，避免用户看到已过期的容器列表。
+    // Bugfix: container lists are runtime data; the entry-time fetch went stale.
+    // Refresh on every dropdown open.
     refreshDockerContainers: () => refreshDockerContainers({ clearContainersOnError: false }),
     applySshConfigAlias,
     clearSelectedSshConfigAlias,

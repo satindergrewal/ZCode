@@ -36,8 +36,14 @@ const modes: TuiModeOption[] = [
 
 test("mode command popup filters mode choices from the composer draft", () => {
   assert.deepEqual(TUI_SWITCHABLE_MODES, ["plan", "build", "guarded", "yolo"]);
-  assert.deepEqual(filterModeOptions("/mode").map((mode) => mode.id), TUI_SWITCHABLE_MODES);
-  assert.equal(filterModeOptions("/mode edit").some((mode) => mode.id === "edit"), false);
+  assert.deepEqual(
+    filterModeOptions("/mode").map((mode) => mode.id),
+    TUI_SWITCHABLE_MODES,
+  );
+  assert.equal(
+    filterModeOptions("/mode edit").some((mode) => mode.id === "edit"),
+    false,
+  );
   assert.equal(modeCommandQuery("/mode"), "");
   assert.equal(modeCommandQuery("/mode yo"), "yo");
   assert.equal(modeCommandQuery("/modebuild"), "build");

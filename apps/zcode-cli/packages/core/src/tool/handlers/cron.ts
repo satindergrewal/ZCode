@@ -44,6 +44,7 @@ function assertNotAutomationTurn(
   // The provider tool denylist is a visibility constraint only; legacy entries or odd providers can still
   // submit automation-write tools directly. The handler must make the final call from the turn facts the
   // executor passed in, without calling ports.
+  throw createCoreError(
     CoreErrorType.PermissionDenied,
     `${toolName} is not allowed while running a scheduled automation.`,
     {
@@ -91,7 +92,7 @@ function toModelAutomation(automation: CronAutomation): CronAutomation {
     recurring: automation.recurring,
     maxRuns: automation.maxRuns,
     // The tool output used to re-project automation here and drop scheduleRule, so CronCreate/
- // CronUpdate/CronList showed only the compat cron despite a real interval, rendering hourly/daily wrongly.
+    // CronUpdate/CronList showed only the compat cron despite a real interval, rendering hourly/daily wrongly.
     scheduleRule: automation.scheduleRule,
   };
 }
@@ -188,21 +189,21 @@ export const cronCreateToolEntry: ToolEntry = {
   metadata: {
     name: "CronCreate",
     // Second-order scheduling requirements belong in the tool contract; natural language cannot be reliably
- // keyword/re-guessed, and the automation-turn mutation denylist is the real permission boundary.
+    // keyword/re-guessed, and the automation-turn mutation denylist is the real permission boundary.
     description:
       "Create a persistent scheduled automation in the current workspace. It uses the host's real current clock for relative delayMinutes schedules, or a standard 5-field cron expression in the user's local timezone for absolute/recurring schedules, and survives app restarts. The prompt must describe the final scheduled work directly and must never ask the run to create, schedule, or configure another automation or call CronCreate.",
     modelInstructions: [
       "Use this only when the user explicitly asks to schedule future automatic work.",
       "Interpret cron in the user's local timezone using fields: minute hour day-of-month month day-of-week. Do not convert to UTC.",
       // '8分钟后上课提醒' is both a relative delay and a one-shot; the old wording ("one-shot pins absolute
- // month/day/hour) shadowed the delay rule, so models self-computed fixed-calendar crons like '29 7 29 7 *'.
+      // month/day/hour) shadowed the delay rule, so models self-computed fixed-calendar crons like '29 7 29 7 *'.
       // A model's "now" is often stale; a self-computed one-shot that just passed silently rolls a year ahead.
       // Fix: any "N from now" phrasing (hours incl., zh+en) goes through delayMinutes; pinning absolute cron
- // only for user-named wall-clock dates, with explicit relative one-shots required to use delayMinutes.
+      // only for user-named wall-clock dates, with explicit relative one-shots required to use delayMinutes.
       "For any schedule expressed as a delay from now — 'in 3 minutes' sets delayMinutes=3, '8分钟后' sets delayMinutes=8, 'in 2 hours' sets delayMinutes=120, 'later'/'稍后' — set delayMinutes to the total whole minutes, omit cron, set recurring=false, and omit maxRuns. The host anchors to its real current clock; never infer the current time or convert a relative delay into a cron or clock time yourself.",
       "Use '*/20 * * * *' for every 20 minutes, '0 * * * *' for hourly, and '0 9 * * 1-5' for weekdays at 09:00.",
       // Expressing "every N units" via cron alone hits field caps and becomes wall-clock-aligned even when N
- // fits, mismatching the UI-custom anchor-at-save semantics. All every-N units use carrier + scheduleRule.
+      // fits, mismatching the UI-custom anchor-at-save semantics. All every-N units use carrier + scheduleRule.
       "For every N minutes/hours/days/weeks/months/years, always set intervalUnit (minute|hourly|daily|weekly|monthly|yearly) and interval together. interval must be an integer from 1 to 200, including values cron could express directly. Supply a legal 5-field compatible cron only for time-of-day/day/weekday/month slots; never put an out-of-range step in cron. Examples: every 20 minutes -> intervalUnit='minute', interval=20, cron='* * * * *'; every 31 hours at minute 49 -> intervalUnit='hourly', interval=31, cron='49 * * * *'; every 40 days at 09:00 -> intervalUnit='daily', interval=40, cron='0 9 * * *'. Omit intervalUnit/interval only for ordinary calendar cron schedules, such as weekdays at 09:00.",
       "Pin minute, hour, day-of-month, and month in cron only for an absolute wall-clock date the user names outright, such as 'tomorrow at 9am' or 'on July 30 at 20:00'; set recurring=false and omit maxRuns (the default limit is 1). A relative one-shot such as '8分钟后' or 'in 2 hours' must use delayMinutes instead, because a self-computed one-shot time that has just passed silently rolls a full year forward.",
       "For exactly N scheduled runs, set recurring=false and maxRuns=N. recurring=true is indefinite and must not be combined with maxRuns.",
@@ -303,7 +304,7 @@ export const cronUpdateToolEntry: ToolEntry = {
       "Apart from the required synchronized title, only pass fields the user asked to change. Omitted fields preserve their existing values.",
       "Interpret cron in the user's local timezone using five fields: minute hour day-of-month month day-of-week. Do not convert to UTC.",
       // Updating an every-N unit must also use the carrier; else short intervals decay into wall-clock crons
- // and long ones produce invalid crons.
+      // and long ones produce invalid crons.
       "Use numeric maxRuns only with recurring=false. Setting recurring=true clears any old finite limit automatically; never combine recurring=true with a numeric maxRuns.",
       "CronUpdate cannot change workspace, session binding, model, provider, mode, thought level, run count, history, or enabled state.",
       "Do not simulate an update by deleting and recreating the automation.",

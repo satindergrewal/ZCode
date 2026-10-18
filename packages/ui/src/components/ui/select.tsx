@@ -176,19 +176,20 @@ const SelectItem = React.forwardRef<React.ElementRef<typeof SelectPrimitive.Item
 SelectItem.displayName = "SelectItem";
 
 type SelectRichItemProps = Omit<React.ComponentProps<typeof SelectPrimitive.Item>, "children"> & {
-  /** 左侧 16–18px 图标。 */
+  /** Leading 16-18px icon. */
   icon?: React.ReactNode;
-  /** 进入 ItemText：触发器（SelectValue）只显示这一段。 */
+  /** Goes inside ItemText: the trigger (SelectValue) shows only this part. */
   title: React.ReactNode;
-  /** 标题同一行的标记（例如「默认」），不进触发器。 */
+  /** A badge on the title row (e.g. default); never shown in the trigger. */
   titleAdornment?: React.ReactNode;
-  /** 标题下一行的说明，不进触发器。 */
+  /** Description under the title; never shown in the trigger. */
   description?: React.ReactNode;
 };
 
 /**
- * 两行选项：图标 + 标题 + 说明，选中态用尾部对勾（与输入框权限模式菜单同一版式）。
- * 用于选项需要解释后果的设置；列表宜配 `position="popper"`，避免 item-aligned 盖住行标签。
+ * Two-row option: icon + title + description, selected state a trailing check (the input permission-mode
+ * menu's layout). For settings whose options need consequences explained; pair the list with
+ * `position="popper"` so item-aligned positioning cannot cover the row labels.
  */
 const SelectRichItem = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Item>,

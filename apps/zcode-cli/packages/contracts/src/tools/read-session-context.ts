@@ -5,8 +5,9 @@ export const READ_SESSION_CONTEXT_TOOL_NAME = "ReadSessionContext";
 export const READ_SESSION_CONTEXT_DEFAULT_MAX_TOKENS = 6000;
 export const READ_SESSION_CONTEXT_MAX_TOKENS = 12000;
 
-// 最小 JSON Schema 校验器不检查 pattern；联合字符串会在 oneOf 中同时匹配，错误拒绝 current。
-// 用单个字符串模式，具体身份格式继续由运行时 schema 严格验证。
+// The minimal JSON Schema validator does not check patterns; unioned string shapes would both
+// match inside oneOf and reject `current` wrongly. Single string shape here; concrete identity
+// formats stay strictly validated by the runtime schema.
 const SESSION_ID_PATTERN = /^(?:current|sess_[A-Za-z0-9._-]+)$/;
 
 export const ReadSessionContextStrategySchema = z.enum(["relevant", "handoff", "topic"]);

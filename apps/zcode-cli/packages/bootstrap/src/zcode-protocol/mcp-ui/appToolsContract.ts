@@ -2,8 +2,8 @@ import type { McpAppsAppToolCallResult, McpAppsAppToolDescriptor } from "@zcode/
 import type { McpUiPluginScope } from "./resourceContract.js";
 
 /**
- * App-Provided Tools 的 renderer → agent 参数形状（与 `@zcode/shared` 的 `zcodeMcpUi*AppTool*` schema 同构）。
- * 实例身份 = 沙箱作用域 + 代际，与资源订阅同一三元组；信箱投递也按它寻址。
+ * The renderer -> agent parameter shape for App-Provided Tools (isomorphic with @zcode/shared's zcodeMcpUi*AppTool* schema).
+ // Instance identity = sandbox scope + generation, the same triple as resource subscriptions; mailbox delivery addresses by it too.
  */
 export interface McpUiAppToolInstance {
   scopeId: string;

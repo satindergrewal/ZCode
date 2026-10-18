@@ -143,7 +143,7 @@ const capturedZCodeAgentTelemetryEnv: Record<string, string> = {};
 // children must not drive the authorized Helper). But the CLI entry sanitizes process.env during bootstrap
 // before resolving the global ~/.zcode/cli/config.json `zcode-cua` server, so targeted injection would find no
 // credentials and the global zcode-cua falls back to --backend auto, making Python/uvx the TCC principal
- //(fail-open, violating "Python/uvx must never become the implicit permission owner"). So the credentials are
+//(fail-open, violating "Python/uvx must never become the implicit permission owner"). So the credentials are
 // captured into process-private storage before stripping, exposed to bootstrap's targeted injection only via
 // getCapturedZCodeCuaBrokerCredentials(), never written back to any child env.
 function captureZCodeCuaBrokerCredentials(env: Record<string, string | undefined>): void {

@@ -128,10 +128,7 @@ function fixture(
   let records: any[] = [];
   const store = {
     grant: vi.fn(async (next: any[]) => {
-      records = [
-        ...records.filter((record) => record.workspaceIdentity !== WORKSPACE),
-        ...next,
-      ];
+      records = [...records.filter((record) => record.workspaceIdentity !== WORKSPACE), ...next];
       return { schemaVersion: 1 as const, records };
     }),
     revoke: vi.fn(async () => {
@@ -143,10 +140,7 @@ function fixture(
     toggle: vi.fn(async (_input, onWriteCommitted) => {
       await onWriteCommitted();
       if (input.rebuildError) throw input.rebuildError;
-      return (
-        input.nextSnapshot ??
-        snapshot({ bundle: "c".repeat(64), enabled: false })
-      );
+      return input.nextSnapshot ?? snapshot({ bundle: "c".repeat(64), enabled: false });
     }),
   };
   controller = new WorkspaceHookReviewController({
@@ -186,17 +180,13 @@ async function pendingRequest(value: ReturnType<typeof fixture>) {
   });
   await vi.waitFor(() => {
     expect(
-      value.events.some(
-        (event) => event.type === SessionEventType.WorkspaceHookReviewRequested,
-      ),
+      value.events.some((event) => event.type === SessionEventType.WorkspaceHookReviewRequested),
     ).toBe(true);
   });
   const event = value.events.find(
-    (candidate) =>
-      candidate.type === SessionEventType.WorkspaceHookReviewRequested,
+    (candidate) => candidate.type === SessionEventType.WorkspaceHookReviewRequested,
   );
-  if (!event || !("request" in event.payload))
-    throw new Error("expected review request");
+  if (!event || !("request" in event.payload)) throw new Error("expected review request");
   return { activation, request: event.payload.request };
 }
 
@@ -254,9 +244,7 @@ describe("WorkspaceHookReviewController", () => {
       reasonCode: "workspace_hooks_blocked_by_policy",
     });
     expect(
-      value.events.filter(
-        (event) => event.type === SessionEventType.WorkspaceHookReviewRequested,
-      ),
+      value.events.filter((event) => event.type === SessionEventType.WorkspaceHookReviewRequested),
     ).toHaveLength(0);
   });
 
@@ -439,9 +427,7 @@ describe("WorkspaceHookReviewController", () => {
           sessionId: request.sessionId,
           taskId: request.taskId,
           runId: request.runId,
-          ...(request.remoteSessionId
-            ? { remoteSessionId: request.remoteSessionId }
-            : {}),
+          ...(request.remoteSessionId ? { remoteSessionId: request.remoteSessionId } : {}),
           workspaceIdentity: request.workspaceIdentity,
           bundleDigest: request.bundleDigest,
           reviewFlowId: request.reviewFlowId,
@@ -459,9 +445,7 @@ describe("WorkspaceHookReviewController", () => {
         snapshot: snapshot(),
       }).items[0]?.trustState,
     ).toBe("trusted_persistent");
-    expect(value.events.at(-1)?.type).toBe(
-      SessionEventType.WorkspaceHookAdmissionUpdated,
-    );
+    expect(value.events.at(-1)?.type).toBe(SessionEventType.WorkspaceHookAdmissionUpdated);
     // 软门禁(D2):settle 后追加 AdmissionUpdated(pendingCount=0),但它必须在 ReviewSettled 之后
     expect(value.events.map((event) => event.type)).toEqual(
       expect.arrayContaining([SessionEventType.WorkspaceHookReviewSettled]),
@@ -528,9 +512,7 @@ describe("WorkspaceHookReviewController", () => {
           sessionId: request.sessionId,
           taskId: request.taskId,
           runId: request.runId,
-          ...(request.remoteSessionId
-            ? { remoteSessionId: request.remoteSessionId }
-            : {}),
+          ...(request.remoteSessionId ? { remoteSessionId: request.remoteSessionId } : {}),
           workspaceIdentity: request.workspaceIdentity,
           bundleDigest: request.bundleDigest,
           reviewFlowId: request.reviewFlowId,
@@ -560,9 +542,7 @@ describe("WorkspaceHookReviewController", () => {
           sessionId: request.sessionId,
           taskId: request.taskId,
           runId: request.runId,
-          ...(request.remoteSessionId
-            ? { remoteSessionId: request.remoteSessionId }
-            : {}),
+          ...(request.remoteSessionId ? { remoteSessionId: request.remoteSessionId } : {}),
           workspaceIdentity: request.workspaceIdentity,
           bundleDigest: request.bundleDigest,
           reviewFlowId: request.reviewFlowId,
@@ -584,9 +564,7 @@ describe("WorkspaceHookReviewController", () => {
     // bundle 已变、discovery 读败）一律吞成 workspace_hooks_config_write_failed。
     // 用户看到"配置写入失败"但写路径根本没走到；真实原因（mismatch）被掩盖，
     // 也断送了 fail-fast 语义（mismatch 应提示刷新而非重试写）。
-    const mismatchError = new Error(
-      "Workspace Hook bundle changed after review",
-    ) as Error & {
+    const mismatchError = new Error("Workspace Hook bundle changed after review") as Error & {
       name: string;
       code: string;
     };
@@ -603,9 +581,7 @@ describe("WorkspaceHookReviewController", () => {
           sessionId: request.sessionId,
           taskId: request.taskId,
           runId: request.runId,
-          ...(request.remoteSessionId
-            ? { remoteSessionId: request.remoteSessionId }
-            : {}),
+          ...(request.remoteSessionId ? { remoteSessionId: request.remoteSessionId } : {}),
           workspaceIdentity: request.workspaceIdentity,
           bundleDigest: request.bundleDigest,
           reviewFlowId: request.reviewFlowId,
@@ -640,9 +616,7 @@ describe("WorkspaceHookReviewController", () => {
           sessionId: request.sessionId,
           taskId: request.taskId,
           runId: request.runId,
-          ...(request.remoteSessionId
-            ? { remoteSessionId: request.remoteSessionId }
-            : {}),
+          ...(request.remoteSessionId ? { remoteSessionId: request.remoteSessionId } : {}),
           workspaceIdentity: request.workspaceIdentity,
           bundleDigest: request.bundleDigest,
           reviewFlowId: request.reviewFlowId,
@@ -690,9 +664,7 @@ describe("WorkspaceHookReviewController", () => {
           sessionId: request.sessionId,
           taskId: request.taskId,
           runId: request.runId,
-          ...(request.remoteSessionId
-            ? { remoteSessionId: request.remoteSessionId }
-            : {}),
+          ...(request.remoteSessionId ? { remoteSessionId: request.remoteSessionId } : {}),
           workspaceIdentity: request.workspaceIdentity,
           bundleDigest: request.bundleDigest,
           reviewFlowId: request.reviewFlowId,
@@ -712,9 +684,7 @@ describe("WorkspaceHookReviewController", () => {
         sessionId: request.sessionId,
         taskId: request.taskId,
         runId: request.runId,
-        ...(request.remoteSessionId
-          ? { remoteSessionId: request.remoteSessionId }
-          : {}),
+        ...(request.remoteSessionId ? { remoteSessionId: request.remoteSessionId } : {}),
         workspaceIdentity: request.workspaceIdentity,
         bundleDigest: request.bundleDigest,
         hookDeclarationDigests: [DIGEST],
@@ -753,9 +723,7 @@ describe("WorkspaceHookReviewController", () => {
           sessionId: request.sessionId,
           taskId: request.taskId,
           runId: request.runId,
-          ...(request.remoteSessionId
-            ? { remoteSessionId: request.remoteSessionId }
-            : {}),
+          ...(request.remoteSessionId ? { remoteSessionId: request.remoteSessionId } : {}),
           workspaceIdentity: request.workspaceIdentity,
           bundleDigest: request.bundleDigest,
           reviewFlowId: request.reviewFlowId,
@@ -769,19 +737,14 @@ describe("WorkspaceHookReviewController", () => {
         sessionId: request.sessionId,
         taskId: request.taskId,
         runId: request.runId,
-        ...(request.remoteSessionId
-          ? { remoteSessionId: request.remoteSessionId }
-          : {}),
+        ...(request.remoteSessionId ? { remoteSessionId: request.remoteSessionId } : {}),
         workspaceIdentity: request.workspaceIdentity,
         bundleDigest: request.bundleDigest,
         hookDeclarationDigests: [DIGEST],
       });
 
       const reopened = value.events
-        .filter(
-          (event) =>
-            event.type === SessionEventType.WorkspaceHookReviewRequested,
-        )
+        .filter((event) => event.type === SessionEventType.WorkspaceHookReviewRequested)
         .at(-1);
       expect(reopened).toBeDefined();
 
@@ -813,9 +776,7 @@ describe("WorkspaceHookReviewController", () => {
         sessionId: request.sessionId,
         taskId: request.taskId,
         runId: request.runId,
-        ...(request.remoteSessionId
-          ? { remoteSessionId: request.remoteSessionId }
-          : {}),
+        ...(request.remoteSessionId ? { remoteSessionId: request.remoteSessionId } : {}),
         workspaceIdentity: request.workspaceIdentity,
         bundleDigest: request.bundleDigest,
         hookDeclarationDigests: [DIGEST],
@@ -842,9 +803,7 @@ describe("WorkspaceHookReviewController", () => {
           sessionId: request.sessionId,
           taskId: request.taskId,
           runId: request.runId,
-          ...(request.remoteSessionId
-            ? { remoteSessionId: request.remoteSessionId }
-            : {}),
+          ...(request.remoteSessionId ? { remoteSessionId: request.remoteSessionId } : {}),
           workspaceIdentity: request.workspaceIdentity,
           bundleDigest: request.bundleDigest,
           reviewFlowId: request.reviewFlowId,
@@ -895,9 +854,7 @@ describe("WorkspaceHookReviewController", () => {
       sessionId: request.sessionId,
       taskId: request.taskId,
       runId: request.runId,
-      ...(request.remoteSessionId
-        ? { remoteSessionId: request.remoteSessionId }
-        : {}),
+      ...(request.remoteSessionId ? { remoteSessionId: request.remoteSessionId } : {}),
       workspaceIdentity: request.workspaceIdentity,
       bundleDigest: request.bundleDigest,
       reviewFlowId: request.reviewFlowId,
@@ -918,9 +875,7 @@ describe("WorkspaceHookReviewController", () => {
       },
       expect.any(Function),
     );
-    expect(value.admission.getCurrentSnapshot().bundleDigest).toBe(
-      next.bundleDigest,
-    );
+    expect(value.admission.getCurrentSnapshot().bundleDigest).toBe(next.bundleDigest);
     expect(value.events.map((event) => event.type)).toContain(
       SessionEventType.WorkspaceHookReviewSuperseded,
     );
@@ -942,9 +897,7 @@ describe("WorkspaceHookReviewController", () => {
       sessionId: request.sessionId,
       taskId: request.taskId,
       runId: request.runId,
-      ...(request.remoteSessionId
-        ? { remoteSessionId: request.remoteSessionId }
-        : {}),
+      ...(request.remoteSessionId ? { remoteSessionId: request.remoteSessionId } : {}),
       workspaceIdentity: request.workspaceIdentity,
       bundleDigest: request.bundleDigest,
       reviewFlowId: request.reviewFlowId,
@@ -952,9 +905,7 @@ describe("WorkspaceHookReviewController", () => {
       interactionId: request.interactionId,
     };
 
-    await expect(
-      value.controller.toggle(target, "item-0", false),
-    ).resolves.toEqual({
+    await expect(value.controller.toggle(target, "item-0", false)).resolves.toEqual({
       accepted: false,
       reasonCode: "workspace_hooks_config_rebuild_failed",
     });
@@ -984,18 +935,14 @@ describe("WorkspaceHookReviewController", () => {
     const value = fixture();
     const { request } = await pendingRequest(value);
     value.store.grant.mockReset();
-    value.store.grant.mockRejectedValueOnce(
-      new Error("trust store disk write failed"),
-    );
+    value.store.grant.mockRejectedValueOnce(new Error("trust store disk write failed"));
 
     const result = await value.controller.respond(
       {
         sessionId: request.sessionId,
         taskId: request.taskId,
         runId: request.runId,
-        ...(request.remoteSessionId
-          ? { remoteSessionId: request.remoteSessionId }
-          : {}),
+        ...(request.remoteSessionId ? { remoteSessionId: request.remoteSessionId } : {}),
         workspaceIdentity: request.workspaceIdentity,
         bundleDigest: request.bundleDigest,
         reviewFlowId: request.reviewFlowId,
@@ -1014,8 +961,6 @@ describe("WorkspaceHookReviewController", () => {
       (entry) => entry.context?.event === "workspace_hook.trust_store_failure",
     );
     expect(failure).toBeDefined();
-    expect(failure?.context?.errorMessage).toBe(
-      "trust store disk write failed",
-    );
+    expect(failure?.context?.errorMessage).toBe("trust store disk write failed");
   });
 });

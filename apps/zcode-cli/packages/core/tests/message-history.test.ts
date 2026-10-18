@@ -38,9 +38,11 @@ describe("message history metadata", () => {
     expect(buildProviderRequestMessages({ entries: history.toRuntimeEntries() }).messages).toEqual([
       { role: "assistant", content: "answer" },
     ]);
-    expect(JSON.stringify(buildProviderRequestMessages({ entries: history.toRuntimeEntries() }).messages)).not.toContain(
-      "tokens",
-    );
+    expect(
+      JSON.stringify(
+        buildProviderRequestMessages({ entries: history.toRuntimeEntries() }).messages,
+      ),
+    ).not.toContain("tokens");
   });
 
   it("borrows the current authoritative runtime entries without cloning the array", () => {

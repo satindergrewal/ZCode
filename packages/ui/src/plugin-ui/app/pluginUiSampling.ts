@@ -36,7 +36,7 @@ export function createPluginUiSampling(deps: {
           cancelled = true;
           void deps.bridge.cancelSampling({ ...scope, operationId }).catch(() => undefined);
         };
-        // 先注册取消与 busy，再发请求，确保取消先于 Agent 接纳也能留下终态。
+        // Register cancel/busy before sending so cancels land a terminal state even before the agent accepts.
         pending.add(cancel);
         deps.activeCalls.add(operationId);
         deps.onBusyChange?.();

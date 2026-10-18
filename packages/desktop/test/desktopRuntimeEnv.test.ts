@@ -588,7 +588,8 @@ describe("desktopRuntimeEnv buildHostProcessEnv", () => {
     } finally {
       if (savedPath === undefined) delete process.env.ZCODE_CUA_BUNDLED_HELPER_APP_PATH;
       else process.env.ZCODE_CUA_BUNDLED_HELPER_APP_PATH = savedPath;
-      if (savedAllowUnsigned === undefined) delete process.env.ZCODE_CUA_HELPER_ALLOW_UNSIGNED_LOCAL;
+      if (savedAllowUnsigned === undefined)
+        delete process.env.ZCODE_CUA_HELPER_ALLOW_UNSIGNED_LOCAL;
       else process.env.ZCODE_CUA_HELPER_ALLOW_UNSIGNED_LOCAL = savedAllowUnsigned;
     }
   }

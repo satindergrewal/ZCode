@@ -16,8 +16,8 @@ import type {
   ModelOptionSpecs,
 } from "../src/model/model.js";
 
-describe("CLI 与共享 Model Schema 的数据合同", () => {
-  it("所有模型数据类型双向一致，不在 CLI 维护平行字段列表", () => {
+describe("CLI vs shared model schema data contract", () => {
+  it("all model data types match both ways; no parallel field list in the CLI", () => {
     expectTypeOf<ModelInputFormat>().toEqualTypeOf<ModelInputFormatData>();
     expectTypeOf<ModelOutputFormat>().toEqualTypeOf<ModelOutputFormatData>();
     expectTypeOf<ModelProperties>().toEqualTypeOf<ModelPropertiesData>();

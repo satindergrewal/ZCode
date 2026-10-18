@@ -1,4 +1,4 @@
-// 类实例不是纯数据（方法与原型都过不了 JSON 边界）—— report 与 ask<T> 同样拒绝。
+// Class instances are not plain data (methods and prototypes fail the JSON boundary) -- like ask<T>, rejected.
 class Finding {
   constructor(readonly path: string) {}
   describe(): string {

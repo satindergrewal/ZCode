@@ -45,8 +45,8 @@ export async function executeToolCallsForModelStep(
   }
   const coreToolCalls: ToolCall[] = options.toolCalls.map((tc) => ({
     id: tc.id as ToolCallId,
-    // Model step admission 已完成类型/ID 校验；这里保留可恢复的原始空白名称，
-    // 让 executor 强制走 registry miss，而不是把 storage 占位值当成真实工具。
+    // Admission validated types/ids; keep the recoverable raw blank name
+    // so the executor takes registry-miss, not a placeholder as a real tool.
     name: tc.name,
     input: tc.input,
   }));
@@ -117,9 +117,9 @@ export async function executeToolCallsForModelStep(
     });
   }
 
-  // assistant tool_use 已经进入 history 后，Stop 不能在 tool result
-  // 创建前直接抛出。继续把 aborted signal 交给 executor，由现有取消路径为
-  // 每个 tool call 生成 ToolCancelled result，再由 turn loop 感知 abort。
+  // Once assistant tool_use is in history, Stop must not throw before
+  // results exist; hand the abort to the executor, whose cancel path emits
+  // ToolCancelled per call; the turn loop sees the abort.
   const schedule = await this.scheduleTools(coreToolCalls);
   state.turnMachine = new TurnMachineImpl(
     state.turnMachine.scheduleTools(coreToolCalls, this.toScheduleState(schedule)),
@@ -163,8 +163,8 @@ export async function executeToolCallsForModelStep(
       subagentModelOverride: state.subagentModelOverride,
       model: state.model,
       onBatchStart: async (toolCallIds) => {
-        // 已取消的 batch 仍由 executor 返回 cancelled results，但不能把从未进入
-        // handler 的 tool parts 误标记为 running。
+        // Cancelled batches still return results; parts never reaching a
+        // handler must not read running.
         if (state.turnAbortSignal?.aborted) return;
         for (const toolCallId of toolCallIds) {
           const toolCall = toolCallById.get(toolCallId as ToolCallId);
@@ -229,13 +229,12 @@ export async function executeToolCallsForModelStep(
     streamedResultsById,
   });
 
-
   const stopTurnResult = results.find((result) => result.turnControl?.stopTurnAfterResult === true);
   if (stopTurnResult) {
     await persistToolModelStepFinish(this, state, options);
     if (stopTurnResult.turnControl?.reason === "automation_create_limit") {
-      // 上限错误只能由用户手动释放名额。把普通 error 继续交给模型，
-      // 导致模型循环 List/Delete/Create，甚至尝试 Bash 绕过。当前 turn 只保留一次文本收口。
+      // Only the user frees cap slots; feeding the ordinary error on,
+      // the model loops List/Delete/Create or Bash-bypasses; one text close per turn.
       state.automationCreateLimitReached = true;
       recordCompletedToolBatch(state);
       this.logger?.info("Automation create limit switched turn to text-only response", {
@@ -288,4 +287,3 @@ export async function executeToolCallsForModelStep(
   });
   return "continue";
 }
-

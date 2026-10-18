@@ -104,7 +104,7 @@ export type OfficialMcpAuthFailureKind =
 // -- Official MCP trust adjudication --
 // In shared, not the CLI bootstrap, because two consumers in mutually blind packages need it:
 //   - apps/zcode-cli/packages/adapters: local validation before the request;
- //   - packages/services (host): a second check at the identity authority boundary (depends only on @zcode/shared,
+//   - packages/services (host): a second check at the identity authority boundary (depends only on @zcode/shared,
 //     cannot import CLI-side packages).
 // A single source is a hard requirement: divergent checks would have one side allow and the other reject.
 

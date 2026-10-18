@@ -37,7 +37,9 @@ export interface MentionResultGroup<TItem = MentionItem> {
 export function buildVisibleMentionGroups<TItem>(
   groups: MentionResultGroup<TItem>[],
 ): MentionResultGroup<TItem>[] {
-  return groups.filter((group) => group.loading || group.errorText !== null || group.items.length > 0);
+  return groups.filter(
+    (group) => group.loading || group.errorText !== null || group.items.length > 0,
+  );
 }
 
 // CJK queries use prefix/substring matching only: per-character subsequence matching is too loose for CJK, and

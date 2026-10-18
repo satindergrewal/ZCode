@@ -247,8 +247,9 @@ function validateExistingFixtureIdentity({ caseName, filePath, specRelFromDeskto
       `${relative(repoRoot, filePath)}: caseName must be ${caseName}; received ${JSON.stringify(value?.caseName)}`,
     );
   }
-  // 修复原因：promotion 会保留已有 fixture 内容；若这里接受 pending 物理路径，移动
-  // spec 后 manifest 会立刻违反 formal admission，形成“转正成功但门禁不可运行”的半状态。
+  // Fix: promotion preserves existing fixture content; accepting the pending physical path here
+  // breaks formal admission in the manifest right after the spec move, leaving a half-promoted
+  // state where the gate cannot run.
   if (
     typeof value?.spec !== "string" ||
     resolve(desktopDir, value.spec) !== resolve(desktopDir, specRelFromDesktop)
@@ -296,7 +297,8 @@ function extractE2EMarkers(text) {
         (text.match(/\bE2E_[A-Z0-9_]+\b/g) ?? []).map((marker) => marker.replace(/_+$/, "")),
       ),
     ]
-      // 修复：E2E_PROVIDER_* 是上游供应商配置的环境变量名，不是用例标记；曾被误报为未覆盖的 marker。
+      // Fix: E2E_PROVIDER_* are provider-config env names, not case markers; once misreported as
+      // uncovered markers.
       .filter((marker) => !ignoredMarkers.has(marker) && !marker.startsWith("E2E_PROVIDER_"))
       .sort()
   );

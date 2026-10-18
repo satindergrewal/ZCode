@@ -79,14 +79,14 @@ export async function flushE2ECoverage(): Promise<void> {
     return;
   }
   try {
-        // Agent shutdown ends in process.exit, so the SIGTERM path does not reliably trigger
-        // NODE_V8_COVERAGE's automatic write-out; flush explicitly in E2E coverage mode only.
+    // Agent shutdown ends in process.exit, so the SIGTERM path does not reliably trigger
+    // NODE_V8_COVERAGE's automatic write-out; flush explicitly in E2E coverage mode only.
     takeCoverage();
-        // takeCoverage hands the write to V8 background tasks; an immediate process.exit can sporadically leave only the readiness
-        // marker. Coverage mode gets a short flush window; normal CLI shutdown gains no latency.
+    // takeCoverage hands the write to V8 background tasks; an immediate process.exit can sporadically leave only the readiness
+    // marker. Coverage mode gets a short flush window; normal CLI shutdown gains no latency.
     await new Promise<void>((resolve) => setTimeout(resolve, 500));
   } catch {
-        // Coverage is a diagnostic artifact; a write failure must not block the CLI's existing exit flow.
+    // Coverage is a diagnostic artifact; a write failure must not block the CLI's existing exit flow.
   }
 }
 
@@ -132,8 +132,8 @@ export function scheduleCliExitWatchdog(options: CliExitWatchdogOptions): () => 
     Math.trunc(options.timeoutMs ?? DEFAULT_CLI_EXIT_WATCHDOG_TIMEOUT_MS),
   );
   const timer = setTimeout(() => {
-        // After a normal run() completes, unknown pipe/socket handles may linger. The watchdog
-        // runs only when the event loop is still not drained at the deadline, so it never delays the natural exit path.
+    // After a normal run() completes, unknown pipe/socket handles may linger. The watchdog
+    // runs only when the event loop is still not drained at the deadline, so it never delays the natural exit path.
     void flushE2ECoverage().finally(() => exitProcess(options.exitCode));
   }, timeoutMs);
   timer.unref?.();

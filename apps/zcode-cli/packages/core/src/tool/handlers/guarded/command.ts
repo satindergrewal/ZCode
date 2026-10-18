@@ -60,7 +60,7 @@ export function matchDangerousCommand(
     ({ commands, unsupported } = analyzeCmdCommand(command));
   } else {
     const analysis = analyzeBashCommand(command);
-    // 解析失败没有可依赖的定位；局部 unsupported 节点则不丢弃其它独立命令。
+    // A parse failure has no reliable span; partial unsupported nodes never discard the other independent commands.
     if (analysis.hasParseErrors) return { status: "unsupported" };
     commands = analysis.commands.map((c) => c.words);
     unsupported = analysis.hasUnsupportedSyntax;
@@ -99,10 +99,10 @@ function matchInvocation(
     return matchRobocopyDelete(args, dialect);
   if (name === "rm") {
     const parsed = parseOptions(args, RM, COMMAND_SCAN);
-    // BSD rm 在首个目标后不再解析选项；存在性扫描会吞掉后续 --help 等真实文件名。
-    // 目标计数单独按该语义扫描，危险选项仍保留 GNU 的交错扫描，不探测运行平台。
+    // BSD rm stops parsing options after the first target; the existence scan would swallow later real filenames like --help.
+    // Target counting follows that semantics; dangerous options keep GNU's interleaved scan, with no platform probing.
     const targets = parseOptions(args, RM, { ordering: "stop-at-operand", unknown: "continue" });
-    // 递归或语法上的批量即可；不展开目标，不用帮助/交互选项取消已知危险证据。
+    // recursive or syntactic batch suffices; never expand targets, never cancel known danger evidence via help/interactive flags.
     return settleRule(
       (enabled(parsed.flags, ["-r", "-R", "--recursive"]) ||
         targets.operands.length >= 2 ||
@@ -112,7 +112,7 @@ function matchInvocation(
     );
   }
   if (["dd", "mount", "umount", "mkfs"].includes(name) || /^mkfs\.[a-zA-Z0-9_-]+$/.test(name)) {
-    // 只豁免独立且明确的查询形式，不能把 -o/其它参数值中的 --help 当成退出选项。
+    // Exempt only standalone, unambiguous query forms; a --help inside -o/option values is not an exit option.
     if (args.length === 1 && !args[0]!.dynamic && ["--help", "--version"].includes(args[0]!.value))
       return false;
     return !(name === "mount" && args.length === 0) && "system-storage";

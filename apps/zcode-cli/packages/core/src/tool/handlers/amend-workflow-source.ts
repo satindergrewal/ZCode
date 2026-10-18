@@ -1,12 +1,12 @@
 // ============================================================
-// AmendWorkflow - 这次修订跑哪一份脚本
+// AmendWorkflow - which script this amend runs
 // ============================================================
 //
-// 脚本有三条来路，归一成同一组字段：`path`（常态：就地改过的脚本文件）、`script`（内联整份）、
-// 两个都不给（沿用前驱存档的那一份）。从 resolveInput 本体（amend-workflow-resolve.ts）分出来的
-// 理由与 `create-workflow-source.ts` 同一条：这里是**读世界**的地方（脚本文件、前驱存档的脚本），
-// handler 是**改世界**的地方。两者搅在一起，下一个人自然会在 handler 里再读一次盘，而确认窗看到
-// 的就不再是将要执行的那份字节了。
+// Three script sources, one field set: `path` (common case: an edited script file), `script` (inline, whole),
+// or neither (inherit the archived predecessor script). Split from the resolveInput body (amend-workflow-resolve.ts) for the
+// same reason as `create-workflow-source.ts`: this is the read-the-world side (script files, predecessor archived script);
+// the handler is the change-it side. Mixed, the next person re-reads disk in the handler, and the dialog
+// no longer shows the bytes that will run.
 
 import {
   AMEND_WORKFLOW_SOURCE_ERROR,
@@ -21,9 +21,9 @@ import { normalizeWorkflowMaxConcurrency } from "./create-workflow-source.js";
 import { readWorkflowScriptFile } from "./workflow-path-source.js";
 
 /**
- * 本地失败码表。数值只是日志位（executor 投影成 `code: "N"`），判别键在 message 前缀；
- * `run_not_found` 复用内省表的同键同码（三个工具上「被引用的 run 不存在」是同一件事）。
- * 从 21 起编只为与内省表（1/2）、ResumeWorkflowRun（11–15）视觉不撞车。
+ * Local failure-code table. Numbers are log bits (the executor projects `code: "N"`); the discriminator is the message prefix.
+ * `run_not_found` reuses the introspection table key/code (a missing referenced run is one thing across all three tools).
+ * Numbering from 21 only avoids collision with the introspection table (1/2) and ResumeWorkflowRun (11-15).
  */
 export const AMEND_WORKFLOW_ERROR_CODE = {
   AMEND_UNAVAILABLE: 21,
@@ -32,19 +32,19 @@ export const AMEND_WORKFLOW_ERROR_CODE = {
   SCRIPT_UNCHANGED: 24,
   SCRIPT_FILE: 25,
   SCRIPT_UNAVAILABLE: 26,
-  // 只改并发那条路由自己的三个拒绝（docs/dynamic-workflow/launch.md「Changing only the
-  // parallelism of a live run」）；三者都不动 run。
+  // The concurrency-only route's three rejections (docs/dynamic-workflow/launch.md "Changing only the
+  // parallelism of a live run"); none of them touch the run.
   RETUNE_UNCHANGED: 27,
   RUN_SETTLED: 28,
   NOT_RETUNABLE: 29,
 } as const;
 
-/** 入参级违规（两个来源都给了）的码，与 `CreateWorkflow` 的同一个 400。 */
+/** Code for the input-level violation (both sources given); the same 400 as `CreateWorkflow`. */
 const AMEND_WORKFLOW_INPUT_FAILURE_CODE = 400;
 
 /**
- * 修订脚本**至多给一个**，只对模型发出的入参成立（理由同 `validateCreateWorkflowSource`：归一化
- * 之后 `script` 与 `path` 同时在场是合法执行态）。两个都不给不是违规——那是「沿用前驱的脚本」。
+ * At most one amend script, for model-emitted input only (reason as `validateCreateWorkflowSource`: post-normalization
+ * coexisting `script` and `path` is a legal execution state). Neither given is no violation — it means inherit the predecessor script.
  */
 export function validateAmendWorkflowSource(input: unknown): { result: true } | ToolHandlerFailure {
   const parsed = AmendWorkflowInputSchema.safeParse(input);
@@ -60,10 +60,10 @@ export function validateAmendWorkflowSource(input: unknown): { result: true } | 
 }
 
 /**
- * 两个来源都省略了，却没有可沿用的脚本。两种原因同一个判别键：对模型下一步是同一件事——把脚本交上来。
+ * Both omitted with nothing to inherit. Two causes, one discriminator: the next step is the same — hand over a script.
  *
- *   - `record`：前驱的记录里没有脚本（脚本落库之前的老 run）；
- *   - `host`：本会话没有 run 端口，或端口不带 `getScript`（老宿主）。
+ *   - `record`: no script in the predecessor record (a pre-script-persistence run);
+ *   - `host`: no run port in this session, or the port lacks `getScript` (older host).
  */
 export function scriptUnavailableFailure(
   runId: string,
@@ -81,17 +81,17 @@ export function scriptUnavailableFailure(
 }
 
 /**
- * 并发上界的三态归一（docs/dynamic-workflow/concurrency.md「Two bounds on a run」）：
+ * Three-state normalization of the concurrency bound (docs/dynamic-workflow/concurrency.md "Two bounds on a run"):
  *
- *   - 数 → 向下取整到至少 1，没有上限（高于默认并发与低于它一样作数）；
- *   - `null` → 解除，键整个消失（新 run 跑在默认并发上）；
- *   - 省略 → 沿用前驱的上界，**原样**。快照**只在不等于默认时**带 `maxConcurrency`，所以「前驱
- *     没设过」与「前驱跑在默认上」在这里是同一件事：也是键消失；一个被调高过的前驱把它的数
- *     传下去。
+ *   - number -> floor to at least 1, no ceiling (above or below default both count);
+ *   - `null` -> clear, the key disappears (the new run uses default concurrency);
+ *   - absent -> inherit the predecessor's bound, **verbatim**. The snapshot carries `maxConcurrency` only when it differs from default, so
+ *     "never set" and "running at default" are the same thing here: the key vanishes; a raised predecessor passes its number on.
+ *     it on.
  *
- * 三态只活到这里：确认窗与 handler 之后面对的只有「一个数或没有」。**唯一的例外是就地调并发**
- * 那条路由（amend-workflow-retune.ts）：`retuneConcurrency` 自己收 `number | null`，默认并发那个数
- * 只有端口知道，工具不该猜第二遍。
+ * The three states end here: past dialog and handler there is only a-number-or-nothing. The sole exception, the in-place retune
+ * That route (amend-workflow-retune.ts): `retuneConcurrency` takes `number | null` itself, so the default-concurrency number
+ * is port knowledge; the tool must not guess twice.
  */
 export function resolveAmendMaxConcurrency(
   requested: number | null | undefined,
@@ -104,16 +104,16 @@ export function resolveAmendMaxConcurrency(
 }
 
 /**
- * 前驱事实块（docs/dynamic-workflow/launch.md「From call to run」第 2 步）。resolveInput 与就地
- * 调并发的落回路（结算竞态里重读一次快照）共用这一份派生，免得两处对「这个 run 现在算什么状态」
- * 给出不同的答案。
+ * The predecessor facts block (docs/dynamic-workflow/launch.md "From call to run", step 2). resolveInput and the in-place
+ * retune fallback (one snapshot re-read in the settlement race) share this derivation, so both answer what-state-is-this-run-in
+ * identically.
  */
 export function describePredecessor(
   snapshot: DynamicWorkflowRunSnapshot,
   sessionId: string | undefined,
 ): AmendWorkflowPredecessor {
-  // 快照的 `status` 是追踪器的通用词（stopped 折成 cancelled …）；真实词在 `runStatus`，只在
-  // 终态在场——非终态一律读作 running（pending 在这里与 running 无分别：都会被 amend 停下）。
+  // The snapshot `status` is tracker vocabulary (stopped folded into cancelled…); the real word is `runStatus`, present
+  // only in terminal states — else read running (pending equals running here: the amend stops both).
   const status = snapshot.runStatus ?? "running";
   return {
     ...(snapshot.name === undefined ? {} : { name: snapshot.name }),
@@ -126,7 +126,7 @@ export function describePredecessor(
   };
 }
 
-/** 归一化出来的脚本字段（三条来源同形），外加模型面该看到的文件写法与「是否沿用」。 */
+/** Normalized script fields (one shape from all three sources), plus the model-facing file spelling and inherited-or-not. */
 export type AmendScriptResolution =
   | {
       result: true;
@@ -137,25 +137,25 @@ export type AmendScriptResolution =
   | ToolHandlerFailure;
 
 /**
- * 三条来源归一成同一组字段。
+ * All three sources normalize to one field set.
  *
- *   - `path`：读文件。带元数据块时块被剥掉且**声明被忽略**——修订不带实参（实参是前驱那次 run
- *     的事实，随 journal 走），所以这里没有可校验的东西；块仍要剥，否则它会被当成脚本的一部分
- *     喂进编译器。
- *   - `script`：原样。
- *   - 都省略：经端口读前驱存档的那一份（resume 重放的同一份字节）。读在 resolveInput 而不在
- *     handler：确认窗要画将要跑的那份脚本的图，hook 与项目规则也要匹配到它，而这两处都在
- *     handler 之前。空串与缺席同义——运行时 schema 的 `.min(1)` 不收空脚本。沿用的脚本还要
- *     认一次家（{@link resolveKeptScriptFile}）：前驱的脚本文件若仍是这份字节，新 run 就继续
- *     记它，否则 `path` 缺席，handler 照「不来自文件的脚本」的规矩写一份新草稿。
+ *   - `path`: read the file. A metadata block is stripped, its **declarations ignored** — amends carry no args (args belong to the predecessor run
+ *     record, in the journal), so there is nothing to validate; the block is still stripped, or it gets
+ *     fed to the compiler as script.
+ *   - `script`: verbatim.
+ *   - Neither: read the predecessor archived script via the port (the bytes resume replays). The read lives in resolveInput, not the
+ *     handler: the dialog must graph the script that will run, hooks and project rules must match it — both happen
+ *     before the handler. Empty string equals absent — the runtime schema `.min(1)` rejects empty scripts. The inherited script also
+ *     gets a home check ({@link resolveKeptScriptFile}): if the predecessor script file still holds these bytes, the new run keeps
+ *     recording it; else `path` is absent and the handler writes a fresh draft per the not-from-a-file rule.
  *
- * `port` 缺席（未接线的宿主）时前两条照常，第三条无从沿用，当场失败。
+ * With `port` absent (unwired host) the first two stand, the third cannot inherit and fails right there.
  */
 export async function resolveAmendScript(options: {
   model: AmendWorkflowInput;
   cwd: string;
   port: DynamicWorkflowRunPort | undefined;
-  /** 前驱快照上的脚本文件（绝对路径）；沿用脚本时用来认家。 */
+  /** The script file on the predecessor snapshot (absolute); the home check for inherited scripts. */
   predecessorScriptPath: string | undefined;
 }): Promise<AmendScriptResolution> {
   const { model, cwd, port } = options;
@@ -211,13 +211,13 @@ export async function resolveAmendScript(options: {
 }
 
 /**
- * 沿用的脚本认家：前驱记下的脚本文件若**此刻**
- * 读出来仍是沿用的那份字节，新 run 就继续记这个文件——脚本没变，文件也没变，它就是新 run 的
- * 脚本文件，模型下一次修订仍去编辑它。工具的沿用与 GUI「配置」共用这一条。
+ * Home check for an inherited script: if the predecessor-recorded script file **right now**
+ * reads back as the inherited bytes, the new run keeps recording that file — script unchanged, file unchanged; it is the new run
+ * script file, and the next amend edits it too. Tool inherit and the GUI settings flow share this.
  *
- * 任何一处对不上（前驱没记过文件、文件没了、读不出来、或已被改过）都回 `undefined`：调用方照
- * 「不来自文件的脚本」写一份新草稿。绝不把一个内容已经不是这份脚本的文件记到新 run 上——那会让
- * 诊断行号与「去编辑那个文件」都指向另一段代码。
+ * Any mismatch (never recorded, gone, unreadable, modified) returns `undefined`: the caller writes
+ * a fresh draft per the not-from-a-file rule. Never pin a file no longer holding this script to the new run —
+ * diagnostic lines and edit-that-file would point at different code.
  */
 export async function resolveKeptScriptFile(options: {
   cwd: string;
@@ -235,18 +235,18 @@ export async function resolveKeptScriptFile(options: {
 }
 
 /**
- * 「文件没被改过」的预检。
+ * The unchanged-file precheck.
  *
- * 只对**模型给的** `path` 成立：这道网要抓的是**忘了编辑**，而把脚本贴一遍、或明说「脚本不动」
- * （两个来源都省略）都不是那个错误。也只在这次调用什么都没改时成立——同时设了 `max_concurrency`
- * 或 `subagent_model` 的修订有它自己的意义，脚本一字不动是合理的（`null` 算「传了」：它是一次
- * 显式解除）。
+ * Holds only for a **model-provided** `path`: the net catches forgotten edits; re-pasting the script or declaring it unchanged
+ * (both omitted) is not that error. It also holds only when nothing else changes — a call that sets `max_concurrency`
+ * or `subagent_model` means itself; an untouched script is legitimate (`null` counts as given: an explicit
+ * lift).
  *
- * `getScript` 是端口的可选成员，缺席就跳过这道预检：它是便利，不是正确性的门。
+ * `getScript` is an optional port member; without it, skip the precheck — a convenience, not a correctness gate.
  */
 export async function refuseUnchangedScript(options: {
   port: DynamicWorkflowRunPort;
-  /** 模型发出的入参（归一化之前）：沿用时回填的 `path` 不算「模型给的」。 */
+  /** The model-emitted input (pre-normalization): a backfilled inherited `path` is not model-given. */
   model: AmendWorkflowInput;
   resolvedScript: string;
   described: string | undefined;

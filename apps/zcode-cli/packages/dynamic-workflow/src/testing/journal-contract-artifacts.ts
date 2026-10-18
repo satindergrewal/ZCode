@@ -1,8 +1,11 @@
 /**
- * 修复原因：journal-contract.ts 顶到 oxlint max-lines 上限（400 行），把用户面产物行（kind: "artifact"、artifactId 列、report 标签）的用例拆到本文件；
- * 公开面仍从 journal-contract.ts 导出（`runJournalStoreContract` 按原顺序调用各主题的注册函数）。
+ * Split out because journal-contract.ts hit the oxlint max-lines cap (400 lines): the user-facing
+ * artifact rows (kind: "artifact", the artifactId column, report tags) live here. The public
+ * surface is still exported from journal-contract.ts (`runJournalStoreContract` calls each
+ * topic's registration function in the original order).
  *
- * 注意：这里只登记 `it(...)`，不另开 describe——套件的分组与用例顺序必须与拆分前逐字相同。
+ * Note: only `it(...)` is registered here, no extra describe — the suite's grouping and case
+ * order must stay verbatim-identical to the pre-split layout.
  */
 
 import { expect, it } from "vitest";
@@ -10,13 +13,16 @@ import type { ArtifactVersionRecord, JournalStorePort, NodeRecord } from "../eng
 import { baseRun } from "./journal-contract-helpers.js";
 
 export function registerArtifactCases(factory: () => JournalStorePort): void {
-  // ——— 用户面产物（docs/dynamic-workflow/authoring.md）———
-  // ⚠ 这里的 artifact 是脚本发布给用户看的交付物，不是 `RunSettlement.artifact`
-  // （脚本顶层返回值）。两义并存，见 spec 的「术语」表。
+  // ——— User-facing artifacts (docs/dynamic-workflow/authoring.md) ———
+  // Note: the artifact here is a deliverable the script publishes to the user, not
+  // `RunSettlement.artifact` (the script's top-level return value). Both senses exist; see the
+  // spec's terminology table.
 
-  // 内容成员成功发布的落库形状：`kind: "artifact"`、`result` 即整条 ArtifactVersionRecord、
-  // `artifactId` 指向它发布的那个产物。两个实现都必须**逐字**回读——`uri` 是字节的唯一
-  // 去路（字节不进 journal），加工或丢弃它就等于把一个已发布的产物变成打不开的卡片。
+  // Persisted shape of a successful content-member publish: `kind: "artifact"`, `result` the
+  // whole ArtifactVersionRecord, `artifactId` pointing at the artifact it published. Both
+  // implementations must read it back **verbatim** — `uri` is the only path to the bytes (bytes
+  // never enter the journal); reworking or dropping it turns a published artifact into a card
+  // that cannot open.
   it("round-trips a completed artifact node with its version record", () => {
     const store = factory();
     store.createRun(baseRun("r1"));
@@ -50,8 +56,9 @@ export function registerArtifactCases(factory: () => JournalStorePort): void {
     expect(stored?.result).toEqual(record);
   });
 
-  // 预置声明的行：同一个 kind、同一列 artifactId，只是 result 里装的是 spec 而不是字节元数据。
-  // 看板本身不含数据（它的每个点是一行标签 report），所以这一行就是「这个看板存在过」的全部记录。
+  // A preset declaration's row: same kind, same artifactId column, only result holds the spec
+  // instead of byte metadata. The board itself carries no data (each of its points is a tagged
+  // report row), so this row is the entire record of "this board once existed".
   it("round-trips a preset declaration artifact node with its spec", () => {
     const store = factory();
     store.createRun(baseRun("r1"));
@@ -76,9 +83,10 @@ export function registerArtifactCases(factory: () => JournalStorePort): void {
     expect(store.getNode("r1", "artifact#2", 1)).toEqual(node);
   });
 
-  // 失败的发布必须**带着 artifactId 落库**：读面要能说出「这个 id 的这次发布没成功」。
-  // 失败行没有 result（字节从未写成），错误在 error 上——这与 settled failure 必须落库
-  // 是同一条重放健全性要求。
+  // A failed publish must land **with its artifactId**: the read face has to be able to say
+  // "this publish of that id did not succeed". A failed row has no result (the bytes were never
+  // written); the error sits on error — the same replay-sanity requirement as persisting
+  // settled failures.
   it("round-trips a failed artifact node with its error and artifact id", () => {
     const store = factory();
     store.createRun(baseRun("r1"));
@@ -99,9 +107,11 @@ export function registerArtifactCases(factory: () => JournalStorePort): void {
     expect(stored !== undefined && "result" in stored).toBe(false);
   });
 
-  // 内容成员走的是「准入 running → 结算」两次写，而 putNode 是整条替换的 upsert：
-  // 结算那一次若不再带上 artifactId，产物归属会被抹掉，那次发布就从「本 run 有哪些产物」
-  // 的读面上消失。引擎两次写都带着它，这条把该形状钉在存储层。
+  // Content members go through the two-write "admit running -> settle" shape, while putNode is
+  // a whole-row replace upsert: if the settling write stops carrying artifactId, the artifact's
+  // ownership is erased and that publish vanishes from the "which artifacts does this run have"
+  // read face. The engine carries it on both writes; this case pins that shape in the storage
+  // layer.
   it("keeps the artifact id across the running → settled rewrite", () => {
     const store = factory();
     store.createRun(baseRun("r1"));
@@ -127,8 +137,9 @@ export function registerArtifactCases(factory: () => JournalStorePort): void {
     expect(settled.artifactId).toBe("book");
   });
 
-  // 「看板是 journal 的投影」这条不变式的落点：一个看板的每个点都是一行
-  // `kind = "report"` ∧ `artifactId` 相符。标签因此必须与 item 同寿地落在 report 行上。
+  // Where the "a board is a projection of the journal" invariant lands: each point of a board
+  // is one row of `kind = "report"` with a matching `artifactId`. The tag must therefore live
+  // on the report row for as long as the item does.
   it("round-trips the artifact tag on a report node", () => {
     const store = factory();
     store.createRun(baseRun("r1"));
@@ -146,9 +157,10 @@ export function registerArtifactCases(factory: () => JournalStorePort): void {
     expect(store.getNode("r1", "report#1", 3)).toEqual(tagged);
   });
 
-  // 未打标签的 report、ask、world-* 与 0029 之前的历史行都没有这一列：必须解成**缺席的键**
-  // 而不是一个值为 undefined 的键。看板取数按「artifactId 相符」筛行，多出来的键会让
-  // 整条 toEqual 失败，也会让「没有标签」与「标签是 undefined」在读面上不可分辨。
+  // Untagged reports, asks, world-* nodes and pre-0029 rows have no such column: it must
+  // decode as an **absent key**, not a key holding undefined. Board queries filter rows by
+  // "artifactId matches", so a spurious key fails the whole toEqual and also makes "no tag"
+  // and "tag is undefined" indistinguishable on the read face.
   it("leaves artifactId absent on nodes that carry no artifact", () => {
     const store = factory();
     store.createRun(baseRun("r1"));
@@ -168,8 +180,9 @@ export function registerArtifactCases(factory: () => JournalStorePort): void {
     expect(stored).toEqual(plain);
   });
 
-  // listNodes 是引擎恢复产物版本号的取数面（「该 id 已 completed 的行数 + 1」，同
-  // reportCount 的恢复法），所以标签必须在枚举读面上也在场——只在 getNode 上回读是不够的。
+  // listNodes is the query face the engine uses to recover an artifact's next version
+  // ("completed rows for the id, plus one" — recovered like reportCount), so the tag must be
+  // present on the enumeration face too; reading it back on getNode alone is not enough.
   it("returns artifactId from listNodes as well as getNode", () => {
     const store = factory();
     store.createRun(baseRun("r1"));

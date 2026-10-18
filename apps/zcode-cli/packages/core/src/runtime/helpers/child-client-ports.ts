@@ -10,7 +10,7 @@
 //
 // This rule used to be scattered across child assembly sites: core's subagent wrapped two private layers while dwf actors and legacy
 // workflow children forwarded appOptions ports verbatim — two wrong, one right. Derivation converges here, invoked by the
-** **parent runtime** (AgentRuntime.createChildClientPorts); parentSessionId is filled by the parent itself,
+// **parent runtime** (AgentRuntime.createChildClientPorts); parentSessionId is filled by the parent itself,
 // so callers cannot get it wrong.
 
 import type { PermissionBrokerPort, SessionId } from "../deps.js";

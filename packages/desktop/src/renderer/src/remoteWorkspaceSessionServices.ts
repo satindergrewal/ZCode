@@ -55,7 +55,8 @@ export function buildServerRemoteWorkspaceSessionServices(
   _baseServices: IServiceAccessor,
   remoteServices: IServiceAccessor,
 ): IServiceAccessor {
-  // Server remote 连接的是完整运行中的 ZCode server；workspace/runtime/model-provider
-  // 等状态以 server 为准，本地 renderer 只保留窗口与 UI shell 状态。
+  // A server-remote connection attaches to a fully running ZCode server; workspace/runtime/
+  // model-provider state is the server's word, and the local renderer keeps only window and UI
+  // shell state.
   return remoteServices;
 }

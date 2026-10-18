@@ -13,7 +13,7 @@ import { expect, it } from "vitest";
 import { NodeProviderRegistryRuntime } from "../src/index.js";
 import { createNodeModelSelectionFacade } from "../src/model-selection-facade.js";
 
-it("Host/Worker 共用 facade：Start 与付费并存，Start 不映射或迁移，付费仍按当前连接解析", async () => {
+it("shares one Host/Worker facade: Start coexists with paid plans, maps/migrates nothing, and paid still resolves per current connection", async () => {
   const root = await mkdtemp(join(tmpdir(), "start154-selection-"));
   let available = true;
   let account!: AccountProviderService;

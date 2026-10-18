@@ -1,4 +1,4 @@
-/* oxlint-disable eslint(max-lines) -- 已发布旧 ZCode config.json 的多版 Provider 结构读取集中在同一边界。 */
+/* oxlint-disable eslint(max-lines) -- every released legacy config.json provider shape is read at this one boundary. */
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
@@ -82,7 +82,7 @@ function normalizeBigModelCodingPlanAnthropicBaseUrlForEnv(
   try {
     const parsed = new URL(normalizedBaseUrl || fallbackBaseUrl);
     const productionParsed = new URL(BIGMODEL_CODING_PLAN_ANTHROPIC_BASE_URL);
-    // 旧配置可能保存生产域名；测试环境的 Team Plan Key 无法调用生产网关。
+    // Legacy configs may hold prod hosts; staging team keys cannot call production.
     return parsed.origin === productionParsed.origin
       ? fallbackBaseUrl
       : normalizedBaseUrl || fallbackBaseUrl;
@@ -400,8 +400,8 @@ function inferModelProviderKindFromOpenCodeProvider(
 }
 
 function hasOpenCodeProviderRuntimeFields(provider: ZCodeOpenCodeProviderConfig): boolean {
-  // config.json 的权威运行态字段是 kind/options.baseURL。
-  // 旧 endpoints/apiFormat/defaultKind/zcode 可能是历史迁移残留，若继续优先读取会覆盖新配置。
+  // Authoritative runtime fields are kind/options.baseURL.
+  // Legacy endpoints/apiFormat/defaultKind/zcode are residue; preferring them clobbers new config.
   return Boolean(
     provider.kind ||
     readString(provider.options?.baseURL) ||
@@ -434,9 +434,9 @@ function resolvePresetProviderKindFromRuntimeBaseUrl(
     return undefined;
   }
 
-  // 历史 config.json 可能保存成 kind=anthropic 但 baseURL 指向
-  // /coding/paas/v4。ZAI/BigModel 这组内置 provider 的运行协议必须和已知
-  // runtime URL 对齐，否则 agent 会用 Anthropic adapter 请求 OpenAI Chat endpoint。
+  // Historical config may say kind=anthropic while baseURL points at
+  // /coding/paas/v4. These built-ins' protocol must match the known
+  // runtime URL or agents hit OpenAI chat endpoints via the Anthropic adapter.
   const normalized = baseURL.trim().toLowerCase();
   if (!normalized) {
     return undefined;
@@ -445,8 +445,8 @@ function resolvePresetProviderKindFromRuntimeBaseUrl(
   const path = resolveRuntimeBaseUrlPath(normalized);
 
   if (isBigModelCodingPlanLegacyOpenAiRuntime(providerId, normalized)) {
-    // BigModel Coding Plan 的默认 runtime 已统一回 Anthropic。
-    // 历史落盘的 /coding/paas/v4 不能继续把该内置 provider 推断成 OpenAI-compatible。
+    // BigModel Coding Plan's default runtime is Anthropic again.
+    // A persisted /coding/paas/v4 must not keep inferring OpenAI-compatible.
     return "anthropic";
   }
   if (path.includes("/coding/paas/v4")) {
@@ -462,7 +462,7 @@ function resolveRuntimeBaseUrlPath(baseURL: string): string {
   try {
     return new URL(baseURL).pathname.toLowerCase();
   } catch {
-    // 非 URL 的历史值继续按原始字符串做保守匹配。
+    // Non-URL legacy values stay on conservative raw-string matching.
     return baseURL.toLowerCase();
   }
 }
@@ -489,8 +489,8 @@ function resolveOpenCodeProviderEndpoints(
   const baseURL = readString(provider.options?.baseURL) ?? readString(provider.api);
   if (baseURL) {
     if (isBigModelCodingPlanLegacyOpenAiRuntime(providerId, baseURL)) {
-      // 旧版本把 BigModel Coding Plan 保存到 OpenAI Chat 的 coding endpoint。
-      // 现在该内置 provider 默认使用 Anthropic endpoint，读取时需要把 baseURL 一并迁移。
+      // Old builds saved BigModel Coding Plan under the OpenAI chat endpoint.
+      // The built-in now defaults to Anthropic; migrate baseURL on read.
       return {
         baseURL: normalizeBigModelCodingPlanAnthropicBaseUrlForEnv(undefined),
         paths: {
@@ -506,8 +506,8 @@ function resolveOpenCodeProviderEndpoints(
         },
       };
     }
-    // config.json 新结构的 options.baseURL 是用户配置的 runtime baseURL。
-    // 读取时不能按 kind 删除 /v1、/responses 等路径段，否则设置页失焦/刷新会改写用户输入。
+    // In the new schema options.baseURL is user-authored.
+    // Never strip path segments by kind on read, or blur/refresh rewrites user input.
     const normalizedBaseURL = normalizeModelProviderConfiguredBaseUrl(baseURL);
     return {
       baseURL: normalizedBaseURL,
@@ -573,8 +573,8 @@ function openCodeModelToModelProviderModel(
     readPositiveNumber(model.limit?.output) ??
     readPositiveNumber(model.options?.max_tokens) ??
     readPositiveNumber(model.maxOutputTokens);
-  // 早期 provider 配置可能只在 options.max_tokens 或顶层 maxOutputTokens 保存输出值。
-  // 读取时按 limit > options > 顶层兼容，写回仍收敛到标准 limit 结构。
+  // Early configs kept output limits in options.max_tokens or top-level maxOutputTokens.
+  // Read precedence limit > options > top-level; writes converge on limit.
   const hasMaxOutputTokens =
     (!options.preferOpenCodeFields ? model.hasMaxOutputTokens : undefined) ??
     zcode?.hasMaxOutputTokens ??
@@ -735,22 +735,26 @@ async function readRawZCodeConfigFile(): Promise<ZCodeConfigFile | null> {
     raw = await readFile(filePath, "utf-8");
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
-    // 旧读取器把所有失败当作文件不存在，Importer 会因此永久提交空 Personal 配置。
-    // 只有 ENOENT 允许初始化空配置；其余错误交给 Repository 保留磁盘并报告失败。
+    // The legacy reader treated every failure as missing-file, committing empty configs forever.
+    // Only ENOENT may initialize empty; other errors keep the file and report.
     if (code === "ENOENT") return null;
-    throw new Error(`旧 Provider 配置读取失败 stage=io path=${filePath} code=${code ?? "unknown"}`);
+    throw new Error(
+      `Legacy provider config read failed stage=io path=${filePath} code=${code ?? "unknown"}`,
+    );
   }
   let json: unknown;
   try {
     json = JSON.parse(raw) as unknown;
   } catch {
-    // JSON/Zod 原始错误可能包含 API Key 等输入值；不能写入日志或通过 cause 向外传递。
-    throw new Error(`旧 Provider 配置解析失败 stage=json path=${filePath}`);
+    // Raw JSON/Zod errors can embed API keys; keep them out of logs and causes.
+    throw new Error(`Legacy provider config parse failed stage=json path=${filePath}`);
   }
   const parsed = zcodeConfigFileSchema.safeParse(json);
   if (!parsed.success) {
     const field = parsed.error.issues[0]?.path.map(String).join(".").slice(0, 256) ?? "";
-    throw new Error(`旧 Provider 配置校验失败 stage=schema path=${filePath} field=${field}`);
+    throw new Error(
+      `Legacy provider config validation failed stage=schema path=${filePath} field=${field}`,
+    );
   }
   return parsed.data;
 }
@@ -814,8 +818,8 @@ function normalizeModelProviderModelConfigEntry(
 function normalizeProviderModels(provider: ModelProviderConfig): ModelProviderModelConfig[] {
   const hasModelConfigs = provider.models.some(isModelProviderModelConfig);
   if (hasModelConfigs) {
-    // 预置同步会产生“官方字符串模型 + 用户自定义对象模型”的混合列表。
-    // 混合列表不能整表走 legacy 迁移：对象里的 contextWindow/reasoning 等 metadata 会丢失。
+    // Preset sync yields mixed official-string and user-object model lists.
+    // Never legacy-migrate the whole list: object metadata would be lost.
     const seen = new Set<string>();
     return provider.models.flatMap((rawModel) => {
       const rawModelId = isModelProviderModelConfig(rawModel) ? rawModel.id : rawModel;
@@ -874,8 +878,8 @@ function resolveProviderDefaultKindForStore(provider: ModelProviderConfig): Mode
     return resolveModelProviderDefaultKind(provider);
   }
 
-  // 旧 v2 store 可能仍只带 endpoints.anthropic/openai。
-  // 新运行态 helper 不再读取旧字段，这里必须在迁移边界先推导 defaultKind 再落 runtime endpoint。
+  // A legacy v2 store may carry only endpoints.anthropic/openai.
+  // New helpers skip those fields; derive defaultKind here before writing the runtime endpoint.
   if (provider.endpoints.anthropic?.trim()) {
     return "anthropic";
   }
@@ -916,21 +920,21 @@ function normalizeProviderForStore(provider: ModelProviderConfig): ModelProvider
 }
 
 function applyProviderStoreMigrations(providers: ModelProviderConfig[]): ModelProviderConfig[] {
-  // default-* 预置模板不随产品分发：空 API Key 表示用户从未启用该供应商。
-  // 在迁移边界清掉这些旧预置项，避免刷新后继续占用设置页和模型菜单。
+  // default-* presets do not ship: an empty key means never enabled.
+  // Drop them at the boundary so settings and model menus stay clean.
   let next = providers.filter(
     (provider) =>
       provider.id !== RETIRED_ZAPI_PROVIDER_ID &&
       !(provider.id.startsWith("default-") && provider.apiKey.trim().length === 0),
   );
 
-  // 迁移边界只规范化旧文件里真实存在的值。模型 Properties、Option Specs 与
-  // reasoning mapping 由 ZCode Built-in/Personal ModelConfigRules 在 Registry 中解析；
-  // 旧 Store 不能再按 Model ID 从另一份 Catalog 补值并把补值持久化回用户文件。
+  // The boundary normalizes only values present in legacy files. Model properties, option specs, and
+  // reasoning maps resolve via built-in/personal ModelConfigRules in the registry;
+  // never backfill from another catalog nor persist the backfill.
   return next.map(normalizeProviderForStore);
 }
 
-/** 只读取已发布旧 config.json；更早期的独立 Provider Store 已退出所有迁移链路。 */
+/** Reads released legacy config.json only; older stores are out of every migration path. */
 export async function readLegacyZCodeConfigProviders(): Promise<ModelProviderConfig[]> {
   const configProviders = await readZCodeConfigProviders();
   return configProviders ? filterDeletedProviderModelsForRead(configProviders) : [];
@@ -983,8 +987,8 @@ function resolveRuntimeBaseUrlForStore(
     return normalizeModelProviderBaseUrlForKind(baseURL, defaultKind);
   }
 
-  // 旧 store 可能还只有 endpoints.anthropic/openai。
-  // runtime config 只能保存当前 kind 的 baseURL，这里按 defaultKind 取一条旧入口。
+  // The legacy store may still carry only endpoints.anthropic/openai.
+  // Runtime config holds one kind's baseURL; pick the entry matching defaultKind.
   return resolveLegacyRuntimeBaseUrlForKind(endpoints, defaultKind);
 }
 

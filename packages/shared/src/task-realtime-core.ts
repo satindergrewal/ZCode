@@ -62,7 +62,7 @@ const taskMetaRealtimeSchema = z.object({
   mode: z.enum(zcodeTaskModeRealtimeValues),
   model: z.string().optional(),
   runtimeEpoch: z.number().int().nonnegative().optional(),
-  // relay payload 可能由旧版本桌面投影；历史 provider 值在此归一为 glm。
+  // Relay payloads can be projections from older desktops; legacy provider values normalize to glm here.
   provider: legacyZCodeProviderSchema.optional(),
   migrationSource: z.enum(zcodeTaskMigrationSourceRealtimeValues).optional(),
   forkedFromTaskId: nonEmptyString.optional(),

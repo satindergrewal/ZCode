@@ -2,8 +2,9 @@ import { readFileSync, writeFileSync } from "node:fs";
 
 export function rewriteFormalSpecImports(specPath) {
   const original = readFileSync(specPath, "utf8");
-  // Bug 根因：pending spec 比 formal spec 多两层目录，只重写 helpers/pages 会让
-  // case-local 文件 fixture 在转正后漂移到 packages/desktop/fixtures 并于运行时 ENOENT。
+  // Root cause: pending specs nest two dirs deeper than formal ones; rewriting only helpers/pages
+  // lets case-local file fixtures drift to packages/desktop/fixtures after promotion and ENOENT at
+  // runtime.
   const rewritten = original
     .replaceAll("../../../helpers/", "../helpers/")
     .replaceAll("../../../pages/", "../pages/")

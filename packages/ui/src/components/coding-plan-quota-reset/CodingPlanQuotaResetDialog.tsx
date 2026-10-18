@@ -38,8 +38,8 @@ function getRemainingSeconds(expiresAt: number, now: number): number {
 }
 
 /**
- * 行是否仍持有可核销的机会；与 hasUsableCodingPlanQuotaResetOpportunity 同口径，
- * 只是不排除 processing——核销中的行要保留展示 loading。
+ * Whether the row still holds a redeemable opportunity; same predicate as
+ * hasUsableCodingPlanQuotaResetOpportunity but keeping processing rows so the in-flight one keeps its spinner.
  */
 function isResetItemUsable(item: CodingPlanQuotaResetDialogResetItem, now: number): boolean {
   return item.count > 0 && item.expiresAt !== null && item.expiresAt > now;
@@ -109,7 +109,7 @@ export function CodingPlanQuotaResetDialog({
   const resetListRef = useRef<HTMLDivElement>(null);
   const timersRef = useRef<number[]>([]);
   const wasOpenRef = useRef(false);
-  // 成功反馈结束时要按最新的 config 决定行去留，延时任务里的 item 是点击时的旧快照。
+  // Whether a row survives is decided against the LATEST config when the success feedback ends; the item in the delayed task is the click-time snapshot.
   const resetItemsRef = useRef(config.resetItems);
 
   useEffect(() => {
@@ -118,7 +118,7 @@ export function CodingPlanQuotaResetDialog({
 
   useEffect(() => {
     if (open !== wasOpenRef.current) {
-      // 成功反馈使用延时任务收起行；若用户中途关闭并重新打开，旧任务会污染新弹框状态。
+      // Success feedback collapses the row via a delayed task; a stale task would pollute the reopened dialog.
       for (const timer of timersRef.current) window.clearTimeout(timer);
       timersRef.current = [];
     }
@@ -144,10 +144,11 @@ export function CodingPlanQuotaResetDialog({
     [],
   );
 
-  // Bugfix：弹框曾在本地另记一份「已核销张数」，与 entry 的机会余额形成两个数据源。
-  // 完成态又把余额清零，核销一张后余下的行拿到空到期，渲染成「0 分 0 秒后过期」，
-  // 重开弹框才被新 status 校正。现在 completed 如实携带余下机会，张数/到期/能否展示
-  // 只读 config；动画中的行（点击 → 成功 → 收起）临时保留。
+  // Bugfix: the dialog kept a local redeemed-count, two sources of truth against the entry's remaining
+  // balance. Completed states zeroed it, so after one redemption remaining rows got an empty expiry and
+  // rendered as expiring-in-0m-0s until a reopen corrected them from the new status. The completed state now
+  // carries remaining chances faithfully and count/expiry/visibility read config alone; rows mid-animation
+  // (click, success, collapse) stay temporarily.
   const visibleResetItems = config.resetItems.filter(
     (item) =>
       isResetItemUsable(item, now) ||
@@ -179,9 +180,9 @@ export function CodingPlanQuotaResetDialog({
       await item.onReset();
       setSuccessfulType(item.resetType);
       burstCodingPlanQuotaResetConfetti(origin);
-      // 成功反馈结束时按最新 config 决定去留：同类型仍有余下机会则留在原位恢复可点击
-      // （张数与最早到期已由完成态携带），否则收起该行。onReset 在 status 对账写入后才
-      // resolve，此时 config 已是核销后的读数。
+      // Keep/exit is decided on the latest config at settle: same-type chances remaining means the row stays
+      // clickable in place (count and earliest expiry carried by the completed state), else it collapses.
+      // onReset resolves only after the status reconciliation writes, so config is already post-redemption.
       const settleTimer = window.setTimeout(() => {
         const latest = resetItemsRef.current.find(
           (candidate) => candidate.resetType === item.resetType,
@@ -201,7 +202,7 @@ export function CodingPlanQuotaResetDialog({
       }, SUCCESS_DISPLAY_MS);
       timersRef.current.push(settleTimer);
     } catch {
-      // 失败原因与 toast 由 useCodingPlanQuotaResetUi 统一处理；弹框只恢复可点击状态。
+      // Failure reason and toast are owned by useCodingPlanQuotaResetUi; the dialog only restores clickability.
       setResettingType(null);
     }
   };
@@ -261,9 +262,10 @@ export function CodingPlanQuotaResetDialog({
                   const success = successfulType === item.resetType;
                   const isExiting = exitingType === item.resetType;
                   const effectiveProcessing = item.processing || resettingType === item.resetType;
-                  // 同一类型可能持有多张机会，但服务端 /use 不支持指定核销哪一张，entry 只保留
-                  // 张数与最早到期时刻（核销一张后由完成态携带余下的张数/到期）。多张时显式
-                  // 标注张数与「最快」，避免用户把最早到期时间误读成全部机会的统一期限。
+                  // One type may hold several chances, but the server /use cannot target one, so the entry keeps
+                  // only count and earliest expiry (the completed state carries the remainder after one redemption).
+                  // With several, label count and soonest explicitly so the earliest expiry is not misread as a
+                  // deadline for all chances.
                   const hasMultipleOpportunities = item.count > 1;
                   return (
                     <div
@@ -291,8 +293,8 @@ export function CodingPlanQuotaResetDialog({
                               ) : null}
                             </div>
                             <div className="mt-0.5 truncate text-ui-sm text-foreground-subtle tabular-nums">
-                              {/* Bugfix：核销掉最后一张后行仍在播放成功/收起动画，此时没有到期时刻；
-                                  曾被当作 0 秒渲染成「0 分 0 秒后过期」。用不换行空格占位保持行高。 */}
+                              {/* Bugfix: after redeeming the last chance the row still plays success/collapse with no
+                                  expiry left; it used to render as expiring-in-0m-0s. A no-break space holds the line height. */}
                               {item.expiresAt === null
                                 ? "\u00a0"
                                 : intl.formatMessage(

@@ -2,8 +2,8 @@ import { z } from "zod";
 import { modelSelectionSchema } from "./model-selection.js";
 
 /**
- * 执行 Selection 退回 Session Selection 的原因。由发起方在 selectionFallback 规则里声明，
- * CLI 只透传命中规则的原因，不自行解释 provider 错误码。
+ * Why an execution Selection falls back to the Session Selection. Declared by the initiator in the selectionFallback rules;
+ * the CLI forwards the matched reason only and never interprets provider error codes itself.
  */
 export const modelExecutionSelectionFallbackReasonSchema = z.enum([
   "highspeed_card_expired",
@@ -35,13 +35,13 @@ export const modelExecutionSchema = z
       .strict()
       .optional(),
     /**
-     * 本次执行的 Selection 失败时，同一 Turn 内退回原模型继续跑完，而不是让整轮失败。
-     * 触发条件由发起方声明：`providerId` 限定只匹配本轮 execution Selection 指向的 provider；
-     * `rules` 按声明顺序匹配，首个命中的规则决定退回原因，`providerErrorCode` 缺省表示该 provider
-     * 的任何失败（用户取消与上下文超窗除外）。CLI 不按 provider id 前缀、模型名或错误文案硬编码。
-     * 退回目标先取 `target`（发起方抽卡时的提交选择，即会话原模型），再取 runtime 会话常驻 Selection：
-     * execution 作用域从不改写会话选择，但常驻选择只在 runtime 内存里，冷恢复竞态下可能未绑定，
-     * 所以发起方必须声明 `target`（docs/highspeed/highspeed-card-spec.md §2.2）。
+     * When this execution's Selection fails, fall back to the original model within the same Turn instead of failing the whole round.
+     * Trigger conditions are declared by the initiator: `providerId` restricts matches to the provider this execution Selection points at;
+     * `rules` match in declaration order and the first hit decides the fallback reason; a missing `providerErrorCode` means any failure of that provider
+     * (except user cancels and context-overflow). The CLI hardcodes nothing by provider id prefix, model name, or error copy.
+     * Fallback target: `target` first (the initiator's draw-time submission choice, i.e. the session's original model), then the runtime session's resident Selection:
+     * the execution scope never rewrites the session selection, but the resident selection lives only in runtime memory and can be unbound in cold-recovery races,
+     * so the initiator must declare `target` (docs/highspeed/highspeed-card-spec.md 2.2).
      */
     selectionFallback: z
       .object({

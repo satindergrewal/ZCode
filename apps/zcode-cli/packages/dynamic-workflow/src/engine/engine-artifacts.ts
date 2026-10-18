@@ -1,9 +1,9 @@
 /**
- * engine.ts 顶到 oxlint max-lines 上限（400 行），把**用户面产物**（`artifact.*`）的
- * 发布 / 声明 / 准入 / 结算 / resume 恢复拆到本文件；公开面仍从 engine.ts 导出。
+ * engine.ts is at the oxlint max-lines cap (400), so user-facing artifact (artifact.*) publish /
+ * declare / admit / settle / resume-recover live here; the public face still exports from engine.ts.
  *
- * ⚠ 术语：以下一律指**用户面产物**（脚本发布给用户看的产出），不是 RunSettlement.artifact。
- * 自由函数经 {@link EngineState} 接缝读写引擎状态；WorkflowEngine 上的同名方法只是薄委托。
+ * ⚠ Terminology: everything below is the user-facing artifact (what the script shows the user), not RunSettlement.artifact.
+ * Free functions touch engine state via the {@link EngineState} seam; same-named methods on WorkflowEngine are thin delegates.
  */
 
 import { canonicalJson, inputHash } from "./hash.js";
@@ -31,22 +31,23 @@ import type {
 import { refToString, WorkflowError } from "./types.js";
 
 /**
- * 发布一个**内容产物**（`artifact.file` / `artifact.markdown`）。效应族：经 driver 拷字节进
- * store，成功兑现 {@link ArtifactRef}，失败**可 catch 地拒绝**——脚本的门控习语是
- * `try { await artifact.file(...) } catch { …让子代理补写… }`。
+ * Publish one content artifact (artifact.file / artifact.markdown). Effect family: bytes copied
+ * into the store via driver; resolves {@link ArtifactRef} on success, rejects catchably on
+ * failure - the script's gating idiom is try/catch around the await.
  *
- * 顺序：
- * 1. `nextOrdinal` → journal 命中？命中即短路：比 inputHash，成功记录返回它的 ArtifactRef，
- *    **失败记录按记录重新拒绝**（resume 是崩溃恢复，不是复验：一次失败的发布在恢复后仍然
- *    是那次失败，重跑它会让脚本的 catch 分支走两次不同的路）。命中一律**不重发事件**（同 report）。
- * 2. 未命中：种类归属 → id 数上限 → 版本数上限，三条都是节点级拒绝（有 promise 可拒）。
- * 3. 版本号在 dispatch **之前**算好并传给 driver（store 的 toolCallId 里要带它，每版一份字节）。
- * 4. `putNode(running)` → driver → 成功 `putNode(completed)` + `artifact-published`；
- *    失败 `putNode(failed)` + `artifact-failed` → reject。
+ * Order:
+ * 1. nextOrdinal -> journal hit? A hit short-circuits: compare inputHash; on success return the recorded ArtifactRef,
+ *    on failure re-reject per the record (resume is crash recovery, not re-verification: a failed
+ *    publish stays that failure; rerunning it would walk the catch branch twice differently).
+ *    Hits never re-emit events (same as report).
+ * 2. Miss: kind check -> id-count cap -> version cap; all three node-level rejections (a promise exists to reject).
+ * 3. The version is computed before dispatch and handed to the driver (the store's toolCallId carries it; one row of bytes per version).
+ * 4. putNode(running) -> driver -> success putNode(completed) + artifact-published;
+ *    failure putNode(failed) + artifact-failed -> reject.
  *
- * 两条路都**不发任何节点生命周期事件**（node-queued / dispatched / settled）：产物站点在两张
- * 图里都不是节点，一条 node-settled 落在这样的站点上会被投影归约进 `nodes[]`，在 run 面板里
- * 变成一个无从解释的未知节点。
+ * Neither path emits node lifecycle events (node-queued/dispatched/settled): artifact sites are
+ * nodes in neither graph; a node-settled there would be reduced into nodes[] and become an
+ * unexplainable unknown node in the run panel.
  */
 export function publishContentArtifact(
   state: EngineState,
@@ -60,15 +61,16 @@ export function publishContentArtifact(
 
   const id = args[0];
   const payload = args[1];
-  // 实参形状的运行期护栏（编译期的字面量 id 诊断与 facade 类型是正门）：走到这里的非字符串
-  // 只可能是有东西绕过了编译。用 DriverError 而不是某个 Artifact* 码——让那些码只表示它们
-  // 各自的那件事（同 probeReportItem 对「item 不是 JSON」的取码论证）。
+  // Runtime guard for arg shapes (the compile-time literal-id diagnostic and facade types are the
+  // front door): a non-string here means something bypassed compilation. DriverError, not an
+  // Artifact* code - keep those codes meaning exactly their one thing (same argument as
+  // probeReportItem's code for non-JSON item).
   //
-  // 这两条**不落 journal 行、不发事件**，与下面所有失败路径不同。理由是它们是**确定性**的：
-  // 结论只由 args 决定，没有 driver 往返，resume 重跑同一个调用必然得到同一个拒绝，所以
-  // 不需要一行记录把它钉住（「settled failure 落库」那条要求针对的是 driver 执行过的、
-  // 下次未必再失败的那种）。何况这里根本没有 id 可写进 `artifact_id` 或事件——编一个出来
-  // 只会让读者以为真有那么一个产物。
+  // These two write no journal row and emit no event, unlike every failure path below: they are
+  // deterministic - the verdict depends on args alone, no driver round trip, so a resume rerun
+  // gets the same refusal and no row is needed to pin it (the settled-failure-must-be-journaled
+  // rule targets driver-executed failures that may not recur). There is no id here anyway to put
+  // into artifact_id or an event - inventing one would imply an artifact exists.
   if (typeof id !== "string" || id === "") {
     return Promise.reject(
       new WorkflowError(
@@ -87,9 +89,9 @@ export function publishContentArtifact(
       ),
     );
   }
-  // `opts.primary` 由**引擎**读：driver 对不认识的
-  // opts 键一律放行，而「全 run 至多一个 primary」是 run 级事实，只有引擎知道。非布尔值与上面
-  // 两条同属确定性护栏——不落行、不发事件。
+  // opts.primary is read by the engine: the driver passes unknown opts keys through, while
+  // at-most-one-primary-per-run is run-level fact only the engine knows. Non-boolean joins the
+  // deterministic guards above - no row, no event.
   const primaryOption = (args[2] as { primary?: unknown } | undefined)?.primary;
   if (primaryOption !== undefined && typeof primaryOption !== "boolean") {
     return Promise.reject(
@@ -108,9 +110,10 @@ export function publishContentArtifact(
       state.failRun(err);
       return Promise.reject(err);
     }
-    // 与 ask / world 命中同规：释放点过 replay 次序闸（docs/execution-engine.md
-    // 「Replaying the settle order」）。发布是效应、脚本要 await 它，所以它也是一个能决定
-    // 后续续体次序的释放点；预置声明是同步 void，从不走这条路，也就从不占闸。
+    // Same as ask/world hits: the release passes the replay settle-order gate
+    // (docs/execution-engine.md "Replaying the settle order"). A publish is an effect the script
+    // awaits, so it is a release point that orders continuations; preset declares are sync void,
+    // never this path, never gated.
     if (recorded.status === "completed") {
       const record = recorded.result as ArtifactVersionRecord;
       return heldResolution(state.holdForReplay, instance, () => ({
@@ -123,11 +126,11 @@ export function publishContentArtifact(
         throw WorkflowError.fromJSON(recorded.error!);
       });
     }
-    // status === "running"：崩溃于执行中，落到下面重新 live 执行（字节的拷贝是幂等的，
-    // 而版本号从**已 completed 的行数**派生，所以重跑不会跳号）。
+    // status running: crashed mid-execution, re-executes live below (the byte copy is idempotent,
+    // and the version derives from completed rows, so a rerun skips no numbers).
   }
 
-  // 粘着：这个 id 已经是 primary，则这一版也是，不管本次有没有再写 `primary`。
+  // Stickiness: once an id is primary, every later version is, regardless of primary at publish.
   const idState = state.artifacts.get(id);
   const primary = primaryOption === true || idState?.primary === true;
   const admission = admitArtifact(state, id, op, primary);
@@ -138,8 +141,8 @@ export function publishContentArtifact(
   const version = (idState?.versions ?? 0) + 1;
   const publish = state.driver.executeArtifactPublish;
   if (publish === undefined) {
-    // 装配没有 driver 侧的发布能力（纯 replay / 没接 store 的 fake）。**大声的一条命名失败**，
-    // 不是静默降级成「发布了一个空产物」——脚本看得见、节点以 failed 落库。
+    // The rig has no driver-side publish (pure replay / store-less fake). One loud named failure,
+    // not a silent empty artifact: the script sees it and the node lands failed.
     return Promise.reject(
       settleArtifactFailure(
         state,
@@ -189,15 +192,12 @@ export function publishContentArtifact(
 }
 
 /**
- * 声明一个**预置产物**（`artifact.chart` / `table` / `metrics` / `board`）。声明族：同步、
- * 无返回值、**不经 driver**——一个声明没有可等的东西。
+ * Declare a preset artifact (artifact.chart/table/metrics/board). Declaration family: sync, void, no driver - a declaration has nothing to await.
  *
- * 顺序：`nextOrdinal` → 命中即返回 → spec 形状校验
- * → 同 id 既有声明？相同 canonical ⇒ 幂等 no-op（不落新行、不发事件）；不同 ⇒ failRun
- * → 上限 → `putNode(completed)` + `artifact-published`。
+ * Order: nextOrdinal -> hit returns -> spec shape check -> same-id declared? equal canonical =>
+ * idempotent no-op (no row, no event); differing => failRun -> caps -> putNode(completed) + artifact-published.
  *
- * 三种失败（spec 非法 / 同 id 异 spec / 超上限）全是 failRun 而不是拒绝：void 返回没有拒绝
- * 通道，与 `report` 的两个上限同一条论证。
+ * All three failures (bad spec / same id different spec / over cap) failRun, not reject: void has no rejection channel, same argument as report's two caps.
  */
 export function declarePresetArtifact(
   state: EngineState,
@@ -205,7 +205,7 @@ export function declarePresetArtifact(
   op: ArtifactPresetOp,
   args: unknown[],
 ): void {
-  if (state.isRunSettled()) return; // 与 report / log 同
+  if (state.isRunSettled()) return; // as report / log
   const ordinal = state.nextOrdinal(siteId);
   const instance: InstanceRef = { siteId, ordinal };
 
@@ -228,7 +228,7 @@ export function declarePresetArtifact(
       state.failRun(hashMismatch(instance, recorded.inputHash, hash));
       return;
     }
-    return; // replay 去重：静默跳过（同 report）
+    return; // replay dedupe: silent skip (as report)
   }
 
   const problem = validateArtifactSpec(op, spec);
@@ -256,7 +256,7 @@ export function declarePresetArtifact(
       );
       return;
     }
-    if (idState.spec === canonical) return; // 幂等 no-op：不落新行、不发事件
+    if (idState.spec === canonical) return; // idempotent no-op: no row, no event
     state.failRun(
       new WorkflowError(
         "ArtifactRedeclared",
@@ -267,8 +267,9 @@ export function declarePresetArtifact(
     );
     return;
   }
-  // `primary` 进 canonical spec，所以同 id 改旗子是 ArtifactRedeclared（上面已经拒了）；这里只剩
-  // **新** id 想当 primary 而别的 id 已经是——预置族没有拒绝通道，failRun。
+  // primary is inside the canonical spec, so same-id flag changes are ArtifactRedeclared (refused
+  // above); only a NEW id claiming primary while another holds it remains - declaration family has
+  // no rejection channel, failRun.
   const wantsPrimary = (spec as { primary?: unknown }).primary === true;
   const holder = wantsPrimary ? primaryArtifactId(state) : undefined;
   if (holder !== undefined && holder !== id) {
@@ -291,7 +292,7 @@ export function declarePresetArtifact(
     return;
   }
 
-  // 声明是**一次写**（同 report）：准入与结算之间没有 driver 调用，没有什么能在中间失败。
+  // A declaration is one-write (as report): no driver call between admission and settlement; nothing can fail between.
   const record = presetRecord(id, op, spec);
   state.artifacts.set(id, {
     kind: op,
@@ -313,10 +314,9 @@ export function declarePresetArtifact(
 }
 
 /**
- * 内容产物的准入：种类归属 → id 数上限 → 版本数上限。返回拒绝理由，`undefined` 即放行。
+ * Content admission: kind check -> id cap -> version cap. Returns the refusal reason; undefined passes.
  *
- * 三条全是**节点级**拒绝（内容成员有 promise 可拒），与预置族里同名的三条形成对照——
- * 那一族只能 failRun。同一个事实、两个通道，差别在返回类型而不是严重程度。
+ * All three are node-level rejections (content has a promise to reject), mirroring the preset family's failRun-only trio: one fact, two channels; the return type differs, not severity.
  */
 function admitArtifact(
   state: EngineState,
@@ -333,7 +333,7 @@ function admitArtifact(
         `new version, and a version cannot change what it is); use a different id.`,
     );
   }
-  // primary 冲突排在上限之前：一个想当交付物的 id 被拒，理由该是「已经有交付物了」，不是「满了」。
+  // primary conflict precedes caps: an id wanting to be the deliverable is refused for 'already has one', not 'full'.
   const holder = primaryConflict(state, id, primary);
   if (holder !== undefined) {
     return new WorkflowError(
@@ -359,12 +359,12 @@ function admitArtifact(
 }
 
 /**
- * 内容产物发布成功：落 completed 行 + 记账 + 发 `artifact-published`，返回脚本要的 ref。
+ * Content publish success: completed row + bookkeeping + artifact-published; returns the script-facing ref.
  *
- * 身份（id / 种类 / 版本号）一律取**引擎自己算的那份**（`issued`），而不是 driver 回来的
- * 记录里的同名字段：版本号是引擎按 journal 派生并下发的，让它绕 driver 走一圈再读回来，
- * 只会多出一个可以不一致的地方。driver 的记录负责它真正拥有的东西——uri / bytes /
- * contentType / sourcePath——那些整条原样落 journal。
+ * Identity (id/kind/version) always comes from the engine's own computation (issued), never the
+ * driver record's same-named fields: the version is engine-derived and issued; round-tripping it
+ * through the driver only adds a skew point. The driver record owns what it truly owns -
+ * uri/bytes/contentType/sourcePath - journaled verbatim.
  */
 function settleArtifactPublish(
   state: EngineState,
@@ -374,8 +374,7 @@ function settleArtifactPublish(
   record: ArtifactVersionRecord,
 ): ArtifactRef {
   if (state.isRunSettled()) throw state.runError();
-  // 准入与结算之间隔着一次 driver 往返：两个并发的 primary 发布都能过准入。结算时再查一次，
-  // 输的那个走失败路径——failed 行不认领旗子，所以 journal 里永远不会有两个 completed 的 primary。
+  // A driver round trip sits between admission and settlement: two concurrent primary publishes can both pass. Recheck at settlement; the loser takes the failure path - failed rows never claim the flag, so two completed primaries cannot exist.
   const holder = primaryConflict(state, issued.id, issued.primary);
   if (holder !== undefined) {
     throw settleArtifactFailure(
@@ -385,11 +384,16 @@ function settleArtifactPublish(
       issued,
       new WorkflowError(
         "ArtifactPrimaryConflict",
-        primaryConflictMessage(issued.id, holder, `publish "${issued.id}" without primary`, instance),
+        primaryConflictMessage(
+          issued.id,
+          holder,
+          `publish "${issued.id}" without primary`,
+          instance,
+        ),
       ),
     );
   }
-  // 旗子由引擎盖章：driver 的记录只负责它真正拥有的东西（uri / bytes / contentType / sourcePath）。
+  // The flag is engine-stamped: the driver record owns only uri/bytes/contentType/sourcePath.
   const stored: ArtifactVersionRecord = issued.primary ? { ...record, primary: true } : record;
   state.journal.putNode({
     runId: state.runId,
@@ -411,15 +415,14 @@ function settleArtifactPublish(
 }
 
 /**
- * 内容产物发布失败：落 failed 行 + 发 `artifact-failed`，返回要抛出的错误。
+ * Content publish failure: failed row + artifact-failed; returns the error to throw.
  *
- * 落库是重放健全性的既有要求（settled failure 必须在 journal 里），否则 resume 会把一次
- * 已经被脚本 catch 过的失败重跑一遍——那正是「resume 是崩溃恢复不是复验」要防的。
+ * Persistence is the standing replay-sanity requirement (settled failures in journal); else resume reruns a failure the script already caught - what crash-recovery-not-reverify guards.
  *
- * node-settled 的读者
- * 会把它归约进 `nodes[]` 并按 site id 去图里找对应节点，而产物站点不进任何图——那会在 run
- * 面板上变成一个无从解释的未知节点。`artifact-failed` 带着渲染一张失败卡需要的东西
- * （id / 种类 / 结构化错误），不冒充一步工作。成功那侧同理只发 `artifact-published`。
+ * node-settled readers would reduce it into nodes[] and hunt the graph by site id, but artifact
+ * sites are in no graph - an unexplainable unknown node in the run panel. artifact-failed carries
+ * what a failure card needs (id/kind/structured error) without posing as work; success likewise
+ * emits only artifact-published.
  */
 function settleArtifactFailure(
   state: EngineState,
@@ -450,12 +453,12 @@ function settleArtifactFailure(
 }
 
 /**
- * resume 恢复：把 journal 里一行**已完成**的产物记录并进内存状态。
+ * Resume recovery: fold one completed artifact row from the journal into memory state.
  *
- * **只有 completed 行才认领 id**：失败的发布不占 id、不占种类、不占版本。这不只是图简洁——
- * 失败行的 `result` 是空的，种类无从恢复，若让 live 那一侧认领而 resume 那一侧认领不了，
- * 同一个脚本在崩溃前后就会得到两套上限账。种类冲突另有编译期诊断把守，运行期这条
- * （`ArtifactKindMismatch`）管的是真正发布成功过的那些 id。
+ * Only completed rows claim the id: failed publishes take no id, kind, or version. Not just
+ * graph tidiness - a failed row's result is empty, kind unrecoverable; if live claimed and resume
+ * could not, one script would hold two cap ledgers across the crash. Kind conflicts have a
+ * compile-time diagnostic; this runtime ArtifactKindMismatch governs ids that truly published.
  */
 export function rememberArtifactRow(
   state: EngineState,
@@ -476,13 +479,13 @@ export function rememberArtifactRow(
   });
 }
 
-/** 该 id 是否已被声明为**预置**产物（`report` 标签的合法目标）。 */
+/** Whether the id is a declared preset (a legal `report` tag target). */
 export function isDeclaredPreset(state: EngineState, id: string): boolean {
   const idState = state.artifacts.get(id);
   return idState !== undefined && isArtifactPresetOp(idState.kind);
 }
 
-/** 已声明的预置 id（字典序）——只用于把 `ArtifactUndeclared` 的消息写得能照做。 */
+/** Declared preset ids (sorted) - only to make the ArtifactUndeclared message actionable. */
 export function declaredPresetIds(state: EngineState): string[] {
   return [...state.artifacts.entries()]
     .filter(([, idState]) => isArtifactPresetOp(idState.kind))
@@ -491,9 +494,9 @@ export function declaredPresetIds(state: EngineState): string[] {
 }
 
 /**
- * 预置声明的落库记录。`title` / `description` 从 spec 里**提上来**：卡片的读者（run 侧板、
- * 通知、中枢）只拿到这条记录，不该为了显示一个标题去解 spec；spec 仍原样保留，渲染器要
- * 完整形状。版本恒为 1——声明没有版本，它只有一次。
+ * Persisted preset declaration. title/description are lifted out of the spec: card readers (run
+ * side panel, notifications, hub) get only this record and must not parse spec for a title; spec
+ * stays verbatim for renderers needing the full shape. Version always 1 - declarations happen once.
  */
 function presetRecord(id: string, op: ArtifactPresetOp, spec: unknown): ArtifactVersionRecord {
   const options = (spec ?? {}) as { title?: unknown; description?: unknown; primary?: unknown };

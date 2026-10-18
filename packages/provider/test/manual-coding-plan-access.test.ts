@@ -6,7 +6,7 @@ import {
 } from "../src/index.js";
 
 describe("Manual Coding Plan access", () => {
-  it("保留显式 type、管理入口和 Key，不要求账号事实", () => {
+  it("keeps the explicit type, admin entry and key without requiring account facts", () => {
     const base = parseProviderConfig({
       group: "standard-personal",
       access: {
@@ -40,7 +40,7 @@ describe("Manual Coding Plan access", () => {
   });
 
   it.each(["api-key", "zhipu-coding-plan-api-key"])(
-    "%s 只允许单一管理入口，不接受已撤销的团队字段",
+    "%s allows a single admin entry and rejects revoked team fields",
     (type) => {
       expect(() =>
         parseProviderConfig({

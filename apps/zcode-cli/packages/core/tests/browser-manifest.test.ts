@@ -341,9 +341,7 @@ describe("browser capability manifest", () => {
       );
     }
     expect(fallbackDocumentation).toContain("every Browser Use call starts in a fresh kernel");
-    expect(fallbackDocumentation).toContain(
-      "const browser = await agent.browsers.getDefault()",
-    );
+    expect(fallbackDocumentation).toContain("const browser = await agent.browsers.getDefault()");
     expect(fallbackDocumentation).not.toContain("globalThis.browser");
     expect(fallbackDocumentation).not.toContain("globalThis.tab");
     for (const guidance of [troubleshootingDocumentation, tabClaimingDocumentation]) {

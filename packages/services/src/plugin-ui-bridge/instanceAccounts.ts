@@ -2,7 +2,7 @@ import type { McpAppInstance } from "@zcode/shared/mcp-apps";
 import { createHash } from "node:crypto";
 import type { PluginUiPluginScope, PluginUiPrepareSandboxParams } from "./contract.js";
 
-/** Host 的账号上下文来自凭据 owner；不接收页面传入的账号或访问令牌。 */
+/** Host account context comes from the credential owner; pages never pass accounts or tokens. */
 export function createPluginUiAccountBindings(deps: {
   readAccount(): Promise<unknown>;
   open(params: PluginUiPrepareSandboxParams & { accountContext: string }): Promise<McpAppInstance>;
@@ -32,7 +32,7 @@ export function createPluginUiAccountBindings(deps: {
     },
     close,
     invalidate() {
-      // 先使在途 open 失效；注销旧凭证只作用于它自己的 Agent 代际。
+      // Invalidate in-flight opens first; revocation only affects its own agent generation.
       revision++;
       for (const bound of active.values()) void deps.close(bound).catch(() => undefined);
       active.clear();

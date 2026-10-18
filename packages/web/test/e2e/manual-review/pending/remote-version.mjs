@@ -1,6 +1,6 @@
-// RV01–RV03：真实 Web 入口与浏览器导航；模拟 relay/桌面响应，不验证外部资源路由服务。
-// 启动：pnpm --filter @zcode/web exec vite --host 127.0.0.1 --port 5178 --strictPort --base=/remote/v4/
-// 运行：node packages/web/test/e2e/manual-review/pending/remote-version.mjs
+// RV01-RV03: real web entry and browser navigation; relay/desktop responses mocked, external asset routing untested.
+// Start: pnpm --filter @zcode/web exec vite --host 127.0.0.1 --port 5178 --strictPort --base=/remote/v4/
+// Run: node packages/web/test/e2e/manual-review/pending/remote-version.mjs
 import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -16,8 +16,8 @@ async function scenario({ width, theme, locale, missingVersion = false, oldDeskt
   const page = await context.newPage();
   page.setDefaultTimeout(30_000);
   const errors = [];
-  // 现有 home-only 空服务未实现动态会话订阅；在版本变化前已出现，不作为版本校验回归。
-  // 保留显式输出，其他浏览器异常仍使本用例失败。
+  // The existing home-only stub lacks live session subscription; predates this change and is not a version-check regression.
+  // Keep the explicit log; any other browser error still fails the case.
   const knownHomeOnlyError = "agentService.onDynamicSessionsIndexFrame(...) is not a function";
   page.on("pageerror", (error) => errors.push(error.message));
   await context.addInitScript((value) => localStorage.setItem("zcode-theme", value), theme);
@@ -29,8 +29,8 @@ async function scenario({ width, theme, locale, missingVersion = false, oldDeskt
     if (width < 768) {
       await home.waitFor();
     } else {
-      // 宽屏的既有 home-only 服务还缺工作区事件订阅，业务区域可能落入 ErrorBoundary。
-      // 本候选只断言入口校验/保留已挂载区域/提示/导航，不宣称覆盖宽屏任务操作。
+      // Wide layouts: home-only still lacks workspace event subscription, so the business area may hit ErrorBoundary.
+      // This case asserts entry validation, mounted-area retention, the notice and navigation only, not wide-layout task actions.
       const baselineError = page
         .getByText(
           "shard.services.zcodeTaskService.onDynamicWorkspaceEvent(...) is not a function",

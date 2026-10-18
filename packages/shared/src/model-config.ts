@@ -25,10 +25,16 @@ export const completeEnumOptionSpecDataSchema = z
       .array(
         z
           .string()
-          .refine((value) => value.trim().length > 0, "reasoningLevel.values must be non-empty strings"),
+          .refine(
+            (value) => value.trim().length > 0,
+            "reasoningLevel.values must be non-empty strings",
+          ),
       )
       .min(1, "reasoningLevel.values must not be empty")
-      .refine((values) => new Set(values).size === values.length, "reasoningLevel.values must not repeat")
+      .refine(
+        (values) => new Set(values).size === values.length,
+        "reasoningLevel.values must not repeat",
+      )
       .readonly(),
     map: optionMapSchema("reasoningLevel"),
   })

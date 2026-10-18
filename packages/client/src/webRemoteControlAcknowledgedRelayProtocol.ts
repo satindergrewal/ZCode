@@ -89,9 +89,7 @@ class AcknowledgedRelayProtocol implements AcknowledgedWebRemoteControlRelayProt
       () => {
         const oldest = this.outboundBatches.oldest;
         return {
-          oldestData: oldest
-            ? { queuedAt: oldest.queuedAt, messageSeq: oldest.messageSeq }
-            : null,
+          oldestData: oldest ? { queuedAt: oldest.queuedAt, messageSeq: oldest.messageSeq } : null,
           pendingAck:
             this.pendingAckQueuedAt === null || this.pendingAckMessageSeq === null
               ? null
@@ -148,7 +146,7 @@ class AcknowledgedRelayProtocol implements AcknowledgedWebRemoteControlRelayProt
       return;
     }
     if (this.unacknowledgedByteCount + outerBytes > this.replayBufferMaxBytes) {
-      // Bugfix：必须在首片发送前对整批 final outer bytes 做 admission，不能给对端留下半条 RPC。
+      // Bugfix: admit the whole batch's final outer bytes before the first fragment, never leaving the peer half an RPC.
       this.enterDegraded({
         reasonCode: "remote.rpcFrame.replayBufferExceeded",
         terminal: true,
@@ -336,11 +334,14 @@ class AcknowledgedRelayProtocol implements AcknowledgedWebRemoteControlRelayProt
   private scheduleAssemblyTimer(): void {
     if (this.assemblyTimer || !this.assembler?.nextExpiryAt) return;
     const deadline = this.assembler.nextExpiryAt;
-    this.assemblyTimer = setTimeout(() => {
-      this.assemblyTimer = undefined;
-      const result = this.assembler?.expire(this.now());
-      if (result?.kind === "fault") this.enterDegraded(result.fault);
-    }, Math.max(0, deadline - this.now()));
+    this.assemblyTimer = setTimeout(
+      () => {
+        this.assemblyTimer = undefined;
+        const result = this.assembler?.expire(this.now());
+        if (result?.kind === "fault") this.enterDegraded(result.fault);
+      },
+      Math.max(0, deadline - this.now()),
+    );
   }
   private clearAssemblyTimer(): void {
     if (this.assemblyTimer) clearTimeout(this.assemblyTimer);

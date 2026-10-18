@@ -239,8 +239,9 @@ describe("WebRemoteControlTaskIndex layout", () => {
     );
 
     expect(source).toContain("shouldRetryWebRemoteControlTaskIndexLoad");
-    expect(source).toContain(
-      "}, [activeTaskId, activeWorkspaceIdentity, activeWorkspacePath, switcher]);",
+    // Formatting may wrap the dependency array; pin the exact dependency list instead of one line shape.
+    expect(source).toMatch(
+      /\},\s*\[activeTaskId, activeWorkspaceIdentity, activeWorkspacePath, switcher\],?\s*\);/u,
     );
   });
 
@@ -313,7 +314,9 @@ describe("Web 归档批量删除入口", () => {
     expect(populated).toContain('aria-label="taskList.archivedActions"');
     expect(populated).not.toContain('data-testid="delete-all-archived-tasks"');
     const empty = await renderTaskIndexWithInitialArchivedTasks(false);
-    expect(empty).toMatch(/<button(?=[^>]*disabled="")(?=[^>]*data-testid="archived-tasks-actions")/);
+    expect(empty).toMatch(
+      /<button(?=[^>]*disabled="")(?=[^>]*data-testid="archived-tasks-actions")/,
+    );
     expect(await renderTaskIndex()).not.toContain('data-testid="archived-tasks-actions"');
   });
 });

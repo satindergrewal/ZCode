@@ -5,7 +5,7 @@ import {
   type NetworkCaptureSnapshot,
 } from "@zcode/shared";
 
-/** Main 仅保存有界观测元数据；captureId 隔离关闭后迟到的 IPC。 */
+/** Main keeps bounded observation metadata only; captureId isolates late IPC after close. */
 export class NetworkCaptureBuffer {
   private captureId: string | null = null;
   private records: NetworkCaptureSnapshot["records"] = [];

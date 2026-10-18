@@ -17,9 +17,9 @@ import {
   formatSummaryCompactTokenUsage,
 } from "@/settings/usage-stats/usageStatsUiParts.js";
 
-// Recharts 会在模块初始化阶段触发 decimal.js-light 的 LN10 校验，
-// 在 Electron Linux 容器里会阻断整个 renderer 启动。图表按需加载后，
-// 普通启动和 e2e 首页不会被 Usage 页图表依赖影响，打开 Usage 时也由局部边界隔离。
+// Recharts triggers decimal.js-light's LN10 check at module init, which on Electron Linux containers
+// blocks the whole renderer boot. With charts loaded lazily,
+// normal boots and the e2e home are unaffected by the Usage charts; opening Usage stays isolated by a local boundary.
 const AppUsageDailyModelTrendChart = lazy(() =>
   import("@/settings/usage-stats/AppUsageDailyModelTrendChart.js").then((module) => ({
     default: module.AppUsageDailyModelTrendChart,
@@ -47,7 +47,7 @@ export function AppUsagePanel() {
           </div>
           <AppUsageRangeTabs range={range} onRangeChange={setRange} />
         </div>
-        {/* Bugfix: App Usage 只聚合本地 session 历史，不能复用 Coding Plan 的 monitor API 加载说明。 */}
+        {/* Bugfix: App Usage aggregates local session history only; never reuse the Coding Plan monitor-API loading note. */}
         <UsageEmptyState
           title={intl.formatMessage({ id: "settings.usage.loadingTitle" })}
           description={intl.formatMessage({
@@ -135,9 +135,7 @@ export function AppUsageLifetimeSummaryStrip({ snapshot }: { snapshot: AppUsageS
   const items = [
     {
       label: intl.formatMessage({ id: "settings.usage.lifetimeTotalTokens" }),
-      value: snapshot
-        ? formatSummaryCompactTokenUsage(locale, snapshot.summary.totalTokens)
-        : "--",
+      value: snapshot ? formatSummaryCompactTokenUsage(locale, snapshot.summary.totalTokens) : "--",
     },
     {
       label: intl.formatMessage({ id: "settings.usage.lifetimePeakTokens" }),

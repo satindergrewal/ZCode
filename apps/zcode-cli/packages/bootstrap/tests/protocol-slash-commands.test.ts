@@ -53,9 +53,7 @@ describe("protocol slash command surface", () => {
       expect(commands.find((command) => command.name === "review")?.description).toBe(
         "User review",
       );
-      expect(commands.find((command) => command.name === "ship")?.inputHint).toBe(
-        "/ship [target]",
-      );
+      expect(commands.find((command) => command.name === "ship")?.inputHint).toBe("/ship [target]");
       expect(commands.some((command) => command.name === "model")).toBe(false);
       expect(commands.filter((command) => command.name === "workflow")).toHaveLength(1);
       expect(commands.find((command) => command.name === "workflow")?.inputHint).toBe(
@@ -172,9 +170,9 @@ describe("protocol slash command surface", () => {
       expect(resolveZCodeBuiltinPromptCommand("/review", { workingDirectory: workspace })).toBe(
         undefined,
       );
-      expect(resolveZCodeBuiltinPromptCommand("please /init", { workingDirectory: workspace })).toBe(
-        undefined,
-      );
+      expect(
+        resolveZCodeBuiltinPromptCommand("please /init", { workingDirectory: workspace }),
+      ).toBe(undefined);
     } finally {
       await rm(tempRoot, { force: true, recursive: true });
     }
@@ -277,13 +275,13 @@ describe("protocol slash command surface", () => {
         userCommands,
         "skill-context",
         "Needs skill context",
-        ['```!', 'echo "${CLAUDE_SKILL_DIR}"', "```"].join("\n"),
+        ["```!", 'echo "${CLAUDE_SKILL_DIR}"', "```"].join("\n"),
       );
       await writeCommand(
         userCommands,
         "session-context",
         "Needs session context",
-        ['```!', 'echo "${CLAUDE_SESSION_ID}"', "```"].join("\n"),
+        ["```!", 'echo "${CLAUDE_SESSION_ID}"', "```"].join("\n"),
       );
 
       const options = {

@@ -8,7 +8,9 @@ interface Draft {
 }
 phase("draft");
 const TOPICS = ["sky", "sea", "soil"] as const;
-const drafts = await Promise.all(TOPICS.map((t) => agent(`writer-${t}`).ask<Draft>(`write about ${t}`)));
+const drafts = await Promise.all(
+  TOPICS.map((t) => agent(`writer-${t}`).ask<Draft>(`write about ${t}`)),
+);
 const reviewer = agent("reviewer");
 const verdict = await reviewer.ask<string>(`review ${JSON.stringify(drafts)}`);
 return verdict;

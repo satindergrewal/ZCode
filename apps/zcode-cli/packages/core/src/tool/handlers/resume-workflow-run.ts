@@ -24,12 +24,7 @@ import {
   type ResumeWorkflowRunInput,
   type ResumeWorkflowRunOutput,
 } from "@zcode/contracts";
-import type {
-  ToolEntry,
-  ToolExecutionContext,
-  ToolHandler,
-  ToolHandlerFailure,
-} from "../types.js";
+import type { ToolEntry, ToolExecutionContext, ToolHandler, ToolHandlerFailure } from "../types.js";
 import { workflowRunNotFoundFailure } from "./workflow-run-introspection.js";
 
 const RESUME_WORKFLOW_RUN_TIMEOUT_MS = 15_000;
@@ -104,7 +99,7 @@ function resumeFailureFor(reason: string, runId: string, detail?: string): ToolH
         message: `workflow_run_superseded: run ${runId} was stopped by an AmendWorkflow and superseded; its unfinished work belongs to the successor run (see GetWorkflowRun's <superseded_by>). Read or amend the successor instead of resuming this run.`,
       };
     // already_running gates the **in-flight registry of this run-service instance** (per-app/per-session)
-// only: cross-session concurrent resumes of one journal run pass -- existing semantics; copy covers this instance only.
+    // only: cross-session concurrent resumes of one journal run pass -- existing semantics; copy covers this instance only.
     case "already_running":
       return {
         result: false,
@@ -127,7 +122,7 @@ function resumeFailureFor(reason: string, runId: string, detail?: string): ToolH
       };
     default:
       // Out-of-contract reason: structured failure, no throw (that is the wiring-bug channel); keep the
- // reserved prefix and put the raw word in the copy for log triage.
+      // reserved prefix and put the raw word in the copy for log triage.
       return {
         result: false,
         errorCode: RESUME_WORKFLOW_RUN_ERROR_CODE.NOT_RESUMABLE,
@@ -156,12 +151,12 @@ const resumeWorkflowRunHandler: ToolHandler = async (input, context: ToolExecuti
     ok: true,
     runId: result.runId,
     // Copy mirrors CreateWorkflow's backgrounded guidance (create-workflow.ts): give the id, state that it
- // is running, that the result arrives as a notification, and discourage default polling (observed:
- // without that line the model immediately TaskOutput-waits a async run sync).
+    // is running, that the result arrives as a notification, and discourage default polling (observed:
+    // without that line the model immediately TaskOutput-waits a async run sync).
     response: `The workflow run ${result.runId} has been resumed and is running in the background. It is still running — you will be notified with the final output when it completes. Do not wait for it or poll it with TaskOutput; continue with other work unless the user asked you to wait.`,
     status: "backgrounded",
     // backgroundTaskId == runId (same identity as CreateWorkflow's backgrounded output):
- // cancel, TaskOutput query, and terminal notification all share this one key.
+    // cancel, TaskOutput query, and terminal notification all share this one key.
     backgroundTaskId: result.runId,
   } satisfies ResumeWorkflowRunOutput;
 };
@@ -178,7 +173,7 @@ export const resumeWorkflowRunToolEntry: ToolEntry = {
     name: RESUME_WORKFLOW_RUN_TOOL_NAME,
     description: RESUME_WORKFLOW_RUN_DESCRIPTION,
     // Resume restarts the execution child and actor session (done nodes replay, pending re-dispatch) --
- // same class as CreateWorkflow; read-only does not hold.
+    // same class as CreateWorkflow; read-only does not hold.
     readOnly: false,
     destructive: false,
     concurrentSafe: true,
@@ -197,7 +192,8 @@ export const resumeWorkflowRunToolEntry: ToolEntry = {
   formatModelContent: formatResumeWorkflowRunModelContent,
   permission: {
     permission: "resumeWorkflowRun",
-    reason: "resumeWorkflowRun.runConfirmation: resuming continues executing a stopped workflow run",
+    reason:
+      "resumeWorkflowRun.runConfirmation: resuming continues executing a stopped workflow run",
     riskLevel: "low",
     sideEffectScope: "none",
     // scriptHash-pinned to the exact script approved at submit; completed nodes pure-replay -- same risk

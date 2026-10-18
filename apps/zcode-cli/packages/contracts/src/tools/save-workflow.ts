@@ -1,5 +1,5 @@
 // ============================================================
-// SaveWorkflow Tool - 把一段 dwf 脚本连同元数据存成项目里的可复用定义
+// SaveWorkflow Tool - store a dwf script plus metadata as a project-reusable definition
 // ============================================================
 
 import { z } from "zod";
@@ -15,14 +15,15 @@ import {
 export const SAVE_WORKFLOW_TOOL_NAME = "SaveWorkflow";
 
 /**
- * 「恰好给一个正文来源」的违规说明。字段不叫 `path` 是因为 `path` 已经是本工具**解析回填的
- * 落点**（确认窗与 UI 读它），两个同名字段一个是输入一个是输出，只会让模型把保存目标当成
- * 源文件传进来。
+ * Violation copy for "exactly one body source". The field is not named `path` because `path`
+ * is already this tool's **resolved backfill destination** (read by the confirm dialog and UI);
+ * two same-named fields, one input one output, would only have the model pass the save target
+ * as the source file.
  */
 export const SAVE_WORKFLOW_SOURCE_ERROR =
   "Provide exactly one script source: `script` for the body inline, or `script_path` for the file holding it (a draft, usually). Passing both, or neither, is ambiguous.";
 
-/** 模型把自带 frontmatter 的脚本传进来时的业务失败说明。 */
+/** Business-failure copy for the model passing a script with its own frontmatter. */
 export const SAVE_WORKFLOW_SENTINEL_IN_SCRIPT_ERROR =
   "The `script` must be the workflow body only — it already starts with a `/* zcode-workflow` metadata block. Pass the metadata through the `description` / `whenToUse` / `args` fields instead; the block is written for you.";
 
@@ -33,15 +34,8 @@ export const SaveWorkflowInputSchema = z
       .min(1)
       .max(SAVED_WORKFLOW_MAX_NAME_CHARS)
       .describe("File-safe identifier: letters, digits, dot, dash and underscore."),
-    description: z
-      .string()
-      .min(1)
-      .describe("One line saying what the workflow does."),
-    whenToUse: z
-      .string()
-      .min(1)
-      .optional()
-      .describe("When this workflow is the right answer."),
+    description: z.string().min(1).describe("One line saying what the workflow does."),
+    whenToUse: z.string().min(1).optional().describe("When this workflow is the right answer."),
     args: SavedWorkflowArgsDeclarationSchema.optional().describe(
       "Argument declarations the script reads off `args`.",
     ),
@@ -52,9 +46,10 @@ export const SaveWorkflowInputSchema = z
         "The script body, inline, without a metadata block. This OR `script_path`, never both.",
       ),
     /**
-     * 正文的第二条来源：一个已经在盘上的文件，
-     * 通常是刚跑过的那份草稿。文件带元数据块时**块被丢掉**——元数据由本次调用的字段说了算，
-     * 用户批准的是那些字段，不是文件里那一份。
+     * The second body source: a file already on disk,
+     * usually the draft that just ran. When the file carries a metadata block the block is
+     ** dropped** - this call's fields govern the metadata; the user approved those, not the
+     * file's copy.
      */
     script_path: z
       .string()
@@ -63,18 +58,20 @@ export const SaveWorkflowInputSchema = z
       .describe(
         "A file holding the script body, usually a draft a result named. This OR `script`, never both.",
       ),
-    // 作用域由**模型**说出，不由系统猜——没有默认值，每次都要判断。判据中性：脚本是否
-    // 引用本仓库的东西？是 → project，否 → global。
+    // The scope is stated by the **model**, never guessed - no default, decided every time. A
+    // neutral test: does the script reference anything in this repo? yes -> project, no -> global.
     scope: SavedWorkflowScopeSchema.describe(
       '"project" when the script depends on this repository; "global" when it depends on nothing in it. Required, no default.',
     ),
     /**
-     * 溯源（docs/dynamic-workflow/launch.md「`SaveWorkflow`」）：本定义是从哪次 run 提炼来的。
-     * **不是第三条正文来源**——正文仍只能来自 `script` / `script_path`，handler 也不读它。
-     * 它唯一的作用是让那次 run 的完成卡认出自己已被保存
-     * （docs/dynamic-workflow/transcript-and-notifications.md「Which workflow a run is saved as」），
-     * 而这是模型存下来的定义与那次 run 之间**仅有的**持久联系：名字由模型另起，脚本被概括改写过，
-     * 两者都联接不回去。
+     * Provenance (docs/dynamic-workflow/launch.md "`SaveWorkflow`"): which run this definition
+     * was distilled from. **Not a third body source** - the body still comes only from
+     * `script` / `script_path`, and the handler does not read it. Its only job is letting that
+     * run's completion card recognize it has been saved
+     * (docs/dynamic-workflow/transcript-and-notifications.md
+     * "Which workflow a run is saved as") - the **only** durable link between the saved
+     * definition and the run: the name is the model's own, the script summary-rewritten; neither
+     * joins back.
      */
     run_id: z
       .string()
@@ -83,15 +80,16 @@ export const SaveWorkflowInputSchema = z
       .describe(
         "Provenance only: the id of the run this workflow was distilled from, when saving a workflow that just ran. Pass it whenever you know it; it does not change what is saved.",
       ),
-    // ——以下三个字段由 `resolveInput` 解析回填，模型不填——
-    // 它们是**确认窗要展示的事实**：这次保存落到哪个文件、是不是一次覆盖、是否遮蔽了另一档。
-    // 走入参而不是 display，是因为入参通道对每个客户端版本都是无 schema 的透传，旧桌面与
-    // legacy v3 因此也能看到完整内容。
-    /** 解析回填：文件落点。 */
+    // - The next three fields are resolved/backfilled by `resolveInput`, never model-filled -
+    // they are **facts the confirm dialog displays**: target file, overwrite or not, shadowing
+    // another archive. They ride the input, not display, because the input channel is a
+    // schemaless passthrough on every client version - legacy desktop and v3 see the full
+    // content too.
+    /** Resolve backfill: file destination. */
     path: z.string().min(1).optional(),
-    /** 解析回填：目标已存在，这次批准的是一次**覆盖**。 */
+    /** Resolve backfill: the target exists; this approval is an **overwrite**. */
     overwrite: z.boolean().optional(),
-    /** 解析回填：另一档已有同名定义（遮蔽事实，供确认窗展示）。缺席 = 无同名。 */
+    /** Resolve backfill: the other archive holds a same-name definition (shadowing fact for the dialog). Absent = none. */
     shadowing: SavedWorkflowShadowingSchema.optional(),
   })
   .strict();
@@ -101,11 +99,11 @@ export type SaveWorkflowInput = z.infer<typeof SaveWorkflowInputSchema>;
 export const SaveWorkflowInputJsonSchema = toToolJsonSchema(SaveWorkflowInputSchema);
 
 /**
- * 输出与 CreateWorkflow 的诊断形状共用一个 schema：两个工具跑的是**同一个**类型检查器，
- * 让模型在两处看到不同形状的诊断只会教它写两套解析。
+ * Output shares one schema with CreateWorkflow's diagnostics: both tools run the **same**
+ * typechecker; different diagnostic shapes per tool would only teach the model two parsers.
  *
- * `overwritten` 只在真写了文件时出现——诊断-only 的结果没有"覆盖了没有"可言，发一个
- * `false` 会让模型以为落盘成功了。
+ * `overwritten` appears only when a file was really written - a diagnostics-only result has no
+ * notion of "overwritten", and a `false` would read to the model as a successful save.
  */
 export const SaveWorkflowOutputSchema = z
   .object({
@@ -114,7 +112,7 @@ export const SaveWorkflowOutputSchema = z
     response: z.string(),
     name: z.string().min(1),
     scope: SavedWorkflowScopeSchema,
-    /** 文件落点（未写成时是**本该**写到的位置，让模型能把错误说清楚）。 */
+    /** File destination (on failure, where it **would** have been written, so the model can state the error precisely). */
     path: z.string().min(1),
     overwritten: z.boolean().optional(),
   })

@@ -120,7 +120,7 @@ describe("fetchTaskListMembershipSets", () => {
         },
         scopes: [{ workspacePath: "/ws" }],
       }),
-    ).rejects.toThrow("tasks-index task 行读取不完整");
+    ).rejects.toThrow("incomplete tasks-index task row read");
   });
 
   it("E2E gate 会暂停已读取的旧 membership 快照，直到测试显式释放", async () => {

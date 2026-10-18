@@ -57,7 +57,7 @@ describe("MCS published capability boundaries", () => {
         baseUrl: api.baseUrl,
       });
       expect(config.properties?.supportsMidConversationSystem, provider.providerId).toBe(true);
-      // 闲时保留 MCS，但按 Todo140 关闭内置搜索；普通套餐不能随之回退。
+      // Keep MCS off-peak but disable built-in search per Todo140; plain plans must not regress with it.
       expect(config.properties?.supportsNativeWebSearch, provider.providerId).toBe(
         provider.config.access.mode !== "off-peak",
       );

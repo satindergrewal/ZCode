@@ -143,7 +143,7 @@ export function dedupeFacts(facts: readonly Fact[]): Fact[] {
     if (fact.exact !== undefined && existing.exact === undefined) existing.exact = fact.exact;
     else if (fact.exact === true) existing.exact = true;
     if (fact.certainty === "maybe") existing.certainty = "maybe";
-        // A fact holding without any jump returns the pair to a plain forward edge: only when every contribution needs the next round is it a back edge.
+    // A fact holding without any jump returns the pair to a plain forward edge: only when every contribution needs the next round is it a back edge.
     if (fact.viaJump !== true) delete existing.viaJump;
     // ABSENT DOMINATES: one contributing fact with no provenance means the merged fact has
     // none, so it fans out fully. A `data` fact (never provenanced, and fanning out by
@@ -162,9 +162,10 @@ export function weakest(values: readonly Certainty[]): Certainty {
 }
 
 /**
- * 写下这个站点的那次补全：站点 id 的 `hole#<hash>/` 前缀（只有一层，hole-id.ts）；体外的站点
- * 没有。留白自己的 id 不带前缀——它属于哪个留白记在站点表的 `fill` 上，调用方自己查
- * （docs/analysis.md「Sites」）。
+ * The fill that wrote this site: the site id's `hole#<hash>/` prefix (exactly one level,
+ * hole-id.ts); absent for sites outside any body. A hole's own id carries no prefix — which hole
+ * it belongs to lives in the site table's `fill`, for the caller to look up
+ * (docs/analysis.md "Sites").
  */
 export function fillOf(siteId: string): string | undefined {
   return holePrefixOf(siteId);

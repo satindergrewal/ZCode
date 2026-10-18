@@ -65,13 +65,13 @@ describe("settings frame content layout", () => {
 
   it("returns to chat before creating a task from plugin detail prompts", () => {
     const pluginStoreUsages = workspaceShellSource.match(
-      /<PluginStorePage[\s\S]{0,500}?onCreateTask=\{handleCreateTaskInChat\}/g,
+      /<PluginStorePage[\s\S]{0,640}?onCreateTask=\{handleCreateTaskInChat\}/g,
     );
 
     // Desktop 与窄屏 Shell 都必须使用包含 showChatMainView 的包装回调。
     expect(pluginStoreUsages).toHaveLength(2);
     expect(workspaceShellSource).not.toMatch(
-      /<PluginStorePage[\s\S]{0,500}?onCreateTask=\{onCreateTask\}/,
+      /<PluginStorePage[\s\S]{0,640}?onCreateTask=\{onCreateTask\}/,
     );
   });
 

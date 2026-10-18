@@ -1,8 +1,8 @@
 import { CodingPlanEntryButton } from "@/settings/CodingPlanEntryButton.js";
 /**
- * ChatErrorBanner — 错误提示组件
+ * ChatErrorBanner: agent error surface.
  *
- * 显示 ZCode Agent 链路中的错误，带 traceId 方便排查。
+ * Renders agent-pipeline errors with traceId for triage.
  */
 import { useState } from "react";
 import {
@@ -49,8 +49,8 @@ const LOCALIZED_ERROR_CODES = new Set([
   MEDIA_BUDGET_CURRENT_ATTACHMENT_TOO_LARGE_ERROR_CODE,
   MEDIA_BUDGET_CURRENT_IMAGE_TOO_LARGE_ERROR_CODE,
   MEDIA_BUDGET_CURRENT_VIDEO_TOO_LARGE_ERROR_CODE,
-  // 服务层错误 message 是跨进程兜底，不能作为最终 UI 语言来源。
-  // 历史任务模型不可用要按稳定 code 本地化，避免英文界面显示中文提示。
+  // Service messages are cross-process fallbacks, never the final UI language.
+  // Localize legacy model-unavailable by stable code, or EN UI shows zh.
   "ZCODE_RUNTIME_MODEL_UNAVAILABLE",
   "ZCODE_BIGMODEL_TEAM_PLAN_MEMBER_REQUIRED",
 ]);
@@ -62,10 +62,10 @@ const MODEL_CONFIG_MISSING_CODES = new Set([
 ]);
 
 function isModelConfigMissingError(error: Pick<ZCodeUiError, "code" | "message">): boolean {
-  // Bugfix: 桌面端发送前 registry 为空时，agent 会退回 CLI config 并抛 Model config is missing。
-  // 真实原因是“当前没有可用模型”，不能把 CLI 配置路径直接暴露给桌面用户。
-  // 这里只按结构化 code 识别，避免 UNKNOWN/SEND_FAILED 等包装错误的可读 message
-  // 碰巧包含同一段文本时被误判，并连带隐藏复制、反馈等诊断入口。
+  // Bugfix: an empty pre-send registry falls back to CLI config: Model config is missing.
+  // The real cause is no available model, not a config path.
+  // Match the structured code only: wrapped UNKNOWN/SEND_FAILED errors can embed
+  // the same text, hiding copy/feedback diagnostics.
   return Boolean(error.code && MODEL_CONFIG_MISSING_CODES.has(error.code));
 }
 
@@ -98,8 +98,8 @@ export function resolveChatErrorBannerDisplayMessage(
       return error.message;
     }
 
-    // Bugfix: 服务层为了兼容历史快照仍持久化中文兜底文案，UI 需要按稳定 code
-    // 重新本地化，否则英文界面会混入中文错误提示。
+    // Bugfix: services persist zh fallback copy for old snapshots; re-localize by
+    // stable code or the EN UI mixes zh.
     return parsed.args
       ? intl.formatMessage(
           { id: "zcode.error.CLAUDE_UNKNOWN_COMMAND_WITH_ARGS" },
@@ -132,8 +132,8 @@ export function resolveChatErrorBannerDisplayMessage(
 export function shouldSuppressChatErrorBanner(
   error: Pick<ZCodeUiError, "code" | "message">,
 ): boolean {
-  // 只有历史恢复残留的模型不可用提示才隐藏；当前发送/草稿报错需要展示，
-  // 否则 registry 移除模型后用户会看到“请求没返回”而没有任何可操作反馈。
+  // Hide only stale restore leftovers; live send/draft errors must show,
+  // or a removed model reads as a silent no-op.
   return Boolean(
     error.code === "ZCODE_RUNTIME_MODEL_UNAVAILABLE" &&
     HISTORICAL_MODEL_UNAVAILABLE_MESSAGES.some((message) => error.message.includes(message)),
@@ -197,8 +197,8 @@ export function ChatErrorBanner({
     }
 
     try {
-      // 错误横幅之前只能复制 TraceID，开发拿不到完整上下文。
-      // 这里统一复制摘要、TraceID 和详情，方便用户一键转发完整报错信息。
+      // Copying just the trace id starved triage of context.
+      // Copy summary, trace, and details for one-click reports.
       await navigator.clipboard.writeText(
         buildErrorCopyText({
           message: localizedErrorMessage,
@@ -284,8 +284,8 @@ export function ChatErrorBanner({
               className={actionButtonClassName}
               data-testid={TID_CHAT_ERROR_DETAILS_BUTTON}
               onClick={() => {
-                // 详情之前内嵌在 banner 里展开，长错误会把消息区直接撑高，聊天滚动也会突然跳动。
-                // 改成 dialog 后，横幅只保留单行摘要，详细内容放到独立浮层里看，结构和交互都更稳定。
+                // Inline expansion ballooned the message area and jumped scrolling;
+                // the dialog keeps the banner at one line, details in their own layer.
                 setDetailsDialogOpen(true);
               }}
             >
@@ -323,8 +323,8 @@ export function ChatErrorBanner({
           </Button>
         ) : null}
 
-        {/* Bugfix: 错误横幅本身就是异常态，不能再经过 Radix Tooltip 的 Popper/Slot 状态链。
-            这里改成普通 Button，避免无可用模型等错误触发横幅时发生 Maximum update depth 循环。 */}
+        {/* Bugfix: the banner is already an error state; Radix Tooltip Popper/Slot chains
+            triggered Maximum update depth loops on no-model errors. Plain Button instead. */}
         {!modelConfigMissing ? (
           <Button
             type="button"
@@ -333,8 +333,8 @@ export function ChatErrorBanner({
             onClick={() => {
               void handleOpenFeedback();
             }}
-            // ChatErrorBanner 这里之前混用了原生 button，导致按钮体系、焦点态和禁用态都绕开了设计系统。
-            // 统一收口到 Button 组件后，错误横幅里的所有操作按钮才能保持同一套交互和主题表现。
+            // Raw buttons bypassed focus/disabled/theming.
+            // Every action now shares one Button interaction/theme.
             className={cn(actionButtonClassName)}
             aria-label={intl.formatMessage({ id: "chat.error.feedback" })}
             title={error.traceId}

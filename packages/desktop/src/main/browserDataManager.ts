@@ -64,7 +64,7 @@ function pathExists(path: string): Promise<boolean> {
   );
 }
 
-/** 兼容旧调用；实际导入使用 discoverChromeProfile 自动选择最近使用的 Profile。 */
+/** Legacy-call compat; real imports use discoverChromeProfile to auto-pick the most recent profile. */
 export function resolveChromeDefaultProfilePath(
   options: {
     platform?: NodeJS.Platform;
@@ -124,8 +124,9 @@ export async function importChromeBrowserData(options: {
   let detectedChromeExecutablePath = options.chromeExecutablePath;
   if (platform !== "win32" && !options.profilePath && !detectedChromeExecutablePath) {
     detectedChromeExecutablePath =
-      (await (options.chromeExecutableDiscovery ??
-        (() => resolveChromeExecutablePath({ platform })))()) ?? undefined;
+      (await (
+        options.chromeExecutableDiscovery ?? (() => resolveChromeExecutablePath({ platform }))
+      )()) ?? undefined;
     if (!detectedChromeExecutablePath) {
       // Scanning the default profile first misreported "Chrome not installed" as a missing profile
       // and missed non-default-dir registrations. Discover executables first; on failure touch no source data.
@@ -245,7 +246,8 @@ export async function clearEmbeddedBrowserData(options: {
     await targetSession.clearCache();
     if (options.mode === "all") {
       await targetSession.clearStorageData();
-      // 「全部清除」连站点权限同意记录一起清：登录态与权限授权同属用户可预期的清理范围。
+      // Clear-all also wipes site permission consents: login state and grants belong to the same
+      // user-expected cleanup scope.
       await clearEmbeddedBrowserSitePermissions();
     } else {
       // Plain cache clears must not delete login-bearing LocalStorage/IndexedDB.

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseDockerContainerList, resolveDockerCommand } from "../src/remote/docker-detect.js";
 
 describe("docker detect", () => {
-  it("GUI PATH 未包含 docker 时应回退到 macOS 常见安装路径", () => {
+  it("falls back to common macOS install paths when the GUI PATH lacks docker", () => {
     const command = resolveDockerCommand({
       env: { PATH: "/usr/bin:/bin:/usr/sbin:/sbin" },
       homeDir: "/Users/demo",
@@ -13,7 +13,7 @@ describe("docker detect", () => {
     expect(command).toBe("/usr/local/bin/docker");
   });
 
-  it("PATH 中已有 docker 时优先使用 PATH 中的可执行文件", () => {
+  it("prefers the PATH binary when docker is already on the PATH", () => {
     const command = resolveDockerCommand({
       env: { PATH: "/custom/bin:/usr/local/bin" },
       homeDir: "/Users/demo",
@@ -24,7 +24,7 @@ describe("docker detect", () => {
     expect(command).toBe("/custom/bin/docker");
   });
 
-  it("保留 Docker JSON 行解析行为", () => {
+  it("preserves Docker JSON line parsing", () => {
     const containers = parseDockerContainerList(
       [
         JSON.stringify({
@@ -38,12 +38,14 @@ describe("docker detect", () => {
       ].join("\n"),
     );
 
-    expect(containers).toEqual([{
-      id: "931b148d01e8",
-      image: "ubuntu:24.04",
-      name: "zcode-ssh-linux-amd64",
-      state: "running",
-      status: "Up 2 minutes",
-    }]);
+    expect(containers).toEqual([
+      {
+        id: "931b148d01e8",
+        image: "ubuntu:24.04",
+        name: "zcode-ssh-linux-amd64",
+        state: "running",
+        status: "Up 2 minutes",
+      },
+    ]);
   });
 });

@@ -1,13 +1,13 @@
-// TUI 常驻会话事件中继：换 app 时必须重挂（docs/dynamic-workflow/launch.md「The inline card」）。
+// TUI resident session-event relay: it must re-attach when the app is replaced (docs/dynamic-workflow/launch.md, "The inline card").
 //
-// 这条性质的失效是安静的：/new、/resume、/fork 之后订阅还挂在旧 runtime 上，TUI 就再也收不到
-// 出回合事件（dwf 进度、后台通知驱动的回合），而界面看起来完全正常。所以它必须有测试。
+// Its failure is silent: after /new, /resume, or /fork the subscription stays on the old runtime and the TUI never receives
+// out-of-turn events (dwf progress, background-notification turns) while the UI looks perfectly fine. Hence this test.
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { SessionEvent } from "@zcode/contracts";
 import { createTuiSessionEventRelay } from "../src/tui-session-event-relay.js";
 
-/** 一个假 runtime：记录挂载/卸载次数，并能主动发事件。 */
+/** A fake runtime: counts attach/detach and can emit events on its own. */
 function fakeRuntime(name: string) {
   const state = {
     name,
@@ -69,7 +69,7 @@ test("reattach after an app swap detaches the old runtime and follows the new on
   relay.addSink((e) => received.push(e.id));
   first.state.emit(event("before-swap"));
 
-  // replaceApp 换 app 后调 reattach。
+  // reattach runs after replaceApp swaps the app.
   current = second.runtime;
   relay.reattach();
 
@@ -77,7 +77,7 @@ test("reattach after an app swap detaches the old runtime and follows the new on
   assert.equal(second.state.attachCount, 1, "new runtime must be attached");
   assert.equal(first.state.attached, false);
 
-  // 新 runtime 的事件到得了；旧的已经断开，发不出东西。
+  // Events from the new runtime arrive; the old one is detached and emits nothing.
   second.state.emit(event("after-swap"));
   first.state.emit(event("orphan"));
   assert.deepEqual(received, ["before-swap", "after-swap"]);
@@ -96,7 +96,7 @@ test("sinks survive the swap without re-registering", () => {
   current = fakeRuntime("third").runtime;
   relay.reattach();
 
-  // 同一个 sink 跨两次换 app 仍然在册（TUI 侧不需要重挂 useEffect）。
+  // The same sink stays registered across two app swaps (no useEffect remount needed on the TUI side).
   assert.equal(relay.isAttached(), true);
   assert.equal(received.length, 0);
 });
@@ -128,7 +128,7 @@ test("a runtime with no subscribeEvents degrades to unattached rather than throw
   const received: string[] = [];
   relay.addSink((e) => received.push(e.id));
   assert.equal(relay.isAttached(), false);
-  // 能力缺席不该让 TUI 起不来。
+  // A missing capability must not keep the TUI from booting.
   relay.reattach();
   assert.deepEqual(received, []);
 });
@@ -146,18 +146,18 @@ test("a sink unsubscribing during fan-out does not break the dispatch", () => {
   relay.addSink((e) => seen.push(`b:${e.id}`));
 
   only.state.emit(event("e1"));
-  // 第一个 sink 在回调里退订，第二个仍然收到本条。
+  // The first sink unsubscribes inside its callback; the second still receives this event.
   assert.deepEqual(seen, ["a:e1", "b:e1"]);
   only.state.emit(event("e2"));
   assert.deepEqual(seen, ["a:e1", "b:e1", "b:e2"]);
 });
 
-// ── WP-F：会话闸门必须跟着 replaceApp 换会话（getter，不是快照）──
+// -- WP-F: the session gate must follow replaceApp's session (a getter, not a snapshot) --
 
 test("the main session id is read per call, so it follows a replaceApp swap", () => {
-  // 这条钉的是 CLI 侧 getMainSessionId 的形状：现读 app.runtime.getSessionId()。
-  // 快照下来的 id 在 /new /resume /fork 之后会过期，然后把**整条**主转写误判成外来事件——
-  // 比它要修的 actor 噪音严重得多。
+  // Pins the shape of the CLI-side getMainSessionId: it reads app.runtime.getSessionId() live.
+  // A snapshotted id goes stale after /new /resume /fork and misclassifies the entire main transcript as a foreign event --
+  // far worse than the actor noise it fixes.
   let currentSessionId = "session-main-1";
   const getMainSessionId = () => currentSessionId;
 

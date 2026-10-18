@@ -47,7 +47,7 @@ describe("stdio Desktop presentation surface", () => {
     );
   });
 
-  it("只从 Host 权威标记读取一次性 WSL Agent 网络配置", () => {
+  it("reads the one-shot WSL Agent network config only from the authoritative Host flag", () => {
     expect(
       resolveRemoteAgentNetworkFromEnv({
         [ZCODE_REMOTE_HTTP_PROXY_ENV_KEY]: " http://172.21.240.1:7890 ",
@@ -66,14 +66,14 @@ describe("stdio Desktop presentation surface", () => {
     });
   });
 
-  it("让 Desktop attached remote authority 贯穿 stdio 装配并生成 Desktop Agent 命令", async () => {
+  it("threads the desktop-attached remote authority through stdio wiring and emits the Desktop Agent command", async () => {
     const home = await mkdtemp(join(tmpdir(), "zcode-stdio-desktop-surface-"));
     tempHomes.push(home);
     process.env.HOME = home;
     setDataBaseDir(home);
-    // Bugfix: 开发机可能导出 ZCODE_DESKTOP_CONTEXT_PROMPT_ENABLED=0（如本机 ZCode 安装的 shell 集成），
-    // 会把 desktop-attached-remote 推导出的 presentationSurface 灭成 undefined，
-    // 让「surface 贯穿装配」断言变成环境敏感；显式置 1 恢复用例封闭性。
+    // Bugfix: dev machines may export ZCODE_DESKTOP_CONTEXT_PROMPT_ENABLED=0 (e.g. a local ZCode install's shell integration),
+    // which would wipe the desktop-attached-remote presentationSurface to undefined and
+    // make the threading assertion environment-sensitive; pin 1 to keep the case hermetic.
     process.env[ZCODE_DESKTOP_CONTEXT_PROMPT_ENABLED_ENV] = "1";
     process.env.ZCODE_AGENT_SERVER_COMMAND = process.execPath;
     process.env.ZCODE_AGENT_SERVER_ARGS_JSON = JSON.stringify([
@@ -103,7 +103,7 @@ describe("stdio Desktop presentation surface", () => {
               },
             ],
           },
-          // 使用正式信封与分组；旧中间态会在装配前被拒绝，无法覆盖本例的远端行为。
+          // Use the real envelopes and grouping; stale intermediate shapes are rejected before wiring and cannot cover this remote path.
           modelConfigRules: { providerModelRules: [], manualProviderModelRules: [] },
         },
       }),
@@ -182,7 +182,7 @@ describe("stdio Desktop presentation surface", () => {
     let resolvedCommand: ZCodeAgentCommand | null = null;
     const commandResolver = vi.fn((context: ZCodeAgentCommandResolverContext) => {
       resolvedCommand = resolveDefaultZCodeAgentCommand(context);
-      // 集成测试只验证入口装配与最终命令，不启动长驻 Agent 子进程。
+      // The integration test only asserts entry wiring and the final command; no long-lived agent child is spawned.
       return null;
     });
     const bootstrap = createStdioServices({
@@ -233,7 +233,7 @@ describe("stdio Desktop presentation surface", () => {
         supportsStorageStartup: true,
       });
     } finally {
-      // 等待服务异步落盘与回收结束，避免清理临时目录时后台重新创建文件。
+      // Wait for async persistence and disposal so the temp dir cleanup never races background re-creation.
       await disposeServiceResourcesAndWait(bootstrap.services);
       setDataBaseDir(null);
     }

@@ -6,9 +6,9 @@ import { run, type RunDependencies } from "../src/run.js";
 import { WORKFLOW_MODE_SCOPE_ERROR } from "../src/workflow-mode.js";
 
 /**
- * `--workflow-mode` 在 headless / resume / stdio 各入口上的取值与隔离
+ * `--workflow-mode` values and isolation across the headless / resume / stdio entries.
  * （docs/dynamic-workflow/launch.md「The standalone CLI: `--workflow-mode`」）。
- * staging 的布尔 `--enable-workflow` 已由 `--workflow-mode` 取代，这里同时钉住它的退役。
+ * The staging boolean `--enable-workflow` was replaced by `--workflow-mode`; its retirement is pinned here too.
  */
 
 function harness(argv: string[]) {
@@ -82,7 +82,7 @@ function harness(argv: string[]) {
     },
     runZCodeProtocolAgent: async (options) => {
       protocolCalls += 1;
-      // stdio 只接收原有协议入口参数，工作流策略继续由 Host 决定。
+      // stdio accepts only the legacy protocol entry args; workflow policy remains the Host's call.
       assert.equal("dynamicWorkflowEnabled" in options, false);
       assert.equal("workflowMode" in options, false);
     },

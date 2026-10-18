@@ -12,14 +12,17 @@ import type {
 } from "./embeddedBrowserPermissionPolicy.js";
 
 /**
- * 内置浏览器权限弹窗的 main ↔ renderer 桥：
- * - promptPermission / devicePicker / onDisplayMediaRequest 把策略模块的决策点
- *   转成 EmbeddedBrowserPermissionPrompt 事件推送到 guest 宿主窗口；
- * - renderer 的用户决策经 EmbeddedBrowserPermissionResolve 回传；
- * - 20s 无响应按 dismiss/cancel 结算（面板不可见或 agent 后台场景自然拒绝）。
+ * main↔renderer bridge for the embedded-browser permission dialog:
+ * - promptPermission / devicePicker / onDisplayMediaRequest turn policy decision points into
+ *   EmbeddedBrowserPermissionPrompt events pushed to the guest's host window;
+ * - the renderer's decision returns via EmbeddedBrowserPermissionResolve;
+ * - no response within 20s settles as dismiss/cancel (natural decline when the panel is hidden
+ *   or the agent runs in the background).
  */
 export interface EmbeddedBrowserPermissionUiBridge {
-  promptPermission(request: EmbeddedBrowserPermissionPromptRequest): Promise<EmbeddedBrowserPermissionPromptAction>;
+  promptPermission(
+    request: EmbeddedBrowserPermissionPromptRequest,
+  ): Promise<EmbeddedBrowserPermissionPromptAction>;
   devicePicker(input: {
     origin: string;
     permission: string;
@@ -43,8 +46,9 @@ const ALLOWED_ACTIONS = new Set([
 ]);
 
 /**
- * 模块级桥持有者（getPluginSandboxHost 同款模式）：index.ts 启动时装配，
- * desktopWindowChrome 等窗口层直接取用，避免多层 options 透传。
+ * Module-level bridge holder (same pattern as getPluginSandboxHost): assembled at index.ts
+ * startup, consumed directly by window layers like desktopWindowChrome, avoiding options
+ * drilling.
  */
 let activeBridge: EmbeddedBrowserPermissionUiBridge | null = null;
 
@@ -54,14 +58,14 @@ export function setActiveEmbeddedBrowserPermissionUiBridge(
   activeBridge = bridge;
 }
 
-/** 蓝牙设备选择守卫用的设备选择器；桥未装配时返回 undefined（守卫回退为取消请求）。 */
+/** Device chooser for the Bluetooth guard; undefined until the bridge is assembled (the guard then falls back to cancel). */
 export function getEmbeddedBrowserDevicePicker():
   | EmbeddedBrowserPermissionUiBridge["devicePicker"]
   | undefined {
   return activeBridge?.devicePicker.bind(activeBridge);
 }
 
-/** IPC 载荷的运行时校验：requestId 必须是待决请求，resolution 形状必须可识别。 */
+/** Runtime validation of the IPC payload: requestId must be a pending request, resolution shape must be recognizable. */
 export function parseEmbeddedBrowserPermissionResolveRequest(
   payload: unknown,
 ): EmbeddedBrowserPermissionResolveRequest | null {
@@ -97,7 +101,7 @@ export function parseEmbeddedBrowserPermissionResolveRequest(
 
 export function createEmbeddedBrowserPermissionUiBridge(deps: {
   logger: EmbeddedBrowserPermissionLogger;
-  /** 弹窗无响应结算时长；测试注入短值。 */
+  /** Dialog no-response settle timeout; tests inject a short value. */
   promptTimeoutMs?: number;
 }): EmbeddedBrowserPermissionUiBridge {
   const { logger } = deps;
@@ -106,7 +110,10 @@ export function createEmbeddedBrowserPermissionUiBridge(deps: {
 
   const sendPrompt = (
     hostWebContentsId: number | undefined,
-    event: { requestId: string; kind: "permission" | "screen-share" | "device" } & Record<string, unknown>,
+    event: { requestId: string; kind: "permission" | "screen-share" | "device" } & Record<
+      string,
+      unknown
+    >,
   ): boolean => {
     const host =
       (hostWebContentsId !== undefined ? webContents.fromId(hostWebContentsId) : undefined) ??
@@ -120,10 +127,13 @@ export function createEmbeddedBrowserPermissionUiBridge(deps: {
     return true;
   };
 
-  /** 建一个待决请求：renderer 决策经 resolver 回来，超时按 fallback 结算。 */
+  /** Create a pending request: the resolver returns the renderer decision, timeout settles via fallback. */
   const openPendingPrompt = <T>(
     hostWebContentsId: number | undefined,
-    event: { requestId: string; kind: "permission" | "screen-share" | "device" } & Record<string, unknown>,
+    event: { requestId: string; kind: "permission" | "screen-share" | "device" } & Record<
+      string,
+      unknown
+    >,
     settle: (resolution: unknown) => T,
     fallbackValue: T,
   ): Promise<T> => {
@@ -176,8 +186,9 @@ export function createEmbeddedBrowserPermissionUiBridge(deps: {
     },
 
     devicePicker(input) {
-      // requestId 显式生成并保留在闭包：设备发现过程中 select-* 会连续 fire，
-      // 同 requestId 的后续推送被 renderer 当作列表热更新而不是新弹窗。
+      // requestId is generated explicitly and kept in the closure: select-* fires repeatedly
+      // during discovery, and later pushes with the same id are treated by the renderer as list
+      // hot-updates, not new dialogs.
       const requestId = randomUUID();
       const result = openPendingPrompt(
         input.hostWebContentsId,
@@ -230,7 +241,7 @@ export function createEmbeddedBrowserPermissionUiBridge(deps: {
               screens: sources.map((source) => ({
                 sourceId: source.id,
                 name: source.name,
-                // source.id 形如 "screen:0:0" / "window:12345:0"，据此在 UI 分组展示。
+                // source.id looks like "screen:0:0" / "window:12345:0"; group on it in the UI.
                 kind: source.id.startsWith("screen:") ? ("screen" as const) : ("window" as const),
                 thumbnailDataUrl: `data:image/jpeg;base64,${source.thumbnail.toJPEG(60).toString("base64")}`,
               })),
@@ -264,19 +275,16 @@ export function createEmbeddedBrowserPermissionUiBridge(deps: {
   };
 }
 
-
 /**
- * Electron 41 在「页面请求了 video 但回调未提供流」时会从 callback 内部同步抛
- * TypeError（用户取消共享的正常路径）；直接在 promise 链里调用会被外层 catch 误记为
- * 源获取失败并二次回调。此处隔离后不再向外传播。
+ * Electron 41 throws a TypeError synchronously from inside the callback when the page requested
+ * video but the callback supplies no stream (the normal user-cancels-share path); calling it
+ * directly in the promise chain gets misrecorded by the outer catch as a source failure and
+ * double-callbacks. Isolated here so it no longer propagates.
  */
-function invokeDisplayMediaCallback(
-  callback: (result: unknown) => void,
-  result: unknown,
-): void {
+function invokeDisplayMediaCallback(callback: (result: unknown) => void, result: unknown): void {
   try {
     callback(result);
   } catch {
-    // 页面侧已按取消/拒绝路径收尾，无需处理。
+    // The page side already finalized via the cancel/deny path; nothing to do.
   }
 }

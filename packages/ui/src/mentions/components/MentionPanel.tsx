@@ -1,4 +1,4 @@
-/* oxlint-disable eslint(max-lines) -- 提示面板集中承载虚拟列表和 E2E 定位属性，暂不为少量测试属性拆组件。 */
+/* oxlint-disable eslint(max-lines) -- the panel hosts the virtualized list and e2e hooks; not splitting over a few test attributes. */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
@@ -23,9 +23,9 @@ export interface MentionPanelOption {
   description: string;
   content?: ReactNode;
   meta?: ReactNode;
-  /** 禁选态（如同名 Plugin 冲突 fail closed）：可见但不可点击，键盘导航由上层跳过。 */
+  /** Disabled state (same-name plugin conflict, fail closed): visible, not clickable; keyboard skips. */
   disabled?: boolean;
-  /** 禁选原因；无自定义 content 时展示在描述位。 */
+  /** Disable reason; shown in the description slot without custom content. */
   disabledReason?: string;
 }
 
@@ -75,8 +75,8 @@ const OPTION_ROW_HEIGHT = 34;
 const STATUS_ROW_HEIGHT = 40;
 export const SECTION_HEADER_ROW_HEIGHT = 34;
 
-// 分组标题改用 base 字号后，旧的 28px 虚拟行装不下默认行高与 12px 上下 padding。
-// 使用与命令项一致的 32px 可见高度和 34px 虚拟行高度，避免裁切或覆盖下一行。
+// Group headers at base size overflow the old 28px virtual row (line height + 12px padding).
+// Use the command item's 32px visible / 34px virtual row so nothing clips or overlaps.
 export const SECTION_HEADER_CLASS_NAME =
   "flex h-8 items-center px-3 text-ui-base font-semibold uppercase tracking-wide text-foreground-subtle";
 
@@ -415,7 +415,7 @@ function OptionRow({
         )}
         onMouseDown={(event) => {
           event.preventDefault();
-          // 禁选项不触发选择：fail closed，冲突 Plugin 不能被插入。
+          // Disabled entries never select: fail closed, conflicts cannot insert.
           if (isDisabled) {
             return;
           }

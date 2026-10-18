@@ -90,15 +90,16 @@ export function resolveModelReference(
  * `resolveInput`, so a failure here means a bypassed normalization — a wiring fault, raised as one,
  * not a silent drop of the requested model (the subagent would quietly run on the session model, invisible to everyone).
  */
-export function parseWorkflowSubagentModel(canonical: string | undefined): ModelSelection | undefined {
+export function parseWorkflowSubagentModel(
+  canonical: string | undefined,
+): ModelSelection | undefined {
   if (canonical === undefined) return undefined;
   try {
     return parseModelPickerValue(canonical);
   } catch (cause) {
-    throw new Error(
-      `workflow subagent_model reached the handler un-canonicalised: ${canonical}`,
-      { cause },
-    );
+    throw new Error(`workflow subagent_model reached the handler un-canonicalised: ${canonical}`, {
+      cause,
+    });
   }
 }
 

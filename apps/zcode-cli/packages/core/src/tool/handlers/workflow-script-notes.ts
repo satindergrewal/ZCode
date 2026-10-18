@@ -3,9 +3,9 @@
 // ============================================================
 //
 // The tool response is one of three readers (terminal notification and GetWorkflowRun are the others), and
- all three must push the model the same way: **go edit that file**. So this file carries one thing -- once
- the script's file is known, how to word the diagnostics and the NOTE. Shared by CreateWorkflow and
- AmendWorkflow: "amend, hand back via path" is one sentence on both; written twice it would fork.
+// all three must push the model the same way: **go edit that file**. So this file carries one thing -- once
+// the script's file is known, how to word the diagnostics and the NOTE. Shared by CreateWorkflow and
+// AmendWorkflow: "amend, hand back via path" is one sentence on both; written twice it would fork.
 //
 // Unknown file (unwritable draft project): silence here -- callers keep the pre-existing copy asking to
 // fix and resubmit the script.

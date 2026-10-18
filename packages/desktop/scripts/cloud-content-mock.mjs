@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import { pathToFileURL } from "node:url";
 import yazl from "yazl";
 
-/** 显式启动的开发 fixture 服务，不由生产 App 自动开启。 */
+/** Dev fixture server started explicitly; the production app never auto-starts it. */
 export async function createCloudContentMockServer({ port = 0 } = {}) {
   const video = Buffer.from(
     await readFile(

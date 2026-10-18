@@ -219,7 +219,7 @@ export const WebPreviewConsole = ({
         )}
       >
         <div className="max-h-48 space-y-1 overflow-auto">
-          {/* Bugfix: Web preview console 可能输出很长的 URL/错误栈，手机窄屏只允许纵向滚动会裁掉右侧内容。 */}
+          {/* Bugfix: the web preview console can emit very long URLs/stacks; mobile-narrow vertical-only scrolling would clip the right side. */}
           {logs.length === 0 ? (
             <p className="text-muted-foreground">No console output</p>
           ) : (

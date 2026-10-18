@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { join } from "node:path";
 import { BrowserWindow } from "electron";
 
-/** 导出资源必须独立工作，不能依赖桌面 preload 或正在运行的 Agent。 */
+/** Exported assets must work standalone, with no desktop preload or running agent. */
 export async function checkStandalone(root: string) {
   const win = new BrowserWindow({ show: false, webPreferences: { sandbox: true } });
   try {

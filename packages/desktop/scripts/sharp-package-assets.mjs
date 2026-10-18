@@ -22,7 +22,15 @@
 // before afterPack because extraResources already ships the whole glm/
 // directory; afterPack then verifies the final app tree.
 
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+} from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 
@@ -160,9 +168,11 @@ function copyRuntimePackage(sourceRoot, targetRoot) {
  * Must be idempotent and safe to run for every desktop target platform.
  */
 /**
- * sharp 只服务于 Computer Use 截图（由 @zcode/zcode-cua 声明依赖）。
- * 构建使用不声明 sharp 的 Computer Use 占位包时，不暂存也不校验 sharp，安装包不携带 sharp/libvips。
- * 这里只读当前安装的 @zcode/zcode-cua 清单，不依赖包导出（其 exports 不含 package.json）。
+ * sharp serves Computer Use screenshots only (dependency declared by @zcode/zcode-cua).
+ * When the build uses the Computer Use placeholder package that does not declare sharp, neither
+ * stage nor verify it, and the installer ships no sharp/libvips.
+ * Read the installed @zcode/zcode-cua manifest only; no package-export dependency (its exports
+ * omit package.json).
  */
 export function isSharpRequiredByComputerUse({ desktopPackageRoot }) {
   for (let dir = resolve(desktopPackageRoot); ; dir = dirname(dir)) {
@@ -288,9 +298,9 @@ export function verifyStagedSharp({
   }
 
   if (targetPlatform.os === "win32") {
-    // Bugfix: Windows 没有独立的 @img/sharp-libvips-win32-* 包，libvips DLL
-    // 与 sharp.node 一起位于 @img/sharp-win32-*/lib。沿用 macOS/Linux 的
-    // 目录模型会在资源准备阶段要求一个上游从未发布的包。
+    // Bugfix: Windows has no dedicated @img/sharp-libvips-win32-* packages; the libvips DLLs live
+    // in @img/sharp-win32-*/lib next to sharp.node. Keeping the macOS/Linux dir model would demand a
+    // never-published upstream package during asset staging.
     if (
       nativeLibDir &&
       existsSync(nativeLibDir) &&
@@ -316,8 +326,8 @@ export function verifyStagedSharp({
     if (!existsSync(libvipsLibDir)) {
       problems.push(`missing @img/sharp-libvips-${suffix}/lib dir: ${libvipsLibDir}`);
     } else {
-      // Bugfix: Linux 上游产物使用 libvips-cpp.so.8.17.3 这类版本化名称，
-      // 只匹配以 `.so` 结尾会把已经正确打包的动态库误判为缺失。
+      // Bugfix: Linux upstream artifacts use versioned names like libvips-cpp.so.8.17.3; matching
+      // only `.so`-suffixed files misflags already-correctly-packaged libraries as missing.
       const libraryPattern = targetPlatform.os === "linux" ? /\.so(?:\.\d+)*$/u : /\.dylib$/u;
       const hasBinary = readdirSync(libvipsLibDir).some((name) => libraryPattern.test(name));
       if (!hasBinary) {

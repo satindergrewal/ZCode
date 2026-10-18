@@ -68,7 +68,7 @@ const listModelsHandler: ToolHandler = async (input, context) => {
 
   return {
     // Absent when no catalog entry is current (allowed by the port contract: the session's choice may
-// reference a removed provider). An empty string would read as "the current model is called ''".
+    // reference a removed provider). An empty string would read as "the current model is called ''".
     ...(current === undefined ? {} : { current: formatModelCatalogId(current) }),
     models: entries.map((entry) => ({
       id: formatModelCatalogId(entry),
@@ -76,7 +76,7 @@ const listModelsHandler: ToolHandler = async (input, context) => {
       modelId: entry.modelId,
       ...(entry.providerLabel === undefined ? {} : { providerLabel: entry.providerLabel }),
       // Tier-less models get [] not absence: readers learn "appending $ is wrong" -- absence reads as
-// "not said on this row".
+      // "not said on this row".
       reasoningLevels: [...entry.reasoningLevels],
       ...(entry.defaultReasoningLevel === undefined
         ? {}
@@ -114,11 +114,13 @@ function formatListModelsModelContent(output: unknown): ModelMessageContent {
     if (model.reasoningLevels.length > 0) {
       const levels = model.reasoningLevels.join(",");
       const fallback =
-        model.defaultReasoningLevel === undefined ? "" : ` (default ${model.defaultReasoningLevel})`;
+        model.defaultReasoningLevel === undefined
+          ? ""
+          : ` (default ${model.defaultReasoningLevel})`;
       parts.push(`; levels: ${levels}${fallback}`);
     }
     // current and disabled sit at row end, each bracketed: the two markers a model uses to **exclude** a
-// row; mid-row placement gets pushed out of sight by longer tier tables.
+    // row; mid-row placement gets pushed out of sight by longer tier tables.
     if (model.id === current) parts.push(" [current]");
     if (model.disabledReason !== undefined) parts.push(` [disabled: ${model.disabledReason}]`);
     return parts.join("");
@@ -158,7 +160,7 @@ export const listModelsToolEntry: ToolEntry = {
     alwaysAllowPatternSources: ["toolName"],
     denyPriority: "beforeAsk",
     // Deliberately NOT inheriting CreateWorkflow's alwaysAsk: that gate exists for "runs a block of code";
-// reading a table of configured models is not that.
+    // reading a table of configured models is not that.
   },
   resultBudget: {
     maxInlineBytes: LIST_MODELS_MODEL_BYTES,

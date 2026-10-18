@@ -190,7 +190,9 @@ describe("openWebRemoteControlTask", () => {
       switcher: {
         listWorkspaces: vi.fn(async () => ({ workspaces: [] })),
         switchWorkspace: vi.fn(async () => {
-          throw new Error("目标远程工作区尚未连接，无法创建 bridge，请先重连。");
+          throw new Error(
+            "Target remote workspace is not connected; reconnect before creating a bridge.",
+          );
         }),
       },
       task: createTask({
@@ -202,7 +204,9 @@ describe("openWebRemoteControlTask", () => {
     });
 
     expect(onNavigateHome).toHaveBeenCalledTimes(1);
-    expect(setError).not.toHaveBeenCalledWith("目标远程工作区尚未连接，无法创建 bridge，请先重连。");
+    expect(setError).not.toHaveBeenCalledWith(
+      "Target remote workspace is not connected; reconnect before creating a bridge.",
+    );
   });
 
   it("clears switching state and stores the error when cross-workspace switching fails", async () => {

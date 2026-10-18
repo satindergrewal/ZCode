@@ -142,7 +142,7 @@ export interface ToolExecutorOptions {
 }
 
 export interface ToolExecutor {
-  /** 同一权限链供 MCP App 使用；返回审批后的输入，不执行 handler / 不做模型结果投影。 */
+  /** The same approval chain, for MCP Apps; returns the approved input without running the handler or projecting model results. */
   authorizeAppTool?(
     toolCall: ExecutableToolCall,
     entry: import("../types.js").ToolEntry,

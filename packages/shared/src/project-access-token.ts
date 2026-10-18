@@ -44,7 +44,7 @@ export interface ProjectAccessTokenScope {
   readonly projectId: string;
   readonly apiKeyId: string;
   readonly usageScene: ApiKeyCreationUsageScene;
-  /** 登录生命周期标识，不能使用 Token 原文或短期 Token 的哈希。 */
+  /** Login lifecycle marker; never the raw token or a short-lived token hash. */
   readonly loginGeneration: string;
 }
 
@@ -58,13 +58,13 @@ export type ProjectAccessTokenResult =
 
 export class ProjectAccessTokenError extends Error {
   constructor(readonly code: "project_token_invalid_response" | "project_token_scope_invalidated") {
-    // 响应包含凭据；不把 zod issues、原始响应或 Token 放进异常/日志。
+    // Responses carry credentials; keep zod issues, raw responses, and tokens out of exceptions/logs.
     super(code);
     this.name = "ProjectAccessTokenError";
   }
 }
 
-/** I/O adapter 确认的临时故障；不携带原始响应、URL、Token 或 cause。 */
+/** Transient fault confirmed by the I/O adapter; carries no raw response, URL, token, or cause. */
 export class ProjectAccessTokenTransientError extends Error {
   constructor() {
     super("project_token_transient_failure");
@@ -80,8 +80,8 @@ interface CacheEntry {
 }
 
 /**
- * 账号鉴权 owner 的纯内存状态，不含网络、存储、定时器或全局单例。
- * Host 和 Standalone 分别持有实例；签发由其已有 I/O adapter 注入。
+ * Pure in-memory state of the account-auth owner: no networking, storage, timers, or global singletons.
+ * Host and Standalone hold separate instances; issuance is injected via each one's existing I/O adapter.
  */
 export class ProjectAccessTokenCache {
   readonly #entries = new Map<string, CacheEntry>();
@@ -104,7 +104,7 @@ export class ProjectAccessTokenCache {
   ): Promise<ProjectAccessTokenResult> {
     const key = scopeKey(scope);
     let entry = this.#entries.get(key);
-    // 仅清理被拒绝的那一代 PAT；迟到的 401 不得废弃新凭据或打断正在进行的换证。
+    // Clean up only the rejected PAT generation; a late 401 must not discard newer credentials or interrupt an in-flight rotation.
     if (rejectedFingerprint && entry?.fingerprint === rejectedFingerprint) {
       entry.value = undefined;
       entry.refreshAt = undefined;
@@ -119,10 +119,10 @@ export class ProjectAccessTokenCache {
     }
     const current = entry;
     const startedAt = this.#now();
-    // 延迟到微任务执行签发，先登记 pending，确保同步重入也只生成一个请求。
+    // Defer issuance to a microtask and register pending first, so even synchronous reentry produces a single request.
     const pending = Promise.resolve()
       .then(() => {
-        // 退出可能先于签发微任务发生；此时连旧登录态的网络请求也不得发出。
+        // Exit can land before the issuance microtask; even the old login's network request must not fire then.
         if (this.#entries.get(key) !== current) {
           throw new ProjectAccessTokenError("project_token_scope_invalidated");
         }
@@ -139,7 +139,7 @@ export class ProjectAccessTokenCache {
           this.#entries.delete(key);
           return Object.freeze({ enabled: false } as const);
         }
-        // expiresIn 从发出签发请求时保守起算，不能把网络耗时变成额外有效期。
+        // expiresIn is counted conservatively from issuance-request start; network latency must not become extra validity.
         const expiresAt = Math.min(
           data.expiresAt * SECOND_MS,
           startedAt + data.expiresIn * SECOND_MS,
@@ -163,8 +163,8 @@ export class ProjectAccessTokenCache {
       .catch((error: unknown) => {
         if (this.#entries.get(key) !== current)
           throw new ProjectAccessTokenError("project_token_scope_invalidated");
-        // 只保留仍有效且未被 401 指纹清除的 PAT；认证拒绝和格式错误必须失败。
-        // 降级属于同一个 pending，使所有并发调用获得一致结果，不延长原有效期。
+        // Keep only PATs still valid and not cleared by a 401 fingerprint; auth rejections and malformed payloads must fail.
+        // The downgrade joins the same pending so every concurrent caller gets one result, without extending validity.
         if (
           error instanceof ProjectAccessTokenTransientError &&
           current.value &&
@@ -196,7 +196,7 @@ export class ProjectAccessTokenCache {
   }
 }
 
-/** 仅用于拒绝某一代 PAT 的比较，不作为账号身份，也不传给模型上游。 */
+/** Comparison value for rejecting one PAT generation; never an account identity, never sent to model upstreams. */
 export async function projectAccessTokenFingerprint(token: string): Promise<string> {
   const digest = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");

@@ -20,7 +20,7 @@ function sliceBetween(source: string, startMarker: string, endMarker: string): s
 }
 
 describe("web remote control Assistant code-comment capability", () => {
-  it("仅在两条承载 workspace 会话的 /remote bridge Root 上显式开启", async () => {
+  it("enables only on the two /remote bridge Roots that carry workspace sessions", async () => {
     const source = await readFile(resolve(process.cwd(), "packages/web/src/main.tsx"), "utf8");
     const externalRelayBridgeRoot = sliceBetween(
       source,
@@ -50,7 +50,7 @@ describe("web remote control Assistant code-comment capability", () => {
     expect(source.match(/assistantCodeCommentCardsEnabled/g)).toHaveLength(2);
   });
 
-  it("终态 replay row 通过共享投影隐藏 directive，并保留 remote review scope", () => {
+  it("hides the directive via the shared projection on final replay rows and keeps the remote review scope", () => {
     const assistantText =
       '已完成审查。\n::code-comment{title="[P1] 检查入口" body="请检查启动路径" file="src/main.ts" start=12 end=14 priority=1}';
     const workspacePath = "/remote/workspace";

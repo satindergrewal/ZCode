@@ -78,8 +78,10 @@ describe("desktop E2E container presets", () => {
       "utf-8",
     ).replaceAll("\r\n", "\n");
 
-    expect(dockerPlan).toContain(
-      "| Spec | 迁移状态 |\n| --- | --- |\n<!-- conversation-session-verified-table-end -->",
+    // oxfmt may keep one blank line between the table skeleton and the marker; the header,
+    // separator and marker adjacency are the contract the admission command relies on.
+    expect(dockerPlan).toMatch(
+      /\| Spec \| 迁移状态 \|\n\| ---- \| -------- \|\n\n?<!-- conversation-session-verified-table-end -->/u,
     );
 
     const spec = "./test/e2e/conversation-session/example.test.ts";

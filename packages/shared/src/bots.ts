@@ -1,6 +1,6 @@
 import { zcodeProtocolTraceSchema, type ZCodeProtocolTrace } from "./zcode-protocol/trace.js";
 import { channelContentPartsSchema, type ChannelContentPart } from "./channel-mention.js";
-/* oxlint-disable eslint(max-lines) -- Bot 共享合约集中维护 provider、状态和 schema，保持类型与校验就近。 */
+/* oxlint-disable eslint(max-lines) -- the Bot shared contract keeps providers, state, and schemas together, types next to validation. */
 import { z } from "zod";
 import { modelSelectionSchema, type ModelSelection } from "./model-selection.js";
 import { conversationQuotesSchema } from "./conversationSelection.js";
@@ -38,8 +38,8 @@ export type BotProvider = (typeof botProviders)[number];
 export type FeishuBotProvider = Extract<BotProvider, "feishu" | "lark">;
 
 /**
- * 定时任务完成后的 Bot 回推目标。只保留未来仍稳定的会话地址；当前消息 id/context token
- * 属于一次入站交互，不能持久化后复用。该字段由 Host 注入，模型工具参数不直接暴露。
+ * The bot callback target after a scheduled task completes. Keep only future-stable conversation addresses; the current
+ * message id/context token belong to one inbound interaction, never persisted for reuse. Host-injected; not exposed in model tool args.
  */
 export const zcodeAutomationBotDeliveryTargetSchema = z
   .object({
@@ -193,9 +193,9 @@ export interface BotState {
   telegramOffset?: number;
   weixinGetUpdatesBuf?: string;
   weixinActivatedAt?: number;
-  /** 单聊绑定代际，阻止换绑后迟到事件恢复旧关联。 */
+  /** Direct-chat binding generation; blocks late events from restoring a stale association after a rebind. */
   privateBindingId?: string;
-  /** iLink 登录返回机器人身份，单聊接收人来自已授权入站消息。 */
+  /** iLink login returns the bot identity; the direct-chat recipient comes from authorized inbound messages. */
   privateRecipientId?: string;
   updatedAt: number;
 }
@@ -204,7 +204,7 @@ export type BotContextState = BotState;
 
 export const botGroupDeliverySchema = z
   .object({
-    /** 名字解析前的请求指纹；重复调用只读原回执，不因目录变化改发给其他人。 */
+    /** Request fingerprint before name resolution; repeats read the original receipt, never re-target on directory changes. */
     channelReplyRequestHash: z
       .string()
       .regex(/^[a-f0-9]{64}$/u)
@@ -298,9 +298,9 @@ export interface BotGroupSession {
   rootMessageId?: string;
   topicTitle?: string;
   topicUrl?: string;
-  /** 仅群默认记录拥有此配置；话题按群授权检查读取。 */
+  /** Only the group default holds this config; topics read it via the group authorization check. */
   historyEnabled?: boolean;
-  /** 仅成功接收首次输入后接入；leave 后保留任务但停止普通消息触发。 */
+  /** Attached only after the first input arrives; after leave the task survives but normal messages no longer trigger. */
   topicActive?: boolean;
   topicAliases?: Record<string, { taskId: string; rootMessageId: string }>;
   name: string;
@@ -356,7 +356,7 @@ export const botGroupInputProgressSchema = z
   .strict();
 export type BotGroupInputProgress = z.infer<typeof botGroupInputProgressSchema>;
 
-/** CLI 只接收轻量材料索引；原文留在 Host 归档及文本附件。 */
+/** The CLI receives a light material index only; full text stays in the Host archive and text attachments. */
 export const botTopicHistorySourceSchema = z
   .object({
     checkpoint: z.string().min(1).max(256),
@@ -388,7 +388,7 @@ export const botTopicInputMessageSchema = z
   })
   .strict();
 
-/** 可信 Host 注入的输入来源；身份展示不能反向授予执行权限。 */
+/** Input source injected by a trusted Host; identity display never grants execution rights. */
 export const botGroupInputSourceSchema = z
   .object({
     botIdentity: botIdentitySchema.optional(),
@@ -456,9 +456,9 @@ export interface BotsStateFile {
 }
 
 export interface BotRuntimeInfo {
-  /** 最近一次消息投递错误；独立于长连接状态，成功投递后清除。 */
+  /** Last message-delivery error; independent of connection state, cleared on successful delivery. */
   deliveryError?: string;
-  /** 当前进程保留的失败单聊回复；显式重试可能重复此前已收到的内容。 */
+  /** Failed direct-chat replies kept in this process; an explicit retry may repeat already-delivered content. */
   deliveryRetryId?: string;
   botId: string;
   provider: BotProvider;
@@ -470,7 +470,7 @@ export interface BotRuntimeInfo {
 }
 
 export interface BotActor {
-  /** 本次可信输入是否明确提及机器人；用于话题回复提醒。 */
+  /** Whether this trusted input explicitly mentions the bot; used for topic-reply nudges. */
   mentionedBot?: boolean;
   provider: BotProvider;
   botId: string;
@@ -479,7 +479,7 @@ export interface BotActor {
   chatType: "private" | "group";
   chatId?: string;
   threadId?: string;
-  /** 仅服务根据已保存的结果关联设置；null 表示原群默认任务。 */
+  /** Set only by the service from saved results; null means the group default task. */
   conversationThreadId?: string | null;
   rootMessageId?: string;
   topicTitle?: string;
@@ -563,18 +563,18 @@ export interface SelectionPrompt {
 }
 
 export interface BotInboundMessage {
-  /** 仅供命令/纯唤醒识别；原文 text 和 contentParts 保持完整。 */
+  /** For command/pure-wake recognition only; the raw text and contentParts stay intact. */
   commandText?: string;
-  /** Provider 核验的当前机器人身份，不从正文推断。 */
+  /** The provider-verified current bot identity, never inferred from body text. */
   botOpenId?: string;
-  /** Provider 校验的发送者类型；机器人正文不具有控制命令权限。 */
+  /** Sender type verified by the provider; bot-authored text carries no control-command rights. */
   senderType?: "user" | "app";
   contentParts?: ChannelContentPart[];
-  /** 由 Provider 根据真实 mention 身份设置；不是正文解析结果。 */
+  /** Set by the provider from the real mention identity; not parsed from body text. */
   mentionedBot?: boolean;
-  /** 原生根消息经 Provider 核验确为当前机器人发送。 */
+  /** Native root message verified by the provider as sent by this bot. */
   topicRootIsCurrentBot?: boolean;
-  /** 可信 Provider 校验后的明确引用，不参与控制命令解析。 */
+  /** Explicit quote verified by the trusted provider; not part of control-command parsing. */
   referencedMessage?: import("./conversationSelection.js").ConversationSelectionText & {
     messageId: string;
   };
@@ -603,17 +603,17 @@ export interface BotOutboundMessage {
   selection?: SelectionPrompt;
   elicitation?: BotOutboundElicitationRequest;
   providerContextToken?: string;
-  /** 无权限/过期回调只能提示操作者，不能覆盖群共享卡片。 */
+  /** Unauthorized/expired callbacks may notify the operator only, never overwrite the group-shared card. */
   callbackToastOnly?: boolean;
-  /** 管理员待办独立通知，不允许用拒绝提示覆盖共享卡片。 */
+  /** The admin to-do is a separate notification; a rejection notice must not overwrite the shared card. */
   administratorAttention?: boolean;
   replyToMessageId?: string;
-  /** 可信输入决定的提醒对象；只作展示，不授予群操作权限。 */
+  /** Reminder targets decided by trusted input; display only, grants no group rights. */
   mentionedUserIds?: string[];
   deliveryId?: string;
-  /** 任务回推需在实际发送前重新验证群当前关联。控制命令回复不携带。 */
+  /** Task callbacks re-verify the group's current association before actually sending. Control-command replies omit it. */
   groupTaskId?: string;
-  /** 可信任务事件中的输入命令，用于将投递状态定位到对应回复。 */
+  /** The input command inside a trusted task event, tying delivery status to the right reply. */
   groupSourceCommandId?: string;
 }
 
@@ -696,7 +696,7 @@ export const botAllowedCommandsSchema = z
     thoughtLevel: z.boolean(),
     sandboxMode: z.boolean().optional(),
     approvalPolicy: z.boolean().optional(),
-    // 兼容旧 bot-config.json；/cli 命令已移除，新配置不会再写入这个字段。
+    // Legacy bot-config.json compat; /cli removed, new configs never write this field.
     cli: z.boolean().optional(),
     reply: z.boolean(),
   })
@@ -704,9 +704,9 @@ export const botAllowedCommandsSchema = z
 
 export const botCommandPolicySchema = botAllowedCommandsSchema;
 
-// 修复原因：第三方 CLI provider 已移除，ZCodeProvider 只剩 glm，但旧 bot 配置与状态文件里可能仍存有
-// 已移除 provider 的历史值。改成严格 literal 会让整份文件 parse 失败、Bot 全部不可用；
-// 因此解析时继续接受这些历史值，并统一归一到当前唯一的 agent provider。
+// Fix: third-party CLI providers are gone and ZCodeProvider is glm-only, but old bot config/state files may still hold
+// historical values of removed providers. A strict literal would fail the whole-file parse and take every Bot down;
+// parsing keeps accepting them and normalizes onto the single current agent provider.
 const legacyBotAgentProviderSchema = z
   .enum(["codex", "claude", "opencode", "gemini", "glm"])
   .transform((): typeof ZCODE_AGENT_PROVIDER => ZCODE_AGENT_PROVIDER);
@@ -717,7 +717,7 @@ export const botCurrentOptionsSchema = z
     mode: z.string().min(1).optional(),
     sandboxMode: z.string().min(1).optional(),
     approvalPolicy: z.string().min(1).optional(),
-    // 兼容旧 bot-config.json；CLI provider 现在统一由 ZCode Protocol 侧配置决定。
+    // Legacy bot-config.json compat; CLI providers are now decided solely by ZCode Protocol-side config.
     cli: legacyBotAgentProviderSchema.optional(),
   })
   .strict();
@@ -910,7 +910,7 @@ export function getSupportedBotReplyGranularities(
   return isFeishuBotProvider(provider)
     ? (["streaming_card"] as const)
     : BOT_REPLY_GRANULARITIES.filter(
-        // Bugfix: streaming card 依赖 Feishu/Lark Card JSON 2.0，其他 channel 无法渲染或更新该消息形态。
+        // Bugfix: the streaming card depends on Feishu/Lark Card JSON 2.0; other channels cannot render or update that shape.
         (granularity) => granularity !== "streaming_card",
       );
 }

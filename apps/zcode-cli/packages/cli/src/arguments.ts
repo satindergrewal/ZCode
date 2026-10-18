@@ -84,8 +84,8 @@ export const parseGlobalArgs = (argv: string[]) =>
       "workflow-mode": {
         type: "string",
       },
-      // `zcode plugins` 子命令旗标：strict 解析器要求
-      // 在全局注册，run.ts 收集后透传给 plugins-command，不污染其他命令的选项语义。
+      // `zcode plugins` subcommand flags: the strict parser requires
+      // global registration; run.ts collects them and passes them to plugins-command without polluting other commands' option semantics.
       all: {
         short: "a",
         type: "boolean",
@@ -108,7 +108,7 @@ export const parseGlobalArgs = (argv: string[]) =>
     strict: true,
   });
 
-/** 入口与命令路由复用同一参数定义，不能把 prompt/cwd 的值误当成协议命令。 */
+/** The entry and command routing share one argument definition; prompt/cwd values must not be mistaken for protocol commands. */
 export function isProtocolServerInvocation(argv: string[]): boolean {
   try {
     const parsed = parseGlobalArgs(argv);
@@ -120,7 +120,7 @@ export function isProtocolServerInvocation(argv: string[]): boolean {
       (parsed.positionals[0] === "app-server" || parsed.positionals[0] === "agent-server")
     );
   } catch {
-    // 无效参数由 run 格式化；明确的协议命令仍保护 stdout。
+    // Invalid args are formatted by run; recognized protocol commands still keep stdout clean.
     return argv[0] === "app-server" || argv[0] === "agent-server";
   }
 }

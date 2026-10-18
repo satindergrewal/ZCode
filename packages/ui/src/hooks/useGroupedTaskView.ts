@@ -899,7 +899,10 @@ export function useGroupedTaskView(params: { workspaceTabs: WorkspaceTabState[] 
       })
       .catch((error) => {
         promotedGroupPersistenceRef.current.delete(signature);
-        logger.error("[useGroupedTaskView] failed to persist promoted grouped draft placement", error);
+        logger.error(
+          "[useGroupedTaskView] failed to persist promoted grouped draft placement",
+          error,
+        );
       });
   }, [
     clearPromotedGroupedDraftTask,

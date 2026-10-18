@@ -66,8 +66,8 @@ describe("ConversationShareLandingPage", () => {
     expect(html).toContain('data-share-continue-visible="true"');
     expect(html).toContain('data-share-continue-measure="true"');
     expect(html).toContain('title="公开任务"');
-    // 首屏（SSR/未测量）先保留自然排列，客户端测量后只写入连续几何变量；
-    // 不再在 inline 与 rail-aligned 两种布局之间切换。
+    // First paint (SSR/unmeasured) keeps natural flow; after client measurement only the continuous geometry vars are written,
+    // with no more switching between the inline and rail-aligned layouts.
     expect(html).toContain('data-share-header-layout="continuous"');
     expect(html).toContain('data-share-header-ready="false"');
     expect(html).not.toContain('data-share-header-layout="compact"');

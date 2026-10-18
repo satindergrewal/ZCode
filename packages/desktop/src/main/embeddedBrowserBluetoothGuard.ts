@@ -8,10 +8,11 @@ import {
 import { readDeviceOptions } from "./embeddedBrowserDeviceOptions.js";
 
 /**
- * 蓝牙设备选择事件挂在 guest 的 WebContents 而非 Session 上（Electron 41 API 分布），
- * 需要在 did-attach-webview 的 browser guest 分支逐个安装；空字符串取消请求。
- * log 参数接收宿主可用的日志函数（windowChrome 的 logger 只有 warn，也用 warn 落这条轨迹）。
- * options.devicePicker 注入后走设备选择弹窗；缺省取消请求（阻断 Electron 默认静默授权）。
+ * Bluetooth device-selection events hang off the guest's WebContents, not the Session
+ * (Electron 41 API layout), so each browser-guest branch of did-attach-webview must install one;
+ * an empty string cancels the request. `log` receives whatever logger the host has (windowChrome's
+ * logger only has warn, so this trail logs at warn too). With options.devicePicker injected the
+ * chooser dialog runs; default cancels the request (blocking Electron's silent grant).
  */
 export function installEmbeddedBrowserBluetoothDeviceGuard(
   guestWebContents: Pick<WebContents, "getURL" | "id" | "on">,
@@ -27,14 +28,14 @@ export function installEmbeddedBrowserBluetoothDeviceGuard(
     hostWebContentsId?: number;
   } = {},
 ): void {
-  // 蓝牙扫描期间 Chromium 会连续多次 fire select-bluetooth-device（渐进发现设备），
-  // 同一请求在 callback 结算前只开一个弹窗，后续 fire 热更新设备列表。
+  // During scans Chromium fires select-bluetooth-device repeatedly (devices appear gradually);
+  // one dialog per request until the callback settles, later fires hot-update the list.
   let session: EmbeddedBrowserDevicePickerSession | null = null;
   guestWebContents.on(
     "select-bluetooth-device",
     (event: unknown, devices: unknown, callback: (deviceId: string) => void) => {
-      // 与 hid/usb/serial 一致：阻止默认取消，等待用户选择（Chromium 默认行为
-      // 是事件 fire 后立即以「未选择」终止页面请求）。
+      // Same as hid/usb/serial: prevent the default cancel and wait for the user (Chromium
+      // otherwise ends the page request with "nothing chosen" right after the event).
       (event as { preventDefault?: () => void }).preventDefault?.();
       if (!options.devicePicker) {
         log(`${LOG_TAG} decision=denied`, {
@@ -44,7 +45,8 @@ export function installEmbeddedBrowserBluetoothDeviceGuard(
         callback("");
         return;
       }
-      // event.sender 在 webview guest 上拿不到可靠 URL（实测 origin=unknown），改用 guest 自身。
+      // event.sender has no reliable URL on webview guests (observed origin=unknown); use the
+      // guest itself.
       const origin = originFromUrl(guestWebContents.getURL());
       const deviceOptions = readDeviceOptions(devices);
       if (session) {

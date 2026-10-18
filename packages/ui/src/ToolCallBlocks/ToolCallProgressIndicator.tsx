@@ -3,7 +3,7 @@ import { toolProgressSchema } from "@zcode/shared/zcode-protocol-v4";
 
 export const TID_TOOL_CALL_PROGRESS = "tool-call-progress";
 
-/** 从 legacy raw 读出投影的运行中进度（toolCallRowAdapter 透传 ToolCallRow.progress）。 */
+/** Running progress projected from legacy raw (toolCallRowAdapter passes ToolCallRow.progress through). */
 export function readToolCallProgress(raw: unknown): ToolProgress | null {
   if (typeof raw !== "object" || raw === null) return null;
   const parsed = toolProgressSchema.safeParse((raw as { progress?: unknown }).progress);
@@ -11,8 +11,8 @@ export function readToolCallProgress(raw: unknown): ToolProgress | null {
 }
 
 /**
- * 工具摘要行里的细进度条（）：有 fraction 用 determinate，否则 indeterminate 扫光；
- * message 跟在后面。颜色只用 brand / surface token，遵守 DESIGN.md。
+ * Thin progress bar in the tool summary row: determinate with a fraction, otherwise an indeterminate sweep;
+ * the message follows. Colors come from brand / surface tokens only, per DESIGN.md.
  */
 export function ToolCallProgressIndicator({ progress }: { progress: ToolProgress }) {
   const fraction = progress.fraction;

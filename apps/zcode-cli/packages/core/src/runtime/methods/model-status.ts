@@ -9,7 +9,7 @@ import type {
 import type { AgentRuntimeInternal } from "../internal.js";
 
 interface ModelStatusSinkOptions {
-  /** Sampling 不投影到主会话；保留网络日志和内存用量事件。 */
+  /** Sampling does not project into the main session; keep network logs and memory-usage events. */
   persist?: boolean;
   onStatus?: (event: ModelNetworkStatusEvent) => void;
   streamRecovery?: ModelStreamRecoveryStatus;

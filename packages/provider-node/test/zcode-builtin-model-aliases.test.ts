@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import { NodeZCodeBuiltinProviderConfigSource } from "../src/index.js";
 import { compileModelOptionMaps } from "@zcode/model-option-map";
 
-describe("发布模型规则的前后缀与覆盖顺序", () => {
-  it("OpenRouter Messages 的 GPT 选择实际生成对应 effort，保留完整请求型号", async () => {
+describe("released model-rule prefix/suffix and override order", () => {
+  it("makes OpenRouter Messages GPT selections emit the matching effort and keeps full request model ids", async () => {
     const source = new NodeZCodeBuiltinProviderConfigSource({
       bundledFilePath: fileURLToPath(
         new URL("../../../config/provider/zcode-builtin.json", import.meta.url),
@@ -43,7 +43,7 @@ describe("发布模型规则的前后缀与覆盖顺序", () => {
     }
   });
   it.each(["anthropic-messages", "openai-chat-completions", "openai-responses"] as const)(
-    "%s：等价前后缀复用能力与 Map，不依赖聚合站点白名单",
+    "%s: equivalent prefixes/suffixes reuse capabilities and maps with no aggregated-site allowlist",
     async (apiType) => {
       const source = new NodeZCodeBuiltinProviderConfigSource({
         bundledFilePath: fileURLToPath(
@@ -92,7 +92,7 @@ describe("发布模型规则的前后缀与覆盖顺序", () => {
             expect(get(alias), alias).toEqual(expected);
           }
         }
-        // 先族基线、后具体变体：不能把匹配范围扩大后让族规则重新盖掉具体配置。
+        // Family baseline first, specific variant after: widening match scope must not let family rules re-cover specifics.
         expect(get("gateway/GLM-5.3-Flash-20250901").properties?.inputFormat?.supportsImage).toBe(
           true,
         );
@@ -116,7 +116,7 @@ describe("发布模型规则的前后缀与覆盖顺序", () => {
     },
   );
 
-  it("聚合模板的每家维护厂商有默认启用代表，所有成员能形成完整配置和请求 Map", async () => {
+  it("gives every maintained vendor on aggregated templates a default-enabled rep while all members build full config and request maps", async () => {
     const source = new NodeZCodeBuiltinProviderConfigSource({
       bundledFilePath: fileURLToPath(
         new URL("../../../config/provider/zcode-builtin.json", import.meta.url),

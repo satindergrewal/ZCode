@@ -130,7 +130,9 @@ const WORKFLOW_DISPLAY = {
     ],
     lanes: [{ id: "actor#1", name: "检查员" }],
     // 第二层是子代理导向：每阶段一张参与者卡 + 交接边（docs/dynamic-workflow/presentation.md）。
-    participants: [{ id: "unphased:actor#1", phase: "unphased", lane: "actor#1", steps: ["ask#1"] }],
+    participants: [
+      { id: "unphased:actor#1", phase: "unphased", lane: "actor#1", steps: ["ask#1"] },
+    ],
     handoffs: [],
     sink: ["ask#1"],
   },

@@ -28,7 +28,7 @@ export async function validateTopicResourceFromRelay(
   }
 }
 
-/** 单个 reverse RPC 只传一块，避免把完整 base64 附件塞进有帧上限的现有 stdio 连接。 */
+/** One chunk per reverse RPC: never stuff a whole base64 attachment through the frame-capped stdio link. */
 export async function readTopicResourceFromRelay(
   channel: Pick<IChannel, "call">,
   value: unknown,
@@ -78,7 +78,7 @@ export async function readTopicResourceFromRelay(
       dataBase64: Buffer.concat(chunks, metadata.bytes).toString("base64"),
     };
   } catch (error) {
-    // 清理不用已取消的 token；远端还有自己的 TTL 与断连回收，清理丢失不能交付半文件。
+    // Cleanup ignores cancelled tokens; the remote has its own TTL/disconnect reclaim and a lost cleanup must not ship a partial file.
     void channel.call("cancel", key).catch(() => undefined);
     throw error;
   } finally {

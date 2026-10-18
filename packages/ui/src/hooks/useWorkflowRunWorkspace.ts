@@ -79,7 +79,11 @@ export function useWorkflowRunWorkspace(options: {
         return;
       }
       const message = caught instanceof Error ? caught.message : String(caught);
-      logger.warn("[workflow-workspace] failed to load workspace list", { error: message, runId, sessionId });
+      logger.warn("[workflow-workspace] failed to load workspace list", {
+        error: message,
+        runId,
+        sessionId,
+      });
       setError(message);
     }
   }, [runId, sessionId, workflowRunWorkspace]);

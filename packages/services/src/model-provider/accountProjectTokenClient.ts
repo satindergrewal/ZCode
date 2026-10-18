@@ -11,7 +11,7 @@ import { readApiJson } from "#src/providers/api/apiJson.js";
 const PROJECT_TOKEN_REQUEST_TIMEOUT_MS = 15_000;
 const log = createServiceLogger("project-access-token");
 
-/** 本地与旧远程附加入口复用同一 HTTP/ID 存储约束，每个鉴权 owner 只持有一个实例。 */
+/** Local and legacy remote-attach entries share one HTTP/ID-store contract; one instance per auth owner. */
 export function createAccountProjectTokenClient(
   apiClient: ApiClient,
   credentialService: Pick<ICredentialService, "load" | "save" | "delete">,
@@ -25,7 +25,7 @@ export function createAccountProjectTokenClient(
         });
       } catch (error) {
         if (error instanceof ApiError && error.status === 404) return { code: 404 };
-        // 仅承认传输异常/内部超时及临时 HTTP 状态；JSON 解析和未知异常不能恢复旧 PAT。
+        // Only transport faults, internal timeouts, and transient HTTP statuses retry; parse/unknown errors never restore the old PAT.
         if (
           error instanceof ApiError &&
           (error.status === 429 ||
@@ -44,8 +44,8 @@ export function createAccountProjectTokenClient(
       log.warn(
         undefined,
         event.code === "project_token_refresh_deferred"
-          ? "项目 Token 提前刷新暂缓"
-          : "项目 Token 获取失败",
+          ? "Project token pre-refresh deferred"
+          : "Failed to fetch project token",
         event,
       ),
   });

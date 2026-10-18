@@ -30,12 +30,12 @@ export function refreshBranchAwareBuiltInTools(runtime: AgentRuntimeInternal): v
     includeSkill: Boolean(runtime.skillPort),
     includeAgent: Boolean(runtime.subagentPort),
     embeddedSearchEnabled,
-    // 本函数是**第二个**
-    // 注册入口，且刻意只传一个精简选项集。对「只有 true 才注册」的门（OffPeak / Cron / Workflow…）
-    // 省略是安全的；但动态工作流灰度门的极性相反——「缺席即开启」，省略等于把首次装配剃掉的
-    // 十个工具在 shell 快照初始化时原样加回来（registry.register 会覆盖同名项，
-    // silentDuplicateWarnings 还把告警吞掉，所以全程无声）。推导因此必须与 runtime-tools.ts
-    // 共用同一个 helper，不能在这里重写一遍判断。
+    // This function is the **second**
+    // registration entry, and deliberately passes a slim option set. For "register only on true" gates (OffPeak / Cron / Workflow...)
+    // omission is safe; the dynamic-workflow gradation gate's polarity is inverted ("absent means on"), so omitting it would re-add
+    // the ten tools shaved off at first assembly during shell-snapshot init (registry.register overwrites same-named entries, and
+    // silentDuplicateWarnings swallows the warning, so it happens silently). The derivation must therefore share the helper with runtime-tools.ts,
+    // not restate the test here.
     includeDynamicWorkflow: resolveRuntimeDynamicWorkflowToolsIncluded(runtime),
     allowedTools: resolveBuiltInToolAllowlist(runtime.config),
     disallowedTools: runtime.config.toolDisallowlist,

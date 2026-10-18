@@ -39,7 +39,7 @@ const NO_RELEVANT_CONTEXT = "NO_RELEVANT_CONTEXT";
 
 export const readSessionContextHandler: ToolHandler = async (input, context) => {
   const raw = ReadSessionContextInputSchema.parse(input);
-  // 真实话题请求中模型并不知道 session id；当前任务身份必须来自工具上下文，不能要求模型查环境变量。
+  // In a real topic request the model does not know the session id; the current task identity must come from tool context, never from env vars.
   const parsed: ReadSessionContextInput = {
     ...raw,
     sessionId: raw.sessionId === "current" ? context.sessionId : raw.sessionId,

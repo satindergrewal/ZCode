@@ -12,8 +12,7 @@ import {
   type SiteGraph,
 } from "../src/index.js";
 
-// 每个 actor 站点的 submit profile（docs/execution-engine.md「Submit
-// profiles」）：真实脚本 → 同一 Program 上的站点表 + schema 合成 + 站点图 → profile。
+// Per-actor-site submit profiles (docs/execution-engine.md, Submit profiles): real script -> site table +
 
 function profilesOf(script: string): {
   profiles: Map<string, ActorSubmitProfile>;
@@ -52,7 +51,7 @@ describe("actor submit profiles — from real scripts", () => {
       ].join("\n"),
     );
     expect(profiles.get("actor#1")).toEqual({ kind: "mono", schema: schemas["ask#1"] });
-    // 同一 T 在两个站点各合成一次：引用不同、内容相同，按内容判等。
+    // The same T synthesizes per site: distinct references, equal contents, compared by value.
     expect(schemas["ask#1"]).not.toBe(schemas["ask#3"]);
     expect(schemas["ask#1"]).toEqual(schemas["ask#3"]);
   });

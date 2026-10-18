@@ -6,7 +6,7 @@ import {
 } from "../src/error-sanitizer.js";
 
 describe("telemetry error sanitizer", () => {
-  it("保留嵌套网络原因并脱敏，不重复记录无嵌套的普通错误", () => {
+  it("sanitizes nested network causes without double-recording plain errors", () => {
     const cause = Object.assign(
       new Error("socket reset request=req-42 authorization: Bearer secret-token"),
       { code: "ECONNRESET" },
@@ -22,7 +22,7 @@ describe("telemetry error sanitizer", () => {
     expect(sanitizeTelemetryError(new Error("plain"))).not.toHaveProperty("cause");
   });
 
-  it("沿 adapterError/error 包装识别根因，同一源错误只认领一次", () => {
+  it("walks adapterError/error wrappers to the root cause, claiming each source error once", () => {
     const source = Object.assign(new Error("socket reset"), { code: "ECONNRESET" });
     const wrapper = { message: "terminated", adapterError: { error: source } };
     expect(claimSanitizedTelemetryError(wrapper)).toMatchObject({
@@ -31,7 +31,7 @@ describe("telemetry error sanitizer", () => {
     expect(claimSanitizedTelemetryError(new Error("outer", { cause: source }))).toBeUndefined();
   });
 
-  it("优先采用 cause，不把其他包装字段并入同一因果链", () => {
+  it("prefers cause and keeps unrelated wrapper fields out of the causal chain", () => {
     const preferred = new Error("preferred");
     const ignored = new Error("ignored");
     expect(sanitizeTelemetryError({ cause: preferred, adapterError: ignored })).toMatchObject({
@@ -39,7 +39,7 @@ describe("telemetry error sanitizer", () => {
     });
   });
 
-  it("循环和超过八层的包装保持有界，自指不产生虚构根因", () => {
+  it("bounds cycles and wrapping past eight levels; self-reference invents no phantom root cause", () => {
     const self = new Error("self");
     self.cause = self;
     expect(sanitizeTelemetryError(self)).not.toHaveProperty("cause");
@@ -54,7 +54,7 @@ describe("telemetry error sanitizer", () => {
     expect(sanitizeTelemetryError(deep)).toMatchObject({ cause: { message: "level-8" } });
   });
 
-  it("移除凭据、邮箱、本地路径和 URL query，同时保留诊断 ID、IP 与 API route", () => {
+  it("strips credentials, emails, local paths, and URL queries while keeping diagnostic IDs, IPs, and API routes", () => {
     const sanitized = sanitizeErrorMessage(
       [
         "POST https://tenant@example.com/v1/messages?api_key=secret-value",
@@ -86,7 +86,7 @@ describe("telemetry error sanitizer", () => {
     expect(sanitized).not.toContain("\n");
   });
 
-  it("错误码保留原始值，错误类型仍要求稳定标识符", () => {
+  it("keeps error codes verbatim while error types still require stable identifiers", () => {
     const sanitized = sanitizeTelemetryError({
       code: "private code with spaces",
       message: "failed",
@@ -97,7 +97,7 @@ describe("telemetry error sanitizer", () => {
     expect(sanitized.type).toBe("UnknownError");
   });
 
-  it("保留包装错误因果链末端的脱敏诊断", () => {
+  it("keeps the sanitized diagnostic at the end of a wrapped-error causal chain", () => {
     const cause = Object.assign(
       new Error("socket reset request=req-42 authorization: Bearer secret-token"),
       { code: "ECONNRESET" },

@@ -119,7 +119,10 @@ export function collectFacadeMisuse(
       // renamed, nested, or parameter): the container is the binding pattern's type, and a
       // renamed element carries the source property name, a shorthand its own bound name.
       flagExtractedMember(node.propertyName ?? node.name, checker.getTypeAtLocation(node.parent));
-    } else if (ts.isShorthandPropertyAssignment(node) && ts.isBinaryExpression(node.parent.parent)) {
+    } else if (
+      ts.isShorthandPropertyAssignment(node) &&
+      ts.isBinaryExpression(node.parent.parent)
+    ) {
       // Destructuring ASSIGNMENT `({ ask } = planner)`: the object literal is the assignment
       // target (its LHS), and the source property lives on the right-hand side's type.
       const assign = node.parent.parent;
@@ -139,11 +142,11 @@ export function collectFacadeMisuse(
     ...table.actors.map((site) => site.call),
     ...table.worldReads.map((site) => site.call),
     ...table.reports.map((site) => site.call),
-        // Artifact sites sit next to report: they produce sites (registry),
-        // so an already-sited direct call must not be misreported, while a missed collection must be.
+    // Artifact sites sit next to report: they produce sites (registry),
+    // so an already-sited direct call must not be misreported, while a missed collection must be.
     ...table.artifacts.map((site) => site.call),
     ...table.joins.map((site) => site.call),
-    // 留白同席：`hole` 产生站点（registry），已 site 的直接调用不得误报。
+    // Holes, same seat: `hole` produces sites (registry), so an already-sited direct call must not be misreported.
     ...table.holes.map((site) => site.call),
   ]);
   const scanCalls = (node: ts.Node): void => {

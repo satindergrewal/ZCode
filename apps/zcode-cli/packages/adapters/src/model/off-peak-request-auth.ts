@@ -5,7 +5,7 @@ import type {
 } from "@zcode/contracts";
 import type { ZCodeProviderAccountAccess } from "@zcode/shared";
 
-/** 派发快照只固定票据与登录作用域；短期 PAT 必须在每个 HTTP attempt 向原 owner 解析。 */
+/** The dispatch snapshot pins ticket and login scope only; a short-lived PAT resolves against the origin owner per HTTP attempt. */
 export async function refreshOffPeakRequestAuth(params: {
   auth: ModelRequestAuth;
   input: ModelRequestAuthSourceInput & { rejectedProjectTokenFingerprint?: string };

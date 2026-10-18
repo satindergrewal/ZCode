@@ -148,8 +148,8 @@ export function buildAutomationThoughtLevelOption(
 }
 
 /**
- * 更新已有定时任务时必须用 null 显式清掉不支持 Think 的目标模型旧值；
- * undefined 在 update 协议里表示“不修改”，会把源模型的档位残留到下次派发。
+ * Updating a scheduled task must null out stale Think-unsupported models explicitly;
+ * undefined means no-change in the update protocol and would leak the old tier into the next dispatch.
  */
 export function resolveAutomationThoughtLevelUpdate(params: {
   editing: boolean;
@@ -169,7 +169,7 @@ export function resolveAutomationThoughtLevelUpdate(params: {
   return params.editing ? null : undefined;
 }
 
-/** Automation 只持久化模型选择；输出预算由执行链按本次请求决定。 */
+/** Automation persists the model choice only; output budget is decided per request by the execution chain. */
 export function buildAutomationModelSelection(params: {
   selected: ModelSelection;
   reasoningLevel?: string | null;

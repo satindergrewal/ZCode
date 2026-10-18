@@ -176,13 +176,17 @@ export class ProviderConfigService implements ProviderSource<ProviderConfigSnaps
       let normalized = config;
       if (builtin) {
         if (normalized.group != null && normalized.group !== builtin.group) {
-          throw new Error(`Personal overlay cannot rewrite a Built-in provider group: ${providerId}`);
+          throw new Error(
+            `Personal overlay cannot rewrite a Built-in provider group: ${providerId}`,
+          );
         }
         normalized = normalized.withoutGroup();
       } else {
         const group = normalized.group ?? currentPersonal?.group;
         if (group !== "standard-personal") {
-          throw new Error(`Personal-only provider must use the standard-personal group: ${providerId}`);
+          throw new Error(
+            `Personal-only provider must use the standard-personal group: ${providerId}`,
+          );
         }
         normalized = normalized.overlay(new ProviderConfigValue({ group }));
       }
@@ -539,7 +543,9 @@ export class ProviderConfigService implements ProviderSource<ProviderConfigSnaps
         membership?.inheritedModelIds ??
         resolveProviderBuiltinModelIds(builtin, current.providers, normalizedProviderId);
       if (inherited.includes(normalizedModelId))
-        throw new Error(`Built-in model cannot be deleted: ${normalizedProviderId}/${normalizedModelId}`);
+        throw new Error(
+          `Built-in model cannot be deleted: ${normalizedProviderId}/${normalizedModelId}`,
+        );
       if (!provider?.personalModelIds?.includes(normalizedModelId)) {
         throw new Error(`Personal model not found: ${normalizedProviderId}/${normalizedModelId}`);
       }

@@ -1,4 +1,4 @@
-// Map / Set 不可 JSON 序列化 —— 拒绝。两个独立 ask 各报一条。
+// Map and Set are not JSON-serializable -- reject. Two distinct asks, two findings.
 interface WithMap {
   index: Map<string, number>;
 }

@@ -11,18 +11,18 @@ type SessionEventSubscriberReader = (
 ) => ((sink: { onSessionEvent: (event: SessionEvent) => void }) => () => void) | undefined;
 
 interface TuiSessionEventRelay {
-    /** Registers a sink; returns the unsubscribe. The first sink triggers the real attach. */
+  /** Registers a sink; returns the unsubscribe. The first sink triggers the real attach. */
   addSink: (sink: (event: SessionEvent) => void) => () => void;
-    /** Reattach after an app swap: detach the old, attach to the current runtime. No-op with no sinks. */
+  /** Reattach after an app swap: detach the old, attach to the current runtime. No-op with no sinks. */
   reattach: () => void;
-    /** Tears down the current subscription (does not clear the sink registry). */
+  /** Tears down the current subscription (does not clear the sink registry). */
   detach: () => void;
-    /** Whether currently attached (for tests and diagnostics). */
+  /** Whether currently attached (for tests and diagnostics). */
   isAttached: () => boolean;
 }
 
 export function createTuiSessionEventRelay(input: {
-    /** On each reattach, read the current app's runtime -- a closure read, not a value snapshot, so replaceApp is followed. */
+  /** On each reattach, read the current app's runtime -- a closure read, not a value snapshot, so replaceApp is followed. */
   currentRuntime: () => unknown;
   readSubscriber: SessionEventSubscriberReader;
 }): TuiSessionEventRelay {
@@ -40,8 +40,8 @@ export function createTuiSessionEventRelay(input: {
     const subscribe = input.readSubscriber(input.currentRuntime());
     detachCurrent = subscribe?.({
       onSessionEvent: (event) => {
-                // Iterate the Set directly: JS Set iteration is safe against removal-during-iteration (removed-unvisited entries are skipped),
-                // so a sink unsubscribing inside the callback neither breaks this fan-out nor receives this event again.
+        // Iterate the Set directly: JS Set iteration is safe against removal-during-iteration (removed-unvisited entries are skipped),
+        // so a sink unsubscribing inside the callback neither breaks this fan-out nor receives this event again.
         for (const sink of sinks) sink(event);
       },
     });

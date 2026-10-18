@@ -1,11 +1,11 @@
 /**
- * `applyArtifactItems` —— 把一串 `report(item, artifactId)` 条目折成预置看板的视图模型。
+ * applyArtifactItems: folds a stream of report(item, artifactId) entries into preset-board view models.
  *
- * 纯函数、不含 React：看板本身**不存数据**，它的每一个点 / 行 / 卡片都是一条 journal 上
- * `kind = "report"` 且 `artifact_id` 命中的条目。同一批条目重放两次必须得到同一张图，所以这里不许有任何
- * 时间、随机或外部状态；折叠规则全部由 spec 决定。
+ * Pure, React-free: the board stores no data; every point/row/card is one journal entry with
+ * kind = "report" matching the artifact_id. Replaying the same entries twice must render the same chart,
+ * so no time, randomness or external state is allowed here; folding rules belong entirely to the spec.
  *
- * 条目只会**追加**（journal 只追加），所以四种折叠都可以按到达顺序单遍完成。
+ * Entries only append (journals are append-only), so all four folds run single-pass in arrival order.
  */
 
 import { readWorkflowArtifactField } from "@zcode/shared/zcode-protocol-v4";
@@ -24,39 +24,39 @@ import {
 } from "@/app-shell/workflow-artifacts/presets/spec.js";
 
 /**
- * 一条到达的条目。`sequence` 是 run 内全局递增的事件序号——它同时是 React key
- * （新点揭示动画靠它区分「这个点是新来的」）与增量取数的游标；`siteId × ordinal`
- * 是 journal 上的身份（同 Results 区的 key 习语），用于没有 spec key 时的行/卡身份。
+ * One arrived entry. sequence is the run-global event counter: both the React key (the new-point reveal uses
+ * it to tell fresh points apart) and the incremental-fetch cursor; siteId x ordinal is the journal identity
+ * (the Results section's key idiom) and the row/card identity when the spec has no key.
  */
 export type ArtifactItem = {
   sequence: number;
   siteId: string;
   ordinal: number;
-  /** 整条 item（老 CLI、或没有点名字段的取数）。 */
+  /** The whole item (old CLIs, or fetches without named fields). */
   item?: unknown;
   /**
-   * 只取字段时：spec 点名的路径 → 值（CLI 在 SQLite 里取好、超长的值已截短）。走不通的路径
-   * 不在表里。在场时折叠只读它，不读 `item`。
+   * Field-only mode: spec-named path to value (fetched by the CLI in SQLite, overlong values truncated).
+   * Unresolvable paths are absent. When present, folds read this and never item.
    */
   fields?: Record<string, unknown>;
 };
 
 export type ChartSeriesModel = {
-  /** recharts 的 dataKey；用序号而不是字段路径，点路径里的 "." 会被 recharts 当嵌套读法。 */
+  /** recharts dataKey; an ordinal, not the field path, dots in paths would read as nesting. */
   key: string;
   field: string;
   label: string;
   unit?: string;
-  /** 调色板槽位（see seriesColorVar）。 */
+  /** Palette slot (see seriesColorVar). */
   colorIndex: number;
 };
 
 export type ChartPointModel = Record<string, number | string | null> & {
-  /** 稳定 React key：只有新点播揭示动画，老点不重播。 */
+  /** Stable React key: only new points play the reveal; old ones never replay. */
   sequence: number;
-  /** x 轴上的位置。非数值 x 时是到达序号。 */
+  /** Position on the x axis; the arrival ordinal for non-numeric x. */
   x: number;
-  /** x 轴刻度上显示的文本。 */
+  /** Tick label text. */
   xLabel: string;
 };
 
@@ -67,9 +67,9 @@ export type ChartModel = {
   series: ChartSeriesModel[];
   points: ChartPointModel[];
   x: { label: string; unit?: string; numeric: boolean };
-  /** 参考线：取自第一条带该字段的条目。log 轴下非正的参考线同样丢弃。 */
+  /** Reference line: from the first entry carrying the field; non-positive values dropped on log axes too. */
   baseline?: { value: number; label: string; unit?: string };
-  /** memo 比较用的定义域；无点时缺席。 */
+  /** Domain for memo comparison; absent with no points. */
   domain?: { xMin: number; xMax: number; yMin: number; yMax: number };
 };
 
@@ -85,10 +85,10 @@ export type MetricTileModel = {
   field: string;
   label: string;
   unit?: string;
-  /** 最后一条带该字段的条目里的值；从没出现过则缺席。 */
+  /** Value from the last entry carrying the field; absent if never seen. */
   value?: string;
   raw?: unknown;
-  /** 该值来自哪一条条目——瓦片刷新时的动画 key。 */
+  /** Which entry the value came from: the animation key on tile refresh. */
   sequence?: number;
 };
 type MetricsModel = { kind: "metrics"; metrics: MetricTileModel[] };
@@ -102,7 +102,7 @@ export type BoardCardModel = {
 };
 export type BoardColumnModel = {
   id: string;
-  /** 「其他」列没有 spec 给的名字，标签由渲染器用 labels.otherColumn 补。 */
+  /** The other column has no spec name; the renderer labels it via labels.otherColumn. */
   other: boolean;
   cards: BoardCardModel[];
 };
@@ -114,20 +114,20 @@ type BoardModel = {
 
 type ArtifactPresetModel = ChartModel | TableModel | MetricsModel | BoardModel;
 
-/** 落到末尾「其他」列的列 id；spec 的 columns 里若真有同名列，会与它合并——可接受。 */
+/** Column id of the trailing other column; a same-named spec column merges into it, acceptable. */
 const BOARD_OTHER_COLUMN_ID = "__other__";
 
 /**
- * 点路径读取："timing.after"、"rounds.0.ms"。规则是协议上的契约
- * （`readWorkflowArtifactField`）：CLI 只取字段时在 SQLite 里按同一套规则取值，两边必须逐字相同。
+ * Dot-path reader: timing.after, rounds.0.ms. The rule is a protocol contract (readWorkflowArtifactField):
+ * field-only CLI fetches evaluate the same rule in SQLite and both sides must agree verbatim.
  */
 export function readArtifactField(item: unknown, path: string): unknown {
   return readWorkflowArtifactField(item, path);
 }
 
 /**
- * 从一条到达的条目里取字段：只取字段的条目查表（CLI 已按同一条规则取好，走不通的路径不在表里），
- * 整条 item 的条目（老 CLI）现场按路径读。四种折叠都只经这一个口子读条目。
+ * Field read off one arrived entry: field-only entries use the table (CLI evaluated the same rule; unresolvable
+ * paths absent), whole-item entries (old CLIs) read the path live. All four folds read entries through this alone.
  */
 function readEntryField(entry: ArtifactItem, path: string): unknown {
   if (entry.fields !== undefined) {
@@ -137,14 +137,14 @@ function readEntryField(entry: ArtifactItem, path: string): unknown {
 }
 
 /**
- * 「这条条目带这个字段吗」。`undefined` 与 `null` 都算不带：
- * metrics 的「最后一条带该字段的条目」若把显式 null 也算进去，一次清空就会把瓦片钉死在空值上。
+ * Does this entry carry the field? Both undefined and null count as no: if metrics last-carrier included
+ * explicit nulls, one cleared value would pin the tile at empty forever.
  */
 function hasValue(value: unknown): boolean {
   return value !== undefined && value !== null;
 }
 
-/** 数值化：真数字直接用；数字串也接（脚本从命令输出里抠出来的值常是字符串）。 */
+/** Numerify: real numbers pass; numeric strings accepted too (values scraped from command output often are strings). */
 function toFiniteNumber(value: unknown): number | undefined {
   if (typeof value === "number") {
     return Number.isFinite(value) ? value : undefined;
@@ -156,7 +156,7 @@ function toFiniteNumber(value: unknown): number | undefined {
   return undefined;
 }
 
-/** 单元格 / 卡片明细的显示文本。对象走紧凑 JSON——比 "[object Object]" 有用得多。 */
+/** Display text for cells / card details. Objects compact-JSON, far more useful than [object Object]. */
 export function formatArtifactValue(value: unknown): string {
   if (value === undefined || value === null) {
     return "";
@@ -170,7 +170,7 @@ export function formatArtifactValue(value: unknown): string {
   try {
     return JSON.stringify(value) ?? "";
   } catch {
-    // 循环引用等：宁可显示一句占位，也不要让整张表抛异常。
+    // Circular refs and friends: show a placeholder rather than throw the whole table away.
     return String(value);
   }
 }
@@ -196,7 +196,7 @@ function applyChart(spec: ChartSpec, items: readonly ArtifactItem[]): ChartModel
   for (const entry of items) {
     const rawX = readEntryField(entry, spec.x.field);
     if (!hasValue(rawX)) {
-      // x 都没有的条目在图上无处安放；静默跳过（它仍在 Results 区里可见）。
+      // Entries without any x have no place on the chart; skip silently (they remain visible in Results).
       continue;
     }
     const values = fields.map((field) => {
@@ -204,7 +204,7 @@ function applyChart(spec: ChartSpec, items: readonly ArtifactItem[]): ChartModel
       if (value === undefined) {
         return undefined;
       }
-      // log 轴上非正数没有位置——丢该点的这一维，而不是丢整条序列或整张图。
+      // Non-positive values have no place on a log axis; drop that dimension of the point, not the series or chart.
       return spec.scale === "log" && value <= 0 ? undefined : value;
     });
     raws.push({ sequence: entry.sequence, x: rawX, values });
@@ -222,12 +222,13 @@ function applyChart(spec: ChartSpec, items: readonly ArtifactItem[]): ChartModel
     }
   }
 
-  // 数值 x 才排序。混了一个非数值就整轴退化成「到达顺序」——半排序的 x 轴比不排序更骗人。
+  // Sort only on numeric x. One non-numeric value degrades the whole axis to arrival order, a half-sorted
+  // x axis lies harder than an unsorted one.
   const numericX = raws.length > 0 && raws.every((raw) => toFiniteNumber(raw.x) !== undefined);
   const ordered = numericX
     ? [...raws].sort((left, right) => {
         const delta = toFiniteNumber(left.x)! - toFiniteNumber(right.x)!;
-        // 同 x 时按到达顺序，保证同一批条目每次折叠出同一个顺序。
+        // Equal x keeps arrival order so every fold of the same entries yields the same order.
         return delta !== 0 ? delta : left.sequence - right.sequence;
       })
     : raws;
@@ -281,13 +282,13 @@ function applyTable(spec: TableSpec, items: readonly ArtifactItem[]): TableModel
     ...(column.unit ? { unit: column.unit } : {}),
   }));
 
-  // key 在场 = upsert：后到的条目替换整行，但**行保持首次出现的位置**——
-  // 一张会跳动排序的表在运行期没法读。
+  // key present = upsert: later entries replace the row, which KEEPS its first-appearance position;
+  // a table that reorders mid-run is unreadable.
   const byId = new Map<string, TableRowModel>();
   for (const entry of items) {
     const keyValue = spec.key ? readEntryField(entry, spec.key) : undefined;
-    // key 缺席（或声明了 key 但这条没带）时用 journal 身份兜底：`siteId@ordinal` 逐条唯一，
-    // 于是 upsert 自然退化成追加——不必为两种模式各写一条路径。
+    // Without a key (or declared but absent here) fall back to journal identity: siteId@ordinal is unique
+    // per entry, so upsert degenerates to append; no need for two code paths.
     const id = hasValue(keyValue)
       ? formatArtifactValue(keyValue)
       : `${entry.siteId}@${entry.ordinal}`;
@@ -308,8 +309,8 @@ function applyMetrics(spec: MetricsSpec, items: readonly ArtifactItem[]): Metric
     ...(metric.unit ? { unit: metric.unit } : {}),
   }));
 
-  // 每块瓦片各找各的「最后一条带该字段的条目」——不是「最后一条条目」。
-  // 一个只报 stage 的心跳条目不该把上一轮的 p99 抹成空。
+  // Each tile looks up its OWN last-carrier entry, not the last entry of any kind;
+  // a heartbeat that only reports stage must not wipe the previous round's p99 to empty.
   for (const entry of items) {
     metrics.forEach((tile, index) => {
       const raw = readEntryField(entry, tile.field);
@@ -330,13 +331,13 @@ function applyMetrics(spec: MetricsSpec, items: readonly ArtifactItem[]): Metric
 
 function applyBoard(spec: BoardSpec, items: readonly ArtifactItem[]): BoardModel {
   const detail: ArtifactField[] = spec.detail ?? [];
-  // Map 的插入顺序 = 卡片首次出现的顺序；改状态的卡在新列里仍按这个顺序排。
+  // Map insertion order = the cards' first-appearance order; a card changing state keeps that order in its column.
   const byId = new Map<string, BoardCardModel>();
 
   for (const entry of items) {
     const keyValue = readEntryField(entry, spec.key);
     if (!hasValue(keyValue)) {
-      // 没有身份的条目在看板上无处安放（看板整个语义就是「按 key upsert」）。
+      // Entries without identity have no home on the board; the board's whole semantics is upsert-by-key.
       continue;
     }
     const id = formatArtifactValue(keyValue);
@@ -369,7 +370,7 @@ function applyBoard(spec: BoardSpec, items: readonly ArtifactItem[]): BoardModel
 
   return {
     kind: "board",
-    // 「其他」永远在末尾，且只在真有卡时出现——空列会让本来就窄的侧板更挤。
+    // Other always sorts last and only appears with actual cards; an empty column squeezes an already narrow pane.
     columns: other.cards.length > 0 ? [...columns, other] : columns,
     cardCount: byId.size,
   };

@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- Coding Plan 用量视图集中维护来源选择、额度投影和重置入口；本阶段只迁移 Account Access，不拆分既有 UI 结构。 */
+/* eslint-disable max-lines -- the usage view owns source switching, quota projection, and reset entries; Account Access only this phase. */
 import type {
   UsageEntitlementSnapshot,
   ZCodeAccountAccess,
@@ -284,8 +284,8 @@ export function CodingPlanUsageRemainingPanel({
         format: "date",
       })
     : undefined;
-  // MCP 额度按自然日重置，重置时刻恒为 00:00，展示时分没有信息量；
-  // 与 Weekly / Tool calls 统一用日期口径。
+  // MCP quotas reset at midnight; a clock time says nothing,
+  // so show the date like Weekly / Tool calls.
   const mcpResetTime = mcpQuotaLimit?.nextResetTime
     ? formatQuotaResetTime({
         locale,
@@ -327,8 +327,8 @@ export function CodingPlanUsageRemainingPanel({
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
-            {/* 修复原因：同一份 Usage Remaining 展示会出现在 sidebar 和输入框上下文菜单。
-                详情入口必须由调用方传入，避免共享展示组件直接依赖 tab/store 导航。 */}
+            {/* Fix: this view renders in sidebar and composer menu alike;
+                the details entry is injected, no tab/store coupling. */}
             {onUsageClick ? (
               <UsageDetailsButton
                 label={intl.formatMessage({ id: "sidebar.usage.plan.open" })}

@@ -37,7 +37,7 @@ describe("schema synthesis fixtures", () => {
   }
 });
 
-/** `ask#2` < `ask#10`：按尾部序号数值排序，snapshot 顺序稳定。 */
+/** ask#2 before ask#10: numeric tail ordering keeps snapshot order stable. */
 function bySiteOrdinal(a: string, b: string): number {
   const ordinal = (id: string): number => Number(id.slice(id.indexOf("#") + 1));
   return ordinal(a) - ordinal(b);

@@ -2,14 +2,14 @@ import ts from "typescript";
 import type { JsonSchema, JsonValue } from "./types.js";
 
 /**
-  * JSDoc harvesting: pulls doc comments off symbols (interface members, type aliases, ask result types) plus supported
-  * constraint tags into JSON Schema fragments.
+ * JSDoc harvesting: pulls doc comments off symbols (interface members, type aliases, ask result types) plus supported
+ * constraint tags into JSON Schema fragments.
  *
-  * - Body text -> description.
-  * - A tag subset -> constraint keywords: minimum/maximum/exclusiveMinimum/exclusiveMaximum and friends.
+ * - Body text -> description.
+ * - A tag subset -> constraint keywords: minimum/maximum/exclusiveMinimum/exclusiveMaximum and friends.
  *   @minLength @maxLength @pattern @format @minItems @maxItems @default`。
  *
-  * Tags outside the subset are silently ignored (not an error).
+ * Tags outside the subset are silently ignored (not an error).
  */
 
 /** Numeric-valued tags -> their numeric keyword names. */
@@ -31,10 +31,13 @@ const STRING_TAGS: Record<string, keyof JsonSchema> = {
 };
 
 /**
-  * Harvest one symbol's description and constraint tags, returning a fragment with only the relevant keywords,
-  * for the synthesizer to merge into that symbol's schema.
+ * Harvest one symbol's description and constraint tags, returning a fragment with only the relevant keywords,
+ * for the synthesizer to merge into that symbol's schema.
  */
-export function harvestConstraints(symbol: ts.Symbol, checker: ts.TypeChecker): Partial<JsonSchema> {
+export function harvestConstraints(
+  symbol: ts.Symbol,
+  checker: ts.TypeChecker,
+): Partial<JsonSchema> {
   const out: Partial<JsonSchema> = {};
 
   const doc = ts.displayPartsToString(symbol.getDocumentationComment(checker)).trim();
@@ -63,7 +66,7 @@ function applyTag(out: Partial<JsonSchema>, tag: ts.JSDocTagInfo): void {
   if (tag.name === "default") {
     out.default = parseDefault(raw);
   }
-    // Tags outside the subset: ignore.
+  // Tags outside the subset: ignore.
 }
 
 /** The default tag's value is JSON-parsed first (number/bool/object/array/quoted string); on failure, taken as a bare string. */

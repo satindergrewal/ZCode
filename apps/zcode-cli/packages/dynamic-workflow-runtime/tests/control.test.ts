@@ -1,10 +1,10 @@
 /**
- * harness 的活体控制面接线（`RunControlBinding`，docs/dynamic-workflow/concurrency.md
- * 「Two bounds on a run」）：引擎构造好之后交给调用方的那个句柄，必须指向**这一世的**引擎，
- * 且在子进程真的跑起来之后仍然管用。
+ * Harness live-control-plane wiring (RunControlBinding; docs/dynamic-workflow/concurrency.md,
+ * "Two bounds on a run"): the handle handed to the caller after construction must point at this very incarnation,
+ * and keep working once the child is actually running.
  *
- * 这里不测命令的语义（那在 @zcode/dynamic-workflow 的引擎用例里），只测接线：绑没绑、
- * 绑的是不是活着的那个引擎、句柄发出的改动有没有落到这个 run 的 journal 行上。
+ * Command semantics live in the @zcode/dynamic-workflow engine cases; here only the wiring: bound or not,
+ * bound to the living engine, and whether handle-issued changes reach this run's journal rows.
  */
 
 import { describe, expect, it } from "vitest";
@@ -29,7 +29,7 @@ const SCRIPT = [
   "return answer;",
 ].join("\n");
 
-/** 捕获 harness 交下来的句柄；`retune` 在句柄未绑时大声失败，而不是静默通过。 */
+/** Captures the handle the harness passes; retune fails loudly when unbound instead of passing silently. */
 function captureControl(): RunControlBinding & { retune: (n: number) => boolean } {
   let bound: { setMaxConcurrency(n: number): boolean } | undefined;
   return {
@@ -43,11 +43,11 @@ function captureControl(): RunControlBinding & { retune: (n: number) => boolean 
   };
 }
 
-describe("harness — 活体控制面绑定", () => {
-  it("在子进程跑起来之后，句柄仍指向这一世的引擎：改动落到 journal 行与事件轨", async () => {
+describe("harness -- live control-plane binding", () => {
+  it("keeps pointing at this incarnation once the child runs: changes land in journal rows and the event track", async () => {
     const journal = new InMemoryJournalStore();
     const control = captureControl();
-    // 子代理的 ask 一开始执行就说明引擎已经在跑；此刻用句柄改上界，然后才让它作答。
+    // The subagent ask starting means the engine is live; retune via the handle now, only then let it answer.
     const retunes: boolean[] = [];
     const driver = new AutoDriver(journal, {
       asks: { "ask#1": () => ({ type: "text", finalText: "42" }) },
@@ -88,7 +88,7 @@ describe("harness — 活体控制面绑定", () => {
     ]);
   });
 
-  it("run 结算之后句柄是 no-op：返回 false，行与事件轨都不再变", async () => {
+  it("is a no-op once the run settles: false, with rows and event track untouched", async () => {
     const journal = new InMemoryJournalStore();
     const control = captureControl();
     const driver = new AutoDriver(journal, {

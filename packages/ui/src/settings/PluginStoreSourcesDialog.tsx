@@ -110,7 +110,7 @@ export function PluginStoreSourcesDialog({
                         : ""}
                     </div>
                     {marketplace.refreshFailure &&
-                    // claude-plugins-official 的刷新失败不提示（同 pluginManagementStore.updateMarketplace）。
+                    // Refresh failures for claude-plugins-official are silent (same as pluginManagementStore.updateMarketplace).
                     marketplace.id !== CLAUDE_OFFICIAL_PLUGIN_MARKETPLACE_ID ? (
                       <PluginStoreSourceRefreshFailure failure={marketplace.refreshFailure} />
                     ) : null}

@@ -68,20 +68,12 @@ export function prependRunningNodeDirectory(
   const currentPath = env[pathKey] ?? "";
   const nodeDirectory = pathApi.dirname(options.execPath);
   const pathEntries = currentPath.split(pathDelimiter).filter(Boolean);
-  if (
-    pathEntries.some((entry) =>
-      arePathEntriesEqual(entry, nodeDirectory, options.platform),
-    )
-  ) {
+  if (pathEntries.some((entry) => arePathEntriesEqual(entry, nodeDirectory, options.platform))) {
     return env;
   }
 
   const nodeExecutableName = options.platform === "win32" ? "node.exe" : "node";
-  if (
-    pathEntries.some((entry) =>
-      options.isExecutable(pathApi.join(entry, nodeExecutableName)),
-    )
-  ) {
+  if (pathEntries.some((entry) => options.isExecutable(pathApi.join(entry, nodeExecutableName)))) {
     return env;
   }
 
@@ -90,17 +82,11 @@ export function prependRunningNodeDirectory(
   // dir keeps plugin configs portable across local/SSH/WSL/Docker without overriding explicit plugin env.
   return {
     ...env,
-    [pathKey]: currentPath
-      ? `${nodeDirectory}${pathDelimiter}${currentPath}`
-      : nodeDirectory,
+    [pathKey]: currentPath ? `${nodeDirectory}${pathDelimiter}${currentPath}` : nodeDirectory,
   };
 }
 
-function arePathEntriesEqual(
-  left: string,
-  right: string,
-  platform: NodeJS.Platform,
-): boolean {
+function arePathEntriesEqual(left: string, right: string, platform: NodeJS.Platform): boolean {
   const pathApi = platform === "win32" ? win32 : posix;
   const normalize = (value: string) => {
     const normalized = pathApi.normalize(value);

@@ -7,7 +7,7 @@ import {
   type SubagentRuntimeConfig,
 } from "@zcode/shared";
 
-/** 独立 CLI 的磁盘 loader 复用共享纯解析器，保留原文件配置来源。 */
+/** The standalone CLI disk loader reuses the shared pure parser, preserving the file-config provenance. */
 export function parseRuntimeSubagentConfig(configuration: {
   documents: { content: string; path: string; source: "user" | "project" }[];
   state: SubagentRuntimeState;
@@ -26,7 +26,7 @@ export function parseRuntimeSubagentConfig(configuration: {
   };
 }
 
-/** Host 已完成纯解析；失败回退不能混入旧模板或磁盘覆盖。 */
+/** The Host has pure-parsed already; fallback must not mix in old templates or disk overrides. */
 export function subagentProfilesFromSnapshot(snapshot: SubagentRuntimeConfig) {
   return snapshot.kind === "ready"
     ? snapshot

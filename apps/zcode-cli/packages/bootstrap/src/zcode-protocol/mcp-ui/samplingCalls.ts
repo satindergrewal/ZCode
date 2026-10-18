@@ -10,7 +10,7 @@ type Scope = { token: string; sessionId: string; signal: AbortSignal };
 type Ledger = { scope: Scope; calls: Map<string, AbortController | null> };
 const cancelled = () => new ProtocolRequestError(-32000, "Sampling cancelled");
 
-/** 终态账本与并发额度的唯一 owner。只在凭证失效时清账本，旧 operationId 不能被重放。 */
+/** Single owner of the terminal ledger and concurrency slots; the ledger clears only on credential invalidation, old operationIds never replay. */
 export class McpUiSamplingCalls {
   private readonly instances = new Map<string, Ledger>();
   private readonly sessions = new Map<string, number>();
@@ -39,7 +39,7 @@ export class McpUiSamplingCalls {
     const ledger = this.ledger(scope);
     const controller = ledger.calls.get(operationId);
     if (!ledger.calls.has(operationId)) this.checkLedgerCapacity(ledger);
-    // 取消先于 sample 到达时也留下终态；旧请求之后到达不会执行。
+    // A cancel preceding the sample still records a terminal state; a later old request never executes.
     ledger.calls.set(operationId, null);
     controller?.abort(cancelled());
     return { cancelled: Boolean(controller) };
@@ -71,7 +71,7 @@ export class McpUiSamplingCalls {
     const signal = controller.signal;
     let off = () => {};
     try {
-      // 先装取消 listener 再执行，取消无需等待不合作的底层 Promise；迟到成功被永久丢弃。
+      // Attach the cancel listener before running, so cancel never waits on an uncooperative underlying Promise; late successes are dropped for good.
       const aborted = new Promise<never>((_, reject) => {
         const onAbort = () => reject(signal.reason ?? cancelled());
         signal.addEventListener("abort", onAbort, { once: true });
@@ -84,7 +84,7 @@ export class McpUiSamplingCalls {
     } finally {
       clearTimeout(timer);
       off();
-      // 迟到清理不重新创建已被 close 删除的实例/账本。
+      // Late cleanup never recreates instances/ledgers already removed by close.
       if (this.instances.get(scope.token) === ledger) ledger.calls.set(operationId, null);
       this.active--;
       const count = (this.sessions.get(scope.sessionId) ?? 1) - 1;

@@ -16,7 +16,7 @@ export type PermissionFlowResult =
       allowed: true;
       executionInput: unknown;
       permissionWaitMs?: number;
-      /** 确认窗里的调整中实际生效的那部分（applyInputAdjustments 的 applied）。 */
+      /** The portion of dialog adjustments actually applied (applyInputAdjustments' applied). */
       inputAdjustments?: Readonly<Record<string, unknown>>;
     }
   | { allowed: false; result: ToolExecutionResult };
@@ -25,7 +25,7 @@ export type PermissionResponseTransition =
   | { kind: "rewrite"; input: unknown }
   | { kind: "complete"; result: PermissionFlowResult };
 
-/** 应答来源取真实 responder；响应载荷不能自行声明授权豁免。 */
+/** The answer source is the real responder; a response payload cannot declare its own approval exemption. */
 export function interpretPermissionResponse(params: {
   deps: ToolExecutorDeps;
   toolCall: ExecutableToolCall;
@@ -81,8 +81,8 @@ export function interpretPermissionResponse(params: {
     input = preparePermissionInput(response.modifiedInput ?? input, entry, deps);
     if (mode === "guarded") {
       input = snapshotPermissionInput(input);
-      // 根因：把用户已批准的修改当作 Hook 提案会重复询问；broker 的批准/答案均完成本次请求。
-      // 来源取真实 responder，Hook 改写仍重判，不能通过响应载荷自报为用户批准。
+      // Root cause: treating user-approved edits as Hook proposals asks again; the broker's approval/answer both complete the request.
+      // Source is the real responder; Hook rewrites still re-check, and a response payload must not self-report user approval.
       if (outcome.source === "hook") return { kind: "rewrite", input };
     }
   }

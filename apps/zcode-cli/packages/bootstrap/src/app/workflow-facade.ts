@@ -285,7 +285,7 @@ function createWorkflowChildRuntime(
     {
       ...deps.runtimeConfig,
       agentName: options.workflowKind === "expert" ? "zcode-expert" : "zcode-workflow",
-      // workflow child 不在 Guarded 合同内；只隔离父任务模式，不继承审批。
+      // The workflow child sits outside the Guarded contract; isolate the parent task's mode only, inherit no approvals.
       mode: "yolo",
       modelSelection: deps.runtime.getSessionModelSelection(),
       parentSessionId: deps.sessionId,

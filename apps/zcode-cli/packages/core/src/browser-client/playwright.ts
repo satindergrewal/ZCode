@@ -156,8 +156,8 @@ function withContext(error: unknown, context: string): Error {
   const message = error instanceof Error ? error.message : String(error);
   const wrapped = new Error(`${message}\n${context}`, { cause: error });
   if (error instanceof Error && error.stack) {
-        // Appending the full original stack (message included) to the new stack made the tool result print the same
-        // timeout twice. Inherit stack frames only; keep the message once and preserve the original error via cause.
+    // Appending the full original stack (message included) to the new stack made the tool result print the same
+    // timeout twice. Inherit stack frames only; keep the message once and preserve the original error via cause.
     const frames = error.stack.split("\n").slice(1).join("\n");
     if (frames) wrapped.stack = `${wrapped.name}: ${wrapped.message}\n${frames}`;
   }
@@ -169,8 +169,8 @@ function serializeMatcher(value: TextMatcher, exact: boolean, method: string): s
     const suffix = exact ? "s" : "i";
     return `${JSON.stringify(value)}${suffix}`;
   }
-    // node_repl creates matchers in a separate VM realm; cross-realm regexes fail instanceof checks.
-    // Use native Node type checks: true for real cross-realm RegExp, immune to Symbol.toStringTag impostors.
+  // node_repl creates matchers in a separate VM realm; cross-realm regexes fail instanceof checks.
+  // Use native Node type checks: true for real cross-realm RegExp, immune to Symbol.toStringTag impostors.
   if (isRegExp(value)) return value.toString();
   throw new Error(`${method} requires a string or RegExp`);
 }

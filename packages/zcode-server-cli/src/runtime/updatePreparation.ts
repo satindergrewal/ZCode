@@ -15,7 +15,10 @@ export type UpdatePreparation =
   | { status: "prepared-offline"; version: string };
 
 async function pathExists(path: string): Promise<boolean> {
-  return await access(path).then(() => true, () => false);
+  return await access(path).then(
+    () => true,
+    () => false,
+  );
 }
 
 function sameRelease(left: ReleaseManifest | null, right: ReleaseManifest): boolean {
@@ -24,9 +27,14 @@ function sameRelease(left: ReleaseManifest | null, right: ReleaseManifest): bool
 
 function isStalePending(pending: ReleaseManifest, current: ReleaseManifest): boolean {
   if (sameRelease(pending, current)) return true;
-  if (pending.archiveSha256 && current.archiveSha256 && pending.archiveSha256 === current.archiveSha256) return true;
-  // 只清理不可能比 current 更新的遗留候选；未来版本的 pending 仍保留，供用户在
-  // catalog 暂时回滚或离线时显式应用。
+  if (
+    pending.archiveSha256 &&
+    current.archiveSha256 &&
+    pending.archiveSha256 === current.archiveSha256
+  )
+    return true;
+  // Only prune leftover candidates that cannot be newer than current; keep pending entries for future versions so the user can
+  // apply them explicitly while the catalog rolls back or offline.
   return pending.version.localeCompare(current.version, undefined, { numeric: true }) <= 0;
 }
 
@@ -43,9 +51,9 @@ function createPreparedReleaseDiscarder(input: {
     discarded = true;
     const releaseManager = new ReleaseManager(input.layout);
     const pending = await releaseManager.readPending();
-    // 准备期间任务可能启动，apply-update 随后拒绝切换；若直接返回错误，
-    // 本次 CLI 生成的 pending/release 会遗留并被下一次更新误认为可直接应用。只回滚仍
-    // 指向本次 candidate 的 pending，避免覆盖并发更新已经写入的更新意图。
+    // Tasks may start during preparation and make apply-update refuse the switch; returning an error outright would
+    // strand this run's pending/release for the next update to misread as ready. Roll back only pending
+    // entries still pointing at this candidate, never a concurrent update's newer intent.
     if (!sameRelease(pending, input.prepared)) return;
     if (input.previousPending) await releaseManager.writePending(input.previousPending);
     else await releaseManager.removePending();
@@ -78,8 +86,8 @@ export async function prepareOnlineUpdate(layout: ServerLayout): Promise<UpdateP
   if (current?.target === target && current.archiveSha256 === release.archiveSha256) {
     const pending = await releaseManager.readPending();
     if (pending && isStalePending(pending, current)) {
-      // 在线检查确认 current 已是 catalog 最新版本时，不能直接返回
-      // up-to-date，却留下旧 pending.json；下一次无网络更新会误应用该指针并降级。
+      // When the online check confirms current is the newest catalog version, do not return
+      // up-to-date while a stale pending.json remains; the next offline update would apply it and downgrade.
       await releaseManager.removePending();
     }
     return { status: "up-to-date", version: current.version };
@@ -113,7 +121,10 @@ export async function prepareOnlineUpdate(layout: ServerLayout): Promise<UpdateP
       expectedSizeBytes: release.archiveSizeBytes,
     });
     const releaseVersion = release.appVersion ?? release.version;
-    const releaseDir = join(layout.releasesDir, `${releaseVersion}-${target}-${release.archiveSha256.toLowerCase().slice(0, 12)}`);
+    const releaseDir = join(
+      layout.releasesDir,
+      `${releaseVersion}-${target}-${release.archiveSha256.toLowerCase().slice(0, 12)}`,
+    );
     const releaseDirExisted = await pathExists(releaseDir);
     const previousPending = await new ReleaseManager(layout).readPending();
     const prepared = await new ReleaseInstaller(layout).installArchive({
@@ -151,8 +162,8 @@ async function prepareComponentUpdate(input: {
   prepared: ReleaseManifest;
   releaseDirExisted: boolean;
 } | null> {
-  // 组件增量更新的 manifest 请求原来没有应用层 AbortSignal，服务端无响应时
-  // 会等到 undici 默认边界（约数分钟）。复用带超时的 JSON 下载器，和 catalog 行为一致。
+  // Component delta-update manifest requests had no application-level AbortSignal, so an unresponsive server
+  // stalled until undici's default boundary (minutes). Reuse the timeout-bounded JSON downloader, matching catalog behavior.
   const remoteManifest = await fetchReleaseJson(
     input.manifestUrl,
     serverRuntimeManifestSchema,
@@ -175,10 +186,11 @@ async function prepareComponentUpdate(input: {
       const remoteComponent = remoteManifest.components.find(
         (candidate) => candidate.id === component.id,
       );
-      const pathsUnchanged = currentComponent && remoteComponent
-        ? currentComponent.paths.length === remoteComponent.paths.length &&
-          currentComponent.paths.every((path, index) => path === remoteComponent.paths[index])
-        : false;
+      const pathsUnchanged =
+        currentComponent && remoteComponent
+          ? currentComponent.paths.length === remoteComponent.paths.length &&
+            currentComponent.paths.every((path, index) => path === remoteComponent.paths[index])
+          : false;
       if (currentComponent?.sha256 === component.sha256 && pathsUnchanged) continue;
       if (!component.archiveUrl || !component.archiveSha256) return null;
       const extension = component.archiveUrl.toLowerCase().endsWith(".zip") ? "zip" : "tar.gz";
@@ -188,13 +200,15 @@ async function prepareComponentUpdate(input: {
         sha256: component.sha256,
         extension,
       });
-      const cached = cachedArchive ?? await downloadComponent({
-        cache,
-        component,
-        extension,
-        target: input.target,
-        temporaryDir,
-      });
+      const cached =
+        cachedArchive ??
+        (await downloadComponent({
+          cache,
+          component,
+          extension,
+          target: input.target,
+          temporaryDir,
+        }));
       changed.push({ componentId: component.id, sha256: component.sha256, archivePath: cached });
     }
     const releaseId = `${input.release.version}-${input.target}-${input.release.archiveSha256.slice(0, 12)}`;
@@ -236,7 +250,9 @@ async function prepareComponentUpdate(input: {
 
 async function downloadComponent(input: {
   cache: ComponentCache;
-  component: NonNullable<Awaited<ReturnType<typeof fetchReleaseCatalog>>["releases"][number]["components"]>[number];
+  component: NonNullable<
+    Awaited<ReturnType<typeof fetchReleaseCatalog>>["releases"][number]["components"]
+  >[number];
   extension: string;
   target: ReturnType<typeof currentServerTarget>;
   temporaryDir: string;

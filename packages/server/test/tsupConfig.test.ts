@@ -34,7 +34,7 @@ describe("server tsup config", () => {
       dependencies?: Record<string, string>;
     };
 
-    // Bugfix: pnpm 不会把传递依赖暴露给 @zcode/server；HTTP bundle 外置后必须从 server 自身解析。
+    // Bugfix: pnpm does not expose transitive deps to @zcode/server; once the HTTP bundle externalizes them they must resolve from the server itself.
     expect(Object.keys(packageJson.dependencies ?? {})).toEqual(
       expect.arrayContaining(SERVER_HTTP_EXTERNAL_DEPENDENCIES),
     );

@@ -33,7 +33,7 @@ export function createGroupMemberDirectory(now: () => number = Date.now) {
         entry.expires = now() + 60_000;
         return names;
       } catch (error) {
-        // 缺少权限时短暂缓存失败，避免每条群消息重复查询；不暴露不完整的分页结果。
+        // Cache the failure briefly when the permission is missing so per-message lookups stop; never expose partial pages.
         entry.expires = now() + 30_000;
         throw error;
       }

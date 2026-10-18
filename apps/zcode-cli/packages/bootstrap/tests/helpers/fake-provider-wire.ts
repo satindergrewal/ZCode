@@ -133,7 +133,9 @@ function anthropicNonStreamBody(ordinal: number, turn: CannedTurn): unknown {
     type: "message",
     role: "assistant",
     model: MODEL_NAME,
-    content: [{ type: "tool_use", id: turn.toolCallId, name: turn.toolName, input: turn.toolInput }],
+    content: [
+      { type: "tool_use", id: turn.toolCallId, name: turn.toolName, input: turn.toolInput },
+    ],
     stop_reason: "tool_use",
     stop_sequence: null,
     usage: { input_tokens: USAGE_IN, output_tokens: USAGE_OUT },
@@ -190,7 +192,11 @@ function openaiToolCallFrames(ordinal: number, turn: CannedTurn): string {
     }),
     openaiChunk(ordinal, { delta: {}, finish_reason: "tool_calls" }),
     openaiChunk(ordinal, undefined, {
-      usage: { prompt_tokens: USAGE_IN, completion_tokens: USAGE_OUT, total_tokens: USAGE_IN + USAGE_OUT },
+      usage: {
+        prompt_tokens: USAGE_IN,
+        completion_tokens: USAGE_OUT,
+        total_tokens: USAGE_IN + USAGE_OUT,
+      },
     }),
     "data: [DONE]\n\n",
   ].join("");
@@ -219,7 +225,11 @@ function openaiNonStreamBody(ordinal: number, turn: CannedTurn): unknown {
         finish_reason: "tool_calls",
       },
     ],
-    usage: { prompt_tokens: USAGE_IN, completion_tokens: USAGE_OUT, total_tokens: USAGE_IN + USAGE_OUT },
+    usage: {
+      prompt_tokens: USAGE_IN,
+      completion_tokens: USAGE_OUT,
+      total_tokens: USAGE_IN + USAGE_OUT,
+    },
   };
 }
 
@@ -233,7 +243,9 @@ export function firstFrame(route: WireFormat, ordinal: number): string {
 }
 
 export function visibleFrame(route: WireFormat, ordinal: number, text: string): string {
-  return route === "anthropic-messages" ? anthropicVisibleText(0, text) : openaiVisibleChunk(ordinal, text);
+  return route === "anthropic-messages"
+    ? anthropicVisibleText(0, text)
+    : openaiVisibleChunk(ordinal, text);
 }
 
 export function successStream(route: WireFormat, ordinal: number, turn: CannedTurn): string {
@@ -244,7 +256,9 @@ export function successStream(route: WireFormat, ordinal: number, turn: CannedTu
 
 export function successBody(route: WireFormat, ordinal: number, turn: CannedTurn): string {
   return JSON.stringify(
-    route === "anthropic-messages" ? anthropicNonStreamBody(ordinal, turn) : openaiNonStreamBody(ordinal, turn),
+    route === "anthropic-messages"
+      ? anthropicNonStreamBody(ordinal, turn)
+      : openaiNonStreamBody(ordinal, turn),
   );
 }
 

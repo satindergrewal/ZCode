@@ -55,7 +55,7 @@ function MarketingBannerContent(props: MarketingBannerProps) {
       onPointerCancel={() => setHovered(false)}
       style={ready ? undefined : { height: 0, overflow: "hidden", visibility: "hidden" }}
     >
-      {/* 由同一按钮裁切图片与 iframe，避免资源越过圆角；关闭/loading 保留为兄弟覆盖层。 */}
+      {/* One button clips both image and iframe so assets stay inside the radius; close/loading stay sibling overlays. */}
       <button
         type="button"
         disabled={!ready || props.pending || !props.hasAction}
@@ -96,7 +96,7 @@ function MarketingBannerContent(props: MarketingBannerProps) {
         )}
       </button>
       {props.pending ? (
-        // 原 bg-card 让关闭/loading 带上常驻底色；两种状态都保持透明。
+        // bg-card gave close/loading a permanent ground; both states stay transparent.
         <span
           role="status"
           className="absolute right-2.5 top-2.5 flex size-5 items-center justify-center rounded-full text-foreground"

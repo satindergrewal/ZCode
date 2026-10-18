@@ -251,9 +251,7 @@ describe("subagent provider-visible prompt assembly", () => {
     expect(systems[1]).toContain(
       "\n\nHere is useful information about the environment you are running in:",
     );
-    expect(systems[1]).toContain(
-      "Working directory: /Users/dev/Desktop/Z/z-code/apps/zcode-cli",
-    );
+    expect(systems[1]).toContain("Working directory: /Users/dev/Desktop/Z/z-code/apps/zcode-cli");
     expect(systems[1]).toContain("Is directory a git repo: Yes");
     expect(systems[1]).toContain("Platform: darwin");
     expect(systems[1]).toContain("Shell: Git Bash");

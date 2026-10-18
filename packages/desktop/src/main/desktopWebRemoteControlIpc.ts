@@ -44,8 +44,10 @@ function reportRemoteUsageEventSafely(
   try {
     reportRemoteUsageEvent(rendererId, event);
   } catch {
-    // Bug 根因：埋点回调原来位于业务 operation 的 try 内，回调抛错会把已成功的启动误判为失败，
-    // 甚至覆盖真正的业务错误。埋点是旁路能力，这里必须吞掉异常并保留 operation 的原始终态。
+    // Regression root cause: the telemetry callback used to live inside the business operation's
+    // try; a callback throw misjudged an already-successful start as failed and could even
+    // overwrite the real business error. Telemetry is a side-channel — swallow exceptions here
+    // and preserve the operation's original outcome.
   }
 }
 
@@ -70,8 +72,9 @@ async function runStartOperation(input: {
     if (!win) {
       throw new Error(input.missingWindowMessage);
     }
-    // 交互边界：远控面板和二维码刷新已有显式用户操作，main 只校验窗口并绑定目标，
-    // 不再叠加原生确认弹窗，避免一次操作出现两层确认。
+    // Interaction boundary: the remote-control panel and QR refresh are already explicit user
+    // actions; main only validates the window and binds the target, without stacking a native
+    // confirm dialog (which would mean two confirmations per action).
     const response = await input.operation(win.id);
     reportRemoteUsageEventSafely(
       input.reportRemoteUsageEvent,
@@ -107,7 +110,7 @@ export function registerWebRemoteControlIpcHandlers(
       runStartOperation({
         context,
         sender: event.sender,
-        missingWindowMessage: "未找到当前窗口，无法开启 Web 远程控制",
+        missingWindowMessage: "Current window not found; cannot start web remote control",
         operation: (windowId) => {
           const manager = dependencies.webRemoteControlManager;
           const authorization = manager.authorizeStart(windowId, context);
@@ -123,7 +126,8 @@ export function registerWebRemoteControlIpcHandlers(
       runStartOperation({
         context,
         sender: event.sender,
-        missingWindowMessage: "未找到当前窗口，无法刷新 Web 远程控制二维码",
+        missingWindowMessage:
+          "Current window not found; cannot refresh the web remote-control QR code",
         operation: (windowId) => {
           const manager = dependencies.webRemoteControlManager;
           const authorization = manager.authorizeStart(windowId, context);

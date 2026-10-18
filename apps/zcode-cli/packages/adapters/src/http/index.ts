@@ -199,8 +199,8 @@ function fetchHttpResponse(
         lookup: proxyUrl ? undefined : lookup,
       },
       (message) => {
-        // 不包成 `Response`：它表示不了 999 之类的状态码，而这里只要状态、头与正文（与原生 fetch 一样原样带回）。
-        // 回调里抛出的东西没人接得住、会打死整个 agent 进程，所以一律转成这一次请求的 reject。
+        // Not wrapped in a `Response`: it cannot express statuses like 999, and here only status/headers/body matter (returned raw, like native fetch).
+        // Anything thrown in the callback has no catcher and would kill the agent process, so it always becomes this request's reject.
         try {
           resolve(readIncomingResponse(message));
         } catch (error) {

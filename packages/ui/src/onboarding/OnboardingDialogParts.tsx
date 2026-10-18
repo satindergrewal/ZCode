@@ -140,7 +140,7 @@ export function OnboardingWizardFooter(props: {
           { count: String(props.selectedWorkspaceCount) },
         )
       : /*
-         * 暂时隐藏数据迁移向导里的代理设置步骤，保留原 helper 文案分支以便后续恢复。
+         * The migration wizard's proxy step is hidden; helper copy kept for the future restore.
          * : props.currentStep === "agent-settings"
          *   ? intl.formatMessage(
          *       { id: "onboarding.footer.selection" },
@@ -150,7 +150,7 @@ export function OnboardingWizardFooter(props: {
         intl.formatMessage({ id: "onboarding.footer.helper" });
 
   /*
-   * 暂时隐藏数据迁移向导里的代理设置步骤，批量选择按钮随步骤一起隐藏。
+   * The migration wizard's proxy step is hidden; batch-select buttons hide with it.
    * const showAgentSettingsBulk =
    *   props.currentStep === "agent-settings" && props.onAgentSettingsBulkToggle;
    */
@@ -160,7 +160,7 @@ export function OnboardingWizardFooter(props: {
       <div className="flex min-w-0 flex-1 items-center gap-2">
         <span className="min-w-0 truncate text-ui-base text-foreground-subtle">{helperText}</span>
         {/*
-          暂时隐藏数据迁移向导里的代理设置步骤，保留原批量选择按钮以便后续恢复。
+          The migration wizard's proxy step is hidden; batch-select kept for the future restore.
           {showAgentSettingsBulk ? (
             <Button
               type="button"
@@ -225,7 +225,7 @@ export function OnboardingWizardFooter(props: {
         ) : null}
 
         {/*
-          暂时隐藏数据迁移向导里的代理设置步骤，保留原开始迁移按钮分支以便后续恢复。
+          The migration wizard's proxy step is hidden; start-migration branch kept for restore.
           {props.currentStep === "agent-settings" ? (
             <>
               <Button

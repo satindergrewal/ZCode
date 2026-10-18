@@ -22,7 +22,7 @@ export function validateCloudLottieData(value: unknown): Record<string, unknown>
     if (++nodes > 50_000 || depth > 40) throw new Error("lottie_complexity");
     if (!node || typeof node !== "object") return;
     for (const [key, child] of Object.entries(node)) {
-      // light 播放器不执行 expressions；同时阻断图片/字体外联，避免绕过资源来源校验。
+      // The light player runs no expressions; image/font subresource fetches are blocked too, so the asset-origin check cannot be bypassed.
       if ((["x", "p", "u", "fPath"].includes(key) && typeof child === "string") || key === "fonts")
         throw new Error("lottie_external_or_expression");
       visit(child, depth + 1);

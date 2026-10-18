@@ -36,7 +36,7 @@ afterEach(async () => {
 });
 
 describe("ModelApiTelemetryStatusSink V5", () => {
-  it("创建 Model Call -> Attempt，并记录目标、reasoning、usage 与实时里程碑", async () => {
+  it("creates Model Call -> Attempt and records target, reasoning, usage, and live milestones", async () => {
     const runtime = new AgentExecutionTelemetryRuntime({
       tracer: provider.getTracer("test"),
     });
@@ -108,7 +108,7 @@ describe("ModelApiTelemetryStatusSink V5", () => {
     );
   });
 
-  it("保留 retry attempt、原始 provider 错误事实和脱敏后的 thrown error", () => {
+  it("keeps the retry attempt, raw provider error facts, and the sanitized thrown error", () => {
     const runtime = new AgentExecutionTelemetryRuntime({
       tracer: provider.getTracer("test"),
     });
@@ -183,7 +183,7 @@ describe("ModelApiTelemetryStatusSink V5", () => {
     expect(modelCall.attributes).not.toHaveProperty("zcode.model_call.error_message");
   });
 
-  it("Session 关闭时释放仍未收到终态事件的 model call 索引", () => {
+  it("releases model call indexes lacking terminal events when the session closes", () => {
     const runtime = new AgentExecutionTelemetryRuntime({
       tracer: provider.getTracer("test"),
     });
@@ -200,7 +200,7 @@ describe("ModelApiTelemetryStatusSink V5", () => {
     expect(sink.activeCallCount).toBe(0);
   });
 
-  it("惰性清理长期没有终态的 model call 和 attempt", () => {
+  it("lazily prunes model calls and attempts that never reach a terminal state", () => {
     let now = 0;
     const runtime = new AgentExecutionTelemetryRuntime({
       tracer: provider.getTracer("test"),
@@ -234,7 +234,7 @@ describe("ModelApiTelemetryStatusSink V5", () => {
     });
   });
 
-  it("容量保护淘汰最久未活动的 call，且 Session 清理互不影响", () => {
+  it("capacity protection evicts the least recently active call and session cleanups stay independent", () => {
     let now = 0;
     const warnings: string[] = [];
     const runtime = new AgentExecutionTelemetryRuntime({

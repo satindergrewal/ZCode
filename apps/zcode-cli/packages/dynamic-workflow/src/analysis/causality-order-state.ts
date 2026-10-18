@@ -170,7 +170,7 @@ export function createTraceState(
   const readByCall = new Map<ts.Node, string>(table.worldReads.map((site) => [site.call, site.id]));
   const actorByCall = new Map<ts.Node, string>(table.actors.map((site) => [site.call, site.id]));
   const holeByCall = new Map<ts.Node, HoleSite>(table.holes.map((site) => [site.call, site]));
-  // 只有开放的留白是一步（docs/analysis.md「Sites」）：已补全的留白由它的函数体在原地代表。
+  // Only open holes are a step (docs/analysis.md "Sites"): a filled hole is represented in place by its body.
   const openHoles = table.holes.filter((site) => site.body === undefined);
   const candByCall = new Map<ts.Node, IterationCandidate>();
   const candByCallback = new Map<ts.Node, IterationCandidate>();
@@ -300,8 +300,8 @@ export function phaseIdOf(state: TraceState, marker: PhaseMarkerSite): string | 
   if (name === undefined || name === "") return undefined;
   const existing = state.phaseIdByName.get(name);
   if (existing !== undefined) return existing;
-  // 编号只数标记铸出的阶段：留白的阶段以站点 id 为 id、不进 phaseIdByName，所以夹在中间的留白
-  // 不会让 `phase#N` 跳号。
+  // Numbering counts only marker-minted phases: a hole's phase uses the site id as its id and
+  // never enters phaseIdByName, so holes in between cannot skip `phase#N`.
   const id = `phase#${state.phaseIdByName.size + 1}`;
   state.phaseIdByName.set(name, id);
   const fill = state.fillStack[state.fillStack.length - 1];

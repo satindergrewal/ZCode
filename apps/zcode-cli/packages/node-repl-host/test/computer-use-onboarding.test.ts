@@ -1,15 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 
 /**
- * CUA 的输出策略：参考按需取用，宿主不主动推。
+ * CUA output policy: reference material is pulled on demand; the host does not push it.
  *
- * Bug（2026-09-11 真机）：首次 CUA 调用前 SDK 会把 docs/computer-use.md 自动写进输出，
- * 而模型刚通过 Skill 工具拿到大面积重合的 SKILL——同一份内容进上下文两遍（13.1KB +
- * 13.8KB，小节重合过半）。口径改成与 Browser Use 一致：文档由模型自己
- * `nodeRepl.write(await agent.documentation.get("computer-use"))` 取。
+ * Bug (2026-09-11, on-device): before the first CUA call, the SDK auto-printed docs/computer-use.md into the output,
+ * while the model had just received the largely overlapping SKILL via the Skill tool -- the same content entered context twice (13.1KB +
+ * 13.8KB, over half the sections duplicated). The policy now matches Browser Use: the model fetches docs itself via
+ * `nodeRepl.write(await agent.documentation.get("computer-use"))`.
  *
- * 观察结果仍由 SDK 自动展示（`Target`）：v1 曾把它写成 SKILL 里的纪律，
- * 模型忘写就整段观察丢失，那次回退的结论保留在 computer-use-client.mjs 的注释里。
+ * The SDK still auto-renders the observation (`Target`): v1 once made this a discipline in the SKILL,
+ * and a forgotten call lost the whole observation; the rollback conclusion lives in the computer-use-client.mjs comments.
  */
 
 const WRITTEN: string[] = [];
@@ -17,7 +17,9 @@ const WRITTEN: string[] = [];
 async function makeGlobals(bridgeOverrides: Record<string, unknown> = {}) {
   const { join, dirname } = await import("node:path");
   const { fileURLToPath } = await import("node:url");
-  const clientUrl = fileURLToPath(new URL("../../zcode-cua-plugin/scripts/computer-use-client.mjs", import.meta.url));
+  const clientUrl = fileURLToPath(
+    new URL("../../zcode-cua-plugin/scripts/computer-use-client.mjs", import.meta.url),
+  );
   const documentationRoot = join(dirname(clientUrl), "..", "docs");
   const bridge = {
     call: vi.fn(async () => ({ content: [{ type: "text", text: "ok" }] })),
@@ -27,7 +29,11 @@ async function makeGlobals(bridgeOverrides: Record<string, unknown> = {}) {
   };
   const globals = {
     [Symbol.for("zcode.node-repl.computer-use-bridge")]: bridge,
-    nodeRepl: { write: (text: string) => { WRITTEN.push(text); } },
+    nodeRepl: {
+      write: (text: string) => {
+        WRITTEN.push(text);
+      },
+    },
   };
   const mod = await import(clientUrl);
   await mod.setupComputerUseRuntime({ globals });
@@ -53,7 +59,7 @@ describe("computer-use output policy", () => {
       globals.agent as { documentation: { get: (name: string) => Promise<string> } }
     ).documentation.get("computer-use");
     expect(doc).toMatch(/^# Computer Use/u);
-    // 按需取用的那份仍是完整参考：模型需要参数形状时才付这份预算。
+    // The on-demand copy remains the full reference: that token budget is paid only when the model needs parameter shapes.
     expect(doc).toMatch(/## Tool arguments/u);
   });
 });

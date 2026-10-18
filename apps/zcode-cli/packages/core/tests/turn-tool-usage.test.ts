@@ -1,9 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type {
-  ToolExecutionResult,
-  TraceContext,
-  UsageStorePort,
-} from "@zcode/contracts";
+import type { ToolExecutionResult, TraceContext, UsageStorePort } from "@zcode/contracts";
 import type { AgentRuntimeInternal } from "../src/runtime/internal.js";
 import { recordToolUsageFromResult } from "../src/runtime/methods/turn-tool-usage.js";
 
@@ -48,12 +44,8 @@ describe("recordToolUsageFromResult", () => {
       turnId: "turn-tool-usage",
     } as TraceContext;
 
-    await expect(
-      recordToolUsageFromResult(runtime, result, traceContext),
-    ).resolves.toBeUndefined();
-    expect(upsertToolUsage).toHaveBeenCalledWith(
-      expect.objectContaining({ exitCode: 2 }),
-    );
+    await expect(recordToolUsageFromResult(runtime, result, traceContext)).resolves.toBeUndefined();
+    expect(upsertToolUsage).toHaveBeenCalledWith(expect.objectContaining({ exitCode: 2 }));
     expect(warn).toHaveBeenCalledWith(
       "Usage tool fact write failed",
       expect.objectContaining({ toolCallId: "tool-call-usage" }),
@@ -91,14 +83,10 @@ describe("recordToolUsageFromResult", () => {
       toolName: "Read",
     } as ToolExecutionResult;
 
-    await recordToolUsageFromResult(
-      runtime,
-      result,
-      {
-        traceId: "trace-read",
-        turnId: "turn-read",
-      } as TraceContext,
-    );
+    await recordToolUsageFromResult(runtime, result, {
+      traceId: "trace-read",
+      turnId: "turn-read",
+    } as TraceContext);
 
     expect(upsertToolUsage).toHaveBeenCalledWith(
       expect.objectContaining({

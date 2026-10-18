@@ -9,7 +9,7 @@ import {
 
 export const MarketingRefreshContext = createContext<(() => void) | null>(null);
 
-/** 仅观察任务完成边沿；活动查询仍由窗口唯一 poller 调度。 */
+/** Observes task-completion edges only; scheduling stays with the window's single poller. */
 export function useMarketingTaskCompletionRefresh({
   workspacePath,
   workspaceIdentity,
@@ -35,7 +35,7 @@ export function useMarketingTaskCompletionRefresh({
     const store = acquireSessionsIndex(scope, zcodeAgentService);
     let previous: Map<string, SessionSummary["phase"]> | null = null;
     const observe = () => {
-      // 初次历史与断连恢复只建立基线，避免把旧完成状态当成新完成事件。
+      // Initial history and reconnect recovery only set the baseline, so stale completed states never read as new completion events.
       if (store.getStatus() !== "live") {
         previous = null;
         return;

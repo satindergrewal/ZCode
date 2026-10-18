@@ -77,7 +77,7 @@ export function ScratchWorkspaceDialog({
         setName("");
       }
     } catch (err) {
-      logger.error("[ChatEmptyWorkspacePreviewMenu] 创建空 workspace 失败", err);
+      logger.error("[ChatEmptyWorkspacePreviewMenu] failed to create scratch workspace", err);
       setError(intl.formatMessage({ id: "chat.empty.createWorkspace.error.createFailed" }));
     } finally {
       setSubmitting(false);

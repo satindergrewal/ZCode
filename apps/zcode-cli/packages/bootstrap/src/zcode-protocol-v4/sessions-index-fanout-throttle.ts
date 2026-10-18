@@ -1,18 +1,18 @@
-// sessions-index fan-out 的高频事件节流（docs/v4-refactor/14-sessions-index.md「事件 fan-out 节奏」）。
-// 纯调度：窗口状态与定时器在这里，publish 由调用方注入，网关只保留调用点。
+// Throttling high-frequency events in the sessions-index fan-out (docs/v4-refactor/14-sessions-index.md, event fan-out cadence).
+// Scheduling only: window state and timers live here; publish is injected by the caller, gateways keep only call sites.
 //
-// 根因备忘：一次工作流运行的引擎事件以 DynamicWorkflowRunProgress 回到父会话，实测 8s 内 4000 条。
-// 每条都 bump record.updatedAt，摘要因此条条有变化 → 旧实现条条 flush 一帧 sessions-index 增量
-// → 宿主重算 task 行 → renderer 按事件频率重拉任务列表。ModelStreaming 早已因同样的理由被排除。
+// Root-cause memo: one workflow run's engine events come back as DynamicWorkflowRunProgress on the parent session — 4000 in 8s measured.
+// Each bumps record.updatedAt, so every summary changes -> the old implementation flushed a sessions-index delta per event
+// -> host recomputes the task row -> renderer re-pulls the task list at event frequency. ModelStreaming was excluded for the same reason long ago.
 
-/** 工作流进度事件的 fan-out 窗口：窗内的进度合并为窗末一次发布（侧栏运行行 ≤4Hz）。 */
+/** Fan-out window for workflow progress events: in-window updates collapse into one publish at window end (sidebar running rows <=4Hz). */
 export const WORKFLOW_PROGRESS_INDEX_FANOUT_MS = 250;
 
-/** 定时器句柄对调度逻辑不透明：生产用 setTimeout，测试可注入任意实现。 */
+/** The timer handle is opaque to scheduling: production uses setTimeout, tests inject any implementation. */
 export type FanoutTimerHandle = unknown;
 
 export interface SessionsIndexFanoutThrottleOptions {
-  /** 发布某会话当前摘要到 sessions-index（网关的 publishCurrentSummaryToIndex）。 */
+  /** Publishes the session's current summary to sessions-index (the gateway's publishCurrentSummaryToIndex). */
   publish: (sessionId: string) => void;
   windowMs?: number;
   setTimer?: (callback: () => void, delayMs: number) => FanoutTimerHandle;
@@ -20,14 +20,14 @@ export interface SessionsIndexFanoutThrottleOptions {
 }
 
 interface WindowState {
-  /** 窗内是否还有未发布的进度；被任意即时发布满足后回落为 false。 */
+  /** Whether unsent progress remains in the window; falls back to false once any immediate publish satisfies it. */
   pending: boolean;
   handle: FanoutTimerHandle;
 }
 
 function defaultSetTimer(callback: () => void, delayMs: number): FanoutTimerHandle {
   const timer = setTimeout(callback, delayMs);
-  // CLI 进程退出不被节流窗口挂住（与 scheduleFlush 同一姿态）。
+  // CLI process exit must not be trapped by a throttle window (same posture as scheduleFlush).
   timer.unref?.();
   return timer;
 }
@@ -37,10 +37,10 @@ function defaultClearTimer(handle: FanoutTimerHandle): void {
 }
 
 /**
- * leading + trailing 窗口节流，按 session 独立计窗：
- * 静默后的第一条立即发布并开窗；窗内的后续请求只置 pending，在窗末合并成一次发布。
- * 窗末若确有 pending 就发布并续窗，保证突发期间每窗至多一帧；窗末无 pending 则关窗，
- * 下一条请求重新走 leading edge。
+ * leading + trailing window throttle with per-session windows:
+ * the first request after silence publishes immediately and opens a window; later in-window requests only set pending, collapsing into one publish at window end.
+ * Pending at window end -> publish and re-open; at most one frame per window during bursts. No pending -> close the window,
+ * and the next request takes the leading edge again.
  */
 export class SessionsIndexFanoutThrottle {
   private readonly windows = new Map<string, WindowState>();
@@ -56,7 +56,7 @@ export class SessionsIndexFanoutThrottle {
     this.clearTimer = options.clearTimer ?? defaultClearTimer;
   }
 
-  /** 高频事件的发布请求：立即发布（leading）或并入窗末的一次发布（trailing）。 */
+  /** High-frequency publish request: publish immediately (leading) or fold into the window-end publish (trailing). */
   request(sessionId: string): void {
     const open = this.windows.get(sessionId);
     if (open) {
@@ -68,15 +68,15 @@ export class SessionsIndexFanoutThrottle {
   }
 
   /**
-   * 任意即时发布（非进度事件、hydration 补发等）都已经带上了窗内合并的进度，
-   * 待发的 trailing 因此被它满足：只清 pending，窗口继续限流，不再补一帧空增量。
+   * Any immediate publish (non-progress events, hydration catch-up, ...) already carries the window's merged progress,
+   * The pending trailing is satisfied by it: clear pending only, keep window throttling, never emit an empty delta.
    */
   notePublished(sessionId: string): void {
     const open = this.windows.get(sessionId);
     if (open) open.pending = false;
   }
 
-  /** 会话运行态清理：窗口定时器必须随之消失（cleanupSessionRuntime）。 */
+  /** Session runtime cleanup: the window timer must disappear with it (cleanupSessionRuntime). */
   clearSession(sessionId: string): void {
     const open = this.windows.get(sessionId);
     if (!open) return;
@@ -84,7 +84,7 @@ export class SessionsIndexFanoutThrottle {
     this.windows.delete(sessionId);
   }
 
-  /** 网关 dispose：清掉全部窗口定时器。 */
+  /** Gateway dispose: clear every window timer. */
   clear(): void {
     for (const open of this.windows.values()) this.clearTimer(open.handle);
     this.windows.clear();
@@ -101,11 +101,11 @@ export class SessionsIndexFanoutThrottle {
     const open = this.windows.get(sessionId);
     if (!open) return;
     if (!open.pending) {
-      // 窗内没有新进度 → 关窗；下一条进度重新立即发布。
+      // No new progress in the window -> close it; the next progress publishes immediately again.
       this.windows.delete(sessionId);
       return;
     }
-    // 先续窗再发布：publish 会回调 notePublished，状态必须已是新窗口的。
+    // Extend the window before publishing: publish calls back into notePublished, so state must already be the new window's.
     open.pending = false;
     open.handle = this.setTimer(() => this.onWindowElapsed(sessionId), this.windowMs);
     this.publish(sessionId);

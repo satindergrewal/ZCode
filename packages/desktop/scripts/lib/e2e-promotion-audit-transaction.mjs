@@ -65,8 +65,9 @@ export async function runPromotionAuditTransaction({ affectedPaths, applyChanges
       return { audit, committed: true, rolledBack: false };
     }
 
-    // Bug 根因：promotion 过去会先留下 formal 文件，再由后续命令发现准入失败，
-    // 导致 spec、fixture 与 matrix 处于半转正状态；audit 未通过时必须恢复完整快照。
+    // Root cause: promotion used to drop formal files first and let a later command discover
+    // admission failure, stranding spec/fixture/matrix half-promoted; on audit failure the full
+    // snapshot must be restored.
     await restoreFileSnapshots(snapshots);
     return { audit, committed: false, rolledBack: true };
   } catch (error) {

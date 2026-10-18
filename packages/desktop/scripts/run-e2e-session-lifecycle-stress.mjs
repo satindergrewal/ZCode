@@ -50,8 +50,9 @@ for (let index = 1; index <= iterations; index += 1) {
   const marker = String(index).padStart(3, "0");
   await writeFile(
     join(specsDir, `session-lifecycle-${marker}.test.ts`),
-    // 每个 alias 都由同一个 WDIO launcher 派发为独立 worker/session，复现全量
-    // 运行的重复启动/销毁模式，而不是在一个 Electron session 内循环断言。
+    // Each alias is dispatched by the same WDIO launcher as its own worker/session, reproducing
+    // the full run's repeated start/teardown pattern instead of looping assertions inside one
+    // Electron session.
     'import "../../../test/e2e/infrastructure/session-lifecycle.test.js";\n',
     "utf8",
   );

@@ -1,37 +1,37 @@
 // ============================================================
-// dwf run 的活动时长（完成卡的「时间」格）
+// Active duration of a dwf run (the completion card's time cell)
 // ============================================================
-// 口径与论证见仓库根 docs/dynamic-workflow/transcript-and-notifications.md「How long it took」：
-// 完成卡的时长是**整条 lineage 的活动时长**——本 run 的每一世，加上沿 `resumedFrom` 上溯的每一个
-// 前驱的每一世，世与世之间的空档不计。
+// Rationale and accounting: docs/dynamic-workflow/transcript-and-notifications.md "How long it took" —
+// the completion card shows the **whole lineage's active time**: every incarnation of this run plus every
+// ancestor's incarnations via `resumedFrom`; gaps between incarnations do not count.
 //
-// 缺陷原因（2026-09-21）：时长曾是「结算它的那个进程自己的时钟」（注册表条目的
-// `completedAt − startedAt`）。resume 换一个新条目、修订换一个新 runId，两者都把那个时钟归零，
-// 而修订/恢复出来的那一世大半是缓存重放——秒级。于是一个跑了四小时、修订过一次的 run 报「12 秒」，
-// 旁边的 tokens 格却是整条 lineage 的总数（那一格从建 run 起就按 lineage 计，见 execution-engine.md
-// 「Usage across the lineage」）。两格答的是同一个问题，必须按同一个跨度计。
+// Defect (2026-09-21): duration was "the settling process's own clock" (the registry entry's
+// completedAt - startedAt). Resume mints a new entry and revision a new runId; both reset that clock to zero,
+// while a revised/restored incarnation is mostly cache replay — seconds. A four-hour run revised once reported "12 seconds",
+// while the neighboring tokens cell counted the whole lineage (that cell has counted per lineage since run creation, see execution-engine.md
+// "Usage across the lineage"). Two cells, one question — they must measure the same span.
 //
-// 时长不需要像 tokens 那样在行上累加：事件日志已经给每一世标了日期（`run-started` → 那一世
-// 最后一条事件），所以这里是一次**只读求和**，零写入、零迁移，对升级前就存在的老 run 同样成立。
+// Duration, unlike tokens, need not accumulate on the row: the event log dates every incarnation (`run-started` -> that
+// incarnation's last event), so this is a **read-only summation** — zero writes, zero migration, and it holds for old runs that predate the fix.
 
 import type { JournalStorePort } from "@zcode/dynamic-workflow";
 import { supportsRunLifeSpans } from "./dynamic-workflow-run-journal.js";
 
 /**
- * lineage 上溯的跳数上限。一次修订一跳，链条实际是个位数；上限只为「行里的 `resumedFrom`
- * 被外力写成一条长链」留一道闸——读一条 run 的时长不该扫过任意多行。
+ * Hop cap for lineage walks. One revision is one hop and real chains are single-digit; the cap only guards
+ * "the row's resumedFrom externally written into a long chain" — reading one run's duration must not scan unbounded rows.
  */
 const LINEAGE_HOP_LIMIT = 64;
 
 /**
- * 本 run 及其 lineage 的活动时长（毫秒），或 `undefined`（无任何一世的证据）。
+ * Active duration of this run and its lineage (ms), or `undefined` (no incarnation has evidence).
  *
- * `undefined` 与 `0` 是两件事：前者是「journal 说不出话」（读面不在场、run 的事件早于本记账、
- * 行已被清理），调用方据此退回自己观察到的那一世；后者是「确有一世，但它的时长不足 1 毫秒」。
+ * `undefined` and `0` differ: the former means "the journal cannot say" (read face absent, run predates this accounting,
+ * the row was cleaned), and the caller falls back to the incarnation it observed; the latter means "an incarnation exists, its duration under 1 ms".
  *
- * 防环不是防御性编程的摆设：`resumedFrom` 是建 run 那一刻写死的元数据，理论上不成环，但这个
- * 循环的终止条件依赖的是**库里的数据**而不是本进程的逻辑——一条被外力写成自指的行会把一次
- * 读快照变成死循环，而快照读在后台追踪器的轮询路径上。
+ * Cycle protection is not decorative: `resumedFrom` is metadata written at run creation and should not cycle, but this
+ * loop's termination depends on **stored data**, not this process's logic — one self-referential row turns a
+ * snapshot read into a livelock, on the background tracker's polling path no less.
  */
 export function runLineageActiveMs(journal: JournalStorePort, runId: string): number | undefined {
   if (!supportsRunLifeSpans(journal)) return undefined;
@@ -44,12 +44,12 @@ export function runLineageActiveMs(journal: JournalStorePort, runId: string): nu
     visited.add(cursor);
     for (const life of journal.listRunLifeSpans(cursor)) {
       sawLife = true;
-      // 钳到非负：两个时刻同源于 `dwf_event.time_created`，但那是**墙钟**——一次系统对时可以
-      // 让「最后一条」早于「第一条」。负数会从总和里减掉别的世的真实时长，那比丢掉这一世更糟。
+      // Clamp to non-negative: both moments come from `dwf_event.time_created`, but that is **wall clock** — one time sync can
+      // put "the last event" before "the first". A negative would subtract another incarnation's real time from the total, worse than dropping it.
       total += Math.max(0, life.lastActivityAt - life.startedAt);
     }
-    // 只上溯 lineage，不下溯 supersededBy：修订是「同一件工作的下一版」，而被替代的前驱的活
-    // 是这一版的底座；反方向的后继与本 run 的时长无关（它有自己的卡）。
+    // Walk lineage upward only, never down supersededBy: a revision is the next version of the
+    // same work built on its predecessor; later siblings have their own cards and don't count.
     cursor = journal.getRun(cursor)?.resumedFrom;
   }
   return sawLife ? total : undefined;

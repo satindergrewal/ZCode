@@ -64,14 +64,14 @@ function stringifyUnknownValue(value: unknown): string {
       return serialized;
     }
   } catch {
-    // Bugfix: 某些错误对象可能带循环引用，JSON 序列化失败时退回到 String，至少不要再抛新的异常。
+    // Bugfix: errors may carry cycles; fall back to String on JSON failure, never throw anew.
   }
 
   return String(value);
 }
 
-// Bugfix: ZCode Agent 调用失败时不一定抛 Error，某些实现会直接抛普通对象。
-// 直接 String(err) 只会得到 [object Object]，用户提示和日志都会丢掉真实错误信息。
+// Bugfix: agent failures may throw plain objects, not Errors.
+// String(err) yields [object Object], losing the message in UI and logs.
 export function getErrorMessage(err: unknown): string {
   if (err instanceof Error) {
     return err.message || err.name || String(err);
@@ -100,7 +100,7 @@ export function readCurrentZCodeMode(
     return undefined;
   }
 
-  // Bugfix: 之前只白名单了本地 ZCodeTaskMode，导致 provider 原生模式
-  // 在首发建 session 时被丢弃。这里先归一化，避免 UI 已选模式和真实 ZCode Agent session 模式不一致。
+  // Bugfix: whitelisting local modes dropped provider-native ones at first session;
+  // normalize so the UI choice matches the real agent session mode.
   return normalizeZCodeModeForTaskCreation(currentValue, provider);
 }

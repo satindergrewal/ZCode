@@ -89,7 +89,7 @@ describe("node_repl MCP server", () => {
     try {
       await deferredClient.callTool({
         name: "js",
-        arguments: { code: "1", title: "验证 Computer Use bridge" },
+        arguments: { code: "1", title: "Verify Computer Use bridge" },
         _meta: requestMeta("deferred-cua-session"),
       });
       expect(forwardedBroker).toMatchObject({
@@ -172,8 +172,8 @@ describe("node_repl MCP server", () => {
     expect(JS_TOOL_DESCRIPTION).toContain(
       "Metadata methods such as list_apps and list_windows may not return action_sent",
     );
-    // open_application 已从 Computer Use 面上删除（get_app_state 负责绑定并按需拉起）。
-    // 工具描述曾漏改，导致每次请求都告诉模型有这个不存在的方法。
+    // open_application was removed from the Computer Use surface (get_app_state binds and launches on demand).
+    // The tool description was missed in that pass, telling the model about a nonexistent method on every request.
     expect(JS_TOOL_DESCRIPTION).not.toContain("open_application");
   });
 
@@ -182,7 +182,7 @@ describe("node_repl MCP server", () => {
       name: "js",
       arguments: {
         code: "globalThis.counter = 41; counter;",
-        title: "初始化计数",
+        title: "Init counter",
       },
       _meta: requestMeta("session-1"),
     });
@@ -210,13 +210,13 @@ describe("node_repl MCP server", () => {
   });
 
   it("exposes js as the only node_repl tool and rejects the two retired ones", async () => {
-    // 修复原因：2026-09-18 下架 js_reset 与 js_add_node_module_dir，node_repl 只留 js。
-    // js_reset 自 fresh-kernel 改造起就是固定返回成功的空操作，而"永不失败"会让弱模型连续
-    // 重复调用它（工单 ZCT-2100503886992535552：155 次连调、19 分钟 4837 万输入 token 直到 429）。
-    // js_add_node_module_dir 则是把宿主职责推给模型——模型无法自行知道该传哪个 node_modules，
-    // 能告诉它的只有 skill 文档，而文档知道的路径宿主自己就能注入；实测两者调用量均为 0。
-    // 必须同时守住两件事：不再出现在模型工具面，且调用时明确失败而非静默成功——
-    // Tool not found 才是模型换策略所需的信号。
+    // Root cause: on 2026-09-18, js_reset and js_add_node_module_dir were retired, leaving node_repl with js only.
+    // js_reset had been a fixed-success no-op since the fresh-kernel rework, and "never fails" made weak models call it
+    // in a loop (ticket ZCT-2100503886992535552: 155 consecutive calls, 19 minutes, 48.37M input tokens, ending in a 429).
+    // js_add_node_module_dir pushed a host duty onto the model, which cannot know which node_modules to pass;
+    // only the skill docs could tell it, and paths the docs know the host can inject itself; measured call counts for both were zero.
+    // Two things must hold: the tools vanish from the model-facing surface, and calling them fails loudly instead of silently succeeding --
+    // "tool not found" is the signal the model needs to switch strategy.
     const { tools } = await client.listTools();
     expect(tools.map((tool) => tool.name)).toEqual(["js"]);
     for (const retired of ["js_reset", "js_add_node_module_dir"]) {
@@ -318,9 +318,9 @@ describe("node_repl MCP server", () => {
   });
 
   it("carries no copy of the Computer Use assets", () => {
-    // 宿主与两个能力插件独立之后，CUA 的 SDK 与文档只有一份，属于 computer-use 插件；
-    // 宿主按 ZCODE_CUA_PLUGIN_ROOT 去取。2026-09-11 之前 browser-use 各存一份手工副本，
-    // 其中文档那份悄悄停在重构前的 API，兜底路径会把它发给模型。
+    // With the host split from the two capability plugins, there is a single CUA SDK and doc set, owned by the computer-use plugin;
+    // the host resolves it via ZCODE_CUA_PLUGIN_ROOT. Before 2026-09-11, browser-use kept hand-maintained copies,
+    // and the doc copy silently lagged the pre-refactor API, which the fallback path would hand to the model.
     for (const relative of [
       "../../browser-use-plugin/scripts/computer-use-client.mjs",
       "../../browser-use-plugin/docs/computer-use.md",
@@ -354,7 +354,7 @@ describe("node_repl MCP server", () => {
       { type: "image", data: "BAUG", mimeType: "image/jpeg" },
       { type: "text", text: "log line\n=> done" },
     ]);
-    // 网关只解析 tool_result.content 开头的连续 image；文本一旦领先，后面的图会被丢弃。
+    // The gateway parses only leading consecutive images in tool_result.content; once text comes first, later images are dropped.
     const firstTextIndex = result.content.findIndex((block) => block.type === "text");
     const lastImageIndex = result.content.reduce(
       (last, block, index) => (block.type === "image" ? index : last),
@@ -364,13 +364,13 @@ describe("node_repl MCP server", () => {
   });
 
   it("drops a byte-identical emitImage duplicate so a redundant call cannot cost the whole frame", () => {
-    // Bug 原因（2026-09-11 真机）：模型写
+    // Root cause (2026-09-11, on-device): the model wrote
     //   const shot = await app.getScreenshot(); await nodeRepl.emitImage(shot);
-    // getScreenshot 已经经 emitStructuredResult 投过「图 + 权威」，于是结果里两张图，
-    // exact-raster 门按「每个结果只允许一张最终 raster」把整帧原子否决。
+    // getScreenshot had already published image plus authority via emitStructuredResult, so the result held two images;
+    // and the exact-raster gate, allowing one final raster per result, atomically vetoed the whole frame.
     //
-    // 门不能放宽（frame_id 绑定像素坐标），但逐字节相同的那份是纯冗余，丢掉即可，
-    // 冗余调用不再连累整帧被否决。
+    // The gate cannot be relaxed (frame_id pins pixel coordinates), but the byte-identical copy is pure redundancy and can be dropped,
+    // so the redundant call no longer drags the whole frame into the veto.
     const authority = JSON.stringify({
       image_ref: { actionable: true, frame_id: "frame-1", height: 2, width: 4 },
     });
@@ -388,17 +388,15 @@ describe("node_repl MCP server", () => {
 
     const images = result.content.filter((block) => block.type === "image");
     expect(images).toEqual([{ type: "image", data: "AQID", mimeType: "image/png" }]);
-    // 权威必须紧跟在存活的那张图后面 —— 原子对不能被去重打散。
+    // The authority must sit immediately after the surviving image -- dedupe must not split the atomic pair.
     expect(result.content[0]?.type).toBe("image");
     expect((result.content[1] as { text?: string }).text).toBe(authority);
   });
 
   it("keeps a different model image so a genuine two-raster result still reaches the gate", () => {
-    // 字节不同就不是冗余：那是真的两张 raster，判定权仍属完整性门，宿主不得代它放行。
+    // Differing bytes are not redundancy: those are two real rasters; the integrity gate keeps the verdict, and the host must not wave them through.
     const result = toMcpRunResult({
-      structuredResults: [
-        { content: [{ type: "image", data: "AQID", mimeType: "image/png" }] },
-      ],
+      structuredResults: [{ content: [{ type: "image", data: "AQID", mimeType: "image/png" }] }],
       images: [{ base64: "ZZZZ", mimeType: "image/png" }],
     } as never);
 
@@ -455,7 +453,10 @@ describe("node_repl MCP server", () => {
 
     expect(result.content).toEqual([
       ...structured.content,
-      { type: "text", text: "console output\n{\"content\":[{\"type\":\"image\",\"data\":\"AQID\",\"mimeType\":\"image/png\"},{\"type\":\"text\",\"text\":\"{\\\"image_ref\\\":\\\"frame-2\\\"}\"}]}" },
+      {
+        type: "text",
+        text: 'console output\n{"content":[{"type":"image","data":"AQID","mimeType":"image/png"},{"type":"text","text":"{\\"image_ref\\":\\"frame-2\\"}"}]}',
+      },
     ]);
     expect(result).toMatchObject({
       structuredContent: structured.structuredContent,
@@ -467,15 +468,15 @@ describe("node_repl MCP server", () => {
     const result = toMcpRunResult({
       logs: "state_id=s-2\nelements (1):",
       result: undefined,
-      structuredResults: [{
-        content: [],
-        _meta: { "zcode.cua/target-app-display-v1": { pid: 7 } },
-      }],
+      structuredResults: [
+        {
+          content: [],
+          _meta: { "zcode.cua/target-app-display-v1": { pid: 7 } },
+        },
+      ],
     });
 
-    expect(result.content).toEqual([
-      { type: "text", text: "state_id=s-2\nelements (1):" },
-    ]);
+    expect(result.content).toEqual([{ type: "text", text: "state_id=s-2\nelements (1):" }]);
     expect(result._meta).toMatchObject({
       "zcode.cua/target-app-display-v1": { pid: 7 },
     });
@@ -493,7 +494,7 @@ describe("node_repl MCP server", () => {
       images: [{ base64: "AQID", mimeType: "image/png" }],
       browserScreenshotImageIndices: [0],
     });
-    // image 现在从 content[0] 开始，image 下标与 content 下标一致，不再有 +1 偏移。
+    // Images now start at content[0]; image indexes match content indexes with no +1 offset.
     expect(screenshot.content[0]).toEqual({
       type: "image",
       data: "AQID",
@@ -514,9 +515,9 @@ describe("node_repl MCP server", () => {
   });
 
   it("projects the CUA app identity recorded by the bridge and drops the sandbox-forgeable key", () => {
-    // `nodeRepl.setResponseMeta` / `nodeRepl.emitStructuredResult` 都挂在模型可见的 sandbox
-    // globals 上，所以 producer 键经这两条通道到达时不可信 —— 模型能让工具卡声称自己操作了
-    // 别的应用。可信事实只来自 CUA bridge 从 broker 响应直接记录的 run.cuaApp。
+    // `nodeRepl.setResponseMeta` / `nodeRepl.emitStructuredResult` hang off the model-visible sandbox
+    // globals, so producer keys arriving through those channels are untrusted -- the model could make a tool card claim it operated
+    // another app. Trusted facts come only from run.cuaApp, recorded by the CUA bridge straight from the broker response.
     const trusted = toMcpRunResult({
       logs: "",
       cuaApp: { appKey: "darwin:com.apple.notes", displayName: "Notes" },
@@ -534,10 +535,10 @@ describe("node_repl MCP server", () => {
         displayName: "Notes",
       },
     });
-    // 伪造的 producer 键必须整条消失，不能与可信键并存后被下游误取。
+    // Forged producer keys must disappear entirely; they must not coexist with trusted keys for downstream mixups.
     expect(trusted._meta).not.toHaveProperty(CUA_APP_ASSOCIATIONS_META_KEY);
 
-    // 没有可信记录时，光靠沙箱伪造拿不到任何身份。
+    // With no trusted record, sandbox-side forgery yields no identity at all.
     const forgedOnly = toMcpRunResult({
       logs: "",
       responseMeta: {
@@ -565,11 +566,10 @@ describe("node_repl MCP server", () => {
     expect(result._meta).toMatchObject({
       [ZCODE_MCP_BROWSER_SCREENSHOT_CONTENT_INDICES_META_KEY]: [0, 2],
     });
-    // 每个声明的下标都必须真的指向 content 里的 image block（越界或指到 text 都会让原图落盘错位）。
+    // Every declared index must point at a real image block in content (out-of-range or text-pointing indexes would misalign the saved frames).
     for (const index of [0, 2]) {
       expect(result.content[index]?.type).toBe("image");
     }
     expect(result.content[1]).toEqual({ type: "image", data: "BBBB", mimeType: "image/png" });
   });
-
 });

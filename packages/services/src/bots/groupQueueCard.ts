@@ -37,7 +37,7 @@ export function createGroupQueueCardSync(deps: {
     update: (key: string, status: BotGroupInputStatus) =>
       change(key, (current) => ({
         ...current,
-        // 原实现只改表情；卡片也必须记录单向生命周期，迟到的 admission 不能覆盖终态。
+        // The original impl only set a reaction; the card must also record the one-way lifecycle so late admissions cannot overwrite a final state.
         status: rank(status) > rank(current.status) ? status : current.status,
       })),
     attach: (key: string, cardMessageId: string) =>

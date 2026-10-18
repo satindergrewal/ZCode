@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { RemoteServiceAccess } from "../src/remoteServiceAccess.js";
 
 describe("RemoteServiceAccess Provider Facades", () => {
-  it("为 Provider Settings 与 Model Selection 建立独立代理", () => {
+  it("builds separate proxies for Provider Settings and Model Selection", () => {
     const requestedChannels: string[] = [];
     const channel: IChannel = {
       call: vi.fn(async () => undefined),

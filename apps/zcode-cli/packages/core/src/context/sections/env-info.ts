@@ -73,7 +73,7 @@ function buildEnvInfoContent(info: EnvInfo, model?: Model): string {
     `- ${PLATFORM_LABEL}: ${info.platform}`,
     `- ${SHELL_LABEL}: ${info.shell}`,
     `- ${OS_VERSION_LABEL}: ${info.osVersion}`,
-        // Legacy environment snapshots may carry stale model fields; rendering reads only the model this step actually ran.
+    // Legacy environment snapshots may carry stale model fields; rendering reads only the model this step actually ran.
     ...(model
       ? [`- You are powered by the model named ${model.providerId}/${model.modelId}.`]
       : []),

@@ -1,11 +1,4 @@
-import {
-  Archive,
-  ArchiveX,
-  CloudDownload,
-  LoaderIcon,
-  Pin,
-  Trash2,
-} from "lucide-react";
+import { Archive, ArchiveX, CloudDownload, LoaderIcon, Pin, Trash2 } from "lucide-react";
 import {
   TID_TASK_ARCHIVE,
   TID_TASK_ITEM,
@@ -13,11 +6,7 @@ import {
   testId,
   type WebRemoteControlTaskTarget,
 } from "@zcode/shared";
-import {
-  useCallback,
-  useState,
-  type MouseEvent as ReactMouseEvent,
-} from "react";
+import { useCallback, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { cn } from "@/components/lib/utils.js";
 import { Button } from "@/components/ui/button.js";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
@@ -76,12 +65,11 @@ export function WebRemoteControlTaskIndexRow({
   const canDeleteArchivedTask = canMutateTask && Boolean(task.archived);
   const showPinnedState = Boolean(task.pinned && !task.archived);
   const rowDisabled = Boolean(switchingTaskKey);
-  // Bugfix: 宽屏 Web 远控任务行的打开按钮覆盖整行主体，纯 CSS group-hover
-  // 会让左侧 pin 操作被主按钮压住且不可命中；这里和桌面 TaskListItem 一样用行级 hover state 挂载动作。
+  // Bugfix: the open button covers the row body, so CSS group-hover buried the pin action;
+  // mount row actions on hover state exactly like desktop TaskListItem.
   const showPinAction = canPinTask && hoverActionsVisible;
   const showArchiveAction = canArchiveTask && (hoverActionsVisible || isArchiveConfirming);
-  const showArchivedActions =
-    (canUnarchiveTask || canDeleteArchivedTask) && hoverActionsVisible;
+  const showArchivedActions = (canUnarchiveTask || canDeleteArchivedTask) && hoverActionsVisible;
   const taskTitle = task.title || intl.formatMessage({ id: "taskList.untitled" });
   const timeLabel = formatTaskRelativeTime(
     taskSortBy === "created" ? task.createdAt : task.updatedAt,
@@ -114,8 +102,8 @@ export function WebRemoteControlTaskIndexRow({
         isActive ? "bg-selected" : "hover:bg-surface-hover",
       )}
     >
-      {/* Bugfix: 宽屏 Web 远控任务行现在统一由 listWorkspaces() 事实源渲染。
-          之前 workspace / timeline / archived 分别落到不同桌面数据源，导致排序、搜索和跨 workspace 视图不一致。 */}
+      {/* Bugfix: wide remote rows render solely from the listWorkspaces() source of truth.
+          workspace/timeline/archived used to hit different stores, diverging order/search/cross-workspace views. */}
       <button
         type="button"
         aria-label={intl.formatMessage({ id: "webRemoteControl.openTask" }, { title: taskTitle })}
@@ -147,7 +135,10 @@ export function WebRemoteControlTaskIndexRow({
 
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="min-w-0 flex h-6 flex-wrap items-center gap-1.5">
-            <span className="min-w-0 flex-1 truncate text-ui-base text-foreground" title={taskTitle}>
+            <span
+              className="min-w-0 flex-1 truncate text-ui-base text-foreground"
+              title={taskTitle}
+            >
               {taskTitle}
             </span>
             {showWorkspaceLabel ? (
@@ -159,8 +150,8 @@ export function WebRemoteControlTaskIndexRow({
               </span>
             ) : null}
           </span>
-          {/* 工作流运行行（docs/dynamic-workflow/presentation.md「The sidebar run line」）：行整体已是按钮，
-              这里只绘制；已结束的行由远控端自己的确认集合折叠。 */}
+          {/* Workflow run row (docs/dynamic-workflow/presentation.md "The sidebar run line"): the row is a button;
+              this only draws it; ended rows collapse into the remote side's own confirmation set. */}
           {task.workflowActivity ? (
             <TaskWorkflowRunLines
               activity={task.workflowActivity}
@@ -182,8 +173,8 @@ export function WebRemoteControlTaskIndexRow({
       </button>
       {showPinAction ? (
         <ControlHintTooltip title={pinLabel} side="right" align="center">
-          {/* Bugfix: archived 行按桌面归档列表语义不显示置顶入口；否则 setTaskPinned 只改 pinned，
-              Web 乐观更新却会把 archived 清掉，导致远控列表和服务端 membership 分叉。 */}
+          {/* Bugfix: archived rows show no pin entry (desktop archive semantics); else setTaskPinned
+              flips pinned while the optimistic update clears archived, forking server membership. */}
           <Button
             type="button"
             variant="ghost"
@@ -247,8 +238,8 @@ export function WebRemoteControlTaskIndexRow({
                 className="shrink-0 text-foreground-subtle hover:text-foreground"
                 aria-label={unarchiveLabel}
               >
-                {/* Bugfix: Web 远控归档列表复用普通 task row，之前 archived 行没有桌面端的恢复入口。
-                    这里按桌面归档列表语义补齐取消归档，并用远端图标标明操作会落到远端 host。 */}
+                {/* Bugfix: the web archive list reuses the plain row and lacked desktop's restore entry.
+                    Add unarchive per desktop semantics; the remote icon marks it lands on the remote host. */}
                 {isRemoteTask ? (
                   <CloudDownload className="size-3.5" />
                 ) : (

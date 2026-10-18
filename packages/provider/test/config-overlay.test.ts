@@ -16,7 +16,7 @@ import {
 } from "../src/index.js";
 
 describe("ProviderConfigMap overlay", () => {
-  it("Provider enabled 位于外层；Overlay、往返及后续配置写入保留 false", () => {
+  it("keeps provider enabled outer; overlays, round-trips and later writes preserve false", () => {
     const base = parseProviderConfigMap([{ providerId: "p", enabled: true, config: {} }]);
     const off = parseProviderConfigMap([{ providerId: "p", enabled: false, config: {} }]);
     const updated = base
@@ -29,7 +29,7 @@ describe("ProviderConfigMap overlay", () => {
     ).toThrow();
   });
   it.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])(
-    "完整属性和保存 Schema 一致拒绝非法 contextWindow：%s",
+    "complete and save schemas reject invalid contextWindow alike: %s",
     (contextWindow) => {
       const properties = new ModelPropertiesConfig({
         contextWindow,
@@ -54,20 +54,20 @@ describe("ProviderConfigMap overlay", () => {
   );
 
   it.each([{ values: [" "] }, { values: ["low", "low"] }])(
-    "稀疏 Schema 同样拒绝非法档位 $values",
+    "the sparse schema rejects invalid tiers too: $values",
     ({ values }) => {
       expect(() => parseModelConfig({ optionSpecs: { reasoningLevel: { values } } })).toThrow();
     },
   );
 
-  it("完整输出上限拒绝非安全整数", () => {
+  it("rejects non-safe-integer output limits in the complete schema", () => {
     const spec = new LimitOptionSpecConfig({
       max: Number.MAX_SAFE_INTEGER + 1,
       map: "{'max_tokens': maxOutputTokens}",
     });
     expect(spec.validateComplete()).toContainEqual(expect.objectContaining({ path: ["max"] }));
   });
-  it("保留 ZCodeBuiltin key 的位置，并按 Personal 顺序追加新 key", () => {
+  it("keeps ZCodeBuiltin key positions and appends new keys in Personal order", () => {
     const zcodeBuiltin = new ProviderConfigMap([
       {
         providerId: "A",
@@ -114,7 +114,7 @@ describe("ProviderConfigMap overlay", () => {
     expect(personal.keys()).toEqual(["Y", "C", "X", "A"]);
   });
 
-  it("按照给定顺序重排已有 key，同时保留未提到的 key", () => {
+  it("reorders mentioned keys as given and keeps the rest", () => {
     const personal = new ProviderConfigMap([
       ["Y", new ProviderConfig()],
       { providerId: "C", providerName: "Personal C", config: new ProviderConfig({}) },
@@ -129,7 +129,7 @@ describe("ProviderConfigMap overlay", () => {
     expect(personal.keys()).toEqual(["Y", "C", "X", "A", "unmentioned"]);
   });
 
-  it("递归覆盖 Config 字段，并整体替换普通字段", () => {
+  it("overlays config fields recursively and replaces plain fields wholesale", () => {
     const base = new ModelConfig({
       properties: new ModelPropertiesConfig({
         requiresMfjsToolSchema: false,
@@ -180,7 +180,7 @@ describe("ProviderConfigMap overlay", () => {
     expect(effective.properties?.requiresMfjsToolSchema).toBe(true);
   });
 
-  it("最终 Option Spec 必须包含可编译且返回 Object 的 map", () => {
+  it("requires the final Option Spec map to compile and return an Object", () => {
     const model = new ModelConfig({
       properties: new ModelPropertiesConfig({
         requiresMfjsToolSchema: false,
@@ -217,7 +217,7 @@ describe("ProviderConfigMap overlay", () => {
     });
   });
 
-  it("Option Spec 只能引用自己的同名输入变量", () => {
+  it("lets an Option Spec reference only its own same-name inputs", () => {
     expect(() =>
       parseModelConfig({
         optionSpecs: {
@@ -239,7 +239,7 @@ describe("ProviderConfigMap overlay", () => {
     ).toThrow(/reasoningLevel/);
   });
 
-  it("使用 supportsJsonSchemaOutput 表达严格 JSON Schema 能力", () => {
+  it("expresses strict JSON Schema capability via supportsJsonSchemaOutput", () => {
     expect(
       parseModelConfig({
         properties: { supportsJsonSchemaOutput: true },
@@ -252,7 +252,7 @@ describe("ProviderConfigMap overlay", () => {
     ).toThrow();
   });
 
-  it("最终 Model Config 必须包含完整 Reasoning Option Spec", () => {
+  it("requires a complete Reasoning Option Spec in the final Model Config", () => {
     const model = new ModelConfig({
       optionSpecs: new ModelOptionSpecsConfig({
         maxOutputTokens: {
@@ -272,7 +272,7 @@ describe("ProviderConfigMap overlay", () => {
     );
   });
 
-  it("接受 disabled 单档位与空 Request Body Patch 作为无推理基线", () => {
+  it("accepts a disabled single tier and empty Request Body Patch as the no-reasoning baseline", () => {
     const optionSpecs = new ModelOptionSpecsConfig({
       reasoningLevel: {
         values: ["disabled"],
@@ -291,7 +291,7 @@ describe("ProviderConfigMap overlay", () => {
     { values: [], message: "reasoningLevel.values must not be empty" },
     { values: ["low", ""], message: "reasoningLevel.values must be non-empty strings" },
     { values: ["low", "low"], message: "reasoningLevel.values must not repeat" },
-  ])("拒绝不完整的 Reasoning 档位：$message", ({ values, message }) => {
+  ])("rejectes incomplete Reasoning tiers: $message", ({ values, message }) => {
     const spec = new EnumOptionSpecConfig({ values, map: "{}" });
 
     expect(spec.validateComplete(["optionSpecs", "reasoningLevel"])).toContainEqual(
@@ -299,7 +299,7 @@ describe("ProviderConfigMap overlay", () => {
     );
   });
 
-  it("Schema 在写入边界拒绝返回非 Object 的 Option map", () => {
+  it("rejectes non-Object Option maps at the write boundary in the schema", () => {
     expect(() =>
       parseModelConfig({
         optionSpecs: {
@@ -312,7 +312,7 @@ describe("ProviderConfigMap overlay", () => {
     ).toThrow(/object/i);
   });
 
-  it("Schema 拒绝已退役的 Option Spec default", () => {
+  it("rejectes the retired Option Spec default in the schema", () => {
     expect(() =>
       parseModelConfig({
         optionSpecs: {
@@ -326,7 +326,7 @@ describe("ProviderConfigMap overlay", () => {
     ).toThrow(/unrecognized|default/i);
   });
 
-  it("用 null 清除字段，并在最终完整性校验中报告必填值缺失", () => {
+  it("clears fields with null and reports missing required values at final completeness", () => {
     const base = new ModelConfig({
       properties: new ModelPropertiesConfig({
         requiresMfjsToolSchema: false,
@@ -374,7 +374,7 @@ describe("ProviderConfigMap overlay", () => {
     });
   });
 
-  it("从普通 Object 解析，并拒绝未知字段", () => {
+  it("parses from plain objects and rejects unknown fields", () => {
     const parsed = parseProviderConfigMap([
       {
         providerId: "local",

@@ -1,8 +1,4 @@
-import type {
-  AboutPanelOptionsOptions,
-  BrowserWindow,
-  MessageBoxReturnValue,
-} from "electron";
+import type { AboutPanelOptionsOptions, BrowserWindow, MessageBoxReturnValue } from "electron";
 import { existsSync, readFileSync } from "node:fs";
 import { arch, hostname, platform, release, type, version as osVersion } from "node:os";
 import { join } from "node:path";
@@ -223,8 +219,9 @@ export function createSystemAboutPanelOptions(
     applicationName: ABOUT_APPLICATION_NAME,
     applicationVersion: `${messages.versionLabel} ${snapshot.appVersion}`,
     copyright: formatAboutCopyright(year, locale),
-    // 设计原因：macOS About Panel 的 credits 区最接近参考图里的硬件优化说明位置。
-    // 保持信息交给系统级面板渲染，避免自绘窗口和原生关于弹窗风格割裂。
+    // By design: the macOS About Panel credits area is closest to the reference art's
+    // hardware-optimization note. Let the system panel render it, avoiding a style clash between
+    // a custom window and the native about dialog.
     ...(credits ? { credits } : {}),
   };
 }

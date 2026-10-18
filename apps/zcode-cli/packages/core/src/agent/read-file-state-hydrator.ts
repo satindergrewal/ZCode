@@ -1,9 +1,4 @@
-import type {
-  MessageId,
-  MessagePart,
-  MessageWithParts,
-  ToolPart,
-} from "@zcode/contracts";
+import type { MessageId, MessagePart, MessageWithParts, ToolPart } from "@zcode/contracts";
 import {
   parseReadFileStateMetadata,
   type PersistedReadFileStateTool,
@@ -74,8 +69,8 @@ export async function hydrateReadFileStateFromSession(input: {
         continue;
       }
 
-      // 内联草稿：模型亲手写的字节，与 Write 同一条恢复路径。不带 metadata 的 part（saved 拷贝、
-      // `path` 提交、沿用的脚本）在 restoreMetadataToolState 里自然落空。
+      // Inline drafts: bytes written by the model itself, restored via the same path as Write. Parts without metadata (saved copies,
+      // `path` commits, reused scripts) fall through naturally in restoreMetadataToolState.
       if (
         part.tool === "CreateWorkflow" ||
         part.tool === "AmendWorkflow" ||
@@ -100,7 +95,7 @@ function restoreReadToolState(
   const toolInput = asRecord(part.state.input);
   if (!toolInput) return false;
   if (!isHistoricalFullReadWindow(toolInput as HistoricalReadWindow)) {
-    // 真正的 range Read 只在同一 runtime 内作为最新水位，跨 resume 不恢复。
+    // A true ranged Read only acts as the latest watermark within one runtime; it is not restored across resume.
     result.skippedRangeReadCount++;
     return false;
   }
@@ -112,8 +107,8 @@ function restoreReadToolState(
     return false;
   }
   setFullReadState(input.readFileState, metadata.path, metadata.content, {
-    // resume 不再从 provider-visible cat-n 文本恢复 Read 状态；只有带
-    // mtimeMs/revisionId/sizeBytes 的结构化 metadata 才能支撑后续 stale guard。
+    // Resume no longer restores Read state from provider-visible cat-n text; only structured metadata with
+    // mtimeMs/revisionId/sizeBytes can support the later stale guard.
     isPartialView: metadata.isPartialView,
     mtimeMs: normalizeReadFileStateMtimeMs(metadata.mtimeMs),
     readAt: new Date(metadata.readAtMs),
@@ -133,8 +128,8 @@ function restoreMetadataToolState(
   if (!metadata || metadata.tool !== expectedTool) return false;
   if (!isHistoricalFullReadWindow(metadata)) return false;
 
-  // Write/Edit 的历史 tool part 不能在 resume 时读取当前磁盘来“补全”状态；
-  // 外部手动保存会被误认证为 agent 已读。这里只恢复成功时持久化的完整快照。
+  // Historical Write/Edit tool parts must not read current disk state on resume to "complete" their status;
+  // external manual saves would be mistaken for agent reads. Only the full snapshot persisted on success is restored.
   setFullReadState(readFileState, metadata.path, metadata.content, {
     isPartialView: metadata.isPartialView,
     mtimeMs: normalizeReadFileStateMtimeMs(metadata.mtimeMs),

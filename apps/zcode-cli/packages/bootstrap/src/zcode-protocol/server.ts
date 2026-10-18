@@ -152,10 +152,10 @@ const MAX_CLIENT_REQUEST_REANNOUNCE_INTERVAL_MS = 10_000;
 type ZCodeProtocolOutboundMessage = ZCodeProtocolNotification | ZCodeProtocolRequest;
 
 /**
-  * After the trust store persists, each session coordinator's
-  * in-memory mirror (loaded at creation only) never refreshes: trusted hooks keep being rejected and the banner pendingCount
-  * goes stale. After a successful pretrust grant, notify every matching live session by workspaceKey to reload.
-  * Exported standalone as pure dispatch (no network, no events) so regression tests can construct the sessions Map directly.
+ * After the trust store persists, each session coordinator's
+ * in-memory mirror (loaded at creation only) never refreshes: trusted hooks keep being rejected and the banner pendingCount
+ * goes stale. After a successful pretrust grant, notify every matching live session by workspaceKey to reload.
+ * Exported standalone as pure dispatch (no network, no events) so regression tests can construct the sessions Map directly.
  */
 export async function notifyWorkspaceHookTrustGrantSessions(input: {
   grantedWorkspaceKey?: string;
@@ -240,11 +240,11 @@ export class ZCodeProtocolAgentServer {
   private shutdownPromise?: Promise<void>;
   readonly browserControlPort: BrowserControlPort;
   /**
-      * The minimal context the official-MCP identity-header port needs.
-      * The MCP pool is constructed before the server; backfill the closure-held reference once the server is ready --
-      * the same construction-order closing as v4Gateway. Expose only requestClient, never the whole context.
+   * The minimal context the official-MCP identity-header port needs.
+   * The MCP pool is constructed before the server; backfill the closure-held reference once the server is ready --
+   * the same construction-order closing as v4Gateway. Expose only requestClient, never the whole context.
    */
-  /** MCP server 发起的 elicitation/create → 用户提问。 */
+  /** MCP-server-initiated elicitation/create -> a user question. */
   requestMcpElicitation(
     request: McpElicitationRequest,
     options?: { signal?: AbortSignal },
@@ -252,7 +252,7 @@ export class ZCodeProtocolAgentServer {
     return requestMcpElicitation(this.context, request, options);
   }
 
-  /** MCP server 通知 → 会话 live 事件 / agent 日志。 */
+  /** MCP server notifications -> session live events / agent log. */
   handleMcpNotification(notification: McpServerNotification): void {
     routeMcpServerNotification(this.context, notification);
   }
@@ -269,8 +269,8 @@ export class ZCodeProtocolAgentServer {
   private readonly pluginOperationControllers = new Map<string, AbortController>();
   private readonly workspaceGenerateTextControllers = new Map<string, AbortController>();
   /**
-      * The subscribe initial frame isolates by JSON-RPC request id. Take the connection first,
-      * then the response line, then notifications in array order -- never trust microtask ordering.
+   * The subscribe initial frame isolates by JSON-RPC request id. Take the connection first,
+   * then the response line, then notifications in array order -- never trust microtask ordering.
    */
   private readonly postResponseOutbox = new Map<
     ZCodeProtocolRequestId,
@@ -283,7 +283,7 @@ export class ZCodeProtocolAgentServer {
     const resolvedDeps = {
       ...deps,
       createZCodeApp: this.runtimeResources.create,
-            // The default turn retention policy.
+      // The default turn retention policy.
       createSessionEventStore:
         deps.createSessionEventStore ?? (() => createInMemorySessionEventStore()),
       workspaceHookPolicyProvider:
@@ -298,20 +298,20 @@ export class ZCodeProtocolAgentServer {
         askUserQuestionAutoResolutionEnabled: true,
         modelIoFullRetentionEnabled: false,
         offPeakToolEnabled: false,
-                // The dynamic-workflow rollout gate fails closed: only an explicit workspace/updateDynamicWorkflowPolicy
-                // from the Host turns it on.
+        // The dynamic-workflow rollout gate fails closed: only an explicit workspace/updateDynamicWorkflowPolicy
+        // from the Host turns it on.
         dynamicWorkflowEnabled: false,
       },
       notify: (notification) => this.messageSink?.(notification),
       requestClient: (method, params, resultSchema, options) =>
         this.requestClient(method, params, resultSchema, options),
       sessions: new Map<string, ZCodeProtocolSessionRecord>(),
-            // The interaction-answer registry (where broker reverse requests meet the v4 resolveInteraction command).
+      // The interaction-answer registry (where broker reverse requests meet the v4 resolveInteraction command).
       v4Interactions: new V4InteractionRegistry(
         resolveV4InteractionRegistryOptionsFromEnv(deps.env ?? process.env),
       ),
     };
-        // The v4 channel: the gateway closure holds context as frame exit and command side-effect face, hung back right after construction.
+    // The v4 channel: the gateway closure holds context as frame exit and command side-effect face, hung back right after construction.
     this.context.v4Gateway = createConversationV4Gateway(this.context);
     this.browserControlPort = createProtocolBrowserControlBroker(this.context);
     const sessionResidentTargetCount =
@@ -321,27 +321,27 @@ export class ZCodeProtocolAgentServer {
       (sessionResidentTargetCount === undefined
         ? undefined
         : Math.max(DEFAULT_SESSION_RESIDENT_HIGH_WATER_COUNT, sessionResidentTargetCount));
-        // The single-CLI resident session pool: protocol request releases converge actively; the resource sampler is backup only.
+    // The single-CLI resident session pool: protocol request releases converge actively; the resource sampler is backup only.
     this.context.sessionResidentPool = new SessionResidentPool(
       createSessionResidentPoolHost(this.context),
       {
         ...deps.sessionResidentPoolOptions,
-                // The legacy target covered high/low at once, collapsing the hysteresis window to 0; cover low only.
-                // A configured target above the default high raises the implicit high; invalid explicit combos stay pool-rejected.
+        // The legacy target covered high/low at once, collapsing the hysteresis window to 0; cover low only.
+        // A configured target above the default high raises the implicit high; invalid explicit combos stay pool-rejected.
         highWaterCount: sessionResidentHighWaterCount,
         targetCount: sessionResidentTargetCount,
       },
     );
   }
 
-    /** The low-frequency sampler backstop entry; normal convergence triggers on each protocol request's operation-lease release. */
+  /** The low-frequency sampler backstop entry; normal convergence triggers on each protocol request's operation-lease release. */
   rebalanceResidentSessions(): void {
     this.context.sessionResidentPool?.rebalance();
   }
 
   /**
-      * The same 60s tick doubles as the event store's time-based expiry fallback:
-      * subagent child sessions have a single turn and may never see the next turn_started, so clear by time. Returns the evicted count.
+   * The same 60s tick doubles as the event store's time-based expiry fallback:
+   * subagent child sessions have a single turn and may never see the next turn_started, so clear by time. Returns the evicted count.
    */
   pruneSessionEventStores(nowMs: number = Date.now()): number {
     let evicted = 0;
@@ -351,14 +351,14 @@ export class ZCodeProtocolAgentServer {
     return evicted;
   }
 
-    /** The same 60s tick: releases detached subagent child publishers that are terminal, subscriber-less, and record-less. */
+  /** The same 60s tick: releases detached subagent child publishers that are terminal, subscriber-less, and record-less. */
   pruneDetachedChildPublishers(nowMs: number = Date.now()): number {
     return this.context.v4Gateway?.pruneDetachedChildPublishers(nowMs) ?? 0;
   }
 
   /**
-      * In-memory diagnostics counters, written to the local log with the 60s resource sample.
-      * Reads Map.size / array lengths only, never session state; counts 0 when the persistent event store offers no getStats.
+   * In-memory diagnostics counters, written to the local log with the 60s resource sample.
+   * Reads Map.size / array lengths only, never session state; counts 0 when the persistent event store offers no getStats.
    */
   collectMemoryDiagnostics(): Record<string, number> {
     let eventRows = 0;
@@ -394,8 +394,8 @@ export class ZCodeProtocolAgentServer {
   disconnectClient(error: Error): void {
     this.networkCapture.setCaptureId(null);
     this.clientDisconnectError = error;
-        // Once the connection closes, reverse requests can no longer be answered: end pending first,
-        // or a handler materializing a session blocks the connection's close path.
+    // Once the connection closes, reverse requests can no longer be answered: end pending first,
+    // or a handler materializing a session blocks the connection's close path.
     const pendingRequests = new Set(this.pendingClientRequests.values());
     for (const pending of pendingRequests) {
       this.cleanupClientRequest(pending);
@@ -403,7 +403,7 @@ export class ZCodeProtocolAgentServer {
     }
   }
 
-    /** Process-resource shutdown; not session/close, which deletes product sessions and emits session.removed. */
+  /** Process-resource shutdown; not session/close, which deletes product sessions and emits session.removed. */
   shutdown(): Promise<void> {
     if (this.shutdownPromise) return this.shutdownPromise;
     this.shutdownPromise = this.runtimeResources.close();
@@ -427,27 +427,27 @@ export class ZCodeProtocolAgentServer {
     return this.shutdownPromise;
   }
 
-    /** Releases projections once the app drain ends bounded; must run even if some app.close hangs. */
+  /** Releases projections once the app drain ends bounded; must run even if some app.close hangs. */
   disposeProjections(): void {
     this.context.v4Gateway?.dispose();
     this.context.sessions.clear();
   }
 
-    /** Takes a request's post-response messages once; a repeated take returns empty. */
+  /** Takes a request's post-response messages once; a repeated take returns empty. */
   takePostResponseMessages(requestId: ZCodeProtocolRequestId): ZCodeProtocolOutboundMessage[] {
     const batch = this.takePostResponseBatch(requestId);
     batch?.commit();
     return [...(batch?.messages ?? [])];
   }
 
-    /** Production NDJSON takes the full batch; commit only after every write succeeded. */
+  /** Production NDJSON takes the full batch; commit only after every write succeeded. */
   takePostResponseBatch(requestId: ZCodeProtocolRequestId): ZCodeProtocolPostResponseBatch | null {
     const batch = this.postResponseOutbox.get(requestId) ?? null;
     this.postResponseOutbox.delete(requestId);
     return batch;
   }
 
-    /** On connection close / server dispose, releases the not-yet-written initial frame reference. */
+  /** On connection close / server dispose, releases the not-yet-written initial frame reference. */
   clearPostResponseMessages(): void {
     this.postResponseOutbox.clear();
   }
@@ -488,13 +488,13 @@ export class ZCodeProtocolAgentServer {
   private async handleRequest(
     request: ZCodeProtocolRequest,
   ): Promise<ZCodeProtocolError | ZCodeProtocolResponse> {
-        // A request id may be reused after the previous request completes; a new request must not inherit an unconsumed old outbox.
+    // A request id may be reused after the previous request completes; a new request must not inherit an unconsumed old outbox.
     this.postResponseOutbox.delete(request.id);
     let releaseResidencyOperation: (() => void) | undefined;
     try {
-            // Subscribe hydration, workspace config, and resume all cross awaits. Keying on the session's
-            // current state alone, the sampler would close it while a handler holds the stale record. The process-level lease
-            // spans the whole request; recognizable sessionIds also feed the cold-restore gate and the LRU touch.
+      // Subscribe hydration, workspace config, and resume all cross awaits. Keying on the session's
+      // current state alone, the sampler would close it while a handler holds the stale record. The process-level lease
+      // spans the whole request; recognizable sessionIds also feed the cold-restore gate and the LRU touch.
       releaseResidencyOperation = await this.context.sessionResidentPool?.acquireOperation(
         collectResidencySessionIds(request.params),
       );
@@ -511,14 +511,14 @@ export class ZCodeProtocolAgentServer {
 
   private async dispatchRequest(request: ZCodeProtocolRequest) {
     switch (request.method) {
-            // -- the v4 conversation channel (a vertical slice, coexisting with legacy session/*) --
+      // -- the v4 conversation channel (a vertical slice, coexisting with legacy session/*) --
       case V4_METHODS.connectionFlow: {
         this.requireV4Gateway().setConnectionFlowState(request.params);
         return {};
       }
       case V4_METHODS.conversationSubscribe: {
-                // One subscribe method, dispatched by topic prefix:
-                // sessions-index/* -> list subscription; workspace-config/* -> config catalog; else conversation.
+        // One subscribe method, dispatched by topic prefix:
+        // sessions-index/* -> list subscription; workspace-config/* -> config catalog; else conversation.
         const gateway = this.requireV4Gateway();
         const topic = (request.params as { topic?: unknown } | null)?.topic;
         let dispatch;
@@ -541,8 +541,8 @@ export class ZCodeProtocolAgentServer {
         return { ack: dispatch.ack };
       }
       case V4_METHODS.conversationResync: {
-                // same-sub recovery shares subscribe's deterministic post-response outbox; the common
-                // response is still strict ACK-only, so physical recovery can only follow the ACK line.
+        // same-sub recovery shares subscribe's deterministic post-response outbox; the common
+        // response is still strict ACK-only, so physical recovery can only follow the ACK line.
         const dispatch = this.requireV4Gateway().resyncReserved(request.params);
         if (dispatch.initialWires.length > 0) {
           this.postResponseOutbox.set(request.id, {
@@ -556,12 +556,12 @@ export class ZCodeProtocolAgentServer {
         return { ack: dispatch.ack };
       }
       case V4_METHODS.conversationUnsubscribe: {
-                // topic + subscriptionId + connectionId pins exactly one publisher; never blanket-match
-                // by bare subId across conversation/sessions-index/workspace-config.
+        // topic + subscriptionId + connectionId pins exactly one publisher; never blanket-match
+        // by bare subId across conversation/sessions-index/workspace-config.
         this.requireV4Gateway().unsubscribe(request.params);
         return {};
       }
-            // -- row-paging query (separate branch, easy to merge with frame-dispatch changes) --
+      // -- row-paging query (separate branch, easy to merge with frame-dispatch changes) --
       case V4_METHODS.conversationRowsRange:
         return await this.requireV4Gateway().rowsRange(request.params);
       case V4_METHODS.conversationPlans:
@@ -572,26 +572,26 @@ export class ZCodeProtocolAgentServer {
         return await this.requireV4Gateway().fileChanges(request.params);
       case V4_METHODS.conversationFileRewindPreview:
         return await this.requireV4Gateway().fileRewindPreview(request.params);
-            // Workflow run event-log paging (read-only, stateless, resend-safe on timeout; new methods are skew-safe by construction).
+      // Workflow run event-log paging (read-only, stateless, resend-safe on timeout; new methods are skew-safe by construction).
       case V4_METHODS.conversationWorkflowRunEvents:
         return await this.requireV4Gateway().workflowRunEvents(request.params);
-            // dwf run enumeration (the post-restart discovery query).
+      // dwf run enumeration (the post-restart discovery query).
       case V4_METHODS.conversationWorkflowRuns:
         return await this.requireV4Gateway().workflowRuns(request.params);
-            // The three read faces of dwf user-facing artifacts. Same family: read-only, stateless,
-            // resend-safe on timeout; ArtifactRead authorization lives in the host port, the gateway validates params and chunking only.
+      // The three read faces of dwf user-facing artifacts. Same family: read-only, stateless,
+      // resend-safe on timeout; ArtifactRead authorization lives in the host port, the gateway validates params and chunking only.
       case V4_METHODS.conversationWorkflowRunArtifacts:
         return await this.requireV4Gateway().workflowRunArtifacts(request.params);
       case V4_METHODS.conversationWorkflowRunArtifactData:
         return await this.requireV4Gateway().workflowRunArtifactData(request.params);
       case V4_METHODS.conversationWorkflowRunArtifactRead:
         return await this.requireV4Gateway().workflowRunArtifactRead(request.params);
-            // The two read faces of the dwf workspace transcript. Same family.
+      // The two read faces of the dwf workspace transcript. Same family.
       case V4_METHODS.conversationWorkflowRunWorkspace:
         return await this.requireV4Gateway().workflowRunWorkspace(request.params);
       case V4_METHODS.conversationWorkflowRunNodeResult:
         return await this.requireV4Gateway().workflowRunNodeResult(request.params);
-            // Attachments only via small RPC transactions; never a full-data attachment/put single line.
+      // Attachments only via small RPC transactions; never a full-data attachment/put single line.
       case V4_METHODS.attachmentBegin:
         return await this.requireV4Gateway().attachmentBegin(request.params);
       case V4_METHODS.attachmentChunk:
@@ -609,9 +609,9 @@ export class ZCodeProtocolAgentServer {
         return await this.requireV4Gateway().conversationAttachmentStat(request.params);
       case V4_METHODS.attachmentPreviewSource:
         return await this.requireV4Gateway().attachmentPreviewSource(request.params);
-            // -- usage query (additive): the same data-access layer as legacy usage/stats and session/usage
-            // (the usage-store aggregation), only the v4 namespace -- not via v4Gateway (no session-projection deps)
-            // nor legacy op dispatch (no bridge). The legacy case stays until the legacy name is deleted (old-host compat). --
+      // -- usage query (additive): the same data-access layer as legacy usage/stats and session/usage
+      // (the usage-store aggregation), only the v4 namespace -- not via v4Gateway (no session-projection deps)
+      // nor legacy op dispatch (no bridge). The legacy case stays until the legacy name is deleted (old-host compat). --
       case V4_METHODS.usageStats:
         return await getUsageStats(this.context, request.params);
       case V4_METHODS.conversationUsage:
@@ -665,8 +665,8 @@ export class ZCodeProtocolAgentServer {
         });
         if (grantResult.accepted) {
           await notifyWorkspaceHookTrustGrantSessions({
-                        // Dispatch-layer params are weakly typed; grant already parsed with the same schema, so this
-                        // safeParse only extracts workspaceKey for matching -- on failure skip the notification (defensive; normally succeeds).
+            // Dispatch-layer params are weakly typed; grant already parsed with the same schema, so this
+            // safeParse only extracts workspaceKey for matching -- on failure skip the notification (defensive; normally succeeds).
             grantedWorkspaceKey: zcodeWorkspaceHookTrustGrantParamsSchema.safeParse(request.params)
               .success
               ? zcodeWorkspaceHookTrustGrantParamsSchema.parse(request.params).workspace
@@ -841,7 +841,7 @@ export class ZCodeProtocolAgentServer {
     const params = parseParams(zcodePluginsCancelOperationParamsSchema, rawParams);
     const controller = this.pluginOperationControllers.get(params.operationId);
     if (!controller) return { operationId: params.operationId, cancelled: false };
-        // Cancellable plugin-sync capabilities stay on the V4 server; abort only the chain matching the operationId.
+    // Cancellable plugin-sync capabilities stay on the V4 server; abort only the chain matching the operationId.
     controller.abort();
     this.pluginOperationControllers.delete(params.operationId);
     return { operationId: params.operationId, cancelled: true };
@@ -855,8 +855,8 @@ export class ZCodeProtocolAgentServer {
     if (!operationId) return await run();
 
     if (this.workspaceGenerateTextControllers.has(operationId)) {
-            // A duplicate operationId would overwrite the first request's AbortController, dropping its cancellation.
-            // Active operationIds stay unique; the finally releases after the request ends; only then reusable.
+      // A duplicate operationId would overwrite the first request's AbortController, dropping its cancellation.
+      // Active operationIds stay unique; the finally releases after the request ends; only then reusable.
       throw new ProtocolRequestError(
         -32600,
         `Workspace generate operation is already active: ${operationId}`,

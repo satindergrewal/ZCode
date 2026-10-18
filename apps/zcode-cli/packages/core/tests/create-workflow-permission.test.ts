@@ -184,9 +184,7 @@ async function run(options: RunOptions): Promise<RunOutcome> {
         ...(options.maxConcurrency === undefined
           ? {}
           : { max_concurrency: options.maxConcurrency }),
-        ...(options.subagentModel === undefined
-          ? {}
-          : { subagent_model: options.subagentModel }),
+        ...(options.subagentModel === undefined ? {} : { subagent_model: options.subagentModel }),
       },
       name: "CreateWorkflow",
     },
@@ -1062,7 +1060,9 @@ describe("CreateWorkflow subagent_model", () => {
     });
 
     expect("subagentModel" in submits[0]!).toBe(false);
-    expect((outcome.result.output as CreateWorkflowOutput).response).not.toContain("Subagents run on");
+    expect((outcome.result.output as CreateWorkflowOutput).response).not.toContain(
+      "Subagents run on",
+    );
   });
 
   it("解不出来的模型名在确认窗之前就退回：没弹窗、没启动", async () => {

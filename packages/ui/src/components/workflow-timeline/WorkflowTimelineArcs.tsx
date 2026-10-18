@@ -15,21 +15,27 @@ import { MarchLight } from "./WorkflowMarchLight.js";
 import { STREAM_GAP, StreamChevrons } from "./WorkflowStreamChevrons.js";
 
 /**
- * 弧层：时间线唯一的一层 SVG，只画
- * 非相邻的边。从源站的灯升到自己的弧道、横到目标站、落回目标的灯上，箭头朝下。一站的弧端——
- * 落地与起飞一视同仁——各占一个槽、槽距 10px（`arcTerminalOffsets`：远端在左的在左、在右的在右，
- * 每一侧车道最低的在最外面），于是出去的竖段不会穿过进来的箭头。首次出现时从源画到目标
- * （`pathLength=1` 让 dashoffset 与几何无关）；之后只换墨色；正在走的边叠一层不动的光
- * （`MarchLight`：朝着灯那一头渐亮），动作留给灯自己。
+ * Arc layer: the timeline's only SVG layer, drawing
+ * non-adjacent edges only. From the source's dot up to its arc lane, across to the target, down onto
+ * the target's dot, arrowhead down. A station's arc ends — landing and takeoff alike — each take a slot
+ * at 10px spacing (`arcTerminalOffsets`: outgoing-left ends on the left, outgoing-right on the right,
+ * a side's lowest lane outermost), so outgoing verticals never cross incoming arrows. On first appearance
+ * it draws source to target (`pathLength=1` makes the dash offset geometry-free); after that only the ink
+ * changes; a travelling edge layers still light (`MarchLight`: brightening toward the dot), motion left to
+ * the dots.
  *
- * 有带时带是**一个节点**：源在带里就从带的汇合点起飞，目标在带里
- * 就落在带的分叉点上（落点提前到 4px，那里没有灯可停）。弧的高度来自它自己的**空**（`arc.air`）：带内同轨道
- * 的弧住在那条轨道的空里，跨轨道与带级的弧一律住在最上面那层空里。轨道段也搬进这一层（`children`）。
+ * With a branch, the branch is one node: a source inside takes off from the branch's merge point, a
+ * target inside lands on its fork point (landing pulled 4px early; no dot to rest on there). An arc's
+ * height comes from its own air (`arc.air`): same-rail arcs inside a branch live in that rail's air;
+ * cross-rail and branch-level arcs live in the topmost air. Rail segments move into this layer too
+ * (`children`).
  *
- * 带级的弧的竖段一路走到**端点自己的行**：源是站就从它的灯那一行起飞，源是带就从主线上的汇合点
- * 起飞；落点同理，是主线上的分叉点或目标的灯那一行。Loops 板的规则三说竖段「穿过分支行、走那些
- * 行空着的列」——停在最上面那条轨道行边上就什么也没穿过，主线上的灯与自己的弧之间反而空出一整行，
- * 读起来是断开的。设计画布的生成器停在 `rowY[R−1]` 是省事，不是设计。
+ * A branch-level arc's verticals run all the way to the end's own row: a station source takes off from
+ * its dot's row, a branch source from the main line's merge point; landing mirrors that — the main
+ * line's fork point or the target's dot row. The Loops board's rule three has verticals cross the branch
+ * rows via the columns those rows leave free — stopping at the topmost rail row crosses nothing and
+ * instead leaves a whole empty row between the main line's dots and their arcs; it reads as broken. The
+ * design-canvas generator stopping at `rowY[R−1]` was laziness, not design.
  */
 const INK_STROKE: Record<TimelineInk, string> = {
   faint: "var(--color-workflow-trace)",
@@ -49,7 +55,7 @@ export function WorkflowTimelineArcs({
 }: {
   arcs: readonly TimelineArc[];
   bands: readonly TimelineBand[];
-  /** 全部的站（不是草稿切过的那一段）：弧的下标指向它，要读每一站的轨道。 */
+  /** Every station (not the draft's sliced span): arc indices point into it; each station's rail gets read. */
   stations: readonly TimelineStation[];
   layout: TimelineLayout;
   width: number;
@@ -61,8 +67,10 @@ export function WorkflowTimelineArcs({
   const { inset, rowY } = layout;
   const rowOf = (track: number): number => rowY[track] ?? rowY[0]!;
   const trackOf = (index: number): number => stations[index]?.track ?? 0;
-  // 整层是装饰，不接指针。修复原因（2026-09-29 实测）：这层 SVG 铺满整张时间线、又画在补全的头之后，
-  // 头那一行的悬停与点击全被它吞掉——框点不亮，点头也开不了侧板。站与药丸画在它之上，所以此前没人发现。
+  // The layer is decoration and takes no pointer events. Fix rationale (observed 2026-09-29): this SVG
+  // covers the whole timeline and paints after the fill heads, swallowing every hover and click on the
+  // head row — frames would not light, heads would not open the pane. Stations and pills paint above it,
+  // which is why it went unnoticed.
   return (
     <svg
       aria-hidden
@@ -89,12 +97,12 @@ export function WorkflowTimelineArcs({
       </defs>
       {children}
       {arcs.map((arc, j) => {
-        // 带内同一条轨道的弧整条住在那条轨道的空里，两端仍是灯；其余的弧把带当一个节点（`arcEnds`）。
+        // Same-rail arcs inside a branch live entirely in that rail's air, ends still on dots; every other arc treats the branch as one node (`arcEnds`).
         const { fromBand, toBand } = arcEnds(arc, bands, stations);
         const source = bandAt(bands, arc.from);
         const target = bandAt(bands, arc.to);
         const ly = rowOf(arc.air) - ARC_BASE - ARC_LANE * arc.lane;
-        // 灯上的两端各就各的槽；分叉点与汇合点是一个点，不是一排灯，不占槽（偏移恒为 0）。
+        // Dot ends each take their slot; fork and merge points are a point, not a row of dots, and take no slot (offset always 0).
         const xa =
           fromBand && source !== undefined
             ? bandMergeX(source, inset)
@@ -104,11 +112,11 @@ export function WorkflowTimelineArcs({
             ? bandForkX(target, inset)
             : lampX(arc.to, inset) + terminals.landing[j]!;
         const sign = xb < xa ? -1 : 1;
-        // 起飞与落地都贴着**端点自己的行**：带是主线上的汇合点 / 分叉点，站是它的灯那一行。
+        // Takeoff and landing hug the end's own row: a branch is the main line's merge / fork point, a station its dot's row.
         const ya = fromBand ? rowY[0]! - 3 : rowOf(trackOf(arc.from)) - 7;
         const yb = toBand ? rowY[0]! - 4 : rowOf(trackOf(arc.to)) - 9;
         const tail = `V${yb}`;
-        // 流弧（presentation.md「Stream rails」）：横段在正中断开，让出朝弧的方向的一组 chevron。
+        // Stream arc (presentation.md "Stream rails"): the horizontal breaks at center for chevrons facing along the arc.
         const mid = (xa + xb) / 2;
         const across = arc.stream
           ? `H${mid - (STREAM_GAP / 2) * sign} M${mid + (STREAM_GAP / 2) * sign},${ly} H${xb - 8 * sign}`
@@ -142,7 +150,7 @@ export function WorkflowTimelineArcs({
               />
             ) : null}
             {arc.ink === "march" && !arc.stream ? (
-              // 行进边的光短 6px 收住，停在箭头根部。
+              // The marching light stops 6px short, at the arrowhead's root.
               <MarchLight
                 d={`${path.slice(0, -tail.length)}V${yb - 6}`}
                 from={{ x: xa, y: ya }}

@@ -16,7 +16,7 @@ afterEach(() => {
 });
 
 describe("sshAuth", () => {
-  it("密码登录时默认禁用隐式 agent，并启用 keyboard-interactive", () => {
+  it("disables the implicit agent by default and enables keyboard-interactive for password auth", () => {
     process.env["SSH_AUTH_SOCK"] = "/tmp/test.sock";
     const config = buildSSHConnectConfig({
       host: "example.com",
@@ -29,7 +29,7 @@ describe("sshAuth", () => {
     expect(config.password).toBe("secret");
   });
 
-  it("无密码时保留隐式 agent", () => {
+  it("keeps the implicit agent when no password is set", () => {
     process.env["SSH_AUTH_SOCK"] = "/tmp/test.sock";
     const config = buildSSHConnectConfig({
       host: "example.com",
@@ -40,7 +40,7 @@ describe("sshAuth", () => {
     expect(config.tryKeyboard).toBe(false);
   });
 
-  it("显式传入 agent 时应覆盖默认策略", () => {
+  it("lets an explicit agent override the default policy", () => {
     const config = buildSSHConnectConfig({
       host: "example.com",
       username: "root",
@@ -51,7 +51,7 @@ describe("sshAuth", () => {
     expect(config.agent).toBe("/tmp/custom.sock");
   });
 
-  it("连接配置应显式设置 readyTimeout 和 keepalive，避免静默断连长期悬挂", () => {
+  it("sets readyTimeout and keepalive explicitly so silent disconnects never hang", () => {
     const config = buildSSHConnectConfig({
       host: "example.com",
       username: "root",
@@ -62,7 +62,7 @@ describe("sshAuth", () => {
     expect(config.keepaliveCountMax).toBe(3);
   });
 
-  it("私钥口令只用于解密私钥，不应改变密码登录分支判断", () => {
+  it("uses the key passphrase only for decryption, never to flip the password-auth branch", () => {
     process.env["SSH_AUTH_SOCK"] = "/tmp/test.sock";
     const config = buildSSHConnectConfig({
       host: "example.com",
@@ -77,7 +77,7 @@ describe("sshAuth", () => {
     expect(config.password).toBeUndefined();
   });
 
-  it("keyboard-interactive 回调应使用同一密码响应全部 prompt", () => {
+  it("answers every keyboard-interactive prompt with the same password", () => {
     const responder = createKeyboardInteractiveResponder("secret");
     let responses: string[] = [];
     responder(
@@ -96,20 +96,21 @@ describe("sshAuth", () => {
     expect(responses).toEqual(["secret", "secret"]);
   });
 
-  it("client-authentication 错误应转换为可读信息", () => {
+  it("maps client-authentication errors to a readable message", () => {
     const error = normalizeSSHConnectError({ level: "client-authentication" });
     expect(error.message).toContain("SSH authentication failed");
   });
 
-  it("client-timeout 错误应说明是 SSH 连接握手超时", () => {
+  it("labels client-timeout errors as an SSH handshake timeout", () => {
     const error = normalizeSSHConnectError({ level: "client-timeout" });
     expect(error.message).toBe(
       "SSH handshake timed out: no SSH session within 60s. Check the network, the server's sshd, or terminal SSH config differences",
     );
   });
 
-  it("私钥缺少口令的错误文案变体应统一转换为可读提示", () => {
-    const expectedMessage = "SSH private key requires a passphrase: the key is encrypted but no passphrase was provided";
+  it("normalizes missing-passphrase error variants into one readable message", () => {
+    const expectedMessage =
+      "SSH private key requires a passphrase: the key is encrypted but no passphrase was provided";
     const cases = [
       "Encrypted private OpenSSH key detected, but no passphrase given",
       "Encrypted OpenSSH private key detected, but no passphrase given",
@@ -121,8 +122,9 @@ describe("sshAuth", () => {
     }
   });
 
-  it("私钥口令错误应转换为可读提示", () => {
-    const expectedMessage = "SSH private key passphrase is incorrect: the key could not be decrypted; check the passphrase";
+  it("maps key passphrase errors to a readable message", () => {
+    const expectedMessage =
+      "SSH private key passphrase is incorrect: the key could not be decrypted; check the passphrase";
     const cases = [
       "OpenSSH key integrity check failed -- bad passphrase?",
       "PPK private key integrity check failed -- bad passphrase?",

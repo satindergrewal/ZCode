@@ -1,5 +1,5 @@
 // ============================================================
-// Dynamic Workflow Run Port - dwf 引擎 run 的提交 / 观察 / 取消边界
+// Dynamic Workflow Run Port - submit / observe / cancel boundary for dwf engine runs
 // ============================================================
 
 import type {
@@ -28,85 +28,102 @@ import type { TraceContext } from "../tracing/tracer.js";
 import type { WorkflowTaskSnapshot } from "./workflow.port.js";
 
 /**
- * 一次 workflow run 的提交请求。脚本文本是权威输入（编译、site 表、schema 合成、lowering
- * 都从它派生），因此这里只递脚本与执行上下文，不递任何编译产物——「编译一次」发生在
- * 端口实现侧（run service），调用方不该有编译产物的概念。
+ * Submit request for one workflow run. The script text is the authoritative input (compilation,
+ * site table, schema synth, and lowering all derive from it), so only the script and the
+ * execution context are passed here - never any compiled artifact. "Compile once" happens on
+ * the port implementation side (run service); callers must have no notion of compiled artifacts.
  */
 export interface DynamicWorkflowRunSubmitRequest {
-  /** workflow 脚本源码。逐字节落库（dwf_run.script_text），resume 以其哈希为前提。 */
+  /** Workflow script source. Stored byte-for-byte (dwf_run.script_text); resume keys off its hash. */
   scriptText: string;
-  /** run 的工作目录（沙箱子进程 cwd、world-read 的根）。 */
+  /** Working directory of the run (sandboxed child cwd, root for world-read). */
   cwd: string;
   /**
-   * run 的展示名（`CreateWorkflow` 的可选 `input.name`）。落 `dwf_run.name`，供枚举面当标签。
-   * 纯展示元数据：不参与执行、不参与 resume 校验；缺席即没起名（读侧按脚本首行兜底）。
+   * Display name of the run (optional `input.name` of `CreateWorkflow`). Stored in `dwf_run.name`
+   * as a label for enumeration surfaces. Pure display metadata: not used by execution or resume
+   * validation; absent means unnamed (read side falls back to the first script line).
    */
   name?: string;
   /**
-   * 本次 run 的实参（saved workflow 的声明式参数，工具侧已按声明校验并回填默认值）。
+   * Arguments for this run (declarative parameters of a saved workflow; the tool layer has
+   * validated them against the declarations and filled defaults).
    *
-   * 与 `name` 不同，这**不是**展示元数据：它落 `dwf_run.args_json` 并注入沙箱成为脚本可读
-   * 的 `args` 全局，是 run 身份的一部分——resume 重放存下的这一份，永不接受新的。内联脚本
-   * 没有实参，字段缺席即 `{}`。
+   * Unlike `name`, this is **not** display metadata: it is stored in `dwf_run.args_json` and
+   * injected into the sandbox as the script-readable `args` global, making it part of the run
+   * identity - resume replays the stored copy and never accepts a new one. Inline scripts have
+   * no args; absent means `{}`.
    */
   args?: Record<string, unknown>;
-  /** 发起这次 run 的会话；引擎事件投影回该会话。 */
+  /** Session that launched this run; engine events are projected back into it. */
   parentSessionId?: SessionId | string;
-  /** 发起这次 run 的 CreateWorkflow 工具调用（工具卡→详情页的关联键）。 */
+  /** CreateWorkflow tool call that launched this run (tool card -> detail page linkage key). */
   toolCallId?: ToolCallId | string;
   /**
-   * 发起 run 那一轮的 inputId：子代理的
-   * `agent_step` 归到这个 message 下。只有中枢直接启动填它（`startSavedWorkflowRun` 铸的
-   * UUID v7，与 controlOnly 启动轮共用）；聊天路径缺席，由 run service 从父 runtime 的活动轮解析。
+   * inputId of the turn that launched the run: the subagent's `agent_step` events nest under
+   * that message. Only hub-launched runs set it (the UUID v7 minted by `startSavedWorkflowRun`,
+   * shared with controlOnly launch turns); chat-path runs omit it, and the run service resolves
+   * it from the parent runtime's active turn.
    */
   launchInputId?: string;
   /**
-   * 脚本声明的阶段表（因果图有名阶段，声明序，≤ 32 × 128；`createWorkflowPhaseNames`）。引擎把它
-   * 与锚点一起记进 `run-launched`，sessions-index 投影据此给侧栏迷你轨道画出前方的站点。纯展示元数据：不参与执行、
-   * 不参与 resume 校验；脚本没有 `phase()` 标记时缺席。
+   * Phase table declared by the script (named phases for the causality graph, declaration order,
+   * <= 32 x 128; `createWorkflowPhaseNames`). The engine records it with the anchor in
+   * `run-launched`, and the sessions-index projection uses it to draw upcoming sites on the
+   * sidebar mini-track. Pure display metadata: not used by execution or resume validation;
+   * absent when the script has no `phase()` markers.
    */
   phaseNames?: string[];
   /**
-   * 本 run 自己的并发上界（docs/dynamic-workflow/concurrency.md「Two bounds on a run」）：同时在飞的
-   * ask 数，落 `dwf_run.caps_max_concurrency`、resume 照用。**缺席即默认并发**（机器推导值，
-   * `resolveWorkflowDefaultConcurrency`）；给了就向下取整、至少 1，**没有上限**——高于或低于默认都行。
-   * 工具层在 `resolveInput` 里已经取整过一次（确认窗要显示实际生效的值），这里再取整是端口自己的契约。
+   * This run's own concurrency cap (docs/dynamic-workflow/concurrency.md "Two bounds on a run"):
+   * asks simultaneously in flight, stored in `dwf_run.caps_max_concurrency` and reused by resume.
+   * **Absent means the default concurrency** (machine-derived, `resolveWorkflowDefaultConcurrency`);
+   * when given it is floored to an integer >= 1 with **no upper bound** - above or below the
+   * default are both fine. The tool layer already floors it once in `resolveInput` (the confirm
+   * dialog shows the effective value); flooring here again is the port's own contract.
    */
   maxConcurrency?: number;
   /**
-   * 本 run 的子代理跑在哪个模型上。记进 journal 事件
-   * `run-launched` 的那个规范形的来源、resume 照用；**缺席即继承发起会话的模型**。
+   * Model that this run's subagents run on. Recorded as the canonical form in the journal event
+   * `run-launched` and reused by resume; **absent means inherit the launching session's model**.
    *
-   * 收的是结构化 {@link ModelSelection} 而不是字符串：工具层**已经**把用户说的名字经模型目录
-   * 解析过一次（解不出来在确认窗之前就退回了），端口不该再做一次名字匹配——那会让「解析在哪
-   * 发生」有两个答案。主代理自己不受影响：它恒留在会话模型上。
+   * Takes a structured {@link ModelSelection} rather than a string: the tool layer has **already**
+   * resolved the user-quoted name against the model catalog once (failures return before the
+   * confirm dialog); the port must not resolve names again - that would leave two answers to
+   * "where does resolution happen". The main agent is unaffected: it always stays on the session model.
    */
   subagentModel?: ModelSelection;
   /**
-   * 脚本里点名的模型（docs/dynamic-workflow/launch.md「Models the script names」）：键是脚本逐字
-   * 写下的名字（运行期 persona 里带的就是它），值是工具层已经对着模型目录解析好的选择。与
-   * {@link subagentModel} 同一条路、同一个理由收结构化选择：随 `run-launched` 记一次（规范串）、
-   * 引擎从不读，宿主建子代理会话时按 persona 的名字查它。脚本没点名任何模型时缺席。
+   * Models named in the script (docs/dynamic-workflow/launch.md "Models the script names"): keys
+   * are the names written verbatim in the script (that is what the runtime persona carries),
+   * values are selections already resolved against the model catalog by the tool layer. Same
+   * path and same rationale as {@link subagentModel}: recorded once in `run-launched` (canonical
+   * string), never read by the engine; the host looks it up by persona name when creating
+   * subagent sessions. Absent when the script names no model.
    */
   modelBindings?: Record<string, ModelSelection>;
   /**
-   * 本 run 的脚本**来自哪个文件**的绝对路径。与 {@link subagentModel} 走同一条路：随 `run-launched` 记一次、引擎从不读、
-   * 零 SQL（`dwf_run` 上没有这一列），两条读面再从事件读回。
+   * Absolute path of the file this run's script **came from**. Same path as {@link subagentModel}:
+   * recorded once in `run-launched`, never read by the engine, zero SQL (no such column on
+   * `dwf_run`); both read surfaces read it back from the event.
    *
-   * ⚠ 与本文件里产物的 `sourcePath` 无关：那是产物落盘的位置，这里是**脚本**的家。
+   * ⚠ Unrelated to the artifact `sourcePath` elsewhere in this file: that is where an artifact
+   * is stored; this is the home of the **script**.
    *
-   * 缺席即这个 run 没有可编辑的脚本文件（草稿写不下去的项目、升级前发起的 run），模型面
-   * 因此退回「改好脚本再内联提交」的老话。纯模型面元数据：桌面与 TUI 一概不显示它。
+   * Absent means this run has no editable script file (projects where drafts cannot be written,
+   * runs launched before the upgrade), so the model surface falls back to the old
+   * "fix the script, submit inline" wording. Pure model-facing metadata: desktop and TUI never show it.
    */
   scriptPath?: string;
   /**
-   * 与 {@link DynamicWorkflowRunSubmitRequest.phaseNames} **按位置对齐**的「同时在跑」表
-   * （`createWorkflowPhaseAlongside`）：`phaseAlongside[i]` 是进入 `phaseNames[i]` 时 strand 仍在
-   * 跑的其他阶段的**下标**（下标落在同一张 `phaseNames` 里）。侧栏迷你轨道据此把并行的两站画成
-   * 双线段。
+   * "Running alongside" table aligned **by position** with
+   * {@link DynamicWorkflowRunSubmitRequest.phaseNames} (`createWorkflowPhaseAlongside`):
+   * `phaseAlongside[i]` holds the **indices** (into the same `phaseNames`) of other phases still
+   * running when `phaseNames[i]` was entered. The sidebar mini-track uses it to draw two parallel
+   * phases as a double segment.
    *
-   * 与 `phaseNames` 同一姿态：纯展示元数据，随锚点落 `run-launched`，引擎不读；没有阶段并行时
-   * 整个字段缺席（缺席就是「这条轨道是一条直线」）。
+   * Same posture as `phaseNames`: pure display metadata recorded with the anchor in
+   * `run-launched`, unread by the engine; when no phases run in parallel the whole field is
+   * absent (absent means "this track is a straight line").
    */
   phaseAlongside?: number[][];
   trace: TraceContext;
@@ -117,229 +134,265 @@ export interface DynamicWorkflowRunSubmitOptions {
 }
 
 /**
- * submit 的结果。成功只有 runId：它同时是 backgroundTaskId 与 cancelBackgroundWork 的
- * workId（runId ≡ taskId ≡ workId），所以三条路径不需要各自的身份映射表。全新 run 没有可拒之处：
- * 接线故障（编译产物损坏、journal 不可用）仍然上抛。
+ * Result of submit. Success carries only runId: it is simultaneously the backgroundTaskId and
+ * the workId of cancelBackgroundWork (runId == taskId == workId), so the three paths need no
+ * per-path identity maps. A brand-new run has nothing to refuse: wiring failures (corrupt
+ * compiled artifacts, unavailable journal) still throw.
  */
 export type DynamicWorkflowRunSubmitResult = { ok: true; runId: string };
 
 /**
- * {@link DynamicWorkflowRunPort.amend} 的请求。
+ * Request for {@link DynamicWorkflowRunPort.amend}.
  *
- * 修订是 **supersede**：以新脚本铸**新 run**，从前驱 journal 导入「每具名 actor 的已完结 ask
- * 前缀」与 world 节点作缓存。前驱**可以仍在飞**——那正是本方法存在的理由：service 先停下它、
- * 等它结算，再导入、再启动，一次调用完成，模型不再需要 TaskStop + 轮询 + 重提交三步。
- * 与 `scriptText` 完全正交：修订 run 重新声明脚本；实参（saved 来源才有）不随修订传递。
+ * Amendment is **supersede**: mint a **new run** from the new script, importing "the completed
+ * ask prefix per named actor" and world nodes from the predecessor journal as cache. The
+ * predecessor **may still be in flight** - that is the reason this method exists: the service
+ * stops it, waits for settlement, imports, then launches, all in one call, so the model no
+ * longer needs TaskStop + poll + resubmit. Fully orthogonal to `scriptText`: the amended run
+ * redeclares the script; args (saved workflows only) do not carry over.
  */
 export interface DynamicWorkflowRunAmendRequest {
   scriptText: string;
   cwd: string;
-  /** 被修订的前驱 run。任意状态。 */
+  /** Predecessor run being amended. Any state. */
   predecessorRunId: string;
-  /** 新 run 的展示名；缺席时 service 沿用前驱的 name。 */
+  /** Display name of the new run; absent keeps the predecessor's name. */
   name?: string;
   parentSessionId?: SessionId | string;
-  /** 发起这次修订的 AmendWorkflow 工具调用（新 run 的工具卡 → 详情页关联键）。 */
+  /** AmendWorkflow tool call starting this amendment (new run's tool card -> detail page key). */
   toolCallId?: ToolCallId | string;
-  /** **新脚本**的声明阶段表；语义同 {@link DynamicWorkflowRunSubmitRequest.phaseNames}。 */
+  /** Declared phase table of the **new script**; semantics as {@link DynamicWorkflowRunSubmitRequest.phaseNames}. */
   phaseNames?: string[];
   /**
-   * 新 run 的并发上界；语义同 {@link DynamicWorkflowRunSubmitRequest.maxConcurrency}（缺席即天花板）。
-   * 「省略即沿用前驱、`null` 即解除」是**工具面**的三态，在 `AmendWorkflow` 的 `resolveInput`
-   * 里归一成这里的一个数或缺席——确认窗要显示沿用下来的值，所以那条规则只能住在 handler 之前。
+   * Concurrency cap of the new run; semantics as
+     {@link DynamicWorkflowRunSubmitRequest.maxConcurrency} (absent means the ceiling).
+   * "Omit keeps predecessor, `null` clears" is a **tool-surface** three-state, normalized here
+   * into a number or absence in `AmendWorkflow`'s `resolveInput` - the confirm dialog must show
+   * the inherited value, so that rule can only live before the handler.
    */
   maxConcurrency?: number;
   /**
-   * 新 run 的子代理模型；语义同 {@link DynamicWorkflowRunSubmitRequest.subagentModel}（缺席即
-   * 继承会话模型）。「省略即沿用前驱、`null` 即清除」是**工具面**的三态，在 `AmendWorkflow` 的
-   * `resolveInput` 里连同一次重新解析归一成这里的一个选择或缺席。
+   * Subagent model of the new run; semantics as
+   * {@link DynamicWorkflowRunSubmitRequest.subagentModel} (absent means inherit the session
+   * model). "Omit keeps predecessor, `null` clears" is a **tool-surface** three-state, normalized
+   * in `AmendWorkflow`'s `resolveInput`, together with one re-resolution, into a selection or absence.
    */
   subagentModel?: ModelSelection;
   /**
-   * **新脚本**点名的模型；语义同 {@link DynamicWorkflowRunSubmitRequest.modelBindings}。「同名沿用
-   * 前驱的绑定」是**工具面**的规则，在 `AmendWorkflow` 的 `resolveInput` 里连同重新解析归一成这里
-   * 的一张表；端口不从前驱继承任何绑定。
+   * Models named by the **new script**; semantics as
+   * {@link DynamicWorkflowRunSubmitRequest.modelBindings}. "Same name keeps the predecessor's
+   * binding" is a **tool-surface** rule, normalized in `AmendWorkflow`'s `resolveInput`, together
+   * with re-resolution, into this table; the port inherits no bindings from the predecessor.
    */
   modelBindings?: Record<string, ModelSelection>;
   /**
-   * **新脚本**来自哪个文件的绝对路径；语义同 {@link DynamicWorkflowRunSubmitRequest.scriptPath}。
+   * Absolute path of the file the **new script** came from; semantics as
+   * {@link DynamicWorkflowRunSubmitRequest.scriptPath}.
    *
-   * 与并发上界、子代理模型不同，它**没有三态**：修订记的永远是这一次修订的脚本来自哪个文件
-   * （`path` 提交就是那个文件，内联提交就是刚写下的草稿），绝不沿用前驱的——前驱的路径指向
-   * 的是**旧脚本**，把它记到新 run 上就是让模型下次去编辑一个已经不在跑的文件。
+   * Unlike the concurrency cap and subagent model, there is **no three-state**: an amendment
+   * always records the file this amendment's script came from (`path` submit: that file; inline
+   * submit: the draft just written), never the predecessor's - the predecessor path points at
+   * the **old script**, and recording it on the new run would send the model off to edit a file
+   * that is no longer running.
    */
   scriptPath?: string;
   /**
-   * **新脚本**的「同时在跑」表；语义同 {@link DynamicWorkflowRunSubmitRequest.phaseAlongside}
-   * （下标落在本请求的 `phaseNames` 上，不是前驱的那张表）。
+   * "Running alongside" table of the **new script**; semantics as
+   * {@link DynamicWorkflowRunSubmitRequest.phaseAlongside} (indices refer to this request's
+   * `phaseNames`, not the predecessor's).
    */
   phaseAlongside?: number[][];
   /**
-   * 新 run 沿用前驱落库的实参（`dwf_run.args_json`）。缺席即修订不带实参（工具路径的契约不变）。
-   * 只有 GUI 的「配置」传它：它重跑的是前驱自己的脚本，脚本读的正是前驱启动时的那份实参；不沿用的话，一个带实参
-   * 从中枢启动的已保存工作流会以空 `args` 重跑。
+   * New run reuses the predecessor's stored args (`dwf_run.args_json`). Absent means the
+   * amendment carries no args (tool-path contract unchanged). Only the GUI "configure" flow
+   * sends it: it re-runs the predecessor's own script, which reads exactly the args the
+   * predecessor launched with; without inheritance, a saved workflow launched from the hub with
+   * args would re-run with empty `args`.
    */
   inheritArgs?: true;
   trace: TraceContext;
 }
 
 /**
- * amend 被拒的结构化理由。两者对模型是**两个不同的下一步**（换一个 run id / 放弃修订走一次
- * 全新 run），所以必须可分辨。可操作文案在工具层，端口只承载判别键。
+ * Structured refusal reasons for amend. The two are **different next steps** for the model
+ * (retry with another run id / give up and run fresh), so they must be distinguishable. The
+ * actionable wording lives in the tool layer; the port carries only discriminants.
  *
- * 没有「前驱仍在飞」这一条：在飞的前驱被停下而不是被拒（旧版的 `not_amendable` 与随之而来的
- * 「停止后轮询到 stopped 再重提交」竞态由此消失）。
+ * There is no "predecessor in flight" case: an in-flight predecessor is stopped, not refused
+ * (the legacy `not_amendable` and its "stop, poll until stopped, resubmit" race disappear).
  *
- * **拒绝即零副作用**：预检在停止前驱**之前**跑完，被拒时没有 dwf_run 行、没有注册表条目、
- * 前驱照旧在跑。
+ * **Refusal means zero side effects**: the precheck finishes before the predecessor is stopped;
+ * on refusal there is no dwf_run row, no registry entry, and the predecessor keeps running.
  */
 export type DynamicWorkflowRunAmendRefusalReason =
-  /** journal 里没有这个前驱 run。 */
+  /** No such predecessor run in the journal. */
   | "run_not_found"
-  /** 前驱有已完结却缺消息边界记账的 ask，导入的转录截断无从谈起（整体拒绝，无降级回退）。 */
+  /** The predecessor has completed asks missing message-boundary bookkeeping; the imported transcript cannot be truncated meaningfully (reject wholesale, no degraded fallback). */
   | "missing_boundaries";
 
 export type DynamicWorkflowRunAmendResult =
   | {
       ok: true;
       runId: string;
-      /** 前驱在飞、被本次修订停下时在场（= predecessorRunId）；前驱早已结算则缺席。 */
+      /** Present when a predecessor was in flight and stopped by this amendment (= predecessorRunId); absent if it had long settled. */
       supersededRunId?: string;
     }
   | { ok: false; reason: DynamicWorkflowRunAmendRefusalReason };
 
 /**
- * 取消的发起方。`user` / `model` 是两条停止入口的 initiator；`{ superseded }` 是 amend 路径
- * 停下在飞前驱时传的：新 run 的 id 随原因一起落进前驱的结算袋（`supersededBy`）。
+ * Initiator of a cancellation. `user` / `model` are the two stop entry points' initiators;
+ * `{ superseded }` is what the amend path passes when stopping an in-flight predecessor: the
+ * new run's id lands in the predecessor's settlement bag next to the reason (`supersededBy`).
  */
 export type DynamicWorkflowRunCancelInitiator = "user" | "model" | { superseded: string };
 
 /**
- * 终态快照带的 report item 上限（`reports` 的长度上界）。取 256——report 条数上限从 256 提到
- * 65,536 之前的值：报告条数不超过它的 run，快照与通知逐字节不变；更大的 run 由 `reportCount`
- * 说出真实总数。完成通知那一节的字符预算（8000）本来也容不下更多条。
+ * Cap on report items carried by the terminal snapshot (length bound of `reports`). Set to 256 -
+ * the value before the report count cap rose from 256 to 65,536: runs with at most that many
+ * reports produce byte-identical snapshots and notifications; larger runs state the true total
+ * in `reportCount`. The completion notification's character budget (8000) could not fit more anyway.
  */
 export const DYNAMIC_WORKFLOW_SNAPSHOT_MAX_REPORTS = 256;
 
 /**
- * 终态快照带的 report item 的字节上界（按 journal 里 `result_json` 的字节计）。取 8 MiB——
- * 单条上限 32 KiB 时 256 条的最坏情形，所以单条上限提到 1 MiB 之后快照的内存不涨。快照只喂
- * 完成通知，而通知每条最多展示 2,000 字符、整节 8,000 字符，8 MiB 远超它能用上的部分。
- * 第一条总是带上，所以一条 1 MiB 的报告不会让快照一条都不带。
+ * Byte cap per report item carried by the terminal snapshot (counted as `result_json` bytes in
+ * the journal). Set to 8 MiB - the worst case of 256 items at the former 32 KiB per-item cap, so
+ * snapshot memory did not grow when the per-item cap rose to 1 MiB. Snapshots only feed the
+ * completion notification, which shows at most 2,000 characters per item and 8,000 per section;
+ * 8 MiB far exceeds anything usable. The first item is always included, so one 1 MiB report
+ * cannot leave the snapshot empty.
  */
 export const DYNAMIC_WORKFLOW_SNAPSHOT_MAX_REPORT_BYTES = 8 * 1024 * 1024;
 
 /**
- * run 快照：沿用 {@link WorkflowTaskSnapshot} 的形状（后台任务追踪器与通知管线按它读），
- * 只把 `output` 放宽——workflow run 的产物是脚本的顶层返回值，形状由脚本决定，不是 legacy
- * `Workflow` 工具的输出类型。legacy 端口本身不加宽（两套 workflow 机制不共用端口）。
+ * Run snapshot: keeps the {@link WorkflowTaskSnapshot} shape (the background task tracker and
+ * notification pipeline read it) and only widens `output` - a workflow run's product is the
+ * script's top-level return value, whose shape the script decides, not the legacy `Workflow`
+ * tool's output type. The legacy port itself is not widened (the two workflow mechanisms do
+ * not share a port).
  *
- * `reports` 是脚本 `report(item)` 交出的渐进产物**原值**，按报告顺序，来自 journal 的
- * `kind = "report"` 节点行——那是这些条目的持久家（`workflowRuns.reports` 只是有界的
- * memory-only 展示面）。完成通知据此在 completed / failed / cancelled 三态下一律回投：
- * 一个死在第 12 个 ask 上的 run 仍然做完了 11 个 ask 的活，捞回它正是 `report` 存在的理由。
- * 它只带**前** {@link DYNAMIC_WORKFLOW_SNAPSHOT_MAX_REPORTS} 条、且至多
- * {@link DYNAMIC_WORKFLOW_SNAPSHOT_MAX_REPORT_BYTES} 字节；真实总数在 `reportCount`
- * （docs/execution-engine.md「Reading the journal」）。
+ * `reports` holds the **original values** handed to `report(item)` by the script, in report
+ * order, from the journal's `kind = "report"` node rows - the persistent home of these entries
+ * (`workflowRuns.reports` is only a bounded memory-only display surface). The completion
+ * notification projects them in completed / failed / cancelled alike: a run that died on its
+ * 12th ask still did the work of 11; recovering it is the point of `report`. It carries only
+ * the first {@link DYNAMIC_WORKFLOW_SNAPSHOT_MAX_REPORTS} items and at most
+ * {@link DYNAMIC_WORKFLOW_SNAPSHOT_MAX_REPORT_BYTES} bytes; the true total is `reportCount`
+ * (docs/execution-engine.md "Reading the journal").
  */
 export type DynamicWorkflowRunSnapshot = Omit<WorkflowTaskSnapshot, "output"> & {
   output?: unknown;
   /**
-   * run 的真实终态词。基类的 `status` 是后台任务
-   * 追踪器的通用词汇（`stopped` 折成 `cancelled`、`errored` 折成 `failed`），通知与工具文案
-   * 要说真话必须读这两个字段；`stopReason` 只在 `runStatus === "stopped"` 时在场。
+   * The run's true terminal state word. The base class's `status` speaks the background task
+   * tracker's generic vocabulary (`stopped` folded into `cancelled`, `errored` into `failed`);
+   * notifications and tool copy must read these two fields to tell the truth; `stopReason` is
+   * present only when `runStatus === "stopped"`.
    */
   runStatus?: DynamicWorkflowRunLifecycleStatus;
   stopReason?: DynamicWorkflowRunStopReason;
-  /** 发起这个 run 的会话（journal 的 parent_session_id；注册表条目在场时取它的）。 */
+  /** Session that launched this run (journal parent_session_id; taken from the registry entry when present). */
   parentSessionId?: string;
-  /** 本 run 修订自哪个 run；不是修订则缺席。 */
+  /** Run this run was amended from; absent when not an amendment. */
   resumedFrom?: string;
-  /** 本 run 被哪次修订停下并替代；未被替代则缺席。 */
+  /** Amendment that stopped and replaced this run; absent when not replaced. */
   supersededBy?: string;
   /**
-   * 本 run 自己的并发上界（`dwf_run.caps_max_concurrency`），**只在低于当前天花板时在场**：
-   * 跑在天花板上的 run 没有可说的（「无则缺席」，与 `reports` 同规）。`AmendWorkflow` 的
-   * `resolveInput` 据它决定省略 `max_concurrency` 时沿用什么。
+   * This run's own concurrency cap (`dwf_run.caps_max_concurrency`), **present only when below
+   * the current ceiling**: a run at the ceiling has nothing to say ("absent when default", same
+   * rule as `reports`). `AmendWorkflow`'s `resolveInput` uses it to decide what omission of
+   * `max_concurrency` inherits.
    */
   maxConcurrency?: number;
   /**
-   * 本 run 的子代理模型（journal 事件 `run-launched` 上的那一个），规范形
-   * `providerId/modelId[$reasoningLevel]`，**只在设过时在场**：继承会话模型的 run 没有可说的
-   * （「无则缺席」，与 `maxConcurrency` 同规）。
-   * 这里是字符串而不是 {@link ModelSelection}：读面只用来显示与原样回填，没有人按字段取值。
+   * This run's subagent model (the one on journal event `run-launched`), canonical form
+   * `providerId/modelId[$reasoningLevel]`, **present only when set**: a run inheriting the
+   * session model has nothing to say ("absent when default", same rule as `maxConcurrency`).
+   * A string, not {@link ModelSelection}: read surfaces only display and round-trip it; nobody
+   * reads fields out of it.
    */
   subagentModel?: string;
   /**
-   * 本 run 的脚本点名的模型（journal 事件 `run-launched` 上的那张表）：脚本逐字写下的名字 →
-   * 规范串。**只在脚本点名过模型时在场**。`AmendWorkflow` 的 `resolveInput` 与 GUI「配置」据它让
-   * 同名的绑定沿用下去（docs/dynamic-workflow/launch.md「Models the script names」）。
+   * Models named by this run's script (the table on journal event `run-launched`): verbatim
+   * script name -> canonical string. **Present only when the script named models.**
+   * `AmendWorkflow`'s `resolveInput` and the GUI "configure" flow use it to carry same-name
+   * bindings forward (docs/dynamic-workflow/launch.md "Models the script names").
    */
   modelBindings?: Record<string, string>;
   /**
-   * 本 run 的脚本文件（绝对路径，journal 事件 `run-launched` 上的那一个）。**只在这个 run 记下过文件时在场**。
+   * This run's script file (absolute path, the one on journal event `run-launched`). **Present
+   * only when the run recorded a file.**
    *
-   * 终态通知据它把「改好脚本再内联提交」换成「就地编辑那个文件、再 `path` 修订」，所以它必须
-   * 能从快照读到；用户面一概不显示（与 `subagentModel` 不同，后者会进桌面的 run 面板）。
+   * The terminal notification uses it to replace "fix the script, submit inline" with "edit that
+   * file in place, then amend with `path`", so it must be readable from the snapshot; user-facing
+   * surfaces never show it (unlike `subagentModel`, which appears in the desktop run panel).
    */
   scriptPath?: string;
-  /** 结构化失败（与 {@link DynamicWorkflowRunDetail.error} 同源）；基类的 `error` 是它的 message。 */
+  /** Structured failure (same source as {@link DynamicWorkflowRunDetail.error}); the base class's `error` is its message. */
   failure?: DynamicWorkflowRunError;
   /**
-   * 本 run 及其 lineage 的**活动**时长（毫秒）：本 run 的每一世加上每个前驱的每一世，世与世
-   * 之间的空档不计（口径与理由见 docs/dynamic-workflow/transcript-and-notifications.md
-   * 「How long it took」）。完成卡的「时间」格报的就是它。
+   * **Active** duration of this run and its lineage (milliseconds): every life of this run plus
+   * every life of every predecessor, excluding gaps between lives (rationale in
+   * docs/dynamic-workflow/transcript-and-notifications.md "How long it took"). This is the
+   * "time" cell of the completion card.
    *
-   * 与 `reports` / `artifacts` 同规**只在终态在场**（`getTask` 被反复轮询，而消费者只有终态
-   * 通知），且 journal 说不出话时整字段缺席——不是 0。缺席即读侧退回 `completedAt − startedAt`：
-   * 那是结算它的那个进程自己看到的一世，一个更保守但永不虚报的答案。
+   * Same rule as `reports` / `artifacts`: **terminal states only** (`getTask` is polled
+   * repeatedly; consumers only act on terminal notifications), and the whole field is absent
+   * when the journal cannot answer - not 0. Absent means read sides fall back to
+   * `completedAt - startedAt`: the single life seen by the process that settled it, a more
+   * conservative answer that never overreports.
    */
   activeDurationMs?: number;
-  /** 前 {@link DYNAMIC_WORKFLOW_SNAPSHOT_MAX_REPORTS} 条 report item，按报告顺序；零条时缺席。 */
+  /** First {@link DYNAMIC_WORKFLOW_SNAPSHOT_MAX_REPORTS} report items, in report order; absent when none. */
   reports?: readonly unknown[];
   /**
-   * 本 run 的 report 真实总条数（`count(*)`），与 `reports` 同在同缺。通知与 manifest 的
-   * `count` 读它：`reports` 被截在上限处时，`count ≠ shown` 就是「还有更多」的信号。
+   * True total number of this run's reports (`count(*)`), present/absent together with `reports`.
+   * Notification and manifest `count` read it: when `reports` is truncated at the cap,
+   * `count != shown` signals "more exist".
    */
   reportCount?: number;
   /**
-   * 此刻停驻在这个 run 上、等主代理作答的升级问题。
+   * Escalated questions currently parked on this run, awaiting the main agent's answer.
    *
-   * **从内存注册表投影，不是 journal 重放**：journal 里有 `escalation-raised` 与
-   * `escalation-resolved` 两类事件，但「现在还欠谁一个答案」是进程内的活事实——重放出来的
-   * 未配对 raised 在进程亡故后只会说谎（停驻的 deferred 早已随进程消失，resume 会让 actor
-   * 重新提问、得新 qid）。
+   * **Projected from the in-memory registry, not a journal replay**: the journal has
+   * `escalation-raised` and `escalation-resolved` events, but "who is still owed an answer" is
+   * live in-process fact - a replayed unpaired raised event lies once the process is gone (the
+   * parked deferred died with it; resume makes the actor ask again under a new qid).
    *
-   * 这是通知被丢弃（stale branch generation / shutdown drop）之后的**查询兜底**：主代理任何
-   * 时候都能经既有观察面重新发现待答问题。零条时整字段缺席（不发空数组）。
+   * This is the **query fallback** after a notification is dropped (stale branch generation /
+   * shutdown drop): the main agent can always rediscover pending questions through the existing
+   * observation surface. Absent entirely when none (never an empty array).
    */
   pendingQuestions?: readonly DynamicWorkflowRunPendingQuestion[];
   /**
-   * 本 run 的留白（{@link DynamicWorkflowRunHole}）：到达过的每一处，等着的与补过的。与
-   * `pendingQuestions` 同规——零条整字段缺席、`waiting` 从引擎的停驻表投影而不是单靠事件重放；
-   * 留白通知的发射器与 `FillWorkflowHole` 的 resolveInput 都读它。
+   * This run's holes ({@link DynamicWorkflowRunHole}): every site reached, waiting or filled.
+   * Same rule as `pendingQuestions` - absent when none, `waiting` projected from the engine's
+   * parked table rather than replayed events; the hole-notification emitter and `FillWorkflowHole`'s
+   * resolveInput both read it.
    */
   holes?: readonly DynamicWorkflowRunHole[];
   /**
-   * 本 run 发布的**用户面产物**，按首次出现顺序，来自
-   * journal 的 `kind = "artifact"` 行——那是版本历史的持久家（`workflowRuns.artifacts` 只带
-   * 最新版元数据）。与 `reports` 同规：**只在终态**读（`getTask` 被反复轮询，而产物行的
-   * 消费者是终态通知与 GetWorkflowRun）；零件时整字段缺席。
+   * User-facing artifacts published by this run, in first-appearance order, from the journal's
+   * `kind = "artifact"` rows - the persistent home of version history (`workflowRuns.artifacts`
+   * carries only latest-version metadata). Same rule as `reports`: read on **terminal states**
+   * (`getTask` is polled repeatedly; consumers of artifact rows are the terminal notification
+   * and GetWorkflowRun); absent entirely when none.
    *
-   * ⚠ 术语：这里的 artifact 是脚本经 `artifact.*` 发布给用户看的产出，与本类型的 `output`
-   * （脚本顶层返回值，引擎内部叫 `RunSettlement.artifact`）无关。
+   * ⚠ Terminology: artifact here is a product the script published to the user via `artifact.*`,
+   * unrelated to this type's `output` (the script's top-level return value, `RunSettlement.artifact`
+   * in engine terms).
    */
   artifacts?: readonly DynamicWorkflowRunArtifact[];
 };
 
 /**
- * 一个用户面产物的一个版本（journal `dwf_node.result_json` 上 `ArtifactVersionRecord` 的
- * JSON 镜像）。**刻意在这里重新声明**而不是从 @zcode/dynamic-workflow import：端口只承载
- * JSON 形状（与 {@link DynamicWorkflowRunLifecycleStatus} 同一条论证）。
+ * One version of a user-facing artifact (JSON mirror of `ArtifactVersionRecord` on the journal's
+ * `dwf_node.result_json`). **Deliberately redeclared here** rather than imported from
+ * @zcode/dynamic-workflow: the port carries only JSON shapes (same argument as
+ * {@link DynamicWorkflowRunLifecycleStatus}).
  *
- * 内容产物（`file` / `markdown`）填 `contentType` / `bytes` / `uri` / `sourcePath`；预置看板
- * （`chart` / `table` / `metrics` / `board`）填 `spec`。字节永不在这里——`uri` 指向
- * tool-artifact store。
+ * Content artifacts (`file` / `markdown`) fill `contentType` / `bytes` / `uri` / `sourcePath`;
+ * preset boards (`chart` / `table` / `metrics` / `board`) fill `spec`. Bytes never appear here -
+ * `uri` points into the tool-artifact store.
  */
 export interface DynamicWorkflowRunArtifactVersion {
   version: number;
@@ -350,13 +403,13 @@ export interface DynamicWorkflowRunArtifactVersion {
   uri?: string;
   sourcePath?: string;
   spec?: unknown;
-  /** 发布时刻（epoch 毫秒）。driver 恒写入。 */
+  /** Publication time (epoch ms). Always written by the driver. */
   publishedAt: number;
-  /** 这一版属于 run 的交付物。 */
+  /** This version is the run's deliverable. */
   primary?: true;
 }
 
-/** 用户面产物的成员种类（facade `artifact.*` 的六个成员）。 */
+/** Member kinds of user-facing artifacts (the six members of facade `artifact.*`). */
 export type DynamicWorkflowRunArtifactKind =
   | "file"
   | "markdown"
@@ -366,9 +419,10 @@ export type DynamicWorkflowRunArtifactKind =
   | "board";
 
 /**
- * 一个用户面产物：id 下的全部版本（按版本号升序）+ 喂给它的标签 report 计数。
- * `title` / `description` / `contentType` / `sourcePath` / `spec` 取**最新版**的值，方便
- * 只关心「现在是什么」的读者不必自己翻 versions。
+ * One user-facing artifact: all versions under an id (ascending by version) + the count of
+ * label reports feeding it. `title` / `description` / `contentType` / `sourcePath` / `spec` take
+ * the **latest version's** values, so readers who only care about "what is it now" need not
+ * walk `versions`.
  */
 export interface DynamicWorkflowRunArtifact {
   id: string;
@@ -378,93 +432,98 @@ export interface DynamicWorkflowRunArtifact {
   contentType?: string;
   sourcePath?: string;
   spec?: unknown;
-  /** 最新版号（= versions 末项的 version）。 */
+  /** Latest version number (= version of the last entry in versions). */
   version: number;
   versions: readonly DynamicWorkflowRunArtifactVersion[];
-  /** 打了这个 id 标签的 `report` 条目数（预置看板的数据量；内容产物恒 0）。 */
+  /** Number of `report` entries tagged with this id (data volume of preset boards; always 0 for content artifacts). */
   itemCount: number;
-  /** run 的交付物（至多一件）。`artifacts` 清单以它带头，其余按首次发布顺序。 */
+  /** The run's deliverable (at most one). Leads the `artifacts` list; the rest follow first-publication order. */
   primary?: true;
 }
 
-/** 喂给某个预置产物的一条 `report` 条目，按 journal sequence 定位（看板的取数面）。 */
+/** One `report` entry feeding a preset artifact, addressed by journal sequence (the board's data surface). */
 export interface DynamicWorkflowRunArtifactItem {
   sequence: number;
   siteId: string;
   ordinal: number;
-  /** 整条 item；请求点名了 `fields` 时缺席。 */
+  /** The whole item; absent when the request named `fields`. */
   item?: unknown;
-  /** 请求点名了 `fields` 时：路径 → 值，走不通的路径不在表里。 */
+  /** When the request named `fields`: path -> value; unreachable paths are not listed. */
   fields?: Record<string, unknown>;
 }
 
 /**
- * {@link DynamicWorkflowRunPort.listArtifactItems} 的分页袋（cursor = journal sequence，严格大于）。
- * 两道界的语义同 {@link DynamicWorkflowRunEventPage}：条数到 `limit`、或再加一条就超过
- * `maxBytes` 时收尾，第一条总是带上。两者都由调用方（网关）给定，实现方精确兑现、不再钳。
+ * Pagination bag of {@link DynamicWorkflowRunPort.listArtifactItems}
+ * (cursor = journal sequence, strictly greater). Both bounds mean the same as
+ * {@link DynamicWorkflowRunEventPage}: stop at `limit` items, or when one more would exceed
+ * `maxBytes`; the first item is always included. Both are given by the caller (gateway); the
+ * implementation honors them exactly and does not clamp further.
  */
 export interface DynamicWorkflowRunArtifactItemPage {
   afterSequence?: number;
   limit: number;
   maxBytes: number;
   /**
-   * 只取这些字段路径（`readWorkflowArtifactField` 的规则，由 SQLite 取出），结果每条带 `fields`
-   * 而不带 `item`，`maxBytes` 按取出的字段值计。缺省 = 整条 item。
+   * Only fetch these field paths (rules of `readWorkflowArtifactField`, extracted by SQLite);
+   * each result carries `fields` instead of `item`, and `maxBytes` counts the extracted values.
+   * Default = the whole item.
    */
   fields?: readonly string[];
 }
 
-/** 看板条目的一页。`hasMore` 由存储层判定：页之后是否还有条目。 */
+/** One page of board items. `hasMore` is decided by the storage layer: whether items follow the page. */
 export interface DynamicWorkflowRunArtifactItemsResult {
   items: readonly DynamicWorkflowRunArtifactItem[];
   hasMore: boolean;
 }
 
-/** {@link DynamicWorkflowRunPort.readArtifact} 的返回：某个版本的全部字节。 */
+/** Return of {@link DynamicWorkflowRunPort.readArtifact}: all bytes of one version. */
 export interface DynamicWorkflowRunArtifactBytes {
   bytes: Uint8Array;
   contentType: string;
 }
 
-/** 一个停驻中的升级问题。字段与 `escalation-raised` 事件同源，另加提问时刻。 */
+/** One parked escalation question. Fields share the source of the `escalation-raised` event, plus the asked-at time. */
 export interface DynamicWorkflowRunPendingQuestion {
-  /** 全局唯一的问题 id（形如 `dwfq-<runId 片段>-<seq>`）；`resolveQuestion` 只认它。 */
+  /** Globally unique question id (shaped `dwfq-<runId fragment>-<seq>`); the only key `resolveQuestion` accepts. */
   qid: string;
-  /** 提问的 actor，`refToString` 形态（如 `actor#1@1`）。恒在场，且在 run 内唯一定位。 */
+  /** Asking actor, `refToString` form (e.g. `actor#1@1`). Always present and unique within the run. */
   actor: string;
   /**
-   * 这个 actor 的人类可读名（脚本里 `agent("poet")` 的 `"poet"`）。
+   * Human-readable name of this actor (the `"poet"` of `agent("poet")` in the script).
    *
-   * **匿名 actor 缺席本字段，且这里不合成任何兜底标签**：兜底是渲染决策，通知面与侧栏各有
-   * 各的合适写法（一个要读成句子，一个要塞进一列）。在这里合成一个「actor#1@1」当名字，
-   * 只会让两个消费者都拿不回「这个 actor 其实没有名字」这条事实。
+   * **Absent for anonymous actors, and no fallback label is synthesized here**: fallback is a
+   * rendering decision; the notification surface and the sidebar each have their own fitting
+   * form (one reads as a sentence, one fits a column). Synthesizing "actor#1@1" as a name here
+   * would stop both consumers from recovering the fact that this actor has no name.
    */
   actorName?: string;
   question: string;
-  /** actor 补充的上下文（`escalate` 的可选 `context`）。 */
+  /** Context added by the actor (optional `context` of `escalate`). */
   context?: string;
-  /** 提问时刻（epoch ms）。主代理据它判断「这个问题已经等了多久」。 */
+  /** Asked-at time (epoch ms). The main agent gauges "how long has this been waiting" from it. */
   askedAt: number;
 }
 
 /**
- * {@link DynamicWorkflowRunPort.resolveQuestion} 的结构化拒绝理由。三者对模型是**三个不同的
- * 下一步**，所以必须可分辨：去快照里取正确的 id / 什么都不用做 / 这个 run 已经不需要答案了。
+ * Structured refusal reasons of {@link DynamicWorkflowRunPort.resolveQuestion}. The three are
+ * **different next steps** for the model, so they must be distinguishable: fetch the right id
+ * from the snapshot / do nothing / this run no longer needs an answer.
  */
 export type DynamicWorkflowResolveQuestionRefusalReason =
-  /** 注册表里没有这个 qid：拼错了，或来自已亡故进程的陈旧 id（停驻项不持久化）。 */
-  | "unknown_question"
-  /** 这个问题已经被回答过，actor 早已带着那次答案继续。 */
-  | "already_resolved"
-  /** qid 所属的 run / ask 已不在飞行中（被取消、失败或已结束），没有人在等这个答案。 */
+  | /** No such qid in the registry: a typo, or a stale id from a dead process (parked entries are not persisted). */
+    "unknown_question" /** Already answered; the actor moved on with that answer long ago. */
+  | "already_resolved" /** The qid's run / ask is no longer in flight (cancelled, failed, or finished); nobody waits for this answer. */
   | "run_not_in_flight";
 
 /**
- * `resolveQuestion` 的结构化结果。失败走 reason 而不是 throw，与
- * {@link DynamicWorkflowRunSubmitResult} 同一条论证：三种理由全是调用方可预期的业务分支。
+ * Structured result of `resolveQuestion`. Failure returns a reason instead of throwing, same
+ * argument as {@link DynamicWorkflowRunSubmitResult}: all three reasons are business branches
+ * the caller can expect.
  *
- * `message` 由实现侧写好（陈述现状与下一步）而不是留给工具层拼：判别键与文案分开维护，
- * 两处迟早会说不同的话，而这里的读者是模型——它读到的就是它的下一步。
+ * `message` is written by the implementation (stating the situation and next step) rather than
+ * assembled by the tool layer: discriminants and copy maintained apart, or the two eventually
+ * say different things - and the reader here is the model: what it reads is its next step.
  */
 export type DynamicWorkflowResolveQuestionResult =
   | { ok: true; qid: string }
@@ -475,47 +534,52 @@ export interface DynamicWorkflowRunWaitOptions {
 }
 
 /**
- * 事件日志的分页参数；cursor = journal sequence（appendEvent 单调分配）。
+ * Pagination parameters of the event log; cursor = journal sequence (monotonically assigned by
+ * appendEvent).
  *
- * 两道界同时生效（docs/execution-engine.md「Reading the journal」）：页在条数到 `limit`、或
- * 再加一条就会让存储里的序列化字节超过 `maxBytes` 时收尾；第一条总是带上，所以一条超过
- * `maxBytes` 的事件自成一页。实现方缺省两者时各取一个有界的默认值——事件日志一页永远有界。
+ * Both bounds apply together (docs/execution-engine.md "Reading the journal"): the page stops at
+ * `limit` items, or when one more would push the stored serialization past `maxBytes`; the first
+ * item is always included, so an event over `maxBytes` forms a page of its own. When the
+ * implementation lacks either, it picks a bounded default - an event-log page is always bounded.
  */
 export interface DynamicWorkflowRunEventPage {
-  /** 只取 sequence 严格大于该值的事件；缺省从头取。 */
+  /** Only events with sequence strictly greater; default from the start. */
   afterSequence?: number;
   limit?: number;
   maxBytes?: number;
 }
 
-/** 事件日志的一页。`hasMore` 由存储层判定：页之后是否还有事件。 */
+/** One page of the event log. `hasMore` is decided by the storage layer: whether events follow the page. */
 export interface DynamicWorkflowRunEventsResult {
   events: DynamicWorkflowRunEvent[];
   hasMore: boolean;
 }
 
 /**
- * 一条 run 事件的**协议形态**：sequence + 事件种类 + JSON 载荷。
+ * **Protocol shape** of one run event: sequence + event kind + JSON payload.
  *
- * 刻意不复用引擎的 `RunEvent`：那是领域包（@zcode/dynamic-workflow）的词汇表，把它
- * import 进 contracts 会让每一个持有端口的层都编译期依赖引擎内部类型。端口只承载
- * JSON 形状，`type` 是不透明字符串，`payload` 由读端按需解释。
+ * Deliberately not the engine's `RunEvent`: that is the domain package's
+ * (@zcode/dynamic-workflow) vocabulary; importing it into contracts would give every layer
+ * holding the port a compile-time dependency on engine internals. The port carries only JSON
+ * shapes; `type` is an opaque string and `payload` is interpreted by readers as needed.
  */
 export interface DynamicWorkflowRunEvent {
   sequence: number;
   type: string;
   payload: Record<string, unknown>;
-  /** 载荷经 {@link boundDynamicWorkflowRunEventPayload} 裁剪过（原始事实仍在 journal）。 */
+  /** Payload trimmed by {@link boundDynamicWorkflowRunEventPayload} (the raw facts remain in the journal). */
   truncated?: boolean;
 }
 
 /**
- * run 事件载荷的界。**协议边界上的所有载荷有界**，而引擎的事件
- * 里有两个天然无界的字段：`actor-created` 的 `persona.system`（整段 system prompt）与
- * node 级错误的 `finalText`（一整轮模型输出）。它们不该按「大概不会很长」放行。
+ * Bounds for run event payloads. **Every payload crossing the protocol boundary is bounded**,
+ * and two engine event fields are naturally unbounded: `persona.system` of `actor-created` (the
+ * whole system prompt) and `finalText` of node-level errors (a full turn of model output).
+ * They must not pass on a "probably not too long" basis.
  *
- * 界是**结构性的**（字符串长度 / 数组条数 / 键数 / 深度）而不是字节总量：结构界可以
- * 逐字段就地施加，不需要先序列化一遍再回退，也不会因为一个巨大字段把其余字段一起丢掉。
+ * Bounds are **structural** (string length / array items / key count / depth), not total bytes:
+ * structural bounds apply per field in place, with no serialize-then-retry, and one huge field
+ * does not drag the rest away with it.
  */
 export const DYNAMIC_WORKFLOW_RUN_EVENT_PAYLOAD_LIMITS = {
   maxStringLength: 2_048,
@@ -525,16 +589,18 @@ export const DYNAMIC_WORKFLOW_RUN_EVENT_PAYLOAD_LIMITS = {
 } as const;
 
 /**
- * 把一条 run 事件的载荷裁到 {@link DYNAMIC_WORKFLOW_RUN_EVENT_PAYLOAD_LIMITS} 之内，
- * 并顺带规范成**可 JSON 序列化**的形状。
+ * Trim one run event payload to {@link DYNAMIC_WORKFLOW_RUN_EVENT_PAYLOAD_LIMITS} and, en
+ * passant, normalize it into a **JSON-serializable** shape.
  *
- * 两个消费者共用这一次序列化：
- *   1. `listEvents` 返回的事件页（详情页的事件日志）；
- *   2. 追加到父会话的 `dynamic_workflow_run_progress` 会话事件（→ `workflowRuns` 投影）。
+ * Two consumers share this one serialization:
+ *   1. the event page returned by `listEvents` (the detail page's event log);
+ *   2. the `dynamic_workflow_run_progress` session event appended to the parent session
+ *      (-> the `workflowRuns` projection).
  *
- * 规范化不是可选的顺带工作，而是必需的：任何非有限数（`Infinity` / `NaN`）经 `JSON.stringify`
- * 都会变成 `null`——那意味着「同一个载荷，落库前后不等」。与其让每个读端各自面对这个不一致，
- * 这里一次性把它折叠成 `null`，使返回值满足 `JSON.parse(JSON.stringify(x)) === x` 的结构等价。
+ * Normalization is required, not optional: any non-finite number (`Infinity` / `NaN`) becomes
+ * `null` through `JSON.stringify` - meaning "same payload, unequal before and after storage".
+ * Rather than expose that inconsistency to every reader, fold it to `null` once here so the
+ * result satisfies structural equality under `JSON.parse(JSON.stringify(x)) === x`.
  */
 export function boundDynamicWorkflowRunEventPayload(payload: Record<string, unknown>): {
   payload: Record<string, unknown>;
@@ -555,14 +621,14 @@ function isJsonRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** 递归裁剪。返回 `undefined` 表示该值不可承载（调用方从对象/数组里省略它）。 */
+/** Recursive trim. A return of `undefined` means the value is uncarryable (callers omit it from objects/arrays). */
 function boundJsonValue(value: unknown, depth: number, markTruncated: () => void): unknown {
   const limits = DYNAMIC_WORKFLOW_RUN_EVENT_PAYLOAD_LIMITS;
 
   if (value === null) return null;
   if (typeof value === "boolean") return value;
   if (typeof value === "number") {
-    // Infinity / NaN 不是合法 JSON 数字；折叠成 null 而不是让 JSON.stringify 偷偷做这件事。
+    // Infinity / NaN are not legal JSON numbers; fold to null instead of letting JSON.stringify do it quietly.
     return Number.isFinite(value) ? value : null;
   }
   if (typeof value === "string") {
@@ -571,7 +637,7 @@ function boundJsonValue(value: unknown, depth: number, markTruncated: () => void
     return truncateSurrogateSafe(value, limits.maxStringLength);
   }
   if (typeof value !== "object") {
-    // undefined / function / symbol / bigint：省略（bigint 亦不可 JSON 序列化）。
+    // undefined / function / symbol / bigint: omit (bigint is not JSON-serializable either).
     return undefined;
   }
 
@@ -587,7 +653,7 @@ function boundJsonValue(value: unknown, depth: number, markTruncated: () => void
     const out: unknown[] = [];
     for (const item of items) {
       const boundedItem = boundJsonValue(item, depth + 1, markTruncated);
-      // 数组里的空洞会改变下标语义，所以不可承载的元素落成 null 而不是被跳过。
+      // Holes would shift index semantics, so uncarryable elements become null rather than being skipped.
       out.push(boundedItem === undefined ? null : boundedItem);
     }
     return out;
@@ -605,8 +671,9 @@ function boundJsonValue(value: unknown, depth: number, markTruncated: () => void
 }
 
 /**
- * 按 UTF-16 码元截断，但绝不留下孤立代理项（lone surrogate）——那既不是合法文本，
- * 也会让下游 JSON 编解码在某些运行时上报错。落在代理对中间时宁可少一个码元。
+ * Truncate by UTF-16 code units without ever leaving a lone surrogate behind - neither legal
+ * text nor safe for downstream JSON codecs on some runtimes. When the cut lands mid-pair,
+ * prefer one code unit fewer.
  */
 function truncateSurrogateSafe(value: string, maxLength: number): string {
   const cut = value.slice(0, maxLength);
@@ -616,62 +683,74 @@ function truncateSurrogateSafe(value: string, maxLength: number): string {
 }
 
 /**
- * workflow run 里**任意脚本值**（顶层返回的产物、`report(item)` 的条目）→ 给模型或读者看的
- * 文本。实现已随共享 workflowRuns reducer 搬进 `@zcode/shared/zcode-protocol-v4`
- * （workflow-artifact.ts，规则与来龙去脉见那边的注释）：`reports[].preview` 的归约下沉到
- * shared 后成了第四个消费者，而依赖方向是 contracts → shared，只能函数跟着搬。这里保留
- * re-export，既有的三个消费者（完成通知、TaskOutput 的 resultText、v4 投影）一行不改。
+ * Any script value in a workflow run (top-level returned product, `report(item)` entries) ->
+ * text for the model or a human reader. The implementation moved into
+ * `@zcode/shared/zcode-protocol-v4` with the shared workflowRuns reducer (workflow-artifact.ts;
+ * rules and rationale in its comments): the reduction behind `reports[].preview` became the
+ * fourth consumer once lowered into shared, and with the dependency direction contracts ->
+ * shared the function had to move. The re-export stays so the three existing consumers (terminal
+ * notification, TaskOutput's resultText, v4 projection) keep compiling unchanged.
  */
 export { serializeWorkflowArtifact } from "@zcode/shared/zcode-protocol-v4";
 
 /**
- * workflow run 的窄端口。与 legacy {@link import("./workflow.port.js").WorkflowPort} 并列而非
- * 合并：后者服务 `Workflow` 工具与 `workflow_*` 旧表，共用一个端口等于在接口层把
- * 「独立于既有 workflow 机制」这条边界重新耦合回去。
+ * The narrow port of a workflow run. Sits beside, not merged with, the legacy
+ * {@link import("./workflow.port.js").WorkflowPort}: the latter serves the `Workflow` tool and
+ * the legacy `workflow_*` tables; sharing a port would re-couple the "independent of the
+ * existing workflow mechanism" boundary at the interface level.
  *
- * 取消没有专属 RPC：详情页按钮与后台面板的停止共用既有的 v4 `cancelBackgroundWork`
- * 命令，它落到这里的 {@link cancel}（runId ≡ workId）。
+ * Cancellation has no dedicated RPC: the detail-page button and the background panel's stop
+ * share the existing v4 `cancelBackgroundWork` command, which lands in {@link cancel}
+ * (runId == workId).
  */
 export interface DynamicWorkflowRunPort {
-  /** 编译一次并启动引擎；返回 runId（即 backgroundTaskId）。 */
+  /** Compile once and start the engine; returns the runId (== backgroundTaskId). */
   submit(
     request: DynamicWorkflowRunSubmitRequest,
     options?: DynamicWorkflowRunSubmitOptions,
   ): Promise<DynamicWorkflowRunSubmitResult>;
   /**
-   * 修订一个 run：预检前驱 → 铸新 id → 前驱在飞则以 `{ superseded: newRunId }` 取消并等它结算
-   * → 从前驱导入缓存 → 启动新 run（见 {@link DynamicWorkflowRunAmendRequest}）。预检被拒即
-   * 结构化失败且**什么都没动**。老宿主可能没有这个方法（可选成员）：工具层按能力探测归一成
-   * 「本会话不支持修订」。
+   * Amend a run: precheck predecessor -> mint a new id -> if the predecessor is in flight, cancel
+   * it with `{ superseded: newRunId }` and await settlement -> import cache from the predecessor
+   * -> launch the new run (see {@link DynamicWorkflowRunAmendRequest}). A refused precheck is a
+   * structured failure and **touches nothing**. Older hosts may lack the method (optional
+   * member): the tool layer probes capability and normalizes to "amending unsupported in this session".
    */
   amend?(
     request: DynamicWorkflowRunAmendRequest,
     options?: DynamicWorkflowRunSubmitOptions,
   ): Promise<DynamicWorkflowRunAmendResult>;
   /**
-   * 默认并发 D（docs/dynamic-workflow/concurrency.md「Two bounds on a run」：
-   * `max(4, min(16, availableParallelism() − 2))`，每进程一个值）。同步、无副作用。它是**起点**
-   * 不是上限：没设 `max_concurrency` 的 run 跑在它上面，设了的高于低于都行。
+   * Default concurrency D (docs/dynamic-workflow/concurrency.md "Two bounds on a run":
+   * `max(4, min(16, availableParallelism() - 2))`, one value per process). Synchronous, side
+   * effect free. It is a **floor**, not a cap: runs without `max_concurrency` run on it; runs
+   * with one may sit above or below.
    *
-   * 工具层的读者：确认窗与回话（「（默认）」「默认 N」）、`AmendWorkflow` 的同值判定（`null` 要
-   * 折算成数才比得了），以及 `GetWorkflowRun` 据它决定一个 run 的上界是否值得一提（≠ 默认才提）。
-   * **可选成员**（消费方 `typeof` 探测）：端口 stub 不必为它陪跑，缺席时工具层只是不知道默认是几。
+   * Tool-layer readers: the confirm dialog and the reply copy ("(default)" / "default N"),
+   * `AmendWorkflow`'s same-value check (`null` must be folded to a number to compare), and
+   * `GetWorkflowRun` deciding whether a run's cap is worth mentioning (only when != default).
+   * **Optional member** (callers `typeof`-probe): port stubs need not implement it; when absent
+   * the tool layer simply does not know the default.
    */
   defaultConcurrency?(): number;
   /**
-   * 就地改一个**在飞** run 自己的并发上界（docs/dynamic-workflow/concurrency.md「Retuning a live
-   * run」）：同一个 runId、不铸后继、不 supersede、不导入缓存、在飞 ask 一个不丢。
+   * In-place change of an **in-flight** run's own concurrency cap
+   * (docs/dynamic-workflow/concurrency.md "Retuning a live run"): same runId, no successor
+   * minted, no supersede, no cache import, not one in-flight ask lost.
    *
-   * 与 {@link amend} 并列而非合并：修订换的是**脚本**，代价是停下前驱、铸新 run、从缓存重放；
-   * 而「只把这个 run 调慢一点」不该付那笔账。两个调用方（`AmendWorkflow` 的 handler 与 GUI 的
-   * `amendWorkflowRunSettings`）读同一个答案，于是「什么算一次 retune」只有一个定义。
+   * Beside {@link amend}, not merged with it: amendment swaps the **script** at the cost of
+   * stopping the predecessor, minting a run, and replaying from cache; "slow this run down a
+   * little" should not pay that bill. Both callers (`AmendWorkflow`'s handler and the GUI's
+   * `amendWorkflowRunSettings`) read the same answer, so "what counts as a retune" has one definition.
    *
-   * 三件事在一个同步片里发生或者一件都不发生：换引擎的 caps（调度器现读）、写
-   * `dwf_run.caps_max_concurrency`（resume 因此续在新上界上）、记一条 `run-caps-changed`。
-   * 服务另把自己那份内存上界一并挪动，于是快照、详情与 `GetWorkflowRun` 立刻报新值。
+   * Three things happen in one synchronous slice or none: swap the engine caps (read live by the
+   * scheduler), write `dwf_run.caps_max_concurrency` (resume therefore continues on the new cap),
+   * record one `run-caps-changed`. The service also moves its own in-memory cap, so snapshot,
+   * detail, and `GetWorkflowRun` report the new value immediately.
    *
-   * **可选成员**（消费方 `typeof` 探测），理由同 {@link resume}：端口 stub 不必为一条控制面全员
-   * 陪跑，而「端口缺席」与「方法缺席」对调用方是同一个业务事实——回落到一次真正的修订。
+   * **Optional member** (callers `typeof`-probe), same rationale as {@link resume}: port stubs
+   * need not implement a control-plane method for everyone; to callers, "port absent" and
+   * "method absent" are the same business fact - fall back to a real amendment.
    */
   retuneConcurrency?(
     request: DynamicWorkflowRunRetuneRequest,
@@ -682,110 +761,130 @@ export interface DynamicWorkflowRunPort {
     options?: DynamicWorkflowRunWaitOptions,
   ): Promise<DynamicWorkflowRunSnapshot | undefined>;
   /**
-   * 停下一个 run：中止在飞 ask 并 kill 子进程，run 结算 `stopped(initiator)`。`initiator`
-   * 缺省 `user`；主代理经 TaskStop 停的传 `model`（原因从此落库，不再只活在后台任务注册表里）；amend 路径传 `{ superseded: newRunId }`。
-   * 未知 runId 返回 false。
+   * Stop a run: abort in-flight asks and kill child processes; the run settles `stopped(initiator)`.
+   * `initiator` defaults to `user`; stops via TaskStop by the main agent pass `model` (the reason
+   * is persisted from now on, no longer living only in the background task registry); the amend
+   * path passes `{ superseded: newRunId }`. Unknown runId returns false.
    */
   cancel(runId: string, initiator?: DynamicWorkflowRunCancelInitiator): Promise<boolean>;
-  /** 按 cursor 翻取事件日志；越界 cursor 返回空页而非报错。 */
+  /** Page the event log by cursor; an out-of-range cursor returns an empty page, not an error. */
   listEvents(
     runId: string,
     options: DynamicWorkflowRunEventPage,
   ): Promise<DynamicWorkflowRunEventsResult>;
   /**
-   * 按项目（cwd）枚举 run，最近更新的在前。服务 `ListWorkflowRuns` 工具。
+   * Enumerate runs by project (cwd), most recently updated first. Serves the `ListWorkflowRuns` tool.
    *
-   * **可选成员**，照 {@link cancel} 之前的先例（消费方 `typeof` 探测）：实现方只有在 journal
-   * 带内省查询时才提供它，既有的端口 stub 也不必为一个只读枚举面全员陪跑。消费方对
-   * 「端口缺席」与「方法缺席」给同一个业务失败——对模型这是同一件事（本会话没有这个能力）。
+   * **Optional member**, following the pre-{@link cancel} precedent (callers `typeof`-probe):
+   * implementers provide it only when the journal carries the introspection query, and existing
+   * port stubs need not implement a read-only enumeration for everyone. Callers treat "port
+   * absent" and "method absent" as the same business failure - to the model it is one thing
+   * (this session lacks the capability).
    */
   listRuns?(query: DynamicWorkflowRunListQuery): Promise<DynamicWorkflowRunListResult>;
   /**
-   * 单 run 详情（进度摘要 + 产物 / 失败）。服务 `GetWorkflowRun` 工具。未知 runId 返回
-   * `undefined`（消费方归一成 `run_not_found`），**不做 wait/block 语义**——等待是
-   * {@link waitForTask} 的活，这里是即时快照。可选成员的理由同 {@link listRuns}。
+   * Single-run detail (progress summary + artifacts / failure). Serves `GetWorkflowRun`. Unknown
+   * runId returns `undefined` (callers normalize to `run_not_found`) and there is **no
+   * wait/block semantics** - waiting is {@link waitForTask}'s job; this is an immediate snapshot.
+   * Optional for the same reason as {@link listRuns}.
    */
   getRunDetail?(runId: string): Promise<DynamicWorkflowRunDetail | undefined>;
   /**
-   * run 存档的脚本原文（`dwf_run.script_text`，resume 重放的同一份字节），逐字节、不做任何处理。
-   * `AmendWorkflow` 的两处读它：省略脚本时把前驱的脚本回填进
-   * 入参，以及 `path` 修订的 `script_unchanged` 预检——
-   * 那必须比字节而不能比哈希，工具侧读到的是文件内容，不是编译产物。GUI「配置」走同一条读路。
+   * Verbatim script of a stored run (`dwf_run.script_text`, the same bytes resume replays),
+   * byte-for-byte, untouched. Two readers in `AmendWorkflow`: backfilling the predecessor's
+   * script when script is omitted, and the `path` amendment's `script_unchanged` precheck -
+   * which must compare bytes, not hashes, because the tool side reads file contents, not
+   * compiled artifacts. The GUI "configure" flow shares this read.
    *
-   * 单独一条读面而不是 {@link DynamicWorkflowRunSnapshot} 的字段：快照被后台追踪器反复轮询，而
-   * 脚本是端口上最大的一个字符串（{@link DynamicWorkflowRunSummary.label} 同一条理由）。未知 run
-   * 与「记录里没有脚本」（落库之前的老 run）都回 `undefined`——对调用方是同一个事实：没有可沿用的
-   * 脚本。只读、不看服务是否已关闭。**可选成员**（消费方 `typeof` 探测），理由同 {@link listRuns}：
-   * 缺席时省略脚本的修订当场失败，`script_unchanged` 预检则被跳过（它是网，不是门）。
+   * A dedicated read surface rather than a {@link DynamicWorkflowRunSnapshot} field: snapshots
+   * are polled repeatedly by the background tracker, and the script is the largest string on the
+   * port (same rationale as {@link DynamicWorkflowRunSummary.label}). Unknown runs and "no
+   * script in the record" (runs stored before the column existed) both return `undefined` - the
+   * same fact to callers: no script to reuse. Read-only, unaffected by service shutdown.
+   * **Optional member** (callers `typeof`-probe), same rationale as {@link listRuns}: when
+   * absent, an amendment omitting script fails outright and the `script_unchanged` precheck is
+   * skipped (it is a net, not a gate).
    */
   getScript?(runId: string): Promise<string | undefined>;
   /**
-   * 恢复一个已取消 / 被进程死亡打断的 run：同 runId 重跑（引擎走 resume 分支，journal
-   * 命中短路、未完结节点重新派发）。门在实现侧：只有 `cancelled` 或 `failed` 且失败编码为
-   * `Interrupted` 的 run 可恢复。
+   * Resume a cancelled / process-death-interrupted run: rerun under the same runId (the engine
+   * takes the resume branch - journal hits short-circuit, unfinished nodes redispatch). The gate
+   * is on the implementation side: only `cancelled`, or `failed` with failure coded `Interrupted`, is resumable.
    *
-   * **可选成员**，照 {@link listEvents} 之前 cancel 的先例（消费方 `typeof` 探测）：
-   * 端口 stub 不必为 resume 面全员陪跑；对消费方「端口缺席」与「方法缺席」是同一个业务失败。
+   * **Optional member**, following the pre-{@link listEvents} cancel precedent (callers
+   * `typeof`-probe): port stubs need not implement the resume surface for everyone; to callers
+   * "port absent" and "method absent" are the same business failure.
    */
   resume?(runId: string): Promise<DynamicWorkflowRunResumeResult>;
   /**
-   * 枚举**本服务父会话**名下的 run 摘要（最近更新在前，journal-backed）。UI 的重启后发现面：
-   * `workflowRuns` 投影跨进程不存活，工具卡 join 与 Resume 按钮的可用性只能从这里还原。
-   * 刻意不收 parentSessionId 参数——服务实例本就按父会话构造（per-app），让调用方传任意
-   * 会话等于开一个跨会话读洞。可选成员的理由同 {@link resume}。
+   * Enumerate run summaries under **this service's parent session** (most recently updated
+   * first, journal-backed). The UI's rediscover-after-restart surface: the `workflowRuns`
+   * projection does not survive processes, so tool-card joins and Resume-button availability can
+   * only be reconstructed here. Deliberately takes no parentSessionId parameter - the service
+   * instance is already constructed per parent session; letting callers pass any session would
+   * open a cross-session read hole. Optional for the same reason as {@link resume}.
    */
   listRunsForSession?(limit?: number): Promise<DynamicWorkflowRunSessionSummary[]>;
   /**
-   * 冷回放：把**本服务父会话**名下、本进程
-   * 没跑过的 run 从 journal 回放成进度事件载荷——与 live 时 `onRunEvent` 交出的是**同一种**
-   * 载荷、同一条铸造链，冷物化把它们当内存事件喂给同一个 reducer，`workflowRuns` 投影因此
-   * 在重启前后逐字节一致。
+   * Cold replay: turn runs under **this service's parent session** that this process never ran
+   * back into progress-event payloads from the journal - the **same kind** of payload and the
+   * same minting chain as live `onRunEvent`; cold materialization feeds them to the same reducer
+   * as memory events, so the `workflowRuns` projection is byte-identical across restarts.
    *
-   *   - 上界与投影的淘汰同（最近更新的 8 条），最旧的 run 在前；
-   *   - `excludeRunIds`：调用方内存里已有事件的 run（本进程跑过 / 正在跑）不回放；
-   *   - 行是终态而事件流没有 `run-settled` 的 run（进程死亡后被孤儿收敛改写的行）追加一条
-   *     **内存态**合成 settle 载荷（携行的 status / failure / resumable），绝不写进 journal。
+   *   - Bound matches the projection's eviction (8 most recently updated), oldest run first;
+   *   - `excludeRunIds`: runs already holding events in caller memory (ran / running in this
+   *     process) are not replayed;
+   *   - rows terminal in the journal whose event stream lacks `run-settled` (rewritten by orphan
+   *     reconciliation after process death) get one **in-memory** synthetic settle payload
+   *     (carrying status / failure / resumable), never written to the journal.
    *
-   * 可选成员的理由同 {@link listRunsForSession}：内存 journal 没有枚举面，回放无物可还原。
+   * Optional for the same reason as {@link listRunsForSession}: a memory journal has no
+   * enumeration surface, so there is nothing to replay.
    */
   replayProgressForSession?(input: {
     excludeRunIds: ReadonlySet<string>;
   }): Promise<DynamicWorkflowRunProgressPayload[]>;
   /**
-   * 回答一个 actor 升级上来的阻塞问题。服务
-   * `ResolveWorkflowQuestion` 工具。
+   * Answer a blocking question escalated by an actor. Serves the `ResolveWorkflowQuestion` tool.
    *
-   * 只收一个不透明 token 而不是 `(runId, qid)` 对：qid 全局唯一（跨 run），多 run 并发时
-   * 让模型自己配对是错配的温床。答案原样成为 actor 那次 `escalate` 调用的工具结果，
-   * actor 的轮次随即继续；run 状态全程不动（升级是 ask 内部的一次慢工具调用，
-   * 不是 run 生命周期事件）。
+   * Takes one opaque token rather than a `(runId, qid)` pair: qids are globally unique across
+   * runs; making the model pair them itself amid concurrent runs breeds mismatches. The answer
+   * verbatim becomes the tool result of that actor's `escalate` call and the actor's turn
+   * continues; run state never changes (escalation is a slow tool call inside an ask, not a run
+   * lifecycle event).
    *
-   * **可选成员**，照 {@link resume} 的先例（消费方 `typeof` 探测）：端口 stub 不必为一个
-   * 应答面全员陪跑；对消费方「端口缺席」与「方法缺席」是同一个业务失败。
+   * **Optional member**, following the {@link resume} precedent (callers `typeof`-probe): port
+   * stubs need not implement the answer surface for everyone; to callers "port absent" and
+   * "method absent" are the same business failure.
    */
   resolveQuestion?(qid: string, answer: string): Promise<DynamicWorkflowResolveQuestionResult>;
   /**
-   * 给一个正在等的留白补上函数体（docs/dynamic-workflow/launch.md「The `FillWorkflowHole` tool」；
-   * 引擎文档「The fill service's checks」）。服务 `FillWorkflowHole` 工具。
+   * Fill in the body of a waiting hole (docs/dynamic-workflow/launch.md "The `FillWorkflowHole`
+   * tool"; engine docs "The fill service's checks"). Serves the `FillWorkflowHole` tool.
    *
-   * 实现侧一条龙：读 run 存档的脚本 → 按站点 id 找到留白调用、把函数体拼成它的最后一个实参 →
-   * 整体编译（诊断 → `compile_failed`，坐标按 `inFill` 分到函数体内 / 脚本）→ 站点稳定性检查
-   * （→ `fill_ids_unstable`）→ 引擎 `fillHole`（→ `hole_not_waiting`）→ 把 run 的草稿就地改写成
-   * 有效脚本。**拒绝即零副作用**：留白照旧在等。
+   * One pipeline on the implementation side: read the run's stored script -> find the hole call
+   * by site id and splice the body in as its last argument -> compile wholesale (diagnostics ->
+   * `compile_failed`, coordinates split by `inFill` into function body / script) -> site
+   * stability check (-> `fill_ids_unstable`) -> engine `fillHole` (-> `hole_not_waiting`) ->
+   * rewrite the run's draft in place into valid script. **Refusal means zero side effects**: the
+   * hole keeps waiting.
    *
-   * **可选成员**（消费方 `typeof` 探测），理由同 {@link resolveQuestion}：端口 stub 不必为它陪跑；
-   * 对消费方「端口缺席」与「方法缺席」是同一个业务失败（本会话不能补全留白）。
+   * **Optional member** (callers `typeof`-probe), same rationale as {@link resolveQuestion}:
+   * port stubs need not implement it; to callers "port absent" and "method absent" are the same
+   * business failure (this session cannot fill holes).
    */
   fillHole?(request: DynamicWorkflowRunFillHoleRequest): Promise<FillWorkflowHoleResult>;
   /**
-   * 本 run 的用户面产物清单（journal `kind = "artifact"` 行按 id 分组、版本升序）。UI 冷恢复与中枢详情的 durable 读法。
-   * 未知 runId 返回 `undefined`。**可选成员**，理由同 {@link listRuns}（journal 带产物
-   * 读面时才提供；消费方 `typeof` 探测）。
+   * User-facing artifacts of this run (journal `kind = "artifact"` rows grouped by id, versions
+   * ascending). The durable read for UI cold-recovery and the hub detail page. Unknown runId
+   * returns `undefined`. **Optional member**, same rationale as {@link listRuns} (provided only
+   * when the journal carries the artifact read; callers `typeof`-probe).
    */
   listArtifacts?(runId: string): Promise<readonly DynamicWorkflowRunArtifact[] | undefined>;
   /**
-   * 喂给某个预置产物的 `report` 条目，按 journal sequence 升序分页（看板的取数面）。
-   * 越界 cursor 返回空页而非报错。可选成员，理由同 {@link listArtifacts}。
+   * `report` entries feeding a preset artifact, paged by journal sequence ascending (the board's
+   * data surface). Out-of-range cursors return an empty page, not an error. Optional, same
+   * rationale as {@link listArtifacts}.
    */
   listArtifactItems?(
     runId: string,
@@ -793,11 +892,11 @@ export interface DynamicWorkflowRunPort {
     page: DynamicWorkflowRunArtifactItemPage,
   ): Promise<DynamicWorkflowRunArtifactItemsResult>;
   /**
-   * 读某个产物版本的字节：**先**在 journal 里确认 `(runId, artifactId, version)` 有一行
-   * `completed` 记录，再按行上的 `uri` 经 tool-artifact store 取——调用方传来的任何 id 都
-   * 不直接成为路径。无此版本 / 非内容产物 /
-   * store 缺席 → `undefined`。分块归网关（v4 `workflowRunArtifactRead`，≤ 512 KiB 一块）。
-   * 可选成员，理由同 {@link listArtifacts}。
+   * Read one artifact version's bytes: **first** confirm a `completed` row for
+   * `(runId, artifactId, version)` in the journal, then fetch via the row's `uri` through the
+   * tool-artifact store - no caller-supplied id ever becomes a path directly. No such version /
+   * not a content artifact / store absent -> `undefined`. Chunking is the gateway's job (v4
+   * `workflowRunArtifactRead`, <= 512 KiB per chunk). Optional, same rationale as {@link listArtifacts}.
    */
   readArtifact?(
     runId: string,
@@ -805,19 +904,22 @@ export interface DynamicWorkflowRunPort {
     version: number,
   ): Promise<DynamicWorkflowRunArtifactBytes | undefined>;
   /**
-   * 本 run 的工作区 transcript：journal 里
-   * `kind ∈ {world-read, world-run}` 的行按落库先后，**不带正文**。
+   * This run's workspace transcript: journal rows with `kind in {world-read, world-run}` in
+   * storage order, **without bodies**.
    *
-   * 授权与 {@link readArtifact} 同一条链：run 必须属于本服务的父会话，否则 `undefined`
-   * （与「无此 run」同一个答案——不告诉越权的调用方它猜对了哪一半）。正文可能含工作区文件
-   * 内容，所以清单也不放行别的会话。可选成员，理由同 {@link listArtifacts}。
+   * Authorization shares the chain of {@link readArtifact}: the run must belong to this service's
+   * parent session, else `undefined` (the same answer as "no such run" - do not tell an
+   * unauthorized caller which half it guessed right). Bodies may contain workspace file
+   * contents, so the listing is also gated to the same session. Optional, same rationale as
+   * {@link listArtifacts}.
    */
   listWorkspaceNodes?(
     runId: string,
   ): Promise<readonly DynamicWorkflowRunWorkspaceNode[] | undefined>;
   /**
-   * 一个工作区节点的正文，按 `maxBytes` 保形有界化。授权链同 {@link listWorkspaceNodes}；
-   * 无此节点 / 非 world 行 / 不是你的 run → `undefined`。可选成员，理由同 {@link listArtifacts}。
+   * Body of one workspace node, shape-preserving bounded by `maxBytes`. Authorization chain as
+   * {@link listWorkspaceNodes}; no such node / not a world row / not your run -> `undefined`.
+   * Optional, same rationale as {@link listArtifacts}.
    */
   readWorkspaceNodeResult?(
     runId: string,
@@ -828,18 +930,20 @@ export interface DynamicWorkflowRunPort {
 }
 
 // ————————————————————————————————————————————————————————————————
-// run 内省（ListWorkflowRuns / GetWorkflowRun 的取数面）
+// Run introspection (data surface of ListWorkflowRuns / GetWorkflowRun)
 // ————————————————————————————————————————————————————————————————
 
 /**
- * run 的生命周期状态。字面与 journal 的 `dwf_run.status` 同集，但**刻意在这里重新声明**
- * 而不是从 @zcode/dynamic-workflow import：端口只承载 JSON 形状，引擎的词汇表一旦进
- * contracts，每个持有端口的层都会编译期依赖引擎内部类型（与 {@link DynamicWorkflowRunEvent}
- * 的 `type` 同一条论证）。
+ * Lifecycle states of a run. Literals match the journal's `dwf_run.status` set but are
+ * **deliberately redeclared here** rather than imported from @zcode/dynamic-workflow: the port
+ * carries only JSON shapes, and once the engine's vocabulary enters contracts, every layer
+ * holding the port gains a compile-time dependency on engine internals (same argument as
+ * {@link DynamicWorkflowRunEvent}'s `type`).
  *
- * 与 {@link DynamicWorkflowRunSnapshot} 的 status 刻意不同：后者是后台任务追踪器的词汇表，
- * 把 `pending` 折进 `running`。内省面必须保留 `pending`——「已提交、引擎还没建行」是一个
- * 模型能看懂且有意义的区别。
+ * Deliberately different from {@link DynamicWorkflowRunSnapshot}'s status: the latter speaks the
+ * background tracker's vocabulary, folding `pending` into `running`. Introspection must keep
+ * `pending` - "submitted, engine has not created the row yet" is a distinction the model
+ * understands and finds meaningful.
  */
 export type DynamicWorkflowRunLifecycleStatus =
   | "completed"
@@ -849,10 +953,11 @@ export type DynamicWorkflowRunLifecycleStatus =
   | "stopped";
 
 /**
- * `stopped` 的原因：`user` 用户取消 / `model` 主代理
- * TaskStop / `provider` 确定性模型侧错误 / `interrupted` 持有进程亡故或沙箱故障 / `superseded`
- * 被一次 AmendWorkflow 停下并替代。前四者可 resume，`superseded` 不可（活的是它的后继）；
- * `errored`（脚本之错）不可。字面与引擎 `RunStopReason` 同集，刻意在这里重新声明。
+ * Why `stopped`: `user` cancelled by the user / `model` TaskStop by the main agent /
+ * `provider` deterministic model-side error / `interrupted` owning process death or sandbox
+ * failure / `superseded` stopped and replaced by an AmendWorkflow. The first four are resumable,
+ * `superseded` is not (its successor is the live one); `errored` (a script error) is not.
+ * Literals match the engine's `RunStopReason` set, deliberately redeclared here.
  */
 export type DynamicWorkflowRunStopReason =
   | "user"
@@ -861,81 +966,87 @@ export type DynamicWorkflowRunStopReason =
   | "interrupted"
   | "superseded";
 
-/** {@link DynamicWorkflowRunPort.listRuns} 的查询袋。 */
+/** Query bag of {@link DynamicWorkflowRunPort.listRuns}. */
 export interface DynamicWorkflowRunListQuery {
   /**
-   * 项目键，**必填**。字面等值匹配 `dwf_run.cwd`（写入侧原样落、读侧原样查）。
-   * 端口不替调用方猜一个默认 cwd：工具面恒查 `context.workingDirectory`，模型无权跨项目扫库。
+   * Project key, **required**. Literal equality against `dwf_run.cwd` (written verbatim, queried
+   * verbatim). The port does not guess a default cwd for callers: the tool surface always
+   * queries `context.workingDirectory`; the model has no right to scan projects.
    */
   cwd: string;
-  /** 返回条数上限，**必填**。钳制策略属于工具面（[1, 50]）；端口不做无界枚举。 */
+  /** Return-count cap, **required**. Clamping policy belongs to the tool surface ([1, 50]); the port does no unbounded enumeration. */
   limit: number;
-  /** 可选状态子集。缺省即不过滤；空数组即「不匹配任何状态」（回空列表）。 */
+  /** Optional state subset. Default: no filter; empty array means "match no state" (empty result). */
   statuses?: readonly DynamicWorkflowRunLifecycleStatus[];
 }
 
 /**
- * 列表与详情**共同的截面**。标签、归属标注与时间戳三者在两条读面上必须逐字段同源——
- * 同一个 run 在列表里和详情里显示不同的名字或归属，是最难被测试抓住、又最直接损害信任的
- * 那类不一致。所以这里是一个共享的基接口，而不是两份各自演化的字段表。
+ * The cross-section shared by list and detail. Label, ownership annotation, and timestamps must
+ * be field-for-field identical on both read surfaces - the same run showing a different name or
+ * ownership in the list vs the detail is the class of inconsistency hardest to catch in tests
+ * and most directly trust-eroding. Hence one shared base interface, not two field tables
+ * evolving apart.
  */
 export interface DynamicWorkflowRunSummary {
   runId: string;
   /**
-   * 展示标签。**已烹熟**：实现侧（run service）按 name → 脚本首行 → runId 的顺序派生好，
-   * 消费方直接展示。之所以不把原料（name / scriptText）交出去让工具层自己拼：那条兜底链
-   * 是读时启发式，两个工具各拼一次就会漂移，而 scriptText 是端口上最大的一个字符串
-   * （列表面根本不该为了取首行把 50 份脚本搬过边界）。
+   * Display label. **Precooked**: the implementation (run service) derives it as name -> first
+   * script line -> runId; consumers render it directly. Why not hand out the raw materials
+   * (name / scriptText) for the tool layer to assemble: that fallback chain is a read-time
+   * heuristic; two tools assembling it twice will drift, and scriptText is the largest string on
+   * the port (a list surface should not haul 50 scripts across the boundary to read first lines).
    */
   label: string;
-  /** 标签来源：`"name"` = 用户起的名字；`"script"` = 读时从脚本派生（含 runId 兜底）。 */
+  /** Label source: `"name"` = user-chosen name; `"script"` = derived from the script at read time (runId fallback included). */
   labelSource: "name" | "script";
   status: DynamicWorkflowRunLifecycleStatus;
-  /** `status === "stopped"` 才在场。 */
+  /** Present only when `status === "stopped"`. */
   stopReason?: DynamicWorkflowRunStopReason;
-  /** 本 run 修订自哪个 run（`dwf_run.resumed_from`）；不是修订则缺席。 */
+  /** Run this run was amended from (`dwf_run.resumed_from`); absent when not an amendment. */
   resumedFrom?: string;
-  /** 本 run 被哪次修订停下并替代（`stopped(superseded)` 的结算袋）；未被替代则缺席。 */
+  /** Amendment that stopped and replaced this run (settlement bag of `stopped(superseded)`); absent when not replaced. */
   supersededBy?: string;
-  /** 本会话是否是这个 run 的发起方（journal 的 parent_session_id 命中，或在本会话注册表里）。 */
+  /** Whether this session is the run's origin (journal parent_session_id hit, or in this session's registry). */
   ownedByThisSession: boolean;
   /**
-   * 「本会话无法证实它还活着」：journal 非终态 ∧ 非本会话 ∧ 不在本会话注册表。可能是死进程
-   * 的遗物，也可能是同进程兄弟会话正在飞的 run——所以这是**标注而非状态改写**，读面绝不
-   * 替别人收尸（孤儿收敛的执行权只属于 owning 会话的构造时刻）。为真时才在场。
+   * "This session cannot prove it is alive": journal non-terminal AND not this session AND not
+   * in this session's registry. Could be a dead process's relic or a sibling session's in-flight
+   * run - so this is an **annotation, not a state rewrite**; read surfaces never bury others'
+   * dead (orphan reconciliation executes only at owning-session construction time). Present only when true.
    */
   possiblyInterrupted?: boolean;
-  /** journal 的 `time_created` / `time_updated`（epoch ms）。 */
+  /** Journal `time_created` / `time_updated` (epoch ms). */
   createdAt: number;
   updatedAt: number;
 }
 
-/** 列表的一项：共同截面 + 用量。刻意轻——无 actors、无节点计数、无产物预览。 */
+/** One list item: shared cross-section + usage. Deliberately light - no actors, no node counts, no artifact previews. */
 export interface DynamicWorkflowRunListItem extends DynamicWorkflowRunSummary {
-  /** 直读 `dwf_run.spent_tokens`（run 级 token 用量的唯一权威）。 */
+  /** Read straight from `dwf_run.spent_tokens` (the only authority for run-level token usage). */
   spentTokens: number;
 }
 
 /**
- * `listRuns` 的返回。刻意是一个对象而不是裸数组：页级字段（如 {@link truncated}）是纯追加
- * 改动，而裸数组只能整体换形状。
+ * Return of `listRuns`. Deliberately an object, not a bare array: page-level fields (such as
+ * {@link truncated}) are pure additions, while a bare array must change shape wholesale.
  */
 export interface DynamicWorkflowRunListResult {
   runs: DynamicWorkflowRunListItem[];
   /**
-   * 这个项目还有更多 run 没进这一页。**为真时才在场**。
+   * This project has more runs beyond this page. **Present only when true.**
    *
-   * 判据是「多取一条」（实现侧按 `limit + 1` 查询后回落），不是 `length === limit`：后者在
-   * 条数正好等于 limit 时误报，而误报会让模型去追一页不存在的历史。同一个惯例在 v4 网关的
-   * 事件分页上（`hasMore`）已经用过一次。
+   * The test is "one more exists" (implementation queries `limit + 1` and settles), not
+   * `length === limit`: the latter false-positives when the count equals the limit exactly, and
+   * a false positive sends the model chasing a page of history that does not exist. The same
+   * convention already serves v4 gateway event pagination (`hasMore`).
    */
   truncated?: boolean;
 }
 
 /**
- * run 的进度与用量（观察面，没有任何上限）。`nodesObserved`
- * 是**已落库节点的行数**（三态之和），绝不冒充「总步数」：动态工作流没有静态总数，而
- * `queued` 只存在于事件相位、不落库。
+ * A run's progress and usage (observation surface, no caps). `nodesObserved` is the **row count
+ * of stored nodes** (sum of the three states), never pretending to be a total step count:
+ * dynamic workflows have no static total, and `queued` exists only as an event phase, never stored.
  */
 export interface DynamicWorkflowRunUsage {
   spentTokens: number;
@@ -945,35 +1056,36 @@ export interface DynamicWorkflowRunUsage {
   nodesFailed: number;
 }
 
-/** 一个 actor 站点实例。`persona` 刻意不出：整段 system prompt 是端口上天然无界的字段。 */
+/** One actor site instance. `persona` deliberately omitted: the whole system prompt is a naturally unbounded field on this port. */
 export interface DynamicWorkflowRunActor {
   siteId: string;
   ordinal: number;
   name?: string;
 }
 
-/** 一条 `log()` 叙事。 */
+/** One `log()` narrative entry. */
 export interface DynamicWorkflowRunLogEntry {
   sequence: number;
-  /** 已按端口的字符串上限（{@link DYNAMIC_WORKFLOW_RUN_EVENT_PAYLOAD_LIMITS}）有界化。 */
+  /** Already bounded by the port's string cap ({@link DYNAMIC_WORKFLOW_RUN_EVENT_PAYLOAD_LIMITS}). */
   message: string;
   /**
-   * 这条事件落 journal 的时刻（`dwf_event.time_created`）。序号定位，时刻回答「多久以前」——
-   * 情势截面的三组字段都按这一把尺算年龄，叙事尾巴没有理由用另一把。**没有这一列的老
-   * journal 上缺席**，读侧据此不给年龄，绝不用读时的 `Date.now()` 兜底。
+   * When this entry was journaled (`dwf_event.time_created`). Sequence addresses; the timestamp
+   * answers "how long ago" - every field group of the situation cross-section ages by this
+   * ruler; the narrative tail has no reason to use another. **Absent on journals predating the
+   * column**; read sides then show no age and never fall back to `Date.now()` at read time.
    */
   at?: number;
 }
 
-/** 结构化失败。`code` 是稳定判别键——模型必须能分辨「进程死了」与「脚本真失败」。 */
+/** Structured failure. `code` is the stable discriminant - the model must be able to tell "process died" from "script failed". */
 export interface DynamicWorkflowRunError {
   code: string;
   message: string;
-  /** 只在 `code === "ProviderStop"` 时在场（引擎 `ProviderStopDetails` 的 JSON 镜像）。 */
+  /** Present only when `code === "ProviderStop"` (JSON mirror of the engine's `ProviderStopDetails`). */
   providerStop?: DynamicWorkflowRunProviderStop;
 }
 
-/** `ProviderStop` 的结构化明细（引擎 `ProviderStopDetails` 的镜像，端口只承载 JSON 形状）。 */
+/** Structured detail of `ProviderStop` (mirror of the engine's `ProviderStopDetails`; the port carries JSON shapes only). */
 export interface DynamicWorkflowRunProviderStop {
   kind: "auth" | "not_configured" | "model_unavailable" | "invalid_request" | "quota" | "other";
   reason: string;
@@ -988,160 +1100,173 @@ export interface DynamicWorkflowRunProviderStop {
   resetAt?: number;
 }
 
-// 情势截面（阶段 / 子代理 / 健康）的类型住在 dynamic-workflow-run-roster.port.ts（同上），
-// 此处原样再导出以保持 `@zcode/contracts` 的导入路径不变。
+// The situation cross-section (phases / subagents / health) types live in
+// dynamic-workflow-run-roster.port.ts (as above); re-exported verbatim here to keep the
+// `@zcode/contracts` import path unchanged.
 export type * from "./dynamic-workflow-run-roster.port.js";
 
-// retune（就地改在飞 run 的并发上界）的三个类型住在 dynamic-workflow-run-retune.port.ts，
-// 同上原样再导出。
+// The three retune (in-place cap change of a live run) types live in
+// dynamic-workflow-run-retune.port.ts; re-exported verbatim as above.
 export type * from "./dynamic-workflow-run-retune.port.js";
-// 留白（快照条目、fillHole 的请求 / 结果）的类型住在 dynamic-workflow-run-hole.port.ts，同一条拆分先例。
+// Hole types (snapshot entries, fillHole request / result) live in
+// dynamic-workflow-run-hole.port.ts, same split precedent.
 export type * from "./dynamic-workflow-run-hole.port.js";
 
-// 工作区 transcript 的六个类型住在 dynamic-workflow-run-workspace.port.ts，同上原样再导出。
+// The six workspace-transcript types live in dynamic-workflow-run-workspace.port.ts,
+// re-exported verbatim as above.
 export type * from "./dynamic-workflow-run-workspace.port.js";
 
-/** 单 run 详情：共同截面 + 进度 + 情势截面 + 按终态分叉的产物 / 失败。 */
+/** Single-run detail: shared cross-section + progress + situation cross-section + terminal-state-branched artifact / failure. */
 export interface DynamicWorkflowRunDetail extends DynamicWorkflowRunSummary {
   usage: DynamicWorkflowRunUsage;
   /**
-   * 本 run 自己的并发上界，语义同 {@link DynamicWorkflowRunSnapshot.maxConcurrency}：只在低于当前
-   * 天花板时在场。刻意不进 {@link DynamicWorkflowRunSummary}——列表行不该为一个很少设置的字段加宽。
+   * This run's own concurrency cap, semantics as {@link DynamicWorkflowRunSnapshot.maxConcurrency}:
+   * present only when below the current ceiling. Deliberately not on
+   * {@link DynamicWorkflowRunSummary} - list rows should not widen for a rarely set field.
    */
   maxConcurrency?: number;
   /**
-   * 本 run 的子代理模型，语义同 {@link DynamicWorkflowRunSnapshot.subagentModel}：只在设过时
-   * 在场。与 `maxConcurrency` 同理不进 {@link DynamicWorkflowRunSummary}——列表行不该为一个
-   * 很少设置的字段加宽。
+   * This run's subagent model, semantics as {@link DynamicWorkflowRunSnapshot.subagentModel}:
+   * present only when set. Same reasoning as `maxConcurrency` for staying off
+   * {@link DynamicWorkflowRunSummary} - list rows should not widen for a rarely set field.
    */
   subagentModel?: string;
-  /** 本 run 的脚本点名的模型，语义同 {@link DynamicWorkflowRunSnapshot.modelBindings}。 */
+  /** Models named by this run's script, semantics as {@link DynamicWorkflowRunSnapshot.modelBindings}. */
   modelBindings?: Record<string, string>;
   /**
-   * 本 run 的脚本文件，语义同 {@link DynamicWorkflowRunSnapshot.scriptPath}：只在记下过文件时
-   * 在场。`GetWorkflowRun` 据它在 `<amendable>` 里把下一步说成「就地编辑这个文件」。
+   * This run's script file, semantics as {@link DynamicWorkflowRunSnapshot.scriptPath}: present
+   * only when a file was recorded. `GetWorkflowRun` uses it to phrase the next step inside
+   * `<amendable>` as "edit this file in place".
    */
   scriptPath?: string;
   actors: DynamicWorkflowRunActor[];
-  /** `log()` 事件的尾巴，按时序（sequence 升序）。无 log 事件即空数组。 */
+  /** Tail of `log()` events, in order (sequence ascending). Empty array when there are no log events. */
   logTail: DynamicWorkflowRunLogEntry[];
   /**
-   * 阶段表：声明序的已声明阶段，后面接上「进过但没声明」的那些
+   * Phase table: declared phases in declaration order, followed by those "entered but undeclared".
    *
-   * **脚本没声明阶段、也一个都没进过时整字段缺席**——那样的 run 没有阶段这回事，
-   * 发一个空数组读起来像「阶段表是空的」，是另一句话。
+   * **The whole field is absent when the script declared no phases and entered none** - such a
+   * run has no notion of phases, and an empty array would read as "the phase table is empty",
+   * a different sentence.
    */
   phases?: DynamicWorkflowRunPhaseView[];
   /**
-   * 子代理花名册，按 actor 行的顺序（= 铸造顺序）。**恒在场**，一个 actor 都没有的 run 是空
-   * 数组：与 `phases` 不同，「这个 run 有几个子代理」永远是个有答案的问题，而 0 就是那个答案。
+   * Subagent roster, in actor-row order (= minting order). **Always present**; a run with zero
+   * actors is an empty array: unlike `phases`, "how many subagents does this run have" always
+   * has an answer, and 0 is that answer.
    *
-   * 与并列的 `actors` 刻意不合并：`actors` 是一张恒定的身份表（siteId / ordinal / name），
-   * 消费者已经按它 join；这里的每一项都是**读时快照**，同一个 run 隔一秒读就不一样。
+   * Deliberately not merged with the sibling `actors`: `actors` is a constant identity table
+   * (siteId / ordinal / name) consumers already join on; each entry here is a **read-time
+   * snapshot**, different one second later on the same run.
    */
   subagents: DynamicWorkflowRunSubagentView[];
-  /** run 整体还在不在动（见 {@link DynamicWorkflowRunHealth}）。恒在场。 */
+  /** Whether the run as a whole is still moving (see {@link DynamicWorkflowRunHealth}). Always present. */
   health: DynamicWorkflowRunHealth;
   /**
-   * 脚本的顶层返回值，**原值**（未序列化）。只有 completed 的 run 才在场；`undefined` 产物
-   * 即整字段缺席。
+   * The script's top-level return value, **original** (unserialized). Present only for completed
+   * runs; an `undefined` product means the whole field is absent.
    *
-   * 为什么不在这里序列化：面向模型的文本投影已经有唯一实现（core 的
-   * `serializeWorkflowArtifact`，完成通知与 TaskOutput 共用它）。端口再做一次，就会出现
-   * 「同一个 run 的产物在通知里和在本工具里长得不一样」——正是那份共用要排除的损失类别。
-   * 所以序列化留在 core，端口只负责把原值送到边界。
+   * Why not serialize here: the model-facing text projection already has one implementation
+   * (core's `serializeWorkflowArtifact`, shared by the completion notification and TaskOutput).
+   * A second one on the port would produce "the same run's product looks different in the
+   * notification and in this tool" - exactly the loss class the sharing exists to prevent. So
+   * serialization stays in core; the port only carries the original value to the boundary.
    */
   result?: unknown;
-  /** errored 恒在场；stopped 只对 provider / interrupted 在场。code 原样透出，不折叠。 */
+  /** Always present for errored; for stopped only provider / interrupted. `code` passes through verbatim, unfolded. */
   error?: DynamicWorkflowRunError;
   /**
-   * 此刻停驻在这个 run 上、等主代理作答的升级问题。
+   * Escalated questions currently parked on this run, awaiting the main agent's answer.
    *
-   * 与 {@link DynamicWorkflowRunSnapshot.pendingQuestions} **同源同投影**（都读进程内的升级
-   * 停驻表，都在零条时整字段缺席），只是换了一条读面：快照服务后台任务追踪器，本字段服务
-   * `GetWorkflowRun`——而后者是**模型侧唯一的发现面**。这条链路不是可选的锦上添花：升级通知
-   * 有两条已知的丢弃路径（stale branch generation / shutdown），查询是这两条路径的兜底，`resolveQuestion` 的 `unknown_question` 文案也明确让模型来这里找 qid。
-   * 缺了它，那两处承诺都会指向一个什么都不返回的工具。
+   * **Same source and projection** as {@link DynamicWorkflowRunSnapshot.pendingQuestions} (both
+   * read the in-process escalation parked table, both absent when none) - only a different read
+   * surface: the snapshot serves the background task tracker, this field serves `GetWorkflowRun`,
+   * the **model side's only discovery surface**. The chain is not optional polish: escalation
+   * notifications have two known drop paths (stale branch generation / shutdown); the query is
+   * the fallback for both, and `resolveQuestion`'s `unknown_question` copy explicitly sends the
+   * model here for qids. Without it, both promises point at a tool that returns nothing.
    */
   pendingQuestions?: readonly DynamicWorkflowRunPendingQuestion[];
   /**
-   * 本 run 的留白，与 {@link DynamicWorkflowRunSnapshot.holes} **同源同投影**（零条整字段缺席），
-   * 只是换了一条读面：本字段服务 `GetWorkflowRun`——留白通知丢失后模型侧唯一的发现面。
+   * This run's holes, **same source and projection** as
+   * {@link DynamicWorkflowRunSnapshot.holes} (absent entirely when none) - only a different read
+   * surface: this field serves `GetWorkflowRun`, the model side's only discovery surface after a
+   * lost hole notification.
    */
   holes?: readonly DynamicWorkflowRunHole[];
   /**
-   * 本 run 的用户面产物（任意状态都附；journal-backed，与 {@link DynamicWorkflowRunSnapshot.artifacts}
-   * 同源）。`GetWorkflowRun` 据此告诉模型「这些已经以卡片呈现给用户了，按标题引用即可」。
-   * 零件时整字段缺席。
+   * This run's user-facing artifacts (attached in any state; journal-backed, same source as
+   * {@link DynamicWorkflowRunSnapshot.artifacts}). `GetWorkflowRun` tells the model "these have
+   * been presented to the user as cards; reference them by title". Absent entirely when none.
    */
   artifacts?: readonly DynamicWorkflowRunArtifact[];
 }
 
-/** {@link DynamicWorkflowRunPort.resume} 的结构化失败原因。 */
+/** Structured failure reasons of {@link DynamicWorkflowRunPort.resume}. */
 export type DynamicWorkflowRunResumeErrorReason =
-  /** journal 里没有这个 run。 */
-  | "not_found"
-  /** run 不在可恢复集里（completed 或 errored；只有 stopped 可恢复）。 */
-  | "not_resumable"
-  /** run 被一次 AmendWorkflow 停下并替代：活的是后继，重放它等于把同一件事做两遍。 */
-  | "superseded"
-  /** 同 runId 的 run 正在本进程内飞行。 */
-  | "already_running"
-  /** 记录缺 scriptText（落库该字段之前的老 run），没有可重跑的脚本。 */
-  | "script_missing"
-  /** 记录的 scriptHash 与按 scriptText 重算的不一致（记录自身被外力改写过）。 */
-  | "script_mismatch"
-  /**
-   * 记录的 scriptText 在**当前** facade 下不再通过类型检查（facade 重构后的老 run）。逐字重放
-   * 只会失败；出路是按当前 facade 改写脚本后走 AmendWorkflow。`message` 携带有界诊断。
-   */
+  | /** No such run in the journal. */
+    "not_found" /** Outside the resumable set (completed or errored; only stopped is resumable). */
+  | "not_resumable" /** Stopped and replaced by an AmendWorkflow: the successor is the live one; replaying this would do the same work twice. */
+  | "superseded" /** A run with this runId is in flight in this process. */
+  | "already_running" /** Record lacks scriptText (pre-column runs); no script to rerun. */
+  | "script_missing" /** Stored scriptHash disagrees with one recomputed from scriptText (the record was rewritten by an outside force). */
+  | "script_mismatch" /**
+     * Stored scriptText no longer typechecks under the **current** facade (pre-refactor runs).
+     * Verbatim replay would only fail; the way out is rewriting the script for the current facade
+     * via AmendWorkflow. `message` carries a bounded diagnostic.
+     */
   | "compile_failed";
 
 /**
- * resume 的结构化结果。失败走 reason 而不是 throw：五种原因全是调用方可预期的业务分支
- * （错误码而非错误文本做流程判断，house rule），throw 只留给真正的接线故障。
+ * Structured result of resume. Failure returns a reason instead of throwing: all five reasons
+ * are business branches the caller can expect (error codes, not error text, drive control flow -
+ * house rule); throw remains for genuine wiring failures.
  */
 export type DynamicWorkflowRunResumeResult =
   | { ok: true; runId: string; toolCallId?: string }
   | { ok: false; reason: DynamicWorkflowRunResumeErrorReason; message?: string };
 
 /**
- * {@link DynamicWorkflowRunPort.listRunsForSession} 的 run 摘要。字面与 journal 的
- * `dwf_run.status` 同集，但**刻意在这里重新声明**：端口只承载 JSON 形状，引擎词汇表一旦
- * 进 contracts，每个持有端口的层都会编译期依赖引擎内部类型。
+ * Run summary for {@link DynamicWorkflowRunPort.listRunsForSession}. Literals match the journal's
+ * `dwf_run.status` set but are **deliberately redeclared here**: the port carries only JSON
+ * shapes, and once engine vocabulary enters contracts, every layer holding the port gains a
+ * compile-time dependency on engine internals.
  */
 export interface DynamicWorkflowRunSessionSummary {
   runId: string;
-  /** 发起 run 的 CreateWorkflow 工具调用 id（工具卡 → 详情页/Resume 的关联键）；老 run 缺席。 */
+  /** CreateWorkflow tool call id that launched the run (tool card -> detail/Resume linkage); absent on legacy runs. */
   toolCallId?: string;
   /**
-   * 展示标签，服务端读时派生（`name` → 脚本首行 → runId，见 bootstrap 的
-   * `resolveDynamicWorkflowRunLabel`）。可选是为了**偏斜安全**：老服务端不发这个键，
-   * 读侧回落到 runId 即可——列表少一个标签是退化，不是错误。
+   * Display label, derived server-side at read time (`name` -> first script line -> runId; see
+   * bootstrap's `resolveDynamicWorkflowRunLabel`). Optional for **skew safety**: older servers
+   * omit the key and readers fall back to runId - a missing label in a list is degradation, not
+   * an error.
    *
-   * 与 `resumable` 同理由集中在服务端：两处各拼一次兜底，同一个 run 在
-   * `/dwf list` 与工具卡上会显示不同的名字。
+   * Centralized server-side for the same reason as `resumable`: assembled in two places, the
+   * same run would show different names in `/dwf list` and on the tool card.
    */
   label?: string;
   /**
-   * 最后更新时间（epoch 毫秒，来自 journal 的 `dwf_run.time_updated`）。可选同上：
-   * 老服务端缺席，读侧不显示时间列。列表排序仍由存储层负责（最近更新在前），
-   * 这个字段只供展示——读侧不要拿它重排，否则与服务端的 tie-break 漂移。
+   * Last update (epoch ms, journal `dwf_run.time_updated`). Optional as above: older servers
+   * omit it and readers hide the time column. List ordering stays with the storage layer (most
+   * recent first); this field is display-only - do not re-sort by it, or you drift from the
+   * server-side tie-break.
    */
   updatedAt?: number;
   status: "completed" | "errored" | "pending" | "running" | "stopped";
-  /** `status === "stopped"` 才在场。 */
+  /** Present only when `status === "stopped"`. */
   stopReason?: DynamicWorkflowRunStopReason;
-  /** 本 run 修订自哪个 run；不是修订则缺席。 */
+  /** Run this run was amended from; absent when not an amendment. */
   resumedFrom?: string;
-  /** 本 run 被哪次修订停下并替代；未被替代则缺席。 */
+  /** Amendment that stopped and replaced this run; absent when not replaced. */
   supersededBy?: string;
-  /** errored / stopped(provider|interrupted) 的结构化失败编码（`ProviderStop` / `Interrupted` …）。 */
+  /** Structured failure code of errored / stopped(provider|interrupted) (`ProviderStop` / `Interrupted` ...). */
   failureCode?: string;
   failureMessage?: string;
   /**
-   * 是否可恢复。**服务端按 resume 门的同一个谓词算好**：UI 若自行按 status+failureCode
-   * 重新推导，两处谓词总有一天不一致——按钮亮着但命令被拒。
+   * Resumable flag. **Computed server-side by the same predicate as the resume gate**: if the UI
+   * re-derives it from status+failureCode, the two predicates eventually disagree - button lit,
+   * command refused.
    */
   resumable: boolean;
 }

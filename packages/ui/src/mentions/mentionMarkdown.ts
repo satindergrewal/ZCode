@@ -104,9 +104,9 @@ export function buildMentionMarkdown(
     );
   }
   if (item.category === "skills") {
-    // Bugfix: skill mention 之前序列化成 `$slug`，消息里拿不到具体技能路径，
-    // 后续展示和解析都只能退化成纯文本 token。这里统一改成 `[$Label](path)`，
-    // 让 skill 和 file 一样具备稳定的链接载体；若历史数据里还没带 path，则继续回退旧格式避免丢内容。
+    // Bugfix: skill mentions serialized as $slug, losing the path in message text;
+    // display/parse degraded to plain text. Now [$Label](path), like files;
+    // legacy entries without a path keep the old format so nothing is lost.
     return buildSkillMentionMarkdown(item.value, item.data?.path);
   }
   if (item.category === "subagents") {
@@ -139,8 +139,7 @@ type MentionTextPart =
   | { type: "session"; label: string }
   | { type: "plugin"; label: string; pluginId?: string };
 
-const PLUGIN_STABLE_ID_PATTERN =
-  /^[A-Za-z0-9][A-Za-z0-9._-]*@[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const PLUGIN_STABLE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*@[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 function parsePluginStableId(destination: string): string | undefined {
   if (!destination.startsWith("plugin://")) return undefined;
@@ -166,9 +165,7 @@ export function formatSkillMentionDisplayLabel(label: string): string {
   if (words.length === 0) {
     return label;
   }
-  return words
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-    .join(" ");
+  return words.map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(" ");
 }
 
 function isDirectoryMentionDestination(destination: string): boolean {

@@ -17,7 +17,7 @@ import {
 } from "../src/index.js";
 
 describe("Provider Template", () => {
-  it("只接受可复用基线字段，拒绝凭据、身份和运行状态", () => {
+  it("accepts only reusable baseline fields, rejecting credentials, identity and runtime state", () => {
     expect(
       parseProviderTemplateMap([
         {
@@ -60,7 +60,7 @@ describe("Provider Template", () => {
     }
   });
 
-  it("按当前语言、英文和 Template ID 依次解析名称", () => {
+  it("resolves names by current language, then English, then the Template ID", () => {
     const localized = new ProviderTemplate({
       templateId: "deepseek",
       templateNameMap: { "zh-CN": "深度求索", "en-US": "DeepSeek" },
@@ -82,7 +82,7 @@ describe("Provider Template", () => {
     expect(resolveProviderTemplateName("deepseek", unnamed, "zh-CN")).toBe("deepseek");
   });
 
-  it("同一 Template 可实例化为多个独立 Provider，Template 不进入 Registry", () => {
+  it("instantiates one Template into many independent Providers while the Template never enters the Registry", () => {
     const template = new ProviderTemplate({
       templateId: "deepseek",
       templateNameMap: { "en-US": "DeepSeek" },
@@ -140,7 +140,7 @@ describe("Provider Template", () => {
     expect(resolution.registryProviders[0]?.config.api?.baseUrl).toBe("https://api.example.com");
   });
 
-  it("Built-in Rule 固定按 match、template-model、provider-model 排序", () => {
+  it("orders Built-in rules by match, template-model, then provider-model", () => {
     const rules = parseZCodeBuiltinModelConfigRules({
       modelRules: [{ modelMatch: ".*", config: { enabled: false } }],
       modelApiRules: [],
@@ -169,7 +169,7 @@ describe("Provider Template", () => {
     ).toBe(false);
   });
 
-  it("Built-in 分组按 model、model+api、site、template、provider 顺序叠加", () => {
+  it("layers Built-in groups in model, model+api, site, template, provider order", () => {
     const rules = parseZCodeBuiltinModelConfigRules({
       modelRules: [
         { modelMatch: ".*", config: { enabled: false } },

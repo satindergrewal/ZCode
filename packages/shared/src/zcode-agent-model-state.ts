@@ -1,12 +1,12 @@
-// ── 旧协议兼容面（过渡期）──────────────────────────────
-// 剩余 5 个导出：旧 configOptions 投影函数（formatModelPickerValue/normalizeAvailableZCodeMode/
+// -- Legacy protocol compat surface (transition) ----------------------------------------
+// Remaining 5 exports: legacy configOptions projections (formatModelPickerValue/normalizeAvailableZCodeMode/
 // getZCodeAgentModeSelectOptions/getZCodeAgentAvailableModes/
-// zcodeSessionSettingsToZCodeConfigOptions；B 类，死期=波次3）。
-// 消费者：services zcodeConfigOptions/botsService、UI zcodeSessionProjection 等旧栈。
-// 2026-09 Guarded 收尾后，ZCODE_AGENT_MODE_OPTIONS 成为 Desktop/手机 Composer、Automation/OffPeak
-// 表单共用的唯一模式目录（UI zcodeSessionProjection / automationAgentConfigOptions 直接消费
+// zcodeSessionSettingsToZCodeConfigOptions; class B, removal in wave 3).
+// Consumers: services zcodeConfigOptions/botsService, UI zcodeSessionProjection, and other legacy stacks.
+// Since the 2026-09 Guarded wrap-up, ZCODE_AGENT_MODE_OPTIONS is the single mode catalog shared by the
+// Desktop/mobile Composer and Automation/OffPeak forms (consumed directly by UI zcodeSessionProjection /
 // getZCodeAgentAvailableModes / getZCodeAgentModeSelectOptions / normalizeAvailableZCodeMode）。
-// 波次3 删除这些导出前必须先把模式目录迁到非 legacy 位置，不能连带删掉目录本身。
+// Before wave 3 removes these exports, migrate the mode catalog off legacy; never delete the catalog itself.
 import { formatModelPickerValue } from "./model-selection.js";
 import type { ZCodeSessionMode, ZCodeSessionSettingsState } from "./zcode-protocol/index.js";
 import type { ZCodeConfigOption, ZCodeTaskModeInfo } from "./zcode-task-types-core.js";
@@ -38,14 +38,14 @@ const ZCODE_AGENT_MODE_OPTIONS = [
     description: "Edit and run commands with fewer confirmations.",
   },
 ] as const satisfies readonly ZCodeTaskModeInfo[];
-// 菜单隐藏 Edit 不等于删除历史值；恢复/投影不能因候选变化把旧 edit 降为 build。
+// Hiding Edit from the menu is not deleting the historical value; restore/projection must not downgrade an old edit to build just because candidates changed.
 const ZCODE_AGENT_MODE_ID_SET = new Set<string>([
   ...ZCODE_AGENT_MODE_OPTIONS.map((mode) => mode.id),
   "edit",
 ]);
 
-// OpenRouter 会把 `:free` 作为模型 ID 的一部分。UI/configOptions 的展示态
-// 不能再用冒号分隔 thought level，否则草稿选择会静默截断真实 modelId。
+// OpenRouter keeps `:free` as part of the model id. The UI/configOptions display state
+// can no longer split thought levels on a colon, or draft selection silently truncates the real modelId.
 export function normalizeAvailableZCodeMode(mode: ZCodeSessionMode): string {
   return ZCODE_AGENT_MODE_ID_SET.has(mode) ? mode : "build";
 }

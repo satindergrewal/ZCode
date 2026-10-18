@@ -41,7 +41,7 @@ export async function readTopicResourceFromSession(
   context.abortSignal.throwIfAborted();
   if (input.sessionId !== context.sessionId || !input.attachment)
     throw new Error("Topic attachments require the current session");
-  // canonical 来源存在时不得回退 legacy 字段，否则旧授权可覆盖新的可信输入事实。
+  // With a canonical source present, never fall back to legacy fields, or stale authorization could overwrite trusted input facts.
   const candidates = messages.filter(({ info }) => info.role === "user" && !info.synthetic);
   let identity: z.infer<typeof identitySchema> | undefined;
   for (const { info } of candidates.toReversed()) {
@@ -64,7 +64,7 @@ export async function readTopicResourceFromSession(
   }
   if (!identity) throw new Error("No admitted topic authorization is available for this input");
   if (input.attachment.inputId) {
-    // A1 只属于所选快照，不允许把另一轮的消息或资源序号拼到当前文件索引上。
+    // A1 belongs to the chosen snapshot only; never splice another turn's message or resource ordinal onto this file index.
     const source = identity.botGroupSource;
     const resourceIndex = input.attachment.index ?? 0;
     const indexed = source.topicHistory

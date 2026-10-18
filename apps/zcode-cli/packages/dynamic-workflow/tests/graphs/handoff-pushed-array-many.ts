@@ -6,8 +6,12 @@ interface Draft {
 }
 const topics = ["sky", "sea"];
 topics.push("soil");
-const drafts = await Promise.all(topics.map((t) => agent(`writer-${t}`).ask<Draft>(`write about ${t}`)));
+const drafts = await Promise.all(
+  topics.map((t) => agent(`writer-${t}`).ask<Draft>(`write about ${t}`)),
+);
 const planner = agent("planner");
 const more = await planner.ask<string[]>(`more topics after ${drafts.length}`);
-const extra = await Promise.all(more.map((t) => agent(`writer-${t}`).ask<Draft>(`write about ${t}`)));
+const extra = await Promise.all(
+  more.map((t) => agent(`writer-${t}`).ask<Draft>(`write about ${t}`)),
+);
 return [...drafts, ...extra];

@@ -133,7 +133,12 @@ export function useSkills(options: UseSkillsOptions): ConversationSkillCatalogSt
     services,
   ]);
 
-  if (!options.enabled || !options.workspacePath || !rpcReady || scopedState.scope !== requestScope) {
+  if (
+    !options.enabled ||
+    !options.workspacePath ||
+    !rpcReady ||
+    scopedState.scope !== requestScope
+  ) {
     return EMPTY_STATE;
   }
   return scopedState.value;

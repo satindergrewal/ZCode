@@ -65,16 +65,22 @@ export const targetReadToolEntry: ToolEntry = {
 function assertTargetStore(
   context: ToolExecutionContext,
   toolName: "GoalRead",
-): asserts context is ToolExecutionContext & { sessionStore: NonNullable<ToolExecutionContext["sessionStore"]> } {
+): asserts context is ToolExecutionContext & {
+  sessionStore: NonNullable<ToolExecutionContext["sessionStore"]>;
+} {
   if (context.sessionStore) return;
 
-  throw createCoreError(CoreErrorType.ConfigurationError, `SessionStorePort is not configured for ${toolName}`, {
-    context: {
-      toolCallId: context.toolCallId,
-      toolName,
+  throw createCoreError(
+    CoreErrorType.ConfigurationError,
+    `SessionStorePort is not configured for ${toolName}`,
+    {
+      context: {
+        toolCallId: context.toolCallId,
+        toolName,
+      },
+      recoverable: false,
     },
-    recoverable: false,
-  });
+  );
 }
 
 function targetResultBudget() {

@@ -11,7 +11,7 @@ export interface PluginUiCancelSamplingParams extends PluginUiPluginScope {
   operationId: string;
 }
 
-/** 无状态透传；Agent 持有实例凭证、并发限额和唯一调用终态。 */
+/** Stateless pass-through; the agent owns instance credentials, concurrency caps, and the single call terminal state. */
 export interface IPluginUiSamplingService {
   sample(params: PluginUiSamplingParams): Promise<McpAppsSamplingResult>;
   cancelSampling(params: PluginUiCancelSamplingParams): Promise<{ cancelled: boolean }>;

@@ -3,7 +3,7 @@ import type {
   SessionDebugSnapshot,
   ZCodeSessionContentProfile,
 } from "@zcode/shared";
-/* eslint-disable max-lines -- ZCode agent service 接口集中声明 protocol/session/workspace 方法，拆分会增加 service descriptor 迁移成本。 */
+/* eslint-disable max-lines -- the ZCode agent service declares protocol/session/workspace surface together; splitting raises descriptor migration cost. */
 import type { Event, IDisposable } from "@zcode/rpc";
 import { ServiceChannels } from "@zcode/shared";
 import type { AppUsageRange, AppUsageSnapshot, ZCodeTaskTokenUsageResult } from "@zcode/shared";
@@ -180,8 +180,8 @@ export interface ZCodeAgentResumeSessionParams extends ZCodeAgentSessionTarget {
   model?: ModelSelection;
   thoughtLevel?: string;
   mcpServers?: ZCodeAgentMcpServer[];
-  // 冷恢复会重建 runtime，工具面隔离必须和 create 保持同一安全边界（CUA 只放行 zcode-cua 工具、
-  // 禁 Bash 等）。否则 resume 后模型可见工具面/执行权限会比创建时更宽。
+  // Cold restore rebuilds runtimes; tool isolation must match create's boundary (CUA allows only zcode-cua tools,
+  // Bash disabled and so on) or resume surfaces wider tools/permissions than creation did.
   toolAllowlist?: string[];
   toolDenylist?: string[];
 }
@@ -228,7 +228,7 @@ export interface ZCodeAgentCreateSessionParams extends ZCodeAgentWorkspaceTarget
   model?: ModelSelection;
   persistence?: ZCodeSessionPersistence;
   thoughtLevel?: string;
-  /** automation 执行会话关闭模型二次命名，保持首条用户 query 作为稳定标题。 */
+  /** Automation sessions skip model renaming; the first user query stays the title. */
   titleGenerationEnabled?: boolean;
   mcpServers?: ZCodeAgentMcpServer[];
   toolAllowlist?: string[];
@@ -246,7 +246,7 @@ export interface ZCodeAgentListSessionsParams extends ZCodeAgentWorkspaceTarget 
 export interface ZCodeAgentListSessionSubagentsParams extends ZCodeAgentSessionTarget {
   endedCursor?: string;
   endedLimit?: number;
-  /** 远程 workspace 的宿主连接身份；只用于选择现有 Host，不进入 CLI wire query。 */
+  /** Host connection identity of the remote workspace; selects hosts only, never a CLI wire param. */
   remoteSessionId?: string;
 }
 
@@ -261,9 +261,9 @@ export interface ZCodeAgentReadSessionParams extends ZCodeAgentSessionTarget {
   deliveryKind?: ZCodeDeliveryKind;
   messageLimit?: number;
   afterSeq?: number;
-  /** 被动索引/观察者只能读取现有 runtime，禁止为了读快照拉起 session。 */
+  /** Passive indexers/observers read existing runtimes only; never spawn sessions for snapshots. */
   runtimePolicy?: ZCodeAgentRuntimePolicy;
-  /** "index" 仅供 task index：返回剥离大载荷的同结构 snapshot，禁止回写 UI 状态。 */
+  /** index mode is task-index only: same-shape snapshot minus heavy payloads; never feeds UI state. */
   contentProfile?: ZCodeSessionContentProfile;
 }
 
@@ -293,14 +293,14 @@ export interface ZCodeAgentSendPromptParamsBase extends ZCodeAgentSessionTarget 
   sessionTraceId?: TraceId;
   content: string;
   attachments?: Record<string, unknown>[];
-  /** provider-only 的当前 IAB 状态；UI/session persistence 仍使用 content 原文。 */
+  /** provider-only in-agent-buffer state; UI/persistence keep the raw content. */
   browserAmbientContext?: ZCodeBrowserAmbientContext;
   clientMode?: ZCodeTaskClientMode;
   expectedRevision?: number;
   expectedProviderRevision?: string;
   runtimeProviderHeaders?: Record<string, string>;
   toolDenylist?: string[];
-  /** Bot 来源 turn 的稳定回推地址；只在当前 turn 内供 CronCreate 读取。 */
+  /** Stable callback address for bot turns; read by CronCreate within the turn only. */
   botDeliveryTarget?: ZCodeAutomationBotDeliveryTarget;
 }
 
@@ -346,9 +346,9 @@ export interface ZCodeAgentGenerateWorkspaceTextParams extends ZCodeAgentWorkspa
   maxOutputTokens?: number;
   signal?: AbortSignal;
   /**
-   * 协议层 RPC 超时。thinking 模型的长请求会超过协议 client 默认的
-   * 3 分钟；调用方必须把自身 deadline 透传到这里，否则默认超时先触发、
-   * 还会被 onRequestTimeout 误判 stale 杀进程。
+   * Protocol RPC timeout. Thinking models overrun the client's default
+   * 3 minutes; callers must thread their deadline here or the default fires first
+   * and onRequestTimeout misreads it as stale and kills the process.
    */
   requestTimeoutMs?: number;
 }
@@ -358,7 +358,7 @@ export interface ZCodeAgentTestModelConnectivityParams extends ZCodeAgentWorkspa
   signal?: AbortSignal;
 }
 
-// 合并时曾混用 Agent 完整鉴权响应；UI 只能回传请求校验，账号鉴权必须由 Host 合成。
+// A past merge leaked the full agent auth response; UIs return request checks only, the Host synthesizes account auth.
 export type ProviderRuntimeHeadersUiResponse =
   | { headersApplied: true; runtimeProviderHeaders: Record<string, string>; errorMessage?: string }
   | { headersApplied: false; errorMessage?: string };
@@ -389,12 +389,12 @@ export interface ZCodeAgentSessionSubscribeParams extends ZCodeAgentSessionTarge
   };
 }
 
-// ── v4 conversation 通道（竖切）──
-// host 只做转发：subscribe/unsubscribe/command 透传给 CLI v4 gateway，
-// v4/conversation/frame 通知按 workspace fan-out 给 renderer。
+// -- v4 conversation channel (vertical slice) --
+// The host only relays: subscribe/unsubscribe/command pass to the CLI v4 gateway,
+// and v4/conversation/frame fans out to renderers per workspace.
 
 export interface ZCodeAgentConversationSubscribeParams extends ZCodeAgentSessionTarget {
-  /** 水位不变量：仅当客户端真持有该时刻一致状态才允许带。 */
+  /** Watermark invariant: attach only when the client truly holds that consistent state. */
   base?: { logEpoch: string; seq: number };
   visibility?: "foreground" | "background";
 }
@@ -411,39 +411,39 @@ export interface ZCodeAgentConversationResyncParams extends ZCodeAgentWorkspaceT
   runtimePolicy?: ZCodeAgentRuntimePolicy;
 }
 
-/** 行分页 query（rows/range）：按游标向上取一窗历史行。 */
+/** Row paging (rows/range): one older window per cursor. */
 export interface ZCodeAgentConversationRowsRangeParams extends ZCodeAgentSessionTarget {
-  /** 取 rowId < beforeRowId 的行；缺省 = 从当前尾部向前。 */
+  /** Rows with rowId < beforeRowId; default walks back from the tail. */
   beforeRowId?: number;
   /** 1..rowsRangeMaxLimit（200）。 */
   limit: number;
 }
 
-/** 当前有效分支里的终态 ExitPlanMode 目录。 */
+/** Terminal ExitPlanMode entries in the active branch. */
 export type ZCodeAgentConversationPlansParams = ZCodeAgentSessionTarget;
 
-/** workflow run 的事件日志分页（详情页审计面）；cursor = journal sequence。 */
+/** Workflow run journal paging (detail audit); cursor = journal sequence. */
 export interface ZCodeAgentConversationWorkflowRunEventsParams extends ZCodeAgentSessionTarget {
   runId: string;
   afterSequence?: number;
   limit?: number;
 }
 
-/** dwf run 的枚举（重启后的发现查询）。 */
+/** dwf run enumeration (post-restart discovery). */
 export interface ZCodeAgentConversationWorkflowRunsParams extends ZCodeAgentSessionTarget {
   limit?: number;
 }
 
-// ── dwf 用户面产物──
-// ⚠ 术语：artifact = 脚本经 `artifact.*` 发布给**用户**看的产出（文件 / markdown / 预置看板），
-// 不是 run 的顶层返回值（引擎内部对后者的同名叫法）。
+// -- dwf user-facing artifacts --
+// Terms: an artifact is what the script publishes to the user via artifact.* (files/markdown/boards),
+// not the run's top-level return (which the engine also calls artifact).
 
-/** 产物清单；UI 冷恢复与中枢详情的 durable 读法。 */
+/** Artifact manifest; durable read for cold restore and the hub detail view. */
 export interface ZCodeAgentConversationWorkflowRunArtifactsParams extends ZCodeAgentSessionTarget {
   runId: string;
 }
 
-/** 预置看板的取数面；cursor = journal sequence（严格大于）。 */
+/** Board data feed; cursor = journal sequence (strictly greater). */
 export interface ZCodeAgentConversationWorkflowRunArtifactDataParams extends ZCodeAgentSessionTarget {
   runId: string;
   artifactId: string;
@@ -451,7 +451,7 @@ export interface ZCodeAgentConversationWorkflowRunArtifactDataParams extends ZCo
   limit?: number;
 }
 
-/** 内容产物的字节，一次一块（≤ 512 KiB，形状逐字照 attachmentRead）。 */
+/** Artifact bytes, one chunk at a time (512 KiB max, attachmentRead-shaped). */
 export interface ZCodeAgentConversationWorkflowRunArtifactReadParams extends ZCodeAgentSessionTarget {
   runId: string;
   artifactId: string;
@@ -460,13 +460,13 @@ export interface ZCodeAgentConversationWorkflowRunArtifactReadParams extends ZCo
   limit: number;
 }
 
-// ── dwf 工作区 transcript──
-/** 轻行清单：一个 run 的 files.* / git.* / world.run 行，不带正文。 */
+// -- dwf workspace transcript --
+/** Light row list: a run's files / git / world.run rows, no bodies. */
 export interface ZCodeAgentConversationWorkflowRunWorkspaceParams extends ZCodeAgentSessionTarget {
   runId: string;
 }
 
-/** 一个工作区节点的正文，按 maxBytes 保形有界化（缺省与上限在 CLI 网关侧）。 */
+/** One workspace node's body, shape-preserving bounded by maxBytes (defaults at the CLI gateway). */
 export interface ZCodeAgentConversationWorkflowRunNodeResultParams extends ZCodeAgentSessionTarget {
   runId: string;
   siteId: string;
@@ -492,7 +492,7 @@ export interface ZCodeAgentConversationFileRewindPreviewParams extends ZCodeAgen
 
 export interface ZCodeAgentConversationCommandParams extends ZCodeAgentWorkspaceTarget {
   envelope: CommandEnvelope;
-  /** 仅 host 内部用于 Browser Use runtime 边界，不进入 v4 wire envelope。 */
+  /** Host-internal Browser Use runtime boundary; never in the v4 envelope. */
   clientMode?: ZCodeTaskClientMode;
 }
 
@@ -501,7 +501,7 @@ export interface ZCodeAgentCommandsQueryParams extends ZCodeAgentWorkspaceTarget
   commands: CommandKey[];
 }
 
-/** UI 不携带 connectionId；connection scope 以 trusted carrier 注入 wire identity。 */
+/** UI carries no connectionId; the trusted carrier injects it into wire identity. */
 export interface ZCodeAgentAttachmentBeginParams extends ZCodeAgentSessionTarget {
   uploadId: string;
   fileName: string;
@@ -549,29 +549,29 @@ export interface ZCodeAgentAttachmentPreviewSourceParams extends ZCodeAgentSessi
   attachmentIndex?: number;
 }
 
-/** host scope 内部 transport 控制面；connectionId 只能经 trusted carrier 注入。 */
+/** Host-scope internal transport control; connectionId only via trusted carrier. */
 export interface ZCodeAgentConnectionFlowParams extends ZCodeAgentWorkspaceTarget {
   state: V4ConnectionFlowState;
 }
 
-/** sessions-index：workspace 级列表订阅（无 sessionId 维度）。 */
+/** sessions-index: workspace-level list subscription (no sessionId axis). */
 export interface ZCodeAgentSessionsIndexSubscribeParams extends ZCodeAgentWorkspaceTarget {
   base?: { logEpoch: string; seq: number };
   visibility?: "foreground" | "background";
   /**
-   * 订阅者作用域后缀：CLI 侧重订阅替换按 (connectionId, topic) 判定，
-   * host 进程内多个独立消费者（renderer 侧栏 / task-index syncer）订阅同一 topic 时
-   * 必须用不同 connectionId，否则互相替换对方的订阅代际。缺省共享 host 连接 id。
+   * Subscriber scope suffix: the CLI replaces resubscribes by (connectionId, topic), so distinct
+   * in-host consumers (renderer sidebar, task-index syncer) on one topic need distinct
+   * connectionIds or they clobber each other's generations. Defaults to the shared host id.
    */
   subscriberScope?: string;
   /**
-   * task-list 等被动观察者必须使用 existing-only；runtime 不存在时返回稳定 unavailable，
-   * 禁止为了建立列表订阅而启动 Agent。缺省保持显式会话入口的旧行为。
+   * Passive observers (task lists) must pass existing-only: a missing runtime yields stable unavailable
+   * and never spawns agents. Default keeps the explicit-session behavior.
    */
   runtimePolicy?: ZCodeAgentRuntimePolicy;
 }
 
-/** workspace-config：workspace 级配置目录订阅（config options + slash 目录）。 */
+/** workspace-config: workspace-level config catalog subscription (options + slash commands). */
 export interface ZCodeAgentWorkspaceConfigSubscribeParams extends ZCodeAgentWorkspaceTarget {
   base?: { logEpoch: string; seq: number };
   visibility?: "foreground" | "background";
@@ -611,7 +611,7 @@ export interface ZCodeAgentStorageStartupSnapshot {
 }
 
 export interface IZCodeAgentService {
-  /** 控制面不需要账号或模型，且不发送普通协议请求。 */
+  //* The control plane needs no account/model and sends no normal requests. */
   prepareStorage(params: ZCodeAgentWorkspaceTarget): Promise<void>;
   getStorageStartupState(
     params: ZCodeAgentWorkspaceTarget,
@@ -621,13 +621,13 @@ export interface IZCodeAgentService {
   ): Event<ZCodeAgentStorageStartupSnapshot>;
   initialize(params: ZCodeAgentWorkspaceTarget): Promise<ZCodeAgentInitializeResult>;
   /**
-   * 同步 App 全局运行时偏好到所有已活动 workspace；不得为此启动空闲 Agent。
+   * Sync app-wide runtime preferences to live workspaces; never spawn idle agents for it.
    */
   syncAppRuntimePreferences(preferences: ZCodeAgentAppRuntimePreferences): Promise<void>;
   /**
-   * 动态工作流用户选择变化的信号（docs/dynamic-workflow/launch.md「The user's choice」）：Host 重新计算
-   * 生效模式并串行重发 workspace/updateDynamicWorkflowPolicy。有本机设置权威的 Host 以设置文件为准；
-   * desktop-attached remote Host 以传入值为准（缺席 = 跟随服务端）。不得为此启动空闲 Agent。
+   * Dynamic-workflow choice signal (launch.md): the host recomputes the effective mode and serially
+   * re-sends workspace/updateDynamicWorkflowPolicy. Setting-authoritative hosts read the file;
+   * attached remotes trust the pushed value (absent = follow server). No idle spawns.
    */
   syncDynamicWorkflowUserMode(params: { mode?: DynamicWorkflowMode }): Promise<void>;
   getWorkspaceRuntimeIdentity(
@@ -650,24 +650,24 @@ export interface IZCodeAgentService {
   readWorkspacePresentation(
     params: ZCodeAgentReadWorkspacePresentationParams,
   ): Promise<ZCodeWorkspacePresentation>;
-  /** 无 task/session 的 Settings 预信任；Agent 会重新发现并校验 canonical snapshot。 */
+  //* Pre-trust for settings without a task/session; the agent re-discovers and validates.
   grantWorkspaceHookTrust(
     params: ZCodeAgentGrantWorkspaceHookTrustParams,
   ): Promise<ZCodeWorkspaceHookTrustGrantResult>;
   listMcpServerStatuses(params: ZCodeAgentListMcpServerStatusesParams): Promise<ZCodeMcpListResult>;
   listPlugins(params: ZCodeAgentPluginViewParams): Promise<ZCodePluginsListResult>;
   /**
-   * Plugin 对话引用 catalog：session-scoped 只读投影。
-   * 走 workspace 级 agent client（session 记录只存在于该进程），不走独立插件管理进程。
+   * Plugin conversation reference catalog: session-scoped read-only projection.
+   * Via the workspace agent client (session state lives there), never a plugin-manager process.
    */
   getPluginReferenceCatalog(
     params: ZCodeAgentPluginReferenceCatalogParams,
   ): Promise<ZCodePluginsReferenceCatalogResult>;
-  /** Composer Skill 引用 catalog；带 sessionId 时读取该 runtime 的冻结快照。 */
+  //* Composer skill catalog; with a sessionId reads that runtime's frozen snapshot. */
   getSkillReferenceCatalog(
     params: ZCodeAgentSkillReferenceCatalogParams,
   ): Promise<ZCodeSkillsReferenceCatalogResult>;
-  /** 插件 UI：读取插件 MCP 的 `ui://` 资源；走 session 所在 workspace agent 进程。 */
+  //* Plugin UI: read plugin MCP ui:// resources via the session's workspace agent. */
   openMcpUiInstance(
     params: import("../plugin-ui-bridge/contract.js").PluginUiPrepareSandboxParams & {
       accountContext?: string;
@@ -683,7 +683,7 @@ export interface IZCodeAgentService {
     params: import("../plugin-ui-bridge/contract.js").PluginUiPluginScope,
   ): Promise<void>;
   readMcpResource(params: ZCodeAgentReadMcpResourceParams): Promise<ZCodeMcpReadResourceResult>;
-  /** 插件 UI：UI 发起的工具调用；复用既有权限审批，不产生 transcript row。 */
+  //* Plugin UI: UI-invoked tools; reuse approval flows, no transcript rows. */
   sampleMcpApp(
     params: import("../plugin-ui-bridge/samplingContract.js").PluginUiSamplingParams,
   ): Promise<import("@zcode/shared/mcp-apps").McpAppsSamplingResult>;
@@ -691,15 +691,15 @@ export interface IZCodeAgentService {
     params: import("../plugin-ui-bridge/samplingContract.js").PluginUiCancelSamplingParams,
   ): Promise<{ cancelled: boolean }>;
   callMcpToolForUi(params: ZCodeAgentCallMcpToolForUiParams): Promise<ZCodeMcpUiCallToolResult>;
-  /** 插件 UI 取消带 callId 的进行中 UI 工具调用；agent 侧 abort 到 MCP client。 */
+  //* Plugin UI: cancel an in-flight call by id; aborts into the MCP client. */
   cancelMcpToolCallForUi(
     params: ZCodeAgentCancelMcpToolCallForUiParams,
   ): Promise<ZCodeMcpUiCancelCallResult>;
-  /** 插件 UI 页面发起的 `resources/read`，agent 侧限同插件服务器、8 MiB、mimeType 白名单。 */
+  /** Plugin UI resources/read; same-plugin servers, 8 MiB, mime allow-list. */
   readMcpResourceForUi(
     params: ZCodeAgentReadMcpResourceForUiParams,
   ): Promise<ZCodeMcpUiReadResourceResult>;
-  /** 插件 UI 页面发起的 resources/list、resources/templates/list、subscribe、unsubscribe 代理。 */
+  //* Plugin UI resources/list, templates/list, subscribe, unsubscribe proxies. */
   listMcpResourcesForUi(
     params: ZCodeAgentListMcpResourcesForUiParams,
   ): Promise<ZCodeMcpUiListResourcesResult>;
@@ -708,7 +708,7 @@ export interface IZCodeAgentService {
   ): Promise<ZCodeMcpUiListResourceTemplatesResult>;
   subscribeMcpResourceForUi(params: ZCodeAgentMcpResourceSubscriptionForUiParams): Promise<void>;
   unsubscribeMcpResourceForUi(params: ZCodeAgentMcpResourceSubscriptionForUiParams): Promise<void>;
-  /** App-Provided Tools：页面工具登记 / 注销与模型调用的认领 / 回传（信箱投递走 v4 live 增量）。 */
+  //* App-Provided Tools: register/unrevoke plus claim/return (mailbox over v4 live deltas). */
   registerAppToolsForUi(
     params: ZCodeAgentRegisterAppToolsForUiParams,
   ): Promise<ZCodeMcpUiRegisterAppToolsResult>;
@@ -721,12 +721,12 @@ export interface IZCodeAgentService {
   resolveAppToolCallForUi(
     params: ZCodeAgentResolveAppToolCallForUiParams,
   ): Promise<ZCodeMcpUiAppToolAcceptedResult>;
-  /** 插件 UI 工作区级面板入口（已启用插件清单 `ui.surfaces[]`）。 */
+  //* Workspace panel entries (enabled manifests' ui.surfaces[]). */
   listPluginUiSurfaces(
     params: ZCodeAgentWorkspaceTarget,
   ): Promise<ZCodePluginsListUiSurfacesResult>;
-  // 已保存工作流的 GUI 中枢：workspace 级、无会话，每次调用现扫 `<cwd>/.zcode/workflows/`。
-  // 全局档传 `scope: "global"`：带 workspace 就用它当载体，不带则由 services 层自选本机载体运行时。
+  // Saved-workflow hub: workspace-scoped, sessionless, rescanning .zcode/workflows per call.
+  // global passes scope=global: with a workspace it is the carrier, else services pick a local one.
   listSavedWorkflows(params: ZCodeAgentListSavedWorkflowsParams): Promise<ZCodeWorkflowsListResult>;
   getSavedWorkflow(params: ZCodeAgentGetSavedWorkflowParams): Promise<ZCodeWorkflowsGetResult>;
   updateSavedWorkflowMeta(
@@ -738,29 +738,29 @@ export interface IZCodeAgentService {
   listSavedWorkflowRuns(
     params: ZCodeAgentListSavedWorkflowRunsParams,
   ): Promise<ZCodeWorkflowsRunsResult>;
-  // 在项目档 / 全局档之间移动同名文件：
-  // `workspace` 是载体（移到项目传目标项目、移到全局传源项目），`to` 是落点档；不覆盖已存在的目标。
+  // Moving same-named files between project and global scopes:
+  // workspace is the carrier (target when moving in, source when out) and to is the destination; never overwrite.
   moveSavedWorkflow(params: ZCodeAgentMoveSavedWorkflowParams): Promise<ZCodeWorkflowsMoveResult>;
-  // 完成卡的「直接保存」（docs/dynamic-workflow/transcript-and-notifications.md）：按 runId 从
-  // journal 取这次 run 实际跑过的脚本落盘，不经模型回合。两者都必带 workspace（journal 在那里）。
+  // Completion-card direct save (transcript-and-notifications.md): fetch the script actually
+  // run by id from the journal and persist it, no model turn. Both require the workspace (the journal lives there).
   saveSavedWorkflowFromRun(
     params: ZCodeAgentSaveSavedWorkflowFromRunParams,
   ): Promise<ZCodeWorkflowsSaveResult>;
-  /** 这次 run 对应哪个已保存工作流（推导，不记忆）；顺带回 run 的实参供「再次运行」预填。 */
+  //* Which saved workflow this run maps to (inferred, not stored); returns args for run-again prefill. */
   findSavedWorkflowForRun(
     params: ZCodeAgentFindSavedWorkflowForRunParams,
   ): Promise<ZCodeWorkflowsForRunResult>;
   resolveSuggestedPluginReference(
     params: ZCodeAgentResolveSuggestedPluginReferenceParams,
   ): Promise<import("@zcode/shared").ZCodePluginsResolveSuggestedReferenceResult>;
-  /** 推荐项 Plugin 首次本地检查缺失后的 operation-scoped 刷新进度。 */
+  //* Operation-scoped refresh progress after a recommendation plugin misses locally. */
   onDynamicPluginOperationProgress(
     operationId: string,
   ): Event<ZCodePluginOperationProgressNotification>;
   getPluginsOverview(params: ZCodeAgentPluginViewParams): Promise<ZCodePluginsOverviewResult>;
   /**
-   * 资源管理器：枚举本 Host 内全部本地 Agent 进程（含 plugin / mcp-status 泳道），
-   * 并向每个存活 runtime 请求 `process/childProcesses`；单个 runtime 失败只让它的 children 为空。
+   * Resource view: enumerate local agent processes in this host (plugin/mcp-status lanes included),
+   * asking each live runtime for process/childProcesses; one failure empties only its children.
    */
   collectLocalRuntimeChildProcesses(
     signal?: AbortSignal,
@@ -790,7 +790,7 @@ export interface IZCodeAgentService {
   validatePlugin(params: ZCodeAgentValidatePluginParams): Promise<ZCodePluginsValidateResult>;
   describePlugin(params: ZCodeAgentDescribePluginParams): Promise<ZCodePluginsDescribeResult>;
   setPluginEnabled(params: ZCodeAgentSetPluginEnabledParams): Promise<ZCodePluginsSetEnabledResult>;
-  // ---- 定时任务(automation)管理 ----
+  //---- Scheduled task (automation) management ----
   listAutomations(params: ZCodeAgentWorkspaceTarget): Promise<ZCodeAutomation[]>;
   listAllAutomations(): Promise<ZCodeAutomation[]>;
   createAutomation(params: ZCodeAgentCreateAutomationParams): Promise<ZCodeAutomation>;
@@ -808,9 +808,9 @@ export interface IZCodeAgentService {
     params: ZCodeAgentTestModelConnectivityParams,
   ): Promise<ZCodeProviderTestModelConnectivityResult>;
   /**
-   * @deprecated：send 主路径已收敛 v4 sendText 命令。仅剩两个消费点——
-   * adapter 带附件输入回退（待附件命令面落地后移除）与 zcodeSessionService
-   * pass-through；新代码禁止回用。
+   * @deprecated The send mainline is v4 sendText. Two consumers remain:
+   * the adapter's attachment fallback (pending a command surface) and the zcodeSessionService
+   * pass-through. Do not reuse.
    */
   sendPrompt(params: ZCodeAgentSendPromptParams): Promise<ZCodeSessionSendResult>;
   compactSession(params: ZCodeAgentCompactParams): Promise<ZCodeSessionCompactResult>;
@@ -828,53 +828,53 @@ export interface IZCodeAgentService {
     params: ZCodeAgentRespondSessionRuntimePreferencesParams,
   ): Promise<void>;
   /**
-   * v4 UI 的 Start Plan runtime-auth bridge 只需要本地 pending request 事件，
-   * 不能为此额外打开旧 `session/subscribe`，否则会把旧 replay/continuous 读路径
-   * 重新带回 v4 pane。
+   * The v4 Start Plan auth bridge needs only local pending-request events;
+   * do not open legacy session/subscribe for it, or replay/continuous read paths
+   * leak back into the v4 pane.
    */
   onDynamicProviderRuntimeHeadersRequest(
     params: ZCodeAgentSessionTarget,
   ): Event<ZCodeProviderRuntimeHeadersRequestParams>;
   /**
-   * Start Plan runtime headers 的 workspace 级订阅入口（生产应答方使用）。
-   * Bug 原因（2026-08-16 web 远控卡死）：session 级入口只随桌面 pane 挂载订阅，
-   * web 远控新建会话在桌面没有 pane、web 端无应答方，请求校验请求滞留 pending，
-   * 任务永久「工作中」。桌面窗口用本入口为每个打开的 workspace tab 维持常驻应答方；
-   * 订阅时先注册 live listener 再按 workspaceKey 前缀补投 pending，与 session 级同语义。
+   * Workspace-level subscription for Start Plan runtime headers (production responders).
+   * Bug (2026-08-16 web-remote hang): session-level entry subscribed only with desktop panes,
+   * so web-created sessions had no desktop pane/responder and validation stuck pending,
+   * leaving tasks working forever. Desktop windows keep a resident responder per open workspace tab;
+   // subscribe registers the live listener first, then replays pending by prefix, matching session semantics.
    */
   onDynamicWorkspaceProviderRuntimeHeadersRequest(
     params: ZCodeAgentWorkspaceTarget,
   ): Event<ZCodeProviderRuntimeHeadersRequestParams>;
-  /** 只投递本 workspace 的校验取消，不属于 conversation stream。 */
+  //* Delivers this workspace's validation cancels only; not a conversation stream. */
   onDynamicWorkspaceProviderRuntimeHeadersCancelled(
     params: ZCodeAgentWorkspaceTarget,
   ): Event<ZCodeProviderRuntimeHeadersCancelled>;
   onDynamicSessionRuntimePreferencesRequest(): Event<ZCodeAgentSessionRuntimePreferencesRequest>;
   /**
-   * CLI 进程级资源样本，带 services 打的 lane 标签（CLI 自己不知道 lane）。
-   * 使用 dynamic event 避免 RPC 服务在无人订阅时缓冲周期事件；
-   * 该事件不属于 session/conversation continuous 或 replayable 状态。
+   * Process-level resource samples tagged with the services lane (the CLI never knows it).
+   * A dynamic event so RPC buffers no periodic samples without watchers;
+   * outside session/conversation continuous and replayable state.
    */
   onDynamicProcessResourceSample(): Event<AgentLaneResourceSample>;
-  /** MCP 进程生命周期与低频内存事件，仅供可信 Host relay 上报 ARMS。 */
+  //* MCP lifecycle and sparse memory events, for trusted host relays to ARMS. */
   onDynamicMcpTelemetry(): Event<ZCodeMcpTelemetryEvent>;
-  /** MCP 进程树资源事实，只供可信 Host 汇总上报。 */
+  //* MCP process-tree resource facts for trusted host rollups. */
   onDynamicMcpResourceSamples(): Event<ZCodeMcpResourceSample[]>;
-  /** Bash 完成事实，仅可信 Host 资源旁路订阅。 */
+  //* Bash completion facts, trusted-host resource side-channel only. */
   onDynamicToolExecResource(): Event<ZCodeToolExecResource>;
   /**
-   * @deprecated 旧协议订阅面（session/subscribe + session/event + state.updated）。
-   * task-index syncer 已迁 v4 sessions-index/workspace-config 帧；
-   * 仅剩 zcodeTaskServiceAdapter.onDynamicTaskEvent（replayable 读路径）消费。
-   * 写路径已收敛 v4 命令面；本订阅是读路径投影源。
+   * @deprecated Legacy subscription surface (session/subscribe + session/event + state.updated).
+   * The task-index syncer moved to v4 sessions-index/workspace-config frames;
+   * only zcodeTaskServiceAdapter.onDynamicTaskEvent (replayable reads) remains.
+   * Writes converged on v4 commands; this feeds read-path projections.
    */
   onDynamicSessionEvent(params: ZCodeAgentSessionSubscribeParams): Event<ZCodeAgentServiceEvent>;
-  // ── v4 conversation 通道（竖切）──
-  /** RPC attachment 建立后先读取 host 可信 hello。 */
+  //-- v4 conversation channel (vertical slice) --
+  //* Read the trusted host hello right after the RPC attaches. */
   helloConversationV4(): Promise<HelloMessage>;
-  /** hello 校验后回送 clientHello；metadata 不能覆盖 connection mode/profile。 */
+  //* Reply clientHello post-validation; metadata never overrides mode/profile. */
   initializeConversationV4(clientHello: ClientHello): Promise<void>;
-  /** 仅供 trusted host relay/facade；terminal RPC caller 必须被 connection scope 拒绝。 */
+  //* Trusted host relays/facades only; terminal RPC callers are scope-rejected. */
   setConnectionFlowStateV4(params: ZCodeAgentConnectionFlowParams): Promise<void>;
   subscribeConversationV4(
     params: ZCodeAgentConversationSubscribeParams,
@@ -883,38 +883,38 @@ export interface IZCodeAgentService {
     params: ZCodeAgentConversationResyncParams,
   ): Promise<V4ConversationResyncResult>;
   unsubscribeConversationV4(params: ZCodeAgentConversationUnsubscribeParams): Promise<void>;
-  /** rows/range 行分页 query（loadOlder 游标向上补历史）。 */
+  //* rows/range paging (loadOlder backfills history). */
   conversationRowsRangeV4(
     params: ZCodeAgentConversationRowsRangeParams,
   ): Promise<V4ConversationRowsRangeResult>;
   conversationPlansV4(
     params: ZCodeAgentConversationPlansParams,
   ): Promise<V4ConversationPlansResult>;
-  /** workflow run 事件日志分页；与 plans 同族（只读、无状态、超时重发安全）。 */
+  //* Run journal paging; plans-family (read-only, stateless, resend-safe). */
   conversationWorkflowRunEventsV4(
     params: ZCodeAgentConversationWorkflowRunEventsParams,
   ): Promise<V4ConversationWorkflowRunEventsResult>;
-  /** workflow run 枚举；journal-backed 的重启后发现面。 */
+  //* Run enumeration; journal-backed post-restart discovery. */
   conversationWorkflowRunsV4(
     params: ZCodeAgentConversationWorkflowRunsParams,
   ): Promise<V4ConversationWorkflowRunsResult>;
-  /** workflow run 的用户面产物清单；与 plans 同族（只读、无状态、超时重发安全）。 */
+  //* User-facing artifact manifest; plans-family (read-only, stateless, resend-safe). */
   conversationWorkflowRunArtifactsV4(
     params: ZCodeAgentConversationWorkflowRunArtifactsParams,
   ): Promise<V4ConversationWorkflowRunArtifactsResult>;
-  /** 预置看板的条目分页；hook 以 itemCount 变化为信号增量拉取。 */
+  //* Board entry paging; hooks pull on itemCount deltas. */
   conversationWorkflowRunArtifactDataV4(
     params: ZCodeAgentConversationWorkflowRunArtifactDataParams,
   ): Promise<V4ConversationWorkflowRunArtifactDataResult>;
-  /** 内容产物的字节，一次一块；授权在 CLI 侧（journal 行才是取字节的依据）。 */
+  //* Artifact bytes per chunk; the CLI authorizes (journal rows gate reads). */
   conversationWorkflowRunArtifactReadV4(
     params: ZCodeAgentConversationWorkflowRunArtifactReadParams,
   ): Promise<V4ConversationWorkflowRunArtifactReadResult>;
-  /** dwf 工作区 transcript 的清单。 */
+  //* dwf workspace transcript index. */
   conversationWorkflowRunWorkspaceV4(
     params: ZCodeAgentConversationWorkflowRunWorkspaceParams,
   ): Promise<V4ConversationWorkflowRunWorkspaceResult>;
-  /** 一个工作区节点的有界正文。 */
+  //* One workspace node's bounded body. */
   conversationWorkflowRunNodeResultV4(
     params: ZCodeAgentConversationWorkflowRunNodeResultParams,
   ): Promise<V4ConversationWorkflowRunNodeResultResult>;
@@ -933,34 +933,34 @@ export interface IZCodeAgentService {
   attachmentChunkV4(params: ZCodeAgentAttachmentChunkParams): Promise<V4AttachmentChunkResult>;
   attachmentCommitV4(params: ZCodeAgentAttachmentTerminalParams): Promise<V4AttachmentCommitResult>;
   attachmentAbortV4(params: ZCodeAgentAttachmentTerminalParams): Promise<void>;
-  /** Desktop local 已发送视频 source query；远端与 Web 返回 chunked。 */
+  //* Desktop-local sent-video source query; remote/web chunk it. */
   attachmentPreviewSourceV4(
     params: ZCodeAgentAttachmentPreviewSourceParams,
   ): Promise<V4AttachmentPreviewSourceResult>;
-  /** 已发送 image/video 只读分块查询；connection scope 注入可信 workspace 连接。 */
+  //* Read-only chunked sent image/video; connection scope injects the trusted link. */
   attachmentReadV4(params: ZCodeAgentAttachmentReadParams): Promise<V4AttachmentReadResult>;
-  /** Share 读取 userInput 附件，允许 text/plain 等非媒体类型。 */
+  //* Share reads userInput attachments, non-media types included. */
   conversationAttachmentReadV4(
     params: ZCodeAgentConversationAttachmentReadParams,
   ): Promise<V4ConversationAttachmentReadResult>;
-  /** Share 选择阶段只读 userInput 附件元数据，不读取完整内容。 */
+  //* Share selection reads attachment metadata only. */
   conversationAttachmentStatV4(
     params: ZCodeAgentConversationAttachmentStatParams,
   ): Promise<V4ConversationAttachmentStatResult>;
-  /** workspace 级下行帧流（v4/conversation/frame），renderer 侧按 topic 自行路由。 */
+  //* Workspace downlink frames (v4/conversation/frame); renderers route by topic. */
   onDynamicConversationFrame(
     params: ZCodeAgentWorkspaceTarget,
   ): Event<ConversationTopicWireCandidate>;
-  /** workspace 级 live telemetry 事实；connection facade 仅向可信 desktop-continuous 下游暴露。 */
+  //* Workspace live telemetry; the facade exposes it to trusted desktop-continuous only. */
   onDynamicLocalTtftFacts(
     params: ZCodeAgentWorkspaceTarget,
   ): Event<import("@zcode/shared").LocalTtftFacts>;
   onDynamicConversationTelemetryFact(
     params: ZCodeAgentWorkspaceTarget,
   ): Event<ConversationTelemetryFact>;
-  /** 当前窗口全部本地 live task 的 CUA 权限观察；历史、远程与 replayable 不在此事件面。 */
+  //* CUA permission observations for local live tasks; history/remote/replayable excluded. */
   onDynamicCuaPermissionObservation(): Event<ZCodeAgentCuaPermissionObservation>;
-  // ── sessions-index 通道（列表活性）──
+  //-- sessions-index channel (list liveness) --
   subscribeSessionsIndexV4(
     params: ZCodeAgentSessionsIndexSubscribeParams,
   ): Promise<V4SessionsIndexSubscribeResult>;
@@ -968,11 +968,11 @@ export interface IZCodeAgentService {
     params: ZCodeAgentConversationResyncParams,
   ): Promise<V4ConversationResyncResult>;
   unsubscribeSessionsIndexV4(params: ZCodeAgentConversationUnsubscribeParams): Promise<void>;
-  /** workspace 级 sessions-index 下行帧流（与 conversation 同一通知，按 topic 前缀分流）。 */
+  //* Workspace sessions-index downlink (same notification, split by prefix). */
   onDynamicSessionsIndexFrame(
     params: ZCodeAgentWorkspaceTarget,
   ): Event<SessionsIndexTopicWireCandidate>;
-  // ── workspace-config 通道（配置目录活性；task-index syncer 消费）──
+  //-- workspace-config channel (catalog liveness; task-index syncer) --
   subscribeWorkspaceConfigV4(
     params: ZCodeAgentWorkspaceConfigSubscribeParams,
   ): Promise<V4WorkspaceConfigSubscribeResult>;
@@ -980,24 +980,24 @@ export interface IZCodeAgentService {
     params: ZCodeAgentConversationResyncParams,
   ): Promise<V4ConversationResyncResult>;
   unsubscribeWorkspaceConfigV4(params: ZCodeAgentConversationUnsubscribeParams): Promise<void>;
-  /** workspace 级 workspace-config 下行帧流（与 conversation 同一通知，按 topic 前缀分流）。 */
+  //* Workspace workspace-config downlink (same notification, split by prefix). */
   onDynamicWorkspaceConfigFrame(
     params: ZCodeAgentWorkspaceTarget,
   ): Event<WorkspaceConfigTopicWireCandidate>;
   /**
-   * （CLI 重连重订）：agent 进程换代通知（超时回收/崩溃后重新拉起）。
-   * v4 订阅活在 CLI 进程内存，进程换代即失效；订阅方（task-index syncer 等）
-   * 收到后必须对该 workspaceKey 重发 subscribe，否则帧流静默中断。
+   * CLI reconnection-resubscribe: agent process generation changed (reaped or respawned).
+   * v4 subscriptions live in process memory and die with it; subscribers (task-index syncer etc.)
+   * must re-subscribe per workspaceKey or frames stop silently.
    */
   onAgentRuntimeRestarted(listener: (event: { workspaceKey: string }) => void): IDisposable;
   /**
-   * Agent client 在 service 内完成登记后发布 available，当前 client 关闭后发布 unavailable。
-   * 这是被动 observer attach/detach 的唯一生命周期信号，不表达用户使用租约。
+   * available fires once the client registers in the service; unavailable when it closes.
+   * The only attach/detach signal for passive observers, never a user lease.
    */
   onAgentRuntimeLifecycle?: (
     listener: (event: ZCodeAgentRuntimeLifecycleEvent) => void,
   ) => IDisposable;
-  /** 当前 desktop-local CUA turn 是否仍在执行，用于 Helper recovery 避免中途回收 Agent。 */
+  //* Whether a desktop-local CUA turn is live; guards Helper recovery mid-turn. */
   hasActiveCuaOperationTurn(): boolean;
   disposeWorkspace(params: ZCodeAgentWorkspaceTarget): Promise<void>;
   disposeAll(): void;

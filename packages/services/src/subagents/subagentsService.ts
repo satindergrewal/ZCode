@@ -52,7 +52,7 @@ interface AgentsStateFile {
   builtInModelSelectionOverrides: BuiltInSubagentModelSelectionOverrides;
   pluginAgentModelSelectionOverrides: PluginSubagentModelSelectionOverrides;
   disabledAgentIds: string[];
-  // 仅供旧版本回滚保留；新版存在选择字段后，禁止再从这两个字段恢复覆盖。
+  // Kept for legacy rollback only; with selection fields present, never restore overrides from these.
   builtInModelOverrides?: unknown;
   builtInThoughtLevelOverrides?: unknown;
 }
@@ -105,7 +105,7 @@ function createBuiltInAgents(
       name: "general-purpose",
       description:
         "General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks.",
-      // 内置子智能体使用显式身份色，避免 UI 按名称 hash 后把 general-purpose 显示为红色。
+      // Builtin subagents pin explicit identity colors; name-hashing renders general-purpose red.
       color: "blue",
       injectAgentsMd: true,
       modelSelection: generalPurposeOverride,
@@ -187,7 +187,7 @@ async function readAgentStateAtPath(stateFile: string): Promise<AgentsStateFile>
         : [],
     };
   } catch (error) {
-    // 文件缺失/损坏沿用既有空覆盖语义；IO 失败不能伪装为空配置并重新启用已禁用 agent。
+    // Missing/corrupt files keep the empty-override semantics; IO failures must not fake empty config and re-enable disabled agents.
     if (error instanceof SyntaxError || (error as NodeJS.ErrnoException).code === "ENOENT")
       return emptyAgentsState();
     throw error;
@@ -272,7 +272,7 @@ async function collectAgentMarkdownPaths(rootPath: string, recursive = false): P
   for (const entry of entries) {
     const entryPath = join(rootPath, entry.name);
     if (entry.isDirectory()) {
-      // 自定义 profile 只支持第一层；插件保留已有递归发现规则。
+      // Custom profiles scan one level only; plugins keep their existing recursive discovery.
       if (recursive) result.push(...(await collectAgentMarkdownPaths(entryPath, true)));
       continue;
     }
@@ -399,7 +399,7 @@ async function discoverPluginAgents(params: {
   }
 
   return {
-    // 裸名称只是同一插件 agent 的运行时调用别名，不能进入一文件一条的 UI 资源投影。
+    // Bare names are runtime aliases of the same plugin agent, never one-entry-per-file UI projections.
     profiles: profiles.sort((left, right) => left.name.localeCompare(right.name)),
     runtimeAgents: runtimeAgents.sort((left, right) => left.name.localeCompare(right.name)),
   };
@@ -428,7 +428,7 @@ async function readPluginConfig(options?: SubagentStorageOptions): Promise<Plugi
   }
 }
 
-/** 内置插件没有安装记录，只扫描 installed 文件会漏掉；缓存只补缺失身份，不能复活禁用/卸载插件。 */
+/** Builtin plugins have no install record and installed-file scans miss them; the cache fills missing identities only, never reviving disabled/uninstalled plugins. */
 async function readEnabledPluginRecords(
   pluginStorageRoot: string,
   config: PluginConfigSummary,
@@ -437,7 +437,7 @@ async function readEnabledPluginRecords(
   const records = installed.filter(
     (record) =>
       config.enabledPlugins[record.id] === true &&
-      // 卸载抑制优先于遗留的安装/启用记录，不能只在缓存兜底时检查而复活官方插件。
+      // Uninstall suppression outranks legacy install/enable records; checking only in the cache fallback would revive official plugins.
       !(
         record.id.endsWith(`@${ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID}`) &&
         config.suppressedBuiltins.includes(record.id)
@@ -527,7 +527,7 @@ function collectPluginAgentRoots(rootPath: string, manifestAgents: unknown): str
 
 function applyPluginAgentOverrides(agent: AgentSummary, state: AgentsStateFile): AgentSummary {
   const override = state.pluginAgentModelSelectionOverrides[agent.id];
-  // 插件文件只提供默认值；覆盖替换整份选择，不能混入原模型的档位。
+  // Plugin files only default; an override replaces the whole selection and never merges the previous model's level.
   return {
     ...agent,
     defaultModelSelection: agent.modelSelection,
@@ -552,7 +552,7 @@ function normalizeBuiltInSelectionOverrides(
 }
 
 export function createSubagentsService(options?: SubagentsServiceOptions): ISubagentsService & {
-  /** Host 启动/重启 Agent 前准备配置，不暴露为 Renderer RPC。 */
+  /** Prepares config before the host starts/restarts an agent; never a renderer RPC. */
   prepareRuntimeState(workspace?: {
     workspacePath: string;
     workspaceIdentity?: string;
@@ -600,8 +600,12 @@ export function createSubagentsService(options?: SubagentsServiceOptions): ISuba
           await resolveUserSubagentRoot(storageOptions),
         );
         for (const failure of markdownMigration.failures)
-          subagentLogger.warn(undefined, "用户 Subagent Markdown 迁移失败，保留原文件", failure);
-        // state 的迁移由缓存读取入口统一执行，IO 失败同样发布回退，不能提前阻断 CLI 启动。
+          subagentLogger.warn(
+            undefined,
+            "User subagent Markdown migration failed; keeping the original file",
+            failure,
+          );
+        // State migration runs in the cache-read path; IO failures publish fallback there too and never block CLI startup.
         await runtimeConfig.prepare(workspace);
       });
     },
@@ -641,7 +645,7 @@ export function createSubagentsService(options?: SubagentsServiceOptions): ISuba
       const sortedWorkspaceAgents = fileAgents
         .filter((agent) => agent.scope === "workspace")
         .sort((left, right) => left.name.localeCompare(right.name));
-      // 用户页不能读项目 profile，但仍需展示本地插件的只读覆盖入口；不能把两者一并剪掉。
+      // User pages cannot read project profiles yet still need the read-only local-plugin override entry; do not cut both.
       const pluginAgentDiscovery = await discoverPluginAgents({
         diagnostics,
         state,
@@ -714,7 +718,7 @@ export function createSubagentsService(options?: SubagentsServiceOptions): ISuba
 
     async setPluginAgentModelOverride(params: PluginSubagentModelOverrideParams): Promise<void> {
       if (!params.agentId.startsWith("plugin:") || params.agentId.trim() !== params.agentId)
-        throw new Error("无效插件 Subagent 身份");
+        throw new Error("Invalid plugin subagent identity");
       const runUpdate = async () => {
         const state = await readAgentStateFile(storageOptions);
         const overrides = { ...state.pluginAgentModelSelectionOverrides };
@@ -754,7 +758,7 @@ export function createSubagentsService(options?: SubagentsServiceOptions): ISuba
 
       const content = serializeSubagentMarkdown(normalizeConfig(params.config));
       const agent = parseSavedAgent(content, filePath, scope, params.workspacePath);
-      // 先验证即将写入的 Markdown 可解析，避免 serializer 回归时把坏 profile 落盘。
+      // Parse-check Markdown before writing so a serializer regression cannot persist a broken profile.
       await writeFile(filePath, content, { encoding: "utf-8", flag: "wx" });
       return { agent };
     },
@@ -777,10 +781,10 @@ export function createSubagentsService(options?: SubagentsServiceOptions): ISuba
 
       const content = serializeSubagentMarkdown(normalizeConfig(params.config));
       const agent = parseSavedAgent(content, filePath, scope, params.workspacePath);
-      // 更新时同样先 parse 再覆盖旧文件，避免失败保存破坏已有用户 agent。
+      // Updates parse first, then overwrite, so a failed save never corrupts an existing user agent.
       await writeFile(filePath, content, "utf-8");
-      // enabled 状态按 agent id 存储；重命名会生成新 id，必须迁移旧禁用记录，
-      // 否则用户禁用的 agent 改名后会被 runtime 当成新启用 profile 重新加载。
+      // Enabled state keys on agent id; renames mint new ids, so migrate old disabled records
+      // or the runtime reloads a user-disabled agent as a fresh enabled profile.
       await migrateDisabledAgentId(params.agentId, agent.id, storageOptions);
       if (params.oldFilePath && params.oldFilePath !== filePath) {
         await rm(params.oldFilePath, { force: true });

@@ -15,14 +15,14 @@ export function normalizeMcpToolDescriptor(
 ): McpToolDescriptor {
   const record = isRecord(tool) ? tool : {};
   const toolName = typeof record.name === "string" ? record.name : "unknown";
-  // 插件 UI：tools/list 的 `_meta` 只在这里读一次，归一化成 descriptor.ui；下游不再碰原始 _meta。
+  // Plugin UI: tools/list `_meta` is read exactly here, normalized into descriptor.ui; downstream never touches raw _meta.
   const ui = normalizeMcpToolUiMeta(record._meta);
   return {
     serverName,
     toolName,
     name: `mcp__${sanitizeMcpName(serverName)}__${sanitizeMcpName(toolName)}`,
     description: typeof record.description === "string" ? record.description : undefined,
-    // 工具级 `_meta.timeoutMs`（A8）覆盖服务器级超时：长任务（下载引擎、渲染）按工具声明，上限 30 分钟。
+    // Tool-level `_meta.timeoutMs` (A8) overrides the server timeout: long tasks (download engines, rendering) declare per tool, cap 30 min.
     timeoutMs: readToolMetaTimeoutMs(record._meta) ?? timeoutMs,
     inputSchema: normalizeInputSchema(record.inputSchema),
     outputSchema: isRecord(record.outputSchema) ? (record.outputSchema as JsonSchema) : undefined,
@@ -30,7 +30,7 @@ export function normalizeMcpToolDescriptor(
     // Only the http official-MCP tool error marker is trusted: that shape comes from the origin-validated
     // ZCode backend and cannot be forged by plugins (rationale and cost in mcp.port.ts official field docs).
     ...(official ? { official: true } : {}),
-    // 可见性独立于 UI 呈现——没有 resourceUri 的 app-only 数据工具也不能进模型工具表。
+    // Visibility is independent of UI presence — an app-only data tool without resourceUri still stays out of the model tool table.
     visibility: readMcpToolVisibility(record._meta),
     ...(ui ? { ui } : {}),
   };

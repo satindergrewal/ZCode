@@ -143,8 +143,7 @@ describe("ResumeWorkflowRun handler — structured failures", () => {
 
     // 判别键是 message 前缀（errorCode 数值不进模型，executor 投影成 code:"N" 字符串）。
     // not_found 复用内省工具的 run_not_found 键（同键同码）。
-    const expectedPrefix =
-      reason === "not_found" ? "run_not_found" : `workflow_run_${reason}`;
+    const expectedPrefix = reason === "not_found" ? "run_not_found" : `workflow_run_${reason}`;
     expect(failure.message.startsWith(`${expectedPrefix}:`)).toBe(true);
     // 可操作性：失败要说清下一步（not_found 指向 ListWorkflowRuns，其余各自说清因由）。
     expect(failure.message.length).toBeGreaterThan(expectedPrefix.length + 1);
@@ -274,7 +273,9 @@ describe("ResumeWorkflowRun registration", () => {
     registerBuiltInTools(registry);
 
     expect(registry.has(RESUME_WORKFLOW_RUN_TOOL_NAME)).toBe(true);
-    expect(registry.toContracts().map((tool) => tool.name)).toContain(RESUME_WORKFLOW_RUN_TOOL_NAME);
+    expect(registry.toContracts().map((tool) => tool.name)).toContain(
+      RESUME_WORKFLOW_RUN_TOOL_NAME,
+    );
   });
 
   // 免确认（2026-08-30）：build/yolo 自动放行（prompt-less 直行）；plan 按 read-only 契约

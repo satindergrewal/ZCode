@@ -58,9 +58,9 @@ describe("AttachmentUploadRegistry hard bounds", () => {
     for (let index = 0; index < PROTOCOL_V4_LIMITS.attachmentUploadMaxConcurrent; index += 1) {
       registry.begin(begin(empty, `upload-${index}`, 0));
     }
-    expect(() =>
-      registry.begin(begin(empty, "upload-overflow", 0)),
-    ).toThrow("fault.attachment.tooManyUploads");
+    expect(() => registry.begin(begin(empty, "upload-overflow", 0))).toThrow(
+      "fault.attachment.tooManyUploads",
+    );
     expect(() =>
       registry.begin({ ...begin(empty, "upload-0", 0), fileName: "conflict.bin" }),
     ).toThrow("fault.attachment.beginConflict");

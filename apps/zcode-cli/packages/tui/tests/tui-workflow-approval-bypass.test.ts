@@ -1,8 +1,8 @@
-// CreateWorkflow 的确认 gate 旁路（docs/dynamic-workflow/launch.md「The approval bypass」）。
+// The CreateWorkflow confirmation-gate bypass (docs/dynamic-workflow/launch.md, "The approval bypass").
 //
-// 两条硬断言：旁路**不渲染审批面板**，且**不持久化任何权限规则**。第二条是关键——
-// 带上 permissionUpdates 就会把「跳过一次确认」变成真的授权，而 spec 的裁定是
-// 「gate 旁路不等于权限旁路」：run 里的 actor 仍继承会话的权限 profile。
+// Two hard assertions: the bypass renders no approval panel and persists no permission rules. The second is the crux --
+// carrying permissionUpdates would turn skip-once-confirmation into real authorization, and the spec's verdict is
+// a gate bypass is not a permission bypass: in-run actors still inherit the session permission profile.
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -26,7 +26,7 @@ function permissionRequest(
   } as PermissionBrokerRequest;
 }
 
-/** 收集 setApprovalQueue 的每一次调用，用来证明「面板有没有被排进队列」。 */
+/** Records every setApprovalQueue call, proving whether the panel ever gets queued. */
 function trackedRequester() {
   const enqueued: ApprovalPrompt[] = [];
   let statusCalls = 0;
@@ -54,9 +54,9 @@ test("CreateWorkflow is auto-allowed without ever enqueuing an approval panel", 
   );
 
   assert.equal(result.decision, "allow");
-  // 硬断言 1：审批面板从未进队列，所以 TUI 不会闪一下审批 UI。
+  // Hard assertion 1: the approval panel never queues, so no approval UI ever flashes.
   assert.deepEqual(enqueued, []);
-  // 面板没渲染，状态行也不该被改写成「等待审批」。
+  // With no panel rendered, the status line must not be rewritten to awaiting-approval either.
   assert.equal(statusCalls(), 0);
 });
 
@@ -66,7 +66,7 @@ test("the CreateWorkflow bypass persists no permission rule", async () => {
   const result = await requestPermission(
     permissionRequest({
       toolName: CREATE_WORKFLOW_TOOL_NAME,
-      // 即使服务端建议了规则，旁路也绝不把它变成持久化授权。
+      // Even when the server suggests rules, the bypass never turns them into persisted grants.
       suggestedPermissionUpdates: [
         { type: "addRules", behavior: "allow", rules: [{ toolName: CREATE_WORKFLOW_TOOL_NAME }] },
       ],
@@ -74,7 +74,7 @@ test("the CreateWorkflow bypass persists no permission rule", async () => {
   );
 
   assert.equal(result.decision, "allow");
-  // 硬断言 2：没有任何权限规则被写回——gate 旁路 ≠ 权限旁路。
+  // Hard assertion 2: no permission rule is written back -- a gate bypass is not a permission bypass.
   assert.equal(result.permissionUpdates, undefined);
   assert.equal("permissionUpdates" in result && result.permissionUpdates !== undefined, false);
 });
@@ -86,7 +86,7 @@ test("other tools still raise an approval panel and stay pending", async () => {
   void requestPermission(permissionRequest({ toolName: "Bash" })).then(() => {
     settled = true;
   });
-  // 让微任务跑一轮：如果旁路误伤了普通工具，这里就已经 resolve 了。
+  // Flush one microtask round: if the bypass bruised the plain-tool path, it would have resolved by now.
   await Promise.resolve();
 
   assert.equal(enqueued.length, 1);
@@ -100,8 +100,8 @@ test("AskUserQuestion keeps its question-panel path", async () => {
   void requestPermission(
     permissionRequest({
       toolName: ASK_USER_QUESTION_TOOL_NAME,
-      // options 的下界是 2，且每个 option 要 label + description（`value` 会被 .strict() 拒收）。
-      // 给错就会走「输入非法」的 deny 分支，那样这条用例根本碰不到 question 面板路径。
+      // options needs at least 2, each with label + description (`value` is rejected by .strict()).
+      // Getting it wrong takes the invalid-input deny branch, and this case would never reach the question panel path.
       input: {
         questions: [
           {
@@ -133,6 +133,6 @@ test("an already-aborted request rejects before the bypass can allow it", async 
     }),
     /cancelled/u,
   );
-  // 取消优先于旁路：不该因为是 CreateWorkflow 就把一个已取消的请求放行。
+  // Cancel wins over the bypass: a cancelled request is not admitted just for being CreateWorkflow.
   assert.deepEqual(enqueued, []);
 });

@@ -20,9 +20,10 @@ import {
 import type { WorkflowActorInstance } from "@/app-shell/workflowRunPanel.js";
 
 /**
- * 详情页脊线上药丸的接线（docs/dynamic-workflow/presentation.md「The spine」）。从
- * WorkflowRunPhaseList.tsx 拆出（max-lines 门）：那里只管节的开合、落点与留白，药丸怎么命名、怎么打开、
- * 尾槽写什么全在这里。纯函数工厂：清单每帧调用一次拿到三把闭包，没有自己的状态。
+ * Wiring for the pills on the detail page's spine (docs/dynamic-workflow/presentation.md "The spine").
+ * Split out of WorkflowRunPhaseList.tsx (max-lines gate): that file owns section open/close, anchoring and
+ * spacing; pill naming, opening, and the tail slot live here. Pure function factory: the list calls it once
+ * per frame to get three closures; no state of its own.
  */
 type FormatMessage = (
   descriptor: { id: string },
@@ -63,7 +64,7 @@ export function phasePillRenderers({
     return station === undefined ? phaseId : phaseDisplayName(station.naming, format);
   };
 
-  // 行交出槽位身份：会话 id 有则随行，没有就开占位 tab。
+  // The row hands over slot identity: session id included when present, else a placeholder tab opens.
   const openActor = (pill: TimelinePill) => {
     const slot = pill.slot;
     if (onOpenActor === undefined || slot === undefined) return;
@@ -82,11 +83,11 @@ export function phasePillRenderers({
     });
   };
 
-  /** 药丸的公共接线（名字、状态、可打开）；整行药丸与「列出全部」的密排药丸共用。 */
+  /** Shared pill wiring (name, status, openability); used by both the per-row pill and the dense list-all pills. */
   const pillProps = (pill: TimelinePill) => {
     const label = nameOf(pill);
     const openable = onOpenActor !== undefined && pill.slot !== undefined;
-    // 脚本行同一条打开语法：开整个 run 的脚本 transcript，落到这一站的第一张卡。
+    // Same open grammar as the script row: open the whole run's script transcript, anchored to this site's first card.
     const workspacePhaseId = onOpenWorkspace === undefined ? undefined : pill.workspace?.phaseId;
     const open: WorkflowAgentPillOpen | undefined = openable
       ? {
@@ -136,14 +137,14 @@ export function phasePillRenderers({
         format({ id: "chat.toolCall.workflow.graph.card.reads" }, { count: activity.reads }),
       );
     }
-    // 可打开的药丸是 <button>：块级父元素里它只包住内容，行宽会随名字长短参差。
-    // 纵向 flex 容器让每一行拉满本列宽度（与卡上站下的药丸列同一机制）。
+    // Openable pills are <button>: inside a block parent it only wraps its content, so row widths vary with name length.
+    // A column flex container stretches every row to the full column width (same mechanism as the pill column under cards).
     return (
       <div className="flex min-w-0 flex-col" key={pill.key}>
         <WorkflowAgentPill {...pillProps(pill)}>
           <SpinePillTrailer counts={counts} modelName={actorModels.get(key ?? "")?.name} />
         </WorkflowAgentPill>
-        {/* 问题挂在提问者下面，再退一步（26px）：它属于这一行，不属于这一站。 */}
+        {/* Questions indent under their asker, one step further (26px): they belong to the row, not the site. */}
         {questions.map((question) => (
           <WorkflowRunQuestionRow
             className="ml-[26px]"

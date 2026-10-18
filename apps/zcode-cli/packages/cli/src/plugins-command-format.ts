@@ -6,7 +6,11 @@ import type {
   ZCodeInstalledPluginData,
   ZCodeMarketplaceSummaryData,
 } from "@zcode/bootstrap";
-import type { PluginDiagnostic, PluginListItem, PluginListOutcome } from "./plugins-command-shared.js";
+import type {
+  PluginDiagnostic,
+  PluginListItem,
+  PluginListOutcome,
+} from "./plugins-command-shared.js";
 
 export function writeWarnings(ctx: RunContext, diagnostics: readonly PluginDiagnostic[]): void {
   const warnings = diagnostics.filter((diagnostic) => diagnostic.severity !== "error");
@@ -100,10 +104,7 @@ export const formatPluginSetJson = (result: SetZCodePluginEnabledResult): string
   });
 
 /** JSON shape of loaded plugins; diagnostics land on their own entry by pluginId, with no top-level cwd/diagnostics wrapper. */
-export function formatPluginJson(
-  plugin: PluginListItem,
-  diagnostics: readonly PluginDiagnostic[],
-) {
+export function formatPluginJson(plugin: PluginListItem, diagnostics: readonly PluginDiagnostic[]) {
   return {
     commandRootCount: plugin.commandRootCount,
     dataPath: plugin.dataPath,
@@ -160,7 +161,7 @@ export function formatMarketplaceJson(marketplace: ZCodeMarketplaceSummaryData) 
     isOfficial: marketplace.isOfficial,
     name: marketplace.name,
     pluginCount: marketplace.pluginCount,
-        // In the bootstrap contract marketplace source is Record<string, unknown>; in practice always a JSON-serializable object.
+    // In the bootstrap contract marketplace source is Record<string, unknown>; in practice always a JSON-serializable object.
     source: marketplace.source as JsonValue,
     ...(marketplace.description ? { description: marketplace.description } : {}),
     ...(marketplace.lastUpdated ? { lastUpdated: marketplace.lastUpdated } : {}),

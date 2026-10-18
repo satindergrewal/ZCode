@@ -44,7 +44,7 @@ describe("ConversationComposer drag and drop scope", () => {
       /readWorkspaceFileDragPayload\(\s*event\.dataTransfer\s*,?\s*\)/u,
     );
     expect(composerSource).toContain("usePromptEditorDragState");
-    expect(composerSource).toContain("只插入 mention，绝不能进入上传队列");
+    expect(composerSource).toContain("insert the mention only, never the upload queue");
   });
 
   it("New Task 标题栏复用主草稿 controller，而不是另建附件入口", () => {

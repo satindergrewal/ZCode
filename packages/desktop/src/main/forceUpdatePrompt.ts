@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 强制升级提示窗口包含内联 HTML/CSS 和状态脚本，启动前不能依赖 renderer 包 */
+/* eslint-disable max-lines -- the force-update window carries inline HTML/CSS and state scripts, pre-renderer-dependency */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { type Locale } from "@zcode/shared";
@@ -55,7 +55,8 @@ function buildForceUpdatePromptMessages(locale: Locale) {
       devSkippedTitle: "调试环境无法自动升级",
       devSkippedMessage: "自动升级仅在打包后的应用中可用，请使用手动升级或打包应用验证。",
       confirmCloseTitle: "自动升级正在进行",
-      confirmCloseMessage: "关闭窗口会中断当前自动升级流程，旧版本仍然无法进入主界面。你可以继续等待，或确认关闭并退出。",
+      confirmCloseMessage:
+        "关闭窗口会中断当前自动升级流程，旧版本仍然无法进入主界面。你可以继续等待，或确认关闭并退出。",
       confirmCloseButton: "确认关闭",
       continueUpdateButton: "继续更新",
       retryButton: "重试自动升级",
@@ -78,9 +79,11 @@ function buildForceUpdatePromptMessages(locale: Locale) {
     errorTitle: "Auto update failed",
     errorMessage: "You can retry auto update or use manual update.",
     devSkippedTitle: "Auto update unavailable in development",
-    devSkippedMessage: "Auto update is only available in packaged apps. Use manual update or test a packaged build.",
+    devSkippedMessage:
+      "Auto update is only available in packaged apps. Use manual update or test a packaged build.",
     confirmCloseTitle: "Auto update in progress",
-    confirmCloseMessage: "Closing this window will stop the current auto update flow, and this old version still cannot open the main app. You can keep waiting or close and quit.",
+    confirmCloseMessage:
+      "Closing this window will stop the current auto update flow, and this old version still cannot open the main app. You can keep waiting or close and quit.",
     confirmCloseButton: "Close anyway",
     continueUpdateButton: "Continue update",
     retryButton: "Retry auto update",
@@ -489,7 +492,8 @@ export async function showForceUpdatePrompt(
   options: ShowForceUpdatePromptOptions = {},
 ): Promise<ForceUpdatePromptAction> {
   const { BrowserWindow, nativeTheme } = await import("electron");
-  const parentWindow = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? undefined;
+  const parentWindow =
+    BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? undefined;
   return new Promise<ForceUpdatePromptAction>((resolvePrompt) => {
     let resolved = false;
     let shown = false;
@@ -531,7 +535,7 @@ export async function showForceUpdatePrompt(
       }
       const script = `window.__setForceUpdateState?.(${JSON.stringify(state)})`;
       void win.webContents.executeJavaScript(script).catch((error) => {
-        logger.warn("[force-update] 更新强制升级提示状态失败", { error });
+        logger.warn("[force-update] failed to update force-update prompt state", { error });
       });
     };
 
@@ -539,7 +543,7 @@ export async function showForceUpdatePrompt(
       if (win.isDestroyed()) {
         return;
       }
-      // 下载态隐藏版本说明后需要收回窗口高度，避免出现大片空白；确认关闭/错误态再恢复默认高度。
+      // Hide release notes while downloading and shrink the height; restore defaults for confirm/error states.
       win.setSize(FORCE_UPDATE_PROMPT_WIDTH, height);
       win.center();
     };
@@ -564,9 +568,10 @@ export async function showForceUpdatePrompt(
       if (autoUpdateDispose) {
         autoUpdateDispose();
       }
-      logger.info("[force-update] 用户选择自动升级");
+      logger.info("[force-update] user chose auto update");
       updatePromptState({ kind: "checking" });
-      autoUpdateDispose = options.startAutoUpdate?.((state) => updatePromptState(state)) ?? undefined;
+      autoUpdateDispose =
+        options.startAutoUpdate?.((state) => updatePromptState(state)) ?? undefined;
     };
 
     const showPromptWindow = (source: string) => {
@@ -575,11 +580,11 @@ export async function showForceUpdatePrompt(
       }
       if (!shown) {
         shown = true;
-        logger.info(`[force-update] 显示强制升级提示窗口 source=${source}`);
+        logger.info(`[force-update] showing force-update prompt window source=${source}`);
       }
       win.show();
       win.focus();
-      // 启动前没有主窗口时，原生消息框在部分开发环境不可见；显式置顶保证用户能看到强制升级提示。
+      // Pre-window native message boxes can be invisible in some dev environments; force alwaysOnTop.
       if (!parentWindow) {
         win.setAlwaysOnTop(true, "modal-panel");
       }
@@ -588,7 +593,7 @@ export async function showForceUpdatePrompt(
     win.on("closed", () => {
       autoUpdateDispose?.();
       if (!resolved) {
-        // 自动升级是异步流程，用户关闭保留中的强更窗口时仍要把最终退出动作交还给 guard。
+        // Auto-update is async; a closed reserved window still hands the final quit back to the guard.
         resolveOnce("quit", false);
       }
     });
@@ -620,7 +625,7 @@ export async function showForceUpdatePrompt(
           `window.__setForceUpdatePromptHeight = (height) => { document.title = 'force-update-height:' + height; };`,
         )
         .catch((error) => {
-          logger.warn("[force-update] 初始化强制升级窗口高度桥失败", { error });
+          logger.warn("[force-update] failed to init prompt height bridge", { error });
         });
       showPromptWindow("did-finish-load");
     });
@@ -629,6 +634,8 @@ export async function showForceUpdatePrompt(
       showPromptWindow("did-fail-load");
     });
     fallbackTimer = setTimeout(() => showPromptWindow("timeout"), 1000);
-    win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(renderForceUpdatePromptHtml(text, locale))}`);
+    win.loadURL(
+      `data:text/html;charset=utf-8,${encodeURIComponent(renderForceUpdatePromptHtml(text, locale))}`,
+    );
   });
 }

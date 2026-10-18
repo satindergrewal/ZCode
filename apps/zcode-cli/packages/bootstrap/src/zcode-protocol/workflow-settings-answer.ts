@@ -1,10 +1,10 @@
 // ============================================================
-// 工作流确认窗应答里的设置调整 → broker 结果的 inputAdjustments
+// Settings adjustments in the workflow confirm-dialog answer -> the broker result's inputAdjustments
 // ============================================================
 // docs/dynamic-workflow/launch.md「Adjusting the settings in the window」。
 //
-// 从 interaction-broker.ts 拆出（max-lines 门）：只做一件事——在 CreateWorkflow / AmendWorkflow 的
-// **放行**应答上读 v4 answer 的 `content`，按契约 schema 收成那两个字段，交给 executor 去应用。
+// Split from interaction-broker.ts (max-lines gate): one job — on the CreateWorkflow / AmendWorkflow
+// **allow** response, read the v4 answer's content, fold it into those two fields by the contract schema, and hand to the executor.
 
 import {
   AMEND_WORKFLOW_TOOL_NAME,
@@ -14,9 +14,9 @@ import {
 import type { V4InteractionAnswer } from "../zcode-protocol-v4/interaction-registry.js";
 
 /**
- * 只认两个工具的 allow 应答。拒绝（含 Refine）永远不带调整：设置属于 Allow 将要启动的那次 run，
- * 拒绝什么都不启动。认不出的键被丢掉，形状不对的 content 整份作废——这不是一次放权（上界只能
- * 压低、模型要经目录重新解析），作废只意味着按确认窗之前的入参跑。
+ // Only the two tools' allow responses count. A rejection (Refine included) never carries adjustments: settings belong to the run the Allow starts,
+ // and a rejection starts nothing. Unknown keys drop; a malformed content voids the whole thing — not a grant (the bound only lowers,
+ // and models re-resolve via the catalog); voiding just means run with the pre-dialog input.
  */
 export function withWorkflowSettingsAdjustment<T extends { decision: string }>(
   response: T,

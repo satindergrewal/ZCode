@@ -42,8 +42,7 @@ export function setDefaultFileDisplayBasePath(basePath: string | null) {
 
 function resolveMaterialIconBasePath(): string {
   const baseUrl =
-    typeof import.meta !== "undefined" &&
-    typeof import.meta.env?.BASE_URL === "string"
+    typeof import.meta !== "undefined" && typeof import.meta.env?.BASE_URL === "string"
       ? import.meta.env.BASE_URL
       : "/";
 
@@ -63,9 +62,7 @@ function buildIconSrc(iconName: string): string {
 }
 
 export const FOLDER_FILE_ICON_SRC = buildMaterialFileIconSrc("folder");
-export const DOCUMENT_FILE_ICON_SRC = buildMaterialFileIconSrc(
-  DEFAULT_FILE_ICON_NAME,
-);
+export const DOCUMENT_FILE_ICON_SRC = buildMaterialFileIconSrc(DEFAULT_FILE_ICON_NAME);
 
 function resolveFallbackFileIconSrc(currentSrc: string): string | null {
   const defaultIconSrc = DOCUMENT_FILE_ICON_SRC;
@@ -124,12 +121,10 @@ export function resolveFileDisplayDescriptor(
 ): FileDisplayDescriptor {
   const normalizedPath = normalizePath(filePath);
   const fileName = getPathLeaf(normalizedPath);
-  const effectiveBasePath =
-    options.basePath ?? defaultFileDisplayBasePath ?? undefined;
+  const effectiveBasePath = options.basePath ?? defaultFileDisplayBasePath ?? undefined;
   const relativePath = stripBasePath(normalizedPath, effectiveBasePath);
   const resolvedFilePath = buildFilePath(relativePath, fileName);
-  const fileIcon =
-    options.kind === "directory" ? "folder" : resolveIconName(fileName);
+  const fileIcon = options.kind === "directory" ? "folder" : resolveIconName(fileName);
 
   return {
     fileIcon,
@@ -150,8 +145,7 @@ export function createFileDisplayDom(
   });
   const container = document.createElement("span");
   container.className =
-    options.className ??
-    "inline-flex max-w-full items-center gap-1.5 align-middle";
+    options.className ?? "inline-flex max-w-full items-center gap-1.5 align-middle";
 
   if (options.showIcon !== false) {
     const icon = document.createElement("img");
@@ -172,16 +166,14 @@ export function createFileDisplayDom(
   }
 
   const primary = document.createElement("span");
-  primary.className =
-    options.fileNameClassName ?? "truncate text-[0.95em] leading-[1.6]";
+  primary.className = options.fileNameClassName ?? "truncate text-[0.95em] leading-[1.6]";
   primary.textContent = descriptor.fileName;
   container.append(primary);
 
   if (options.showFilePath && descriptor.filePath) {
     const secondary = document.createElement("span");
     secondary.className =
-      options.filePathClassName ??
-      "truncate text-[0.85em] text-muted-foreground";
+      options.filePathClassName ?? "truncate text-[0.85em] text-muted-foreground";
     secondary.textContent = descriptor.filePath;
     container.append(secondary);
   }
@@ -211,11 +203,7 @@ export function FileDisplayInline({
   }, [descriptor.fileIconSrc]);
 
   return (
-    <span
-      className={
-        options?.className ?? "inline-flex max-w-full items-center gap-1 "
-      }
-    >
+    <span className={options?.className ?? "inline-flex max-w-full items-center gap-1 "}>
       {options?.showIcon !== false ? (
         <img
           src={fileIconSrc}
@@ -235,18 +223,14 @@ export function FileDisplayInline({
       ) : null}
       <span
         className={
-          options?.fileNameClassName ??
-          "truncate text-ui-base font-medium text-foreground"
+          options?.fileNameClassName ?? "truncate text-ui-base font-medium text-foreground"
         }
       >
         {descriptor.fileName}
       </span>
       {options?.showFilePath && descriptor.filePath ? (
         <span
-          className={
-            options.filePathClassName ??
-            "truncate text-ui-base text-foreground-subtlest"
-          }
+          className={options.filePathClassName ?? "truncate text-ui-base text-foreground-subtlest"}
         >
           {descriptor.filePath}
         </span>
@@ -291,10 +275,7 @@ export function FileDisplayIcon({
   );
 }
 
-export function getFileDisplayPath(
-  filePath: string,
-  basePath?: string,
-): string {
+export function getFileDisplayPath(filePath: string, basePath?: string): string {
   const normalizedPath = normalizePath(filePath);
   const pathWithoutBase = stripBasePath(normalizedPath, basePath);
 

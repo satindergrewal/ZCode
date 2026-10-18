@@ -30,9 +30,7 @@ const AUTHORITY_SEGMENTS: Record<RemoteWorkspaceIdentityKind, number> = {
   server: 1,
 };
 
-function isRemoteWorkspaceIdentityKind(
-  value: string,
-): value is RemoteWorkspaceIdentityKind {
+function isRemoteWorkspaceIdentityKind(value: string): value is RemoteWorkspaceIdentityKind {
   return value === "ssh" || value === "wsl" || value === "docker" || value === "server";
 }
 
@@ -83,10 +81,7 @@ export function buildServerRemoteWorkspaceIdentity(
  * The single constructor of remote workspace identities. Host, main, and UI never concat authorities themselves;
  * workspacePath enters the identity key only after normalization here, while actual IO keeps the caller's original path.
  */
-export function buildRemoteWorkspaceIdentity(
-  workspacePath: string,
-  target: RemoteTarget,
-): string {
+export function buildRemoteWorkspaceIdentity(workspacePath: string, target: RemoteTarget): string {
   const normalizedPath = normalizeWorkspacePathForIdentity(workspacePath);
   switch (target.kind) {
     case "ssh":

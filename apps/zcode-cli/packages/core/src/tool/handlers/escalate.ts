@@ -84,7 +84,7 @@ const escalateHandler: ToolHandler = async (input, context) => {
   }
 
   // Rejection copy is authored by the port (state + next step) and passed through verbatim -- keeping the
- // discriminator and the copy apart; they would drift, and the reader here is the model.
+  // discriminator and the copy apart; they would drift, and the reader here is the model.
   return {
     status: "refused",
     message: outcome.message,
@@ -100,7 +100,7 @@ export const escalateToolEntry: ToolEntry = {
     readOnly: false,
     destructive: false,
     // Deliberately unlike submit_result: escalate is NOT a terminal tool. It ends no turn and excludes no
- // sibling -- the pause covers this call, not the whole actor.
+    // sibling -- the pause covers this call, not the whole actor.
     concurrentSafe: true,
     maxOutputBytes: MAX_ESCALATE_MODEL_BYTES,
     sideEffectScope: "session",
@@ -133,7 +133,7 @@ export const escalateToolEntry: ToolEntry = {
     },
   },
   // The wait is unbounded by design (no timeout -- "decide yourself after timeout" reintroduces speculative
- // bypass). The escape hatch is the existing cancel: the driver's cancelAsk rejects the parked escalation too.
+  // bypass). The escape hatch is the existing cancel: the driver's cancelAsk rejects the parked escalation too.
   timeout: {
     kind: "none",
   },

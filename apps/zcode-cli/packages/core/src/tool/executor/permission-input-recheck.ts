@@ -21,14 +21,14 @@ export function recheckPermissionHookModifiedInput(input: {
   modifiedInput: unknown;
   projectRules: PermissionRuleset | null;
   toolCall: ExecutableToolCall;
-  /** 与首次判权同一份上下文（mode、bashShellSelection、cwd 快照），由 executor 构造并透传。 */
+  /** Same context as the first grant check (mode, bashShellSelection, cwd snapshot), built by the executor and passed through. */
   context: ToolRuntimePermissionCapabilityContext & {
     workingDirectory: string;
     workspaceRoot: string;
   };
 }): PermissionHookInputRecheckResult {
-  // 根因（2026-09-17 review）：此前在此重新构造只含 runtimeScope/cwd 的缩减上下文，丢掉 mode 与
-  // bashShellSelection；一旦 guarded 复用重判路径，matcher 会静默失效。上下文只能有一个构造点。
+  // Root cause (2026-09-17 review): this used to rebuild a reduced context holding only runtimeScope/cwd, dropping mode and
+  // bashShellSelection; once guarded reuse took the recheck path the matcher silently broke. Context has exactly one construction site.
   const { context: runtimePermissionContext } = input;
   const { workingDirectory, workspaceRoot } = runtimePermissionContext;
   const permissionContext: PermissionContext = {
@@ -38,7 +38,7 @@ export function recheckPermissionHookModifiedInput(input: {
     planEnabled: input.deps.sessionModePort?.isPlanEnabled?.(),
     riskLevel: input.entry.metadata.riskLevel,
     toolName: input.toolCall.name,
-    // 与首次判定同源：hook 改过 input 之后，草稿免确认仍要按同一个工作目录复核。
+    // Same source as the first pass: after hooks edit the input, draft-no-confirm rechecks against the same workdir.
     workingDirectory,
   };
   const rulePolicy = input.entry.resolvePermissionRulePolicy?.(
@@ -79,6 +79,6 @@ export function recheckPermissionHookModifiedInput(input: {
     return {};
   }
 
-  // 仅返回旧模式需要保留的策略事实；请求登记/发布/终态全部由 executor 统一处理。
+  // Return only the policy facts the legacy mode must keep; request registration/publication/terminal states stay with the executor.
   return { permissionDecision: decision };
 }

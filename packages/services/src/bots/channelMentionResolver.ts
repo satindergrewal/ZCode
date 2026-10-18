@@ -12,7 +12,7 @@ type Clarification = Extract<ChannelReplyResult, { status: "needs_clarification"
 const MAX_CANDIDATES = 10;
 const normalizeName = (name: string) => name.normalize("NFKC").trim().toLowerCase();
 
-/** 名字只是查询条件；候选身份只能来自 Provider 目录与已授权原生节点。 */
+/** Names are lookup keys only; candidate identities come from the provider directory or authorized native peers. */
 export function resolveChannelMentionNames(
   parts: ChannelReplyHostRequest["parts"],
   trusted: ChannelContentPart[],
@@ -40,7 +40,7 @@ export function resolveChannelMentionNames(
   const unresolved: Clarification["unresolved"] = [];
   for (const part of parts) {
     if (part.type !== "mentionName") {
-      // 按原语义解析可信 ref，不能把模型提供的名字当成 ref/平台 ID。
+      // Resolve trusted refs with the original semantics; model-provided names are never refs or platform IDs.
       if (part.type === "text") resolved.push(part);
       else resolved.push(...resolveChannelReplyParts([part], trusted));
       continue;
@@ -70,12 +70,12 @@ export function resolveChannelMentionNames(
     const selected = part.candidateRef
       ? candidates.find((candidate) => candidate.ref === part.candidateRef)
       : automatic;
-    // 查询失败不能将不完整候选当成唯一匹配，包含可信机器人节点时也一样。
+    // On lookup failure an incomplete candidate set must not count as a unique match, bot peers included.
     if (members && selected) {
       resolved.push({ ...selected.node, refId: selected.ref });
       continue;
     }
-    // 之前遇到首个失败就返回，后续名字未查却被模型误报为成功；必须收集全部失败项。
+    // Historical bug: the first failure returned early and unlooked-up names were reported as resolved; collect every failure.
     unresolved.push({
       name: part.name,
       reason: !members

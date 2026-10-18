@@ -80,7 +80,9 @@ export function normalizeSSHConnectError(error: unknown): Error {
     "level" in error &&
     (error as { level?: string }).level === "client-authentication"
   ) {
-    return new Error("SSH authentication failed: check the username, password, or private key configuration");
+    return new Error(
+      "SSH authentication failed: check the username, password, or private key configuration",
+    );
   }
 
   if (
@@ -100,10 +102,14 @@ export function normalizeSSHConnectError(error: unknown): Error {
     // passphrase cases. Normalize by pattern so the same failure always maps to
     // one product-level hint the user can act on.
     if (isMissingPrivateKeyPassphraseMessage(error.message)) {
-      return new Error("SSH private key requires a passphrase: the key is encrypted but no passphrase was provided");
+      return new Error(
+        "SSH private key requires a passphrase: the key is encrypted but no passphrase was provided",
+      );
     }
     if (isInvalidPrivateKeyPassphraseMessage(error.message)) {
-      return new Error("SSH private key passphrase is incorrect: the key could not be decrypted; check the passphrase");
+      return new Error(
+        "SSH private key passphrase is incorrect: the key could not be decrypted; check the passphrase",
+      );
     }
     return error;
   }

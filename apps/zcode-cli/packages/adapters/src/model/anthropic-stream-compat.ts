@@ -44,8 +44,8 @@ function restoreMemorySelectorMessageBoundaries(
     return body;
   }
 
-  // 修复原因：AI SDK 会在发请求前合并连续的 user message；Memory selector 的
-  // provider-visible 基线要求 manifest 与当前 query 保持为两个独立 message。
+  // Why: the AI SDK merges adjacent user messages before sending; the Memory selector's
+  // provider-visible baseline requires manifest and current query to stay two separate messages.
   return {
     ...body,
     messages: [

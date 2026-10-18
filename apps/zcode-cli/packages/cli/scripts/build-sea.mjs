@@ -70,8 +70,8 @@ export const resolvePostjectBin = ({
   const executable = platform === "win32" ? "postject.cmd" : "postject";
   let directory = startDirectory;
 
-  // pnpm hoisted 布局会把 postject 放到仓库根 node_modules，而不是 CLI 子包下。
-  // 从 CLI 包目录逐级向上找，避免 SEA 构建依赖某一种安装布局。
+  // pnpm's hoisted layout puts postject in the repo-root node_modules, not the CLI subpackage.
+  // Walk upward from the CLI package dir so the SEA build does not depend on one install layout.
   while (true) {
     const candidate = resolve(directory, "node_modules", ".bin", executable);
     if (existsSync(candidate)) return candidate;

@@ -12,10 +12,7 @@ export async function recordGoalStateChangeReminder(
 ): Promise<void> {
   const traceContext = input.traceContext ?? this.rootTraceContext;
   const activeTurn = this.activeTurn;
-  if (
-    activeTurn?.kind === "regular" &&
-    activeTurn.goalStateChangeReminderDeferralOpen
-  ) {
+  if (activeTurn?.kind === "regular" && activeTurn.goalStateChangeReminderDeferralOpen) {
     // Stop pauses the goal, then aborts running tools; writing history here at once would
     // drop the reminder between tool_use and cancelled tool_result, breaking provider grammar next request.
     activeTurn.pendingGoalStateChangeReminder = { text: input.text };

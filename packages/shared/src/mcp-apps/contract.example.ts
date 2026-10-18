@@ -7,7 +7,7 @@ import {
   buildMcpAppsCspExperimentalCapability,
 } from "./contract.js";
 
-/** 一个带 UI 资源的工具 `_meta` 归一化后应得到的描述。 */
+/** What a tool with UI resources yields once its `_meta` is normalized. */
 export const exampleToolUiDescriptor: McpToolUiDescriptor = {
   resourceUri: "ui://example-plugin/widget.html",
   visibility: ["model", "app"],
@@ -16,7 +16,7 @@ export const exampleToolUiDescriptor: McpToolUiDescriptor = {
   prefersBorder: true,
 };
 
-/** main 登记成功后返回给 renderer 的句柄；partition 按 server 身份派生，同一 server 的页面共享。 */
+/** Handle returned to the renderer after main registers the server; the partition derives from server identity and is shared by that server's pages. */
 export const exampleSandboxHandle: PluginSandboxHandle = {
   instance: {
     runtimeId: "test-agent",
@@ -28,7 +28,7 @@ export const exampleSandboxHandle: PluginSandboxHandle = {
   initId: 1,
   shellUrl: "zcode-sandbox://shell-sb-01/",
   partition: "persist:plugin-sandbox-v1-0123456789abcdef",
-  // 句柄能带的全部资源级字段都写上：contract.test 用它过 host 的 strict 回包 schema，字段漏同步会在这里失败。
+  // Carries every resource-level field the handle allows: contract.test asserts it against the host strict reply schema, and missing fields fail here.
   resourceMeta: {
     prefersBorder: true,
     heightHint: 320,
@@ -38,11 +38,11 @@ export const exampleSandboxHandle: PluginSandboxHandle = {
   },
 };
 
-/** agent 对 MCP server `initialize` 时宣告的 ui 扩展能力。 */
+/** ui extension capabilities the agent declares during the MCP server `initialize`. */
 export const exampleClientCapabilities = buildMcpAppsClientCapabilities();
-/** 宿主在 hostCapabilities.experimental 里宣告的 CSP 放宽键。 */
+/** CSP relaxation keys the host declares in hostCapabilities.experimental. */
 export const exampleCspExperimental = buildMcpAppsCspExperimentalCapability();
-/** 资源级 `_meta` 里声明放宽的写法。 */
+/** How relaxations are declared in resource-level `_meta`. */
 export const exampleResourceMetaWithRelaxations = {
   ui: { csp: { connectDomains: ["https://api.example.com"] } },
   [MCP_APPS_CSP_RELAXATION_META_KEY]: { unsafeEval: true },

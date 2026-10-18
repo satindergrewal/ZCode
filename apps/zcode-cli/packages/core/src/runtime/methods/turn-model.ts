@@ -14,9 +14,9 @@ import { createRuntimeModel, withModelInvocationContext } from "./runtime-model.
 import { applyRuntimeExecutionState } from "../execution-state.js";
 
 /**
- * 带退回声明且 Selection 指向声明 provider 的执行句柄只允许一次物理请求：失败后由 core 退回会话模型
- * 继续本轮，适配层再按默认预算退避重试只会把降级拖到数分钟之后（spec §2.2「加速请求 0 次重试」）。
- * 其余句柄返回 undefined，沿用按 taskType 解析的默认预算。
+ * An execution handle with a fallback declaration whose Selection points at the declared provider gets exactly one physical request: on failure core falls back to the session model
+ * to finish the turn; adapter-level retries on the default budget would only postpone the downgrade by minutes (spec 2.2, "speed-up requests retry 0 times").
+ * Other handles return undefined and keep the taskType-derived default budget.
  */
 export function resolveExecutionModelRetryBudget(input: {
   selection: ModelSelection | undefined;

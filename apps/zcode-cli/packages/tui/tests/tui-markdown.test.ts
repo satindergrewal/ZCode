@@ -112,8 +112,14 @@ test("message rows hide speaker labels and only highlight user prompts", () => {
       (node) => node.text.includes("Show `raw` markdown") && node.style.fg === palette.text,
     ),
   );
-  assert.equal(collectTextLines(userRow).some((line) => line.includes("User:")), false);
-  assert.equal(collectTextLines(agentRow).some((line) => line.includes("Agent:")), false);
+  assert.equal(
+    collectTextLines(userRow).some((line) => line.includes("User:")),
+    false,
+  );
+  assert.equal(
+    collectTextLines(agentRow).some((line) => line.includes("Agent:")),
+    false,
+  );
 });
 
 test("message rows keep user and explicit plain text parts unformatted", () => {

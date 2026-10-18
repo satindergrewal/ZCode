@@ -94,7 +94,10 @@ export function useProviderAvailabilityLoginEntryGuard({
 
     if (modelSelectionError) {
       // A first-read failure must not pose as "no providers", nor leave the startup gate loading forever.
-      logger.error("[Root] Failed to read provider availability; ending the startup-gate wait", modelSelectionError);
+      logger.error(
+        "[Root] Failed to read provider availability; ending the startup-gate wait",
+        modelSelectionError,
+      );
       startupCheckCompletedRef.current = true;
       setStartupCheckCompleted(true);
       return;

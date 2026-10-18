@@ -51,8 +51,7 @@ export {
 } from "./analysis/world-run.js";
 export { collectPhaseMarkerDiagnostics, PHASE_MARKER_CODE } from "./analysis/phases.js";
 export { collectPhaseNames, collectSitePhases } from "./analysis/site-phases.js";
-// 留白（docs/dynamic-workflow/authoring.md「Holes」）：规则 9012、站点类型、补全服务的拼接与
-// 稳定性复核。
+// Holes (docs/dynamic-workflow/authoring.md, Holes): rule 9012, site types, the fill service's splice,
 export { collectHoleDiagnostics, HOLE_CODE, HOLE_NAME_MAX_CHARS } from "./analysis/hole-sites.js";
 export type { HoleSite } from "./analysis/sites.js";
 export {

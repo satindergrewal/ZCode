@@ -109,7 +109,7 @@ function deferred<T>() {
 }
 
 describe("ProviderRegistryService", () => {
-  it("start 只返回就绪；Account 更新后显式读取当前快照，不重复启动刷新", async () => {
+  it("resolves start with ready only; read the current snapshot explicitly after Account updates instead of restarting refreshes", async () => {
     const configSource = new MutableSource(configSnapshot("config-1", "model-a"));
     const accountSource = new MutableSource(accountSnapshot());
     const service = new ProviderRegistryService({ configSource, accountSource });
@@ -125,7 +125,7 @@ describe("ProviderRegistryService", () => {
       service.dispose();
     }
   });
-  it("Mutable Account Config Source 替换第三层 Overlay 后驱动 Registry 刷新", async () => {
+  it("drives a Registry refresh when the mutable Account Config Source swaps the third-layer Overlay", async () => {
     const configSource = new MutableSource(configSnapshot("config-1", "model-a"));
     const accountSource = new MutableAccountProviderConfigSource();
     accountSource.replace({
@@ -156,7 +156,7 @@ describe("ProviderRegistryService", () => {
     await expect(accountSource.read()).resolves.toMatchObject({ revision: "account-2" });
   });
 
-  it("通过注入的 Config 和 Account Source 初始化并发布完整快照", async () => {
+  it("boots from the injected Config and Account Sources and publishes a full snapshot", async () => {
     const configSource = new MutableSource(configSnapshot("config-1", "model-a"));
     const accountSource = new MutableSource(accountSnapshot());
     const service = new ProviderRegistryService({ configSource, accountSource });
@@ -172,7 +172,7 @@ describe("ProviderRegistryService", () => {
     expect(listener.mock.calls[0]?.[0].reasons).toEqual(["start"]);
   });
 
-  it("读取期间发生新失效时丢弃过时代际，只发布最新 Source", async () => {
+  it("drops stale generations on mid-read invalidation and publishes only the latest Sources", async () => {
     const configV1 = configSnapshot("config-1", "model-a");
     const configV2 = configSnapshot("config-2", "model-b");
     const firstRead = deferred<ProviderConfigSnapshot>();
@@ -198,7 +198,7 @@ describe("ProviderRegistryService", () => {
     );
   });
 
-  it("Source revision 未变化时不重复发布 Registry", async () => {
+  it("skips republish when Source revisions are unchanged", async () => {
     const configSource = new MutableSource(configSnapshot("config-1", "model-a"));
     const accountSource = new MutableSource(accountSnapshot());
     const service = new ProviderRegistryService({ configSource, accountSource });
@@ -214,7 +214,7 @@ describe("ProviderRegistryService", () => {
     expect(listener).toHaveBeenCalledTimes(1);
   });
 
-  it("发布回调中请求的新刷新不会被即将结束的旧刷新吞掉", async () => {
+  it("lets a refresh requested inside the publish callback survive the finishing old one", async () => {
     const configSource = new MutableSource(configSnapshot("config-1", "model-a"));
     const accountSource = new MutableSource(accountSnapshot());
     const service = new ProviderRegistryService({ configSource, accountSource });
@@ -233,7 +233,7 @@ describe("ProviderRegistryService", () => {
     expect(service.listProviders()[0]?.models[0]?.modelId).toBe("model-b");
   });
 
-  it("刷新失败保留上一份成功 View，并允许后续刷新恢复", async () => {
+  it("keeps the last good View on refresh failure and lets later refreshes recover", async () => {
     const configSource = new MutableSource(configSnapshot("config-1", "model-a"));
     const accountSource = new MutableSource(accountSnapshot());
     const service = new ProviderRegistryService({ configSource, accountSource });
@@ -258,7 +258,7 @@ describe("ProviderRegistryService", () => {
     expect(service.listProviders()[0]?.models[0]?.modelId).toBe("model-b");
   });
 
-  it("Built-in 与 Account 来源 revision 不匹配时保留旧 Registry，匹配后只发布最终组合", async () => {
+  it("holds the old Registry on Built-in/Account revision mismatch and publishes only the final combination once matched", async () => {
     const configSource = new MutableSource(configSnapshot("config-1", "model-a"));
     const accountSource = new MutableSource(accountSnapshot("account-1", "config-1"));
     const service = new ProviderRegistryService({ configSource, accountSource });
@@ -281,7 +281,7 @@ describe("ProviderRegistryService", () => {
     expect(listener).toHaveBeenCalledTimes(2);
   });
 
-  it("Personal-only revision 变化不等待新的 Account Snapshot", async () => {
+  it("never waits on a new Account Snapshot for Personal-only revision changes", async () => {
     const configSource = new MutableSource(configSnapshot("config-1", "model-a"));
     const accountSource = new MutableSource(accountSnapshot("account-1", "config-1"));
     const service = new ProviderRegistryService({ configSource, accountSource });

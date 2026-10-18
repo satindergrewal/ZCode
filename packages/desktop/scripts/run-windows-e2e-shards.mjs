@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* eslint-disable max-lines -- Windows E2E 父 runner 需要集中维护构建、分片、取消和 summary 完整性门禁。 */
+/* eslint-disable max-lines -- the Windows E2E parent runner must keep build, sharding, cancellation and summary-integrity gates in one place. */
 
 import { randomBytes } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -9,10 +9,7 @@ import { dirname, join, resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { spawnCancellableStep, startStepExecution } from "./e2e-step-process.mjs";
-import {
-  hasRequiredSshE2EEnvironment,
-  isSshFormalSpec,
-} from "./e2e-formal-spec-selection.mjs";
+import { hasRequiredSshE2EEnvironment, isSshFormalSpec } from "./e2e-formal-spec-selection.mjs";
 
 const RUNNER_SHARD_ARG_PREFIX = "--shards=";
 const DEFAULT_SPEC_DURATION_PROFILE_PATH = "test/e2e/spec-duration-weights.json";
@@ -69,8 +66,9 @@ export function resolveWindowsE2EShardTotal({
   const { explicitShardTotal } = splitRunnerArgs(args);
   const hasNativeShard = args.some((arg) => arg === "--shard" || arg.startsWith("--shard="));
   const isCaptureRun = env.E2E_PROVIDER_HTTP_MODE?.trim() === "capture";
-  // 修复原因：性能入口固定携带 --shards=10；若显式分片先返回，定向、人工复核、
-  // capture 或上层 native shard 会被重复启动。特殊模式必须先锁定单 child。
+  // Fix: the perf entry hardcoded --shards=10; if an explicit-shard mode returned first, targeted,
+  // manual-review, capture or parent-native shards would be started twice. Special modes must pin
+  // a single child first.
   if (hasNativeShard || isTargetedRun(args, env) || isManualReviewRun(args, env) || isCaptureRun) {
     return 1;
   }
@@ -84,8 +82,9 @@ export function resolveWindowsE2EShardTotal({
     return readPositiveInteger(envShardTotal, "ZCODE_E2E_SHARD_TOTAL");
   }
 
-  // 修复原因：按机器资源自动启用多 shard 会让无参数命令产生隐式并发，既不便于
-  // 本地复现，也会放大 session/清理竞争；默认固定单 shard，并行必须由调用方显式选择。
+  // Fix: auto-enabling shards by machine resources gives flagless commands hidden concurrency,
+  // hurting local repro and amplifying session/cleanup races; default to one shard, and let
+  // callers opt into parallelism explicitly.
   void platform;
   void logicalCpuCount;
   void totalMemoryBytes;
@@ -147,8 +146,8 @@ export function partitionE2ESpecsByWeight(specs, shardTotal, profile) {
     buckets[targetIndex].estimatedWeightMs += weightedSpec.weightMs;
   }
 
-  // 修复原因：历史权重只决定 shard 归属；每个 shard 内恢复稳定路径顺序，
-  // 避免权重更新改变 fixture/mock 的执行顺序并制造无意义的快照差异。
+  // Fix: historical weights only pick shard membership; restore stable path order inside each
+  // shard so weight updates cannot reorder fixture/mock execution into meaningless snapshot diffs.
   for (const bucket of buckets) bucket.specs.sort((a, b) => a.localeCompare(b));
   return buckets;
 }
@@ -167,8 +166,8 @@ function createBuildEnv(env) {
     ...buildEnv,
     PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN: "false",
     VITE_ZCODE_E2E_STORE_BRIDGE: "1",
-    // Windows full E2E 反复执行时复用 Turbo 内容缓存；冷缓存仍按依赖图构建，
-    // targeted/non-Windows 路径不会经过父 runner 的 sharded build env。
+    // Repeat Windows full E2E runs reuse the Turbo content cache; cold cache still builds by the
+    // dependency graph, and targeted/non-Windows paths never see the parent runner's sharded env.
     ZCODE_DESKTOP_AGENT_BUILD_MODE: env.ZCODE_DESKTOP_AGENT_BUILD_MODE ?? "turbo",
   };
 }
@@ -186,8 +185,9 @@ export function createWindowsE2EShardPlan({
 }) {
   const { wdioArgs } = splitRunnerArgs(args);
   const shardTotal = resolveWindowsE2EShardTotal({ args, env, platform });
-  // 修复原因：只有 ISO 毫秒的自动 ID 会让同毫秒启动的 runner 共享 HOME/artifact/network。
-  // 显式 ID 保持原语义；自动 ID 同时加入 PID 和随机熵，测试可注入固定值稳定验证。
+  // Fix: ISO-milliseconds-only auto IDs let same-millisecond runners share HOME/artifact/network.
+  // Explicit IDs keep their semantics; auto IDs add PID plus random entropy, injectable in tests
+  // for stable verification.
   const runId =
     env.ZCODE_E2E_RUN_ID?.trim() ||
     createWindowsE2ERunId({
@@ -199,8 +199,9 @@ export function createWindowsE2EShardPlan({
     env.ZCODE_E2E_ARTIFACT_DIR?.trim() || join(desktopDir, ".e2e-artifacts", runId),
   );
   const explicitHomeRoot = env.ZCODE_E2E_HOME_DIR?.trim();
-  // 修复原因：单 shard runner 也可能并发启动；默认 HOME 若固定为 `.e2e-home`，
-  // 不同 runId 会互相清理进程和状态。显式 HOME 保持调用方语义，默认 HOME 才追加 runId。
+  // Fix: even single-shard runners can start concurrently; a default HOME pinned to .e2e-home
+  // would let different runIds clean each other's processes and state. Explicit HOME keeps caller
+  // semantics; only the default HOME appends the runId.
   const homeRoot = resolve(explicitHomeRoot || join(desktopDir, `.e2e-home-${runId}`));
   const sharded = shardTotal > 1;
   const useWeightedSpecBuckets =
@@ -237,9 +238,10 @@ export function createWindowsE2EShardPlan({
     const shardName = `shard-${shardIndex}-of-${shardTotal}`;
     const childRunId = sharded ? `${runId}-${shardName}` : runId;
     const artifactDir = sharded ? join(artifactRoot, shardName) : artifactRoot;
-    // 修复原因：默认并发度从多 shard 收敛为单 child 后，旧逻辑会让并发 runner
-    // 重新共享 .e2e-home 并互相清理进程；自动 HOME 必须始终携带 runId。
-    // 显式单 child HOME 保持原路径兼容，只有显式多 shard 才继续追加 run/shard 身份。
+    // Fix: after default concurrency collapsed from many shards to one child, the old logic let
+    // concurrent runners re-share .e2e-home and clean each other's processes; the automatic HOME
+    // must always carry the runId. Explicit single-child HOMEs keep their path compatible; only
+    // explicit multi-shard runs append run/shard identity.
     const childHomeDir = explicitHomeRoot
       ? sharded
         ? join(homeRoot, runId, shardName)
@@ -354,7 +356,7 @@ export async function executeWindowsE2EShardPlan(
       try {
         execution.terminate();
       } catch {
-        // 等待对应 result 进入 close/error 终态，不能因清理调用失败提前跳出。
+        // The process may already be gone; the kill fallback below is best-effort.
       }
     }
   };
@@ -398,7 +400,8 @@ export async function executeWindowsE2EShardPlan(
       }
     }
 
-    // 每项内部吸收 reject，保证所有已启动 shard 都进入 close/error 终态后才写 manifest。
+    // Wait for every child result to reach a close/error terminal state; an earlier skip on
+    // cleanup failure would strand shards.
     const childResults = await Promise.all(
       plan.children.map(async (child) => ({
         child,
@@ -407,8 +410,8 @@ export async function executeWindowsE2EShardPlan(
     );
     for (const childResult of childResults) {
       if (childResult.result.exitCode === 0 && !summaryExists(childResult.child.summaryPath)) {
-        // 修复原因：onPrepare 的 unref timer 曾让 shard 在未运行任何 spec 时静默退出 0；
-        // summary 是执行覆盖的权威证据，缺失时必须让父 runner 失败。
+        // Fix: onPrepare's unref timer once let shards exit 0 silently without running any spec;
+        // the summary is the authoritative coverage evidence, so a missing one must fail the parent.
         childResult.result = {
           exitCode: 1,
           error: `missing shard summary: ${childResult.child.summaryPath}`,

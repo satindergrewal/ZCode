@@ -5,9 +5,10 @@ import { buildArmsBrowserInitConfig } from "./armsRumShared.js";
 let bootstrapped = false;
 
 /**
- * 在 preload 或 renderer 入口尽早初始化 Browser SDK。
- * 原因：Vite `type="module"` 的 main.tsx 往往在 window.load 之后才执行，perf-collector 只在 load 回调 sendPerf，
- * 仅放在 renderer 入口会导致 beforeReport 长期 perf=0；须在 preload 末尾（ARMS frame preload 已注入 Bridge 之后）调用。
+ * Initialize the Browser SDK as early as possible in preload or the renderer entry.
+ * Why: Vite `type="module"` main.tsx often runs after window.load, and perf-collector only sends
+ * perf in the load callback - renderer-entry-only init keeps beforeReport at perf=0. Call at the
+ * end of preload (after the ARMS frame preload injected the Bridge).
  */
 export function initArmsBrowserRumOnce(runtimeEnv: ZCodeRuntimeEnv): boolean {
   if (bootstrapped) {
@@ -27,8 +28,8 @@ export function initArmsBrowserRumOnce(runtimeEnv: ZCodeRuntimeEnv): boolean {
 
   bootstrapped = true;
   try {
-    // Bugfix: Vite define 不会写入同名 globalThis 属性；由入口显式注入运行态，
-    // 避免 production 产品环境下的本地开发事件误入 ARMS prod。
+    // Bugfix: Vite define does not write a same-named globalThis property; the entry injects the
+    // runtime value explicitly so local-dev events in production builds stay out of ARMS prod.
     armsRum.init(buildArmsBrowserInitConfig(runtimeEnv));
   } catch (error) {
     bootstrapped = false;
@@ -36,14 +37,14 @@ export function initArmsBrowserRumOnce(runtimeEnv: ZCodeRuntimeEnv): boolean {
     return false;
   }
 
-  // 极端竞态：init 时页面已 complete，补发 load 触发 sendPerf
+  // Edge race: readyState complete at init time; re-dispatch load to trigger sendPerf.
   if (typeof document !== "undefined" && document.readyState === "complete") {
     window.dispatchEvent(new Event("load"));
   }
   return true;
 }
 
-/** preload 中 ARMS frame preload 可能晚于本脚本一帧，短重试避免 Bridge 尚未就绪 */
+/** In preload the ARMS frame preload may run one tick later; brief retries cover a missing Bridge. */
 export function scheduleArmsBrowserRumInit(runtimeEnv: ZCodeRuntimeEnv, maxAttempts = 50): void {
   let attempts = 0;
   const tick = (): void => {
@@ -54,7 +55,7 @@ export function scheduleArmsBrowserRumInit(runtimeEnv: ZCodeRuntimeEnv, maxAttem
     if (attempts < maxAttempts) {
       setTimeout(tick, 0);
     } else {
-      console.warn("[arms] ArmsEventBridge 不可用，跳过 renderer RUM 初始化");
+      console.warn("[arms] ArmsEventBridge unavailable; skipping renderer RUM init");
     }
   };
   tick();

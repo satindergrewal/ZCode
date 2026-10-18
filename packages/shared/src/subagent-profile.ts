@@ -35,7 +35,7 @@ export interface AgentProfileLoadResult {
   profiles: AgentProfile[];
 }
 
-/** 完整运行时 profile 的跨进程边界，不使用 Settings 摘要代替。 */
+/** Cross-process boundary for the full runtime profile; never a Settings summary substitute. */
 export const agentProfileSchema = z
   .object({
     name: z.string().min(1),

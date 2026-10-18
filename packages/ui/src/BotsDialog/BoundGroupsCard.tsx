@@ -32,7 +32,7 @@ export function BoundGroupsList({
             {row.name}
           </span>
           <span className="shrink-0 whitespace-nowrap text-ui-sm text-foreground-subtle">
-            {/* 当前格式化器只替换简单占位符，单复数通过文案 key 选择。 */}
+            {/* The formatter replaces simple placeholders only; plurals are chosen by message key. */}
             {intl.formatMessage(
               { id: row.topicCount === 1 ? "bots.boundGroups.countOne" : "bots.boundGroups.count" },
               { count: row.topicCount },

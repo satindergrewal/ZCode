@@ -1,6 +1,6 @@
 import type { BotActor, BotOutboundMessage } from "@zcode/shared";
 
-/** 仅由服务明确识别的配置/连接错误升级，不能扫描模型输出猜测管理员待办。 */
+/** Escalate only config/connection errors identified by the service; never scan model output to guess admin to-dos. */
 export class BotAdminRequiredError extends Error {
   constructor(
     public readonly reason: string,
@@ -10,14 +10,14 @@ export class BotAdminRequiredError extends Error {
   }
 }
 
-/** 保留准备阶段的结构化提示，避免话题续接把收件人丢成纯文本。 */
+/** Keep the structured preparation prompt so continuation never flattens recipients into plain text. */
 export class BotReplyError extends Error {
   constructor(public readonly replies: BotOutboundMessage[]) {
     super(replies.map((reply) => reply.text).join("\n"));
   }
 }
 
-/** 通知去重不参与任务接收、授权或执行；重启后允许重新提醒。 */
+/** Notification dedupe never gates task intake, grants, or execution; reminders may repeat after a restart. */
 export function createGroupAdminAttention() {
   const sent = new Map<string, true>();
   const scope = (actor: BotActor, owner: string) =>

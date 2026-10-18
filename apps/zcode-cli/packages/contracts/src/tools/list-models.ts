@@ -37,9 +37,8 @@ export const ListModelsEntrySchema = z
     /** Legal `$level` values. Empty for tier-less models -- readers learn that appending `$` would be wrong. */
     reasoningLevels: z.array(z.string()),
     /** Tier used when no `$level` is given; absent when `reasoningLevels` is empty. */
-
     defaultReasoningLevel: z.string().optional(),
-    /** Why not selectable; selectable means absent (never an empty string). */
+    contextWindow: z.number().optional(),
     /** Why not selectable; selectable means absent (never an empty string). */
     disabledReason: z.string().optional(),
   })
@@ -49,9 +48,10 @@ export type ListModelsEntry = z.infer<typeof ListModelsEntrySchema>;
 
 export const ListModelsOutputSchema = z
   .object({
-     * The session's current model (canonical form). **A coordinate, not a recommendation**: subagents without
-     * `subagent_model` run on it, so "set the subagent to this" is a no-op. Absent when no row matches.
-     * `subagent_model` run on it, so "set the subagent to this" is a no-op. Absent when no row matches.
+    /**
+     * The session's current model (canonical form). **A coordinate, not a recommendation**:
+     * subagents without `subagent_model` run on it, so "set the subagent to this" is a no-op.
+     * Absent when no catalog row matches.
      */
     current: z.string().optional(),
     models: z.array(ListModelsEntrySchema),

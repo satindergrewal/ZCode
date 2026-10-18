@@ -1,10 +1,10 @@
-// CreateWorkflow 的实时工具卡。
+// The live tool card for CreateWorkflow.
 //
-// 为什么不是 ToolTranscriptPart 上的几行 detailLines：工具行是**事件时刻的快照**，而
-// CreateWorkflow 一把 run launch 出去就返回——工具行会在 run 还在飞的时候就变成 completed。
-// 卡片因此必须在渲染时读镜像（join 按 toolCallId），状态取 run 的状态而不是工具行的状态。
+// Why not a few detailLines on the ToolTranscriptPart: a tool row is a snapshot at event time, while
+// CreateWorkflow returns as soon as the run is launched -- the row would read completed while the run is still in flight.
+// The card must therefore read the mirror at render time (joined on toolCallId) and take status from the run, not the row.
 //
-// 视图是 props 的纯函数（TUI 测试按函数式调用组件，不起终端）。
+// The view is a pure function of props (TUI tests invoke it as a function, no terminal).
 import React from "react";
 import type { TuiCopy } from "@zcode/i18n";
 import type { WorkflowRunActor } from "@zcode/shared/zcode-protocol-v4";
@@ -18,7 +18,7 @@ const CARD_LOG_INDENT = "    ";
 export const MAX_ACTOR_ROWS = 6;
 const MAX_RESULT_PREVIEW_WIDTH = 200;
 
-/** 六行位置按状态分桶（docs/dynamic-workflow/launch.md「The inline card」）：跑着的排前面。 */
+/** The six rows are bucketed by status (docs/dynamic-workflow/launch.md, "The inline card"): running first. */
 const ACTOR_ROW_RANK: Record<WorkflowRunActor["status"], number> = {
   running: 0,
   waiting: 1,
@@ -26,12 +26,12 @@ const ACTOR_ROW_RANK: Record<WorkflowRunActor["status"], number> = {
 };
 
 /**
- * 卡片要显示的 actor 行。
+ * Actor rows shown on the card.
  *
- * 为什么不是 `actors.slice(0, MAX_ACTOR_ROWS)`：`run.actors` 是协议顺序（出生序），一条宽 run
- * 里最先出生的六个往往都已结算，于是六行全是干完的人，正在跑的一个都看不见。改成按状态分桶
- * 挑选——running → waiting → completed，桶内仍按协议顺序（稳定，所以一个 actor 只在它自己换
- * 状态时才移动）。
+ * Why not `actors.slice(0, MAX_ACTOR_ROWS)`: run.actors is protocol order (birth order), so on a wide run
+ * the six oldest actors are usually settled -- six finished rows, none running. Selection is bucketed by status
+ * instead -- running -> waiting -> completed, protocol order within a bucket (stable, so an actor moves only
+ * when its own status changes).
  */
 export function actorRowsForCard(
   actors: readonly WorkflowRunActor[],
@@ -68,7 +68,7 @@ export function WorkflowRunCardView({
   const workflowCopy = copy.transcript.workflow;
   const width = Math.max(20, terminalWidth - CARD_DETAIL_INDENT.length);
   const collapsedLine = workflowCopy.collapsed({
-    // label 只有服务端知道（冷补种带回）；没有就退回 runId，绝不在这里造一个假名字。
+    // Only the server knows the label (cold reseed brings it back); fall back to runId -- never invent a name here.
     label: card.label ?? card.runId,
     status: workflowStatusLabel(card.status, workflowCopy, card.stopReason),
     nodesSettled: card.nodesSettled,
@@ -183,7 +183,7 @@ function workflowStatusLabel(
   if (status === "running") return workflowCopy.status.running;
   if (status === "completed") return workflowCopy.status.completed;
   if (status === "errored") return workflowCopy.status.errored;
-  // stopped 带原因词：`stopped (model error)`。
+  // stopped carries a reason word: `stopped (model error)`.
   if (status === "stopped") {
     return stopReason === undefined
       ? workflowCopy.status.stopped
@@ -194,7 +194,7 @@ function workflowStatusLabel(
 
 function colorForWorkflowStatus(status: TuiWorkflowCard["status"]): string {
   if (status === "completed") return palette.success;
-  // errored 是脚本故障（danger）；stopped 可恢复（muted）。
+  // errored is a script failure (danger); stopped is resumable (muted).
   if (status === "errored") return palette.danger;
   if (status === "running") return palette.accent;
   if (status === "stopped") return palette.muted;

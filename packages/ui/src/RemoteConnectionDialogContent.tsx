@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 远程连接向导的多个步骤暂集中在同一文件，避免拆分时扩大 SSH/Docker/WSL 回归面。 */
+/* eslint-disable max-lines -- wizard steps share this file to contain SSH/Docker/WSL regression surface. */
 import { useState } from "react";
 import type {
   DockerContainerInfo,
@@ -256,8 +256,8 @@ export function RemoteConnectionSettingsStep({
     <div className="flex min-h-0 flex-1 flex-col gap-6 h-full">
       <div
         data-testid="remote-connection-settings-scroll"
-        // SSH 配置项增多时，表单内容以前没有自己的滚动边界，会继续绘制到下方按钮区域。
-        // 这里把中间内容区限定为可滚动区域，让 footer 始终占据独立空间，不遮挡最后几项配置。
+        // As SSH fields grew, the form had no scroll boundary and painted under the footer.
+        // The middle pane scrolls; the footer keeps its own space.
         className="flex-1 min-h-0 space-y-4 overflow-y-auto pr-1"
       >
         {currentRuntimeOptionsError ? (
@@ -455,8 +455,8 @@ export function RemoteConnectionDirectoryStep({
             onOpenPluginSync={() => setRemotePluginSyncOpen(true)}
           />
         </div>
-        {/* Bugfix: 该容器之前不是 flex，导致子级 DirectoryBrowser 的 flex-1 无法拿到有效高度，
-            目录项变多时 overflow-y-auto 不生效，列表不能垂直滚动。 */}
+        {/* Bugfix: without flex, DirectoryBrowser's flex-1 got no height and
+            overflow-y-auto never engaged; long lists could not scroll. */}
         <div
           className={cn(
             "min-h-0 flex flex-1 overflow-hidden",

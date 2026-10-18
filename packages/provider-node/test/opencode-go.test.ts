@@ -78,43 +78,46 @@ const patch = (config: ModelConfig, level: string) =>
     maxOutputTokens: { map: config.optionSpecs!.maxOutputTokens!.map! },
   }).apply({}, { reasoningLevel: level, maxOutputTokens: 4096 });
 
-describe("Todo149 Go 模板与自建供应商共用站点规则", () => {
-  it.each(Object.entries(members))("%s 按官方协议列成员，模板只决定默认启停", (templateId, ids) => {
-    const t = templates.find((t) => t.templateId === templateId)!;
-    expect(t).toBeDefined();
-    expect(t.config.builtinModelIds).toEqual(
-      [...ids].sort((a, b) => Number(enabled.has(b)) - Number(enabled.has(a))),
-    );
-    expect(t.config.api).toEqual({
-      type: templateId.endsWith("chat")
-        ? "openai-chat-completions"
-        : templateId.endsWith("messages")
-          ? "anthropic-messages"
-          : "openai-responses",
-      baseUrl: url,
-    });
-    expect(t.config.access).toEqual({
-      type: "api-key",
-      apiKeyManagementUrl: "https://opencode.ai/auth",
-    });
-    expect(t.config.logo).toEqual({ type: "builtin", key: "opencode" });
-    for (const modelId of ids) {
-      const i = input(modelId, t.config.api.type);
-      const fromTemplate = rules.resolve({ ...i, templateId });
-      const manual = rules.resolve(i);
-      expect(fromTemplate.validateComplete(), modelId).toEqual([]);
-      expect(fromTemplate.enabled, modelId).toBe(enabled.has(modelId));
-      expect(fromTemplate.properties?.toJSON()).toEqual(manual.properties?.toJSON());
-      expect(fromTemplate.optionSpecs?.toJSON()).toEqual(manual.optionSpecs?.toJSON());
-      expect(manual.properties?.supportsNativeWebSearch, modelId).toBe(false);
-      for (const level of fromTemplate.optionSpecs!.reasoningLevel!.values!)
-        expect(() => patch(fromTemplate, level), `${modelId}/${level}`).not.toThrow();
-    }
-  });
+describe("Todo149 shared-site rules for the Go template and self-built providers", () => {
+  it.each(Object.entries(members))(
+    "%s lists members per the official protocol; templates decide defaults only",
+    (templateId, ids) => {
+      const t = templates.find((t) => t.templateId === templateId)!;
+      expect(t).toBeDefined();
+      expect(t.config.builtinModelIds).toEqual(
+        [...ids].sort((a, b) => Number(enabled.has(b)) - Number(enabled.has(a))),
+      );
+      expect(t.config.api).toEqual({
+        type: templateId.endsWith("chat")
+          ? "openai-chat-completions"
+          : templateId.endsWith("messages")
+            ? "anthropic-messages"
+            : "openai-responses",
+        baseUrl: url,
+      });
+      expect(t.config.access).toEqual({
+        type: "api-key",
+        apiKeyManagementUrl: "https://opencode.ai/auth",
+      });
+      expect(t.config.logo).toEqual({ type: "builtin", key: "opencode" });
+      for (const modelId of ids) {
+        const i = input(modelId, t.config.api.type);
+        const fromTemplate = rules.resolve({ ...i, templateId });
+        const manual = rules.resolve(i);
+        expect(fromTemplate.validateComplete(), modelId).toEqual([]);
+        expect(fromTemplate.enabled, modelId).toBe(enabled.has(modelId));
+        expect(fromTemplate.properties?.toJSON()).toEqual(manual.properties?.toJSON());
+        expect(fromTemplate.optionSpecs?.toJSON()).toEqual(manual.optionSpecs?.toJSON());
+        expect(manual.properties?.supportsNativeWebSearch, modelId).toBe(false);
+        for (const level of fromTemplate.optionSpecs!.reasoningLevel!.values!)
+          expect(() => patch(fromTemplate, level), `${modelId}/${level}`).not.toThrow();
+      }
+    },
+  );
 
-  // 原因：GLM 落入通用四组参数兜底，Go 上游严格校验并拒绝 enable_thinking/reasoning。
+  // Why: GLM lands in the generic four-key fallback, and the Go upstream strictly rejects enable_thinking/reasoning.
   it.each(["glm-5.3", "glm-5.3-flash"])(
-    "%s 每个档位仅发送 reasoning_effort，不修改其他站点",
+    "%s sends reasoning_effort only on every tier, touching no other site",
     (modelId) => {
       for (const level of ["low", "high", "max"]) {
         expect(patch(rules.resolve(input(modelId)), level)).toEqual({
@@ -151,14 +154,17 @@ describe("Todo149 Go 模板与自建供应商共用站点规则", () => {
     ["deepseek-v4-pro", ["high", "max"], 1000000, 384000],
     ["hy3", ["none", "low", "high"], 256000, 128000],
     ["hy4-preview", ["none", "high"], 1024000, 64000],
-  ] as const)("%s 使用 Go 能力而不是同名原厂默认", (id, levels, context, max) => {
-    const c = rules.resolve(input(id));
-    expect(c.optionSpecs?.reasoningLevel?.values).toEqual(levels);
-    expect(c.properties?.contextWindow).toBe(context);
-    expect(c.optionSpecs?.maxOutputTokens?.max).toBe(max);
-  });
+  ] as const)(
+    "%s uses the Go capabilities, not the same-name first-party defaults",
+    (id, levels, context, max) => {
+      const c = rules.resolve(input(id));
+      expect(c.optionSpecs?.reasoningLevel?.values).toEqual(levels);
+      expect(c.properties?.contextWindow).toBe(context);
+      expect(c.optionSpecs?.maxOutputTokens?.max).toBe(max);
+    },
+  );
 
-  it("视觉与桥接分离；Qwen 的 Go 输出上限不照搬原厂", () => {
+  it("separates vision from bridging and gives Qwen's Go output cap its own value", () => {
     expect(rules.resolve(input("glm-5.3")).properties?.inputFormat.supportsImage).toBe(false);
     expect(rules.resolve(input("glm-5.3-flash")).properties?.inputFormat.toJSON()).toMatchObject({
       supportsImage: true,
@@ -178,7 +184,7 @@ describe("Todo149 Go 模板与自建供应商共用站点规则", () => {
   });
 
   it.each(["provider-model", "manual-provider-model"] as const)(
-    "%s 的个人 Map 仍然优先",
+    "%s personal maps still win",
     (type) => {
       const personal = new ModelConfigRules([
         {

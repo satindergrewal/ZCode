@@ -110,7 +110,7 @@ export const editHandler: ToolHandler = async (input, context) => {
 
   if (!file_path) {
     // Empty paths throw a plain exception from shared path-policy, bypassing Edit's own
- // code+message failure contract and dropping the tool_use_error envelope from provider-visible content.
+    // code+message failure contract and dropping the tool_use_error envelope from provider-visible content.
     return editFailure(EditErrorCode.INVALID_PATH, "Tool path must not be empty");
   }
 

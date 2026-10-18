@@ -37,7 +37,11 @@ const TOOLS: ModelToolContract[] = [
   {
     name: "Glob",
     description: "find files",
-    inputSchema: { type: "object", properties: { pattern: { type: "string" } }, required: ["pattern"] },
+    inputSchema: {
+      type: "object",
+      properties: { pattern: { type: "string" } },
+      required: ["pattern"],
+    },
   },
   {
     name: SUBMIT_RESULT_TOOL_NAME,
@@ -90,7 +94,9 @@ async function rig(
     baseURL: server.baseURL,
     statusSink: { publish: (event) => void statusEvents.push(event) },
     ...(options.retry === undefined ? {} : { retry: options.retry }),
-    ...(options.streamIdleTimeoutMs === undefined ? {} : { streamIdleTimeoutMs: options.streamIdleTimeoutMs }),
+    ...(options.streamIdleTimeoutMs === undefined
+      ? {}
+      : { streamIdleTimeoutMs: options.streamIdleTimeoutMs }),
   });
   const model = factory.modelFactory({ selection: FAULT_MODEL_SELECTION });
   const built: Rig = {
@@ -135,7 +141,9 @@ async function rejectionOf(work: () => Promise<unknown>): Promise<AiSdkModelAdap
 
 function toolCallsOf(events: ModelEvent[]): { name: string; input: unknown }[] {
   return events
-    .filter((event): event is Extract<ModelEvent, { type: "tool_call" }> => event.type === "tool_call")
+    .filter(
+      (event): event is Extract<ModelEvent, { type: "tool_call" }> => event.type === "tool_call",
+    )
     .map((event) => ({ name: event.toolCall.name, input: event.toolCall.input }));
 }
 
@@ -154,17 +162,23 @@ describe.each(FORMATS)("fake provider server — %s", (apiFormat) => {
       { name: SUBMIT_RESULT_TOOL_NAME, input: { result: { note: "done" } } },
     ]);
 
-    expect(server.requests.map((entry) => [entry.route, entry.stream, entry.toolResultCount])).toEqual([
+    expect(
+      server.requests.map((entry) => [entry.route, entry.stream, entry.toolResultCount]),
+    ).toEqual([
       [apiFormat, true, 0],
       [apiFormat, true, 1],
     ]);
-    expect(server.requests.every((entry) => entry.servedStatus === 200 && !entry.closedByClient)).toBe(true);
+    expect(
+      server.requests.every((entry) => entry.servedStatus === 200 && !entry.closedByClient),
+    ).toBe(true);
   });
 
   it("serve: the non-stream path yields the same tool calls", async () => {
     const { model, server } = await rig(apiFormat, healthy(), { turns: 1 });
 
-    const result = await runWithModelInvocationContext({}, () => model.generateText(request(AFTER_ONE_TOOL_RESULT)));
+    const result = await runWithModelInvocationContext({}, () =>
+      model.generateText(request(AFTER_ONE_TOOL_RESULT)),
+    );
     expect(result.finishReason).toBe("tool-calls");
     expect(result.toolCalls?.map((call) => [call.name, call.input])).toEqual([
       [SUBMIT_RESULT_TOOL_NAME, { result: { note: "done" } }],
@@ -175,7 +189,11 @@ describe.each(FORMATS)("fake provider server — %s", (apiFormat) => {
   it("status 429 + error.code 3008: providerCode 3008, reason rate_limited (bounded budget fails fast)", async () => {
     const { model } = await rig(apiFormat, always(BUSY_3008), { retry: NO_RETRY });
     const error = await rejectionOf(() => collectStream(model, FIRST_TURN, undefined));
-    expect(error.context).toMatchObject({ providerCode: "3008", reason: "rate_limited", statusCode: 429 });
+    expect(error.context).toMatchObject({
+      providerCode: "3008",
+      reason: "rate_limited",
+      statusCode: 429,
+    });
   });
 
   it("status 429 with a top-level {code,msg} body and text/plain content-type still yields providerCode 3008", async () => {
@@ -190,8 +208,14 @@ describe.each(FORMATS)("fake provider server — %s", (apiFormat) => {
 
   it("status 401 + error.code 1006: reason auth_failed even under the unbounded workflow budget", async () => {
     const { model } = await rig(apiFormat, always(AUTH_401));
-    const error = await rejectionOf(() => collectStream(model, FIRST_TURN, ModelRetryBudget.Unbounded));
-    expect(error.context).toMatchObject({ providerCode: "1006", reason: "auth_failed", retryable: false });
+    const error = await rejectionOf(() =>
+      collectStream(model, FIRST_TURN, ModelRetryBudget.Unbounded),
+    );
+    expect(error.context).toMatchObject({
+      providerCode: "1006",
+      reason: "auth_failed",
+      retryable: false,
+    });
   });
 
   it("stream_error frame: an in-stream business error carries providerCode 3008", async () => {
@@ -252,5 +276,6 @@ describe.each(FORMATS)("fake provider server — %s", (apiFormat) => {
 
 /** 第一个请求在 message_start 之后切断，其余放行。 */
 function failFirstCut(n: number): FaultProgram {
-  return (request) => (request.ordinal <= n ? { kind: "cut", after: "message_start" } : { kind: "serve" });
+  return (request) =>
+    request.ordinal <= n ? { kind: "cut", after: "message_start" } : { kind: "serve" };
 }

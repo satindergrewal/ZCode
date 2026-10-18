@@ -215,7 +215,9 @@ describe("withTerminalToolTurnStop", () => {
       stopTurnAfterResult: true,
     });
     // 键入 metadata 声明而非工具名：未声明的工具永不因成功而终止 turn。
-    expect(withTerminalToolTurnStop(success, { entry: entryWith(false) }).turnControl).toBeUndefined();
+    expect(
+      withTerminalToolTurnStop(success, { entry: entryWith(false) }).turnControl,
+    ).toBeUndefined();
     expect(
       withTerminalToolTurnStop(success, { entry: entryWith(undefined) }).turnControl,
     ).toBeUndefined();
@@ -223,7 +225,9 @@ describe("withTerminalToolTurnStop", () => {
 
   it("never stops a failed result even for a terminal tool", () => {
     const failed = { ...success, success: false } as ToolExecutionResult;
-    expect(withTerminalToolTurnStop(failed, { entry: entryWith(true) }).turnControl).toBeUndefined();
+    expect(
+      withTerminalToolTurnStop(failed, { entry: entryWith(true) }).turnControl,
+    ).toBeUndefined();
   });
 });
 

@@ -1,10 +1,10 @@
 // ============================================================
-// Dynamic Workflow Run 的留白（docs/execution-engine.md「Holes」）：编译产物、快照投影与诊断映射
+// Dynamic Workflow Run holes (docs/execution-engine.md, "Holes"): compile artifacts, snapshot projection, diagnostics mapping.
 // ============================================================
-// 留白在宿主侧有三个读面：`run-launched.holes`（阶段表里哪些站是开放的留白）、快照与详情上的
-// `holes[]`（谁在等、谁补过），以及补全被拒时的诊断（落在函数体内还是草稿里）。三者都只依赖
-// 编译产物（站点表）与 journal 事件，不碰引擎——引擎的停驻表由调用方经控制面读好递进来。
-// 本文件因此是纯合成规则（无 I/O、无状态），与 dynamic-workflow-run-observation.ts 同一纪律。
+// Holes have three host-side read surfaces: run-launched.holes (which phase stops are open holes), holes[] on snapshot/detail
+// (who waits, who filled), and fill-rejection diagnostics (in-body vs in-draft). All three depend only on
+// compile artifacts (site table) and journal events, never the engine -- its stall table is read by the caller via the control surface.
+// Pure synthesis rules hence (no IO, no state), same discipline as dynamic-workflow-run-observation.ts.
 
 import type {
   DynamicWorkflowRunFillHoleDiagnostic,
@@ -25,29 +25,29 @@ import {
 import type { RunRegistryEntry } from "./dynamic-workflow-run-observation.js";
 
 /**
- * 快照上留白条数的上限（contracts 的 `DynamicWorkflowRunHole` 注释：≤32）。一个站点在循环里
- * 可以到达多次，每次一条；超出的是同一个站点的重复到达，读者从前 32 条已经知道它在等。
+ // * Snapshot cap on hole entries (contracts DynamicWorkflowRunHole docs: <=32). A site reached in a loop
+ // * appears per arrival; beyond are repeat arrivals of the same site -- the first 32 already tell the reader it waits.
  */
 const SNAPSHOT_MAX_HOLES = 32;
 
-/** 类型实参缺席时的占位（9012 要求显式类型实参，只有绕过分析器的脚本才会走到这里）。 */
+/** Placeholder when the type argument is absent (9012 demands explicit type args; only analyzer-bypassing scripts land here). */
 const UNKNOWN_HOLE_TYPE = "unknown";
 
 /**
- * 一处留白的编译期事实：站点 id、字面名、类型实参原文、调用所在的脚本行，以及此刻开放与否。
- * 从站点表抄下来而不是持有站点表本身：`SiteTable` 挂着整棵 AST，注册表条目要活到 run 结算。
+ // * One hole's compile-time facts: site id, literal name, type-argument source, the call's script line, and whether currently open.
+ // * Copied from the site table, not holding it: SiteTable carries the whole AST and the entry lives until run settlement.
  */
 export interface CompiledHole {
   siteId: string;
   name: string;
   type: string;
-  /** `hole(...)` 调用在脚本里的行号（1 起）。 */
+  /** The hole(...) call's line in the script (1-based). */
   line: number;
-  /** 没有函数体 = 开放的留白；补全后变成 false，嵌套在体内的新留白随之出现在表里。 */
+  /** No body = open hole; false after fill, with nested in-body holes appearing in the table. */
   open: boolean;
 }
 
-/** 站点表 → 留白的编译期事实表（源码序，开放与已补全都在）。 */
+/** Site table -> per-hole compile facts (source order, open and filled both). */
 export function compiledHolesOf(table: SiteTable): CompiledHole[] {
   return table.holes.map((site) => ({
     siteId: site.id,
@@ -59,9 +59,9 @@ export function compiledHolesOf(table: SiteTable): CompiledHole[] {
 }
 
 /**
- * `run-launched.holes`：声明阶段表里哪些下标是**开放的留白**（docs/execution-engine.md「Holes」）。
- * 留白按名字站在阶段表里（9012 保证留白名与阶段标记名互不重复），所以按名字对得上就是它。
- * 阶段表缺席或没有开放留白时回 `undefined`——字段整个缺席，与 `phaseAlongside` 同规。
+ // * run-launched.holes: which phase-table indices are OPEN HOLES (docs/execution-engine.md, "Holes").
+ // * Holes stand by name in the phase table (9012 keeps hole names and phase markers distinct), so a name match IS it.
+ // * No phase table or no open holes -> undefined, whole field absent, same rule as phaseAlongside.
  */
 export function openHoleIndexes(
   phaseNames: readonly string[] | undefined,
@@ -76,20 +76,20 @@ export function openHoleIndexes(
   return indexes.length === 0 ? undefined : indexes;
 }
 
-/** 快照投影要读的两类事件；`reportItems: {limit: 0}` 是这条读面的固定形状（不碰 report 行）。 */
+/** The two event kinds the snapshot projection reads; reportItems {limit:0} is this surface's fixed shape (no report rows). */
 const HOLE_EVENT_TYPES: RunEvent["type"][] = ["hole-reached", "hole-filled", "run-launched"];
 
 type HoleReachedEvent = Extract<RunEvent, { type: "hole-reached" }>;
 type HoleFilledEvent = Extract<RunEvent, { type: "hole-filled" }>;
 
-/** 快照投影的事件读：留白事件与首条 `run-launched`（阶段表的冷来源），一次有类型过滤的窄读。 */
+/** The snapshot's event read: hole events plus the first run-launched (the phase table's cold source), one typed narrow read. */
 export function readRunHoleEvents(journal: JournalStorePort, runId: string): StoredEvent[] {
   return journal.listEvents(runId, { types: HOLE_EVENT_TYPES, reportItems: { limit: 0 } });
 }
 
 /**
- * 从这批事件里读出**此刻生效**的阶段表：最后一条 `hole-filled` 带的是有效脚本的表，没有补全过
- * 就是 `run-launched` 的声明表。快照与冷回放的 before / after 都按它取邻居。
+ // * From these events read the CURRENTLY EFFECTIVE phase table: the last hole-filled carries the effective script's table; never filled
+ // * means run-launched's declaration table. Snapshot and cold-replay before/after neighbors both key off it.
  */
 export function phaseNamesFromEvents(events: readonly StoredEvent[]): string[] | undefined {
   let names: string[] | undefined;
@@ -101,25 +101,25 @@ export function phaseNamesFromEvents(events: readonly StoredEvent[]): string[] |
 }
 
 export interface ProjectRunHolesInput {
-  /** `readRunHoleEvents` 的返回（sequence 升序）。 */
+  /** readRunHoleEvents' return (sequence ascending). */
   events: readonly StoredEvent[];
   /**
-   * 引擎此刻的停驻表；`undefined` = 本进程没有活着的引擎（冷行、已结算、还没接上）。
-   * **`waiting` 只在这张表里有它时成立**：进程亡故后没有 promise 在等，单靠事件会把一个没人问的
-   * 留白报成在等（docs/execution-engine.md「The run snapshot」）。
+   //   * The engine's current stall table; undefined = no live engine in this process (cold row, settled, not yet attached).
+   //   * waiting is TRUE only when present here: after a process death no promise waits; events alone would report an un-asked
+   * hole as waiting (docs/execution-engine.md, The run snapshot).
    */
   openHoles: readonly OpenHole[] | undefined;
-  /** 有效脚本的留白事实表（type / line 的来源）；缺席即这两项不出。 */
+  /** The effective script's hole-facts table (source of type/line); absent = both withheld. */
   holes: readonly CompiledHole[] | undefined;
-  /** 此刻生效的阶段表（before / after 的来源）；缺席即这两项不出。 */
+  /** The currently effective phase table (source of before/after); absent = both withheld. */
   phaseNames: readonly string[] | undefined;
 }
 
 /**
- * 快照与详情上的 `holes[]`（docs/execution-engine.md「The run snapshot」）：每一次到达一条，
- * 到达序；`waiting` 来自引擎的停驻表，`filled` 来自 `hole-filled` 事件。既不在等、又没补过的到达
- * （上一世停在留白处、进程死了）**不出现**——resume 会重新到达并记一条新的 `hole-reached`，
- * 那时它才又是一条在等的留白。零条时返回空数组，调用方据此让字段整个缺席。
+ // * holes[] on snapshot/detail (docs/execution-engine.md, "The run snapshot"): one entry per arrival, arrival order; waiting from the
+ // * engine stall table, filled from hole-filled events. Arrivals neither waiting nor filled
+ // * (previous life stalled at the hole, process died) do NOT appear -- a resume re-reaches and records a fresh hole-reached,
+ // * only then is it waiting again. Zero rows -> empty array; the caller then withholds the whole field.
  */
 export function projectRunHoles(input: ProjectRunHolesInput): DynamicWorkflowRunHole[] {
   const waiting = new Set((input.openHoles ?? []).map((hole) => instanceKey(hole)));
@@ -161,9 +161,9 @@ export function projectRunHoles(input: ProjectRunHolesInput): DynamicWorkflowRun
 }
 
 /**
- * 冷行（本进程没有条目）的留白事实表：事件里真有留白到达、行里有脚本时，对行里的（有效）脚本
- * 建一次站点表；否则 `undefined`。绝大多数 run 没有留白，这笔编译因此只在需要时付。脚本编不过
- * （老 facade 下写的行）同样回 `undefined`——这是读面，不该因为一次派生字段而抛。
+ // * Cold row (no entry here) hole facts: when events show real arrivals and the row has a script, build the site table once over the row's (effective) script;
+ // * else undefined. Most runs have no holes, so this compile is pay-on-need. Uncompilable rows
+ // * (older facade) also undefined -- a read surface must not throw over a derived field.
  */
 export function coldCompiledHoles(
   scriptText: string | undefined,
@@ -179,9 +179,9 @@ export function coldCompiledHoles(
 }
 
 /**
- * 快照 / 详情两条读面共用的留白投影入口：热条目读它自己的事实表、阶段表与控制面上引擎的停驻表；
- * 冷行从事件与行里的脚本重建。条目在场却一处留白都没有（编译产物说的）时**零读**——那是绝大多数
- * run，`getTask` 被追踪器每秒轮询，不该为一个空字段付一次事件读。
+ // * The hole projection entry shared by snapshot/detail: live entries read own facts/phase tables and the engine stall table via the control surface;
+ // * cold rows rebuild from events plus the row's script. An entry with ZERO holes (per compile artifacts) reads NOTHING -- that is most
+ // * runs, and getTask is polled every second by the tracker; never pay an event read for an empty field.
  */
 export function runHolesOf(
   runId: string,
@@ -206,7 +206,7 @@ function instanceKey(ref: { siteId: string; ordinal: number }): string {
   return `${ref.siteId}@${ref.ordinal}`;
 }
 
-/** 留白在阶段表里的前后邻居（留白按名字站在表里）；不在表里或没有邻居时各自缺席。 */
+/** The hole's before/after neighbors in the phase table (holes stand by name); absent when unlisted or neighborless. */
 function neighbourPhases(
   name: string,
   phaseNames: readonly string[] | undefined,
@@ -223,11 +223,11 @@ function neighbourPhases(
 }
 
 /**
- * 补全被拒时的诊断映射（docs/dynamic-workflow/launch.md「The fill file」）。拼接把函数体插在
- * 脚本第 `insertedAtLine` 行起的 `insertedLines - 1` 行里（最后一行是右花括号），每行前面垫了
- * 调用缩进加两格。落在函数体行里的诊断标 `inFill`，行列改成函数体自己的坐标；落在右花括号那一行
- * 的算到调用那一行上；落在插入点之后的整体前移 `insertedLines`——拒绝时什么都没写，草稿仍是
- * 拼接前的脚本，行号得指向它。
+ // * Diagnostics mapping for rejected fills (docs/dynamic-workflow/launch.md, "The fill file"). The splice inserts the body at
+ // * script line insertedAtLine for insertedLines-1 rows (last is the closing brace), each prefixed
+ // * with call indent plus two spaces. Diagnostics on body rows tag inFill with body-local coordinates; on the closing-brace row
+ // * they map to the call's line; past the insertion point they shift up by insertedLines -- rejection writes nothing, the draft is still
+ // * the pre-splice script, and line numbers must point at it.
  */
 export function mapFillDiagnostics(input: {
   diagnostics: readonly CompileDiagnostic[];
@@ -272,13 +272,13 @@ export function mapFillDiagnostics(input: {
 }
 
 /**
- * 补全的有效脚本里点名了本 run 绑定表之外的模型 → 9011，每个名字一条，落在它第一次出现的位置
- * （坐标是有效脚本的，交给 {@link mapFillDiagnostics} 换算）。
+ // * The filled script names models outside this run's binding table -> 9011, one per name, at its first occurrence
+ // * (effective-script coordinates; {@link mapFillDiagnostics} translates).
  *
- * 修复原因（MR !2837 评审 CR-01）：绑定表只在建 run 时对着目录解析一次、记在 `run-launched` 上，
- * 子代理建会话时按名字查它。补全此前只跑编译，函数体新写的 `model("accurate")` 照样被收下、留白
- * 被放行，直到那个子代理启动才以 WorkflowActorModelUnboundError 失败——而用户批准的启动窗里根本
- * 没有这个模型。补全的确认窗不列模型，所以函数体只能用表里已有的名字；要换模型走 AmendWorkflow。
+ // * Fix rationale (MR !2837 review CR-01): the binding table resolves against the catalog once, at run creation, recorded on run-launched;
+ * subagent session creation looks names up there. Fills used to compile only, so a body's new model("accurate") sailed through and the hole
+ * released, failing only at subagent start with WorkflowActorModelUnboundError -- a model absent from the approval dialog the user saw.
+ * The fill confirm dialog lists no models, so bodies must reuse table names; model changes go through AmendWorkflow.
  */
 export function unboundFillModelDiagnostics(
   references: readonly ModelReference[],

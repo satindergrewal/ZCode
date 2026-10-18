@@ -12,15 +12,17 @@ import {
 const preparedSessions = new WeakSet<Session>();
 
 /**
- * 每个可信 App 身份一个持久 partition（多个沙箱共享）。首次使用时把 partition session 锁死：
- * 装 protocol handler、权限交给闸门（未声明一律拒绝）、阻止下载、代理 direct。
- * desktopNetworkPolicy 只覆盖 defaultSession 与 embedded-browser partition，沙箱 session 必须自己设。
+ * One persistent partition per trusted app identity (shared by its sandboxes). On first use the
+ * partition session is locked down: protocol handler installed, permissions handed to the gate
+ * (undeclared always rejected), downloads blocked, proxy direct.
+ * desktopNetworkPolicy covers only defaultSession and embedded-browser partitions; sandbox
+ * sessions must configure themselves.
  */
 export function preparePluginSandboxSession(input: {
   session: Session;
   registry: PluginSandboxRegistryPort;
   assets: PluginSandboxAssetSource;
-  /** 缺省（单测 / 未装闸门）时拒绝全部权限。 */
+  /** With no gate installed (unit tests), reject every permission. */
   permissions?: PluginSandboxPermissionGate;
   logger?: { warn: (...args: unknown[]) => void; info?: (...args: unknown[]) => void };
 }): void {
@@ -37,7 +39,8 @@ export function preparePluginSandboxSession(input: {
       ...(input.logger ? { logger: input.logger } : {}),
     }),
   );
-  // 稳定 origin 不能授予跨实例资源访问；以 Electron 提供的实际 guest 与路径登记交叉验证。
+  // A stable origin must not grant cross-instance resource access; cross-check against the
+  // actual Electron guest and the path registration.
   session.webRequest.onBeforeRequest(
     { urls: ["zcode-sandbox://*/*", "https://*/*"] },
     (details, callback) => {
@@ -51,7 +54,8 @@ export function preparePluginSandboxSession(input: {
           callback({});
           return;
         }
-        // 只为实际 Gen UI guest 的固定脚本改来源；重定向后的实例请求仍走下方归属校验。
+        // Rewrites origins only for the fixed script of the actual Gen UI guest; post-redirect
+        // instance requests still pass the ownership check below.
         void resolveGenUiVendorRedirect(
           details.url,
           input.registry.get(shell.sandboxId),
@@ -65,7 +69,8 @@ export function preparePluginSandboxSession(input: {
         );
         return;
       }
-      // shell 的打包 / dev 绝对资源 URL 重定向到同一 guest 的实例路径，顶层站点保持稳定。
+      // Redirect the shell's packaged/dev absolute resource URLs to the same guest's instance
+      // path, keeping the top-level site stable.
       if (!target && shell?.kind === "shell") {
         const record = input.registry.get(shell.sandboxId);
         if (record && url.hostname === `shell-${record.instance.appIdentity}`) {
@@ -77,7 +82,8 @@ export function preparePluginSandboxSession(input: {
       }
       if (target?.kind === "shell") {
         const record = input.registry.get(target.sandboxId);
-        // 首次主文档已由 will-attach 绑定；后续资源必须仍属于这个实际 guest。
+        // The first main document was bound by will-attach; later resources must still belong to
+        // that exact guest.
         const initial =
           details.resourceType === "mainFrame" && (!shell || shell.sandboxId === target.sandboxId);
         callback({

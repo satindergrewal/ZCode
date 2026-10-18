@@ -3,12 +3,12 @@ function record(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : null;
 }
 
-// 接收事件用 bot，历史接口用 app；此前混用导致真实机器人事件在入口被丢弃。
+// Bot token for inbound events, app token for history; mixing them used to drop real bot events at the door.
 export function isFeishuBotSender(senderType: string): boolean {
   return senderType === "bot" || senderType === "app";
 }
 
-/** 只接受真实 mention 身份，不能靠显示名或正文中的 @ 字样触发执行。 */
+/** Accept only real mention identities; display names or literal @ text never trigger execution. */
 export function readGroupMessage(
   text: string,
   mentions: unknown,
@@ -21,7 +21,7 @@ export function readGroupMessage(
   mentionedBot: boolean;
   contentParts?: ChannelContentPart[];
 } | null {
-  // 机器人可参与已接入话题，但自身回声必须按可信 ID 过滤，不能使用显示名。
+  // The bot may join bound topics, but its own echoes are filtered by trusted id, never display name.
   if (!botOpenId || (senderType !== "user" && !isFeishuBotSender(senderType))) return null;
   if (isFeishuBotSender(senderType) && (!senderOpenId || senderOpenId === botOpenId)) return null;
   let mentioned = false;
@@ -73,7 +73,7 @@ export function readGroupMessage(
     if (last.text) break;
     contentParts.pop();
   }
-  // 自身 @ 是分工原文的一部分；只有命令副本可以剥离开头的唤醒标记。
+  // The self-@ is part of the original assignment text; only the command copy may strip the leading wake marker.
   let commandStart = 0;
   while (commandStart < contentParts.length) {
     const part = contentParts[commandStart]!;
@@ -99,12 +99,12 @@ export function readGroupMentionText(
   senderType: string,
   senderOpenId?: string,
 ): string | null {
-  // 引用准备也必须透传发送者身份，否则合法机器人被当作缺失身份过滤。
+  // Quote preparation must carry the sender identity too, or legitimate bots get filtered as identity-less.
   const message = readGroupMessage(text, mentions, botOpenId, senderType, senderOpenId);
   return message?.mentionedBot ? message.text : null;
 }
 
-/** 只取卡片可见正文，不把按钮值和审批参数作为另一机器人的发言。 */
+/** Take only visible card bodies; button values and approval params are not another bot speech. */
 export function readGroupCardText(value: unknown): string {
   if (Array.isArray(value)) return value.map(readGroupCardText).filter(Boolean).join("\n");
   const item = record(value);
@@ -118,7 +118,7 @@ export function readGroupCardText(value: unknown): string {
   return lines.filter(Boolean).join("\n");
 }
 
-/** interactive 也是普通回复载体；只根据控件结构识别操作卡片，不能按消息类型全拦。 */
+/** interactive also carries plain replies; detect action cards by widget structure, never by message type alone. */
 export function isGroupControlCard(value: unknown): boolean {
   if (Array.isArray(value)) return value.some(isGroupControlCard);
   const item = record(value);
@@ -133,7 +133,7 @@ export function isGroupControlCard(value: unknown): boolean {
   return Object.entries(item).some(([key, child]) => key !== "value" && isGroupControlCard(child));
 }
 
-/** 卡片正文中的发送端 ID 可能与接收端不同，使用平台有序 mentions 恢复本端身份。 */
+/** Sender-side ids in card bodies may differ from receiver-side ones; recover local identity from ordered platform mentions. */
 export function readGroupConversationCardText(value: unknown, mentions: unknown): string {
   const text = readGroupCardText(value);
   const native = Array.isArray(mentions)

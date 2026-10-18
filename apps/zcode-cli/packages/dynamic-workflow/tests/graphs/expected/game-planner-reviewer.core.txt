@@ -2,8 +2,8 @@ actor actor#1 "Planner" @50:17 order=0
 actor actor#2 "Reviewer" @57:18 order=1
 ask ask#1 "planner" @68:36 order=2 type="GamePlan"
 ask ask#2 "reviewer" @75:45 order=3 type="ReviewVerdict"
-ask ask#3 "planner" @86:24 order=4 type="GamePlan"
-ask ask#4 "reviewer" @91:28 order=5 type="ReviewVerdict"
+ask ask#3 "planner" @91:24 order=4 type="GamePlan"
+ask ask#4 "reviewer" @98:28 order=5 type="ReviewVerdict"
 fact ask-data ask#2 <- ask#1 exact
 fact ask-data ask#2 <- ask#3 exact
 fact ask-data ask#3 <- ask#2 exact

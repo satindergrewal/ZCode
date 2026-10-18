@@ -79,7 +79,7 @@ export async function resolveStandaloneCodingPlanProvider(
   );
   if (matches.length !== 1) {
     throw new Error(
-      `ZCode Built-in Config 必须为 ${family} 声明唯一 Individual Coding Plan Provider`,
+      `ZCode Built-in Config must declare exactly one Individual Coding Plan provider for ${family}`,
     );
   }
   return matches[0]!;
@@ -87,7 +87,7 @@ export async function resolveStandaloneCodingPlanProvider(
 
 export function standaloneAccountIdentityCredentialKey(providerId: string): string {
   const normalized = providerId.trim();
-  if (!normalized) throw new Error("Standalone Account Provider ID 不能为空");
+  if (!normalized) throw new Error("Standalone Account Provider ID must not be empty");
   return `account-provider:${normalized}:identity`;
 }
 
@@ -100,22 +100,22 @@ function oauthCredentialKey(family: ProviderFamilyDomain): string {
     : SHARED_ZCODE_CREDENTIAL_KEYS.bigmodelAccessToken;
 }
 
-/** Standalone Credential Store 私有键；不得进入 Provider Config、Model 或 Protocol。 */
+/** Standalone Credential Store private keys; never enter Provider Config, Model, or Protocol. */
 export function standaloneAccountProviderCredentialKey(input: {
   readonly providerId: string;
   readonly accountIdentity: string;
 }): string {
   const providerId = input.providerId.trim();
   const accountIdentity = input.accountIdentity.trim();
-  if (!providerId) throw new Error("Standalone Account Provider ID 不能为空");
-  if (!accountIdentity) throw new Error("Standalone Account Identity 不能为空");
+  if (!providerId) throw new Error("Standalone Account Provider ID must not be empty");
+  if (!accountIdentity) throw new Error("Standalone Account Identity must not be empty");
   return `account-provider:coding-plan:${providerId}:account:${encodeURIComponent(accountIdentity)}:api-key`;
 }
 
-/** 没有账号 Profile 的手工 Key 登录使用稳定、不可逆的连接身份。 */
+/** Manual key logins without an account profile use a stable, non-reversible connection identity. */
 export function createStandaloneAccountIdentityFromSecret(secret: string): string {
   const normalized = secret.trim();
-  if (!normalized) throw new Error("Standalone Account Secret 不能为空");
+  if (!normalized) throw new Error("Standalone Account Secret must not be empty");
   return `key-${createHash("sha256").update(normalized).digest("hex").slice(0, 24)}`;
 }
 
@@ -142,7 +142,7 @@ export async function readStandaloneAccountProviderConfigSnapshot(
   const sources = await credentialStore.loadMany(
     candidates.map(({ providerId }) => standaloneAccountAuthSourceCredentialKey(providerId)),
   );
-  // 先按来源选择读取范围；OAuth 不解密旧 Key，手工模式也不依赖无关 OAuth 密文。
+  // Read the scope by source selection first; OAuth never decrypts legacy keys, manual mode never depends on unrelated OAuth ciphertext.
   const credentials = await credentialStore.loadMany(
     candidates.map(({ credentialKey, providerId, family }) =>
       sources[standaloneAccountAuthSourceCredentialKey(providerId)] === "manual"
@@ -161,8 +161,8 @@ export async function readStandaloneAccountProviderConfigSnapshot(
         source === "manual" ? candidate?.credentialKey : oauthCredentialKey(family);
       const authorized = Boolean(requestCredentialKey && credentials[requestCredentialKey]?.trim());
       if (!candidate || !authorized) {
-        // Bug 根因：账号 Overlay 缺少成员表示“不覆盖”，不能表达账号已断开；必须显式
-        // entitled=false，才能让 Built-in 账号 Provider 在凭据删除后从 Registry 退出。
+        // Root cause: the account overlay lacked a member for "no override", so a disconnected account was inexpressible; it must be
+        // entitled=false lets the Built-in account provider leave the Registry once its credential is deleted.
         return [
           providerId,
           new ProviderConfig({
@@ -235,13 +235,17 @@ export function createStandaloneProviderRuntimeHeadersPort(
       const providerId = input.providerId.trim();
       const access = input.accountAccess;
       if (!access || access.mode !== "individual-coding-plan") {
-        throw new Error(`Standalone Account Provider 请求身份无效: ${providerId}`);
+        throw new Error(
+          `Standalone Account Provider has an invalid request identity: ${providerId}`,
+        );
       }
       const currentIdentity = (
         await credentialStore.load(standaloneAccountIdentityCredentialKey(providerId))
       )?.trim();
       if (!currentIdentity)
-        throw new Error(`Standalone Account Provider 凭据已经失效: ${providerId}`);
+        throw new Error(
+          `Standalone Account Provider credentials are no longer valid: ${providerId}`,
+        );
       const family = access.accountType;
       if (!family) throw new Error("project_token_account_required");
       const sourceKey = standaloneAccountAuthSourceCredentialKey(providerId);
@@ -282,7 +286,7 @@ export function createStandaloneProviderRuntimeHeadersPort(
         );
         apiKey = material.token;
         apiKeyId = material.apiKeyId;
-        // 请求期只交付当前账号的 Token；迟到签发不能覆盖已退出/切换的登录态。
+        // During a request, deliver only the current account's token; a late issuance must not overwrite a logged-out/switched state.
         if (
           (await credentialStore.load(oauthKey))?.trim() !== oauth ||
           (
@@ -306,13 +310,15 @@ export function createStandaloneProviderRuntimeHeadersPort(
         )?.trim();
       }
       if (!useOAuth && source !== "manual") {
-        // 旧格式无法区分手工和 OAuth 派生 Key；无登录态时要求重新选择登录方式，禁止猜测回退。
+        // The legacy format cannot tell manual from OAuth-derived keys; with no login state, demand a fresh choice, never guess a fallback.
         resolver.clear();
         throw new Error("project_token_login_required");
       }
       input.abortSignal?.throwIfAborted();
       if (!apiKey) {
-        throw new Error(`Standalone Account Provider 缺少请求凭据: ${providerId}`);
+        throw new Error(
+          `Standalone Account Provider is missing request credentials: ${providerId}`,
+        );
       }
       return {
         headersApplied: true,

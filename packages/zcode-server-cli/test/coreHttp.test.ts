@@ -43,7 +43,7 @@ async function connectResourcePeer(base: string, onValidate: () => void) {
     drain: async () => {},
     dispose: () => socket.close(),
   };
-  // WebSocket 可在 open 同一轮分发初始化帧；连接内同步安装 RPC listener，不能先 await open。
+  // The WebSocket may dispatch init frames in the same tick as open; install the RPC listener synchronously on the connection, never await open first.
   return new Promise<{ services: { zcodeAgentService: IZCodeAgentService }; dispose(): void }>(
     (resolve, reject) => {
       socket.once("error", reject);
@@ -210,7 +210,7 @@ describe("standalone Server Core ingress", () => {
       socket.once("error", reject);
     });
 
-    // 一次性 ticket：同一 capability 重放必须被拒绝。
+    // One-shot ticket: replaying the same capability must be rejected.
     const replayed = await fetch(`http://${server.host}:${server.port}/ws/host`, {
       headers: { "x-zcode-rpc-host-capability": capability.capability },
     });

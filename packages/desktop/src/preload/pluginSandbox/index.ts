@@ -2,10 +2,11 @@ import { ipcRenderer } from "electron";
 import { PluginSandboxChannels } from "@zcode/shared";
 
 /**
- * 插件 UI 沙箱 guest 的 preload。只做一件事：把 main 送来的那条 MessagePort 经 window.postMessage
- * 原样转交给受信 relay shell（contextBridge 会把 MessagePort 包成 Proxy，丢失原生方法，与 preload/index.ts 同一原因）。
- * 不暴露任何 contextBridge API；插件 iframe 在 shell 内的子 frame 里，且 nodeIntegrationInSubFrames=false，
- * 因此这段代码只在 shell 顶层 frame 运行。
+ * Preload for the plugin UI sandbox guest. Does one thing only: forward the MessagePort sent by
+ * main verbatim to the trusted relay shell via window.postMessage (contextBridge wraps
+ * MessagePort in a Proxy losing native methods, same reason as preload/index.ts).
+ * Exposes no contextBridge API; the plugin iframe lives in a child frame of the shell and
+ * nodeIntegrationInSubFrames=false, so this code runs only in the shell top frame.
  */
 const PLUGIN_SANDBOX_SCHEME = "zcode-sandbox:";
 

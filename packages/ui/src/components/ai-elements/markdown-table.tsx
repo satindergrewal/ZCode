@@ -993,9 +993,9 @@ export function MarkdownTable({ className, children, node: _node, ...props }: Ma
     resizeObserver?.observe(frame);
     resizeObserver?.observe(verticalViewport);
     syncDockObservation();
-      // Draft/empty-state switches conditionally mount or replace the V4 composer dock;
-      // watching only the initial node misses the new dock's height growth. Also observe
-      // subtree mutations at the root and rebind.
+    // Draft/empty-state switches conditionally mount or replace the V4 composer dock;
+    // watching only the initial node misses the new dock's height growth. Also observe
+    // subtree mutations at the root and rebind.
     const dockMutationObserver =
       typeof MutationObserver === "undefined" || !root
         ? null

@@ -11,7 +11,8 @@ import {
 const [root, profile, mode] = process.argv.slice(2);
 app.setPath("userData", profile!);
 protocol.registerSchemesAsPrivileged([PLUGIN_SANDBOX_PRIVILEGED_SCHEME]);
-// 旧分区探针会先关闭临时窗口；完整测试结束前不能触发 Electron 默认退出。
+// The legacy partition probe closes its temp window first; the full test must not trigger
+// Electron's default quit before it finishes.
 app.on("window-all-closed", () => {});
 app
   .whenReady()
@@ -36,7 +37,8 @@ app
       assert.equal((await old.cookies.get({ name: "fixture" })).length, mode === "empty" ? 0 : 1);
       assert.equal((await unrelated.cookies.get({ name: "fixture" })).length, 1);
     }
-    // 冷启动计时只包含待测宿主页，不把旧分区探针窗口的启动耗时算入。
+    // Cold-start timing covers only the host page under test; never count the legacy partition
+    // probe window's startup.
     const started = performance.now();
     const host = installPluginSandboxHost({
       rendererDir: root!,
@@ -135,7 +137,8 @@ app
       storage,
       mode === "empty" ? { local: null, indexed: null } : { local: "42", indexed: 42 },
     );
-    // 用 Chromium 输入事件走 React onClick/onChange，避免直接改 DOM 掩盖受控状态丢失。
+    // Drive React onClick/onChange with real Chromium input events; DOM mutation hides lost
+    // controlled state.
     guest.debugger.attach("1.3");
     for (const selector of ["#counter", "#input"]) {
       const point = await frame.executeJavaScript(

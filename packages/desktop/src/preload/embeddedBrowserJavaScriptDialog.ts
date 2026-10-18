@@ -109,11 +109,11 @@ contextBridge.executeInMainWorld({
 });
 
 /**
- * Electron 的 Notification.permission getter 不查询 session permission handler，
- * 恒返回 denied（官方 Feature Request 待实现 renderer override），导致网页
- * 「已授权却显示未授予」。此处与 JS Dialog 同通道在主世界 override：
- * 初始按未决定（default）呈现，requestPermission 的真实结果回写状态。
- * new Notification 的显示行为仍由 Chromium 内部判定，不受本 override 影响。
+ * Electron's Notification.permission getter never consults the session permission handler and
+ * always returns denied (upstream feature request; no renderer override yet), so pages show
+ * granted-permissions as denied. Override it in the main world over the same channel as the JS
+ * dialog: present as default until decided, then write back requestPermission's real result.
+ * The display behavior of new Notification stays Chromium-internal, untouched by this override.
  */
 contextBridge.executeInMainWorld({
   func: () => {
@@ -125,12 +125,12 @@ contextBridge.executeInMainWorld({
         this: typeof Notification,
         deprecatedCallback?: NotificationPermissionCallback | undefined,
       ): Promise<NotificationPermission> {
-        const settled = Promise.resolve(
-          nativeRequestPermission.call(Notification),
-        ).then((status: NotificationPermission) => {
-          permissionState = status;
-          return status;
-        });
+        const settled = Promise.resolve(nativeRequestPermission.call(Notification)).then(
+          (status: NotificationPermission) => {
+            permissionState = status;
+            return status;
+          },
+        );
         if (typeof deprecatedCallback === "function") {
           void settled.then(
             (status) => deprecatedCallback(status),
@@ -145,7 +145,7 @@ contextBridge.executeInMainWorld({
         configurable: true,
       });
     } catch {
-      // 页面脚本可能已锁定 Notification；保持原生行为。
+      // Page scripts may have replaced Notification; keep native behavior.
     }
   },
   args: [],

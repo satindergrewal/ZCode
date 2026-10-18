@@ -1,7 +1,7 @@
 /**
- * mcp-ui 契约：UI 发起的 MCP 资源读取与工具调用在 agent 侧的处理器接口。
- * 参数与结果形状与 `@zcode/shared` 的 `zcodeMcpReadResource*` / `zcodeMcpUiCallTool*` schema 同构，
- * 由 contract.test 断言两者一致。
+ * The mcp-ui contract: agent-side handler interfaces for UI-initiated MCP resource reads and tool calls.
+ // Request/result shapes are isomorphic with @zcode/shared's zcodeMcpReadResource* / zcodeMcpUiCallTool* schemas,
+ // contract.test asserts the two stay identical.
  */
 
 import type {
@@ -27,7 +27,7 @@ export interface McpUiReadResourceResult {
   contents: McpUiResourceContent[];
 }
 
-/** 页面发起的 resources/read 结果：无 `_meta`，每项 text 或 blob（base64）二选一。 */
+/** A page-initiated resources/read result: no _meta; each item is text or blob (base64), never both. */
 export interface McpUiReadResourceForUiResult {
   contents: Array<Pick<McpUiResourceContent, "uri" | "mimeType" | "text" | "blob">>;
 }
@@ -35,7 +35,7 @@ export interface McpUiReadResourceForUiResult {
 export interface McpUiCallToolParams extends McpUiPluginScope {
   toolName: string;
   arguments?: Record<string, unknown>;
-  /** 宿主生成的必填调用 id；接纳、取消与终态去重共用。 */
+  /** Host-minted required call id; shared by admission, cancel, and terminal dedup. */
   callId: string;
 }
 
@@ -43,7 +43,7 @@ export interface McpUiCancelCallParams extends McpUiPluginScope {
   callId: string;
 }
 export interface McpUiCancelCallResult {
-  /** false = 没有这个进行中的调用（已完成或尚未接纳）。 */
+  /** false = no such in-flight call (finished or never admitted). */
   cancelled: boolean;
 }
 
@@ -55,13 +55,13 @@ export interface McpUiCallToolResult {
 }
 
 /**
- * 处理器依赖的最小 session 视图：由 bootstrap 的 session record 适配，
- * 处理器不直接接触 ZCodeApp 或 mcpPort 的其余能力。
+ * The minimal session view the handlers depend on: adapted from bootstrap's session record,
+ // handlers never touch the rest of ZCodeApp or mcpPort.
  */
 export interface McpUiSessionAccess extends McpUiResourceSessionAccess {
-  /** serverName 是否是本 session 已配置的 MCP server（插件 server 与普通 MCP server 同一张表）。 */
+  /** Whether serverName is an MCP server configured on this session (plugin and plain servers share one table). */
   hasMcpServer(serverName: string): Promise<boolean>;
-  /** 工具可见性（`_meta.ui.visibility` 归一化结果）；工具不存在返回 null。 */
+  /** Tool visibility (normalized `_meta.ui.visibility`); null when the tool is unknown. */
   getToolVisibility(
     serverName: string,
     toolName: string,
@@ -77,7 +77,7 @@ export interface McpUiSessionAccess extends McpUiResourceSessionAccess {
     args: Record<string, unknown> | undefined,
     options?: { signal?: AbortSignal },
   ): Promise<McpUiCallToolResult>;
-  /** 页面发起的 resources/read（A7）；大小与 mimeType 校验在处理器完成，这里只是端口透传。 */
+  /** Page-initiated resources/read (A7); size/mime validation happens in the handler, this is a passthrough. */
   readResourceForUi(
     serverName: string,
     uri: string,
@@ -86,8 +86,8 @@ export interface McpUiSessionAccess extends McpUiResourceSessionAccess {
 }
 
 /**
- * fail closed：serverName 不在本 session 的 MCP server 表里时抛出，映射为 JSON-RPC -32602。
- * 归属只看 server（任何已连接的 MCP server 都能渲染 MCP App）；pluginId 只用于展示与日志。
+ // fail closed: serverName outside this session's MCP server table throws, mapped to JSON-RPC -32602.
+ // Ownership sees the server only (any connected MCP server may render an MCP App); pluginId is display/logging.
  */
 export class McpUiServerScopeError extends Error {
   readonly code = -32602;
@@ -98,8 +98,8 @@ export class McpUiServerScopeError extends Error {
 }
 
 /**
- * UI 调用了不存在或 model-only 的工具。归属校验通过不代表调用方有资格：
- * `visibility` 不含 "app" 的工具只给模型用。映射为 JSON-RPC -32602。
+ * The UI called a missing or model-only tool. Passing ownership does not confer eligibility:
+ // a tool whose visibility lacks "app" is model-only. Maps to JSON-RPC -32602.
  */
 export class McpUiToolAccessError extends Error {
   readonly code = -32602;
@@ -117,7 +117,7 @@ export class McpUiToolAccessError extends Error {
   }
 }
 
-/** A7：结果超过 8 MiB 或 mimeType 不在白名单时抛出，映射为 JSON-RPC -32001（资源被拒）。 */
+/** A7: thrown when the result exceeds 8 MiB or the mimeType is not allowlisted; maps to JSON-RPC -32001 (resource rejected). */
 export class McpUiResourceRejectedError extends Error {
   readonly code = -32001;
   constructor(
@@ -145,7 +145,7 @@ export interface McpUiHandlers extends McpUiResourceHandlers<McpUiSessionAccess>
     params: McpUiCallToolParams,
     options?: { signal?: AbortSignal },
   ): Promise<McpUiCallToolResult>;
-  /** abort 对应 callId 的进行中调用；归属校验同 callTool。 */
+  /** Aborts the in-flight call for this callId; same ownership check as callTool. */
   cancelToolCall(
     access: McpUiSessionAccess,
     params: McpUiCancelCallParams,

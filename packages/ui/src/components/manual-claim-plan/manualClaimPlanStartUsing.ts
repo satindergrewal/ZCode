@@ -15,8 +15,9 @@ export type ManualClaimPlanStartUsingTargetResult =
     };
 
 /**
- * “开始体验”是一个会改变当前 Family 选择的跳转，必须使用领取后最新的 Provider View 做一次门禁。
- * 不能只依据领取接口的成功响应：Provider 刷新失败或模型尚未进入 Registry 时，直接写入选择会制造坏的当前状态。
+ * Start-using is a jump that changes the active Family selection and must gate on the post-claim Provider View.
+ * The claim response alone does not suffice: if the provider refresh failed or the model is not in the Registry
+ * yet, writing the selection directly would mint a broken active state.
  */
 export function resolveManualClaimPlanStartUsingTarget(
   view: ProviderSettingsView | null | undefined,

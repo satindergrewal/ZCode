@@ -17,15 +17,15 @@ export function getTurnTools(runtime: AgentRuntimeInternal, state: RegularTurnLo
 function buildTurnDisallowedTools(state: RegularTurnLoopState): Set<string> | null {
   const tools = new Set(state.toolDisallowlist ?? []);
   if (isAutomationMutationRestrictedTurn(state)) {
-    // 修复原因：定时任务执行轮只应运行任务 prompt，不能反过来管理自己的定义。
-    // 保留 CronList 供只读查询；所有 mutation 在 provider 请求边界统一隐藏。
+    // Why: a scheduled-task execution turn runs only the task prompt; it must not manage its own definition.
+    // CronList stays for reads; mutations hide at the provider boundary.
     for (const toolName of AUTOMATION_MUTATION_TOOL_NAMES) {
       tools.add(toolName);
     }
   }
   if (isOffPeakCreateRestrictedTurn(state)) {
-    // D49：闲时执行轮禁止再创建闲时任务（免费池自我放大）；OffPeakList 只读保留。
-    // 注意 automation 执行轮不进此分支——cron turn 按 D49-3 放行 OffPeakCreate。
+    // D49: idle execution turns may not create idle tasks (free-pool self-amplification); OffPeakList stays read-only.
+    // Note automation execution turns do not enter this branch — cron turns allow OffPeakCreate per D49-3.
     for (const toolName of OFF_PEAK_MUTATION_TOOL_NAMES) {
       tools.add(toolName);
     }

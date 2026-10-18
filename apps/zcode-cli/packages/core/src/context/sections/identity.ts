@@ -15,8 +15,8 @@ export function buildSecurityNotice(): string {
 }
 
 /**
-  * The `# Harness` block: stable runtime constraints, not part of the output-style-replaceable coding instructions,
-  * and also the block reused verbatim by the workflow-subagent identity (sections/workflow-actor.ts).
+ * The `# Harness` block: stable runtime constraints, not part of the output-style-replaceable coding instructions,
+ * and also the block reused verbatim by the workflow-subagent identity (sections/workflow-actor.ts).
  */
 export function buildHarnessBlock(): string {
   return [

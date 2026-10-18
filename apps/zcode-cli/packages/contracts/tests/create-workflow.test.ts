@@ -98,9 +98,9 @@ describe("CreateWorkflowInputSchema — no predecessor field", () => {
 
   it("rejects resume_from in every spelling", () => {
     for (const key of ["resume_from", "resumeFrom", "run_id"]) {
-      expect(CreateWorkflowInputSchema.safeParse({ script: SCRIPT, [key]: "dwfrun-prev" }).success).toBe(
-        false,
-      );
+      expect(
+        CreateWorkflowInputSchema.safeParse({ script: SCRIPT, [key]: "dwfrun-prev" }).success,
+      ).toBe(false);
     }
   });
 
@@ -747,11 +747,7 @@ describe("createWorkflowPhaseNames — the declared phase table for run-launched
         lanes: [],
         participants: [],
         handoffs: [],
-        phases: [
-          { id: "p1", name: "Research" },
-          { id: "unphased" },
-          { id: "p2", name: "Write" },
-        ],
+        phases: [{ id: "p1", name: "Research" }, { id: "unphased" }, { id: "p2", name: "Write" }],
       }),
     ).toEqual(["Research", "Write"]);
   });

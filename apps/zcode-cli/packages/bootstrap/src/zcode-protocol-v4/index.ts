@@ -1,5 +1,5 @@
-// ZCode Protocol v4 —— CLI 权威投影（M2）。
-// schema/纯函数在 @zcode/shared/zcode-protocol-v4；本目录是事件日志 → 投影的 reducer 宿主。
+// ZCode Protocol v4 — the CLI's authoritative projection (M2).
+// schema/pure functions in @zcode/shared/zcode-protocol-v4; this directory hosts the event-log -> projection reducers.
 export { ProductProjection } from "./product-projection.js";
 export type { SessionConfigSeed } from "./product-projection.js";
 export { normalizeConversationEvent } from "./event-normalizer.js";
@@ -59,10 +59,7 @@ export {
   ColdSessionResumeCoordinator,
   V4SubscribeSessionUnavailableError,
 } from "./cold-session-resume.js";
-export type {
-  ColdSessionResumeHost,
-  ColdSessionResumeOutcome,
-} from "./cold-session-resume.js";
+export type { ColdSessionResumeHost, ColdSessionResumeOutcome } from "./cold-session-resume.js";
 export {
   ConversationV4Gateway,
   V4CommandNoopError,

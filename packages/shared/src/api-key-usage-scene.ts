@@ -1,4 +1,4 @@
-/** Key 的创建用途；独立于 keyType，不包含仅供存量映射/缓存哨兵的 3 和 -1。 */
+/** What the key was created for; independent of keyType. Excludes 3 and -1, which serve only as legacy-mapping/cache sentinels. */
 export const API_KEY_USAGE_SCENE = {
   CODING_PLAN: 1,
   STANDARD: 2,

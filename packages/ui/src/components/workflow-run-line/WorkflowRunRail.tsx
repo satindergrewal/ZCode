@@ -1,6 +1,7 @@
-// 工作流运行的迷你轨道（docs/dynamic-workflow/presentation.md「The sidebar run line」）：6px 灯按
-// 声明序排开，之间是 6×1px 的轨段——控制流走过的段用强色，并行的两站之间画双线段；超过六站时折到
-// 运行站 ±2 并带「+n」尾。侧栏运行行与任务岛的 run 行共用这一个组件：一条 run 在两处长得一样。
+// The workflow run's mini rail (docs/dynamic-workflow/presentation.md The sidebar run line): 6px lamps in
+// declaration order joined by 6x1px segments. Walked segments use the strong color, parallel sites get a
+// double-line segment; past six sites it folds to running+-1 with a +n tail. Shared by the sidebar run line and
+// the task-island run row: one run, one face in both places.
 import { cn } from "@/components/lib/utils.js";
 import { STATUS_DOT } from "@/components/workflow-graph/run-status-presentation.js";
 import type { WorkflowRunRail as WorkflowRunRailModel } from "@/lib/workflowRunLine.js";
@@ -36,8 +37,9 @@ export function WorkflowRunRail({
         <span key={`${station.name}:${index}`} className="flex items-center">
           {index > 0 ? (
             station.twin === true ? (
-              // 双线段：本站与前一站并行，控制流没有从那站走到这站。两条 1px 线相距 2px
-              // （容器 4px，上下各贴一条），宽度与墨色规则与普通段完全相同。
+              // Double-line segment: this site runs parallel to the previous one, control flow did not walk there
+              // to here. Two 1px lines 2px apart (4px container, one at each edge); width and ink rules identical
+              // to plain segments.
               <span
                 aria-hidden="true"
                 data-rail-segment={station.reached ? "strong" : "faint"}
@@ -70,8 +72,8 @@ export function WorkflowRunRail({
               className={cn("size-1.5 rounded-full", STATUS_DOT[station.status])}
             />
           ) : (
-            // 留白（docs/dynamic-workflow/presentation.md「Holes on the timeline」的「The sidebar」）：
-            // 虚线 6px 灯，等待时警示色。补全后它就是普通站，这一支不再走。
+            // Hole (docs/dynamic-workflow/presentation.md Holes on the timeline, The sidebar): dashed 6px lamp,
+            // warning color while waiting. Once filled it is a plain site and this branch is gone.
             <span
               aria-hidden="true"
               data-rail-station={station.status}

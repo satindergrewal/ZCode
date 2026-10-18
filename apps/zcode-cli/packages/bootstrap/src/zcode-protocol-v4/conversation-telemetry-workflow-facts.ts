@@ -42,7 +42,7 @@ export function workflowLifecycleFactFromProgress(
       ...base,
       kind: "workflow.lifecycle",
       phase: "actor-spawned",
-            // The anchor is the sourceCommandId: the subagent step hangs under the message of the turn that started the run.
+      // The anchor is the sourceCommandId: the subagent step hangs under the message of the turn that started the run.
       sourceCommandId: launchInputId,
       runId: progress.runId,
       ...(toolCallId === undefined ? {} : { toolCallId }),
@@ -56,8 +56,8 @@ export function workflowLifecycleFactFromProgress(
     if (status === undefined) return null;
     const stopReason =
       status === "stopped" ? settledStopReason(progress.payload.stopReason) : undefined;
-        // Error text mirrors the engine event: errored always carries error; stopped carries it only for provider / interrupted;
-        // user / model stops have none, so a fixed string plus the reason keeps the dashboard able to tell who stopped it.
+    // Error text mirrors the engine event: errored always carries error; stopped carries it only for provider / interrupted;
+    // user / model stops have none, so a fixed string plus the reason keeps the dashboard able to tell who stopped it.
     const engineMessage = optionalString(errorRecord(progress.payload.error)?.message);
     const errorMessage =
       status === "completed"

@@ -228,9 +228,9 @@ export function getLegacyDeletedTaskSessionSnapshotPath(
 }
 
 /**
- * GLM（唯一 agent provider）的配置目录：~/.zcode/cli。
- * Bugfix：GLM 配置改为直接读写新版 zcode-cli 的全局配置目录，不做 workspace 隔离，
- * 避免同机不同工作区配置漂移。
+ * GLM (the sole agent provider) config dir: ~/.zcode/cli.
+ * Bugfix: GLM config now reads/writes the new zcode-cli global dir with no workspace isolation,
+ * avoiding per-workspace config drift on one machine.
  */
 export function getProviderWorkspaceConfigDir(): string {
   return ZCODE_AGENT_RUNTIME.nativeConfigDir

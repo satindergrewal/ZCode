@@ -1,14 +1,19 @@
 /**
- * JournalStorePort 契约套件：写一次、跑多次。阶段一对内存实现运行，阶段二对 SQLite 实现复用。
- * 以工厂 `() => JournalStorePort` 注入被测实现，覆盖 run/actor/node/event 的写入-读取语义与隔离性。
+ * The JournalStorePort contract suite: write once, run many times. Stage one runs it against the
+ * in-memory implementation, stage two reuses it against the SQLite implementation. The
+ * implementation under test is injected as a `() => JournalStorePort` factory; coverage spans the
+ * write/read semantics and isolation of runs / actors / nodes / events.
  *
- * 之所以住在 src/（而非 tests/）：SQLite 实现在 @zcode/adapters 里，需要经
- * `@zcode/dynamic-workflow/testing` 子路径导入同一份套件。vitest 仍是 devDependency——
- * 本文件只在消费方的测试进程里执行，不进入任何运行时路径。
+ * Why it lives in src/ (not tests/): the SQLite implementation is in @zcode/adapters and must
+ * import this same suite via the `@zcode/dynamic-workflow/testing` subpath. vitest remains a
+ * devDependency — this file runs only inside the consumer's test process, never on a runtime
+ * path.
  *
- * 用例按主题分住兄弟模块（journal-contract-runs / -script / -nodes / -artifacts / -events / -isolation / -reads.ts，
- * 共用夹具在 journal-contract-helpers.ts；拆分原因：oxlint max-lines 上限 400 行）。本文件只保留
- * 入口：同一个 describe 里按拆分前的顺序依次登记各组用例，套件的分组与顺序逐字不变。
+ * The cases live in per-topic sibling modules (journal-contract-runs / -script / -nodes /
+ * -artifacts / -events / -isolation / -reads.ts, shared fixtures in journal-contract-helpers.ts;
+ * split reason: the oxlint max-lines cap of 400 lines). This file keeps only the entry point: the
+ * same describe registers each group in the pre-split order, so the suite's grouping and order
+ * stay verbatim-identical.
  */
 
 import { describe } from "vitest";

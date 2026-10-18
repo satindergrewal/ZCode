@@ -1,8 +1,8 @@
 /* oxlint-disable eslint(max-lines) */
 /**
- * WelcomeScreen —— OAuth / API Key 登录入口
+ * WelcomeScreen: OAuth / API key sign-in.
  *
- * 通过 useOAuth hook 驱动 OAuth 流程。
+ * OAuth flow driven by the useOAuth hook.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Loader2Icon, LoaderIcon, TriangleAlertIcon } from "lucide-react";
@@ -47,7 +47,7 @@ export function WelcomeScreen({ mode, onComplete }: WelcomeScreenProps) {
   return (
     <main className="relative flex h-full min-h-dvh items-center justify-center overflow-hidden bg-background px-4 py-6 text-foreground sm:px-6">
       <ThemeHeroVisual className="absolute inset-0" />
-      {/* 原生拖拽命中不受 pointer-events/z-index 约束；拖拽层必须避开窗控，且先于 no-drag 区声明。 */}
+      {/* Native drag hit-testing ignores pointer-events/z-index; the drag layer avoids window controls and declares before no-drag areas. */}
       <div className="pointer-events-none absolute left-0 top-0 right-0 z-10 flex h-12 items-center [app-region:drag] platform-windows-desktop:right-[134px] platform-linux-desktop:right-[134px]" />
       <DesktopOverlayWindowControls />
       <section className="relative z-10 w-full flex flex-col gap-10 max-w-sm rounded-2xl border border-popover-border bg-background p-8 text-ui-base/relaxed shadow-md sm:p-10">
@@ -130,11 +130,11 @@ export function LoginPanel({ mode, active, onComplete }: LoginPanelProps) {
     ) => {
       const activeAttempt = activeLoginEntryAttemptRef.current;
       if (activeAttempt && activeAttempt.id !== loginEntryAttemptId) {
-        // 用户在统一登录页开始另一条登录流程时，旧购买意图不能继续等待。
+        // A new login flow must not leave the previous purchase intent waiting.
         finishActiveLoginEntryAttempt("cancelled");
       }
-      // 上一次失败遗留的 store oauthError 若不清掉，新流程进入等待态后
-      // 失败提示会和等待提示同屏（如失败后关闭登录入口，再从设置页自动续接登录）。
+      // A stale oauthError shows failure and waiting copy together once the
+      // new flow waits (fail, close, then auto-resume from settings).
       setOAuthError(null);
       if (loginEntryAttemptId !== undefined) {
         activeLoginEntryAttemptRef.current = {
@@ -176,9 +176,9 @@ export function LoginPanel({ mode, active, onComplete }: LoginPanelProps) {
 
     consumedLoginRequestRef.current = loginEntryRequest.id;
     clearLoginEntryRequest(loginEntryRequest.id);
-    // Model Provider 的登录/连接入口以前绕过统一登录入口直接发起 OAuth，
-    // 导致用户看不到统一的等待、取消和错误状态。这里在 WelcomeScreen 打开后自动启动指定 provider，
-    // 复用登录入口的 loading 流程，同时用 request id 防止 React 严格模式下重复发起。
+    // Provider entries used to bypass this page and fire OAuth directly, hiding
+    // waiting/cancel/error states. On open, auto-start the requested provider through
+    // the shared loading flow, with a request id guarding strict-mode double fires.
     void startTrackedLogin(
       loginEntryRequest.providerId,
       {
@@ -188,12 +188,12 @@ export function LoginPanel({ mode, active, onComplete }: LoginPanelProps) {
     );
   }, [active, clearLoginEntryRequest, loginEntryRequest, startTrackedLogin]);
 
-  // Root 层 OAuth 回调失败时写入 Zustand oauthError，统一登录入口负责显示错误。
+  // Root writes oauthError on callback failure; this page renders it.
   useEffect(() => {
     if (oauthError && active) {
       finishActiveLoginEntryAttempt("failed");
-      reset(); // 重置 useOAuth 的 waiting 状态
-      // oauthError 已在 store 中，下方 UI 会读取并显示
+      reset(); // reset the useOAuth waiting state
+      // oauthError is already in the store; the UI below renders it.
     }
   }, [active, finishActiveLoginEntryAttempt, oauthError, reset]);
 
@@ -203,7 +203,7 @@ export function LoginPanel({ mode, active, onComplete }: LoginPanelProps) {
     }
   }, [active, finishActiveLoginEntryAttempt, status]);
 
-  // OAuth 回调成功后 Root 层设置 user，统一登录入口自动关闭。
+  // Root sets user on OAuth success; the page closes itself.
   useEffect(() => {
     if (
       active &&
@@ -212,8 +212,8 @@ export function LoginPanel({ mode, active, onComplete }: LoginPanelProps) {
         attempt: activeLoginEntryAttemptRef.current,
       })
     ) {
-      // 全局 user 可能来自另一个 Provider，不能把刚发起的购买登录
-      // 误判为成功；Provider-specific attempt 只由匹配的 OAuth success 完成。
+      // A global user may come from another provider; never read a fresh purchase login
+      // as success; only the matching provider attempt completes it.
       reset();
       setOAuthError(null);
       void onComplete("oauth");
@@ -239,8 +239,8 @@ export function LoginPanel({ mode, active, onComplete }: LoginPanelProps) {
         successProvider: lastOAuthSuccessProvider,
       })
     ) {
-      // provider connection 复用同一个登录入口视觉流程，
-      // 但成功后不会写 App user；这里用 Root 的成功信号关闭登录入口，保持用户交互不变。
+      // Provider connection reuses the login visuals but never writes the App user;
+      // close on Root's success signal, UX unchanged.
       finishActiveLoginEntryAttempt("succeeded");
       reset();
       setOAuthError(null);
@@ -302,9 +302,9 @@ export function LoginPanel({ mode, active, onComplete }: LoginPanelProps) {
       </LoginPanelHeader>
 
       <div className="space-y-6">
-        {/* Bugfix: Root 层写入 oauthError（轮询/回调失败）后 effect 会把 useOAuth reset 回 idle，
-            若只判断 status==="idle" 会让失败块和渠道按钮列表同屏、状态纠缠。
-            失败期间统一由下方失败块接管（重新登录/取消），渠道列表等错误清掉后再回来。 */}
+        {/* Bugfix: after Root writes oauthError an effect resets useOAuth to idle; keying on
+            status===idle shows failure and channel list together. While failing, the failure
+            block owns the flow (retry/cancel); channels return once the error clears. */}
         {status === "idle" &&
           !oauthError &&
           loginMode === "providers" &&
@@ -417,8 +417,8 @@ export function LoginPanel({ mode, active, onComplete }: LoginPanelProps) {
               size="lg"
               data-testid={TID_OAUTH_CANCEL}
               onClick={() => {
-                // OAuth 等待态里的“取消”只应取消浏览器授权等待，
-                // 不能关闭整个登录入口，否则用户需要重新从入口打开才能换登录方式。
+                // Cancel inside the OAuth wait aborts the browser grant only,
+                // not the page; closing it all forces a full reopen to switch methods.
                 finishActiveLoginEntryAttempt("cancelled");
                 void cancel(pendingProvider ?? undefined);
               }}
@@ -437,8 +437,8 @@ export function LoginPanel({ mode, active, onComplete }: LoginPanelProps) {
             >
               <TriangleAlertIcon className="size-4" />
               <AlertDescription className="text-center">
-                {/* Bugfix: 登录失败通常是可重试/可切换提供方的状态，不能用 destructive 红色误导为破坏性错误。
-                    这里统一用 warning 语义，并居中文案以匹配登录面板的居中视觉节奏。 */}
+                {/* Bugfix: login failure is retryable/switchable, not destructive; warning
+                    semantics, centered to match the panel's rhythm. */}
                 {oauthError || error}
               </AlertDescription>
             </Alert>
@@ -454,9 +454,9 @@ export function LoginPanel({ mode, active, onComplete }: LoginPanelProps) {
                 if (!retryProvider) {
                   return;
                 }
-                // OAuth 回调失败会触发 reset()，它会清空 pendingProvider。
-                // 重新登录必须沿用刚才失败的渠道，不能因为 providers[0] 的原始顺序退回 BigModel。
-                // store 残留错误由 startTrackedLogin 发起前统一清理。
+                // OAuth callback failure fires reset(), clearing pendingProvider.
+                // Retry reuses the failed channel, never the providers[0] order (BigModel).
+                // startTrackedLogin clears residual store error before firing.
                 void startTrackedLogin(retryProvider);
               }}
             >
@@ -468,9 +468,9 @@ export function LoginPanel({ mode, active, onComplete }: LoginPanelProps) {
               size="lg"
               data-testid={TID_OAUTH_CANCEL}
               onClick={() => {
-                // 失败态不能只有「重新登录」沿原渠道重试：想换渠道只能关闭
-                // 登录入口重开，容易在同一条失败链路上反复失败。这里对齐等待态取消的
-                // 语义：结束本次失败流程回到渠道列表，登录入口不关闭。
+                // Failure offers more than same-channel retry; switching meant close+reopen,
+                // a loop on one failing path. Waiting-cancel semantics: end this failed
+                // attempt, return to the channel list, page stays open.
                 finishActiveLoginEntryAttempt("cancelled");
                 setOAuthError(null);
                 void cancel(pendingProvider ?? undefined);
@@ -508,7 +508,7 @@ function LoginPanelHeader({
 
 function LoginPanelLogo() {
   return (
-    // 登录 logo 壳是固定深色底，边框不能跟随浅色主题 token，否则浅色主题下边框过重。
+    // The logo shell is fixed-dark; theme borders weigh too heavy in light mode.
     <div
       className="relative mb-1 flex size-16 items-center justify-center rounded-2xl bg-[linear-gradient(180deg,#000000_0%,#151718_100%)] text-[#ffffff] shadow-lg/20 before:pointer-events-none before:absolute before:inset-0 before:rounded-2xl before:border before:border-[rgba(255,255,255,0.1)]"
       aria-label="ZCode"
@@ -558,9 +558,9 @@ function LoginOAuthRegionTag({ providerId }: { providerId: string }) {
 
 function getProviderPriority(provider: OAuthProviderMeta): number {
   switch (provider.id) {
-    // Windows 登录入口里 z.ai 入口需要固定排在最上面，
-    // 之前把 BigModel 设成更高优先级后，用户首屏会先看到次要入口。
-    // 这里直接调整排序权重，只改展示顺序，不影响 OAuth provider 的真实配置来源。
+    // Windows: the z.ai entry stays topmost.
+    // An older BigModel priority pushed a secondary entry first.
+    // Display order only; provider config untouched.
     case ZAI_PROVIDER_ID:
       return 0;
     case BIGMODEL_PROVIDER_ID:
@@ -571,8 +571,8 @@ function getProviderPriority(provider: OAuthProviderMeta): number {
 }
 
 export function resolveVisibleLoginProviders(providers: OAuthProviderMeta[]): OAuthProviderMeta[] {
-  // Bugfix: ZAI / BigModel 现在共享 App 登录事实源，未登录时登录入口必须同时展示两个入口。
-  // 旧逻辑曾临时隐藏 BigModel，导致用户无法主动选择 BigModel 作为 active provider。
+  // Bugfix: ZAI/BigModel share one App-login truth; signed-out shows both entries.
+  // The old temporary hide blocked choosing BigModel as the active provider.
   return [...providers].sort((left, right) => {
     return getProviderPriority(left) - getProviderPriority(right);
   });

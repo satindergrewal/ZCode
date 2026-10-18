@@ -10,20 +10,20 @@ import {
 const ev = (type: SessionEventType, turnId?: string) => ({ type, turnId });
 
 describe("session event retention policy", () => {
-  it("RET-001 turn-window：turn 结束只 seal，下一 turn 开始才淘汰上一 turn", () => {
+  it("RET-001 turn-window: turn end only seals; the next turn's start evicts the previous", () => {
     const policy = createSessionEventRetentionPolicy("turn-window");
     expect(policy.onAppend(ev(SessionEventType.TurnStarted, "t1"), 0)).toEqual([]);
     expect(policy.onAppend(ev(SessionEventType.ModelStreaming, "t1"), 0)).toEqual([]);
     expect(policy.onAppend(ev(SessionEventType.ModelComplete, "t1"), 0)).toEqual([]);
     expect(policy.onAppend(ev(SessionEventType.TurnComplete, "t1"), 0)).toEqual([]);
-    // 仍在滞后窗口内：不淘汰。
+    // Still inside the lag window: no eviction.
     expect(policy.onAppend(ev(SessionEventType.SessionTitleUpdated, "t1"), 0)).toEqual([]);
     expect(policy.onAppend(ev(SessionEventType.TurnStarted, "t2"), 0)).toEqual(["t1"]);
     expect(policy.onAppend(ev(SessionEventType.TurnError, "t2"), 0)).toEqual([]);
     expect(policy.onAppend(ev(SessionEventType.TurnStarted, "t3"), 0)).toEqual(["t2"]);
   });
 
-  it("RET-001 多个已结束 turn 一起淘汰；rewind 不触发淘汰；无 turnId 的事件不参与", () => {
+  it("RET-001 several ended turns evicted together; rewind triggers none; turnId-less events untouched", () => {
     const policy = createSessionEventRetentionPolicy("turn-window");
     policy.onAppend(ev(SessionEventType.TurnStarted, "t1"), 0);
     policy.onAppend(ev(SessionEventType.TurnComplete, "t1"), 0);
@@ -34,14 +34,14 @@ describe("session event retention policy", () => {
     expect(policy.onAppend(ev(SessionEventType.TurnStarted, "t3"), 0)).toEqual(["t2"]);
   });
 
-  it("unbounded 永不淘汰", () => {
+  it("unbounded never evicts", () => {
     const policy = createSessionEventRetentionPolicy("unbounded");
     policy.onAppend(ev(SessionEventType.TurnStarted, "t1"), 0);
     policy.onAppend(ev(SessionEventType.TurnComplete, "t1"), 0);
     expect(policy.onAppend(ev(SessionEventType.TurnStarted, "t2"), 0)).toEqual([]);
   });
 
-  it("瞬态集合是与消息流同频的四类事件，且 reducer 不消费它们", () => {
+  it("the transient set is the four message-frequency kinds, unconsumed by the reducer", () => {
     expect([...TRANSIENT_SESSION_EVENT_TYPES].sort()).toEqual(
       [
         SessionEventType.ModelStreaming,
@@ -55,19 +55,19 @@ describe("session event retention policy", () => {
   });
 });
 
-describe("session event retention policy · 时间兜底", () => {
-  it("RET-008 sealed turn 超过 grace 且没有后继 turn 时由 collectExpired 交出；一次性 subagent 子 session 场景", () => {
+describe("session event retention policy: time backstop", () => {
+  it("RET-008 sealed turn past grace with no successor handed out by collectExpired; one-shot subagent child session case", () => {
     const policy = createSessionEventRetentionPolicy("turn-window");
     policy.onAppend(ev(SessionEventType.TurnStarted, "child"), 0);
     policy.onAppend(ev(SessionEventType.ModelStreaming, "child"), 1_000);
     policy.onAppend(ev(SessionEventType.TurnComplete, "child"), 10_000);
     expect(policy.collectExpired(60_000, 120_000)).toEqual([]);
     expect(policy.collectExpired(130_000, 120_000)).toEqual(["child"]);
-    // 交出后不再重复交出。
+    // Handed out once, never again.
     expect(policy.collectExpired(200_000, 120_000)).toEqual([]);
   });
 
-  it("RET-008 后继 turn 先到时按 turn 窗口淘汰，时间兜底不再重复", () => {
+  it("RET-008 with a successor turn present, turn-window eviction applies and the backstop does not repeat it", () => {
     const policy = createSessionEventRetentionPolicy("turn-window");
     policy.onAppend(ev(SessionEventType.TurnStarted, "t1"), 0);
     policy.onAppend(ev(SessionEventType.TurnComplete, "t1"), 5_000);
@@ -75,7 +75,7 @@ describe("session event retention policy · 时间兜底", () => {
     expect(policy.collectExpired(500_000, 120_000)).toEqual([]);
   });
 
-  it("unbounded 的时间兜底恒为空", () => {
+  it("unbounded time backstop is always empty", () => {
     const policy = createSessionEventRetentionPolicy("unbounded");
     policy.onAppend(ev(SessionEventType.TurnStarted, "t1"), 0);
     policy.onAppend(ev(SessionEventType.TurnComplete, "t1"), 1);

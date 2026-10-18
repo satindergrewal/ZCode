@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 已安装插件列表与详情弹窗共享组件分组/Hook 明细渲染，集中维护更利于与参考图保持一致。 */
+/* eslint-disable max-lines -- the installed list and detail dialog share component grouping/hook-detail rendering; one file tracks the reference. */
 import type { ReactNode } from "react";
 import { AlertTriangle, Cable, ChevronRight, Trash2 } from "lucide-react";
 import type {
@@ -40,7 +40,7 @@ export function InstalledPluginDetailDialog({
   uninstallable,
   updateStatus,
 }: {
-  /** 插件管理 store 聚合的 list/overview 诊断；透传给面板展示当前插件自身的 warning。 */
+  /** list/overview diagnostics aggregated by the plugin store; passed through so the panel can show this plugin's own warnings. */
   diagnostics?: ZCodePluginDiagnostic[];
   getPluginOptionValue: PluginOptionValueGetter;
   configScope: ZCodePluginScope;
@@ -103,7 +103,7 @@ export function InstalledPluginDetailPanel({
   uninstallable,
   updateStatus,
 }: {
-  /** 插件管理 store 聚合的 list/overview 诊断；面板只展示当前插件自身的 warning。 */
+  /** list/overview diagnostics aggregated by the plugin store; the panel shows only this plugin's own warnings. */
   diagnostics?: ZCodePluginDiagnostic[];
   getPluginOptionValue: PluginOptionValueGetter;
   configScope: ZCodePluginScope;
@@ -130,9 +130,9 @@ export function InstalledPluginDetailPanel({
 
   const componentGroups = buildInstalledPluginDisplayGroups(plugin);
   const hookDetails = plugin.hookDetails ?? [];
-  // Bugfix（静默失败）：插件 warning 诊断（如声明的技能路径扫描为空）此前在 UI 无任何
-  // 渲染位置，用户看到「安装成功、启用生效、技能数 0」却无从排查。这里在详情面板
-  // 直接列出该插件自身的 warning；正文直出 CLI 下发的 message（含具体路径）。
+  // Bugfix (silent failure): plugin warning diagnostics (e.g. empty declared-skill scan) had no
+  // render location, leaving users with installed-enabled-zero-skills and no lead. The detail panel
+  // now lists the plugin's own warnings, verbatim from the CLI message (paths included).
   const pluginWarnings = diagnostics.filter(
     (diagnostic) => diagnostic.pluginId === plugin.id && diagnostic.severity === "warning",
   );
@@ -184,8 +184,8 @@ export function InstalledPluginDetailPanel({
           {componentGroups.length > 0 ? (
             <PluginComponentGroups groups={componentGroups} />
           ) : (
-            // components 由 CLI 对插件根目录权威枚举得出（与启用态无关），停用插件也能展示真实组件。
-            // 走到这里说明该插件确实未声明任何组件，给出诚实空态即可。
+            // components comes from the CLI's authoritative scan of the plugin root (enable-state independent), so disabled plugins show real components.
+            // Reaching here means the plugin declares no components at all; show an honest empty state.
             <p className="text-ui-base text-foreground-subtle">
               {intl.formatMessage({
                 id: "settings.plugins.detail.componentsEmpty",
@@ -195,9 +195,7 @@ export function InstalledPluginDetailPanel({
         </DetailSection>
 
         {pluginWarnings.length > 0 ? (
-          <DetailSection
-            title={intl.formatMessage({ id: "settings.plugins.detail.warnings" })}
-          >
+          <DetailSection title={intl.formatMessage({ id: "settings.plugins.detail.warnings" })}>
             <PluginWarningList warnings={pluginWarnings} />
           </DetailSection>
         ) : null}
@@ -304,9 +302,9 @@ function DetailSection({ title, children }: { title: string; children: ReactNode
 }
 
 /**
- * 插件 warning 诊断列表。CLI 对「声明的技能路径扫描为空」等异常
- * 只写 diagnostics 的话 UI 无渲染位置，用户无从排查。message 由 CLI 下发并包含
- * 具体路径（协议 wire 不携带 path 字段），因此正文直出 message 即可。
+ * Plugin warning diagnostics. For cases such as empty declared-skill scans the CLI
+ * only writes diagnostics; without a render location users cannot troubleshoot. The message comes from the CLI and carries
+ * the exact path (the wire has no path field), so render it verbatim.
  */
 export function PluginWarningList({ warnings }: { warnings: ZCodePluginDiagnostic[] }) {
   return (
@@ -317,9 +315,7 @@ export function PluginWarningList({ warnings }: { warnings: ZCodePluginDiagnosti
           className="flex min-w-0 items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2"
         >
           <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-warning" aria-hidden="true" />
-          <span className="min-w-0 break-all text-ui-sm text-foreground">
-            {diagnostic.message}
-          </span>
+          <span className="min-w-0 break-all text-ui-sm text-foreground">{diagnostic.message}</span>
         </li>
       ))}
     </ul>

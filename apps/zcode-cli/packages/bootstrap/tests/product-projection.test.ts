@@ -245,13 +245,19 @@ describe("ProductProjection 黄金测试（L1）", () => {
     );
     log.push(
       SessionEventType.TurnComplete,
-      { response: "done", tokenCount: 20, toolCallCount: 1, duration: 3_000, resultType: "success" },
+      {
+        response: "done",
+        tokenCount: 20,
+        toolCallCount: 1,
+        duration: 3_000,
+        resultType: "success",
+      },
       { turnId, timestampMs: 1_700_000_003_000 },
     );
 
-    const header = runAll(log.events).projection.getSnapshot().rows.window.find(
-      (row) => row.kind === "turnHeader",
-    );
+    const header = runAll(log.events)
+      .projection.getSnapshot()
+      .rows.window.find((row) => row.kind === "turnHeader");
     expect(header).toMatchObject({
       activeMs: 3_000,
       modelDurationMs: 400,
@@ -600,28 +606,65 @@ describe("ProductProjection 黄金测试（L1）", () => {
 
   it("preserves topic originals and attachment ownership when replaying accepted turn events", () => {
     const source = {
-      provider: "feishu", botId: "bot", chatId: "group", threadId: "topic",
-      senderId: "b", senderName: "Bob", messageId: "second",
+      provider: "feishu",
+      botId: "bot",
+      chatId: "group",
+      threadId: "topic",
+      senderId: "b",
+      senderName: "Bob",
+      messageId: "second",
       messages: [
-        { messageId: "first", senderId: "a", senderName: "Alice", text: "First", attachmentIndexes: [0], conversationQuotes: [{ text: "Root", senderName: "Root author" }] },
-        { messageId: "second", senderId: "b", senderName: "Bob", text: "Second", attachmentIndexes: [1] },
+        {
+          messageId: "first",
+          senderId: "a",
+          senderName: "Alice",
+          text: "First",
+          attachmentIndexes: [0],
+          conversationQuotes: [{ text: "Root", senderName: "Root author" }],
+        },
+        {
+          messageId: "second",
+          senderId: "b",
+          senderName: "Bob",
+          text: "Second",
+          attachmentIndexes: [1],
+        },
       ],
     };
     const log = new EventLog();
     log.push(SessionEventType.SessionCreated, { mode: "default", contextWindow: 200_000 });
-    log.push(SessionEventType.TurnStarted, {
-      turnNumber: 1, input: "combined", messageId: "accepted", inputId: "command",
-      intent: {
-        sourceCommandId: "command", kind: "sendText", text: "combined", admissionSeq: 1, admittedAt: 10,
-        requestedDelivery: "startNow", admittedDelivery: "startNow", botGroupSource: source,
-        attachmentRefs: [{ ref: "artifact://first", fileName: "first.txt", mime: "text/plain", bytes: 1 },
-          { ref: "artifact://second", fileName: "second.txt", mime: "text/plain", bytes: 1 }],
+    log.push(
+      SessionEventType.TurnStarted,
+      {
+        turnNumber: 1,
+        input: "combined",
+        messageId: "accepted",
+        inputId: "command",
+        intent: {
+          sourceCommandId: "command",
+          kind: "sendText",
+          text: "combined",
+          admissionSeq: 1,
+          admittedAt: 10,
+          requestedDelivery: "startNow",
+          admittedDelivery: "startNow",
+          botGroupSource: source,
+          attachmentRefs: [
+            { ref: "artifact://first", fileName: "first.txt", mime: "text/plain", bytes: 1 },
+            { ref: "artifact://second", fileName: "second.txt", mime: "text/plain", bytes: 1 },
+          ],
+        },
       },
-    }, { turnId: "topic-turn" });
-    const restored = log.events.map((event) => ({ ...event, payload: JSON.parse(JSON.stringify(event.payload)) }));
+      { turnId: "topic-turn" },
+    );
+    const restored = log.events.map((event) => ({
+      ...event,
+      payload: JSON.parse(JSON.stringify(event.payload)),
+    }));
     const snapshot = conversationSnapshotSchema.parse(runAll(restored).projection.getSnapshot());
     expect(snapshot.rows.window.find((row) => row.kind === "userInput")).toMatchObject({
-      botGroupSource: source, attachments: [{ ref: "artifact://first" }, { ref: "artifact://second" }],
+      botGroupSource: source,
+      attachments: [{ ref: "artifact://first" }, { ref: "artifact://second" }],
     });
   });
 

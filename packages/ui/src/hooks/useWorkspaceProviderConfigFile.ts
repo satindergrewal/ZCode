@@ -52,9 +52,9 @@ export function resolveWorkspaceProviderConfigZCodeService(params: {
     return params.baseZCodeService;
   }
 
-  // Bugfix: 远程 workspace 下如果误回退到 workspaceZCodeService，
-  // “前往配置”会读到远端绝对路径（如 /root/...），本机无法正确打开。
-  // 这里在远程会话里严格要求 baseZCodeService，就绪前先等待，不再冒险走错误 fallback。
+  // Bugfix: falling back to workspaceZCodeService on remote workspaces
+  // yields remote absolute paths (/root/...) the local machine cannot open.
+  // Remote sessions require baseZCodeService and wait until ready; no risky fallback.
   if (params.remoteSessionId) {
     return null;
   }
@@ -63,9 +63,9 @@ export function resolveWorkspaceProviderConfigZCodeService(params: {
 }
 
 /**
- * 读取当前 workspace + provider 的主配置文件路径。
+ * Reads the main config path for the active workspace + provider.
  *
- * 统一通过 zcodeTaskService 获取路径规则，避免 UI 层拼接 provider 配置路径。
+ * Path rules come from zcodeTaskService; the UI never assembles provider paths.
  */
 export function useWorkspaceProviderConfigFile(
   workspacePath: string,
@@ -108,8 +108,7 @@ export function useWorkspaceProviderConfigFile(
       : remoteSessionId && workspaceZCodeService !== baseZCodeService
         ? "remote"
         : "base";
-  const [state, setState] =
-    useState<WorkspaceProviderConfigFileState>(INITIAL_STATE);
+  const [state, setState] = useState<WorkspaceProviderConfigFileState>(INITIAL_STATE);
   const [refreshVersion, setRefreshVersion] = useState(0);
   const requestVersionRef = useRef(0);
 
@@ -122,8 +121,8 @@ export function useWorkspaceProviderConfigFile(
 
     if (!workspacePath || !enabled || !workspaceRpcEnabled) {
       requestVersionRef.current += 1;
-      // Bugfix: 恢复断连远端 workspace 时，provider 配置路径读取不能抢在 remote session
-      // 绑定前访问断连代理，否则会把 ZCODE_REMOTE_WORKSPACE_DISCONNECTED 记录成配置读取失败。
+      // Bugfix: while restoring a disconnected remote, path reads must wait for the
+      // session binding; the disconnect proxy would log as a config-read failure.
       setState({
         path: null,
         exists: false,
@@ -151,8 +150,8 @@ export function useWorkspaceProviderConfigFile(
     const requestVersion = requestVersionRef.current + 1;
     requestVersionRef.current = requestVersion;
 
-    // Bugfix: provider 切换时如果保留旧 path，用户会在新请求返回前误点到上一个 provider 的配置文件。
-    // 这里在发起请求时立即清空 path/exists，配合 requestVersion 仅接受最新响应，避免旧结果回写。
+    // Bugfix: keeping the old path across provider switches lets users open the
+    // previous provider's file. Clear path/exists at request time; requestVersion gates latest.
     setState({
       path: null,
       exists: false,
@@ -161,7 +160,7 @@ export function useWorkspaceProviderConfigFile(
     });
 
     logger.info(
-      `[useWorkspaceProviderConfigFile] 开始读取 provider 配置路径 workspace=${workspacePath} provider=${provider} scope=${zcodeServiceScope} session=${remoteSessionId ?? "none"}`,
+      `[useWorkspaceProviderConfigFile] reading provider config path workspace=${workspacePath} provider=${provider} scope=${zcodeServiceScope} session=${remoteSessionId ?? "none"}`,
     );
 
     void zcodeTaskService
@@ -176,7 +175,7 @@ export function useWorkspaceProviderConfigFile(
         }
 
         logger.info(
-          `[useWorkspaceProviderConfigFile] 读取 provider 配置路径成功 workspace=${workspacePath} provider=${provider} scope=${zcodeServiceScope} session=${remoteSessionId ?? "none"} exists=${result.exists} path=${result.path}`,
+          `[useWorkspaceProviderConfigFile] provider config path read workspace=${workspacePath} provider=${provider} scope=${zcodeServiceScope} session=${remoteSessionId ?? "none"} exists=${result.exists} path=${result.path}`,
         );
 
         setState({
@@ -192,7 +191,7 @@ export function useWorkspaceProviderConfigFile(
         }
 
         const message = getErrorMessage(error);
-        logger.warn("[useWorkspaceProviderConfigFile] 读取 provider 配置路径失败", {
+        logger.warn("[useWorkspaceProviderConfigFile] failed to read provider config path", {
           workspacePath,
           provider,
           scope: zcodeServiceScope,
@@ -222,8 +221,8 @@ export function useWorkspaceProviderConfigFile(
     workspaceRpcEnabled,
   ]);
 
-  // Bugfix: provider 配置状态会继续作为 Shell/Header/Menu props 透传。
-  // 字段未变时复用返回对象，避免父级无关重渲让下游 memo 组件误判配置状态变化。
+  // Bugfix: provider config state props flow into Shell/Header/Menu; reuse the result
+  // object when fields match, or parent rerenders read as config changes downstream.
   return useMemo(
     () => ({
       ...state,

@@ -21,7 +21,7 @@ export type CreateModelAdapterOptions = CreateModelAdapterBaseOptions & {
   executionConfig: AiSdkModelExecutionConfig;
 };
 
-// 可复用资源由进程拥有，每个 execution 保留自己的请求状态。
+// Reusable resources are process-owned; each execution keeps its own request state.
 const processRequestSecurityState = createModelRequestSecurityState();
 
 export function createModelAdapter(options: CreateModelAdapterOptions): AiSdkModelAdapter {

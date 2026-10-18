@@ -64,7 +64,7 @@ describe("ProviderConfigResolver", () => {
     [true, false, true, false],
     [true, true, false, false],
   ])(
-    "账号旧 enabled=%s 不再禁用，但 entitled=%s current=%s 仍控制执行资格",
+    "legacy account enabled=%s no longer disables, while entitled=%s current=%s still gate execution",
     (enabled, entitled, current, executable) => {
       const providers = new ProviderConfigMap([
         [
@@ -103,7 +103,7 @@ describe("ProviderConfigResolver", () => {
     },
   );
   it.each(["zai", "bigmodel"] as const)(
-    "%s 所有账号模式忽略旧总禁用，仍尊重模型禁用",
+    "%s account modes ignore the legacy global disable but honor model disables",
     (accountType) => {
       for (const mode of [
         "start-plan",
@@ -148,7 +148,7 @@ describe("ProviderConfigResolver", () => {
     [true, false, true, false],
     [true, true, false, false],
   ] as const)(
-    "Provider enabled=%s、Key=%s、Model=%s 的集中准入",
+    "centralized admission for Provider enabled=%s, key=%s, model=%s",
     (enabled, key, modelEnabled, executable) => {
       const config = createApiKeyProviderConfig({
         apiFormat: "anthropic-messages",
@@ -175,7 +175,7 @@ describe("ProviderConfigResolver", () => {
       expect(result.registryProviders.length > 0).toBe(executable);
     },
   );
-  it("同 endpoint 下 Start 动态成员不串入 Individual/API，同名成员仍按 Provider 隔离", () => {
+  it("keeps Start dynamic members out of Individual/API on the same endpoint and isolates same-name members per provider", () => {
     const api = { apiFormat: "anthropic-messages" as const, baseURL: "https://same.example/v1" };
     const providers = new ProviderConfigMap([
       ["start", createAccountProviderConfig({ ...api, mode: "start-plan", models: ["stale"] })],
@@ -216,7 +216,7 @@ describe("ProviderConfigResolver", () => {
     expect(result.registryProviders.map((p) => p.providerId)).toEqual(["start", "api"]);
   });
 
-  it("未选中账号保留 Settings 配置但不进入 Registry，API 与隐藏闲时不使用 current", () => {
+  it("keeps unselected accounts Settings-only outside the Registry; API and hidden off-peak never use current", () => {
     const base = {
       group: "bigmodel-family" as const,
       builtinModelIds: ["m"],
@@ -279,7 +279,7 @@ describe("ProviderConfigResolver", () => {
       result.resolvedProviders.find((provider) => provider.providerId === "idle")?.models[0],
     ).toMatchObject({ executable: true, selectable: false });
   });
-  it("Registry 完整类型只由受校验入口创建", () => {
+  it("lets only validated entrypoints construct the complete Registry type", () => {
     const provider = createRegistryProviderConfig(new ProviderConfig({}), ["providers", "bad"]);
     const model = createRegistryModelConfig(new ModelConfig({}), [
       "providers",
@@ -292,7 +292,7 @@ describe("ProviderConfigResolver", () => {
     expect(model).toMatchObject({ ok: false, issues: expect.any(Array) });
   });
 
-  it("两个成员集合重名时 Built-in-wins，Personal 专属 Rule 继续后置覆盖", () => {
+  it("prefers Built-in on name collisions across member sets while Personal-exclusive rules still override later", () => {
     const builtin = completeModelConfig({ contextWindow: 100_000 });
     const result = new ProviderConfigResolver().resolve({
       zcodeBuiltinProviders: new ProviderConfigMap([
@@ -321,7 +321,7 @@ describe("ProviderConfigResolver", () => {
           providerId: "provider-a",
           modelId: "model-a",
           config: new ModelConfig({
-            // Personal 已只支持精确覆盖；不能用已裁决删除的全局 match 构造测试。
+            // Personal supports exact overrides only; do not build tests from the already-removed global match.
             properties: new ModelPropertiesConfig({
               contextWindow: 999_999,
               supportsToolCall: false,
@@ -346,7 +346,7 @@ describe("ProviderConfigResolver", () => {
     expect(result.registryProviders[0]?.models[0]?.config.properties.contextWindow).toBe(999_999);
   });
 
-  it("无关的非法 Personal endpoint 不阻断同一文件中的合法 Provider", () => {
+  it("lets an unrelated invalid Personal endpoint block nothing else in the same file", () => {
     const personalProviders = parsePersonalProviderConfigMap({
       providerRules: [
         {
@@ -386,7 +386,7 @@ describe("ProviderConfigResolver", () => {
     expect(brokenProvider?.providerIssues.some((issue) => issue.code === "invalid-url")).toBe(true);
   });
 
-  it("引用不存在 Template 的 Provider 不进入 Registry，并在全局诊断中保留问题", () => {
+  it("keeps providers with missing Templates out of the Registry and surfaces the issue in global diagnostics", () => {
     const result = new ProviderConfigResolver().resolve({
       zcodeBuiltinProviders: ProviderConfigMap.empty(),
       zcodeBuiltinProviderTemplates: ProviderTemplateMap.empty(),
@@ -417,7 +417,7 @@ describe("ProviderConfigResolver", () => {
     });
   });
 
-  it("隐藏 Provider 的启用模型仍进入 Registry，禁用模型只保留在 Settings Resolution", () => {
+  it("publishes hidden providers' enabled models to the Registry and keeps disabled ones in Settings Resolution only", () => {
     const result = new ProviderConfigResolver().resolve({
       zcodeBuiltinProviders: new ProviderConfigMap([
         [
@@ -450,7 +450,7 @@ describe("ProviderConfigResolver", () => {
     ]);
   });
 
-  it("在唯一完整性边界收窄 Config，且 Registry 保留同一对象引用", () => {
+  it("narrows Config at the single completeness boundary and has the Registry retain the same object reference", () => {
     const providerConfig = new ProviderConfig({
       group: "standard-personal",
       access: new ApiKeyAccessConfig({ apiKey: "test-key" }),
@@ -485,7 +485,7 @@ describe("ProviderConfigResolver", () => {
     );
   });
 
-  it("Built-in 规则按完整字符串匹配，并让后命中的规则覆盖前面的字段", () => {
+  it("matches Built-in rules on full strings and lets later hits override earlier fields", () => {
     const resolver = new ProviderConfigResolver();
     const result = resolver.resolve({
       zcodeBuiltinProviders: new ProviderConfigMap([
@@ -534,7 +534,7 @@ describe("ProviderConfigResolver", () => {
     ).toBe(false);
   });
 
-  it("用 Effective Provider baseURL 解析 Endpoint 特化规则", () => {
+  it("resolves endpoint-specialized rules via the Effective Provider baseURL", () => {
     const result = new ProviderConfigResolver().resolve({
       zcodeBuiltinProviders: new ProviderConfigMap([
         [
@@ -569,7 +569,7 @@ describe("ProviderConfigResolver", () => {
     expect(result.registryProviders[0]?.models[0]?.config.properties.contextWindow).toBe(1_000_000);
   });
 
-  it("先应用模型通用 Option，再按 Provider 的 apiFormat 覆盖原始请求 map", () => {
+  it("applies model-common options first, then overrides the raw request map per provider apiFormat", () => {
     const resolver = new ProviderConfigResolver();
     const result = resolver.resolve({
       zcodeBuiltinProviders: new ProviderConfigMap([
@@ -648,7 +648,7 @@ describe("ProviderConfigResolver", () => {
     );
   });
 
-  it("按 Built-in -> Account -> Personal 叠加 Provider，并让 Personal 最终覆盖账号模型成员", () => {
+  it("layers providers Built-in -> Account -> Personal with Personal overriding account model membership last", () => {
     const resolver = new ProviderConfigResolver();
     const providerApi = new ProviderApiConfig({
       type: "anthropic-messages",
@@ -713,7 +713,7 @@ describe("ProviderConfigResolver", () => {
     expect(result.registryProviders[1]?.models.map((model) => model.modelId)).toEqual(["m1", "m2"]);
   });
 
-  it("API Provider 必须取得 Personal API Key，Account Provider 的鉴权不进入静态配置", () => {
+  it("requires a Personal API key for API providers and keeps AccountProvider auth out of static config", () => {
     const resolver = new ProviderConfigResolver();
     const providerBase = {
       group: "standard-personal" as const,
@@ -768,7 +768,7 @@ describe("ProviderConfigResolver", () => {
     });
   });
 
-  it("只把完整 Provider 与启用 Model 发布到 Registry，并保留解析问题", () => {
+  it("publishes only complete providers with enabled models and retains resolution issues", () => {
     const resolver = new ProviderConfigResolver();
     const result = resolver.resolve({
       zcodeBuiltinProviders: new ProviderConfigMap([

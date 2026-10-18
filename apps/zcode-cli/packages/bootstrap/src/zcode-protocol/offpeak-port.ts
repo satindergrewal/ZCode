@@ -20,16 +20,16 @@ export const OFF_PEAK_CREATE_BOUND_SESSION_CHECK_ERROR =
 const OFF_PEAK_TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled"]);
 
 /**
-  * The Off-Peak protocol port. Trade-offs vs automation-port:
-  * - Guards only "off-peak round recursive creation" (activeOffPeakTaskId); activeAutomationId is not checked -- cron rounds
-  *   let OffPeakCreate through (scheduled derivation of off-peak tasks).
-  * - In-session creation binds the current session (aligned with CronCreate targetTaskId) and resumes it on dispatch.
-  *   The binding guard rejects only "this session already has a non-terminal off-peak task" (two unattended prompts racing one session); once it ends, creation is allowed again,
-  *   unlike cron's permanent one-task-per-session. The check reuses the minimal offPeak/list snapshot (sessionId/status),
-  *   failing closed on query errors. The real scale protection remains the server-side ticket quota (POST /ticket 3103).
-  * - No runtimeModel/mode/thoughtLevel injection: defaults resolve host-side
-  *   (yolo / last of allowed_models / highest tier); session runtime state is unrelated to the off-peak allowlist.
-  * - Never freeze the session title: the bound session is the user's working session; its title is not the task's to rewrite.
+ * The Off-Peak protocol port. Trade-offs vs automation-port:
+ * - Guards only "off-peak round recursive creation" (activeOffPeakTaskId); activeAutomationId is not checked -- cron rounds
+ *   let OffPeakCreate through (scheduled derivation of off-peak tasks).
+ * - In-session creation binds the current session (aligned with CronCreate targetTaskId) and resumes it on dispatch.
+ *   The binding guard rejects only "this session already has a non-terminal off-peak task" (two unattended prompts racing one session); once it ends, creation is allowed again,
+ *   unlike cron's permanent one-task-per-session. The check reuses the minimal offPeak/list snapshot (sessionId/status),
+ *   failing closed on query errors. The real scale protection remains the server-side ticket quota (POST /ticket 3103).
+ * - No runtimeModel/mode/thoughtLevel injection: defaults resolve host-side
+ *   (yolo / last of allowed_models / highest tier); session runtime state is unrelated to the off-peak allowlist.
+ * - Never freeze the session title: the bound session is the user's working session; its title is not the task's to rewrite.
  */
 export function createProtocolOffPeakPort(
   context: ZCodeProtocolAgentServerContext,
@@ -41,8 +41,8 @@ export function createProtocolOffPeakPort(
         resolveOwnSession?.() ??
         (createContext?.sessionId ? context.sessions.get(createContext.sessionId) : undefined);
       if (activeSession?.activeOffPeakTaskId?.trim()) {
-                // This turn was already dispatched by an off-peak task; creating another inside the round is recursive self-derivation -- reject.
-                // A third defense layer beyond the turn denylist and the handler's offPeakTurn.
+        // This turn was already dispatched by an off-peak task; creating another inside the round is recursive self-derivation -- reject.
+        // A third defense layer beyond the turn denylist and the handler's offPeakTurn.
         throw new Error(OFF_PEAK_CREATE_FROM_OFF_PEAK_RUN_ERROR);
       }
       const boundSessionId = createContext?.sessionId ?? activeSession?.app.sessionId;
@@ -55,7 +55,8 @@ export function createProtocolOffPeakPort(
             zcodeOffPeakListResultSchema,
           );
           bound = listed.tasks.some(
-            (task) => task.sessionId === boundSessionId && !OFF_PEAK_TERMINAL_STATUSES.has(task.status),
+            (task) =>
+              task.sessionId === boundSessionId && !OFF_PEAK_TERMINAL_STATUSES.has(task.status),
           );
         } catch (error) {
           context.logger?.warn("Failed to check bound idle-time tasks before OffPeakCreate", {
@@ -63,7 +64,7 @@ export function createProtocolOffPeakPort(
             event: "offpeak.create.bound_session_check.failed",
             sessionId: boundSessionId,
           });
-                    // Unknown must not mean unbound: a transient host/database failure must not reopen "two tasks per session".
+          // Unknown must not mean unbound: a transient host/database failure must not reopen "two tasks per session".
           throw new Error(OFF_PEAK_CREATE_BOUND_SESSION_CHECK_ERROR);
         }
         if (bound) throw new Error(OFF_PEAK_CREATE_IN_BOUND_SESSION_ERROR);
@@ -76,13 +77,13 @@ export function createProtocolOffPeakPort(
           ...(input.permissionMode ? { permissionMode: input.permissionMode } : {}),
           ...(input.model ? { model: input.model } : {}),
           ...(input.thoughtLevel ? { thoughtLevel: input.thoughtLevel } : {}),
-                    // Bind the current session; workspace is still injected host-side from the current session (mirroring automation/create).
+          // Bind the current session; workspace is still injected host-side from the current session (mirroring automation/create).
           ...(boundSessionId ? { boundSessionId } : {}),
         },
         zcodeOffPeakCreateResultSchema,
       );
       if (!result.ok) {
-                // Failure classes pass through for the handler to translate; never degrade to a message string at the port layer.
+        // Failure classes pass through for the handler to translate; never degrade to a message string at the port layer.
         return {
           ok: false,
           failureStage: result.failureStage,

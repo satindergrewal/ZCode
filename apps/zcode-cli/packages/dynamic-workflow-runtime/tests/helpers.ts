@@ -1,6 +1,6 @@
 /**
- * 集成测试共享装配：脚本文本 → 真实 schema 合成 + 真实 validate + 真实 lowering → 沙箱子进程
- * → 引擎核心 → AutoDriver。整条 phase-1 管线（短一个真模型）都在这里跑通。
+ * Shared integration harness: script text -> real schema synthesis + real validate + real lowering -> sandbox child
+-> engine core -> AutoDriver. The whole phase-1 pipeline, minus a real model, runs here.
  */
 
 import { mkdtempSync } from "node:fs";
@@ -22,14 +22,14 @@ import {
 import { runWorkflowScript } from "../src/index.js";
 import { AutoDriver, type AutoDriverConfig } from "./auto-driver.js";
 
-/** 适配真实校验器到引擎的 ValidateFn 契约（schema: JsonSchema → unknown 的形参放宽）。 */
+/** Adapts the real validator to the engine's ValidateFn contract (schema: JsonSchema -> unknown widening). */
 const validateFn: ValidateFn = (schema, value) => validate(schema as JsonSchema, value);
 
 /**
- * 由脚本文本合成 ask 规格：走包里的规范构造器 {@link buildAskSpecs}（按站点表遍历，
- * untyped 站点显式记 `{typed:false}`——引擎把站点缺席当接线错误硬失败）。
+ * Synthesizes ask specs from script text via the package's canonical {@link buildAskSpecs} (walking the site table,
+ * recording untyped sites explicitly as {typed:false} -- the engine hard-fails missing sites as wiring errors).
  *
- * 同时演示「编译一次」：一个 ts.Program 同时喂站点表与 schema 合成。
+ * Also demonstrates compile-once: one ts.Program feeds both the site table and schema synthesis.
  */
 export function askSpecsFor(scriptText: string): Map<string, AskSpec> {
   const workflow = createWorkflowProgram(scriptText);
@@ -49,22 +49,25 @@ interface RunScriptOptions extends AutoDriverConfig {
   timeoutMs?: number;
   journal?: InMemoryJournalStore;
   runId?: string;
-  /** 外部取消信号（resume 测试用它把首趟打断在执行中，制造 running 记录）。 */
+  /** External cancel (resume tests use it to break pass one mid-flight, leaving a running row). */
   signal?: AbortSignal;
 }
 
 const DEFAULT_CAPS: Caps = { maxConcurrency: 16 };
 
 /**
- * 每个测试文件一份独立的 run cwd。harness 把入口文件写到 `<cwd>/.zcode/workflow-runs/<runId>.mjs`
- * 且**保留**；测试几乎都用 runId "run"，若共用 process.cwd()，并行的测试文件会互相覆写同一个
- * 入口文件（一个子进程跑成另一个文件的脚本），也会把存档留在包目录里。vitest 按文件隔离模块，
- * 这个常量因此是每文件一份；文件内的用例串行，同名覆写无害。
+ * One run cwd per test file. The harness writes the entry to <cwd>/.zcode/workflow-runs/<runId>.mjs
+ * and keeps it; nearly every test uses runId "run", so a shared process.cwd() would have parallel files overwriting one
+ * entry (a child running another file's script) and leave archives in the package dir. vitest isolates modules per file,
+ * so this constant is per-file; within a file cases run serially and same-name overwrites are harmless.
  */
 export const TEST_CWD: string = mkdtempSync(join(tmpdir(), "dwf-test-cwd-"));
 
-/** 用真实管线跑一份脚本；AutoDriver 按 opts 里的 asks/worldReads 自动扮演模型。 */
-export async function runScript(scriptText: string, opts: RunScriptOptions = {}): Promise<RunScriptResult> {
+/** Runs a script through the real pipeline; AutoDriver plays the model from opts.asks/worldReads. */
+export async function runScript(
+  scriptText: string,
+  opts: RunScriptOptions = {},
+): Promise<RunScriptResult> {
   const journal = opts.journal ?? new InMemoryJournalStore();
   const driver = new AutoDriver(journal, {
     asks: opts.asks,

@@ -36,7 +36,7 @@ describe("ConversationTimeline header slot", () => {
 
   it("headerSlot 异步增高时继续保持时间线吸底", () => {
     // 导入请求首次吸底时只读块可能尚未完成测高；高度变化必须重新执行底部锚定。
-    const anchorStart = source.indexOf("// 底部锚定：内容变化");
+    const anchorStart = source.indexOf("// Bottom anchoring: on content change");
     const anchorEffectStart = source.indexOf("useLayoutEffect(() => {", anchorStart);
     const anchorEnd = source.indexOf("useLayoutEffect(() => {", anchorEffectStart + 1);
     expect(anchorStart).toBeGreaterThan(-1);

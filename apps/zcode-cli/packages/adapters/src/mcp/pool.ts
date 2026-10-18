@@ -381,7 +381,7 @@ export function createMcpConnectionPool(options: McpConnectionPoolOptions): McpC
         }
         return await adapter.readResource(request, callOptions);
       },
-      // 资源列表与订阅经同一 entry 的 adapter；登记表在 adapter（连接层）里，多 session 共享。
+      // Resource list and subscribe go through the same entry's adapter; the registry lives in the adapter (connection layer), shared across sessions.
       async listResources(request, callOptions) {
         const adapter = requireEntry(request.serverName).adapter;
         if (!adapter.listResources) {

@@ -27,15 +27,15 @@ export interface DockerConnectOptions {
 
 export interface ServerConnectOptions {
   kind: "server";
-  /** 已运行的 zcode-server HTTP(S)/WS(S) 入口。 */
+  /** An already-running zcode-server HTTP(S)/WS(S) endpoint. */
   url: string;
-  /** 用户可读名称，仅用于展示。 */
+  /** Human-readable name, display only. */
   name?: string;
-  /** 临时连接凭据；持久化时必须转成 credential key。 */
+  /** Ephemeral connection secret; must be turned into a credential key when persisted. */
   token?: string;
-  /** 服务端默认工作区路径，可被连接流程中的 workspacePath 覆盖。 */
+  /** Server default workspace path; the connection flow may override it via workspacePath. */
   workspacePath?: string;
-  /** 远端服务实例稳定标识，用于 workspaceIdentity authority。 */
+  /** Stable remote instance id, used as the workspaceIdentity authority. */
   serverId?: string;
 }
 

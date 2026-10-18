@@ -1,8 +1,8 @@
 node source
 node ask#1 "planner" @68:36 actors=actor#1 type="GamePlan"
 node ask#2 "reviewer" @75:45 actors=actor#2 type="ReviewVerdict"
-node ask#3 "planner" @86:24 actors=actor#1 type="GamePlan"
-node ask#4 "reviewer" @91:28 actors=actor#2 type="ReviewVerdict"
+node ask#3 "planner" @91:24 actors=actor#1 type="GamePlan"
+node ask#4 "reviewer" @98:28 actors=actor#2 type="ReviewVerdict"
 node sink
 actor actor#1 "Planner" @50:17
 actor actor#2 "Reviewer" @57:18

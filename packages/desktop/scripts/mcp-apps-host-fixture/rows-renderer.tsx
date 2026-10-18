@@ -30,7 +30,7 @@ const layout = () =>
     requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
   );
 
-/** 使用真实时间线和工具行，不直接挂 PluginUiCard；避免绕过展示资格/替代/折叠策略。 */
+/** P */
 export function RowsFixture({ config, ready }: { config: any; ready: () => void }) {
   const [cases, setCases] = useState<RowCase[]>([]);
   const [mounted, setMounted] = useState(true);

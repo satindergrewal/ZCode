@@ -143,8 +143,8 @@ const WorkflowWorkspaceContent = memo(function WorkflowWorkspaceContent({
     () => snapshot?.workflowRuns?.runs.find((candidate) => candidate.runId === tab.runId),
     [snapshot?.workflowRuns, tab.runId],
   );
-  // 补全过的 run 取最新补全行的有效脚本图（docs/dynamic-workflow/presentation.md「Holes on the timeline」）：
-  // 脚本 transcript 的落点按站，站必须是补全之后的那一张表。
+  // For runs with completions, use the latest completion's valid script graph (docs/dynamic-workflow/presentation.md
+  // "Holes on the timeline"): script transcript anchors are per site, and the site must be the post-completion table.
   const graph = useMemo(
     () =>
       buildWorkflowFillGraphByRunId(snapshot?.rows.window).get(tab.runId)?.graph ??

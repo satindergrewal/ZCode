@@ -110,17 +110,15 @@ function startTestFeedbackSubmissionJob(
   const { formDraft, ...submissionOptions } = options;
   return startFeedbackSubmissionJob({
     ...submissionOptions,
-    formDraft:
-      formDraft ??
-      {
-        description: options.ticketInput.description,
-        contact: options.ticketInput.contact,
-        screenshots: options.screenshots,
-        includeLogs: options.includeLogs,
-        type: options.ticketInput.type,
-        severity: options.ticketInput.severity,
-        module: options.ticketInput.module,
-      },
+    formDraft: formDraft ?? {
+      description: options.ticketInput.description,
+      contact: options.ticketInput.contact,
+      screenshots: options.screenshots,
+      includeLogs: options.includeLogs,
+      type: options.ticketInput.type,
+      severity: options.ticketInput.severity,
+      module: options.ticketInput.module,
+    },
   });
 }
 
@@ -256,7 +254,9 @@ describe("feedback submission job", () => {
     expect(feedbackService.uploadAttachmentData).toHaveBeenCalledTimes(1);
     expect(feedbackService.uploadAttachmentWithProgress).toHaveBeenCalledTimes(1);
     expect(feedbackService.cleanupPreparedLogArchive).toHaveBeenCalledWith("/tmp/logs.zip");
-    expect(seen.some((progress) => progress.label === "Connecting to the feedback service")).toBe(true);
+    expect(seen.some((progress) => progress.label === "Connecting to the feedback service")).toBe(
+      true,
+    );
     expect(job.getState()).toMatchObject({
       status: "success",
       ticketId: "ticket-1",

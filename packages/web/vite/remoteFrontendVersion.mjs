@@ -11,14 +11,14 @@ function parseVersion(version) {
   return { core: match.slice(1, 4).map(BigInt), prerelease };
 }
 
-/** 构建与发布共用版本解析；随 packages/web 复制进 Docker，避免依赖未复制的根 scripts。 */
+/** Version resolution shared by build and release; copied into Docker with packages/web so it never needs root scripts. */
 export function resolveRemoteFrontendVersion(packageVersion, override) {
   const version = override?.trim() || packageVersion;
   parseVersion(version);
   return version;
 }
 
-/** SemVer 优先级：主版本号逐段数值比较，正式版高于预发布，忽略 build metadata。 */
+/** SemVer precedence: numeric per-segment core compare, releases above prereleases, build metadata ignored. */
 export function compareRemoteFrontendVersions(leftVersion, rightVersion) {
   const left = parseVersion(leftVersion);
   const right = parseVersion(rightVersion);

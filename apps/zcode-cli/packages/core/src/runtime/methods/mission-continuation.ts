@@ -126,17 +126,14 @@ export async function runMissionContinuationLoop(
       return lastResult;
     }
     if (idleStreak >= cap) {
-      this.logger?.warn(
-        "Mission continuation stopped after repeated no-progress continuations",
-        {
-          ...traceContextToLogContext(traceContext),
-          event: "mission.continuation.idle_cap_reached",
-          module: "core.runtime",
-          idleStreak,
-          idleContinuationCap: cap,
-          openTasks: open.length,
-        },
-      );
+      this.logger?.warn("Mission continuation stopped after repeated no-progress continuations", {
+        ...traceContextToLogContext(traceContext),
+        event: "mission.continuation.idle_cap_reached",
+        module: "core.runtime",
+        idleStreak,
+        idleContinuationCap: cap,
+        openTasks: open.length,
+      });
       return lastResult;
     }
 

@@ -54,7 +54,8 @@ export function registerRuntimeBackgroundTask(
   const taskType = runtimeTaskTypeForToolCall(toolCall);
   if (!taskType || !deps.runtimeTaskRegistry) return;
   const existing = deps.runtimeTaskRegistry.get(taskId);
-  const description = runtimeTaskDescription(toolCall, output) ?? defaultRuntimeTaskDescription(taskType);
+  const description =
+    runtimeTaskDescription(toolCall, output) ?? defaultRuntimeTaskDescription(taskType);
   const outputFile = backgroundTaskOutputMetadata(output).outputFile;
   // Same-process cancel terminal -> resume without restart (dwf re-arm; the v4 command path and the tool path
   // converge in trackBackgroundTask): the surviving entry still carries the previous round's claimed
@@ -130,8 +131,7 @@ export function updateRuntimeBackgroundTask(
       : {
           ...current,
           completedAt: runtimeTaskCompletedAt(status, snapshot) ?? current.completedAt,
-          description:
-            runtimeTaskDescription(toolCall, undefined, snapshot) ?? current.description,
+          description: runtimeTaskDescription(toolCall, undefined, snapshot) ?? current.description,
           error: runtimeTaskError(snapshot) ?? current.error,
           exitCode: runtimeTaskExitCode(snapshot) ?? current.exitCode,
           isBackgrounded: true,

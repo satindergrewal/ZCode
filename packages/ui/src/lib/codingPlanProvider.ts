@@ -18,7 +18,7 @@ export function hasActiveUsageEntitlementSnapshot(
 
 export type UsageEntitlementOutcome = "active" | "inactive" | "unknown";
 
-/** 只把权威 no_plan 解释为失效；网络、鉴权和不完整快照都保持未知。 */
+/** Only the authoritative no_plan outcome counts as inactive; network/auth and partial snapshots stay unknown. */
 export function resolveUsageEntitlementOutcome(
   snapshot: UsageEntitlementSnapshot | null,
   providerId?: string,

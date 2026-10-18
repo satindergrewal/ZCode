@@ -33,9 +33,9 @@ function body(config: ModelConfig, reasoningLevel: string, maxOutputTokens = 500
   }).apply({ model: "unchanged", messages: [] }, { reasoningLevel, maxOutputTokens });
 }
 
-describe("OpenRouter Messages 推理请求契约", () => {
+describe("OpenRouter Messages reasoning request contract", () => {
   it.each(["zcode-builtin.json", "zcode-builtin.test.json"])(
-    "%s 模板仅简化名称，不改变请求协议",
+    "%s templates simplify names only, never the request protocol",
     async (filename) => {
       const release = JSON.parse(
         await readFile(new URL(`../../../config/provider/${filename}`, import.meta.url), "utf8"),
@@ -51,7 +51,7 @@ describe("OpenRouter Messages 推理请求契约", () => {
     },
   );
 
-  it("所有模板成员的所有档位不再生成缺预算的 enabled", () => {
+  it("stops emitting budget-less enabled for every tier of every template member", () => {
     expect(modelIds.length).toBeGreaterThan(50);
     for (const id of modelIds) {
       const config = resolve(id);
@@ -82,7 +82,7 @@ describe("OpenRouter Messages 推理请求契约", () => {
     ["qwen/qwen3.8-max-0902", "minimal"],
     ["qwen/qwen3.7-plus", "enabled"],
     ["xiaomi/mimo-v2.5-pro", "enabled"],
-  ])("%s/%s 使用 adaptive，不引入与小输出上限冲突的固定预算", (id, level) => {
+  ])("%s/%s stays adaptive with no fixed budget fighting small output caps", (id, level) => {
     for (const baseUrl of [
       "https://openrouter.ai/api",
       "https://openrouter.ai/api/",
@@ -99,7 +99,7 @@ describe("OpenRouter Messages 推理请求契约", () => {
     }
   });
 
-  it("关闭仍关闭，现有 Claude 和 GPT 映射不变", () => {
+  it("keeps disabled disabled and existing Claude/GPT maps untouched", () => {
     expect(body(resolve("z-ai/glm-5.2"), "disabled")).toMatchObject({
       thinking: { type: "disabled" },
     });
@@ -110,7 +110,7 @@ describe("OpenRouter Messages 推理请求契约", () => {
     expect(body(resolve("openai/gpt-6-astra"), "high")).not.toHaveProperty("thinking");
   });
 
-  it("不改变官方站点、相似域名、其他协议及 Personal Map", () => {
+  it("leaves official sites, lookalike domains, other protocols and Personal maps untouched", () => {
     for (const url of [
       "https://api.z.ai/api/anthropic",
       "https://open.bigmodel.cn/api/anthropic",

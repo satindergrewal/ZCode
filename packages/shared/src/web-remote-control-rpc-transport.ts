@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- raw RPC 的 schema、精确计量、编码与单 assembly 状态机共享同一组物理不变量。 */
+/* eslint-disable max-lines -- raw RPC schema, exact metering, encoding, and the single-assembly state machine share one set of physical invariants. */
 import { z } from "zod";
 import { PROTOCOL_V4_LIMITS } from "./zcode-protocol-v4/core.js";
 import {
@@ -46,7 +46,7 @@ export type WebRemoteControlRpcTransportChecksum = z.infer<
 >;
 
 function isCanonicalBase64(value: string): boolean {
-  // Zod 的后续 refine 不保证在 max issue 后短路；先按 raw string 做硬闸，避免先分配 decoded buffer。
+  // Later Zod refines may not short-circuit after the size issue; hard-gate on the raw string first so the decoded buffer is not allocated early.
   if (
     value.length < 4 ||
     value.length > WEB_REMOTE_CONTROL_RPC_TRANSPORT_LIMITS.maxPhysicalFrameBytes
@@ -81,7 +81,7 @@ export const webRemoteControlRpcTransportFrameSchema = z
       .positive()
       .max(WEB_REMOTE_CONTROL_RPC_TRANSPORT_LIMITS.maxMessageBytes),
     checksum: webRemoteControlRpcTransportChecksumSchema,
-    // 先做字符串长度硬闸，再进入 decode/refine，避免恶意超长 base64 先分配 decoded buffer。
+    // Hard-gate string length before decode/refine so an oversized base64 cannot allocate the decoded buffer first.
     dataBase64: z
       .string()
       .min(4)
@@ -179,7 +179,7 @@ function relayEnvelopeFor(
   };
 }
 
-/** 最终 relay JSON（默认同时含最坏 client/server timestamp）的精确 UTF-8 byte 数。 */
+/** Exact UTF-8 byte length of the final relay JSON (worst-case client/server timestamps included by default). */
 export function measureWebRemoteControlRpcRelayEnvelopeBytes(
   payload: WebRemoteControlRpcTransportPayload,
   timestamps?: { clientTimestamp?: number | null; serverTimestamp?: number | null },
@@ -202,7 +202,7 @@ export function parseWebRemoteControlRpcTransportPayload(
   return result.success ? result.data : null;
 }
 
-/** D3 接线时在 JSON.parse 前调用；本切片只提供 standalone primitive。 */
+/** Called before JSON.parse at D3 wiring; this slice ships only the standalone primitive. */
 export function parseWebRemoteControlRpcRelayEnvelopeJson(
   rawJson: string,
   options: { maxPhysicalFrameBytes?: number } = {},
@@ -330,7 +330,7 @@ function findDecodedBudget(params: {
     fragmentCount: params.fragmentCount,
     messageBytes: params.messageBytes,
     checksum: params.checksum,
-    // 这里只用于精确固定 envelope 计量；真正 payload 仍须非空 canonical base64。
+    // For exact fixed envelope metering only; the real payload must still be non-empty canonical base64.
     dataBase64: "",
   });
   const fixedBytes = measureWebRemoteControlRpcRelayEnvelopeBytes(empty);
@@ -495,7 +495,7 @@ function frameFingerprint(
 ): SettledFrameFingerprint {
   return {
     messageSeq: frameValue.messageSeq,
-    // 完成后的 tombstone 只保留有界 metadata + fragment digest，不保留整段 base64。
+    // The completed tombstone keeps only bounded metadata plus fragment digests, never the whole base64.
     value: JSON.stringify([
       frameValue.bridgeSessionId,
       frameValue.bridgeGeneration ?? null,
@@ -517,7 +517,7 @@ function sameFingerprint(left: SettledFrameFingerprint, right: SettledFrameFinge
   return left.value === right.value;
 }
 
-/** 每方向一个实例；任何 terminal fault 后由 04D-2 映射为 bridge degraded。 */
+/** One instance per direction; any terminal fault maps to bridge degraded via 04D-2. */
 export class WebRemoteControlRpcTransportAssembler {
   private readonly identity: WebRemoteControlRpcTransportIdentity;
   private readonly maxPhysicalFrameBytes: number;
@@ -600,7 +600,7 @@ export class WebRemoteControlRpcTransportAssembler {
   }
 
   accept(candidate: unknown, now: number = this.now()): WebRemoteControlRpcTransportAssemblyEvent {
-    // foreign identity 必须先于本连接的 timeout、schema 与 base64 工作拒绝，否则坏外片会清空 owning assembly。
+    // Foreign-identity checks precede this connection's timeout/schema/base64 rejections, or a bad foreign frame wipes the owning assembly.
     if (hasRawIdentityMismatch(this.identity, candidate)) {
       return this.fault("remote.rpcFrame.identityMismatch", false);
     }
@@ -726,7 +726,7 @@ export class WebRemoteControlRpcTransportAssembler {
     this.active.frameFingerprintsBySeq.set(frameValue.seq, fingerprint);
     this.active.stagedBytes += decoded.byteLength;
     if (frameValue.seq === Number.MAX_SAFE_INTEGER) {
-      // 本消息可在最大 seq 收口，但任何后继消息都必须新 bridge generation。
+      // This message may close out at the max seq, but any successor must start a new bridge generation.
       this.physicalSequenceExhausted = true;
     } else {
       this.expectedPhysicalSeq += 1;

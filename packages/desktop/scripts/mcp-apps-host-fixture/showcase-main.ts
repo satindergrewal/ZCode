@@ -22,7 +22,8 @@ app
     const env = await managedEnvironment(root, node, cli);
     const checks: string[] = [];
     try {
-      // 独立 fixture 只批准本测试的两个演示工具；审批仍通过真实 Agent/宿主链路。
+      // The standalone fixture approves only this test's two demo tools; approval still flows
+      // through the real agent/host chain.
       env.agent.client.onRequest((request) => {
         const input = (request.params as any)?.input;
         if (
@@ -55,7 +56,7 @@ app
         page(`document.getElementById(${JSON.stringify(id)}).value=${JSON.stringify(text)}`);
       const read = (id: string) =>
         page(`document.getElementById(${JSON.stringify(id)}).textContent`);
-      // DOM 事件驱动观察实际按钮处理的终态，不用睡眠代替请求完成。
+      // Drive the terminal state via real DOM events; never substitute sleeps for completion.
       const phase = (id: string, wanted: string) =>
         page(`new Promise(resolve => {
       const node=document.getElementById(${JSON.stringify(id)});

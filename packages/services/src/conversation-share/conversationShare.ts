@@ -49,7 +49,7 @@ export interface ConversationShareAllowedArtifact {
 }
 
 export interface ConversationShareTurnPreflightResult {
-  /** 已转换的公开行数；选择变化时可按轮重新聚合，不缓存整组选中项的容量错误。 */
+  /** Converted public row count; re-aggregable per turn on selection changes, with no cached capacity errors across the set. */
   rowBudget?: { count: number; limit: number };
   productTurnId: string;
   turnFingerprint?: string;

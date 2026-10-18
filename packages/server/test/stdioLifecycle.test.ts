@@ -8,7 +8,7 @@ class FakeStdin extends Readable {
 }
 
 describe("stdio process lifecycle", () => {
-  it("stdin 未关闭时不应因为空闲时间退出", () => {
+  it("does not exit for idleness while stdin stays open", () => {
     vi.useFakeTimers();
     try {
       const stdin = new FakeStdin();
@@ -31,7 +31,7 @@ describe("stdio process lifecycle", () => {
     }
   });
 
-  it("stdin 关闭时应等待资源清理完成后再正常退出", async () => {
+  it("waits for disposal to finish before exiting cleanly once stdin closes", async () => {
     const stdin = new FakeStdin();
     let finishDispose: (() => void) | undefined;
     const dispose = vi.fn(
@@ -63,7 +63,7 @@ describe("stdio process lifecycle", () => {
     expect(exit).toHaveBeenCalledTimes(1);
   });
 
-  it("cleanup 期间发生 stdin error 时只清理一次并升级退出码", async () => {
+  it("disposes once and escalates the exit code when stdin errors mid-cleanup", async () => {
     const stdin = new FakeStdin();
     let finishDispose: (() => void) | undefined;
     const dispose = vi.fn(
@@ -95,7 +95,7 @@ describe("stdio process lifecycle", () => {
     expect(exit).toHaveBeenCalledTimes(1);
   });
 
-  it("termination signal 应进入同一异步清理链路", async () => {
+  it("routes termination signals into the same async disposal chain", async () => {
     const stdin = new FakeStdin();
     const signalSource = new EventEmitter();
     const order: string[] = [];
@@ -127,7 +127,7 @@ describe("stdio process lifecycle", () => {
     expect(order).toEqual(["stop-rpc", "dispose-services", "exit"]);
   });
 
-  it("资源清理失败时应记录错误并以错误码退出", async () => {
+  it("logs and exits non-zero when disposal fails", async () => {
     const stdin = new FakeStdin();
     const cleanupError = new Error("cleanup failed");
     const log = vi.fn();
@@ -149,7 +149,7 @@ describe("stdio process lifecycle", () => {
     expect(exit).toHaveBeenCalledTimes(1);
   });
 
-  it("RPC stop 失败时仍应继续清理 services 并记录完成轨迹", async () => {
+  it("still disposes services and records the trail when the RPC stop fails", async () => {
     const stdin = new FakeStdin();
     const stopError = new Error("stop failed");
     const log = vi.fn();
@@ -173,7 +173,7 @@ describe("stdio process lifecycle", () => {
     expect(dispose).toHaveBeenCalledTimes(1);
   });
 
-  it("RPC stop 永久 pending 时应在阶段 deadline 后继续清理 services", async () => {
+  it("proceeds to dispose services after the phase deadline when RPC stop hangs", async () => {
     vi.useFakeTimers();
     try {
       const stdin = new FakeStdin();
@@ -208,7 +208,7 @@ describe("stdio process lifecycle", () => {
     }
   });
 
-  it("service dispose 永久 pending 时应记录阶段并在 deadline 后强制退出", async () => {
+  it("records the phase and force-exits after the deadline when service dispose hangs", async () => {
     vi.useFakeTimers();
     try {
       const stdin = new FakeStdin();

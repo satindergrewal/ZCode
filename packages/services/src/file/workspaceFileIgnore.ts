@@ -5,15 +5,15 @@ import type { Ignore } from "ignore";
 import type { ServiceLogger } from "../logger/serviceLogger.js";
 
 /**
- * workspace 文件搜索忽略的单一真相源。
+ * Single source of truth for workspace file-search ignore rules.
  *
- * `.zcodeignore`（workspace root，gitignore 语法）是搜索索引的唯一规则文件：
- * 自动创建暂时停用：文件不存在时仅在内存中使用 root `.gitignore` + 默认排除规则；
- * 之后 `.gitignore` 的变化不再影响搜索，用户通过设置页编辑或「从 .gitignore 重新同步」。
+ * `.zcodeignore` (workspace root, gitignore syntax) is the only rule file for the search index:
+ * auto-create is paused for now: with no file, the in-memory rules are the root `.gitignore` plus defaults;
+ * later .gitignore changes never affect search; users edit via settings or Sync from .gitignore.
  *
- * 规则解析交给 `ignore` npm 包（gitignore spec 2.22 参考实现，ESLint 同款）：
- * 后声明覆盖、`!` 反选（含父目录排除后子文件无法恢复的 git 原生约束）、anchored/basename、
- * `**` 跨层、目录后缀 `/`、字符类与转义。禁止在本仓库手写 gitignore 解析。
+ * Rule parsing delegates to the `ignore` npm package (gitignore spec 2.22 reference, as in ESLint):
+ * later-wins, `!` negation (including git's native limit on re-including under excluded dirs), anchored/basename,
+ * `**` depth, trailing `/`, classes, and escapes. Never hand-roll gitignore parsing in this repo.
  */
 
 export const WORKSPACE_FILE_SEARCH_IGNORE_FILE_NAME = ".zcodeignore";
@@ -36,14 +36,14 @@ export interface WorkspaceFileSearchIgnoreRules {
 
 export interface WorkspaceFileSearchIgnoreContent {
   content: string;
-  /** file：.zcodeignore 已存在；template：尚未创建，content 是保存后将落盘的初始内容预览。 */
+  /** file: .zcodeignore exists; template: not yet created, content previews what saving would write. */
   source: "file" | "template";
 }
 
 /**
- * 默认模板的内置排除规则：承接旧 defaultWorkspaceFileSearchFilter 目录黑名单的退役部分，
- * 保证"从零创建"的 workspace 行为与旧默认一致（node_modules/.git 等仍被剪枝）。
- * 前缀通配按 gitignore 语法表达（cmake-build-* 等），与旧 SKIPPED_DIRECTORY_PREFIXES 等价。
+ * Built-in excludes for the default template: carry over the retired parts of the legacy directory blocklist
+ * so from-scratch workspaces behave like the old defaults (node_modules/.git still pruned).
+ * Prefix globs use gitignore syntax (cmake-build-* etc.), matching the old SKIPPED_DIRECTORY_PREFIXES.
  */
 const BUILTIN_IGNORE_LINES = [
   ".git/",
@@ -77,32 +77,32 @@ const BUILTIN_IGNORE_LINES = [
 ];
 
 const TEMPLATE_HEADER = [
-  "# ZCode 工作区文件搜索忽略规则（.zcodeignore）",
-  "# 语法与 .gitignore 一致，只影响 ZCode 的 @ 文件候选 / Command Center / 文件树搜索，",
-  "# 不影响文件树浏览、上传或 Agent 文件访问。",
-  "# 修改 .gitignore 不会自动同步到本文件；可在设置页「从 .gitignore 同步」。",
+  "# ZCode workspace file-search ignore rules (.zcodeignore)",
+  "# Syntax matches .gitignore. Affects only ZCode @ file candidates / Command Center / file-tree search,",
+  "# not file-tree browsing, uploads, or agent file access.",
+  "# .gitignore edits do not auto-sync here; use Settings > Sync from .gitignore.",
   "",
 ];
 
 /**
- * 分区标记（按行精确匹配，删除标记会让对应按钮退化为整体重建）：
- * 「从 .gitignore 同步」只重写 SYNC 标记之上的内容；
- * 「恢复默认规则」只重写两个标记之间的默认排除段；
- * DEFAULTS 标记之下的自定义规则区，任何按钮都不会改动。
+ * Section markers (exact-line matches; deleting one degrades its button to a full rebuild):
+ * Sync from .gitignore rewrites only above the SYNC marker;
+ * Restore defaults rewrites only the defaults segment between the markers;
+ * the custom section below the DEFAULTS marker is never touched by any button.
  */
 export const WORKSPACE_FILE_SEARCH_IGNORE_SYNC_MARKER =
-  "# ===== ↑ 以上同步自 .gitignore（「从 .gitignore 同步」只重写以上部分）=====";
+  "# ===== Everything above syncs from .gitignore (Sync from .gitignore rewrites only the above) =====";
 export const WORKSPACE_FILE_SEARCH_IGNORE_DEFAULTS_MARKER =
-  "# ----- ↑ 以上为 ZCode 默认排除规则（自定义规则请写在本行下方，不会被同步/恢复改动）-----";
+  "# ----- ZCode default excludes above (custom rules go below this line; sync/restore never touch them) -----";
 
-const CUSTOM_SECTION_HINT = "# 自定义规则写在下方（本行提示可删除）";
+const CUSTOM_SECTION_HINT = "# Custom rules below (you may delete this hint line)";
 
 function buildBuiltinDefaultsSection(gitignoreContent: string | null): string {
-  // 创建/恢复默认时的去重：gitignore 区已声明的规则不重复写入默认段，
-  // 保证文件中每条规则最多一份——用户删除一处即完全放开，不会出现
-  // "删了默认段的 node_modules/ 但 gitignore 拷贝区还藏着一条"的困惑。
-  // 判重保守：行 trim 后相等，或忽略单个尾 '/' 差异（node_modules 覆盖 node_modules/）；
-  // anchored（/node_modules/）等写法差异不视为重复，宁可重复不可漏规则。
+  // On create/restore, rules already present in the gitignore section are not duplicated into defaults,
+  // keeping one copy per rule: removing it fully re-includes the path, avoiding the
+  // deleted-from-defaults-but-a-copy-hides-in-gitignore trap.
+  // Dedupe is conservative: trim-equal, or ignoring one trailing slash (node_modules covers node_modules/);
+  // anchored forms (/node_modules/) are distinct. Prefer a duplicate over a lost rule.
   if (gitignoreContent === null) {
     return BUILTIN_IGNORE_LINES.join("\n");
   }
@@ -123,11 +123,11 @@ function buildBuiltinDefaultsSection(gitignoreContent: string | null): string {
 }
 
 /**
- * 构建 `.zcodeignore` 初始内容：.gitignore 规则拷贝 + 双标记分区（默认排除段 / 自定义区）。
- * 附加默认段是行为兼容要求：.gitignore 未声明 node_modules 等目录的仓库若仅严格拷贝，
- * 依赖目录会被整棵放开扫描（再次出现全仓扫描的性能问题）；默认段随文件
- * 交给用户编辑，删除即放开，维持"单一真相源、无代码级并集"的承诺。
- * 默认段写入前先对 gitignore 区做规则去重（见 buildBuiltinDefaultsSection）。
+ * Builds the initial .zcodeignore: .gitignore copy plus the two-marker layout (defaults segment / custom area).
+ * Appending defaults is a compatibility requirement: repos whose .gitignore omits node_modules etc. would, as a pure copy,
+ * scan whole dependency trees (the old full-repo-scan perf bug); the defaults segment ships in the file,
+ * user-editable, removal re-includes: one source of truth, no code-level union.
+ * Defaults are deduped against the gitignore section before writing (see buildBuiltinDefaultsSection).
  */
 export function buildWorkspaceFileSearchIgnoreTemplate(gitignoreContent: string | null): string {
   const gitignoreSection =
@@ -152,7 +152,7 @@ interface SplitWorkspaceFileSearchIgnoreSections {
   customSection: string;
 }
 
-/** 按双标记切分文件；任一标记缺失（旧格式/用户删除）返回 null，调用方退化为整体重建。 */
+/** Splits by the two markers; either missing (legacy file/user edit) returns null and callers rebuild wholesale. */
 function splitWorkspaceFileSearchIgnoreSections(
   content: string,
 ): SplitWorkspaceFileSearchIgnoreSections | null {
@@ -168,15 +168,21 @@ function splitWorkspaceFileSearchIgnoreSections(
   }
   return {
     gitignoreSection: lines.slice(0, syncIndex).join("\n"),
-    defaultsSection: lines.slice(syncIndex + 1, defaultsIndex).join("\n").trim(),
-    customSection: lines.slice(defaultsIndex + 1).join("\n").replace(/^\n+/, ""),
+    defaultsSection: lines
+      .slice(syncIndex + 1, defaultsIndex)
+      .join("\n")
+      .trim(),
+    customSection: lines
+      .slice(defaultsIndex + 1)
+      .join("\n")
+      .replace(/^\n+/, ""),
   };
 }
 
 /**
- * 「从 .gitignore 同步」：只重写 SYNC 标记之上的内容为当前 .gitignore，
- * 默认排除段与自定义区原样保留（用户对默认段的删改不受影响）。
- * 标记缺失时退化为整体初始内容重建（无法结构化定位分区）。
+ * Sync from .gitignore: rewrites only above the SYNC marker with the current .gitignore,
+ * keeping defaults and custom sections intact (user edits to defaults survive).
+ * Missing markers degrade to a full initial-content rebuild (sections cannot be located).
  */
 export function syncWorkspaceFileSearchIgnoreFromGitignore(
   currentContent: string,
@@ -204,8 +210,8 @@ export function syncWorkspaceFileSearchIgnoreFromGitignore(
 }
 
 /**
- * 「恢复默认规则」：只重置默认排除段为内置清单，gitignore 区与自定义区原样保留。
- * 标记缺失时退化为整体初始内容重建。
+ * Restore defaults: resets only the defaults segment to the built-in list; gitignore and custom sections stay.
+ * Missing markers degrade to a full initial-content rebuild.
  */
 export function resetWorkspaceFileSearchIgnoreDefaults(
   currentContent: string,
@@ -215,8 +221,8 @@ export function resetWorkspaceFileSearchIgnoreDefaults(
   if (!sections) {
     return buildWorkspaceFileSearchIgnoreTemplate(gitignoreContent);
   }
-  // 恢复默认按当前 gitignore 区规则去重重算：gitignore 已声明的行不重复写回默认段；
-  // 若用户曾从 .gitignore 删掉 node_modules 等，恢复时默认段会把它补回（兜底回归）。
+  // Restore re-dedupes against the current gitignore section: rules already declared there skip the defaults block;
+  // if node_modules left the .gitignore, restore adds it back to defaults (safety net).
   return [
     sections.gitignoreSection,
     WORKSPACE_FILE_SEARCH_IGNORE_SYNC_MARKER,
@@ -228,8 +234,8 @@ export function resetWorkspaceFileSearchIgnoreDefaults(
     .replace(/\n+$/, "\n");
 }
 
-// ignore 包的 index.d.ts 在 nodenext 下把 default import 解析为模块命名空间（无调用签名），
-// 而运行时 default 恰是工厂函数本身（Node ESM interop 实测）。这里显式收窄回工厂签名。
+// Under nodenext the ignore package's index.d.ts types the default import as a module namespace (uncallable),
+// while runtime default is the factory itself (verified via Node ESM interop); narrow the type back to the factory.
 const createIgnoreMatcher: () => Ignore = ignoreFactory as unknown as () => Ignore;
 
 function buildIgnoreMatcher(content: string): Ignore {
@@ -252,8 +258,8 @@ async function readOptionalFile(path: string): Promise<string | null> {
 }
 
 /**
- * 原子写：目标目录内写临时文件（flush + close）后 rename 替换，参照
- * workspace-hook-mutation.ts 的模式，保证 Runtime/设置页不会观察到半截规则文件。
+ * Atomic write: temp file in the target dir (flush + close) then rename over, mirroring
+ * workspace-hook-mutation.ts, so the runtime/settings page never observe a half-written rules file.
  */
 async function atomicWriteIgnoreFile(path: string, content: string): Promise<void> {
   const directory = dirname(path);
@@ -277,10 +283,10 @@ async function atomicWriteIgnoreFile(path: string, content: string): Promise<voi
 }
 
 /**
- * 扫描前加载 `.zcodeignore` 规则；自动创建暂时注释停用：
- * 文件不存在 → 内存使用 .gitignore + 默认排除规则，不落盘；
- * 读取失败（权限等）→ 内存使用 .gitignore 内容 → 再失败用内置默认规则。
- * 任何降级只 warn 一次，绝不让 @ 面板因规则文件不可用而扫描失败。
+ * Loads .zcodeignore before scanning; auto-create is commented out for now:
+ * missing file -> in-memory .gitignore plus defaults, nothing written;
+ * read failure (permissions etc.) -> in-memory .gitignore -> then built-in defaults.
+ * Each degrade warns once; the @ panel must never fail a scan over rules-file trouble.
  */
 export async function loadWorkspaceFileSearchIgnoreRules(
   rootPath: string,
@@ -298,7 +304,7 @@ export async function loadWorkspaceFileSearchIgnoreRules(
     if (gitignoreContent !== null) {
       logger?.warn(
         undefined,
-        `[workspace-file-ignore] ${reason}，降级为运行时使用 .gitignore 规则`,
+        `[workspace-file-ignore] ${reason}; falling back to .gitignore rules in memory`,
         error,
       );
       return {
@@ -308,7 +314,7 @@ export async function loadWorkspaceFileSearchIgnoreRules(
     }
     logger?.warn(
       undefined,
-      `[workspace-file-ignore] ${reason}，降级为内置默认忽略规则`,
+      `[workspace-file-ignore] ${reason}; falling back to built-in default ignore rules`,
       error,
     );
     const template = buildWorkspaceFileSearchIgnoreTemplate(null);
@@ -322,29 +328,29 @@ export async function loadWorkspaceFileSearchIgnoreRules(
   try {
     existing = await readOptionalFile(ignorePath);
   } catch (error) {
-    return degradeToInMemory(`读取 ${WORKSPACE_FILE_SEARCH_IGNORE_FILE_NAME} 失败`, error);
+    return degradeToInMemory(`Failed to read ${WORKSPACE_FILE_SEARCH_IGNORE_FILE_NAME}`, error);
   }
   if (existing !== null) {
     return { matcher: buildIgnoreMatcher(existing), source: "file" };
   }
 
-  const gitignoreContent = await readOptionalFile(
-    resolve(rootPath, GITIGNORE_FILE_NAME),
-  ).catch(() => null);
+  const gitignoreContent = await readOptionalFile(resolve(rootPath, GITIGNORE_FILE_NAME)).catch(
+    () => null,
+  );
   const initialContent = buildWorkspaceFileSearchIgnoreTemplate(gitignoreContent);
-  // 管理入口已临时隐藏，但自动创建逻辑仍会往用户项目写文件，因此先注释停用。
-  // 保留原创建和日志逻辑，后续恢复入口时可重新启用；当前只在内存中使用规则。
+  // The settings entry is hidden, but auto-create would still write into user projects; disabled for now.
+  // Creation/logging kept for re-enablement; rules stay in memory for now.
   /*
   try {
     await atomicWriteIgnoreFile(ignorePath, initialContent);
   } catch (error) {
-    // 创建失败不影响扫描：初始内容确定性已知，内存中直接按初始内容执行，
-    // 来源标记沿用初始内容来源（.gitignore 拷贝 / 内置模板）表达 fail-open 降级。
+    // Create failures never block scanning: the initial content is deterministic, so run it in memory and
+    // keep the source marker of that content (gitignore copy / built-in) to express the fail-open degrade.
     logger?.warn(
       undefined,
-      `[workspace-file-ignore] 自动创建 ${WORKSPACE_FILE_SEARCH_IGNORE_FILE_NAME} 失败，降级为运行时使用${
-        gitignoreContent !== null ? ".gitignore" : "内置默认"
-      }规则`,
+      `[workspace-file-ignore] Auto-creating ${WORKSPACE_FILE_SEARCH_IGNORE_FILE_NAME} failed; falling back to ${
+        gitignoreContent !== null ? "in-memory .gitignore" : "built-in defaults"
+      }`,
       error,
     );
     return {
@@ -354,8 +360,8 @@ export async function loadWorkspaceFileSearchIgnoreRules(
   }
   logger?.info(
     undefined,
-    `[workspace-file-ignore] 已自动创建 ${WORKSPACE_FILE_SEARCH_IGNORE_FILE_NAME}（来源：${
-      gitignoreContent !== null ? ".gitignore 拷贝" : "默认模板"
+    `[workspace-file-ignore] Auto-created ${WORKSPACE_FILE_SEARCH_IGNORE_FILE_NAME} (source: ${
+      gitignoreContent !== null ? "gitignore copy" : "default template"
     }）`,
   );
   */
@@ -367,8 +373,8 @@ export async function loadWorkspaceFileSearchIgnoreRules(
 }
 
 /**
- * 判定相对路径是否被忽略。目录必须传带尾斜杠的路径（gitignore dirOnly 规则只匹配目录），
- * relativePath 由调用方保证为 posix 分隔符（fileService 的 normalizeRelativePath 已转换）。
+ * Ignores test for relative paths. Directories must pass a trailing-slash path (gitignore dirOnly matches dirs only);
+ * callers guarantee posix separators (fileService normalizeRelativePath already converts).
  */
 export function isWorkspaceFileSearchPathIgnored(
   rules: WorkspaceFileSearchIgnoreRules,
@@ -380,7 +386,7 @@ export function isWorkspaceFileSearchPathIgnored(
     : rules.matcher.ignores(relativePath);
 }
 
-/** 设置页读取：文件不存在时返回初始内容预览（source: template），不落盘。 */
+/** Settings read: returns the initial-content preview (source: template) when no file exists; never writes. */
 export async function readWorkspaceFileSearchIgnore(
   rootPath: string,
 ): Promise<WorkspaceFileSearchIgnoreContent> {
@@ -389,9 +395,9 @@ export async function readWorkspaceFileSearchIgnore(
   if (existing !== null) {
     return { content: existing, source: "file" };
   }
-  const gitignoreContent = await readOptionalFile(
-    resolve(rootPath, GITIGNORE_FILE_NAME),
-  ).catch(() => null);
+  const gitignoreContent = await readOptionalFile(resolve(rootPath, GITIGNORE_FILE_NAME)).catch(
+    () => null,
+  );
   return {
     content: buildWorkspaceFileSearchIgnoreTemplate(gitignoreContent),
     source: "template",
@@ -401,9 +407,9 @@ export async function readWorkspaceFileSearchIgnore(
 export type WorkspaceFileSearchIgnoreTransform = "sync-gitignore" | "reset-defaults";
 
 /**
- * 设置页分区操作（返回新内容填充编辑框，保存才落盘）：
- * sync-gitignore 只重写 gitignore 同步区；reset-defaults 只重置默认排除段；
- * 两者都保留标记之外的用户内容，详见各纯函数的契约。
+ * Settings section ops (return new editor content; only saving persists):
+ * sync-gitignore rewrites the sync section; reset-defaults resets only the defaults segment;
+ * both preserve user content outside the markers (see each pure function's contract).
  */
 export async function transformWorkspaceFileSearchIgnore(
   rootPath: string,
@@ -411,9 +417,9 @@ export async function transformWorkspaceFileSearchIgnore(
 ): Promise<{ content: string }> {
   const ignorePath = resolve(rootPath, WORKSPACE_FILE_SEARCH_IGNORE_FILE_NAME);
   const existing = await readOptionalFile(ignorePath).catch(() => null);
-  const gitignoreContent = await readOptionalFile(
-    resolve(rootPath, GITIGNORE_FILE_NAME),
-  ).catch(() => null);
+  const gitignoreContent = await readOptionalFile(resolve(rootPath, GITIGNORE_FILE_NAME)).catch(
+    () => null,
+  );
   const currentContent = existing ?? buildWorkspaceFileSearchIgnoreTemplate(gitignoreContent);
   const content =
     transform === "sync-gitignore"
@@ -422,7 +428,7 @@ export async function transformWorkspaceFileSearchIgnore(
   return { content };
 }
 
-/** 设置页保存：原子写整个文件，下次扫描读取即为新内容。 */
+/** Settings save: atomic whole-file write; the next scan reads the new content. */
 export async function writeWorkspaceFileSearchIgnore(
   rootPath: string,
   content: string,

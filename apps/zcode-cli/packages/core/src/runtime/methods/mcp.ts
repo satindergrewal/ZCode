@@ -143,13 +143,13 @@ export async function initializeMcp(
         this.config.mcp?.servers ?? {},
         new Set(this.config.mcp?.trustedOfficialCuaServerNames ?? []),
       ),
-      // 插件 UI：display.ui 需要 server → pluginId 的归属；catalog 是 session 冻结的唯一权威。
+      // Plugin UI: display.ui needs the server -> pluginId attribution; the catalog is the session-frozen single authority.
       pluginIdByServerName: buildPluginIdByServerName(this.config.pluginReferenceCatalog),
     });
     if (registered.length > 0) {
       this.invalidateToolCache();
     }
-    // A7：记住注册集合与签名，回合边界 refreshMcpToolsIfChanged 据此判断是否重注册。
+    // A7: remember the registered set and its signature; refreshMcpToolsIfChanged at turn boundaries uses it to decide re-registration.
     this.registeredMcpToolNames = registered;
     this.mcpToolsSignature = mcpToolsSignature(snapshot.tools);
     this.mcpToolListRevision = mcpPort.toolListRevision?.();
@@ -175,8 +175,8 @@ export async function initializeMcp(
 }
 
 /**
- * server 名 → 插件稳定 id。catalog 里 disabled 插件的 mcpServerNames 为空，天然不参与；
- * 同名冲突插件的 server 名互不相同（带插件名前缀），不需要额外去重。
+ * Server name -> plugin stable id. Disabled plugins have empty mcpServerNames in the catalog and naturally drop out; same-named
+ * plugin servers are unique (plugin-name prefix), so no extra dedupe is needed.
  */
 function buildPluginIdByServerName(
   catalog: PluginReferenceCatalog | undefined,
@@ -196,9 +196,9 @@ function mcpToolsSignature(descriptors: readonly McpToolDescriptor[]): string {
 }
 
 /**
- * 回合开始前刷新 MCP 工具表。只有端口报告 tools/list_changed 计数变化时才重新 listTools
- * （adapter 对收到通知的 server 重拉），再比较工具签名，变了就注销旧的、注册新的并失效工具缓存。
- * 不实现 toolListRevision 的端口（mock / 静态 server）永远不刷新；回合内也不刷新（已拍板）。
+ * Refresh the MCP tool table before a turn starts. Only when the port reports a tools/list_changed count change re-listTools
+ * run (the adapter re-pulls servers that received the notification), then compare tool signatures; on change, unregister old, register new, invalidate caches.
+ * Ports without toolListRevision (mock / static servers) never refresh; nor mid-turn (decided).
  */
 export async function refreshMcpToolsIfChanged(
   this: AgentRuntimeInternal,

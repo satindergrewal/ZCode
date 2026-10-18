@@ -1,7 +1,7 @@
-// 权限规则的读取、持久化与授权后的落定（从 permission-flow.ts 拆出）。
-// 拆分原因：permission-flow.ts 引入 responder 竞速后超过单文件 400 行上限；这里的 helper 只与
-// 规则存取内聚（project 级写 sessionStore、会话级进内存 ruleset），与 ask 时序无关。确认窗的设置调整
-// 让 permission-flow.ts 再次逼近上限时，授权应答里的规则更新整段也搬了过来（行为不变）。
+// Permission-rule reads, persistence, and post-approval settling (split from permission-flow.ts).
+// Reason: after permission-flow gained the responder race it crossed the 400-line file cap; these helpers cohere only with
+// rule storage (project-level writes to sessionStore, session-level to the in-memory ruleset), not with ask ordering. When dialog settings
+// pushed permission-flow toward the cap again, the rule updates in approval responses moved here too (behavior unchanged).
 import {
   CoreErrorType,
   createCoreError,
@@ -76,8 +76,8 @@ export async function persistProjectPermissionUpdates(
 }
 
 /**
- * 授权应答里的规则更新：先把项目级规则写盘，再把会话级规则放进内存 ruleset。写盘失败即返回工具失败
- * 结果（用户选的「始终允许」没能记住，不能当作什么都没发生），此时会话级规则也不落。
+ * Rule updates inside an approval response: write project-level rules to disk first, then session-level rules into the in-memory ruleset. A write failure returns a tool failure
+ * result (the chosen always-allow was not remembered — never a silent no-op) and session-level rules are skipped too.
  */
 export async function applyGrantedPermissionUpdates(options: {
   deps: ToolExecutorDeps;
@@ -110,8 +110,8 @@ export async function applyGrantedPermissionUpdates(options: {
   }
 
   if (sessionPermissionUpdates?.length) {
-    // 会话免确认（docs/dynamic-workflow/launch.md「Always allow in this session」）：只进内存里的会话 ruleset，
-    // 与上面的项目级持久化互不可见。
+    // Session-level always-allow (docs/dynamic-workflow/launch.md "Always allow in this session"): into the in-memory session ruleset only,
+    // invisible to the project-level persistence above and vice versa.
     deps.permissionService.grantSessionPermission(sessionPermissionUpdates);
     deps.logger?.info("Session permission granted", {
       ...traceContextToLogContext(traceContext),

@@ -26,7 +26,9 @@ async function makeTempDir(): Promise<string> {
 }
 
 afterEach(async () => {
-  await Promise.all(temporaryDirs.splice(0).map((dir) => rm(dir, { force: true, recursive: true })));
+  await Promise.all(
+    temporaryDirs.splice(0).map((dir) => rm(dir, { force: true, recursive: true })),
+  );
 });
 
 interface FakePackageSpec {
@@ -187,14 +189,28 @@ describe("stageRelease", () => {
       node: "Copyright Node\nComplete runtime terms\n",
       nodeSource: '{"version":"22.16.0"}\n',
     };
-    return { distDir, workspaceNodeModulesDir, agentBundlePath, nodeBinaryPath, outputDir, notices };
+    return {
+      distDir,
+      workspaceNodeModulesDir,
+      agentBundlePath,
+      nodeBinaryPath,
+      outputDir,
+      notices,
+    };
   }
 
-  async function writeFakeNativeTools(toolsDir: string, tools: Record<string, string>): Promise<void> {
+  async function writeFakeNativeTools(
+    toolsDir: string,
+    tools: Record<string, string>,
+  ): Promise<void> {
     for (const [tool, binaryName] of Object.entries(tools)) {
       await mkdir(join(toolsDir, tool), { recursive: true });
       await writeFile(join(toolsDir, tool, binaryName), tool, "utf8");
-      await writeFile(join(toolsDir, tool, "THIRD-PARTY-NOTICES.txt"), `Copyright ${tool}\nFull terms\n`, "utf8");
+      await writeFile(
+        join(toolsDir, tool, "THIRD-PARTY-NOTICES.txt"),
+        `Copyright ${tool}\nFull terms\n`,
+        "utf8",
+      );
       await writeFile(join(toolsDir, tool, "SOURCES.json"), JSON.stringify({ tool }), "utf8");
     }
   }
@@ -215,8 +231,8 @@ describe("stageRelease", () => {
     expect(launcher).toContain('"$DIR/runtime/node"');
     expect(launcher).toContain('"$DIR/runtime/server-cli.js"');
     const launcherStat = await stat(join(releaseDir, "bin", "zcode"));
-    // Bugfix: NTFS 不保留 POSIX exec 位（Windows 上 stat.mode 恒无 0o111 位），
-    // 可执行性断言只在 POSIX 宿主上生效；Windows 宿主仍验证文件存在与内容。
+    // Bugfix: NTFS keeps no POSIX exec bit (stat.mode never has 0o111 on Windows),
+    // so executability asserts only on POSIX hosts; Windows still checks existence and content.
     if (process.platform !== "win32") expect(launcherStat.mode & 0o111).not.toBe(0);
 
     const runtimePackageJson = JSON.parse(
@@ -243,16 +259,16 @@ describe("stageRelease", () => {
     }
 
     const nodeStat = await stat(join(releaseDir, "runtime", "node"));
-    // Bugfix: 同上，NTFS 无 POSIX exec 位，可执行性断言只在 POSIX 宿主生效。
+    // Bugfix: as above, NTFS has no POSIX exec bit; executability asserts on POSIX hosts only.
     if (process.platform !== "win32") expect(nodeStat.mode & 0o111).not.toBe(0);
 
-    // 交叉打包安全性：宿主编译产物与非目标平台 prebuilds 不进入发行包。
+    // Cross-packing safety: host-built artifacts and foreign-platform prebuilds never enter the release.
     await expect(stat(join(releaseDir, "runtime/node_modules/node-pty/build"))).rejects.toThrow();
     await expect(
       stat(join(releaseDir, "runtime/node_modules/node-pty/prebuilds/darwin-arm64")),
     ).rejects.toThrow();
 
-    // linux 平台 pty.node 由 @lydell 平台包补齐。
+    // linux pty.node is filled from the @lydell platform package.
     const linuxPty = await readFile(
       join(releaseDir, "runtime/node_modules/node-pty/prebuilds/linux-x64/pty.node"),
       "utf8",
@@ -294,7 +310,7 @@ describe("stageRelease", () => {
     );
     await expect(stat(join(prebuildDir, "pty.node"))).resolves.toBeTruthy();
     const helperStat = await stat(join(prebuildDir, "spawn-helper"));
-    // Bugfix: 同上，NTFS 无 POSIX exec 位，可执行性断言只在 POSIX 宿主生效。
+    // Bugfix: as above, NTFS has no POSIX exec bit; executability asserts on POSIX hosts only.
     if (process.platform !== "win32") expect(helperStat.mode & 0o111).not.toBe(0);
   });
 
@@ -302,49 +318,82 @@ describe("stageRelease", () => {
     const fixture = await makeStageFixture();
     const toolsDir = join(await makeTempDir(), "tools");
     await writeFakeNativeTools(toolsDir, { ripgrep: "rg.exe", ugrep: "ugrep.exe" });
-    const staged = await stageRelease({ target: "win32-x64", appVersion: "9.9.9-test", nativeToolsDir: toolsDir, ...fixture });
+    const staged = await stageRelease({
+      target: "win32-x64",
+      appVersion: "9.9.9-test",
+      nativeToolsDir: toolsDir,
+      ...fixture,
+    });
     expect(staged.archivePath).toMatch(/\.zip$/u);
-    expect(await readFile(join(staged.releaseDir, "bin", "zcode.cmd"), "utf8")).toContain("node.exe");
+    expect(await readFile(join(staged.releaseDir, "bin", "zcode.cmd"), "utf8")).toContain(
+      "node.exe",
+    );
     await expect(stat(join(staged.releaseDir, "runtime", "node.exe"))).resolves.toBeTruthy();
-    await expect(stat(join(staged.releaseDir, "runtime", "tools", "ripgrep", "rg.exe"))).resolves.toBeTruthy();
-    await expect(stat(join(staged.releaseDir, "runtime", "tools", "ugrep", "ugrep.exe"))).resolves.toBeTruthy();
-    await expect(stat(join(staged.releaseDir, "runtime", "tools", "ugrep", "THIRD-PARTY-NOTICES.txt"))).resolves.toBeTruthy();
+    await expect(
+      stat(join(staged.releaseDir, "runtime", "tools", "ripgrep", "rg.exe")),
+    ).resolves.toBeTruthy();
+    await expect(
+      stat(join(staged.releaseDir, "runtime", "tools", "ugrep", "ugrep.exe")),
+    ).resolves.toBeTruthy();
+    await expect(
+      stat(join(staged.releaseDir, "runtime", "tools", "ugrep", "THIRD-PARTY-NOTICES.txt")),
+    ).resolves.toBeTruthy();
     await expect(stat(join(staged.releaseDir, "runtime", "tools", "bfs"))).rejects.toThrow();
   });
 
-  it("每个可独立下载的组件归档都携带适用的第三方声明", async () => {
+  it("ships the applicable third-party notices in every independently downloadable component archive", async () => {
     const fixture = await makeStageFixture();
     const toolsDir = join(await makeTempDir(), "tools");
     await writeFakeNativeTools(toolsDir, { bfs: "bfs", ripgrep: "rg", ugrep: "ugrep" });
-    const staged = await stageRelease({ target: "linux-x64", appVersion: "9.9.9-test", nativeToolsDir: toolsDir, ...fixture });
-    const manifest = JSON.parse(await readFile(join(staged.releaseDir, "manifest.json"), "utf8")) as {
+    const staged = await stageRelease({
+      target: "linux-x64",
+      appVersion: "9.9.9-test",
+      nativeToolsDir: toolsDir,
+      ...fixture,
+    });
+    const manifest = JSON.parse(
+      await readFile(join(staged.releaseDir, "manifest.json"), "utf8"),
+    ) as {
       components: Array<{ id: string; archivePath: string }>;
     };
     const expected: Record<string, string[]> = {
       "node-runtime": ["runtime/LICENSE.node.txt", "runtime/NODE-SOURCES.json"],
       "server-runtime": ["runtime/THIRD-PARTY-NOTICES.md", "runtime/node_modules/node-pty/LICENSE"],
       "agent-runtime": ["runtime/licenses/agent/THIRD-PARTY-NOTICES.md"],
-      "native-search-tools": ["runtime/tools/ripgrep/THIRD-PARTY-NOTICES.txt", "runtime/tools/ugrep/SOURCES.json"],
+      "native-search-tools": [
+        "runtime/tools/ripgrep/THIRD-PARTY-NOTICES.txt",
+        "runtime/tools/ugrep/SOURCES.json",
+      ],
     };
-    expect(manifest.components.map((component) => component.id).sort()).toEqual(Object.keys(expected).sort());
+    expect(manifest.components.map((component) => component.id).sort()).toEqual(
+      Object.keys(expected).sort(),
+    );
     const extractRoot = await makeTempDir();
     for (const component of manifest.components) {
       const extractDir = join(extractRoot, component.id);
       await mkdir(extractDir, { recursive: true });
       await runTar(["-xf", join(fixture.outputDir, component.archivePath), "-C", extractDir]);
       for (const member of expected[component.id] ?? []) {
-        expect(await readFile(join(extractDir, member))).toEqual(await readFile(join(staged.releaseDir, member)));
+        expect(await readFile(join(extractDir, member))).toEqual(
+          await readFile(join(staged.releaseDir, member)),
+        );
       }
     }
   });
 
-  it("工具目录缺少声明或声明参数为空时拒绝组装发行包", async () => {
+  it("refuses to assemble the release when tool dirs miss notices or notice args are empty", async () => {
     const fixture = await makeStageFixture();
     const toolsDir = join(await makeTempDir(), "tools");
     await writeFakeNativeTools(toolsDir, { bfs: "bfs", ripgrep: "rg", ugrep: "ugrep" });
     await rm(join(toolsDir, "ripgrep", "THIRD-PARTY-NOTICES.txt"));
     await expect(
-      stageRelease({ target: "linux-x64", appVersion: "9.9.9-test", archive: false, nativeToolsDir: toolsDir, ...fixture }),
+      stageRelease({
+        target: "linux-x64",
+        appVersion: "9.9.9-test",
+        archive: false,
+        nativeToolsDir: toolsDir,
+        ...fixture,
+      }),
     ).rejects.toThrow(/ENOENT/u);
     await expect(
       stageRelease({
@@ -384,12 +433,16 @@ describe("stageRelease", () => {
     });
 
     for (const name of pluginNames.filter((name) => name !== "superpowers-plugin")) {
-      await expect(stat(join(staged.releaseDir, "runtime/packages", name, "README.md"))).resolves.toBeTruthy();
+      await expect(
+        stat(join(staged.releaseDir, "runtime/packages", name, "README.md")),
+      ).resolves.toBeTruthy();
     }
     await expect(
       stat(join(staged.releaseDir, "runtime/packages/superpowers-plugin")),
     ).rejects.toThrow();
-    const manifest = JSON.parse(await readFile(join(staged.releaseDir, "manifest.json"), "utf8")) as {
+    const manifest = JSON.parse(
+      await readFile(join(staged.releaseDir, "manifest.json"), "utf8"),
+    ) as {
       plugins?: string[];
       components?: Array<{ id: string }>;
     };
@@ -402,7 +455,9 @@ describe("stageRelease", () => {
       "skill-creator",
       "zcode-guide",
     ]);
-    expect(manifest.components?.some((component) => component.id === "official-plugins")).toBe(true);
+    expect(manifest.components?.some((component) => component.id === "official-plugins")).toBe(
+      true,
+    );
   });
 
   it("removes stale component archives before restaging a target", async () => {
@@ -411,7 +466,12 @@ describe("stageRelease", () => {
     await mkdir(staleDir, { recursive: true });
     await writeFile(join(staleDir, "stale-component.tar.gz"), "stale", "utf8");
 
-    await stageRelease({ target: "linux-x64", appVersion: "9.9.9-test", archive: false, ...fixture });
+    await stageRelease({
+      target: "linux-x64",
+      appVersion: "9.9.9-test",
+      archive: false,
+      ...fixture,
+    });
 
     await expect(stat(join(staleDir, "stale-component.tar.gz"))).rejects.toThrow();
   });

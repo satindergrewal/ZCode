@@ -19,7 +19,7 @@ async function waitForReady(
       };
       if (status.state === "ready") return status;
     } catch {
-      // Supervisor/Core 仍在真实启动，继续轮询 control endpoint。
+      // Supervisor/Core are still really starting; keep polling the control endpoint.
     }
     await new Promise<void>((resolve) => setTimeout(resolve, 25));
   }
@@ -65,7 +65,7 @@ async function waitForHttpClosed(port: number): Promise<boolean> {
 }
 
 describe.skipIf(process.platform === "win32")("runtime update integration", () => {
-  it("收口 Supervisor IPC 断连后的 Core，避免遗留孤儿监听进程", async () => {
+  it("settles the Core after Supervisor IPC loss, leaving no orphaned listener process", async () => {
     const root = await mkdtemp(join("/tmp", "zcode-orphan-"));
     const layout = resolveServerLayout(join(root, ".zcode", "server"));
     await new ReleaseManager(layout).ensure();
@@ -115,15 +115,15 @@ describe.skipIf(process.platform === "win32")("runtime update integration", () =
         try {
           process.kill(pid, "SIGKILL");
         } catch {
-          /* child 已退出 */
+          /* child exited */
         }
       }
     }
   }, 20_000);
 
   it("launches real old/new Core processes with release-scoped Agent wiring", async () => {
-    // POSIX Unix socket 有路径长度限制，macOS 的 tmpdir() 可能位于很长的 /var/folders 路径；
-    // 保持短路径，Windows 则使用其可移植的系统临时目录。
+    // POSIX Unix sockets cap path length and macOS tmpdir() can sit deep in /var/folders;
+    // keep it short; Windows uses its portable system temp dir.
     const root = await mkdtemp(
       join(process.platform === "win32" ? tmpdir() : "/tmp", "zcode-runtime-"),
     );
@@ -177,8 +177,8 @@ describe.skipIf(process.platform === "win32")("runtime update integration", () =
         state: "ready",
         serviceRegistered: false,
       });
-      // control socket 会比外层 serve 命令返回稍早；先等 CLI 完成自己的 ready barrier，
-      // 避免测试立即 update/stop 让启动调用方错过短暂的 ready 状态。
+      // The control socket may accept slightly before the outer serve command returns; wait for the CLI's own ready barrier first,
+      // or an immediate update/stop makes the starter miss the fleeting ready state.
       await waitForCondition(() => diagnostics.includes('"state":"ready"'));
       await releases.writePending({ version: "new", releaseDir: join(layout.releasesDir, "new") });
       await expect(

@@ -12,11 +12,10 @@ import type { CliMcpSource, McpFileFormat } from "@zcode/shared";
 export type McpConfigKeyName = "mcpServers" | "mcp" | "mcp_servers" | "mcp.servers";
 
 /**
- * OpenCode MCP 配置格式
- * OpenCode 使用特殊的配置格式：
- * - 键名是 "mcp" 而不是 "mcpServers"
- * - command 是数组格式 ["npx", "-y", "server"] 而不是分开的 command + args
- * - 必须有 type 字段 ("local" 或 "remote")
+ * OpenCode MCP config shape. OpenCode uses a particular format:
+ * - the key is "mcp", not "mcpServers"
+ * - command is an array ["npx", "-y", "server"] instead of separate command + args
+ * - a type field ("local" or "remote") is required.
  */
 export interface OpenCodeMcpServerConfig {
   type: "local" | "remote";

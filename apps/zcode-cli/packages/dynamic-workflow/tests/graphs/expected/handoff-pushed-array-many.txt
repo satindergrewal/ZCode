@@ -1,15 +1,15 @@
 node source
 node join#1 "join" @9:30 type="Draft[]"
-node fan-out#1 "fan-out" @9:34 type="Draft[]"
-node ask#1 "ask" @9:73 actors=actor#1 within=fan-out#1 type="Draft"
-node ask#2 "planner" @11:28 actors=actor#2 type="string[]"
-node join#2 "join" @12:29 type="Draft[]"
-node fan-out#2 "fan-out" @12:33 type="Draft[]"
-node ask#3 "ask" @12:70 actors=actor#3 within=fan-out#2 type="Draft"
+node fan-out#1 "fan-out" @10:3 type="Draft[]"
+node ask#1 "ask" @10:42 actors=actor#1 within=fan-out#1 type="Draft"
+node ask#2 "planner" @13:28 actors=actor#2 type="string[]"
+node join#2 "join" @14:29 type="Draft[]"
+node fan-out#2 "fan-out" @15:3 type="Draft[]"
+node ask#3 "ask" @15:40 actors=actor#3 within=fan-out#2 type="Draft"
 node sink
-actor actor#1 @9:52 within=fan-out#1
-actor actor#2 "planner" @10:17
-actor actor#3 @12:49 within=fan-out#2
+actor actor#1 @10:21 within=fan-out#1
+actor actor#2 "planner" @12:17
+actor actor#3 @15:19 within=fan-out#2
 edge source -> fan-out#1 data exact
 edge join#1 -> ask#2 data exact type="Draft[]"
 edge join#1 -> sink data exact type="Draft[]"

@@ -43,31 +43,31 @@ const testRoots = [
 ] as const;
 
 describe("M2 completion boundary", () => {
-  it("旧 Provider DTO 只属于一次性物理迁移边界", async () => {
+  it("confines the legacy provider DTO to the one-shot physical migration boundary", async () => {
     const matches = await findProductionFilesMatching(/\bModelProviderConfig\b/u);
     expect(matches).toEqual([...legacyDtoOwners].sort());
   });
 
-  it("非迁移测试不再以旧 Provider DTO 组织夹具", async () => {
+  it("keeps legacy provider DTOs out of non-migration test fixtures", async () => {
     const matches = await findFilesMatching(testRoots, /\bModelProviderConfig\b/u);
     expect(matches).toEqual([...legacyDtoTestOwners].sort());
   });
 
-  it("生产实现不再读取旧 Provider Store 路径", async () => {
+  it("stops production from reading legacy provider store paths", async () => {
     expect(await findProductionFilesContaining("model-providers.json")).toEqual([]);
   });
 
-  it("正式 Provider 消费链路不再使用旧 API format 类型", async () => {
+  it("keeps legacy API format types out of the production provider consumption path", async () => {
     const matches = await findProductionFilesMatching(/\bModelProviderApiFormat\b/u);
     expect(matches).toEqual([...legacyApiFormatOwners].sort());
   });
 
-  it("旧 Runtime Model Config 只属于一次性导入与兼容解析边界", async () => {
+  it("confines the legacy runtime model config to one-shot import and compatibility parsing", async () => {
     const matches = await findProductionFilesMatching(/\bRuntimeModelConfig\b/u);
     expect(matches).toEqual([]);
   });
 
-  it("模型名硬编码缺省值不能重新进入 Process Registry 与正式 Model", async () => {
+  it("never lets hardcoded model-name defaults back into the Process Registry or official models", async () => {
     const matches = await findProductionFilesMatching(
       /\b(?:resolveModelCapabilityDefaults|createDefaultModelCapability|applyModelCapabilityDefaults)\b/u,
     );
@@ -98,7 +98,7 @@ describe("M2 completion boundary", () => {
     "providerRevision",
     "createRuntimeAiSdkModelRegistryConfig",
     "modelCatalog: options.modelCatalog",
-  ])("生产源码不再出现已退出边界 %s", async (retiredBoundary) => {
+  ])("keeps retired boundary %s out of production sources", async (retiredBoundary) => {
     expect(await findProductionFilesContaining(retiredBoundary)).toEqual([]);
   });
 
@@ -113,11 +113,14 @@ describe("M2 completion boundary", () => {
     "migrateLegacyOpenAiCompatibleReasoningOptions",
     "isSystemDisabledCodingPlanProvider",
     "isUserDisabledCodingPlanProvider",
-  ])("生产源码不再公开或消费无有效调用方的旧 helper %s", async (retiredHelper) => {
-    expect(
-      await findProductionFilesMatching(new RegExp(`\\b${escapeRegExp(retiredHelper)}\\b`, "u")),
-    ).toEqual([]);
-  });
+  ])(
+    "keeps the orphaned legacy helper %s unexported and unconsumed in production sources",
+    async (retiredHelper) => {
+      expect(
+        await findProductionFilesMatching(new RegExp(`\\b${escapeRegExp(retiredHelper)}\\b`, "u")),
+      ).toEqual([]);
+    },
+  );
 });
 
 async function findProductionFilesContaining(needle: string): Promise<string[]> {
@@ -135,7 +138,7 @@ async function findFilesMatching(roots: readonly string[], pattern: RegExp): Pro
   const matches: string[] = [];
   for (const file of files) {
     if (pattern.test(await readFile(file, "utf-8"))) {
-      // 路径作为跨平台模块标识，统一 POSIX 分隔符比较（Windows readdir 产出 \）。
+      // Paths act as cross-platform module ids; compare with POSIX separators (Windows readdir yields \).
       matches.push(relative(repositoryRoot, file).replaceAll("\\", "/"));
     }
   }

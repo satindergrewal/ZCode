@@ -1,6 +1,7 @@
 /**
- * 受信 relay shell 的纯逻辑：不解析、不缓冲协议消息，只在宿主 MessagePort 与插件 iframe 之间原样转发 JSON-RPC。
- * 协议状态（握手、超时、teardown）全部在宿主 renderer 的官方 AppBridge 里；DOM 接线在 main.ts。
+ * Pure logic for the trusted relay shell: no parsing, no buffering - JSON-RPC is forwarded
+ * verbatim between the host MessagePort and the plugin iframe. All protocol state (handshake,
+ * timeouts, teardown) lives in the host renderer's official AppBridge; DOM wiring is in main.ts.
  */
 export interface PluginSandboxRelayFrame {
   postMessage(message: unknown, targetOrigin: string): void;
@@ -15,15 +16,15 @@ export interface PluginSandboxRelayPort {
 }
 
 export interface PluginSandboxRelay {
-  /** preload 转交的 init 帧：`{ type: "init", sandboxId, initId }` + 一条端口。 */
+  /** Init frame handed over by preload: `{ type: "init", sandboxId, initId }` plus one port. */
   handleInit(data: unknown, ports: readonly PluginSandboxRelayPort[]): void;
-  /** 来自插件 iframe（source / origin 已由 main.ts 校验）的消息。 */
+  /** Messages from the plugin iframe (source/origin already validated in main.ts). */
   handleFrameMessage(data: unknown): void;
   readonly initId: number | null;
   dispose(): void;
 }
 
-/** 插件 iframe `allow` 只接受这四个 Permission Policy 特性（与 main 的权限闸门同一集合）。 */
+/** The plugin iframe `allow` accepts only these four Permissions Policy features (the same set the main permission gate enforces). */
 export const PLUGIN_SANDBOX_IFRAME_ALLOW_TOKENS: readonly string[] = [
   "camera",
   "microphone",
@@ -31,7 +32,7 @@ export const PLUGIN_SANDBOX_IFRAME_ALLOW_TOKENS: readonly string[] = [
   "clipboard-write",
 ];
 
-/** 过滤 init 帧里的 allow 串：未知 token 丢弃，去重，保持原顺序。 */
+/** Filter the init frame's allow list: drop unknown tokens, dedup, keep order. */
 export function sanitizePluginSandboxIframeAllow(value: unknown): string {
   if (typeof value !== "string") return "";
   const tokens = value
@@ -44,7 +45,7 @@ export function sanitizePluginSandboxIframeAllow(value: unknown): string {
 export const PLUGIN_SANDBOX_SHELL_HOST_PREFIX = "shell-";
 export const PLUGIN_SANDBOX_PLUGIN_HOST_PREFIX = "plugin-";
 
-/** 从 shell 自己的 origin（zcode-sandbox://shell-<id>）推导 sandboxId 与插件 iframe 的 origin / URL。 */
+//** Derive the sandboxId and plugin iframe origin/URL from the shell's own origin (zcode-sandbox://shell-<id>). */
 export function resolvePluginSandboxShellIdentity(origin: string): {
   sandboxId: string;
   pluginOrigin: string;
@@ -69,7 +70,7 @@ export function createPluginSandboxRelay(deps: {
   sandboxId: string;
   pluginOrigin: string;
   pluginUrl: string;
-  /** `allow` 为空串时不设该属性。 */
+  /** Omit the attribute when `allow` is empty. */
   createPluginFrame(src: string, allow: string): PluginSandboxRelayFrame;
   showError(message: string): void;
   log(message: string): void;
@@ -112,7 +113,7 @@ export function createPluginSandboxRelay(deps: {
         return;
       }
       if (port) {
-        // main 只在 guest dom-ready 时发一次 init；重复 init 只可能来自串线，保留首个。
+        // main sends init once per guest dom-ready; a duplicate can only be a crossed line - keep the first.
         deps.log(
           `[plugin-sandbox-shell] duplicate init ignored (initId=${init.initId}, current=${initId})`,
         );

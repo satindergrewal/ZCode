@@ -2,7 +2,8 @@ import { createServer } from "node:http";
 import { copyFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { Events } from "./agent.js";
-// 确定性本地模型只返回预置工具调用；授权、认领、执行、取消仍走真实 Agent。
+// The deterministic local model replays preset tool calls only; authorize/claim/execute/cancel
+// still run through the real agent.
 export async function startModel(root: string, cli: string) {
   const requests = new Events<any>();
   const plans: { key: string; delayed: boolean; status?: number; finishReason?: string }[] = [];

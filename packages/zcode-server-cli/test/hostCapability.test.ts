@@ -8,7 +8,7 @@ describe("host capability store", () => {
     const issued = store.issue();
     expect(issued.expiresAt).toBe(1_100);
     expect(store.consume(issued.capability)).toBe(true);
-    // 一次性 ticket：重放必须失败。
+    // One-shot ticket: a replay must fail.
     expect(store.consume(issued.capability)).toBe(false);
     now += 1;
     expect(store.consume(issued.capability)).toBe(false);

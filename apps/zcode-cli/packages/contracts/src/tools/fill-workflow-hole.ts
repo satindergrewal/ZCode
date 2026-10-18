@@ -1,13 +1,14 @@
 // ============================================================
-// FillWorkflowHole Tool - 给一个正在等代码的留白补上函数体
+// FillWorkflowHole Tool - fill a waiting hole's function body
 // ============================================================
-// docs/dynamic-workflow/launch.md「The `FillWorkflowHole` tool」；引擎侧见
-// apps/zcode-cli/packages/dynamic-workflow/docs/execution-engine.md「Holes」，端口方法
+// docs/dynamic-workflow/launch.md "The `FillWorkflowHole` tool"; engine side
+// apps/zcode-cli/packages/dynamic-workflow/docs/execution-engine.md "Holes"; the port method
 // `DynamicWorkflowRunPort.fillHole`（interfaces/dynamic-workflow-run.port.ts）。
 //
-// 与 AmendWorkflow 分成两个工具的理由：补全**什么都不启动**——run 保持它的 id、journal 与子代理，
-// 只是在留白处长出模型写下的那一段。输出与 CreateWorkflow / AmendWorkflow 共用一个形状，好让有效
-// 脚本的 display 载荷照启动那样骑在工具行上，run 卡取它 run id 下最新的一份。
+// Why a separate tool from AmendWorkflow: filling **starts nothing** - the run keeps its id,
+// journal, and subagents; the model's snippet simply grows at the hole. Output shares one shape
+// with CreateWorkflow / AmendWorkflow so the valid script's display payload rides the tool row
+// as on launch, and the run card takes the latest under its run id.
 
 import { z } from "zod";
 import { CreateWorkflowOutputJsonSchema, CreateWorkflowOutputSchema } from "./create-workflow.js";
@@ -16,14 +17,16 @@ import { toToolJsonSchema } from "./json-schema.js";
 export const FILL_WORKFLOW_HOLE_TOOL_NAME = "FillWorkflowHole";
 
 /**
- * 「恰好给一个函数体来源」的违规说明。与 `CREATE_WORKFLOW_SOURCE_ERROR` 同一个位置、同一种语气；
- * 与 AmendWorkflow 不同的是两个都不给在这里**也是**违规——没有可沿用的函数体。
+ * Violation copy for "exactly one body source". Same slot and tone as
+ * `CREATE_WORKFLOW_SOURCE_ERROR`; unlike AmendWorkflow, giving neither is **also** a violation
+ * here - there is no body to inherit.
  */
 export const FILL_WORKFLOW_HOLE_SOURCE_ERROR =
   "Provide exactly one body source: `script` for the hole's statements written inline, or `path` for a file holding them (usually the fill file a rejected attempt was saved to). Passing both, or neither, is ambiguous.";
 
 /**
- * 模型面入参。`hole` 不在这里——那是 resolveInput 回填的事实（下面），模型的 JSON schema 不列它。
+ * Model-facing input. `hole` is not here - a fact backfilled by resolveInput (below), absent
+ * from the model's JSON schema.
  */
 const FillWorkflowHoleModelInputSchema = z.object({
   run_id: z
@@ -37,8 +40,9 @@ const FillWorkflowHoleModelInputSchema = z.object({
       "The hole's site id from the notification or from GetWorkflowRun's holes, e.g. `hole#21b40fca`.",
     ),
   /**
-   * 函数体**只有语句**：不含 `hole(...)` 调用、不含箭头、不含它周围的脚本。工具把它拼进 run 存档的
-   * 脚本作为留白的函数体再整体编译（docs/dynamic-workflow/launch.md「Input and output」）。
+   * The body is **statements only**: no `hole(...)` call, no arrow, none of the surrounding
+   * script. The tool splices it into the run's stored script as the hole's body and compiles
+   * wholesale (docs/dynamic-workflow/launch.md "Input and output").
    */
   script: z
     .string()
@@ -48,8 +52,9 @@ const FillWorkflowHoleModelInputSchema = z.object({
       "The body: only the statements of the hole's function, inline. This OR `path`, never both. It is compiled where the hole stands and sees every binding declared before it; it must return the hole's type.",
     ),
   /**
-   * 被拒绝的一次尝试的回程（「The fill file」）：内联提交被写到 fill 文件，诊断给的是那个文件的行号，
-   * 下一次只改一行再把同一个路径交回来。
+   * The return path of a refused attempt ("The fill file"): an inline submission is written to
+   * the fill file, diagnostics carry that file's line numbers, and the next try edits one line
+   * and hands the same path back.
    */
   path: z
     .string()
@@ -61,24 +66,28 @@ const FillWorkflowHoleModelInputSchema = z.object({
 });
 
 /**
- * resolveInput 回填的留白事实（docs/dynamic-workflow/launch.md「Approval」）。
+ * Hole facts backfilled by resolveInput
+ * (docs/dynamic-workflow/launch.md "Approval").
  *
- * 权限判定（本会话的 run 免确认）与确认窗（留白的名字与类型、草稿路径）都读它，而两处都在
- * handler 之前、且必须同步——所以由 resolveInput（异步、全流程唯一一次读端口）算好放进入参。
- * 归一化**无条件覆盖**：模型伪造它是无效的（AmendWorkflow 的 `predecessor` 同一条先例）。
+ * Both the permission decision (this session's runs skip confirmation) and the confirm dialog
+ * (hole name and type, draft path) read it; both precede the handler and must agree - so
+ * resolveInput (async, the flow's single port read) computes it into the input. Normalization
+ * **unconditionally overwrites**: a model-forged copy is invalid (same precedent as
+ * AmendWorkflow's `predecessor`).
  *
- * `owned_by_this_session` 已折进 amend 规则的第二个条件：run 归本会话**且**不是用户亲手停下的。
- * 一个被用户停下的 run 不可能仍在留白处等待，所以这一位在实践上只会因归属为假。
+ * `owned_by_this_session` folded into the second amend condition: the run is this session's
+ * **and** not user-stopped. A user-stopped run cannot still wait at a hole, so in practice the
+ * bit is false only via ownership.
  */
 export const FillWorkflowHoleHoleSchema = z
   .object({
-    /** 留白的字面名（`hole<T>("决定分组", …)` 的 `"决定分组"`）。 */
+    /** The hole's literal name (the `"grouping"` of `hole<T>("grouping", ...)`). */
     name: z.string().min(1),
-    /** 留白的类型实参原文（`Verdict`、`string[]`），照脚本写法。 */
+    /** Type argument verbatim (`Verdict`, `string[]`), as written in the script. */
     type: z.string().min(1),
-    /** run 的草稿文件（绝对路径）；run 没记过文件时缺席。 */
+    /** The run's draft file (absolute); absent when the run recorded none. */
     draft_path: z.string().min(1).optional(),
-    /** 留白调用在草稿里的行号（1 起）；读不到时缺席。 */
+    /** Line of the hole call in the draft (1-based); absent when unreadable. */
     line: z.number().int().positive().optional(),
     owned_by_this_session: z.boolean(),
   })
@@ -87,11 +96,12 @@ export const FillWorkflowHoleHoleSchema = z
 export type FillWorkflowHoleHole = z.infer<typeof FillWorkflowHoleHoleSchema>;
 
 /**
- * 「这个 run 归本会话、且不是用户亲手停下的」——免确认的 owner 规则
- * （docs/dynamic-workflow/launch.md「Approval」，读的是「Amending this session's runs」那条）。
+ * "This run is this session's, and not user-stopped" - the confirmation-exempt owner rule
+ * (docs/dynamic-workflow/launch.md "Approval", reading the "Amending this session's runs" clause).
  *
- * 与 `isAmendWorkflowOwnedPredecessor` 同一条论证：住在契约里，权限服务与 handler 读同一份谓词。
- * 收 `unknown`：权限服务拿到的是还没解析的工具入参，handler 拿到的是解析好的事实块。
+ * Same argument as `isAmendWorkflowOwnedPredecessor`: lives in the contract so the permission
+ * service and handler read one predicate. Takes `unknown`: the service sees not-yet-parsed
+ * input, the handler the resolved fact block.
  */
 export function isFillWorkflowHoleOwnedRun(hole: unknown): boolean {
   if (!hole || typeof hole !== "object") return false;
@@ -99,9 +109,10 @@ export function isFillWorkflowHoleOwnedRun(hole: unknown): boolean {
 }
 
 /**
- * 运行时入参：模型面那些键 + 回填的 `hole`。`.strict()`：任何旧拼写在这里都是可见错误。
- * 归一化后 `script`（函数体的字节）与 `path` 可以同时在场——`path` 提交读成 `script`、路径留作
- * 来龙去脉，与 AmendWorkflow 同一条「读一次、只读一次」纪律。
+ * Runtime input: the model-facing keys + backfilled `hole`. `.strict()`: any legacy spelling
+ * is a visible error here. After normalization `script` (the body bytes) and `path` may both
+ * be present - a `path` submit resolves into `script` and keeps the path as provenance, the
+ * same "read once, only once" discipline as AmendWorkflow.
  */
 export const FillWorkflowHoleInputSchema = FillWorkflowHoleModelInputSchema.extend({
   hole: FillWorkflowHoleHoleSchema.optional(),
@@ -109,15 +120,16 @@ export const FillWorkflowHoleInputSchema = FillWorkflowHoleModelInputSchema.exte
 
 export type FillWorkflowHoleInput = z.infer<typeof FillWorkflowHoleInputSchema>;
 
-/** 交给模型的 JSON schema：不含 `hole`。 */
+/** JSON schema for the model: no `hole`. */
 export const FillWorkflowHoleInputJsonSchema = toToolJsonSchema(
   FillWorkflowHoleModelInputSchema.strict(),
 );
 
 /**
- * 输出**就是** `CreateWorkflowOutput`（同一个 schema 对象，不是拷贝）：display 载荷因此在协议上
- * 与启动行同形，UI 的 CreateWorkflow 行渲染器按工具名选中本工具的行。补全不启动任何东西，所以
- * `status: "backgrounded"` 与 `backgroundTaskId` 在这里永远缺席。
+ * The output **is** `CreateWorkflowOutput` (the same schema object, not a copy): the display
+ * payload is therefore protocol-identical to a launch row, and the UI's CreateWorkflow row
+ * renderer picks this tool's rows by tool name. Filling starts nothing, so
+ * `status: "backgrounded"` and `backgroundTaskId` are always absent here.
  */
 export const FillWorkflowHoleOutputSchema = CreateWorkflowOutputSchema;
 export type FillWorkflowHoleOutput = z.infer<typeof FillWorkflowHoleOutputSchema>;

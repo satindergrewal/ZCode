@@ -136,15 +136,15 @@ export function GeneralSectionContent({
   defaultHomeDir: string;
   isDesktop?: boolean;
   isWindowsDesktop?: boolean;
-  /** Linux 桌面端（isDesktop 且非 win/mac）；关闭驻留托盘设置在 Linux 上按能力自适应展示 */
+  /** Linux desktop (isDesktop, not win/mac); close-to-tray adapts to ability */
   isLinuxDesktop?: boolean;
-  /** Linux 关闭驻留托盘能力状态（spec：docs/desktop/linux-close-to-tray.md）；Windows 不传 */
+  /** Linux close-to-tray ability (docs/desktop/linux-close-to-tray.md); omitted on Windows */
   linuxCloseToTray?: {
-    /** 能力探测中或确认不可用，开关锁定 */
+    /** Probing or unavailable: switch locked */
     disabled: boolean;
-    /** 确认不可用（描述文案切换为"未提供系统托盘"） */
+    /** Unavailable (copy becomes "no system tray") */
     unavailable: boolean;
-    /** GNOME 系桌面且无托盘（追加 AppIndicator 扩展安装提示） */
+    /** GNOME family without a tray (adds the AppIndicator hint) */
     gnomeLikeHint: boolean;
   };
   showIntegratedTerminalShell?: boolean;
@@ -685,7 +685,7 @@ export function GeneralSectionContent({
             control={
               <Switch
                 checked={closeToTrayOnWindows}
-                // Linux 上托盘能力未知（探测中）或确认不可用时都锁定，防止误开导致关窗失联
+                // Locked while probing or unavailable, so closing never orphans the window
                 //（spec：docs/desktop/linux-close-to-tray.md）。
                 disabled={Boolean(linuxCloseToTray?.disabled)}
                 onCheckedChange={(checked) => {
@@ -764,7 +764,7 @@ export function GeneralSectionContent({
             />
           }
         />
-        {/* docs/dynamic-workflow/launch.md「The user's choice」：服务端未提供时整行不渲染。 */}
+        {/* docs/dynamic-workflow/launch.md The-users-choice: hidden when the server offers nothing. */}
         {hasServices ? <DynamicWorkflowModeSetting /> : null}
         <SettingsRow
           label={intl.formatMessage({ id: "settings.modelIoFullRetention" })}

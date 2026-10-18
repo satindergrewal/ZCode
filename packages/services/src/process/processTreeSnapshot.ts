@@ -88,11 +88,17 @@ function readPosixProcessList(options: ProcessTreeTerminatorOptions): ProcessIde
     return [];
   }
   if (result.signal === "SIGTERM" || result.signal === "SIGKILL") {
-    warn(options, `Failed to query runtime descendants (process table timeout) signal=${result.signal}`);
+    warn(
+      options,
+      `Failed to query runtime descendants (process table timeout) signal=${result.signal}`,
+    );
     return [];
   }
   if (result.status !== 0 || !result.stdout) {
-    warn(options, `Failed to query runtime descendants (process table) status=${result.status ?? "unknown"}`);
+    warn(
+      options,
+      `Failed to query runtime descendants (process table) status=${result.status ?? "unknown"}`,
+    );
     return [];
   }
   return parsePosixProcessList(result.stdout, includeCommand);

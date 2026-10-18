@@ -42,34 +42,37 @@ export function literalText(expr: ts.Expression | undefined): string | undefined
 }
 
 /**
- * 一套 per-kind 站点计数器（`ask#N` / `actor#N` / …），外加 id 前缀。
+ * One set of per-kind site counters (`ask#N` / `actor#N` / ...), plus an id prefix.
  *
- * 前缀是留白的事（docs/analysis.md「Sites」的 Hole sites 段）：走查进入一个留白的函数体时
- * **开一套全新的计数器**，体内铸出的每个 id 都带 `<holeId>/`（`hole#a91f3c07/ask#1`），外层
- * 计数器从不看见体内的站点。于是补全一个留白（在脚本中间插入代码）不改动任何已有的 `ask#N` /
- * `actor#N` / …——这是站点 id 稳定性规则从「加标记」到「加函数体」的延伸；活 run 的 journal
- * 键、ask spec、站点阶段表都靠它在补全后幸存。前缀只有**一层**：留白自己的 id 是名字键
- * （hole-id.ts），不带外层前缀，体内再留的留白因此不会让 id 随深度增长；`holeId` 记着
- * 这套计数器属于哪个留白，让体内的留白站点把包着它的留白写进 `fill`。
- * 全局 `order` 不在这里：它是文本输出的归并键，穿过函数体连续计数。
+ * The prefix is a hole affair (docs/analysis.md "Sites", Hole sites): when the walk enters a
+ * hole's body it **opens a brand-new counter set**, and every id minted inside carries
+ * `<holeId>/` (`hole#a91f3c07/ask#1`); the outer counters never see the body's sites. Filling a
+ * hole (inserting code mid-script) therefore changes no existing `ask#N` / `actor#N` / ... — the
+ * extension of the site id stability rule from "adding markers" to "adding a body"; a live run's
+ * journal keys, ask specs and site phase table all survive a fill on it. The prefix is exactly
+ ** one level**: the hole's own id is the name key (hole-id.ts) and carries no outer prefix, so
+ * holes left inside bodies never grow ids with depth; `holeId` records which hole this set
+ * belongs to, letting hole sites in the body write their encloser into `fill`.
+ * The global `order` is not here: it is the merge key of the text output and counts straight
+ * through bodies.
  */
 export class SiteCounters {
   private readonly counts = new Map<string, number>();
 
   constructor(
     private readonly prefix = "",
-    /** 这套计数器所在的留白函数体（顶层没有）。 */
+    /** The hole body these counters live in (absent at the top level). */
     readonly holeId?: string,
   ) {}
 
-  /** 铸下一个 `<prefix><kind>#<n>`。 */
+  /** Mint the next `<prefix><kind>#<n>`. */
   next(kind: string): string {
     const n = (this.counts.get(kind) ?? 0) + 1;
     this.counts.set(kind, n);
     return `${this.prefix}${kind}#${n}`;
   }
 
-  /** 进入留白 `holeId` 的函数体：全新一套计数器，前缀就是这个留白的 id（不叠加外层的）。 */
+  /** Enter the body of hole `holeId`: a brand-new counter set whose prefix is that hole's id (never stacked on the outer one). */
   child(holeId: string): SiteCounters {
     return new SiteCounters(`${holeId}/`, holeId);
   }
@@ -89,7 +92,7 @@ export function askLabel(receiver: ts.Expression, checker: ts.TypeChecker): stri
 }
 
 /**
-  * ask label pattern: only for an inline agent(template-literal) receiver -- the one shape
+ * ask label pattern: only for an inline agent(template-literal) receiver -- the one shape
  * `askLabel` answers `"ask"` for despite the script having said something. A named or
  * identifier receiver already produced a real label, so there is nothing to reconstruct.
  */
@@ -135,13 +138,13 @@ export function actorNamePattern(call: ts.CallExpression): NamePattern | undefin
 }
 
 /**
-  * The literals at both ends of a template: before the first hole (head) and after the last hole (tail).
+ * The literals at both ends of a template: before the first hole (head) and after the last hole (tail).
  *
-  * ts.isStringLiteralLike already covers interpolation-free backtick strings (literals; the name path),
-  * so only genuinely holey ts.TemplateExpression instances reach here.
+ * ts.isStringLiteralLike already covers interpolation-free backtick strings (literals; the name path),
+ * so only genuinely holey ts.TemplateExpression instances reach here.
  *
-  * **Middle literals are deliberately dropped**: a-x-b-y-c yields a and c, not the middle run. A name is a one-line
-  * label, not a rendering of the expression that produced it.
+ * **Middle literals are deliberately dropped**: a-x-b-y-c yields a and c, not the middle run. A name is a one-line
+ * label, not a rendering of the expression that produced it.
  */
 function templateAffixes(arg: ts.Expression | undefined): NamePattern | undefined {
   if (arg === undefined || !ts.isTemplateExpression(arg)) return undefined;

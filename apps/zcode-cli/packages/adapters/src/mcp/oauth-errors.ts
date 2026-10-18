@@ -1,4 +1,8 @@
-import { InsufficientScopeError, SdkErrorCode, UnauthorizedError } from "@modelcontextprotocol/client";
+import {
+  InsufficientScopeError,
+  SdkErrorCode,
+  UnauthorizedError,
+} from "@modelcontextprotocol/client";
 
 /**
  * Stable identity for interactive-grant-required.
@@ -12,8 +16,7 @@ const INTERACTIVE_REQUIRED_BRAND = Symbol.for("zcode.mcp.oauth.interactiveAuthor
 const TEMPORARY_REFRESH_FAILURE_BRAND = Symbol.for("zcode.mcp.oauth.temporaryRefreshFailure");
 
 export const MCP_OAUTH_INTERACTIVE_REQUIRED_ERROR_CODE = "MCP_OAUTH_INTERACTIVE_REQUIRED";
-export const MCP_OAUTH_TEMPORARY_REFRESH_FAILURE_ERROR_CODE =
-  "MCP_OAUTH_TEMPORARY_REFRESH_FAILURE";
+export const MCP_OAUTH_TEMPORARY_REFRESH_FAILURE_ERROR_CODE = "MCP_OAUTH_TEMPORARY_REFRESH_FAILURE";
 
 export type McpOAuthInteractiveRequiredReason =
   | "no_credentials"
@@ -146,10 +149,7 @@ function isSdkAuthenticationHttpError(error: unknown): boolean {
 }
 
 function hasBrand(error: unknown, brand: symbol): boolean {
-  return (
-    (typeof error === "object" && error !== null) ||
-    typeof error === "function"
-      ? (error as Record<symbol, unknown>)[brand] === true
-      : false
-  );
+  return (typeof error === "object" && error !== null) || typeof error === "function"
+    ? (error as Record<symbol, unknown>)[brand] === true
+    : false;
 }

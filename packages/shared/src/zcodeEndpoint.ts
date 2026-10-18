@@ -23,8 +23,8 @@ function isWebRemoteControlV4AppVersion(appVersion: string | undefined): boolean
     return false;
   }
 
-  // zcodeEndpoint 会被 Vite 配置在 Node 加载期直接导入，不能依赖源码态 `.js` runtime import。
-  // 这里只比较固定的稳定版门槛；高于 3.4.0 的预发布版本仍满足门槛，3.4.0 自身的预发布版本不满足。
+  // zcodeEndpoint is imported by Vite during Node loading; it must not rely on source-tree `.js` runtime imports.
+  // Only the fixed stable floor is compared: prereleases above 3.4.0 pass, a 3.4.0 prerelease does not.
   const normalizedVersion = appVersion.trim().replace(/^v/i, "");
   const match = normalizedVersion.match(
     /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([^+]+))?(?:\+(.+))?$/,
@@ -197,7 +197,7 @@ export function resolveZCodeEndpointOrigin(options?: {
 }
 
 export function resolveRuntimeZCodeEnv(env: RuntimeZCodeEndpointEnv = {}): ZCodeEnv {
-  // 独立 CLI / 服务测试未注入 ZCODE_ENV 时默认生产域；桌面测试包会显式下发 ZCODE_ENV=test。
+  // Standalone CLI/service tests default to the production domain when ZCODE_ENV is unset; desktop test builds inject ZCODE_ENV=test.
   return env.ZCODE_ENV?.trim().toLowerCase() === "test" ? "test" : "production";
 }
 
@@ -241,8 +241,8 @@ export function resolveWebRemoteControlRelayWsUrl(options?: {
     return overrideUrl;
   }
 
-  // Bugfix：标准 test endpoint 已部署独立 relay；继续固定到生产 relay 会让测试环境跨环境配对。
-  // 仅识别规范 test origin，避免改变 production、localhost 和其他自定义 endpoint 的既有行为。
+  // Bugfix: the standard test endpoint runs a dedicated relay; keeping the production relay pinned cross-pairs test environments.
+  // Only the canonical test origin is special-cased; production, localhost, and custom endpoints keep their behavior.
   if (options?.endpointOrigin?.trim() === TEST_ZCODE_ENDPOINT_ORIGIN) {
     return "wss://zcode.z.ai/ws";
   }
@@ -270,8 +270,8 @@ export function buildBigModelApiUrl(env: RuntimeBigModelApiEnv = {}, path: strin
 }
 
 export function buildBigModelCodingPlanPersonalManageUrl(env: RuntimeBigModelApiEnv = {}): string {
-  // 修复原因：BigModel Coding Plan 管理页要跟随 ZCODE_ENV；
-  // 测试环境如果继续写死 bigmodel.cn，会把测试账号带到生产套餐页。
+  // Fix: the BigModel Coding Plan management page must follow ZCODE_ENV;
+  // hardcoding bigmodel.cn sends test accounts to the production plan page.
   return buildBigModelApiUrl(env, "/coding-plan/personal/overview");
 }
 
@@ -369,7 +369,7 @@ export function buildZCodeEndpointUrls(
   const parsed = new URL(normalizedOrigin);
   const wsProtocol = parsed.protocol === "https:" ? "wss:" : "ws:";
   const wsOrigin = `${wsProtocol}//${parsed.host}`;
-  // 无法解析或低于分界版本时保守使用 v3，避免开发版本和旧客户端进入未兼容的 v4 页面。
+  // Below the boundary version (or unparsable), stay on v3 so dev builds and old clients never enter incompatible v4 pages.
   const remoteVersion = isWebRemoteControlV4AppVersion(options.appVersion) ? "v4" : "v3";
 
   return {

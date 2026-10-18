@@ -128,9 +128,24 @@ describe("artifactsOf — journal 行 → 端口的 artifacts", () => {
   it("primary 从版本记录抬到顶层，且交付物带头、其余保持首次发布顺序", () => {
     const journal = new ArtifactAwareJournalStore();
     makeRun(journal, "run-primary", "completed");
-    putArtifact(journal, "run-primary", 1, { id: "perf", kind: "chart", version: 1, publishedAt: 1 });
-    putArtifact(journal, "run-primary", 2, { id: "notes-a", kind: "markdown", version: 1, publishedAt: 2 });
-    putArtifact(journal, "run-primary", 3, { id: "notes-b", kind: "markdown", version: 1, publishedAt: 3 });
+    putArtifact(journal, "run-primary", 1, {
+      id: "perf",
+      kind: "chart",
+      version: 1,
+      publishedAt: 1,
+    });
+    putArtifact(journal, "run-primary", 2, {
+      id: "notes-a",
+      kind: "markdown",
+      version: 1,
+      publishedAt: 2,
+    });
+    putArtifact(journal, "run-primary", 3, {
+      id: "notes-b",
+      kind: "markdown",
+      version: 1,
+      publishedAt: 3,
+    });
     putArtifact(journal, "run-primary", 4, {
       id: "report",
       kind: "markdown",
@@ -150,7 +165,12 @@ describe("artifactsOf — journal 行 → 端口的 artifacts", () => {
     });
 
     const { artifacts } = artifactsOf("run-primary", journal);
-    expect(artifacts!.map((artifact) => artifact.id)).toEqual(["report", "perf", "notes-a", "notes-b"]);
+    expect(artifacts!.map((artifact) => artifact.id)).toEqual([
+      "report",
+      "perf",
+      "notes-a",
+      "notes-b",
+    ]);
     const report = artifacts![0]!;
     expect(report.primary).toBe(true);
     expect(report.versions.map((version) => version.primary)).toEqual([true, true]);
@@ -162,8 +182,18 @@ describe("artifactsOf — journal 行 → 端口的 artifacts", () => {
   it("没有交付物时顺序与形状与旧 CLI 落的行完全一致（旗子从不被推断）", () => {
     const journal = new ArtifactAwareJournalStore();
     makeRun(journal, "run-no-primary", "completed");
-    putArtifact(journal, "run-no-primary", 1, { id: "b", kind: "markdown", version: 1, publishedAt: 1 });
-    putArtifact(journal, "run-no-primary", 2, { id: "a", kind: "markdown", version: 1, publishedAt: 2 });
+    putArtifact(journal, "run-no-primary", 1, {
+      id: "b",
+      kind: "markdown",
+      version: 1,
+      publishedAt: 1,
+    });
+    putArtifact(journal, "run-no-primary", 2, {
+      id: "a",
+      kind: "markdown",
+      version: 1,
+      publishedAt: 2,
+    });
     const { artifacts } = artifactsOf("run-no-primary", journal);
     expect(artifacts!.map((artifact) => artifact.id)).toEqual(["b", "a"]);
     expect(artifacts!.some((artifact) => "primary" in artifact)).toBe(false);

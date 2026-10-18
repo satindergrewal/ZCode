@@ -8,8 +8,8 @@ import {
 } from "./options.js";
 import type { CommandWord } from "./word.js";
 
-// 前置参数走 abort 策略，未知即整体 unsupported，因此这里必须认识 -c/-p/-P/--exec-path 这类常见前置项；
-// -c 只按取值 arity 跳过，不解释配置内容。
+// Leading args follow the abort policy — unknown means unsupported overall — so this must know common ones like -c/-p/-P/--exec-path;
+// -c skips by value arity only, never interpreting the config.
 const FRONT = optionTable(
   "--no-pager -P --paginate -p --literal-pathspecs --glob-pathspecs --noglob-pathspecs --icase-pathspecs --bare --no-replace-objects --no-optional-locks",
   "-C --git-dir --work-tree --namespace -c --config-env --super-prefix",
@@ -41,7 +41,7 @@ const FORCE = ["-f", "--force"];
 const TREE = new Set([".", "./", ":/"]);
 export type RuleMatch = string | false | undefined;
 
-/** false=已支持且未命中；undefined=超出当前命令/选项文法。 */
+/** false = supported, no match; undefined = beyond the current command/option grammar. */
 export function matchGit(words: CommandWord[]): RuleMatch {
   const front = parseOptions(words, FRONT, WRAPPER_SCAN);
   if (front.unsupported || front.operands[0]?.dynamic) return undefined;
@@ -90,7 +90,7 @@ export function matchGit(words: CommandWord[]): RuleMatch {
   }
   const parsed = parseOptions(args, table, COMMAND_SCAN);
   const { flags, operands } = parsed;
-  // Git 的 -h/--help 是可靠的查询退出；未知选项不改变这一点，也不抹去已识别的 force/hard。
+  // Git's -h/--help is a trusted query exit; unknown options never change that, nor erase a recognized force/hard.
   if (hasHelp(flags)) return false;
   const dryRun = enabled(flags, ["-n", "--dry-run"], ["--no-dry-run"]);
   const force = enabled(flags, FORCE, ["--no-force"]);
@@ -105,7 +105,7 @@ export function matchGit(words: CommandWord[]): RuleMatch {
       return settleRule(!dryRun && force && "git-clean-force", parsed);
     case "push": {
       const refspecs = flags.includes("--repo") ? operands : operands.slice(1);
-      // glob 会让整词标为 dynamic，但已知的 + 前缀仍是强推证据。
+      // A glob marks the whole word dynamic, but a known + prefix is still force evidence.
       return settleRule(
         !dryRun &&
           (force ||

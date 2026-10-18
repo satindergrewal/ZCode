@@ -1,13 +1,13 @@
 /**
- * MCP 资源订阅登记表（纯内存，无 IO）。
- * 键 = (serverName, uri) → subscriberKey 集合；同一连接被多个 session 共享时只向 server 订阅一次，
- * 所以 add 只在 0 → 1 时告诉调用方"该向 server 订阅"，remove 只在 1 → 0 时告诉调用方"该向 server 退订"。
- * 向 server 的实际请求、重连重放与日志都在 adapter；这里只管计数与快照。
+ * The MCP resource-subscription registry (pure memory, no IO).
+ // Keys = (serverName, uri) -> subscriberKey set; a connection shared by sessions subscribes once,
+ // so add flags "subscribe on the server" at 0 -> 1 and remove flags "unsubscribe" at 1 -> 0.
+ // The actual server requests, reconnect replay, and logging live in the adapter; here only counts and snapshots.
  */
 export class McpResourceSubscriptionRegistry {
   private readonly byServer = new Map<string, Map<string, Set<string>>>();
 
-  /** 登记一个订阅者；返回是否是该 (server, uri) 的第一个。 */
+  /** Registers a subscriber; returns whether this is the (server, uri) pair's first. */
   add(serverName: string, uri: string, subscriberKey: string): { first: boolean } {
     const byUri = this.byServer.get(serverName) ?? new Map<string, Set<string>>();
     this.byServer.set(serverName, byUri);
@@ -18,7 +18,7 @@ export class McpResourceSubscriptionRegistry {
     return { first };
   }
 
-  /** 撤销一个订阅者；未登记返回 null，否则返回它是不是最后一个（此时该 uri 已从表中移除）。 */
+  /** Removes a subscriber; null when unregistered, else whether it was the last (the uri left the table). */
   remove(serverName: string, uri: string, subscriberKey: string): { last: boolean } | null {
     const byUri = this.byServer.get(serverName);
     const subscribers = byUri?.get(uri);
@@ -28,7 +28,7 @@ export class McpResourceSubscriptionRegistry {
     return { last: true };
   }
 
-  /** 按 subscriberKey 前缀清理（会话关闭）；返回因此归零、需要向 server 退订的 (server, uri)。 */
+  /** Sweeps by subscriberKey prefix (session close); returns (server, uri) pairs that dropped to zero and need unsubscribing. */
   removeByPrefix(subscriberKeyPrefix: string): Array<{ serverName: string; uri: string }> {
     const released: Array<{ serverName: string; uri: string }> = [];
     for (const [serverName, byUri] of this.byServer) {
@@ -45,12 +45,12 @@ export class McpResourceSubscriptionRegistry {
     return released;
   }
 
-  /** 某 uri 的订阅者（通知 resources/updated 时附上）。 */
+  /** A uri's subscribers (attached to resources/updated notices). */
   subscribers(serverName: string, uri: string): string[] {
     return [...(this.byServer.get(serverName)?.get(uri) ?? [])];
   }
 
-  /** 某 server 全部订阅者去重（通知 resources/list_changed 时附上）。 */
+  /** A server's deduped subscribers (attached to resources/list_changed notices). */
   allSubscribers(serverName: string): string[] {
     const out = new Set<string>();
     for (const keys of this.byServer.get(serverName)?.values() ?? []) {
@@ -59,12 +59,12 @@ export class McpResourceSubscriptionRegistry {
     return [...out];
   }
 
-  /** 某 server 登记过的 uri（重连后重放）。 */
+  /** A server's registered uris (replayed after reconnect). */
   uris(serverName: string): string[] {
     return [...(this.byServer.get(serverName)?.keys() ?? [])];
   }
 
-  /** 快照（测试 / 诊断）：serverName → uri → 订阅者数。 */
+  /** Snapshot (tests / diagnostics): serverName -> uri -> subscriber count. */
   counts(): Record<string, Record<string, number>> {
     const out: Record<string, Record<string, number>> = {};
     for (const [serverName, byUri] of this.byServer) {

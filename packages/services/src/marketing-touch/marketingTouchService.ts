@@ -5,7 +5,7 @@ import { readApiJson } from "#src/providers/api/apiJson.js";
 import type { IMarketingTouchService } from "#src/marketing-touch/marketingTouch.js";
 
 const localeSchema = z.enum(["zh-CN", "en-US"]);
-// 序号属于本次服务进程启动，不能随组件、账号或服务实例重建而归零。
+// Sequence numbers live for this service process and never reset on component/account/service rebuilds.
 let bootRequestSeq = 0;
 const reportSchema = z.object({
   locale: localeSchema,
@@ -61,7 +61,7 @@ export function createMarketingTouchService(options: {
     async report(input) {
       const parsed = reportSchema.parse(input);
       const identity = await context(parsed.locale);
-      // 领取期间账号可能已切换；禁止把旧操作用新凭据上报，也不向 UI 暴露凭据。
+      // The account may have switched mid-claim: never report old actions with new credentials, and never leak credentials to the UI.
       if (identity.scope !== parsed.scope) throw new Error("marketing_identity_changed");
       const response = await readApiJson<unknown>(
         options.apiClient,

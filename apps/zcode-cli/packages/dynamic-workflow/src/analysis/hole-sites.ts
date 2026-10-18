@@ -1,18 +1,28 @@
 /**
- * 留白站点（docs/dynamic-workflow/authoring.md「Holes: `hole<T>()`」，docs/analysis.md「Sites」）：
- * 站点的构造（三个重载的实参分派、tail 判定）与编译期规则 9012。
+ * Hole sites (docs/dynamic-workflow/authoring.md "Holes: `hole<T>()`", docs/analysis.md
+ * "Sites"): the sites' construction (argument dispatch across the three overloads, the tail
+ * check) and compile-time rule 9012.
  *
- * 9012 的每条规则都是「运行期才炸不如现在就教改写」的那一类（与 9003 / 9004 同席）：
- *  - 类型实参必须显式写出：T 是补全被检查的契约，推断出的 `unknown` 不是契约；
- *  - 名字是非空字面量、≤128 字符，且在脚本的留白与阶段标记中**唯一**（嵌套补全也算）：名字
- *    是留白的阶段名与每个界面显示的身份——两个标记同名是一个阶段，两个留白同名却是两个缺口；
- *  - 调用必须被 await：没等值的留白会让脚本越过一个还没有值的缺口；
- *  - 不能落在 fan-out **回调**里（数组方法的回调，提升与否都算）：元素并发跑，补全得在它们
- *    已经在跑的时候写。`for...of` 体**允许**：带 await 的 for...of 是顺序的——第一轮停在留白，
- *    补全到了，后面每轮跑函数体，正是「循环里的留白补全一次、每轮跑一遍」那一条；
- *  - 函数体不得引用留白之后才声明的绑定：函数体是编译器不检查「先用后声明」的闭包，引用
- *    后面的 `const` 到运行期才 TDZ 抛错；
- *  - 函数体必须是内联的函数字面量：lowering 要把它原样打印成补全文本，一个标识符没有文本可打。
+ * Every 9012 rule is of the kind "better taught at rewrite time than exploded at run time"
+ * (seated with 9003 / 9004):
+ *  - The type argument must be explicit: T is the contract the fill is checked against; an
+ *    inferred `unknown` is no contract.
+ *  - The name is a non-empty literal, at most 128 characters, and **unique** across the script's
+ *    holes and phase markers (nested fills included): the name is the hole's phase label and the
+ *    identity every surface shows — two markers of one name are one phase, two holes of one name
+ *    are two broken gaps.
+ *  - The call must be awaited: an unawaited hole lets the script run past a gap that has no
+ *    value yet.
+ *  - It must not sit inside a fan-out **callback** (a callback of an array method, hoisted or
+ *    not): the elements run concurrently, so the fill would have to be written while they are
+ *    already running. A `for...of` body **is allowed**: for...of with await is sequential — the
+ *    first round stops at the hole, the fill lands, every later round runs the body; that is
+ *    exactly the "fill once in the loop, run per round" rule.
+ *  - The body must not reference a binding declared after the hole: the body is a closure the
+ *    compiler does not check for use-before-declare; referencing a later `const` throws a TDZ
+ *    error at run time.
+ *  - The body must be an inline function literal: lowering prints it verbatim as the fill text,
+ *    and an identifier has no text to print.
  */
 
 import ts from "typescript";
@@ -20,10 +30,10 @@ import type { CompileDiagnostic, ScriptLoc, WorkflowProgram } from "../compiler/
 import type { HoleSite, SiteTable } from "./sites.js";
 import { literalText } from "./sites-labels.js";
 
-/** 留白规则的诊断码（9001 = facade-siting、…、9010 = 模型名，顺延）。 */
+/** The hole rule's diagnostic code (9001 = facade-siting, ..., 9010 = model name, and so on). */
 export const HOLE_CODE = 9012;
 
-/** 留白名的长度上限：与阶段名同规（docs/dynamic-workflow/authoring.md「Holes」）。 */
+/** Length cap for hole names: same rule as phase names (docs/dynamic-workflow/authoring.md "Holes"). */
 export const HOLE_NAME_MAX_CHARS = 128;
 
 const TYPE_MESSAGE =
@@ -55,14 +65,14 @@ const BODY_INLINE_MESSAGE =
   "hole()'s body must be an inline async arrow (async () => { ... }): a fill is spliced into the " +
   "script as text, so a function held in a variable has nothing to splice.";
 
-/** 名字撞车的文案：撞的是标记还是另一个留白，说清楚。 */
+/** The copy for a name collision: say whether it hit a marker or another hole. */
 function duplicateMessage(name: string, other: "hole" | "marker"): string {
   return other === "hole"
     ? `two holes are named "${name}"; a hole's name is its identity and must be unique among the script's holes and phase markers.`
     : `hole "${name}" shares its name with a phase("${name}") marker; a hole is a phase of its own, so the name must be unique among holes and markers.`;
 }
 
-/** 两个不同名字的哈希撞车（hole-id.ts）：极罕见，但绝不猜——改一个名字就过。 */
+/** A hash collision between two distinct names (hole-id.ts): rare, but never guess — renaming one fixes it. */
 function idCollisionMessage(name: string, other: string): string {
   return (
     `hole "${name}" and hole "${other}" hash to the same site id; rename one of them ` +
@@ -84,7 +94,7 @@ function isFunctionLiteral(
   return expr !== undefined && (ts.isArrowFunction(expr) || ts.isFunctionExpression(expr));
 }
 
-/** 调用是不是顶层 `return` 的操作数（`return await hole(...)` 或 `return hole(...)`）。 */
+/** Whether the call is the operand of a top-level `return` (`return await hole(...)` or `return hole(...)`). */
 function isTailPosition(call: ts.CallExpression): boolean {
   const parent = call.parent;
   if (ts.isReturnStatement(parent)) return true;
@@ -92,9 +102,10 @@ function isTailPosition(call: ts.CallExpression): boolean {
 }
 
 /**
- * 从一个已按声明判定为 facade `hole` 的调用构造站点。三个重载的分派只看实参形状：第二实参是
- * 函数字面量即函数体，否则是提示；第三实参（若有）是函数体。非字面量的函数体既不算提示也不算
- * 函数体——留给 9012 报「必须内联」。
+ * Build a site from a call already judged to be the facade `hole`. The three-overload dispatch
+ * looks only at argument shapes: a function-literal second argument is the body, else the prompt;
+ * a third argument (if present) is the body. A non-literal body counts as neither prompt nor
+ * body — left for 9012 to report as "must be inline".
  */
 export function holeSiteOf(
   call: ts.CallExpression,
@@ -124,14 +135,15 @@ export function holeSiteOf(
   };
 }
 
-/** `node` 是否整体落在 `span` 节点的源码范围内。 */
+/** Whether `node` lies entirely within the source range of the `span` node. */
 function within(node: ts.Node, span: ts.Node, scriptFile: ts.SourceFile): boolean {
   return span.getStart(scriptFile) <= node.getStart(scriptFile) && node.getEnd() <= span.getEnd();
 }
 
 /**
- * 声明是否会被提升到作用域顶部，因而「先用后声明」在运行期无害：`function` 与 `var`。
- * `let` / `const` / `class` / `enum` 都不是（TDZ 或空对象），引用它们就是运行期错误。
+ * Whether the declaration is hoisted to the top of its scope, making use-before-declare harmless
+ * at run time: `function` and `var`. `let` / `const` / `class` / `enum` are not (TDZ or an empty
+ * object); referencing them is a run-time error.
  */
 function isHoisted(declaration: ts.Declaration): boolean {
   if (ts.isFunctionDeclaration(declaration)) return true;
@@ -140,7 +152,7 @@ function isHoisted(declaration: ts.Declaration): boolean {
   return ts.isVariableDeclarationList(list) && (list.flags & ts.NodeFlags.BlockScoped) === 0;
 }
 
-/** 校验收集到的留白站点。非空即脚本不可提交（`analyzeWorkflowScript` 与 misuse 同席）。 */
+/** Validate the collected hole sites. Non-empty means the script cannot be submitted (`analyzeWorkflowScript`, seated with misuse). */
 export function collectHoleDiagnostics(
   workflow: WorkflowProgram,
   table: SiteTable,
@@ -154,14 +166,17 @@ export function collectHoleDiagnostics(
   const at = (node: ts.Node | undefined, fallback: ScriptLoc): ScriptLoc =>
     node === undefined ? fallback : toScriptLoc(node.getStart(scriptFile));
 
-  // 名字的唯一性跨留白与标记：标记先登记，所以任何与标记同名的留白都被报出，不论先后；两个
-  // 留白同名报在后一个上（源码序）。嵌套补全里的留白与标记也在表里，自然一并计入。
+  // Name uniqueness spans holes and markers: markers register first, so any hole sharing a
+  // marker's name is reported regardless of order; two holes of one name report on the latter
+  // (source order). Holes and markers inside nested fills are in the table too and count
+  // naturally.
   const seen = new Map<string, "hole" | "marker">();
   for (const marker of table.phases) {
     const name = marker.name?.trim();
     if (name !== undefined && name !== "") seen.set(name, "marker");
   }
-  // 名字键的哈希撞车：同一个 id 只能属于一个名字（同名的重复已经由上面那条报过）。
+  // Hash collisions of the name key: one id belongs to one name (same-name duplicates were
+  // already reported above).
   const idOwner = new Map<string, string>();
 
   for (const site of [...table.holes].sort((a, b) => a.order - b.order)) {
@@ -185,13 +200,15 @@ export function collectHoleDiagnostics(
 
     if (!ts.isAwaitExpression(site.call.parent)) push(site.loc, AWAIT_MESSAGE);
 
-    // 只有数组方法回调（提升与否都算）；for...of 的语句体是顺序的，留白可以站在里面。
+    // Only array-method callbacks count (hoisted or not); a for...of statement body is
+    // sequential, so a hole may stand inside it.
     const inCallback = table.iterations.some(
       (cand) => cand.form === "array-method" && within(site.call, cand.body, scriptFile),
     );
     if (inCallback) push(site.loc, FANOUT_MESSAGE);
 
-    // 非内联的函数体：第二实参不是提示（不是 string）且不是字面量，或第三实参不是字面量。
+    // A non-inline body: the second argument is neither a prompt (not a string) nor a literal,
+    // or the third argument is not a literal.
     const [, second, third] = site.call.arguments;
     const heldBody =
       (third !== undefined && site.body !== third ? third : undefined) ??
@@ -214,8 +231,9 @@ function isCallable(expr: ts.Expression, checker: ts.TypeChecker): boolean {
 }
 
 /**
- * 函数体里每一个解析到「留白之后、函数体之外、不被提升」的脚本声明的标识符引用，每个绑定
- * 报一次（首次引用处）。属性名与声明位不是引用，跳过。
+ * Every identifier reference in the body that resolves to a script declaration positioned after
+ * the hole and outside the body, not hoisted: one report per binding (at the first reference).
+ * Property names and the declaration's own name are not references; skip them.
  */
 function collectLateBindings(
   call: ts.CallExpression,
@@ -248,7 +266,7 @@ function collectLateBindings(
   visit(body.body);
 }
 
-/** 标识符是不是一次值引用（不是 `x.NAME` 的成员名、不是声明自己的名字、不是属性键）。 */
+/** Whether the identifier is a value reference (not a `x.NAME` member name, not a declaration's own name, not a property key). */
 function isValueReference(node: ts.Identifier): boolean {
   const parent = node.parent;
   if (ts.isPropertyAccessExpression(parent) && parent.name === node) return false;

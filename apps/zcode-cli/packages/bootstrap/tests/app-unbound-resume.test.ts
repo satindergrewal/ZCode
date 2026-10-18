@@ -175,7 +175,13 @@ describe("App 从真实存储恢复未绑定选择", () => {
       data: stored,
     });
     const warn = vi.fn();
-    const logger: Logger = { debug: vi.fn(), info: vi.fn(), warn, error: vi.fn(), child: () => logger };
+    const logger: Logger = {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn,
+      error: vi.fn(),
+      child: () => logger,
+    };
     const loggerFactory: LoggerFactory = {
       createLogger: () => logger,
       withContext: () => logger,

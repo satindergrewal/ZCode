@@ -11,7 +11,8 @@ const {
 async function compile() {
   const [entryPath, outputPath] = process.argv.slice(2);
   const runtime = configureBytecodeRuntime();
-  if (!runtime.electron) throw new Error("desktop agent bytecode must be compiled by Electron in Node mode");
+  if (!runtime.electron)
+    throw new Error("desktop agent bytecode must be compiled by Electron in Node mode");
   const source = await readFile(entryPath, "utf8");
   const wrapped = Module.wrap(source.replace(/^#![^\r\n]*/, ""));
   const script = new vm.Script(wrapped, {

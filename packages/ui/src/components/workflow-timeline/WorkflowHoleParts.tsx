@@ -5,16 +5,18 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import type { TimelineHole } from "./timeline-holes.js";
 
 /**
- * 留白的小零件（docs/dynamic-workflow/presentation.md「Holes on the timeline」），卡、侧板与工具行共用：
- * 无阶段补全后站名旁的笔标（它的头）、等待中的元数据词「等待补全」、表头与侧板的「{n} 处留白待补全」芯片。
+ * Small hole parts (docs/dynamic-workflow/presentation.md "Holes on the timeline"), shared by card, pane
+ * and tool row: the pen mark beside a phase-less fill's station name (its head), the waiting metadata
+ * word awaiting-fill, and the {n} holes-awaiting-fill chip for header and pane.
  *
- * 留白的类型（`hole<T>` 的 T）**不在任何界面上出现**：它是编译器与主代理之间的契约，不是用户要读
- * 的东西。2026-09-28 的实测里它曾作为等宽徽标挂在站名之后：`{ target: string; reason: string }`
- * 这样的原文把站头撑满、站名被挤到零宽——所以这里只剩名字。
+ * The hole's type (the T in `hole<T>`) never appears in any UI: it is a contract between compiler and
+ * main agent, not reading material. Observed 2026-09-28: rendered as a mono badge after the name,
+ * `{ target: string; reason: string }` filled the header and squeezed the name to zero width — so only
+ * the name remains.
  */
 export function HoleFillMark({ className, holeId }: { className?: string; holeId: string }) {
-  // 笔标就是无阶段补全的头（presentation.md「Filled without phases」）：指针落在它上面，时间线与侧板
-  // 画出这一站的框（`data-fill-head`）。
+  // The pen mark is the phase-less fill's head (presentation.md "Filled without phases"): pointer on it
+  // and timeline and pane draw this station's frame (`data-fill-head`).
   return (
     <span
       className={cn(
@@ -29,7 +31,7 @@ export function HoleFillMark({ className, holeId }: { className?: string; holeId
   );
 }
 
-/** 站头右侧的「等待补全」：警示色、不换行；只在 run 停在这处留白上时出现。 */
+/** The header's awaiting-fill word: warning color, no wrap; only while the run rests at this hole. */
 export function HoleWaitingMeta({ hole }: { hole: TimelineHole | undefined }) {
   const { intl } = useZCodeIntl();
   if (hole?.state !== "waiting") return null;
@@ -43,7 +45,7 @@ export function HoleWaitingMeta({ hole }: { hole: TimelineHole | undefined }) {
   );
 }
 
-/** 侧板状态头的同一枚芯片：直接读 run 的留白表，数等待中的。 */
+/** The pane status header's chip: reads the run's hole table directly, counts the waiting. */
 export function RunHolesWaitingChip({
   run,
   testId,
@@ -56,8 +58,9 @@ export function RunHolesWaitingChip({
 }
 
 /**
- * 「{n} 处留白待补全」芯片（run 卡表头、侧板状态头）：笔图标，落在问题芯片的槽位上；两枚可以同时在。
- * 与问题芯片同一副面孔（警示色 12% 底、`text-ui-xs`），可点时开 run 详情。
+ * The {n} holes-awaiting-fill chip (run card header, pane status header): pen icon in the question
+ * chip's slot; both can coexist. The question chip's exact face (warning 12% ground, `text-ui-xs`);
+ * clickable, it opens the run's details.
  */
 export function HolesWaitingChip({
   count,

@@ -1341,7 +1341,7 @@ describe("SessionPane stop foreground execution", () => {
         payload: { expectedForegroundExecutionId: "foreground-1" },
       });
       // 普通 info 在生产禁用；停止归因必须走生命周期通道，同时保留执行 ID 防误停。
-      expect(infoSpy).toHaveBeenCalledWith("[v4-pane] stop 命令发出", {
+      expect(infoSpy).toHaveBeenCalledWith("[v4-pane] stop command sent", {
         source,
         sessionId: "session-1",
         foregroundExecutionId: "foreground-1",
@@ -1369,7 +1369,7 @@ describe("SessionPane stop foreground execution", () => {
         await flushMicrotasks();
       });
       expect(mocks.sendCommand).not.toHaveBeenCalled();
-      expect(infoSpy).toHaveBeenCalledWith("[v4-pane] stop 命令被跳过（无可停执行）", {
+      expect(infoSpy).toHaveBeenCalledWith("[v4-pane] stop skipped (nothing running to stop)", {
         source: "button",
         sessionId: "session-1",
       });

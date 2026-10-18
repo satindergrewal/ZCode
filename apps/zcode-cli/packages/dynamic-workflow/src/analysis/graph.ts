@@ -68,7 +68,7 @@ export function projectSiteGraph(core: AnalysisCore): SiteGraph {
     ...sites.worldReads.map((site) => plainNode(site, "world-read", types)),
     ...sites.joins.map((site) => plainNode(site, "join", types)),
     ...fanoutNodes,
-    // 开放的留白是一个节点：名字是标签，类型实参是它的产物类型（docs/analysis.md「Sites」）。
+    // An open hole is a node: the name is the label, the type argument its product type (docs/analysis.md "Sites").
     ...sites.holes.map((site) => plainNode({ ...site, label: site.name }, "hole", types)),
   ].sort((a, b) => a.order - b.order);
 
@@ -122,7 +122,8 @@ export function projectSiteGraph(core: AnalysisCore): SiteGraph {
       const b = contextAsks[j];
       if (a === undefined || b === undefined) continue;
       if (!actorsIntersect(a.actors, b.actors)) continue;
-      const [from, to] = (askOrder.get(a.id) ?? 0) <= (askOrder.get(b.id) ?? 0) ? [a.id, b.id] : [b.id, a.id];
+      const [from, to] =
+        (askOrder.get(a.id) ?? 0) <= (askOrder.get(b.id) ?? 0) ? [a.id, b.id] : [b.id, a.id];
       edges.push({ exact: contextExact(a.actors, b.actors), from, kind: "context", to });
     }
   }

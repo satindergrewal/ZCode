@@ -46,7 +46,7 @@ export class ContextBuilder {
   }
 
   /**
-      * Compatibility entry point. Tool descriptions ride the model request's tools field and are no longer mirrored into the system prompt.
+   * Compatibility entry point. Tool descriptions ride the model request's tools field and are no longer mirrored into the system prompt.
    */
   setToolRegistry(_registry: ToolRegistry): this {
     return this;
@@ -61,7 +61,7 @@ export class ContextBuilder {
   }
 
   /**
-      * Add a custom section (for future extension).
+   * Add a custom section (for future extension).
    */
   addSection(
     section: Omit<ContextSection, "chars" | "tokens" | "injectionTarget" | "cacheHint"> &
@@ -78,7 +78,7 @@ export class ContextBuilder {
   }
 
   /**
-      * Build the context and return a structured result.
+   * Build the context and return a structured result.
    */
   build(): ContextBuildResult {
     const sections: ContextSection[] = [];
@@ -87,9 +87,9 @@ export class ContextBuilder {
       : undefined;
     const customSystemPrompt = this.config.customSystemPrompt?.trim();
     const hasCustomSystemPrompt = Boolean(customSystemPrompt);
-        // Workflow-subagent identity: the third path. Mutually exclusive with
-        // customSystemPrompt — both present means a wiring bug (persona should arrive via workflowActor,
-        // not also be stuffed into systemPrompt) — fail loudly instead of silently picking one.
+    // Workflow-subagent identity: the third path. Mutually exclusive with
+    // customSystemPrompt — both present means a wiring bug (persona should arrive via workflowActor,
+    // not also be stuffed into systemPrompt) — fail loudly instead of silently picking one.
     const workflowActor = this.config.workflowActor;
     if (workflowActor !== undefined && hasCustomSystemPrompt) {
       throw new Error(
@@ -99,8 +99,8 @@ export class ContextBuilder {
     const isWorkflowActor = workflowActor !== undefined;
 
     // 1. CLI / product prefix. Keep this as the short leading identity block.
-        // "You are ZCode, an interactive coding agent" is the wrong identity for a subagent
-        // that only talks to scripts and may lack even the Read tool, and it would precede the correct identity section.
+    // "You are ZCode, an interactive coding agent" is the wrong identity for a subagent
+    // that only talks to scripts and may lack even the Read tool, and it would precede the correct identity section.
     if (!isWorkflowActor) {
       sections.push(buildCliPrefixSection());
     }
@@ -123,11 +123,11 @@ export class ContextBuilder {
     }
 
     // 3. Dynamic system context
-        // A custom prompt does not merely replace the
-        // stable body — it skips the default system-prompt stack and systemContext; otherwise a user-provided
-        // custom prompt would still be mixed with dynamic system sections such as Session Guidance / output style.
-        // Workflow subagents skip the three user-conversation sections among these (desktop, Dynamic Behavior, session
-        // guidance — the contract already carries Report outcomes faithfully) and keep memory plus later sections.
+    // A custom prompt does not merely replace the
+    // stable body — it skips the default system-prompt stack and systemContext; otherwise a user-provided
+    // custom prompt would still be mixed with dynamic system sections such as Session Guidance / output style.
+    // Workflow subagents skip the three user-conversation sections among these (desktop, Dynamic Behavior, session
+    // guidance — the contract already carries Report outcomes faithfully) and keep memory plus later sections.
     if (!hasCustomSystemPrompt) {
       if (!isWorkflowActor && this.config.presentationSurface === "zcode_desktop") {
         sections.push(buildDesktopContextSection(this.config.genUiOutputDirectory));
@@ -177,9 +177,9 @@ export class ContextBuilder {
     }
 
     // 4. Skills appear as a meta user system-reminder, matching provider block layout.
-        // guidanceToolNames is the runtime's current
-        // tool table; telling a workflow subagent without a registered Skill tool that "the following skills are available via the Skill tool"
-        // only makes it trust a tool it does not have. Keep legacy behavior when the table is absent (tests / old callers).
+    // guidanceToolNames is the runtime's current
+    // tool table; telling a workflow subagent without a registered Skill tool that "the following skills are available via the Skill tool"
+    // only makes it trust a tool it does not have. Keep legacy behavior when the table is absent (tests / old callers).
     if (this.config.skills && this.skillToolAvailable()) {
       const skillsSection = buildSkillsSection({
         outcome: this.config.skills,
@@ -210,7 +210,7 @@ export class ContextBuilder {
 
     const orderedSections = orderSectionsForInjection(sections);
 
-        // Compute totals.
+    // Compute totals.
     const totalChars = orderedSections.reduce((sum, s) => sum + s.chars, 0);
     const totalTokens = orderedSections.reduce((sum, s) => sum + s.tokens, 0);
 
@@ -270,7 +270,7 @@ export class ContextBuilder {
     if (dynamicSystemContent) {
       messages.push({
         role: "system",
-                // ZCode by design: the Main Agent's dynamic system block carries its own left boundary, uniform across providers.
+        // ZCode by design: the Main Agent's dynamic system block carries its own left boundary, uniform across providers.
         content: `\n\n${dynamicSystemContent}`,
         cacheControl: EPHEMERAL_CACHE_CONTROL,
       });

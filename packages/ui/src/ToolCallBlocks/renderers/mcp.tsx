@@ -180,10 +180,11 @@ export function McpToolCallBlock(context: ToolCallBlockRenderContext) {
   const parametersLabel = intl.formatMessage({ id: "chat.toolCall.mcp.parameters" });
   const hasCallDetails = Boolean(presentation?.description || toolCall.input !== undefined);
   const resultText = stringifyMcpResult(toolCall.output);
-  const visibleError = toolCall.status === "failed" ? (toolCall.error ?? context.errorText) : undefined;
+  const visibleError =
+    toolCall.status === "failed" ? (toolCall.error ?? context.errorText) : undefined;
   const hasPrimaryResult = Boolean(resultText || visibleError);
   const isSummaryOnlyLifecycle = toolCall.status === "pending" || toolCall.status === "stopped";
-  // R7：运行中且 agent 投影了 MCP 进度时，摘要行显示细进度条 + message；终态由投影清除。
+  // R7: while running and the agent projection carries MCP progress, the summary row shows a thin progress bar + message; the terminal state clears it via the projection.
   const progress = toolCall.status === "in_progress" ? readToolCallProgress(toolCall.raw) : null;
   const stoppedSummaryStatus =
     toolCall.status === "stopped" ? (
@@ -351,9 +352,7 @@ export function McpToolCallBlock(context: ToolCallBlockRenderContext) {
       forceOpen={!isSummaryOnlyLifecycle && (context.forceOpen ?? false)}
       kindLabel="MCP"
       kindDetail={
-        serverLabel ? (
-          <span className="text-foreground-subtle">{serverLabel}</span>
-        ) : undefined
+        serverLabel ? <span className="text-foreground-subtle">{serverLabel}</span> : undefined
       }
       primaryText={toolLabel}
       summaryContentSeparator="·"

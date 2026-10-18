@@ -149,7 +149,8 @@ function classDefs(graph: SiteGraph): string[] {
   const world = idsOf(["world-read"]);
   const relay = idsOf(["join", "fan-out"]);
   const hole = idsOf(["hole"]);
-  // 留白的 classDef 只在有留白时发：没有留白的脚本必须逐字节画出原来的图（快照钉住）。
+  // The hole classDef is emitted only when holes exist: a script without holes must render the
+  // original graph byte-for-byte (snapshots pin it).
   if (hole.length > 0)
     out.push("  classDef hole fill:#ffffff,stroke:#9a9aa5,stroke-dasharray: 4 3;");
   if (endpoint.length > 0) out.push(`  class ${endpoint.join(",")} endpoint;`);
@@ -166,7 +167,9 @@ export function actorGraphToMermaid(graph: ActorGraph): string {
   for (const edge of graph.edges) lines.push(`  ${actorEdgeLine(edge)}`);
   // Muted source/sink endpoints, mirroring the site chart's palette. Only class the
   // endpoints actually present — the agent-relevance filter may have pruned one.
-  const endpoints = graph.nodes.filter((n) => n.id === "source" || n.id === "sink").map((n) => safeId(n.id));
+  const endpoints = graph.nodes
+    .filter((n) => n.id === "source" || n.id === "sink")
+    .map((n) => safeId(n.id));
   if (endpoints.length > 0) {
     lines.push("  classDef endpoint fill:#eeeeef,stroke:#9a9aa5,color:#555566;");
     lines.push(`  class ${endpoints.join(",")} endpoint;`);
@@ -190,7 +193,8 @@ function actorEdgeLine(edge: ActorEdge): string {
   // Label is the message types joined `", "`, with a ` ×N` multiplicity suffix when
   // more than one site edge collapsed here; with no types, the bare `×N` (or nothing).
   if (edge.types !== undefined && edge.types.length > 0) {
-    const label = edge.types.map(escapeLabel).join(", ") + (edge.count > 1 ? ` ×${edge.count}` : "");
+    const label =
+      edge.types.map(escapeLabel).join(", ") + (edge.count > 1 ? ` ×${edge.count}` : "");
     return `${from} ${arrow}|${quote(label)}| ${to}`;
   }
   if (edge.count > 1) return `${from} ${arrow}|${quote(`×${edge.count}`)}| ${to}`;
@@ -354,7 +358,9 @@ function stepNodeDef(step: Step): string {
   if (step.lanes !== undefined) parts.push(`may: ${step.lanes.join("|")}`);
   const body = quote(parts.join("<br/>"));
   if (step.kind === "hole") return `${safeId(step.id)}[[${body}]]`;
-  return step.kind === "world-read" ? `${safeId(step.id)}[/${body}/]` : `${safeId(step.id)}[${body}]`;
+  return step.kind === "world-read"
+    ? `${safeId(step.id)}[/${body}/]`
+    : `${safeId(step.id)}[${body}]`;
 }
 
 /**
@@ -435,7 +441,9 @@ export function handoffGraphToMermaid(
 ): string {
   const lines: string[] = ["flowchart LR"];
   const laneName = new Map(names.lanes.map((lane) => [lane.id, lane.name]));
-  const phaseName = new Map((names.phases ?? []).map((phase) => [phase.id, phase.name ?? phase.id]));
+  const phaseName = new Map(
+    (names.phases ?? []).map((phase) => [phase.id, phase.name ?? phase.id]),
+  );
 
   const byPhase = new Map<string, HandoffParticipant[]>();
   for (const participant of graph.participants) {
@@ -470,7 +478,8 @@ export function handoffGraphToMermaid(
 function participantNodeDef(participant: HandoffParticipant, name: string | undefined): string {
   const id = safeId(participant.id);
   let head = escapeLabel(name ?? participant.lane);
-  if (participant.member !== undefined) head += ` [${participant.member.index + 1}/${participant.member.of}]`;
+  if (participant.member !== undefined)
+    head += ` [${participant.member.index + 1}/${participant.member.of}]`;
   if (participant.many) head += " ×N";
   const body = quote(`${head}<br/>${participant.steps.join(", ")}`);
   return participant.lane === WORKSPACE_LANE ? `${id}[(${body})]` : `${id}[${body}]`;

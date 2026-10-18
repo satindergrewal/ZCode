@@ -46,7 +46,7 @@ export function ConversationShareLinkRow({
               data-conversation-share-open-icon="true"
               aria-hidden="true"
               strokeWidth={1.33}
-              // Bug 根因：opacity-0 仍占用 flex 宽度，导致默认态 URL 提前截断；隐藏后仅在交互态参与布局。
+              // Bug: opacity-0 still flexes width, truncating the URL early; hidden leaves layout.
               className="hidden size-4 shrink-0 group-hover:block group-focus-visible:block"
             />
           </button>

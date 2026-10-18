@@ -7,9 +7,9 @@ import {
 import type { LoadedPlugin } from "./types.js";
 
 /**
- * 清单 `ui.surfaces[]` 解析。
- * 逐项校验：非法项丢弃并记 `plugin_manifest_invalid` 诊断，不影响其余面板与插件其它组件。
- * server 必须是清单 `mcpServers` 里声明的键，运行时名用 `plugin:${name}:${server}`（与 mcp.ts 同规则）。
+ * manifest `ui.surfaces[]` parser.
+ // Per-entry validation: invalid entries drop with a `plugin_manifest_invalid` diagnostic, never touching other panels or components.
+ // server must be a key declared in manifest `mcpServers`; runtime name `plugin:${name}:${server}` (same rule as mcp.ts).
  */
 const SURFACE_TITLE_MAX_CHARS = 200;
 const SURFACE_ICON_MAX_CHARS = 2048;
@@ -100,7 +100,7 @@ function parseSurface(
     typeof raw.icon === "string" && raw.icon.trim().length > 0
       ? raw.icon.trim().slice(0, SURFACE_ICON_MAX_CHARS)
       : undefined;
-  // 清单里的 widgetStateVisibility 已废弃，出现时按未知字段静默忽略。
+  // manifest's widgetStateVisibility is deprecated; when present, ignore silently as an unknown field.
   return {
     id,
     title,

@@ -6,8 +6,7 @@ const INITIAL_SURFACE = { width: 800, height: 450 };
 const SENTINEL_SIZE = 96;
 const RESULT_PATH = process.env.ZCODE_SCREENSHOT_SMOKE_RESULT_PATH;
 const SCALE_FACTOR = process.env.ZCODE_SCREENSHOT_SMOKE_SCALE_FACTOR;
-const SUCCESS_RESULT =
-  '{"width":1280,"height":720,"periodicRepeat":false,"corners":"distinct"}';
+const SUCCESS_RESULT = '{"width":1280,"height":720,"periodicRepeat":false,"corners":"distinct"}';
 
 let scaleFactorError;
 if (SCALE_FACTOR) {
@@ -128,7 +127,7 @@ function hostHtml(guestUrl) {
 
 function rgbaAt(bitmap, width, x, y) {
   const index = (y * width + x) * 4;
-  // nativeImage.toBitmap() 在 Windows 采用 Chromium 的 BGRA 顺序，这里统一为 RGBA。
+  // nativeImage.toBitmap() uses Chromium's BGRA order on Windows; normalize to RGBA here.
   return [bitmap[index + 2], bitmap[index + 1], bitmap[index], bitmap[index + 3]];
 }
 
@@ -202,11 +201,14 @@ async function run() {
 
     const guestUrl = htmlDataUrl(guestHtml());
     await window.loadURL(htmlDataUrl(hostHtml(guestUrl)));
-    const guestId = await window.webContents.executeJavaScript("window.waitForGuestDomReady()", true);
+    const guestId = await window.webContents.executeJavaScript(
+      "window.waitForGuestDomReady()",
+      true,
+    );
     guest = webContents.fromId(guestId);
     if (!guest) throw new Error(`guest webContents ${guestId} was not found`);
 
-    // 保持 800×450 Fit surface，只用 CDP 把 guest 的逻辑 viewport 改为 1280×720。
+    // Keep the 800x450 Fit surface; only CDP moves the guest's logical viewport to 1280x720.
     await window.webContents.executeJavaScript("window.waitForHistoricalSurface()", true);
     const surface = await window.webContents.executeJavaScript("window.readStableSurface()", true);
     for (const rect of [surface.first, surface.second]) {
@@ -226,8 +228,9 @@ async function run() {
       mobile: false,
       dontSetVisibleSize: true,
     });
-    // Bug 原因：Windows 的 CDP Page.captureScreenshot 会把较小 Fit surface 平铺到逻辑
-    // viewport；main 直接读取 guest 已合成 surface 不会重复，再归一化到 CSS 尺寸。
+    // Root cause: on Windows, CDP Page.captureScreenshot tiles the smaller Fit surface across the
+    // logical viewport; reading the guest's already-composited surface via main avoids that, then
+    // normalizes to CSS size.
     const source = await guest.capturePage();
     const size = source.getSize();
     const resized =
@@ -249,7 +252,8 @@ async function run() {
       }
     }
     if (window && !window.isDestroyed()) window.destroy();
-    // window/detach 已完成后显式退出，确保错误退出码不会被 Electron 生命周期回调覆盖。
+    // Exit explicitly once window/detach completes so the error exit code is not
+    // masked by Electron lifecycle callbacks.
     app.exit(exitCode);
   }
 }

@@ -1,4 +1,4 @@
-/** 持久化目录增量；恢复只信结构化数据，不从自然语言正文推断已通知类型。 */
+/** Persisted-listing delta; recovery trusts structured data only and never infers notified kinds from prose. */
 export interface AgentListingDelta {
   addedTypes: string[];
   addedLines: string[];

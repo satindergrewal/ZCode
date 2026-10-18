@@ -3,20 +3,20 @@ import type { SkillRoot } from "@zcode/contracts";
 import { DYNAMIC_WORKFLOW_SKILL_NAME } from "./bundled-skills.js";
 
 /**
- * 动态工作流灰度门在 App 装配层的技能减法（docs/dynamic-workflow/launch.md「Gray release」）。
- * 工具面的减法在 core 的 registerBuiltInTools，`/` 目录与 `/workflow` 展开的减法分别在
- * zcode-protocol/slash-commands.ts 与 builtin-prompt-command.ts；这里只放需要 bootstrap 侧路径推导的技能剔除。
+ * The dynamic-workflow gradation gate's skill subtraction at the App assembly layer (docs/dynamic-workflow/launch.md "Gray release").
+ * Tool-surface subtraction lives in core's registerBuiltInTools; the `/` catalog and `/workflow` expansion subtraction live in
+ * zcode-protocol/slash-commands.ts and builtin-prompt-command.ts; this file only removes skills needing bootstrap-side path derivation.
  */
 
 const SKILL_MANIFEST_FILE_NAME = "SKILL.md";
 
 /**
- * 动态工作流关闭时要从技能发现中剔除的 SKILL.md 绝对路径。
+ * Absolute SKILL.md paths to remove from skill discovery when dynamic workflows are disabled.
  *
- * 为什么按路径而不是按 root 过滤：NodeSkillAdapter 只提供 `disabledPaths` 这一个剔除机制
- * （config.json 的 `skill.<path>.enable=false` 走的也是它）。传入的是内置技能包的根
- * （bundled-skills.ts），路径不存在时只是一个永不命中的 Set 成员，没有副作用；技能包日后再放
- * 与灰度无关的技能时，它们也不会被连坐。
+ * Why filter by path, not root: NodeSkillAdapter offers `disabledPaths` as its only removal mechanism
+ * (config.json's `skill.<path>.enable=false` uses it too). The input is the bundled skill pack root
+ * (bundled-skills.ts); a missing path is just a never-matching Set member with no side effects, and skills later added
+ * unrelated-to-gradation skills are not swept up with them.
  */
 export function collectDynamicWorkflowDisabledSkillPaths(
   bundledSkillRoots: readonly SkillRoot[],

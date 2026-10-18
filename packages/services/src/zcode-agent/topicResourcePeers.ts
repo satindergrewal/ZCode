@@ -9,7 +9,7 @@ interface Peer {
   closed: boolean;
 }
 
-/** 共用 Server 只维护已鉴权连接的资源返回路由，不保存任务或队列状态。 */
+/** The shared server only routes resource returns for authenticated connections; no task or queue state. */
 export function createTopicResourcePeers() {
   const owners = new Map<string, Peer>();
   const key = (identity: string, session: string) => JSON.stringify([identity.trim(), session]);
@@ -23,9 +23,9 @@ export function createTopicResourcePeers() {
     attach(channel: IChannel) {
       const peer: Peer = { channel, routes: new Map(), closed: false };
       const bind = (value: unknown) => {
-        // 断连后只停止登记；旧 facade 仍需通过 base 完成 unsubscribe/flow cleanup。
+        // Disconnect only unregisters; the old facade still needs base unsubscribe/flow cleanup.
         if (peer.closed) return;
-        // 公共参数不能声明来源；只有连接 facade 写入的可信 carrier 可以登记返回路由。
+        // Public params never declare origin; only the carrier written by the connection facade may register a return route.
         if (!readTrustedZCodeAgentV4Connection(value)) return;
         const request = value as Record<string, unknown>;
         if (request.remoteSessionId === undefined) return;

@@ -597,10 +597,7 @@ describe("AmendWorkflow — subagent_model", () => {
   }
 
   const CATALOG: ModelCatalogPort = {
-    listModels: () => [
-      entry("bigmodel", "GLM-4.6", { current: true }),
-      entry("openai", "gpt-5"),
-    ],
+    listModels: () => [entry("bigmodel", "GLM-4.6", { current: true }), entry("openai", "gpt-5")],
   };
 
   /** 目录里只剩一个模型：前驱选过的那一个已经不在了。 */

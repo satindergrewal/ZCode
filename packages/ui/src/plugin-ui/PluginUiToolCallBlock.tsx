@@ -4,7 +4,7 @@ import { usePluginUiToolCallModel } from "@/plugin-ui/adapters/usePluginUiToolCa
 import { PluginUiToolCallView } from "@/plugin-ui/components/PluginUiToolCallBlock.js";
 import { readPluginUiPresentation } from "@/plugin-ui/domain/readPluginUiPresentation.js";
 
-/** 宿主工具行渲染插槽，普通 MCP 卡片作为模块外的展示依赖注入。 */
+/** Host tool-row render slot; the plain MCP card is injected as a display dependency outside the module. */
 export function PluginUiToolCallBlock(context: ToolCallBlockRenderContext) {
   const model = usePluginUiToolCallModel(context);
   return <PluginUiToolCallView {...model} fallback={<McpToolCallBlock {...context} />} />;

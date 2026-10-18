@@ -1,7 +1,7 @@
 import { AccountProviderService, ProviderConfigMap } from "@zcode/provider";
 import { NodeProviderRegistryRuntime } from "../../src/provider-registry-runtime.js";
 
-// 真实子进程只消费共享文件，模拟不拥有下载器的 Worker；Account 使用本地可控事实。
+// The real child only consumes shared files, mimicking a Worker that owns no downloader; Account uses locally controlled facts.
 let account!: AccountProviderService;
 const runtime = new NodeProviderRegistryRuntime({
   zcodeBuiltinFilePath: process.argv[2]!,

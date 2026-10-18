@@ -28,14 +28,15 @@ describe("ListWorkflowRuns input schema", () => {
     expect(ListWorkflowRunsInputSchema.parse({})).toEqual({ limit: 20 });
   });
 
-  // 用户裁决（spec 的「`ListWorkflowRuns` 输出」行）：limit 是**钳制**而不是拒绝。一次只读
-  // 枚举没有理由因为一个越界数字变成模型要从中恢复的工具错误。
+  // User ruling (spec row "The \`ListWorkflowRuns\` output"): limit is **clamped**, not refused.
+  // A read-only enumeration has no reason to become a tool error the model must recover from
+  // over one out-of-range number.
   it("clamps an out-of-range limit into [1, 50] instead of rejecting it", () => {
     expect(ListWorkflowRunsInputSchema.parse({ limit: 0 }).limit).toBe(1);
     expect(ListWorkflowRunsInputSchema.parse({ limit: -7 }).limit).toBe(1);
     expect(ListWorkflowRunsInputSchema.parse({ limit: 500 }).limit).toBe(50);
     expect(ListWorkflowRunsInputSchema.parse({ limit: 7 }).limit).toBe(7);
-    // 小数被截断而不是被拒：模型偶尔会给 12.5，而 SQL 的 limit 只接受整数。
+    // Fractions floor instead of failing: models occasionally emit 12.5 and SQL limit takes integers only.
     expect(ListWorkflowRunsInputSchema.parse({ limit: 12.5 }).limit).toBe(12);
   });
 
@@ -51,15 +52,15 @@ describe("ListWorkflowRuns input schema", () => {
       statuses: ["errored", "running"],
     });
     expect(ListWorkflowRunsInputSchema.safeParse({ statuses: ["lost"] }).success).toBe(false);
-    // 旧词汇（apps/zcode-cli/packages/dynamic-workflow/docs/execution-engine.md 之前的 failed / cancelled）不再是合法输入。
+    // Legacy vocabulary (failed / cancelled predating apps/zcode-cli/packages/dynamic-workflow/docs/execution-engine.md) is no longer valid input.
     expect(ListWorkflowRunsInputSchema.safeParse({ statuses: ["failed"] }).success).toBe(false);
     expect(ListWorkflowRunsInputSchema.safeParse({ statuses: ["cancelled"] }).success).toBe(false);
-    // 空数组是合法输入（端口把它读作「不匹配任何状态」）。
+    // Empty array is valid (the port reads it as "match no state").
     expect(ListWorkflowRunsInputSchema.parse({ statuses: [] }).statuses).toEqual([]);
   });
 
   it("stays strict about unknown keys", () => {
-    // 刻意没有 cwd 输入：工具恒查 context.workingDirectory，模型无权跨项目扫库。
+    // Deliberately no cwd input: the tool always queries context.workingDirectory; the model may not scan across projects.
     expect(ListWorkflowRunsInputSchema.safeParse({ cwd: "/elsewhere" }).success).toBe(false);
   });
 
@@ -75,8 +76,8 @@ describe("ListWorkflowRuns input schema", () => {
       default: 20,
     });
     expect(schema.properties?.statuses?.type).toBe("array");
-    // 两个字段都可省：TaskOutput 那个手写 required 覆盖是为了固定它自己的 provider schema，
-    // 本工具没有那个约束，默认值就该读作「可以不传」。
+    // Both fields omissible: TaskOutput's handwritten required-override pins its own provider
+    // schema; this tool carries no such constraint, so defaults read as "may be omitted".
     expect(schema.required ?? []).toEqual([]);
   });
 });
@@ -121,7 +122,9 @@ describe("ListWorkflowRuns output schema", () => {
   });
 
   it("stays strict about unknown keys on the page and on a row", () => {
-    expect(ListWorkflowRunsOutputSchema.safeParse({ runs: [RUN], cursor: "x" }).success).toBe(false);
+    expect(ListWorkflowRunsOutputSchema.safeParse({ runs: [RUN], cursor: "x" }).success).toBe(
+      false,
+    );
     expect(
       ListWorkflowRunsOutputSchema.safeParse({ runs: [{ ...RUN, scriptText: "return 1;" }] })
         .success,
@@ -156,8 +159,9 @@ describe("ListWorkflowRuns output schema", () => {
     ]);
   });
 
-  // stopped 的原因（apps/zcode-cli/packages/dynamic-workflow/docs/execution-engine.md）：五值枚举，只在 stopped 上有意义，
-  // 但 schema 层不绑定状态（端口才是裁定者），只校验词汇。
+  // stopped reason (apps/zcode-cli/packages/dynamic-workflow/docs/execution-engine.md): a
+  // five-value enum meaningful only on stopped; the schema does not bind it to status (the port
+  // is the arbiter) and validates vocabulary only.
   it("accepts the five stop reasons and rejects anything else", () => {
     for (const stopReason of ["user", "model", "provider", "interrupted", "superseded"]) {
       expect(

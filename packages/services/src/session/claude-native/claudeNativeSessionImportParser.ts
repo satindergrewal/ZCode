@@ -1,12 +1,9 @@
-/* oxlint-disable eslint(max-lines) -- Claude 原生日志解析需要集中维护用户轮次、assistant 自愈和 system warning 归因，拆分会让同一日志语义分散。 */
+/* oxlint-disable eslint(max-lines) -- Claude-native log parsing keeps user turns, assistant healing, and system-warning attribution in one place; splitting scatters the log semantics. */
 import { stat } from "node:fs/promises";
 import type { JsonLineRecord } from "#src/session/claude-native/jsonLineRecord.js";
 import { readJsonLinesFile } from "#src/session/claude-native/sessionHistoryJsonl.js";
 import { deriveSessionTitle } from "#src/session/sessionTitle.js";
-import {
-  isObjectRecord,
-  readTrimmedString,
-} from "#src/session/claude-native/jsonLineRecord.js";
+import { isObjectRecord, readTrimmedString } from "#src/session/claude-native/jsonLineRecord.js";
 import type { ClaudeNativeImportedSessionSource } from "#src/session/claude-native/claudeNativeImportedSessionTypes.js";
 
 const IDE_OPENED_FILE_TAG_RE = /<ide_opened_file>[\s\S]*?<\/ide_opened_file>/gi;
@@ -87,7 +84,9 @@ function readEntryModel(entry: JsonLineRecord): string | undefined {
 function isClaudeNativeSidechainEntry(entry: JsonLineRecord): boolean {
   const message = isObjectRecord(entry.message) ? entry.message : undefined;
   const request = isObjectRecord(entry.request) ? entry.request : undefined;
-  return entry.isSidechain === true || message?.isSidechain === true || request?.isSidechain === true;
+  return (
+    entry.isSidechain === true || message?.isSidechain === true || request?.isSidechain === true
+  );
 }
 
 export function hasClaudeNativeSidechainMarker(entries: readonly JsonLineRecord[]): boolean {
@@ -129,9 +128,9 @@ export function stripClaudeNativeSyntheticNoResponsePlaceholderText(text: string
 
 function isClaudeNativeSyntheticPlaceholderEntry(entry: JsonLineRecord): boolean {
   const message = isObjectRecord(entry.message) ? entry.message : undefined;
-  // Claude Code 会把 SDK 自己生成的控制占位也写成 assistant，
-  // 例如 model=<synthetic> 的 "No response requested."。这种占位没有用户可见价值，
-  // 但 API Error / 登录错误本身是用户在 Claude 里看到的 assistant 气泡，导入时必须保留。
+  // Claude Code writes SDK-generated control placeholders as assistant entries,
+  // e.g. model=<synthetic> 'No response requested.'. They carry no user value,
+  // but API/login errors are assistant bubbles users saw in Claude and must survive import.
   return (
     readEntryModel(entry) === "<synthetic>" &&
     entry.isApiErrorMessage !== true &&
@@ -161,9 +160,9 @@ function extractClaudeUserText(entry: JsonLineRecord): string | null {
     return null;
   }
 
-  // 关键业务逻辑：这里只提取“用户真正可见的问题文本”。
-  // tool_result / local-command / ide_opened_file 这些内容虽然也会混在 Claude 原生日志里，
-  // 但它们属于协议噪音或 IDE 注入信息，直接写进 zcode task 会让导入后的聊天记录失真。
+  // Core rule: extract only problem text the user actually saw.
+  // tool_result/local-command/ide_opened_file entries also appear in native logs,
+  // but they are protocol noise or IDE injections; importing them verbatim distorts history.
   const content =
     message?.content ?? (isObjectRecord(entry.request) ? entry.request.prompt : undefined);
   if (typeof content === "string") {
@@ -244,9 +243,9 @@ export function extractClaudeNativeSessionHeadInfo(entries: readonly JsonLineRec
   for (const entry of entries) {
     const userText = extractClaudeUserText(entry);
     const assistantText = extractClaudeAssistantText(entry);
-    // 扫描阶段不能用任意头部事件的 cwd 判定 workspace，
-    // 因为 queue/progress 等前置记录可能带着更深层的临时 cwd。
-    // 这里必须等到第一条“真正可见的业务消息”出现后，才把它的 cwd 视为 session 归属。
+    // Never infer the workspace from an arbitrary early event's cwd:
+    // queue/progress records may carry deeper temp cwds.
+    // Adopt the cwd of the first truly visible message as the session's home.
     if (!workspacePath && (userText || assistantText)) {
       workspacePath = readEntryWorkspacePath(entry);
     }
@@ -288,9 +287,9 @@ export function parseClaudeNativeSessionRecords(params: {
       return;
     }
 
-    // 关键业务逻辑：Claude 原生日志里 assistant 一轮回答可能被拆成多条事件。
-    // 这里在遇到下一条可见 user turn 或文件结束时统一聚合，保证导入后的 history
-    // 仍然是“用户一轮 + assistant 一轮”的最小可渲染结构。
+    // Core rule: one Claude-native assistant turn can span several events.
+    // Aggregate until the next visible user turn or EOF so imported history stays
+    // the minimal user-turn + assistant-turn renderable shape.
     messages.push({
       role: "assistant",
       content: pendingAssistantContent,
@@ -312,8 +311,8 @@ export function parseClaudeNativeSessionRecords(params: {
       flushPendingAssistant();
       currentTurnIndex += 1;
       const timestamp = readEntryTimestamp(entry) ?? updatedAt ?? Date.now();
-      // createdAt 必须优先取首条可见 user 消息，而不是文件 birthtime。
-      // 原生 jsonl 的创建时间可能只是文件落盘时间，不能稳定代表用户真正发起会话的时刻。
+      // createdAt prefers the first visible user message, never the file birthtime:
+      // jsonl birthtime is a disk artifact, not when the user actually started.
       firstVisibleUserTimestamp ??= timestamp;
       updatedAt = timestamp;
       messages.push({
@@ -333,9 +332,9 @@ export function parseClaudeNativeSessionRecords(params: {
       continue;
     }
 
-    // synthetic/API error assistant 会被正文过滤，但它也可能带
-    // model=<synthetic>。导入 snapshot 的模型只能来自可见模型回复，否则续聊时会把
-    // SDK 占位模型当成真实模型参与 session/load 和 set_model 决策。
+    // Body filtering drops synthetic/API-error assistants, but they can still carry
+    // model=<synthetic>. Snapshot models come from visible replies only, or continuation would
+    // feed placeholder models into session/load and set_model decisions.
     model ??= readEntryModel(entry);
     pendingAssistantContent += assistantText;
     pendingAssistantTimestamp = readEntryTimestamp(entry) ?? pendingAssistantTimestamp ?? updatedAt;
@@ -346,7 +345,7 @@ export function parseClaudeNativeSessionRecords(params: {
 
   if (messages.length === 0) {
     throw new Error(
-      `[claude-native] Claude 原生 session ${params.sessionId} 没有可导入的可见消息`,
+      `[claude-native] Claude-native session ${params.sessionId} has no importable visible messages`,
     );
   }
 
@@ -358,9 +357,9 @@ export function parseClaudeNativeSessionRecords(params: {
     createdAt: firstVisibleUserTimestamp ?? params.fallbackCreatedAt ?? updatedAt ?? Date.now(),
     updatedAt: updatedAt ?? firstVisibleUserTimestamp ?? params.fallbackCreatedAt ?? Date.now(),
     title: deriveSessionTitle(messages.find((item) => item.role === "user")?.content ?? "", []),
-    // 关键业务逻辑：provider=claude 只能说明任务最终由 Claude 续接，
-    // 不能区分它是 zcode 内新建的 Claude 任务，还是从 Claude Code 原生历史迁移来的任务。
-    // 这里单独写 migrationSource，后续任务列表/统计才能稳定识别迁移来源。
+    // Core rule: provider=claude only proves Claude continued the task;
+    // it cannot tell a native zcode Claude task from a Claude Code import.
+    // Record migrationSource so lists/stats can identify the origin reliably.
     migrationSource: "claudeCode",
     ...(model ? { model } : {}),
     messages,
@@ -413,14 +412,14 @@ export function selectClaudeNativeVisibleAssistantTurnAfter(
     (turn) => turn.timestamp === undefined || turn.timestamp >= lowerBoundMs,
   );
 
-  // Bugfix: Claude 原生日志 turnIndex 与 ZCode turnIndex 在 session/load、旧错误合成消息、
-  // 跨 provider 续接后可能发生漂移。恢复正文时必须优先用 userTimestamp 判断 assistant
-  // 归属的用户轮次，否则 session/load 追加的临近 assistant（如 No response requested）
-  // 会凭较新的 assistant timestamp 混入本轮，把旧轮次 API Error 当成当前成功回复覆盖掉。
-  // Bugfix: 但 Claude 原生日志的 user timestamp 可能被截断到秒级。快速连续 prompt 时，
-  // 上一轮 user 也会落进 1s 容忍窗口；这时必须排除 assistant 写入时间早于本轮发送的旧轮次，
-  // 并在剩余候选中取日志顺序最后一条，才是最接近当前 prompt 的可见 assistant。
-  // 不向后寻找 terminal，避免当前轮还未写终态时误跳到更晚一轮的正文。
+  // Bugfix: Claude-native and ZCode turnIndexes drift across session/load, synthesized errors,
+  // and cross-provider continuation. Attribute assistants by userTimestamp first, or nearby
+  // session/load additions (No response requested) with fresher timestamps
+  // leak into this turn and overwrite an older API error with a fake success.
+  // Bugfix: native user timestamps truncate to seconds, so rapid prompts put the
+  // previous user inside the 1s window; exclude assistants written before this turn's send
+  // and take the last in log order: the assistant closest to this prompt.
+  // Never search forward for terminals, or an unfinished turn jumps to a later one's body.
   return truncatedTimestampCandidates.at(-1) ?? null;
 }
 
@@ -442,9 +441,9 @@ export function parseClaudeNativeVisibleAssistantTurns(
       return;
     }
 
-    // 关键业务逻辑：prompt 收尾兜底不能只知道“有正文”，还要知道这一轮
-    // Claude 原生日志是否已经写到 end_turn/max_tokens 等终态。否则会把 tool_use
-    // 阶段的开场白误当最终回复。
+    // Core rule: prompt-finalization needs more than a body; it must know whether this turn
+    // reached a terminal (end_turn/max_tokens), or tool_use openings
+    // read as final replies.
     turns.push({
       turnIndex: currentTurnIndex,
       content: pendingAssistantContent,
@@ -501,9 +500,9 @@ function extractClaudeSystemDiagnosticText(entry: JsonLineRecord): string | null
 
   const content = readTrimmedString(entry.content);
   if (content) {
-    // Bugfix: Claude Code 2.1.148 会把未知 slash command 写成
-    // system/local_command/info，并将错误包在 local-command-stdout 标签内。
-    // 这里只剥标签保留诊断文本，避免继续落到泛化“Agent 未产生任何回复”。
+    // Bugfix: Claude Code 2.1.148 logs unknown slash commands as
+    // system/local_command/info with the error inside local-command-stdout tags.
+    // Strip the tags, keep the diagnostics, and avoid the generic no-reply fallback.
     return sanitizeClaudeDiagnosticText(content);
   }
 
@@ -545,8 +544,8 @@ export function parseClaudeNativeUnknownCommandWarnings(
       latestTimestamp === undefined ||
       Math.abs(timestamp - latestTimestamp) <= CLAUDE_NATIVE_UNKNOWN_COMMAND_ARGS_MAX_GAP_MS;
     if (isSameWarningGroup) {
-      // Bugfix: Claude Code 对未知 slash command 会拆成两条 system warning：
-      // 一条写命令名，一条写参数。这里合并后才能给 ZCode 用户展示可操作的失败原因。
+      // Bugfix: unknown slash commands split into two system warnings
+      // (name, then args); merge them so ZCode shows an actionable failure.
       latest.args = argsMatch[1].trim();
     }
   }

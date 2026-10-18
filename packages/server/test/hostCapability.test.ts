@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 describe("desktop host websocket capability store", () => {
-  it("capability 有 TTL 且只能成功消费一次，无效值不会赋予权限", async () => {
+  it("gives capabilities a TTL, single successful redemption, and no grant for invalid values", async () => {
     const modulePromise = import("../src/hostCapability.js");
     await expect(modulePromise).resolves.toBeDefined();
     const { createHostCapabilityStore } = await modulePromise;

@@ -34,11 +34,11 @@ function previewArg(value: unknown): string {
 }
 
 /**
-  * Squeeze {op, args} under {@link WORLD_READ_INPUT_MAX_BYTES}.
+ * Squeeze {op, args} under {@link WORLD_READ_INPUT_MAX_BYTES}.
  *
-  * Fast path: under the cap after serialization, return as-is (args keep their types -- the world.run opts object and
-  * git.log's numbers stay themselves). Slow path: each arg becomes a string preview, at most 8 of them, plus a truncated flag.
-  * Unserializable args (cycles, BigInt) take the same slow path -- the journal could not represent them anyway.
+ * Fast path: under the cap after serialization, return as-is (args keep their types -- the world.run opts object and
+ * git.log's numbers stay themselves). Slow path: each arg becomes a string preview, at most 8 of them, plus a truncated flag.
+ * Unserializable args (cycles, BigInt) take the same slow path -- the journal could not represent them anyway.
  */
 export function boundWorldReadInput(op: string, args: readonly unknown[]): WorldReadInput {
   const plain: WorldReadInput = { op, args: [...args] };
@@ -46,7 +46,7 @@ export function boundWorldReadInput(op: string, args: readonly unknown[]): World
     const text = JSON.stringify(plain);
     if (text !== undefined && utf8Length(text) <= WORLD_READ_INPUT_MAX_BYTES) return plain;
   } catch {
-        // Fall through to the preview path below.
+    // Fall through to the preview path below.
   }
   return {
     op,

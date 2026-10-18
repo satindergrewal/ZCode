@@ -63,7 +63,7 @@ export type WorkspaceHookTrustRevokeTarget = z.infer<typeof workspaceHookTrustRe
 
 // Soft gate: the command target that opens the review flow on demand.
 // The clone-revoke variant of non-flow targets, without hookDeclarationDigests
- //(the review flow pulls all pending items from the current snapshot, not specified declarations).
+//(the review flow pulls all pending items from the current snapshot, not specified declarations).
 export const requestWorkspaceHookReviewTargetSchema = z
   .object({
     sessionId: nonEmptyStringSchema,

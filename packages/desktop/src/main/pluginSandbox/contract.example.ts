@@ -1,7 +1,7 @@
 import type { PluginSandboxRegistryPort } from "./contract.js";
 import { buildPluginSandboxPartition, buildPluginSandboxShellUrl } from "./contract.js";
 
-/** host 登记后 main 返回给 host 的句柄应满足的派生规则。 */
+/** Derived rules the handle returned by main to the host after registration must satisfy. */
 export function exampleRegister(registry: PluginSandboxRegistryPort) {
   const serverName = "plugin:example-plugin:widget";
   const handle = registry.register({
@@ -25,7 +25,7 @@ export function exampleRegister(registry: PluginSandboxRegistryPort) {
     handle,
     shellUrlMatches:
       handle.shellUrl === buildPluginSandboxShellUrl(handle.sandboxId, handle.instance.appIdentity),
-    // partition 由 Agent 可信身份派生；相同身份跨实例稳定。
+    // The partition derives from the trusted Agent identity; stable across instances for the same identity.
     partitionMatches:
       handle.partition ===
       buildPluginSandboxPartition({ appIdentity: handle.instance.appIdentity }),

@@ -35,7 +35,8 @@ const VISUAL_PASS = 8.6;
 
 function consolidate(verdicts: JuryVerdict[]): { scene: string; median: number }[] {
   const rows: { scene: string; median: number }[] = [];
-  for (const v of verdicts) for (const ss of v.sceneScores) rows.push({ scene: ss.scene, median: ss.score });
+  for (const v of verdicts)
+    for (const ss of v.sceneScores) rows.push({ scene: ss.scene, median: ss.score });
   return rows.sort((a, b) => a.median - b.median);
 }
 
@@ -70,7 +71,11 @@ for (let round = 1; round <= INTEG_ROUNDS && !gatesGreen; round++) {
   }
 }
 if (!gatesGreen) {
-  const failed: WorkflowReport = { gatesGreen: false, visualGreen: false, signatureFeatures: contract.signatureFeatures };
+  const failed: WorkflowReport = {
+    gatesGreen: false,
+    visualGreen: false,
+    signatureFeatures: contract.signatureFeatures,
+  };
   return failed;
 }
 
@@ -89,7 +94,9 @@ for (let round = 1; round <= VISUAL_ROUNDS; round++) {
     await fixer.ask<FixReport>(`shoot.js 失败\n${shoot.stderr}`);
     continue;
   }
-  const verdicts = await Promise.all([juryA, juryB, juryC].map((j) => j.ask<JuryVerdict>(`第 ${round} 轮视觉评审`)));
+  const verdicts = await Promise.all(
+    [juryA, juryB, juryC].map((j) => j.ask<JuryVerdict>(`第 ${round} 轮视觉评审`)),
+  );
   rows = consolidate(verdicts);
   visualGreen = rows.length > 0 && rows.every((r) => r.median >= VISUAL_PASS);
   if (visualGreen) break;

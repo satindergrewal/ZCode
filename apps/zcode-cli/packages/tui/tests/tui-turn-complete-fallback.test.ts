@@ -5,9 +5,9 @@ import { applyTurnCompleteFallbackResponse } from "../src/app-turn-complete.js";
 import { appendAgentResult } from "../src/app-submit.js";
 import type { Message } from "../src/app-model.js";
 
-// turn_complete 的 response 兜底：通知驱动的回合没有 applyResult，流式又可能一个字都没画
-// （只有工具调用、或流中途断掉）。这组测试钉住兜底的三条性质：该补时补、已画过不补、
-// 以及与 appendAgentResult 的守卫对称——同一段回答绝不出现两次。
+// turn_complete response fallback: notification-driven turns have no applyResult, and streaming may have drawn nothing
+// (tool calls only, or the stream died midway). These tests pin three properties: append when owed, skip when already drawn,
+// and symmetry with the appendAgentResult guard -- one answer never appears twice.
 
 function dispatch(current: Message[], payload: Record<string, unknown>): Message[] {
   let next = current;
@@ -48,9 +48,9 @@ test("re-delivery of the same response is idempotent", () => {
 });
 
 test("regression: fallback then applyResult must not duplicate the answer", () => {
-  // 用户回合里流断掉的场景：turn_complete 先到（兜底补上），随后 submitPrompt 结算、
-  // appendAgentResult 再跑。守卫只扫 streamProjected 消息，所以兜底消息必须自带该标记，
-  // 否则这里会出现同一段回答的第二份。
+  // Stream dying mid-user-turn: turn_complete lands first (the fallback appends), then submitPrompt settles and
+  // appendAgentResult runs. The guard scans only streamProjected messages, so the fallback message must carry that flag
+  // or this case would show a second copy of the same answer.
   const afterFallback = dispatch([], { response: "the one answer" });
   const afterResult = appendAgentResult(afterFallback, { response: "the one answer" });
   const occurrences = afterResult.filter((m) => m.content === "the one answer");

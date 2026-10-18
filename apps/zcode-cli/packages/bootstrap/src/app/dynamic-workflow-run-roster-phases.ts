@@ -17,10 +17,10 @@ import type { RosterEventIndex } from "./dynamic-workflow-run-roster-events.js";
 const WORLD_NODE_KIND = "world-read";
 
 /**
-  * Phase table: declared phases in declaration order, then visited-but-undeclared ones (by first entry).
+ * Phase table: declared phases in declaration order, then visited-but-undeclared ones (by first entry).
  *
-  * **Returns undefined when nothing was declared and none entered**: such a run has no phase concept,
-  * and an empty array would read as "the phase table is empty" -- a different statement.
+ * **Returns undefined when nothing was declared and none entered**: such a run has no phase concept,
+ * and an empty array would read as "the phase table is empty" -- a different statement.
  */
 export function buildPhaseViews(input: {
   run: WorkflowRunState | undefined;
@@ -60,10 +60,10 @@ export function buildPhaseViews(input: {
 }
 
 /**
-  * A phase's situation (the four words on `DynamicWorkflowRunPhaseState`).
+ * A phase's situation (the four words on `DynamicWorkflowRunPhaseState`).
  *
-  * `unfinished` **holds only for terminal runs**: while the run lives, an in-flight ask in a non-current phase is normal
-  * parallel branching, not a dangling tail -- `nodesRunning` already reports how many are in flight.
+ * `unfinished` **holds only for terminal runs**: while the run lives, an in-flight ask in a non-current phase is normal
+ * parallel branching, not a dangling tail -- `nodesRunning` already reports how many are in flight.
  */
 function phaseStateOf(input: {
   rounds: number;

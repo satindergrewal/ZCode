@@ -11,7 +11,7 @@ describe("materializeBundledZCodeBuiltinProviderConfig", () => {
     await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
   });
 
-  it("在环境固定路径物化 ZCode Built-in Provider Config，并复用相同内容", async () => {
+  it("materializes the ZCode built-in provider config at the fixed env path and reuses identical content", async () => {
     const runtimeRoot = await mkdtemp(join(tmpdir(), "zcode-remote-provider-config-"));
     tempDirs.push(runtimeRoot);
     const content = emptyRelease(1);
@@ -32,7 +32,7 @@ describe("materializeBundledZCodeBuiltinProviderConfig", () => {
     await expect(readFile(firstPath, "utf8")).resolves.toBe(`${content}\n`);
   });
 
-  it("内容变化时在固定路径替换资源副本", async () => {
+  it("replaces the bundled copy at the fixed path when content changes", async () => {
     const runtimeRoot = await mkdtemp(join(tmpdir(), "zcode-remote-provider-config-"));
     tempDirs.push(runtimeRoot);
     const firstContent = emptyRelease(1);
@@ -51,7 +51,7 @@ describe("materializeBundledZCodeBuiltinProviderConfig", () => {
     await expect(readFile(secondPath, "utf8")).resolves.toBe(`${secondContent}\n`);
   });
 
-  it("发现损坏资源副本时从有效随包资源重建", async () => {
+  it("rebuilds from the valid bundled asset when the materialized copy is corrupt", async () => {
     const runtimeRoot = await mkdtemp(join(tmpdir(), "zcode-remote-provider-config-"));
     tempDirs.push(runtimeRoot);
     const content = emptyRelease(1);

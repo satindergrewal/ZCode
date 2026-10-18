@@ -44,20 +44,20 @@ export function calculateHighspeedSavedDurationMs(params: {
       params.otherDurationMs >= 0
         ? params.otherDurationMs
         : Math.max(0, params.durationMs - modelDurationMs - toolDurationMs);
-    // CLI 已把真实模型/工具区间持久化；工具与其它等待不因模型换速而缩短。
+    // The CLI persists real model/tool spans; tool and other waits never shrink with model speed.
     const regularDurationMs = toolDurationMs + otherDurationMs + modelDurationMs * modelSpeedup;
     const actualDurationMs = modelDurationMs + toolDurationMs + otherDurationMs;
     return Math.max(0, Math.round(regularDurationMs - actualDurationMs));
   }
-  // Bug 根因：此前把卡级 TPS 直接当成整轮耗时，工具调用时间也被错误地按模型速度缩短。
-  // 工具占 20% 且不变，只有模型推理的 80% 按 Highspeed 倍率缩短。
+  // Bug: card-level TPS was treated as whole-turn duration, shrinking tool time by model speed too.
+  // Tools are a fixed 20%; only the 80% model inference scales with the Highspeed ratio.
   const highspeedShare = 0.2 + 0.8 / modelSpeedup;
   const estimatedRegularDurationMs = params.durationMs / highspeedShare;
   return Math.max(0, Math.round(estimatedRegularDurationMs - params.durationMs));
 }
 
 /**
- * 统一把完成态的真实耗时拆分传入计算器，避免持久化前漏传拆分字段后静默回退到 20/80 估算。
+ * Always pass the completed turn's real split; a missing split field must not silently fall back to 20/80.
  */
 export function calculateHighspeedSavedDurationFromMetrics(
   metrics: HighspeedTimingMetricsForSavedTime,
@@ -75,8 +75,8 @@ export async function readHighspeedRegularTpsFromHealth(params: {
   usageStatsService: IUsageStatsService;
   preferredProviderId: string;
   /**
-   * 当前 Coding Plan 的账号访问上下文。Provider 重构后请求期鉴权只能由它解析，
-   * 缺失时 host 无法确定用哪个账号/团队项目查询，必定抛错。
+   * Current Coding Plan account context. Post-provider-refactor only this resolves request auth;
+   * without it the host cannot pick the account/team project and must throw.
    */
   accountAccess: CodingPlanRegularTpsRequest["accountAccess"];
   timeZone?: string;

@@ -63,7 +63,10 @@ async function validatePlayback(root, outputPath) {
     `<!doctype html><video id="video" src="${pathToFileURL(outputPath).href}" muted></video>`,
     "utf8",
   );
-  const validationWindow = new BrowserWindow({ show: false, webPreferences: { backgroundThrottling: false } });
+  const validationWindow = new BrowserWindow({
+    show: false,
+    webPreferences: { backgroundThrottling: false },
+  });
   try {
     await validationWindow.loadFile(validationHtmlPath);
     return await validationWindow.webContents.executeJavaScript(`(async () => {
@@ -86,8 +89,9 @@ async function validatePlayback(root, outputPath) {
         video.currentTime = time;
       });
 
-      // MediaRecorder 的流式 WebM 不写 Duration 头，video.duration 是 Infinity。
-      // seek 到超大时间点让 Chromium 定位真实末尾，再读回可播放时长。
+            // MediaRecorder's streaming WebM writes no Duration header, so video.duration is
+            // Infinity; seek far past the end to make Chromium locate the real tail, then read back
+            // the playable duration.
       await seek(1e7);
       const durationSeconds = video.currentTime;
       if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
@@ -130,7 +134,7 @@ async function validatePlayback(root, outputPath) {
         if (samples[1][index] + samples[1][index + 1] + samples[1][index + 2] > 24) litPixels += 1;
       }
 
-      // 实际解码帧率：统计一段真实播放里的 video frame callback 次数。
+            // Real decoded fps: count video frame callbacks across an actual playback window.
       await seek(0);
       let sampledFrames = 0;
       let sampledMs = 0;
@@ -231,28 +235,34 @@ async function run() {
     if (playback.width !== 1280 || playback.height !== 720) {
       throw new Error(`WebM dimensions mismatch: ${JSON.stringify(playback)}`);
     }
-    // 时长必须来自真实容器，而不是 main 侧推算：偏离取景 wall clock 太多说明丢帧或提前截断。
+    // Duration must come from the real container, not a main-side estimate: a large deviation from
+    // the framing wall clock means dropped frames or early truncation.
     const durationMs = playback.durationSeconds * 1000;
     if (durationMs < capturedMs * 0.5 || durationMs > capturedMs * 1.5 + 500) {
       throw new Error(
         `WebM duration ${durationMs.toFixed(0)}ms is not consistent with ${capturedMs}ms of capture`,
       );
     }
-    // 只验证尺寸会让全黑或全静止的录制也通过；这里要求画面真的在动且不是黑屏。
+    // Size alone lets an all-black or frozen recording pass; require actual motion and non-black
+    // frames.
     if (playback.changedPixelRatio < 0.02) {
       throw new Error(
         `recorded frames are static: changedPixelRatio=${playback.changedPixelRatio.toFixed(4)}`,
       );
     }
     if (playback.litPixelRatio < 0.5) {
-      throw new Error(`recorded frames are mostly black: litPixelRatio=${playback.litPixelRatio.toFixed(4)}`);
+      throw new Error(
+        `recorded frames are mostly black: litPixelRatio=${playback.litPixelRatio.toFixed(4)}`,
+      );
     }
     if (playback.sampledFps < 8) {
       throw new Error(
         `decoded frame rate too low: ${playback.sampledFps.toFixed(1)}fps over ${playback.sampledFrames} frames`,
       );
     }
-    console.log(JSON.stringify({ ok: true, path: outputPath, size: info.size, capturedMs, ...playback }));
+    console.log(
+      JSON.stringify({ ok: true, path: outputPath, size: info.size, capturedMs, ...playback }),
+    );
   } catch (error) {
     exitCode = 1;
     await new Promise((resolve) => process.stderr.write(`${error.stack ?? error}\n`, resolve));
@@ -262,7 +272,7 @@ async function run() {
         try {
           contents.debugger.detach();
         } catch {
-          // smoke 已进入退出清理，不覆盖更早的验证错误。
+          // The smoke is already in exit cleanup; never mask the earlier verification error.
         }
       }
     }

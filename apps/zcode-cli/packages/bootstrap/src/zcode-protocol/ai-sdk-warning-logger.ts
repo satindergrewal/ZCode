@@ -15,9 +15,7 @@ type AiSdkWarningGlobal = typeof globalThis & {
 export function installZCodeProtocolAiSdkWarningLogger(logger: Logger): void {
   // The AI SDK default warning logger writes to stdout via console.info on first use;
   // app-server --stdio uses stdout as the ZCode Protocol NDJSON frame channel, so any stray text breaks host parsing.
-  (globalThis as AiSdkWarningGlobal).AI_SDK_LOG_WARNINGS = (
-    options: AiSdkWarningLoggerOptions,
-  ) => {
+  (globalThis as AiSdkWarningGlobal).AI_SDK_LOG_WARNINGS = (options: AiSdkWarningLoggerOptions) => {
     try {
       const warnings = Array.isArray(options.warnings) ? options.warnings : [];
       logger.warn("AI SDK model warning", {

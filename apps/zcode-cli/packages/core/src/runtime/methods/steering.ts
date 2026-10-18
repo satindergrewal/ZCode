@@ -68,7 +68,7 @@ export async function steerTurn(
   const inputSize = measureUtf8Bytes(request.input);
   const inputPreview = previewInput(request.input);
 
-  // 附件输入可以没有正文；旧校验只看 input，导致已 accepted 的附件无法进入权威 queue。
+  // Attachment input may have no body; the legacy check looked at input only, so accepted attachments could never enter the authoritative queue.
   if (!hasSteerInput(request)) {
     return await this.rejectTurnSteer("empty_input", {
       activeTurn,
@@ -448,9 +448,9 @@ function pendingInputDelivery(pendingInput: PendingTurnInput | undefined): "guid
 }
 
 function firstInlineGuideIndex(activeTurn: ActiveTurnSteeringState): number {
-  // pendingInputs 同时承载 future queue 与 current-turn guide，只检查
-  // 数组队首，导致先入队的普通消息把后续显式 guide 永久挡住。delivery 才是消费车道；
-  // 这里只在 guide 子序列内保持 admission FIFO，普通 queue 留在原位等待外层提升。
+  // pendingInputs holds both the future queue and the current-turn guide; checking only the
+  // array head let earlier queued messages block later explicit guides forever. delivery is the consumption lane;
+  // keep admission FIFO inside the guide subsequence only; plain queue stays put for outer promotion.
   return activeTurn.pendingInputs.findIndex(
     (pendingInput) =>
       pendingInput.commandKind !== "sendGoalCommand" &&
@@ -477,8 +477,8 @@ export function hasInlineGuidePendingInput(
 }
 
 /**
- * 当前 product turn 被 stop/interrupted，或 FIFO barrier 阻止安全 inline 时，把尚未消费的
- * guide 原地改投普通 queue。正常可消费的 text-only guide 仍在当前 active turn 内续跑。
+ // * When the current product turn is stopped/interrupted, or a FIFO barrier blocks safe inlining, re-route unconsumed
+ // * guides into the plain queue in place. Consumable text-only guides keep running in the current active turn.
  */
 export async function fallbackPendingGuidesToQueue(
   this: AgentRuntimeInternal,
@@ -571,9 +571,9 @@ async function settleRemovedSessionInput(
   reason: "user_removed" | "promoted",
 ): Promise<void> {
   if (reason !== "user_removed") return;
-  // 只删内存 queue/event 会留下 admitted 的 durable session_input。
-  // LRU 淘汰后 commands/query 会退成 unknown，CLI restart 又会把用户主动删除误报为
-  // inputDiscardedOnRestart。先写 cancelled 终态，失败时不允许 UI queue 先消失。
+  // Deleting only the in-memory queue/events leaves admitted durable session_input rows.
+  // After LRU eviction commands/queries degrade to unknown, and a CLI restart would misreport a user's own deletion as
+  // inputDiscardedOnRestart. Write the cancelled terminal first; never let the UI queue vanish before it.
   await runtime.sessionStore?.settleSessionInput?.({
     id: pendingInputId,
     sessionID: runtime.sessionId,
@@ -604,7 +604,7 @@ export async function reservePendingInputById(
     return false;
   if (unpublishedPermissionGrants.has(this)) await recoverPendingPermissionGrant(this);
   const targetTurnId = await pendingInputTargetTurnId(this, options.pendingInputId);
-  // rebuildProjection 上方有 await；落锁前必须复查，避免两端同时读到未占用。
+  // rebuildProjection has an await above; recheck before taking the lock so both ends cannot read unclaimed at once.
   if (
     !targetTurnId ||
     this.permissionFullAccessPending ||
@@ -668,7 +668,7 @@ export async function releasePendingInputReservation(
       traceContext: options.traceContext,
     });
   } catch (error) {
-    // 事件写失败时 reservation 仍必须保持，不能让第二端重复执行。
+    // On event-write failure the reservation must hold; never let the second end execute twice.
     this.pendingInputReservations.set(options.pendingInputId, options.reservationId);
     throw error;
   }
@@ -676,10 +676,10 @@ export async function releasePendingInputReservation(
 }
 
 /**
- * （v4 queue 单项管理）：按 id 从当前 active turn 的 pendingInputs 移除一条，
- * 发 TurnSteerDiscarded([id])。v4 ProductProjection 已消费该事件移除对应 queue row。
- * 旧架构 queue 是 renderer-local，无单项 op；v4 queue 移入 CLI 投影后需此原生能力。
- * 返回是否移除（未命中 id / 无 active turn → false）。
+ // * (v4 per-item queue op): remove one entry by id from the active turn's pendingInputs,
+ // * emitting TurnSteerDiscarded([id]). The v4 ProductProjection consumes it and drops the queue row.
+ // * Legacy queues were renderer-local with no per-item op; v4 queue lives in the CLI projection, hence this native ability.
+ // * Returns whether removed (id miss / no active turn -> false).
  */
 export async function removePendingInputById(
   this: AgentRuntimeInternal,
@@ -698,8 +698,8 @@ export async function removePendingInputById(
       (pendingInput) => pendingInput.id === options.pendingInputId,
     ) ?? -1;
   if (!activeTurn || index < 0) {
-    // held 回落（stop/完成后 queue 保留成 held）：held 项只存在于
-    // 事件日志/投影（active turn 已结束），按投影定位后补 TurnSteerDiscarded。
+    // held fallback (stop/completion keeps the queue as held): held items exist only in the
+    // event log/projection (the active turn ended); locate via projection then emit TurnSteerDiscarded.
     return this.discardHeldPendingInputById(
       options.pendingInputId,
       options.traceContext,
@@ -736,9 +736,9 @@ export async function removePendingInputById(
 }
 
 /**
- * held 项按 id 丢弃（heldQueueDisposition=clearQueueAndSend 的执行件）：
- * active turn 结束后 pendingInputs 内存态即消亡，held queue 的权威在事件日志——
- * 经投影反查该项仍未 drain/discard 后补 TurnSteerDiscarded(user_removed)。
+ // * Drop a held item by id (the executor of heldQueueDisposition=clearQueueAndSend):
+ // * the active turn's in-memory pendingInputs dies with the turn; held queues' authority is the event log --
+ once the projection confirms not drained/discarded, emit TurnSteerDiscarded(user_removed).
  */
 export async function discardHeldPendingInputById(
   this: AgentRuntimeInternal,
@@ -780,9 +780,9 @@ export async function discardHeldPendingInputById(
 }
 
 /**
- * 清空全部排队输入（heldQueueDisposition=clearQueueAndSend 的执行件）：
- * 先摘 active turn 内存项（防后续 roundtrip drain），再按投影清扫 held 残留。
- * 返回丢弃条数。
+ // * Clear all queued input (executor of clearQueueAndSend):
+ // * first lift the active turn's in-memory items (no later roundtrip drain), then sweep held leftovers via the projection.
+ // * Returns the discarded count.
  */
 export async function clearAllPendingInputs(
   this: AgentRuntimeInternal,
@@ -842,8 +842,8 @@ export async function clearAllPendingInputs(
 }
 
 /**
- * （v4 queue 单项编辑）：按 id 替换某排队输入的文本，重发 TurnSteerQueued（同 id）。
- * v4 reducer 的 onTurnSteerQueued 对同 id 原地更新（保位）。未命中 / 无 active turn → false。
+ // * (v4 per-item edit): replace a queued input's text by id, re-emitting TurnSteerQueued (same id).
+ // * The v4 reducer's onTurnSteerQueued updates in place (position kept). Miss / no active turn -> false.
  */
 export async function editPendingInputById(
   this: AgentRuntimeInternal,
@@ -856,8 +856,8 @@ export async function editPendingInputById(
   const activeTurn = this.activeTurn;
   const pendingInput = activeTurn?.pendingInputs.find((item) => item.id === options.pendingInputId);
   if (!activeTurn || !pendingInput) {
-    // held 回落：held 项只在事件日志/投影，经投影定位后
-    // 重发同 id TurnSteerQueued（v4 reducer 原地更新，保位）。
+    // held fallback: held items live only in the event log/projection; locate via projection and
+    // re-emit the same-id TurnSteerQueued (the v4 reducer updates in place, keeping position).
     const projection = await this.rebuildProjection();
     const held = projection.pendingSteerInputs.find(
       (item) => item.pendingInputId === options.pendingInputId,
@@ -888,7 +888,7 @@ export async function editPendingInputById(
   }
   await persistSessionInputUpdates(this, [{ id: pendingInput.id, text: options.newText }]);
   pendingInput.input = options.newText;
-  // 编辑正文后必须同步 canonical text，否则结构化引用恢复时会显示旧正文。
+  // After a body edit the canonical text must update too, or structured-quote restore shows the old body.
   if (pendingInput.intent) pendingInput.intent = { ...pendingInput.intent, text: options.newText };
   const event = createSessionEvent(
     SessionEventType.TurnSteerQueued,
@@ -919,8 +919,8 @@ export async function editPendingInputById(
 }
 
 /**
- * （v4 queue 重排）：把 pendingInputId 移到 beforePendingInputId 之前（null = 移到队尾），
- * 发 TurnSteerReordered(新序)。v4 reducer 按新序重排 queue rows。未命中 → false。
+ // * (v4 reorder): move pendingInputId before beforePendingInputId (null = to the tail),
+ // * emitting TurnSteerReordered(new order). The v4 reducer reorders queue rows. Miss -> false.
  */
 export async function reorderPendingInput(
   this: AgentRuntimeInternal,
@@ -934,7 +934,7 @@ export async function reorderPendingInput(
   const fromIndexActive =
     activeTurn?.pendingInputs.findIndex((item) => item.id === options.pendingInputId) ?? -1;
   if (!activeTurn || fromIndexActive < 0) {
-    // held 回落：在投影序上重排后发 TurnSteerReordered（v4 reducer 按新序重排）。
+    // held fallback: reorder on the projection then emit TurnSteerReordered (the v4 reducer reorders).
     const projection = await this.rebuildProjection();
     const heldIds = projection.pendingSteerInputs.map((item) => item.pendingInputId);
     const fromIndex = heldIds.indexOf(options.pendingInputId);
@@ -982,14 +982,14 @@ export async function reorderPendingInput(
   } else {
     const beforeIndex = items.findIndex((item) => item.id === options.beforePendingInputId);
     if (beforeIndex < 0) {
-      // 目标锚点已消失 → 退回队尾，不丢项。
+      // Target anchor gone -> fall back to the tail; never drop the item.
       items.push(moved);
     } else {
       items.splice(beforeIndex, 0, moved);
     }
   }
-  // 只重排数组而不更新 intent.queuePosition，会让 live queue 顺序正确，
-  // 但 drain 后 transcript 又写回 admission 时的旧位置，造成冷热投影事实分叉。
+  // Reordering the array without intent.queuePosition keeps the live queue right but
+  // writes the admission-time position back post-drain, forking cold/hot projection facts.
   const reorderedItems = items.map((item, index) =>
     item.intent ? { ...item, intent: { ...item.intent, queuePosition: index } } : item,
   );
@@ -1015,9 +1015,9 @@ export async function reorderPendingInput(
 }
 
 /**
- * （v4 setAutoDrain）：翻转 queue autoDrain 授权位（会话级配置，与 active turn 无关）。
- * 仅追加 QueueAutoDrainChanged 事件供 v4 投影消费；held 派生（completed+queue>0+autoDrain=false
- * → choice 路由）与后续 heldQueueDisposition 命令闭合发送语义。
+ // * (v4 setAutoDrain): flip the queue autoDrain grant bit (session-level, independent of the active turn).
+ // * Appends QueueAutoDrainChanged for the v4 projection; the held derivation (completed+queue>0+autoDrain=false
+ // * -> choice routing) and later heldQueueDisposition commands close the send semantics.
  */
 export async function setQueueAutoDrain(
   this: AgentRuntimeInternal,
@@ -1026,14 +1026,14 @@ export async function setQueueAutoDrain(
     traceContext: TraceContext;
   },
 ): Promise<void> {
-  // false -> true 表示用户从暂停队列恢复。旧暂停项只存在于事件投影，不在新
-  // activeTurn.pendingInputs 中；恢复期间改由 CLI 外层按完整投影 FIFO 逐项提升。
+  // false->true means the user resumes a paused queue. Legacy paused items exist only in the event projection, not in the new
+  // activeTurn.pendingInputs; during resume the CLI outer layer promotes item by item under full-projection FIFO.
   if (options.autoDrain && !this.queueAutoDrain) {
     this.queueExternalDrainActive = true;
   } else if (!options.autoDrain) {
     this.queueExternalDrainActive = false;
   }
-  // 授权位同时进 runtime（drain 门）与事件日志（投影派生暂停队列）。
+  // The grant bit enters both the runtime (drain gate) and the event log (the projection's paused-queue derivation).
   this.queueAutoDrain = options.autoDrain;
   const event = createSessionEvent(
     SessionEventType.QueueAutoDrainChanged,
@@ -1044,15 +1044,15 @@ export async function setQueueAutoDrain(
   await this.appendEvent(event, options.traceContext);
 }
 
-/** CLI 投影确认恢复队列已空后，重新允许 core 在后续 tool batch 边界消费 guide。 */
+/** Once the CLI projection confirms the queue is empty, allow core to consume guides at later tool-batch boundaries again. */
 export function completeExternalQueueDrain(this: AgentRuntimeInternal): void {
   this.queueExternalDrainActive = false;
 }
 
 /**
- * （v4 setFollowupMode）：翻转 followup 路由模式（会话级配置）。
- * 仅追加 FollowupModeChanged 事件供 v4 投影消费；running 时 computeInputRouting 依此在
- * enqueue（queue）与 guide 之间选择。
+ // * (v4 setFollowupMode): flip the followup routing mode (session-level).
+ // * Appends FollowupModeChanged for the v4 projection; while running, computeInputRouting chooses between
+ // * enqueue (queue) and guide by it.
  */
 export async function setFollowupMode(
   this: AgentRuntimeInternal,
@@ -1071,10 +1071,10 @@ export async function setFollowupMode(
 }
 
 /**
- * （v4 switchModelConfig）：模型选型变化后追加 ModelSelected 事件供投影消费。
- * v4 reducer 的 onModelSelected 依此更新 config.provider/model/thought 和实际 context window，
- * 并（中途切换时）产出 modelChange marker。实际 provider client 切换由 app.setModel 完成，
- * 此处把切换后的完整模型能力元组写入同一个事件。
+ // * (v4 switchModelConfig): append a ModelSelected event for the projection after a selection change.
+ // * The v4 reducer's onModelSelected updates config provider/model/thought and the effective context window,
+ // * and (mid-run) emits the modelChange marker. The actual provider-client switch is app.setModel's job;
+ // * this writes the post-switch full model-capability tuple into the same event.
  */
 export async function emitModelSelected(
   this: AgentRuntimeInternal,
@@ -1093,13 +1093,13 @@ export async function emitModelSelected(
     SessionEventType.ModelSelected,
     this.sessionId,
     {
-      // 模型切换事件必须从本次创建的 Active Model 读取窗口，不能再复制 Runtime Config。
+      // A model-switch event must read the window from the Active Model created here, never copy the Runtime Config.
       contextWindow: model.properties.contextWindow,
       modelSelection: cloneModelSelection(options.modelSelection),
       ...(options.effectiveReasoningLevel
         ? { effectiveReasoningLevel: options.effectiveReasoningLevel }
         : {}),
-      // previousModelSelection=null 是显式 ∅→X 模型边界，不能按 truthy 判断丢失。
+      // previousModelSelection=null is the explicit empty-to-X model boundary; truthiness checks would lose it.
       ...(options.previousModelSelection !== undefined
         ? {
             previousModelSelection: options.previousModelSelection
@@ -1118,9 +1118,9 @@ export async function emitModelSelected(
 }
 
 /**
- * （v4 switchCollaborationMode）：命令面切换协作模式后追加 SessionModeChanged 事件。
- * app.setMode 只更新 runtime config + 持久化偏好、不产事件（session-mode-port 的
- * enterPlanMode/exitPlanMode 仅覆盖 plan 工具路径），v4 投影的 config.mode 更新靠这条补发。
+ // * (v4 switchCollaborationMode): append SessionModeChanged after a command-surface mode switch.
+ // * app.setMode only updates runtime config + persisted preference, no event (session-mode-port's
+ // * enterPlanMode/exitPlanMode cover the plan tool path only); the v4 projection's config.mode update relies on this backfill.
  */
 export async function emitModeChanged(
   this: AgentRuntimeInternal,
@@ -1155,7 +1155,7 @@ export async function drainPendingInput(
   if (this.permissionFullAccessPending || this.activeTurn !== options.activeTurn) return undefined;
   if (unpublishedPermissionGrants.has(this)) await recoverPendingPermissionGrant(this);
   if (this.permissionFullAccessPending || this.activeTurn !== options.activeTurn) return undefined;
-  // Guide 出队先移除内存、后落事件；完整消费期间不能从旧投影捕获授权目标。
+  // Guide dequeue removes in-memory first, event second; during full consumption never capture the authorized target from a stale projection.
   this.pendingInputDrains = (this.pendingInputDrains ?? 0) + 1;
   try {
     return await drainPendingInputUnlocked.call(this, options);
@@ -1171,16 +1171,16 @@ async function drainPendingInputUnlocked(
   const guideIndex = firstInlineGuideIndex(options.activeTurn);
   const pendingInput = guideIndex >= 0 ? options.activeTurn.pendingInputs[guideIndex] : undefined;
   if (!pendingInput) return undefined;
-  // sendQueuedNow 已 reserve 的队首只能由 reservation owner 提升；普通 roundtrip drain
-  // 必须暂停，避免 stop barrier 期间同一输入又被当前 turn 消费一次。
+  // A queue head already reserved by sendQueuedNow only its reservation owner may promote; plain roundtrip drain
+  // must pause, or during a stop barrier the same input gets consumed by the current turn twice.
   if (this.pendingInputReservations.has(pendingInput.id)) return undefined;
-  // 普通 queue 只能由 bootstrap 在 session-ready + goal gate 后提升；runtime 行内 drain
-  // 从 guide 子序列取最早一项，不能让 future queue 偷跑，也不能让它阻塞当前轮引导。
+  // Plain queue promotion belongs to bootstrap after session-ready + goal gate; the runtime's inline drain
+  // takes the earliest guide-subsequence item -- the future queue must neither jump it nor block the current turn's guide.
   options.activeTurn.pendingInputs.splice(guideIndex, 1);
   const pendingInputs = [pendingInput];
   const queryIds = pendingInput.queryId ? [pendingInput.queryId] : undefined;
-  // steer 是新的真实用户 query。drain 后的下一次模型请求必须切到该 queryId，
-  // 不能继续沿用原始 turn query，否则 tool 后续请求会被归因到上一条用户消息。
+  // A steer is the new real user query. The post-drain model request must switch to that queryId;
+  // keeping the original turn query would attribute later tool requests to the previous user message.
   const drainTraceContext = pendingInput.queryId
     ? { ...options.traceContext, queryId: pendingInput.queryId }
     : options.traceContext;
@@ -1203,8 +1203,8 @@ async function drainPendingInputUnlocked(
   }> = [];
   for (const pendingInput of pendingInputs) {
     const messageId = createMessageId();
-    // 投递语义缺省按 queue（排队消费=独立轮）；guide 由 v4 命令面
-    // 按 inputRouting 显式标注。落到持久 metadata 供冷恢复还原同一切分。
+    // Delivery semantics default to queue (queued consumption = own turn); guide is explicitly tagged by the v4 command surface
+    // via inputRouting. Persist to metadata so cold recovery restores the same split.
     const delivery = pendingInput.delivery ?? "queue";
     const resolvedAttachments = await resolveTurnAttachments(pendingInput.attachments, {
       artifactStore: this.artifactStore,
@@ -1215,7 +1215,7 @@ async function drainPendingInputUnlocked(
       turnId: options.activeTurn.turnId,
       workingDirectory: this.workingDirectory,
     });
-    // 只在实际 guide 消费且无附件时固化新标记；审批反馈仍走原合同。
+    // Pin the new marker only on real guide consumption without attachments; approval feedback keeps the legacy contract.
     const inputPresentation =
       delivery === "guide" && !pendingInput.source && !pendingInput.attachments?.length
         ? parseRuntimeInputPresentation(pendingInput.inputPresentation)
@@ -1346,10 +1346,10 @@ export async function discardPersistedPendingSteerInputs(
   this: AgentRuntimeInternal,
   traceContext: TraceContext,
 ): Promise<number> {
-  // （重启不保留队列）：先清扫账本残留 admitted——事件日志是
-  // 内存的，崩溃后投影里什么都没有，账本是唯一痕迹（含 background wake：后台
-  // 子进程随 CLI 重启已死，其未消费通知不可恢复）。留痕（discarded/session_resumed）
-  // 不静默，用户/诊断可查「这条输入去哪了」。
+  // (queues do not survive restart): first sweep the ledger's leftover admitted -- the event log is
+  // in-memory; after a crash the projection has nothing and the ledger is the only trace (background wake included: background
+  // children die with the CLI restart, their unconsumed notices unrecoverable). Keep the trace (discarded/session_resumed)
+  // non-silent, so user/diagnostics can ask where this input went.
   try {
     const admitted =
       (await this.sessionStore?.listSessionInputs?.({

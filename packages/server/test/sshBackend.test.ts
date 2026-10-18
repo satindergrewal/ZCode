@@ -114,7 +114,7 @@ function expectSSHExecCommand(command: string, rawCommand: string): void {
 }
 
 describe("SSHBackend", () => {
-  it("ready 后 SSH client error 应触发一次断连事件", () => {
+  it("emits a single disconnect event when the SSH client errors after ready", () => {
     const backend = new SSHBackend({
       host: "example.com",
       username: "root",
@@ -145,7 +145,7 @@ describe("SSHBackend", () => {
     errorSpy.mockRestore();
   });
 
-  it("ready 后 SSH client error 应先记录错误详情再触发断连事件", () => {
+  it("logs error details before emitting the disconnect when the SSH client errors after ready", () => {
     const backend = new SSHBackend({
       host: "example.com",
       username: "root",
@@ -176,7 +176,7 @@ describe("SSHBackend", () => {
     }
   });
 
-  it("ready 后 SSH client close 应触发断连事件", () => {
+  it("emits a disconnect event when the SSH client closes after ready", () => {
     const backend = new SSHBackend({
       host: "example.com",
       username: "root",
@@ -201,7 +201,7 @@ describe("SSHBackend", () => {
     backend.dispose();
   });
 
-  it("释放后不得使用旧凭据重新建立 SSH 连接", async () => {
+  it("never re-establishes the SSH connection with stale credentials after dispose", async () => {
     const backend = new SSHBackend({
       host: "example.com",
       username: "root",
@@ -228,7 +228,7 @@ describe("SSHBackend", () => {
     expect(fakeClient.connect).not.toHaveBeenCalled();
   });
 
-  it("连接 ready 晚于释放屏障时不得继续执行远端命令", async () => {
+  it("skips remote commands when ready lands after the dispose barrier", async () => {
     const backend = new SSHBackend({
       host: "example.com",
       username: "root",
@@ -257,7 +257,7 @@ describe("SSHBackend", () => {
     expect(fakeClient.exec).not.toHaveBeenCalled();
   });
 
-  it("释放期间 end 之后的迟到 SSH error 不得逃逸为未捕获异常", () => {
+  it("swallows late SSH errors after end during dispose instead of escaping uncaught", () => {
     const backend = new SSHBackend({
       host: "example.com",
       username: "root",
@@ -281,7 +281,7 @@ describe("SSHBackend", () => {
     expect(() => fakeClient.emit("error", new Error("late after end"))).not.toThrow();
   });
 
-  it("握手超时后的迟到 SSH error 不得逃逸为未捕获异常", async () => {
+  it("swallows late SSH errors after a handshake timeout instead of escaping uncaught", async () => {
     const backend = new SSHBackend({
       host: "example.com",
       username: "root",
@@ -299,7 +299,7 @@ describe("SSHBackend", () => {
       onClientError: (error: unknown) => void;
     };
     mutableBackend.client = fakeClient;
-    // 构造 ssh2 的两次 error 顺序：第一次由 ready timeout 触发，第二次由 socket close 触发。
+    // Stage two ssh2 errors: the first from the ready timeout, the second from socket close.
     fakeClient.on("error", mutableBackend.onClientError);
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
@@ -315,7 +315,7 @@ describe("SSHBackend", () => {
 
       backend.dispose();
 
-      // ssh2 在 timeout 后销毁 socket，close/end 阶段仍可能再发出 error；该迟到事件必须被吞掉。
+      // ssh2 destroys the socket on timeout and may still emit errors during close/end; those late events must be swallowed.
       expect(() =>
         fakeClient.emit("error", new Error("Connection lost before handshake")),
       ).not.toThrow();
@@ -325,7 +325,7 @@ describe("SSHBackend", () => {
     }
   });
 
-  it("连接检查完成后插入释放屏障时不得继续执行远端命令", async () => {
+  it("skips remote commands when the dispose barrier lands after the connectivity check", async () => {
     const backend = new SSHBackend({
       host: "example.com",
       username: "root",
@@ -351,7 +351,7 @@ describe("SSHBackend", () => {
     expect(fakeClient.exec).not.toHaveBeenCalled();
   });
 
-  it("detect 在 exit 先于 data 时不应丢失 platform 输出", async () => {
+  it("keeps platform output when detect exits before data arrives", async () => {
     const backend = new SSHBackend({
       host: "example.com",
       username: "root",
@@ -398,7 +398,7 @@ describe("SSHBackend", () => {
     });
   });
 
-  it("exec 成功完成时不应输出无意义的完成日志", async () => {
+  it("does not log a meaningless completion line on exec success", async () => {
     const backend = new SSHBackend({
       host: "example.com",
       username: "root",
@@ -436,7 +436,7 @@ describe("SSHBackend", () => {
     warnSpy.mockRestore();
   });
 
-  it("exec 应通过 POSIX shell 执行远端命令，避免 fish 默认 shell 解析部署脚本", async () => {
+  it("runs remote commands via a POSIX shell so fish default shells never parse deploy scripts", async () => {
     const backend = new SSHBackend({
       host: "example.com",
       username: "root",
@@ -471,7 +471,7 @@ describe("SSHBackend", () => {
     expect(executedCommands).toHaveLength(1);
   });
 
-  it("exec 失败完成时应保留退出码日志但不输出完整远端命令", async () => {
+  it("logs the exit code but not the full remote command when exec fails", async () => {
     const backend = new SSHBackend({
       host: "example.com",
       username: "root",
@@ -508,7 +508,7 @@ describe("SSHBackend", () => {
     warnSpy.mockRestore();
   });
 
-  it("ssh2 debug 不应输出下载阶段的高频 channel 数据包", () => {
+  it("keeps high-frequency channel packets out of ssh2 debug output during downloads", () => {
     const backend = new SSHBackend({
       host: "example.com",
       username: "root",
@@ -543,7 +543,7 @@ describe("SSHBackend", () => {
     }
   });
 
-  it("首次 SFTP 写入失败后，同 backend 的后续上传应直接使用 exec pipe", async () => {
+  it("falls back to exec pipe for later uploads on the same backend after the first SFTP write fails", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "ssh-backend-upload-"));
     const localFilePath = join(tempDir, "node");
     const localContent = "hello ssh fallback";
@@ -659,7 +659,7 @@ describe("SSHBackend", () => {
     ).toBe(true);
   });
 
-  it("首次 SFTP session 失败后，同 backend 的后续上传应直接使用 exec pipe", async () => {
+  it("falls back to exec pipe for later uploads on the same backend after the first SFTP session fails", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "ssh-backend-sftp-session-"));
     const localFilePath = join(tempDir, "node");
     const localContent = "hello ssh session fallback";
@@ -741,7 +741,7 @@ describe("SSHBackend", () => {
     }
   });
 
-  it("本地文件读取失败不应把 backend 标记为 exec-upload-only", async () => {
+  it("does not mark the backend exec-upload-only when the local read fails", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "ssh-backend-local-read-"));
     const localFilePath = join(tempDir, "node");
     await writeFile(localFilePath, "first", "utf8");
@@ -808,7 +808,7 @@ describe("SSHBackend", () => {
     }
   });
 
-  it("upload 成功时应输出上传进度日志", async () => {
+  it("logs upload progress on success", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "ssh-backend-progress-"));
     const localFilePath = join(tempDir, "node");
     await writeFile(localFilePath, Buffer.alloc(96 * 1024, "a"));
@@ -894,7 +894,7 @@ describe("SSHBackend", () => {
     }
   });
 
-  it("upload fallback 时应明确记录切换到 exec pipe", async () => {
+  it("logs explicitly when upload falls back to exec pipe", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "ssh-backend-fallback-log-"));
     const localFilePath = join(tempDir, "node");
     await writeFile(localFilePath, Buffer.alloc(96 * 1024, "a"));

@@ -15,6 +15,6 @@ export async function ensureGenUiOutputDirectory(runtime: AgentRuntimeInternal):
   const path = resolveGenUiOutputDirectory(runtime);
   if (!path) return;
   if (!runtime.fileSystemPort) throw new Error("Gen UI output requires FileSystemPort");
-  // 只有成功创建后才向模型声明可写目录；失败不能静默落到 Git 工作区。
+  // Declare writable dirs to the model only after creation succeeds; a failure must not silently fall back to the Git workspace.
   await runtime.fileSystemPort.createDirectory({ path, trace: runtime.rootTraceContext });
 }

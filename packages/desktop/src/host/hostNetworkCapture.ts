@@ -9,7 +9,7 @@ export function createHostNetworkCapture(
     try {
       port?.postMessage({ type: HostResponseTypes.NetworkCaptureBatch, batch });
     } catch {
-      /* 观测丢弃，不影响 Host 主链路 */
+      /* Observation drops never affect the Host hot path */
     }
   };
   const nodeCapture = createNodeNetworkCapture("host", send);

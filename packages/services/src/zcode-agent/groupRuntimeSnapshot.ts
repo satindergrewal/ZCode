@@ -8,7 +8,7 @@ import {
 } from "@zcode/shared/zcode-protocol-v4";
 import type { IZCodeAgentService, ZCodeAgentSessionTarget } from "#src/zcode-agent/zcodeAgent.js";
 
-/** Bot 控制操作临时读取 CLI 权威快照，不建立第二份输入队列。 */
+/** Bot control ops read the CLI's authoritative snapshot transiently; never a second input queue. */
 export function readBotGroupRuntimeSnapshot(
   agent: IZCodeAgentService,
   target: ZCodeAgentSessionTarget,
@@ -18,7 +18,7 @@ export function readBotGroupRuntimeSnapshot(
   );
 }
 
-/** 只观察同一订阅的连续控制状态；停止 ACK 不是终态证据。 */
+/** Observes consecutive control states of one subscription; a stop ACK is not terminal evidence. */
 export function waitBotGroupExecutionEnd(
   agent: IZCodeAgentService,
   target: ZCodeAgentSessionTarget,
@@ -67,7 +67,7 @@ async function observeRuntime<T>(
     resolveSnapshot = resolve;
     rejectSnapshot = reject;
   });
-  // 订阅 ACK 可能晚于首帧送达；先注册监听，取得 ownership 后才解析缓存帧。
+  // The subscribe ACK can land after the first frame; register the listener and parse buffered frames only after ownership.
   void snapshot.catch(() => undefined);
   let rejectAbort!: (reason: unknown) => void;
   const aborted = new Promise<never>((_resolve, reject) => {
@@ -105,7 +105,7 @@ async function observeRuntime<T>(
     void agent.unsubscribeConversationV4({ ...target, subscriptionId: id }).catch(() => undefined);
   };
   try {
-    // 超时必须覆盖订阅 ACK 本身；迟到的 ACK 仍要释放，不留下后台订阅。
+    // The timeout must cover the subscribe ACK itself; release late ACKs so no background subscription leaks.
     const subscribing = agent
       .subscribeConversationV4({ ...target, visibility: "background" })
       .then((result) => {

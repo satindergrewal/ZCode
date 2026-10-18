@@ -1,11 +1,14 @@
 /**
- * `updateRunScript` 的契约用例（docs/execution-engine.md「Holes」→「The engine's part」）：它是
- * `script_text` / `script_hash` 两列在 `createRun` 之后的**第二个写入者**——一次补全把有效脚本
- * 写回 run 行，resume 拿行里的哈希对行里的文本，所以两列必须同一笔写；行上其余一切（状态、
- * 用量、上界、结算袋、元数据）不在这条写入的范围里，与 `updateRunUsage` 同族。
+ * Contract cases for `updateRunScript`
+ * (docs/execution-engine.md "Holes" -> "The engine's part"): it is the **second writer** of the
+ * `script_text` / `script_hash` columns after `createRun` — one fill writes the effective script
+ * back onto the run row, and resume checks the row's hash against the row's text, so both columns
+ * must land in one stroke; everything else on the row (status, usage, caps, settlement bag,
+ * metadata) is outside this write's scope, same family as `updateRunUsage`.
  *
- * 独立成模块而不是追加到 journal-contract-runs.ts：那个文件已顶到 oxlint max-lines 上限。
- * 这里只登记 `it(...)`，不另开 describe——套件的分组与用例顺序由 journal-contract.ts 决定。
+ * A separate module rather than an append to journal-contract-runs.ts: that file already sits at
+ * the oxlint max-lines cap. Only `it(...)` is registered here, no extra describe — the suite's
+ * grouping and case order are owned by journal-contract.ts.
  */
 
 import { expect, it } from "vitest";

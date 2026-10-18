@@ -433,7 +433,6 @@ function resolveTemplate(
       return envValue;
     }
     if (options.allowSensitive && ENVIRONMENT_VARIABLE_NAME_PATTERN.test(name)) {
-
       // token. Resolve only at sensitive sinks so secrets never expand into args, URLs or other visible fields.
       const envValue = context.env[name];
       if (envValue === undefined)

@@ -355,10 +355,10 @@ export function useUsageEntitlementWithService(
             (refreshOptions.silent || current.snapshot.subscription?.details.length)
           ) {
             return {
-            // On background-refresh failure (or a confirmed-subscription manual refresh), keep
-            // the last good result; otherwise network jitter knocks the Plan Card from ready
-            // back to empty/error.
-            snapshot: current.snapshot,
+              // On background-refresh failure (or a confirmed-subscription manual refresh), keep
+              // the last good result; otherwise network jitter knocks the Plan Card from ready
+              // back to empty/error.
+              snapshot: current.snapshot,
               loading: false,
               error: message,
             };

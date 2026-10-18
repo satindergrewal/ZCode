@@ -65,7 +65,7 @@ export function createTuiSubmitPrompt(
 ): TuiPromptHandler {
   let app: Awaited<ReturnType<NonNullable<RunDependencies["createZCodeApp"]>>> | undefined;
   let activeUiLocale = uiLocale;
-    // Process-level handles (telemetry / Provider Registry / endpoint routing) survive app swaps; see the runtime file.
+  // Process-level handles (telemetry / Provider Registry / endpoint routing) survive app swaps; see the runtime file.
   const processRuntime = createTuiProcessRuntimeState();
   let closeHandlerPromise: Promise<void> | undefined;
   const closePromises = new WeakMap<object, Promise<void>>();
@@ -100,7 +100,7 @@ export function createTuiSubmitPrompt(
     if (!closePromise) {
       closePromise = (async () => {
         await runCliCleanupWithTimeout(async () => targetApp.close?.(), cleanupTimeoutMs);
-                // Chromium started by the CLI itself must still be released when App/session close hangs or fails.
+        // Chromium started by the CLI itself must still be released when App/session close hangs or fails.
         await runCliCleanupWithTimeout(
           async () => browserRuntimes.get(closeKey)?.close(),
           cleanupTimeoutMs,
@@ -111,8 +111,8 @@ export function createTuiSubmitPrompt(
     await closePromise;
   };
 
-    // -- Cross-turn persistent session-event subscription --
-    // The per-turn onEvent dies with its turn, missing out-of-turn events (dwf progress, notice-driven turns).
+  // -- Cross-turn persistent session-event subscription --
+  // The per-turn onEvent dies with its turn, missing out-of-turn events (dwf progress, notice-driven turns).
   const sessionEventRelay = createTuiSessionEventRelay({
     currentRuntime: () => (app as { runtime?: unknown } | undefined)?.runtime,
     readSubscriber: readRuntimeEventSubscriber,
@@ -127,8 +127,8 @@ export function createTuiSubmitPrompt(
     if (previousApp && previousApp !== nextApp) {
       await closeApp(previousApp);
     }
-        // The persistent subscription must reattach on app swap: this is the single choke point shared by /new, /resume, and /fork;
-        // a missed attach means the TUI never again receives out-of-turn events after a session swap (dwf progress, notice-driven turns).
+    // The persistent subscription must reattach on app swap: this is the single choke point shared by /new, /resume, and /fork;
+    // a missed attach means the TUI never again receives out-of-turn events after a session swap (dwf progress, notice-driven turns).
     sessionEventRelay.reattach();
     modeState.current = readTuiMode(app, currentCliMode(modeState));
     return app as unknown as CommandCenterApp;
@@ -165,7 +165,7 @@ export function createTuiSubmitPrompt(
           ...(modeState.override ? { mode: modeState.override } : {}),
           ...(toolDisallowlist ? { toolDisallowlist } : {}),
           ...(forceMcs ? { midConversationSystem: { mode: "force" as const } } : {}),
-          // 首个 app 与 /new、/resume、fork 都经这里创建，mode 因此在进程内一致。
+          // The first app and /new, /resume, and fork are all created here, keeping the mode consistent process-wide.
           ...resolveWorkflowModeRuntimeConfig(workflowMode),
           modelStreaming: "on",
           titleGeneration: TUI_TITLE_GENERATION_CONFIG,
@@ -184,7 +184,7 @@ export function createTuiSubmitPrompt(
       throw error;
     }
     if (browserRuntime) browserRuntimes.set(createdApp as object, browserRuntime);
-        // Init may still be awaiting the old identity import when the TUI closed; a late App must not become the current session again.
+    // Init may still be awaiting the old identity import when the TUI closed; a late App must not become the current session again.
     if (closeHandlerPromise) {
       await closeApp(createdApp);
       throw new Error("TUI prompt handler is closed");
@@ -362,7 +362,7 @@ export function createTuiSubmitPrompt(
 
   submitPrompt.subscribeSessionEvents = (sink: (event: SessionEvent) => void) => {
     const unsubscribe = sessionEventRelay.addSink(sink);
-        // The first real attach misses while the app does not exist yet; attach again once it does (reattach is idempotent, no double fan-out).
+    // The first real attach misses while the app does not exist yet; attach again once it does (reattach is idempotent, no double fan-out).
     void getApp().then(
       () => sessionEventRelay.reattach(),
       () => undefined,
@@ -370,8 +370,8 @@ export function createTuiSubmitPrompt(
     return unsubscribe;
   };
 
-    // Main session id: feeds the TUI's session gate (actor/child-session events keep their own sessionId and feed the same sink set).
-    // Read fresh every time, never cached: replaceApp swaps the session, and a cached id would judge the whole relay foreign.
+  // Main session id: feeds the TUI's session gate (actor/child-session events keep their own sessionId and feed the same sink set).
+  // Read fresh every time, never cached: replaceApp swaps the session, and a cached id would judge the whole relay foreign.
   submitPrompt.getMainSessionId = () => {
     const runtime = (app as { runtime?: { getSessionId?: () => string } } | undefined)?.runtime;
     const sessionId = runtime?.getSessionId?.();
@@ -381,8 +381,8 @@ export function createTuiSubmitPrompt(
   submitPrompt.close = async () => {
     closeHandlerPromise ??= (async () => {
       await closeApp();
-            // Root cause: the TUI's session switch and process exit share App close; shared Owners must not be closed early on /new-style paths --
-            // only terminal Prompt Handler state performs the symmetric shutdown.
+      // Root cause: the TUI's session switch and process exit share App close; shared Owners must not be closed early on /new-style paths --
+      // only terminal Prompt Handler state performs the symmetric shutdown.
       await runCliCleanupWithTimeout(
         async () => processRuntime.shutdownTelemetry?.(),
         cleanupTimeoutMs,

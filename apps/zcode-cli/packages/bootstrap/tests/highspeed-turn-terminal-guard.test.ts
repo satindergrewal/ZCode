@@ -75,9 +75,7 @@ function makeSnapshot(options: {
 
 function makeContext(messages: ReturnType<typeof vi.fn>): never {
   return {
-    sessions: new Map([
-      ["session-1", { eventStore: {}, traceContext: { traceId: "trace-1" } }],
-    ]),
+    sessions: new Map([["session-1", { eventStore: {}, traceContext: { traceId: "trace-1" } }]]),
     deps: { sessionStore: { messages } },
     v4Gateway: undefined,
     logger: { warn: vi.fn() },

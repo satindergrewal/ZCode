@@ -28,8 +28,8 @@ import type { AgentRuntimeWorkflowDriverDeps, SessionState } from "./workflow-dr
 const SUBMIT_PROFILE_MISMATCH_EVENT = "dynamic_workflow.submit_profile.mismatch";
 
 /**
-  * Makes the session's submit_result shape match this typed ask. false = the ask already failed and the caller must not
-  * dispatch a turn. generic sessions and mono sessions with the same schema pass through untouched.
+ * Makes the session's submit_result shape match this typed ask. false = the ask already failed and the caller must not
+ * dispatch a turn. generic sessions and mono sessions with the same schema pass through untouched.
  */
 export function ensureSubmitProfileFits(
   deps: AgentRuntimeWorkflowDriverDeps,
@@ -64,8 +64,8 @@ export function ensureSubmitProfileFits(
       sessionId: state.sessionId,
     },
   );
-    // Same registry, same name: register overwrites the typed entry, silently, because overwriting is the intent. The cache must be invalidated,
-    // or getTools keeps sending the old typed declaration to the model.
+  // Same registry, same name: register overwrites the typed entry, silently, because overwriting is the intent. The cache must be invalidated,
+  // or getTools keeps sending the old typed declaration to the model.
   state.runtime.getToolRegistry().register(submitResultToolEntry, { silentDuplicateWarning: true });
   state.runtime.invalidateToolCache();
   state.submitProfile = GENERIC_SUBMIT_PROFILE;

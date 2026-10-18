@@ -1,12 +1,12 @@
 world-read world-read#1 "glob src/**/*.ts" @5:27 order=0 type="string[]"
 join join#1 "join" @6:31 order=1 type="string[]"
-fan-out fan-out#1 "fan-out" @6:35 order=2 type="string[]"
-ask ask#1 "ask" head="t-" @6:73 order=3 within=fan-out#1 type="string"
-actor actor#1 head="t-" @6:57 order=4 within=fan-out#1
-join join#2 "join" @9:29 order=6 type="string[]"
-fan-out fan-out#2 "fan-out" @9:33 order=7 type="string[]"
-ask ask#2 "fixer" @9:74 order=8 within=fan-out#2 type="string"
-actor actor#2 "fixer" @9:59 order=9 within=fan-out#2
+fan-out fan-out#1 "fan-out" @7:3 order=2 type="string[]"
+ask ask#1 "ask" head="t-" @7:41 order=3 within=fan-out#1 type="string"
+actor actor#1 head="t-" @7:25 order=4 within=fan-out#1
+join join#2 "join" @11:29 order=6 type="string[]"
+fan-out fan-out#2 "fan-out" @11:33 order=7 type="string[]"
+ask ask#2 "fixer" @11:74 order=8 within=fan-out#2 type="string"
+actor actor#2 "fixer" @11:59 order=9 within=fan-out#2
 fact ask-data ask#1 <- world-read#1 exact
 fact ask-data ask#1 <- fan-out#1 exact
 fact ask-data ask#2 <- world-read#1 exact
@@ -38,9 +38,9 @@ fact return <- join#2 exact
 fact return <- fan-out#1 exact
 fact return <- fan-out#2 exact
 region seq#1 seq entered
-region fanout#1 fanout parent=seq#1 @6:35 label="flatMap"
-region fanout#2 fanout parent=seq#1 @7:16 label="filter"
-region fanout#3 fanout parent=seq#1 @9:33 label="from"
+region fanout#1 fanout parent=seq#1 @7:3 label="flatMap"
+region fanout#2 fanout parent=seq#1 @9:16 label="filter"
+region fanout#3 fanout parent=seq#1 @11:33 label="from"
 mark phase#1 in=seq#1
 issue world-read#1 in=seq#1 phase=phase#1
 settle world-read#1 in=seq#1
@@ -53,4 +53,4 @@ issue ask#2 in=seq#1>fanout#3 phase=phase#2
 settle ask#2 in=seq#1
 jump return seq#1 in=seq#1 phase=phase#2
 phase phase#1 "triage" @4:1
-phase phase#2 "fix" @8:1
+phase phase#2 "fix" @10:1

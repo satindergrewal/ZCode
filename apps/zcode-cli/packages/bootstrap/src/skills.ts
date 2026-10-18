@@ -10,7 +10,7 @@ import { collectDisabledPaths } from "./skill-command-overrides.js";
 
 export interface ListZCodeSkillsOptions {
   env?: NodeJS.ProcessEnv;
-  /** 协议宿主草稿目录使用；CLI 命令缺省关闭。 */
+  /** Used by the protocol host's draft dir; CLI commands default it off. */
   includeVisualize?: boolean;
   logger?: Logger;
   projectConfigPath?: string;
@@ -110,7 +110,7 @@ function createSkillDiscovery(options: ListZCodeSkillsOptions):
     workingDirectory,
   });
 
-  // 内置技能包与插件技能根并列注入：`zcode skills list`、引用目录与 runtime 看到同一份发现结果。
+  // Bundled skill packs are injected alongside plugin skill roots: `zcode skills list`, the reference catalog, and the runtime all see the same discovery result.
   const bundledSkillRoots = resolveBundledSkillRoots({
     cliStorageRoot: getCliStorageRoot(resolvePath(configResult.config.storage.dir)),
     logger: options.logger,

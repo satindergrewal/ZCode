@@ -65,7 +65,8 @@ export async function runActiveTargetContinuationLoop(
   );
   const requiredCompletionConfirmations = Math.max(
     1,
-    verificationConfig?.requiredCompletionConfirmations ?? DEFAULT_REQUIRED_COMPLETION_CONFIRMATIONS,
+    verificationConfig?.requiredCompletionConfirmations ??
+      DEFAULT_REQUIRED_COMPLETION_CONFIRMATIONS,
   );
   const backgroundDeferralDeadlineMs =
     verificationConfig?.backgroundDeferralTimeoutMs ?? DEFAULT_BACKGROUND_DEFERRAL_TIMEOUT_MS;

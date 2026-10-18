@@ -16,7 +16,7 @@ export function createProviderEndpointRoutingFetch(options: {
     }
 
     const signal = init?.signal ?? (input instanceof Request ? input.signal : undefined);
-    // 配置接口只接受账号 owner 返回的 ID，禁止从模型 PAT 或手工 Key 推导。
+    // The config endpoint accepts only IDs returned by the account owner; never derive from a model PAT or manual key.
     const apiKeyId = options.apiKeyId;
     const decision = await options.routingPort.resolve(requestUrl, {
       ...(apiKeyId ? { apiKeyId } : {}),

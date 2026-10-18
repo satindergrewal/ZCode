@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 手机远控首页集中编排 workspace card、task row、加载态和交互态，后续筛选/搜索落地时再按子组件边界拆分。 */
+/* eslint-disable max-lines -- the phone home owns workspace cards, task rows, loading and interaction states; split along child bounds when search/filter lands. */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
@@ -44,10 +44,7 @@ import { getErrorMessage } from "@/hooks/chatActionHelpers.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { formatTaskRelativeTime } from "@/lib/taskListItemPresentation.js";
 import { TaskWorkflowRunLines } from "@/components/workflow-run-line/TaskWorkflowRunLines.js";
-import {
-  getTaskTimelineGroupMessage,
-  groupTaskTimelineItems,
-} from "@/lib/taskTimelineGroups.js";
+import { getTaskTimelineGroupMessage, groupTaskTimelineItems } from "@/lib/taskTimelineGroups.js";
 import {
   EMPTY_WEB_REMOTE_CONTROL_WORKSPACE_LIST,
   buildWebRemoteControlMobileTaskHomeModel,
@@ -111,10 +108,7 @@ export function WebRemoteControlMobileTaskHome({
     taskId: string,
     targetWorkspaceIdentity?: string,
   ) => void;
-  onStartDraftInWorkspace?: (
-    targetWorkspacePath: string,
-    targetWorkspaceIdentity?: string,
-  ) => void;
+  onStartDraftInWorkspace?: (targetWorkspacePath: string, targetWorkspaceIdentity?: string) => void;
   onNavigateHome?: () => void;
   onNavigateToChat?: () => void;
   onOpenTask?: (task: WebRemoteControlTaskTarget) => void;
@@ -167,8 +161,8 @@ export function WebRemoteControlMobileTaskHome({
   );
   const timelineGroups = useMemo(
     () =>
-      // Bugfix: 手机时间线之前只平铺已排序 task，缺少桌面端“今天/上月”等分组文案。
-      // 这里复用桌面时间线分组工具，保证排序字段、locale 周起始日和文案 key 都保持一致。
+      // Bugfix: the phone timeline listed sorted tasks flat, missing desktop group labels (today/last month);
+      // reuse desktop grouping so sort key, locale week start, and copy keys agree.
       groupTaskTimelineItems(model.timelineTasks, {
         sortBy: taskSortBy,
         now: Date.now(),
@@ -200,9 +194,9 @@ export function WebRemoteControlMobileTaskHome({
     try {
       setResult(await switcher.listWorkspaces());
     } catch (err) {
-      // Bugfix: 远控请求失败时可能抛普通对象，直接 String 会把真实原因吞成 [object Object]。
+      // Bugfix: remote failures may throw plain objects; String() turns them into [object Object].
       const message = getErrorMessage(err);
-      logger.error("[WebRemoteControlMobileTaskHome] 加载远控首页失败", {
+      logger.error("[WebRemoteControlMobileTaskHome] failed to load remote home", {
         error: message,
       });
       setLoadError(message);
@@ -216,8 +210,8 @@ export function WebRemoteControlMobileTaskHome({
       return;
     }
 
-    // Bugfix: 手机端任务首页之前每 3 秒轮询 listWorkspaces，导致 relay 持续产生任务列表请求。
-    // 这里只保留首次无 initialResult 时加载；从聊天页返回首页由 WebRemoteControlMobileShell 显式 refreshKey 触发一次刷新。
+    // Bugfix: the home polled listWorkspaces every 3s, flooding the relay with task-list requests;
+    // load once without initialResult; chat-return refreshes via the shell's explicit refreshKey.
     void loadWorkspaces();
   }, [initialResult, loadWorkspaces]);
 
@@ -226,15 +220,15 @@ export function WebRemoteControlMobileTaskHome({
       return;
     }
 
-    // Bugfix: 取消 3 秒轮询后，用户从 task 页返回任务列表时仍需要看到刚发送消息后的最新状态。
-    // 这里把“返回列表”作为一次明确刷新事件，避免持续请求，同时保证 loading / 选中态及时更新。
+    // Bugfix: after killing the 3s poll, returning from a task must still show post-send state;
+    // treat back-navigation as one explicit refresh, no polling, instant loading/selection.
     void loadWorkspaces();
   }, [loadWorkspaces, refreshKey]);
 
   useEffect(() => {
     return switcher.onWorkspaceListUpdated?.((nextResult) => {
-      // Bugfix: 桌面端或宽屏远控变更 task membership 后，手机首页需要采用推送的最新索引。
-      // 继续只在明确事件上刷新，避免恢复到旧的定时轮询。
+      // Bugfix: after desktop/wide-remote membership changes the phone home takes the pushed index;
+      // stay event-driven, never restore interval polling.
       setResult(nextResult);
       setLoadError(null);
       setLoading(false);
@@ -259,14 +253,14 @@ export function WebRemoteControlMobileTaskHome({
       (group) => group.workspaceKey === model.activeWorkspaceKey,
     );
     if (!activeGroup) {
-      logger.warn("[WebRemoteControlMobileTaskHome] 初始 workspace 未匹配", {
+      logger.warn("[WebRemoteControlMobileTaskHome] initial workspace not matched", {
         workspaceKey: model.activeWorkspaceKey,
       });
       return;
     }
 
     if (!hasWebRemoteControlMobileTaskHomeActiveTaskMatch(model)) {
-      logger.warn("[WebRemoteControlMobileTaskHome] 初始 task 未匹配", {
+      logger.warn("[WebRemoteControlMobileTaskHome] initial task not matched", {
         taskId: model.activeTaskId,
         workspaceKey: model.activeWorkspaceKey,
       });
@@ -318,16 +312,19 @@ export function WebRemoteControlMobileTaskHome({
       setLoadError(null);
       setReconnectingWorkspaceKey(workspaceKey);
       try {
-        // Bugfix: 手机端列表现在会展示已断开的 SSH 工作区，不能再误走 bridge。
-        // 重连请求必须交回桌面 renderer 复用原有 SSH 恢复流程，再刷新列表拿最新连接态。
+        // Bugfix: the phone list shows disconnected SSH workspaces; do not misroute to the bridge.
+        // hand reconnection to the desktop renderer's SSH flow, then refresh for live status.
         await switcher.reconnectWorkspace(workspaceKey);
         await loadWorkspaces();
       } catch (err) {
         const message = getErrorMessage(err);
-        logger.error("[WebRemoteControlMobileTaskHome] 手机端重连远程工作区失败", {
-          error: message,
-          workspaceKey,
-        });
+        logger.error(
+          "[WebRemoteControlMobileTaskHome] failed to reconnect remote workspace on phone",
+          {
+            error: message,
+            workspaceKey,
+          },
+        );
         setLoadError(message);
       } finally {
         setReconnectingWorkspaceKey(null);
@@ -343,9 +340,9 @@ export function WebRemoteControlMobileTaskHome({
       setCreatingWorkspaceKey(workspaceKey);
       onCrossWorkspaceSwitchingChange?.(true);
       try {
-        // Bugfix: 手机端“新建任务”如果只切 workspace 不清空 activeTask，
-        // 远控会继续带着旧 taskId 进入聊天页，看起来像按钮无效。
-        // 这里统一走 startDraft（可选）或 switchWorkspace(不带 taskId)，确保进入草稿态。
+        // Bugfix: new-task that only switches workspace keeps the old activeTaskId,
+        // so chat opens with a stale task and the button reads as dead.
+        // always startDraft (optional) or taskId-less switchWorkspace to land in a draft.
         if (switcher.startDraft) {
           await switcher.startDraft(workspaceKey, { mobileNavigationIntent: "chat" });
         } else {
@@ -358,7 +355,7 @@ export function WebRemoteControlMobileTaskHome({
         }
       } catch (err) {
         const message = getErrorMessage(err);
-        logger.error("[WebRemoteControlMobileTaskHome] 手机端新建任务失败", {
+        logger.error("[WebRemoteControlMobileTaskHome] failed to create task from phone", {
           error: message,
           workspaceKey,
         });
@@ -456,8 +453,8 @@ export function WebRemoteControlMobileTaskHome({
                   value={taskOrganizeBy}
                   onValueChange={(value) => {
                     if (value === "workspace" || value === "timeline") {
-                      // Bugfix: 手机远控首页会在进入 task 后卸载，排序/分组偏好不能留在本组件本地 state。
-                      // 这里把用户选择回写到 shell 级状态，返回任务列表时继续沿用上一次设置。
+                      // Bugfix: the home unmounts on task entry; sort/group prefs cannot stay local.
+                      // write the choice to shell state so the list restores it on return.
                       onPreferencesChange({ ...preferences, organizeBy: value });
                     }
                   }}
@@ -557,8 +554,7 @@ export function WebRemoteControlMobileTaskHome({
                   taskWorkspaceKey === model.activeWorkspaceKey &&
                   task.taskId === model.activeTaskId;
                 const switching = switchingTaskKey === rowKey;
-                const taskTitle =
-                  task.title || intl.formatMessage({ id: "taskList.untitled" });
+                const taskTitle = task.title || intl.formatMessage({ id: "taskList.untitled" });
                 const displayStatus = task.displayStatus ?? "idle";
 
                 return (
@@ -653,10 +649,7 @@ export function WebRemoteControlMobileTaskHome({
               return (
                 <li key={group.key} className="space-y-1">
                   <div className="px-1 py-1 text-ui-base font-medium text-foreground-subtle">
-                    {intl.formatMessage(
-                      { id: labelMessage.id },
-                      labelMessage.values,
-                    )}
+                    {intl.formatMessage({ id: labelMessage.id }, labelMessage.values)}
                   </div>
                   <ul className="space-y-1">
                     {group.items.map((task) => {
@@ -753,230 +746,233 @@ export function WebRemoteControlMobileTaskHome({
         ) : (
           <ul className="mt-3 space-y-2">
             {model.groups.map((group) => {
-            const expanded = expandedWorkspaceKeys.has(group.workspaceKey);
-            const latestUpdatedAt = getWorkspaceLatestUpdatedAt(group.tasks);
-            const isDisconnectedRemoteWorkspace =
-              group.workspace.kind === "remote" &&
-              (group.workspace.connectionState === "disconnected" ||
-                !group.workspace.remoteSessionId);
-            const reconnecting = reconnectingWorkspaceKey === group.workspaceKey;
+              const expanded = expandedWorkspaceKeys.has(group.workspaceKey);
+              const latestUpdatedAt = getWorkspaceLatestUpdatedAt(group.tasks);
+              const isDisconnectedRemoteWorkspace =
+                group.workspace.kind === "remote" &&
+                (group.workspace.connectionState === "disconnected" ||
+                  !group.workspace.remoteSessionId);
+              const reconnecting = reconnectingWorkspaceKey === group.workspaceKey;
 
-            return (
-              <li key={group.workspaceKey} className="rounded-lg border border-card-border bg-card">
-                <div className="flex min-w-0 items-center gap-2 px-3 py-3">
-                  <button
-                    type="button"
-                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                    aria-expanded={expanded}
-                    onClick={() => toggleWorkspace(group.workspaceKey)}
-                  >
-                    <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-surface text-foreground-subtle">
-                      {group.workspace.workspacePurpose === "conversation" ? (
-                        <MessageCirclePlus className="size-4" />
-                      ) : group.workspace.kind === "remote" ? (
-                        <Cloud className="size-4" />
-                      ) : (
-                        <FolderOpen className="size-4" />
-                      )}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="flex min-w-0 items-center gap-2">
-                        <span className="truncate text-ui-base font-medium text-foreground">
-                          {group.workspace.workspacePurpose === "conversation"
-                            ? intl.formatMessage({
-                                id: "workspaceSidebar.conversationsSection",
-                              })
-                            : group.workspace.label}
-                        </span>
-                        <span className="shrink-0 rounded-full border border-border bg-surface px-1.5 py-0.5 text-ui-xs leading-none text-foreground-subtle">
-                          {intl.formatMessage({
-                            id:
-                              group.workspace.workspacePurpose === "conversation"
-                                ? "webRemoteControl.mobileHome.workspaceKind.conversation"
-                                : group.workspace.kind === "remote"
-                                ? "webRemoteControl.mobileHome.workspaceKind.remote"
-                                : "webRemoteControl.mobileHome.workspaceKind.local",
-                          })}
-                        </span>
-                        {isDisconnectedRemoteWorkspace ? (
-                          <span className="shrink-0 rounded-full border border-destructive/40 bg-card px-1.5 py-0.5 text-ui-xs leading-none text-destructive">
+              return (
+                <li
+                  key={group.workspaceKey}
+                  className="rounded-lg border border-card-border bg-card"
+                >
+                  <div className="flex min-w-0 items-center gap-2 px-3 py-3">
+                    <button
+                      type="button"
+                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                      aria-expanded={expanded}
+                      onClick={() => toggleWorkspace(group.workspaceKey)}
+                    >
+                      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-surface text-foreground-subtle">
+                        {group.workspace.workspacePurpose === "conversation" ? (
+                          <MessageCirclePlus className="size-4" />
+                        ) : group.workspace.kind === "remote" ? (
+                          <Cloud className="size-4" />
+                        ) : (
+                          <FolderOpen className="size-4" />
+                        )}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span className="truncate text-ui-base font-medium text-foreground">
+                            {group.workspace.workspacePurpose === "conversation"
+                              ? intl.formatMessage({
+                                  id: "workspaceSidebar.conversationsSection",
+                                })
+                              : group.workspace.label}
+                          </span>
+                          <span className="shrink-0 rounded-full border border-border bg-surface px-1.5 py-0.5 text-ui-xs leading-none text-foreground-subtle">
                             {intl.formatMessage({
-                              id: "webRemoteControl.mobileHome.disconnected",
+                              id:
+                                group.workspace.workspacePurpose === "conversation"
+                                  ? "webRemoteControl.mobileHome.workspaceKind.conversation"
+                                  : group.workspace.kind === "remote"
+                                    ? "webRemoteControl.mobileHome.workspaceKind.remote"
+                                    : "webRemoteControl.mobileHome.workspaceKind.local",
                             })}
+                          </span>
+                          {isDisconnectedRemoteWorkspace ? (
+                            <span className="shrink-0 rounded-full border border-destructive/40 bg-card px-1.5 py-0.5 text-ui-xs leading-none text-destructive">
+                              {intl.formatMessage({
+                                id: "webRemoteControl.mobileHome.disconnected",
+                              })}
+                            </span>
+                          ) : null}
+                        </span>
+                        <span className="mt-1 block truncate font-mono text-ui-base text-foreground-subtlest">
+                          {group.workspace.workspacePath}
+                        </span>
+                        {group.workspace.lastConnectionError ? (
+                          <span className="mt-1 block truncate text-ui-base text-destructive">
+                            {group.workspace.lastConnectionError}
+                          </span>
+                        ) : null}
+                        {latestUpdatedAt ? (
+                          <span className="mt-1 block text-ui-base text-foreground-subtle">
+                            {intl.formatMessage(
+                              { id: "webRemoteControl.mobileHome.updatedAt" },
+                              {
+                                time: formatTaskRelativeTime(latestUpdatedAt, intl),
+                              },
+                            )}
                           </span>
                         ) : null}
                       </span>
-                      <span className="mt-1 block truncate font-mono text-ui-base text-foreground-subtlest">
-                        {group.workspace.workspacePath}
+                      <span className="flex shrink-0 items-center gap-2 text-ui-base text-foreground-subtle">
+                        {!expanded && group.hasUnread ? (
+                          <span
+                            aria-hidden="true"
+                            data-workspace-unread-indicator="true"
+                            className="h-1.5 w-1.5 rounded-full bg-sky-500 dark:bg-sky-400"
+                          />
+                        ) : null}
+                        {intl.formatMessage(
+                          { id: "webRemoteControl.mobileHome.taskCount" },
+                          { count: String(group.tasks.length) },
+                        )}
+                        {expanded ? (
+                          <ChevronDown className="size-4" />
+                        ) : (
+                          <ChevronRight className="size-4" />
+                        )}
                       </span>
-                      {group.workspace.lastConnectionError ? (
-                        <span className="mt-1 block truncate text-ui-base text-destructive">
-                          {group.workspace.lastConnectionError}
+                    </button>
+                    {isDisconnectedRemoteWorkspace ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={
+                          !switcher.reconnectWorkspace ||
+                          Boolean(switchingTaskKey) ||
+                          Boolean(creatingWorkspaceKey) ||
+                          Boolean(reconnectingWorkspaceKey)
+                        }
+                        onClick={() => {
+                          void handleReconnectWorkspace(group.workspace);
+                        }}
+                      >
+                        {reconnecting ? (
+                          <LoaderIcon className="size-3.5 animate-spin" />
+                        ) : (
+                          <RefreshCw className="size-3.5" />
+                        )}
+                        <span className="sr-only">
+                          {intl.formatMessage({
+                            id: reconnecting
+                              ? "webRemoteControl.mobileHome.reconnecting"
+                              : "webRemoteControl.mobileHome.reconnect",
+                          })}
                         </span>
-                      ) : null}
-                      {latestUpdatedAt ? (
-                        <span className="mt-1 block text-ui-base text-foreground-subtle">
-                          {intl.formatMessage(
-                            { id: "webRemoteControl.mobileHome.updatedAt" },
-                            {
-                              time: formatTaskRelativeTime(latestUpdatedAt, intl),
-                            },
-                          )}
-                        </span>
-                      ) : null}
-                    </span>
-                    <span className="flex shrink-0 items-center gap-2 text-ui-base text-foreground-subtle">
-                      {!expanded && group.hasUnread ? (
-                        <span
-                          aria-hidden="true"
-                          data-workspace-unread-indicator="true"
-                          className="h-1.5 w-1.5 rounded-full bg-sky-500 dark:bg-sky-400"
-                        />
-                      ) : null}
-                      {intl.formatMessage(
-                        { id: "webRemoteControl.mobileHome.taskCount" },
-                        { count: String(group.tasks.length) },
-                      )}
-                      {expanded ? (
-                        <ChevronDown className="size-4" />
-                      ) : (
-                        <ChevronRight className="size-4" />
-                      )}
-                    </span>
-                  </button>
-                  {isDisconnectedRemoteWorkspace ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      disabled={
-                        !switcher.reconnectWorkspace ||
-                        Boolean(switchingTaskKey) ||
-                        Boolean(creatingWorkspaceKey) ||
-                        Boolean(reconnectingWorkspaceKey)
-                      }
-                      onClick={() => {
-                        void handleReconnectWorkspace(group.workspace);
-                      }}
-                    >
-                      {reconnecting ? (
-                        <LoaderIcon className="size-3.5 animate-spin" />
-                      ) : (
-                        <RefreshCw className="size-3.5" />
-                      )}
-                      <span className="sr-only">
-                        {intl.formatMessage({
-                          id: reconnecting
-                            ? "webRemoteControl.mobileHome.reconnecting"
-                            : "webRemoteControl.mobileHome.reconnect",
-                        })}
-                      </span>
-                    </Button>
-                  ) : (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      disabled={
-                        Boolean(switchingTaskKey) ||
-                        Boolean(creatingWorkspaceKey) ||
-                        Boolean(reconnectingWorkspaceKey)
-                      }
-                      onClick={() => {
-                        void handleStartDraft(group.workspace);
-                      }}
-                    >
-                      {creatingWorkspaceKey === group.workspaceKey ? (
-                        <LoaderIcon className="size-3.5 animate-spin" />
-                      ) : (
-                        <Plus className="size-3.5" />
-                      )}
-                      {/* {intl.formatMessage({ id: "sidebar.newTask" })} */}
-                    </Button>
-                  )}
-                </div>
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={
+                          Boolean(switchingTaskKey) ||
+                          Boolean(creatingWorkspaceKey) ||
+                          Boolean(reconnectingWorkspaceKey)
+                        }
+                        onClick={() => {
+                          void handleStartDraft(group.workspace);
+                        }}
+                      >
+                        {creatingWorkspaceKey === group.workspaceKey ? (
+                          <LoaderIcon className="size-3.5 animate-spin" />
+                        ) : (
+                          <Plus className="size-3.5" />
+                        )}
+                        {/* {intl.formatMessage({ id: "sidebar.newTask" })} */}
+                      </Button>
+                    )}
+                  </div>
 
-                {expanded ? (
-                  <ul className="border-t border-card-border px-2 py-2">
-                    {group.tasks.length === 0 ? (
-                      <li className="px-2 py-2 text-ui-base text-foreground-subtle">
-                        {intl.formatMessage({
-                          id: "webRemoteControl.mobileHome.workspaceEmpty",
-                        })}
-                      </li>
-                    ) : null}
-                    {group.tasks.map((task) => {
-                      const rowKey = buildWebRemoteControlTaskRowKey(task);
-                      const taskWorkspaceKey = resolveWebRemoteControlWorkspaceKey(task);
-                      const selected =
-                        taskWorkspaceKey === model.activeWorkspaceKey &&
-                        task.taskId === model.activeTaskId;
-                      const switching = switchingTaskKey === rowKey;
-                      const taskTitle =
-                        task.title || intl.formatMessage({ id: "taskList.untitled" });
-                      const displayStatus = task.displayStatus ?? "idle";
-
-                      return (
-                        <li key={rowKey}>
-                          <button
-                            type="button"
-                            data-testid={testId(TID_TASK_ITEM, task.taskId)}
-                            data-state={selected ? "selected" : "idle"}
-                            className={cn(
-                              "flex min-h-12 w-full min-w-0 items-center gap-2 rounded-lg px-2.5 py-2 text-left transition-colors disabled:cursor-wait disabled:opacity-70",
-                              selected ? "bg-selected text-foreground" : "hover:bg-surface-hover",
-                            )}
-                            disabled={Boolean(switchingTaskKey) || isDisconnectedRemoteWorkspace}
-                            onClick={() => {
-                              if (!isDisconnectedRemoteWorkspace) {
-                                handleOpenTask(task);
-                              }
-                            }}
-                          >
-                            <span className="relative flex size-4 shrink-0 items-center justify-center">
-                              {switching ? (
-                                <LoaderIcon className="size-4 animate-spin text-foreground-subtle" />
-                              ) : task.unreadAt ? (
-                                <span className="h-1.5 w-1.5 rounded-full bg-sky-500 dark:bg-sky-400" />
-                              ) : null}
-                            </span>
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate text-ui-base text-foreground">
-                                {taskTitle}
-                              </span>
-                              <span className="mt-1 flex min-w-0 items-center gap-1.5 text-ui-base text-foreground-subtle">
-                                <span className="truncate">
-                                  {formatTaskRelativeTime(task.updatedAt, intl)}
-                                </span>
-                              </span>
-                              {task.workflowActivity ? (
-                                <TaskWorkflowRunLines
-                                  activity={task.workflowActivity}
-                                  isActive={selected}
-                                  intl={intl}
-                                  density="compact"
-                                />
-                              ) : null}
-                            </span>
-                            <span
-                              className={cn(
-                                "inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-0.5 text-ui-xs leading-none",
-                                getWebRemoteControlTaskStatusClassName(displayStatus),
-                              )}
-                            >
-                              {getStatusIcon(displayStatus)}
-                              {intl.formatMessage({
-                                id: `webRemoteControl.taskStatus.${displayStatus}`,
-                              })}
-                            </span>
-                          </button>
+                  {expanded ? (
+                    <ul className="border-t border-card-border px-2 py-2">
+                      {group.tasks.length === 0 ? (
+                        <li className="px-2 py-2 text-ui-base text-foreground-subtle">
+                          {intl.formatMessage({
+                            id: "webRemoteControl.mobileHome.workspaceEmpty",
+                          })}
                         </li>
-                      );
-                    })}
-                  </ul>
-                ) : null}
-              </li>
-            );
+                      ) : null}
+                      {group.tasks.map((task) => {
+                        const rowKey = buildWebRemoteControlTaskRowKey(task);
+                        const taskWorkspaceKey = resolveWebRemoteControlWorkspaceKey(task);
+                        const selected =
+                          taskWorkspaceKey === model.activeWorkspaceKey &&
+                          task.taskId === model.activeTaskId;
+                        const switching = switchingTaskKey === rowKey;
+                        const taskTitle =
+                          task.title || intl.formatMessage({ id: "taskList.untitled" });
+                        const displayStatus = task.displayStatus ?? "idle";
+
+                        return (
+                          <li key={rowKey}>
+                            <button
+                              type="button"
+                              data-testid={testId(TID_TASK_ITEM, task.taskId)}
+                              data-state={selected ? "selected" : "idle"}
+                              className={cn(
+                                "flex min-h-12 w-full min-w-0 items-center gap-2 rounded-lg px-2.5 py-2 text-left transition-colors disabled:cursor-wait disabled:opacity-70",
+                                selected ? "bg-selected text-foreground" : "hover:bg-surface-hover",
+                              )}
+                              disabled={Boolean(switchingTaskKey) || isDisconnectedRemoteWorkspace}
+                              onClick={() => {
+                                if (!isDisconnectedRemoteWorkspace) {
+                                  handleOpenTask(task);
+                                }
+                              }}
+                            >
+                              <span className="relative flex size-4 shrink-0 items-center justify-center">
+                                {switching ? (
+                                  <LoaderIcon className="size-4 animate-spin text-foreground-subtle" />
+                                ) : task.unreadAt ? (
+                                  <span className="h-1.5 w-1.5 rounded-full bg-sky-500 dark:bg-sky-400" />
+                                ) : null}
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-ui-base text-foreground">
+                                  {taskTitle}
+                                </span>
+                                <span className="mt-1 flex min-w-0 items-center gap-1.5 text-ui-base text-foreground-subtle">
+                                  <span className="truncate">
+                                    {formatTaskRelativeTime(task.updatedAt, intl)}
+                                  </span>
+                                </span>
+                                {task.workflowActivity ? (
+                                  <TaskWorkflowRunLines
+                                    activity={task.workflowActivity}
+                                    isActive={selected}
+                                    intl={intl}
+                                    density="compact"
+                                  />
+                                ) : null}
+                              </span>
+                              <span
+                                className={cn(
+                                  "inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-0.5 text-ui-xs leading-none",
+                                  getWebRemoteControlTaskStatusClassName(displayStatus),
+                                )}
+                              >
+                                {getStatusIcon(displayStatus)}
+                                {intl.formatMessage({
+                                  id: `webRemoteControl.taskStatus.${displayStatus}`,
+                                })}
+                              </span>
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  ) : null}
+                </li>
+              );
             })}
           </ul>
         )}

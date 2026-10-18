@@ -21,14 +21,14 @@ import {
 } from "./resourceUsageView.js";
 
 export interface ResourceManagerAppProps {
-  /** 缺省表示桥接不可用（例如非桌面环境） */
+  /** Absent = bridge unavailable (e.g. non-desktop). */
   getSnapshot?: () => Promise<ResourceUsageSnapshot>;
   setSamplingActive?: (active: boolean) => void;
-  /** 存储管理桥（window.resourceManager.storage）；缺省时「存储」tab 显示接口不可用 */
+  /** Storage bridge (window.resourceManager.storage); absent = tab shows unavailable. */
   storage?: StorageManagementBridge;
   network?: NetworkCaptureBridge;
   refreshIntervalMs?: number;
-  /** 初始 tab，默认 CPU */
+  /** Initial tab, CPU by default. */
   initialTab?: ResourceManagerTab;
 }
 
@@ -49,8 +49,8 @@ const CATEGORY_LABEL_IDS: Record<ResourceUsageCategory, string> = {
 };
 
 /**
- * 资源管理器窗口 UI。
- * 组件放在 packages/ui 内是为了纳入 Tailwind 扫描；desktop 的独立 renderer 入口只负责挂载。
+ * Resource manager window UI.
+ * Lives in packages/ui for Tailwind scanning; the desktop renderer entry only mounts it.
  */
 export function ResourceManagerApp({
   getSnapshot,
@@ -62,7 +62,7 @@ export function ResourceManagerApp({
 }: ResourceManagerAppProps) {
   const { intl } = useZCodeIntl();
   const [tab, setTab] = useState<ResourceManagerTab>(initialTab);
-  // CPU / 内存共用一份进程快照；存储 tab 激活时停止轮询，避免和扫盘争抢 IO。
+  // CPU/memory share one snapshot; pause polling on the storage tab to spare disk IO.
   const pollingActive = tab === "cpu" || tab === "memory";
   const [snapshot, setSnapshot] = useState<ResourceUsageSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -83,7 +83,7 @@ export function ResourceManagerApp({
     let inFlight = false;
 
     async function refresh() {
-      // 请求串行：上一轮未返回（Host 采样慢）时不叠加新请求。
+      // Serial requests: no overlap while a slow Host sample is in flight.
       if (inFlight) return;
       inFlight = true;
       try {
@@ -104,7 +104,7 @@ export function ResourceManagerApp({
     return () => {
       disposed = true;
       window.clearInterval(interval);
-      // 停止 renderer 定时器还不够，Host 在途采样也必须随页面生命周期取消。
+      // Cancelling the timer is not enough; abort in-flight Host samples on unmount.
       setSamplingActive?.(false);
     };
   }, [getSnapshot, intl, pollingActive, refreshIntervalMs, setSamplingActive]);
@@ -171,7 +171,7 @@ export function ResourceManagerApp({
   );
 }
 
-/** CPU / 内存 tab 的正文：左侧对应指标卡，右侧分组列表只显示当前指标列。 */
+/** CPU/memory tab: metric cards left, grouped list showing the active column. */
 function UsageTabContent({
   metric,
   snapshot,

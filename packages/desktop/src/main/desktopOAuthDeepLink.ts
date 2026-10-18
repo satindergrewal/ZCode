@@ -410,8 +410,9 @@ export function registerDeepLinkProtocol(
 ) {
   const scheme = "zcode";
 
-  // 外部 URL 必须位于 -- 后；否则 Windows 引号拆分可把 URL 内容变成 Electron 启动参数。
-  // Inspector 早于应用 JS 和单实例锁启动，不能依赖后续 handleDeepLink 校验拦截。
+  // External URLs must come after `--`; otherwise Windows quote-splitting can turn URL content
+  // into Electron flags. The Inspector starts before app JS and the single-instance lock, so the
+  // later handleDeepLink validation cannot be relied on to filter.
   if (process.defaultApp && process.argv.length >= 2) {
     const entry = resolve(process.argv[1]!);
     const args = process.platform === "win32" ? [entry, "--"] : [entry];

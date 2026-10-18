@@ -14,7 +14,7 @@ export async function checkFileSummary(
       await win.webContents.executeJavaScript(
         `document.documentElement.className=${JSON.stringify(theme === "dark" ? "dark theme-zai-dark" : "theme-zai-light")}; document.body.className='bg-background text-foreground'`,
       );
-      // 先证明普通 HTML 可以正常出现，再验证 visualize 去重，避免空组件假阳性。
+      // Prove plain HTML renders first, then verify visualize dedup, avoiding false positives from an empty component.
       await win.webContents.executeJavaScript("window.showFileSummary('ordinary')");
       await waitHost(
         `document.querySelector('#file-preview-cards')?.textContent.includes('demo.html')`,

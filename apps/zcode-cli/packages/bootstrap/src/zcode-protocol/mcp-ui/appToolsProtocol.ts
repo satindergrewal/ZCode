@@ -26,8 +26,8 @@ import { mcpUiInstances } from "./instances.js";
 import { createMcpUiSessionAccess } from "./sessionAccess.js";
 
 /**
- * App-Provided Tools 的四个协议方法。登记表按 agent 进程（context）唯一；信箱投递用 v4Gateway.ingest 的
- * live-only 事件（seq 0），与资源通知同一条路。
+ * The four App-Provided Tools protocol methods. The registry is per agent process (context); mailbox delivery uses v4Gateway.ingest's
+ // live-only events (seq 0), the same path as resource notices.
  */
 const registries = new WeakMap<ZCodeProtocolAgentServerContext, McpUiAppToolRegistry>();
 
@@ -68,7 +68,7 @@ export function getMcpUiAppToolRegistry(
           type: SessionEventType.PluginUiAppToolCallRequested,
           timestamp: new Date(),
           traceId: String(record.traceContext.traceId) as never,
-          // 只进 live 投影、不落盘：seq 0 让 gateway 分配 transport 序号。
+          // Live projection only, never persisted: seq 0 lets the gateway assign the transport sequence.
           sequenceNumber: 0,
           payload,
         };
@@ -118,7 +118,7 @@ export async function unregisterMcpUiAppTools(
   const params = parseParams(zcodeMcpUiUnregisterAppToolsParamsSchema, rawParams);
   if (params.scopeId !== params.instance.token || params.generation !== params.instance.generation)
     throw new Error("Invalid MCP App binding");
-  // 实例销毁时的 best effort 收尾：会话已关闭（登记已清空）不报错。
+  // Best-effort teardown on instance destroy: a closed session (registrations cleared) is not an error.
   if (!context.sessions.has(params.sessionId)) return { removed: 0 };
   return { removed: getMcpUiAppToolRegistry(context).unregister(params.sessionId, params) };
 }

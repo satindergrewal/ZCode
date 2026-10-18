@@ -125,7 +125,9 @@ describe("Bot deleted active task recovery", () => {
       providers: [],
       preferredSelection: undefined,
     });
-    await expect(h.service.handleInboundMessage(inbound)).rejects.toThrow("Submission");
+    await expect(h.service.handleInboundMessage(inbound)).rejects.toThrow(
+      "Failed to resolve the submission model",
+    );
     expect(h.taskService.createTask).not.toHaveBeenCalled();
     expect(h.taskService.sendPrompt).not.toHaveBeenCalled();
     expect(h.requests).toHaveLength(0);

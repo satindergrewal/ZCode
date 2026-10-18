@@ -280,7 +280,10 @@ export function startFeedbackSubmissionJob(
 
       if (failedScreenshots.length > 0) {
         await options.feedbackService
-          .comment(ticket.id, `System note: some screenshots failed to upload: ${failedScreenshots.join("; ")}`)
+          .comment(
+            ticket.id,
+            `System note: some screenshots failed to upload: ${failedScreenshots.join("; ")}`,
+          )
           .catch(() => undefined);
       }
 

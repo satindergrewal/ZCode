@@ -9,8 +9,8 @@ import { createTuiSubmitPrompt } from "../src/tui-prompt-handler.js";
 import { WORKFLOW_DISABLED_NOTICE, WORKFLOW_MODE_SCOPE_ERROR } from "../src/workflow-mode.js";
 
 /**
- * 独立 CLI 的 `--workflow-mode`（docs/dynamic-workflow/launch.md「The standalone CLI:
- * `--workflow-mode`」，DWG-14 ～ DWG-17）。缺省 disabled；两个 runtime 字段总是显式写出。
+ * The standalone CLI's `--workflow-mode` (docs/dynamic-workflow/launch.md,
+ * "The standalone CLI: `--workflow-mode`", DWG-14..17). Defaults to disabled; both runtime fields are always explicit.
  */
 
 type CapturedWriteStream = NodeJS.WriteStream & { output: () => string };
@@ -50,7 +50,7 @@ type RuntimeConfigSeen = {
   dynamicWorkflowToolsOnDemand?: boolean;
 };
 
-/** 记录每次建 app 时的两个工作流字段；app 本身只够跑通一次 prompt / TUI 启动。 */
+/** Records the two workflow fields at each app creation; the app itself just barely runs one prompt / TUI startup. */
 function createRecordingDeps(): { deps: RunDependencies; seen: RuntimeConfigSeen[] } {
   const seen: RuntimeConfigSeen[] = [];
   const deps: RunDependencies = {
@@ -90,7 +90,7 @@ const DISABLED_PAIR = { dynamicWorkflowEnabled: false, dynamicWorkflowToolsOnDem
 const ON_DEMAND_PAIR = { dynamicWorkflowEnabled: true, dynamicWorkflowToolsOnDemand: true };
 const ALWAYS_ON_PAIR = { dynamicWorkflowEnabled: true, dynamicWorkflowToolsOnDemand: false };
 
-// ── DWG-14：取值与 runtime 字段 ────────────────────────────────────────────
+// -- DWG-14: parsing and runtime fields -------------------------------------
 
 test("headless prompt without --workflow-mode writes the disabled pair explicitly", async () => {
   const { deps, seen } = createRecordingDeps();
@@ -119,7 +119,7 @@ test("TUI without --workflow-mode writes the disabled pair and suggests no /work
   const exitCode = await run(ctx, {
     ...deps,
     runTui: async (options) => {
-      // TUI 的斜杠命令与首个 App 由启动选项异步提供（TUI 启动画面先渲染，再加载会话元数据）。
+      // TUI slash commands and the first App arrive asynchronously via startup options (the splash renders first, then session metadata loads).
       const startup = await options.loadStartupOptions?.();
       suggestions = (startup?.slashCommands ?? options.slashCommands ?? []).map(
         (entry) => entry.name,
@@ -141,7 +141,7 @@ test("TUI with --workflow-mode onDemand writes the onDemand pair and suggests /w
   const exitCode = await run(ctx, {
     ...deps,
     runTui: async (options) => {
-      // TUI 的斜杠命令与首个 App 由启动选项异步提供（TUI 启动画面先渲染，再加载会话元数据）。
+      // TUI slash commands and the first App arrive asynchronously via startup options (the splash renders first, then session metadata loads).
       const startup = await options.loadStartupOptions?.();
       suggestions = (startup?.slashCommands ?? options.slashCommands ?? []).map(
         (entry) => entry.name,
@@ -192,7 +192,7 @@ test("an unknown --workflow-mode value fails before any app is created", async (
   assert.deepEqual(seen, []);
 });
 
-// ── DWG-15：作用域 ──────────────────────────────────────────────────────────
+// -- DWG-15: scoping --------------------------------------------------------
 
 for (const argv of [["app-server"], ["agent-server"], ["login"], ["skills"]] as const) {
   test(`--workflow-mode is rejected with ${argv[0]}`, async () => {
@@ -245,7 +245,7 @@ test("headless /help lists /workflow only when workflows are on", async () => {
   assert.match(onDemand.stdout.output(), /\/workflow \[what the workflow should accomplish\]/);
 });
 
-// ── DWG-16：命令面 ───────────────────────────────────────────────────────────
+// -- DWG-16: command surface -------------------------------------------------
 
 function createHarness(
   workflowMode: CommandCenterDeps["workflowMode"],

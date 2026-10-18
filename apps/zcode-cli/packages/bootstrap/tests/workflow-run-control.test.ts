@@ -36,7 +36,10 @@ function fakeGate() {
 }
 
 /** 一个最小的在飞条目：retune 只读 terminal / control / maxConcurrency 三样。 */
-function liveEntry(control: RunRegistryEntry["control"], maxConcurrency?: number): RunRegistryEntry {
+function liveEntry(
+  control: RunRegistryEntry["control"],
+  maxConcurrency?: number,
+): RunRegistryEntry {
   return {
     controller: new AbortController(),
     startedAt: new Date(),

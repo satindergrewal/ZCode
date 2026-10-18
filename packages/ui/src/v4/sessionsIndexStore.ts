@@ -1,7 +1,7 @@
-/* eslint-disable max-lines -- index projection、applied-base 与 recovery flight 必须由同一原子 store 裁决。 */
-// sessions-index topic 的 renderer 只读 store：
-// snapshot 帧全量替换；delta 帧仅在区间衔接（frame.fromSeq === watermark）时 apply，
-// 断档不猜、不缓存补偿——重订阅交由服务端裁决续传或全量（与 ConversationProjectionStore 同策略）。
+/* eslint-disable max-lines -- index projection, applied-base, and recovery flights must be adjudicated by one atomic store. */
+// Read-only renderer store for the sessions-index topic:
+// snapshot frames replace wholesale; delta frames apply only when contiguous (frame.fromSeq === watermark);
+// never guess across gaps nor cache-compensate -- resubscribe and let the server rule resume vs full (same policy as ConversationProjectionStore).
 import {
   isDeterministicContentFault,
   PROTOCOL_V4_LIMITS,
@@ -16,12 +16,12 @@ import { logger } from "@/logger.js";
 import type { SessionsIndexTransport } from "@/v4/agentSessionsIndexTransport.js";
 
 export interface SessionsIndexState {
-  /** workspaceId → 已知；null = 尚无 snapshot。 */
+  /** workspaceId -> known; null = no snapshot yet. */
   workspaceId: string | null;
   logEpoch: string | null;
-  /** 帧区间水位（= 最近一帧 toSeq）。 */
+  /** Frame-range watermark (= the latest frame toSeq). */
   seq: number;
-  /** 会话摘要，按 sessionId 索引（conflated）。 */
+  /** Session summaries keyed by sessionId (conflated). */
   sessions: Map<string, SessionSummary>;
 }
 
@@ -74,10 +74,10 @@ async function unsubscribeIgnoringFailure(
   try {
     await transport.unsubscribe(subscriptionId);
   } catch (error) {
-    // service proxy 换代后旧 store cleanup 仍会命中已断开的 RPC。
-    // cleanup 失败不能变成 unhandled rejection，也不能影响新一代 registry entry。
+    // After a service-proxy generation change, a stale store cleanup can still hit a disconnected RPC.
+    // A failing cleanup must not become an unhandled rejection nor touch the newer registry entry.
     logger.warn(
-      `[v4-sessions-index] unsubscribe ${subscriptionId} 失败（忽略）: ${
+      `[v4-sessions-index] unsubscribe ${subscriptionId} failed (ignored): ${
         error instanceof Error ? error.message : String(error)
       }`,
     );
@@ -86,11 +86,11 @@ async function unsubscribeIgnoringFailure(
 
 export interface ApplySessionsIndexResult {
   state: SessionsIndexState;
-  /** true = 帧区间断档（fromSeq 与水位不衔接），调用方应重订阅。 */
+  /** true = frame-range gap (fromSeq does not join the watermark); the caller must resubscribe. */
   gap: boolean;
 }
 
-/** 纯 apply：snapshot 全量替换；deltas 仅在衔接时逐条 upsert/remove。 */
+/** Pure apply: snapshots replace wholesale; deltas upsert/remove one by one only when contiguous. */
 export function applySessionsIndexFrame(
   current: SessionsIndexState,
   frame: SessionsIndexTopicFrame,
@@ -114,7 +114,7 @@ export function applySessionsIndexFrame(
   if (frame.toSeq <= current.seq) {
     return { state: current, gap: false };
   }
-  // deltas：区间必须衔接（fromSeq === 当前水位），否则断档。
+  // deltas: the range must be contiguous (fromSeq === current watermark), otherwise a gap.
   if (frame.fromSeq !== current.seq) {
     return { state: current, gap: true };
   }
@@ -133,16 +133,16 @@ export function applySessionsIndexFrame(
 }
 
 /**
- * useSyncExternalStore 兼容的只读 store：subscribe + getState 返回稳定引用。
- * 状态本体与纯 applyFrame 可独立单测；传输绑定（connect/handleFrame/close）
- * 负责订阅生命周期与断档重订阅。
+ * useSyncExternalStore-compatible read-only store: subscribe + getState return stable references.
+ * The state and pure applyFrame unit-test standalone; the transport binding
+ * (connect/handleFrame/close) owns subscription lifecycle and gap resubscription.
  */
 export class SessionsIndexStore {
   private state: SessionsIndexState = EMPTY_SESSIONS_INDEX_STATE;
   private readonly listeners = new Set<() => void>();
-  /** 缓存的有序列表（getSessions 稳定引用，避免每次 new array 触发重渲染）。 */
+  // Cached ordered list (getSessions returns a stable reference so no per-call array re-renders).
   private cachedList: SessionSummary[] | null = null;
-  // 传输绑定（可选：纯 applyFrame 单测不需要）。
+  // Transport binding (optional; pure applyFrame tests need none).
   private transport: SessionsIndexTransport | null = null;
   private frameUnsub: (() => void) | null = null;
   private faultUnsub: (() => void) | null = null;
@@ -161,7 +161,7 @@ export class SessionsIndexStore {
     forceSnapshot: boolean;
     postRecoveryGapPending: boolean;
     frameDeadline: ReturnType<typeof setTimeout> | null;
-    /** 本次 flight 是为内容确定性失败发起的：终态用 contentRejected，且不再无限退避重订阅。 */
+    /** This flight stems from a deterministic content fault: terminal state contentRejected, no endless backoff resubscribe. */
     contentFault: boolean;
   } | null = null;
   private status: SessionsIndexStoreStatus = "idle";
@@ -188,9 +188,9 @@ export class SessionsIndexStore {
   }
 
   /**
-   * 绑定传输并发起订阅：注册帧监听 + subscribe（水位不变量：仅当真持有一致状态才带 base）。
-   * 断档帧 → 丢 base 重订阅（handleFrame 触发）。close 后可再次 connect（React
-   * effect 卸载/重挂载——StrictMode 双调——走同一路径复活）。
+   * Bind the transport and subscribe: register the frame listener + subscribe (watermark invariant: carry base only when a consistent state is held).
+   * Gap frames -> drop base and resubscribe (via handleFrame). After close, connect again (React
+   * unmount/remount, StrictMode double-invoke -- revives through the same path).
    */
   async connect(
     transport: SessionsIndexTransport,
@@ -242,10 +242,10 @@ export class SessionsIndexStore {
         void unsubscribeIgnoringFailure(transport, result.ack.subscriptionId);
         return;
       }
-      // 与 conversationProjectionStore.connect 同因（线上 notOwned 卡死）：
-      // subscribe ACK 的 await 窗口内旧订阅仍可能创建 same-sub recovery，而 host scope 在
-      // 新 ACK remember() 时已静默驱逐旧 ownership。换代成功即丢弃旧 recovery，避免其
-      // 迟到失败把 live 的新订阅打成 error。
+      // Same root as conversationProjectionStore.connect (production notOwned stalls):
+      // during the subscribe-ACK await an old subscription can still create a same-sub recovery, while the host scope
+      // silently evicts the old ownership at remember(). Drop the old recovery once the generation lands, so its
+      // late failure cannot flag the live new subscription as error.
       this.discardRecovery();
       this.subscriptionId = result.ack.subscriptionId;
       this.status = "live";
@@ -258,7 +258,7 @@ export class SessionsIndexStore {
         subscriptionId: result.ack.subscriptionId,
         mode: result.ack.mode,
       };
-      // initial 只经 notification 到达；先绑定代际，再 activate 释放 ACK 前早帧。
+      // The initial arrives only via notification; bind the generation first, then activate to release pre-ACK early frames.
       transport.activate(result.ack.subscriptionId);
       this.emit();
     } catch (error) {
@@ -266,8 +266,8 @@ export class SessionsIndexStore {
       this.awaitingInitial = null;
       this.subscriptionHasAppliedBase = false;
       if (isRuntimeUnavailableError(error)) {
-        // restored workspace 的被动列表订阅曾把 runtime 缺失当成普通失败并
-        // 退避重试，最终由 getClient 批量启动 CLI。dormant 等待 lifecycle，不设 timer。
+        // Passive list subscribes on restored workspaces used to treat a missing runtime as a plain failure and
+        // backoff-retry, mass-starting CLIs via getClient. Wait dormant for lifecycle; no timer.
         this.handleRuntimeUnavailable();
         return;
       }
@@ -288,11 +288,13 @@ export class SessionsIndexStore {
       const retryAttempt = options.subscribeRetryAttempt ?? 0;
       const retryDelay = TRANSIENT_SUBSCRIBE_RETRY_DELAYS_MS[retryAttempt];
       if (isTransientSubscribeError(error) && retryDelay !== undefined) {
-        // Host 冷启动时 provider registry 的配置锁可能短暂冲突。若把
-        // 首次 subscribe 失败永久定格为 error，聚合层随即发布空列表并显示“还没有对话”。
-        // 瞬时文件锁错误保持 hydrating，用有界退避重订阅；已有 snapshot 也继续保留。
+        // On host cold start the provider registry's config lock can conflict briefly. Freezing the first
+        // subscribe failure as error makes the aggregation publish an empty list -- no conversations yet.
+        // Keep hydrating on transient lock errors with bounded-backoff resubscribe; keep any snapshot already held.
         this.status = "connecting";
-        logger.warn(`[v4-sessions-index] subscribe 瞬时失败，${retryDelay}ms 后重试: ${message}`);
+        logger.warn(
+          `[v4-sessions-index] transient subscribe failure; retrying in ${retryDelay}ms: ${message}`,
+        );
         this.subscribeRetryTimer = setTimeout(() => {
           this.subscribeRetryTimer = null;
           if (this.closed || generation !== this.generation) return;
@@ -312,11 +314,11 @@ export class SessionsIndexStore {
   }
 
   /**
-   * 远程 RPC proxy 换代时原地替换 transport。
+   // Swaps the transport in place on a remote RPC proxy generation change.
    *
-   * 先同步解除旧 transport 的本地监听，再对新 transport 强制取 snapshot；远端退订只做
-   * best-effort，不能阻塞新 proxy 接管。服务端按 subscriptionId 精确退订，迟到 cleanup
-   * 不会删除新代际。并发换代由 store generation 失效旧结果，store 身份和最后一份投影保持不变。
+      * Detach the old transport's local listeners synchronously, then force a snapshot on the new one; the remote unsubscribe is
+      * best-effort and must not block the handover. The server unsubscribes by subscriptionId, so a late cleanup
+      * never kills the new generation. Concurrent handovers invalidate via the store generation; identity and the last projection hold.
    */
   async replaceTransport(transport: SessionsIndexTransport): Promise<void> {
     if (!this.closed && this.transport === transport) return;
@@ -327,8 +329,8 @@ export class SessionsIndexStore {
     this.emit();
 
     if (previous.transport && previous.subscriptionId) {
-      // proxy handoff 后旧 RPC 可能永远不 settle；等待它会让新 transport
-      // 永久停在 connecting。先完成本地 detach，远端精确退订异步收尾即可。
+      // After a proxy handoff the old RPC may never settle; waiting on it parks the new transport
+      // in connecting forever. Finish the local detach first; let the remote unsubscribe settle async.
       void unsubscribeIgnoringFailure(previous.transport, previous.subscriptionId);
     }
     if (generation !== this.generation || this.closed) return;
@@ -336,17 +338,17 @@ export class SessionsIndexStore {
     await this.connect(transport, { forceSnapshot: true });
   }
 
-  /** 帧路由入口（initial / online notification）。断档 → 重订阅。 */
+  /** Frame-routing entry (initial/online notification). Gap -> resubscribe. */
   handleFrame(
     frame: SessionsIndexTopicFrame,
     delivery?: { deliveryKind: TopicFrameDeliveryKind },
   ): void {
     if (this.closed) return;
-    // 代际闸门：workspace 级 fan-out 会把同 topic 其他订阅者的帧也送到这里
-    // （host 侧 task-index syncer 用独立 connectionId 常驻订阅 sessions-index）。
-    // 不按自己的 subscriptionId 过滤会把别人的 (fromSeq, toSeq] 窗口当成断档，触发重订阅风暴。
-    // subscriptionId 尚未就位时的 own initial 由 transport 有界 staging；绑定后 activate
-    // 才释放。其他旧代际/foreign frame 在这里继续丢弃。
+    // Generation gate: workspace-level fan-out delivers other subscribers' frames on the same topic here too
+    // (the host task-index syncer holds a resident sessions-index subscription on its own connectionId).
+    // Without filtering by own subscriptionId, foreign (fromSeq, toSeq] windows read as gaps and storm resubscribes.
+    // The own initial, pre-subscriptionId, is bounded-staged by the transport; activate releases it after binding.
+    // Stale-generation/foreign frames keep dropping here.
     if (this.subscriptionId === null || frame.subscriptionId !== this.subscriptionId) {
       return;
     }
@@ -375,7 +377,7 @@ export class SessionsIndexStore {
     const gap = this.applyFrame(frame);
     if (gap && this.transport) {
       logger.warn(
-        `[v4-sessions-index] 帧断档 fromSeq=${frame.fromSeq} local=${this.state.seq}，重订阅`,
+        `[v4-sessions-index] frame gap fromSeq=${frame.fromSeq} local=${this.state.seq}; resubscribing`,
       );
       if (initial) void this.connect(this.transport, { forceSnapshot: true });
       else this.requestRecovery(deliveryKind === "recovery");
@@ -397,9 +399,9 @@ export class SessionsIndexStore {
     ) {
       this.awaitingInitial = null;
     }
-    // 内容确定性失败不进瞬态阶梯（04-sync 封闭规则 11）：resume 只会重投同一批被拒的内容。
-    // 直接跳到唯一可能产出不同字节的强制 snapshot；它再被内容拒绝就停手。本 store 的 fail
-    // closed 会清空投影并有界退避重订阅——对确定性失败那就是一个永不收敛的重订阅循环。
+    // Content-deterministic failures skip the transient ladder (04-sync closed rule 11): resume redelivers the same rejected content.
+    // Jump straight to the forced snapshot, the only bytes that could differ; stop if it too is rejected. This store's fail
+    // closed clears the projection and backoff-resubscribes -- for a deterministic failure, an endless resubscribe loop.
     if (isDeterministicContentFault(reasonCode)) {
       this.requestRecovery(true, { contentFault: true });
       return;
@@ -420,7 +422,7 @@ export class SessionsIndexStore {
     const contentFault = options.contentFault === true;
     const existing = this.recovery;
     if (existing) {
-      // 一旦本次 flight 出现过内容失败，终态就归内容失败：后续瞬态 fault 不该把它洗白。
+      // Once a content failure occurs in a flight, the terminal state is the content failure; later transient faults must not whitewash it.
       if (contentFault) existing.contentFault = true;
       if (!recoveryEvent) return;
       if (existing.forceSnapshot) {
@@ -448,7 +450,7 @@ export class SessionsIndexStore {
       contentFault,
     };
     this.recovery = recovery;
-    // 内容失败跳过 resume 档直接强制 snapshot；瞬态失败仍按原阶梯先试 resume。
+    // Content failures skip the resume rung and force a snapshot; transient failures still try resume first.
     this.issueRecovery(recovery, contentFault);
   }
 
@@ -491,16 +493,16 @@ export class SessionsIndexStore {
         this.clearRecoveryDeadline(recovery);
         this.recovery = null;
         const message = error instanceof Error ? error.message : String(error);
-        logger.warn(`[v4-sessions-index] resync 失败: ${message}`);
+        logger.warn(`[v4-sessions-index] transient subscribe failure; retrying: ${message}`);
         if (isRuntimeUnavailableError(error)) {
           this.handleRuntimeUnavailable();
           return;
         }
         if (message.includes("fault.subscription.notOwned") && this.transport) {
-          // 与 conversationProjectionStore.issueRecovery 同因（线上事件）：
-          // notOwned 是 ownership 状态分歧的确定性失效而非瞬态故障，停在 error 会让
-          // 会话列表永久卡死。携当前水位 fresh subscribe 由服务端裁决 resume/snapshot，
-          // 完成自愈。仅对 notOwned 特判，避免瞬态错误引发重连风暴。
+          // Same root as conversationProjectionStore.issueRecovery (production event):
+          // notOwned is deterministic ownership divergence, not a transient; parking in error wedges the
+          // session list forever. A fresh subscribe with the current watermark lets the server rule resume/snapshot
+          // and heals. Special-case notOwned only, so transients cannot storm reconnects.
           void this.connect(this.transport);
           return;
         }
@@ -566,15 +568,15 @@ export class SessionsIndexStore {
   }
 
   /**
-   * 内容确定性失败：终态 code 与传输失败区分，且**不排退避重订阅**——重订阅会拿到同一份读不懂的
-   * 内容，本 store 的退避会因此变成永不收敛的循环（清空投影 → 重订阅 → 再被拒 → …）。自愈仍有
-   * 路径：runtime 换代、fresh connect、用户重连都会重新订阅；被拿掉的只是那个循环。
+   * Content-deterministic failure: the terminal code distinguishes it from transport failures and schedules **no backoff resubscribe** -- a resubscribe gets the same unreadable
+   * content, turning this store's backoff into a never-converging loop (clear -> resubscribe -> rejected -> ...). Self-healing survives via
+   * runtime handover, fresh connects, and user reconnects -- only the loop is removed.
    *
-   * `contentEligible: false` 给**超时**终态用：deadline 没等到 recovery 帧是传输症状，不该被重标
-   * 成 contentRejected，更不该因此取消那次仍然有意义的重试。
+   * `contentEligible: false` is for **timeout** terminals: a deadline without a recovery frame is a transport symptom -- never rebrand it
+   * contentRejected, nor cancel the still-meaningful retry.
    */
   private failRecovery(reasonCode: string, options: { contentEligible?: boolean } = {}): void {
-    // contentFault 必须在 discardRecovery 之前读。
+    // contentFault must be read before discardRecovery.
     const contentFault = this.recovery?.contentFault === true && options.contentEligible !== false;
     this.failAndScheduleRecovery(contentFault ? SUBSCRIPTION_CONTENT_REJECTED : reasonCode, {
       scheduleRetry: !contentFault,
@@ -582,10 +584,10 @@ export class SessionsIndexStore {
   }
 
   /**
-   * recovery/subscribe 失败时撤销旧 projection 的 live 证明，并用有界退避重新取权威
-   * snapshot。error 仍对外可观测；重试仅在 transport/runtime 仍属于当前代际时执行。
+      * On recovery/subscribe failure, revoke the old projection's live proof and re-fetch authority via bounded backoff.
+      * error stays externally visible; retries run only while transport/runtime remain current-generation.
    *
-   * `scheduleRetry: false` 只给确定性失败用：重试必然得到同一结果时不该排它。
+   // `scheduleRetry: false` is for deterministic failures: never schedule a retry doomed to the same result.
    */
   private failAndScheduleRecovery(
     reasonCode: string,
@@ -659,9 +661,9 @@ export class SessionsIndexStore {
     if (this.runtimeRestartReconnectTimer) {
       clearTimeout(this.runtimeRestartReconnectTimer);
     }
-    // runtimeRestarted 不能每到一条就立即 connect。若上游异常地连续发布
-    // restart，subscribe 会反向触发更多 runtime 启动，形成无上限重连风暴。这里将 burst
-    // 合并为一次 fresh subscribe，并按连续次数指数退避；稳定 30 秒后恢复首跳立即重连。
+    // Do not connect on every runtimeRestarted. A pathological restart burst would make each subscribe
+    // trigger more runtime starts -- an unbounded reconnect storm. Merge the burst into one fresh
+    // subscribe with exponential backoff per consecutive count; after 30 quiet seconds, restore immediate first-hop.
     this.runtimeRestartReconnectTimer = setTimeout(() => {
       this.runtimeRestartReconnectTimer = null;
       if (this.closed || this.transport !== transport) return;
@@ -688,15 +690,15 @@ export class SessionsIndexStore {
       clearTimeout(this.runtimeRestartReconnectTimer);
       this.runtimeRestartReconnectTimer = null;
     }
-    // runtime 已不存在时旧 summary 的 running/attention 失去 live 证明；持久 task 行由
-    // tasks-index 保留，sessions-index 投影必须清空以避免孤儿 spinner。
+    // With the runtime gone, a stale summary's running/attention loses its live proof; persisted task rows live in
+    // tasks-index -- clear the sessions-index projection to avoid orphan spinners.
     this.state = EMPTY_SESSIONS_INDEX_STATE;
     this.cachedList = null;
     this.status = "dormant";
     this.emit();
   }
 
-  /** 释放订阅与监听（组件卸载 / workspace 切换）。 */
+  /** Releases the subscription and listeners (unmount / workspace switch). */
   close(): void {
     this.closed = true;
     this.generation += 1;
@@ -740,7 +742,7 @@ export class SessionsIndexStore {
     return previous;
   }
 
-  /** 应用一帧；断档返回 true（调用方重订阅）。 */
+  /** Applies one frame; returns true on a gap (caller resubscribes). */
   applyFrame(frame: SessionsIndexTopicFrame): boolean {
     const { state, gap } = applySessionsIndexFrame(this.state, frame);
     if (gap) return true;
@@ -752,7 +754,7 @@ export class SessionsIndexStore {
     return false;
   }
 
-  /** 断档/重连时清空，等待新 snapshot。 */
+  // Cleared on gap/reconnect; waits for a fresh snapshot.
   reset(): void {
     this.discardRecovery();
     this.subscriptionHasAppliedBase = false;
@@ -761,7 +763,7 @@ export class SessionsIndexStore {
     this.emit();
   }
 
-  /** 会话列表（默认按 lastActivityAt 降序；分组/pin 是更上层逻辑）。 */
+  /** Session list (lastActivityAt descending by default; grouping/pinning live upstream). */
   getSessions(): SessionSummary[] {
     if (this.cachedList === null) {
       this.cachedList = [...this.state.sessions.values()].sort(

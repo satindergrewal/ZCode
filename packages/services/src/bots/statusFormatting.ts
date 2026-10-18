@@ -39,9 +39,14 @@ export function formatTaskRunningDuration(durationMs: number): string {
   return parts.join(" ");
 }
 
-function readRunningTaskStartedAt(snapshot: ZCodeSessionFile | null, task: ZCodeTaskMeta): number | null {
+function readRunningTaskStartedAt(
+  snapshot: ZCodeSessionFile | null,
+  task: ZCodeTaskMeta,
+): number | null {
   const messages = snapshot?.messages ?? [];
-  const assistantStartedAt = messages.findLast((message) => message.role === "assistant")?.timestamp;
+  const assistantStartedAt = messages.findLast(
+    (message) => message.role === "assistant",
+  )?.timestamp;
   if (assistantStartedAt !== undefined) {
     return assistantStartedAt;
   }
@@ -56,7 +61,10 @@ export function formatStatusTaskLine(task: ZCodeTaskMeta, label = "Task"): strin
   return `${label}: ${task.title} (${task.taskId})`;
 }
 
-export function readTaskWorkedDurationMs(snapshot: ZCodeSessionFile | null, task: ZCodeTaskMeta): number | null {
+export function readTaskWorkedDurationMs(
+  snapshot: ZCodeSessionFile | null,
+  task: ZCodeTaskMeta,
+): number | null {
   const status = taskStatus(task);
   if (status === "running") {
     const startedAt = readRunningTaskStartedAt(snapshot, task);
@@ -66,17 +74,25 @@ export function readTaskWorkedDurationMs(snapshot: ZCodeSessionFile | null, task
     // Bugfix: the third-party /status used to stuff runtime into the Task line; emit Worked separately, matching the UI's worked-time semantics.
     return Math.max(Date.now() - startedAt, 0);
   }
-  const completedDurationMs = snapshot?.messages.findLast((message) => message.role === "assistant")?.durationMs;
+  const completedDurationMs = snapshot?.messages.findLast(
+    (message) => message.role === "assistant",
+  )?.durationMs;
   if (completedDurationMs !== undefined) {
     return completedDurationMs;
   }
-  if (task.updatedAt !== undefined && task.createdAt !== undefined && task.updatedAt >= task.createdAt) {
+  if (
+    task.updatedAt !== undefined &&
+    task.createdAt !== undefined &&
+    task.updatedAt >= task.createdAt
+  ) {
     return task.updatedAt - task.createdAt;
   }
   return null;
 }
 
-export function readLatestAssistantTurnChangeSummary(snapshot: ZCodeSessionFile | null): ZCodeTaskMeta["changeSummary"] | null {
+export function readLatestAssistantTurnChangeSummary(
+  snapshot: ZCodeSessionFile | null,
+): ZCodeTaskMeta["changeSummary"] | null {
   if (!snapshot?.fileChanges || snapshot.fileChanges.length === 0) {
     return null;
   }
@@ -89,7 +105,8 @@ export function readLatestAssistantTurnChangeSummary(snapshot: ZCodeSessionFile 
 
   // Bugfix: meta.changeSummary is a task-level aggregate that merges earlier turns into the
   // third-party message; the completion reply must show only this turn's (turnIndex) file changes.
-  const summary = buildPerTurnChangeSummaries(snapshot.fileChanges).get(latestAssistantTurnIndex) ?? null;
+  const summary =
+    buildPerTurnChangeSummaries(snapshot.fileChanges).get(latestAssistantTurnIndex) ?? null;
   return summary && summary.fileCount > 0 && summary.files.length > 0 ? summary : null;
 }
 
@@ -139,11 +156,15 @@ function formatStatusToolProgress(tool: ZCodePersistedToolCall | undefined): str
   return detail ? `${title}${status}: ${detail}` : `${title}${status}`;
 }
 
-export function formatStatusStreamToolProgress(event: Extract<ZCodeStreamEvent, { type: "tool_call" | "tool_call_update" }>): string | null {
+export function formatStatusStreamToolProgress(
+  event: Extract<ZCodeStreamEvent, { type: "tool_call" | "tool_call_update" }>,
+): string | null {
   const title = normalizeStatusProgressText(event.title ?? event.kind ?? "tool");
   const detail =
     readStatusStringField(event.input, ["command", "path", "file_path", "filePath", "prompt"]) ??
-    ("content" in event ? readStatusStringField(event.content, ["command", "path", "file_path", "filePath", "prompt"]) : null) ??
+    ("content" in event
+      ? readStatusStringField(event.content, ["command", "path", "file_path", "filePath", "prompt"])
+      : null) ??
     readStatusStringField(event.raw, ["command", "path", "file_path", "filePath", "prompt"]);
   const status = "status" in event && event.status ? ` [${event.status}]` : "";
   return detail ? `${title}${status}: ${detail}` : `${title}${status}`;

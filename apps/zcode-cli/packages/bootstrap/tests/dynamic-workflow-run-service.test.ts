@@ -214,7 +214,11 @@ function scriptedModelAdapter(
           providerMetadata: undefined,
           text: "",
           toolCalls: [
-            { id: `write-call-${index}`, name: "Write", input: { file_path: planned.path, content: planned.content } },
+            {
+              id: `write-call-${index}`,
+              name: "Write",
+              input: { file_path: planned.path, content: planned.content },
+            },
           ],
           usage,
         };
@@ -1304,7 +1308,9 @@ describe("dynamic workflow run service — retuneConcurrency", () => {
   // launch 把本 run 的上界登记给治理器（抬它用过的 key 的增长上限），retune 经控制面覆盖，
   // launch 结算时清掉——三处与调度器、座位闸门同一刻换值。
   it("launch 登记上界、retune 覆盖、结算清掉：治理器上的增长上限跟着 run 走", async () => {
-    const governor = createWorkflowConcurrencyGovernor({ defaultConcurrency: DEFAULT_OF_TEN_CORES });
+    const governor = createWorkflowConcurrencyGovernor({
+      defaultConcurrency: DEFAULT_OF_TEN_CORES,
+    });
     const calls: string[] = [];
     const concurrency: WorkflowConcurrencyPort = {
       tryAdmit: (runId, key) => governor.tryAdmit(runId, key),
@@ -7177,8 +7183,14 @@ describe("dynamic workflow run service — amend-resume 的崩溃后重建", () 
       // beta 从重建出来的导入表结算：门从未关过，只有 alpha 真的跑了。
       expect((await resumed.service.getTask(runB))?.output).toBe("alpha-2|beta-1");
       expect(turnCount(resumed)).toBe(1);
-      expect(resumed.actorRuntimeInputs.map((input) => refToString(input.actor))).toEqual(["actor#1@1"]);
-      expect(settledEvents(resumed, runB)).toContainEqual({ siteId: "ask#2", ordinal: 1, cached: true });
+      expect(resumed.actorRuntimeInputs.map((input) => refToString(input.actor))).toEqual([
+        "actor#1@1",
+      ]);
+      expect(settledEvents(resumed, runB)).toContainEqual({
+        siteId: "ask#2",
+        ordinal: 1,
+        cached: true,
+      });
       expect(journal.getNode(runB, "ask#2", 1)?.result).toEqual({ text: "beta-1" });
 
       expect(resumed.actorRuntimeInputs[0]!.pinnedModel).toBe("sentinel/from-journal");
@@ -7226,7 +7238,10 @@ describe("dynamic workflow run service — amend-resume 的崩溃后重建", () 
 
       const crashed = makeHarness({
         actorScripts: {
-          "actor#1@1": [{ kind: "write", path: join(TEST_CWD, "notes.md"), content: "alpha was here" }, { kind: "hang" }],
+          "actor#1@1": [
+            { kind: "write", path: join(TEST_CWD, "notes.md"), content: "alpha was here" },
+            { kind: "hang" },
+          ],
         },
         journal,
         sessionStore: store as never,
@@ -7283,7 +7298,11 @@ describe("dynamic workflow run service — amend-resume 的崩溃后重建", () 
         "actor#1@1",
         "actor#2@1",
       ]);
-      expect(settledEvents(resumed, runB)).toContainEqual({ siteId: "ask#2", ordinal: 1, cached: false });
+      expect(settledEvents(resumed, runB)).toContainEqual({
+        siteId: "ask#2",
+        ordinal: 1,
+        cached: false,
+      });
       expect(journal.getNode(runB, "ask#2", 1)?.result).toEqual({ text: "beta-2" });
       // resume 不重发关门事件：判定是恢复出来的，不是新发生的。
       expect(
@@ -8161,7 +8180,7 @@ describe("dynamic workflow run service — 模型侧错误的收容（apps/zcode
     });
   });
 
-  it("cancel(runId, \"model\")（TaskStop）→ stopped(model)；缺省 initiator 是 user", async () => {
+  it('cancel(runId, "model")（TaskStop）→ stopped(model)；缺省 initiator 是 user', async () => {
     const harness = makeHarness({ hangActors: true });
     const byModel = await submitRun(harness, {
       cwd: TEST_CWD,
@@ -8170,12 +8189,19 @@ describe("dynamic workflow run service — 模型侧错误的收容（apps/zcode
     });
     expect(await harness.service.cancel(byModel, "model")).toBe(true);
     await settle(harness, byModel);
-    expect(harness.journal.getRun(byModel)).toMatchObject({ status: "stopped", stopReason: "model" });
+    expect(harness.journal.getRun(byModel)).toMatchObject({
+      status: "stopped",
+      stopReason: "model",
+    });
     expect((await harness.service.getTask(byModel))?.stopReason).toBe("model");
     const settled = harness.runEvents.find(
       (event) => event.runId === byModel && event.eventType === "run-settled",
     );
-    expect(settled?.payload).toMatchObject({ status: "stopped", stopReason: "model", resumable: true });
+    expect(settled?.payload).toMatchObject({
+      status: "stopped",
+      stopReason: "model",
+      resumable: true,
+    });
 
     const byUser = await submitRun(harness, {
       cwd: TEST_CWD,

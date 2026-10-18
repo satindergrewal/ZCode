@@ -9,13 +9,13 @@ import {
 } from "./contract.js";
 
 /**
- * 以下 schema 是 mcp-apps-protocol 的运行时校验面：只覆盖 ZCode 自己的投影 / 元数据形状。
- * 页面 ↔ 宿主的 `ui/*` 参数由官方 SDK（`McpUi*Schema`）校验，这里不重复。类型见 contract.ts。
+ * The schemas below are mcp-apps-protocol's runtime validation surface: ZCode's own projection / metadata shapes only.
+ * Page<->host `ui/*` params are validated by the official SDK (`McpUi*Schema`), not duplicated here. Types live in contract.ts.
  */
 
 export const mcpAppsDisplayModeSchema = z.enum(["inline", "fullscreen", "pip"]);
 export const mcpAppsToolVisibilitySchema = z.enum(["model", "app"]);
-/** 面板 id。 */
+/** Panel id. */
 export const mcpAppsSurfaceIdSchema = z
   .string()
   .min(1)
@@ -31,7 +31,7 @@ export const mcpToolUiCspSchema = z
   })
   .strict();
 
-/** 资源级 `_meta["zcode/csp"]` 归一化后的形状（只有为 true 的键）。 */
+/** Normalized shape of resource-level `_meta["zcode/csp"]` (only keys that are true). */
 export const mcpAppCspRelaxationsSchema = z
   .object({ unsafeEval: z.boolean().optional(), wasmUnsafeEval: z.boolean().optional() })
   .strict();
@@ -49,8 +49,8 @@ export const mcpToolUiDescriptorSchema = z
   .strict();
 
 /**
- * `display.ui`：agent 投影到 ToolCallRow.display 的插件 UI 元数据。
- * contracts 与 zcode-protocol-v4 两处 strict schema 都从这里复用，避免三份手写不同步。
+ * `display.ui`: plugin UI metadata the agent projects onto ToolCallRow.display.
+ * The contracts and zcode-protocol-v4 strict schemas both reuse this source so the hand-written copies cannot drift.
  */
 export const mcpToolDisplayUiSchema = z
   .object({
@@ -59,19 +59,19 @@ export const mcpToolDisplayUiSchema = z
     preferredDisplayMode: mcpAppsDisplayModeSchema.optional(),
     prefersBorder: z.boolean().optional(),
     csp: mcpToolUiCspSchema.optional(),
-    // 上限按 UTF-8 字节由 agent 侧保证；这里的 max 按字符数只是兜底（字符数 ≤ 字节数）。
+    // The agent enforces the cap in UTF-8 bytes; max here counts chars as a backstop (chars <= bytes).
     structuredContent: z.string().max(MCP_APPS_STRUCTURED_CONTENT_MAX_BYTES).optional(),
     widgetMeta: z.string().max(MCP_APPS_WIDGET_META_MAX_BYTES).optional(),
-    /** 原始 `content` 数组的 JSON 文本（≤ 32 KiB），页面 tool-result 用它而不是拼接的纯文本。 */
+    /** JSON text of the raw `content` array (<= 32 KiB); the page tool-result uses it instead of the concatenated plain text. */
     content: z.string().max(MCP_APPS_CONTENT_MAX_BYTES).optional(),
     truncated: z.boolean().optional(),
-    /** 被省略字段的 UTF-8 字节数之和。 */
+    /** Total UTF-8 byte length of the omitted fields. */
     truncatedBytes: z.number().int().nonnegative().optional(),
-    /** MCP 结果 `isError: true`（调用本身完成、工具报错）；页面 tool-result 带 isError，面板不用它覆盖上一份成功快照。 */
+    /** MCP result `isError: true` (call completed, tool errored); the page tool-result carries isError and the panel never lets it overwrite the last good snapshot. */
     isError: z.literal(true).optional(),
-    /** 工具级强制常驻（`openai/widgetShowCodexWidgetInline`），卡片不进折叠区。 */
+    /** Tool-level always-visible flag (`openai/widgetShowCodexWidgetInline`); the card stays out of the collapsed area. */
     showInline: z.literal(true).optional(),
-    // 所属面板；contracts 侧 mcpToolDisplayUiPayloadSchema 同步。
+    // Owning panel; kept in sync with contracts' mcpToolDisplayUiPayloadSchema.
     surface: mcpAppsSurfaceIdSchema.optional(),
   })
   .strict();

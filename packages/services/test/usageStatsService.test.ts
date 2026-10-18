@@ -305,7 +305,7 @@ describe("createUsageStatsService", () => {
 
     expect(warn).toHaveBeenCalledWith(
       expect.any(String),
-      "Highspeed 普通 TPS 健康检查失败",
+      "Highspeed standard TPS health check failed",
       expect.objectContaining({
         providerId: BUILTIN_MODEL_PROVIDER_IDS.bigmodelIndividualCodingPlan,
         status: 503,
@@ -347,7 +347,7 @@ describe("createUsageStatsService", () => {
 
     expect(warn).toHaveBeenCalledWith(
       expect.any(String),
-      "Highspeed 普通 TPS 健康检查失败",
+      "Highspeed standard TPS health check failed",
       expect.objectContaining({
         status: 200,
         responseCode: 2007,

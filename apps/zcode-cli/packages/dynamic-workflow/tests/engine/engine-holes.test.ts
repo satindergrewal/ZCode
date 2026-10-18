@@ -11,9 +11,7 @@ import {
 import { FakeDriver, flush } from "./fake-driver.js";
 
 /**
- * 留白（docs/execution-engine.md「Holes」）：`hole` 铸序号、盖出生阶段、记 `hole-reached`、把
- * deferred 停在站点下；`fillHole` 在一个同步步骤里换规格表、写脚本、记 `hole-filled`、记住代码、
- * 兑现全部停驻。没有 journal 行：留白不是会自己结算的节点。
+ * Holes (docs/execution-engine.md, Holes): hole mints the ordinal, stamps the birth phase, records
  */
 
 const RUN = "run";
@@ -45,7 +43,7 @@ function setup(opts: SetupOpts = {}) {
   return { journal, driver, engine };
 }
 
-/** 一份最小的补全：有效脚本的规格表是原表的超集，新站点都带 `hole#1/` 前缀。 */
+/** A minimal fill: the valid script's spec table is a superset, new sites hole#1/-prefixed. */
 function fillFor(overrides: Partial<HoleFill> = {}): HoleFill {
   return {
     siteId: "hole#1",
@@ -60,7 +58,7 @@ function fillFor(overrides: Partial<HoleFill> = {}): HoleFill {
   };
 }
 
-/** 一个 promise 当前是否已经结算（不等待）。 */
+/** Whether a promise has settled (no waiting). */
 async function settledState(p: Promise<unknown>): Promise<"pending" | "resolved" | "rejected"> {
   const marker = Symbol("pending");
   const result = await Promise.race([
@@ -109,7 +107,7 @@ describe("WorkflowEngine — hole(): reach and park", () => {
     const [reached] = driver.eventsOfType("hole-reached");
     expect(reached?.prompt?.length).toBe(HOLE_PROMPT_MAX_CHARS);
     expect(reached?.prompt?.endsWith("…")).toBe(true);
-    // 恰好到上限的不截。
+    // Exactly at the cap is not truncated.
     void engine.hole("hole#2", "Other", "y".repeat(HOLE_PROMPT_MAX_CHARS));
     expect(driver.eventsOfType("hole-reached")[1]?.prompt).toBe("y".repeat(HOLE_PROMPT_MAX_CHARS));
   });
@@ -152,12 +150,12 @@ describe("WorkflowEngine — fillHole(): one synchronous step", () => {
     const result = engine.fillHole(fillFor());
     expect(result).toEqual({ ok: true });
 
-    // 脚本两列同笔改写，其余不动。
+    // Both script columns rewritten in one pass, everything else untouched.
     const row = journal.getRun(RUN);
     expect(row?.scriptText).toBe("effective");
     expect(row?.scriptHash).toBe("h1");
     expect(row?.status).toBe("running");
-    // 恰好一条 hole-filled，紧跟在 fill 上。
+    // Exactly one hole-filled, immediately from the fill.
     expect(driver.events.slice(eventsBefore)).toEqual([
       {
         type: "hole-filled",
@@ -174,7 +172,7 @@ describe("WorkflowEngine — fillHole(): one synchronous step", () => {
       { siteId: "hole#1", filledAt: 2000, filledBy: "session-main" },
     ]);
 
-    // 规格表已是有效脚本的：体内的 ask 站点不再是 MissingAskSpec，且出生阶段来自新表。
+    // The spec table is the valid script's: the body's ask site gains a spec and the birth phase comes from it.
     const actor = engine.createActor("hole#1/actor#1", "judge");
     void engine.ask("hole#1/ask#1", actor, "judge it");
     await flush();
@@ -238,7 +236,7 @@ describe("WorkflowEngine — fillHole(): one synchronous step", () => {
     expect(engine.fillHole(fillFor())).toEqual({ ok: false, reason: "not_waiting" });
     expect(driver.events.length).toBe(eventsBefore);
     expect(journal.getRun(RUN)?.scriptText).toBe("original");
-    // 另一个站点在等也不算：停驻按站点。
+    // Another waiting site does not count: parking is per site.
     void engine.hole("hole#2", "B");
     expect(engine.fillHole(fillFor())).toEqual({ ok: false, reason: "not_waiting" });
     expect(journal.getRun(RUN)?.scriptText).toBe("original");
@@ -319,7 +317,7 @@ describe("WorkflowEngine — holes across lives", () => {
     const promise = engine.hole("hole#1", "A", "Decide.");
     expect(await settledState(promise)).toBe("pending");
     expect(driver.eventsOfType("hole-reached")).toHaveLength(1);
-    // 整段日志里现在有两条 hole-reached：上一世一条、这一世一条，序号都从 1 起（没有行可撞）。
+    // Two hole-reached rows now: one per incarnation, ordinals from 1 each (no rows to collide).
     const all = journal.listEvents(RUN, { types: ["hole-reached"], reportItems: "all" });
     expect(
       all.map((e) => (e.event.type === "hole-reached" ? refToString(e.event.instance) : "")),
@@ -333,7 +331,7 @@ describe("WorkflowEngine — holes across lives", () => {
     first.engine.fillHole(fillFor());
     first.engine.stop("user");
 
-    // 旧哈希：拒绝；新哈希：接受（两列同笔写，所以校验成立）。
+    // Old hash rejected, new accepted (both columns rewritten in one pass, so the check holds).
     const driver = new FakeDriver(journal, {});
     const config = {
       runId: RUN,
@@ -357,7 +355,7 @@ describe("WorkflowEngine — recursive holes (a fill that contains an open hole)
   it("fills the inner site while the outer's fill is remembered: nested ids, superset tables, hole-filled by nested siteId", async () => {
     const { engine, driver, journal } = setup({ now: () => 3000 });
     void engine.hole("hole#1", "outer", "p");
-    // 外层的有效脚本：内层留白的站点带外层前缀，词法上出生在外层的阶段。
+    // The outer valid script: inner-hole sites carry the outer prefix, born lexically in the outer phase.
     expect(
       engine.fillHole(
         fillFor({
@@ -382,7 +380,7 @@ describe("WorkflowEngine — recursive holes (a fill that contains an open hole)
       phaseName: "Verdict",
     });
     expect(engine.openHoles()).toEqual([{ siteId: INNER, ordinal: 1, name: "inner", since: 3000 }]);
-    // 外层已记住，内层在等：对外层再补全不是 not_waiting（记忆在），对一个无人问津的站点才是。
+    // Outer remembered, inner waiting: re-filling the outer is not not_waiting (memory holds); an unasked site is.
     expect(engine.fillHole(fillFor({ siteId: "hole#2" }))).toEqual({
       ok: false,
       reason: "not_waiting",
@@ -421,7 +419,7 @@ describe("WorkflowEngine — recursive holes (a fill that contains an open hole)
     expect(engine.filledHoles().map((h) => h.siteId)).toEqual(["hole#1", INNER]);
     expect(journal.getRun(RUN)).toMatchObject({ scriptText: "effective-2", scriptHash: "h2" });
 
-    // 第二份有效脚本的规格表已生效：内层体内的 ask 站点有 spec，出生阶段来自新表。
+    // The second valid script's spec table applied: the inner body's ask has a spec, birth phase from the new table.
     const actor = engine.createActor(`${INNER}/actor#1`, "judge");
     void engine.ask(`${INNER}/ask#1`, actor, "judge");
     await flush();
@@ -431,7 +429,7 @@ describe("WorkflowEngine — recursive holes (a fill that contains an open hole)
         ?.phaseName,
     ).toBe("Verdict");
 
-    // 两个站点都记住了：再到达任一个都立刻作答、不停驻、不记事件。
+    // Both sites remembered: re-reaching either answers at once, no parking, no event.
     const after = driver.events.length;
     await expect(engine.hole("hole#1", "outer")).resolves.toEqual({
       code: "(async () => { return 42; })",

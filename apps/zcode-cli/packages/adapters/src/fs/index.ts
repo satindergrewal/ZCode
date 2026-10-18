@@ -4,7 +4,17 @@
 
 import { createHash, randomBytes } from "node:crypto";
 import { constants } from "node:fs";
-import { lstat, mkdir, open, readdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  open,
+  readdir,
+  readFile,
+  rename,
+  stat,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, normalize, relative, sep } from "node:path";
 import { Worker } from "node:worker_threads";
 import type { RgArg, RipgrepBufferedResult } from "ripgrep";
@@ -596,8 +606,7 @@ async function searchTextWithJavaScript(
     const mode = request.outputMode ?? "files_with_matches";
     const candidates = await collectTextSearchCandidates(path, rootInfo, request, signal);
 
-    const searchRequest =
-      mode === "content" ? request : { ...request, onlyMatching: false };
+    const searchRequest = mode === "content" ? request : { ...request, onlyMatching: false };
     const contentEntries: FileSystemSearchTextEntry[] = [];
     const countEntries: FileSystemSearchTextEntry[] = [];
     const matchingFiles: Array<{ path: string; mtimeMs: number }> = [];
@@ -740,7 +749,9 @@ async function atomicWrite(path: string, content: Buffer): Promise<void> {
       constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW,
     ).catch((error: unknown) => {
       if (getNodeErrorCode(error) === "ELOOP") {
-        throw new SymlinkWriteRefusedError(`Refusing to write through symlink: ${path} (O_NOFOLLOW)`);
+        throw new SymlinkWriteRefusedError(
+          `Refusing to write through symlink: ${path} (O_NOFOLLOW)`,
+        );
       }
       throw error;
     });
@@ -1187,11 +1198,13 @@ function parseRipgrepJsonOutput(
         const lineNumber =
           typeof event.data?.line_number === "number" ? event.data.line_number : undefined;
         for (const submatch of submatches) {
-          entries.push(...createOnlyMatchingEntries({
-            path,
-            text: submatch.match?.text ?? "",
-            lineNumber,
-          }));
+          entries.push(
+            ...createOnlyMatchingEntries({
+              path,
+              text: submatch.match?.text ?? "",
+              lineNumber,
+            }),
+          );
         }
         continue;
       }
@@ -1603,8 +1616,8 @@ function createOnlyMatchingContentEntries(input: {
 }): FileSystemSearchTextEntry[] {
   const matchedLineIndexes = createMatchedLineIndexes(input.matches.ranges);
 
-  return createContextLineIndexes(input.lines.length, input.matches.ranges, input.request)
-    .flatMap((lineIndex) => {
+  return createContextLineIndexes(input.lines.length, input.matches.ranges, input.request).flatMap(
+    (lineIndex) => {
       const matchedEntries = input.matches.entriesByLine.get(lineIndex);
       if (matchedEntries) return matchedEntries;
       if (matchedLineIndexes.has(lineIndex)) return [];
@@ -1616,7 +1629,8 @@ function createOnlyMatchingContentEntries(input: {
           matched: false,
         },
       ];
-    });
+    },
+  );
 }
 
 function createContextLineIndexes(
@@ -1668,21 +1682,18 @@ function createOnlyMatchingEntries(input: {
 
   // ripgrep treats only LF/CRLF as output line boundaries; a lone CR is ordinary matched text.
   // Empty lines inside a multi-line match emit no entry, but a whole zero-length match keeps an empty entry.
-  return input.text
-    .split(/\r?\n/)
-    .flatMap((line, index) =>
-      line.length === 0
-        ? []
-        : [
-            {
-              path: input.path,
-              lineNumber:
-                input.lineNumber === undefined ? undefined : input.lineNumber + index,
-              text: line,
-              matched: true,
-            },
-          ],
-    );
+  return input.text.split(/\r?\n/).flatMap((line, index) =>
+    line.length === 0
+      ? []
+      : [
+          {
+            path: input.path,
+            lineNumber: input.lineNumber === undefined ? undefined : input.lineNumber + index,
+            text: line,
+            matched: true,
+          },
+        ],
+  );
 }
 
 function splitRipgrepSearchLines(content: string): string[] {

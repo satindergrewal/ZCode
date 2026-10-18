@@ -77,7 +77,7 @@ export function createProtocolInteractionBroker(
             ? requestExitPlanModeApproval(context, request, registeredOptions)
             : requestPermission(context, request, registeredOptions);
       const result = requestResult.catch((error: unknown) => {
-        // 协议错误只在适配层翻译；core 不识别传输错误码，也不能把基础设施故障当用户拒绝。
+        // Protocol errors translate at the adapter layer; core knows no transport codes, and infrastructure failure is never a user denial.
         if (request.mode === "guarded" && error instanceof ProtocolRequestError) {
           const type =
             error.code === PROTOCOL_CLIENT_REQUEST_ERROR_CODES.cancelled
@@ -95,7 +95,7 @@ export function createProtocolInteractionBroker(
         () => ready.resolve(),
         (error: unknown) => ready.reject(error),
       );
-      // 旧调用方只消费 result；它们不观察登记信号时也不能产生未处理拒绝。
+      // Legacy callers consume result only; without observing the registration signal they must not raise unhandled rejections.
       void ready.promise.catch(() => {});
       return Object.assign(result, { registered: ready.promise });
     },
@@ -108,7 +108,7 @@ async function requestPermission(
   options?: RegisteredRequestOptions,
 ): Promise<PermissionBrokerResult> {
   const permissionOptions = buildProtocolPermissionOptions(request);
-    // The v3 reverse-RPC option list: session no-confirm ships in v4 only (legacy desktops return the response verbatim and cannot parse session semantics).
+  // The v3 reverse-RPC option list: session no-confirm ships in v4 only (legacy desktops return the response verbatim and cannot parse session semantics).
   const legacyPermissionOptions = buildProtocolPermissionOptions({
     ...request,
     optionsPolicy: toLegacyPermissionOptionsPolicy(request.optionsPolicy),
@@ -135,10 +135,10 @@ async function requestPermission(
         zcodePermissionResponseSchema,
         withInteractionRequestRecovery(options, signal),
       ),
-        // v4 answer -> ZCodePermissionResponse: optionId semantics come from the v4 reducer's synthesized
-        // allowOnce/allowAlways/deny (see product-projection onPermissionRequested).
+    // v4 answer -> ZCodePermissionResponse: optionId semantics come from the v4 reducer's synthesized
+    // allowOnce/allowAlways/deny (see product-projection onPermissionRequested).
     (answer) => {
-      // 工作流确认窗里调整过的设置随放行应答一起走（docs/dynamic-workflow/launch.md
+      // Settings adjusted in the workflow confirm dialog travel with the allow response (docs/dynamic-workflow/launch.md
       // 「Adjusting the settings in the window」）。
       const base = v4AnswerToPermissionResponse(answer, permissionOptions, request.toolName);
       const response = withWorkflowSettingsAdjustment(base, answer, request.toolName);
@@ -148,7 +148,8 @@ async function requestPermission(
     },
     {
       ...createInteractionRegistrationOptions(request, "other"),
-      ...(request.approvalMode !== "user-once" && !request.origin &&
+      ...(request.approvalMode !== "user-once" &&
+      !request.origin &&
       !request.optionsPolicy &&
       options?.claimResponse &&
       context.deps?.sessionStore?.commitPermissionFullAccess
@@ -174,8 +175,8 @@ async function requestPermission(
   );
   return {
     ...response,
-        // Legacy compat: legacy clients may omit reason; a plain user rejection must still tell the model the tool did not run,
-        // or core falls back to the generic `Permission denied for <tool>` and bypass attempts go unblocked.
+    // Legacy compat: legacy clients may omit reason; a plain user rejection must still tell the model the tool did not run,
+    // or core falls back to the generic `Permission denied for <tool>` and bypass attempts go unblocked.
     ...(response.decision === "deny" && !response.reason?.trim()
       ? { reason: PERMISSION_DENIED_BY_USER_CONTENT }
       : {}),
@@ -184,15 +185,15 @@ async function requestPermission(
 }
 
 /**
-  * The v4 permission-answer map: prefer exact-matching, via optionId, the options built by buildProtocolPermissionOptions
-  * (allow_project carries permissionUpdate rules -- never drop); the projection-side
-  * allowAlways is semantically equal to allow_project. Unknown optionIds fall back to deny -- in permission
-  * semantics, reject rather than admit an unknown answer.
+ * The v4 permission-answer map: prefer exact-matching, via optionId, the options built by buildProtocolPermissionOptions
+ * (allow_project carries permissionUpdate rules -- never drop); the projection-side
+ * allowAlways is semantically equal to allow_project. Unknown optionIds fall back to deny -- in permission
+ * semantics, reject rather than admit an unknown answer.
  *
-  * Workflow Refine: that option is synthesized only in the v4
-  * projection, never in the legacy list, so special-case it before exact matching. Empty freeText, or a
-  * non-CreateWorkflow tool faking the optionId, falls to the deny fallback without reasonSource --
-  * the feedback-as-user-message channel opens only to real user input.
+ * Workflow Refine: that option is synthesized only in the v4
+ * projection, never in the legacy list, so special-case it before exact matching. Empty freeText, or a
+ * non-CreateWorkflow tool faking the optionId, falls to the deny fallback without reasonSource --
+ * the feedback-as-user-message channel opens only to real user input.
  */
 function v4AnswerToPermissionResponse(
   answer: V4InteractionAnswer,
@@ -219,8 +220,8 @@ function v4AnswerToPermissionResponse(
     if (exact.kind === "deny") {
       return { decision: "deny", reason: buildPermissionDeniedContent(answer.freeText) };
     }
-        // Session no-confirm: session semantics are synthesized here, not put into
-        // option.response -- the wire's zcodePermissionUpdateSchema is strict; one extra field and legacy desktops drop the event.
+    // Session no-confirm: session semantics are synthesized here, not put into
+    // option.response -- the wire's zcodePermissionUpdateSchema is strict; one extra field and legacy desktops drop the event.
     if (exact.kind === SESSION_ALLOW_PERMISSION_OPTION_KIND) {
       return {
         ...exact.response,
@@ -238,14 +239,14 @@ function v4AnswerToPermissionResponse(
   if (answer.optionId === "allowOnce") {
     return { decision: "allow", reason: "Approved once" };
   }
-    // deny/rejectOnce/rejectAlways, unknown optionId, no optionId: all land on deny.
+  // deny/rejectOnce/rejectAlways, unknown optionId, no optionId: all land on deny.
   return { decision: "deny", reason: buildPermissionDeniedContent(answer.freeText) };
 }
 
 /**
- * MCP elicitation：server 在工具执行中向用户提问。
- * 复用 AskUserQuestion 的两条通道——旧 RPC interaction/requestUserInput 与 v4 pending interaction——
- * 后者靠合成（不持久化）的 PermissionRequested / PermissionResolved 事件推进投影。
+ * MCP elicitation: the server asks the user mid-tool-execution.
+ // Reuses AskUserQuestion's two channels — legacy RPC interaction/requestUserInput and the v4 pending interaction —
+ // the latter advancing the projection via non-persisted synthesized PermissionRequested / PermissionResolved events.
  */
 export async function requestMcpElicitation(
   context: ZCodeProtocolAgentServerContext,
@@ -255,7 +256,7 @@ export async function requestMcpElicitation(
   const sessionId = request.trace?.sessionId;
   const record = sessionId ? context.sessions?.get(sessionId) : undefined;
   if (!sessionId || !record) {
-    // 没有正在执行的工具调用可归属（如 server 在空闲时主动提问）：拒绝而不是猜会话。
+    // No in-flight tool call to attribute (e.g. the server asks while idle): reject rather than guess the session.
     return { action: "decline" };
   }
   const interactionId = `mcp-elicit-${randomUUID()}`;
@@ -280,8 +281,8 @@ export async function requestMcpElicitation(
       type,
       timestamp: new Date(),
       traceId: traceId as never,
-      // 只进 live 投影、不落盘：raw seq 置 0，让 v4 gateway 分配 transport 序号。
-      // 若沿用持久化高水位 +1，第二条合成事件会因 seq 不高于游标被当作重放丢弃，pending 永远清不掉。
+      // Live projection only, never persisted: raw seq 0 lets the v4 gateway assign the transport sequence.
+      // A persisted high-water +1 would make the second synthesized event read as a replay (seq not above cursor) and pending never clears.
       sequenceNumber: 0,
       payload: payload as never,
     };
@@ -379,9 +380,9 @@ async function requestUserInput(
         zcodeUserInputResponseSchema,
         withInteractionRequestRecovery(options, signal),
       ),
-        // v4 answering AskUserQuestion: freeText/optionId land in the single-question answer slot
-        // (normalizeAskUserQuestionResponseContent's content.answer compat path);
-        // deny becomes decline. Multi-question mapping waits for the v4 projection to model the userInput kind.
+    // v4 answering AskUserQuestion: freeText/optionId land in the single-question answer slot
+    // (normalizeAskUserQuestionResponseContent's content.answer compat path);
+    // deny becomes decline. Multi-question mapping waits for the v4 projection to model the userInput kind.
     (answer) => v4AnswerToUserInputResponse(answer),
     createInteractionRegistrationOptions(
       request,
@@ -396,9 +397,9 @@ async function requestUserInput(
 }
 
 function v4AnswerToUserInputResponse(answer: V4InteractionAnswer): ZCodeUserInputResponse {
-    // With answer.action present (the host adapter's respondElicitation convergence path),
-    // pass through per legacy respondUserInput semantics -- content carries multi-question answers/annotations,
-    // and normalizeAskUserQuestionResponseContent keeps handling schema convergence.
+  // With answer.action present (the host adapter's respondElicitation convergence path),
+  // pass through per legacy respondUserInput semantics -- content carries multi-question answers/annotations,
+  // and normalizeAskUserQuestionResponseContent keeps handling schema convergence.
   if (answer.action) {
     return answer.action === "accept"
       ? { action: "accept", content: answer.content ?? {} }
@@ -441,8 +442,8 @@ async function requestExitPlanModeApproval(
         zcodeUserInputResponseSchema,
         withInteractionRequestRecovery(options, signal),
       ),
-        // v4 answering plan approval: allow-ish optionIds = approve; freeText = plan feedback
-        // (planApprovalResponseToBrokerResult takes the plan_approval_feedback deny); else decline.
+    // v4 answering plan approval: allow-ish optionIds = approve; freeText = plan feedback
+    // (planApprovalResponseToBrokerResult takes the plan_approval_feedback deny); else decline.
     (answer) => v4AnswerToPlanApprovalResponse(answer),
     createInteractionRegistrationOptions(request, "other"),
     options?.onRegistered,
@@ -452,8 +453,8 @@ async function requestExitPlanModeApproval(
 }
 
 function v4AnswerToPlanApprovalResponse(answer: V4InteractionAnswer): ZCodeUserInputResponse {
-    // As in v4AnswerToUserInputResponse -- the host adapter convergence path passes
-    // action/content through; planApprovalResponseToBrokerResult keeps normalizing approve/feedback.
+  // As in v4AnswerToUserInputResponse -- the host adapter convergence path passes
+  // action/content through; planApprovalResponseToBrokerResult keeps normalizing approve/feedback.
   if (answer.action) {
     return answer.action === "accept"
       ? { action: "accept", content: answer.content ?? {} }
@@ -492,12 +493,12 @@ function withInteractionRequestRecovery(
 ): PermissionBrokerRequestOptions & { reannounceIntervalMs: number } {
   return {
     ...options,
-        // The v4 race: the internal signal already cascades from options.signal (see raceClientRequestWithV4Interaction),
-        // and a v4 hit uses it to cancel the dangling reverse RPC.
+    // The v4 race: the internal signal already cascades from options.signal (see raceClientRequestWithV4Interaction),
+    // and a v4 hit uses it to cancel the dangling reverse RPC.
     signal,
-        // In desktop/restore flows the UI may restore pending interactions from a snapshot only,
-        // while the host's in-memory entry for the original protocol id is gone. During the wait, re-issue the protocol request under the same business
-        // requestId so the host re-registers an answerable protocolRequestId.
+    // In desktop/restore flows the UI may restore pending interactions from a snapshot only,
+    // while the host's in-memory entry for the original protocol id is gone. During the wait, re-issue the protocol request under the same business
+    // requestId so the host re-registers an answerable protocolRequestId.
     reannounceIntervalMs: INTERACTION_REQUEST_REANNOUNCE_INTERVAL_MS,
   };
 }
@@ -613,9 +614,9 @@ function normalizeAskUserQuestionResponseContent(
     normalized.annotations = annotations;
   }
 
-    // For legacy single-question compat the UI submits answer_0 and answer together.
-    // AskUserQuestionInputSchema is strict: merging those legacy fields into the tool input triggers
-    // Tool input failed inputSchema validation, so keep only the schema-sanctioned fields.
+  // For legacy single-question compat the UI submits answer_0 and answer together.
+  // AskUserQuestionInputSchema is strict: merging those legacy fields into the tool input triggers
+  // Tool input failed inputSchema validation, so keep only the schema-sanctioned fields.
   return normalized;
 }
 
@@ -641,8 +642,8 @@ function normalizeAskUserQuestionAnswers(
     }
   });
 
-    // action=accept + content.answers={} is the runtime's explicit auto-continue success;
-    // keep the empty object, distinct from content fully absent (a legacy approve without answers).
+  // action=accept + content.answers={} is the runtime's explicit auto-continue success;
+  // keep the empty object, distinct from content fully absent (a legacy approve without answers).
   if (isRecord(content.answers) && Object.keys(content.answers).length === 0) {
     return {};
   }
@@ -765,8 +766,8 @@ function readAskUserQuestionTexts(input: Record<string, unknown>): string[] {
 
 function normalizeAnswerValue(value: unknown): string | undefined {
   if (typeof value === "string") {
-        // Legacy clients used an empty string to skip; drop blanks uniformly so they never enter
-        // answers and read as user preference. Non-empty answers are trimmed at the protocol boundary too.
+    // Legacy clients used an empty string to skip; drop blanks uniformly so they never enter
+    // answers and read as user preference. Non-empty answers are trimmed at the protocol boundary too.
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : undefined;
   }

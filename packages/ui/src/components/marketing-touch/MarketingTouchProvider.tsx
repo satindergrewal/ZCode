@@ -49,7 +49,7 @@ import { MarketingRefreshContext } from "@/components/marketing-touch/useMarketi
 
 const Context = createContext<MarketingTouchController | null>(null);
 
-// 导出给左下角活动仲裁层（SidebarBottomActivity）读取 Banner 可见性；控制器仍是唯一 owner。
+// Exported for the bottom-left activity arbiter (SidebarBottomActivity) to read banner visibility; the controller stays the sole owner.
 export { Context as MarketingTouchContext };
 
 export function MarketingTouchProvider({
@@ -159,7 +159,7 @@ export function MarketingTouchProvider({
               if (!controller.store.getState().dialog)
                 toast(intl.formatMessage({ id: "manualClaimPlan.claim.share.copyTextSucceeded" }));
             } else if (action.args.page === "rewards") {
-              // 只确认窗口级 Provider 接收意图；登录续接不依赖会在账号变化时销毁的营销实例。
+              // Only confirms the window-level Provider got the intent; login continuation never depends on a marketing instance destroyed on account change.
               if (!openRewardsRef.current) throw new Error("marketing_navigation_unavailable");
               await openRewardsRef.current();
             } else {
@@ -199,7 +199,7 @@ export function MarketingTouchProvider({
                     if (!tabs.activeWorkspacePath)
                       throw new Error("marketing_navigation_unavailable");
                     requestPluginStoreOpen(action.args.plugin_id);
-                    // 市场在工作区内；仅发事件会在设置层后挂载，必须退出设置并激活原工作区。
+                    // The marketplace lives in a workspace; merely emitting the event mounts behind the settings layer — exit settings and activate the original workspace.
                     if (
                       !tabs.activateTabByPath(tabs.activeWorkspacePath, {
                         workspaceIdentity: tabs.activeWorkspaceIdentity ?? undefined,
@@ -272,16 +272,16 @@ export function MarketingTouchProvider({
                 ? result.message
                 : intl.formatMessage({ id: "manualClaimPlan.claim.failure.generic" }),
             };
-          // 成功已由 claim 确定，后置刷新失败只影响本地权益投影，不能逆转领取结果。
+          // The claim already settled success; a follow-up refresh failure only skews the local entitlement projection and cannot reverse it.
           void Promise.allSettled([
             refreshStartEntitlementRef.current({ force: true, silent: true, reason: "purchase" }),
-            // Provider 迁移后旧服务已不存在；统一刷新权威设置视图，不重建第二条凭据刷新链路。
+            // After the provider migration the old service is gone; refresh the authoritative settings view instead of building a second credential-refresh chain.
             services.providerSettingsService.refresh("marketing-plan-claim"),
           ]).then((results) => {
             if (results.some((value) => value.status === "rejected"))
               logger.warn("[marketing-touch] claim succeeded but entitlement refresh failed");
           });
-          // 领取结果由 Controller 的结果弹窗承载，避免成功 toast 与弹窗重复提示。
+          // The claim result surfaces in the Controller's result dialog, so the success toast cannot duplicate it.
           return { status: "success" };
         } catch {
           if (signal.aborted) return { status: "cancelled" };
@@ -370,7 +370,7 @@ function ConnectedBanner({ controller }: { controller: MarketingTouchController 
         .type === "claim_zcode_plan",
     ),
   );
-  // 与仲裁层（SidebarBottomActivity）共用同一可见性谓词，避免两处判断漂移。
+  // Shares the arbiter's (SidebarBottomActivity) visibility predicate so the two checks cannot drift.
   if (!isMarketingBannerRenderable(banner)) return null;
   const buttons = banner.delivery.banner.buttons;
   const action = buttons.find((button) => button.action.type !== "close");
@@ -381,7 +381,7 @@ function ConnectedBanner({ controller }: { controller: MarketingTouchController 
       bundle={banner.bannerHero?.type === "interactive_bundle" ? banner.bannerHero : undefined}
       video={banner.bannerHero?.type === "video" ? banner.bannerHero : undefined}
       locale={locale}
-      // 纯图片 Banner 允许空文案；动作是否存在不能由标签决定。
+      // Image-only banners may carry empty copy; action presence is never inferred from the label.
       hasAction={Boolean(action)}
       hasClose={Boolean(close)}
       actionLabel={

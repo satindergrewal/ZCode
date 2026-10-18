@@ -2,8 +2,8 @@ import { formatPluginDisplayName } from "./pluginDisplayName.js";
 import type { PluginUiImageBlock } from "./pluginUiImageBlocks.js";
 
 /**
- * 插件 UI 经 `ui/update-model-context` 附加的下一轮模型上下文。
- * 与代码评论 / 网页元素同构：只存在于 composer 草稿与 prompt 尾块里，不进协议字段；用户可见、可删。
+ * Next-turn model context attached by plugin UI via ui/update-model-context.
+ * Isomorphic to code references/web elements: lives only in composer drafts and the prompt tail block, never protocol fields; user-visible and removable.
  */
 export interface PluginUiModelContext {
   id: string;
@@ -13,14 +13,14 @@ export interface PluginUiModelContext {
   text: string;
   structuredContent?: unknown;
   /**
-   * image 块不进 prompt 尾块，由 composer 转成本条上下文名下的图片附件随下一回合发送；
-   * 同一实例再次 updateModelContext 时连同附件一起替换。
+   * Image blocks skip the prompt tail; the composer turns them into attachments under this context for the next turn;
+   * a repeat updateModelContext on the same instance replaces them too.
    */
   images?: readonly PluginUiImageBlock[];
 }
 
 export const PLUGIN_UI_MODEL_CONTEXT_BLOCK_TITLE = "# Plugin context:";
-/** 单条上下文文本上限；超出截断并追加省略号，避免插件把整页塞进 prompt。 */
+/** Per-entry text cap; truncate with ellipsis so a plugin cannot stuff a whole page into the prompt. */
 export const PLUGIN_UI_MODEL_CONTEXT_MAX_CHARS = 16 * 1024;
 
 const ITEM_HEADER = /^## Plugin (\S+) \(([^)]+)\)\s*$/m;
@@ -72,7 +72,7 @@ function parseItem(raw: string, index: number): PluginUiModelContext | null {
       structuredContent = JSON.parse(fence[1] ?? "");
       body = body.slice(0, fence.index).trim();
     } catch {
-      // 非法 JSON 当作正文保留。
+      // Keep invalid JSON as body text.
     }
   }
   return {
@@ -85,7 +85,7 @@ function parseItem(raw: string, index: number): PluginUiModelContext | null {
   };
 }
 
-/** 只识别 prompt 尾块；与其它四类上下文一样，序列化顺序与解析顺序严格相反。 */
+/** Only the prompt tail block parses; like the other four kinds, serialization and parse orders are exact inverses. */
 export function parsePromptPluginUiContexts(content: string): ParsedPluginUiContextPrompt {
   const match = /(?:^|\n\n)# Plugin context:\s*\n\n([\s\S]*?)\s*$/.exec(content);
   if (!match || match[1] === undefined) return { visibleContent: content, pluginUiContexts: [] };

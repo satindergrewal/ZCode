@@ -60,7 +60,7 @@ export function usePluginUiSidePaneModel({
     return () => nextLease.release();
   }, [layer, tab.parentSessionId]);
   const state = useConversationProjection(lease);
-  // 4b-2 R4：侧栏不在 SessionPane 树内，自己把会话投影的资源通知接到路由表（按 store 引用计数，不重复投递）。
+  // 4b-2 R4: the pane lives outside SessionPane's tree, so it wires session-projection resource notices into the router itself (refcounted per store, no dupes).
   const feedScope = useMemo<PluginUiSessionScope>(
     () => ({
       workspacePath: tab.workspacePath,
@@ -75,7 +75,7 @@ export function usePluginUiSidePaneModel({
   const surfaceKey = buildPluginUiSurfaceKey({ ...tab, sessionId: tab.parentSessionId }, scopeRef);
 
   const rows = state.snapshot?.rows.window ?? null;
-  // 工具卡片 tab：投喂本行。
+  // Tool-card tab: feed this row.
   const row = useMemo(
     () =>
       scopeRef.kind === "toolCall" && rows ? findToolRowById(rows, scopeRef.toolCallId) : null,
@@ -86,8 +86,8 @@ export function usePluginUiSidePaneModel({
     () => (toolCall ? readPluginUiPresentation(toolCall.raw) : null),
     [toolCall],
   );
-  // 面板 tab（H06）：投喂"最后一次成功结果"快照，由投影窗口归约、合并进 renderer 内存 store；
-  // 最新一行 running / failed 不覆盖上一份好结果，窗口裁掉旧行后快照仍在。归约是纯函数，读 store 在渲染期无副作用。
+  // Pane tab (H06): feed the last-good-result snapshot, reduced from the projection window into the renderer store;
+  // newer running/failed rows never overwrite it and window truncation keeps it. Pure reduce; store reads are render-side effect-free.
   const feed = useMemo(
     () =>
       scopeRef.kind === "surface"
@@ -104,7 +104,7 @@ export function usePluginUiSidePaneModel({
   useEffect(() => {
     if (scopeRef.kind === "surface") offerPluginUiSurfaceFeed(surfaceKey, feed);
   }, [feed, scopeRef.kind, surfaceKey]);
-  // 面板的呈现信息来自 tab（清单入口），不随工具行变化；工具卡片 tab 仍以行上的 display.ui 为准。
+  // Pane presentation comes from the tab (launcher entry), row-invariant; tool-card tabs still follow the row's display.ui.
   const presentation = useMemo<PluginUiPresentation | null>(() => {
     if (scopeRef.kind === "toolCall") return rowPresentation;
     return tab.serverName
@@ -132,7 +132,7 @@ export function usePluginUiSidePaneModel({
     scopeRef.kind === "surface"
       ? feed.latest?.status === "cancelled"
       : isPluginUiToolCancelled(toolCall);
-  // H10：只有该作用域在会话流里仍有内联卡片可接管（行在投影窗口内）且宿主给了关闭入口，才能回 inline。
+  // H10: back to inline only while the scope still has an inline card to take over (row in window) and the host offers close.
   const canReturnInline =
     Boolean(onCloseTab) && (scopeRef.kind === "surface" ? feed.latest !== null : row !== null);
   const handleDisplayModeRequest = useCallback(
@@ -163,7 +163,7 @@ export function usePluginUiSidePaneModel({
       tab.remoteSessionId,
     ],
   );
-  // widgetState 初值由 usePluginUiHost 按同一 surfaceKey 从宿主内存 store 读取（4a-0），面板不另取。
+  // Initial widgetState is read by usePluginUiHost from the host memory store under the same surfaceKey (4a-0); the pane adds nothing.
   const host = usePluginUiHost({
     presentation: presentation ?? {
       serverName: "",
@@ -191,9 +191,9 @@ export function usePluginUiSidePaneModel({
     width,
     titleBar: PLUGIN_UI_SIDE_PANE_TITLE_BAR,
     interactions,
-    // 启动屏障（H07）：工具卡片 tab 要等本行进投影（rowPresentation 才有 serverName，否则 prepareSandbox 被参数校验拒绝，
-    // 而 identity 不变导致 controller 之后也不会重启）；面板 tab 要等投影快照到达（rows 非 null），
-    // 否则第一次 setWidgetData 没有 toolInput / toolResult，页面先空渲染一次再收通知。
+    // Start barrier (H07): tool-card tabs wait until the row is projected (only rowPresentation carries serverName, else prepareSandbox
+    // fails validation and the identity-unchanged controller never restarts); pane tabs wait for the snapshot (rows non-null),
+    // or the first setWidgetData lacks toolInput/toolResult and the page blank-renders before notices.
     enabled: presentation !== null && (scopeRef.kind === "toolCall" || rows !== null),
   });
 
@@ -211,7 +211,7 @@ export function usePluginUiSidePaneModel({
   };
 }
 
-/** 侧栏不在 SessionPane 树内，由这个适配器复用原 workspace 的 V4 层与 lease。 */
+/** Outside SessionPane's tree, this adapter reuses the original workspace's V4 layer and lease. */
 export function PluginUiConversationScope({
   tab,
   children,

@@ -81,8 +81,7 @@ export const WorkbenchSplitDivider = memo(function WorkbenchSplitDivider({
       const client = isRow ? event.clientX : event.clientY;
       dragRef.current = {
         pointerId: event.pointerId,
-        regionPx:
-          (isRow ? containerRect.width : containerRect.height) * regionFraction,
+        regionPx: (isRow ? containerRect.width : containerRect.height) * regionFraction,
         startClient: client,
         startRatio: ratio,
         latestClient: client,
@@ -126,10 +125,7 @@ export const WorkbenchSplitDivider = memo(function WorkbenchSplitDivider({
       }
       drag.latestClient = isRow ? event.clientX : event.clientY;
       const finalRatio = ratioFromDrag(drag);
-      containerRef.current?.style.setProperty(
-        `${SPLIT_VAR_PREFIX}${splitId}`,
-        String(finalRatio),
-      );
+      containerRef.current?.style.setProperty(`${SPLIT_VAR_PREFIX}${splitId}`, String(finalRatio));
       dragRef.current = null;
       setDragging(false);
       // Commit into the store (-> localStorage); the container style writes the same value next render, no visual jump.

@@ -51,15 +51,15 @@ export interface PluginUiBridgeServiceDependencies {
     params: PluginUiCallToolParams,
     options?: { signal?: AbortSignal },
   ) => Promise<ZCodeMcpUiCallToolResult>;
-  /** 取消带 callId 的进行中调用。 */
+  //* Cancels the in-flight call by id. */
   cancelMcpToolCallForUi?: (
     params: PluginUiCancelToolCallParams,
   ) => Promise<ZCodeMcpUiCancelCallResult>;
-  /** 页面发起的 `resources/read`，agent 侧 `mcp/uiReadResource` 做归属与 mimeType 校验。 */
+  /** Page-initiated resources/read; the agent's mcp/uiReadResource checks ownership and mime. */
   readMcpResourceForUi?: (
     params: PluginUiReadResourceParams,
   ) => Promise<ZCodeMcpUiReadResourceResult>;
-  /** 资源列表 / 模板 / 订阅代理；缺省（web / 远程）时对应方法抛 unavailable。 */
+  //* Resource list/templates/subscribe proxy; methods throw unavailable without a backend (web/remote). */
   listMcpResourcesForUi?: (
     params: PluginUiListResourcesParams,
   ) => Promise<ZCodeMcpUiListResourcesResult>;
@@ -69,11 +69,11 @@ export interface PluginUiBridgeServiceDependencies {
   subscribeMcpResourceForUi?: (params: PluginUiResourceSubscriptionParams) => Promise<unknown>;
   unsubscribeMcpResourceForUi?: (params: PluginUiResourceSubscriptionParams) => Promise<unknown>;
   registerSandbox?: (input: PluginSandboxRegisterInput) => Promise<PluginSandboxHandle>;
-  /** 工作区级 `plugins/listUiSurfaces`。 */
+  //* Workspace-level plugins/listUiSurfaces. */
   listPluginUiSurfaces?: (
     params: PluginUiWorkspaceTarget,
   ) => Promise<ZCodePluginsListUiSurfacesResult>;
-  /** 由 display.ui 提供的 CSP / prefersBorder 在 prepare 时随 params 传入；这里只做透传。 */
+  //* display.ui CSP/prefersBorder arrive via prepare params; passed through untouched. */
 }
 
 export class PluginUiBridgeError extends Error {
@@ -92,16 +92,16 @@ export class PluginUiBridgeError extends Error {
 }
 
 /**
- * `ui://` 资源 URI 的 server 归属由 agent 侧 catalog 校验；这里只负责把 URI 拆成 server 名。
- * 约定：`ui://<plugin-name>/<path>` 对应 namespaced server 由 params.serverName 显式给出，
- * 不从 URI 猜测。
+ * The agent catalog validates ui:// server ownership; this only splits the server name out of the URI.
+ * The namespaced server for ui://<plugin-name>/<path> comes explicitly via params.serverName,
+ * never guessed from the URI.
  */
 export function createPluginUiBridgeService(
   dependencies: PluginUiBridgeServiceDependencies = {},
 ): IPluginUiBridgeService {
-  // prepare 每个沙箱只有一两次，info 级留生命周期轨迹（读资源 / 登记 / 失败），排 e2e 与用户现场用。
-  // 修复：logger 必须在工厂里创建而不是模块顶层——本文件经 @zcode/services 入口也被打进 renderer bundle，
-  // 顶层 createServiceLogger 会在 import 时读 process.pid，renderer 里直接 ReferenceError，整个主界面起不来。
+  // prepare runs once or twice per sandbox: info-level lifecycle trail (read/register/failure) for e2e and field debugging.
+  // Fix: create the logger inside the factory, not at module top. This file ships in the renderer bundle via @zcode/services,
+  // and a top-level createServiceLogger reads process.pid at import, ReferenceError-ing the whole main UI.
   const log = createServiceLogger("plugin-ui-bridge");
   const preparing = new Map<string, Promise<PluginSandboxHandle>>();
   const prepareSandboxOnce = async (
@@ -141,9 +141,9 @@ export function createPluginUiBridgeService(
     try {
       const picked = pickHtmlResource(result, params.resourceUri);
       const { html } = picked;
-      // 资源级 _meta 是权威：先看 resources/read 选中的 HTML 项，缺省再回退到 resources/list 条目
-      // （规范把 csp / prefersBorder 放在列表条目的 _meta 上，官方 SDK 的 registerAppResource 也只写那里）；
-      // 工具级声明只在资源两处都没有对应字段时兜底；csp 整体取舍，不逐域并集。
+      // Resource-level _meta wins: check the resources/read HTML item, else fall back to its resources/list entry
+      // (the spec puts csp/prefersBorder on list-entry _meta, and the official SDK writes only there);
+      // tool-level declarations apply only when both lack the field; csp is taken wholesale, never unioned per directive.
       const meta =
         picked.meta ?? (await readListLevelResourceMeta(dependencies.listMcpResourcesForUi, bound));
       const csp = meta?.csp ?? params.csp;
@@ -161,12 +161,12 @@ export function createPluginUiBridgeService(
         ownerWebContentsId: params.ownerWebContentsId,
         sessionId: params.sessionId,
         pluginId: params.pluginId,
-        // partition 按 server 身份派生（插件 server 跨工作区共享；普通 MCP server 按工作区隔离）。
+        // partition derives from server identity (plugin servers shared across workspaces; plain MCP per workspace).
         serverName: params.serverName,
         scopeId: params.scopeId,
         html,
         ...(csp ? { csp } : {}),
-        // 资源级 `_meta["zcode/csp"]`：unsafe-eval / wasm-unsafe-eval 放宽只认资源自己的声明。
+        // Resource-level _meta zcode/csp: relaxations honor only the resource's own declaration.
         ...(meta?.cspRelaxations ? { cspRelaxations: meta.cspRelaxations } : {}),
         ...(meta?.permissions ? { permissions: meta.permissions } : {}),
         ...(prefersBorder !== undefined ? { prefersBorder } : {}),
@@ -204,7 +204,7 @@ export function createPluginUiBridgeService(
     async prepareSandbox(params) {
       if (!dependencies.openInstance) throw unavailable("instance identity");
       const instance = await dependencies.openInstance(params);
-      // 合并键来自 Agent 当前连接凭证；断连后的初始化不能复用上一代正在读取的 HTML。
+      // The merge key comes from the agent's live connection; a post-disconnect init never reuses the previous generation's in-flight HTML.
       const key = JSON.stringify([
         instance.runtimeId,
         instance.token,
@@ -229,7 +229,7 @@ export function createPluginUiBridgeService(
       return dependencies.callMcpToolForUi(params, options);
     },
     async cancelToolCall(params) {
-      // 没有 agent 依赖（web / 远程）时视为无可取消，不报错：取消是 best effort 的收尾动作。
+      // Without an agent (web/remote) there is nothing to cancel: stay silent, cancel is best-effort cleanup.
       if (!dependencies.cancelMcpToolCallForUi) return { cancelled: false };
       return dependencies.cancelMcpToolCallForUi(params);
     },
@@ -257,12 +257,12 @@ export function createPluginUiBridgeService(
       await dependencies.subscribeMcpResourceForUi(params);
     },
     async unsubscribeResource(params) {
-      // 退订是收尾动作：没有依赖时静默成功（与 cancelToolCall 同理）。
+      // Unsubscribe is cleanup: silently succeed without a backend (like cancelToolCall).
       if (!dependencies.unsubscribeMcpResourceForUi) return;
       await dependencies.unsubscribeMcpResourceForUi(params);
     },
     async listSurfaces(params) {
-      // web / 远程 workspace 没有本地 agent runtime：没有入口而不是报错，launcher 据此隐藏分组。
+      // Web/remote workspaces have no local agent runtime: an empty list, not an error, so launchers hide the group.
       if (!dependencies.listPluginUiSurfaces) return [];
       return (await dependencies.listPluginUiSurfaces(params)).surfaces;
     },
@@ -277,8 +277,8 @@ function unavailable(feature: string): PluginUiBridgeError {
 }
 
 /**
- * 8 MiB 总量守卫：结果经 MessagePort 结构化克隆进沙箱，
- * agent 侧已按同一常量限流，这里再算一次解码后大小（text 按 UTF-8、blob 按 base64 解码长度）防止旧 agent 漏检。
+ * 8 MiB total guard: results reach the sandbox via MessagePort structured clone,
+ * already capped by the same constant agent-side; recompute decoded size here (UTF-8 text, base64 len for blobs) for older agents.
  */
 export function assertUiReadResourceSize(result: ZCodeMcpUiReadResourceResult, uri: string): void {
   let total = 0;
@@ -301,7 +301,7 @@ function decodedBase64Length(value: string): number {
   return Math.floor((trimmed.length * 3) / 4) - padding;
 }
 
-/** 兼容旧调用：只要 HTML 文本。 */
+/** Legacy signature: HTML text only. */
 export function pickHtmlContent(result: ZCodeMcpReadResourceResult, uri: string): string {
   return pickHtmlResource(result, uri).html;
 }
@@ -309,8 +309,8 @@ export function pickHtmlContent(result: ZCodeMcpReadResourceResult, uri: string)
 const LIST_LEVEL_META_MAX_PAGES = 8;
 
 /**
- * resources/read 的 HTML 项没带 `_meta` 时，翻 resources/list 找同 uri 条目的 `_meta`（最多 8 页）。
- * 列表不可用、翻页失败或找不到都视为"没有声明"，不阻塞沙箱准备。
+ * When the resources/read HTML item lacks _meta, scan resources/list for the same uri (up to 8 pages).
+ * Missing list, pagination failure, or no match all mean undeclared and never block preparation.
  */
 async function readListLevelResourceMeta(
   list: PluginUiBridgeServiceDependencies["listMcpResourcesForUi"],
@@ -343,9 +343,9 @@ async function readListLevelResourceMeta(
 }
 
 /**
- * 选中实际使用的 HTML 项：遍历 contents，取第一个 mimeType 在 HTML 白名单内的项
- * （同 uri 的优先）；从**该项**的 `_meta` 读资源级 csp / prefersBorder / 尺寸提示。
- * blob、超限一律拒绝，不降级、不截断；没有任何 HTML 项时按第一项的 mimeType 报错。
+ * Picks the HTML item actually used: first contents entry whose mime is HTML-allow-listed
+ * (same-uri preferred); resource-level csp/prefersBorder/size hints come from that item's _meta.
+ * Blobs and oversize reject outright, no degrade/truncate; with no HTML item, error using the first entry's mime.
  */
 export function pickHtmlResource(
   result: ZCodeMcpReadResourceResult,
@@ -387,7 +387,7 @@ export function pickHtmlResource(
 
 function normalizeMimeType(value: string | undefined): string | null {
   if (!value) return null;
-  // 去掉 charset 等次要参数，但保留 profile=mcp-app 以匹配白名单。
+  // Drop secondary params like charset but keep profile=mcp-app for the allow-list.
   const parts = value
     .split(";")
     .map((part) => part.trim().toLowerCase())

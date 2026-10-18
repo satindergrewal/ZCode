@@ -9,9 +9,9 @@ import {
 import { PLUGIN_SANDBOX_SHELL_CSP, buildPluginSandboxPermissionsPolicy } from "./csp.js";
 import { createGenUiVendorResources, type GenUiVendorResources } from "./genUiVendor.js";
 
-/** 打包产物在 out/renderer 下的文件名（vite input 名 `plugin-sandbox`）。 */
+/** Bundled artifact file name under out/renderer (vite input name `plugin-sandbox`). */
 export const PLUGIN_SANDBOX_SHELL_HTML_FILE = "plugin-sandbox.html";
-/** 注入插件 HTML 顶部的 `window.zcode` 别名脚本；同源加载，避免依赖 inline nonce。 */
+/** `window.zcode` alias script injected at the top of plugin HTML; same-origin load, no inline nonce dependency. */
 export const PLUGIN_SANDBOX_ALIAS_SCRIPT_PATH = "/__zcode__/alias.js";
 export const PLUGIN_SANDBOX_ALIAS_SCRIPT_FILE = "plugin-sandbox-alias.js";
 
@@ -21,7 +21,7 @@ export interface PluginSandboxSchemeRegistrar {
   ): void;
 }
 
-/** 与 zcode-media 必须在同一次 registerSchemesAsPrivileged 调用里注册（第二次调用会覆盖第一次）。 */
+/** Must be registered in the same registerSchemesAsPrivileged call as zcode-media (a second call overrides the first). */
 export const PLUGIN_SANDBOX_PRIVILEGED_SCHEME = {
   scheme: PLUGIN_SANDBOX_SCHEME,
   privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: false },
@@ -34,13 +34,14 @@ export interface PluginSandboxProtocolHost {
 }
 
 export interface PluginSandboxAssetSource {
-  /** out/renderer 目录；shell HTML 与其 assets 从这里读。 */
+  /** out/renderer dir; the shell HTML and its assets read from here. */
   rendererDir: string;
-  /** out/plugin-sandbox 目录；别名脚本从这里读（独立目录，避免被 vite emptyOutDir 清掉）。 */
+  /** out/plugin-sandbox dir; the alias script reads from here (separate dir, safe from vite emptyOutDir). */
   aliasDir: string;
   /**
-   * 开发模式（vite dev）下 out/renderer 没有 shell 产物：shell 的 HTML、/src/*.ts、/@vite/* 全部
-   * 从 renderer dev server 代理（ELECTRON_RENDERER_URL）。打包版缺省，走 rendererDir。
+   * In dev (vite dev) out/renderer has no shell artifacts: the shell HTML, /src/*.ts and /@vite/*
+   * all proxy from the renderer dev server (ELECTRON_RENDERER_URL). Absent in packaged builds,
+   * which use rendererDir.
    */
   devServerUrl?: string;
 }
@@ -51,7 +52,7 @@ export interface PluginSandboxRequestTarget {
   pathname: string;
 }
 
-/** 解析 zcode-sandbox:// URL；host 不匹配前缀、带凭据或端口一律 null。 */
+/** Parse a zcode-sandbox:// URL; host prefix mismatch, credentials or port yield null. */
 export function parsePluginSandboxUrl(rawUrl: string): PluginSandboxRequestTarget | null {
   let url: URL;
   try {
@@ -79,7 +80,7 @@ export function parsePluginSandboxUrl(rawUrl: string): PluginSandboxRequestTarge
   return null;
 }
 
-/** 在插件 HTML 的 `<head>` 顶部（或文档最前）注入别名脚本引用。 */
+/** Inject the alias script reference at the top of the plugin HTML `<head>` (or document start). */
 export function injectPluginSandboxAliasScript(html: string, sandboxId?: string): string {
   const tag = `<script src="${sandboxId ? `/instance/${sandboxId}` : ""}${PLUGIN_SANDBOX_ALIAS_SCRIPT_PATH}"></script>`;
   const headMatch = /<head[^>]*>/i.exec(html);
@@ -118,7 +119,7 @@ export function createPluginSandboxProtocolHandler(options: {
     relativePath: string,
     headers: Record<string, string>,
   ) => {
-    // 防路径穿越：规范化后必须仍在 baseDir 内。
+    // Path traversal guard: after normalization the path must remain inside baseDir.
     const absolute = normalize(join(baseDir, relativePath));
     const root = normalize(baseDir + sep);
     if (!absolute.startsWith(root)) return notFound();
@@ -152,7 +153,8 @@ export function createPluginSandboxProtocolHandler(options: {
         "Permissions-Policy": buildPluginSandboxPermissionsPolicy(record.permissions, "shell"),
       };
       if (options.assets.devServerUrl) {
-        // dev：同源代理整个 shell 路径空间，vite 的模块脚本才能在 zcode-sandbox://shell-<id> 下解析。
+        // dev: proxy the whole shell path space same-origin so vite module scripts resolve under
+        // zcode-sandbox://shell-<id>.
         const upstreamPath =
           target.pathname === "/" || target.pathname === "/index.html"
             ? `/${PLUGIN_SANDBOX_SHELL_HTML_FILE}`
@@ -217,7 +219,8 @@ export function createPluginSandboxProtocolHandler(options: {
             readAsset(join(options.assets.aliasDir, "visualize.html")),
           ]);
           const decode = (value: Uint8Array) => new TextDecoder().decode(value);
-          // bridge/Tweak 在作者脚本前，inner kit 在片段后；原手写 Widgets 改变了上游初始化语义。
+          // bridge/Tweak before author scripts, inner kit after the fragment; the old hand-written
+          // Widgets changed upstream initialization semantics.
           html = html.replace(
             "<!--__ZCODE_GEN_UI_STYLES__-->",
             `<style>${decode(styles)}\n:root { --visualize-paint-gutter: 5px; --viz-fg: var(--foreground); }</style>`,
@@ -235,11 +238,13 @@ export function createPluginSandboxProtocolHandler(options: {
           html =
             html.slice(0, index) +
             decode(kit).replace("<!--__INLINE_VISUALIZATION_FRAGMENT__-->", "") +
-            // 标签切换的短暂溢出可能在撑高后残留空滚动条；只隐藏根滚动条，不裁切内容或禁用作者滚动区。
+            // Transient tab-switch overflow can leave an empty scrollbar after growth; hide only
+            // the root scrollbar, never clipping content or disabling author scroll areas.
             '<style id="zcode-gen-ui-document-scrollbar">html,body{scrollbar-width:none!important}html::-webkit-scrollbar,body::-webkit-scrollbar{display:none!important}</style>' +
             html.slice(index + marker.length);
         } catch {
-          // 资源缺失不能返回半成品文档，否则页面看似加载成功但交互静默失效。
+          // Missing resources must not yield a half-built document; the page would look loaded
+          // while interactions silently fail.
           options.logger?.warn("[plugin-sandbox] Gen UI runtime resources unavailable");
           return new Response(null, { status: 500 });
         }
@@ -259,10 +264,12 @@ export function createPluginSandboxProtocolHandler(options: {
 
   return async (request) => {
     const response = await handle(request);
-    // 稳定 origin 会共享 Chromium 资源缓存；只禁止 HTML 缓存仍会让已载入脚本
-    // 绕过后续 guest 归属检查。全部实例响应禁用缓存，浏览器业务存储保持独立语义。
+    // A stable origin shares the Chromium resource cache; disabling only HTML caching would let
+    // already-loaded scripts bypass later guest-ownership checks. Disable caching on every
+    // instance response; browser business storage keeps its own semantics.
     response.headers.set("Cache-Control", "no-store");
-    // 插件文档与别名脚本的请求记 info（shell 静态资源不记），沙箱空白页可据此区分 404 与脚本未跑。
+    // Log plugin document and alias-script requests at info (not shell static assets) so a blank
+    // sandbox page can be attributed to 404 vs script-never-ran.
     const isShellAsset = request.url.includes(`://${PLUGIN_SANDBOX_SHELL_HOST_PREFIX}`);
     if (!isShellAsset || response.status >= 400) {
       const line = `[plugin-sandbox] ${request.method} ${request.url} -> ${response.status} type=${response.headers.get("Content-Type") ?? ""} csp=${response.headers.get("Content-Security-Policy") ?? ""}`;

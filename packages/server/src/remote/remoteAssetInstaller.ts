@@ -1016,9 +1016,9 @@ async function fetchRemoteDownloadManifestInternal(
   }
 
   if (candidateErrors.length > 0) {
-  // remote-download used to discard each CDN candidate's timeout/HTTP
-  // diagnostics, ending in a bare manifest not found that cannot distinguish an
-  // unpublished asset from a half-open body.
+    // remote-download used to discard each CDN candidate's timeout/HTTP
+    // diagnostics, ending in a bare manifest not found that cannot distinguish an
+    // unpublished asset from a half-open body.
     throw new Error(
       `[remote-assets] failed to fetch manifest for ${options.platformArch}: ${candidateErrors.join("; ")}`,
     );

@@ -180,9 +180,9 @@ describe("plugins protocol contracts", () => {
   });
 
   it("normalizes Windows plugin roots for Workspace ownership projection", () => {
-    expect(
-      normalizePluginRootForComparison("C:\\Repo\\Plugin", "win32"),
-    ).toBe(normalizePluginRootForComparison("c:/repo/plugin", "win32"));
+    expect(normalizePluginRootForComparison("C:\\Repo\\Plugin", "win32")).toBe(
+      normalizePluginRootForComparison("c:/repo/plugin", "win32"),
+    );
   });
 
   it("projects an inline plugin declared by the current Workspace into Workspace scope", async () => {
@@ -229,30 +229,20 @@ describe("plugins protocol contracts", () => {
         }),
       );
 
-      const userResult = await listPlugins(
-        {} as ZCodeProtocolAgentServerContext,
-        {
-          workspace: { workspacePath: root, workspaceKey: root },
-          configScope: "user",
-        },
-      );
-      const workspaceResult = await listPlugins(
-        {} as ZCodeProtocolAgentServerContext,
-        {
-          workspace: { workspacePath: root, workspaceKey: root },
-          configScope: "workspace",
-        },
-      );
+      const userResult = await listPlugins({} as ZCodeProtocolAgentServerContext, {
+        workspace: { workspacePath: root, workspaceKey: root },
+        configScope: "user",
+      });
+      const workspaceResult = await listPlugins({} as ZCodeProtocolAgentServerContext, {
+        workspace: { workspacePath: root, workspaceKey: root },
+        configScope: "workspace",
+      });
 
-      expect(
-        userResult.plugins.find((plugin) => plugin.id === pluginId),
-      ).toMatchObject({
+      expect(userResult.plugins.find((plugin) => plugin.id === pluginId)).toMatchObject({
         enabled: true,
         enabledSource: "user",
       });
-      expect(
-        workspaceResult.plugins.find((plugin) => plugin.id === pluginId),
-      ).toMatchObject({
+      expect(workspaceResult.plugins.find((plugin) => plugin.id === pluginId)).toMatchObject({
         enabled: false,
         enabledSource: "workspace",
       });
@@ -313,17 +303,12 @@ describe("plugins protocol contracts", () => {
         }),
       );
 
-      const result = await listPlugins(
-        {} as ZCodeProtocolAgentServerContext,
-        {
-          workspace: { workspacePath: root, workspaceKey: root },
-          configScope: "workspace",
-        },
-      );
+      const result = await listPlugins({} as ZCodeProtocolAgentServerContext, {
+        workspace: { workspacePath: root, workspaceKey: root },
+        configScope: "workspace",
+      });
 
-      expect(
-        result.plugins.find((plugin) => plugin.id === pluginId),
-      ).toMatchObject({
+      expect(result.plugins.find((plugin) => plugin.id === pluginId)).toMatchObject({
         enabled: true,
         enabledSource: "workspace",
         marketplace: "personal-market",

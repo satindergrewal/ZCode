@@ -137,7 +137,7 @@ async function createService(): Promise<ProviderRegistryService> {
 }
 
 describe("Provider Facades", () => {
-  it("Settings View 同时投影 Personal、Effective、问题和调序能力", async () => {
+  it("projects Personal, Effective, issues and reorder capabilities in one Settings View", async () => {
     const service = await createService();
     const view = new ProviderSettingsFacade(service).getView();
 
@@ -189,7 +189,7 @@ describe("Provider Facades", () => {
     expect(JSON.parse(JSON.stringify(view))).toEqual(view);
   });
 
-  it("Settings 模型配置解析复用 ZCodeBuiltin 与 Personal Model Config Rules", async () => {
+  it("resolves Settings model config from ZCodeBuiltin plus Personal Model Config Rules", async () => {
     const service = await createService();
     const facade = new ProviderSettingsFacade(service);
     const current = facade.getView();
@@ -207,7 +207,7 @@ describe("Provider Facades", () => {
     expect(facade.getView()).toEqual(current);
   });
 
-  it("Personal Model Draft 解析移动精确 Rule，但不修改正式 View", async () => {
+  it("moves the exact rule on Personal Model Draft resolve without touching the official View", async () => {
     const service = await createService();
     const facade = new ProviderSettingsFacade(service);
     const current = facade.getView();
@@ -237,7 +237,7 @@ describe("Provider Facades", () => {
     expect(facade.getView()).toEqual(current);
   });
 
-  it("Personal Model Draft 保存校验 View revision 后只调用一次原子 Mutation", async () => {
+  it("validates the View revision on Personal Model Draft save and issues exactly one atomic mutation", async () => {
     const service = await createService();
     const savePersonalModelDraft = vi.fn(async () => undefined);
     const mutations = {
@@ -293,7 +293,7 @@ describe("Provider Facades", () => {
     expect(savePersonalModelDraft).toHaveBeenCalledTimes(1);
   });
 
-  it("Settings Facade 可显式等待 Source 刷新后返回最新 View", async () => {
+  it("lets the Settings Facade await the Source refresh and return the latest View", async () => {
     const service = await createService();
     const refresh = vi.spyOn(service, "refresh");
     const facade = new ProviderSettingsFacade(service);
@@ -304,7 +304,7 @@ describe("Provider Facades", () => {
     expect(view).toEqual(facade.getView());
   });
 
-  it("Selection View 只投影 Registry 中实际可选的 Provider 和模型", async () => {
+  it("projects only actually selectable providers and models into the Selection View", async () => {
     const service = await createService();
     const facade = new ModelSelectionFacade(service);
     const view = facade.getView();
@@ -316,12 +316,12 @@ describe("Provider Facades", () => {
       "personal",
     ]);
     expect(view.providers[1]?.models.map((model) => model.modelId)).toEqual(["custom"]);
-    // 不能只在 UI mock 中补名称：真实 Registry → View 也必须投影规则层名称。
+    // Patching names in a UI mock is not enough: the real Registry -> View path must project rule-layer names too.
     expect(view.providers[1]?.providerName).toBe("Personal API");
     expect(view.providers[1]?.config).not.toHaveProperty("label");
   });
 
-  it("消费者有效选择不进入共享 View，旧账号身份即使不在 Registry 也能对应", async () => {
+  it("keeps consumer effective choices out of the shared View and maps stale account identities missing from the Registry", async () => {
     const service = await createService();
     const facade = new ModelSelectionFacade(service, (id) =>
       ["old-account", "account"].includes(id) ? "account-plan" : "ordinary",
@@ -342,7 +342,7 @@ describe("Provider Facades", () => {
     expect(original.providerId).toBe("old-account");
   });
 
-  it("Settings 写操作只接收可序列化配置，并在 Registry 刷新后返回同一份 View", async () => {
+  it("accepts only serializable config in Settings writes and returns the same View after the Registry refresh", async () => {
     const service = await createService();
     const mutations = {
       createPersonalProvider: vi.fn(async () => ({ providerId: "new-provider" })),
@@ -368,7 +368,7 @@ describe("Provider Facades", () => {
       { providerName: "New Provider" },
     );
     await facade.reorderPersonalProviders(["personal", "new-provider"]);
-    // Mutation 是只记录调用的 stub；成员操作使用真实快照中已有的 Provider。
+    // The mutation is a call-recording stub; member ops use providers that exist in the real snapshot.
     await facade.reorderPersonalModels("personal", ["custom"]);
     await facade.addPersonalModel("personal", "model.2", {
       properties: { contextWindow: 128_000 },
@@ -420,7 +420,7 @@ describe("Provider Facades", () => {
     ).rejects.toThrow();
   });
 
-  it("同一 Provider 写入保持串行", async () => {
+  it("serializes writes to the same provider", async () => {
     const service = await createService();
     const calls: string[] = [];
     let releaseSave!: () => void;
@@ -457,7 +457,7 @@ describe("Provider Facades", () => {
     expect(calls).toEqual(["save:start", "save:end", "model"]);
   });
 
-  it("delete 失败后解除终止标记，允许用户修正并重试保存", async () => {
+  it("clears the terminating flag after a failed delete so the user can fix and retry the save", async () => {
     const service = await createService();
     const mutations = {
       createPersonalProvider: vi.fn(async () => ({ providerId: "new-provider" })),
@@ -482,7 +482,7 @@ describe("Provider Facades", () => {
     expect(mutations.savePersonalProviderOverlay).toHaveBeenCalledTimes(1);
   });
 
-  it("删除等待同一 Provider 已经开始的保存，最终删除最后执行", async () => {
+  it("waits for the in-flight save of the same provider and runs the delete last", async () => {
     const service = await createService();
     const calls: string[] = [];
     let releaseSave!: () => void;

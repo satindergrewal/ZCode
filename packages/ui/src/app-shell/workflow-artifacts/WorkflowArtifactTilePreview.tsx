@@ -18,25 +18,25 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import type { Theme } from "@/useTheme.js";
 
 /**
- * 产物瓦片的预览区（侧板画廊同用）：产物**本身**的缩略。
+ * The artifact tile's preview area (shared with the side pane gallery): a thumbnail of the artifact ITSELF.
  *
- * - markdown / 纯文本：文档开头按 2× 宽排版再 `scale(0.5)`——是内容的缩略，不是把界面字号调小；
- * - CSV：前几行的迷你表格；
- * - 图片：渲染本身；
- * - chart / table / metrics / board：`ArtifactPresetBody` compact，按自然尺寸在框里居中，随 report
- *   条目实时长；
- * - 其余（PDF / 二进制 / 超大文件）：纸页字形 + 扩展名徽字。
+ * - markdown / plain text: the document head laid out at 2x width then scale(0.5), a thumbnail of the content,
+ *   not a smaller UI font;
+ * - CSV: a mini table of the first rows;
+ * - image: the render itself;
+ * - chart / table / metrics / board: ArtifactPresetBody compact, centered at natural size, growing live with the report entry;
+ * - everything else (PDF / binary / huge files): page glyph plus extension badge.
  *
- * 两处框同一档、同一画法：交付物行的框（160 × 100）与侧板画廊的瓦片框（130–180px 一列）。没有更小
- * 的档——预览要么读得清，要么不画。
+ * Both frames share one size class and one rendering: the deliverable-row frame (160x100) and the gallery
+ * tile (130-180px column). No smaller class, a preview is either legible or not drawn.
  *
- * 字节还没到时整块留空白（不闪骨架屏，也不先画一张字形再换掉）。字节走与产物 tab 同一条
- * 分块读取（journal-backed，冷恢复也在）；上限之外不读——卡是转录的一部分，不该为一份 20 MiB
- * 的产物拉整条链路。
+ * Until bytes arrive the block stays blank (no skeleton flash, no glyph swapped out later). Bytes ride the
+ * same chunked read as the artifact tab (journal-backed, cold restore included); beyond the cap they are not
+ * fetched, a transcript card must not pull the whole chain for a 20 MiB artifact.
  */
 const TEXT_PREVIEW_MAX_BYTES = 256 * 1024;
 const IMAGE_PREVIEW_MAX_BYTES = 4 * 1024 * 1024;
-/** 文档缩略只解码开头这么多字节：一屏缩略装不下更多，整份解码是白算。 */
+/** Document thumbnails decode only this many leading bytes: one screen of thumbnail is the budget, decoding all is waste. */
 const TEXT_DECODE_BYTES = 8 * 1024;
 const TEXT_PREVIEW_CHARS = 1_600;
 const CSV_PREVIEW_ROWS = 6;
@@ -64,7 +64,7 @@ export function previewModeFor(artifact: {
   return undefined;
 }
 
-/** 最小的 CSV 读法：只认逗号与成对引号，够画一张缩略；不是解析器。 */
+/** Minimal CSV reading: commas and paired quotes only, enough for a thumbnail; not a parser. */
 export function csvPreviewRows(text: string): string[][] {
   const rows: string[][] = [];
   for (const line of text.split(/\r?\n/u)) {
@@ -99,12 +99,12 @@ function decodeHead(bytes: Uint8Array): string {
     .slice(0, TEXT_PREVIEW_CHARS);
 }
 
-/** 空白占位：字节在路上。测试与调用方据它区分「还没到」与「画不了」。 */
+/** Blank placeholder: bytes in flight. Tests and callers distinguish not-yet from cannot-render by it. */
 function Pending() {
   return <span className="absolute inset-0" data-testid="workflow-artifact-preview-pending" />;
 }
 
-/** 文档缩略底部渐隐到面板色：截断的文档看起来是「还有」，不是「断了」。看板与图片不要它。 */
+/** Document thumbnails fade into the panel color at the bottom: truncated reads as more below, not cut off. Boards and images skip it. */
 function Fade() {
   return (
     <span
@@ -136,7 +136,7 @@ export function WorkflowArtifactTilePreview({
     version: artifact.version ?? 1,
     enabled: mode !== undefined,
   });
-  // 看板只让 CLI 取 spec 点名的字段；spec 还没到或画不了时不取数——预览此时本来也画不出图。
+  // Boards fetch only the fields the spec names; skip until the spec arrives and renders, the preview has no chart before then.
   const fields = useMemo(
     () =>
       isArtifactPresetKind(artifact.kind)
@@ -172,7 +172,7 @@ export function WorkflowArtifactTilePreview({
   const glyph = <ArtifactSheetGlyph {...(badge === undefined ? {} : { badge })} />;
 
   if (preset) {
-    // spec 只有 journal 带得回来；还没到时安静留白，不闪一句「无法渲染」。到了但坏了才说。
+    // Only the journal carries the spec; stay blank until it lands, no unrenderable flash. Speak up only when it arrived broken.
     if (artifact.spec === undefined) return <Pending />;
     return (
       <div
@@ -256,7 +256,7 @@ export function WorkflowArtifactTilePreview({
         data-testid="workflow-artifact-preview-body"
       >
         {mode === "markdown" ? (
-          // markdown 必须**传 theme**（渲染器按 theme 选代码块配色）。
+          // markdown must receive theme (the renderer picks code block colors from it).
           <MessageResponse className="w-full min-w-0 break-words text-foreground" theme={theme}>
             {text ?? ""}
           </MessageResponse>

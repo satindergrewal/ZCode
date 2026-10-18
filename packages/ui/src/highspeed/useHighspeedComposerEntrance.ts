@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-/** Highspeed 输入框入场方式：activation 播放激活动效，restore 直接呈现稳定态。 */
+/** Highspeed composer entrance: activation plays the effect, restore shows the stable state. */
 export type HighspeedComposerEntrance = "activation" | "restore";
 
 function resolveEntrance(
@@ -11,9 +11,9 @@ function resolveEntrance(
 }
 
 /**
- * 按 cardId 锁定入场方式：仅宿主登记的一次性激活请求命中当前卡时播放激活动效，
- * 切回 Task、快照恢复与组件重挂载一律 restore（spec §9.2）。
- * 锁定后立即回调消费请求，之后的重挂载读不到请求，因而不会重播。
+ * Locked per cardId: only a one-shot host activation request for this card plays the effect; switch-back,
+ * snapshot restore, and remount always restore (spec 9.2).
+ * The lock consumes the request at once, so later remounts see none and never replay.
  */
 export function useHighspeedComposerEntrance({
   cardId,
@@ -30,7 +30,7 @@ export function useHighspeedComposerEntrance({
   }));
   let current = latch;
   if (latch.cardId !== cardId) {
-    // 卡片身份变化时在渲染期重新锁定，避免新卡先以旧入场方式渲染一帧。
+    // Re-lock during render on identity change; a new card never renders one frame with the old entrance.
     current = { cardId, entrance: resolveEntrance(cardId, activationCardId) };
     setLatch(current);
   }

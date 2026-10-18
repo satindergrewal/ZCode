@@ -26,10 +26,10 @@ interface MonitoredException {
 }
 
 /**
-  * Installs the last process-level exception boundary for protocol-style CLIs.
+ * Installs the last process-level exception boundary for protocol-style CLIs.
  *
-  * Keep one diagnostic, then hand off to the entry lifecycle for a bounded shutdown. Unknown exceptions must not keep
-  * the process accepting work, let alone recursively report failures writing to a broken stderr; callers must install the stderr outlet boundary first.
+ * Keep one diagnostic, then hand off to the entry lifecycle for a bounded shutdown. Unknown exceptions must not keep
+ * the process accepting work, let alone recursively report failures writing to a broken stderr; callers must install the stderr outlet boundary first.
  */
 export function installCliProcessErrorBoundary(
   options: CliProcessErrorBoundaryOptions,
@@ -59,8 +59,8 @@ export function installCliProcessErrorBoundary(
     const matchingMonitor = monitoredException?.error === error ? monitoredException : undefined;
     const origin = matchingMonitor ? matchingMonitor.origin : "uncaughtException";
     monitoredException = undefined;
-        // Under Node's strict mode uncaughtException fires first, then unhandledRejection.
-        // Report uniformly from the rejection listener so one Promise error never yields two different errorIds.
+    // Under Node's strict mode uncaughtException fires first, then unhandledRejection.
+    // Report uniformly from the rejection listener so one Promise error never yields two different errorIds.
     if (origin === "unhandledRejection") return;
     reportFatal("uncaughtException", origin, error);
   };
@@ -105,13 +105,13 @@ function writeProcessErrorDiagnostic(
       ...(reason instanceof Error && reason.stack ? { stack: detail } : {}),
       occurredAt: Date.now(),
     };
-        // Root cause: while the process lives, old stderr only reaches debug, which the Electron SDK cannot capture for child processes.
-        // Add a single-line structured event the Host can forward immediately, keeping the readable text for old Hosts and the crash tail.
+    // Root cause: while the process lives, old stderr only reaches debug, which the Electron SDK cannot capture for child processes.
+    // Add a single-line structured event the Host can forward immediately, keeping the readable text for old Hosts and the crash tail.
     stderr.write(
       `${ZCODE_PROCESS_DIAGNOSTIC_PREFIX}${JSON.stringify(diagnostic)}\n[zcode] process error kind=${kind} origin=${origin}\n${detail}\n`,
     );
   } catch {
-        // Diagnostic output must not punch through the process-level exception boundary again.
+    // Diagnostic output must not punch through the process-level exception boundary again.
   }
 }
 

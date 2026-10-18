@@ -5,8 +5,8 @@ import type {
   SessionWorkflowActivity,
 } from "@zcode/shared/zcode-protocol-v4";
 
-// UI-only sidecar：不进入 shared task meta/schema，也不写回 tasks-index。
-// 字段名使用明确的内部前缀，避免调用方把它误当成持久化 task 属性。
+// UI-only sidecar: never enters shared task meta/schema, never writes back to tasks-index.
+// Field names carry an explicit internal prefix so callers never mistake them for persisted task properties.
 export const TASK_LIST_ROW_ACTIVITY_FIELD = "__zcodeSessionActivity" as const;
 
 export interface TaskListRowActivity {
@@ -14,7 +14,7 @@ export interface TaskListRowActivity {
   lastActivityAt: number;
   hasBackgroundWork: boolean;
   pendingInteractions?: PendingInteractionSummary;
-  /** 侧栏工作流运行行的数据；无 run 时缺席。 */
+  /** Data of the sidebar workflow-run row; absent without a run. */
   workflowActivity?: SessionWorkflowActivity;
 }
 
@@ -37,19 +37,19 @@ export function getTaskListRowActivity(task: ZCodeTaskMeta): TaskListRowActivity
   return activity ?? null;
 }
 
-/** 只采信 sessions-index 的实时 phase；tasks-index 残留 status=running 不能置顶历史任务。 */
+/** Trust live sessions-index phase only; a stale tasks-index status=running must not pin historical tasks. */
 export function isTaskListRowRunning(task: ZCodeTaskMeta): boolean {
   const phase = getTaskListRowActivity(task)?.phase;
   return phase === "prewarming" || phase === "running";
 }
 
 /**
- * 列表运行层的成员判定：回合在跑（prewarming/running）**或**挂着后台工作（hasBackgroundWork）。
+ * Running-layer membership for the list: turn in flight (prewarming/running) OR background work attached (hasBackgroundWork).
  *
- * 动态工作流 run 是后台工作——启动轮收口后父会话 phase 已回到 completedSuccess，
- * 但每条 run 进度事件仍会推进 lastActivityAt。运行层若只看 phase，两个各跑一个 run 的会话
- * 都落在按 updatedAt 排序的非运行层，随进度事件互相换位。后台 bash / 分离子代理同理。
- * 转圈图标仍只认 phase（isTaskListRowRunning），这里只决定排序层。
+ * A dynamic workflow run is background work - once the launch turn closes, the parent phase is back to completedSuccess,
+ * yet every run progress event still advances lastActivityAt. Judged by phase alone, two sessions each running a workflow
+ * would sit in the non-running layer ordered by updatedAt and swap as events land. Same for background bash / detached subagents.
+ * The spinner still follows phase only (isTaskListRowRunning); this decides the sorting layer alone.
  */
 export function isTaskListRowActive(task: ZCodeTaskMeta): boolean {
   return isTaskListRowRunning(task) || getTaskListRowActivity(task)?.hasBackgroundWork === true;
@@ -81,9 +81,9 @@ export function mergeTaskListMembershipFields(
     return membershipTask;
   }
   const membershipOwnsUnreadAt = Object.prototype.hasOwnProperty.call(membershipTask, "unreadAt");
-  // rename/pin/archive/unread 的 tasks-index 响应会携带自己的 updatedAt/status，
-  // 但侧栏 activity 与 Updated 排序只属于 sessions-index。mutation 只能覆盖 membership/meta
-  // 字段，不能把整行替换后让任务无真实活动却跳序或丢掉实时 phase。
+  // tasks-index responses for rename/pin/archive/unread carry their own updatedAt/status,
+  // but sidebar activity and the Updated order belong to sessions-index. A mutation may override membership/meta
+  // fields only; never replace the row wholesale, or tasks without real activity jump the order or lose live phase.
   return attachTaskListRowActivity(
     {
       ...activityTask,

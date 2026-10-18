@@ -1071,8 +1071,11 @@ describe("Explore subagent", () => {
     const eventStore = createTestSessionEventStore();
     // 主 runtime 每次调用报自己的 sessionId；子 runtime 拿到的是父 runtime 派生的实例
     // （helpers/child-client-ports.ts），派生层把 sessionId 改写成父会话。
-    const refreshes: Array<{ providerId: string; boundSessionId: string; routedSessionId?: string }> =
-      [];
+    const refreshes: Array<{
+      providerId: string;
+      boundSessionId: string;
+      routedSessionId?: string;
+    }> = [];
     const childRequests: any[] = [];
     let parentCallCount = 0;
     const modelSelection = {

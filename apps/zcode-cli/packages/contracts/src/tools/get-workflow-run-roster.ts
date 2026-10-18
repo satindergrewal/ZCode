@@ -12,26 +12,26 @@
 import { z } from "zod";
 
 /**
-  * Bounds for the situation section. Each equals an existing bound; no parallel regime:
-  * phase count and names follow the reducer's WORKFLOW_RUNS_LIMITS.maxPhases / maxPhaseNameLength;
-  * instructions head and tool name/target follow the engine-side INSTRUCTIONS_HEAD_MAX_CHARS / LAST_TOOL_TARGET_MAX_CHARS.
+ * Bounds for the situation section. Each equals an existing bound; no parallel regime:
+ * phase count and names follow the reducer's WORKFLOW_RUNS_LIMITS.maxPhases / maxPhaseNameLength;
+ * instructions head and tool name/target follow the engine-side INSTRUCTIONS_HEAD_MAX_CHARS / LAST_TOOL_TARGET_MAX_CHARS.
  */
 export const GET_WORKFLOW_RUN_ROSTER_LIMITS = {
-    /** Row cap for the phase table (same value as the reducer's maxPhases). */
+  /** Row cap for the phase table (same value as the reducer's maxPhases). */
   maxPhases: 32,
   maxPhaseNameLength: 128,
   /**
-      * Row cap for the roster, deliberately above the phase table: a 50-way fan-out is ordinary, and the reader is asking exactly
-      * who is doing what. Past this bound the whole block is cut, flagged via subagentsTruncated --
-      * a roster silently missing 18 rows reads as only 64 subagents.
+   * Row cap for the roster, deliberately above the phase table: a 50-way fan-out is ordinary, and the reader is asking exactly
+   * who is doing what. Past this bound the whole block is cut, flagged via subagentsTruncated --
+   * a roster silently missing 18 rows reads as only 64 subagents.
    */
   maxSubagents: 64,
   maxActorNameLength: 128,
-    /** Task summary of one ask (node-queued's instructionsHead). */
+  /** Task summary of one ask (node-queued's instructionsHead). */
   maxInstructionsHeadLength: 240,
   maxLastToolNameLength: 64,
   maxLastToolTargetLength: 120,
-    /** Free-text reason of node-waiting (one line of the backoff's provider error). */
+  /** Free-text reason of node-waiting (one line of the backoff's provider error). */
   maxWaitReasonLength: 240,
 } as const;
 
@@ -39,12 +39,12 @@ export const GET_WORKFLOW_RUN_ROSTER_LIMITS = {
 export const GetWorkflowRunPhaseSchema = z
   .object({
     name: z.string().min(1).max(GET_WORKFLOW_RUN_ROSTER_LIMITS.maxPhaseNameLength),
-        /** ahead = declared by the script but control flow has not reached it; the only state with rounds 0. */
+    /** ahead = declared by the script but control flow has not reached it; the only state with rounds 0. */
     state: z.enum(["done", "current", "ahead", "unfinished"]),
     rounds: z.number().int().nonnegative(),
     nodesSettled: z.number().int().nonnegative(),
     nodesRunning: z.number().int().nonnegative(),
-        /** Last enter/leave instants (epoch ms). Absent when events carry no timestamp; never 0. */
+    /** Last enter/leave instants (epoch ms). Absent when events carry no timestamp; never 0. */
     enteredAt: z.number().optional(),
     exitedAt: z.number().optional(),
   })
@@ -60,8 +60,8 @@ export const GetWorkflowRunSubagentLastToolSchema = z
   .strict();
 
 /**
-  * The ask a subagent is running right now. Absent turn / toolCalls read as unknown, 0 reads as
-  * no tool call yet -- old journals lack node-progress, so the two must stay distinguishable.
+ * The ask a subagent is running right now. Absent turn / toolCalls read as unknown, 0 reads as
+ * no tool call yet -- old journals lack node-progress, so the two must stay distinguishable.
  */
 export const GetWorkflowRunSubagentAskSchema = z
   .object({
@@ -90,10 +90,10 @@ export const GetWorkflowRunSubagentWaitSchema = z
   .strict();
 
 /**
-  * One subagent of the roster (mirror of the port's DynamicWorkflowRunSubagentView).
+ * One subagent of the roster (mirror of the port's DynamicWorkflowRunSubagentView).
  *
-  * The seven state words are a closed set, read in write order (full decision chain in the port comment): while the run lives
-  * parked -> waiting -> executing -> failed -> idle; under a terminal run only
+ * The seven state words are a closed set, read in write order (full decision chain in the port comment): while the run lives
+ * parked -> waiting -> executing -> failed -> idle; under a terminal run only
  * `unfinished` → `failed` → `done`。
  */
 export const GetWorkflowRunSubagentSchema = z
@@ -105,7 +105,7 @@ export const GetWorkflowRunSubagentSchema = z
     phaseName: z.string().max(GET_WORKFLOW_RUN_ROSTER_LIMITS.maxPhaseNameLength).optional(),
     currentAsk: GetWorkflowRunSubagentAskSchema.optional(),
     wait: GetWorkflowRunSubagentWaitSchema.optional(),
-        /** Which question it is parked on; never present in a read where health.pendingQuestionsKnown is false. */
+    /** Which question it is parked on; never present in a read where health.pendingQuestionsKnown is false. */
     parkedOn: z.string().optional(),
     stepsSettled: z.number().int().nonnegative(),
     stepsFailed: z.number().int().nonnegative(),
@@ -115,8 +115,8 @@ export const GetWorkflowRunSubagentSchema = z
   .strict();
 
 /**
-  * Run-level concurrency pressure. **The whole object appears only when squeezed below its own bound**: a run at its bound has
-  * nothing to say, and its presence means actively being throttled.
+ * Run-level concurrency pressure. **The whole object appears only when squeezed below its own bound**: a run at its bound has
+ * nothing to say, and its presence means actively being throttled.
  */
 export const GetWorkflowRunConcurrencyHealthSchema = z
   .object({
@@ -135,11 +135,11 @@ export const GetWorkflowRunHealthSchema = z
     concurrency: GetWorkflowRunConcurrencyHealthSchema.optional(),
     consecutiveFailures: z.number().int().nonnegative(),
     cachedSteps: z.number().int().nonnegative(),
-        /** Terminal runs only: node rows still marked running (processes died under them). Absent at 0. */
+    /** Terminal runs only: node rows still marked running (processes died under them). Absent at 0. */
     leftoverRunning: z.number().int().positive().optional(),
     /**
-          * Whether this read can answer are-any-questions-pending. When false the whole pendingQuestions field is absent
-          * and no subagent is reported parked -- no-one-waiting and unknown are two different facts.
+     * Whether this read can answer are-any-questions-pending. When false the whole pendingQuestions field is absent
+     * and no subagent is reported parked -- no-one-waiting and unknown are two different facts.
      */
     pendingQuestionsKnown: z.boolean(),
   })

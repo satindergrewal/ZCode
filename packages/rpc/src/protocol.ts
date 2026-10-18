@@ -289,7 +289,9 @@ export class SocketProtocol implements IMessagePassingProtocol {
 
       const body = this.chunkStream.read(length);
       if (!body) {
-        throw new Error("SocketProtocol: body must not be empty once the full frame length is known");
+        throw new Error(
+          "SocketProtocol: body must not be empty once the full frame length is known",
+        );
       }
 
       if (type === ProtocolMessageType.Regular) {

@@ -21,7 +21,7 @@ const manifestSchema = z
     "Duplicate bundled resource",
   );
 
-/** 每个 partition 共用一份只读清单；不下载、不缓存远程响应。 */
+/** One read-only manifest per partition; no downloads, no remote response caching. */
 export function createGenUiVendorResources(
   aliasDir: string,
   readAsset: (path: string) => Promise<Uint8Array> = readFile,

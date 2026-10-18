@@ -25,7 +25,7 @@ export interface Step {
   id: string;
   kind: StepKind;
   label: string;
-    /** When label only gets the fallback string: the inline agent() receiver's template shape. */
+  /** When label only gets the fallback string: the inline agent() receiver's template shape. */
   labelPattern?: NamePattern;
   loc: SiteLoc;
   /** Actor site id, or `workspace` / `unknown`. For an unexpanded may-set, `lanes[0]`. */
@@ -96,7 +96,7 @@ export interface Lane {
   /** The author's verbatim word, when `agent()` was given a literal. Never a reconstruction. */
   name?: string;
   /**
-      * Static shape of the name when name is absent and agent()'s first arg is a holey template. The ellipsis is render-time.
+   * Static shape of the name when name is absent and agent()'s first arg is a holey template. The ellipsis is render-time.
    */
   namePattern?: NamePattern;
   loc?: SiteLoc;
@@ -146,29 +146,29 @@ export interface Fact {
   kind: OrderKind;
   certainty: Certainty;
   exact?: boolean;
-    /** The carry edge's underlying kind (the forward kind before retyping); carry minimization judges witness strength by it. */
+  /** The carry edge's underlying kind (the forward kind before retyping); carry minimization judges witness strength by it. */
   carryOf?: Exclude<OrderKind, "carry">;
   /**
-      * Phase set of the issue events witnessing this fact (carried only by **seq facts born of await barriers**).
-      * Phase copies narrow an edge's head with it: a barrier fact is witnessed on one concrete issue, while the current
-      * one-site-one-step design merges a site's issues across call sites into one step; losing the provenance would
-      * let the gate's bench-before-cargo-test claim also hold for the preflight bench --
-      * a backwards time claim (extra order is allowed; wrong order is not).
+   * Phase set of the issue events witnessing this fact (carried only by **seq facts born of await barriers**).
+   * Phase copies narrow an edge's head with it: a barrier fact is witnessed on one concrete issue, while the current
+   * one-site-one-step design merges a site's issues across call sites into one step; losing the provenance would
+   * let the gate's bench-before-cargo-test claim also hold for the preflight bench --
+   * a backwards time claim (extra order is allowed; wrong order is not).
    *
-      * Absent = no provenance = the head fully expanded (data/control/fifo and region-dup facts expand per contract).
+   * Absent = no provenance = the head fully expanded (data/control/fifo and region-dup facts expand per contract).
    *
-      * The tail has no symmetric provenance (settle events carry no phase), but **the tail side is no longer a gap**: the phase copy's temporal
-      * feasibility check (admits in phase-graph.ts) intercepts by position on **both ends** alike, so pseudo-edges like a copy placed
-      * before the step producing its own argument are removed by that rule, not by provenance here.
+   * The tail has no symmetric provenance (settle events carry no phase), but **the tail side is no longer a gap**: the phase copy's temporal
+   * feasibility check (admits in phase-graph.ts) intercepts by position on **both ends** alike, so pseudo-edges like a copy placed
+   * before the step producing its own argument are removed by that rule, not by provenance here.
    */
   toPhases?: Set<string>;
   /**
-      * This seq fact can only hold via the **next round**: from is emitted in an arm ending in continue,
-      * to later in the same loop body. A linear time walk under may-semantics would keep walking the body, recording
-      * fixer-round-k before juries-round-k-plus-one as same-round forward order; the control-flow projection says loop-via-continue for the same spot.
-      * Facts with this mark are treated as carry at back-edge typing (only when every fact in the pair carries it --
-      * see dedupeFacts in causality-graph-lanes.ts). Arms ending in break are stronger: their steps cannot
-      * precede later steps of the same loop at all, so such facts are not emitted.
+   * This seq fact can only hold via the **next round**: from is emitted in an arm ending in continue,
+   * to later in the same loop body. A linear time walk under may-semantics would keep walking the body, recording
+   * fixer-round-k before juries-round-k-plus-one as same-round forward order; the control-flow projection says loop-via-continue for the same spot.
+   * Facts with this mark are treated as carry at back-edge typing (only when every fact in the pair carries it --
+   * see dedupeFacts in causality-graph-lanes.ts). Arms ending in break are stronger: their steps cannot
+   * precede later steps of the same loop at all, so such facts are not emitted.
    */
   viaJump?: true;
 }

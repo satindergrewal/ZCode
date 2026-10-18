@@ -36,7 +36,7 @@ describe("side pane toggle empty state", () => {
     // 截图 surface prepare 期间，即使当前对话没有可见 tab，也要保留后台 browser-use
     // 的实际布局，不能回退为 display:none。
     expect(source).toContain('visibleTabs.length === 0 && !screenshotSurfaceRequest && "hidden"');
-    expect(source).toContain("保留 TabsContent 挂载");
+    expect(source).toContain("keep TabsContent mounted");
     expect(source).toContain("openTabLauncher");
     expect(source).toContain("flex-1 items-center justify-center");
     expect(source).toContain("side-pane-open-tab-shell");
@@ -128,6 +128,6 @@ describe("side pane toggle empty state", () => {
     expect(handlerSource).toContain("applyBrowserUseSidePaneEvent(");
     expect(handlerSource).toContain("ownerTaskId: sidePaneOwnerIdRef.current");
     expect(handlerSource).toContain("if (result.shouldReveal)");
-    expect(handlerSource).toContain('result.shouldReveal ? "展开并激活" : "后台挂载"');
+    expect(handlerSource).toContain('result.shouldReveal ? "reveal" : "background-mount"');
   });
 });

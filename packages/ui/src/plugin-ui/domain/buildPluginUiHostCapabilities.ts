@@ -6,24 +6,24 @@ import {
   buildMcpAppsCspExperimentalCapability,
 } from "@zcode/shared/mcp-apps";
 
-/** 宿主实例真实可用的交互；缺省项对应的能力不声明，插件据此降级。 */
+/** Interactions the host instance actually supports; undeclared keys degrade gracefully. */
 export interface PluginUiHostCapabilityInput {
   canSample?: boolean;
   canSendFollowUpMessage: boolean;
   canUpdateModelContext: boolean;
   canSetWidgetState: boolean;
-  /** 宿主能代理 resources/subscribe 并把 server 通知路由回本实例。 */
+  /** Host proxies resources/subscribe and routes server notices back to this instance. */
   canSubscribeResources: boolean;
-  /** 平台有 saveFile（桌面）才声明 downloadFile。 */
+  /** downloadFile only when the platform has saveFile (desktop). */
   canDownloadFile: boolean;
-  /** 常驻面板实例：宣告 `experimental["zcode/surface"]: { id }`，页面据此判断自己运行在面板里。 */
+  /** Pane instance: declares experimental zcode/surface { id } so the page knows it runs in the pane. */
   surfaceId?: string;
 }
 
 /**
- * hostCapabilities 的唯一构造点。声明与 handler 一一对应：没有会话动作绑定就不声明 message，没有 composer 就不声明
- * updateModelContext。ZCode 扩展（widgetState、resourceSubscribe、surface、csp 放宽）一律放 `experimental["zcode/…"]`，
- * 官方 SDK 的 zod 会剥掉标准位之外的未知能力键。
+ * Sole constructor of hostCapabilities. Declarations mirror handlers: no session actions, no message; no composer, no
+ * updateModelContext. ZCode extensions (widgetState, resourceSubscribe, surface, CSP relax) go under experimental zcode/*,
+ * since the official SDK zod strips unknown capability keys.
  */
 export function buildPluginUiHostCapabilities(
   input: PluginUiHostCapabilityInput,
@@ -35,7 +35,7 @@ export function buildPluginUiHostCapabilities(
     logging: {},
     ...(input.canSample ? { sampling: {} } : {}),
     ...(input.canDownloadFile ? { downloadFile: {} } : {}),
-    // image 随 text 一起声明（png / jpeg / webp，单张 ≤ 4 MiB）。
+    // image declared beside text (png/jpeg/webp, 4 MiB each).
     ...(input.canSendFollowUpMessage ? { message: { text: {}, image: {} } } : {}),
     ...(input.canUpdateModelContext
       ? { updateModelContext: { text: {}, structuredContent: {}, image: {} } }

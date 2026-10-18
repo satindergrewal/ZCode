@@ -7,7 +7,7 @@ export function resolveMarketingTouchPollIntervalMs(
   return isProductionBuild && env === "production" ? 10 * 60_000 : 30_000;
 }
 
-/** 唯一串行调度器；用户触发在途刷新合并为一次后续查询。 */
+/** The single serial scheduler; a user trigger mid-flight coalesces into one follow-up query. */
 export function createMarketingTouchPoller(options: {
   query: () => Promise<void>;
   visible: () => boolean;
@@ -51,7 +51,7 @@ export function createMarketingTouchPoller(options: {
         }
         const delay = failures
           ? Math.min(600_000, 30_000 * 2 ** Math.min(failures - 1, 5))
-          : // 迁移时曾丢失正式/测试环境频率；由入口显式注入，避免统一随机间隔。
+          : // The migration once lost the prod/test intervals; entry points inject them explicitly instead of one shared random jitter.
             options.intervalMs;
         timer = setTimeout(refresh, delay);
       });

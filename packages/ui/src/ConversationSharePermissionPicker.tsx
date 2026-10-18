@@ -43,14 +43,14 @@ export function ConversationSharePermissionPicker({
       data-variant={variant}
       className={cn("flex flex-col", compact ? "min-w-0 gap-1" : "gap-1.5")}
     >
-      {/* 修复原因：compact 变体曾把字段标签降到 text-ui-xs，导致它和同一确认表单的分享标题层级不一致。 */}
+      {/* Fix: compact dropped labels to text-ui-xs, breaking hierarchy with the share title. */}
       <span
         data-testid="conversation-share-permission-label"
         className={cn(compact ? "text-ui-sm" : "text-ui-base", "text-foreground-subtle")}
       >
         {intl.formatMessage({ id: "conversationShare.permissionLabel" })}
       </span>
-      {/* 根因：窗口断点无法反映侧栏挤压后的空间；按确认面板实际宽度分列，并完整展示权限。 */}
+      {/* Why: breakpoints miss sidebar squeeze; column by actual panel width, permissions visible. */}
       <div
         role="radiogroup"
         aria-label={intl.formatMessage({ id: "conversationShare.permissionLabel" })}

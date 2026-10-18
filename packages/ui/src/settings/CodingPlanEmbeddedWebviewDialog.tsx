@@ -371,16 +371,22 @@ export function CodingPlanEmbeddedWebviewDialog({
         const raw = event.args[0] as CodingPlanPurchaseCompletePayload | undefined;
         if (raw?.provider !== "zai" && raw?.provider !== "bigmodel") {
           // Invalid payload: ignore, so forged or dirty data cannot trigger a refresh.
-          logger.warn("[CodingPlanEmbeddedWebviewDialog] Received invalid purchase-complete payload", {
-            channel: event.channel,
-            args: event.args,
-          });
+          logger.warn(
+            "[CodingPlanEmbeddedWebviewDialog] Received invalid purchase-complete payload",
+            {
+              channel: event.channel,
+              args: event.args,
+            },
+          );
           return;
         }
-        logger.info("[CodingPlanEmbeddedWebviewDialog] Purchase-complete received from official site; triggering refresh", {
-          provider: raw.provider,
-          timestamp: raw.timestamp,
-        });
+        logger.info(
+          "[CodingPlanEmbeddedWebviewDialog] Purchase-complete received from official site; triggering refresh",
+          {
+            provider: raw.provider,
+            timestamp: raw.timestamp,
+          },
+        );
         onPurchaseCompleteRef.current?.();
       };
 

@@ -65,8 +65,8 @@ export interface CoreFanoutSite {
   loc: ScriptLoc;
   within?: string;
   /**
-      * Literal cardinality: the element count when the iterated value is an unspread array literal
-      * or a never-written const literal binding; absent otherwise. Computed at mint time, read-only for projections.
+   * Literal cardinality: the element count when the iterated value is an unspread array literal
+   * or a never-written const literal binding; absent otherwise. Computed at mint time, read-only for projections.
    */
   cardinality?: number;
 }
@@ -135,9 +135,10 @@ export interface AnalysisCore {
 /**
  * Site-id vocabulary: is this label an actor site? (Actor labels never make data edges.)
  *
- * 修复原因：留白函数体里的站点带留白 id 的前缀（`hole#21b40fca/actor#1`，docs/analysis.md「Sites」），
- * 原先的 `startsWith("actor#")` 认不出它们，于是补全体内的 ask 全部解析不到 receiver、落到
- * `unknown` 车道。按**最后一段**判种类。
+ * Fix rationale: sites inside a hole body carry the hole id as prefix
+ * (`hole#21b40fca/actor#1`, docs/analysis.md "Sites"), which the former
+ * `startsWith("actor#")` missed — every ask inside a fill failed to resolve its receiver and
+ * fell into the `unknown` lane. Classify by the **last segment**.
  */
 export function isActorSite(site: string): boolean {
   return /(^|\/)actor#/.test(site);
@@ -205,7 +206,7 @@ function at(loc: ScriptLoc): string {
  *
  * A `hole` line is an OPEN hole (a filled one is not a step; `tail` marks the tail form and
  * `type=` is the author's spelling of the type argument); `fill=` on a phase names the filled
- * hole whose body wrote it (docs/analysis.md「Sites」).
+ * hole whose body wrote it (docs/analysis.md "Sites").
  *
  * Sites come first in source (`order`) order, kinds interleaved; `type=` carries the
  * materialized artifact type and `ports=` a join's per-port types (`-` = unknown).

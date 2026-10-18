@@ -1,8 +1,9 @@
 // ============================================================
-// 「配置」弹层的两个字段
+// The Configure popover's two fields.
 // ============================================================
-// 从 WorkflowRunSettingsPopover.tsx 拆出：那边管表单状态、命令与后果句，这里只画两个受控字段——
-// 子代理模型（composer 的模型菜单 + 思考档）与「最大并发数」步进器。props 全是烹熟的值。
+// Split from WorkflowRunSettingsPopover.tsx: that side owns form state, the command and the consequence
+// line; this only draws two controlled fields — subagent model (composer menu plus thinking level) and
+// the max-concurrency stepper. Every prop arrives cooked.
 
 import { useMemo, useRef, useState } from "react";
 import { MinusIcon, PlusIcon } from "lucide-react";
@@ -26,14 +27,15 @@ import { clampWorkflowRunSettingsBound } from "./workflowRunSettings.js";
 
 const MODEL_ITEM_NEVER_LOCKED = () => false;
 
-/** 字段标签：12px、次要色，控件上方 4px。 */
+/** Field label: 12px, secondary color, 4px above its control. */
 function FieldLabel({ children }: { children: string }) {
   return <div className="text-ui-sm text-foreground-subtle">{children}</div>;
 }
 
 /**
- * 子代理模型：composer 的同一份模型菜单，「会话模型」排第一；所选模型有思考档时，触发器旁边是
- * 设置页子代理那一格用的同一个思考档控件。清单为空时整格换成一句话（上限仍可调）。
+ * Subagent model: the composer's very model menu, session model first; when the selection has thinking
+ * levels, the settings page subagent row's own level control sits beside the trigger. An empty catalog
+ * replaces the field with a sentence (the limit stays adjustable).
  */
 export function WorkflowRunSettingsModelField({
   badge,
@@ -47,16 +49,16 @@ export function WorkflowRunSettingsModelField({
   triggerLabel,
   value,
 }: {
-  /** 触发器里的徽标：「会话模型」或「不可用」；缺席即无。 */
+  /** Badge in the trigger: session-model or unavailable; absent when none. */
   badge?: { text: string; tone: "subtle" | "warning" };
   disabled: boolean;
   groups: readonly ModelSelectGroup[];
   leadingItem: ModelSelectGroupItem;
-  /** 当前 agent 没有可选模型：整格退成一句话。 */
+  /** The agent has no pickable model: the field degrades to a sentence. */
   noCatalog: boolean;
   onLevelChange: (level: string) => void;
   onValueChange: (value: string) => void;
-  /** 所选模型的思考档；缺席即不画思考档控件。 */
+  /** The selection's thinking level; absent, no level control renders. */
   thoughtOption: ZCodeConfigOption | null;
   triggerLabel: string;
   value: string;
@@ -65,7 +67,7 @@ export function WorkflowRunSettingsModelField({
   const levelTriggerRef = useRef<HTMLSpanElement | null>(null);
   const [levelOpen, setLevelOpen] = useState(false);
   const label = intl.formatMessage({ id: "chat.toolCall.workflow.run.settings.model" });
-  // ModelConfigSelect 是 memo 组件：内联数组每次渲染都是新引用，会让它的 memo 形同虚设。
+  // ModelConfigSelect is memoized: an inline array is a fresh reference per render and voids the memo.
   const leadingItems = useMemo(() => [leadingItem], [leadingItem]);
   if (noCatalog) {
     return (
@@ -139,9 +141,10 @@ export function WorkflowRunSettingsModelField({
 }
 
 /**
- * 「最大并发数」步进器：减、等宽数字、加，从 1 起、**没有上限**——默认并发 D 是起点不是天花板
- * （docs/dynamic-workflow/presentation.md「The settings popover」）。提示写「默认 N」，停在 D 上即
- * 「本 run 没有自己的界」，提示改写成「= 默认」。D 未知（老 CLI）时没有提示，数字照样可以直接敲。
+ * The max-concurrency stepper: minus, mono digits, plus; from 1, no ceiling — default concurrency D is
+ * a starting point, not a cap (docs/dynamic-workflow/presentation.md "The settings popover"). The hint
+ * reads default-N; resting on D means this run has no limit of its own and the hint becomes = default.
+ * With D unknown (older CLIs) there is no hint, and the number stays typable.
  */
 export function WorkflowRunSettingsBoundField({
   bound,

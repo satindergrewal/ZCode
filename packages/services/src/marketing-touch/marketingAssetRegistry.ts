@@ -6,7 +6,7 @@ import {
   type MarketingVisual,
 } from "@zcode/shared";
 
-/** 下载授权只来自宿主已验证的投放响应；Renderer 不能自行授权地址。 */
+/** Download grants come only from host-verified campaign responses; renderers never self-authorize URLs. */
 export function createMarketingAssetRegistry(
   options: { fetch?: typeof fetch; allowLoopback?: boolean } = {},
 ) {

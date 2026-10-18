@@ -1,8 +1,8 @@
 /**
- * 同一作用域同时只保留一个活 sandbox。
- * 键为 `buildPluginUiSurfaceKey(target, scope)`，统一隔离 workspace/session/plugin。
- * 侧栏打开时内联卡片显示占位；带 `display.ui.surface` 的工具结果据此判断面板是否已在本会话打开（R4 路由）。
- * 这里只记录"谁在渲染"，不持有任何沙箱状态。渲染进程内存，不持久化。
+ * At most one live sandbox per scope.
+ * Keyed buildPluginUiSurfaceKey(target, scope); isolates workspace/session/plugin uniformly.
+ * While the pane is open the inline card shows a placeholder; results carrying display.ui.surface use this to route (R4).
+ * Records who renders only; no sandbox state. Renderer memory, never persisted.
  */
 export type PluginUiSurface = "inline" | "side-pane";
 
@@ -42,7 +42,7 @@ export function subscribePluginUiSurfaces(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
-/** 测试用：清空全部记录。 */
+/** Test hook: clear all records. */
 export function resetPluginUiSurfacesForTest(): void {
   surfaces.clear();
   listeners.clear();

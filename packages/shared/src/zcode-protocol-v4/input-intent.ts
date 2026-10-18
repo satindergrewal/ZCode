@@ -1,7 +1,7 @@
 import { conversationQuotesSchema } from "../conversationSelection.js";
 import { botGroupInputSourceSchema } from "../bots.js";
-// CLI admission 后的自包含输入事实。
-// queue / guide / runtime / transcript 只能携带同一个 intent，不允许各层重建字段。
+// Self-contained input facts after CLI admission.
+// queue / guide / runtime / transcript all carry this one intent; no layer may rebuild its fields.
 import { z } from "zod";
 import { timestampSchema } from "./core.js";
 import { attachmentRefSchema } from "./attachment-ref.js";
@@ -11,8 +11,8 @@ import { submissionModeSchema } from "./submission.js";
 import { sharedContextRefSchema } from "./shared-context-ref.js";
 
 /**
- * 用户输入的结构化来源：插件 UI 经 `ui/message`
- * 代用户发送时带上，落库后卡片显示"来自插件 X"。缺省即用户亲自输入。
+ * Structured origin of the user input: present when a plugin UI sends on the user's behalf via `ui/message`;
+ * persisted rows show 'from plugin X'. Absent means the user typed it themselves.
  */
 const pluginUiInputSourceSchema = z
   .object({
@@ -70,11 +70,11 @@ export const conversationInputIntentSchema = z
     sourceCommandId: z.string().min(1),
     queueItemId: z.string().min(1),
     clientId: z.string().min(1),
-    // compact 是可排队的维护意图；消费时走 compact lifecycle，不投影为 user row。
+    // compact is a queueable maintenance intent; consumption runs the compact lifecycle and never projects a user row.
     kind: z.enum(["sendText", "sendGoalCommand", "compact"]),
     text: z.string(),
     attachments: z.array(attachmentRefSchema).default([]),
-    // optional 只服务旧 snapshot hydration；新 admission 必须填入完整 Submission。
+    // optional exists for legacy snapshot hydration; new admission must carry a full Submission.
     modelSelection: modelSelectionSchema.optional(),
     mode: submissionModeSchema.optional(),
     planEnabled: z.boolean().optional(),

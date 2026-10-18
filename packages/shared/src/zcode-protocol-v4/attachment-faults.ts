@@ -1,9 +1,9 @@
 // Structured error codes for attachment read/probe (the classification basis of share precheck and publish).
 //
 // Share precheck once distinguished missing / unauthorized / other by `error.message` regexes.
- // Any RPC-layer wrap, localization, or message replacement (e.g. ZodError on schema failure) kills the classification
- // and degrades a definite verdict into deferred. Repo discipline (AGENTS.md "never branch on error text")
- // demands stable codes; this module is that contract's single source.
+// Any RPC-layer wrap, localization, or message replacement (e.g. ZodError on schema failure) kills the classification
+// and degrades a definite verdict into deferred. Repo discipline (AGENTS.md "never branch on error text")
+// demands stable codes; this module is that contract's single source.
 //
 // Wire path: CLI-side Errors carry a `code` field; `toProtocolError` passes string codes into JSON-RPC
 // error.data.code; clients read them back via readZCodeAttachmentFaultCode.

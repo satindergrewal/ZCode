@@ -12,11 +12,7 @@ describe("buildProtocolPermissionOptions", () => {
       toolName: "Edit",
     });
 
-    expect(options.map((option) => option.kind)).toEqual([
-      "allow_once",
-      "allow_always",
-      "deny",
-    ]);
+    expect(options.map((option) => option.kind)).toEqual(["allow_once", "allow_always", "deny"]);
     const always = options.find((option) => option.kind === "allow_always");
     expect(always?.response.permissionUpdates?.[0]?.rules[0]).toMatchObject({
       toolName: "Edit",
@@ -43,11 +39,7 @@ describe("buildProtocolPermissionOptions", () => {
       toolName: "CreateWorkflow",
     });
 
-    expect(options.map((option) => option.kind)).toEqual([
-      "allow_once",
-      "allow_session",
-      "deny",
-    ]);
+    expect(options.map((option) => option.kind)).toEqual(["allow_once", "allow_session", "deny"]);
     const session = options.find((option) => option.kind === "allow_session");
     expect(session).toMatchObject({
       optionId: "allowSession",

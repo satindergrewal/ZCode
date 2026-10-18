@@ -26,13 +26,13 @@ sentinel.exec(
 );
 sentinel.close();
 await writeFile(join(output, "plugin-sentinel.txt"), "preserve-plugin-files\n");
-// Agent bundle 必须来自本次源码；否则 Electron 用新代码、stdio 却测到旧 dist。
+// The agent bundle must come from these sources; otherwise Electron runs new code while stdio exercises a stale dist.
 if (
   !process.argv.includes("--retention-only") &&
   !process.argv.includes("--storage-only") &&
   !process.argv.includes("--reuse-agent-build")
 ) {
-  // 新工作树没有预先生成的声明文件，先构建 Agent 的基础包。
+  // Fresh worktrees have no pregenerated declarations; build the agent's base packages first.
   for (const name of [
     "shared-types",
     "dynamic-workflow",

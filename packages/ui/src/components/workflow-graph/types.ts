@@ -58,8 +58,8 @@ export const WORKSPACE_LANE_ID = "workspace";
 /** Lane of an ask whose receiver the analysis could not resolve to an actor site. */
 export const UNKNOWN_LANE_ID = "unknown";
 /**
- * 主代理的车道：分析器把每个开着的留白记成这条车道上的一步（analysis.md「Sites」）。它不是子代理，
- * 从不画成药丸——开着的留白自己就是一站（presentation.md「Pills」）。
+ * The main agent's lane: the analyzer records every open hole as a step on it (analysis.md Sites). Not a
+ * subagent and never drawn as a pill, an open hole is a station in itself (presentation.md Pills).
  */
 export const MAIN_LANE_ID = "main";
 /** The terminal marker node: the artifact the workflow returns. */

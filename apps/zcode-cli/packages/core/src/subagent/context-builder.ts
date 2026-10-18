@@ -51,7 +51,7 @@ export class SubagentContextBuilder extends ContextBuilder {
     const systemSections = orderedSections.filter(
       (section) => section.injectionTarget === "system",
     );
-    // 逐段标记会耗尽缓存断点额度，导致对话末尾标记被丢弃；正文合并时保留各段自带的换行。
+    // Per-segment markers would exhaust the cache-breakpoint budget and drop trailing markers; the merged body keeps each segment's own newlines.
     const systemMessages = [
       systemSections.filter((section) => section.source === "cli_prefix"),
       systemSections.filter((section) => section.source !== "cli_prefix"),
@@ -117,8 +117,8 @@ function buildSubagentContextSections(config: SubagentContextBuilderConfig): Con
         name: "Subagent Agent Prompt",
         source: "subagent_agent_prompt",
         cacheHint: "stable",
-        // 空 prompt 不是语义段，不能让左边界单独成为 system block。
-        // ZCode by design：Subagent agent prompt 自带相对 CLI prefix 的单换行左边界。
+        // An empty prompt is not a semantic segment; a bare left edge must not become its own system block.
+        // ZCode by design: the Subagent agent prompt carries a single-newline left edge vs the CLI prefix.
         content: `\n${agentPrompt}`,
       }),
     );
@@ -129,7 +129,7 @@ function buildSubagentContextSections(config: SubagentContextBuilderConfig): Con
       name: "Subagent Notes",
       source: "subagent_notes",
       cacheHint: "stable",
-      // ZCode by design：后续 Subagent system block 统一自带双换行左边界。
+      // ZCode by design: later Subagent system blocks all carry a double-newline left edge.
       content: `\n\n${buildSubagentCommonNotes()}`,
     }),
     createSubagentSection({

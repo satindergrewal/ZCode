@@ -27,11 +27,11 @@ describe("node_repl CUA bridge", () => {
         closeSession: async () => undefined,
         dispose: async () => undefined,
       },
-      // 不传 platform 时 createNodeReplCuaBroker 会走 POSIX 分支，在 tmpdir 里建
-      // `znrc-*.sock`；Windows 的 net.Server.listen 只接受命名管道，给文件路径直接
-      // EACCES，于是这条用例在 Windows 上从来没跑过。产品代码本身是对的（它按
-      // platform 分支选管道或 unix socket），所以测试必须跑在真实平台上，而不是
-      // 默默假设 POSIX。
+      // Without an explicit platform, createNodeReplCuaBroker takes the POSIX branch and creates
+      // `znrc-*.sock` in tmpdir; on Windows, net.Server.listen accepts only named pipes and fails a file path with
+      // EACCES, so this case never ran on Windows. The product code is correct (it picks pipe or unix socket by
+      // platform), so the test must run on the real platform instead of
+      // silently assuming POSIX.
       platform: process.platform,
     });
     await broker.ready;
@@ -86,8 +86,8 @@ describe("node_repl CUA bridge", () => {
   });
 
   it("records the target app identity from the broker response, not from sandbox code", async () => {
-    // 工具卡的 App 图标只能来自 broker 响应：这一跳沙箱看不见，也改不了。producer 自带的
-    // 内联 icon PNG 不进 run 结果（会话协议不承载 data URL），只保留 appKey/displayName。
+    // Tool-card app icons may only come from the broker response: the sandbox can neither see nor alter that hop. A producer's own
+    // inline icon PNG never reaches the run result (the session protocol carries no data URLs); only appKey/displayName survive.
     broker = createNodeReplCuaBroker({
       runtime: {
         execute: async () =>
@@ -138,8 +138,8 @@ describe("node_repl CUA bridge", () => {
   });
 
   it("ignores app associations that carry no primary identity", async () => {
-    // list_apps 声明的是 items 模式，没有 primary；request_access / stop 声明 none。
-    // 这些调用不能覆盖同一 cell 里前面动作已经确立的身份。
+    // list_apps declares items mode with no primary; request_access / stop declare none.
+    // These calls must not overwrite the identity established by earlier actions in the same cell.
     broker = createNodeReplCuaBroker({
       runtime: {
         execute: async () =>

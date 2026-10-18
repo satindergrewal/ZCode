@@ -241,7 +241,7 @@ export type ToolCallSavedWorkflowListDisplay = z.infer<
 
 // ListModels' catalog card payload. Synced with
 // contracts' listModelsToolResultDisplayPayloadSchema--both strict; a missing member strips the block
- // and the card degrades to `<models>` text. Length caps mirror the CLI constants (100 rows / 2048 chars).
+// and the card degrades to `<models>` text. Length caps mirror the CLI constants (100 rows / 2048 chars).
 export const toolCallListModelsDisplaySchema = z
   .object({
     kind: z.literal("list_models"),

@@ -39,7 +39,7 @@ export class ZCodeStdioTransport implements ZCodeProtocolTransport {
   private readonly closeEmitter = new Emitter<ZCodeProtocolTransportClosedEvent>();
   private readonly stderrCollector: AgentStderrCollector;
   private readonly stdoutDecoder = new StringDecoder("utf8");
-  // 当前未完成行的分片；只在遇到 LF 时 join 一次，见 handleStdoutData 注释。
+  // Fragments of the current unfinished line; joined once on LF (see handleStdoutData).
   private stdoutPendingChunks: string[] = [];
   private stdoutFlushed = false;
   private readersDisposed = false;
@@ -211,11 +211,11 @@ export class ZCodeStdioTransport implements ZCodeProtocolTransport {
     if (this.closed) {
       return;
     }
-    // Bug 原因：旧实现 `stdoutBuffer += chunk` 后对整个缓冲 indexOf("\n")，每个 64KB
-    // chunk 都会让 V8 把 cons string 拍平并从头扫描，单行帧长度 n 时总开销 O(n²)。
-    // task index resync 的 session/read 会回一行约 15MB 的完整快照，实测 30s 内
-    // 真实 stdout 95MB 却拍平分配 9.4GB，Host CPU 100%、RSS 冲到 1.5–1.9GB。
-    // 修复：只在新 chunk 内找 LF，未完成的部分存分片数组，成帧时 join 一次，线性开销。
+    // Bug: the old `stdoutBuffer += chunk` plus whole-buffer indexOf("\n") flattened the V8 cons string on every 64KB
+    // chunk and rescanned from the start: O(n^2) for a single frame of length n.
+    // A task-index resync session/read returns one ~15MB snapshot line; in 30s real traffic of 95MB
+    // it flattened 9.4GB of allocations, pinning Host CPU at 100% and RSS at 1.5-1.9GB.
+    // Fix: find LF only inside the new chunk, keep fragments in an array, join once at frame time. Linear.
     const text = typeof chunk === "string" ? chunk : this.stdoutDecoder.write(chunk);
     this.consumeStdoutText(text);
   };

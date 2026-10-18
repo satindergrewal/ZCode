@@ -173,10 +173,9 @@ describe("ListModels", () => {
 
     // 判别键在 message 前缀（`workflow_introspection_unavailable` 同规），所以读 handler 的
     // 原始返回而不是 executor 投影后的错误对象。
-    const failure = (await listModelsToolEntry.handler(
-      {},
-      { workingDirectory: "/workspace/never-read" } as unknown as ToolExecutionContext,
-    )) as ToolHandlerFailure;
+    const failure = (await listModelsToolEntry.handler({}, {
+      workingDirectory: "/workspace/never-read",
+    } as unknown as ToolExecutionContext)) as ToolHandlerFailure;
     expect(failure.result).toBe(false);
     expect(failure.message).toContain("model_catalog_unavailable");
     expect(failure.message).toContain("capability gap");

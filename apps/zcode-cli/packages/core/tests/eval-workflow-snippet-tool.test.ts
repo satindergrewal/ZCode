@@ -39,7 +39,10 @@ function makeContext(port?: DynamicWorkflowSnippetPort): ToolExecutionContext {
   } as unknown as ToolExecutionContext;
 }
 
-async function run(input: unknown, context: ToolExecutionContext): Promise<EvalWorkflowSnippetOutput> {
+async function run(
+  input: unknown,
+  context: ToolExecutionContext,
+): Promise<EvalWorkflowSnippetOutput> {
   return (await evalWorkflowSnippetToolEntry.handler(input, context)) as EvalWorkflowSnippetOutput;
 }
 
@@ -74,7 +77,9 @@ describe("EvalWorkflowSnippet tool", () => {
 
   it("rejects timeoutMs beyond the 600s schema ceiling", async () => {
     const { port } = stubPort({ kind: "completed", logs: [], logsTruncated: false });
-    await expect(run({ code: "return 1;", timeoutMs: 900_000 }, makeContext(port))).rejects.toThrow();
+    await expect(
+      run({ code: "return 1;", timeoutMs: 900_000 }, makeContext(port)),
+    ).rejects.toThrow();
   });
 
   it("renders diagnostics with the NOT-executed note", async () => {
@@ -144,7 +149,7 @@ describe("EvalWorkflowSnippet — the `path` source", () => {
     const cwd = mkdtempSync(join(tmpdir(), "dwf-snippet-path-"));
     try {
       // 恰好以起始标记开头的文件也整个是代码：片段没有保存定义那套语义。
-      const source = '/* zcode-workflow\ndescription: not a workflow\n*/\nreturn 1;';
+      const source = "/* zcode-workflow\ndescription: not a workflow\n*/\nreturn 1;";
       writeFileSync(join(cwd, "snippet.ts"), source, "utf8");
       const resolution = await resolve({ path: "snippet.ts" }, cwd);
       expect(resolution).toMatchObject({ result: true });
@@ -189,7 +194,9 @@ describe("EvalWorkflowSnippet approval gate (world.run)", () => {
   });
 
   it("asks when the snippet carries world.run commands", () => {
-    expect(gate({ code: `const r = await world.run("lean", ["a.lean"]); return r.exitCode;` })).toEqual({
+    expect(
+      gate({ code: `const r = await world.run("lean", ["a.lean"]); return r.exitCode;` }),
+    ).toEqual({
       gate: "ask",
     });
   });
@@ -198,7 +205,9 @@ describe("EvalWorkflowSnippet approval gate (world.run)", () => {
     // handler / 端口负责把这两种失败变成可读的诊断；打断用户批准一段编不过的代码没有意义。
     expect(gate({ notCode: true })).toEqual({ gate: "proceed" });
     expect(gate({ code: `await agent("x").ask("y");` })).toEqual({ gate: "proceed" });
-    expect(gate({ code: `const c = "node"; await world.run(c, []);` })).toEqual({ gate: "proceed" });
+    expect(gate({ code: `const c = "node"; await world.run(c, []);` })).toEqual({
+      gate: "proceed",
+    });
   });
 
   it("stays a standard-permission tool: no alwaysAsk, no always-allow suppression", () => {

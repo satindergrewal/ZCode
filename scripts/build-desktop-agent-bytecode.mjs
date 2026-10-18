@@ -28,7 +28,8 @@ export async function buildDesktopAgentBytecode({
   electronPath = createRequire(import.meta.url)("electron"),
   env = process.env,
 } = {}) {
-  if (env.ZCODE_E2E_COVERAGE === "1") throw new Error("coverage builds must not enable the bytecode experiment");
+  if (env.ZCODE_E2E_COVERAGE === "1")
+    throw new Error("coverage builds must not enable the bytecode experiment");
   const directory = dirname(entryPath);
   const temporary = join(directory, `.bytecode-${randomUUID()}`);
   const loaderPath = join(directory, "zcode.bytecode.cjs");

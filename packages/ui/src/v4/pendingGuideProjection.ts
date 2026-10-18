@@ -11,9 +11,7 @@ export interface PendingGuideQueueProjection {
  * Split display by the authoritative admitted delivery only - no copying, no rewriting of
  * accepted-input state.
  */
-export function projectPendingGuideQueue(
-  queue: QueueState,
-): PendingGuideQueueProjection {
+export function projectPendingGuideQueue(queue: QueueState): PendingGuideQueueProjection {
   const pendingGuides: QueueItem[] = [];
   const visibleItems: QueueItem[] = [];
   for (const item of queue.items) {
@@ -26,8 +24,6 @@ export function projectPendingGuideQueue(
   return {
     pendingGuides,
     visibleQueue:
-      visibleItems.length === queue.items.length
-        ? queue
-        : { ...queue, items: visibleItems },
+      visibleItems.length === queue.items.length ? queue : { ...queue, items: visibleItems },
   };
 }

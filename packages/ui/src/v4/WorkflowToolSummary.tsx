@@ -25,7 +25,7 @@ export function WorkflowToolSummary({
   toolCallId: string;
   summary: WorkflowRunCardSummary;
   onOpen?: () => void;
-  /** AmendWorkflow 发起行：种类词换成「工作流已调整」。 */
+  /** AmendWorkflow origin row: the kind word becomes workflow-adjusted. */
   amend?: boolean;
   /** FillWorkflowHole 行：留白词汇与补全的计数；在场时 `amend` 不看。 */
   fill?: WorkflowFillSummary;

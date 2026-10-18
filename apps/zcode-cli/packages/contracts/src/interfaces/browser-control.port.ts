@@ -369,7 +369,7 @@ export type BrowserCommand =
   | { method: "nameSession"; name: string }
   | { method: "finalize"; tabId?: string; deliverable?: boolean }
   | { method: "turnEnded"; turnId?: string }
-  // closeTabs：连 tab 一起关（含已释放回该 session 的）。只给永不回来认领的 session（dwf 子代理）。
+  // closeTabs: close the tabs along with the session (including ones released back to it). Only for sessions that never return to claim them (dwf subagents).
   | { method: "closeSession"; closeTabs?: boolean }
   | { method: "cancelRequest"; requestId: string }
   // close: close the given controlled tab; handled at the manager layer.
@@ -535,7 +535,7 @@ export interface BrowserControlListInput {
   signal?: AbortSignal;
 }
 
-/** 子会话 Browser 请求的 tab 归属：子会话自己（dwf 子代理）或父会话（core Agent 子代理）。 */
+/** Tab ownership of child-session browser requests: the child session itself (dwf subagents) or the parent (core Agent subagents). */
 export type BrowserChildSessionTabOwner = "child" | "parent";
 
 export interface BrowserControlPort {
@@ -547,18 +547,22 @@ export interface BrowserControlPort {
   /** On session close, release the browser guest, pending requests, and lease. */
   closeSession?(input: BrowserControlListInput): Promise<void>;
   /**
-   * 为一个客户端不认识的子会话派生端口：workspace / clientMode 按 parentSessionId 的会话解析。
+   * Derive a port for a child session unknown to the client: workspace / clientMode resolve via
+   * the parentSessionId's session.
    *
-   * - `tabOwner: "child"`（默认，dwf 子代理）：tab 归属是子会话自己的 sessionId；派生端口的
-   *   closeSession 连 tab 一起关，并结束这份登记。
-   * - `tabOwner: "parent"`（core Agent 子代理）：下发的 sessionId 换成父会话，子代理与当前对话共用同一组
-   *   tab（桌面据此展开面板、tabs.list 列出对话全部 tab）；派生端口的 turnEnded / closeSession 不向
-   *   桌面发生命周期，tab 交给父会话自己的生命周期管理，closeSession 只结束登记。
+   * - `tabOwner: "child"` (default, dwf subagents): tabs belong to the child session's own
+   *   sessionId; the derived port's closeSession closes the tabs too and ends the registration.
+   * - `tabOwner: "parent"` (core Agent subagents): the issued sessionId is replaced by the
+   *   parent's; the subagent shares one tab set with the conversation (the desktop expands the
+   *   panel and tabs.list lists every conversation tab on this basis). The derived port's
+   *   turnEnded / closeSession emit no lifecycle to the desktop; tabs are left to the parent
+   *   session's own lifecycle, and closeSession only ends the registration.
    *
-   * 登记结束后该子会话的请求与从未登记的一样被拒。
+   * After registration ends, the child session's requests are refused as if never registered.
    *
-   * 缺席表示实现不按客户端会话校验 sessionId（如 CLI headless CDP），子会话直接用本端口。
-   * 见 apps/zcode-cli/packages/dynamic-workflow/docs/execution-engine.md「Subagent sessions」。
+   * Absent means the implementation does not validate sessionIds against client sessions (e.g.
+   * CLI headless CDP); child sessions use this port directly.
+   * See apps/zcode-cli/packages/dynamic-workflow/docs/execution-engine.md "Subagent sessions".
    */
   forChildSession?(input: {
     childSessionId: string;

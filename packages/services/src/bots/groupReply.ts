@@ -2,7 +2,7 @@ import type { BotOutboundMessage } from "@zcode/shared";
 
 type ReplyTarget = Pick<BotOutboundMessage, "replyToMessageId" | "threadId" | "rootMessageId">;
 
-/** 明确拒绝后的有限降级；话题不能误发到群主聊天，也不能重试同一失效锚点。 */
+/** Bounded fallback after explicit rejection: never misroute a topic to the group owner chat nor retry a dead anchor. */
 export function getUnavailableReplyFallback(target: ReplyTarget): ReplyTarget | null {
   const current = target.replyToMessageId || (target.threadId ? target.rootMessageId : undefined);
   if (!current) return null;

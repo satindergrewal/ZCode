@@ -9,13 +9,13 @@ function normalizePath(value: string): string {
   return value.replaceAll("\\", "/");
 }
 
-// 这份依赖边界守卫原先长在 browser-use-plugin/test/bundle-boundary.test.ts 上（entry 是
-// browser-use 的 src/mcp/server.ts）。node_repl 宿主抽成本包后 entry 随之搬家，守卫必须跟着
-// 搬：留在 browser-use 侧会指向已删除的 src/mcp/，而本包才是真正被 plugin host import 的产物。
-// 相对路径深度不变（两个包同为 apps/zcode-cli/packages/*），因此下面的 ../contracts、
-// ../../../../packages/shared 等前缀原样有效。
+// This dependency-boundary guard used to live in browser-use-plugin/test/bundle-boundary.test.ts (entry:
+// browser-use src/mcp/server.ts). Once the node_repl host became this package, the entry moved and the guard had to
+// move with it: left behind, it would point at the deleted src/mcp/, while this package is what the plugin host actually imports.
+// Relative depth is unchanged (both packages live under apps/zcode-cli/packages/*), so the ../contracts and
+// ../../../../packages/shared prefixes below remain valid as-is.
 describe("node_repl MCP bundle boundary", () => {
-  it("只依赖 core 的 REPL 引擎，不带入 Agent、工具或工作流编译器", async () => {
+  it("depends only on the core REPL engine, with no agents, tools, or workflow compiler", async () => {
     const result = await build({
       absWorkingDir: packageRoot,
       bundle: true,
@@ -33,8 +33,8 @@ describe("node_repl MCP bundle boundary", () => {
     const coreRoot = `${normalizePath(resolve(packageRoot, "../core/dist"))}/`;
     const coreInputs = inputs.filter((path) => path.startsWith(coreRoot));
     expect(coreInputs.length).toBeGreaterThan(0);
-    // Bug 原因：仅从总入口取 NodeReplSession，也会因顶层副作用带入整套业务依赖。
-    // 检查依赖边界而非固定包体积，允许 REPL 自身增加实现文件。
+    // Root cause: importing NodeReplSession from the root barrel pulls the whole business graph in via top-level side effects.
+    // The check pins the dependency boundary, not a byte size, so the REPL may add implementation files freely.
     expect(coreInputs.find((path) => !path.startsWith(`${coreRoot}repl/`))).toBeUndefined();
     expect(
       inputs.find((path) => /(?:^|\/)(?:dynamic-workflow|typescript)\//u.test(path)),
@@ -53,7 +53,7 @@ describe("node_repl MCP bundle boundary", () => {
     const sharedRoot = `${normalizePath(resolve(packageRoot, "../../../../packages/shared/src"))}/`;
     const sharedInputs = inputs.filter((path) => path.startsWith(sharedRoot));
     expect(sharedInputs.length).toBeGreaterThan(0);
-    // 同一个总入口即使只取常量，也会初始化其它领域的 schema；Worker 会重复承担这份开销。
+    // Even a constant-only import from the root entry initializes other domains' schemas; each Worker would pay that cost again.
     expect(
       sharedInputs.find((path) => !path.startsWith(`${sharedRoot}browser-use/`)),
     ).toBeUndefined();

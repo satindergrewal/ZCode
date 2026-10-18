@@ -17,13 +17,7 @@ import { logger } from "@/logger.js";
 
 const RewardsContext = createContext<(() => Promise<void>) | null>(null);
 export const useOpenRewards = () => useContext(RewardsContext);
-export function RewardsProvider({
-  children,
-  desktop,
-}: {
-  children: ReactNode;
-  desktop: boolean;
-}) {
+export function RewardsProvider({ children, desktop }: { children: ReactNode; desktop: boolean }) {
   const [opened, setOpened] = useState(false);
   const platform = usePlatform();
   const { locale } = useZCodeIntl();
@@ -31,7 +25,7 @@ export function RewardsProvider({
   const user = useZCodeStore((s) => s.user);
   const loginAttempt = useZCodeStore((s) => s.loginEntryAttempt);
   const requestLogin = useZCodeStore((s) => s.requestLoginEntry);
-  // 登录后营销实例会重建；续接意图由窗口级 Provider 持有，不能挂在旧 controller 上。
+  // Login rebuilds the marketing instance; resume intent is window-level, not on the old controller.
   const pendingLogin = useRef<number | null>(null);
   const openPage = useCallback(async () => {
     if (desktop) setOpened(true);
@@ -66,7 +60,7 @@ export function RewardsProvider({
     }
     if (loginAttempt.status === "succeeded" && user) {
       pendingLogin.current = null;
-      void openPage().catch((error) => logger.warn("[rewards] 登录后打开失败", { error }));
+      void openPage().catch((error) => logger.warn("[rewards] post-login open failed", { error }));
     }
   }, [loginAttempt, user, openPage]);
   return (

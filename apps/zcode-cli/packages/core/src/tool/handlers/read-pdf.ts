@@ -47,7 +47,7 @@ const READ_ERROR_CODE_BY_PDF_DOCUMENT_ERROR = {
   unavailable: ReadErrorCode.PDF_CONFIGURATION_ERROR,
 } satisfies Record<PdfDocumentErrorCode, ReadErrorCode | undefined>;
 // Root cause: 120s belongs to the Poppler child process; sharing it as the executor cap would eat the
- availability check, image normalization, and finally-cleanup budget -- the pages branch keeps its own outer budget.
+// availability check, image normalization, and finally-cleanup budget -- the pages branch keeps its own outer budget.
 export const READ_PDF_TOOL_TIMEOUT_MS = READ_PDF_RENDER_TIMEOUT_MS + 30_000;
 
 export function isPdfPath(filePath: string): boolean {
@@ -152,7 +152,7 @@ async function readNativePdf(
     } catch (error) {
       rethrowPdfCancellation(error, context.abortSignal);
       // Root cause: the adapter already signals normal pdfinfo failure/parse issues via undefined; swallowing
- unknown port exceptions would mask impl bugs. Convert cancellation only; everything else bubbles.
+      // unknown port exceptions would mask impl bugs. Convert cancellation only; everything else bubbles.
       throw error;
     }
   }

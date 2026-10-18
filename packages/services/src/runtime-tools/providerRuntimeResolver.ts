@@ -7,7 +7,7 @@ import { buildRuntimeProcessEnvPatch } from "./runtimeCommandEnv.js";
 
 const ZCODE_AGENT_WORKDIR_ENV = "ZCODE_AGENT_WORKDIR";
 
-/** 返回 provider + workspace 在应用内的专属配置目录路径 */
+/** Returns the in-app config dir for a provider+workspace pair */
 export function resolveProviderConfigDir(
   _legacyProvider: string,
   _workspacePath: string,
@@ -16,7 +16,7 @@ export function resolveProviderConfigDir(
   return getProviderWorkspaceConfigDir();
 }
 
-/** 构建干净的 Node.js 环境，去掉 Electron/GPU 相关变量 */
+/** Builds a clean Node.js env, stripping Electron/GPU variables */
 export function buildCleanEnv(
   provider: string,
   _configDir: string,
@@ -25,15 +25,15 @@ export function buildCleanEnv(
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
     if (!value) continue;
-    // 过滤掉 Electron 特有的和 GPU 相关的环境变量
+    // Filter Electron-specific and GPU-related variables
     if (key.startsWith("ELECTRON_")) continue;
     if (key.startsWith("ORIGINAL_XDG_")) continue;
     if (key === "NODE_OPTIONS") continue;
-    // Bugfix: Windows 下 git bash / WSL 环境会把 SHELL=/usr/bin/bash 注入到 process.env，
-    // agent runtime 在 Windows 上用 SHELL 来启动子进程（stdio MCP server），
-    // 传入无效的 POSIX shell 路径会导致所有 stdio MCP 启动失败。
-    // 不能直接删掉 SHELL，否则 agent 找不到 shell 也会导致 MCP 连接失败。
-    // 这里把无效的 POSIX 路径替换为 Windows 原生 shell（优先 ComSpec，回退 cmd.exe）。
+    // Bugfix: git-bash/WSL on Windows inject SHELL=/usr/bin/bash into process.env;
+    // the agent runtime uses SHELL on Windows to spawn children (stdio MCP servers),
+    // and a bogus POSIX path fails every stdio MCP start.
+    // Deleting SHELL outright breaks MCP connections too, so
+    // replace invalid POSIX paths with a native Windows shell (ComSpec, else cmd.exe).
     if (key === "SHELL" && process.platform === "win32") {
       const winShell = process.env.ComSpec || "cmd.exe";
       env.SHELL = winShell;
@@ -42,15 +42,15 @@ export function buildCleanEnv(
     if (key === "GOOGLE_API_KEY") continue;
     env[key] = value;
   }
-  // 修复原因：provider/agent runtime 子进程不能默认继承 shell 里的 NODE_ENV、代理或证书变量。
-  // 这些运行时输入必须来自 ZCODE_* 显式配置或 app 设置页，避免用户环境污染模型请求和工具子进程。
+  // Fix: provider/agent children must not inherit shell NODE_ENV, proxies, or cert vars by default.
+  // Those inputs come from explicit ZCODE_* config or app settings, keeping user env out of model requests and tool children.
   sanitizeZCodeRuntimeEnvInPlace(env);
-  // Bugfix: Windows 环境变量名大小写不敏感，但 JS 普通对象区分大小写。
-  // process.env 枚举时 PATH 通常以 "Path"（title case）出现，
-  // 复制到普通对象后，下游 buildRuntimeProcessEnvPatch 按 "PATH"（全大写）查找会得到 undefined，
-  // 导致它创建仅含工具路径的 PATH 条目，子进程初始化时 "PATH" 覆盖了 "Path"，
-  // 最终 agent 及其子进程丢失整个系统 PATH，无法找到 git / node / cmd 等系统命令。
-  // 这里统一把 Path → PATH，保证后续代码使用一致的大写 key。
+  // Bugfix: Windows env names are case-insensitive; plain JS objects are not.
+  // process.env enumerates PATH as "Path" (title case),
+  // and buildRuntimeProcessEnvPatch looks up "PATH", gets undefined,
+  // builds a tools-only PATH, and at child init "PATH" overrides "Path",
+  // dropping the whole system PATH so git/node/cmd vanish for the agent and its children.
+  // Normalize Path to PATH so downstream code uses one uppercase key.
   if (process.platform === "win32") {
     const nonCanonicalPathKey = Object.keys(env).find(
       (k) => k.toUpperCase() === "PATH" && k !== "PATH",
@@ -62,8 +62,8 @@ export function buildCleanEnv(
   }
   if (provider === "glm") {
     const glmHome = getDataBaseDir();
-    // Bugfix: GLM agent 会把 config/session 产物写到 dataBaseDir 下的 ~/.zcode/cli。
-    // 这里统一把子进程 HOME 切到 dataBaseDir，保证“写入目录”和“运行时读取目录”始终一致。
+    // Bugfix: the GLM agent writes config/session artifacts to ~/.zcode/cli under dataBaseDir.
+    // Point the child HOME at dataBaseDir so writes and reads always agree.
     env.HOME = glmHome;
     if (process.platform === "win32") {
       env.USERPROFILE = glmHome;
@@ -168,12 +168,12 @@ export function findZCodeAgentRuntimeNodeBundle(): string | null {
   return resolveExistingPath(candidates);
 }
 
-/** 根据 provider 查找对应 binary 路径 */
+/** Finds the binary path for a provider */
 export function findBinary(provider: string): string | null {
   if (provider !== "glm") {
     return null;
   }
-  // GLM 开发态：ZCODE_AGENT_WORKDIR 或相邻目录发现，返回源码入口路径作为 "binary"
+  // GLM dev mode: discover via ZCODE_AGENT_WORKDIR or sibling dirs; the source entry path acts as the binary
   const devEntry = findGlmDevEntry();
   if (devEntry) {
     return devEntry.agentPath;
@@ -182,9 +182,9 @@ export function findBinary(provider: string): string | null {
 }
 
 /**
- * GLM 开发态源码入口发现。
- * 优先读取 ZCODE_AGENT_WORKDIR。
- * 未设置时在 cwd 相邻目录查找 zcode-cli / glm。
+ * GLM dev-mode source entry discovery.
+ * Prefers ZCODE_AGENT_WORKDIR.
+ * Otherwise searches cwd siblings for zcode-cli / glm.
  */
 interface GlmDevEntry {
   workdir: string;
@@ -218,9 +218,9 @@ function findGlmDevEntry(): GlmDevEntry | null {
       return entry;
     }
   }
-  // Bugfix: desktop dev 进程的 cwd 是 packages/desktop，旧逻辑只查 cwd 的父级，
-  // 会误找 packages/zcode-cli，而不是仓库旁边的 ../zcode-cli。这里先向上定位仓库根，
-  // 再按“仓库相邻目录”发现本地 GLM 源码，同时保留 cwd 相邻目录作为非 monorepo 兜底。
+  // Bugfix: desktop dev runs with cwd packages/desktop; the old parent-only lookup hit
+  // packages/zcode-cli instead of ../zcode-cli beside the repo. Locate the repo root first,
+  // then search repo siblings for the local GLM checkout, keeping cwd siblings as the non-monorepo fallback.
   const repoRoot = findWorkspaceRoot(process.cwd());
   const anchorDirs = [repoRoot, process.cwd()].filter((anchor): anchor is string =>
     Boolean(anchor),

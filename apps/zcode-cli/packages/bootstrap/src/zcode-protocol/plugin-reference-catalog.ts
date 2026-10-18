@@ -93,7 +93,7 @@ export async function resolveSuggestedPluginReference(
   ) {
     return unavailable(
       "plugin_suggested_reference_untrusted_source",
-            "The suggested plugin is not from the trusted official zcode-plugins-official source",
+      "The suggested plugin is not from the trusted official zcode-plugins-official source",
     );
   }
 
@@ -107,8 +107,8 @@ export async function resolveSuggestedPluginReference(
   };
   let displayByPluginId: Map<string, PluginReferenceListingDisplay> | undefined;
   const resolveIcon = () => {
-        // Icons come only from the official listing cached by the target Host, returned once with the trusted resolution; the UI no longer reads
-        // the workspace referenceCatalog for them. overview never waits on the network; missing icons degrade to none.
+    // Icons come only from the official listing cached by the target Host, returned once with the trusted resolution; the UI no longer reads
+    // the workspace referenceCatalog for them. overview never waits on the network; missing icons degrade to none.
     displayByPluginId ??= resolveReferenceListingDisplayByPluginId(workingDirectory);
     return displayByPluginId.get(stableId)?.icon;
   };
@@ -130,7 +130,7 @@ export async function resolveSuggestedPluginReference(
           ? [
               diagnostic(
                 "plugin_suggested_reference_conflict",
-                                "The suggested plugin has a name conflict; it cannot be auto-installed or referenced",
+                "The suggested plugin has a name conflict; it cannot be auto-installed or referenced",
               ),
             ]
           : [],
@@ -140,8 +140,8 @@ export async function resolveSuggestedPluginReference(
   const initial = readState();
   if (initial.entry) return toResult(initial.entry);
 
-    // The legacy flow returned missing results only after the official Marketplace refresh finished -- no feedback
-    // while waiting, so clicks looked dead. After the first local miss-check, mark that same operation loading immediately.
+  // The legacy flow returned missing results only after the official Marketplace refresh finished -- no feedback
+  // while waiting, so clicks looked dead. After the first local miss-check, mark that same operation loading immediately.
   context.notify({
     method: zcodeProtocolNotifications.pluginOperationProgress,
     params: { operationId: params.operationId, state: "refreshing" },
@@ -161,17 +161,18 @@ export async function resolveSuggestedPluginReference(
       workingDirectory,
     });
     const refreshTimeoutRequest = new Promise<never>((_, reject) => {
-            // A refresh timeout must abort the underlying network/process; ending only the protocol wait lets the old operation keep rewriting catalog snapshots.
+      // A refresh timeout must abort the underlying network/process; ending only the protocol wait lets the old operation keep rewriting catalog snapshots.
       refreshTimeout = setTimeout(() => {
         refreshTimedOut = true;
-                const timeoutError = new Error("Timed out refreshing zcode-plugins-official (10000 ms)");
+        const timeoutError = new Error("Timed out refreshing zcode-plugins-official (10000 ms)");
         timeoutError.name = "TimeoutError";
         refreshController.abort(timeoutError);
         reject(timeoutError);
       }, SUGGESTED_PLUGIN_MARKETPLACE_REFRESH_TIMEOUT_MS);
     });
     const refreshed = await Promise.race([refreshRequest, refreshTimeoutRequest]);
-        if (signal?.aborted) return unavailable("plugin_operation_cancelled", "The plugin operation was cancelled");
+    if (signal?.aborted)
+      return unavailable("plugin_operation_cancelled", "The plugin operation was cancelled");
     const failure = refreshed.diagnostics.find(
       (item) => item.pluginId === SUGGESTED_PLUGIN_MARKETPLACE,
     );
@@ -184,7 +185,7 @@ export async function resolveSuggestedPluginReference(
       );
     }
     if (signal?.aborted) {
-            return unavailable("plugin_operation_cancelled", "The plugin operation was cancelled");
+      return unavailable("plugin_operation_cancelled", "The plugin operation was cancelled");
     }
     return unavailable(
       "marketplace_refresh_failed",
@@ -204,7 +205,10 @@ export async function resolveSuggestedPluginReference(
     candidate.name !== pluginName ||
     candidate.marketplace !== SUGGESTED_PLUGIN_MARKETPLACE
   ) {
-        return unavailable("plugin_suggested_reference_not_listed", "Plugin not found in the refreshed official catalog");
+    return unavailable(
+      "plugin_suggested_reference_not_listed",
+      "Plugin not found in the refreshed official catalog",
+    );
   }
   const icon = candidate.listing?.icon?.trim();
   return {
@@ -220,11 +224,11 @@ export async function resolveSuggestedPluginReference(
 }
 
 /**
-  * icon/displayName(I18n) are mutable display projections of the target Host's Marketplace listing, not part of the frozen
-  * session identity. Root cause: the store listing is the source of truth for icon/localized display names; plugin
-  * manifest/runtime metadata does not carry them. workingDirectory only locates data along existing Host/config
-  * boundaries; the join here is by stable ID, for Picker/chip display and search only --
-  * reminders still consume only the core identity catalog.
+ * icon/displayName(I18n) are mutable display projections of the target Host's Marketplace listing, not part of the frozen
+ * session identity. Root cause: the store listing is the source of truth for icon/localized display names; plugin
+ * manifest/runtime metadata does not carry them. workingDirectory only locates data along existing Host/config
+ * boundaries; the join here is by stable ID, for Picker/chip display and search only --
+ * reminders still consume only the core identity catalog.
  */
 interface PluginReferenceListingDisplay {
   category?: string;

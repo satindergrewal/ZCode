@@ -14,7 +14,7 @@ import type { TopicFrameReservation } from "./topic-frame-reservation.js";
 interface ConfigSubscription {
   subscriptionId: string;
   connectionId: string;
-    /** Next frame's fromSeq ((fromSeq, toSeq] semantics). */
+  /** Next frame's fromSeq ((fromSeq, toSeq] semantics). */
   sentSeq: number;
   inFlight: TopicFrameReservation<WorkspaceConfigTopicFrame> | null;
   nextLogicalFrameOrdinal: number;
@@ -41,7 +41,7 @@ function statesEqual(a: WorkspaceConfigState, b: WorkspaceConfigState): boolean 
 export class WorkspaceConfigPublisher {
   private state: WorkspaceConfigState = { configOptions: [], slashCommands: [] };
   private currentSeq = 0;
-    /** Bounded (seq, delta) replay buffer; overflow/gaps degrade to snapshot. */
+  /** Bounded (seq, delta) replay buffer; overflow/gaps degrade to snapshot. */
   private readonly deltaLog: Array<{
     seq: number;
     delta: WorkspaceConfigDelta;
@@ -66,7 +66,7 @@ export class WorkspaceConfigPublisher {
     return this.state;
   }
 
-    /** Latest config catalog arrived -> conflated debounce; on change, account and advance seq. Returns whether anything changed. */
+  /** Latest config catalog arrived -> conflated debounce; on change, account and advance seq. Returns whether anything changed. */
   publish(state: WorkspaceConfigState): boolean {
     if (statesEqual(this.state, state)) return false;
     this.state = state;
@@ -83,7 +83,7 @@ export class WorkspaceConfigPublisher {
     return this.currentSeq;
   }
 
-    /** Subscribe: resume when the base is valid and resumable, else snapshot. One subscription per connection (re-subscribe replaces the generation). */
+  /** Subscribe: resume when the base is valid and resumable, else snapshot. One subscription per connection (re-subscribe replaces the generation). */
   subscribe(
     connectionId: string,
     base?: { logEpoch: string; seq: number },
@@ -129,9 +129,7 @@ export class WorkspaceConfigPublisher {
     };
 
     const canResume =
-      base !== undefined &&
-      base.logEpoch === this.logEpoch &&
-      this.canResumeFrom(base.seq);
+      base !== undefined && base.logEpoch === this.logEpoch && this.canResumeFrom(base.seq);
     if (canResume) {
       subscription.sentSeq = base.seq;
       const reservation =
@@ -151,7 +149,7 @@ export class WorkspaceConfigPublisher {
     return this.subscribeResult(subscriptionId, "snapshot", reservation, rollback);
   }
 
-    /** same-sub recovery: rebuilt from the client's base, never trusting sentSeq. */
+  /** same-sub recovery: rebuilt from the client's base, never trusting sentSeq. */
   resyncReserved(
     subscriptionId: string,
     request: WorkspaceConfigResyncRequest,
@@ -170,14 +168,18 @@ export class WorkspaceConfigPublisher {
       subscription.sentSeq = base.seq;
       const reservation =
         base.seq === this.currentSeq
-          ? this.reserveFrame(subscription, {
-              topic: this.topic,
-              subscriptionId,
-              fromSeq: base.seq,
-              toSeq: base.seq,
-              sentAt: this.now(),
-              payload: { kind: "deltas", deltas: [] },
-            }, "recovery")
+          ? this.reserveFrame(
+              subscription,
+              {
+                topic: this.topic,
+                subscriptionId,
+                fromSeq: base.seq,
+                toSeq: base.seq,
+                sentAt: this.now(),
+                payload: { kind: "deltas", deltas: [] },
+              },
+              "recovery",
+            )
           : this.reserveDeltaFrame(subscription, "recovery");
       return this.subscribeResult(
         subscriptionId,
@@ -263,7 +265,7 @@ export class WorkspaceConfigPublisher {
     };
   }
 
-    /** Drains a subscription's unsent delta frames; null when there are none. */
+  /** Drains a subscription's unsent delta frames; null when there are none. */
   flush(subscriptionId: string): WorkspaceConfigTopicFrame | null {
     const reservation = this.reserveFlush(subscriptionId);
     if (!reservation || !reservation.commit()) return null;
@@ -283,7 +285,7 @@ export class WorkspaceConfigPublisher {
     deliveryKind: TopicFrameDeliveryKind = "online",
   ): TopicFrameReservation<WorkspaceConfigTopicFrame> {
     const pending = this.deltaLog.filter((entry) => entry.seq > subscription.sentSeq);
-        // The replay buffer dropped part of the interval (seq gap) -> degrade to snapshot (equivalent under conflated semantics).
+    // The replay buffer dropped part of the interval (seq gap) -> degrade to snapshot (equivalent under conflated semantics).
     if (pending.length === 0 || pending[0]!.seq !== subscription.sentSeq + 1) {
       return this.reserveFrame(
         subscription,
@@ -292,14 +294,18 @@ export class WorkspaceConfigPublisher {
       );
     }
     const fromSeq = subscription.sentSeq;
-    return this.reserveFrame(subscription, {
-      topic: this.topic,
-      subscriptionId: subscription.subscriptionId,
-      fromSeq,
-      toSeq: this.currentSeq,
-      sentAt: this.now(),
-      payload: { kind: "deltas", deltas: pending.map((entry) => entry.delta) },
-    }, deliveryKind);
+    return this.reserveFrame(
+      subscription,
+      {
+        topic: this.topic,
+        subscriptionId: subscription.subscriptionId,
+        fromSeq,
+        toSeq: this.currentSeq,
+        sentAt: this.now(),
+        payload: { kind: "deltas", deltas: pending.map((entry) => entry.delta) },
+      },
+      deliveryKind,
+    );
   }
 
   private reserveFrame(

@@ -109,13 +109,16 @@ export function useBrowserScreenshotSurfaceRequest(
       // and a command landing during React effect cleanup briefly removed the IPC listener, so prepare messages
       // were lost for good and background screenshots waited the full 30s. The listener now lives with the platform lifetime and reads the latest tabs on match.
       if (!findScreenshotSurfaceTabForPrepare(tabsRef.current, payload)) {
-        logger.debug("[browser-use] Ignoring screenshot surface prepare for a non-current renderer tab", {
-          requestId: payload.requestId,
-          tabId: payload.tabId,
-        });
+        logger.debug(
+          "[browser-use] Ignoring screenshot surface prepare for a non-current renderer tab",
+          {
+            requestId: payload.requestId,
+            tabId: payload.tabId,
+          },
+        );
         return;
       }
-        logger.debug("[browser-use] Accepted screenshot surface prepare", {
+      logger.debug("[browser-use] Accepted screenshot surface prepare", {
         requestId: payload.requestId,
         tabId: payload.tabId,
         webContentsId: payload.webContentsId,

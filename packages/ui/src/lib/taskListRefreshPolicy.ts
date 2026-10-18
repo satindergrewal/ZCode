@@ -13,12 +13,12 @@ const TASK_META_INCREMENTAL_REASONS = new Set<ZCodeWorkspaceTaskListChanged["rea
   "assistant_message_saved",
   "task_status_changed",
   "task_meta_changed",
-  // Bugfix: 切模型是纯配置变更，只需按 meta 增量回写（model 字段），
-  // 绝不能触发整表刷新或 membership 重拉——之前它混在 task_meta_changed 里，
-  // 每次切模型都会让左侧所有列表（跨 workspace）重拉归属并整体重发布。
+  // Bugfix: a model switch is a pure config change -- write back the meta delta (model field) only;
+  // never a full refetch or membership re-pull. It used to ride task_meta_changed,
+  // making every model switch re-pull membership and republish every sidebar list across workspaces.
   "task_model_changed",
-  // Bugfix: 标题变更（首条消息写 title/自动标题/手动重命名）与归属无关，
-  // 按 meta 增量回写即可，不触发整表刷新或 membership 重拉。
+  // Bugfix: title changes (first-message title/auto-title/rename) do not touch membership --
+  // write the meta delta; no full refresh, no membership re-pull.
   "task_title_changed",
 ]);
 
@@ -80,21 +80,21 @@ export function shouldRefetchTaskListMembershipForWorkspaceEvent(
 export function shouldRefreshTaskListForWorkspaceEvent(
   event: Pick<ZCodeWorkspaceTaskListChanged, "reason" | "taskId" | "taskMeta">,
 ): boolean {
-  // Bugfix: 发送、停止、归档和元数据保存已经通过乐观 task cache / snapshot meta 增量写回。
-  // 如果这里继续把 realtime invalidation 当成整表查询信号，左侧 task 会在这些操作时闪一下。
-  // 但消息保存和状态变更事件只携带 taskId/reason，不携带最新 meta；远控 observer 没有本地乐观状态，
-  // 必须保留静默刷新来同步 running/completed/error，否则手机端发送后桌面任务列表状态不会更新。
+  // Bugfix: send/stop/archive/meta saves already write back via the optimistic task cache / snapshot meta.
+  // Treating realtime invalidations as full-refetch signals made sidebar tasks flash on each.
+  // But message-save/state events carry only taskId/reason, and the remote observer has no local optimistic state --
+  // keep the silent refresh for running/completed/error, or desktop lists never update after a phone send.
   if (getTaskMetaWorkspaceEventSyncMode(event)) {
     return false;
   }
   if (isTaskListMembershipWorkspaceEvent(event)) {
-    // Bugfix: membership 事件带 taskMeta 时，UI 可以根据当前缓存位置推断旧 membership 并增量移动。
-    // 只有旧版本/异常广播缺 meta 时才整表刷新兜底。
+    // Bugfix: with taskMeta on membership events, infer the old slot from cache and move incrementally.
+    // Full-refetch only as the fallback for legacy/abnormal broadcasts lacking meta.
     return !event.taskMeta;
   }
   if (isTaskListDeletionWorkspaceEvent(event)) {
-    // Bugfix: 删除事件通常只有 taskId，无法判断折叠/分页隐藏项原本属于 active/pinned/archived 哪些列表。
-    // 调用方确认命中可见缓存时会提前跳过刷新；否则必须回到服务端事实源补齐 total/hasMore。
+    // Bugfix: deletes carry only a taskId -- collapsed/paged-hidden items' original lists are unknowable.
+    // Callers skip early on visible-cache hits; otherwise re-derive total/hasMore from the server truth.
     return true;
   }
 
@@ -108,8 +108,8 @@ export function getTaskMetaWorkspaceEventSyncMode(
     return null;
   }
   if (event.reason === "task_created") {
-    // Bugfix: 手机 shared-host 创建 task 时，桌面 renderer 没有本地乐观插入。
-    // task_created 必须作为 active 成员变更插入所有匹配 query cache，不能只重排已存在项。
+    // Bugfix: tasks created from the phone on a shared host give the desktop renderer no optimistic insert.
+    // task_created must insert into every matching query cache as an active-membership change, not just reorder existing rows.
     return "insert-active";
   }
   if (TASK_META_INCREMENTAL_REASONS.has(event.reason)) {

@@ -1,8 +1,8 @@
-// V4 用户输入准入共用件：正文/附件非空校验、held 队列裁决、以及旧发送端的
-// Selection/Mode 固定。这些原语被 session-flow / goal-compact / session-mgmt /
-// queue / fork-edit-retry 五个命令组共同消费，属于 commands 层的横向能力，
-// 因此与 prompt-turn.ts、record-access.ts 并列放在 commands/ 下，
-// 而不是寄居在某一个 handler 文件里。
+// V4 user-input admission commons: body/attachment non-empty checks, held-queue verdicts, and legacy-sender
+// Selection/Mode pinning. session-flow / goal-compact / session-mgmt /
+// queue / fork-edit-retry all consume these; a cross-cutting commands-layer capability,
+// hence placed beside prompt-turn.ts and record-access.ts under commands/,
+// not lodged in one handler file.
 import type { SubmissionMode } from "@zcode/shared/zcode-protocol-v4";
 import { resolveExecutionState, type ModelSelection } from "@zcode/shared";
 import type { TurnAttachment } from "@zcode/core";
@@ -20,12 +20,12 @@ export class V4InputAdmissionRejectedError extends Error {
   }
 }
 
-/** V4 用户输入统一准入：正文或附件至少存在一个。 */
+/** Unified v4 user-input admission: body or attachments, at least one. */
 export function hasPromptInput(text: string, attachments: readonly unknown[] | undefined): boolean {
   return text.trim().length > 0 || Boolean(attachments && attachments.length > 0);
 }
 
-/** held（inputRouting.mode=choice）下 sendText/sendGoalCommand 缺 disposition → 拒绝（10 §6.4）。 */
+/** held (inputRouting.mode=choice) sendText/sendGoalCommand without disposition -> reject (10 6.4). */
 export class V4HeldQueueDispositionRequiredError extends Error {
   readonly reasonCode = "heldQueueDispositionRequired";
   constructor() {
@@ -34,7 +34,7 @@ export class V4HeldQueueDispositionRequiredError extends Error {
   }
 }
 
-/** 确认框打开后队列被另一端增删：旧确认不能继续清空/保留并发送。 */
+/** The queue changed on the other end while the confirm dialog was open: a stale confirm may not clear/keep-and-send. */
 export class V4HeldQueueConfirmationStaleError extends Error {
   readonly reasonCode = "guard.heldQueueConfirmationStale";
   constructor() {
@@ -77,9 +77,9 @@ export async function enqueueDeferredInputForBusyWork(
 }
 
 /**
- * held choice 裁决共用件（catalog B06/B07，2026-07-05 裁决）：completed + queue>0 +
- * autoDrain=false（投影 inputRouting.mode=choice）时输入不静默入队——
- * clear → 先清空 queue 再 startNow；keep → 保留 queue 直接 startNow；缺省 → reject。
+ * Held-choice verdict commons (catalog B06/B07, ruling 2026-07-05): with completed + queue>0 +
+ // autoDrain=false (projected inputRouting.mode=choice) input never silently enqueues —
+ * clear -> empty the queue then startNow; keep -> keep the queue, startNow; absent -> reject.
  */
 export async function applyHeldQueueDisposition(
   host: V4CommandCoreHost,
@@ -111,8 +111,8 @@ export async function applyHeldQueueDisposition(
 }
 
 /**
- * M3 兼容 admission：新发送端显式提交 Selection/Mode/Plan；旧发送端在 CLI 接收边界把
- * 当前 Session 值固定进 canonical intent。固定完成后 Queue/Guide 不再读取可变 Session。
+ * M3-compat admission: new senders state Selection/Mode/Plan explicitly; old senders get them pinned at the CLI receive boundary.
+ * current Session values pinned into the canonical intent at the CLI receive boundary. Once pinned, Queue/Guide never read the mutable Session.
  */
 export function resolveSubmittedExecutionState(
   record: V4SessionRecordView,
@@ -131,9 +131,9 @@ export function resolveSubmittedExecutionState(
     if (!runtimeSelection && !entrySelection) {
       throw new Error(`Session model must be provider-qualified: ${record.app.getModel()}`);
     }
-    // 修复原因：getThoughtLevel() 是 Active Model 的 effective 展示事实。把它补回
-    // canonical intent 会把 Config 默认值伪装成显式 pin；旧发送端只能固定 Session
-    // 已经持有的稀疏 Selection，不能在 admission 时重新解释它。
+    // Why: getThoughtLevel() is the Active Model's effective display fact. Putting it back
+    // into the canonical intent would disguise a Config default as an explicit pin; legacy senders can only pin the sparse Selection
+    // the Session already holds, never re-interpret it at admission.
     modelSelection = runtimeSelection
       ? {
           providerId: runtimeSelection.providerId,
@@ -159,10 +159,10 @@ export function resolveSubmittedExecutionState(
 }
 
 /**
- * Highspeed Selection 只有与同一轮 execution 材料成对出现才有效。retry、edit 重发、卡过期与
- * queue promotion 在没有本轮有效执行材料时，统一经这个 resolver 退回会话常驻 Selection；
- * 禁止只删 modelExecution 却保留 account:*-highspeed-card Selection（spec §3 规则 13）。
- * 只读会话当前值，不改写 session 常驻模型。
+ * A Highspeed Selection is valid only paired with the same turn's execution material. Retry, edit re-send, expired cards, and
+ // queue promotion without valid material fall back to the resident Selection through this one resolver;
+ // never drop modelExecution while keeping the account:*-highspeed-card Selection (spec 3, rule 13).
+ // Read-only on the session's current value; never rewrites the resident model.
  */
 export function resolveSessionFallbackModelSelection(record: V4SessionRecordView): ModelSelection {
   return resolveSubmittedExecutionState(record, {}).modelSelection;

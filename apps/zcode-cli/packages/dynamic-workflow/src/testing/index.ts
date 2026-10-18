@@ -1,6 +1,7 @@
 /**
- * `@zcode/dynamic-workflow/testing`：面向 JournalStorePort 实现方的共享测试资产。
- * 只在消费方的测试进程里执行（vitest 是本包的 devDependency，不进入运行时依赖）。
+ * `@zcode/dynamic-workflow/testing`: shared test assets for JournalStorePort implementers.
+ * Runs only inside the consumer's test process (vitest is a devDependency of this package, never
+ * a runtime dependency).
  */
 
 export { runJournalStoreContract } from "./journal-contract.js";

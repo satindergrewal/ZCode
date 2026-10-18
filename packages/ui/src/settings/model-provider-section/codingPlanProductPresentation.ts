@@ -1,19 +1,11 @@
-import type {
-  CodingPlanCardCopyItem,
-  CodingPlanProductPreviewPayment,
-} from "@zcode/shared";
+import type { CodingPlanCardCopyItem, CodingPlanProductPreviewPayment } from "@zcode/shared";
 
-export function normalizeCodingPlanCardCopyItems(
-  items: unknown,
-): CodingPlanCardCopyItem[] {
+export function normalizeCodingPlanCardCopyItems(items: unknown): CodingPlanCardCopyItem[] {
   if (!Array.isArray(items)) {
     return [];
   }
   return items.flatMap((item) => {
-    if (
-      typeof item !== "string" &&
-      (!item || typeof item !== "object")
-    ) {
+    if (typeof item !== "string" && (!item || typeof item !== "object")) {
       return [];
     }
     const text =
@@ -26,8 +18,7 @@ export function normalizeCodingPlanCardCopyItems(
       return [];
     }
     const tooltip =
-      typeof item === "string" ||
-      typeof (item as { tooltip?: unknown }).tooltip !== "string"
+      typeof item === "string" || typeof (item as { tooltip?: unknown }).tooltip !== "string"
         ? ""
         : (item as { tooltip: string }).tooltip.trim();
     return [{ text, ...(tooltip ? { tooltip } : {}) }];
@@ -46,22 +37,14 @@ export type CodingPlanProductDisplay = CodingPlanProductPreviewPayment & {
   descriptionItems?: CodingPlanCardCopyItem[];
 };
 
-const CODING_PLAN_CURRENCY_LABELS_ZH: Record<CodingPlanPriceCurrency, string> =
-  {
-    CNY: "人民币",
-    USD: "美元",
-  };
+const CODING_PLAN_CURRENCY_LABELS_ZH: Record<CodingPlanPriceCurrency, string> = {
+  CNY: "人民币",
+  USD: "美元",
+};
 
-export const CODING_PLAN_PERIODS: CodingPlanBillingPeriod[] = [
-  "monthly",
-  "quarterly",
-  "yearly",
-];
+export const CODING_PLAN_PERIODS: CodingPlanBillingPeriod[] = ["monthly", "quarterly", "yearly"];
 
-export const CODING_PLAN_PERIOD_LABEL_IDS: Record<
-  CodingPlanBillingPeriod,
-  string
-> = {
+export const CODING_PLAN_PERIOD_LABEL_IDS: Record<CodingPlanBillingPeriod, string> = {
   monthly: "settings.modelProvider.codingPlan.period.monthly",
   quarterly: "settings.modelProvider.codingPlan.period.quarterly",
   yearly: "settings.modelProvider.codingPlan.period.yearly",
@@ -87,21 +70,13 @@ export function groupProductsByPeriod(
   return groups;
 }
 
-export function pickProductTitle(
-  product: CodingPlanProductPreviewPayment,
-): string {
-  return (
-    product.productName?.trim() ||
-    product.productBigTitle?.trim() ||
-    product.productId
-  );
+export function pickProductTitle(product: CodingPlanProductPreviewPayment): string {
+  return product.productName?.trim() || product.productBigTitle?.trim() || product.productId;
 }
 
-export function pickProductDetails(
-  product: CodingPlanProductPreviewPayment,
-): string[] {
-  // 修复原因：套餐卡片的运营文案现在由静态配置的 description 控制；
-  // 继续优先拼 productEquityList 会展示旧权益字段，和服务端配置的套餐说明不一致。
+export function pickProductDetails(product: CodingPlanProductPreviewPayment): string[] {
+  // Fix rationale: plan-card marketing copy now comes from the statically configured description;
+  // preferring productEquityList shows stale entitlement fields, mismatching the server-configured plan copy.
   const descriptionDetails = [
     product.productDescription?.trim(),
     product.productIntroduction?.trim(),
@@ -128,12 +103,8 @@ export function pickProductDetails(
     .slice(0, 4);
 }
 
-export function pickProductPrice(
-  product: CodingPlanProductPreviewPayment,
-): number | null {
-  return (
-    product.payAmount ?? product.discountAmount ?? product.renewAmount ?? null
-  );
+export function pickProductPrice(product: CodingPlanProductPreviewPayment): number | null {
+  return product.payAmount ?? product.discountAmount ?? product.renewAmount ?? null;
 }
 
 export function normalizeCodingPlanCurrency(
@@ -162,8 +133,8 @@ export function formatCodingPlanAmount(
       : "CN¥";
   const formatted = `${currencyPrefix}${formattedAmount}`;
 
-  // 套餐页需要同时展示中英文和跨币种价格；依赖 Intl currency 会在不同 locale 下输出
-  // 不一致的 ISO code/符号组合，因此这里按产品文案规范固定符号和中文币种名。
+  // The plan page shows zh/en and cross-currency prices; Intl currency output varies
+  // per locale, so symbol and currency naming are pinned here per the product copy spec.
   return isChineseLocale
     ? `${formatted} ${CODING_PLAN_CURRENCY_LABELS_ZH[resolvedCurrency]}`
     : formatted;
@@ -174,7 +145,7 @@ export function inferBillingPeriod(
 ): CodingPlanBillingPeriod {
   const explicitUnit = product.priceUnit;
   if (explicitUnit) {
-    // Bugfix: Z.AI 海外套餐会直接返回 priceUnit，优先使用后端给出的计费周期，避免英文商品名或金额折算造成误判。
+    // Bugfix: overseas Z.AI plans return priceUnit directly; prefer the backend billing period, since English names or converted amounts mislead.
     return explicitUnit === "year"
       ? "yearly"
       : explicitUnit === "quarter"
@@ -193,8 +164,7 @@ export function inferBillingPeriod(
     return "monthly";
   }
 
-  const monthlyAmount =
-    product.monthlyOriginalAmount ?? product.monthlyPayAmount;
+  const monthlyAmount = product.monthlyOriginalAmount ?? product.monthlyPayAmount;
   const totalAmount = product.originalAmount ?? product.payAmount;
   if (typeof monthlyAmount === "number" && typeof totalAmount === "number") {
     const ratio = Math.round(totalAmount / monthlyAmount);

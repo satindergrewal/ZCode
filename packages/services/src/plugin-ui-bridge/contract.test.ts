@@ -5,14 +5,14 @@ import { examplePrepareAndMount, exampleReadBlob } from "./contract.example.js";
 import { IPluginUiBridgeService } from "./contract.js";
 
 describe("plugin-ui-bridge contract", () => {
-  it("描述符绑定 plugin-ui-bridge 频道", () => {
+  it("binds descriptors to the plugin-ui-bridge channel", () => {
     expect(IPluginUiBridgeService.channelName).toBe(ServiceChannels.PluginUiBridge);
     expect(ServiceChannels.PluginUiBridge).toBe("plugin-ui-bridge");
   });
 
-  it("句柄能带的全部资源级字段都过 main → host 的 strict 回包 schema", () => {
-    // 回包 schema 是 strict 的：PluginSandboxHandle.resourceMeta 新增字段没同步到 validation.ts，
-    // 整条回包会被 host 拒收，桥永远等不到句柄，卡片卡在 preparing（2026-09-20 permissions 复现）。
+  it("every resource-level handle field passes the strict main-to-host reply schema", () => {
+    // The reply schema is strict: a PluginSandboxHandle.resourceMeta field missing from validation.ts
+    // gets the whole reply rejected, the bridge never receives the handle, and the card sticks on preparing (2026-09-20 repro).
     const handle: PluginSandboxHandle = {
       instance: {
         runtimeId: "test-agent",
@@ -42,7 +42,7 @@ describe("plugin-ui-bridge contract", () => {
     ).toBe(true);
   });
 
-  it("示例只依赖契约方法", async () => {
+  it("example relies on contract methods only", async () => {
     const bridge: IPluginUiBridgeService = {
       recycleInstance: async () => true,
       validateInstance: async () => undefined,
@@ -64,7 +64,7 @@ describe("plugin-ui-bridge contract", () => {
       readResource: async (params) => ({
         contents: [{ uri: params.uri, mimeType: "model/gltf-binary", blob: "AAAA" }],
       }),
-      // 资源订阅接口扩展后，契约示例的替身也必须完整实现，避免类型检查被旧样例阻断。
+      // New resource-subscription surface must be fully implemented in the example stub too, or typecheck breaks on the stale sample.
       listResources: async () => ({ resources: [] }),
       listResourceTemplates: async () => ({ resourceTemplates: [] }),
       subscribeResource: async () => undefined,

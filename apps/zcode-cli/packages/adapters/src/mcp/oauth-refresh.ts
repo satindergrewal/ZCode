@@ -74,9 +74,13 @@ export async function refreshMcpOAuthTokensUnderLock(
   const lockPath = resolveRefreshLockPath(input.credentialStore.filePath, input.keyPrefix);
 
   try {
-    return await withFileLock(lockPath, async () => await refreshLocked(input, observedGeneration), {
-      lockMaxWaitMs: REFRESH_LOCK_MAX_WAIT_MS,
-    });
+    return await withFileLock(
+      lockPath,
+      async () => await refreshLocked(input, observedGeneration),
+      {
+        lockMaxWaitMs: REFRESH_LOCK_MAX_WAIT_MS,
+      },
+    );
   } catch (error) {
     if (!isZCodeFileLockTimeoutError(error)) throw error;
     // Lock-wait timeout is not refresh failure: the winner may have published. Re-read first; a fresh generation with a token wins.

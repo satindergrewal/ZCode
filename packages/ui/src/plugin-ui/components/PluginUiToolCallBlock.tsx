@@ -4,9 +4,9 @@ import type { PluginUiToolCallViewProps } from "@/plugin-ui/contract.js";
 import { TID_PLUGIN_UI_OPEN_SIDE_PANE } from "@zcode/shared";
 import { PanelRightOpenIcon, PinIcon, PinOffIcon } from "lucide-react";
 
-/** 纯工具卡片视图：平台能力、结果与侧栏归属都由适配器提供。 */
+/** Pure tool-card view; platform capabilities, results and pane ownership come from adapters. */
 export function PluginUiToolCallView(props: PluginUiToolCallViewProps) {
-  // 旧 UI 已被更新结果接管，继续画替代占位会让查询记录刷屏；只保留可展开的普通工具结果。
+  // A newer result owns the row; painting the superseded placeholder spams queries. Keep only the expandable plain result.
   if (!props.supported || props.superseded) return props.fallback;
   return (
     <div
@@ -24,10 +24,10 @@ export function PluginUiToolCallView(props: PluginUiToolCallViewProps) {
         </div>
       ) : (
         <div className="relative">
-          {/* 固定承载层独立于虚拟列表的 stacking context；宿主按钮留在页面锚点之外。 */}
+          {/* The keep-alive layer lives outside the virtual list's stacking context; host buttons stay outside the page anchor. */}
           <div className="mb-1 flex justify-end gap-1">
             {props.onTogglePin ? (
-              // 4b-1：手动固定 / 收起，独立于"最近三回合自动展开"的默认规则。
+              // 4b-1: manual pin/collapse, independent of the last-three-turns auto-expand default.
               <Button
                 variant="ghost"
                 size="icon-sm"

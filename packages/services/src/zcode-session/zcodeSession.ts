@@ -34,7 +34,7 @@ export interface ZCodeTaskTarget extends ZCodeSessionWorkspaceTarget {
 }
 
 export interface ZCodeSessionCreateParams extends ZCodeSessionWorkspaceTarget {
-  /** 仅导入事务使用的预分配 ID；普通新会话继续由 Agent 分配。 */
+  //* Preallocated id for import transactions only; normal sessions keep agent-assigned ids. */
   sessionId?: string;
   sessionTraceId?: TraceId;
   parentSessionId?: string;
@@ -51,8 +51,8 @@ export interface ZCodeSessionResumeParams extends ZCodeTaskTarget {
   thoughtLevel?: string;
   mcpServers?: ZCodeAgentMcpServer[];
   /**
-   * 默认广播 resume 得到的历史快照，并让 shadow 订阅请求初始 snapshot。
-   * 续聊发送前的 runtime 预恢复会关闭它，避免旧终态快照覆盖本地已开始的新输入运行态。
+   * Broadcast the resumed history snapshot by default and let shadow subscribers request an initial snapshot.
+   * Pre-resume before a follow-up send disables it so a stale terminal snapshot cannot cover local in-flight state.
    */
   broadcastSnapshot?: boolean;
 }
@@ -163,9 +163,9 @@ export interface IZCodeSessionService {
   respondProviderRuntimeHeaders(
     params: ZCodeSessionRespondProviderRuntimeHeadersParams,
   ): Promise<void>;
-  // M5 删波次 2：onDynamicSessionEvent（旧 session/subscribe 词表的 renderer 订阅面）
-  // 已删除——v4 UI 走 agentService 的 conversation/sessions-index 帧通道，
-  // 该方法在 renderer 侧已无任何调用者（grep packages/ui packages/desktop 为零）。
+  // M5 deletion wave 2: onDynamicSessionEvent (the legacy session/subscribe renderer surface)
+  // is gone; the v4 UI consumes agentService conversation/sessions-index frames and
+  // zero renderer callers remain (grep over packages/ui and packages/desktop).
 }
 
 export const IZCodeSessionService = createServiceDescriptor<IZCodeSessionService>(

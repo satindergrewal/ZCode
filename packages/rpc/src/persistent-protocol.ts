@@ -194,7 +194,9 @@ export class PersistentProtocol implements IMessagePassingProtocol, ConnectionFl
       if (length > 0) {
         const readBody = this.chunkStream.read(length);
         if (!readBody) {
-          throw new Error("PersistentProtocol: body must not be empty once the full frame length is known");
+          throw new Error(
+            "PersistentProtocol: body must not be empty once the full frame length is known",
+          );
         }
         body = readBody;
       }

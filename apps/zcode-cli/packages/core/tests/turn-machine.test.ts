@@ -35,14 +35,11 @@ describe("TurnMachine", () => {
       const machine = modelWaitingMachine();
       const streaming = new TurnMachineImpl(machine.receiveModelResponse(""));
       const scheduled = new TurnMachineImpl(
-        streaming.scheduleTools(
-          [{ id: toolCallId, name: "Read", input: {} }],
-          {
-            items: [{ toolCallId, dependencies: [], canRunParallel: true }],
-            parallelGroups: [[toolCallId]],
-            executionOrder: [toolCallId],
-          },
-        ),
+        streaming.scheduleTools([{ id: toolCallId, name: "Read", input: {} }], {
+          items: [{ toolCallId, dependencies: [], canRunParallel: true }],
+          parallelGroups: [[toolCallId]],
+          executionOrder: [toolCallId],
+        }),
       );
       const executing = new TurnMachineImpl(scheduled.startToolExecution());
       const completed = new TurnMachineImpl(
@@ -68,14 +65,11 @@ describe("TurnMachine", () => {
       const machine = modelWaitingMachine();
       const streaming = new TurnMachineImpl(machine.receiveModelResponse(""));
       const scheduled = new TurnMachineImpl(
-        streaming.scheduleTools(
-          [{ id: toolCallId, name: "ReadImage", input: {} }],
-          {
-            items: [{ toolCallId, dependencies: [], canRunParallel: true }],
-            parallelGroups: [[toolCallId]],
-            executionOrder: [toolCallId],
-          },
-        ),
+        streaming.scheduleTools([{ id: toolCallId, name: "ReadImage", input: {} }], {
+          items: [{ toolCallId, dependencies: [], canRunParallel: true }],
+          parallelGroups: [[toolCallId]],
+          executionOrder: [toolCallId],
+        }),
       );
       const executing = new TurnMachineImpl(scheduled.startToolExecution());
 

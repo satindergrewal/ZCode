@@ -9,17 +9,14 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 
 export type EnabledStatusFilter = "all" | "enabled" | "disabled";
 
-export function matchesEnabledStatusFilter(
-  enabled: boolean,
-  filter: EnabledStatusFilter,
-): boolean {
+export function matchesEnabledStatusFilter(enabled: boolean, filter: EnabledStatusFilter): boolean {
   if (filter === "all") {
     return true;
   }
   return filter === "enabled" ? enabled : !enabled;
 }
 
-// 与子智能体面板保持一致的启用状态筛选下拉：搜索框右侧同行摆放，全部/已启用/已停用三档。
+// Enable-state filter dropdown matching the subagent panel: inline right of the search, with all/enabled/disabled.
 export function EnabledStatusFilterSelect({
   value,
   onValueChange,

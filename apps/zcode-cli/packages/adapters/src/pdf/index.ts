@@ -204,7 +204,7 @@ function assertRenderSucceeded(
     firstDiagnostic.startsWith("I/O Error: ") && firstDiagnostic.includes(`'${request.filePath}'`);
   const isInputPermissionError = firstDiagnostic.startsWith("Permission Error: ");
   if ((isInputIoError || isInputPermissionError) && !hasCommandOrInternalError) {
-        // classified as process_failed, avoiding guesses from broad keywords.
+    // classified as process_failed, avoiding guesses from broad keywords.
     throw new PdfDocumentPortError(
       isInputPermissionError ? "permission_denied" : "io_error",
       `Could not render PDF: ${firstDiagnostic}`,

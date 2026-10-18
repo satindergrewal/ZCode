@@ -1,7 +1,7 @@
 import type { RuleMatch } from "./git.js";
 import type { CommandWord } from "./word.js";
 
-/** CMD 内建删除：斜杠开关只在 CMD 分支解释；独立帮助不是删除调用。 */
+/** CMD built-in deletes: slash switches parse in the CMD branch only; standalone help is not a delete call. */
 export function matchCmdDelete(name: string, args: CommandWord[]): RuleMatch {
   if (args.length === 1 && args[0]!.value === "/?" && !args[0]!.dynamic) return false;
   const tree = name === "rd" || name === "rmdir";
@@ -38,7 +38,7 @@ const ROBOCOPY_VALUES = new Set(
   ),
 );
 
-/** Robocopy 值选项用冒号绑定；XF/XD 列表遇到下一个斜杠开关结束。 */
+/** Robocopy value options bind with a colon; XF/XD lists end at the next slash switch. */
 export function matchRobocopyDelete(args: CommandWord[], dialect: "cmd" | "git-bash"): RuleMatch {
   if (args.length < 2) return false;
   let deletion = false;
@@ -48,8 +48,8 @@ export function matchRobocopyDelete(args: CommandWord[], dialect: "cmd" | "git-b
   for (const word of args) {
     const value = word.value.toUpperCase();
     if (word.dynamic) return deletion ? "robocopy-delete" : undefined;
-    // Git Bash 会把 /c/... 转为 Windows 盘符路径；这是 argv 语法，不是未知斜杠开关。
-    // 必须有盘符后的 /，避免把 /L 等真实开关当路径；未知开关的 arity 策略不变。
+    // Git Bash converts /c/... to Windows drive paths; that is argv syntax, not an unknown slash switch.
+    // Require the slash after the drive so real switches like /L are not read as paths; unknown-switch arity policy unchanged.
     const drivePath = dialect === "git-bash" && /^\/[a-z]\//i.test(word.value);
     if (!value.startsWith("/") || drivePath) {
       if (!exclusions) paths++;
@@ -60,7 +60,7 @@ export function matchRobocopyDelete(args: CommandWord[], dialect: "cmd" | "git-b
     else if (value === "/L") listOnly = true;
     else if (value === "/XF" || value === "/XD" || ROBOCOPY_FLAGS.has(value)) continue;
     else if (value.includes(":") && ROBOCOPY_VALUES.has(value.split(":", 1)[0]!)) continue;
-    // JOB 与未知 arity 后不能生成豁免，也不能撤销之前明确定位的删除。
+    // After JOB or an unknown arity, neither mint an exemption nor undo an earlier located delete.
     else return deletion ? "robocopy-delete" : undefined;
   }
   return paths >= 2 && deletion && !listOnly && "robocopy-delete";

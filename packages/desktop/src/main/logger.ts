@@ -99,8 +99,9 @@ function writeDedicated(filePrefix: string, level: LogLevel, source: string, ...
   const line = `[${ts}] [${level}] [pid:${pid}] [${source}] ${message}\n`;
   const logDir = getLogDir();
   mkdirSync(logDir, { recursive: true });
-  // Bugfix: 远控 relay trace 与主日志混放时，目录内文件会快速增多，人工排查不直观。
-  // 这里把高频 trace 分流到 logs 子目录，避免影响主日志浏览与导出定位。
+  // Bugfix: mixing remote-control relay traces into the main log multiplies files quickly and
+  // hurts manual triage; split the high-frequency trace into a logs subdirectory to keep main-log
+  // browsing and export targeting clean.
   const dedicatedDir = join(logDir, "web-remote-control");
   mkdirSync(dedicatedDir, { recursive: true });
   const filePath = join(dedicatedDir, `${filePrefix}-${formatDate(now)}.log`);
@@ -109,7 +110,7 @@ function writeDedicated(filePrefix: string, level: LogLevel, source: string, ...
     maybeThrowInjectedFsFault({ operation: "appendFile", path: filePath });
     appendFileSync(filePath, line);
   } catch {
-    // 日志写入失败不应影响应用运行
+    // Write failures must never disturb the app.
   }
 }
 
@@ -133,8 +134,8 @@ export const logger = {
 };
 
 /**
- * Web remote control relay message trace 专用日志。
- * 仅用于高频链路排障，独立落盘避免淹没主日志文件。
+ * Dedicated log for the web remote-control relay message trace.
+ * For high-frequency link debugging only; separate files keep the main log readable.
  */
 export const webRemoteControlRelayLogger = {
   info: (...args: unknown[]) =>

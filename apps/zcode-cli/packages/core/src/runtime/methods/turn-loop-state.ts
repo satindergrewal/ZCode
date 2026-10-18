@@ -23,17 +23,17 @@ export const MAX_CONSECUTIVE_RAPID_REFILLS = 3;
 export const AUTOMATION_MUTATION_TOOL_NAMES = ["CronCreate", "CronUpdate", "CronDelete"] as const;
 const AUTOMATION_QUERY_ID_PREFIX = "automation-";
 /**
- * 闲时派发轮隐藏的工具；OffPeakList 只读保留。
- * - OffPeakCreate：防止闲时任务递归自我派生、无限调度。
- * - SendMessage / Workflow：会在闲时 turn 的 modelExecution 之外重新启动子 Agent（SendMessage 续跑
- *   已完成子 Agent、Workflow 派生脚本子会话），按父会话常驻选择建模型。
+ * Tools hidden on off-peak dispatch turns; OffPeakList stays read-only.
+ * - OffPeakCreate: no recursive self-spawn, unbounded schedules.
+ * - SendMessage / Workflow: spawn subagents outside off-peak modelExecution (SendMessage resumes
+ *   finished ones, Workflow spawns script sessions), modeled on the parent resident choice.
  *
- * 独立常量，绝不并入 AUTOMATION_MUTATION_TOOL_NAMES——cron automation turn 明确放行
- * OffPeakCreate（定时派生闲时任务），混入会让 automation turn 误 deny。
+ * A separate constant, never in AUTOMATION_MUTATION_TOOL_NAMES — cron automation allows
+ * OffPeakCreate (scheduled off-peak spawns); merging mis-denies automation turns.
  */
 export const OFF_PEAK_MUTATION_TOOL_NAMES = ["OffPeakCreate", "SendMessage", "Workflow"] as const;
-// 闲时派发 init 段 traceId 无固定前缀，只有 resume 段是 `${offPeakTaskId}:resume:*`
-// （offpeak- 开头）；前缀只是 resume 兜底信号，主信号必须是显式 offPeakTaskId。
+// Off-peak init-leg traceIds have no fixed prefix; only resume legs look like `${offPeakTaskId}:resume:*`
+// (offpeak- prefixed); the prefix is a fallback, the real signal the explicit offPeakTaskId.
 const OFF_PEAK_QUERY_ID_PREFIX = "offpeak-";
 
 export interface CompactLoopTracking {
@@ -77,16 +77,16 @@ export interface TurnRequestState {
 
 export interface RegularTurnLoopState {
   activeTurn?: ActiveTurnSteeringState;
-  /** Host admission 显式传入的本轮 automation 身份；不能从持久 task metadata 推断。 */
+  /** Host-admission automation identity for this turn; never inferred from task metadata. */
   automationId?: string;
-  /** Host admission 显式传入的本轮闲时任务身份；与 automationId 互斥，不从持久 meta 推断。 */
+  /** Host-admission off-peak identity; exclusive with automationId, never inferred. */
   offPeakTaskId?: string;
-  /** CronCreate 命中全局上限后，本用户 turn 永久切为纯文本回复，禁止模型自行恢复。 */
+  /** Post CronCreate cap-hit, this turn goes text-only permanently; no self-restore. */
   automationCreateLimitReached?: boolean;
   anomalyWarningsInjected: number;
-  /** 本轮是否已消费来源为 subagent 的后台结果通知。 */
+  /** Whether this turn consumed a subagent-source result. */
   backgroundSubagentResultConsumed: boolean;
-  /** 本轮是否已消费来源为 workflow（dynamic-workflow run）的后台通知。 */
+  /** Whether this turn consumed a workflow (dynamic run) notice. */
   workflowResultConsumed: boolean;
   compactTracking?: CompactLoopTracking;
   currentUserMessageId: MessageId;
@@ -95,16 +95,16 @@ export interface RegularTurnLoopState {
   input: string;
   inputId?: string;
   modelResponse: string;
-  /** 本轮固定使用的可调用模型；配置变化只影响以后创建的 Loop。 */
+  /** The pinned callable model; config changes affect future Loops only. */
   model: Model;
-  /** execution 表示当前 Active Model 不能被同 loop 的 guide 改写。 */
+  /** execution: the Active Model cannot be rewritten by same-loop guides. */
   modelSelectionScope?: "execution";
-  /** 本轮执行 Selection 的降级声明；命中一次后清空，退回后的模型不再二次降级。 */
+  /** This turn's execution Selection fallback declaration; cleared after one hit, so the post-fallback model never downgrades twice. */
   selectionFallback?: ModelExecutionContext["selectionFallback"];
-  /** Core Server 的前台 child Selection override；优先于 profile 与父模型继承。 */
+  /** Core Server foreground-child Selection override; beats profile and parent. */
   subagentModelOverride?: SubagentRunOptions["modelOverride"];
   modelStepCount: number;
-  /** 当前 query 已成功写入 provider 可见持久历史的 assistant/compact 产物数量。 */
+  /** Assistant/compact artifacts persisted provider-visibly for this query. */
   historyRoundCount: number;
   completedRealToolResultBatch: boolean;
   reactiveCompactAttemptedInCurrentModelStep: boolean;
@@ -112,22 +112,22 @@ export interface RegularTurnLoopState {
   repeatedToolCallStreakCount: number;
   pendingStreamRecoveryRequest?: PendingStreamRecoveryRequest;
   stopHookContinuationCount: number;
-  /** 最终成功 product turn 的 raw transcript 起点；只有确认不再 continue 时才赋值。 */
+  /** Final product-turn raw transcript start; set once no-continue is sure. */
   stableProductStartMessageId?: MessageId;
-  /** 最终成功 assistant boundary；与 stableProductStartMessageId 成对出现。 */
+  /** Final assistant boundary; paired with stableProductStartMessageId. */
   stableBoundaryAssistantMessageId?: MessageId;
   streamRecoveryRetryCount: number;
   tokenCount: number;
   toolCallCount: number;
-  /** 当前 Turn 的 provider-local history；Turn 结束后直接释放。 */
+  /** This Turn provider-local history; dropped at end. */
   turnRequestState: TurnRequestState;
-  /** 当前 turn 不向 provider 暴露的工具名；registry 仍保留，供执行边界做纵深校验。 */
+  /** Tool names hidden from the provider; registry keeps them for defense. */
   toolDisallowlist?: readonly string[];
   traceId: TraceId;
   turnAbortSignal: AbortSignal;
   turnId: TurnId;
   turnMachine: TurnMachineImpl;
-  /** 当前 Turn 捕获的 provider-visible output style；不表示显式 subagent model override。 */
+  /** Provider-visible output style this Turn; no subagent model override implied. */
   turnOutputStyle?: OutputStylePromptConfig;
   turnTraceContext: TraceContext;
   userMessageId: MessageId;
@@ -138,21 +138,21 @@ export function isAutomationMutationRestrictedTurn(state: RegularTurnLoopState):
   if (state.turnTraceContext.queryId?.trim().startsWith(AUTOMATION_QUERY_ID_PREFIX)) return true;
 
   const disallowedTools = new Set(state.toolDisallowlist ?? []);
-  // active/busy automation 输入会把 turn-scoped denylist 合并进当前 loop；即使原始
-  // automationId 不再是 loop 首输入，也必须把同一事实继续传到 handler 执行边界。
+  // active/busy automation merges the turn denylist into the loop; even off the loop head,
+  // the fact must reach the handler execution boundary.
   return AUTOMATION_MUTATION_TOOL_NAMES.every((toolName) => disallowedTools.has(toolName));
 }
 
 /**
- * 本轮是否为闲时自动派发 turn（需 deny OffPeakCreate）。三重信号与
- * isAutomationMutationRestrictedTurn 同构：显式 offPeakTaskId 为主信号；
- * resume 段 traceId 前缀与 turn denylist 是纵深兜底。
+ * Off-peak auto-dispatch turn (deny OffPeakCreate)? Three signals, isomorphic to
+ * isAutomationMutationRestrictedTurn: explicit offPeakTaskId primary;
+ * resume-leg prefix and turn denylist as defense.
  */
 export function isOffPeakCreateRestrictedTurn(state: RegularTurnLoopState): boolean {
   if (state.offPeakTaskId?.trim()) return true;
   if (state.turnTraceContext.queryId?.trim().startsWith(OFF_PEAK_QUERY_ID_PREFIX)) return true;
 
-  // 兜底只认 OffPeakCreate 这一哨兵：旧 host 派发的 denylist 可能尚未带上 新增的工具。
+  // The fallback trusts only the OffPeakCreate sentinel: older denylists may lack new tools.
   const disallowedTools = new Set(state.toolDisallowlist ?? []);
   return disallowedTools.has(OFF_PEAK_MUTATION_TOOL_NAMES[0]);
 }
@@ -184,7 +184,7 @@ export function recordCompactSuccess(
 }
 
 export function recordCompletedToolBatch(state: RegularTurnLoopState): void {
-  // 旧 guard 活在整个用户 turn，完整工具批次结束后仍保持 used，导致后续真实 overflow 无法再次 reactive compact。
+  // The old guard lived the whole user turn, staying used post-batch — later overflow could never re-compact.
   state.reactiveCompactAttemptedInCurrentModelStep = false;
   if (state.compactTracking) {
     state.compactTracking.toolTurnsSinceCompact += 1;
@@ -192,12 +192,12 @@ export function recordCompletedToolBatch(state: RegularTurnLoopState): void {
 }
 
 export function recordModelHistoryRound(state: RegularTurnLoopState): void {
-  // toolCallCount 会把并行工具按数量展开，无法表达模型真正写入历史的轮次。
-  // 调用点沿用既有 modelStepCount 的提交边界，额外累计历史轮次而不改变 loop 控制语义。
+  // toolCallCount explodes parallel calls; it misses model-written history rounds.
+  // Keep the modelStepCount commit boundary; count history rounds, no control change.
   state.historyRoundCount += 1;
 }
 
 export function recordCompactHistoryRound(state: RegularTurnLoopState): void {
-  // compact summary 是独立的 provider 可见持久历史，但不是普通模型步骤，单独累计一次。
+  // A compact summary is provider-visible history, no plain model step; count once, separately.
   state.historyRoundCount += 1;
 }

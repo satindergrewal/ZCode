@@ -111,9 +111,9 @@ export const useSavedWorkflowStore = create<SavedWorkflowStoreState>((set) => ({
     }));
     const request = fetchWorkspace(target, agentService)
       .then(({ list, runs }) => {
-        // 中枢刚看过磁盘：把完成卡那张「这次 run 存成了哪个工作流」的读缓存一并作废
+        // The hub just looked at disk: invalidate the "which workflow did this run use" card cache too.
         // （docs/dynamic-workflow/transcript-and-notifications.md「Which workflow a run is saved as」）。
-        // 中枢里的删除 / 移动 / 改元数据都以一次刷新收尾，这一行让那些动作也走到对话里的卡片上。
+        // Hub delete/move/metadata edits end with one refresh; this line carries them to the chat cards.
         useWorkflowRunSavedStore.getState().invalidate();
         set((state) => ({
           byWorkspaceKey: {
@@ -163,7 +163,7 @@ export function selectSavedWorkflowState(
   return state.byWorkspaceKey[savedWorkflowStoreKey(target)] ?? EMPTY_SAVED_WORKFLOW_STATE;
 }
 
-/** 测试用：清掉 in-flight 去重表。 */
+/** Test-only: clear the in-flight dedupe table. */
 export function resetSavedWorkflowStoreForTests(): void {
   inFlight.clear();
   useSavedWorkflowStore.setState({ byWorkspaceKey: {} });

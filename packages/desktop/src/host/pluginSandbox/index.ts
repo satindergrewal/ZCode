@@ -6,7 +6,7 @@ import type {
 import { randomUUID } from "node:crypto";
 import type { PluginSandboxRegistrationBridge } from "./contract.js";
 
-/** 请求/响应/关闭共享同一生命周期，入口不再维护第二处 pending Map。 */
+/** Request/response/close share one lifecycle; the entry keeps no second pending map. */
 export function createPluginSandboxRegistrationBridge(deps: {
   send(
     message: PluginSandboxRegisterRequestPayload & { type: "plugin-sandbox-register-request" },
@@ -50,13 +50,14 @@ export function createPluginSandboxRegistrationBridge(deps: {
           initId: result.initId,
           shellUrl: result.shellUrl,
           partition: result.partition,
-          // 资源级尺寸 / 边框提示原样回 renderer。
+          // Resource-level size/border hints go back to the renderer unchanged.
           ...(result.resourceMeta ? { resourceMeta: result.resourceMeta } : {}),
         });
-      } else request.reject(new Error(result.error ?? "插件 UI 沙箱登记失败"));
+      } else request.reject(new Error(result.error ?? "plugin UI sandbox registration failed"));
     },
     dispose() {
-      // 修复：原 Host 退出只释放 services，未完成的登记 Promise 没有明确终态。
+      // Fix: the old Host exit released services only, leaving in-flight registration promises
+      // without a terminal state.
       closed = true;
       for (const request of pending.values())
         request.reject(new Error("Plugin sandbox registration bridge closed"));

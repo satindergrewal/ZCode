@@ -69,7 +69,9 @@ export function DesktopWindowControls() {
           onClick={() => {
             void platform
               .executeDesktopCommand(command)
-              .catch((error) => logger.warn("Failed to run window control command", { command, error }));
+              .catch((error) =>
+                logger.warn("Failed to run window control command", { command, error }),
+              );
           }}
         >
           <Icon className="size-4" />

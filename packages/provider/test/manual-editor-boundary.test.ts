@@ -21,8 +21,8 @@ export const manualConfig = {
   },
 };
 
-describe("Todo130 手动可编辑字段边界", () => {
-  it("只要求可编辑叶子，拒绝隐藏字段；enabled 的三态不变", () => {
+describe("Todo130 manually editable field boundary", () => {
+  it("requires editable leaves only, rejects hidden fields, and keeps the enabled tri-state", () => {
     for (const enabled of [undefined, null, true, false])
       expect(manualModelConfigSchema.safeParse({ ...manualConfig, enabled }).success).toBe(true);
     expect(
@@ -48,7 +48,7 @@ describe("Todo130 手动可编辑字段边界", () => {
     ).toBe(false);
   });
 
-  it("手动叶子固定，系统字段由当前 API 规则更新；未知接口仍不能执行", () => {
+  it("pins manual leaves while system fields follow current API rules; unknown APIs still cannot run", () => {
     const builtin = parseZCodeBuiltinModelConfigRules({
       modelRules: [
         {

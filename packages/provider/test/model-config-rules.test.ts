@@ -40,7 +40,7 @@ const complete = {
 };
 
 describe("ModelConfigRules", () => {
-  it("Todo90：固定配置不从推荐补缺；enabled 仍独立继承", () => {
+  it("Todo90: pinned configs never backfill from recommendations; enabled still inherits independently", () => {
     const rules = new ModelConfigRules([
       {
         type: "model",
@@ -69,7 +69,7 @@ describe("ModelConfigRules", () => {
     expect(fixed.enabled).toBe(false);
     expect(fixed.validateComplete().length).toBeGreaterThan(0);
   });
-  it("modelMatch 对完整 Model ID 做大小写不敏感匹配，但不隐式扩成 contains", () => {
+  it("matches whole model ids case-insensitively in modelMatch without implicit contains widening", () => {
     const rules = new ModelConfigRules([
       {
         type: "model",
@@ -85,7 +85,7 @@ describe("ModelConfigRules", () => {
     ).toBeUndefined();
   });
 
-  it("baseUrlMatch 规范化 scheme、hostname、默认端口和尾部斜杠，但保留 path 大小写", () => {
+  it("normalizes scheme, host, default port and trailing slash in baseUrlMatch while keeping path case", () => {
     const rules = new ModelConfigRules([
       {
         type: "model",
@@ -116,7 +116,7 @@ describe("ModelConfigRules", () => {
     ).toBe(true);
   });
 
-  it("按 Effective Provider baseURL 应用可选的 Endpoint 特化规则", () => {
+  it("applies optional endpoint-specialized rules by the Effective Provider baseURL", () => {
     const rules = new ModelConfigRules([
       {
         type: "model",
@@ -149,7 +149,7 @@ describe("ModelConfigRules", () => {
     ).toBe(true);
   });
 
-  it("严格解析并原样序列化 baseUrlMatch", () => {
+  it("parses baseUrlMatch strictly and serializes it verbatim", () => {
     const source = {
       ...emptyBuiltin,
       providerSiteRules: [
@@ -165,7 +165,7 @@ describe("ModelConfigRules", () => {
     expect(rules.toZCodeBuiltinJSON()).toEqual(source);
   });
 
-  it("Personal 手动配置通过所属集合表达模式，往返不混回智能组", () => {
+  it("encodes Personal manual modes via their owning collection, never mixing back into the smart group", () => {
     const source = {
       providerModelRules: [],
       manualProviderModelRules: [
@@ -181,7 +181,7 @@ describe("ModelConfigRules", () => {
     expect(rules.getExactRule("provider-a", "model-a")?.type).toBe("manual-provider-model");
   });
 
-  it("替换精确 Personal Rule 时保留显式推荐模式", () => {
+  it("keeps the explicit recommendation mode when replacing an exact Personal rule", () => {
     const rules = ModelConfigRules.empty().setExact(
       "provider-a",
       "model-a",
@@ -204,7 +204,7 @@ describe("ModelConfigRules", () => {
     });
   });
 
-  it("provider-model 使用结构化精确身份并按来源层合成", () => {
+  it("uses structured exact identity for provider-model and composes across source layers", () => {
     const builtin = parseZCodeBuiltinModelConfigRules({
       ...emptyBuiltin,
       modelRules: [{ modelMatch: "model-a", config: { enabled: false } }],
@@ -222,7 +222,7 @@ describe("ModelConfigRules", () => {
     expect(rules.rules().map((rule) => rule.type)).toEqual(["model", "provider-model"]);
   });
 
-  it("Effective 组合只允许 Built-in 与 Personal 精确覆盖", () => {
+  it("limits Effective composition to Built-in and Personal exact overrides", () => {
     const builtin = new ModelConfigRules([
       { type: "model", modelMatch: ".*", config: new ModelConfig({ enabled: true }) },
     ]);
@@ -242,7 +242,7 @@ describe("ModelConfigRules", () => {
     expect(personal.rules().map((rule) => rule.type)).toEqual(["provider-model"]);
   });
 
-  it("专属生命周期操作只修改精确规则，不猜测外观精确的匹配规则", () => {
+  it("confines lifecycle ops to exact rules, never guessing look-alike match rules", () => {
     const match = {
       type: "model" as const,
       modelMatch: "model-a",
@@ -260,7 +260,7 @@ describe("ModelConfigRules", () => {
     expect(renamed.deleteExact("provider-a", "model-b").rules()).toEqual([match]);
   });
 
-  it("持久化不接受 type 或混合两种 Rule 字段", () => {
+  it("persists neither a type discriminator nor mixed rule fields", () => {
     expect(() =>
       parseZCodeBuiltinModelConfigRules({
         ...emptyBuiltin,

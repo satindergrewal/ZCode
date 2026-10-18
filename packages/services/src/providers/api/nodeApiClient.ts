@@ -66,8 +66,8 @@ async function hasBusinessUnauthorizedCode(
   response: Response,
   timeoutMs: number,
 ): Promise<boolean> {
-  // 业务接口把登录过期封装成 HTTP 200，不能只看 status；读副本避免抢走调用方正文。
-  // continuous SSE 没有完整 JSON 正文，观察器不能等待流结束或引入恢复语义。
+  // The API wraps auth expiry in HTTP 200, so never trust status alone; read a clone to avoid consuming the caller's body.
+  // continuous SSE has no complete JSON body; observers must not await stream end or add recovery semantics.
   if (response.headers.get("content-type")?.toLowerCase().startsWith("text/event-stream"))
     return false;
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
@@ -96,10 +96,10 @@ async function hasBusinessUnauthorizedCode(
       typeof payload === "object" && payload !== null && "code" in payload && payload.code === 401
     );
   } catch {
-    // 空正文/HTML/损坏 JSON 只能证明请求异常，不能据此清理登录态。
+    // Empty/HTML/broken JSON bodies prove a request fault only; never clear auth state because of them.
     return false;
   } finally {
-    // 观察副本是 best-effort；超时、超限或解析失败时及时取消，不能占用连接。
+    // The observer clone is best-effort; cancel promptly on timeout/overflow/parse failure and never hold the connection.
     if (reader) void reader.cancel().catch(() => undefined);
   }
 }

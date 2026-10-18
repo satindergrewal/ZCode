@@ -13,11 +13,11 @@ export interface FeedbackLogSource {
   directory: string;
   archivePrefix: string;
   exitLogsOnly?: boolean;
-  /** 只收集根目录下列出的文件名；用于允许单文件进入归档的配置入口。 */
+  //** Collect only names listed at the root; the opt-in for single-file archive entries. */
   includeFileNames?: readonly string[];
-  /** 默认只收集本地当天修改的文件；配置文件可关闭该限制。 */
+  /** Defaults to locally modified today; config can lift the restriction. */
   onlyCurrentDay?: boolean;
-  /** 配置文件使用结构化安全投影，避免把插件自定义敏感项上传。 */
+  /** Config files use the structured safe projection so plugin-private keys never upload. */
   contentPolicy?: "diagnostic" | "cli-config";
 }
 
@@ -75,7 +75,7 @@ function pickSafeSection(
   return Object.keys(result).length > 0 ? result : undefined;
 }
 
-/** 只投影 CLI 的非敏感配置；插件 options、MCP、网络和 hooks 等未知字段全部舍弃。 */
+/** Project only non-sensitive CLI config; unknown plugin options, MCP, network, and hooks fields are all dropped. */
 function sanitizeCliConfig(text: string): string | null {
   let parsed: unknown;
   try {
@@ -154,7 +154,7 @@ function sanitizeCliConfig(text: string): string | null {
   return redactFeedbackText(JSON.stringify(projection, null, 2), { diagnostic: true });
 }
 
-/** 反馈上传唯一归档入口：白名单来源、有界读取、无法安全解码时禁止原文兜底。 */
+/** The only archive path for feedback uploads: allow-listed sources, bounded reads, and no raw fallback when decoding is unsafe. */
 export async function createFeedbackDiagnosticArchive(options: {
   sources: readonly FeedbackLogSource[];
   outputRootDir: string;
@@ -163,7 +163,7 @@ export async function createFeedbackDiagnosticArchive(options: {
   onProgress?: (event: { processedBytes: number; totalBytes: number }) => void;
 }): Promise<{ path: string; size: number }> {
   const now = options.now?.() ?? new Date();
-  // 按本地自然日筛选文件；次日零点由日历计算，兼容夏令时的 23/25 小时日。
+  // Filter files by local calendar day; midnight comes from the calendar, honoring 23/25h DST days.
   const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   const dayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime();
   const isToday = (mtimeMs: number) => mtimeMs >= dayStart && mtimeMs < dayEnd;
@@ -181,7 +181,7 @@ export async function createFeedbackDiagnosticArchive(options: {
   try {
     options.onProgress?.({ processedBytes: 0, totalBytes: 0 });
     for (const source of options.sources) {
-      // 不跟随诊断根目录本身的链接；规范化系统目录别名（如 macOS /var）。
+      // Never follow links at the diagnostics root itself; normalize system aliases such as macOS /var.
       const root = await realpath(source.directory).catch(() => null);
       if (!root || !(await lstat(source.directory).catch(() => null))?.isDirectory()) continue;
       const walk = async (directory: string, prefix: string, depth: number): Promise<void> => {
@@ -221,7 +221,7 @@ export async function createFeedbackDiagnosticArchive(options: {
             skipLogFile("metadata-policy");
             continue;
           }
-          // O_NOFOLLOW 防止检查后把文件替换为链接；按打开后的 inode 再校验。
+          // O_NOFOLLOW stops post-check symlink swaps; re-verify via the opened inode.
           const handle = await open(
             absolutePath,
             constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0),
@@ -244,8 +244,8 @@ export async function createFeedbackDiagnosticArchive(options: {
               skipLogFile("opened-file-policy");
               continue;
             }
-            // 日志追加是正常场景：只读打开时确认的长度，后续追加留待下次归档。
-            // 不能用 size+1 探测增长并丢弃整份 active 日志；短读则仍保守跳过。
+            // Appends are normal: trust the length confirmed at read-open and leave later growth to the next archive run.
+            // Never probe size+1 and discard the active log; on short reads skip conservatively.
             const bytes = Buffer.alloc(opened.size);
             let length = 0;
             while (length < bytes.length) {
@@ -286,7 +286,7 @@ export async function createFeedbackDiagnosticArchive(options: {
     }
     const zip = new ZipFile();
     const output = createWriteStream(path, { mode: 0o600 });
-    // pipeline 同时监听 ZIP 和输出错误，失败统一清理本次目录。
+    // The pipeline watches zip and stdout errors; any failure cleans up this run\x27s directory.
     const writing = pipeline(zip.outputStream, output);
     for (const entry of entries) zip.addBuffer(entry.data, entry.name);
     zip.addBuffer(

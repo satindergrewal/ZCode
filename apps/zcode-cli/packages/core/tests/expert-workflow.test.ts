@@ -418,7 +418,9 @@ describe("ExpertWorkflowRuntime", () => {
     expect(execPrompts).toHaveLength(1);
     expect(execPrompts[0]).toContain("Node: Implement public API boundary");
     expect(execPrompts[0]).toContain("Implement only the public API boundary.");
-    expect(execPrompts[0]).toContain("Preserve existing validation behavior and add focused tests.");
+    expect(execPrompts[0]).toContain(
+      "Preserve existing validation behavior and add focused tests.",
+    );
     expect(result.snapshot?.graph.nodes.find((node) => node.id === "implement_api")).toMatchObject({
       description: "Implement only the public API boundary.",
       prompt: "Preserve existing validation behavior and add focused tests.",

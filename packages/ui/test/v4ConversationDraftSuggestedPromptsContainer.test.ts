@@ -1111,7 +1111,7 @@ describe("ConversationDraftSuggestedPromptsContainer", () => {
       variant: "warning",
     });
     expect(loggerWarn).toHaveBeenCalledWith(
-      "[v4-suggested-prompts] 推荐插件安装失败，恢复确认态以便重试",
+      "[v4-suggested-prompts] recommended plugin install failed; restoring confirm state for retry",
       expect.objectContaining({
         error: "offline",
         operationId: expect.any(String),
@@ -1202,7 +1202,7 @@ describe("ConversationDraftSuggestedPromptsContainer", () => {
         variant: "warning",
       });
       expect(loggerWarn).toHaveBeenCalledWith(
-        "[v4-suggested-prompts] 推荐插件安装失败，恢复确认态以便重试",
+        "[v4-suggested-prompts] recommended plugin install failed; restoring confirm state for retry",
         expect.objectContaining({
           error: "安装超时",
           operationId: expect.any(String),

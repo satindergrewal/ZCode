@@ -41,15 +41,18 @@ export class ApiProviderModelRuntime {
   }
 
   readonly modelFactory: RuntimeModelFactory = (target): Model => {
-    if (!this.#started) throw new Error("ApiProviderModelRuntime must start() before creating a Model");
+    if (!this.#started)
+      throw new Error("ApiProviderModelRuntime must start() before creating a Model");
     const validation = this.#registry.validateSelection(target.selection);
     if (!validation.ok) throw createRegistrySelectionProtocolError(validation);
     const providerId = target.selection.providerId;
     const modelId = target.selection.modelId;
     const provider = this.#registry.getProvider(providerId);
-    if (!provider) throw new Error("Registry selection validation disagrees with the provider index");
+    if (!provider)
+      throw new Error("Registry selection validation disagrees with the provider index");
     const registryModel = this.#registry.getModel(providerId, modelId);
-    if (!registryModel) throw new Error("Registry selection validation disagrees with the model index");
+    if (!registryModel)
+      throw new Error("Registry selection validation disagrees with the model index");
     return this.#createRegistryModel(provider, registryModel, target);
   };
 
@@ -76,13 +79,12 @@ export class ApiProviderModelRuntime {
       modelId: registryModel.modelId,
       providerConfig: provider.config,
       modelConfig: config,
-      // Off-Peak 与 Highspeed 都靠执行作用域的动态 requestAuth（JWT / 计划 Key / 卡 ID header）
-      // 发送，必须把承载它的 source 透传给 adapter。此门禁与 runner.ts 的 requestAuthRequired
-      // 门禁一一对应：漏掉 highspeed 会在这里丢掉 source，导致 runner 端 requestAuth 缺失、
-      // 本轮在发送前抛 model_request_auth_missing。
+      // Off-Peak and Highspeed both authenticate via the execution scope's dynamic requestAuth (JWT / plan key / card-ID header);
+      // the carrying source must reach the adapter. This gate mirrors runner.ts's requestAuthRequired
+      // gate one-to-one: missing highspeed here drops the source, the runner side lacks requestAuth, and
+      // the turn throws model_request_auth_missing before sending.
       ...(provider.config.access.type === "zhipu-account" &&
-      (provider.config.access.mode === "off-peak" ||
-        provider.config.access.mode === "highspeed")
+      (provider.config.access.mode === "off-peak" || provider.config.access.mode === "highspeed")
         ? {
             requestDependencies: {
               requestAuth: {

@@ -33,7 +33,11 @@ interface OpenWebRemoteControlTaskOptions {
 }
 
 function isDisconnectedRemoteWorkspaceBridgeError(message: string): boolean {
-  return message.includes("远程工作区尚未连接") || message.includes("请先重连");
+  // Match the desktop main copy verbatim (webRemoteControlManager): keep fragments stable.
+  return (
+    message.includes("remote workspace is not connected") ||
+    message.includes("reconnect before creating a bridge")
+  );
 }
 
 export async function openWebRemoteControlTask({
@@ -63,16 +67,16 @@ export async function openWebRemoteControlTask({
     if (markTaskReadOnOpen && typeof task.unreadAt === "number" && switcher.markTaskRead) {
       const logReadFailure = (err: unknown) => {
         const message = err instanceof Error ? err.message : String(err);
-        // 未读写入失败不能阻止用户打开任务；返回首页后由权威 tasks-index 快照恢复蓝点。
-        logger.warn("[useWebRemoteControlTaskOpen] 标记手机端 task 已读失败", {
+        // A failed read must not block opening; the authoritative tasks-index snapshot restores the dot.
+        logger.warn("[useWebRemoteControlTaskOpen] failed to mark phone task read", {
           error: message,
           taskId: task.taskId,
           workspaceKey: taskWorkspaceKey,
         });
       };
       try {
-        // 修复原因：手机首页蓝点来自 desktop 推送快照，当前 Root 的 query cache
-        // 可能尚未水合。这里显式表达“用户已查看”，不能继续依赖桌面选择逻辑的 cache 命中。
+        // Fix: the dot comes from the desktop push and this Root's query cache may lag;
+        // express user-seen explicitly, not via desktop selection cache hits.
         void switcher.markTaskRead(task).catch(logReadFailure);
       } catch (err) {
         logReadFailure(err);
@@ -83,7 +87,7 @@ export async function openWebRemoteControlTask({
       await switcher.updateMobileViewState?.(taskWorkspaceKey, task.taskId);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      logger.error("[useWebRemoteControlTaskOpen] 更新手机端查看状态失败", {
+      logger.error("[useWebRemoteControlTaskOpen] failed to update phone seen state", {
         error: message,
         taskId: task.taskId,
         workspaceKey: taskWorkspaceKey,
@@ -97,7 +101,7 @@ export async function openWebRemoteControlTask({
   onSwitchingChange?.(true);
   setSwitchingTaskKey?.(rowKey);
   setError?.(null);
-  logger.info("[useWebRemoteControlTaskOpen] 开始切换远控 workspace", {
+  logger.info("[useWebRemoteControlTaskOpen] switching remote workspace", {
     taskId: task.taskId,
     workspaceKey: taskWorkspaceKey,
   });
@@ -112,7 +116,7 @@ export async function openWebRemoteControlTask({
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    logger.error("[useWebRemoteControlTaskOpen] 打开远程 task 失败", {
+    logger.error("[useWebRemoteControlTaskOpen] failed to open remote task", {
       error: message,
       taskId: task.taskId,
       workspaceKey: taskWorkspaceKey,
@@ -120,9 +124,9 @@ export async function openWebRemoteControlTask({
     setSwitchingTaskKey?.(null);
     onSwitchingChange?.(false);
     if (isDisconnectedRemoteWorkspaceBridgeError(message)) {
-      // Bugfix: 手机端重连后 workspace list 可能还没同步到新的 remoteSessionId，
-      // 此时打开 task 会被 desktop main 拒绝创建 bridge。这里退回任务首页，
-      // 让用户看到断开态和重连按钮，而不是停在聊天页错误提示里。
+      // Bugfix: after a phone reconnect the list may lag the new remoteSessionId and task open
+      // gets rejected by desktop main; return home to show reconnect state instead of
+      // a chat-page error.
       onNavigateHome?.();
       return;
     }

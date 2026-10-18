@@ -28,11 +28,11 @@ function isWorkflowRunDelta(delta: ConversationDelta): boolean {
 }
 
 /**
-  * The legacy-consumer encoding of one delta batch. With no `workflowRun.*` inside, **returns the very same array**
-  * (this path runs per subscriber per ingest; never allocate for unrelated batches).
+ * The legacy-consumer encoding of one delta batch. With no `workflowRun.*` inside, **returns the very same array**
+ * (this path runs per subscriber per ingest; never allocate for unrelated batches).
  *
-  * With `workflowRuns` absent, drop without adding: the projection has no such key yet, nothing to whole-key-replace with.
-  * The producer side never hits this (deltas imply state); this only avoids emitting `{workflowRuns: undefined}`.
+ * With `workflowRuns` absent, drop without adding: the projection has no such key yet, nothing to whole-key-replace with.
+ * The producer side never hits this (deltas imply state); this only avoids emitting `{workflowRuns: undefined}`.
  */
 export function encodeConversationDeltasForLegacy(
   deltas: readonly ConversationDelta[],
@@ -73,20 +73,20 @@ export function encodeConversationDeltasForLegacy(
 const WORKFLOW_RUN_DELTA_ENVELOPE_SLACK_BYTES = 64;
 
 /**
-  * When a batch **only** contains key-level deltas, the byte bound on snapshot growth; with any other op, null (measure exactly).
+ * When a batch **only** contains key-level deltas, the byte bound on snapshot growth; with any other op, null (measure exactly).
  *
-  * Why it holds: everything `workflowRun.updated` writes into the snapshot is in that op's payload (whole-header
-  * replacement, whole-row upsert), so the snapshot grows by at most that; `workflowRun.removed` only shrinks it.
+ * Why it holds: everything `workflowRun.updated` writes into the snapshot is in that op's payload (whole-header
+ * replacement, whole-row upsert), so the snapshot grows by at most that; `workflowRun.removed` only shrinks it.
  *
-  * **Empty batches** satisfy the criterion too (no non-key-level op), with a stronger argument still: an event producing
-  * no delta changes the snapshot by the `seq` digits alone -- ample headroom. No special case; it is the criterion
-  * read to the end, and it spares replay events that reduce to idempotence (zero deltas) a full serialization.
+ * **Empty batches** satisfy the criterion too (no non-key-level op), with a stronger argument still: an event producing
+ * no delta changes the snapshot by the `seq` digits alone -- ample headroom. No special case; it is the criterion
+ * read to the end, and it spares replay events that reduce to idempotence (zero deltas) a full serialization.
  *
-  * The null-covered half is contract too: when diff cannot recognize a structural change it degrades to a whole-key `state.updated`,
-  * whose bytes are **not** a growth bound (it replaces the whole key; the old value's bytes are not included) -- fall back to the exact
-  * path. The criterion is therefore "every op is key-level", never "some are".
+ * The null-covered half is contract too: when diff cannot recognize a structural change it degrades to a whole-key `state.updated`,
+ * whose bytes are **not** a growth bound (it replaces the whole key; the old value's bytes are not included) -- fall back to the exact
+ * path. The criterion is therefore "every op is key-level", never "some are".
  *
-  * Headroom is **per batch**, not per op: it covers the JSON shell and the growth of `seq`'s decimal digits alike.
+ * Headroom is **per batch**, not per op: it covers the JSON shell and the growth of `seq`'s decimal digits alike.
  */
 export function workflowRunDeltaGrowthUpperBound(
   deltas: readonly ConversationDelta[],

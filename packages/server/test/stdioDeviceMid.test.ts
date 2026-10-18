@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ensureRemoteServerDeviceMid } from "../src/stdioDeviceMid.js";
 
 describe("ensureRemoteServerDeviceMid", () => {
-  it("启动时确保 deviceMid 并返回，不打告警", async () => {
+  it("ensures deviceMid on startup, returns it and stays quiet", async () => {
     const log = vi.fn();
     const ensureDeviceMid = vi.fn(async () => "device-mid-remote");
 
@@ -14,7 +14,7 @@ describe("ensureRemoteServerDeviceMid", () => {
     expect(log).not.toHaveBeenCalled();
   });
 
-  it("确保失败时记录原因并继续启动，不抛错也不伪造设备 ID", async () => {
+  it("logs the cause and keeps starting when ensure fails, without throwing or fabricating an id", async () => {
     const log = vi.fn();
     const ensureDeviceMid = vi.fn(async () => {
       throw new Error("Telemetry state lock timeout");

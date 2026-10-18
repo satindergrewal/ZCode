@@ -30,7 +30,7 @@ describe("goal target contracts", () => {
   it("treats malformed verifier json as passed fail-open", () => {
     expect(
       parseGoalCompletionVerificationText(
-        '```json\n{"passed": true, "reason": "目标"继续修环境和做完所有开发"已全部完成。", "nextAction": ""}\n```',
+        '```json\n{"passed": true, "reason": "Goal "keep fixing env" incomplete.", "nextAction": ""}\n```',
       ),
     ).toEqual({
       passed: true,

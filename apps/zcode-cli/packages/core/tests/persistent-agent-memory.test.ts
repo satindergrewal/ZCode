@@ -111,7 +111,6 @@ describe("persistent custom-agent memory", () => {
         subagents: { profiles: [customProfile({ memory: "project", tools: [] })] },
       }).subagents?.profiles?.[0]?.tools,
     ).toEqual(["Write", "Edit"]);
-
   });
 
   it("reads MEMORY.md for every child launch and creates nothing when globally disabled", async () => {

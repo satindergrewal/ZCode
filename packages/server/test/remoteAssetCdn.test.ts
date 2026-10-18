@@ -5,7 +5,7 @@ import {
 } from "@zcode/server/remote/remoteAssetCdn.js";
 
 describe("remoteAssetCdn URL encoding", () => {
-  it("组件路径包含 '+' 时应编码为 %2B", () => {
+  it("encodes '+' in component paths as %2B", () => {
     const urls = buildComponentArtifactUrlCandidates(
       ["https://cdn.example.com/zcode/electron/releases/1.3.0"],
       "components/linux-arm64/server-bundle/v1.3.0+7138ea7a9b45.tar.gz",
@@ -18,7 +18,7 @@ describe("remoteAssetCdn URL encoding", () => {
     ]);
   });
 
-  it("组件产物应从带版本 manifest 基址回退到跨版本 components 根目录", () => {
+  it("falls back from the versioned manifest base to the cross-version components root", () => {
     const urls = buildComponentArtifactUrlCandidates(
       [
         "https://cdn.example.com/zcode/electron/releases/1.3.0",
@@ -36,7 +36,7 @@ describe("remoteAssetCdn URL encoding", () => {
     ]);
   });
 
-  it("已编码路径不应重复编码", () => {
+  it("does not double-encode already-encoded paths", () => {
     const urls = buildReleaseAssetUrlCandidates(
       ["https://cdn.example.com/zcode/electron/releases/1.3.0"],
       ["components/linux-arm64/server-bundle/v1.3.0%2B7138ea7a9b45.tar.gz"],

@@ -1,7 +1,7 @@
-// edit/retry 的 canonical intent 重发原语：rewind 截断之后，把 projection resolver 解析出的
-// canonical user intent（含附件引用、模型 Selection、goal 命令语义）重新发起为一轮。
-// 从 fork-edit-retry.ts 抽出：editUserQuery 与 retryTurn 共用，forkAssistant 不经过这里
-// （fork 只做 conversation-only copy，不 rewind、不重发）。
+// edit/retry's canonical-intent replay primitive: after a rewind truncation, re-issue the projection resolver's
+// canonical user intent (attachment refs, model Selection, goal-command semantics) as a new turn.
+// Extracted from fork-edit-retry.ts: editUserQuery and retryTurn share it; forkAssistant never passes here
+// (a fork is a conversation-only copy: no rewind, no re-send).
 import type { CommandEnvelope, CommandPayloadMap } from "@zcode/shared/zcode-protocol-v4";
 import { isHighspeedProviderId } from "@zcode/shared";
 import type { mapAttachmentRefsToTurnAttachments } from "../attachment-refs.js";
@@ -62,21 +62,21 @@ export async function startCanonicalIntent(
   );
   const requireQueue = options?.requireQueue === true;
   const retainQueuedTurnExecution = host.retainQueuedTurnExecution;
-  // 入队路径的凭据只能驻留内存；宿主不提供暂存能力时必须整体退回会话模型，不留半程加速。
+  // Queued-path credentials stay in memory only; without host staging, fall back wholly to the session model — no half-way speed-up.
   const canRetainQueuedHighspeed =
     requireQueue && highspeed !== undefined && retainQueuedTurnExecution !== undefined;
   const appliesHighspeed = highspeed !== undefined && (!requireQueue || canRetainQueuedHighspeed);
   if (appliesHighspeed && highspeed) {
     intent.highspeed = highspeed.card;
-    // 编辑重发是新的一次发送：canonical intent 的模型要换成本次卡的 Selection，
-    // 不能沿用被 rewind 那轮的旧模型，否则提升时会拿加速凭据打普通端点。
+    // A re-sent edit is a new send: the canonical intent's model becomes this card's Selection,
+    // never the rewound turn's old model, or promotion would hit a plain endpoint with speed-up credentials.
     intent.modelSelection = highspeed.modelSelection;
   } else if (isHighspeedProviderId(intent.modelSelection?.providerId)) {
-    // Bug 根因：retry、卡过期/未重新抽到卡的 edit、宿主无法暂存凭据的入队 edit 都没有本轮执行材料，
-    // 却沿用了被 rewind 那轮持久化的 account:*-highspeed-card Selection。加速 Selection 只有与同一轮
-    // requestAuth 成对才有效：单独保留会让 Core 以 ModelRequestAuthMissing 失败，还会被固定进新的
-    // canonical intent，让后续普通发送继续携带无法使用的加速 Provider。与队列提升共用同一 resolver
-    // 退回会话常驻 Selection，只改本轮 intent、不改 session 模型（spec §3 规则 13）。
+    // Root cause: retry, an edit whose card expired / was not re-drawn, and a queued edit without host staging all lack this turn's execution material,
+    // yet inherited the rewound turn's persisted account:*-highspeed-card Selection. A speed-up Selection is valid only paired with the same
+    // turn's requestAuth: keeping it alone makes Core fail with ModelRequestAuthMissing and pins it into the new
+    // canonical intent, so later plain sends keep carrying an unusable speed-up provider. Shares the queue-promotion resolver
+    // falling back to the resident Selection; only this turn's intent changes, never the session model (spec 3, rule 13).
     intent.modelSelection = resolveSessionFallbackModelSelection(record);
   }
   if (requireQueue) {

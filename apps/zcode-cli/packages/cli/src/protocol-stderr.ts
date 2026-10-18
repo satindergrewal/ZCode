@@ -1,6 +1,6 @@
 /**
-  * The protocol process has exactly one diagnostics outlet. Listen for the async error of the real stream, not just catch writes:
-  * otherwise EPIPE -> uncaughtException -> writing stderr again becomes a high-CPU feedback loop.
+ * The protocol process has exactly one diagnostics outlet. Listen for the async error of the real stream, not just catch writes:
+ * otherwise EPIPE -> uncaughtException -> writing stderr again becomes a high-CPU feedback loop.
  */
 export function installProtocolStderrBoundary(stderr: NodeJS.WritableStream): () => void {
   const originalWrite = stderr.write;
@@ -23,7 +23,7 @@ export function installProtocolStderrBoundary(stderr: NodeJS.WritableStream): ()
         unavailable = true;
       }
     }
-        // Diagnostics are best effort; once the outlet is dead, finish the caller's flush without writing to a broken stream or reporting our own failure.
+    // Diagnostics are best effort; once the outlet is dead, finish the caller's flush without writing to a broken stream or reporting our own failure.
     if (writeCallback) queueMicrotask(() => writeCallback());
     return true;
   }) as typeof stderr.write;

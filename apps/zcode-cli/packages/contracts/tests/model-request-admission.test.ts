@@ -7,8 +7,8 @@ import {
   type ModelTextRequest,
 } from "../src/model/index.js";
 
-// docs/dynamic-workflow/concurrency.md「One ticket per request attempt」：准入端口是 runtime-only 请求字段；票据同时是
-// 该次尝试的状态事件汇（extends ModelStatusSink）。
+// docs/dynamic-workflow/concurrency.md "One ticket per request attempt": the admission port is a runtime-only request field; the ticket doubles as
+// the attempt's status-event sink (extends ModelStatusSink).
 describe("ModelRequestAdmission", () => {
   it("is a runtime-only request field and stays out of the model request JSON schema", () => {
     const received: ModelNetworkStatusEvent[] = [];

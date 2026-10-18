@@ -101,8 +101,8 @@ const webSearchHandler: ToolHandler<WebSearchInput, WebSearchOutput> = async (in
   };
 
   // BigModel's Anthropic-compat non-streaming JSON returns provider-internal web_search results as a
- // bare assistant-side tool_result; AI SDK throws Invalid JSON response at schema validation.
- // Streaming reuses the existing SSE compat.
+  // bare assistant-side tool_result; AI SDK throws Invalid JSON response at schema validation.
+  // Streaming reuses the existing SSE compat.
   const result = await collectWebSearchStreamResult({
     events: runWithModelInvocationContext(
       {
@@ -131,7 +131,7 @@ export const webSearchToolEntry: ToolEntry = {
   metadata: {
     name: WEBSEARCH_TOOL_NAME,
     // Hardcoding the month would let the model-visible WebSearch description go stale;
- // regenerate per read so long-lived processes never serve last month's date.
+    // regenerate per read so long-lived processes never serve last month's date.
     get description() {
       return buildWebSearchProviderDescription();
     },

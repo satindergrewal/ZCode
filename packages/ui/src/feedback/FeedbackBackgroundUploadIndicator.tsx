@@ -114,7 +114,7 @@ function FeedbackBackgroundUploadJobCard({
 
   const handleOpen = () => {
     const target = getFeedbackBackgroundOpenTarget(job);
-    logger.debug("[FeedbackBackgroundUploadIndicator] 打开后台反馈卡片", {
+    logger.debug("[FeedbackBackgroundUploadIndicator] opening background feedback card", {
       jobId: job.id,
       status: job.status,
       target: target.kind,
@@ -124,7 +124,7 @@ function FeedbackBackgroundUploadJobCard({
       dismissFeedbackSubmissionJob(job.id);
       return;
     }
-    // 多个上传任务必须按被点击卡片的 jobId 打开，不能再回退到最后一个活动任务。
+    // Open by the clicked card's jobId; never fall back to the last active job.
     onOpenSubmissionJob(target.jobId);
   };
 
@@ -181,8 +181,8 @@ export function FeedbackBackgroundUploadIndicatorView({
         )}
       >
         <Icon
-          // 后台提示是 toast 语义，状态图标不应再包一层边框底座，
-          // 否则会被误读成独立按钮，也会和外层浮层圆角形成重复层级。
+          // Background notices are toast semantics; the status icon must not grow a framed base,
+          // or it reads as a button and stacks a rounded layer over the popover.
           className={cn("mt-0.5 shrink-0", expanded ? "size-4" : "size-3.5", statusTone)}
         />
         <button
@@ -224,7 +224,7 @@ export function FeedbackBackgroundUploadIndicatorView({
             size="icon-sm"
             variant="ghost"
             onClick={() => {
-              // 收起态再点“展开”只露出一小截状态条，用户还要二次操作；这里直接打开完整反馈页。
+              // Expand on a collapsed card shows a sliver and demands a second click; open the full page.
               if (!expanded) {
                 onOpen();
                 return;
@@ -238,7 +238,7 @@ export function FeedbackBackgroundUploadIndicatorView({
           >
             {expanded ? <ChevronDown className="size-3" /> : <ChevronUp className="size-3" />}
           </Button>
-          {/* Bugfix: paused-log 只能继续上传；如果允许隐藏，会把等待用户动作的后台 job 变成不可恢复的悬挂状态。 */}
+          {/* Bugfix: paused-log jobs can only continue uploading; hiding strands a pending user action. */}
           {!isPaused ? (
             <Button
               type="button"

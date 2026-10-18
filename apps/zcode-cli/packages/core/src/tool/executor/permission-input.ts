@@ -3,7 +3,7 @@ import { normalizeToolExecutionInput } from "../input-normalization.js";
 import type { ToolExecutorDeps } from "./types.js";
 import { validateInput } from "./validation.js";
 
-/** 审批只读快照；先冻结再下钻，避免可信 Hook 返回循环引用时无限递归。 */
+/** Approval-time read-only snapshot; freeze before descent so a trusted Hook returning cyclic references cannot recurse forever. */
 export function snapshotPermissionInput<T>(input: T): T {
   const snapshot = structuredClone(input);
   function freeze(value: unknown): void {
@@ -26,7 +26,7 @@ export function preparePermissionInput(
     logger: deps.logger,
     source: "permission",
   });
-  // 原因：审批重构曾额外重跑所有工具的语义预检，扩大了旧模式行为变更；改写保留原 schema 校验。
+  // Why: the approval rework used to re-run every tool's semantic precheck, widening the legacy behavior change; the rewrite keeps the original schema validation.
   const error = validateInput(normalized, entry);
   if (error) throw error;
   return normalized;

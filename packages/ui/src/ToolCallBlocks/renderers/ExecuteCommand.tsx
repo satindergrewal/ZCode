@@ -14,7 +14,7 @@ export function ExecuteCommand({ command }: { command: string | undefined }) {
   useLayoutEffect(() => {
     const element = content.current;
     if (!element || expanded) return;
-    // 原命令区域只有限高和截断，没有阅读完整内容的入口；按实际换行测量，兼容窄屏与字号变化。
+    // The raw command area only clamps height and truncates; there is no way to read the full text. Measure real line wraps to survive narrow panes and font changes.
     const measure = () => setOverflowing(element.scrollHeight > element.clientHeight + 1);
     measure();
     const observer = new ResizeObserver(measure);
@@ -29,10 +29,10 @@ export function ExecuteCommand({ command }: { command: string | undefined }) {
         ref={content}
         data-testid="execute-command"
         tabIndex={expanded ? 0 : undefined}
-        // 原滚动条受卡片右侧 16px padding 限制；向右扩展 12px 并补回正文留白，使滚动条距内边缘 4px。
+        // The stock scrollbar is limited by the card's 16px right padding; extend 12px right and restore the body gutter so the scrollbar sits 4px from the inner edge.
         className={`col-span-2 -mr-3 pr-3 min-w-0 leading-5 ${expanded ? "max-h-[10lh] overflow-y-auto" : "max-h-[3lh] overflow-hidden"}`}
       >
-        {/* 起始标记此前在滚动容器外，滚到命令中段仍显示；与正文共用视口，保持首行语义。 */}
+        {/* The start marker used to live outside the scroll container and stayed visible mid-scroll; share the viewport with the body to keep first-line semantics. */}
         <div className="flex items-start gap-2">
           <span data-testid="execute-command-prompt" className="shrink-0 text-foreground-subtle">
             $
@@ -46,7 +46,7 @@ export function ExecuteCommand({ command }: { command: string | undefined }) {
           type="button"
           variant="link"
           size="default"
-          // 去掉基础按钮的水平 padding 和边框占位，让文字直接对齐命令正文。
+          // Drop the base button's horizontal padding and border slot so the text aligns with the command body.
           className="col-start-2 justify-self-start border-0 px-0 font-sans text-ui-sm font-normal text-foreground-subtle focus-visible:underline"
           aria-expanded={expanded}
           aria-controls={id}

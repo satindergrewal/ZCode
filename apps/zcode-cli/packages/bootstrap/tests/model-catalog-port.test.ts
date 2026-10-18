@@ -90,7 +90,10 @@ describe("createModelCatalogPort", () => {
     // 判别用例：构造之后注册表才变。一份构造期冻结的目录会让第二次列举给出旧答案，
     // 而 `subagent_model` 的解析正是据它挑模型。
     const fake = fakeRegistry([ZHIPU]);
-    const port = createModelCatalogPort({ registry: fake.registry, currentSelection: () => undefined });
+    const port = createModelCatalogPort({
+      registry: fake.registry,
+      currentSelection: () => undefined,
+    });
 
     expect(port.listModels().map((entry) => entry.modelId)).toEqual(["glm-5.3", "glm-5.3-flash"]);
     expect(fake.viewReads()).toBe(1);

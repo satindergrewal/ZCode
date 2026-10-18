@@ -7,15 +7,15 @@ type HighspeedVisualPhase = "diffusing" | "handoff" | "stable";
 const HIGHSPEED_HANDOFF_FALLBACK_MS = 1_000;
 
 /**
- * 仅渲染 Highspeed 输入壳的视觉层；激活资格、有效期和模型仍由外部卡片快照决定。
+ * Renders only the visual layer of the input shell; eligibility/expiry/model come from the outer card snapshot.
  */
 export const HighspeedComposerBackground = memo(function HighspeedComposerBackground({
   animated,
   onModelTransitionStart,
 }: {
   /**
-   * 是否为 draw 新命中的激活入场。恢复入场直接从 stable 挂载，不挂载扩散 Canvas；
-   * 入场方式只在挂载时生效，宿主以 cardId 作 key。
+   * True only for a fresh-draw activation entrance. Restores mount straight at stable, no dissolve canvas;
+   * the mode applies at mount only; the host keys by cardId.
    */
   animated: boolean;
   onModelTransitionStart: () => void;
@@ -26,9 +26,9 @@ export const HighspeedComposerBackground = memo(function HighspeedComposerBackgr
 
   useEffect(() => {
     if (phase !== "handoff") return;
-    // Bug 根因：窗口后台化或 Renderer 忙碌时，Canvas 的 opacity transitionend 可能丢失，
-    // 动画状态会永久停在 handoff，使只在 stable 生效的紫色边框和阴影一起消失。
-    // 正常路径仍由 transitionend 精确收口；超时只负责把丢事件的状态机推进到稳定态。
+    // Bug: backgrounded/busy renderers can lose the canvas opacity transitionend, stranding the state
+    // machine in handoff so the stable-only purple border and shadow vanish.
+    // The normal path still settles via transitionend; the timeout only rescues lost-event runs to stable.
     const fallbackTimer = window.setTimeout(handleDiffusionComplete, HIGHSPEED_HANDOFF_FALLBACK_MS);
     return () => window.clearTimeout(fallbackTimer);
   }, [handleDiffusionComplete, phase]);

@@ -18,7 +18,7 @@ export interface SampleModelInput {
   source: { pluginId: string; serverName: string; appIdentity: string };
 }
 const QUERY_SOURCE = "mcp_app_sampling";
-/** 独立模型调用，沿用任务的 factory/admission/认证；不创建 turn、不写会话消息或事件。 */
+/** Standalone model call reusing the task's factory/admission/auth; no turn, no session messages or events. */
 export async function sampleModel(
   this: AgentRuntimeInternal,
   input: SampleModelInput,
@@ -27,7 +27,7 @@ export async function sampleModel(
   const params = mcpAppsSamplingParamsSchema.parse(input.request);
   const signal = options.abortSignal;
   signal.throwIfAborted();
-  // 在第一个 await 前固定任务模型；页面 hints 不能选择另一账号或修改进行中调用。
+  // Pin the task model before the first await; page hints must not switch accounts or alter in-flight calls.
   const model = createRuntimeModel(this, { selection: this.getSessionModelSelection() });
   const messages: ModelInputMessage[] = params.messages.map((message) => ({
     role: message.role,
@@ -56,7 +56,7 @@ export async function sampleModel(
       modelId: String(model.modelId),
     },
   });
-  // model_usage 引用当前任务行；空任务也要记账，但不能把 App 提示词写成主聊天或标题。
+  // model_usage references the current task row; empty tasks still meter, but App prompts must not be booked as main chat or title.
   await this.ensureSessionPersisted("MCP App sampling", traceContext);
   signal.throwIfAborted();
   const events: SessionEvent[] = [];

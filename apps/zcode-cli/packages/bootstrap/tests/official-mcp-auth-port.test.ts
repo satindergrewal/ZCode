@@ -33,7 +33,9 @@ function entrypointResolveWorkspace(fallbackCwd: string) {
   };
 }
 
-function createHarness(options: { resolveWorkspace?: ReturnType<typeof entrypointResolveWorkspace> } = {}) {
+function createHarness(
+  options: { resolveWorkspace?: ReturnType<typeof entrypointResolveWorkspace> } = {},
+) {
   const requestClient = vi.fn(async () => OK);
   const context = { requestClient } as unknown as OfficialMcpAuthRequestContext;
   const port = createOfficialMcpAuthHeadersPort({
@@ -91,7 +93,11 @@ describe("official mcp auth headers port", () => {
 
   it("treats a blank identity as absent instead of producing an empty workspaceKey", async () => {
     const { port, sentWorkspace } = createHarness();
-    await port.resolveHeaders({ ...BASE_REQUEST, workspaceIdentity: "   ", workspacePath: "/repo" });
+    await port.resolveHeaders({
+      ...BASE_REQUEST,
+      workspaceIdentity: "   ",
+      workspacePath: "/repo",
+    });
     expect(sentWorkspace(0)).toEqual({ workspaceKey: "/repo", workspacePath: "/repo" });
   });
 
@@ -126,9 +132,9 @@ describe("official mcp auth headers port", () => {
       resolveContext: () => undefined,
       resolveWorkspace: entrypointResolveWorkspace("/fallback"),
     });
-    await expect(
-      port.resolveHeaders({ ...BASE_REQUEST, workspacePath: "/repo" }),
-    ).resolves.toEqual({ ok: false, reason: "official_auth_unavailable" });
+    await expect(port.resolveHeaders({ ...BASE_REQUEST, workspacePath: "/repo" })).resolves.toEqual(
+      { ok: false, reason: "official_auth_unavailable" },
+    );
     expect(requestClient).not.toHaveBeenCalled();
   });
 

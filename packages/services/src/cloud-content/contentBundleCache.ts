@@ -118,7 +118,7 @@ async function extract(bytes: Buffer, directory: string): Promise<Manifest> {
   }
 }
 
-/** 仅供宿主装配：可信源和缓存根不从云端 payload 派生；cacheRoot 必须由单个宿主独占。 */
+/** Host assembly only: trusted sources and the cache root never derive from cloud payloads; one host owns cacheRoot exclusively. */
 export function createContentBundleCache(options: {
   cacheRoot: string;
   isTrustedUrl: (url: URL) => boolean;

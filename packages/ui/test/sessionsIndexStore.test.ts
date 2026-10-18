@@ -913,7 +913,9 @@ describe("SessionsIndexStore", () => {
     store.close();
 
     await vi.waitFor(() =>
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining("unsubscribe sub-1 失败（忽略）")),
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining("unsubscribe sub-1 failed (ignored)"),
+      ),
     );
     expect(store.getStatus()).toBe("idle");
     warn.mockRestore();

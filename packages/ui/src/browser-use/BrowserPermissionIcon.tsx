@@ -14,7 +14,7 @@ import {
   Volume2,
 } from "lucide-react";
 
-/** 地址栏与面板复用同一能力字形；图标表示申请能力，不表示设备正在使用。 */
+/** One glyph for omnibox+panel: requested capability, not live device use. */
 export function BrowserPermissionIcon({ capability }: { capability: string }) {
   const Icon =
     capability === "camera"

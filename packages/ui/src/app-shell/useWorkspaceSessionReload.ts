@@ -50,7 +50,9 @@ export function useWorkspaceSessionReload({
         // Both the header and the error strip can trigger reload; quick double-clicks cause
         // concurrent rebuilds. Time-window debounce at the entry keeps concurrent
         // restartWorkspaceProcess calls from racing for the same provider-workspace.
-        logger.info(`[App] ignoring duplicate workspace session rebuild request workspace=${workspaceAbsPath}`);
+        logger.info(
+          `[App] ignoring duplicate workspace session rebuild request workspace=${workspaceAbsPath}`,
+        );
         return;
       }
       lastReloadSessionTriggeredAtRef.current = now;

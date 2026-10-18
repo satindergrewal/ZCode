@@ -44,12 +44,12 @@ export {
   serializeSavedWorkflow,
   validateWorkflowArgs,
 } from "./tool/handlers/saved-workflows/index.js";
-// 同一个类型检查器（docs/dynamic-workflow/launch.md「`SaveWorkflow`」）：GUI 从一次 run 直接
-// 保存时走的也必须是它——「存得下来却跑不起来」是这个特性最难解释的一种坏掉方式，而两个入口
-// 各编译一次就是它的标准产地。
+// One and the same typechecker (docs/dynamic-workflow/launch.md "SaveWorkflow"): a save issued straight from a run in the GUI
+// must pass through it too — "it saves but never runs" is the hardest failure of this feature to explain, and two entry
+// points each compiling once is the canonical birthplace of that guarantee.
 export { analyzeScript } from "./tool/handlers/workflow-script-analysis.js";
-// 草稿铸名规则只此一份（docs/dynamic-workflow/launch.md「The draft after a fill」）：bootstrap 的 run
-// service 经注入拿它给启动时没写成草稿的 run 在补全时补铸一份，而不是把 slug / `-2` / `wx` 再抄一遍。
+// The draft-naming rule lives here exactly once (docs/dynamic-workflow/launch.md "The draft after a fill"): bootstrap's run
+// service gets it injected to mint a draft for a fill on a run launched without one, instead of duplicating the slug / `-2` / `wx` logic.
 export {
   writeWorkflowDraft,
   type WriteWorkflowDraftInput,

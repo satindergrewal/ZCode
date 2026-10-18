@@ -244,10 +244,7 @@ describe.skipIf(!nativeE2eEnabled)("native embedded search E2E", () => {
 
     expect(
       outputLines(normalizeNativeSearchResultPaths(outputSection(result.stdout, "RG_FILES"))),
-    ).toEqual([
-      "src/alpha.ts:2:needle alpha",
-      "src/deep/beta.ts:1:needle beta",
-    ]);
+    ).toEqual(["src/alpha.ts:2:needle alpha", "src/deep/beta.ts:1:needle beta"]);
     expect(outputSection(result.stdout, "RG_HIDDEN")).toBe(".hidden.ts:1:needle hidden");
     expect(outputSection(result.stdout, "RG_STDIN")).toBe("needle from rg stdin");
     expect(outputLines(outputSection(result.stdout, "RG_MATCHERS"))).toEqual([

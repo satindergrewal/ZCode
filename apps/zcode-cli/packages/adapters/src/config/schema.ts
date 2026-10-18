@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- zcode-cli 配置 schema 需要集中维护文件解析和 provider 继承，拆散会让配置语义更难对齐。 */
+/* eslint-disable max-lines -- the zcode-cli config schema must keep file parsing and provider inheritance together; splitting obscures the semantics. */
 import { z } from "zod";
 import type { RuntimeConfigPatch } from "@zcode/contracts";
 
@@ -44,7 +44,7 @@ const memorySchema = z.object({
 });
 
 const mcpServerBaseSchema = {
-  // 设置页和 MCP adapter 已支持协议选择；配置入口漏掉该字段会因 strict 校验丢弃整个 server。
+  // Settings UI and the MCP adapter support protocol choice; a config entry missing it would drop the whole server under strict validation.
   protocolVersion: z.enum(["auto", "legacy", "2026-07-28"]).optional(),
   enabled: z.boolean().optional(),
   timeoutMs: positiveNumberSchema.optional(),
@@ -165,10 +165,7 @@ const pluginsSchema = z.object({
   dirs: z.array(z.string().min(1)).optional(),
   enabledPlugins: z.record(z.string(), z.boolean()).optional(),
   extraKnownMarketplaces: z
-    .record(
-      z.string().min(1),
-      z.object({ source: pluginMarketplaceSourceSchema }).strict(),
-    )
+    .record(z.string().min(1), z.object({ source: pluginMarketplaceSourceSchema }).strict())
     .optional(),
   options: z.record(z.string(), z.record(z.string(), pluginOptionValueSchema)).optional(),
   suppressedBuiltins: z.array(z.string().min(1)).optional(),
@@ -191,7 +188,7 @@ const skillToggleSchema = z.object({
   enable: z.boolean().optional(),
 });
 
-// skill / command 可用性覆盖：key 为对应 .md 的绝对路径，enable:false 表示禁用
+// skill/command availability overrides: key is the absolute .md path, enable:false means disabled
 const skillCommandOverrideSchema = z
   .object({
     enable: z.boolean().optional(),
@@ -228,12 +225,12 @@ const modelAnomalyGuardSchema = z.object({
 });
 
 // Hooks schema：
-// 理想态是 re-export shared/workspace-hook-config，但两个 pnpm workspace 解析出物理
-// 不同的 zod 实例（adapters 4.4.3 / shared 4.3.6）：shared schema 嵌入本包组合 schema
-// 会让 dts 引用 foreign zod 内部类型（TS2742），typeof/ZodType 注解都会落入类型循环。
-// 因此本副本按原样保留（本包 zod 构造），并保持与 shared 的校验语义等价；
-// 运行时校验语义仍以 shared 为准（discovery/trust 装配入口都走 shared schema——
-// 本 schema 只负责配置文件装载诊断）。若未来统一 zod 实例，应删除本副本改 re-export。
+// Ideal shape is re-exporting shared/workspace-hook-config, but the two pnpm workspaces resolve distinct
+// zod instances (adapters 4.4.3 / shared 4.3.6): embedding the shared schema in this package's composite
+// schema makes dts reference foreign zod internals (TS2742); typeof/ZodType annotations hit type loops.
+// So this copy is kept as-is (built with this package's zod), validation-equivalent to shared;
+// shared remains the runtime source of truth (discovery/trust wiring both use the shared schema;
+// this schema only serves config-file load diagnostics). Delete this copy for a re-export once zod unifies.
 export const hookProcessSchema = z
   .object({
     type: z.literal("process"),
@@ -338,19 +335,19 @@ function normalizeMcpServerConfigInput(value: unknown): unknown {
 
   const server = { ...(value as Record<string, unknown>) };
   if (!("env" in server) && "environment" in server) {
-    // 旧配置和部分外部导入使用 environment；运行态只消费 env。
-    // 在解析入口归一化，避免一个 legacy MCP server 拖垮整份 config。
+    // Legacy config and some external imports use environment; runtime consumes only env.
+    // Normalize at parse time so one legacy MCP server cannot poison the whole config.
     server.env = server.environment;
   }
   delete server.environment;
 
   if (typeof server.enable === "boolean" || typeof server.enabled === "boolean") {
-    // 历史遗留兜底：桌面端早期把停用状态写成 enable，而契约字段一直是 enabled。
-    // 桌面端与 mcp-sync 现在只写 enabled，并在加载配置时把存量 enable 就地迁移落盘；
-    // CLI 是只读解析、不能写盘，这里只覆盖「用户先跑 CLI、还没开过桌面端」的窗口。
-    // 冲突时以「停用」为准：桌面端写 enable:false 时不会清理外部导入残留的 enabled:true，
-    // 按 enabled 取值会把用户关掉的 server 重新拉起（停用了还在被调用）。
-    // 存量配置迁移完毕后，这段连同下面的 delete 可以整块删除。
+    // Legacy fallback: early desktop builds wrote enable while the contract field was always enabled.
+    // Desktop and mcp-sync now write only enabled and migrate legacy enable on load;
+    // the CLI is read-only, so this only covers users who ran the CLI before ever opening the desktop app.
+    // On conflict prefer disabled: desktop enable:false does not clear enabled:true left by imports,
+    // and trusting enabled would resurrect servers the user turned off.
+    // Once legacy configs are migrated, delete this block and the delete below.
     server.enabled = server.enable === false ? false : (server.enabled ?? true);
   }
   delete server.enable;
@@ -361,11 +358,11 @@ function normalizeMcpServerConfigInput(value: unknown): unknown {
   delete server.startup_timeout_sec;
 
   if (server.type === "remote") {
-    // 外部 Agent 配置常把 HTTP MCP 标记为 remote；ZCode 运行态协议类型是 http。
+    // External agent configs often mark HTTP MCP as remote; the ZCode runtime type is http.
     server.type = "http";
   } else if (typeof server.type !== "string") {
-    // app 管理层把 command 形态视为默认 stdio；CLI 也需要同样推断，
-    // 否则历史 app 配置缺少 type 时会阻断模型配置加载。
+    // The app layer treats command-form servers as stdio by default; the CLI needs the same inference
+    // or legacy app configs without type block model-config loading.
     if (typeof server.command === "string" && server.command.trim().length > 0) {
       server.type = "stdio";
     } else if (typeof server.url === "string" && server.url.trim().length > 0) {
@@ -378,7 +375,7 @@ function normalizeMcpServerConfigInput(value: unknown): unknown {
     server.headers === undefined &&
     server.http_headers !== undefined
   ) {
-    // 兼容历史 BigModel MCP 配置：旧字段名是 http_headers，agent runtime 只消费 headers。
+    // Compat for legacy BigModel MCP config: old field name http_headers; runtime consumes headers.
     server.headers = server.http_headers;
   }
   delete server.http_headers;
@@ -439,12 +436,8 @@ function normalizePluginConfig(
   }
   const suppressedBuiltins = plugins.suppressedBuiltins
     ? plugins.suppressedBuiltins.reduce<string[]>((ids, id) => {
-        const canonicalId =
-          id === LEGACY_CUA_PLUGIN_ID ? CANONICAL_CUA_PLUGIN_ID : id;
-        if (
-          canonicalId === CANONICAL_CUA_PLUGIN_ID &&
-          ids.includes(CANONICAL_CUA_PLUGIN_ID)
-        ) {
+        const canonicalId = id === LEGACY_CUA_PLUGIN_ID ? CANONICAL_CUA_PLUGIN_ID : id;
+        if (canonicalId === CANONICAL_CUA_PLUGIN_ID && ids.includes(CANONICAL_CUA_PLUGIN_ID)) {
           return ids;
         }
         ids.push(canonicalId);
@@ -498,7 +491,7 @@ function normalizeConfigFileInput(value: unknown, diagnostics: ConfigDiagnostic[
       continue;
     }
 
-    // MCP server 是可选工具配置，单个 server 错误不应导致 provider/plugin 等配置丢失。
+    // An MCP server is optional tooling; one bad server must not drop provider/plugin config.
     diagnostics.push({
       code: "config_mcp_server_invalid",
       message: formatMcpServerError(parsed.error),
@@ -554,8 +547,8 @@ function parseSkillOverridesFromPluralSkills(
     if (!isAbsoluteConfigPath(path) || !isSkillCommandOverrideValue(value)) {
       continue;
     }
-    // 设置页当前把单个 skill 开关写到 skills[SKILL.md 绝对路径]。
-    // agent 运行态只消费 skillOverrides，所以这里在配置解析阶段统一映射，避免 UI 状态和 agent 实际加载分叉。
+    // The settings UI currently writes a single skill toggle to skills[absolute SKILL.md path].
+    // Runtime consumes only skillOverrides, so map once at parse time keeping UI state and agent loads aligned.
     overrides[path] = { enable: value.enable };
   }
   return Object.keys(overrides).length > 0 ? overrides : undefined;

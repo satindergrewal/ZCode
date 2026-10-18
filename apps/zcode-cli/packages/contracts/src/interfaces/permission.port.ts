@@ -22,7 +22,7 @@ export interface PermissionRuleValue {
 }
 
 export interface PermissionRuleset {
-  /** 群协作任务的记忆授权仅在当前 session 内生效。 */
+  /** Memory grants for group-collab tasks apply within the current session only. */
   scope?: "session";
   version?: 1;
   allow?: PermissionRuleValue[];
@@ -108,7 +108,7 @@ export interface PermissionBrokerPort {
     request: PermissionBrokerRequest,
     options?: PermissionBrokerRequestOptions,
   ): Promise<PermissionBrokerResult> & {
-    /** 异步登记时必须提供；缺省表示调用内同步登记。仅表示可响应，不持有授权状态。 */
+    /** Required for async registration; absent means synchronous within the call. Respond-only; holds no grant state. */
     readonly registered?: Promise<void>;
   };
 }

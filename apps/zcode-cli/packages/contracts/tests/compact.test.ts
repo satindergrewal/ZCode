@@ -63,7 +63,7 @@ describe("compact contracts", () => {
       trigger: CompactTrigger.Auto,
       phase: CompactPhase.PreRequest,
       compactReason: CompactReason.ContextLimit,
-      text: "正在自动压缩上下文",
+      text: "Auto-compacting context",
     });
 
     expect(payload).toMatchObject({

@@ -1,10 +1,7 @@
 import { accessSync, constants as fsConstants } from "node:fs";
 import { basename, delimiter, join, win32 } from "node:path";
 import { windowsExecutableCandidates } from "./windows-executable.js";
-import {
-  type ExecutionShellDialect,
-  type ExecutionShellSelection,
-} from "@zcode/contracts";
+import { type ExecutionShellDialect, type ExecutionShellSelection } from "@zcode/contracts";
 
 type PosixShellKind = "bash" | "zsh";
 type ExecutableCheck = (path: string) => boolean;
@@ -293,9 +290,7 @@ function resolveWindowsCmdOverridePath(
 
 function isWindowsCmdFallback(shellPath: string): boolean {
   return (
-    !shellPath.includes("\\") &&
-    !shellPath.includes("/") &&
-    shellPath.toLowerCase() === "cmd.exe"
+    !shellPath.includes("\\") && !shellPath.includes("/") && shellPath.toLowerCase() === "cmd.exe"
   );
 }
 

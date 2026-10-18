@@ -55,7 +55,7 @@ export function buildPersistedConversationInputIntent(
   };
 }
 
-/** 在工具执行前收紧群任务授权；普通正文不能改变这个可信 metadata 标记。 */
+/** Tightens group-task authorization before tool execution; plain body text must not alter this trusted metadata flag. */
 export async function ensureGroupTaskPermissionScope(
   store: SessionStorePort | undefined,
   sessionId: SessionId,

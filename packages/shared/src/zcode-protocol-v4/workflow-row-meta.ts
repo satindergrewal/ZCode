@@ -1,23 +1,23 @@
 // ============================================================
-// workflow 轮的行级元数据（rows.ts 的 turnHeader / userInput 成员）
+// Row-level metadata for workflow turns (turnHeader / userInput members of rows.ts)
 // ============================================================
-// 从 rows.ts 拆出：通知 manifest、后台结果归属、直接启动三段 schema 让 rows.ts 越过
-// max-lines 上限（与 create-workflow-display.ts 同一先例——特性级 schema 单独成模块）。
-// 对外名字不变：rows.ts 原样再导出，@zcode/shared 桶与相对导入两条路都照旧。
+// Split from rows.ts: the notification manifest, background-result attribution, and direct-launch shapes pushed rows.ts past
+// its max-lines cap (same precedent as create-workflow-display.ts -- feature-level schemas get their own module).
+// Public names unchanged: rows.ts re-exports as-is; both the @zcode/shared barrel and relative imports keep working.
 
 import { z } from "zod";
 import { toolCallCreateWorkflowDisplaySchema } from "./create-workflow-display.js";
 import { WORKFLOW_RUNS_LIMITS } from "./workflow-runs.js";
 
-// workflow 通知的结构化载荷。
-// 发射侧铸造、有界；禁止从模型面通知文本反解析。上界原则：载荷随 turnHeader row
-// 走协议 + snapshot，截断诚实（resultTruncated / count≠shown ⇒ 预览是局部的，
-// 全量经 run id 可取）。批量轮刻意不携带（一轮一张 manifest 在批量下不成立）。
+// Structured payload of workflow notifications.
+// Minted by the emitter, bounded; never parsed back out of model-facing notification text. Bound principle: the payload rides the turnHeader row
+// through protocol + snapshot, honestly truncated (resultTruncated / count!=shown means the preview is partial;
+// the full set is fetchable via run id). Batch turns deliberately carry none (one manifest per turn does not hold under batching).
 export const workflowNotificationMetaSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("terminal"),
     status: z.enum(["completed", "errored", "stopped"]),
-    // `status === "stopped"` 才在场。
+    // Present only when status === "stopped".
     stopReason: z.enum(["user", "model", "provider", "interrupted", "superseded"]).optional(),
     summary: z.string().min(1).max(500),
     result: z.string().max(4000).optional(),
@@ -31,14 +31,14 @@ export const workflowNotificationMetaSchema = z.discriminatedUnion("kind", [
         preview: z.array(z.string().max(500)).max(8),
       })
       .optional(),
-    // 用户面产物的 chips 载荷。
-    // ⚠ 术语：这里的 artifact 是脚本经 `artifact.*` 发布给用户看的产出，与同一载荷上的
-    // `result`（脚本顶层返回值，引擎内部也叫 artifact）无关。
-    // 只带 chip 画得下的字段：字节数 / 条目数点开侧板即可看到，chip 上放不下。
-    // 上界 8，超出（含被种类过滤掉的）置 artifactsTruncated；title 的 120 与
-    // ARTIFACT_CAPS.maxTitleLength 同值，发射侧就地截断。
-    // 例外是交付物（`primary`）那一条：它还带 `description`（≤ 500，同 ARTIFACT_CAPS），因为
-    // 完成卡把它画成一行带文字的交付物，冷 transcript 上只有这个载荷可读。清单 primary 在前。
+    // Chips payload of user-facing artifacts.
+    // Terminology: artifact here is what the script published via `artifact.*`, unrelated to
+    // `result` on the same payload (the script's top-level return value, also called artifact internally).
+    // Chip-fittable fields only: bytes / entry count are one side-panel away; no room on the chip.
+    // Bound 8; overflow (including kind-filtered entries) sets artifactsTruncated; title's 120 matches
+    // ARTIFACT_CAPS.maxTitleLength, truncated in place by the emitter.
+    // Exception: the deliverable (`primary`) entry also carries `description` (<= 500, per ARTIFACT_CAPS), because
+    // the completion card draws it as a one-line titled deliverable and on cold transcripts this payload is the only readable copy. Primary first in the list.
     artifacts: z
       .array(
         z.object({
@@ -64,10 +64,10 @@ export const workflowNotificationMetaSchema = z.discriminatedUnion("kind", [
     context: z.string().max(4000).optional(),
     askedAt: z.number().optional(),
   }),
-  // 留白（docs/dynamic-workflow/transcript-and-notifications.md「The payload」的 `hole` 种类）：run 走到一个
-  // 开着的 `hole<T>()`，那条分支停驻、主代理欠一段代码。`type` 是作者写的类型原文（`Plan`）；`before` /
-  // `after` 是留白两侧的阶段名；`draftPath` / `line` 指向草稿文件里留白所在的那一行。prompt 与升级问题
-  // 同一条 4000 上界，发射侧先截。与契约同名（apps/zcode-cli contracts 侧手工镜像）。
+  // Hole (the `hole` kind of docs/dynamic-workflow/transcript-and-notifications.md "The payload"): the run reached an
+  // open `hole<T>()`; that branch is parked and the main agent owes code. `type` is the author-written type text (`Plan`); `before` /
+  // `after` are the phase names around the hole; `draftPath` / `line` point at the hole's line in the draft file. prompt shares the
+  // escalation's 4000 bound, emitter-truncated. Same name as the contract (hand-mirrored on the apps/zcode-cli contracts side).
   z.object({
     kind: z.literal("hole"),
     siteId: z.string().min(1).max(64),
@@ -81,7 +81,7 @@ export const workflowNotificationMetaSchema = z.discriminatedUnion("kind", [
     after: z.string().max(128).optional(),
     reachedAt: z.number().optional(),
   }),
-  // run 级停滞：每个 stall 段一条，不是终态。
+  // Run-level stall: one per stall segment, not a terminal state.
   z.object({
     kind: z.literal("stall"),
     sinceMs: z.number().int().nonnegative(),
@@ -92,41 +92,41 @@ export const workflowNotificationMetaSchema = z.discriminatedUnion("kind", [
 export type WorkflowNotificationMeta = z.infer<typeof workflowNotificationMetaSchema>;
 
 export const backgroundResultOriginMetaSchema = z.object({
-  // 三个取值与 contracts 的 BackgroundResultOriginMeta 保持同步。
-  // "workflow" 是 dynamic-workflow run（workId ≡ runId），复用整条后台通知管线。
+  // The three values stay in sync with contracts' BackgroundResultOriginMeta.
+  // "workflow" is a dynamic-workflow run (workId = runId) riding the whole background-notification pipeline.
   backgroundSource: z.enum(["bash", "subagent", "workflow"]),
   workId: z.string().min(1),
   title: z.string().min(1),
-  // 只在 backgroundSource === "workflow" 的单条通知轮上在场；zod 剥离未知键，
-  // 这里不加即整条链路静默丢——本字段是 manifest 渲染的唯一数据源。
+  // Present only on single-notification turns with backgroundSource === "workflow"; zod strips unknown keys,
+  // so omitting it here silently loses the whole chain -- this field is the manifest render's only data source.
   workflowNotification: workflowNotificationMetaSchema.optional(),
 });
 export type BackgroundResultOriginMeta = z.infer<typeof backgroundResultOriginMetaSchema>;
 
-// 直接启动的启动轮元数据。
-// GUI 用中枢的「运行」在新会话里直接启动一个已保存工作流，agent 铸造一条 controlOnly 轮；
-// 该轮的 turnHeader 与 userInput 都以 origin: "workflowLaunch" 投影，并各自携带这一份元数据。
-// 冷恢复（消息 metadata）与活投影（TurnStarted payload）取同一份，冷热同形。
-// 上界原则与 workflowNotificationMetaSchema 一致：发射侧铸造、有界、截断诚实——
-// 全量脚本 / 诊断经 runId 在详情侧板可取，卡片上只画这份定长摘要。
-// 刻意不复用 backgroundResultOriginMeta 的 backgroundSource 形状：那是「后台通知归属」，
-// 这里是「用户从中枢发起的启动」，语义不同，形状独立以免两处交叉演进时互相拖累。
+// Direct-launch turn metadata.
+// The GUI uses the hub's Run to start a saved workflow in a fresh session; the agent mints one controlOnly turn;
+// that turn's turnHeader and userInput both project with origin: "workflowLaunch", each carrying this metadata.
+// Cold recovery (message metadata) and live projection (TurnStarted payload) use the same copy -- one shape hot and cold.
+// Bound principle matches workflowNotificationMetaSchema: emitter-minted, bounded, honestly truncated --
+// full script / diagnostics are fetchable via runId in the detail side panel; the card draws only this fixed-size summary.
+// Deliberately not backgroundResultOriginMeta's backgroundSource shape: that means background-notification attribution,
+// this means a hub-initiated launch; different semantics, separate shapes so cross-evolution cannot drag one into the other.
 const workflowSubagentModelTextSchema = z
   .string()
   .min(1)
   .max(WORKFLOW_RUNS_LIMITS.maxSubagentModelLength);
 
-// 设置轮：用户在 run 卡 / 详情页的「配置」里
-// 改了设置，agent 以同一份脚本修订出新 run，并用一条与直接启动同形的 controlOnly 轮记下这件事。
-// 这一块说**改了什么**：只有改动过的设置在场；每一项的 from / to 缺一端即那一端是默认
-// （模型 = 会话模型，上限 = 默认并发）。`ceiling` 是默认并发 D（键名早于「默认并发」，为兼容旧端保留），
-// 供「默认 13 → 4」这种读法。
+// Settings-amend turn: the user changed settings via the run card / detail Configure,
+// the agent amended a new run from the same script, and records it with a controlOnly turn shaped like direct launch.
+// This block states **what changed**: only changed settings appear; a from/to missing one side means that side is the default
+// (model = session model, ceiling = default concurrency). `ceiling` is the legacy default-concurrency D (name predates the rename, kept for compat),
+// reading like "default 13 -> 4".
 export const workflowSettingsAmendMetaSchema = z.object({
-  // 修订自哪个 run。**缺席 = 就地生效**（docs/dynamic-workflow/concurrency.md）：只改并发上限、run
-  // 又在飞时，那次「配置」不停这次 run、也不另起一次，于是没有前驱可指——`runId` 指的就是被调整的
-  // 那一个。渲染端据此只出那一行、不再出卡（同一条 run 画两张卡会读成两次运行）。
-  // 记录在案的偏斜（与下方 scope / path 同一档）：旧桌面上它是必填，就地生效的设置轮在那里 parse
-  // 失败、整行被丢——丢的是一行记录，run 卡与运行本身不受影响。
+  // Amended from which run. **Absent = takes effect in place** (docs/dynamic-workflow/concurrency.md): a concurrency-only
+  // change on a live run neither stops it nor starts another, so there is no predecessor -- `runId` is the adjusted
+  // one. Renderers show the row only, no extra card (two cards for one run read as two runs).
+  // Recorded skew (same tier as scope / path below): required on old desktops, where in-place amend turns fail to parse
+  // and the row drops -- one lost record; run card and the run itself are unaffected.
   predecessorRunId: z.string().min(1).max(128).optional(),
   subagentModel: z
     .object({
@@ -145,38 +145,38 @@ export const workflowSettingsAmendMetaSchema = z.object({
 export type WorkflowSettingsAmendMeta = z.infer<typeof workflowSettingsAmendMetaSchema>;
 
 export const workflowLaunchMetaSchema = z.object({
-  // runId ≡ workId：驱动启动轮 run 卡的实时状态 / 步数，也是取消 / 恢复 / 详情侧板的联接键。
+  // runId = workId: drives the launch-turn run card's live state / step count, and the cancel / resume / detail side-panel join key.
   runId: z.string().min(1).max(128),
-  // launch-<uuid> 前缀（区别于模型工具调用 id）；与合成 CreateWorkflow toolCall 同一个 id。
+  // launch-<uuid> prefix (distinct from model tool-call ids); the same id as the synthesized CreateWorkflow toolCall.
   toolCallId: z.string().min(1).max(128),
-  // 解析结果里的工作流名（由 agent 填，用户与模型都不能另起）。中枢启动恒在场；设置轮
-  // 取被调整的 run 自己的名字，没起过名的 run 就没有——卡片与侧板照任何无名 run 的规矩换用兜底词，
-  // 而不是把一个 run id 当标题。
+  // Workflow name from resolution (agent-filled; neither user nor model may rename). Always present on hub launches; amend turns
+  // take the adjusted run's own name -- never-named runs have none, and card/side panel fall back per the unnamed-run rule,
+  // never titling with a run id.
   name: z.string().min(1).max(200).optional(),
-  // scope / path 只属于中枢启动：设置轮（下方 `amend`）改的是一个已有 run，没有保存文件可指。
-  // 记录在案的偏斜：旧桌面上它们是必填，新 CLI 的设置轮在那里 parse 失败、整行被丢（与
-  // origin 闭集加值同一档）；中枢启动轮两者恒在，不受影响。
+  // scope / path belong to hub launches only: an amend turn (below) edits an existing run and has no saved file to point at.
+  // Recorded skew: required on old desktops, where new-CLI amend turns fail to parse and the row drops (same tier as the
+  // origin closed-enum addition); hub-launch turns always carry both, unaffected.
   scope: z.enum(["project", "global"]).optional(),
-  // 命中的脚本落盘路径；仅供详情 / 诊断，卡片不显示。1024 覆盖深层全局 / 项目路径。
+  // Resolved script path on disk; detail/diagnostics only, not shown on the card. 1024 covers deep global/project paths.
   path: z.string().min(1).max(1024).optional(),
-  // 实参键值表（卡片渲染源）。有界：序列化 ≤ 4KB，与 contracts 侧 TurnStartedPayload 同界，
-  // 防止把整个大对象塞进每条持久消息与活事件。
+  // Argument map (card render source). Bounded: serialized <= 4KB, same bound as contracts' TurnStartedPayload,
+  // keeping whole-object dumps out of every persisted message and live event.
   args: z
     .record(z.string(), z.unknown())
     .refine((value) => JSON.stringify(value).length <= 4096, {
       message: "workflowLaunch.args JSON must be ≤ 4096 bytes",
     })
     .optional(),
-  // 说明行（若有）；与实参窗 / 中枢卡同一段文案，500 与通知 summary 同界。
+  // Description line (if any); same copy as the args dialog / hub card, 500 like the notification summary.
   description: z.string().max(500).optional(),
-  // 启动前编译得到的 create_workflow display（有界因果图 + 诊断）：run 详情侧板按 toolCallId 找
-  // 「发起行」取图，直接启动没有工具行，图从这里取。与工具行 display 同一 schema。
-  // 同样不设门：图解析失败只是这一行没有图，不拒整帧（见 toolDisplay.ts 注释）。
+  // Pre-launch compiled create_workflow display (bounded causal graph + diagnostics): the run detail side panel locates the
+  // origin row by toolCallId for the graph; direct launch has no tool row, so the graph comes from here. Same schema as the tool-row display.
+  // Also ungated: a graph parse failure just means no graph on this row, never a rejected frame (see the toolDisplay.ts comment).
   display: toolCallCreateWorkflowDisplaySchema.optional().catch(undefined),
-  // 本次 run 实际执行的脚本原文（侧板 Script 区），对应工具行的 input.script；上界与 contracts
-  // WORKFLOW_LAUNCH_SCRIPT_MAX_CHARS 同值。
+  // The script text this run actually executed (side panel Script section), mirroring the tool row's input.script; bound matches contracts'
+  // WORKFLOW_LAUNCH_SCRIPT_MAX_CHARS.
   script: z.string().max(256_000).optional(),
-  // 设置轮才在场：这次 run 是用「配置」从哪个 run 修订来的、改了什么。
+  // Amend turns only: which run this one was amended from via Configure, and what changed.
   amend: workflowSettingsAmendMetaSchema.optional(),
 });
 export type WorkflowLaunchMeta = z.infer<typeof workflowLaunchMetaSchema>;

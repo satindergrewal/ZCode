@@ -9,7 +9,7 @@ import type {
 } from "./appToolsContract.js";
 import { PluginUiBridgeError } from "./pluginUiBridgeService.js";
 
-/** 四条 agent 调用都是透传；缺省（web / 远程）时登记与认领抛 unavailable，注销静默。 */
+/** All four agent calls pass through; without a backend (web/remote) register/claim throw unavailable and revoke is a no-op. */
 export interface PluginUiAppToolsServiceDependencies {
   registerAppToolsForUi?: (
     params: PluginUiRegisterAppToolsParams,

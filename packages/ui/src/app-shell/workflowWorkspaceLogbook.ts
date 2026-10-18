@@ -140,7 +140,7 @@ export function setRememberedOpen(key: string, open: boolean): void {
   openState.set(key, open);
 }
 
-/** 测试用：清空展开态记忆。 */
+/** Test hook: clear expanded-state memory. */
 export function resetWorkspaceEntryOpenState(): void {
   openState.clear();
 }

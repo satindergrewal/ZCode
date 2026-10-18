@@ -27,7 +27,7 @@ function getTomlTableEndIndex(lines: string[], tableStartIndex: number): number 
 
 function formatTomlInlineValue(value: unknown): string {
   if (value === null || value === undefined) {
-    throw new TypeError("inline table 不支持 null/undefined");
+    throw new TypeError("inline tables do not support null/undefined");
   }
 
   if (typeof value === "string") {
@@ -53,7 +53,7 @@ function formatTomlInlineValue(value: unknown): string {
 
   if (value instanceof Date) {
     if (Number.isNaN(value.getTime())) {
-      throw new TypeError("inline table 不支持无效 Date");
+      throw new TypeError("inline tables do not support invalid Date");
     }
     return value.toISOString();
   }
@@ -67,7 +67,7 @@ function formatTomlInlineValue(value: unknown): string {
   }
 
   if (!isObjectRecord(value)) {
-    throw new TypeError(`inline table 不支持值类型: ${typeof value}`);
+    throw new TypeError(`Inline tables do not support value type: ${typeof value}`);
   }
 
   const entries = Object.entries(value);
@@ -141,11 +141,7 @@ function rewriteHttpHeadersAsInlineTable(options: {
 
   providerTableEnd = getTomlTableEndIndex(nextLines, providerHeaderIndex);
   if (providerTableEnd < nextLines.length && nextLines[providerTableEnd - 1] !== "") {
-    nextLines = [
-      ...nextLines.slice(0, providerTableEnd),
-      "",
-      ...nextLines.slice(providerTableEnd),
-    ];
+    nextLines = [...nextLines.slice(0, providerTableEnd), "", ...nextLines.slice(providerTableEnd)];
   }
 
   return nextLines.join("\n");
@@ -163,8 +159,8 @@ function stripNestedQueryParamHttpHeaders(providerConfig: Record<string, unknown
     };
   }
 
-  // Bugfix: 历史错误实现会把 provider 的 http_headers 写进 query_params.http_headers。
-  // Codex 只认 provider 主表的 http_headers；这里在序列化前剔除错误层级，避免持续污染 config.toml。
+  // Bugfix: an old implementation wrote provider http_headers into query_params.http_headers.
+  // Codex reads http_headers only from the provider table; strip the stray level before serializing so config.toml stays clean.
   const nextProviderConfig = { ...providerConfig };
   const nextQueryParams = { ...queryParams };
   delete nextQueryParams.http_headers;
@@ -182,9 +178,7 @@ function stripNestedQueryParamHttpHeaders(providerConfig: Record<string, unknown
 }
 
 export function stringifyCodexConfigToml(config: Record<string, unknown>): string {
-  const modelProviders = isObjectRecord(config.model_providers)
-    ? config.model_providers
-    : null;
+  const modelProviders = isObjectRecord(config.model_providers) ? config.model_providers : null;
 
   if (!modelProviders) {
     return stringifyToml(config);

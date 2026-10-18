@@ -7,8 +7,7 @@
 
 const PLUGIN_REFERENCE_SCHEME = "plugin://";
 // Keeps the link syntax of mentionMarkdown: labels allow \ escapes, destinations allow <...> or the bare form.
-const MARKDOWN_LINK_PATTERN =
-  /\[(?:\\.|[^\\\]])*\]\((?:<((?:\\.|[^>])*?)>|((?:\\.|[^)\s])*))\)/g;
+const MARKDOWN_LINK_PATTERN = /\[(?:\\.|[^\\\]])*\]\((?:<((?:\\.|[^>])*?)>|((?:\\.|[^)\s])*))\)/g;
 const PLUGIN_ID_SEGMENT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 export const MAX_PLUGIN_REFERENCES_PER_TURN = 8;

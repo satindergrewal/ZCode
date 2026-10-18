@@ -634,7 +634,7 @@ describe("desktopRemoteSessions R1 window Host forwarding", () => {
       expect.objectContaining({ type: HostMessageTypes.ConnectRemoteWorkspace }),
     );
     await expect(settled).resolves.toMatchObject({
-      message: expect.stringContaining("应用正在退出"),
+      message: expect.stringContaining("App is exiting"),
     });
   });
 
@@ -780,7 +780,7 @@ describe("desktopRemoteSessions R1 window Host forwarding", () => {
       );
       const candidateAttachment = getLatestScopedAttachment(win);
       manager.confirmRendererAttachmentReady(101, firstAttachment);
-      const bindingRejection = expect(binding).rejects.toThrow("renderer attachment ready 超时");
+      const bindingRejection = expect(binding).rejects.toThrow("Renderer attachment ready timeout");
       await vi.advanceTimersByTimeAsync(10);
 
       await bindingRejection;
@@ -911,14 +911,14 @@ describe("desktopRemoteSessions R1 window Host forwarding", () => {
         workspaceKey: workspaceIdentity,
         clientMode: "web-remote-replayable",
       }),
-    ).toThrow("远程 workspace source 当前离线");
+    ).toThrow("Remote workspace source is currently offline");
     await expect(
       manager.createBotRemoteWorkspaceRuntimePort(win as never, {
         target: sshTarget,
         workspacePath,
         workspaceIdentity,
       }),
-    ).rejects.toThrow("未找到可供 Bot attachment 的远程 logical session");
+    ).rejects.toThrow("No remote logical session available for Bot attachment");
 
     manager.disposeRemoteWorkspaceSession("remote-session-1", "tab-closed");
     expect(child.postMessage).toHaveBeenCalledWith(
@@ -964,7 +964,7 @@ describe("desktopRemoteSessions R1 window Host forwarding", () => {
         workspaceKey: tabIdentity,
         clientMode: "web-remote-replayable",
       });
-    expect(attachMobile).toThrow("远程 workspaceKey 与 logical session 不匹配。");
+    expect(attachMobile).toThrow("Remote workspaceKey does not match the logical session.");
 
     const binding = manager.bindRemoteWorkspaceSessionContext(
       "remote-session-1",

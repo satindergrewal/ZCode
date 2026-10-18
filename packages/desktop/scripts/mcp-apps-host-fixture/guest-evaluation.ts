@@ -7,7 +7,8 @@ export function evaluateGuest(guest: WebContents, code: string): Promise<any> {
     closed = () => reject(new Error("fixture page was destroyed"));
     guest.once("destroyed", closed);
   });
-  // Chromium 不保证已销毁 frame 的 executeJavaScript Promise 回包；以真实销毁事件结束观察。
+  // Chromium does not guarantee the executeJavaScript promise settles for destroyed frames;
+  // finish on the real destroyed event instead.
   return Promise.race([frame.executeJavaScript(code), destroyed]).finally(() =>
     guest.removeListener("destroyed", closed),
   );

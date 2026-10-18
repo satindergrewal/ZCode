@@ -1,10 +1,13 @@
 /**
- * 读面选项的契约用例（docs/execution-engine.md「Reading the journal」）：kinds / withResult /
- * limit / maxResultBytes / countNodes / sumResultBytes / types / reportItems / 按名取子代理。两个实现（内存、SQLite）必须逐字同
- * 语义——读者按这些选项把过滤下推到存储层，任何一侧偷偷退回「读全表」或给出不同的顺序，
- * 冷回放与 GetWorkflowRun 就会在两种部署上归约出不同的状态。
+ * Contract cases for the read-face options
+ * (docs/execution-engine.md "Reading the journal"): kinds / withResult / limit /
+ * maxResultBytes / countNodes / sumResultBytes / types / reportItems / actors by name. Both
+ * implementations (in-memory, SQLite) must be verbatim-identical in semantics — readers push
+ * filtering down into the store through these options, and if either side quietly falls back to
+ * reading whole tables or orders differently, cold replay and GetWorkflowRun reduce to different
+ * states on the two deployments.
  *
- * 注意：这里只登记 `it(...)`，不另开 describe（与兄弟模块同规）。
+ * Note: only `it(...)` is registered here, no extra describe (same rule as the sibling modules).
  */
 
 import { expect, it } from "vitest";
@@ -28,7 +31,7 @@ function node(
   };
 }
 
-/** 一条 run：ask、report×3（第二条带标签）、world-read、artifact，按这个顺序落库。 */
+/** One run: an ask, report x3 (the second tagged), a world-read, an artifact — persisted in this order. */
 function seedNodes(store: JournalStorePort): void {
   store.createRun(baseRun("r1"));
   store.putNode(node("ask#1", "ask", { actorSiteId: "actor#1", actorOrdinal: 1, actorSeq: 0 }));
@@ -79,8 +82,9 @@ export function registerReadCases(factory: () => JournalStorePort): void {
   });
 
   it("keeps a row's place when it is upserted again", () => {
-    // 准入 running → 结算 completed 是同一条 upsert：行的顺序（id）不能因为第二次写而挪到末尾，
-    // 否则「按插入顺序」对每个结算过的节点都是假话。
+    // Admit running -> settle completed is one and the same upsert: the row's position (id) must
+    // not move to the end because of the second write, or "in insertion order" becomes a lie for
+    // every settled node.
     const store = factory();
     seedNodes(store);
     store.putNode(
@@ -115,7 +119,7 @@ export function registerReadCases(factory: () => JournalStorePort): void {
     expect(slim).toEqual(rest);
     expect(slim).not.toHaveProperty("result");
     expect(store.getNode("r1", "ask#1", 1, { withResult: false })).toEqual(rest);
-    // 点查缺省读整行。
+    // The point query reads the whole row by default.
     expect(store.getNode("r1", "ask#1", 1)).toEqual(full);
     expect(store.getNode("r1", "ask#1", 1, { withResult: true })).toEqual(full);
   });
@@ -147,8 +151,10 @@ export function registerReadCases(factory: () => JournalStorePort): void {
   });
 
   it("sums the UTF-8 bytes of one kind's results without listing them", () => {
-    // resume 靠它恢复报告的 run 级字节计数：两个实现必须用同一把尺——`JSON.stringify(result)`
-    // 的 UTF-8 字节（SQLite 侧就是 result_json 的长度），多字节字符按字节算，没有结果的行计 0。
+    // Resume recovers the run-level byte count of reports through this: both implementations
+    // must use the same ruler — the UTF-8 bytes of `JSON.stringify(result)` (on SQLite the
+    // length of result_json), multi-byte characters counted as bytes, rows without a result
+    // counting 0.
     const store = factory();
     store.createRun(baseRun("r1"));
     const bytes = (value: unknown): number =>
@@ -182,13 +188,14 @@ export function registerReadCases(factory: () => JournalStorePort): void {
           ...(limit === undefined ? {} : { limit }),
         })
         .map((row) => row.siteId);
-    // 两行半的预算放得下两行。
+    // A two-and-a-half-row budget fits two rows.
     expect(sites(one * 2 + one / 2)).toEqual(["report#1", "report#2"]);
-    // 恰好两行也放得下（超过才收尾，等于不收）。
+    // Exactly two rows also fit (truncation kicks in past the bound, not at it).
     expect(sites(one * 2)).toEqual(["report#1", "report#2"]);
-    // 一行都放不下时第一行照样在：快照不会因为一条大报告而一条都不带。
+    // With no row fitting, the first still ships: a snapshot never carries zero rows because of
+    // one big report.
     expect(sites(1)).toEqual(["report#1"]);
-    // limit 与字节界同时生效，先到先停。
+    // limit and the byte bound act together; whichever hits first stops.
     expect(sites(one * 10, 3)).toEqual(["report#1", "report#2", "report#3"]);
     expect(
       store
@@ -253,7 +260,7 @@ export function registerReadCases(factory: () => JournalStorePort): void {
     expect(seqs({ types: ["import-cache-closed", "log"], reportItems: "all" })).toEqual([
       0, 2, 3, 4,
     ]);
-    // limit 作用在过滤之后：前两条 log，而不是「前两条事件里的 log」。
+    // limit applies after the filter: the first two logs, not "logs among the first two events".
     expect(seqs({ types: ["log"], reportItems: "all", limit: 2 })).toEqual([0, 2]);
     expect(seqs({ types: ["log"], reportItems: "all", afterSequence: 0, limit: 1 })).toEqual([2]);
     expect(seqs({ types: [], reportItems: "all" })).toEqual([]);
@@ -265,7 +272,7 @@ export function registerReadCases(factory: () => JournalStorePort): void {
     store.createRun(baseRun("r1"));
     store.appendEvent("r1", report("report#1", { n: 1 })); // 0: rank 1
     store.appendEvent("r1", { type: "log", message: "between" }); // 1
-    store.appendEvent("r1", report("report#1", null)); // 2: rank 2 — null 是合法 item
+    store.appendEvent("r1", report("report#1", null)); // 2: rank 2 — null is a legal item
     store.appendEvent("r1", report("report#2", { n: 3 }, "chart")); // 3: rank 3
     store.appendEvent("r1", report("report#1", "four")); // 4: rank 4
 
@@ -295,8 +302,8 @@ export function registerReadCases(factory: () => JournalStorePort): void {
   });
 
   it("ranks report events over the whole run, not over the page being read", () => {
-    // 「第几条报告」是 run 的事实：从 cursor 3 开始读，第 3 条报告仍然是第 3 条，
-    // 不会因为它是这一页的第一条就把 item 带回来。
+    // "Which report this is" is a fact of the run: reading from cursor 3, the third report is
+    // still the third — its item is not stripped just because it is first on this page.
     const store = factory();
     store.createRun(baseRun("r1"));
     store.appendEvent("r1", report("report#1", 1)); // 0

@@ -6,11 +6,7 @@ import { LoginRequiredPanel } from "../src/app-components.js";
 import { ContentPane, MessageRow } from "../src/app-transcript-components.js";
 import { EmptyTranscriptLogo, ZCODE_LOGO_LINES } from "../src/app-empty-transcript.js";
 import { SHIMMER_SWEEP_PERIOD_MS, shimmerTextSegments } from "../src/app-motion.js";
-import {
-  ShikiDiffView,
-  buildDiffRows,
-  buildSplitDiffRows,
-} from "../src/app-shiki-diff-view.js";
+import { ShikiDiffView, buildDiffRows, buildSplitDiffRows } from "../src/app-shiki-diff-view.js";
 import {
   highlightShikiCodeLines,
   inferShikiLanguage,
@@ -122,7 +118,7 @@ test("renders a prominent non-modal login notice", () => {
   const lines = collectTextLines(LoginRequiredPanel());
   const textNodes = collectTextNodes(LoginRequiredPanel());
 
-  // 登录提示改为“没有可用模型”，引导用 /model 查看模型或 /login 连接账号。
+  // The login hint is now no-models-available, pointing at /model to inspect models or /login to connect an account.
   assert.ok(lines.some((line) => line.includes("No available models")));
   assert.ok(lines.some((line) => line.includes("/model")));
   assert.ok(textNodes.some((node) => node.style.fg === "#fbbf24"));

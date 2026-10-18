@@ -9,10 +9,8 @@ import {
 import type { CompactModelMessage } from "./manual.js";
 import { estimateMessageTokens } from "./manual.js";
 
-export const MICROCOMPACT_CLEARED_TOOL_RESULT_PREFIX =
-  "[Old tool result content cleared]";
-export const MICROCOMPACT_CLEARED_TOOL_RESULT_MESSAGE =
-  "[Old tool result content cleared]";
+export const MICROCOMPACT_CLEARED_TOOL_RESULT_PREFIX = "[Old tool result content cleared]";
+export const MICROCOMPACT_CLEARED_TOOL_RESULT_MESSAGE = "[Old tool result content cleared]";
 export const DEFAULT_MICROCOMPACT_KEEP_RECENT_TOOL_RESULTS = 5;
 export const DEFAULT_MICROCOMPACT_IDLE_THRESHOLD_MINUTES = 60;
 export const DEFAULT_MICROCOMPACT_MIN_TOKEN_SAVINGS = 256;
@@ -146,8 +144,7 @@ export function maybeLocalMicrocompactMessages<T extends LocalMicrocompactMessag
 
   const postTokenCount = estimateMessageTokens(messages);
   const tokensSaved = Math.max(0, estimatedTokenCount - postTokenCount);
-  const minSavings =
-    positiveInt(config.minTokenSavings) ?? DEFAULT_MICROCOMPACT_MIN_TOKEN_SAVINGS;
+  const minSavings = positiveInt(config.minTokenSavings) ?? DEFAULT_MICROCOMPACT_MIN_TOKEN_SAVINGS;
   if (tokensSaved < minSavings) {
     return {
       decision: { estimatedTokenCount, reason: "below_min_savings", thresholdTokens, trigger },
@@ -179,8 +176,7 @@ function resolveMicrocompactTrigger(input: {
   thresholdTokens?: number;
 }): MicrocompactTrigger | undefined {
   const idleThresholdMinutes =
-    positiveInt(input.config.idleThresholdMinutes) ??
-    DEFAULT_MICROCOMPACT_IDLE_THRESHOLD_MINUTES;
+    positiveInt(input.config.idleThresholdMinutes) ?? DEFAULT_MICROCOMPACT_IDLE_THRESHOLD_MINUTES;
   if (
     input.lastAssistantCompletedAtMs !== undefined &&
     Number.isFinite(input.lastAssistantCompletedAtMs)

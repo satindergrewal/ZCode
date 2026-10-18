@@ -49,7 +49,11 @@ function stubExecutionPort(result: Partial<ExecutionResult>): {
   calls: RecordedRun[];
 } {
   const calls: RecordedRun[] = [];
-  const stream = (text: string) => ({ text, bytes: Buffer.byteLength(text, "utf8"), truncated: false });
+  const stream = (text: string) => ({
+    text,
+    bytes: Buffer.byteLength(text, "utf8"),
+    truncated: false,
+  });
   const full: ExecutionResult = {
     status: "completed",
     exitCode: 0,
@@ -98,7 +102,10 @@ function makeDriver(executionPort: ExecutionPort) {
 
 describe("workflow driver — world.run", () => {
   it("passes argv, cwd, default 300s timeout and cap+1 output limit to the port", async () => {
-    const { port, calls } = stubExecutionPort({ exitCode: 0, stdout: { text: "ok", bytes: 2, truncated: false } as never });
+    const { port, calls } = stubExecutionPort({
+      exitCode: 0,
+      stdout: { text: "ok", bytes: 2, truncated: false } as never,
+    });
     const driver = makeDriver(port);
     const value = await driver.executeWorldRead("run", ["lean", ["--make", "a.lean"]]);
     expect(value).toEqual({ exitCode: 0, stdout: "ok", stderr: "" });

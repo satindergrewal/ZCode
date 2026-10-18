@@ -10,13 +10,13 @@ import { encodeJsonLine, JsonLineDecoder } from "../src/ipc/framing.js";
 import { resolveServerLayout } from "../src/runtime/paths.js";
 
 async function createControlTestEndpoint(): Promise<string> {
-  // Bug 原因：macOS 的 Unix socket 路径上限很短，测试名语义化前缀叠加系统临时目录后
-  // 会让 control.sock 超过上限并报 EINVAL；固定使用短前缀，随机后缀仍保证用例隔离。
+  // Bug cause: macOS Unix socket paths cap out early; a semantic test-name prefix stacked on the system temp dir
+  // pushes control.sock past the limit with EINVAL; keep the prefix short and let the random suffix isolate cases.
   const root = await mkdtemp(join(tmpdir(), "z2-"));
   const endpoint = resolveServerLayout(join(root, "server")).controlEndpoint;
-  // Bugfix：POSIX 下 endpoint 是 <root>/server/run/control.sock，原生
-  // net.createServer().listen() 不像 createControlServer 那样自带父目录 mkdir，
-  // 目录缺失会在 POSIX CI 上 ENOENT；Windows named pipe（\\.\pipe\ 前缀）无目录概念。
+  // Bugfix: on POSIX the endpoint is <root>/server/run/control.sock and a plain
+  // net.createServer().listen() lacks createControlServer's parent mkdir,
+  // so a missing dir ENOENTs on POSIX CI; Windows named pipes (\\.\pipe\ prefix) have no dir concept.
   if (!endpoint.startsWith("\\\\.\\pipe\\")) {
     await mkdir(dirname(endpoint), { recursive: true });
   }
@@ -40,8 +40,8 @@ describe("JSONL framing", () => {
 describe("control client", () => {
   it("times out when the supervisor never responds", async () => {
     const endpoint = await createControlTestEndpoint();
-    // 故意不回复任何帧，验证客户端有界超时而不是永久挂起。
-    // 服务端连接不消费数据，server.close 回调要等连接结束，清理时必须主动 destroy。
+    // Reply with no frames on purpose; prove the client times out boundedly instead of hanging forever.
+    // The server never consumes from the connection and server.close waits on it, so destroy explicitly during cleanup.
     const connections: import("node:net").Socket[] = [];
     const server = createServer((socket) => connections.push(socket));
     await new Promise<void>((resolve) => server.listen(endpoint, resolve));

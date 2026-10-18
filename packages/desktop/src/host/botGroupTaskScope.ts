@@ -1,6 +1,6 @@
 import type { WindowHostAttachmentScope } from "@zcode/shared";
 
-/** 群控制复用已验证 attachment，不能由 RPC 调用方声明另一条远程会话。 */
+/** Group control reuses the verified attachment; RPC callers may not declare another remote session. */
 export function bindBotGroupTaskScope<T extends object>(
   params: T,
   scope: WindowHostAttachmentScope,

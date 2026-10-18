@@ -269,7 +269,7 @@ describe("automation typography tokens", () => {
 
   it("调度 tag 之间的连接词与 tag 内文字使用同一主文字样式", () => {
     const automationEditSource = sourceByFile.get("AutomationEditView.tsx") ?? "";
-    const scheduleStart = automationEditSource.indexOf("调度栏原先使用 min-height");
+    const scheduleStart = automationEditSource.indexOf("the schedule bar used min-height");
     const scheduleEnd = automationEditSource.indexOf("<CustomRepeatDialog", scheduleStart);
     const scheduleSource = automationEditSource.slice(scheduleStart, scheduleEnd);
 
@@ -331,7 +331,10 @@ describe("automation typography tokens", () => {
     );
     const customScheduleSource = automationEditSource.slice(customScheduleStart, customScheduleEnd);
     const timePickerStart = automationEditSource.indexOf("function TimeOfDayPicker");
-    const timePickerEnd = automationEditSource.indexOf("/** 月/日单列滚动列表", timePickerStart);
+    const timePickerEnd = automationEditSource.indexOf(
+      "/** Month/day single-column list",
+      timePickerStart,
+    );
     const timePickerSource = automationEditSource.slice(timePickerStart, timePickerEnd);
     const timeUnitStart = automationEditSource.indexOf("function TimeUnitColumn");
     const timeUnitSource = automationEditSource.slice(timeUnitStart, timePickerStart);

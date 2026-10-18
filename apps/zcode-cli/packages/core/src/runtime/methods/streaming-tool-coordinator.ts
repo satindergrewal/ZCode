@@ -83,7 +83,7 @@ export function createStreamingToolCoordinator(
     state.modelStepCount += 1;
     recordModelHistoryRound(state);
     state.toolCallCount += settlement.streamedToolResults.length;
-    // 完整 tool_call 已建立配对义务；切换模型前必须让 live、durable ToolPart 与冷恢复看到同一组 call/result。
+    // A complete tool_call incurs a pairing obligation; before switching models, live, durable ToolPart, and cold restore must see the same call/result set.
     commitTurnRequestEntries(runtime, state.turnRequestState, [
       createRuntimeAssistantEntry("", settlement.toolCalls, undefined, options.model),
     ]);
@@ -107,7 +107,7 @@ export function createStreamingToolCoordinator(
 
   return {
     accept(toolCall: ModelToolCall) {
-      // 保留 runtime admission 后的空名，使正常 finish 走 registry miss，断流则保留 synthetic interrupted error。
+      // Keep the post-admission empty name so a normal finish takes the registry-miss path; on stream drop, keep the synthetic interrupted error.
       const normalizedToolCall = { ...toolCall };
       if (normalizedToolCall.providerExecuted) return;
       acceptedToolCalls.set(normalizedToolCall.id, normalizedToolCall);
@@ -116,7 +116,7 @@ export function createStreamingToolCoordinator(
       const promise = executeDuringStream(runtime, state, {
         abortSignal: abortController.signal,
         assistantMessageId: options.assistantMessageId,
-        // model admission 已去重；只读工具可能先落盘，序号必须来自全部本地声明。
+        // Admission deduped; read-only tools may persist first, so sequencing uses all local declarations.
         declarationIndex: acceptedToolCalls.size - 1,
         model: options.model,
         toolCall: normalizedToolCall,
@@ -269,8 +269,8 @@ async function executeDuringStream(
   const metadata = mcpToolPartMetadata(
     runtime.registry.getMetadata(toolCall.name)?.mcpPresentation,
   );
-  // during_stream 是 pending/running part 的首个 durable writer；若绕过
-  // turn-tools 的 metadata 写入，Stop 发生在 drain 前时冷恢复只能退化成通用工具卡。
+  // during_stream is the first durable writer for pending/running parts; bypassing
+  // the turn-tools metadata write degrades cold recovery to a generic card on pre-drain Stops.
   await persistPendingToolPart(runtime, {
     assistantMessageId: options.assistantMessageId,
     declarationIndex: options.declarationIndex,

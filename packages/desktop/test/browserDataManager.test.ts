@@ -170,10 +170,13 @@ describe("browserDataManager", () => {
       maxRetries: 5,
       retryDelay: 100,
     });
-    expect(logger.warn).toHaveBeenCalledWith("[browser-data] Chrome helper temp dir cleanup failed", {
-      name: "Error",
-      code: "ENOTEMPTY",
-    });
+    expect(logger.warn).toHaveBeenCalledWith(
+      "[browser-data] Chrome helper temp dir cleanup failed",
+      {
+        name: "Error",
+        code: "ENOTEMPTY",
+      },
+    );
   });
 
   it("使用 createRequire 加载 node:sqlite，避免桌面 bundle 丢失 node: 前缀", async () => {

@@ -92,7 +92,7 @@ export type ChannelReplyResult = z.infer<typeof channelReplyResultSchema>;
 export function channelContentText(parts: readonly ChannelContentPart[]): string {
   return parts.map((part) => (part.type === "text" ? part.text : `@${part.name}`)).join("");
 }
-/** 只从 Host 已验证的会话输入解析 ref；模型不得直接提供平台 ID。 */
+/** Parse refs only from Host-verified conversation input; the model must never supply platform ids directly. */
 export function resolveChannelReplyParts(
   parts: z.infer<typeof channelReplyPartsSchema>,
   source: readonly ChannelContentPart[],

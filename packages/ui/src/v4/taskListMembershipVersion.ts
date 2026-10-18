@@ -16,9 +16,7 @@ export function bumpTaskListMembershipVersion(): void {
   }
 }
 
-export function subscribeTaskListMembershipVersion(
-  listener: () => void,
-): () => void {
+export function subscribeTaskListMembershipVersion(listener: () => void): () => void {
   listeners.add(listener);
   return () => {
     listeners.delete(listener);
@@ -84,8 +82,5 @@ export function bumpTaskListMembershipVersionForWorkspaceEvent(
 
 /** React binding: version bumps re-render (subscribe/get are module-level, stable references). */
 export function useTaskListMembershipVersion(): number {
-  return useSyncExternalStore(
-    subscribeTaskListMembershipVersion,
-    getTaskListMembershipVersion,
-  );
+  return useSyncExternalStore(subscribeTaskListMembershipVersion, getTaskListMembershipVersion);
 }

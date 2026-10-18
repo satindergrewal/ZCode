@@ -5,7 +5,5 @@
 // ask/actor there through the call oracle's closure): here the agent is lexically nested,
 // exercising innermost-within attribution and its faithful copy into `family`.
 const seeds = await files.glob("*.md");
-const out = seeds.map((s) =>
-  [s].map((y) => agent("inner").ask<string>(`${y}`)),
-);
+const out = seeds.map((s) => [s].map((y) => agent("inner").ask<string>(`${y}`)));
 return out;

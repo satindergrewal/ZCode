@@ -5,8 +5,8 @@ import { cn } from "@/components/lib/utils.js";
 import { useZCodeIntl, type IntlInstance } from "@/i18n/IntlProvider.js";
 import type { ToolCallBlockRenderContext } from "@/ToolCallBlocks/shared.js";
 
-// OffPeakCreate 的静态轮尾卡（cron-create 兄弟实现，样式契约一致）。
-// 位次是创建时快照（取自取号返回），不订阅后续状态——历史回看不产生过期活数据。
+// Static tail card for OffPeakCreate (sibling of cron-create, same style contract).
+// The queue position is a creation-time snapshot (from the ticket response), not a live subscription -- history views never show stale live data.
 
 export interface OffPeakCreateTaskSummary {
   offPeakTaskId?: string;
@@ -62,7 +62,7 @@ export function readOffPeakCreateTaskOutputSummary(
       ? task.offPeakTaskId.trim()
       : undefined;
   const title = typeof task.title === "string" && task.title.trim() ? task.title.trim() : undefined;
-  // 卡片必须能定位任务；缺 id 视为无效输出，回退普通工具行。
+  // The card must be able to locate its task; a missing id means invalid output, fall back to a plain tool row.
   if (!offPeakTaskId) {
     return null;
   }
@@ -107,7 +107,7 @@ export function readOffPeakCreateTaskSummary(
   return null;
 }
 
-/** 卡片第二行：创建时位次快照优先，缺位次回退「已加入闲时队列」文案。 */
+/** Card second row: creation-time position snapshot first; without it, fall back to the queued-for-off-peak copy. */
 export function describeOffPeakCardStatus(
   task: OffPeakCreateTaskSummary,
   intl: IntlInstance,
@@ -130,7 +130,7 @@ export function OffPeakCreateTaskCard({
 }) {
   const { intl } = useZCodeIntl();
   const title = task.title ?? intl.formatMessage({ id: "offPeak.chatCreated.defaultTitle" });
-  // 会话内创建的任务绑定并运行在当前会话；位次快照后追加一句提示。
+  // Tasks created in-session bind to and run in the current session; append a hint after the position snapshot.
   const statusLine = `${describeOffPeakCardStatus(task, intl)} · ${intl.formatMessage({
     id: "offPeak.chatCreated.boundHint",
   })}`;

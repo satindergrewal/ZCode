@@ -51,8 +51,9 @@ async function buildApplicationPathIndex(
   dependencies: ApplicationPathDependencies,
 ): Promise<Map<string, string>> {
   const deadline = dependencies.now() + FALLBACK_SCAN_BUDGET_MS;
-  // darwin 路径拼接固定用 posix 分隔符：node:path 的 join 会跟随运行平台，
-  // Windows 上跑单测时产出反斜杠路径，导致兜底索引与 Spotlight 的 POSIX 口径不一致。
+  // darwin path joining always uses posix separators: node:path join follows the running
+  // platform, so unit tests on Windows would emit backslash paths and break the fallback index's
+  // agreement with Spotlight's POSIX convention.
   const roots = [
     "/Applications",
     posix.join(dependencies.homeDirectory, "Applications"),

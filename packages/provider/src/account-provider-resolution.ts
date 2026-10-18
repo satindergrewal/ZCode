@@ -157,10 +157,14 @@ function indexConnections(
     }
     const configured = configuredProviders.get(connection.providerId);
     if (!configured) {
-      throw new Error(`Account connection references an unconfigured provider: ${connection.providerId}`);
+      throw new Error(
+        `Account connection references an unconfigured provider: ${connection.providerId}`,
+      );
     }
     if (!isAccountConstrainedProvider(configured)) {
-      throw new Error(`Account connection references a non-account provider: ${connection.providerId}`);
+      throw new Error(
+        `Account connection references a non-account provider: ${connection.providerId}`,
+      );
     }
     result.set(connection.providerId, connection);
   }

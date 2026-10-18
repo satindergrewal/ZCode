@@ -188,7 +188,11 @@ export async function readWindowsProcessListAsync(
       (error, stdout, stderr) => {
         if (error || !stdout) {
           if (isHardCimUnavailable(error)) windowsCimCapability = "identity-unavailable";
-          warn(options, "Failed to query the Windows runtime process table (async):", error ?? stderr);
+          warn(
+            options,
+            "Failed to query the Windows runtime process table (async):",
+            error ?? stderr,
+          );
           resolve([]);
           return;
         }

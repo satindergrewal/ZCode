@@ -1,4 +1,4 @@
-// SHARE-NF01：先启动 pnpm dev:web-share:mock，再运行本文件；仅使用开发态 fixture。
+// SHARE-NF01: start pnpm dev:web-share:mock first, then run this file; dev fixtures only.
 import assert from "node:assert/strict";
 import { chromium } from "playwright-core";
 
@@ -50,7 +50,7 @@ try {
           name: chinese ? "重试" : "Try again",
           exact: true,
         });
-        // 清除模拟登录态后重试必须回到登录页，证明按钮实际重新读取 token 并请求。
+        // After clearing the mock auth the retry must land back on the login page, proving the button re-reads the token and re-requests.
         await page.evaluate(() => sessionStorage.removeItem("zcode:share:mock-auth"));
         await retry.click();
         await page.locator('[data-share-login-provider="bigmodel"]').waitFor();

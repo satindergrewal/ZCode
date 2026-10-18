@@ -1,11 +1,9 @@
-/* ZCode 官方 Server MCP 的调用额度读取（`GET /api/v1/mcp/usage`）。
- *
- * 单文件承载该接口的全部细节：路径、信封解析、总额度映射。**鉴权不在这里实现**——
- * 身份头必须与 server MCP 端点用同一套 5 个头，唯一生产者是
- * `official-mcp/officialMcpCredentials.ts` 的 buildOfficialMcpAuthHeaders。
- * 这里只接收注入的凭证解析器，绝不自行拼头、补头或改前缀，否则会与服务端
- * WithCodingPlan 的读取口径分叉。
- */
+/* Official ZCode server MCP usage read (GET /api/v1/mcp/usage).
+ * One file for every detail of it: path, envelope parsing, total mapping. Auth lives elsewhere:
+ * identity headers must match the server MCP endpoint's five, produced only by
+ * buildOfficialMcpAuthHeaders in official-mcp/officialMcpCredentials.ts.
+ * This file only consumes the injected resolver; assembling or altering headers here
+ * would fork the server's WithCodingPlan reading. */
 import { z } from "zod";
 import {
   MCP_USAGE_QUOTA_LIMIT_TYPE,
@@ -26,11 +24,11 @@ const REQUEST_TIMEOUT_MS = 15_000;
 const log = createServiceLogger("usage-stats");
 
 /**
- * 注入的官方 MCP 凭证来源。
+ * Injected official-MCP credential source.
  *
- * 注入的是**凭证解析**而不是 createOfficialMcpAuthHeadersResolver 的 resolveHeaders：
- * 归属校验需要 snapshot.providerFamily，而身份头里没有 family 信息（只有 target-type /
- * organization / project）。身份头仍由共享的 buildOfficialMcpAuthHeaders 构造，保持单源。
+ * Inject the resolver, not resolveHeaders from createOfficialMcpAuthHeadersResolver:
+ * attribution needs snapshot.providerFamily and headers carry no family (only target-type /
+ * organization / project). Headers still come from the shared builder: one source.
  */
 export interface OfficialMcpCredentialSource {
   resolve(): Promise<OfficialMcpCredentialOutcome>;
@@ -47,12 +45,12 @@ const mcpUsageDataSchema = z.object({
   next_refresh_at: z.number().finite().optional(),
   level: z.string().optional(),
   /**
-   * 服务端汇总后的总额度。
+   * Server-aggregated total quota.
    *
-   * 刻意 optional 而不是必填：必填时缺字段会落进"结构不符合预期"那条通用告警，与"整体坏了"
-   * 混在一起。单独分支能记一条"响应缺少 total_usage"，接口再变时一眼可辨——这一行的由来正是
-   * 上一次的故障：服务端把返回从 `buckets` 数组改成 total_usage，客户端 schema 校验失败，
-   * 而 mcpQuota 是可选数据面（失败即静默降级），表现为额度条无声消失。
+   * Deliberately optional: required fields collapse into the generic schema warning, blending
+   * with total breakage. A dedicated missing-total_usage branch is instantly recognizable;
+   * the last incident was the server moving buckets to total_usage, failing client schema
+   * while the optional quota degraded silently: the bar just vanished.
    */
   total_usage: mcpUsageTotalSchema.optional(),
 });
@@ -63,7 +61,7 @@ const mcpUsageEnvelopeSchema = z.object({
   data: mcpUsageDataSchema.optional().nullable(),
 });
 
-/** 本次 entitlement 查询的连接归属，用于和凭证归属比对。 */
+/** Connection attribution of this entitlement query, checked against the credential's. */
 export interface McpQuotaRequestScope {
   providerFamily: "zai" | "bigmodel";
   organizationId?: string | null;
@@ -71,11 +69,11 @@ export interface McpQuotaRequestScope {
 }
 
 /**
- * 凭证归属是否与本次 entitlement 查询一致。
+ * Whether credential attribution matches this entitlement query.
  *
- * 凭证来自 settings 当前选中的连接，而 entitlement 是按面板 provider tab 分别查询的。
- * 同时持有 Z.ai 与 BigModel Coding Plan（或个人 + Team）的用户，如果不做这层比对，
- * 就会在另一个 tab 下看到不属于它的 MCP 额度。
+ * Credentials follow the selected connection; entitlement queries run per provider tab.
+ * Without the check, users holding both Z.ai and BigModel plans (or personal+team)
+ * would see foreign MCP quota under the other tab.
  */
 export function matchesMcpQuotaScope(
   scope: UsageMcpQuotaScope,
@@ -98,9 +96,9 @@ export function matchesMcpQuotaScope(
 }
 
 /**
- * 服务端汇总的总额度映射成一条等价的 UsageQuotaLimit，直接复用现有额度条 / 额度卡的展示逻辑。
+ * Maps the server total onto one equivalent UsageQuotaLimit, reusing existing quota bars/cards.
  *
- * percentage 沿用 quota 接口语义（**已使用**占比），展示端统一反转成剩余。
+ * percentage keeps the quota semantic (used); displays invert to remaining.
  */
 export function buildMcpQuotaAggregateLimit(params: {
   totalUsage: { used: number; limit: number; remaining: number };
@@ -108,11 +106,11 @@ export function buildMcpQuotaAggregateLimit(params: {
 }): UsageQuotaLimit | null {
   const limit = Math.max(0, params.totalUsage.limit);
   if (limit <= 0) {
-    // 没有可用额度时不渲染一条 0% 的空条。
+    // No quota: render no empty 0% bar.
     return null;
   }
-  // 服务端 remaining 已按 0 兜底，这里再夹一次上界：异常数据（remaining > limit）会算出负的
-  // 已用占比，进而让展示端反转后越过 100%。
+  // Server floors remaining at 0; clamp the top too, since remaining>limit yields negative
+  // used ratios that invert past 100%.
   const remaining = Math.min(Math.max(0, params.totalUsage.remaining), limit);
   const used = Math.max(0, params.totalUsage.used);
 
@@ -124,7 +122,7 @@ export function buildMcpQuotaAggregateLimit(params: {
     remaining,
     percentage: usedPercentage,
     ...(params.nextResetTime === undefined ? {} : { nextResetTime: params.nextResetTime }),
-    // usageDetails 留空：该字段在 StatusCards 里被当作模型名渲染，额度维度不适合走那条展示路径。
+    // Leave usageDetails empty: StatusCards renders it as model names, wrong for quota.
     usageDetails: [],
   };
 }
@@ -148,13 +146,13 @@ function readRequestId(headers: Headers): string | null {
   return headers.get("x-request-id")?.trim() || null;
 }
 
-/** 响应体截断长度。正常响应只有一两百字节，截断只为兜住错误页（如网关 HTML）。 */
+/** Body truncate cap. Real responses are ~100s of bytes; this catches error pages (gateway HTML). */
 const MAX_LOGGED_BODY_CHARS = 512;
 
 /**
- * 响应体可以原样进日志：该接口的 data 只有 server_time / next_refresh_at / level / total_usage，
- * 全是非敏感计数，**不含任何凭证**。反过来，不记它就是这次故障排查慢的直接原因——
- * 服务端换了字段名，客户端只报一句"结构不符合预期"，看不出到底收到了什么。
+ * The body is log-safe: data holds only server_time/next_refresh_at/level/total_usage,
+ * all non-sensitive counts, no credentials. Not logging it is why the last incident dragged:
+ * the server renamed a field and clients could only say schema-mismatch.
  */
 function truncateForLog(text: string): string {
   const trimmed = text.trim();
@@ -164,8 +162,8 @@ function truncateForLog(text: string): string {
 }
 
 /**
- * 读取一次 MCP 额度。可选数据面：任何失败都返回 null 并只记 warn，
- * 绝不影响 entitlement 快照本身的成功与降级语义。
+ * One quota read. Optional surface: any failure returns null with a warn,
+ * never touching entitlement success/degrade semantics.
  */
 export async function fetchMcpQuotaSnapshot(params: {
   apiClient: ApiClient;
@@ -177,27 +175,29 @@ export async function fetchMcpQuotaSnapshot(params: {
   try {
     outcome = await params.credentialSource.resolve();
   } catch (error) {
-    log.warn(undefined, "读取官方 MCP 额度凭证失败，跳过该额度", {
+    log.warn(undefined, "Failed to resolve official MCP quota credentials; skipping quota", {
       error: error instanceof Error ? error.message : String(error),
     });
     return null;
   }
   if (!outcome.ok) {
-    // official_auth_plan_required（无 Coding Plan / Start Plan / API Key 模式）与
-    // official_auth_unavailable（未登录、凭证缺失、选择态竞态）都不发请求。
-    log.info(undefined, "官方 MCP 额度不可用，跳过请求", { reason: outcome.reason });
+    // official_auth_plan_required (no plan/API-key mode) and
+    // official_auth_unavailable (signed out, missing creds, selection races) skip the request.
+    log.info(undefined, "Official MCP quota unavailable; skipping request", {
+      reason: outcome.reason,
+    });
     return null;
   }
 
   const scope = readScopeFromCredentialSnapshot(outcome.snapshot);
   if (!scope) {
-    log.info(undefined, "官方 MCP 额度缺少可精确归属的套餐 scope，跳过请求", {
+    log.info(undefined, "Official MCP quota lacks attributable plan scope; skipping request", {
       credentialFamily: outcome.snapshot.providerFamily,
     });
     return null;
   }
   if (!matchesMcpQuotaScope(scope, params.requestScope)) {
-    log.info(undefined, "官方 MCP 额度归属与本次查询不一致，跳过请求", {
+    log.info(undefined, "Official MCP quota attribution mismatches this query; skipping request", {
       credentialFamily: scope.providerFamily,
       credentialTargetType: scope.targetType ?? null,
       requestFamily: params.requestScope.providerFamily,
@@ -212,10 +212,10 @@ export async function fetchMcpQuotaSnapshot(params: {
   let payload: unknown;
   let requestId: string | null = null;
   let body = "";
-  // 请求与响应各记一条 info（不是 debug）：生产构建的最低级别是 Info，只记 debug 等于出问题时
-  // 什么都看不到。该接口按 entitlement 的 TTL 缓存触发，量级是每会话个位数，不构成日志膨胀。
-  // 只记 header **名**，绝不记值——里面是 JWT 与 Coding Plan 凭证。
-  log.info(undefined, "官方 MCP 额度请求", {
+  // One info each for request/response (not debug): prod floors at Info, so debug-only
+  // means silence during incidents. TTL-tied to entitlement, single-digit calls per session: no spam.
+  // Log header names only, never values: they carry JWTs and plan credentials.
+  log.info(undefined, "Official MCP quota request", {
     credentialFamily: scope.providerFamily,
     credentialTargetType: scope.targetType ?? null,
     headerNames: Object.keys(headers).sort(),
@@ -228,13 +228,13 @@ export async function fetchMcpQuotaSnapshot(params: {
     const response = await params.apiClient.request(url, {
       method: "GET",
       timeoutMs: REQUEST_TIMEOUT_MS,
-      // 身份头原样使用共享构造结果：5 个头一个不改、不补、不改前缀。
+      // Use the shared headers verbatim: no edits, no additions, no prefix changes.
       headers,
     });
     requestId = readRequestId(response.headers);
     const text = await response.text();
     body = truncateForLog(text);
-    log.info(undefined, "官方 MCP 额度响应", {
+    log.info(undefined, "Official MCP quota response", {
       body,
       durationMs: Date.now() - startedAt,
       status: response.status,
@@ -242,7 +242,7 @@ export async function fetchMcpQuotaSnapshot(params: {
       "x-request-id": requestId,
     });
     if (!response.ok) {
-      log.warn(undefined, "官方 MCP 额度请求失败", {
+      log.warn(undefined, "Official MCP quota request failed", {
         body,
         status: response.status,
         url,
@@ -252,7 +252,7 @@ export async function fetchMcpQuotaSnapshot(params: {
     }
     payload = JSON.parse(text) as unknown;
   } catch (error) {
-    log.warn(undefined, "官方 MCP 额度请求异常", {
+    log.warn(undefined, "Official MCP quota request threw", {
       body,
       durationMs: Date.now() - startedAt,
       error: error instanceof Error ? error.message : String(error),
@@ -264,8 +264,8 @@ export async function fetchMcpQuotaSnapshot(params: {
 
   const envelope = mcpUsageEnvelopeSchema.safeParse(payload);
   if (!envelope.success) {
-    // 带上响应体与 zod 的 issue 路径：只报"结构不符合预期"时，看不出服务端到底改了哪个字段。
-    log.warn(undefined, "官方 MCP 额度响应结构不符合预期", {
+    // Attach body and zod issue paths: a bare schema-mismatch hides what changed.
+    log.warn(undefined, "Official MCP quota response schema mismatch", {
       body,
       issues: envelope.error.issues.map(
         (issue) => `${issue.path.join(".") || "(root)"}: ${issue.code}`,
@@ -276,8 +276,8 @@ export async function fetchMcpQuotaSnapshot(params: {
     return null;
   }
   if (envelope.data.code !== 0 || !envelope.data.data) {
-    // 业务失败（如 1000 用量存储故障）只清空该额度，不上抛。
-    log.warn(undefined, "官方 MCP 额度业务失败", {
+    // Business failures (1000 usage-store) clear this quota only, never throw.
+    log.warn(undefined, "Official MCP quota business failure", {
       code: envelope.data.code,
       msg: envelope.data.msg ?? null,
       "x-request-id": requestId,
@@ -287,8 +287,8 @@ export async function fetchMcpQuotaSnapshot(params: {
 
   const data = envelope.data.data;
   if (!data.total_usage) {
-    // 与"结构不符合预期"分开记：这条专指接口把总额度字段换了名字/位置。
-    log.warn(undefined, "官方 MCP 额度响应缺少 total_usage", {
+    // Separate from schema mismatch: this is specifically a moved/renamed total field.
+    log.warn(undefined, "Official MCP quota response missing total_usage", {
       body,
       url,
       "x-request-id": requestId,
@@ -297,7 +297,7 @@ export async function fetchMcpQuotaSnapshot(params: {
   }
   const aggregate = buildMcpQuotaAggregateLimit({
     totalUsage: data.total_usage,
-    // 接口是 Unix 秒；客户端 nextResetTime 全链路是毫秒。
+    // The API uses Unix seconds; nextResetTime is ms end to end.
     ...(data.next_refresh_at === undefined ? {} : { nextResetTime: data.next_refresh_at * 1000 }),
   });
   if (!aggregate) {

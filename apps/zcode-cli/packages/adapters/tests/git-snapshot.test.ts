@@ -17,66 +17,64 @@ interface GitCall {
   };
 }
 
-const { execFileMock, gitCalls, resetGitMock, setGitResponse } = vi.hoisted(
-  () => {
-    const calls: GitCall[] = [];
-    const responses = new Map<string, GitResponse>();
-    const commandKey = (args: string[]) => args.join("\0");
-    const runGitMock = (command: string, args: string[], options: GitCall["options"]) => {
-      calls.push({ args: [...args], command, options });
-      const response = responses.get(commandKey(args)) ?? { code: 1, stdout: "", stderr: "" };
-      const stdout = response.stdout ?? "";
-      const stderr = response.stderr ?? "";
-      if (response.code === 0) {
-        return { stdout, stderr };
+const { execFileMock, gitCalls, resetGitMock, setGitResponse } = vi.hoisted(() => {
+  const calls: GitCall[] = [];
+  const responses = new Map<string, GitResponse>();
+  const commandKey = (args: string[]) => args.join("\0");
+  const runGitMock = (command: string, args: string[], options: GitCall["options"]) => {
+    calls.push({ args: [...args], command, options });
+    const response = responses.get(commandKey(args)) ?? { code: 1, stdout: "", stderr: "" };
+    const stdout = response.stdout ?? "";
+    const stderr = response.stderr ?? "";
+    if (response.code === 0) {
+      return { stdout, stderr };
+    }
+
+    const error = new Error(`git exited with ${response.code}`) as Error & {
+      code?: number;
+      stderr?: string;
+      stdout?: string;
+    };
+    error.code = response.code;
+    error.stdout = stdout;
+    error.stderr = stderr;
+    throw error;
+  };
+  const mock = vi.fn(
+    (
+      command: string,
+      args: string[],
+      options: GitCall["options"],
+      callback: (error: Error | null, stdout: string, stderr: string) => void,
+    ) => {
+      try {
+        const result = runGitMock(command, args, options);
+        callback(null, result.stdout, result.stderr);
+      } catch (error) {
+        const execError = error as Error & { stderr?: string; stdout?: string };
+        callback(execError, execError.stdout ?? "", execError.stderr ?? "");
       }
+    },
+  );
+  const customPromisify = Symbol.for("nodejs.util.promisify.custom");
+  Object.defineProperty(mock, customPromisify, {
+    value: (command: string, args: string[], options: GitCall["options"]) =>
+      Promise.resolve().then(() => runGitMock(command, args, options)),
+  });
 
-      const error = new Error(`git exited with ${response.code}`) as Error & {
-        code?: number;
-        stderr?: string;
-        stdout?: string;
-      };
-      error.code = response.code;
-      error.stdout = stdout;
-      error.stderr = stderr;
-      throw error;
-    };
-    const mock = vi.fn(
-      (
-        command: string,
-        args: string[],
-        options: GitCall["options"],
-        callback: (error: Error | null, stdout: string, stderr: string) => void,
-      ) => {
-        try {
-          const result = runGitMock(command, args, options);
-          callback(null, result.stdout, result.stderr);
-        } catch (error) {
-          const execError = error as Error & { stderr?: string; stdout?: string };
-          callback(execError, execError.stdout ?? "", execError.stderr ?? "");
-        }
-      },
-    );
-    const customPromisify = Symbol.for("nodejs.util.promisify.custom");
-    Object.defineProperty(mock, customPromisify, {
-      value: (command: string, args: string[], options: GitCall["options"]) =>
-        Promise.resolve().then(() => runGitMock(command, args, options)),
-    });
-
-    return {
-      execFileMock: mock,
-      gitCalls: calls,
-      resetGitMock: () => {
-        calls.length = 0;
-        mock.mockClear();
-        responses.clear();
-      },
-      setGitResponse: (args: string[], response: GitResponse) => {
-        responses.set(commandKey(args), response);
-      },
-    };
-  },
-);
+  return {
+    execFileMock: mock,
+    gitCalls: calls,
+    resetGitMock: () => {
+      calls.length = 0;
+      mock.mockClear();
+      responses.clear();
+    },
+    setGitResponse: (args: string[], response: GitResponse) => {
+      responses.set(commandKey(args), response);
+    },
+  };
+});
 
 vi.mock("node:child_process", () => ({
   execFile: execFileMock,

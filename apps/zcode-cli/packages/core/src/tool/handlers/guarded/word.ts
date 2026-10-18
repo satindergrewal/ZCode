@@ -1,4 +1,4 @@
-/** AST 定位后的单词事实；不执行 expansion，也不将未知词当作已知选项。 */
+/** Word facts after AST location; no expansion performed, unknown words never become known options. */
 export interface CommandWord {
   value: string;
   dynamic: boolean;

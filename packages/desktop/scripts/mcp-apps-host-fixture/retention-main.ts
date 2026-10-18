@@ -115,7 +115,8 @@ app
     await run("advance(300000)");
     assert.equal(guestCount(), 1);
     await run("busy('deadline',false)");
-    // 释放完成由 guest destroyed 事件确认；不使用 sleep 作为同步依据。
+    // Release completion is confirmed by the guest destroyed event; never sleep as the
+    // synchronization primitive.
     const remaining = webContents
       .getAllWebContents()
       .filter((contents) => contents.getType() === "webview");

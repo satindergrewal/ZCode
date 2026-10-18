@@ -52,8 +52,9 @@ export * from "./resume-workflow-run.js";
 // disable list; dropping these lines breaks both silently (same note as resume-workflow-run).
 export * from "./escalate.js";
 export * from "./resolve-workflow-question.js";
-// 留白补全（docs/dynamic-workflow/launch.md「The `FillWorkflowHole` tool」）：名字常量被 core 的注册、
-// 权限服务的 owner 规则、workflow child 的禁用名单与 display 分派读走。
+// Hole filling (docs/dynamic-workflow/launch.md "The `FillWorkflowHole` tool"): name constants
+// read by core's registry, the permission service's owner rules, the workflow child denylist,
+// and display dispatch.
 export * from "./fill-workflow-hole.js";
 export * from "./workflow-observation-display.js";
 export * from "./tool-result-metadata.js";

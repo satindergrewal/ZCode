@@ -1,7 +1,7 @@
 /**
- * 流水线原语 channel / future 与停滞检测在**真沙箱**里的行为（docs/dynamic-workflow/authoring.md
- * 「Streams」、execution-engine.md「The vm cell」）。跑真子进程而不是桩：channel 的实现、
- * `__checkStalled` 的调度点（setImmediate）与 error-complete 的收尾都只在这条链上成立。
+ * The channel/future primitives and stall detection, against the real sandbox (docs/dynamic-workflow/authoring.md,
+ * "Streams"; execution-engine.md, "The vm cell"). A real child, not a stub: the channel implementation,
+ * the __checkStalled scheduling point (setImmediate), and the error-complete teardown hold only on this path.
  */
 
 import { describe, expect, it } from "vitest";
@@ -17,7 +17,7 @@ import { runWorkflowScript } from "../src/index.js";
 import { AutoDriver } from "./auto-driver.js";
 import { askSpecsFor, runScript, TEST_CWD } from "./helpers.js";
 
-/** 直接投喂手写 lowered 体（自由标识符仅 `__host`），返回结算。 */
+/** Feeds a handwritten lowered body (free identifier: __host only); returns the settlement. */
 async function runLowered(lowered: string): Promise<RunSettlement> {
   const journal = new InMemoryJournalStore();
   const driver = new AutoDriver(journal);
@@ -81,7 +81,7 @@ describe("channel — a pipeline in the sandbox", () => {
       status: "completed",
       artifact: ["a1", "a2", "b1", "b2", "c1", "c2"],
     });
-    // 六个 fact，六个 verifier ask；每个 fact 恰好被一个消费者拿到。
+    // Six facts, six verifier asks; each fact consumed exactly once.
     expect(
       journal
         .listNodes("run", { kinds: "all", withResult: true })
@@ -97,7 +97,7 @@ describe("channel — a pipeline in the sandbox", () => {
       let sum = 0;
       let count = 0;
       for await (const n of ch) { sum += n; count += 1; }
-      // 关闭后再迭代：立即结束，不挂起。
+      // Iterating after close: ends immediately, never hangs.
       for await (const n of ch) { sum += n; }
       return [count, sum];
     `);
@@ -111,7 +111,7 @@ describe("channel — a pipeline in the sandbox", () => {
       const consumers = [0, 1].map((w) => __host.future(async () => {
         for await (const n of ch) got[w].push(n);
       }));
-      // 两个接收者都已停在空通道上；逐个 send 应轮流唤醒 0、1、0、1。
+      // Both receivers parked on the empty channel; successive sends must wake 0, 1, 0, 1 in turn.
       await Promise.resolve();
       for (let i = 0; i < 4; i++) ch.send(i);
       ch.close();
@@ -176,8 +176,8 @@ describe("stall detection — a stuck run fails instead of hanging", () => {
   });
 
   it("fires only once the last in-flight request has been answered", async () => {
-    // 生产者的 ask 在飞时不能误报；它结算、发送、却忘了 close 之后，消费者停在空通道上——
-    // 那一刻（最后一条 response 投递之后）才是死锁。
+    // No false stall while the producer's ask is in flight; once it settles, sends, and forgets to close, the receiver parks on an empty channel --
+    // that moment (after the last response delivery) is the deadlock.
     const script = [
       'const facts = channel<string>("facts");',
       "const seen: string[] = [];",
@@ -197,7 +197,7 @@ describe("stall detection — a stuck run fails instead of hanging", () => {
     });
     const message = failureMessage(settlement);
     expect(message).toContain('1 on "facts"');
-    // 生产者的 ask 正常结算了：检测没有抢在 response 前面。
+    // The producer's ask settled normally: detection did not jump the response.
     expect(journal.getNode("run", "ask#1", 1)?.status).toBe("completed");
   });
 
@@ -226,7 +226,7 @@ describe("lexical phases end to end", () => {
       '  phase("Gather facts");',
       "  try {",
       '    const first = await agent("scout").ask<string[]>("scout");',
-      "    // 首次 await 之后再发一个 ask：动态戳会说 Verify（它的标记最后跑过），词法戳说 Gather。",
+      "    // After the first await, ask again: the dynamic stamp says Verify (its marker ran last), the lexical stamp Gather.",
       '    const more = await agent("digger").ask<string[]>(`dig ${first.length}`);',
       "    for (const fact of [...first, ...more]) facts.send(fact);",
       "  } finally {",

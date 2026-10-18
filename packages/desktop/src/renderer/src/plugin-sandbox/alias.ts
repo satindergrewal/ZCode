@@ -3,23 +3,26 @@ import { ZCODE_GLOBALS_EVENT, createPluginSandboxAliasRuntime } from "./aliasRun
 import { OPENAI_SET_GLOBALS_EVENT } from "./openaiAlias.js";
 
 /**
- * 注入到插件 HTML 顶部的 `window.zcode` / `window.openai` 别名（以 IIFE 打包为 out/plugin-sandbox/plugin-sandbox-alias.js）。
- * 官方 `App` 上的薄封装：只与父窗口（受信 relay shell，origin 为 shell-<id>）通信；懒连接，
- * 自建官方 `App` 的页面不会因为别名多一次 ui/initialize。
+ * `window.zcode` / `window.openai` aliases injected at the top of plugin HTML (IIFE-bundled as
+ * out/plugin-sandbox/plugin-sandbox-alias.js). Thin wrapper over the official `App`: it talks only
+ * to the parent window (trusted relay shell, origin shell-<id>) and connects lazily, so pages that
+ * build their own official `App` never pay an extra ui/initialize because of the alias.
  */
-// 不在这里 `declare global` 扩 Window：别名脚本与宿主 renderer 共用 tsconfig，`zcode?: unknown` 会覆盖宿主对
-// `window.zcode`（preload 桥）的类型。这里只用 defineProperty / `in` 检查，不需要类型声明。
+// No `declare global` Window augmentation here: the alias script shares the host renderer's
+// tsconfig, and `zcode?: unknown` would clobber the host's type for window.zcode (the preload
+// bridge). Only defineProperty / `in` checks are used; no declarations needed.
 
 const app = new App(
   { name: "zcode-alias", version: "1" },
   {},
-  // 用别名的页面自己调 notifyIntrinsicHeight；自动 ResizeObserver 会与页面自建的 App 重复上报。
+  // Pages using the alias call notifyIntrinsicHeight themselves; an automatic ResizeObserver would double-report next to a page-owned App.
   { autoResize: false },
 );
 
 const runtime = createPluginSandboxAliasRuntime({
   app,
-  // 只接受 relay shell（window.parent）来的消息；SDK 的 transport 以 "*" 发出，origin 由 shell 侧校验。
+  // Accept messages from the relay shell (window.parent) only; the SDK transport posts to "*" and
+  // the shell side validates origin.
   transport: new PostMessageTransport(window.parent, window.parent),
   protocolVersion: LATEST_PROTOCOL_VERSION,
   onChange: (globals) => {
@@ -28,7 +31,7 @@ const runtime = createPluginSandboxAliasRuntime({
   },
 });
 
-// 别名握手前就收到宿主的 JSON-RPC（响应 / 通知）= 页面自建的官方 App 已在通信，别名不再握手（见 markForeignApp）。
+// Host JSON-RPC (response/notification) before the alias handshake = a page-owned official App is already talking; the alias stands down (see markForeignApp).
 window.addEventListener("message", (event) => {
   if (runtime.connecting || event.source !== window.parent) return;
   const data = event.data as { jsonrpc?: unknown } | null;
@@ -41,7 +44,7 @@ Object.defineProperty(window, "zcode", {
   configurable: false,
   enumerable: true,
 });
-// 页面若自带 window.openai（如页面自带的 polyfill），不覆盖。
+// Never overwrite a page-owned window.openai (e.g. the page's own polyfill).
 if (!("openai" in window)) {
   Object.defineProperty(window, "openai", {
     value: runtime.openai,

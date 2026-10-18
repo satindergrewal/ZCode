@@ -50,7 +50,7 @@ export class CodingPlanApiKeyError extends Error {
   }
 }
 
-/** CLI 进程内唯一换证入口；保留旧导出名兼容调用方，返回值已是短期 Token。 */
+/** The CLI process's single recredentialing entry; the legacy export name stays for callers, the return is already the short-lived token. */
 export function createCodingPlanApiKeyResolver(
   options: CodingPlanApiKeyResolverOptions,
 ): CodingPlanApiKeyResolver {
@@ -156,7 +156,7 @@ export function createCodingPlanApiKeyResolver(
           throw new CodingPlanApiKeyError("project_token_scope_invalidated");
         return result;
       } catch (error) {
-        // 只恢复业务 JWT 的明确 HTTP 401；不把模型 401、403 或网络故障猜成过期。
+        // Resume only a clear HTTP 401 on the business JWT; never guess model 401/403 or network faults into expiry.
         if (!business || !businessTokens.wasRejected(business)) throw error;
         businessTokens.invalidate(business);
         if (attempt + 1 === maxAttempts) throw error;
@@ -177,7 +177,7 @@ export function createCodingPlanApiKeyResolver(
       () =>
         execution.run(
           {
-            // 单飞属于鉴权 owner，不继承会话 signal 或 context.abortSignal；只保留观测上下文。
+            // The single-flight belongs to the auth owner, inheriting neither the session signal nor context.abortSignal; observation context only.
             context: runOptions?.context
               ? { trace: runOptions.context.trace, logger: runOptions.context.logger }
               : undefined,
@@ -201,7 +201,7 @@ export function createCodingPlanApiKeyResolver(
   };
 }
 
-/** 仅取消当前调用方的等待；底层 Promise 始终有拒绝处理器，不误伤共享换证。 */
+/** Cancels only the caller's wait; the underlying promise always has a rejection handler, never hurting shared refreshes. */
 async function waitForProjectToken<T>(run: () => Promise<T>, signal?: AbortSignal): Promise<T> {
   if (!signal) return run();
   signal.throwIfAborted();

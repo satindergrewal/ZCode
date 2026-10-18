@@ -15,7 +15,7 @@ export interface PreparedMarketingDelivery {
   release: () => Promise<void>;
 }
 type Candidate = PreparedMarketingDelivery & { scope: string };
-// 导出以便 controller 类型（经 MarketingTouchContext）可被 .d.ts 命名引用。
+// Exported so the controller type (via MarketingTouchContext) can be named from .d.ts files.
 export interface MarketingTouchState {
   banner: Candidate | null;
   dialog: (Candidate & { result: boolean }) | null;
@@ -30,10 +30,12 @@ export type MarketingActionResult = {
   terminal?: boolean;
 };
 
-// 左下角活动槽位的唯一可见性判断：Banner 与 ConnectedBanner 的渲染守卫共用此谓词，
-// 避免仲裁层（SidebarBottomActivity）与展示层对「Banner 是否可见」出现两套判断而漂移。
-// 领取 pending 期间 banner 仍非空 → 判定可见，Highspeed 分享卡继续让位。
-// 用类型谓词收窄 delivery 到 banner 变体，保留调用点原有的 narrowing。
+// The single visibility test for the bottom-left activity slot: the render guards of Banner and
+// ConnectedBanner share this predicate, so the arbiter (SidebarBottomActivity) and the display layer
+// cannot drift apart on whether the banner is visible.
+// While a claim is pending the banner stays non-null, hence visible, and the Highspeed share card
+// keeps yielding. A type predicate narrows delivery to the banner variant, preserving the call site's
+// existing narrowing.
 type RenderableBannerCandidate = Candidate & {
   delivery: Extract<MarketingDelivery, { resource_position: "banner" }>;
 };
@@ -98,7 +100,7 @@ export function createMarketingTouchController(options: {
       );
   }
   function invalidatePendingSnapshot() {
-    // 原先按 Campaign 记录历史会拦住服务端重新投放；这里只丢弃操作前的迟到快照。
+    // Keying history by campaign once blocked server re-targeting; drop only stale pre-action snapshots.
     generation++;
     release(deferredBanner);
     deferredBanner = undefined;
@@ -109,7 +111,7 @@ export function createMarketingTouchController(options: {
       const snapshot = await options.query();
       if (disposed || current !== generation) return;
       if (snapshotScope && snapshotScope !== snapshot.scope) {
-        // 同账号凭据更新也失效旧事件上下文，已打开业务操作不移交给新凭据。
+        // A same-account credential update invalidates the old event context too; in-flight actions never migrate to it.
         release(waitingPopup);
         waitingPopup = null;
       }
@@ -121,7 +123,7 @@ export function createMarketingTouchController(options: {
       const popupWire = snapshot.deliveries.find(
         (d) =>
           d.resource_position === "popup" &&
-          // 只避免当前已打开弹窗重复排队，不记录历史展示状态。
+          // Only keeps the open dialog from re-queueing; no impression history is recorded.
           (!state.dialog || state.dialog.result || key(state.dialog.delivery) !== key(d)),
       );
       if (!popupWire || JSON.stringify(waitingPopup?.delivery) !== JSON.stringify(popupWire)) {
@@ -201,7 +203,7 @@ export function createMarketingTouchController(options: {
   }
   async function showPending() {
     const state = store.getState();
-    // 错误状态先于 React 弹窗挂载；仅检查 DOM 会让等待中的投放抢先出队并叠加。
+    // Error state can predate the React dialog mount; a DOM-only check lets a queued delivery jump the gate and stack.
     if (
       disposed ||
       state.pending ||
@@ -246,7 +248,7 @@ export function createMarketingTouchController(options: {
       succeeded = true;
       invalidatePendingSnapshot();
       report(candidate, "confirm");
-      // 复制是可重复操作；不能沿用领取的完成清理，否则首次复制就会移除内容。
+      // Copying is repeatable; reusing the claim's completion cleanup would drop the content on the first copy.
       if (action.type === "copy_text") return result;
       if (
         action.type !== "navigate" &&
@@ -256,7 +258,7 @@ export function createMarketingTouchController(options: {
         store.setState({ phase: "preparing" });
         const prepared = await candidate.success;
         if (disposed) return;
-        // 业务等待期间也可能打开别的 modal；结果排队到安全展示点，不能直接叠加。
+        // Another modal may open while the action is in flight; the result queues for a safe presentation point instead of stacking.
         waitingResult = { ...candidate, hero: prepared?.hero ?? candidate.hero };
       } else {
         if (store.getState().dialog === candidate) {
@@ -284,7 +286,7 @@ export function createMarketingTouchController(options: {
           release(state.banner);
         store.setState({ pending: false, phase: "idle", banner: next });
         await showPending();
-        // 新动作不改变领取资格；立即查询会与异步 confirm 竞争，可能用旧投放再次挡住目标页。
+        // A new action does not change claim eligibility; querying at once races the async confirm and could re-block the target page with a stale delivery.
         if (succeeded && action.type !== "copy_text" && action.type !== "navigate" && !disposed)
           options.refresh();
       }

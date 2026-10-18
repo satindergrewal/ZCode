@@ -1,6 +1,6 @@
 import { MCP_APPS_STRUCTURED_CONTENT_MAX_BYTES } from "@zcode/shared/mcp-apps";
 
-/** `ui/message` 的 structuredContent 序列化后允许的最大 UTF-8 字节数（与工具结果同一上限）。 */
+/** Max UTF-8 bytes for serialized ui/message structuredContent (same cap as tool results). */
 export const PLUGIN_UI_FOLLOW_UP_STRUCTURED_MAX_BYTES = MCP_APPS_STRUCTURED_CONTENT_MAX_BYTES;
 
 export type PluginUiFollowUpPromptResult =
@@ -8,9 +8,9 @@ export type PluginUiFollowUpPromptResult =
   | { ok: false; reason: "empty_prompt" | "structured_too_large"; bytes?: number };
 
 /**
- * 发出去的消息 = 插件文本原样 + structuredContent 的 JSON（```json 块），
- * 不加任何"来自插件 / 不可信"的明文提示；来源只进消息 metadata（`source.kind = "pluginUi"`）。
- * 无法序列化的 structuredContent（循环引用等）按缺省处理。
+ * The sent message = plugin text verbatim + structuredContent as a json fence;
+ * no from-plugin/untrusted prose -- provenance lives in message metadata (source.kind pluginUi).
+ * Unserializable structuredContent (cycles etc.) degrades to default.
  */
 export function buildPluginUiFollowUpPrompt(
   prompt: string,

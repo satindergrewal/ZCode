@@ -3,30 +3,30 @@ import { ServiceChannels } from "@zcode/shared";
 import type { McpToolUiCsp, PluginSandboxHandle } from "@zcode/shared/mcp-apps";
 import { createServiceDescriptor } from "../descriptors.js";
 
-/** 与 zcodeAgentService 其余方法一致的 workspace 定位；身份用 workspaceIdentity，路径用 workspacePath。 */
+/** Same workspace addressing as the rest of zcodeAgentService: workspaceIdentity for identity, workspacePath for paths. */
 export interface PluginUiWorkspaceTarget {
   workspacePath: string;
   workspaceIdentity?: string;
 }
 
-/** UI 发起的插件 MCP 请求共用的归属范围：同一 session、同一插件、同一 namespaced server。 */
+/** Attribution scope shared by UI-initiated plugin MCP requests: one session, one plugin, one namespaced server. */
 export interface PluginUiPluginScope extends PluginUiWorkspaceTarget {
   instance: import("@zcode/shared/mcp-apps").McpAppInstance;
   sessionId: string;
   pluginId: string;
-  /** display.ui / 清单 surface 所属的 namespaced server（`plugin:<name>:<server>`）；归属由 agent 侧 catalog 校验。 */
+  /** Namespaced server (plugin:<name>:<server>) owning the display.ui/manifest surface; attribution checked by the agent catalog. */
   serverName: string;
 }
 
 export interface PluginUiPrepareSandboxParams extends Omit<PluginUiPluginScope, "instance"> {
-  /** 沙箱作用域 id（`buildPluginSandboxScopeId`）：工具卡片 `tool:<toolCallId>`，面板 `surface:<surfaceId>`。 */
+  /** Sandbox scope id (buildPluginSandboxScopeId): tool cards `tool:<toolCallId>`, panels `surface:<surfaceId>`. */
   scopeId: string;
   resourceUri: string;
-  /** 发起请求的宿主窗口 webContents id，main 用它校验 webview attach 归属。 */
+  /** webContents id of the requesting host window; main validates webview attach ownership with it. */
   ownerWebContentsId: number;
   /**
-   * 来自 display.ui 的工具级声明。起只是兜底：`ui://` 资源项自己的 `_meta`（csp / prefersBorder /
-   * 尺寸提示）才是权威，桥读资源时解析并优先使用；产品决策为完全信任插件声明。
+   * Tool-level declaration from display.ui. A fallback only: the ui:// resource's own _meta (csp / prefersBorder /
+   * size hints) is authoritative, parsed and preferred at read time; product trusts plugin declarations fully.
    */
   csp?: McpToolUiCsp;
   prefersBorder?: boolean;
@@ -35,7 +35,7 @@ export interface PluginUiPrepareSandboxParams extends Omit<PluginUiPluginScope, 
 export interface PluginUiCallToolParams extends PluginUiPluginScope {
   toolName: string;
   arguments?: Record<string, unknown>;
-  /** 宿主生成的调用 id；卸载卡片时经 cancelToolCall 取消到 agent 的 MCP client。 */
+  /** Host-generated call id; card teardown cancels into the agent MCP client via cancelToolCall. */
   callId: string;
 }
 export interface PluginUiCancelToolCallParams extends PluginUiPluginScope {
@@ -49,7 +49,7 @@ export interface PluginUiCallToolResult {
   _meta?: Record<string, unknown>;
 }
 
-/** 页面发起的 `resources/read`；结果形状与 MCP `resources/read` 一致，页面可直接消费。 */
+/** Page-initiated resources/read; MCP-shaped result, directly consumable. */
 export interface PluginUiReadResourceParams extends PluginUiPluginScope {
   uri: string;
 }
@@ -64,7 +64,7 @@ export interface PluginUiReadResourceResult {
   contents: PluginUiResourceContent[];
 }
 
-/** 页面发起的 resources/list、resources/templates/list；结果与 MCP 同形，游标透传。 */
+/** Page-initiated resources/list and resources/templates/list; MCP-shaped with cursors passed through. */
 export interface PluginUiListResourcesParams extends PluginUiPluginScope {
   cursor?: string;
 }
@@ -85,8 +85,8 @@ export interface PluginUiListResourceTemplatesResult {
   nextCursor?: string;
 }
 /**
- * 订阅 / 退订。订阅者身份 = session + 沙箱作用域 + 实例代际（initId），
- * agent 侧按 (server, uri) 引用计数；dispose 只退订本代际。server 不支持订阅时 agent 回 -32001。
+ * Subscribe/unsubscribe. Subscriber identity = session + sandbox scope + instance generation (initId),
+ * reference-counted by (server, uri) in the agent; dispose unsubscribes only its generation. Unsupported subs return -32001.
  */
 export interface PluginUiResourceSubscriptionParams extends PluginUiPluginScope {
   scopeId: string;
@@ -94,15 +94,15 @@ export interface PluginUiResourceSubscriptionParams extends PluginUiPluginScope 
   uri: string;
 }
 
-/** 工作区级面板入口（清单 `ui.surfaces[]`），来自 agent `plugins/listUiSurfaces`。 */
+/** Workspace-level panel entries (manifest ui.surfaces[]) from the agent's plugins/listUiSurfaces. */
 export type PluginUiSurfaceEntry = ZCodePluginUiSurface;
 
 /**
- * 插件 UI 桥。UI 只依赖这个描述符，不直接调用 zcodeAgentService（M5 ③-3 平台能力面收敛）。
- * `prepareSandbox` 以 (ownerWebContentsId, workspaceKey, sessionId, pluginId, scopeId) 幂等：重复调用返回同一
- * sandboxId 与递增 initId；同键并发调用只合并资源读取、登记各自进行（H15-a，每个调用方拿自己的 initId），
- * 顺序调用仍重新读取以拿到最新 HTML。
- * 句柄的 `resourceMeta` 带资源级 prefersBorder / heightHint / minFrameHeight（H02）。
+ * Plugin UI bridge. The UI depends on this descriptor only, never on zcodeAgentService directly (M5 3-3 capability surface).
+ * prepareSandbox is idempotent on (ownerWebContentsId, workspaceKey, sessionId, pluginId, scopeId): repeats return the same
+ * sandboxId with a fresh initId; concurrent same-key calls share resource reads but register separately (H15-a, per-caller initId),
+ * and sequential calls re-read for fresh HTML.
+ * The handle's resourceMeta carries resource-level prefersBorder/heightHint/minFrameHeight (H02).
  */
 export interface IPluginUiBridgeService {
   validateInstance(params: PluginUiPluginScope): Promise<void>;
@@ -114,19 +114,19 @@ export interface IPluginUiBridgeService {
     options?: { signal?: AbortSignal },
   ): Promise<PluginUiCallToolResult>;
   /**
-   * 取消带 callId 的进行中调用。renderer → host 的 RPC 传不了 AbortSignal，
-   * 所以取消是一条显式请求；agent 侧 abort 到 MCP client。返回 false 表示已完成或未登记。
+   * Cancels the in-flight call by id. renderer-to-host RPC cannot carry an AbortSignal,
+   * so cancel is an explicit request aborting into the agent MCP client. false = finished or unknown.
    */
   cancelToolCall(params: PluginUiCancelToolCallParams): Promise<{ cancelled: boolean }>;
   readResource(params: PluginUiReadResourceParams): Promise<PluginUiReadResourceResult>;
-  /** 资源列表 / 模板 / 订阅，同 readResource 一样限同插件 server，归属由 agent 校验。 */
+  //* Resource list/templates/subscribe: same-plugin servers only, like readResource; agent-checked. */
   listResources(params: PluginUiListResourcesParams): Promise<PluginUiListResourcesResult>;
   listResourceTemplates(
     params: PluginUiListResourcesParams,
   ): Promise<PluginUiListResourceTemplatesResult>;
   subscribeResource(params: PluginUiResourceSubscriptionParams): Promise<void>;
   unsubscribeResource(params: PluginUiResourceSubscriptionParams): Promise<void>;
-  /** 已启用插件的面板入口；插件启停后由 UI 重新拉取（不缓存）。 */
+  //* Panel entries of enabled plugins; the UI refetches on enable/disable (never cached). */
   listSurfaces(params: PluginUiWorkspaceTarget): Promise<PluginUiSurfaceEntry[]>;
 }
 

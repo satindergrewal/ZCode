@@ -1,5 +1,5 @@
 /**
- * 插件 id 形如 `<name>@<marketplace>`；对用户只显示 name 部分。纯函数，供来源标签与确认框共用。
+ * Plugin ids look like name@marketplace; users see only the name. Pure, shared by source labels and confirms.
  */
 export function formatPluginDisplayName(pluginId: string): string {
   const at = pluginId.indexOf("@");

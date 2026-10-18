@@ -20,8 +20,8 @@ export function resolveChatCodingPlanResetOpportunityBadge(
     resetUi.week.entry,
   );
 
-  // Bugfix：徽标曾在额度剩余 100% 时隐藏（重置无收益）。但核销会把剩余改写成 100%，
-  // 余下机会的徽标随即消失，用户以为卡被吞掉。只要该额度存在且有可用机会就展示张数。
+  // Bugfix: the badge hid at 100% remaining (no reset gain), but redemption rewrites remaining to 100%,
+  // hiding future chances, looking like a swallowed grant. Show the count while chances remain.
   return mergeCodingPlanQuotaResetOpportunityBadges([
     {
       count: resetUi.entry?.opportunityCount ?? 0,

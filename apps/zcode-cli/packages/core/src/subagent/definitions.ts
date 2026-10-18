@@ -5,7 +5,7 @@ export interface AgentDefinitionsSnapshot {
   readonly activeAgents: readonly Readonly<AgentProfile>[];
 }
 
-/** 同步读取已发布的内存快照；加载、覆盖和移除由提供方负责。 */
+/** Synchronously reads the published memory snapshot; load, override, and removal are the provider's job. */
 export type GetAgentDefinitions = () => AgentDefinitionsSnapshot;
 
 export type LoadAgentDefinitions = (input: {
@@ -13,7 +13,7 @@ export type LoadAgentDefinitions = (input: {
   traceContext: TraceContext;
 }) => Promise<AgentDefinitionsSnapshot>;
 
-/** 新父上下文替换快照；加载失败由 turn 收尾，不能吞掉断连错误后继续请求模型。 */
+/** New-parent-context replacement snapshot; load failures finalize with the turn, never swallowing disconnect errors to keep requesting. */
 export function createTurnAgentDefinitions(
   getInitial: GetAgentDefinitions,
   load?: LoadAgentDefinitions,

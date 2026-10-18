@@ -38,7 +38,8 @@ function observeContentSize() {
     const contentTop = body.getBoundingClientRect().top + top;
     const children = [...roots];
     let extent = 0;
-    // 旧 SDK 临时改写 html 高度来测量，测量自身会触发溢出布局；这里仅读取实际内容。
+    // The legacy SDK rewrote the html height to measure, and measuring itself triggers overflow
+    // layout; read the actual content only.
     if (children.length === 0) {
       range.selectNodeContents(body);
       extent = range.getBoundingClientRect().height;
@@ -53,7 +54,8 @@ function observeContentSize() {
     const next = { height: extent + top + bottom, width: innerWidth, viewport: innerHeight };
     const last = previous;
     previous = next;
-    // vh / 百分比高度会跟随宿主视口等量增长；不把宿主调整再反馈成新的内容增高。
+    // vh/percentage heights grow with the host viewport; never feed host resizes back as more
+    // content growth.
     if (
       last &&
       next.width === last.width &&
@@ -157,7 +159,8 @@ const api = Object.freeze({
       .then(async () => {
         await ready;
         await app.request({ method: GEN_UI_STATE_METHOD, params: { state: next } }, z.object({}));
-        // Service 通知是唯一状态投影；迟到的保存 ACK 不能覆盖另一窗口更新的快照。
+        // Service notifications are the only state projection; a late save ACK must not
+        // overwrite a snapshot another window updated.
       });
     saves = pending;
     return pending;
@@ -182,7 +185,8 @@ const openAnchor = (event: MouseEvent) => {
   if (!(anchor instanceof HTMLAnchorElement)) return;
   const href = anchor.getAttribute("href")?.trim();
   if (!href || href.startsWith("#")) return;
-  // 原生导航会被沙箱阻止；外链经宿主打开，下载和合成点击不借用剩余手势。
+  // The sandbox blocks native navigation; external links open via the host, and downloads and
+  // synthetic clicks never borrow the remaining gesture.
   event.preventDefault();
   if (!event.isTrusted || anchor.hasAttribute("download")) return;
   void api
@@ -193,7 +197,8 @@ const openAnchor = (event: MouseEvent) => {
 };
 window.addEventListener("click", openAnchor);
 window.addEventListener("auxclick", openAnchor);
-// guest 的 hover/键盘事件不会冒泡到宿主 DOM；只传展示事件，不增加 Agent 能力。
+// Guest hover/keyboard events never bubble to host DOM; pass display-only events, adding no
+// agent capability.
 const presentation = (params: { hovered?: boolean; escape?: true }) => {
   void ready
     .then(() => app.request({ method: GEN_UI_PRESENTATION_METHOD, params }, z.object({})))

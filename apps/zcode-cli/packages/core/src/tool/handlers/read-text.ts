@@ -75,7 +75,7 @@ export function formatReadTextOutput(output: ReadTextOutput): string {
   }
 
   // The successful-text model contract carries only conditional reminders and numbered body;
- // legacy safety notices are not part of this tool result path.
+  // legacy safety notices are not part of this tool result path.
   return `${partialViewPrefix}${addReadLineNumbers({
     content: output.content,
     startLine: output.startLine,

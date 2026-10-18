@@ -45,8 +45,8 @@ const emptyModelRules = {
   builtinProviderModelRules: [],
 };
 
-describe("Todo104 最终规则数据合同", () => {
-  it("三种 Match 层只接受本层条件，保留正则而非 API 枚举", () => {
+describe("Todo104 final rule data contract", () => {
+  it("accepts only layer-native conditions per Match layer and keeps regexes over API enums", () => {
     expect(modelMatchConfigRuleSchema.parse(modelRule)).toEqual(modelRule);
     expect(
       modelApiMatchConfigRuleSchema.parse({ ...modelRule, apiTypeMatch: "openai-.*" }),
@@ -102,7 +102,7 @@ describe("Todo104 最终规则数据合同", () => {
     ).toBe(false);
   });
 
-  it("Manual 从共享叶子派生，可编辑字段完整、系统字段不写入", () => {
+  it("derives Manual from shared leaves with complete editable fields and no system-field writes", () => {
     expect(completeModelConfigDataSchema.parse(completeModel)).toEqual(completeModel);
     const manual = extractManualModelConfig(completeModel);
     expect(manualModelConfigSchema.shape.properties.shape.contextWindow).toBe(
@@ -138,7 +138,7 @@ describe("Todo104 最终规则数据合同", () => {
     ).toBe(false);
   });
 
-  it("Personal 两组互斥，手动完整、智能稀疏，不能靠顺序吞掉冲突", () => {
+  it("keeps the two Personal groups exclusive - manual complete, smart sparse - with no order-based conflict swallowing", () => {
     const manual = { ...exactRule, config: extractManualModelConfig(completeModel) };
     expect(
       personalModelConfigRulesSchema.parse({
@@ -177,7 +177,7 @@ describe("Todo104 最终规则数据合同", () => {
     );
   });
 
-  it("Builtin 五组均必需，精确规则与匹配规则不混用，旧集合不兼容", () => {
+  it("requires all five Builtin groups, never mixes exact with match rules, and rejects legacy collections", () => {
     expect(builtinModelConfigRulesSchema.parse(emptyModelRules)).toEqual(emptyModelRules);
     for (const key of Object.keys(emptyModelRules)) {
       expect(
@@ -197,7 +197,7 @@ describe("Todo104 最终规则数据合同", () => {
     ).toBe(false);
   });
 
-  it("Provider 规则身份/名称在外层，来源权限保持", () => {
+  it("keeps provider rule identity/names outer and source authority intact", () => {
     const template = {
       templateId: "openai",
       templateNameMap: { "en-US": "OpenAI" },
@@ -277,7 +277,7 @@ describe("Todo104 最终规则数据合同", () => {
     ).toBe(false);
   });
 
-  it("同来源重复 Provider/Template 在建索引前拒绝；Match 同时命中仍合法", () => {
+  it("rejects same-source duplicate providers/templates before indexing; simultaneous Match hits stay valid", () => {
     const provider = { providerId: "test", config: { group: "zai-family" } };
     const template = { templateId: "test", templateNameMap: {}, config: {} };
     expect(

@@ -1,19 +1,19 @@
 interface ImplUpdate {
-  /** 本轮改动过的文件路径 */
+  /** Files changed this round */
   changed: string[];
-  /** 改动说明：这一版怎么处理上一轮的反例 */
+  /** How this version addresses the last round's counterexamples */
   notes: string;
-  /** 交付前 lake build 是否自检通过 */
+  /** Whether the lake build self-check passed before delivery */
   buildOk: boolean;
 }
 
 interface Verdict {
   pass: boolean;
-  /** pass 时：证明写在哪个文件里 */
+  /** On pass: the file holding the proof */
   proofPath?: string;
-  /** 证伪时：能复现失败的具体反例输入 */
+  /** On falsify: a concrete counterexample input reproducing the failure */
   counterExamples?: string[];
-  /** 判定理由，作为下一轮 Programmer 的输入 */
+  /** Verdict rationale, fed to the next Programmer round */
   reason: string;
 }
 
@@ -23,37 +23,37 @@ const THEOREM = "∀ s, decompress (compress s) = s";
 
 const programmer = agent("Programmer", {
   system:
-    `你是 Lean 4 工程师。实现写进 ${IMPL_PATH}，交付前必须用 lake build 自检。` +
-    "交付物是文件本身，消息里只说改了什么，不要把源码贴回来。",
+    `You are a Lean 4 engineer. Put the implementation in ${IMPL_PATH}; lake build must pass before delivery.` +
+    "The deliverable is the file itself; say what changed, never paste the source back.",
 });
 
 const prover = agent("Prover", {
   system:
-    `你是 Lean 4 形式化验证专家。读 ${IMPL_PATH}，把证明写进 ${PROOF_PATH}，用 lake build 验证。` +
-    "证不出来就是 pass=false，并给出具体反例；不要用 sorry 蒙混过关。",
+    `You are a Lean 4 formalization expert. Read ${IMPL_PATH}, write the proof in ${PROOF_PATH}, verify via lake build.` +
+    "If it fails, pass=false plus a concrete counterexample; no sorry hand-waving.",
 });
 
 const MAX_ROUNDS = 10;
 
 let impl = await programmer.ask<ImplUpdate>(
-  `在 ${IMPL_PATH} 中实现 compress / decompress，目标是能证明 ${THEOREM}。`,
+  `Implement compress/decompress in ${IMPL_PATH} such that ${THEOREM} becomes provable.`,
 );
 let verdict = await prover.ask<Verdict>(
-  `请证明或证伪 ${THEOREM}。\n实现: ${impl.changed.join(", ")}\n` +
-    `作者说明: ${impl.notes}\n自检: lake build ${impl.buildOk ? "通过" : "未通过"}`,
+  `Prove or refute ${THEOREM}.\nChanged: ${impl.changed.join(", ")}\n` +
+    `Author notes: ${impl.notes}\nSelf-check: lake build ${impl.buildOk ? "pass" : "fail"}`,
 );
 
 let round = 1;
 while (!verdict.pass && round < MAX_ROUNDS) {
   round = round + 1;
-  log(`第 ${round} 轮: ${verdict.counterExamples?.length ?? 0} 个反例`);
+  log(`Round ${round}: ${verdict.counterExamples?.length ?? 0} counterexample(s)`);
   impl = await programmer.ask<ImplUpdate>(
-    `上一版未通过验证。\n理由: ${verdict.reason}\n` +
-      `反例: ${JSON.stringify(verdict.counterExamples ?? [])}\n` +
-      `请直接改 ${IMPL_PATH}（失败的证明尝试见 ${PROOF_PATH}），改完 lake build 自检。`,
+    `The last version failed verification.\nReason: ${verdict.reason}\n` +
+      `Counterexamples: ${JSON.stringify(verdict.counterExamples ?? [])}\n` +
+      `Edit ${IMPL_PATH} directly (failed attempts in ${PROOF_PATH}), then re-run lake build.`,
   );
   verdict = await prover.ask<Verdict>(
-    `实现已更新（${impl.notes}）。请重新证明或证伪 ${THEOREM}。`,
+    `Implementation updated (${impl.notes}). Prove or refute ${THEOREM} again.`,
   );
 }
 

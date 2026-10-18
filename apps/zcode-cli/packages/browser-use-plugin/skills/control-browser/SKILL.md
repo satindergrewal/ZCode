@@ -21,8 +21,7 @@ Initialize at the start of every `mcp__node_repl__js` call that uses the browser
 
 ```js
 // 修复原因：Skill base directory 指向 skills/control-browser，不能据此拼接插件运行时资产。
-const browserPluginRoot =
-  process.env.ZCODE_PLUGIN_ROOT ?? process.env.CLAUDE_PLUGIN_ROOT;
+const browserPluginRoot = process.env.ZCODE_PLUGIN_ROOT ?? process.env.CLAUDE_PLUGIN_ROOT;
 if (!browserPluginRoot) {
   throw new Error("Browser plugin root is unavailable in the node_repl host");
 }

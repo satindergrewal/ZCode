@@ -40,11 +40,11 @@ function asksOf(
 }
 
 /**
-  * The roster, in actor-row order (= minting order). **Always returns an array**; no actors means an empty one:
-  * "how many subagents does this run have" must always be answerable, and 0 is that answer.
+ * The roster, in actor-row order (= minting order). **Always returns an array**; no actors means an empty one:
+ * "how many subagents does this run have" must always be answerable, and 0 is that answer.
  *
-  * `pendingQuestions === undefined` means "this read cannot see the park table" (the run lives in another process); then
-  * **no subagent is ever reported `parked`**, because "nobody waiting" and "unknown" cannot be told apart right now.
+ * `pendingQuestions === undefined` means "this read cannot see the park table" (the run lives in another process); then
+ * **no subagent is ever reported `parked`**, because "nobody waiting" and "unknown" cannot be told apart right now.
  */
 export function buildSubagentViews(input: {
   actors: readonly ActorRecord[];
@@ -61,8 +61,8 @@ export function buildSubagentViews(input: {
   return actors.map((actor) => {
     const asks = asksOf(nodes, actor);
     const settled = asks.filter((ask) => ask.status !== NODE_ROW_RUNNING);
-        // A subagent's asks are serial, so at most one is running; with several (should not happen), take the highest actorSeq --
-        // the most recently dispatched.
+    // A subagent's asks are serial, so at most one is running; with several (should not happen), take the highest actorSeq --
+    // the most recently dispatched.
     const runningAsk = asks.filter((ask) => ask.status === NODE_ROW_RUNNING).at(-1);
     const trace =
       runningAsk === undefined
@@ -90,7 +90,7 @@ export function buildSubagentViews(input: {
       ...(parkedOn === undefined ? {} : { parkedOn }),
       stepsSettled: settled.length,
       stepsFailed: settled.filter((ask) => ask.status === "failed").length,
-            // Count tokens from settled asks only; the in-flight one has no bill yet (`stats` is backfilled by the driver at settlement).
+      // Count tokens from settled asks only; the in-flight one has no bill yet (`stats` is backfilled by the driver at settlement).
       tokens: settled.reduce((total, ask) => total + (ask.stats?.tokens ?? 0), 0),
       ...lastProgressField(asks, index),
     };
@@ -98,8 +98,8 @@ export function buildSubagentViews(input: {
 }
 
 /**
-  * A subagent's situation. **The check order is this code's order**; the first match decides -- the order is part of the contract:
-  * a subagent parked waiting for an answer is also "has an ask running"; reporting `executing` would hide the very thing that needs a human.
+ * A subagent's situation. **The check order is this code's order**; the first match decides -- the order is part of the contract:
+ * a subagent parked waiting for an answer is also "has an ask running"; reporting `executing` would hide the very thing that needs a human.
  */
 function subagentStateOf(input: {
   terminal: boolean;
@@ -110,7 +110,7 @@ function subagentStateOf(input: {
 }): DynamicWorkflowRunSubagentState {
   const { terminal, running, waiting, parked, lastAskFailed } = input;
   if (terminal) {
-        // On a terminal run all three live words retire: a row still marked running only means the process died under it.
+    // On a terminal run all three live words retire: a row still marked running only means the process died under it.
     if (running) return "unfinished";
     return lastAskFailed ? "failed" : "done";
   }
@@ -148,8 +148,8 @@ function currentAskOf(
 }
 
 /**
-  * The phase where its current (or last) ask was born; when neither ask can be read, fall back to the actor's own birth phase.
-  * Phase coordinates live only in reducer state, so this queries reducer nodes, not rows.
+ * The phase where its current (or last) ask was born; when neither ask can be read, fall back to the actor's own birth phase.
+ * Phase coordinates live only in reducer state, so this queries reducer nodes, not rows.
  */
 function phaseNameField(input: {
   actor: Pick<ActorRecord, "siteId" | "ordinal">;

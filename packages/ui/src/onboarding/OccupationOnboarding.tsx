@@ -103,7 +103,9 @@ export function OccupationOnboarding({
     setRequested(false);
     if (onboardingRecord) {
       void onboardingRecord.dismissOnboarding(platform.getDeviceId()).catch((cause: unknown) => {
-        logger.warn("[occupation-onboarding] Failed to persist the close decision", { error: String(cause) });
+        logger.warn("[occupation-onboarding] Failed to persist the close decision", {
+          error: String(cause),
+        });
       });
     }
   }, [captureEnd, intl, onboardingRecord, platform, setRequested]);
@@ -172,7 +174,9 @@ export function OccupationOnboarding({
         if (!cancelled) setLatestEntry(entry);
       },
       (cause) => {
-        logger.warn("[occupation-onboarding] Failed to read prefilled answers", { error: String(cause) });
+        logger.warn("[occupation-onboarding] Failed to read prefilled answers", {
+          error: String(cause),
+        });
       },
     );
     return () => {
@@ -256,7 +260,9 @@ export function OccupationOnboarding({
           markOnboarded();
         } catch (cause) {
           // Preferences saved; a record-write failure only warns and never interrupts, and the next startup re-triggers from the record.
-          logger.warn("[occupation-onboarding] Failed to write the onboarding record", { error: String(cause) });
+          logger.warn("[occupation-onboarding] Failed to write the onboarding record", {
+            error: String(cause),
+          });
         }
       }
     } catch (cause) {

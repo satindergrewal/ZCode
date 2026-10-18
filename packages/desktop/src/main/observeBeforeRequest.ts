@@ -4,7 +4,7 @@ type Observer = (details: OnBeforeRequestListenerDetails) => void;
 type RequestSource = Pick<WebRequest, "onBeforeRequest">;
 const sources = new WeakMap<RequestSource, Map<Observer, { urls: string[]; patterns: RegExp[] }>>();
 
-/** Electron 同一事件只保留最后一个 listener，观测者必须共用这个只读分发入口。 */
+/** Electron keeps only the last listener per event; observers must share this read-only dispatch entry. */
 export function subscribeBeforeRequest(
   source: RequestSource,
   urls: string[],
@@ -30,7 +30,7 @@ export function subscribeBeforeRequest(
           try {
             if (entry.patterns.some((pattern) => pattern.test(details.url))) listener(details);
           } catch {
-            /* 观测错误不得阻断网络或其他观测者 */
+            /* Observation errors must never block the network or other observers */
           }
         }
       },

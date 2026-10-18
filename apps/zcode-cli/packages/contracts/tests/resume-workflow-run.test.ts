@@ -7,8 +7,9 @@ import {
   ResumeWorkflowRunOutputSchema,
 } from "../src/tools/resume-workflow-run.js";
 
-// 成功输出只有一个形状：run 恢复后在后台飞行，携勿轮询引导。失败走 ToolHandlerFailure
-// 不进输出 schema，所以这里没有失败形用例（handler 侧的测试钉那五条 reason）。
+// Success has a single output shape: the run flies again in the background carrying do-not-poll
+// guidance. Failures travel as ToolHandlerFailure outside the output schema, so no failure-shape
+// cases here (handler-side tests pin those five reasons).
 const BACKGROUNDED = {
   ok: true,
   runId: "dwfrun-1",
@@ -22,8 +23,8 @@ describe("ResumeWorkflowRun input schema", () => {
     expect(RESUME_WORKFLOW_RUN_TOOL_NAME).toBe("ResumeWorkflowRun");
   });
 
-  // snake_case 随 GetWorkflowRun 的 run_id / TaskOutput 的 task_id：在模型眼里这三个键是
-  // 同一族的 run/task 标识，命名风格分叉只会让它在工具之间猜。
+  // snake_case matching GetWorkflowRun's run_id / TaskOutput's task_id: to the model these three
+  // keys are one run/task family; a style fork only makes it guess across tools.
   it("requires a non-empty snake_case run_id", () => {
     expect(ResumeWorkflowRunInputSchema.parse({ run_id: "dwfrun-1" })).toEqual({
       run_id: "dwfrun-1",
@@ -55,12 +56,13 @@ describe("ResumeWorkflowRun output schema", () => {
     expect(parsed).toEqual(BACKGROUNDED);
   });
 
-  // backgroundTaskId ≡ runId 是取消/查询/通知共用键的恒等式；schema 只钉「在场且非空」，
-  // 等值本身由 handler 构造保证（handler 侧测试钉 ===）。
+  // backgroundTaskId == runId is the identity behind the shared cancel/query/notify key; the
+  // schema pins only "present and non-empty" - equality is the handler constructor's job
+  // (handler-side tests pin ===).
   it("requires every field of the success shape — there is no failure variant here", () => {
-    expect(ResumeWorkflowRunOutputSchema.safeParse({ ...BACKGROUNDED, status: "completed" }).success).toBe(
-      false,
-    );
+    expect(
+      ResumeWorkflowRunOutputSchema.safeParse({ ...BACKGROUNDED, status: "completed" }).success,
+    ).toBe(false);
     expect(
       ResumeWorkflowRunOutputSchema.safeParse({ ...BACKGROUNDED, backgroundTaskId: "" }).success,
     ).toBe(false);

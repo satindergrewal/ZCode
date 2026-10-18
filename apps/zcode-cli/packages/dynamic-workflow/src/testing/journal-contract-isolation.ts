@@ -1,8 +1,11 @@
 /**
- * 修复原因：journal-contract.ts 顶到 oxlint max-lines 上限（400 行），把存储边界隔离与按 runId 作用域的收尾用例拆到本文件；
- * 公开面仍从 journal-contract.ts 导出（`runJournalStoreContract` 按原顺序调用各主题的注册函数）。
+ * Split out because journal-contract.ts hit the oxlint max-lines cap (400 lines): the
+ * storage-boundary isolation and per-runId scoping closing cases live here. The public surface
+ * is still exported from journal-contract.ts (`runJournalStoreContract` calls each topic's
+ * registration function in the original order).
  *
- * 注意：这里只登记 `it(...)`，不另开 describe——套件的分组与用例顺序必须与拆分前逐字相同。
+ * Note: only `it(...)` is registered here, no extra describe — the suite's grouping and case
+ * order must stay verbatim-identical to the pre-split layout.
  */
 
 import { expect, it } from "vitest";
@@ -23,7 +26,7 @@ export function registerIsolationCases(factory: () => JournalStorePort): void {
       result: { nested: { value: 1 } },
     };
     store.putNode(node);
-    // 改动调用方持有的对象不应影响已存记录（存储边界隔离）。
+    // Mutating the caller's object must not touch the stored record (storage-boundary isolation).
     (node.result as { nested: { value: number } }).nested.value = 999;
     const stored = store.getNode("r1", "ask#1", 1);
     expect(stored).toBeDefined();

@@ -8,9 +8,9 @@ import {
 import { FakeDriver, flush } from "./fake-driver.js";
 
 /**
- * 词法出生阶段（docs/execution-engine.md「Identity: sites, ordinals, phases」）：`EngineConfig.sitePhases`
- * 在表里的站点按表打戳，不在表里的退回动态当前阶段。并发的两个 future 各带自己的标记时，
- * 「最近经过的标记」是谁家的全凭时序，表里的阶段才是确认图上用户看到的那个。
+ * Lexical birth phases (docs/execution-engine.md, Identity: sites, ordinals, phases): EngineConfig.sitePhases
+ * stamps tabulated sites from the table and falls back to the dynamic current phase otherwise. When two
+ * the last-passed marker is timing's guess -- the tabulated phase is what the confirmed graph shows users.
  */
 
 const RUN = "run";
@@ -41,8 +41,7 @@ describe("WorkflowEngine — lexical birth phase (sitePhases)", () => {
         ["ask#2", "verify"],
       ]),
     );
-    // 时序：两个 stage 的标记都已经过，当前阶段停在 verify；此时 gather 那一段在 await 之后
-    // 才发出它的 ask——动态戳会说 verify，词法戳说 gather。
+    // Timing: both stages' markers passed, current phase at verify; gather's ask fires after the await,
     engine.enterPhase("gather");
     engine.enterPhase("verify");
     const verifier = engine.createActor("actor#2", "verifier");
@@ -63,7 +62,7 @@ describe("WorkflowEngine — lexical birth phase (sitePhases)", () => {
     );
     expect(queued.get("ask#2@1")).toBe("verify");
     expect(queued.get("ask#1@1")).toBe("gather");
-    // 不在表里的站点退回动态当前阶段。
+    // Off-table sites fall back to the dynamic current phase.
     expect(queued.get("world-read#1@1")).toBe("verify");
   });
 

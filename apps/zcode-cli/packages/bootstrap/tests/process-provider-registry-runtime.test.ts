@@ -274,7 +274,7 @@ describe("process provider registry runtime", () => {
 
   it("未注入 Provider Config 路径时拒绝启动", async () => {
     await expect(startProcessProviderRegistryRuntime({})).rejects.toThrow(
-      "缺少进程 Provider Registry",
+      "Missing ZCode Built-in / Personal Config paths",
     );
   });
 

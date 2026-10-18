@@ -3,14 +3,16 @@ import { cn } from "@/components/lib/utils.js";
 import type { TimelineInk } from "./timeline-model.js";
 
 /**
- * 流轨的 chevron（docs/dynamic-workflow/presentation.md「Stream rails」）：轨道在它可见跨度的正中断开
- * 一截 `STREAM_GAP`，缺口里站着一组 `›››`——三枚相距 5px、每枚 2.6 × 6.4、描边 1.35、圆头圆角，朝流的
- * 方向。墨在 chevron 上：`faint`（还什么都没过去）是 workflow-trace，`strong`（过去过、此刻没在过）是
- * workflow-trace-strong，`march`（两端都在跑，东西正在过）是警示色，三枚沿流向依次亮起
- * （`wf-stream-flow`，1.2s 一轮、相隔 0.15s）。轨道本身不动；动的只有 chevron。
+ * The stream rail's chevrons (docs/dynamic-workflow/presentation.md "Stream rails"): the rail breaks a
+ * `STREAM_GAP` at the middle of its visible span and a group of `›››` stands in the gap — three, 5px
+ * apart, each 2.6 × 6.4, stroke 1.35, round caps, facing the stream's direction. Ink on the chevron:
+ * `faint` (nothing through yet) is workflow-trace, `strong` (passed, not passing now) is
+ * workflow-trace-strong, `march` (both ends live, things passing) warning color, the three lighting in
+ * stream order (`wf-stream-flow`, 1.2s per cycle, 0.15s apart). The rail itself never moves; only the
+ * chevron does.
  *
- * 画在 SVG 坐标里（卡的弧层、带的轨道层都是 SVG）；站头行的 DOM 轨道用 {@link StreamChevronsBox}
- * 包一层小 SVG。脊线竖着用，两枚、朝下。
+ * Drawn in SVG coordinates (the card's arc layer and the branch rail layer are SVG); the header row's
+ * DOM rail wraps {@link StreamChevronsBox} around a small SVG. On spines it renders vertically, two, pointing down.
  */
 export const STREAM_GAP = 22;
 const PITCH = 5;
@@ -26,7 +28,7 @@ const STROKE: Record<TimelineInk, string> = {
 
 export type StreamDirection = "right" | "left" | "down";
 
-/** 一组 chevron 的路径（纯函数）：中心在 (x, y)，`count` 枚沿 `direction` 排开并朝它指。 */
+/** Path for a chevron group (pure): centered at (x, y), `count` chevrons laid out along `direction`, pointing that way. */
 export function streamChevronPaths(
   x: number,
   y: number,
@@ -71,7 +73,7 @@ export function StreamChevrons({
           strokeLinecap="round"
           strokeLinejoin="round"
           strokeWidth={1.35}
-          // 依次亮起：沿流向第 k 枚晚 0.15s·k。
+          // Lit in sequence: the kth along the stream delays 0.15s × k.
           style={flowing ? { animationDelay: `${k * STAGGER_S}s` } : undefined}
         />
       ))}
@@ -79,7 +81,7 @@ export function StreamChevrons({
   );
 }
 
-/** DOM 里用的一小块 SVG：中心贴在宿主的 (left, top)，宿主负责把自己的线在这里断开。 */
+/** A small SVG for DOM use: centered on the host's (left, top); the host breaks its own line for it. */
 export function StreamChevronsBox({
   count = 3,
   direction = "right",

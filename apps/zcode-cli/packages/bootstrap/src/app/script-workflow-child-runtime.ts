@@ -51,12 +51,12 @@ export interface ScriptWorkflowAgentRuntimeDeps {
   pdfDocumentPort?: PdfDocumentPort;
   logger: Logger;
   mcpPort?: McpPort;
-  /** 父会话的 model factory：child 与主 turn 从同一份 Registry 视图造 Model，不各自冻结。 */
+  /** The parent session's model factory: child and main turn build Models from the same Registry view, no separate freezing. */
   modelFactory: NonNullable<AgentRuntimeDeps["modelFactory"]>;
   permissionService: PermissionService;
   /**
-   * 插件的技能根（主会话 skill 端口的同一份 `pluginOutcome.skillRoots`）。捆绑技能根不在内：
-   * 那里只有 dynamic-workflows，子代理不能起工作流。
+   * Plugin skill roots (the main-session skill port's same `pluginOutcome.skillRoots`). Bundled roots excluded:
+   // only dynamic-workflows lives there, and subagents must not start workflows.
    */
   pluginSkillRoots: readonly SkillRoot[];
   runtime: AgentRuntime;
@@ -73,50 +73,50 @@ export function createScriptWorkflowAgentRuntime(input: {
   request: WorkflowAgentCallInput;
   traceContext: TraceContext;
   /**
-   * 覆盖 child runtime 的配置切片。dwf actor 用它落工具面：`workflowActorToolPolicy` 给出
-   * `toolDisallowlist`（全集的减法），而 `request.opts.tools` 只能表达 allowlist——两者不是
-   * 同一个自由度。
+   * Overrides the child runtime's config slice. dwf actors land the tool surface through it: `workflowActorToolPolicy` yields a
+   * `toolDisallowlist` (subtraction of the full set) while `request.opts.tools` can only express an allowlist -- not
+   * the same degree of freedom.
    */
   configOverrides?: Partial<AgentRuntimeConfig>;
   /**
-   * 会话级 submit 端口。注入即为该会话注册 submit_result 工具（core 的注册门以端口存在为准），
-   * 这是 dwf typed ask 的终止通道。
+   * Session-level submit port. Injecting it registers the submit_result tool for that session (core's registration gate keys on the port's presence);
+   * it is the termination channel for dwf typed asks.
    */
   workflowSubmitPort?: WorkflowSubmitPort;
   /**
-   * mono 子代理的 typed `submit_result` 声明：
-   * 在场时 core 注册 `{ result: <schema> }` 而非任意 JSON。只与 workflowSubmitPort 同在时有意义。
+   * The mono subagent's typed `submit_result` declaration:
+   * when present, core registers `{ result: <schema> }` instead of arbitrary JSON. Meaningful only alongside workflowSubmitPort.
    */
   workflowSubmitSchema?: JsonSchema;
   /**
-   * 会话级升级端口。注入即为该会话注册 `escalate` 工具
-   * （core 的注册门同样以端口存在为准），这是 actor 遇到真阻塞时唯一的求助通道。
+   * Session-level escalation port. Injecting it registers the `escalate` tool
+   * (the registration gate again keys on presence) -- the actor's only help channel when truly blocked.
    */
   workflowEscalatePort?: WorkflowEscalatePort;
   /**
-   * 模型请求准入端口。dwf actor 由 driver
-   * 给出（每次模型请求尝试先过进程级闸门）；legacy `Workflow` 工具的子代理不传——不受闸门约束、
-   * 不喂信号。与两个工具端口同路进 runtime deps。
+   * Model-request admission port. Provided by the driver for dwf actors
+   * (every model-request attempt passes the process-wide gate first); legacy `Workflow`-tool subagents omit it --
+   * ungated and signal-free. Enters runtime deps alongside the two tool ports.
    */
   modelRequestAdmission?: ModelRequestAdmission;
   /**
-   * 交互请求 origin 上的 `description`（权限窗来源徽标的文字）。dwf actor 由工厂给出
-   * `<persona 名> (<siteId>@<ordinal>)`（workflow-actor-permission.ts）；缺席时回落到
-   * `request.opts.label` / agentType（legacy workflow child 的既有行为）。
+   * The `description` on the interaction request's origin (permission-dialog source badge text). For dwf actors the factory supplies
+   `<persona name> (<siteId>@<ordinal>)` (workflow-actor-permission.ts); on absence fall back to
+   `request.opts.label` / agentType (legacy workflow child's existing behavior).
    */
   interactionDescription?: string;
   /**
-   * **父会话**的浏览器端口（主 runtime 用的那一份）。在场即给子代理 Browser Use：这里用
-   * `forChildSession` 派生出子端口——tab 归属是子会话自己的 id，workspace / clientMode 取父会话，
-   * runtime 关闭时连 tab 一起关并撤销登记。只有 dwf actor 传：它的 runtime 在 run dispose 时必然
-   * `closeBrowserSession`；legacy workflow child 没有关闭链路，不传
+   * The **parent session's** browser port (the one the main runtime uses). Present = the subagent gets Browser Use: derive a child via
+   `forChildSession` — tab ownership is the child session's own id, workspace/clientMode from the parent,
+   // and runtime shutdown closes the tabs and revokes registration. Only the dwf actor passes it: its runtime always
+   // closeBrowserSession on run dispose; the legacy workflow child has no shutdown path and passes nothing.
    * （apps/zcode-cli/packages/dynamic-workflow/docs/execution-engine.md「Subagent sessions」）。
    */
   browserControlPort?: BrowserControlPort;
 }): AgentRuntime {
-  // dwf actor 经 configOverrides.workflowActor 走 builder 的叠加路径，此时 systemPrompt 必须
-  // 缺席（builder 对二者同在抛错）——父会话自带的 custom system prompt 不得漏给子代理，所以
-  // 从继承的配置里把它剥掉，而不是靠后面的覆盖。
+  // A dwf actor goes through configOverrides.workflowActor, the builder's overlay path, where systemPrompt must
+  // be absent (the builder throws when both are set) -- the parent's custom system prompt must still reach the child, so
+  // strip it from the inherited config rather than relying on a later override.
   const { systemPrompt: inheritedSystemPrompt, ...inheritedConfig } = input.deps.runtimeConfig;
   const systemPrompt =
     input.configOverrides?.workflowActor === undefined
@@ -137,16 +137,16 @@ export function createScriptWorkflowAgentRuntime(input: {
       ...(systemPrompt === undefined ? {} : { systemPrompt }),
       agentName: input.request.opts?.agentType ?? "zcode-workflow",
       maxTurns: input.request.opts?.maxTurns ?? input.deps.runtimeConfig.maxTurns,
-      // 基线 YOLO，父任务仍保留自己的 Guarded。legacy script workflow child 就停在这里；dwf actor
-      // 经 configOverrides 覆盖成 run 记下的模式（docs/dynamic-workflow/launch.md
+      // Baseline YOLO; the parent task keeps its own Guarded. The legacy script workflow child stops here; the dwf actor
+      // overrides via configOverrides to the mode recorded on the run (docs/dynamic-workflow/launch.md
       // 「Permissions inside a run」）。
       mode: "yolo",
       modelSelection,
       parentSessionId: input.deps.sessionId,
       subagents: { enabled: false },
       taskType: "workflow_child",
-      // actor 只存在于一次 run 之下，天然「已激活」（launch.md「On demand: activation」Children 段）：
-      // 不继承父会话的按需标志，否则 spread 会把 onDemand 带进来而子会话里没有任何激活入口。
+      // An actor exists only under one run, hence born activated (launch.md "On demand: activation", Children):
+      // never inherit the parent's onDemand flag, or the spread carries onDemand into a child with no activation entrypoint.
       dynamicWorkflowToolsOnDemand: false,
       toolAllowlist: input.request.opts?.tools,
       workingDirectory: input.deps.workingDirectory,
@@ -154,10 +154,10 @@ export function createScriptWorkflowAgentRuntime(input: {
     },
     {
       ...createRuntimeDeps(input.deps, input.traceContext, input.childSessionId, {
-        // 对外交互端口只能由父 runtime 铸造：子会话不是客户端认识的身份。
-        // 这里过去直接用 `appOptions.providerRuntimeHeadersPort` /
-        // `deps.permissionBroker`，于是 actor 带着 `sess_dwf-…` 去问桌面，桌面
-        // `requireSession` 抛错、response 永不发出，子代理在首个模型请求前挂死。
+        // Outbound interaction ports can only be minted by the parent runtime: child sessions are not identities the client knows.
+        // This used to pass `appOptions.providerRuntimeHeadersPort` /
+        // `deps.permissionBroker` straight through, so the actor asked the desktop as `sess_dwf-...`, the desktop's
+        // requireSession threw, the response never went out, and the child hung before its first model request.
         agentId: input.childSessionId,
         agentType: input.request.opts?.agentType ?? "zcode-workflow",
         childSessionId: input.childSessionId,
@@ -183,9 +183,7 @@ export function createScriptWorkflowAgentRuntime(input: {
       ...(input.workflowSubmitPort && input.workflowSubmitSchema
         ? { workflowSubmitSchema: input.workflowSubmitSchema }
         : {}),
-      ...(input.workflowEscalatePort
-        ? { workflowEscalatePort: input.workflowEscalatePort }
-        : {}),
+      ...(input.workflowEscalatePort ? { workflowEscalatePort: input.workflowEscalatePort } : {}),
       ...(input.modelRequestAdmission
         ? { modelRequestAdmission: input.modelRequestAdmission }
         : {}),
@@ -202,7 +200,7 @@ function createRuntimeDeps(
   return {
     agentTelemetry: deps.agentTelemetry,
     agentTelemetryCausation: deps.agentTelemetry.captureCausation(),
-    // Script workflow child 具有独立生命周期；用 Link 保留发起关系。
+    // Script workflow children own their lifecycle; a Link keeps the origin relationship.
     agentTelemetryCausationMode: "linked_root",
     appVersion: deps.appVersion,
     artifactStore: deps.artifactStore,
@@ -210,28 +208,28 @@ function createRuntimeDeps(
       deps.contextSourcePort ??
       deps.appOptions.contextSourcePort ??
       createNodeContextSourceAdapter({ env: deps.appOptions.env }),
-    // 直播通道（照 subagent 同款）：原始子会话事件只**通知**父 runtime 的外部 sink 集，
-    // 保留子 sessionId 让协议层按 detached live session 路由；父侧不再 append，
-    // 所以共享 store 里每条事件恰好一份。
+    // Live channel (mirroring subagents): raw child events only **notify** the parent runtime's external sink set;
+    // the child sessionId is kept so the protocol routes it as a detached live session; the parent no longer appends,
+    // so each event exists exactly once in the shared store.
     //
-    // 必须在**构造期**装：`ensureSessionPersistedForExternalActivity` 把 SessionTitleUpdated
-    // 写成 sequenceNumber 1，而 v4 网关只排水连续 seq——构造之后才挂的订阅从 seq 2 起，
-    // 会永远等一个再也不会来的 seq 1（这正是旧 subscribeEvents 通道从未直播成功的原因）。
+    // Must be installed at **construction**: `ensureSessionPersistedForExternalActivity` writes SessionTitleUpdated
+    // as sequenceNumber 1, and the v4 gateway drains only contiguous seq -- a subscription attached later starts at seq 2
+    // and waits forever for a seq 1 that never comes (why the legacy subscribeEvents channel never lived-streamed).
     eventSink: {
       onSessionEvent: async (event) => {
         await deps.runtime.notifyExternalChildSessionEvent({
           childSessionId,
           event,
           traceContext,
-          // 交互事件另镜像到父会话：确认窗只从父会话投影生成（与 createChildClientPorts 同一份
-          // 归属，docs/dynamic-workflow/launch.md「Permissions inside a run」）。
+          // Interaction events mirror to the parent session too: the confirm dialog comes only from the parent's projection (same
+          // attribution as createChildClientPorts, docs/dynamic-workflow/launch.md "Permissions inside a run").
           interactionOrigin: clientPortsContext,
         });
       },
     },
-    // 与父 runtime 共享 event store：子事件按子自己的 sessionId 落在同一个 store 里，
-    // v4 的 `loadPersistedEvents(childSessionId)` 因此命中。私建内存 store 时它永远读不到，
-    // transcript 就是永久空白（照 subagent.ts 的 `eventStore: this.eventStore`）。
+    // Share the parent runtime's event store: child events land in the same store under the child's own sessionId,
+    // so v4's `loadPersistedEvents(childSessionId)` hits. With a private in-memory store it would read nothing
+    // and the transcript stays blank forever (as in subagent.ts's `eventStore: this.eventStore`).
     eventStore: deps.runtime.getSessionEventStore(),
     executionPort:
       deps.appOptions.executionPort ??
@@ -262,7 +260,7 @@ function createRuntimeDeps(
     mcpPort: deps.mcpPort,
     modelFactory: deps.modelFactory,
     resolveEffectiveModelSelection: deps.appOptions.resolveEffectiveModelSelection,
-    // permissionBroker + providerRuntimeHeadersPort 都在这里面：父 runtime 派生，路由身份已改写成父会话。
+    // permissionBroker + providerRuntimeHeadersPort live in there: parent-runtime derived, routing identity rewritten to the parent session.
     ...deps.runtime.createChildClientPorts(clientPortsContext),
     permissionService: deps.permissionService,
     sessionStore: deps.sessionStore,
@@ -272,10 +270,10 @@ function createRuntimeDeps(
 }
 
 /**
- * workflow child 的技能端口：用户配置根 + 插件技能根，禁用路径照主会话。
+ * The workflow child's skill ports: user config roots + plugin skill roots; disabled paths mirror the main session.
  *
- * Bug 根因（2026-09-30）：这里原先只带用户配置的 roots，插件技能根是后来才加到主会话那一份上的，
- * child 这边漂掉了——dwf 子代理看不见 browser-use 的 control-browser，只能自己翻插件目录摸索。
+ * Root cause (2026-09-30): this used to carry only user-config roots; plugin skill roots were later added to the main session's copy and
+ // the child drifted — dwf subagents could not see browser-use's control-browser and had to forage the plugin dirs.
  */
 export function createWorkflowChildSkillPort(
   deps: Pick<ScriptWorkflowAgentRuntimeDeps, "appOptions" | "configResult" | "pluginSkillRoots">,
@@ -288,7 +286,7 @@ export function createWorkflowChildSkillPort(
     createNodeSkillAdapter({
       extraRoots: deps.configResult.config.skills.roots,
       extraResolvedRoots: [...deps.pluginSkillRoots],
-      // 脚本 workflow child runtime 不能绕过用户禁用的 SKILL.md 路径。
+      // Script workflow child runtimes must not bypass user-disabled SKILL.md paths.
       disabledPaths: collectDisabledPaths(deps.configResult.config.skillOverrides),
     })
   );

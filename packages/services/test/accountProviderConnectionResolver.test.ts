@@ -256,7 +256,9 @@ describe("createAccountProviderConnectionResolver", () => {
           },
         };
       release();
-      await expect(pending).rejects.toThrow("账号查询期间");
+      await expect(pending).rejects.toThrow(
+        "Connection or identity changed during the account query",
+      );
       wait = false;
       identity = "account-b";
       const next = await resolve(input);

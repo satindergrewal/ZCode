@@ -1,26 +1,20 @@
 import type { FeedbackTicketEvent, FeedbackTicketStatus } from "@zcode/shared";
-import {
-  FEEDBACK_STATUS_MESSAGE_IDS,
-  formatFeedbackStatusLabel,
-} from "@/feedback/feedbackMeta.js";
+import { FEEDBACK_STATUS_MESSAGE_IDS, formatFeedbackStatusLabel } from "@/feedback/feedbackMeta.js";
 
-type MessageFormatter = (
-  descriptor: { id: string },
-  values?: Record<string, string>,
-) => string;
+type MessageFormatter = (descriptor: { id: string }, values?: Record<string, string>) => string;
 
 export function getUserFacingEventSummary(
   event: FeedbackTicketEvent,
   formatMessage?: MessageFormatter,
 ) {
   const normalizedSummary = event.summary.trim();
-  // Bugfix: 后端事件摘要会持久化为中文，切到英文后历史数据仍会原样透出。
-  // 这里仅翻译已知系统摘要，保留用户/运营手写内容，避免误改真实回复。
+  // Bugfix: backend event summaries persist as zh and would show verbatim after a locale switch.
+  // Translate known system summaries only; handwritten user/staff content stays untouched.
   const knownSummary = formatKnownSystemEventSummary(normalizedSummary, formatMessage);
   if (knownSummary) {
     return knownSummary;
   }
-  // Bugfix: 用户侧只需要理解「产品经理 / 研发」两个处理身份，不能把具体开发姓名透出。
+  // Bugfix: the user view exposes only the PM/dev roles, never concrete engineer names.
   if (event.type === "assignee_changed" && /^已交由 .+ 跟进$/.test(normalizedSummary)) {
     return formatOptionalMessage(
       formatMessage,
@@ -31,10 +25,7 @@ export function getUserFacingEventSummary(
   return event.summary;
 }
 
-function formatKnownSystemEventSummary(
-  summary: string,
-  formatMessage?: MessageFormatter,
-) {
+function formatKnownSystemEventSummary(summary: string, formatMessage?: MessageFormatter) {
   const directMessageId = getKnownSystemSummaryMessageId(summary);
   if (directMessageId) {
     return formatOptionalMessage(formatMessage, directMessageId, summary);
@@ -55,12 +46,9 @@ function formatKnownSystemEventSummary(
   const agentSubmitted = summary.match(/^(.+) 通过 Agent 提交反馈$/);
   if (agentSubmitted) {
     const name = agentSubmitted[1] ?? "";
-    return formatOptionalMessage(
-      formatMessage,
-      "feedback.timeline.event.agentSubmitted",
-      summary,
-      { name },
-    );
+    return formatOptionalMessage(formatMessage, "feedback.timeline.event.agentSubmitted", summary, {
+      name,
+    });
   }
 
   const progressWithStatus = summary.match(/^进度更新（状态→(.+)）：(.+)$/);
@@ -86,12 +74,10 @@ function formatKnownSystemEventSummary(
     const status = toKnownFeedbackStatus(markedStatus[1]);
     const message = markedStatus[2] ?? "";
     if (!status) return summary;
-    return formatOptionalMessage(
-      formatMessage,
-      "feedback.timeline.event.markedStatus",
-      summary,
-      { status: formatStatusLabel(status, formatMessage), message },
-    );
+    return formatOptionalMessage(formatMessage, "feedback.timeline.event.markedStatus", summary, {
+      status: formatStatusLabel(status, formatMessage),
+      message,
+    });
   }
 
   return null;
@@ -117,10 +103,7 @@ function getKnownSystemSummaryMessageId(summary: string) {
   }
 }
 
-function formatProgressWithMessage(
-  message: string,
-  formatMessage?: MessageFormatter,
-) {
+function formatProgressWithMessage(message: string, formatMessage?: MessageFormatter) {
   return formatOptionalMessage(
     formatMessage,
     "feedback.timeline.event.progressUpdatedWithMessage",
@@ -134,10 +117,7 @@ function toKnownFeedbackStatus(value: string | undefined): FeedbackTicketStatus 
   return value in FEEDBACK_STATUS_MESSAGE_IDS ? (value as FeedbackTicketStatus) : null;
 }
 
-function formatStatusLabel(
-  status: FeedbackTicketStatus,
-  formatMessage?: MessageFormatter,
-) {
+function formatStatusLabel(status: FeedbackTicketStatus, formatMessage?: MessageFormatter) {
   if (!formatMessage) return status;
   return formatFeedbackStatusLabel(status, formatMessage);
 }

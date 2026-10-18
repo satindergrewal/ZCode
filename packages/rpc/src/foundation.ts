@@ -73,7 +73,7 @@ export namespace Event {
   /** An event that never fires */
   export const None: Event<any> = () => ({ dispose() {} });
 
-/** Fires once, then unsubscribes automatically */
+  /** Fires once, then unsubscribes automatically */
   export function once<T>(event: Event<T>): Event<T> {
     return (listener) => {
       let fired = false;

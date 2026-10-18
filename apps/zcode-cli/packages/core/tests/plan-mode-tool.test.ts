@@ -14,10 +14,7 @@ import {
 } from "@zcode/contracts";
 import { PermissionService, defaultPermissionConfig } from "../src/permission/service.js";
 import { createToolExecutor } from "../src/tool/executor.js";
-import {
-  enterPlanModeToolEntry,
-  exitPlanModeToolEntry,
-} from "../src/tool/handlers/plan-mode.js";
+import { enterPlanModeToolEntry, exitPlanModeToolEntry } from "../src/tool/handlers/plan-mode.js";
 import { createToolRegistry } from "../src/tool/registry.js";
 import { MemoryFileSystem } from "./memory-test-utils.js";
 

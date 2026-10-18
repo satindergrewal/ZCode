@@ -48,8 +48,8 @@ export async function runRegularTurnLoop(
   while (true) {
     throwIfTurnAborted(state.turnAbortSignal);
     const outputTokenRecoveryActive = state.turnRequestState.outputTokenContinuationCount > 0;
-    // guide 只允许由完整 tool result batch 设置这个一次性诊断；普通 queue 不在
-    // model roundtrip 起点消费，避免把未来 turn 错并入当前 product turn。
+    // Only full tool-result batches set this one-shot diagnostic; plain queues are not
+    // consumed at roundtrip start; future stays out of this product turn.
     const drainedSteerForNextRequest = state.drainedSteerForNextRequest;
     state.drainedSteerForNextRequest = undefined;
 
@@ -115,7 +115,7 @@ export async function runRegularTurnLoop(
 
     const finishMcp = beginLocalTurnPreparation(state.turnTraceContext, "mcp");
     await this.initializeMcp(state.turnTraceContext);
-    // tools/list_changed 只在回合开始前生效。
+    // tools/list_changed takes effect only before a turn starts.
     await this.refreshMcpToolsIfChanged(state.turnTraceContext);
     finishMcp();
     throwIfTurnAborted(state.turnAbortSignal);
@@ -167,23 +167,23 @@ export async function runRegularTurnLoop(
         ? buildRuntimeOutputStyleReminderBody(state.turnOutputStyle)
         : null;
     if (outputStyleReminderBody) {
-      // output_style 是 provider-visible 的当前 turn runtime attachment，
-      // 需要进入内存历史参与后续 request 的增量轨迹；但不把它落 session。
+      // output_style is a provider-visible current-turn attachment;
+      // it enters memory history for later deltas, never the session.
       commitTurnRequestEntries(this, state.turnRequestState, [
         systemReminderAttachmentEntry("output_style", outputStyleReminderBody),
       ]);
     }
-    // （2026-09-12）：原"回合开始注入 plugin_ui_state reminder"已删除，插件给模型的信息
-    // 一律走 ui/update-model-context。
+    // (2026-09-12): the old "inject plugin_ui_state reminder at turn start" is gone; plugin info reaches the model
+    // exclusively via ui/update-model-context.
     const providerEntries = [...state.turnRequestState.entries];
-    // Dream 可能在同一 turn 的首个模型请求期间完成；每次 attachment collection 都检查，
-    // 才能把一次性更新放进紧随其后的模型请求，而不是延迟到下一次用户输入。
+    // Dream may complete during the turn's first model request; checking on every attachment collection is what places
+    // the one-shot update in the immediately following model request instead of the next user input.
     const memoryUpdate = outputTokenRecoveryActive
       ? undefined
       : consumePendingProjectMemoryUpdate(this);
     const requestEntries = memoryUpdate ? [...providerEntries, memoryUpdate] : providerEntries;
-    // 修复原因：provider-visible user ordering projection 会改变最终 latest user 落点，
-    // cache-control 必须在 projection 后统一设置，避免 raw synthetic entry 抢占缓存锚点。
+    // Why: the provider-visible user ordering projection moves the final latest-user landing spot,
+    // set cache-control after it, or raw synthetic entries take the anchor.
     const providerProjection = buildRuntimeProviderRequestMessages(this, {
       entries: requestEntries,
       applyCacheControl: true,
@@ -206,8 +206,8 @@ export async function runRegularTurnLoop(
       ),
     );
 
-    // 生产包需要知道 Turn 是否已经跨过 provider 边界；这里只记录请求元数据，
-    // 不记录 prompt、消息内容或 streaming chunk，避免泄露内容并控制日志量。
+    // Production needs the crossed-provider fact; log request metadata only,
+    // no prompts, bodies or chunks — privacy and volume.
     this.logger?.info("Model request started", {
       ...traceContextToLogContext(state.turnTraceContext),
       event: "model.request.started",

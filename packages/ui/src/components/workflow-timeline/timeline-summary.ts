@@ -56,7 +56,8 @@ export function workflowPhasesDetail(
   graph: WorkflowCausalityGraphData | undefined,
 ): string {
   const counts = timelineCounts(model, graph);
-  // 还开着的留白不算阶段（docs/dynamic-workflow/presentation.md「Holes on the timeline」）：「2 个阶段 · 2 处留白」。
+  // Open holes do not count as phases (docs/dynamic-workflow/presentation.md Holes on the timeline):
+  // 2 phases, 2 holes.
   const holes = model.stations.filter(
     (station) => station.hole !== undefined && station.hole.state !== "filled",
   ).length;

@@ -79,11 +79,7 @@ describe("shell init snapshot cleanup", () => {
       await expect(stat(freshSnapshot)).resolves.toBeDefined();
       await expect(stat(staleTextFile)).resolves.toBeDefined();
       await expect(stat(staleNestedSnapshot)).resolves.toBeDefined();
-      await expect(readdir(snapshotsDir)).resolves.toEqual([
-        "fresh.sh",
-        "nested",
-        "stale.txt",
-      ]);
+      await expect(readdir(snapshotsDir)).resolves.toEqual(["fresh.sh", "nested", "stale.txt"]);
     } finally {
       await rm(rootDir, { recursive: true, force: true });
     }

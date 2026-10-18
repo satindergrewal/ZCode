@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 网络指标采集/聚合/ARMS 上报 */
+/* eslint-disable max-lines -- network metric capture / aggregation / ARMS reporting */
 import armsRum from "@arms/rum-electron";
 import { mapZCodeEnvToArmsRumEnv } from "@zcode/shared";
 import type { NetworkObservation } from "@zcode/rpc";
@@ -11,7 +11,7 @@ import {
 } from "./networkTelemetryAggregator.js";
 import { desktopRuntimeEnv } from "./desktopRuntimeEnv.js";
 
-/** 与资源指标对齐：开发 1min、生产 5min 聚合上报 */
+/** Aligned with resource metrics: 1min in development, 5min in production. */
 export const NETWORK_REPORT_INTERVAL_MS = desktopRuntimeEnv === "development" ? 60_000 : 300_000;
 
 interface NetworkLogger {
@@ -91,7 +91,8 @@ function reportInterfaceStats(stats: InterfaceNetworkStats): void {
     success_count: stats.successCount,
     fail_count: stats.failCount,
     retry_count: stats.retryCount,
-    // value 已表达 duration mean；阶段耗时只保留 mean，给 counts 与主错误归因留固定预算。
+    // value already carries the duration mean; per-phase timing keeps only the mean, reserving
+    // fixed budget for counts and primary-error attribution.
     duration_ms_peak: stats.duration.peak,
     duration_ms_p95: stats.duration.p95,
     duration_ms_sample_count: stats.duration.sample_count,
@@ -139,7 +140,7 @@ export function ingestHostNetworkObservations(observations: NetworkObservation[]
   }
 }
 
-/** 远控 relay WebSocket：接口维度固定为 web_remote_control.relay */
+/** Remote-control relay WebSocket: fixed interface dimension web_remote_control.relay. */
 export const WEB_REMOTE_RELAY_INTERFACE = "web_remote_control.relay";
 
 export function noteWebRemoteRelayConnectAttempt(

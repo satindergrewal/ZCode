@@ -13,9 +13,9 @@ const DWF_USAGE = "Usage: /dwf [list|cancel [runId]|resume <runId>]";
 const DWF_LIST_LIMIT = 20;
 
 /**
-  * Status set of non-terminal runs. It is exactly the candidate set when /dwf cancel lacks a runId:
-  * pending means created-not-started, running means in flight -- both still have something to cancel;
-  * completed / errored / stopped are settled, cancellation is meaningless.
+ * Status set of non-terminal runs. It is exactly the candidate set when /dwf cancel lacks a runId:
+ * pending means created-not-started, running means in flight -- both still have something to cancel;
+ * completed / errored / stopped are settled, cancellation is meaningless.
  */
 const IN_FLIGHT_STATUSES: readonly DynamicWorkflowRunSessionSummary["status"][] = [
   "pending",
@@ -40,7 +40,7 @@ export async function handleDwfCommand(
   }
 
   if (action === "resume") {
-    // resume 会起引擎，disabled 下在问服务端之前拒绝；list / cancel 不起引擎，照常。
+    // resume boots the engine and is rejected before the server is asked when disabled; list / cancel never boot the engine and behave as usual.
     if (!isWorkflowModeEnabled(deps.workflowMode)) return respond(deps, WORKFLOW_DISABLED_NOTICE);
     if (!runId) return respond(deps, DWF_USAGE);
     if (!app.resumeWorkflowRun) return unavailable(deps);
@@ -65,8 +65,8 @@ async function handleCancel(
 
   let targetRunId = runId;
   if (!targetRunId) {
-        // Without a runId, decide for the user only when exactly one run is in flight. With several, list them and let the user name one:
-        // cancelling spends money and drops progress, so a wrong guess is asymmetric.
+    // Without a runId, decide for the user only when exactly one run is in flight. With several, list them and let the user name one:
+    // cancelling spends money and drops progress, so a wrong guess is asymmetric.
     if (!app.listDynamicWorkflowRuns) return respond(deps, DWF_USAGE);
     const runs = await app.listDynamicWorkflowRuns({ limit: DWF_LIST_LIMIT });
     const inFlight = runs.filter((run) => IN_FLIGHT_STATUSES.includes(run.status));
@@ -87,7 +87,7 @@ async function handleCancel(
     targetRunId = inFlight[0]!.runId;
   }
 
-    // runId = taskId: the workflow run registers in the background-task registry under its runId.
+  // runId = taskId: the workflow run registers in the background-task registry under its runId.
   const result = await app.cancelBackgroundTask(targetRunId);
   if (!result.cancelled) {
     const reason = result.reason ? `: ${result.reason}` : ".";
@@ -109,28 +109,28 @@ function formatRunList(runs: DynamicWorkflowRunSessionSummary[]): string {
 }
 
 /**
-  * One line = runId, label, status, resumable, updated, plus the failure suffix.
+ * One line = runId, label, status, resumable, updated, plus the failure suffix.
  *
-  * label and updatedAt are additive optional (older servers omit both): the label falls back to runId and the time is
-  * omitted entirely. A missing column is degradation, not an error -- never hide the whole row for it. When label equals runId
-  * it is not reprinted: the server's final fallback tier is runId, and copying yields dwfrun_x dwfrun_x.
+ * label and updatedAt are additive optional (older servers omit both): the label falls back to runId and the time is
+ * omitted entirely. A missing column is degradation, not an error -- never hide the whole row for it. When label equals runId
+ * it is not reprinted: the server's final fallback tier is runId, and copying yields dwfrun_x dwfrun_x.
  */
 function formatRunLine(run: DynamicWorkflowRunSessionSummary): string {
   const columns = [run.runId];
   const label = run.label ?? run.runId;
   if (label !== run.runId) columns.push(label);
-    // stopped carries its reason word: stopped/provider.
+  // stopped carries its reason word: stopped/provider.
   columns.push(run.stopReason === undefined ? run.status : `${run.status}/${run.stopReason}`);
-    // resumable prints the server's verdict verbatim, never re-derived from status + failureCode:
-    // the two predicates will disagree someday, and then the hint would say resumable for a command that gets rejected.
+  // resumable prints the server's verdict verbatim, never re-derived from status + failureCode:
+  // the two predicates will disagree someday, and then the hint would say resumable for a command that gets rejected.
   if (run.resumable) columns.push("resumable");
   if (run.updatedAt !== undefined) columns.push(`updated ${formatUpdatedAt(run.updatedAt)}`);
   return `${columns.join(" · ")}${formatFailure(run)}`;
 }
 
 /**
-  * Epoch ms -> readable time. Local-timezone ISO-like short format: the terminal user reads their own machine's clock,
-  * while UTC's Z suffix demands a mental conversion in every local incident.
+ * Epoch ms -> readable time. Local-timezone ISO-like short format: the terminal user reads their own machine's clock,
+ * while UTC's Z suffix demands a mental conversion in every local incident.
  */
 function formatUpdatedAt(updatedAt: number): string {
   const date = new Date(updatedAt);

@@ -3,9 +3,14 @@ import { parseMarkdownFrontmatter } from "../src/plugins/markdown-frontmatter.js
 
 describe("parseMarkdownFrontmatter", () => {
   it("reads a plain single-line description", () => {
-    const content = ["---", "name: airtable-overview", "description: Explains the data model.", "---", "", "# Body"].join(
-      "\n",
-    );
+    const content = [
+      "---",
+      "name: airtable-overview",
+      "description: Explains the data model.",
+      "---",
+      "",
+      "# Body",
+    ].join("\n");
     expect(parseMarkdownFrontmatter(content)).toEqual({
       name: "airtable-overview",
       description: "Explains the data model.",
@@ -33,18 +38,14 @@ describe("parseMarkdownFrontmatter", () => {
   });
 
   it("keeps newlines for a `|` literal block scalar", () => {
-    const content = [
-      "---",
-      "description: |",
-      "  line one",
-      "  line two",
-      "---",
-    ].join("\n");
+    const content = ["---", "description: |", "  line one", "  line two", "---"].join("\n");
     expect(parseMarkdownFrontmatter(content).description).toBe("line one\nline two");
   });
 
   it("strips surrounding quotes from scalar values", () => {
-    const content = ["---", 'name: "quoted-name"', "description: 'single quoted'", "---"].join("\n");
+    const content = ["---", 'name: "quoted-name"', "description: 'single quoted'", "---"].join(
+      "\n",
+    );
     expect(parseMarkdownFrontmatter(content)).toEqual({
       name: "quoted-name",
       description: "single quoted",

@@ -37,7 +37,7 @@ describe("settings model provider upgrade intent", () => {
     expect(detailSource).toContain("useCodingPlanUpgradeDialog");
     expect(detailSource).toContain("openCodingPlanUpgrade({");
     expect(statusCardsSource).toContain("onOpenUpgradePlans");
-    expect(statusCardsSource).toContain("由弹窗 hook 承载购买面板");
+    expect(statusCardsSource).toContain("the dialog hook owns the purchase panel");
     expect(statusCardsSource).not.toContain('openUpgradePlans(\n            "personal"');
     expect(detailSource).toContain("initialTeamPlanKey:");
     expect(statusCardsSource).toContain(

@@ -208,7 +208,7 @@ test("parses all supported SEA targets", () => {
 });
 
 test("uses node-binary targets when no explicit target selector is provided", () => {
-  // Windows 会按宿主路径规则解析 binary 路径，不能硬编码 POSIX 绝对路径作为预期。
+  // Windows resolves the binary path by host rules; a hardcoded POSIX absolute path must not be the expectation.
   const linuxBinary = join(tmpdir(), "node binaries", "linux", "node");
   const windowsBinary = join(tmpdir(), "node binaries", "win", "node.exe");
   const parsed = parseBuildSeaArgs([
@@ -410,7 +410,7 @@ for (const fixture of [
           `${fixture.target}:${toolId}`,
         );
       }
-      // SEA 内嵌原生工具的许可声明与来源清单；材料取自仓库登记，fixture 根目录需带上同一份。
+      // License notices and provenance for SEA-embedded native tools, sourced from the registry; the fixture root must carry the same copy.
       const repositoryRoot = fileURLToPath(new URL("../../../../..", import.meta.url));
       await cp(
         join(repositoryRoot, "third-party/native-search"),
@@ -483,8 +483,8 @@ test("includes TUI workspace runtime package assets", async () => {
     });
     const paths = new Set(manifest.files.map((file) => file.path));
 
-    // SEA 从缓存目录导入 TUI 时无法回退到 workspace 链接，运行时 workspace
-    // 依赖必须和第三方依赖一样完整进入 node_modules 形状的资产闭包。
+    // When the SEA imports the TUI from the cache dir there is no workspace-link fallback, so runtime workspace
+    // deps must enter the node_modules-shaped asset closure as completely as third-party deps.
     assert.equal(paths.has("node_modules/@zcode/tui/package.json"), true);
     assert.equal(paths.has("node_modules/@zcode/tui/dist/index.js"), true);
     assert.equal(paths.has("node_modules/@zcode/i18n/package.json"), true);
@@ -510,7 +510,7 @@ test("includes TUI workspace runtime package assets", async () => {
       }),
     );
     assert.deepEqual([...new Set(zodVersions)].sort(), ["3", "4"]);
-    // 根 workspace 的源码 exports 不能原样进入只包含 dist 的 SEA runtime。
+    // Root-workspace source exports must not enter the dist-only SEA runtime verbatim.
     for (const packageName of ["@zcode/shared", "@zcode/model-option-map"]) {
       const assetKey = `${seaTuiAssetPrefix}node_modules/${packageName}/package.json`;
       const stagedPackage = JSON.parse(await readFile(assets[assetKey], "utf8"));
@@ -554,7 +554,7 @@ test("loads TUI from an extracted SEA runtime dependency closure", async () => {
       await copyFile(sourcePath, outputPath);
     }
 
-    // Windows 锁定进程已加载的 opentui.dll；子进程退出释放 DLL 后，父进程才能清理目录。
+    // Windows locks the opentui.dll a process loaded; the parent can clean the dir only after the child exits and releases the DLL.
     const entryUrl = pathToFileURL(
       join(runtimeDirectory, "node_modules/@zcode/tui/dist/index.js"),
     ).href;
@@ -630,7 +630,7 @@ test("keeps the Browser Use SEA release at 0.5.1 with complete runtime assets", 
       sea: "0.5.1",
     },
   );
-  // Bug 原因：新增录屏能力时重写了整段插件描述，并把原生 WebM 误写成 MP4。
+  // Root cause: the screen-recording capability rewrite replaced the whole plugin description and mislabeled native WebM as MP4.
   assert.equal(
     pluginManifest.description,
     "Built-in browser automation runtime and guidance for Desktop IAB and explicitly enabled CLI-managed headless CDP: open, navigate, inspect, click, type, screenshot, record workspace WebM videos, and verify web pages and local dev targets.",
@@ -701,7 +701,7 @@ test("includes bundled official plugin assets", async () => {
     assert.equal(restorePlugin?.marketplace, "zcode-plugins-official");
     assert.equal(skillCreatorPlugin?.marketplace, "zcode-plugins-official");
     assert.equal(zcodeGuidePlugin?.marketplace, "zcode-plugins-official");
-    // superpowers 已从内置 SEA 清单移除，断言它不再出现在 manifest 里。
+    // superpowers was removed from the built-in SEA manifest; assert its absence.
     assert.equal(
       manifest.plugins.some((item) => item.name === "superpowers"),
       false,
@@ -722,7 +722,7 @@ test("includes bundled official plugin assets", async () => {
     assert.equal(browserUsePaths.has("docs/documents.json"), true);
     assert.equal(browserUsePaths.has("docs/overview.md"), true);
     assert.equal(browserUsePaths.has("docs/workflow.md"), true);
-    // 宿主产物已搬到独立的 node-repl-host seed 单元；browser-use 不再携带它。
+    // The host artifact moved to the dedicated node-repl-host seed unit; browser-use no longer carries it.
     assert.equal(browserUsePaths.has("dist/mcp/server.js"), false);
     const hostPlugin = manifest.plugins.find((item) => item.name === "node-repl-host");
     assert.ok(hostPlugin, "the shared node_repl host must be embedded");
@@ -731,9 +731,9 @@ test("includes bundled official plugin assets", async () => {
       true,
     );
     assert.equal(browserUsePaths.has("scripts/browser-client.mjs"), true);
-    // CUA 的 client 只有一份，属于 computer-use 插件；browser-use 不再镜像它。
+    // There is a single CUA client, owned by the computer-use plugin; browser-use no longer mirrors it.
     assert.equal(browserUsePaths.has("scripts/computer-use-client.mjs"), false);
-    // CUA 的文档同理：唯一那份属于 computer-use 插件。
+    // Same for CUA docs: the only copy belongs to the computer-use plugin.
     assert.equal(browserUsePaths.has("docs/computer-use.md"), false);
     assert.equal(documentPaths.has(".zcode-plugin/plugin.json"), true);
     assert.equal(documentPaths.has("skills/docx/SKILL.md"), true);
@@ -771,7 +771,7 @@ test("includes bundled official plugin assets", async () => {
     assert.equal(zcodeGuidePaths.has("skills/diagnosing-commands/SKILL.md"), true);
     assert.equal(zcodeGuidePaths.has("skills/diagnosing-hooks/SKILL.md"), true);
     assert.equal(zcodeGuidePaths.has("skills/diagnosing-plugins/SKILL.md"), true);
-    // 0.3.0：/workflow 与 dynamic-workflows 不再随 zcode-guide 发布（见 bundled skill pack 用例）。
+    // 0.3.0: /workflow and dynamic-workflows no longer ship with zcode-guide (see the bundled skill pack case).
     assert.equal(zcodeGuidePaths.has("commands/workflow.md"), false);
     assert.equal(zcodeGuidePaths.has("skills/dynamic-workflows/SKILL.md"), false);
   } finally {
@@ -800,7 +800,7 @@ test("includes the bundled skill pack as content-hashed SEA assets", async () =>
       assert.equal(paths.has(requiredPath), true, requiredPath);
       assert.equal(typeof assets[`${seaBundledSkillAssetPrefix}${requiredPath}`], "string");
     }
-    // 资产只来自 skills/：README 之类的包元数据不进二进制。
+    // Assets come only from skills/: package metadata such as README stays out of the binary.
     assert.equal(
       [...paths].every((path) => path.startsWith("skills/")),
       true,
@@ -863,11 +863,11 @@ test("allows skill-only official plugins when SEA runtime assets are required", 
     );
     await writeTestFile(root, "packages/skill-creator-plugin/.zcode-plugin/plugin.json", "{}");
     await writeTestFile(root, "packages/skill-creator-plugin/skills/skill-creator/SKILL.md", "");
-    // 新增官方内容插件后也要提供 fixture，否则采集会先报 manifest 缺失，无法验证免运行时资源。
+    // New official content plugins need a fixture too, or collection fails first on the missing manifest and the runtime-free assets go unverified.
     await writeTestFile(root, "packages/plugin-creator-plugin/.zcode-plugin/plugin.json", "{}");
     await writeTestFile(root, "packages/plugin-creator-plugin/skills/plugin-creator/SKILL.md", "");
-    // skill-creator 用作「带可执行 hook 的 skill-only 官方插件」载体（原先由 superpowers 覆盖）。
-    // collector 按 officialSeaPlugins 登记 + 伪造目录采集，真实 skill-creator 是否带 hook 无关紧要。
+    // skill-creator stands in as the skill-only official plugin with an executable hook (formerly covered by superpowers).
+    // The collector works from the officialSeaPlugins entry plus a fabricated dir; whether real skill-creator has a hook is irrelevant.
     await writeTestFile(root, "packages/skill-creator-plugin/hooks/hooks.json", "{}");
     await writeTestFile(root, "packages/skill-creator-plugin/hooks/run-hook.cmd", "");
     await writeTestFile(root, "packages/zcode-guide-plugin/.zcode-plugin/plugin.json", "{}");
@@ -920,7 +920,7 @@ test("allows skill-only official plugins when SEA runtime assets are required", 
     assert.equal(browserUsePaths.has("docs/api.json"), true);
     assert.equal(browserUsePaths.has("docs/overview.md"), true);
     assert.equal(browserUsePaths.has("docs/workflow.md"), true);
-    // 宿主产物已搬到独立的 node-repl-host seed 单元；browser-use 不再携带它。
+    // The host artifact moved to the dedicated node-repl-host seed unit; browser-use no longer carries it.
     assert.equal(browserUsePaths.has("dist/mcp/server.js"), false);
     const hostPlugin = manifest.plugins.find((item) => item.name === "node-repl-host");
     assert.ok(hostPlugin, "the shared node_repl host must be embedded");
@@ -929,9 +929,9 @@ test("allows skill-only official plugins when SEA runtime assets are required", 
       true,
     );
     assert.equal(browserUsePaths.has("scripts/browser-client.mjs"), true);
-    // CUA 的 client 只有一份，属于 computer-use 插件；browser-use 不再镜像它。
+    // There is a single CUA client, owned by the computer-use plugin; browser-use no longer mirrors it.
     assert.equal(browserUsePaths.has("scripts/computer-use-client.mjs"), false);
-    // CUA 的文档同理：唯一那份属于 computer-use 插件。
+    // Same for CUA docs: the only copy belongs to the computer-use plugin.
     assert.equal(browserUsePaths.has("docs/computer-use.md"), false);
     assert.equal(restorePaths.has("skills/restore-legacy-sessions/SKILL.md"), true);
     assert.equal(restorePaths.has("dist/mcp/server.js"), false);
@@ -955,7 +955,7 @@ test("requires SEA runtime assets for runtime-backed official plugins", async ()
 
   try {
     await writeTestFile(root, "packages/android-emulator-plugin/.zcode-plugin/plugin.json", "{}");
-    // 宿主要先齐备，这条测试隔离的是 android-emulator 缺 runtime 这一种情况。
+    // The host must be complete first; this case isolates exactly one failure: android-emulator missing its runtime.
     await writeTestFile(root, "packages/node-repl-host/.zcode-plugin/plugin.json", "{}");
     await writeTestFile(root, "packages/node-repl-host/dist/mcp/server.js", "");
     await writeTestFile(root, "packages/browser-use-plugin/.zcode-plugin/plugin.json", "{}");
@@ -1245,7 +1245,7 @@ test("rebuilds workspace dependencies without caching SEA outputs before packagi
 test("resolves Turbo from the repository while retaining the CLI workspace graph", () => {
   const cliPackageRoot = new URL("..", import.meta.url);
 
-  // 回归原因：CLI 是嵌套 workspace，--workspace-root 会把 Turbo 限定到未安装 binary 的内层 node_modules。
+  // Regression root cause: the CLI is a nested workspace, and --workspace-root scoped Turbo to the inner node_modules lacking the binary.
   const result = spawnSync(
     "pnpm",
     [

@@ -1,9 +1,10 @@
 import type { InputId, ZCodeProvider, ZCodeTaskMeta } from "@zcode/shared";
-import { getTaskMeta, resolveWorkspaceStateKey, useZCodeSessionStore } from "@/store/zcodeSessionStore.js";
 import {
-  mergeTaskMetaCandidates,
-  mergeTaskWithOptimisticMeta,
-} from "@/lib/zcodeTaskMetaMerge.js";
+  getTaskMeta,
+  resolveWorkspaceStateKey,
+  useZCodeSessionStore,
+} from "@/store/zcodeSessionStore.js";
+import { mergeTaskMetaCandidates, mergeTaskWithOptimisticMeta } from "@/lib/zcodeTaskMetaMerge.js";
 import {
   applyTaskQueryCacheMutation,
   removeTaskFromTaskQueryCaches,
@@ -47,8 +48,8 @@ function inferTaskMembershipFromQueryCaches(params: {
     if (
       result.descriptor.kind === "workspace" ||
       result.descriptor.kind === "timeline" ||
-      // Bugfix: active 是搜索/Command Center 使用的正式 active 列表。
-      // 漏掉它会把 active-only 可见 task 推断成 absent，置顶/归档事件会误增减 total。
+      // Bugfix: active is the canonical list used by search/Command Center.
+      // Missing it infers active-only visible tasks as absent, skewing totals on pin/archive.
       result.descriptor.kind === "active"
     ) {
       foundActive = true;
@@ -180,8 +181,8 @@ export function syncTaskMembershipEventToTaskCaches(params: {
     }) ?? ABSENT_MEMBERSHIP;
   const nextMembership = membershipForWorkspaceEventReason(params.reason);
 
-  // Bugfix: 远控/其它窗口触发归档或置顶时，本窗口没有本地 optimistic mutation。
-  // 过去只能失效整表 query cache，导致点击后列表闪烁；这里根据当前缓存位置推断旧 membership 后增量移动。
+  // Bugfix: archive/pin from remote or another window leaves no local optimistic mutation here.
+  // Whole-cache invalidation flickered lists; infer the old slot from cache and move incrementally.
   syncTaskMetaToTaskCaches({
     workspacePath: params.workspacePath,
     workspaceIdentity: params.workspaceIdentity,
@@ -243,27 +244,25 @@ export function patchTaskMetaInTaskCaches(params: {
   const patchedTask = {
     ...currentTask,
     ...patch,
-    // Bugfix: 用户手动重命名后，运行中的 session_info_update 仍可能带回自动标题。
-    // 这些 patch 只该刷新运行态字段，不能把 titleOverridden 的手动标题短暂冲掉。
-    title: shouldPreserveManualTitle ? currentTask.title : patch.title ?? currentTask.title,
+    // Bugfix: after a manual rename, in-flight session_info_update can still return the auto title.
+    // Such patches refresh runtime fields only, never briefly washing out a titleOverridden name.
+    title: shouldPreserveManualTitle ? currentTask.title : (patch.title ?? currentTask.title),
     titleOverridden: patch.titleOverridden ?? currentTask.titleOverridden,
   };
-  // Bugfix: session_info_update / snapshot patch 可能只是在补运行态，却带回 "New session" 占位标题。
-  // patch 后再和当前 meta 合并一次，保留 status/target/updatedAt 的同时，不让占位标题写进 task/query cache。
+  // Bugfix: session_info_update/snapshot patches may add runtime state but carry a New-session placeholder title.
+  // Re-merge with current meta after the patch: keep status/target/updatedAt, keep placeholders out of task/query caches.
   const nextTask = mergeTaskWithOptimisticMeta(patchedTask, currentTask);
 
   store.upsertOptimisticTaskListItem(params.workspacePath, nextTask, params.workspaceIdentity);
   if (taskCacheState.taskListCache) {
     store.setTaskListCache(
       params.workspacePath,
-      taskCacheState.taskListCache.map((task) =>
-        task.taskId === params.taskId ? nextTask : task,
-      ),
+      taskCacheState.taskListCache.map((task) => (task.taskId === params.taskId ? nextTask : task)),
       params.workspaceIdentity,
     );
   }
-  // Bugfix: 手机端从聊天页返回任务列表时，运行开始只会 patch 当前 task 的 status/updatedAt。
-  // 如果 query cache 只替换 meta 不重排，按更新时间排序的远控首页会继续停在旧顺序。
+  // Bugfix: returning from chat on mobile, run start patches only status/updatedAt of that task.
+  // Without a re-sort, the update-ordered remote home keeps the stale order.
   updateTaskQueryCacheTaskMetaPreservingMembership(nextTask);
 
   return nextTask;
@@ -287,7 +286,6 @@ export function insertTaskIntoTaskCaches(params: {
     ensureInWorkspaceTaskCache:
       params.membership.pinned === false && params.membership.archived === false,
   });
-
 }
 
 export function initializeBackgroundTaskInTaskCaches(params: {
@@ -300,9 +298,7 @@ export function initializeBackgroundTaskInTaskCaches(params: {
   const store = useZCodeSessionStore.getState();
   const workspaceState = store.getWorkspaceState(params.workspacePath, params.workspaceIdentity);
   const previousTask = getTaskMeta(workspaceState, params.task.taskId);
-  const task = previousTask
-    ? mergeTaskWithOptimisticMeta(params.task, previousTask)
-    : params.task;
+  const task = previousTask ? mergeTaskWithOptimisticMeta(params.task, previousTask) : params.task;
 
   store.initializeBackgroundTaskRuntime(params.workspacePath, {
     workspaceIdentity: params.workspaceIdentity,
@@ -311,8 +307,8 @@ export function initializeBackgroundTaskInTaskCaches(params: {
     activeInputId: params.activeInputId,
   });
   upsertTaskQueryCacheTaskMeta(task);
-  // 修复原因：后台首发不再先写 optimistic 再 insert cache；query cache 仍需按“无 -> active”
-  // 插入成员，保证侧栏 total / show more 与普通首发一致。
+  // Fix: background first-sends no longer write optimistic-then-insert; the query cache still needs the
+  // absent->active membership insert so sidebar totals/show-more match normal first sends.
   applyTaskQueryCacheMutation({
     previousTask: previousTask ?? task,
     nextTask: task,

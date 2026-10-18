@@ -104,15 +104,12 @@ export function TaskSearchDialog({
   const [expandedTaskKeys, setExpandedTaskKeys] = useState<Set<string>>(() => new Set());
   const shortcutLabel = formatCommandShortcutLabel("G");
   const trimmedQuery = query.trim();
-  const searchWorkspaceTabs = useMemo(
-    () => (open ? workspaceTabs : []),
-    [open, workspaceTabs],
-  );
+  const searchWorkspaceTabs = useMemo(() => (open ? workspaceTabs : []), [open, workspaceTabs]);
   const taskList = useGlobalTaskList({
     kind: "active",
-    // 修复原因：搜索弹窗组件常驻在 App 里，但未打开时不需要 recent/search 结果。
-    // 传空 workspace 可以复用 useGlobalTaskList 的空态路径，避免空闲时多一组 listTaskList
-    // 和 workspace 事件订阅，减轻启动期 renderer/RPC 压力。
+    // Fix: the dialog lives in App but needs nothing while closed.
+    // Empty workspace reuses useGlobalTaskList's empty path, skipping an idle
+    // listTaskList subscription and workspace events at startup.
     workspaceTabs: searchWorkspaceTabs,
     sortBy: "updated",
     searchQuery: trimmedQuery,
@@ -143,8 +140,8 @@ export function TaskSearchDialog({
         continue;
       }
 
-      // Bugfix: 搜索结果可能从查询缓存和跨工作区聚合路径带入同一个 task。
-      // 这里先按会话 key 合并，再按片段文本去重，避免列表里出现重复标题或重复摘要。
+      // Bugfix: results can repeat across query cache and cross-workspace aggregation;
+      // merge by session key then dedupe snippets, or titles/summaries repeat.
       taskByKey.set(taskKey, {
         ...existingTask,
         searchSnippets: [
@@ -156,9 +153,7 @@ export function TaskSearchDialog({
 
     for (const task of taskByKey.values()) {
       const taskKey = getTaskResultKey(task);
-      const snippets = hasQuery
-        ? getUniqueTaskSearchSnippets(task)
-        : [];
+      const snippets = hasQuery ? getUniqueTaskSearchSnippets(task) : [];
       if (snippets.length === 0) {
         rows.push({
           key: taskKey,
@@ -235,8 +230,8 @@ export function TaskSearchDialog({
       return;
     }
 
-    // Bugfix: 正文搜索上线后，旧的空搜索结果可能已经被 task query cache 记为 fresh。
-    // 弹窗输入查询词时主动刷新一次，确保服务层新补的正文索引和按需回填逻辑能够生效。
+    // Bugfix: legacy empty results may be cached fresh; body search needs one refresh
+    // on query so the new index/backfill applies.
     void taskList.refresh();
   }, [open, taskList.refresh, trimmedQuery]);
 
@@ -251,7 +246,7 @@ export function TaskSearchDialog({
 
     const snippetCount = visibleResults.filter((result) => result.searchSnippet?.trim()).length;
     logger.info(
-      `[TaskSearchDialog] 搜索结果 query=${JSON.stringify(trimmedQuery)} items=${visibleResults.length} snippets=${snippetCount} firstSnippet=${JSON.stringify(visibleResults[0]?.searchSnippet?.slice(0, 80) ?? "")}`,
+      `[TaskSearchDialog] results query=${JSON.stringify(trimmedQuery)} items=${visibleResults.length} snippets=${snippetCount} firstSnippet=${JSON.stringify(visibleResults[0]?.searchSnippet?.slice(0, 80) ?? "")}`,
     );
   }, [open, trimmedQuery, visibleResults]);
 
@@ -364,7 +359,11 @@ export function TaskSearchDialog({
                     ) : null}
                     <CommandItem
                       value={`${title} ${workspaceLabel} ${searchSnippet ?? ""}`}
-                      className={isExpandRow ? "min-h-7 items-center px-2.5 text-ui-base" : quickPickItemClassName}
+                      className={
+                        isExpandRow
+                          ? "min-h-7 items-center px-2.5 text-ui-base"
+                          : quickPickItemClassName
+                      }
                       onSelect={() => selectTask(result)}
                     >
                       {isExpandRow ? (
@@ -379,11 +378,7 @@ export function TaskSearchDialog({
                         </span>
                       ) : (
                         <>
-                          <span
-                            className={
-                              "flex min-w-0 flex-1 flex-col justify-center py-0.5"
-                            }
-                          >
+                          <span className={"flex min-w-0 flex-1 flex-col justify-center py-0.5"}>
                             {searchSnippet ? (
                               <span className="min-w-0 truncate text-ui-base font-normal leading-4 text-foreground-subtle">
                                 <HighlightedMatchText text={searchSnippet} query={query} />

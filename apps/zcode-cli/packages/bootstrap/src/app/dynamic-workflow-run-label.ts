@@ -11,25 +11,25 @@
 import type { DynamicWorkflowRunSummary } from "@zcode/contracts";
 
 /**
-  * Character cap for script-derived labels. 80 is one readable list line; the derived value is a heuristic -- the longer, the less label-like.
+ * Character cap for script-derived labels. 80 is one readable list line; the derived value is a heuristic -- the longer, the less label-like.
  */
 export const DYNAMIC_WORKFLOW_RUN_LABEL_MAX_CHARS = 80;
 
 /**
-  * Derives the run's display label: `name` -> first non-empty script line (trimmed, capped at 80) -> runId.
+ * Derives the run's display label: `name` -> first non-empty script line (trimmed, capped at 80) -> runId.
  *
-  * Deliberately no "smarter" extraction (first comment, regex heading, agent-name scrape): the first line is the **honest**
-  * one ("the script starts like this"), and every extra heuristic is one more way to mislabel someone's script.
+ * Deliberately no "smarter" extraction (first comment, regex heading, agent-name scrape): the first line is the **honest**
+ * one ("the script starts like this"), and every extra heuristic is one more way to mislabel someone's script.
  *
-  * The derived result is **never written back** to `dwf_run.name`: persisting would fossilize a display heuristic as data, after which
-  * even "does this run have a name at all" becomes unanswerable.
+ * The derived result is **never written back** to `dwf_run.name`: persisting would fossilize a display heuristic as data, after which
+ * even "does this run have a name at all" becomes unanswerable.
  */
 export function resolveDynamicWorkflowRunLabel(input: {
   runId: string;
   name?: string;
   scriptText?: string;
 }): Pick<DynamicWorkflowRunSummary, "label" | "labelSource"> {
-    // A blank-only name equals unnamed: in the list it renders as a non-clickable blank line, not a label.
+  // A blank-only name equals unnamed: in the list it renders as a non-clickable blank line, not a label.
   const name = input.name?.trim();
   if (name !== undefined && name.length > 0) return { label: name, labelSource: "name" };
 
@@ -38,9 +38,9 @@ export function resolveDynamicWorkflowRunLabel(input: {
     return { label: boundLabel(firstLine), labelSource: "script" };
   }
 
-    // Cannot happen in theory (submit always carries scriptText). labelSource still reports "script" -- the only distinction
-    // the tool surface needs is "user-named" vs "derived by us"; adding another source value for a branch that
-    // cannot happen just makes every consumer write one more never-true check.
+  // Cannot happen in theory (submit always carries scriptText). labelSource still reports "script" -- the only distinction
+  // the tool surface needs is "user-named" vs "derived by us"; adding another source value for a branch that
+  // cannot happen just makes every consumer write one more never-true check.
   return { label: input.runId, labelSource: "script" };
 }
 
@@ -55,9 +55,9 @@ function firstNonEmptyLine(scriptText: string | undefined): string | undefined {
 }
 
 /**
-  * Truncates to the cap without leaving lone surrogates. Scripts are model-written external input; string literals
-  * may contain emoji, and half a surrogate pair is neither valid text nor safe in every runtime's
-  * JSON codec (same treatment as create-workflow's boundGraphText and port payload bounding).
+ * Truncates to the cap without leaving lone surrogates. Scripts are model-written external input; string literals
+ * may contain emoji, and half a surrogate pair is neither valid text nor safe in every runtime's
+ * JSON codec (same treatment as create-workflow's boundGraphText and port payload bounding).
  */
 function boundLabel(value: string): string {
   if (value.length <= DYNAMIC_WORKFLOW_RUN_LABEL_MAX_CHARS) return value;

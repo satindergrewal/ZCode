@@ -61,7 +61,7 @@ function buildRequestUserContextContent(input: {
   }
 
   return [
-        // The aggregated-field heading must not be bound to AGENTS.md, or Project-Memory-only setups lose the heading.
+    // The aggregated-field heading must not be bound to AGENTS.md, or Project-Memory-only setups lose the heading.
 
     "# agentsMd",
     "Codebase and user instructions are shown below. Be sure to adhere to these instructions. IMPORTANT: These instructions OVERRIDE any default behavior and you MUST follow them exactly as written.",

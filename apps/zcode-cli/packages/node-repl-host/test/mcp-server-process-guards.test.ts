@@ -1,9 +1,6 @@
 import { EventEmitter } from "node:events";
 import { describe, expect, it, vi } from "vitest";
-import {
-  installNodeReplProcessGuards,
-  installNodeReplShutdownTriggers,
-} from "../src/server.js";
+import { installNodeReplProcessGuards, installNodeReplShutdownTriggers } from "../src/server.js";
 
 function createFakeProcess() {
   const emitter = new EventEmitter();

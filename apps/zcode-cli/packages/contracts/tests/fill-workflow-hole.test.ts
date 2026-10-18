@@ -9,9 +9,10 @@ import {
 import { CreateWorkflowOutputSchema } from "../src/tools/create-workflow.js";
 import { GetWorkflowRunOutputSchema } from "../src/tools/get-workflow-run.js";
 
-// docs/dynamic-workflow/launch.md「The `FillWorkflowHole` tool」：模型面是 run_id + hole_id + 恰好一个
-// 来源（script / path）；`hole` 是 resolveInput 回填的事实块——运行时 schema 认它、模型面 JSON schema
-// 不列它（与 AmendWorkflow 的 `predecessor` 同一个姿态）。
+// docs/dynamic-workflow/launch.md "The \`FillWorkflowHole\` tool": model surface is run_id +
+// hole_id + exactly one source (script / path); \`hole\` is a fact block backfilled by resolveInput -
+// runtime schema accepts it, the model-facing JSON schema omits it (same posture as
+// AmendWorkflow's \`predecessor\`).
 describe("FillWorkflowHoleInputSchema", () => {
   const BODY = 'const verdict = await agent("judge").ask<string>("judge it");\nreturn verdict;';
 
@@ -54,7 +55,7 @@ describe("FillWorkflowHoleInputSchema", () => {
       hole_id: "hole#1",
       script: BODY,
       hole: {
-        name: "决定分组",
+        name: "grouping",
         type: "Verdict",
         draft_path: "/repo/.zcode/workflow-drafts/triage.dwf.ts",
         line: 12,
@@ -65,11 +66,11 @@ describe("FillWorkflowHoleInputSchema", () => {
     expect(
       FillWorkflowHoleInputSchema.safeParse({
         ...resolved,
-        hole: { name: "决定分组", type: "Verdict", owned_by_this_session: false },
+        hole: { name: "grouping", type: "Verdict", owned_by_this_session: false },
       }).success,
     ).toBe(true);
     expect(
-      FillWorkflowHoleInputSchema.safeParse({ ...resolved, hole: { name: "决定分组" } }).success,
+      FillWorkflowHoleInputSchema.safeParse({ ...resolved, hole: { name: "grouping" } }).success,
     ).toBe(false);
   });
 
@@ -92,8 +93,8 @@ describe("FillWorkflowHoleInputSchema", () => {
   });
 });
 
-// 免确认的 owner 规则（docs/dynamic-workflow/launch.md「Approval」）：与 AmendWorkflow 的谓词一样住在
-// 契约里，权限服务与 handler 读同一条。
+// Confirmation-exempt owner rule (docs/dynamic-workflow/launch.md "Approval"): lives in the
+// contract like AmendWorkflow's predicate; permission service and handler read the same one.
 describe("isFillWorkflowHoleOwnedRun", () => {
   it("is true only for a hole block that says owned_by_this_session", () => {
     expect(isFillWorkflowHoleOwnedRun({ name: "n", type: "T", owned_by_this_session: true })).toBe(
@@ -110,7 +111,7 @@ describe("isFillWorkflowHoleOwnedRun", () => {
   });
 });
 
-// GetWorkflowRun 的 `holes` 与 pendingQuestions 同规：零条缺席、≤32 条、strict 字段。
+// GetWorkflowRun's \`holes\` follows pendingQuestions' rule: absent when none, <=32, strict fields.
 describe("GetWorkflowRunOutputSchema.holes", () => {
   const base = {
     runId: "dwfrun-1",
@@ -134,7 +135,7 @@ describe("GetWorkflowRunOutputSchema.holes", () => {
       {
         siteId: "hole#1",
         ordinal: 1,
-        name: "决定分组",
+        name: "grouping",
         type: "Verdict",
         state: "waiting",
         since: 10,
@@ -142,7 +143,7 @@ describe("GetWorkflowRunOutputSchema.holes", () => {
       {
         siteId: "hole#2",
         ordinal: 1,
-        name: "收尾",
+        name: "wrapup",
         type: "string",
         state: "filled",
         filledAt: 20,
@@ -157,8 +158,9 @@ describe("GetWorkflowRunOutputSchema.holes", () => {
   });
 });
 
-// 递归留白：一次补全的函数体里可以再留白，站点 id 形如 `hole#1/hole#1`（可更深）。入参对 id 只要求非空，
-// 不设任何会拒绝 `/` 的正则——模型要能把通知里的 id 原样抄回来。
+// Recursive holes: a filled body may itself hole, site ids like \`hole#1/hole#1\` (deeper too).
+// Input only requires non-empty ids and no regex may refuse \`/\` - the model must be able to
+// copy the notification's id verbatim.
 describe("FillWorkflowHoleInputSchema — nested hole ids", () => {
   it("accepts nested site ids verbatim", () => {
     for (const id of ["hole#1/hole#1", "hole#1/hole#1/hole#2", "hole#3/hole#1/hole#1/hole#1"]) {
@@ -168,14 +170,14 @@ describe("FillWorkflowHoleInputSchema — nested hole ids", () => {
   });
 });
 
-describe("CreateWorkflowOutputSchema.fill（补全行给自己起名的那一块）", () => {
+describe("CreateWorkflowOutputSchema.fill (the block the fill row names itself by)", () => {
   const base = { diagnostics: [], ok: true, response: "joined" };
-  it("站点 id + 名字过 strict，草稿路径与行号可选；未知键与空名被拒；缺席照常通过", () => {
+  it("site id + name pass strict; draft path/line optional; unknown keys and empty name refused; absent passes", () => {
     expect(CreateWorkflowOutputSchema.safeParse(base).success).toBe(true);
     expect(
       CreateWorkflowOutputSchema.safeParse({
         ...base,
-        fill: { siteId: "hole#1", name: "决定分组" },
+        fill: { siteId: "hole#1", name: "grouping" },
       }).success,
     ).toBe(true);
     expect(
@@ -183,7 +185,7 @@ describe("CreateWorkflowOutputSchema.fill（补全行给自己起名的那一块
         ...base,
         fill: {
           siteId: "hole#1/hole#1",
-          name: "第2步",
+          name: "step2",
           draftPath: "/w/.zcode/workflow-drafts/a.dwf.ts",
           line: 61,
         },

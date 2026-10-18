@@ -50,9 +50,7 @@ function resolveTelemetryStateFile(env: NodeJS.ProcessEnv): string {
   return join(dataBaseDir, ".zcode", "v2", "telemetry-state.json");
 }
 
-async function readExistingDeviceMid(
-  stateFile: string,
-): Promise<string | undefined> {
+async function readExistingDeviceMid(stateFile: string): Promise<string | undefined> {
   const cached = cachedDeviceMidByStateFile.get(stateFile);
   if (cached) {
     return cached;
@@ -74,7 +72,7 @@ async function readExistingDeviceMid(
     cachedDeviceMidByStateFile.set(stateFile, deviceMid);
     return deviceMid;
   } catch {
-    // deviceMid 由 Desktop telemetry 管理；Agent 只异步复用已存在值，不创建或修改设备身份。
+    // deviceMid is owned by Desktop telemetry; the agent only reuses an existing value asynchronously, never creating or mutating device identity.
     return undefined;
   }
 }

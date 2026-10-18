@@ -56,7 +56,14 @@ describe("runtime request reminders", () => {
           toolCalls: [{ id: "todo-write-1", name: "TodoWrite", input: {} }],
         },
       },
-      { message: { role: "tool" as const, content: "ok", toolCallId: "todo-write-1", toolName: "TodoWrite" } },
+      {
+        message: {
+          role: "tool" as const,
+          content: "ok",
+          toolCallId: "todo-write-1",
+          toolName: "TodoWrite",
+        },
+      },
       { message: { role: "assistant" as const, content: "after write 1" } },
       {
         message: { role: "user" as const, content: "todo reminder" },
@@ -125,7 +132,14 @@ describe("runtime request reminders", () => {
           toolCalls: [{ id: "todo-write-recent", name: "TodoWrite", input: {} }],
         },
       },
-      { message: { role: "tool" as const, content: "ok", toolCallId: "todo-write-recent", toolName: "TodoWrite" } },
+      {
+        message: {
+          role: "tool" as const,
+          content: "ok",
+          toolCallId: "todo-write-recent",
+          toolName: "TodoWrite",
+        },
+      },
       { message: { role: "assistant" as const, content: "recent assistant" } },
     ];
 
@@ -210,7 +224,9 @@ describe("runtime request reminders", () => {
       prompt: "Explain tradeoffs while solving the task.",
     });
 
-    expect(body).toBe("Learning output style is active. Remember to follow the specific guidelines for this style.");
+    expect(body).toBe(
+      "Learning output style is active. Remember to follow the specific guidelines for this style.",
+    );
     expect(body).toContain("Learning output style is active");
     expect(body).not.toContain("Explain tradeoffs while solving the task.");
     expect(body).not.toContain("<system-reminder>");

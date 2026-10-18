@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  createRootTraceContext,
-  createSessionId,
-  createTurnId,
-} from "@zcode/contracts";
+import { createRootTraceContext, createSessionId, createTurnId } from "@zcode/contracts";
 import { MemoryFileSystem } from "./memory-test-utils.js";
 import {
   formatPlanFileReference,

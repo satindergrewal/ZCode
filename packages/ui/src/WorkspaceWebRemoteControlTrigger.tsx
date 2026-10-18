@@ -31,9 +31,9 @@ export function getWebRemoteControlTriggerPresentation(
   }
 
   if (status.status === "active") {
-    // Bugfix: relay 重连时 main 可能先把 status 降到 starting/running，
-    // 但 mobileConnected 仍保留上一轮配对状态。按钮只按 active 显示已连接，
-    // 避免和打开弹层后的真实连接阶段文案不一致。
+    // Bugfix: on relay reconnect main may drop status to starting/running while
+    // mobileConnected keeps the old pairing. The button shows connected only when active,
+    // matching the post-open connecting copy.
     return {
       iconClassName: "text-success",
       tooltip: formatMessage({
@@ -90,8 +90,8 @@ export function WorkspaceWebRemoteControlTrigger({
 }) {
   const enabled = useWebRemoteControlFeatureEnabled();
 
-  // Bugfix: 生产默认隐藏时如果继续执行远程 session 解析 hook，会依赖 TabStoreProvider 并导致静态渲染提前抛错。
-  // 这里先读无 store 依赖的 feature provider，再决定是否进入真正的入口内容。
+  // Bugfix: hidden-by-default builds still ran session hooks, dragging in TabStoreProvider
+  // and throwing during static render. Check the store-free feature provider first.
   if (!enabled) {
     return null;
   }
@@ -130,9 +130,9 @@ function WorkspaceWebRemoteControlTriggerContent({
     remoteSessionId,
     workspaceIdentity,
   );
-  // 修复原因：tab 上的 remoteSessionId 可能在断线重连期间失效；远控链路同时携带
-  // identity 与 session，若继续透传未注册的旧值会组合成错误 endpoint。这里只采用
-  // resolver 按 identity 校验后的 live session，未恢复时让弹层保持 remote-waiting。
+  // Fix: a tab's remoteSessionId goes stale across reconnects; the remote path carries
+  // identity+session and stale pairs build wrong endpoints. Use only the
+  // identity-validated live session; otherwise the dialog stays remote-waiting.
   const currentRemoteSessionId = mappedRemoteSessionId ?? undefined;
   const [webRemoteControlOpen, setWebRemoteControlOpen] = useState(false);
   const remoteControlStatus = useWebRemoteControlStatus();
@@ -166,7 +166,7 @@ function WorkspaceWebRemoteControlTriggerContent({
                 "web-remote-control-entry",
               );
             }
-            logger.info("[WorkspaceWebRemoteControlTrigger] 打开 Web 远程控制弹层", {
+            logger.info("[WorkspaceWebRemoteControlTrigger] web remote dialog opened", {
               workspacePath,
               workspaceIdentity: workspaceIdentity ?? "none",
               remoteSessionId: currentRemoteSessionId ?? "none",
@@ -183,9 +183,9 @@ function WorkspaceWebRemoteControlTriggerContent({
             className,
           )}
         >
-          {/* Bugfix: 触发入口以前只显示固定手机图标，用户无法从桌面端判断手机是否已连上。
-              这里复用远控状态轮询结果，用语义色表达连接状态，并把入口名称和状态文案合进同一个 tooltip，
-              避免桌面端 footer 外层和按钮内层同时弹出两份提示。 */}
+          {/* Bugfix: a static phone icon said nothing about connectivity.
+              Poll results drive semantic colors; name and state share one tooltip
+              so footer and button never toast twice. */}
           <Smartphone className={cn("size-4", triggerPresentation.iconClassName)} />
           {compact ? (
             <span className="sr-only">

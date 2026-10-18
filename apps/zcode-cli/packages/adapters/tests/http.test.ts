@@ -306,7 +306,11 @@ describe("NodeHttpClientAdapter", () => {
     });
 
     try {
-      await writeFile(certPath, "-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----\n", "utf8");
+      await writeFile(
+        certPath,
+        "-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----\n",
+        "utf8",
+      );
       const baseUrl = await listenServer(server);
       const fetch = createNetworkProxyFetch({ caCertFile: certPath });
       const abortController = new AbortController();
@@ -342,7 +346,11 @@ describe("NodeHttpClientAdapter", () => {
     });
 
     try {
-      await writeFile(certPath, "-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----\n", "utf8");
+      await writeFile(
+        certPath,
+        "-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----\n",
+        "utf8",
+      );
       const baseUrl = await listenServer(server);
       const fetch = createNetworkProxyFetch({ caCertFile: certPath });
       const abortController = new AbortController();
@@ -363,11 +371,12 @@ describe("NodeHttpClientAdapter", () => {
   it("fails before reading responses that exceed the declared content length budget", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () =>
-        new Response("too large", {
-          headers: { "content-length": "9" },
-          status: 200,
-        }),
+      vi.fn(
+        async () =>
+          new Response("too large", {
+            headers: { "content-length": "9" },
+            status: 200,
+          }),
       ),
     );
     const adapter = createNodeHttpClientAdapter();

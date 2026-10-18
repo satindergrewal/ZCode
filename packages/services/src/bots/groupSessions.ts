@@ -1,13 +1,13 @@
 import type { BotActor, BotContextState } from "@zcode/shared";
 
-/** 群身份不能用发送者代替，否则多人会串到私聊或各自创建任务。 */
+/** Group identity must not be replaced by the sender, or multi-person chats cross into private threads or spawn duplicate tasks. */
 export function getBotConversationKey(
   actor: Pick<BotActor, "botId" | "chatType" | "chatId" | "threadId" | "conversationThreadId">,
 ): string {
   if (actor.chatType === "private") return actor.botId;
   const chatId = actor.chatId?.trim();
   if (!chatId) throw new Error("Group chat ID is required");
-  // 旧默认群键保持不变；话题必须进入独立键，不能覆盖群默认任务。
+  // Legacy default group keys stay; topics get their own key and never overwrite the group default task.
   const threadId = (
     actor.conversationThreadId !== undefined ? actor.conversationThreadId : actor.threadId
   )?.trim();

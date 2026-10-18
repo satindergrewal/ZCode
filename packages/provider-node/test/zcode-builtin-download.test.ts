@@ -28,8 +28,8 @@ const envelope = (field: unknown) =>
 const cdn = "https://cdn.example/release-7.json";
 afterEach(() => vi.useRealTimers());
 
-describe("Built-in 共用 URL 下载边界", () => {
-  it("两阶段同一 signal，无 CDN 凭据且返回正式 Release", async () => {
+describe("built-in shared-URL download boundary", () => {
+  it("shares one signal across both phases, sends no CDN credentials and returns the official release", async () => {
     const request = vi.fn(
       async (url: string | URL) =>
         new Response(
@@ -57,14 +57,14 @@ describe("Built-in 共用 URL 下载边界", () => {
     "https://user:secret@cdn.example/a",
     "file:///tmp/a",
     '{"revision":7}',
-  ])("拒绝非法 URL 字段 %j", async (field) => {
+  ])("rejectes invalid URL field %j", async (field) => {
     const request = vi.fn(async () => new Response(envelope(field)));
     await expect(downloadZCodeBuiltinRelease({ ...input, request })).rejects.toThrow(
       /client-config/,
     );
     expect(request).toHaveBeenCalledTimes(1);
   });
-  it("缺省与旧内联字段不下载、不当清空", async () => {
+  it("downloads nothing and clears nothing for absent or legacy inline fields", async () => {
     const request = vi.fn(
       async () =>
         new Response(JSON.stringify({ code: 0, data: { configs: { zcodeBuiltin: release } } })),
@@ -72,31 +72,34 @@ describe("Built-in 共用 URL 下载边界", () => {
     await expect(downloadZCodeBuiltinRelease({ ...input, request })).resolves.toBeNull();
     expect(request).toHaveBeenCalledTimes(1);
   });
-  it.each(["http", "json", "schema", "regex", "cel"])("CDN %s 失败可诊断", async (kind) => {
-    const invalid = structuredClone(release);
-    if (kind === "schema") invalid.schemaVersion = 99;
-    if (kind === "regex")
-      (invalid.config.modelConfigRules.modelRules as unknown[]).push({
-        modelMatch: "[",
-        config: {},
-      });
-    if (kind === "cel")
-      (invalid.config.modelConfigRules.modelRules as unknown[]).push({
-        modelMatch: ".*",
-        config: { optionSpecs: { reasoningLevel: { map: "{" } } },
-      });
-    const request = vi
-      .fn()
-      .mockResolvedValueOnce(new Response(envelope(cdn)))
-      .mockResolvedValueOnce(
-        new Response(kind === "json" ? "{" : JSON.stringify(invalid), {
-          status: kind === "http" ? 500 : 200,
-        }),
-      );
-    await expect(downloadZCodeBuiltinRelease({ ...input, request })).rejects.toThrow(/cdn/);
-  });
+  it.each(["http", "json", "schema", "regex", "cel"])(
+    "keeps CDN %s failures diagnosable",
+    async (kind) => {
+      const invalid = structuredClone(release);
+      if (kind === "schema") invalid.schemaVersion = 99;
+      if (kind === "regex")
+        (invalid.config.modelConfigRules.modelRules as unknown[]).push({
+          modelMatch: "[",
+          config: {},
+        });
+      if (kind === "cel")
+        (invalid.config.modelConfigRules.modelRules as unknown[]).push({
+          modelMatch: ".*",
+          config: { optionSpecs: { reasoningLevel: { map: "{" } } },
+        });
+      const request = vi
+        .fn()
+        .mockResolvedValueOnce(new Response(envelope(cdn)))
+        .mockResolvedValueOnce(
+          new Response(kind === "json" ? "{" : JSON.stringify(invalid), {
+            status: kind === "http" ? 500 : 200,
+          }),
+        );
+      await expect(downloadZCodeBuiltinRelease({ ...input, request })).rejects.toThrow(/cdn/);
+    },
+  );
   it.each([10_000_000, 10_000_001])(
-    "按实际字节计数，%d 字节边界不信 Content-Length",
+    "counts actual bytes and never trusts Content-Length at the %d-byte boundary",
     async (size) => {
       const json = JSON.stringify(release);
       const body = json + " ".repeat(size - new TextEncoder().encode(json).length);
@@ -109,7 +112,7 @@ describe("Built-in 共用 URL 下载边界", () => {
       else await expect(pending).rejects.toThrow(/limit/);
     },
   );
-  it("20 秒为两次头与正文的总预算；超时取消 reader 并释放", async () => {
+  it("budgets 20s across both header and body phases; on timeout cancels the reader and frees it", async () => {
     vi.useFakeTimers();
     const cancel = vi.fn();
     const body = new ReadableStream({
@@ -134,7 +137,7 @@ describe("Built-in 共用 URL 下载边界", () => {
     expect(cancel).toHaveBeenCalledOnce();
     expect(vi.getTimerCount()).toBe(0);
   });
-  it("退出取消头等待，不等待不响应 Abort 的网络替身", async () => {
+  it("cancels the header wait on exit instead of awaiting an Abort-oblivious network double", async () => {
     const controller = new AbortController();
     const request = vi.fn(() => new Promise<Response>(() => {}));
     const pending = downloadZCodeBuiltinRelease({ ...input, request, signal: controller.signal });

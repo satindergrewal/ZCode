@@ -44,8 +44,6 @@ describe("withPluginStorageLock", () => {
       }),
     ).rejects.toThrow("boom");
     // next op still runs
-    await expect(
-      withPluginStorageLock("/root-c", async () => "ok"),
-    ).resolves.toBe("ok");
+    await expect(withPluginStorageLock("/root-c", async () => "ok")).resolves.toBe("ok");
   });
 });

@@ -27,9 +27,7 @@ import {
   type WireFormat,
 } from "./fake-provider-wire.js";
 
-export {
-  type WireFormat,
-} from "./fake-provider-wire.js";
+export { type WireFormat } from "./fake-provider-wire.js";
 
 /** 故障程序对一个到达请求的判决；与 wire 无关。 */
 export type Verdict =
@@ -171,7 +169,10 @@ async function respond(
     }
     case "status": {
       entry.servedStatus = verdict.status;
-      response.writeHead(verdict.status, { "content-type": "application/json", ...verdict.headers });
+      response.writeHead(verdict.status, {
+        "content-type": "application/json",
+        ...verdict.headers,
+      });
       response.end(businessErrorBody(verdict));
       return;
     }
@@ -312,7 +313,9 @@ export async function startFakeProviderServer(options: {
       if (!response.headersSent) {
         response.writeHead(500, { "content-type": "application/json" });
       }
-      response.end(JSON.stringify({ error: { message: `fake provider crashed: ${String(error)}` } }));
+      response.end(
+        JSON.stringify({ error: { message: `fake provider crashed: ${String(error)}` } }),
+      );
     });
   });
   server.on("connection", (socket) => {

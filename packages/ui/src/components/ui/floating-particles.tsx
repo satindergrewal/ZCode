@@ -7,9 +7,9 @@ const PARTICLE_SPRITE_SIZE = 24;
 const PARTICLE_RADIUS = 1;
 const HIGHLIGHT_PARTICLE_RADIUS = 1.5;
 const HIGHLIGHT_PARTICLE_BLUR = 7;
-// 高亮 index 按 seeded startLeft 选取，横向覆盖约 8%–92%，避免亮点集中在同一区域。
+// Highlighted indexes are picked by seeded startLeft, spanning roughly 8-92% horizontally so bright spots never clump.
 const HIGHLIGHT_PARTICLE_INDICES = new Set([1, 22, 42, 56, 57, 74, 90]);
-// 超过最大相位偏移 2.6s + 最长周期 11.2s，粒子直接处于循环稳态，不再从空场逐个冒出。
+// Phase offsets cover the 2.6s maximum plus the longest 11.2s period, so particles begin in the cyclic steady state instead of trickling in from empty.
 const PARTICLE_SETTLED_ELAPSED_MS = 14_000;
 
 interface FloatingParticle {
@@ -99,14 +99,15 @@ export const FloatingParticles = memo(function FloatingParticles({
   settled = false,
 }: {
   className?: string;
-  /** 直接从循环稳态开始绘制（Highspeed 恢复入场），跳过从空场逐个冒出的起始段。 */
+  /** Draw from the cyclic steady state directly (the Highspeed recovery entrance), skipping the trickle-in phase. */
   settled?: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
-    // Bug 根因：旧实现同时挂载 96 个 motion.span 与独立动画控制器，恰好和扩散 Canvas
-    // 收尾竞争 renderer 主线程。统一到一张 Canvas 后，交接只剩父层 opacity 合成。
+    // Bug root cause: the old code mounted 96 motion.spans with individual animation controllers,
+    // racing the renderer's main thread exactly against the diffusion canvas teardown. One canvas
+    // later, the handoff is just the parent's opacity compositing.
     const canvas = canvasRef.current;
     const context = canvas?.getContext("2d", { alpha: true });
     if (!canvas || !context) return;
@@ -138,8 +139,9 @@ export const FloatingParticles = memo(function FloatingParticles({
       color = style.getPropertyValue("--color-highspeed-particle");
       highlightColor = style.getPropertyValue("--color-highspeed-particle-highlight");
       glowColor = style.getPropertyValue("--color-highspeed-particle-highlight-glow");
-      // Bug 根因：Canvas shadowBlur 在部分 Electron/macOS 环境会逐帧触发昂贵的软件栅格化。
-      // 辉光只在尺寸变化时离屏生成一次，动画帧复用位图，避免 Renderer 长期满载。
+      // Bug root cause: canvas shadowBlur triggers costly per-frame software rasterization on some
+      // Electron/macOS stacks. The glow is generated offscreen once per resize; animation frames reuse
+      // the bitmap instead of loading the Renderer.
       particleSprite = createParticleSprite({ color, highlight: false, pixelRatio: scale });
       highlightParticleSprite = createParticleSprite({
         color: highlightColor,

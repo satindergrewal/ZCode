@@ -1,18 +1,18 @@
 /**
-  * Shape validation for preset artifact specs.
+ * Shape validation for preset artifact specs.
  *
-  * ⚠ Terminology: artifact = the **user-facing deliverable** (a board the script publishes), not RunSettlement.artifact,
-  * the top-level return value.
+ * ⚠ Terminology: artifact = the **user-facing deliverable** (a board the script publishes), not RunSettlement.artifact,
+ * the top-level return value.
  *
-  * Why validation in the **engine core**, not the driver: preset declarations never pass the driver (no executable effect),
-  * and a malformed spec must be stopped before the journal -- journal rows are the only truth for projections and cold
-  * recovery; an undrawable spec, once persisted, re-explodes on every read face.
+ * Why validation in the **engine core**, not the driver: preset declarations never pass the driver (no executable effect),
+ * and a malformed spec must be stopped before the journal -- journal rows are the only truth for projections and cold
+ * recovery; an undrawable spec, once persisted, re-explodes on every read face.
  *
-  * Hand-written, not zod: the package has zero runtime dependencies (facade / compiler / engine rely on typescript only)
-  * and the spec shape fits one screen. A schema library to validate four objects would change the pure package's dependency premise.
+ * Hand-written, not zod: the package has zero runtime dependencies (facade / compiler / engine rely on typescript only)
+ * and the spec shape fits one screen. A schema library to validate four objects would change the pure package's dependency premise.
  *
-  * Returns a **human-readable sentence**, not a boolean: the message lands via ArtifactSpecInvalid in the run's
-  * failure_json, and the reader (model or author) must fix the script from it -- invalid-spec helps no one.
+ * Returns a **human-readable sentence**, not a boolean: the message lands via ArtifactSpecInvalid in the run's
+ * failure_json, and the reader (model or author) must fix the script from it -- invalid-spec helps no one.
  */
 
 import { ARTIFACT_CAPS } from "../facade/artifact-caps.js";
@@ -23,8 +23,8 @@ import { canonicalJson } from "./hash.js";
 type ArtifactSpecProblem = string | undefined;
 
 /**
-  * Validate one preset spec. The op decides required fields; the common part (title / description lengths) is checked for all four kinds.
-  * A passing spec guarantees: plain object, required fields present and well-shaped, normalized size within 8KB.
+ * Validate one preset spec. The op decides required fields; the common part (title / description lengths) is checked for all four kinds.
+ * A passing spec guarantees: plain object, required fields present and well-shaped, normalized size within 8KB.
  */
 export function validateArtifactSpec(op: ArtifactPresetOp, spec: unknown): ArtifactSpecProblem {
   if (!isPlainObject(spec)) return `${op} spec must be an object literal, got ${describe(spec)}`;
@@ -35,8 +35,8 @@ export function validateArtifactSpec(op: ArtifactPresetOp, spec: unknown): Artif
   const shape = checkShape(op, spec);
   if (shape !== undefined) return shape;
 
-    // Size cap checked last: shape errors first, then size -- for a spec both malformed and oversized, the author
-    // learns the malformation first.
+  // Size cap checked last: shape errors first, then size -- for a spec both malformed and oversized, the author
+  // learns the malformation first.
   const bytes = utf8ByteLength(canonicalJson(spec));
   if (bytes > ARTIFACT_CAPS.maxSpecSerializedBytes) {
     return `${op} spec is ${bytes} bytes serialized, over the ${ARTIFACT_CAPS.maxSpecSerializedBytes}-byte limit`;
@@ -78,7 +78,8 @@ function checkShape(op: ArtifactPresetOp, spec: Record<string, unknown>): Artifa
   }
   if (op === "metrics") return checkFieldList(spec.metrics, "metrics");
   // board
-  if (!isNonEmptyString(spec.key)) return "board spec key must be a non-empty string (the field that identifies a card)";
+  if (!isNonEmptyString(spec.key))
+    return "board spec key must be a non-empty string (the field that identifies a card)";
   if (!isNonEmptyString(spec.status)) {
     return "board spec status must be a non-empty string (the field that picks a card's column)";
   }
@@ -88,8 +89,8 @@ function checkShape(op: ArtifactPresetOp, spec: Record<string, unknown>): Artifa
   for (const [index, column] of spec.columns.entries()) {
     if (!isNonEmptyString(column)) return `board spec columns[${index}] must be a non-empty string`;
   }
-    // cardTitle is the **field name** (which field becomes the card title), distinct from ArtifactOptions.title (the board's own
-    // title) -- the two used to collide on one key; the rename lets one board say both.
+  // cardTitle is the **field name** (which field becomes the card title), distinct from ArtifactOptions.title (the board's own
+  // title) -- the two used to collide on one key; the rename lets one board say both.
   if (spec.cardTitle !== undefined && !isNonEmptyString(spec.cardTitle)) {
     return "board spec cardTitle must be a non-empty string (the field used as the card title)";
   }
@@ -100,7 +101,8 @@ function checkShape(op: ArtifactPresetOp, spec: Record<string, unknown>): Artifa
 /** Common display metadata (ArtifactOptions): types and lengths. */
 function checkOptions(spec: Record<string, unknown>): ArtifactSpecProblem {
   if (spec.title !== undefined) {
-    if (typeof spec.title !== "string") return `spec title must be a string, got ${describe(spec.title)}`;
+    if (typeof spec.title !== "string")
+      return `spec title must be a string, got ${describe(spec.title)}`;
     if (spec.title.length > ARTIFACT_CAPS.maxTitleLength) {
       return `spec title is ${spec.title.length} characters, over the ${ARTIFACT_CAPS.maxTitleLength} limit`;
     }
@@ -110,8 +112,10 @@ function checkOptions(spec: Record<string, unknown>): ArtifactSpecProblem {
       return `spec description must be a string, got ${describe(spec.description)}`;
     }
     if (spec.description.length > ARTIFACT_CAPS.maxDescriptionLength) {
-      return `spec description is ${spec.description.length} characters, over the ` +
-      `${ARTIFACT_CAPS.maxDescriptionLength} limit`;
+      return (
+        `spec description is ${spec.description.length} characters, over the ` +
+        `${ARTIFACT_CAPS.maxDescriptionLength} limit`
+      );
     }
   }
   if (spec.primary !== undefined && typeof spec.primary !== "boolean") {

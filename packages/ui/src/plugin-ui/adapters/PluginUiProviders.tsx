@@ -15,7 +15,7 @@ const WorkspaceActions = createContext<((request: OpenPluginUiSideTabRequest) =>
 );
 const SessionScope = createContext<PluginUiSessionScope | null>(null);
 
-/** Shell 只在边界提供面板动作，中间布局组件不感知插件请求。 */
+/** The shell provides pane actions at the boundary only; intermediate layout stays plugin-agnostic. */
 export function PluginUiWorkspaceProvider({
   onOpenSidePane,
   children,
@@ -29,7 +29,7 @@ export function useOpenPluginUi() {
   return useContext(WorkspaceActions);
 }
 
-/** SessionPane 拥有命令入口；本适配器只绑定作用域与挂载生命周期。 */
+/** SessionPane owns the command entry; this adapter binds scope and mount lifecycle only. */
 export function PluginUiSessionProvider({
   workspacePath,
   workspaceIdentity,
@@ -43,7 +43,7 @@ export function PluginUiSessionProvider({
 }: Omit<PluginUiSessionScope, "sessionId"> & {
   sessionId: string | null;
   readOnly: boolean;
-  /** 本会话的投影 store（lease 就绪后给出），插件资源通知从它的 live 增量路由到沙箱实例。 */
+  /** This session's projection store (post-lease); plugin resource notices route from its live deltas into sandboxes. */
   projectionStore?: ConversationProjectionStore | null;
   children: ReactNode;
 } & PluginUiSessionCommandPort) {
@@ -56,7 +56,7 @@ export function PluginUiSessionProvider({
   usePluginUiResourceDeltaFeed(projectionStore, scope);
   useEffect(() => {
     if (!scope || readOnly) return;
-    // 修复：发送配置变更会重建回调，但不应让同一挂载中的待确认请求失效。
+    // Fix: send-config changes rebuild callbacks but must not invalidate pending confirms of this mount.
     return registerPluginUiSessionActions(
       scope,
       createPluginUiSessionActions(scope, {

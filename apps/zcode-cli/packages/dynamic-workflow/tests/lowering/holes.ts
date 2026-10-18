@@ -12,13 +12,13 @@ interface Plan {
 interface Verdict {
   pass: boolean;
 }
-const survey = await agent("勘察员").ask<Survey>("列出最慢的测试文件");
-const plan = await hole<Plan>("决定分组", `最慢的是 ${survey.slowest}`, async () => {
-  phase("分组");
-  const draft = await agent("分组员").ask<Plan>(`按模块分组 ${survey.slowest}`);
+const survey = await agent("scout").ask<Survey>("list the slowest test files");
+const plan = await hole<Plan>("plan grouping", `Slowest: ${survey.slowest}`, async () => {
+  phase("grouping");
+  const draft = await agent("grouper").ask<Plan>(`Group by module: ${survey.slowest}`);
   report({ groups: draft.groups.length });
   return draft;
 });
-const order = await hole<string>("决定顺序");
-const done = await agent("执行者").ask<string>(`按 ${plan.groups.length} 组执行，先跑 ${order}`);
-return await hole<Verdict>("评判", `执行结果：${done}`);
+const order = await hole<string>("ordering");
+const done = await agent("runner").ask<string>(`Run ${plan.groups.length} groups, ${order} first`);
+return await hole<Verdict>("verdict", `Run result: ${done}`);

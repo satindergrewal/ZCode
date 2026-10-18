@@ -11,8 +11,7 @@ import {
   type JsonSchema,
 } from "../src/index.js";
 
-// 合成侧单测：用便捷入口 synthesizeWorkflowSchemas 从脚本文本一站式合成，精确断言
-// 关键行为（快照套件覆盖整体输出，这里锁定语义细节）。
+// Synthesis unit tests: one-stop synthesis from script text via synthesizeWorkflowSchemas, asserting key behavior precisely (the snapshot suite owns whole-output equality; this locks semantics).
 
 function schemasOf(script: string): Record<string, JsonSchema> {
   const result = synthesizeWorkflowSchemas(script);
@@ -43,7 +42,11 @@ describe("typedness", () => {
   });
 
   it("treats ask<string | null> as typed (not the bare string primitive)", () => {
-    const script = [`const a = agent("a");`, `const v = await a.ask<string | null>("maybe");`, `log(String(v));`].join("\n");
+    const script = [
+      `const a = agent("a");`,
+      `const v = await a.ask<string | null>("maybe");`,
+      `log(String(v));`,
+    ].join("\n");
     const schema = schemasOf(script)["ask#1"]!;
     expect(schema.anyOf).toHaveLength(2);
     expect(schema.anyOf).toEqual(expect.arrayContaining([{ type: "string" }, { type: "null" }]));
@@ -62,7 +65,11 @@ describe("typedness", () => {
 
 describe("unknown is permissive", () => {
   it("emits an empty schema for unknown", () => {
-    const script = [`const a = agent("a");`, `const v = await a.ask<unknown>("anything");`, `log(String(v));`].join("\n");
+    const script = [
+      `const a = agent("a");`,
+      `const v = await a.ask<unknown>("anything");`,
+      `log(String(v));`,
+    ].join("\n");
     expect(schemasOf(script)["ask#1"]).toEqual({});
   });
 });
@@ -119,7 +126,11 @@ describe("unions", () => {
 
   it("rejects a pathologically wide union at the ask site", () => {
     const members = Array.from({ length: MAX_UNION_MEMBERS + 1 }, (_, i) => String(i)).join(" | ");
-    const script = [`const g = agent("g");`, `const r = await g.ask<${members}>("pick");`, `log(String(r));`].join("\n");
+    const script = [
+      `const g = agent("g");`,
+      `const r = await g.ask<${members}>("pick");`,
+      `log(String(r));`,
+    ].join("\n");
     const result = synthesizeWorkflowSchemas(script);
     expect(result.schemas).toEqual({});
     expect(result.diagnostics).toHaveLength(1);
@@ -175,9 +186,19 @@ describe("JSDoc harvest", () => {
       `log(JSON.stringify(r));`,
     ].join("\n");
     const props = schemasOf(script)["ask#1"]!.properties!;
-    expect(props.age).toEqual({ description: "The user's age.", maximum: 120, minimum: 0, type: "number" });
+    expect(props.age).toEqual({
+      description: "The user's age.",
+      maximum: 120,
+      minimum: 0,
+      type: "number",
+    });
     expect(props.name).toEqual({ minLength: 1, pattern: "^[a-z]+$", type: "string" });
-    expect(props.tags).toEqual({ items: { type: "string" }, maxItems: 3, minItems: 1, type: "array" });
+    expect(props.tags).toEqual({
+      items: { type: "string" },
+      maxItems: 3,
+      minItems: 1,
+      type: "array",
+    });
   });
 
   it("ignores tags outside the subset", () => {
@@ -197,10 +218,8 @@ describe("JSDoc harvest", () => {
   });
 });
 
-describe("buildAskSpecs — 引擎入参的总覆盖", () => {
-  // 引擎把「站点缺席」当接线错误硬失败（MissingAskSpec），所以 askSpecs 必须**每个 ask
-  // 站点都有一条**。schemas 只含 typed 站点，因此这个 builder 按站点表遍历——它存在的
-  // 唯一理由就是把这条规则收在一处，而不是让每个调用点各自实现一遍（其中一处必然写错）。
+describe("buildAskSpecs -- total coverage of the engine input", () => {
+  // The engine hard-fails missing sites as wiring errors (MissingAskSpec), so askSpecs must cover every
   function specsOf(script: string): {
     specs: Map<string, AskSpec>;
     siteIds: string[];
@@ -225,15 +244,20 @@ describe("buildAskSpecs — 引擎入参的总覆盖", () => {
     const { specs, siteIds, schemas } = specsOf(script);
     expect([...specs.keys()]).toEqual(siteIds);
     expect(specs.size).toBe(2);
-    // typed 站点的 schema 原样透传（builder 不加工 schema，只决定 typed 与否）。
+    // Typed schemas pass through verbatim (the builder never reworks them, only typed-ness).
     expect(specs.get("ask#1")).toEqual({ typed: true, schema: schemas["ask#1"] });
     expect(specs.get("ask#1")?.schema).toBe(schemas["ask#1"]);
     expect(specs.get("ask#2")).toEqual({ typed: false });
   });
 
   it("gives an untyped-only script a full table of explicit untyped entries", () => {
-    // 这是那条兜底被删掉后真正的回归风险：从前 askSpecs 为空也能跑，现在必须显式记录。
-    const script = [`const a = agent("a");`, `const x = await a.ask("one");`, `const y = await a.ask("two");`, `log(x + y);`].join("\n");
+    // The real regression risk once the fallback died: empty askSpecs used to run; now recording is explicit.
+    const script = [
+      `const a = agent("a");`,
+      `const x = await a.ask("one");`,
+      `const y = await a.ask("two");`,
+      `log(x + y);`,
+    ].join("\n");
     const { specs } = specsOf(script);
     expect([...specs.entries()]).toEqual([
       ["ask#1", { typed: false }],
@@ -242,22 +266,26 @@ describe("buildAskSpecs — 引擎入参的总覆盖", () => {
   });
 
   it("leaves schema absent (not undefined) on untyped entries", () => {
-    // schema 会随 AskMessage 透传给 driver；`schema: undefined` 与"没有 schema"在
-    // 序列化与 `in` 判定上不同，untyped 条目必须是后者。
-    const { specs } = specsOf([`const a = agent("a");`, `const x = await a.ask("plain");`, `log(x);`].join("\n"));
+    // schema rides to the driver on AskMessage; undefined-key and no-schema differ in serialization and in-checks,
+    const { specs } = specsOf(
+      [`const a = agent("a");`, `const x = await a.ask("plain");`, `log(x);`].join("\n"),
+    );
     const spec = specs.get("ask#1")!;
     expect("schema" in spec).toBe(false);
   });
 
   it("returns an empty table for a script with no asks", () => {
-    const { specs } = specsOf([`const paths = await files.glob("*.ts");`, `log(String(paths.length));`].join("\n"));
+    const { specs } = specsOf(
+      [`const paths = await files.glob("*.ts");`, `log(String(paths.length));`].join("\n"),
+    );
     expect(specs.size).toBe(0);
   });
 
   it("ignores schema keys that no ask site claims", () => {
-    // 防御：schemas 若因调用方拼错而带了不存在的站点，结果仍严格由站点表定形——
-    // 站点表是身份的唯一真源。
-    const script = [`const a = agent("a");`, `const x = await a.ask("plain");`, `log(x);`].join("\n");
+    // Defense: bogus sites in schemas (caller typo) still cannot shape the result -- the site table is
+    const script = [`const a = agent("a");`, `const x = await a.ask("plain");`, `log(x);`].join(
+      "\n",
+    );
     const workflow = createWorkflowProgram(script);
     const table = collectSites(workflow);
     const specs = buildAskSpecs(table, { "ask#42": { type: "string" } });

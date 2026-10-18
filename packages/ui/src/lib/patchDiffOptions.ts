@@ -14,10 +14,10 @@ interface PatchDiffSettings {
 type PatchDiffSeparatorStyle = "line-info" | "simple";
 
 const PATCH_DIFF_UNSAFE_CSS = `
-/* 修复原因：PatchDiff 渲染在 Shadow DOM 内，外层的 Tailwind 选择器无法命中内部 code 节点。
- * 这里必须通过 unsafeCSS 注入到 shadow root，才能真正覆盖库自己的 code padding 和背景色。
- * 另外库在横向滚动时会把左侧 gutter 做成 sticky；如果把底色设成 transparent，
- * 正文就会从行号列下面“穿过去”，导致拖动滑块时行号和文字视觉重叠。 */
+/* Fix: PatchDiff renders inside a shadow DOM where outer Tailwind selectors cannot reach the inner code nodes.
+  * The override must be injected via unsafeCSS into the shadow root to beat the library's own code padding/background.
+  * The library also sticks the left gutter on horizontal scroll; a transparent gutter lets body text
+  * show through under the line numbers, overlapping visually while dragging. */
 :host {
   --diffs-light-bg: var(--color-background, #fff);
   --diffs-dark-bg: var(--color-background, #000);
@@ -67,9 +67,9 @@ export function createPatchDiffOptions(
     diffIndicators: "classic",
     disableFileHeader: true,
     disableLineNumbers: !codePreviewSettings.showLineNumbers,
-    // Bugfix: “上一轮更改”这类紧凑 diff 更关注快速定位修改点，
-    // 不需要额外展示“123 unmodified lines”标签。这里允许调用方切到 simple，
-    // 把大段未改动区域退化成轻量空白分隔，避免视觉上抢走改动本身的注意力。
+    // Bugfix: compact diffs like last-turn-changes optimize for spotting edits
+    // and need no 123-unmodified-lines label. Let callers switch to simple,
+    // degrading long unchanged runs to a light spacer so they never compete with the changes.
     hunkSeparators: options?.separatorStyle ?? "line-info",
     overflow: codePreviewSettings.wrapLongLines ? "wrap" : "scroll",
     theme: {

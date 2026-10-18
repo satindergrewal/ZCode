@@ -13,7 +13,7 @@ const VALUES = new Set(
 );
 const EXEC = new Set(["-exec", "-execdir", "-ok", "-okdir"]);
 
-/** 有限 find 表达式；未知 arity 后不把参数值猜成动作，不递归分析 exec 载荷。 */
+/** Finite find expression; past unknown arity never guess args into actions, nor recurse into exec payloads. */
 export function matchFindDelete(args: CommandWord[]): RuleMatch {
   let expression = false;
   for (let i = 0; i < args.length; i++) {
@@ -21,7 +21,7 @@ export function matchFindDelete(args: CommandWord[]): RuleMatch {
     const value = word.value;
     if (!expression && !value.startsWith("-") && !["!", "("].includes(value)) continue;
     if (word.dynamic) return undefined;
-    // BSD 的 -d/-x 可位于起始路径前，不能提前进入表达式阶段而把后续路径当未知谓词。
+    // BSD allows -d/-x before the start path; do not enter expression state early and read later paths as unknown predicates.
     if (["-H", "-L", "-P", "-O0", "-O1", "-O2", "-O3", "-d", "-x"].includes(value) && !expression)
       continue;
     if (["-D", "-f"].includes(value) && !expression) {

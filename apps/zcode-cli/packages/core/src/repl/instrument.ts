@@ -1,26 +1,26 @@
 import { parseModule, type ESTree } from "meriyah";
 
 /**
- * REPL 代码 instrument 纯函数集（路线 B：顶层绑定跨调用持久）。
+ * Pure helpers to instrument REPL code (route B: top-level bindings persist across calls).
  *
- * 设计动机：
- * NodeReplSession 为支持 top-level await 把用户代码包进 `(async () => {...})()`，导致顶层
- * `const/let/var/function/class` 被 IIFE 局部作用域捕获、不落持久 vm context。这里用 meriyah
- * 解析出顶层声明，在每条声明语句后注入 `globalThis.<name> = <name>;`，把绑定复制到持久 context，
- * 使下次 `js` 调用里 bare 名字能经作用域链解析到 globalThis。
+ * Motivation:
+ * NodeReplSession wraps user code in `(async () => {...})()` for top-level await, trapping top-level
+ * `const/let/var/function/class` in the IIFE scope, never reaching the persistent vm context. Using meriyah
+ * we find top-level declarations and inject `globalThis.<name> = <name>;` after each, copying the bindings
+ * into the persistent context, so the next `js` call resolves bare names to globalThis via the scope chain.
  *
- * 本模块是 A-ready 接缝：将来若能加 `--experimental-vm-modules` 升级到 SourceTextModule（路线 A），
- * 只需替换执行器并新写 harvest 版 instrument，`parseReplCode`/`collectTopLevelBindingNames` 可直接复用
- * （parser 换实现只动 parseReplCode 内部）。
+ * This module is the A-ready seam: once `--experimental-vm-modules` is viable, upgrading to SourceTextModule (route A)
+ * means swapping the executor and writing a harvest-style instrument; `parseReplCode`/`collectTopLevelBindingNames` carry over
+ * (parser swaps touch only parseReplCode's internals).
  */
 
-/** parseReplCode 结果：成功携带 AST，失败携带 parseError（不 throw，交调用方回退）。 */
+/** parseReplCode result: AST on success, parseError on failure (no throw; the caller falls back). */
 export type ParseReplCodeResult = { ast: ESTree.Program } | { parseError: Error };
 
 /**
- * 解析 REPL 代码为 ESTree AST。封装 meriyah.parseModule（parser 换实现只动这里 = A-ready 接缝）。
- * 用 module 模式 + next 拿最新语法；ranges 让每个节点带 start/end（instrument 切片需要）。
- * 解析失败返回 { parseError }，绝不 throw（调用方据此回退到原样执行）。
+ * Parse REPL code into an ESTree AST. Wraps meriyah.parseModule (parser swaps touch only here = the A-ready seam).
+ * module + latest for newest syntax; ranges give every node start/end (instrument slicing needs them).
+ * On failure returns { parseError }, never throwing (callers fall back to verbatim execution).
  */
 export function parseReplCode(code: string): ParseReplCodeResult {
   try {
@@ -32,13 +32,13 @@ export function parseReplCode(code: string): ParseReplCodeResult {
 }
 
 /**
- * 递归收集一个 binding pattern 里声明的所有标识符名。
- * 覆盖：Identifier / ObjectPattern（含 shorthand 与 RestElement）/ ArrayPattern（含空位与 RestElement）
- * / AssignmentPattern（默认值）/ RestElement。
+ * Recursively collect every identifier declared by a binding pattern.
+ * Covers Identifier / ObjectPattern (shorthand and RestElement) / ArrayPattern (holes and RestElement)
+ * / AssignmentPattern (defaults) / RestElement.
  */
 function collectPatternNames(node: ESTree.Node | null | undefined, out: string[]): void {
   if (!node) {
-    // ArrayPattern 里的空位（elision）是 null，跳过。
+    // Holes (elisions) in an ArrayPattern are null; skip.
     return;
   }
   switch (node.type) {
@@ -47,16 +47,16 @@ function collectPatternNames(node: ESTree.Node | null | undefined, out: string[]
       return;
     case "ObjectPattern":
       for (const prop of node.properties) {
-        // meriyah 在 pattern 上下文实际产出 RestElement/Property，但类型标注较宽
-        // （ObjectLiteralElementLike 含 SpreadElement），故按 type 逐一收窄。
+        // In pattern positions meriyah emits RestElement/Property, but its types are wider
+        // (ObjectLiteralElementLike includes SpreadElement), so narrow by type one by one.
         const p = prop as ESTree.Node;
         if (p.type === "RestElement") {
           collectPatternNames(p.argument, out);
         } else if (p.type === "Property") {
-          // 解构目标是 value（`{x:xx}` 的 xx；shorthand `{x}` 的 value 也是 x）。
+          // The destructuring target is the value (`{x:xx}`'s xx; shorthand `{x}`'s value is x too).
           collectPatternNames(p.value as ESTree.Node, out);
         } else if (p.type === "SpreadElement") {
-          // 防御性：pattern 里罕见地被标为 SpreadElement 时也收集其 argument。
+          // Defensive: if a pattern is (rarely) typed SpreadElement, collect its argument too.
           collectPatternNames(p.argument as ESTree.Node, out);
         }
       }
@@ -67,19 +67,19 @@ function collectPatternNames(node: ESTree.Node | null | undefined, out: string[]
       }
       return;
     case "AssignmentPattern":
-      // `const {x = 1} = o` / `const [a = 1] = arr`：绑定名在 left。
+      // `const {x = 1} = o` / `const [a = 1] = arr`: the binding name is in left.
       collectPatternNames(node.left, out);
       return;
     case "RestElement":
       collectPatternNames(node.argument, out);
       return;
     default:
-      // MemberExpression 等非声明目标（解构赋值到已存在属性）不产生新绑定，忽略。
+      // Non-declaration targets such as MemberExpression (assigning into existing properties) bind nothing; ignore.
       return;
   }
 }
 
-/** 收集单条顶层声明语句声明的所有绑定名（供 instrument 逐语句注入用）。 */
+/** Collect every binding declared by one top-level declaration statement (for per-statement injection). */
 function collectStatementBindingNames(node: ESTree.Node): string[] {
   const names: string[] = [];
   if (node.type === "VariableDeclaration") {
@@ -95,9 +95,9 @@ function collectStatementBindingNames(node: ESTree.Node): string[] {
 }
 
 /**
- * 把 cell 里的动态 import() 改写为注入的 importModule()。
- * vm.Script 默认不能直接执行 import expression，因此执行器使用宿主 loader，并只替换
- * AST 中真正的 ImportExpression；字符串、注释和 import.meta 不受影响。
+ * Rewrite dynamic import() in the cell to the injected importModule().
+ * vm.Script cannot execute import expressions directly, so the executor uses the host loader and replaces only
+ * real ImportExpressions in the AST; strings, comments, and import.meta are untouched.
  */
 export function collectTopLevelBindingNames(ast: ESTree.Program): string[] {
   const names: string[] = [];
@@ -106,17 +106,17 @@ export function collectTopLevelBindingNames(ast: ESTree.Program): string[] {
       names.push(name);
     }
   }
-  // 去重（同名重复声明或多语句同名只需一次赋值）。
+  // Dedupe (a name declared twice, or the same name across statements, gets only one assignment).
   return [...new Set(names)];
 }
 
 /**
- * 把 cell 里的动态 `import(...)` 改写为注入的 `importModule(...)`。
+ * Rewrites dynamic `import(...)` in the cell into the injected `importModule(...)`.
  *
- * Node 的 vm.Script 只有配置 vm module loader 才能直接执行 import expression，而 desktop/SEA
- * Agent 不能稳定携带 `--experimental-vm-modules`。旧合同因此要求模型写 ZCode 私有
- * `importModule(...)`，与 skill 里通用的标准 `await import(...)` 写法不一致。AST 定位只替换真正的
- * ImportExpression，字符串、注释和 `import.meta` 均不受影响。
+ * Node's vm.Script runs import expressions only with a vm module loader configured, and desktop/SEA
+ * agents cannot reliably carry `--experimental-vm-modules`. The old contract therefore made the model write ZCode's private
+ * `importModule(...)`, inconsistent with the standard `await import(...)` used in skills. AST targeting rewrites only real
+ * ImportExpressions; strings, comments, and `import.meta` are untouched.
  */
 export function rewriteDynamicImports(code: string, ast: ESTree.Program): string {
   const starts: number[] = [];
@@ -150,9 +150,9 @@ export function rewriteDynamicImports(code: string, ast: ESTree.Program): string
 }
 
 /**
- * 按 REPL 语法改写动态 import。用户代码允许顶层 return，而 module parser 不允许；直接解析失败时
- * 临时包进 async function 只用于取得可靠 AST range，再剥掉包装层。这样不会退回正则替换，也不会
- * 误改字符串或注释中的 `import(`。
+ * Rewrite dynamic imports under REPL syntax. User code may use top-level return, which the module parser forbids; if direct parsing fails,
+ * temporarily wrap in an async function solely to obtain reliable AST ranges, then strip the wrapper. No regex fallback, and
+ * no false edits inside strings or comments.
  */
 export function rewriteDynamicImportsForRepl(code: string): string {
   const direct = parseReplCode(code);
@@ -167,50 +167,50 @@ export function rewriteDynamicImportsForRepl(code: string): string {
   return rewritten.slice(prefix.length, rewritten.length - suffix.length);
 }
 
-/** 取节点结束偏移；ranges:true 下 end 必然存在，缺省兜底避免类型收窄问题。 */
+/** End offset of a node; guaranteed under ranges:true, defaulted only to satisfy type narrowing. */
 function nodeEnd(node: ESTree.Node): number {
   const end = node.end ?? node.range?.[1];
   if (end === undefined) {
-    throw new Error("instrument 需要节点 end（parseReplCode 应带 ranges:true）");
+    throw new Error("instrument requires node end (parseReplCode should set ranges:true)");
   }
   return end;
 }
 
-/** 取节点起始偏移；同 nodeEnd，用于最后表达式语句的完成值切片。 */
+/** Start offset of a node; as nodeEnd, used for the completion-value slice of the last expression statement. */
 function nodeStart(node: ESTree.Node): number {
   const start = node.start ?? node.range?.[0];
   if (start === undefined) {
-    throw new Error("instrument 需要节点 start（parseReplCode 应带 ranges:true）");
+    throw new Error("instrument requires node start (parseReplCode should set ranges:true)");
   }
   return start;
 }
 
 /**
- * 在每条顶层声明后把绑定复制到持久 context，并把最后一条表达式语句转成 return，使 cell
- * 的完成值可回传。逐语句注入保证后续语句抛错时，抛错前已执行的声明仍然保留。
+ * After each top-level declaration, copy bindings into the persistent context, and turn the last expression statement into a return so the
+ * cell's completion value returns. Per-statement injection keeps already-run declarations when a later statement throws.
  */
 export function instrumentForContextPersistence(code: string, ast: ESTree.Program): string {
   let cursor = 0;
   let out = "";
   const lastIndex = ast.body.length - 1;
   ast.body.forEach((stmt, index) => {
-    // 最后一条顶层表达式语句：转成 return，让 async-IIFE 回传完成值（REPL 回显）。
-    // 声明/控制流语句不转（其完成值本就是 undefined，REPL 语义一致）。
+    // Last top-level expression statement: turn into return so the async-IIFE returns the completion value (the REPL echo).
+    // Declaration/control-flow statements stay (their completion value is undefined anyway, matching REPL semantics).
     if (index === lastIndex && stmt.type === "ExpressionStatement") {
       const stmtStart = nodeStart(stmt);
       const stmtEnd = nodeEnd(stmt);
-      // meriyah 对 `({ value: 1 })` 的 expression range 不含最外层括号。
-      // 从 expression.start 插入 return 会生成 `(return ({...});)` 非法语法；必须以完整
-      // ExpressionStatement 为边界，再仅移除语句末尾分号。
+      // meriyah's expression range for `({ value: 1 })` excludes the outer parens.
+      // Inserting return at expression.start would emit invalid `(return ({...});)`; bound the rewrite to the full
+      // ExpressionStatement and strip only the trailing semicolon.
       const expressionSource = code.slice(stmtStart, stmtEnd).replace(/;\s*$/, "");
-      // 保留该语句前的原始 trivia（空白/注释），再把完整表达式包成 return (...)。
+      // Keep the original trivia before the statement (whitespace/comments), then wrap the full expression as return (...).
       out += code.slice(cursor, stmtStart);
       out += `return (${expressionSource});`;
       cursor = nodeEnd(stmt);
       return;
     }
     const end = nodeEnd(stmt);
-    // 保留到该语句结束的原始片段（含前导空白/注释与语句本身）。
+    // Keep the original segment through the statement's end (leading trivia, comments, and the statement).
     out += code.slice(cursor, end);
     cursor = end;
     const names = collectStatementBindingNames(stmt);
@@ -219,7 +219,7 @@ export function instrumentForContextPersistence(code: string, ast: ESTree.Progra
       out += `;${assigns}`;
     }
   });
-  // 保留最后一条语句之后的尾部原始片段。
+  // Keep the trailing original segment after the last statement.
   out += code.slice(cursor);
   return out;
 }

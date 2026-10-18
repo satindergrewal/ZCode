@@ -19,8 +19,8 @@ import { assertNotOffPeakTurn } from "./off-peak.js";
 
 const WORKFLOW_TOOL_NAME = "Workflow";
 /**
- * D52：Workflow 的脚本子会话由 script-workflow-child-runtime 按父会话常驻选择建模型，
- * 不携带闲时轮的 modelExecution，同样会落到用户 Coding Plan，闲时轮内一并拒绝。
+ * D52: the Workflow script sub-session's model is built by script-workflow-child-runtime from the parent's resident selection,
+ * without the idle turn's modelExecution; it also lands on the user's Coding Plan, and is rejected within idle turns.
  */
 const OFF_PEAK_WORKFLOW_HINT = "Run the child work with foreground Agent calls instead.";
 

@@ -3,7 +3,7 @@ import { createConnection } from "node:net";
 import type { BrowserClientTransport } from "@zcode/core/browser-client";
 import type { NodeReplRequestMeta, NodeReplSession } from "@zcode/core/repl";
 import type { BrowserCommand, BrowserCommandResult } from "@zcode/shared";
-// 只加载 broker 协议；shared 总入口会在每个 Worker 中初始化无关领域的 schema。
+// Loads only the broker protocol; the shared root entry initializes unrelated domains' schemas in every Worker.
 import {
   NODE_REPL_BROWSER_BROKER_SOCKET_ENV,
   NODE_REPL_BROWSER_BROKER_TOKEN_ENV,

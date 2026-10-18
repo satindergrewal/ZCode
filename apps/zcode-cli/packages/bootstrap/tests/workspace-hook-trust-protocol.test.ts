@@ -73,28 +73,31 @@ describe("workspace Hook Trust protocol operation", () => {
       },
       reasonCode: "workspace_hooks_policy_requires_pretrust",
     },
-  ])("rejects Settings pretrust before mutation for $policy.mode", async ({ policy, reasonCode }) => {
-    const grant = vi.fn();
+  ])(
+    "rejects Settings pretrust before mutation for $policy.mode",
+    async ({ policy, reasonCode }) => {
+      const grant = vi.fn();
 
-    await expect(
-      grantWorkspaceHookTrustForProtocol(
-        {
-          workspace: {
-            workspacePath: "/repo",
-            workspaceIdentity: "workspace:repo",
-            workspaceKey: "workspace:repo",
+      await expect(
+        grantWorkspaceHookTrustForProtocol(
+          {
+            workspace: {
+              workspacePath: "/repo",
+              workspaceIdentity: "workspace:repo",
+              workspaceKey: "workspace:repo",
+            },
+            bundleDigest: BUNDLE,
+            hookDeclarationDigest: DIGEST,
           },
-          bundleDigest: BUNDLE,
-          hookDeclarationDigest: DIGEST,
-        },
-        {
-          grant,
-          policyProvider: new InMemoryWorkspaceHookPolicyProvider(policy),
-        },
-      ),
-    ).resolves.toEqual({ accepted: false, reasonCode });
-    expect(grant).not.toHaveBeenCalled();
-  });
+          {
+            grant,
+            policyProvider: new InMemoryWorkspaceHookPolicyProvider(policy),
+          },
+        ),
+      ).resolves.toEqual({ accepted: false, reasonCode });
+      expect(grant).not.toHaveBeenCalled();
+    },
+  );
 
   it("fails closed before mutation when the managed policy provider is unavailable", async () => {
     const grant = vi.fn();
@@ -195,7 +198,11 @@ describe("workspace Hook Trust protocol operation", () => {
 // 的全部活跃 session 重载 Trust store（否则运行中 session 的 coordinator 内存镜像
 // 停留旧值：已信任 Hook 继续被拒、banner pendingCount 不刷新）。
 describe("notifyWorkspaceHookTrustGrantSessions fan-out", () => {
-  function fakeSessionRecord(workspaceKey: string, workspacePath: string, workspaceIdentity?: string) {
+  function fakeSessionRecord(
+    workspaceKey: string,
+    workspacePath: string,
+    workspaceIdentity?: string,
+  ) {
     const reload = vi.fn(async () => undefined);
     return {
       reload,

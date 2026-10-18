@@ -9,9 +9,9 @@ import {
 import type { CommandCenterApp, CommandCenterDeps } from "../src/command-center.js";
 
 /**
- * `/dwf` 的命令面测试（docs/dynamic-workflow/launch.md「`/dwf`」）。
- * 三条不变量在这里守着：能力缺席要说「不可用」而不是空表；cancel 缺 runId 只在
- * 恰一在飞时替用户决定；resume 的拒绝理由原样来自服务端，绝不客户端重新推导。
+ * Command-surface tests for `/dwf` (docs/dynamic-workflow/launch.md, `/dwf`).
+ * Three invariants hold here: a missing capability says unavailable rather than showing an empty table; cancel without runId decides for the user
+ * only when exactly one run is in flight; resume rejection reasons come verbatim from the server, never re-derived client-side.
  */
 
 const ABORT = { abortSignal: new AbortController().signal };
@@ -72,7 +72,7 @@ test("/dwf lists this session's dynamic workflow runs as text", async () => {
   assert.equal(requestedLimit, 20);
   assert.match(result.response, /Dynamic workflow runs \(2\)/);
   assert.match(result.response, /dwfrun_live · nightly audit · running/);
-  // resumable 与 failure 一起呈现：用户看到「可恢复」才知道 /dwf resume 有意义。
+  // resumable is surfaced next to failure: seeing resumable is what makes /dwf resume meaningful.
   assert.match(
     result.response,
     /dwfrun_dead · flaky test hunt · stopped\/interrupted · resumable \(Interrupted: host exited\)/,
@@ -97,7 +97,7 @@ test("/dwf list degrades gracefully when label and updatedAt are absent", async 
 
   const result = await submitPrompt("/dwf list", ABORT);
 
-  // 老服务端不发这两个可选键：标签回落 runId、时间整段省略，行仍然完整可读。
+  // Older servers omit both optional keys: the label falls back to runId and the time is dropped; the line stays fully readable.
   assert.match(result.response, /- dwfrun_old · running/);
   assert.ok(!result.response.includes("updated"), "no time column when the server omits it");
 });
@@ -109,7 +109,7 @@ test("/dwf list does not repeat the runId when label fell back to it", async () 
 
   const result = await submitPrompt("/dwf list", ABORT);
 
-  // 服务端的 label 兜底最后一档就是 runId；照抄会印成 "dwfrun_bare dwfrun_bare"。
+  // The server label's final fallback is the runId; echoing it blindly prints "dwfrun_bare dwfrun_bare".
   assert.match(result.response, /- dwfrun_bare · running/);
 });
 
@@ -139,7 +139,7 @@ test("/dwf list says not available when the capability is absent", async () => {
 
   const result = await submitPrompt("/dwf list", ABORT);
 
-  // 能力缺席 ≠ 没有 run：必须区分，否则用户以为工作流丢了。
+  // Missing capability is not no-runs: the distinction matters, or users think their workflows vanished.
   assert.match(result.response, /not available in this client/);
 });
 
@@ -158,7 +158,7 @@ test("/dwf cancel without a run id cancels the only in-flight run", async () => 
 
   const result = await submitPrompt("/dwf cancel", ABORT);
 
-  // runId ≡ taskId：终态 run 不是候选，所以唯一在飞的那个被取消。
+  // runId === taskId: settled runs are not candidates, so the single in-flight run is the one cancelled.
   assert.equal(cancelledTaskId, "dwfrun_live");
   assert.match(result.response, /Cancelled dynamic workflow run dwfrun_live\./);
 });
@@ -178,7 +178,7 @@ test("/dwf cancel without a run id lists candidates when several are in flight",
 
   const result = await submitPrompt("/dwf cancel", ABORT);
 
-  // 多个候选时绝不猜：取消是丢掉的进度，猜错的代价不对称。
+  // Never guess among candidates: cancelling discards progress, and a wrong guess is asymmetrically costly.
   assert.equal(cancelCalled, false);
   assert.match(result.response, /Multiple in-flight dynamic workflow runs/);
   assert.match(result.response, /dwfrun_a · running/);
@@ -264,7 +264,7 @@ test("/dwf resume renders the server's structured rejection", async () => {
 
   const result = await submitPrompt("/dwf resume dwfrun_done", ABORT);
 
-  // 服务端裁定原样呈现：友好一行 + 原始 reason code（不按 status 客户端重推导）。
+  // The server verdict is shown verbatim: friendly line plus raw reason code, never re-derived from status client-side.
   assert.match(result.response, /Cannot resume dwfrun_done/);
   assert.match(result.response, /only a stopped run can be resumed/);
   assert.match(result.response, /\(not_resumable\)/);
@@ -333,7 +333,7 @@ test("/dwf rejects an unknown subcommand with usage", async () => {
 
   const result = await submitPrompt("/dwf status", ABORT);
 
-  // 刻意不做 /dwf status：GetWorkflowRun 是模型工具，用户问模型即可。
+  // There is deliberately no /dwf status: GetWorkflowRun is a model tool; ask the model.
   assert.match(result.response, /Usage: \/dwf/);
 });
 
@@ -342,9 +342,9 @@ test("the slash command registry knows /dwf and /workflow and has dropped /workf
   assert.equal(dwf?.type, "known");
   assert.equal(dwf?.type === "known" ? dwf.name : undefined, "dwf");
 
-  // legacy `/workflows` 命名空间整体移除（面板机器随之删除）。`/workflow` 不是它的残留：
-  // 它是与 `/init` 同路的内置 prompt 命令（docs/design/v2/commands.md），名字由 TUI 识别、
-  // 正文由 bootstrap 展开。
+  // The legacy `/workflows` namespace was removed wholesale (panel machinery with it). `/workflow` is not a leftover:
+  // it is a builtin prompt command on the same path as /init (docs/design/v2/commands.md): the TUI recognizes the name
+  // and bootstrap expands the body.
   assert.equal(parseSlashCommand("/workflow")?.type, "known");
   assert.equal(parseSlashCommand("/workflows")?.type, "unknown");
 
@@ -352,6 +352,6 @@ test("the slash command registry knows /dwf and /workflow and has dropped /workf
   assert.ok(names.includes("dwf"), "/dwf must be suggestible in the composer");
   assert.ok(names.includes("workflow"), "/workflow is a builtin and must be suggestible");
   assert.ok(!names.includes("workflows"));
-  // /expert 是另一套 legacy 面，本轮不动。
+  // /expert is a separate legacy surface, untouched this round.
   assert.ok(names.includes("expert"));
 });

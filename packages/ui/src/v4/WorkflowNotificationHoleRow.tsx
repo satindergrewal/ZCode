@@ -6,15 +6,15 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { workflowRunQuestionWaitedLabel } from "@/app-shell/workflowRunQuestions.js";
 
 /**
- * 留白通知行（docs/dynamic-workflow/transcript-and-notifications.md「The notification row」的 hole 一行、
- * 「The hole row's live state」）。从 WorkflowNotificationToolRow.tsx 拆出（max-lines 门）：同一套
- * ToolLayout 语法，笔图标，种类词按 run 投影的 `holes` 活翻转——
- *   run 在场且此 siteId 是 waiting → 「工作流留白 · 等待补全」，等待时长每 30 秒刷一次；
- *   run 在场且已 filled → 「留白已补全」；
- *   run 不在投影里（`holes` 缺席）→ 中性的「工作流留白」。
- * 主文本 `· <run 名> · <留白名>` 加类型徽标；展开体是提示全文、它站在哪两站之间、须返回什么、草稿
- * 路径、等了多久、run 链接。**永不 shimmer**：留白等的是主代理，不是工作。体不引用补全代码——那在相邻
- * 的 FillWorkflowHole 工具卡上。
+ * The hole notification row (docs/dynamic-workflow/transcript-and-notifications.md, The notification row's hole line and
+ * The hole row's live state), split out of WorkflowNotificationToolRow.tsx (max-lines gate): same
+ * ToolLayout grammar, pen icon, and a kind label flipped live by the run projection's `holes` --
+ *   run present and this siteId waiting -> workflow-hole awaiting-fill, wait time refreshing every 30s;
+ *   run present and filled -> hole filled;
+ *   run absent from the projection (no `holes`) -> neutral workflow-hole.
+ * Body text `· <run name> · <hole name>` plus the kind badge; expanded: the full prompt, bounding phases, expected return,
+ * draft path, wait time, run link. **Never shimmers**: the hole waits on the lead agent, not work. No fill code here --
+ * that lives on the adjacent FillWorkflowHole tool card.
  */
 export type WorkflowHoleNotification = Extract<WorkflowNotificationMeta, { kind: "hole" }>;
 
@@ -52,7 +52,7 @@ export function WorkflowNotificationHoleRow({
   notification: WorkflowHoleNotification;
   runName: string;
   toolId: string;
-  /** run 投影里的留白表；undefined = run 不在活投影（中性词）。 */
+  /** The run projection's hole table; undefined = run absent from the live projection (neutral copy). */
   holes: readonly WorkflowRunHole[] | undefined;
   onOpenRun?: () => void;
   forceOpen?: boolean;
@@ -60,7 +60,7 @@ export function WorkflowNotificationHoleRow({
   const { intl } = useZCodeIntl();
   const state = holeRowState(holes, notification.siteId);
 
-  // 等待时长要在没有事件流时也照走（停驻的 run 恰恰不发事件），30 秒喂一次新的「现在」；只在等待时走。
+  // Wait time must tick with no event stream (a stalled run emits none): feed a fresh now every 30s, only while waiting.
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (state !== "waiting") return undefined;

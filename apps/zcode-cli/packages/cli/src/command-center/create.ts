@@ -209,22 +209,22 @@ export function createCommandCenter(deps: CommandCenterDeps): TuiSubmitPrompt {
       if (command.name === "init") {
         const app = await deps.getApp();
         const prompt = command.args ? `/init ${command.args}` : "/init";
-                // A TUI-known slash command without an explicit branch falls through to the
-                // resume fallback at the end of this file. /init is a plain prompt command and must go through app.submitPrompt
-                // into the bootstrap resolver to share one expansion path with app --stdio.
+        // A TUI-known slash command without an explicit branch falls through to the
+        // resume fallback at the end of this file. /init is a plain prompt command and must go through app.submitPrompt
+        // into the bootstrap resolver to share one expansion path with app --stdio.
         return attachCurrentSessionMetadata(await app.submitPrompt(prompt, options), deps, app);
       }
 
       if (command.name === "workflow") {
-        // disabled 下 builtin resolver 不展开 `/workflow`，照常提交会把原文当普通文本发给模型；
-        // 在本地拦下，不建 app、不发模型（launch.md「The standalone CLI: `--workflow-mode`」）。
+        // When disabled, the builtin resolver does not expand `/workflow`; submitting as usual would send the raw text to the model as a plain prompt.
+        // Intercept locally: no app creation, no model call (launch.md, "The standalone CLI: `--workflow-mode`").
         if (!isWorkflowModeEnabled(deps.workflowMode)) {
           return { mode: deps.getMode?.(), response: WORKFLOW_DISABLED_NOTICE };
         }
         const app = await deps.getApp();
         const prompt = command.args ? `/workflow ${command.args}` : "/workflow";
-                // Same pattern as /init: the raw text goes to app.submitPrompt, expanded by bootstrap's builtin resolver into
-                // a prompt that first loads the dynamic-workflows skill, then writes a script calling CreateWorkflow.
+        // Same pattern as /init: the raw text goes to app.submitPrompt, expanded by bootstrap's builtin resolver into
+        // a prompt that first loads the dynamic-workflows skill, then writes a script calling CreateWorkflow.
         return attachCurrentSessionMetadata(await app.submitPrompt(prompt, options), deps, app);
       }
 

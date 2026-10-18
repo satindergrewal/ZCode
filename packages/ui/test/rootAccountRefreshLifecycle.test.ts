@@ -55,9 +55,11 @@ describe("Root 账号刷新生命周期", () => {
     try {
       await waitFor(() =>
         expect(logger.warn).toHaveBeenCalledWith(
-          "[Root] Startup account config refresh failed; watching later updates", {
-          error: expect.any(Error),
-        }),
+          "[Root] Startup account config refresh failed; watching later updates",
+          {
+            error: expect.any(Error),
+          },
+        ),
       );
       expect(refreshProviderState).toHaveBeenCalledOnce();
       expect(onDidChange).toHaveBeenCalledOnce();

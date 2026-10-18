@@ -168,7 +168,13 @@ export const userCandidates: Candidate[] = [
     target: "latest",
     surface: "message actions",
   },
-  { id: "editOld", kind: "user", label: "Edit older query", target: "old", surface: "message actions" },
+  {
+    id: "editOld",
+    kind: "user",
+    label: "Edit older query",
+    target: "old",
+    surface: "message actions",
+  },
 ];
 
 const systemCandidates: Candidate[] = [
@@ -342,7 +348,8 @@ function buildStateNode(
     kind: "state",
     title: `S${round}: ${context.runPhase}`,
     subtitle: contextLabel(context),
-    detail: "Visible product context. The next layer enumerates the Cartesian product of all candidate actions, then prunes with product guards.",
+    detail:
+      "Visible product context. The next layer enumerates the Cartesian product of all candidate actions, then prunes with product guards.",
     context,
     children: [],
   });
@@ -358,7 +365,11 @@ function buildStateNode(
   const loopKey = `${round}:${contextKey(context)}`;
   const visited = seen.get(loopKey) ?? 0;
   if (visited > 1) {
-    return makeCaseNode(node, "Duplicate context", "The model reached the same context again; decide whether to merge equivalent classes.");
+    return makeCaseNode(
+      node,
+      "Duplicate context",
+      "The model reached the same context again; decide whether to merge equivalent classes.",
+    );
   }
   const nextSeen = new Map(seen);
   nextSeen.set(loopKey, visited + 1);
@@ -529,7 +540,12 @@ function evaluateRunning(context: ProductContext, candidate: Candidate): Decisio
     );
   }
   if (candidate.id === "forkLatest" || candidate.id === "forkOld") {
-    return reject(context, "runningCannotFork", "Cannot fork while running", "Neither the latest nor older turns can be forked.");
+    return reject(
+      context,
+      "runningCannotFork",
+      "Cannot fork while running",
+      "Neither the latest nor older turns can be forked.",
+    );
   }
   if (candidate.id === "editLatest" || candidate.id === "editOld") {
     return reject(
@@ -641,7 +657,7 @@ function evaluateCompleted(context: ProductContext, candidate: Candidate): Decis
         context,
         "heldQueueInputRequiresChoice",
         "Sending with a held queue needs a user verdict",
-        "Present \"clear queue then send / keep queue and send\"; the disposition travels with the command.",
+        'Present "clear queue then send / keep queue and send"; the disposition travels with the command.',
       );
     }
     return allow(context, "completedCanSend", "Send again once completed", {
@@ -690,7 +706,12 @@ function evaluateIdle(context: ProductContext, candidate: Candidate): Decision {
     );
   }
   if (candidate.id === "forkLatest" || candidate.id === "forkOld") {
-    return reject(context, "idleCannotFork", "No turn to fork", "Fork must be disabled when no turn completed.");
+    return reject(
+      context,
+      "idleCannotFork",
+      "No turn to fork",
+      "Fork must be disabled when no turn completed.",
+    );
   }
   if (candidate.id === "editLatest" || candidate.id === "editOld") {
     return reject(
@@ -777,7 +798,8 @@ function allow(
     title,
     reason: title,
     next,
-    assertion: "The action must apply, with UI, message ownership, button state, and next context consistent.",
+    assertion:
+      "The action must apply, with UI, message ownership, button state, and next context consistent.",
   };
 }
 
@@ -796,7 +818,12 @@ function enqueue(
   return {
     kind: "enqueue",
     ruleId,
-    title: queued === "goal" ? "goal enqueued" : queued === "compact" ? "compact enqueued" : "text message enqueued",
+    title:
+      queued === "goal"
+        ? "goal enqueued"
+        : queued === "compact"
+          ? "compact enqueued"
+          : "text message enqueued",
     reason,
     next: {
       ...context,
@@ -819,7 +846,8 @@ function choice(context: ProductContext, ruleId: string, title: string, reason: 
     reason,
     // No next: the state does not advance until the user submits a disposition (clear/keep both end at startNow).
     next: context,
-    assertion: "A clear choice must be presented; nothing is enqueued or sent before the user decides.",
+    assertion:
+      "A clear choice must be presented; nothing is enqueued or sent before the user decides.",
   };
 }
 
@@ -846,7 +874,8 @@ function systemTransition(
     title,
     reason: "An async system event advances product state.",
     next,
-    assertion: "System events must be persisted under the owning session/run and must not pollute other traces.",
+    assertion:
+      "System events must be persisted under the owning session/run and must not pollute other traces.",
   };
 }
 

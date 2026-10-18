@@ -29,7 +29,6 @@ export async function createCompatibleHookStdin(input: HookInput): Promise<{
   compatible.transcriptPath = transcriptPath;
 
   if ("toolName" in input) {
-
     // Add lossless aliases only; ZCode camelCase fields remain the primary internal contract.
     compatible.tool_name = input.toolName;
     compatible.tool_input = input.toolInput;
@@ -44,7 +43,6 @@ export async function createCompatibleHookStdin(input: HookInput): Promise<{
       compatible.tool_response = input.toolResponse;
       break;
     case HookEventName.PostToolUseFailure:
-
       compatible.error_details = input.error;
       compatible.error = input.error.message;
       compatible.is_interrupt = input.isInterrupt;

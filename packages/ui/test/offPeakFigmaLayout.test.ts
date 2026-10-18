@@ -125,7 +125,7 @@ describe("idle-time task Figma layout contracts", () => {
   });
 
   it("keeps the main tabs 8px apart and trailing actions 12px apart", () => {
-    const actionRowStart = automationsSectionSource.indexOf("Tab：Scheduled");
+    const actionRowStart = automationsSectionSource.indexOf("Tabs: Scheduled always");
     const actionRowEnd = automationsSectionSource.indexOf("{loading &&", actionRowStart);
     const actionRowSource = automationsSectionSource.slice(actionRowStart, actionRowEnd);
 
@@ -135,7 +135,7 @@ describe("idle-time task Figma layout contracts", () => {
   });
 
   it("keeps inactive main tabs transparent until hover", () => {
-    const actionRowStart = automationsSectionSource.indexOf("Tab：Scheduled");
+    const actionRowStart = automationsSectionSource.indexOf("Tabs: Scheduled always");
     const actionRowEnd = automationsSectionSource.indexOf("{loading &&", actionRowStart);
     const actionRowSource = automationsSectionSource.slice(actionRowStart, actionRowEnd);
 
@@ -149,12 +149,12 @@ describe("idle-time task Figma layout contracts", () => {
   });
 
   it("keeps action-row labels at 14px and the idle create button text-only", () => {
-    const actionRowStart = automationsSectionSource.indexOf("Tab：Scheduled");
+    const actionRowStart = automationsSectionSource.indexOf("Tabs: Scheduled always");
     const actionRowEnd = automationsSectionSource.indexOf("{loading &&", actionRowStart);
     const actionRowSource = automationsSectionSource.slice(actionRowStart, actionRowEnd);
     const idleButtonStart = automationsSectionSource.indexOf("function OffPeakCreateButton");
     const idleButtonEnd = automationsSectionSource.indexOf(
-      "/** 创建表单的预填草稿",
+      "/** Prefill draft for the create form",
       idleButtonStart,
     );
     const idleButtonSource = automationsSectionSource.slice(idleButtonStart, idleButtonEnd);
@@ -285,7 +285,9 @@ describe("idle-time task Figma layout contracts", () => {
   });
 
   it("separates visible task cards and templates with the Figma divider rhythm", () => {
-    const separatorStart = automationsSectionSource.indexOf("真实任务卡与模板此前只靠空白分区");
+    const separatorStart = automationsSectionSource.indexOf(
+      "Fix note: real and template cards were separated by whitespace alone",
+    );
     const separatorEnd = automationsSectionSource.indexOf(
       "Idle-time task template",
       separatorStart,
@@ -364,7 +366,7 @@ describe("idle-time task Figma layout contracts", () => {
   });
 
   it("anchors the 160px history menu from the trigger start and preserves its 89px stack", () => {
-    const menuStart = historyTabSource.indexOf("旧版按触发器右缘对齐");
+    const menuStart = historyTabSource.indexOf("The old right-edge alignment");
     const menuEnd = historyTabSource.indexOf("</DropdownMenuContent>", menuStart);
     const menuSource = historyTabSource.slice(menuStart, menuEnd);
 

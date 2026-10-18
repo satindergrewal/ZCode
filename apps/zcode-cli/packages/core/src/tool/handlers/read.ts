@@ -111,11 +111,11 @@ function formatReadImageOutput(output: ReadImageOutput): ModelMessageContent {
     },
   };
   // A size hint in the tool result would make provider-visible content depend on whether scaling happened;
- // image results keep only the media block; dimensions stay in structured output for UI and debugging.
+  // image results keep only the media block; dimensions stay in structured output for UI and debugging.
   return [imageBlock];
 }
 
- // Mirrors images: tool result keeps only the media block; OpenAI-family providers get it split into a
+// Mirrors images: tool result keeps only the media block; OpenAI-family providers get it split into a
 // tool-result-media-projection emits it as a trailing user part (the AI SDK tool result has no video-part variant).
 function formatReadVideoOutput(output: ReadVideoOutput): ModelMessageContent {
   const videoBlock = {
@@ -260,7 +260,7 @@ function parseReadInput(input: unknown): ReadInput {
   }
 
   // Read input-preflight failures must reach the provider as <tool_use_error> text;
- // a raw ZodError JSON would diverge from binary/device preflight and capture.
+  // a raw ZodError JSON would diverge from binary/device preflight and capture.
   throw createCoreError(
     CoreErrorType.ToolExecutionFailed,
     `<tool_use_error>${toolUseErrorMessage}</tool_use_error>`,

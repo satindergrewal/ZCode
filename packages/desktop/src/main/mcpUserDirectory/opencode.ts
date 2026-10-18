@@ -1,22 +1,22 @@
 /**
- * MCP 用户目录模块 - OpenCode 格式转换
+ * MCP user-directory module - OpenCode format conversion.
  */
 
 import type { McpServerConfig } from "@zcode/shared";
 import type { OpenCodeMcpServerConfig } from "./types.js";
 
 /**
- * 将 OpenCode 配置格式转换为标准 McpServerConfig
- * OpenCode 格式: { type: "local", command: ["npx", "-y", "server"], env: {...} }
- * 标准格式: { command: "npx", args: ["-y", "server"], env: {...} }
+ * Convert the OpenCode config shape to the standard McpServerConfig.
+ * OpenCode: { type: "local", command: ["npx", "-y", "server"], env: {...} }
+ * Standard: { command: "npx", args: ["-y", "server"], env: {...} }
  */
 export function convertOpenCodeToStandard(config: OpenCodeMcpServerConfig): McpServerConfig {
   const result: McpServerConfig = {};
 
   if (config.type === "local" && config.command && config.command.length > 0) {
-    // command 数组的第一个元素是命令本身
+    // The first command element is the binary.
     result.command = config.command[0];
-    // 剩余元素是参数
+    // The rest are arguments.
     if (config.command.length > 1) {
       result.args = config.command.slice(1);
     }
@@ -36,7 +36,7 @@ export function convertOpenCodeToStandard(config: OpenCodeMcpServerConfig): McpS
 }
 
 /**
- * 将标准 McpServerConfig 转换为 OpenCode 配置格式
+ * Convert standard McpServerConfig back to the OpenCode shape.
  */
 export function convertStandardToOpenCode(config: McpServerConfig): OpenCodeMcpServerConfig {
   const result: OpenCodeMcpServerConfig = {
@@ -44,7 +44,7 @@ export function convertStandardToOpenCode(config: McpServerConfig): OpenCodeMcpS
   };
 
   if (result.type === "local") {
-    // 将 command 和 args 合并为数组
+    // Merge command and args into one array.
     const commandParts: string[] = [];
     if (config.command) {
       commandParts.push(config.command);
@@ -72,7 +72,7 @@ export function convertStandardToOpenCode(config: McpServerConfig): OpenCodeMcpS
 }
 
 /**
- * 检查配置是否是 OpenCode 格式
+ * Check whether a config uses the OpenCode shape.
  */
 export function isOpenCodeFormat(config: McpServerConfig): boolean {
   return "type" in config || Array.isArray((config as unknown as OpenCodeMcpServerConfig).command);

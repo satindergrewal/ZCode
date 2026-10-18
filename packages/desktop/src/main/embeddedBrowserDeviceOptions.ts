@@ -1,6 +1,6 @@
 import type { EmbeddedBrowserPermissionDeviceOption } from "@zcode/shared";
 
-/** select-* 事件携带的 Electron 设备对象（HID/USB/Serial/Bluetooth 字段各异）映射为统一弹窗选项。 */
+/** Maps the Electron device objects carried by select-* events (HID/USB/Serial/Bluetooth fields differ) into uniform dialog options. */
 export function readDeviceOptions(rawList: unknown): EmbeddedBrowserPermissionDeviceOption[] {
   if (!Array.isArray(rawList)) return [];
   return rawList.flatMap((device) => {

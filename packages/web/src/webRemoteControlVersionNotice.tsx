@@ -2,7 +2,7 @@ import { createRoot } from "react-dom/client";
 import { Button } from "@zcode/ui";
 import { resolveWebRemoteControlScreenLocale } from "./webRemoteControlFailureScreen.js";
 
-/** 原页面保持挂载；原生 modal 阻止背景元素与其他 portal 的操作，全局快捷键由入口提前拦截。 */
+/** The page stays mounted; the native modal blocks background elements and other portals, and global shortcuts are intercepted at the entry. */
 export function showWebRemoteControlVersionNotice(
   version: string,
   onReload: () => void,
@@ -10,9 +10,9 @@ export function showWebRemoteControlVersionNotice(
   const dialog = document.createElement("dialog");
   dialog.className =
     "m-auto max-w-md rounded-2xl border border-popover-border bg-popover p-6 text-foreground shadow-lg";
-  // Web 文件不在共享 UI 的 Tailwind 扫描目录内；流式宽度避免依赖未生成的响应式 utility。
+  // Web files sit outside shared-UI Tailwind scan dirs; streaming widths avoid depending on ungenerated responsive utilities.
   dialog.style.width = "calc(100% - 2rem)";
-  // 已打开的 Radix 弹窗会给 body 设置 pointer-events:none；顶层原生 modal 必须显式恢复指针事件。
+  // Open Radix dialogs set pointer-events:none on body; the top-level native modal must restore pointer events explicitly.
   dialog.style.pointerEvents = "auto";
   dialog.setAttribute("aria-labelledby", "remote-version-title");
   dialog.setAttribute("aria-describedby", "remote-version-description");
@@ -39,7 +39,7 @@ export function showWebRemoteControlVersionNotice(
     </div>,
   );
   dialog.showModal();
-  // 原生 modal 的事件仍会冒泡到 document/window，阻止背景的全局快捷键处理。
+  // Native modal events still bubble to document/window; stop them so background global shortcut handling stays blocked.
   for (const type of [
     "keydown",
     "keyup",

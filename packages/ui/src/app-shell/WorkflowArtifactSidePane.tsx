@@ -177,7 +177,7 @@ function WorkflowArtifactView({
     version,
     enabled: !preset,
   });
-  // 看板只让 CLI 取 spec 点名的字段；spec 还没到或画不了时不取数——正文此时本来也画不出图。
+  // Boards fetch only the fields the spec names; skip fetching until the spec arrives and renders, the body has no chart before then.
   const fields = useMemo(
     () =>
       isArtifactPresetKind(artifact.kind)
@@ -207,7 +207,7 @@ function WorkflowArtifactView({
       ? joinFilePath(tab.workspacePath, sourcePath)
       : undefined;
 
-  // 头部只留一个文件控件：能「作为文件打开」时「在工作区显示」收进它的菜单，否则独立成按钮。
+  // One file control in the header: when open-as-file is possible, reveal-in-workspace lives in its menu; otherwise it is a standalone button.
   const canOpenAsFile = useCanOpenArtifactAsFile();
   const openAsFile = !preset && canOpenAsFile;
   const reveal =
@@ -262,7 +262,7 @@ function WorkflowArtifactView({
             {openAsFile ? (
               <ArtifactOpenAsFileButton
                 artifactId={artifact.id}
-                // 只交**属于这一版**的字节：换版本那一帧 bytes 还是旧版的，而副本只写一次。
+                // Hand over only this version's bytes: for one frame after a version switch they are still the old ones, and the copy is written once.
                 bytes={bytesState.bytesVersion === version ? bytesState.bytes : null}
                 fileName={artifactOpenAsFileName(artifact, version)}
                 runId={tab.runId}

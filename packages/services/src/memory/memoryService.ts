@@ -4,14 +4,7 @@ import {
   type ProjectMemoryFileSummary,
   type ProjectMemoryWorkspaceSummary,
 } from "./memory.js";
-import {
-  lstat,
-  mkdir,
-  readFile,
-  readdir,
-  realpath,
-  writeFile,
-} from "node:fs/promises";
+import { lstat, mkdir, readFile, readdir, realpath, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, relative, sep } from "node:path";
 import { readProjectMemoryFileFromStableHandle } from "#src/memory/projectMemoryStableRead.js";
@@ -22,12 +15,7 @@ const PROJECT_MEMORY_DIRECTORY_NAME = "memory";
 const PROJECT_KEY_SUFFIX_PATTERN = /^(.*)-[a-f0-9]{16}$/i;
 
 function isNotFoundError(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    error.code === "ENOENT"
-  );
+  return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
 }
 
 function getProjectMemoriesRoot(): string {
@@ -72,15 +60,13 @@ async function isPlainDirectory(path: string): Promise<boolean> {
 async function requirePlainDirectory(path: string): Promise<void> {
   const metadata = await lstat(path);
   if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
-    throw new Error(
-      `Project Memory directory is not a regular directory: ${path}`,
-    );
+    throw new Error(`Project Memory directory is not a regular directory: ${path}`);
   }
 }
 
 async function requireProjectMemoriesRoot(): Promise<string> {
   const projectsRoot = getProjectMemoriesRoot();
-  // 只校验 workspace 子目录时，projectsRoot symlink 会让 list/read 跟随到本地数据目录外。
+  // Validating only the workspace subtree lets a projectsRoot symlink escape the local data dir on list/read.
   await requirePlainDirectory(projectsRoot);
   return projectsRoot;
 }
@@ -93,11 +79,9 @@ async function requireExactProjectMemoryFile(
   const fileEntry = memoryEntries.find((entry) => entry.name === fileName);
   const requestedFilePath = join(memoryRoot, fileName);
   if (!fileEntry) {
-    // 文件确实不存在时继续透传原始 ENOENT；只有大小写别名能命中时才拒绝读取。
+    // Pass the original ENOENT through when the file is truly absent; reject only when a case-alias would hit.
     await lstat(requestedFilePath);
-    throw new Error(
-      `Project Memory file name does not match exactly: ${fileName}`,
-    );
+    throw new Error(`Project Memory file name does not match exactly: ${fileName}`);
   }
   if (!fileEntry.isFile() || fileEntry.isSymbolicLink()) {
     throw new Error(`Project Memory file is not a regular file: ${fileName}`);
@@ -112,14 +96,8 @@ async function assertContainedProjectMemoryPath(
   const projectsRootRealPath = await realpath(projectsRoot);
   const targetRealPath = await realpath(targetPath);
   const relativePath = relative(projectsRootRealPath, targetRealPath);
-  if (
-    relativePath === ".." ||
-    relativePath.startsWith(`..${sep}`) ||
-    isAbsolute(relativePath)
-  ) {
-    throw new Error(
-      `Project Memory path is outside the local profile: ${targetPath}`,
-    );
+  if (relativePath === ".." || relativePath.startsWith(`..${sep}`) || isAbsolute(relativePath)) {
+    throw new Error(`Project Memory path is outside the local profile: ${targetPath}`);
   }
 }
 
@@ -143,15 +121,15 @@ function getUserMemoryDir(): string {
 }
 
 /**
- * 获取 agent 对应的 memory 文件名
+ * Maps an agent to its memory file name
  */
 function getMemoryFileName(_agentId: string): string {
-  // 目前只支持 MEMORY.md，后续可以根据 agent 类型扩展
+  // Only MEMORY.md for now; extend per agent type later
   return "MEMORY.md";
 }
 
 /**
- * 创建 Memory 服务实例
+ * Creates the Memory service instance
  */
 export function createMemoryService(): IMemoryService {
   async function loadMemory(params: {
@@ -164,7 +142,7 @@ export function createMemoryService(): IMemoryService {
       const fileName = getMemoryFileName(agentId);
       const memoryDir = getUserMemoryDir();
 
-      // 直接从用户级 ~/.claude/memory 目录读取
+      // Read straight from the user-level ~/.claude/memory directory
       const filePath = join(memoryDir, fileName);
       try {
         const content = await readFile(filePath, "utf-8");
@@ -175,7 +153,7 @@ export function createMemoryService(): IMemoryService {
           },
         };
       } catch {
-        // 文件不存在，返回 null
+        // Missing file: return null
         return { memory: null };
       }
     } catch (error) {
@@ -192,7 +170,7 @@ export function createMemoryService(): IMemoryService {
     const { agentId, config } = params;
 
     try {
-      // 直接保存到用户级 ~/.claude/memory 目录
+      // Write straight to the user-level ~/.claude/memory directory
       const memoryDir = getUserMemoryDir();
       await mkdir(memoryDir, { recursive: true });
 
@@ -205,10 +183,7 @@ export function createMemoryService(): IMemoryService {
     }
   }
 
-  async function clearMemory(params: {
-    workspacePath: string;
-    agentId: string;
-  }): Promise<void> {
+  async function clearMemory(params: { workspacePath: string; agentId: string }): Promise<void> {
     const { agentId } = params;
 
     try {
@@ -219,7 +194,7 @@ export function createMemoryService(): IMemoryService {
       try {
         await writeFile(filePath, "", "utf-8");
       } catch {
-        // 文件不存在，忽略错误
+        // Missing file: ignore
       }
     } catch (error) {
       console.error("Failed to clear memory:", error);
@@ -232,14 +207,12 @@ export function createMemoryService(): IMemoryService {
     try {
       await mkdir(memoryDir, { recursive: true });
     } catch {
-      // 目录已存在
+      // Directory already exists
     }
     return { path: memoryDir };
   }
 
-  async function listProjectMemories(): Promise<
-    ProjectMemoryWorkspaceSummary[]
-  > {
+  async function listProjectMemories(): Promise<ProjectMemoryWorkspaceSummary[]> {
     let projectsRoot: string;
     let projectEntries;
     try {
@@ -261,10 +234,7 @@ export function createMemoryService(): IMemoryService {
       const workspaceId = projectEntry.name;
       const workspaceRoot = join(projectsRoot, workspaceId);
       const memoryRoot = join(workspaceRoot, PROJECT_MEMORY_DIRECTORY_NAME);
-      if (
-        !(await isPlainDirectory(workspaceRoot)) ||
-        !(await isPlainDirectory(memoryRoot))
-      ) {
+      if (!(await isPlainDirectory(workspaceRoot)) || !(await isPlainDirectory(memoryRoot))) {
         continue;
       }
 
@@ -272,7 +242,7 @@ export function createMemoryService(): IMemoryService {
       try {
         memoryEntries = await readdir(memoryRoot, { withFileTypes: true });
       } catch (error) {
-        // 目录检查后 Memory Agent 仍可能删除目录；catalog 快照只跳过已消失的 workspace。
+        // The agent can still remove the dir after the check; the catalog snapshot just skips vanished workspaces.
         if (isNotFoundError(error)) {
           continue;
         }
@@ -293,7 +263,7 @@ export function createMemoryService(): IMemoryService {
         try {
           fileMetadata = await lstat(filePath);
         } catch (error) {
-          // readdir 后事实文件可能被并发删除；它不再属于本次只读快照。
+          // Entries can be deleted concurrently after readdir; they no longer belong to this read-only snapshot.
           if (isNotFoundError(error)) {
             continue;
           }
@@ -305,10 +275,7 @@ export function createMemoryService(): IMemoryService {
         files.push({
           name: memoryEntry.name,
           path: filePath,
-          kind:
-            memoryEntry.name === PROJECT_MEMORY_INDEX_FILE_NAME
-              ? "index"
-              : "item",
+          kind: memoryEntry.name === PROJECT_MEMORY_INDEX_FILE_NAME ? "index" : "item",
           size: fileMetadata.size,
           updatedAt: fileMetadata.mtimeMs,
         });
@@ -328,9 +295,7 @@ export function createMemoryService(): IMemoryService {
     }
 
     workspaces.sort(
-      (left, right) =>
-        right.updatedAt - left.updatedAt ||
-        left.id.localeCompare(right.id, "en"),
+      (left, right) => right.updatedAt - left.updatedAt || left.id.localeCompare(right.id, "en"),
     );
     return workspaces;
   }
@@ -353,11 +318,8 @@ export function createMemoryService(): IMemoryService {
     await requirePlainDirectory(workspaceRoot);
     await requirePlainDirectory(memoryRoot);
 
-    // Bugfix：大小写不敏感文件系统会让请求名称命中不同大小写的磁盘文件，绕过 catalog 白名单。
-    const filePath = await requireExactProjectMemoryFile(
-      memoryRoot,
-      params.fileName,
-    );
+    // Bugfix: case-insensitive filesystems let a requested name hit a different-case file, bypassing the catalog allow-list.
+    const filePath = await requireExactProjectMemoryFile(memoryRoot, params.fileName);
     return readProjectMemoryFileFromStableHandle({
       fileName: params.fileName,
       filePath,

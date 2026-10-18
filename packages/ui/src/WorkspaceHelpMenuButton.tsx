@@ -131,7 +131,7 @@ export function WorkspaceHelpMenuButton({
         {isDesktop ? (
           <>
             <DropdownMenuSeparator />
-            {/* 独立导出入口曾被移除；复用原菜单动作，保持打包、系统定位与提示一致。 */}
+            {/* The standalone export entry returns via the original action; packaging/locate/toasts intact. */}
             <DropdownMenuItem onSelect={helpMenuActions.exportLogs}>
               <DownloadIcon className="size-4" />
               {intl.formatMessage({ id: "titleBar.menu.help.exportLogs" })}

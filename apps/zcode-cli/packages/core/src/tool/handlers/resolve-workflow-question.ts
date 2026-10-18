@@ -20,12 +20,7 @@ import {
   type ResolveWorkflowQuestionInput,
   type ResolveWorkflowQuestionOutput,
 } from "@zcode/contracts";
-import type {
-  ToolEntry,
-  ToolExecutionContext,
-  ToolHandler,
-  ToolHandlerFailure,
-} from "../types.js";
+import type { ToolEntry, ToolExecutionContext, ToolHandler, ToolHandlerFailure } from "../types.js";
 
 const RESOLVE_WORKFLOW_QUESTION_TIMEOUT_MS = 15_000;
 /** Output is one confirmation paragraph; 24k is plenty (as in ResumeWorkflowRun). */
@@ -101,9 +96,7 @@ const resolveWorkflowQuestionHandler: ToolHandler = async (
   input,
   context: ToolExecutionContext,
 ) => {
-  const parsed = ResolveWorkflowQuestionInputSchema.parse(
-    input,
-  ) as ResolveWorkflowQuestionInput;
+  const parsed = ResolveWorkflowQuestionInputSchema.parse(input) as ResolveWorkflowQuestionInput;
 
   const port = context.dynamicWorkflowRunPort;
   if (port === undefined || typeof port.resolveQuestion !== "function") {
@@ -143,7 +136,7 @@ export const resolveWorkflowQuestionToolEntry: ToolEntry = {
     sideEffectScope: "none",
     riskLevel: "low",
     // No confirm: answering only feeds text into an already-approved run (approved at CreateWorkflow's
- // confirm), same risk class as ResumeWorkflowRun. A dialog would park a waiting actor longer.
+    // confirm), same risk class as ResumeWorkflowRun. A dialog would park a waiting actor longer.
     needsApproval: false,
   },
   handler: resolveWorkflowQuestionHandler,

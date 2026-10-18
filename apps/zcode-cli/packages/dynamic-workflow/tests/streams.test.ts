@@ -12,12 +12,12 @@ import { FACADE_SITING_CODE } from "../src/analysis/facade-misuse.js";
 import { corpusDiagnostics } from "./helpers/analysis-corpus.js";
 
 /**
- * 流水线原语 channel / future 的编译期行为（docs/dynamic-workflow/authoring.md「Streams」、
+ * Compile-time behavior of the channel/future primitives (docs/dynamic-workflow/authoring.md, Streams;
  * docs/analysis.md「Phases」）：
- *   - 两者无站点，但仍是 facade callable——别名逃逸走 9001；
- *   - channel 是分析器「看穿」的容器：send 写入、for await 读出，生产者到消费者有数据边；
- *   - future 体作为 entered strand 内联在调用点；
- *   - collectSitePhases：唯一有名阶段进表，helper 被两处调用 / 首个标记之前的站点不进表。
+ *   - neither sites, both still facade-callables -- alias escapes ride 9001;
+ *   - channel is a container the analyzer sees through: send writes, for await reads, a producer-to-consumer data edge;
+ *   - the future body inlines at the call site as an entered strand;
+ *   - collectSitePhases: solely-named phases tabulate; twice-called helpers and pre-first-marker sites do not.
  */
 
 const PIPELINE = `
@@ -61,7 +61,7 @@ describe("streams — compile and lower", () => {
     const code = lowered.lowered?.code ?? "";
     expect(code).toContain('__host.channel("facts")');
     expect(code).toContain("__host.future(async () =>");
-    // 无站点：站点 id 清单里没有 channel / future 的份。
+    // No sites: channel/future appear in no site-id list.)
     expect(
       lowered.lowered?.siteIds.some((id) => id.startsWith("channel") || id.startsWith("future")),
     ).toBe(false);
@@ -177,13 +177,13 @@ describe("collectSitePhases", () => {
       "return late;",
     ].join("\n");
     const phases = sitePhasesOf(source);
-    // 首个标记之前：unphased，不进表。
+    // Before the first marker: unphased, not tabulated.)
     expect(phases.has("actor#1")).toBe(false);
     expect(phases.has("ask#1")).toBe(false);
-    // helper 里的站点被两个阶段各调一次：不唯一，不进表——引擎退回动态阶段。
+    // The helper's site is called under two phases: not unique, not tabulated -- the engine falls back dynamic.)
     expect(phases.has("actor#2")).toBe(false);
     expect(phases.has("ask#2")).toBe(false);
-    // 第二阶段独有的站点进表。
+    // The second phase's own site tabulates.)
     expect(phases.get("actor#3")).toBe("second");
     expect(phases.get("ask#3")).toBe("second");
   });

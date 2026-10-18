@@ -1,6 +1,6 @@
 /**
- * fake driver：以脚本化裁决 + 手动兑现的 promise 驱动引擎核心，不用 timer / 时钟 / 会话 / 磁盘。
- * 测试同时扮演"沙箱"（调用引擎的 host API）与"模型"（调用引擎的 WorkflowReportSink）。
+ * A fake driver: drives the engine core with scripted verdicts and manually settled promises, no timers/clock/sessions/disk.
+ * The test plays both sandbox (calling the engine host API) and model (calling the engine WorkflowReportSink).
  */
 
 import type {
@@ -36,7 +36,7 @@ function defer<T>(): Deferred<T> {
   return { promise, resolve, reject };
 }
 
-/** 排空微任务队列，让引擎内部的异步派发（惰性建会话）推进到位。 */
+/** Drains microtasks so the engine's async dispatch (lazy session creation) settles. */
 export async function flush(rounds = 12): Promise<void> {
   for (let i = 0; i < rounds; i++) await Promise.resolve();
 }
@@ -49,32 +49,30 @@ interface StartAskCall {
 
 interface WorldReadCall {
   op: WorldReadOp;
-  /** 位置实参数组（Boundary A 原样透传的脚本实参）。 */
+  /** Positional args (script args passed through verbatim per Boundary A). */
   args: unknown[];
   deferred: Deferred<unknown>;
 }
 
 export interface FakeDriverOptions {
   /**
-   * 为真时**不实现** `executeArtifactPublish`——模拟没有接产物存储的装配（纯 replay / 老
-   * fake）。引擎应据此以 `ArtifactStoreUnavailable` 拒绝内容成员，而不是静默发布一个空产物。
+   * When true, executeArtifactPublish is absent entirely -- an assembly with no artifact store (pure replay /
+   * old fake). The engine must reject content members with ArtifactStoreUnavailable, not silently publish empties.
    */
   withoutArtifactStore?: boolean;
-  /** 为真时内容产物的发布返回受控 promise（由 test 兑现/拒绝）；默认立即解析。 */
+  /** When true, content publishes return a promise the test settles; otherwise they resolve immediately. */
   deferArtifactPublishes?: boolean;
-  /** 为真时会话创建返回受控 promise（由 test 兑现）；默认立即解析。 */
+  /** When true, session creation returns a promise the test settles; otherwise it resolves immediately. */
   deferSessions?: boolean;
   /**
-   * 模拟生产 driver 的档位解析：会话创建时把「实际解析出的模型」写进 actor 记录，
-   * 正如 bootstrap 的 `journalActorResolvedModel` 所做（persona 只带档位，具体模型由宿主定）。
-   * 装上它才能验证引擎侧的 putActor 不会把这个 driver 拥有的字段抹掉。
+   * Mimics production tier resolution: session creation writes the resolved model into the actor record,
    */
   resolveModel?: (persona: PersonaSpec) => string;
-  /** resolveModel 写库需要 runId（与引擎的 runId 一致）。 */
+  /** runId for resolveModel writes (the engine's own). */
   runId?: string;
 }
 
-/** 从脚本给的 opts 里取 title（fake 只做真 driver 会做的这一小步）。 */
+/** Takes title from the script's opts (the one slice a real driver performs). */
 function titleOf(opts: unknown): string | undefined {
   const title = (opts as { title?: unknown } | undefined)?.title;
   return typeof title === "string" ? title : undefined;
@@ -85,36 +83,33 @@ export class FakeDriver implements WorkflowDriver {
   readonly submitResponses: Array<{ instance: InstanceRef; verdict: SubmitVerdict }> = [];
   readonly cancels: InstanceRef[] = [];
   readonly sessionCreations: ActorRef[] = [];
-  /** 每次会话创建收到的 persona（与 sessionCreations 同序）。 */
+  /** Persona captured per session creation (same order as sessionCreations). */
   readonly sessionPersonas: PersonaSpec[] = [];
   /**
-   * 每次会话创建收到的种子（与 sessionCreations 同序，无种子记 undefined）。
-   * 真 driver 会据它复制源会话的转录前缀；fake 只记录——引擎侧要验的是**传了什么**。
+   * Seed per session creation (same order; undefined when none). A real driver copies the source transcript
    */
   readonly sessionSeeds: Array<ActorSessionSeed | undefined> = [];
   readonly worldReads: WorldReadCall[] = [];
-  /** 每次内容产物发布收到的请求（引擎侧要验的是**传了什么**：id / version / path / opts）。 */
+  /** Request captured per content publish (what the engine passes: id/version/path/opts). */
   readonly artifactPublishes: ArtifactPublishRequest[] = [];
-  /** deferArtifactPublishes 下的受控 promise，与 artifactPublishes 同序。 */
+  /** Controlled promises under deferArtifactPublishes, aligned with artifactPublishes. */
   readonly artifactDeferrals: Array<Deferred<ArtifactVersionRecord>> = [];
   /**
-   * 内存中的「store」：`${id}@${version}` → 记录。真 driver 把字节拷进 tool-artifact store，
-   * fake 只把记录留在这张表里——引擎不关心字节，它关心的是记录原样回到 journal。
+   * The in-memory store: id@version -> record. A real driver copies bytes into the tool-artifact store;
    */
   readonly artifactStore = new Map<string, ArtifactVersionRecord>();
   readonly events: RunEvent[] = [];
   readonly sessionDeferrals: Array<Deferred<SessionRef>> = [];
-  /** dispose 的调用次数（引擎契约：结算后恰好一次，晚于 run-settled）。 */
+  /** dispose call count (engine contract: exactly once, after run-settled). */
   disposeCalls = 0;
-  /** dispose 被调用那一刻已发出的事件数（用于断言它晚于 run-settled）。 */
+  /** Events emitted when dispose ran (asserting it follows run-settled). */
   eventsAtDispose: number | undefined;
 
   constructor(
     readonly journal: JournalStorePort,
     private readonly options: FakeDriverOptions = {},
   ) {
-    // 「没有产物存储的装配」不是一个开关字段，而是**方法整个缺席**：引擎按方法在不在场
-    // 分派，所以 fake 也必须在同一层表达它，否则测的就不是产品里的那条路。
+    // A storeless assembly is not a flag -- the method is absent wholesale: the engine dispatches on presence,
     if (options.withoutArtifactStore === true) this.executeArtifactPublish = undefined;
   }
 
@@ -127,7 +122,7 @@ export class FakeDriver implements WorkflowDriver {
     this.sessionPersonas.push(persona);
     this.sessionSeeds.push(seed);
     if (this.options.resolveModel !== undefined) {
-      // 生产接缝的等价物：读改写，绝不整条覆盖（persona / name 不是 driver 的字段）。
+      // The production seam's equivalent: read-modify-write, never a whole-record clobber (persona/name are not driver fields).
       const runId = this.options.runId ?? "run";
       const existing = this.journal.getActor(runId, actor.siteId, actor.ordinal);
       this.journal.putActor({
@@ -163,9 +158,7 @@ export class FakeDriver implements WorkflowDriver {
   }
 
   /**
-   * 内容产物的发布（Boundary B）。真 driver 在这里解析路径、读字节、写 store；fake 只按
-   * 请求造一条记录并留在内存 map 里。**方法本身按选项缺席**——`withoutArtifactStore` 时
-   * 整个属性是 undefined，这正是「装配没有 store」在类型层的样子。
+   * Content publish (Boundary B). A real driver resolves paths, reads bytes, writes the store; the fake records
    */
   executeArtifactPublish?: (request: ArtifactPublishRequest) => Promise<ArtifactVersionRecord> = (
     request,
@@ -200,29 +193,32 @@ export class FakeDriver implements WorkflowDriver {
     this.eventsAtDispose ??= this.events.length;
   }
 
-  // ——————————————————————————————— 断言辅助 ———————————————————————————————
+  // ------------------------------------------------- assertion helpers -------------------------------------------------
 
-  /** 已 startAsk 的实例 key 集合（用于断言 replay 命中未再执行）。 */
+  /** Instance keys that startAsk ran (asserting replay hits never re-execute). */
   startedInstanceKeys(): Set<string> {
     return new Set(this.startAsks.map((c) => refToString(c.instance)));
   }
 
-  /** startAsk 的次数（可按实例过滤）。 */
+  /** startAsk count (filterable per instance). */
   startAskCount(instance?: InstanceRef): number {
     if (instance === undefined) return this.startAsks.length;
     const key = refToString(instance);
     return this.startAsks.filter((c) => refToString(c.instance) === key).length;
   }
 
-  /** 收集某类事件。 */
+  /** Collects one event type. */
   eventsOfType<T extends RunEvent["type"]>(type: T): Array<Extract<RunEvent, { type: T }>> {
     return this.events.filter((e) => e.type === type) as Array<Extract<RunEvent, { type: T }>>;
   }
 
-  /** node-settled 事件里 cached 命中的实例 key 顺序（用于 hold 规则断言）。 */
+  // Order of cached-hit instance keys across node-settled events (hold-rule assertions).
   cachedSettleOrder(): string[] {
     return this.events
-      .filter((e): e is Extract<RunEvent, { type: "node-settled" }> => e.type === "node-settled" && e.cached === true)
+      .filter(
+        (e): e is Extract<RunEvent, { type: "node-settled" }> =>
+          e.type === "node-settled" && e.cached === true,
+      )
       .map((e) => refToString(e.instance));
   }
 }

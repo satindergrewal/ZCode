@@ -17,12 +17,10 @@ interface ShouldShowTaskConfigLoadingOnSwitchParams {
   nextTaskId: string | null;
 }
 
-export function shouldKeepTaskStreamingDuringRestore(
-  taskStatus: ZCodeTaskRuntimeStatus,
-): boolean {
-  // Bugfix: 任务切到后台后再切回来时，如果这条 task 其实还在持续输出，
-  // 恢复链路不能把它先打回 restoring/ready。
-  // 否则 ChatView 会误以为生成已经结束，"思考中" 动画会在切回来后直接消失。
+export function shouldKeepTaskStreamingDuringRestore(taskStatus: ZCodeTaskRuntimeStatus): boolean {
+  // Bugfix: returning to a backgrounded task that is still emitting,
+  // the restore path must not reset it to restoring/ready first.
+  // Otherwise ChatView reads generation as finished and the thinking animation vanishes on return.
   return taskStatus === "streaming";
 }
 
@@ -35,9 +33,9 @@ export function shouldShowTaskConfigLoadingOnSwitch(
   }
 
   const previousTaskId = params.previousTaskId?.trim() ?? "";
-  // Bugfix: task 切换期间如果继续沿用 workspace 里上一条任务的 configOptions，
-  // 工具栏会短暂显示旧模型，直到 resume/config_option_update 回包才纠正。
-  // 这里按 taskId 切换判定先进入 loading，占位期不再暴露上一个 task 的模型回显。
+  // Bugfix: reusing the previous task's configOptions during a switch
+  // shows the old model until resume/config_option_update corrects it.
+  // Enter loading on the taskId-switch test; no stale model echo during the placeholder.
   return previousTaskId !== nextTaskId;
 }
 
@@ -79,22 +77,19 @@ export function resolveTaskRuntimeStatusAfterRestore(
     persistedStatus &&
     persistedStatus !== "running" &&
     typeof persistedUpdatedAt === "number" &&
-    (
-      latestUserMessageTimestamp === null ||
-      persistedUpdatedAt >= latestUserMessageTimestamp
-    )
+    (latestUserMessageTimestamp === null || persistedUpdatedAt >= latestUserMessageTimestamp)
   ) {
-    // Bugfix: 历史任务恢复时，store 里可能还残留上一帧的 streaming 运行态。
-    // 如果宿主已经把这一轮真正收尾（completed/error）持久化到 meta.status，
-    // 继续沿用旧 streaming 就会让 UI 永远显示“生成中”。
-    // 这里要求持久化终态至少覆盖到最新一条用户消息，再用它收口运行态，
-    // 避免把“上一轮 completed 快照”误套到新一轮仍在运行的 prompt 上。
+    // Bugfix: on history restore the store may hold a stale streaming state from the previous frame.
+    // If the host persisted the turn's true terminal (completed/error) into meta.status,
+    // keeping streaming pins the UI on generating forever.
+    // Require the persisted terminal to reach at least the latest user message before closing the run state,
+    // so a prior completed snapshot never lands on a still-running prompt.
     return toTerminalRuntimeStatus(persistedStatus);
   }
 
   if (options?.runtimeMainActive === true) {
-    // 修复原因：mainActive snapshot 是 agent/session 当前仍在 main turn 的运行事实。
-    // 但它只能先用于恢复 runtime.status；真正的 UI mainActive 标记会在 status=streaming 后再写入。
+    // Fix: the mainActive snapshot is the fact that agent/session is still in its main turn.
+    // It may restore runtime.status only; the real UI mainActive flag writes once status=streaming.
     return "streaming";
   }
 

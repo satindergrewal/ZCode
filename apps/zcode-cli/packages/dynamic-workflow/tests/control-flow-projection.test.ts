@@ -4,7 +4,7 @@ import { createStrandPark } from "../src/analysis/flow-strands.js";
 import { corpusDiagnostics } from "./helpers/analysis-corpus.js";
 
 /**
- * Scale pins for the control-flow projection (docs/analysis.md, 追记 2026-09-03).
+ * Scale pins for the control-flow projection (docs/analysis.md, 2026-09-03 addendum).
  *
  * Two recorded scripts — xiangqi engines whose pure rule helpers get inlined a hundred times
  * each — made `projectControlFlow` exhaust the call stack after 12 s and 74 s of work. Neither
@@ -38,7 +38,8 @@ return await agent("v").ask<string>(t);
 function deepInlining(depth: number): string {
   let src = "";
   for (let k = depth; k >= 0; k -= 1) {
-    const inner = k === depth ? "if (x < 100) return;" : `h${k + 1}(x); if (x > ${k}) h${k + 1}(x + 1);`;
+    const inner =
+      k === depth ? "if (x < 100) return;" : `h${k + 1}(x); if (x > ${k}) h${k + 1}(x + 1);`;
     src += `function h${k}(x: number): void { if (x > ${k}) { ${inner} } }\n`;
   }
   return `${src}const t = await agent("w").ask<string>("start");
@@ -98,8 +99,13 @@ function strandPhase(name: string, binding: string, tag: string): string {
   );
 }
 
-function edgeLines(flow: { edges: readonly { from: string; to: string; kind: string; via?: string }[] }): string[] {
-  return flow.edges.map((edge) => `${edge.from} -> ${edge.to} ${edge.kind}${edge.via === undefined ? "" : ` via=${edge.via}`}`);
+function edgeLines(flow: {
+  edges: readonly { from: string; to: string; kind: string; via?: string }[];
+}): string[] {
+  return flow.edges.map(
+    (edge) =>
+      `${edge.from} -> ${edge.to} ${edge.kind}${edge.via === undefined ? "" : ` via=${edge.via}`}`,
+  );
 }
 
 describe("strands", () => {
@@ -151,7 +157,11 @@ describe("strands", () => {
       flow.nodes.filter((node) => node.kind === "mark").map((node) => [node.id, node.alongside]),
     );
     // B is entered while A's strand is parked; C is entered after the barrier joined both.
-    expect(alongside).toEqual({ "phase#1@1": undefined, "phase#2@1": ["phase#1"], "phase#3@1": undefined });
+    expect(alongside).toEqual({
+      "phase#1@1": undefined,
+      "phase#2@1": ["phase#1"],
+      "phase#3@1": undefined,
+    });
     expect(flow.phases?.map((phase) => [phase.id, phase.alongside])).toEqual([
       ["phase#1", undefined],
       ["phase#2", ["phase#1"]],
@@ -206,7 +216,7 @@ describe("strands", () => {
       IDS +
         strandPhase("A", "aWork", "a") +
         'phase("B");\n' +
-        "const tail = await agent(\"tail\").ask<string>(`count ${aWork.length}`);\n" +
+        'const tail = await agent("tail").ask<string>(`count ${aWork.length}`);\n' +
         "return tail;\n",
     );
     expect(flow.nodes.find((node) => node.id === "phase#2@1")?.alongside).toEqual(["phase#1"]);
@@ -226,12 +236,12 @@ describe("strands", () => {
     // still a control-flow fact, and the strand's exit must land on the node after it.
     const { core, flow } = analyze(
       "async function fetchOne(topic: string): Promise<string> {\n" +
-        "  const r = await agent(\"worker\").ask<string>(`do ${topic}`);\n" +
+        '  const r = await agent("worker").ask<string>(`do ${topic}`);\n' +
         "  return r;\n" +
         "}\n" +
         'const alpha = await fetchOne("alpha");\n' +
         'const beta = await fetchOne("beta");\n' +
-        "const tail = await agent(\"tail\").ask<string>(`${alpha} ${beta}`);\n" +
+        'const tail = await agent("tail").ask<string>(`${alpha} ${beta}`);\n' +
         "return tail;\n",
     );
     const joinOnly = core.trace.events.filter(
@@ -284,8 +294,8 @@ describe("strands", () => {
       'const draft = agent("writer").ask<string>("draft");\n' +
         "const settled = await Promise.resolve(draft)\n" +
         "  .then(\n" +
-        "    (t) => agent(\"editor\").ask<string>(`edit ${t}`),\n" +
-        "    (e) => agent(\"fixer\").ask<string>(`recover ${String(e)}`),\n" +
+        '    (t) => agent("editor").ask<string>(`edit ${t}`),\n' +
+        '    (e) => agent("fixer").ask<string>(`recover ${String(e)}`),\n' +
         "  )\n" +
         '  .finally(() => log("done"));\n' +
         "return settled;\n",

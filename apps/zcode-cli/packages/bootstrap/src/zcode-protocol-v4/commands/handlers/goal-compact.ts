@@ -46,12 +46,12 @@ export class V4GoalCompactRejectedError extends Error {
 const manualCompactControllers = new WeakSet<AbortController>();
 
 /**
-  * compact: manual context compaction (the v4 payload is the empty object; no instructions variant).
+ * compact: manual context compaction (the v4 payload is the empty object; no instructions variant).
  *
-  * Barrier semantics:
-  * 1. running / goal verifier / goal continuation / tool work -> typed compact intent into the FIFO.
-  * 2. held queue -> append at the tail, never bypassing existing future intents.
-  * 3. a running or queued compact exists -> compactOperationLock, no duplicate compaction.
+ * Barrier semantics:
+ * 1. running / goal verifier / goal continuation / tool work -> typed compact intent into the FIFO.
+ * 2. held queue -> append at the tail, never bypassing existing future intents.
+ * 3. a running or queued compact exists -> compactOperationLock, no duplicate compaction.
  */
 async function compact(
   host: V4CommandCoreHost,
@@ -76,7 +76,7 @@ async function compact(
     );
   }
   if (record.restoreWarning) {
-        // Same gate as prompt-turn: a failed-restore session must not silently continue writing (compact turns included).
+    // Same gate as prompt-turn: a failed-restore session must not silently continue writing (compact turns included).
     throw new V4GoalCompactRejectedError("restoreWarning", record.restoreWarning.message);
   }
 
@@ -127,12 +127,12 @@ export async function startManualCompact(
   if (record.restoreWarning) {
     throw new V4GoalCompactRejectedError("restoreWarning", record.restoreWarning.message);
   }
-    // After cold restore the user may trigger /compact directly (no sendText first); compact's background model request
-    // needs the model-ready check too -- via the hook (see types.ts).
+  // After cold restore the user may trigger /compact directly (no sendText first); compact's background model request
+  // needs the model-ready check too -- via the hook (see types.ts).
   await host.ensureModelReady?.(record);
   const abortController = new AbortController();
-    // The real model request runs in the background, but Stop still
-    // interrupts via record.activeAbortController. Without registering the controller, the compaction request runs to natural completion.
+  // The real model request runs in the background, but Stop still
+  // interrupts via record.activeAbortController. Without registering the controller, the compaction request runs to natural completion.
   record.activeAbortController = abortController;
   manualCompactControllers.add(abortController);
   void runWithSessionResidencyFinalization(record, () =>
@@ -142,7 +142,7 @@ export async function startManualCompact(
       inputId,
     }),
   ).catch(() => {
-        // Background compact errors degrade through the event stream (CompactStarted / terminal markers); this backstop prevents unhandled rejections.
+    // Background compact errors degrade through the event stream (CompactStarted / terminal markers); this backstop prevents unhandled rejections.
   });
 }
 
@@ -174,8 +174,8 @@ async function runCompactTurnInBackground(
       lifecycleStatus === "cancelled" ? "session_compact_cancelled" : "session_compact_failed";
     if ((host.getQueueLength?.(record.app.sessionId) ?? 0) > 0) {
       try {
-                // A queued compact is a FIFO barrier; if auto-drain continues after a failure/Stop,
-                // later text would bypass the user's explicit maintenance intent. Switch to held, as with a plain Stop.
+        // A queued compact is a FIFO barrier; if auto-drain continues after a failure/Stop,
+        // later text would bypass the user's explicit maintenance intent. Switch to held, as with a plain Stop.
         await record.app.setQueueAutoDrain(false);
       } catch (holdError) {
         host.logger?.warn?.("v4 compact failed to hold following queue", {
@@ -198,14 +198,14 @@ async function runCompactTurnInBackground(
     }
     manualCompactControllers.delete(params.abortController);
     if (record.activeAbortController === params.abortController) {
-            // The ready boundary (critical): once compact ends, release the active lock before broadcasting;
-            // else a queued prompt or the next /compact briefly hits the stale controller at the ready boundary.
+      // The ready boundary (critical): once compact ends, release the active lock before broadcasting;
+      // else a queued prompt or the next /compact briefly hits the stale controller at the ready boundary.
       record.activeAbortController = undefined;
     }
   }
   try {
-        // compact has no user message, so unpinning cannot rely on SessionInputPromoted; whether the lifecycle
-        // succeeded/failed/was cancelled, a timeline command fact keeps the restart from re-prompting the executed command.
+    // compact has no user message, so unpinning cannot rely on SessionInputPromoted; whether the lifecycle
+    // succeeded/failed/was cancelled, a timeline command fact keeps the restart from re-prompting the executed command.
     await host.recordPersistentCommandFact?.(
       record.app.sessionId,
       "timeline",
@@ -217,26 +217,26 @@ async function runCompactTurnInBackground(
       { lifecycleStatus },
     );
   } catch (error) {
-        // The compact already ran; a dedup-bypass write failure must not masquerade as a model-execution failure.
+    // The compact already ran; a dedup-bypass write failure must not masquerade as a model-execution failure.
     host.logger?.warn?.("v4 compact persistent command fact failed", {
       commandId: params.inputId,
       error: error instanceof Error ? error.message : String(error),
       sessionId: record.app.sessionId,
     });
   }
-    // The legacy path called afterStateMutation here -> replaced by the equivalent hook (dies with the legacy broadcast).
+  // The legacy path called afterStateMutation here -> replaced by the equivalent hook (dies with the legacy broadcast).
   await host.afterLegacyStateMutation?.(record, mutationReason);
 }
 
 /**
-  * sendGoalCommand: set/update the goal (legacy goalSession action:"set").
+ * sendGoalCommand: set/update the goal (legacy goalSession action:"set").
  *
-  * Barrier semantics (legacy-faithful + v4 queue additions):
-  * 1. active turn -> enqueue as sendGoalCommand: /goal writes target state, it is not a plain prompt;
-  *    the target cannot be rewritten mid-run, but must not be dropped either. The queue item keeps its command identity for the ready boundary.
-  * 2. Duplicate sets converge to replace (critical): a `/goal new target` in the box is the user's
-  *    explicit new goal; demanding replace again with one existing would leave the DB on the old goal while
-  *    the user believes it changed. An existing target takes the replace path (the difference is only the broadcast reason).
+ * Barrier semantics (legacy-faithful + v4 queue additions):
+ * 1. active turn -> enqueue as sendGoalCommand: /goal writes target state, it is not a plain prompt;
+ *    the target cannot be rewritten mid-run, but must not be dropped either. The queue item keeps its command identity for the ready boundary.
+ * 2. Duplicate sets converge to replace (critical): a `/goal new target` in the box is the user's
+ *    explicit new goal; demanding replace again with one existing would leave the DB on the old goal while
+ *    the user believes it changed. An existing target takes the replace path (the difference is only the broadcast reason).
  */
 async function sendGoalCommand(
   host: V4CommandCoreHost,
@@ -259,10 +259,10 @@ async function sendGoalCommand(
     inputIntentMetadata(envelope, { ...options, ...submittedExecutionState });
   const routingMode = host.getInputRoutingMode?.(record.app.sessionId) ?? null;
   if (record.activeAbortController || routingMode === "enqueue" || routingMode === "guide") {
-        // /goal is target control; the target must not be written during an active turn.
-        // But product semantics let running/compacting/goal-verifier enqueue. The busy projection can
-        // precede controller registration, so consume inputRouting too; commandKind keeps the control-command identity,
-        // consumed later as sendGoalCommand, never a plain user prompt.
+    // /goal is target control; the target must not be written during an active turn.
+    // But product semantics let running/compacting/goal-verifier enqueue. The busy projection can
+    // precede controller registration, so consume inputRouting too; commandKind keeps the control-command identity,
+    // consumed later as sendGoalCommand, never a plain user prompt.
     const queuedText = goalCommandQueueText(payload.displayText, objective);
     if (
       await enqueueDeferredInputForBusyWork(record, queuedText, {
@@ -316,7 +316,7 @@ export async function applyGoalCommand(
     intent?: SteerTurnOptions["intent"];
   },
 ): Promise<void> {
-    // The held-choice verdict (as in sendText; sendGoalCommand).
+  // The held-choice verdict (as in sendText; sendGoalCommand).
   await applyHeldQueueDisposition(
     host,
     record,
@@ -324,7 +324,7 @@ export async function applyGoalCommand(
     params.expectedHeldQueueItemIds,
   );
   const replacesExistingGoal = Boolean(await record.app.readTarget());
-    // The goal submission already froze execution state; close the explicitly cancelled Plan first -- never block the continuation on stale Runtime state.
+  // The goal submission already froze execution state; close the explicitly cancelled Plan first -- never block the continuation on stale Runtime state.
   if (params.intent?.planEnabled !== undefined) {
     if (params.intent.planEnabled)
       throw new V4GoalCompactRejectedError(
@@ -364,9 +364,9 @@ function goalCommandQueueText(displayText: string | undefined, objective: string
 }
 
 /**
-  * pauseGoal: standalone target control, not the generic stop's queue hold/disposition.
-  * Legacy v4 had stop only: no active controller meant no pause, and the UI could not
-  * express "pause goal" vs "end this round". Settle the target's active run first, then stop the current goal work.
+ * pauseGoal: standalone target control, not the generic stop's queue hold/disposition.
+ * Legacy v4 had stop only: no active controller meant no pause, and the UI could not
+ * express "pause goal" vs "end this round". Settle the target's active run first, then stop the current goal work.
  */
 async function pauseGoal(
   host: V4CommandCoreHost,
@@ -388,8 +388,8 @@ async function pauseGoal(
 }
 
 /**
-  * resumeGoal: paused -> active (the inverse of stopPausesActiveGoalTarget).
-  * No target -> idempotent success (legacy returned "No goal to resume.", unchanged, no throw).
+ * resumeGoal: paused -> active (the inverse of stopPausesActiveGoalTarget).
+ * No target -> idempotent success (legacy returned "No goal to resume.", unchanged, no throw).
  */
 async function resumeGoal(
   host: V4CommandCoreHost,
@@ -397,13 +397,13 @@ async function resumeGoal(
 ): Promise<CommandResult | undefined> {
   const record = requireRecord(host, envelope.sessionId);
   if (record.activeAbortController) {
-        // As in sendGoalCommand: resume is a non-pause legacy goalSession action; reject while running.
+    // As in sendGoalCommand: resume is a non-pause legacy goalSession action; reject while running.
     throw new V4GoalCompactRejectedError(
       "activeTurn",
       "Cannot manage goals while a prompt is running",
     );
   }
-    // Skipping only the continuation would leave an active Goal + Plan; check before restoring, never write then reject.
+  // Skipping only the continuation would leave an active Goal + Plan; check before restoring, never write then reject.
   const planEnabled = record.app.runtime?.getPlanEnabled?.() ?? record.app.getMode?.() === "plan";
   if (planEnabled && (await record.app.readTarget())) {
     throw new V4GoalCompactRejectedError(
@@ -427,9 +427,9 @@ async function resumeGoal(
 }
 
 /**
-  * The post-goal-change continuation (legacy continueGoalAfterChange; shared by set/resume):
-  * no continuation in plan mode or with an active turn (persist the goal; the user drives later);
-  * otherwise model-ready check -> lock -> background continueActiveTarget.
+ * The post-goal-change continuation (legacy continueGoalAfterChange; shared by set/resume):
+ * no continuation in plan mode or with an active turn (persist the goal; the user drives later);
+ * otherwise model-ready check -> lock -> background continueActiveTarget.
  */
 async function continueGoalAfterChange(
   host: V4CommandCoreHost,
@@ -442,7 +442,7 @@ async function continueGoalAfterChange(
   },
 ): Promise<void> {
   const isPlanMode = record.app.runtime?.getPlanEnabled?.() ?? record.app.getMode?.() === "plan";
-    // continueActiveTarget is a required App capability; continuation depends only on the mode and any active turn.
+  // continueActiveTarget is a required App capability; continuation depends only on the mode and any active turn.
   const canContinue = !isPlanMode && !record.activeAbortController;
   if (canContinue) {
     await host.ensureModelReady?.(record);
@@ -456,11 +456,11 @@ async function continueGoalAfterChange(
         intent: params.intent,
       }),
     ).catch(() => {
-            // Background goal-continuation failures degrade through the event stream; this backstop prevents unhandled rejections.
+      // Background goal-continuation failures degrade through the event stream; this backstop prevents unhandled rejections.
     });
   }
-    // The legacy path fired afterStateMutation(goal_set/goal_replaced/goal_resumed) right after the continuation started
-    // -> the hook equivalent; the v4 projection closes naturally via TargetChanged.
+  // The legacy path fired afterStateMutation(goal_set/goal_replaced/goal_resumed) right after the continuation started
+  // -> the hook equivalent; the v4 projection closes naturally via TargetChanged.
   await host.afterLegacyStateMutation?.(record, params.reason);
 }
 
@@ -489,8 +489,8 @@ async function runGoalContinuationInBackground(
       record.app.runtime.releaseForegroundPromotionLease(params.foregroundPromotionLeaseId);
     }
     if (record.activeAbortController === params.abortController) {
-            // Release the active lock as soon as the continuation ends; the broadcast is a follow-up --
-            // holding it would misread a consecutive /goal as already-active.
+      // Release the active lock as soon as the continuation ends; the broadcast is a follow-up --
+      // holding it would misread a consecutive /goal as already-active.
       record.activeAbortController = undefined;
     }
   }

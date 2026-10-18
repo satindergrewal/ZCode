@@ -91,7 +91,12 @@ describe("marketplace 自定义导入 E2E (真实 agent facade)", () => {
       expect(rec?.source.path).toBe(market);
 
       // manifest 复制进 storage，供后续 install 引用。
-      const manifestCopy = join(storageRoot, "marketplaces", "e2e-local-dir-market", "marketplace.json");
+      const manifestCopy = join(
+        storageRoot,
+        "marketplaces",
+        "e2e-local-dir-market",
+        "marketplace.json",
+      );
       expect(existsSync(manifestCopy)).toBe(true);
 
       // 复核：overview 列出新市场（popover 关闭后 UI refresh 能看到它）。
@@ -107,7 +112,9 @@ describe("marketplace 自定义导入 E2E (真实 agent facade)", () => {
     const storageRoot = join(base, "storage");
     try {
       // popover 里随手敲的一个不存在的本地路径。
-      await expect(addViaFacade("./definitely-not-a-real-marketplace-xyz", storageRoot, base)).rejects.toThrow();
+      await expect(
+        addViaFacade("./definitely-not-a-real-marketplace-xyz", storageRoot, base),
+      ).rejects.toThrow();
       // 失败时不应写 known_marketplaces.json。
       expect(existsSync(join(storageRoot, "known_marketplaces.json"))).toBe(false);
     } finally {
@@ -131,7 +138,9 @@ describe("marketplace 自定义导入 E2E (真实 agent facade)", () => {
       expect(summary.id).toBe("claude-code-workflows");
       expect(summary.pluginCount).toBeGreaterThan(0);
 
-      const known = JSON.parse(await readFile(join(storageRoot, "known_marketplaces.json"), "utf8")) as {
+      const known = JSON.parse(
+        await readFile(join(storageRoot, "known_marketplaces.json"), "utf8"),
+      ) as {
         marketplaces: Array<{ id: string; source: { source: string; url?: string } }>;
       };
       const rec = known.marketplaces.find((m) => m.id === summary.id);
@@ -159,7 +168,9 @@ describe("marketplace 自定义导入 E2E (真实 agent facade)", () => {
       const summary = await addViaFacade(repo, storageRoot, base);
       expect(summary.id).toBe("claude-code-workflows");
 
-      const known = JSON.parse(await readFile(join(storageRoot, "known_marketplaces.json"), "utf8")) as {
+      const known = JSON.parse(
+        await readFile(join(storageRoot, "known_marketplaces.json"), "utf8"),
+      ) as {
         marketplaces: Array<{ id: string; source: { source: string; repo?: string } }>;
       };
       const rec = known.marketplaces.find((m) => m.id === summary.id);

@@ -1,6 +1,6 @@
-// transcript → 内存记录的水合合并纯逻辑。从 highspeedTurnStore 拆出：store 只做状态 owner
-// 与查询，合并口径在这里收敛，便于单独理解与测试。本模块不触碰 store 状态，读取一律通过
-// context 注入，因此不与 store 形成运行时循环依赖（只保留编译期擦除的 type import）。
+// Pure hydration merge, transcript -> memory records. Split from highspeedTurnStore: the store owns state
+// and queries; merge rules concentrate here for isolated review/testing. This module never writes store state and
+// reads only via injected context, so no runtime cycle with the store (type-only imports, erased at compile time).
 import type { HighspeedMessageMeta } from "@zcode/shared";
 import type {
   HighspeedTranscriptRow,
@@ -19,13 +19,13 @@ const METRIC_KEYS = [
   "savedDurationMs",
 ] as const satisfies readonly (keyof HighspeedTurnMetrics)[];
 
-/** 水合一批 transcript row 的结果；store 按序应用后只发一次通知。 */
+/** Result of hydrating a transcript row batch; the store applies in order and notifies once. */
 export interface HighspeedHydrationPlan {
-  /** 需要落库的记录，按 transcript 顺序；`existed` 区分替换已有记录与新登记。 */
+  /** Records to persist, transcript order; `existed` separates replacement from new registration. */
   records: Array<{ record: HighspeedTurnRecord; existed: boolean }>;
-  /** 需要写入的卡级 TPS。 */
+  /** Card-level TPS to write. */
   cardTps: Array<[cardId: string, highspeedTps: number]>;
-  /** 产生变化的 row 数；0 表示整批无变化，调用方不必通知订阅者。 */
+  /** Changed-row count; 0 means no change and callers skip notifying subscribers. */
   changedRows: number;
 }
 
@@ -47,9 +47,9 @@ function sameMetrics(a: HighspeedTurnMetrics | undefined, b: HighspeedTurnMetric
 }
 
 /**
- * 把 transcript 的权威 meta 合并进（可能已存在的）记录。transcript/CLI 持久化是跨端恢复的
- * 权威事实：完成态字段覆盖运行期临时值；meta 仍是运行态时绝不清空已完成字段。
- * 没有任何字段变化时返回 null，让调用方跳过通知。
+ * Merges authoritative transcript meta into a (possibly existing) record. Transcript/CLI persistence is the
+ * cross-device recovery authority: completed fields override runtime temporaries; never clear completed fields early.
+ * Returns null when nothing changed, letting the caller skip the notify.
  */
 function mergeTranscriptRow(
   existing: HighspeedTurnRecord | null,
@@ -74,7 +74,7 @@ function mergeTranscriptRow(
     createdAt: row.createdAt,
   };
   let next = base;
-  // 发送时采样的 regularTps 是持久事实；内存记录缺失时补齐。
+  // regularTps sampled at send time is persisted fact; backfill it when the memory record lacks it.
   if (meta.regularTps !== undefined && next.card.regularTps !== meta.regularTps) {
     next = { ...next, card: { ...next.card, regularTps: meta.regularTps } };
   }
@@ -98,7 +98,7 @@ function mergeTranscriptRow(
       next = { ...next, completedAt: next.completedAt ?? now, metrics };
     }
   }
-  // 与 markHighspeedTurnMetricsPersisted 同口径：只有拿到卡级 TPS 才能落 savedDurationMs；已标记过不重复。
+  // Same rule as markHighspeedTurnMetricsPersisted: savedDurationMs requires card TPS; never mark twice.
   const highspeedTps = meta.highspeedTps ?? highspeedTpsOfCard;
   if (
     meta.savedDurationMs !== undefined &&
@@ -120,18 +120,18 @@ function mergeTranscriptRow(
 }
 
 /**
- * 冷启动恢复与跨端追平：到期时 renderer 可能不在场，内存 store 没有机会登记/收口这张卡；
- * 远控 Renderer 也可能先登记运行中 row、桌面端随后才把完成态持久化进 transcript。
- * transcript 中的 userInput.highspeed 是持久事实，按 sourceCommandId 幂等合并（spec §8）。
- * Bug 根因：旧实现对已存在的 sourceCommandId 直接 continue，迟到的 outputTokens/durationMs/
- * highspeedTps/savedDurationMs 永远吸收不进来，远端的卡级 TPS、节省时间与自动分享候选无法收口。
+ * Cold-start recovery and cross-device catch-up: the renderer may be absent at expiry, so the memory store
+ * never registered/closed the card; a remote renderer may also register a running row before desktop persists.
+ * userInput.highspeed in the transcript is persisted fact; merge idempotently by sourceCommandId (spec 8).
+ * Bug: the old code skipped known sourceCommandIds, so late outputTokens/durationMs/
+ * highspeedTps/savedDurationMs never absorbed and remote card TPS/savings/auto-share could not settle.
  */
 export function planHighspeedTranscriptHydration(
   rows: readonly HighspeedTranscriptRow[],
   context: HighspeedHydrationContext,
 ): HighspeedHydrationPlan {
   const plan: HighspeedHydrationPlan = { records: [], cardTps: [], changedRows: 0 };
-  // 同一批内后续 row 必须看到前面 row 刚产生的记录与卡级 TPS，口径与逐条落库的旧实现一致。
+  // Later rows in a batch must see records/card TPS from earlier rows, matching per-row persistence.
   const stagedByCommandId = new Map<string, number>();
   const stagedCardTps = new Map<string, number>();
   for (const row of rows) {
@@ -143,7 +143,7 @@ export function planHighspeedTranscriptHydration(
     const existing = staged?.record ?? context.findRecord(sourceCommandId);
     let changed = false;
     let cardTps = stagedCardTps.get(meta.cardId) ?? context.getCardTps(meta.cardId);
-    // 守卫与 setHighspeedCardTps 同口径：非正或非有限值不落库，也不算变化。
+    // Same guard as setHighspeedCardTps: non-positive/non-finite never persists, never counts as a change.
     if (
       meta.highspeedTps !== undefined &&
       Number.isFinite(meta.highspeedTps) &&

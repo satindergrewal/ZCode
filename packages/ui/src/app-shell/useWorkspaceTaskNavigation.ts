@@ -166,9 +166,9 @@ export function useWorkspaceTaskNavigation({
           // another remote session or local base services -- that would clear another workspace's
           // unread state.
           rollbackTaskQueryCacheUnread(targetTask, previousUnreadAt);
-              logger.warn(
-                `[App] skipped unread persist on task select; remote workspace disconnected workspace=${targetWorkspacePath} taskId=${taskId}`,
-              );
+          logger.warn(
+            `[App] skipped unread persist on task select; remote workspace disconnected workspace=${targetWorkspacePath} taskId=${taskId}`,
+          );
         } else {
           void targetServices.zcodeTaskService
             .setTaskUnread({

@@ -26,7 +26,7 @@ export function useBotGroupMemberNames(context: BotContextState | null) {
       } catch (error) {
         if (!disposed) {
           setResolved(null);
-          logger.debug("读取群成员姓名失败", { error: String(error) });
+          logger.debug("failed to read group member names", { error: String(error) });
         }
       } finally {
         loading = false;
@@ -41,7 +41,7 @@ export function useBotGroupMemberNames(context: BotContextState | null) {
       window.removeEventListener("focus", refresh);
     };
   }, [botsService, botId, chatId, enabled, key]);
-  // 切换群或授权后立即隐藏旧缓存，不等 effect 清理完成。
+  // Hide cached names on group/permission switch; no waiting for effect cleanup.
   return botId && chatId && enabled && resolved?.key === key
     ? { botId, chatId, names: resolved.names }
     : null;

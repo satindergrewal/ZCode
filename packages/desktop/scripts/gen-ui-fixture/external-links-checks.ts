@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { app, type BrowserWindow, type WebContents } from "electron";
 
-// 使用生产桥接与手势校验；只替换最终 opener，避免测试启动系统浏览器。
+// Use the production bridge and gesture validation; only the final opener is swapped so tests never launch the system browser.
 export async function checkExternalLinks(
   win: BrowserWindow,
   guest: WebContents,
@@ -42,7 +42,7 @@ export async function checkExternalLinks(
       return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)};
     })()`);
     await win.webContents.capturePage();
-    // CDP 能命中嵌套 iframe，但不发 Electron input-event；先用原生修饰键登记手势。
+    // CDP reaches nested iframes but emits no Electron input-event; register the gesture via a real modifier key first.
     guest.sendInputEvent({ type: "keyDown", keyCode: "Shift" });
     guest.sendInputEvent({ type: "keyUp", keyCode: "Shift" });
     guest.debugger.attach("1.3");
@@ -123,7 +123,7 @@ export async function checkExternalLinks(
   }
   await openedOnce("https://example.com/subscribe");
 
-  // 页面可取消默认行为，避免自定义点击处理与委托处理重复打开。
+  // The page may cancel the default; prevents duplicated opens between custom and delegated click handling.
   await read(`document.getElementById('link-probe').onclick=event=>{
     event.preventDefault();window.linkResult=window.zcode.openExternal({href:'http://example.com/script'}).then(()=>'',String);
   }`);
@@ -151,7 +151,7 @@ export async function checkExternalLinks(
   await read(
     "document.getElementById('link-probe').onclick=null;document.getElementById('link-probe').click()",
   );
-  // 合成点击不能利用之前未消费的用户手势；下载与片段也不进入 opener。
+  // Synthetic clicks must not consume an earlier unused user gesture; downloads and fragments bypass the opener too.
   await read("document.getElementById('link-probe').download='plan.html'");
   await click();
   await read(

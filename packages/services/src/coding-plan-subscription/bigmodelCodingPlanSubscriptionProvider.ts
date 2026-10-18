@@ -4,7 +4,7 @@ import {
   isRequestVerificationMessage,
   type RequestVerificationClientConfig,
 } from "@zcode/shared";
-/* eslint-disable max-lines -- Coding Plan provider 需要集中维护 BigModel 支付宝与 Z.ai Stripe/PayPal 接口映射，拆分会让共享鉴权和响应解包更难追踪。 */
+/* eslint-disable max-lines -- This provider keeps the BigModel Alipay and Z.ai Stripe/PayPal mappings together; splitting would obscure the shared auth and response unwrapping. */
 import type {
   ApiClient,
   ApiRequestInit,
@@ -100,7 +100,7 @@ const CODING_PLAN_ZAI_OVERSEAS_PAYMENT_REQUIRED = "coding_plan_zai_overseas_paym
 const ZCODE_JWT_TOKEN_KEY = "zcodejwttoken";
 const log = createServiceLogger("codingPlanSubscription");
 
-// 合并时曾丢失秒到毫秒的边界转换，导致客户端用本机时间误判待生效权益。
+// A past merge lost the seconds-to-ms conversion, making clients misjudge pending entitlements from local clocks.
 function readServerTimeMilliseconds(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value >= 0
     ? value * 1_000
@@ -164,15 +164,15 @@ interface ZCodeClientConfigEnvelope {
           codingPlanStaticProducts?: CodingPlanStaticProductsConfig;
           codingPlanStaticTeamProducts?: CodingPlanStaticTeamProductsConfig;
           startPlanPreview?: StartPlanPreviewConfig | null;
-          // 闲时任务灰度（服务端）：内层字段服务端为 snake_case，与外层 camelCase 混排。
+          // Off-peak gating (server): inner fields are snake_case mixed with the outer camelCase.
           offPeak?: {
             enable_offpeak_task?: boolean;
           } | null;
           modelContextBudget?: {
             strategy?: unknown;
           } | null;
-          // 动态工作流灰度：mode 的取值域由
-          // shared 的 normalizeDynamicWorkflowMode 裁决，这里保持 unknown，不在类型层假设服务端合法。
+          // Dynamic-workflow gating: the mode value domain is decided by the shared
+          // normalizeDynamicWorkflowMode; keep unknown here and never assume server validity in types.
           dynamicWorkflow?: {
             mode?: unknown;
           } | null;
@@ -225,28 +225,28 @@ export class BigModelCodingPlanSubscriptionProvider {
     this.resolveOffPeakModelSelectionView = options.resolveOffPeakModelSelectionView;
   }
 
-  // ─────────── family 维度抽象（供 ZaiCodingPlanSubscriptionProvider 覆盖）───────────
-  // 原 enterprise 读方法（getEnterprisePricing / enrichEnterprisePricingTeamProjects 等）
-  // 把 family 硬编码成 bigmodel：providerId=bigmodelCodingPlan、host=resolveBigModelApiOrigin、
-  // token=loadBigModelAccessToken。zai family 对称化时无法复用。
-  // 这里把 family 维度抽成 protected 虚方法，bigmodel 默认实现保持原行为，zai 子类覆盖即可。
+  // ------- family-dimension hooks (overridden by ZaiCodingPlanSubscriptionProvider) -------
+  // The original enterprise readers (getEnterprisePricing / enrichEnterprisePricingTeamProjects etc.)
+  // hard-coded the bigmodel family: providerId=bigmodelCodingPlan, host=resolveBigModelApiOrigin,
+  // token=loadBigModelAccessToken; unusable once zai needed symmetry.
+  // The family dimension is now protected virtuals: bigmodel keeps the original behavior, zai overrides.
 
-  /** 当前 family 的 Coding Plan providerId（bigmodelCodingPlan / zaiCodingPlan）。 */
+  /** Coding Plan providerId for this family (bigmodelCodingPlan / zaiCodingPlan). */
   protected codingPlanProviderId(): CodingPlanSubscriptionProviderId {
     return BUILTIN_MODEL_PROVIDER_IDS.bigmodelIndividualCodingPlan;
   }
 
-  /** 当前 family 的业务域名（bigmodel 域 / zai 域）。 */
+  /** Business origin for this family (bigmodel / zai). */
   protected resolveFamilyEnterpriseHost(): string {
     return resolveBigModelApiOrigin(process.env);
   }
 
-  /** 当前 family 的业务 OAuth token。 */
+  /** Business OAuth token for this family. */
   protected async loadFamilyEnterpriseToken(): Promise<string> {
     return this.loadBigModelAccessToken();
   }
 
-  /** 当前 family 的业务鉴权头。 */
+  /** Business auth header for this family. */
   protected createFamilyEnterpriseAuthHeaders(token: string): Record<string, string> {
     return createBigModelLoginAuthHeaders(token);
   }
@@ -288,8 +288,8 @@ export class BigModelCodingPlanSubscriptionProvider {
         timeoutMs: REQUEST_TIMEOUT_MS,
       },
     );
-    // 新 ZCode billing 接口沿用平台 envelope（code=0 成功），不能复用
-    // BigModel 支付接口的 code=200 解包器，否则合法 preview 会被误判失败。
+    // The new ZCode billing API uses the platform envelope (code=0 success) and must not reuse
+    // the BigModel pay code=200 unwrapper, or valid previews read as failures.
     if (payload.code !== undefined && payload.code !== 0) {
       throw new Error(payload.msg?.trim() || "manual_claim_preview_failed");
     }
@@ -357,7 +357,7 @@ export class BigModelCodingPlanSubscriptionProvider {
         timeoutMs: REQUEST_TIMEOUT_MS,
       },
     );
-    // 领取接口的错误码可能是数字字符串；缺失 code 仍不推断成功。
+    // Claim error codes may be numeric strings; a missing code is still not success.
     const rawCode = payload.code;
     const code =
       typeof rawCode === "number"
@@ -371,10 +371,10 @@ export class BigModelCodingPlanSubscriptionProvider {
       return {
         success: false,
         code,
-        // 服务端已完成翻译，顶层 msg 不是用户文案；空值由 UI 本地化兜底。
+        // The server already localized it; the top-level msg is not user copy and empty values fall back to UI localization.
         message: typeof payload.data?.message === "string" ? payload.data.message : "",
         ...(serverTime === undefined ? {} : { serverTime }),
-        // 保留既有结果字段兼容其他调用方；营销提示不再据此推导文案。
+        // Keep the legacy result fields for other callers; marketing copy no longer derives from them.
         ...(Number.isFinite(failureEndsAt) ? { failureEndsAt } : {}),
       };
     }
@@ -408,13 +408,13 @@ export class BigModelCodingPlanSubscriptionProvider {
   }
 
   /**
-   * 闲时任务灰度配置：复用 client/configs 通道零新增请求。
-   * forceRefresh 供"打开 Automations 入口补拉"（1h 快照否则灰度翻转最长 1h 不可见）。
+   * Off-peak gating config rides the client/configs channel with zero extra requests.
+   * forceRefresh covers opening the Automations panel (otherwise a flip can stay hidden up to 1h behind the snapshot).
    */
   async getOffPeakClientConfig(options?: { forceRefresh?: boolean }): Promise<OffPeakClientConfig> {
     if (process.env["ZCODE_OFFPEAK_MOCK"] === "1") {
-      // mock 已经明确替代远端曝光配置，不能再先等待 /client/configs：
-      // 离线 Desktop E2E 会一直停在 Loading，根本无法进入闲时执行链。
+      // Mock fully replaces remote exposure config, so waiting on /client/configs first is wrong:
+      // offline desktop E2E would hang on Loading and never reach the off-peak path.
       const modelSelectionView = await this.resolveOffPeakModelSelectionView?.();
       return resolveOffPeakClientConfig({}, process.env, modelSelectionView);
     }
@@ -428,18 +428,18 @@ export class BigModelCodingPlanSubscriptionProvider {
   }
 
   /**
-   * 动态工作流灰度快照：与闲时任务同走
-   * client/configs，零新增请求。三条边界：
-   *   1. 本地覆盖（ZCODE_DYNAMIC_WORKFLOW_MODE）在任何网络动作之前裁决，命中即返回——
-   *      preview 构建和开发者手测因此不受 1h 快照与首次 Host 竞态影响；
-   *   2. forceRefresh 与 Off-Peak 同义，清掉快照后重拉（灰度翻转最长 1h 不可见）；
-   *   3. 请求失败 fail-closed：返回 default（disabled）并 warn，绝不把异常抛给调用方——
-   *      调用方在 session create/client 就绪路径上，灰度读失败不能阻断普通聊天。
+   * Dynamic-workflow gating snapshot rides the same client/configs call as off-peak, zero extra requests. Edges:
+   * (unused continuation)
+   *   1. The local override (ZCODE_DYNAMIC_WORKFLOW_MODE) decides before any network action and returns on hit, so
+   *      preview builds and manual testing dodge the 1h snapshot and first-host race;
+   *   2. forceRefresh means the same as off-peak: drop the snapshot and refetch (a flip hides up to 1h otherwise);
+   *   3. Fail closed on errors: return default (disabled) and warn, never throw to the caller, because
+   *      callers sit on the session-create/client-ready path and a gating read must not block normal chat.
    */
   async getDynamicWorkflowClientConfig(options?: {
     forceRefresh?: boolean;
   }): Promise<DynamicWorkflowClientConfig> {
-    // 覆盖合法即短路：判据（normalize）与快照构造（resolve）都留在 shared，这里不复述取值域。
+    // A valid override short-circuits; normalize/resolve live in shared, so the value domain is not restated here.
     if (normalizeDynamicWorkflowMode(process.env[ZCODE_DYNAMIC_WORKFLOW_MODE_ENV])) {
       return resolveDynamicWorkflowClientConfig({ remote: undefined, env: process.env });
     }
@@ -454,7 +454,7 @@ export class BigModelCodingPlanSubscriptionProvider {
         env: process.env,
       });
     } catch (error) {
-      log.warn(undefined, "动态工作流灰度配置读取失败，按关闭处理", {
+      log.warn(undefined, "Failed to read dynamic-workflow gating config; treating as disabled", {
         errorMessage: error instanceof Error ? error.message : String(error),
       });
       return createDynamicWorkflowClientConfig(DEFAULT_DYNAMIC_WORKFLOW_MODE, "default");
@@ -462,7 +462,7 @@ export class BigModelCodingPlanSubscriptionProvider {
   }
 
   async getModelContextBudgetStrategy(): Promise<ZCodeModelContextBudgetStrategy> {
-    // 3.12.2：预算统一为 preflight-v1；保留兼容方法，但不能再为每次建会话等待远端配置。
+    // 3.12.2: budgets unified on preflight-v1; the compat method remains but must not block session creation on remote config.
     return DEFAULT_ZCODE_MODEL_CONTEXT_BUDGET_STRATEGY;
   }
 
@@ -490,7 +490,7 @@ export class BigModelCodingPlanSubscriptionProvider {
         imRef: request.imRef ?? null,
         ticket: request.ticket ?? null,
         randstr: request.randstr ?? null,
-        // Coding Plan 试算接口默认按 Maas 渠道处理，不显式标记会丢失 zcode 来源归因。
+        // The Coding Plan quote API defaults to the Maas channel; without the marker the zcode attribution is lost.
         salesChannel: request.salesChannel ?? "zcode",
       },
     );
@@ -806,13 +806,13 @@ export class BigModelCodingPlanSubscriptionProvider {
       return await this.clientConfigRequest;
     }
 
-    // client/configs 和其他 ZCode 平台接口必须共享运行时 endpoint；
-    // E2E/测试环境会通过 ZCODE_BASE_URL 指向本地 mock，硬编码线上域名会让套餐状态不可控。
+    // client/configs and other ZCode platform APIs must share the runtime endpoint;
+    // E2E/test envs point ZCODE_BASE_URL at a local mock, and hard-coded prod domains would unsettle plan state.
     const url = resolveCodingPlanClientConfigUrl(process.env);
     url.searchParams.set("app_version", ZCODE_VERSION);
     url.searchParams.set("platform", resolveClientPlatformKey());
-    // StartPlanCard 和套餐列表都来自同一个 client/configs。
-    // 同屏分别读取 preview/products 时必须合并请求，避免未登录设置页重复打远端配置。
+    // StartPlanCard and the plan list both come from the same client/configs.
+    // Concurrent preview/products reads must share one request or the signed-out settings page spams the config endpoint.
     this.clientConfigRequest = readCodingPlanApiJson<ZCodeClientConfigEnvelope>(
       this.apiClient,
       url,
@@ -862,9 +862,9 @@ export class BigModelCodingPlanSubscriptionProvider {
     }
     const zcodeJwtToken = (await this.credentialService.load(ZCODE_JWT_TOKEN_KEY))?.trim();
     if (zcodeJwtToken && token === zcodeJwtToken) {
-      // 旧版 BigModel OAuth callback 曾把 zcode JWT 同时写进
-      // oauth:bigmodel:access_token，付费套餐预览会拿它去打 bigmodel.cn 并报令牌过期。
-      // 这里在服务边界拦截旧污染状态，避免继续向 BigModel 业务接口发送错误凭据。
+      // The legacy BigModel OAuth callback also wrote the zcode JWT into
+      // oauth:bigmodel:access_token, so plan previews hit bigmodel.cn with it and report token expiry.
+      // Intercept the polluted legacy state at the service boundary before wrong credentials reach BigModel APIs.
       log.warn(undefined, "BigModel access token is stale zcode JWT; login required");
       throw new Error("bigmodel_oauth_required");
     }
@@ -929,11 +929,11 @@ export class BigModelCodingPlanSubscriptionProvider {
         const primaryProject = matchedTeamProjects[0];
         return {
           ...product,
-          // 企业 pricing 的 subscribed 商品只返回 productId/tier，不返回 org/project。
-          // 有些账号只返回 organizationId，不返回 projectId；必须继续读取 customerInfo.organizations 数组，
-          // 并按机构匹配团队项目，否则多机构账号会漏掉真实 Team Plan 连接方式。
-          // 另有测试环境账号 pricing 全部返回 subscribed=false，但 customerInfo 已有 projectType=2 团队项目；
-          // 此时 customerInfo 是更可靠的已购凭据，需要反向补出当前团队套餐入口。
+          // Enterprise pricing returns only productId/tier for subscribed plans, no org/project.
+          // Some accounts return only organizationId; keep reading the customerInfo.organizations array
+          // and match team projects per org, or multi-org accounts lose their real Team Plan connection.
+          // Some staging accounts return subscribed=false everywhere while customerInfo already has a projectType=2 team;
+          // customerInfo is then the stronger purchase evidence, so backfill the team plan entry from it.
           organizationId: primaryProject?.organizationId ?? product.organizationId,
           organizationName: primaryProject?.organizationName ?? product.organizationName,
           projectId: primaryProject?.projectId ?? product.projectId,
@@ -985,8 +985,8 @@ export class BigModelCodingPlanSubscriptionProvider {
           createTeamPlanProjectApiKeyPrewarmStatusFromEnsureResult(result),
         );
       } catch (error) {
-        // 多团队套餐每个项目都需要独立 zcode-team-api-key。
-        // 单个团队项目创建失败不能阻断 pricing 返回，否则会让其他团队入口一起不可见。
+        // Each project of a multi-team plan needs its own zcode-team-api-key.
+        // One failed team-project creation must not sink pricing, or every other team entry disappears too.
         log.warn(undefined, "Team Plan project api key prewarm failed", {
           family: this.codingPlanProviderId(),
           organizationId: teamContext.organizationId,
@@ -1232,15 +1232,15 @@ function isBigModelTeamCodingPlanProject(
     NonNullable<BigModelCustomerInfoResponse["organizations"]>[number]["projects"]
   >[number],
 ): boolean {
-  // 团队套餐项目类型由 customerInfo.projectType 标识。
-  // 不能写死项目名称，否则团队项目改名或国际化名称变化后会漏选。
+  // customerInfo.projectType marks the team-plan project type.
+  // Never match on project names, or renames/localized names break selection.
   return String(project.projectType ?? "").trim() === "2";
 }
 
 export function createBigModelLoginAuthHeaders(token: string): Record<string, string> {
   return {
-    // BigModel 登录态业务接口要求 Authorization 直接传 accessToken。
-    // 这里不能套 Bearer；Bearer 只适用于模型/API Key 类接口。
+    // BigModel session APIs want the raw accessToken in Authorization.
+    // No Bearer prefix here; Bearer is for model/API-key endpoints only.
     Authorization: token,
     "Content-Type": "application/json",
   };
@@ -1248,8 +1248,8 @@ export function createBigModelLoginAuthHeaders(token: string): Record<string, st
 
 export function createZaiLoginAuthHeaders(token: string): Record<string, string> {
   return {
-    // Z.ai provider connection 已把 access_token 持久化为业务 JWT。
-    // 这里不能使用模型 API key，也不能给业务 JWT 添加 Bearer 前缀。
+    // The Z.ai provider connection persists access_token as the business JWT.
+    // Never substitute the model API key nor prefix the business JWT with Bearer.
     Authorization: token,
     "Content-Type": "application/json",
   };
@@ -1262,14 +1262,14 @@ function resolveCodingPlanHost(providerId: CodingPlanSubscriptionProviderId | un
 }
 
 function resolveZaiCodingPlanHost(): string {
-  // Z.ai Coding Plan 的 /api/biz 与 /api/pay 业务接口必须跟随产品环境。
-  // 业务 token 必须发送到 .env 配置的 ZAI Business origin；未覆盖时默认 api.z.ai。
+  // Z.ai Coding Plan /api/biz and /api/pay must follow the product environment.
+  // Business tokens go to the env-configured ZAI origin; default api.z.ai when unset.
   return resolveZaiBusinessBaseUrl(process.env);
 }
 
 function resolveBigModelEnterpriseHost(): string {
-  // 企业套餐 token 必须发送到 .env 配置的 BigModel origin；未覆盖时默认 bigmodel.cn，
-  // 服务端返回空响应后被归一成系统繁忙。
+  // Enterprise-plan tokens go to the env-configured BigModel origin; default bigmodel.cn,
+  // and empty server responses normalize to a busy system error.
   return resolveBigModelApiOrigin(process.env);
 }
 
@@ -1300,7 +1300,7 @@ function unwrapEnvelope<T>(
   return payload.data;
 }
 
-/** 旧服务端目录仍使用 builtin 键；只在配置边界转换，不能扩散成运行时身份别名。 */
+/** Legacy server catalogs still use builtin keys; convert at the config boundary only, never as runtime identity aliases. */
 function normalizeStaticProductProviderIds<T>(
   products: Partial<Record<CodingPlanSubscriptionProviderId, T[]>>,
 ): Partial<Record<CodingPlanSubscriptionProviderId, T[]>> {
@@ -1310,7 +1310,7 @@ function normalizeStaticProductProviderIds<T>(
     ["builtin:bigmodel-coding-plan", BUILTIN_MODEL_PROVIDER_IDS.bigmodelIndividualCodingPlan],
     ["builtin:zai-coding-plan", BUILTIN_MODEL_PROVIDER_IDS.zaiIndividualCodingPlan],
   ] as const) {
-    // 显式空数组表示关闭该目录；只有旧键不存在时才使用新键，不能用长度判断回退。
+    // An explicit empty array disables the catalog; use the new key only when the legacy one is absent, never by length.
     if (Object.hasOwn(raw, legacyId)) normalized[currentId] = raw[legacyId];
     delete (normalized as Record<string, T[]>)[legacyId];
   }
@@ -1345,8 +1345,8 @@ function unwrapClientConfigTeamProducts(
       !Array.isArray(providerProducts) ||
       !providerProducts.every(isCodingPlanStaticTeamProduct)
     ) {
-      // 远端配置没有运行时类型保障；无效静态目录必须整体降级为读取失败，
-      // 让 UI 继续使用实时 pricing 恢复团队订阅身份，不能在合并阶段抛错。
+      // Remote config carries no runtime type guarantees; an invalid static catalog degrades wholesale to a read failure
+      // so the UI can recover team identity from live pricing; never throw during the merge.
       throw new Error("ZCode client config has invalid Coding Plan team products");
     }
   }
@@ -1493,8 +1493,8 @@ async function readCodingPlanApiJson<T>(
   } catch (error) {
     const message = readRemoteErrorMessage(error);
     if (isUnrenderableRemoteErrorMessage(message)) {
-      // 支付接口偶发返回 WAF/HTML 页面或非 JSON 响应，原样透传会把整段
-      // HTML 渲到确认支付页。服务边界先收敛为稳定错误码，UI 再做本地化提示。
+      // Pay endpoints occasionally return WAF/HTML or non-JSON; passing it through renders the whole
+      // HTML into the confirm-payment page. Normalize to a stable error code here; UI localizes the message.
       throw new Error(CODING_PLAN_SYSTEM_BUSY);
     }
     throw error;
@@ -1539,9 +1539,9 @@ function dropUndefined(value: Record<string, unknown>): Record<string, unknown> 
 }
 
 /**
- * 闲时任务灰度判据（纯函数供单测）：远端只提供曝光开关，模型成员和事实
- * 来自 ZCode Built-in Provider / Model Config。
- * mock 模式（ZCODE_OFFPEAK_MOCK=1）只替代产品曝光与套餐状态；模型候选仍来自 Registry。
+ * Off-peak gating predicate (pure, unit-tested): remote exposes only the flag; model membership and facts
+ * come from the ZCode built-in provider / model config.
+ * Mock mode (ZCODE_OFFPEAK_MOCK=1) replaces product exposure and plan state only; model candidates stay from the registry.
  */
 export function resolveOffPeakClientConfig(
   payload: ZCodeClientConfigEnvelope,
@@ -1553,7 +1553,7 @@ export function resolveOffPeakClientConfig(
     return {
       enabled: hasModels,
       modelSelectionView,
-      // ZCODE_OFFPEAK_MOCK_NO_PLAN=1 演示「非 coding plan 锁定」态；缺省视为已订阅。
+      // ZCODE_OFFPEAK_MOCK_NO_PLAN=1 demos the no-plan locked state; default is subscribed.
       codingPlanActive: env["ZCODE_OFFPEAK_MOCK_NO_PLAN"] !== "1",
     };
   }

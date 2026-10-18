@@ -159,7 +159,8 @@ function loadPluginHookSource(input: {
   } catch (error) {
     input.diagnostics.push({
       code: "plugin_hook_read_failed",
-      message: error instanceof Error ? error.message : `Failed to read plugin hooks: ${input.path}`,
+      message:
+        error instanceof Error ? error.message : `Failed to read plugin hooks: ${input.path}`,
       path: input.path,
       pluginId: input.loaded.id,
       severity: "error",

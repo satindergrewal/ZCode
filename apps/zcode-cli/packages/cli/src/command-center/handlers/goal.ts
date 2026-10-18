@@ -10,7 +10,7 @@ import type {
 import { splitArgs } from "../utils.js";
 
 const PLAN_MODE_GOAL_CONTINUATION_SKIPPED_MESSAGE =
-    "Goal recorded under plan mode; it will not auto-continue.";
+  "Goal recorded under plan mode; it will not auto-continue.";
 
 export async function handleTargetCommand(
   args: string,
@@ -130,9 +130,10 @@ function formatTargetSummary(target: CommandCenterTarget | null): string {
 function formatTargetChanged(title: string, target: CommandCenterTarget): string {
   const lines = [title, `Objective: ${target.objective}`];
   if (target.tokensUsed !== undefined || target.tokenBudget !== undefined) {
-    const budget = target.tokenBudget === null || target.tokenBudget === undefined
-      ? "none"
-      : target.tokenBudget.toString();
+    const budget =
+      target.tokenBudget === null || target.tokenBudget === undefined
+        ? "none"
+        : target.tokenBudget.toString();
     lines.push(`Usage: ${target.tokensUsed ?? 0} tokens / ${budget}`);
   }
   if (target.timeUsedSeconds !== undefined) {

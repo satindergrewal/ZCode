@@ -1,9 +1,9 @@
 /**
- * ChatEmptyState — 对话为空时的空态展示组件
+ * ChatEmptyState: empty-conversation surface.
  *
- * 从 ChatView.tsx 拆出的 workspace 路径工具函数和空态下拉菜单组件。
+ * Workspace path helpers and the empty-state menu, split from ChatView.
  */
-/* eslint-disable max-lines -- 空态工作区菜单集中维护本地、远程与会话 workspace 的筛选和切换交互，局部样式扩展需保持同一套语义。 */
+/* eslint-disable max-lines -- the empty-state menu owns local/remote/session filtering and switching; style tweaks keep one semantic. */
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button.js";
@@ -53,7 +53,7 @@ export {
 } from "@/ChatEmptyScratchWorkspaceDialog.js";
 
 // ---------------------------------------------------------------------------
-// Workspace 路径工具函数
+// Workspace path helpers
 // ---------------------------------------------------------------------------
 
 function inferWorkspaceHomePath(path: string) {
@@ -66,11 +66,7 @@ function inferWorkspaceHomePath(path: string) {
 
 function getWorkspaceMenuTitle(path: string, homeLabel: string) {
   const normalizedPath = path.replace(/\\/g, "/").replace(/\/+$/, "");
-  if (
-    /^(\/Users\/[^/]+|\/home\/[^/]+|[A-Za-z]:\/Users\/[^/]+)$/.test(
-      normalizedPath,
-    )
-  ) {
+  if (/^(\/Users\/[^/]+|\/home\/[^/]+|[A-Za-z]:\/Users\/[^/]+)$/.test(normalizedPath)) {
     return homeLabel;
   }
 
@@ -79,11 +75,7 @@ function getWorkspaceMenuTitle(path: string, homeLabel: string) {
 
 function getWorkspaceListTitle(path: string, homeLabel: string) {
   const normalizedPath = path.replace(/\\/g, "/").replace(/\/+$/, "");
-  if (
-    /^(\/Users\/[^/]+|\/home\/[^/]+|[A-Za-z]:\/Users\/[^/]+)$/.test(
-      normalizedPath,
-    )
-  ) {
+  if (/^(\/Users\/[^/]+|\/home\/[^/]+|[A-Za-z]:\/Users\/[^/]+)$/.test(normalizedPath)) {
     return getPathLeaf(path);
   }
 
@@ -92,11 +84,7 @@ function getWorkspaceListTitle(path: string, homeLabel: string) {
 
 export function getWorkspaceTriggerTitle(path: string, homeLabel: string) {
   const normalizedPath = path.replace(/\\/g, "/").replace(/\/+$/, "");
-  if (
-    /^(\/Users\/[^/]+|\/home\/[^/]+|[A-Za-z]:\/Users\/[^/]+)$/.test(
-      normalizedPath,
-    )
-  ) {
+  if (/^(\/Users\/[^/]+|\/home\/[^/]+|[A-Za-z]:\/Users\/[^/]+)$/.test(normalizedPath)) {
     return getPathLeaf(path);
   }
 
@@ -146,14 +134,13 @@ export function filterVisibleWorkspaceMenuTabs({
   return workspaceTabs
     .filter((workspaceTab) => {
       const isDisconnectedRemoteWorkspace = Boolean(
-        hasRemoteWorkspaceIdentity(workspaceTab) &&
-        !workspaceTab.remoteSessionId,
+        hasRemoteWorkspaceIdentity(workspaceTab) && !workspaceTab.remoteSessionId,
       );
 
-      // 空态菜单的 workspace 列表是给“立即切换可用上下文”用的。
-      // 断连 remote workspace 继续出现在这里时，用户点进去只会得到一条当前不可用的上下文，
-      // 和左侧 sidebar 的“保留断连项以便重连”职责不同。这里把断连 remote 从菜单列表里排除，
-      // 仅保留可直接进入的 workspace；底部的固定入口保持不变。
+      // The menu lists instantly enterable contexts only.
+      // A disconnected remote click lands on an unavailable context;
+      // the sidebar keeps them for reconnection, this menu does not:
+      // only enterable workspaces; the fixed footer entry stays.
       return !isDisconnectedRemoteWorkspace;
     })
     .filter((workspaceTab) => {
@@ -161,10 +148,7 @@ export function filterVisibleWorkspaceMenuTabs({
         return true;
       }
 
-      const workspaceTitle = getWorkspaceListTitle(
-        workspaceTab.workspacePath,
-        homeWorkspaceLabel,
-      );
+      const workspaceTitle = getWorkspaceListTitle(workspaceTab.workspacePath, homeWorkspaceLabel);
       const searchableText = [
         workspaceTitle,
         workspaceTab.label,
@@ -179,7 +163,7 @@ export function filterVisibleWorkspaceMenuTabs({
 }
 
 // ---------------------------------------------------------------------------
-// 空态组件
+// Empty-state component
 // ---------------------------------------------------------------------------
 
 export function ChatEmptyWorkspacePreviewMenu({
@@ -209,7 +193,7 @@ export function ChatEmptyWorkspacePreviewMenu({
   compactForRemoteControl?: boolean;
   workspaceTabs: ReadonlyArray<ChatEmptyWorkspaceMenuTab>;
   allowConversationWorkspaceSelection?: boolean;
-  /** 是否显示项目 chip 的快捷脱离按钮；默认跟随非项目工作区选择能力。 */
+  /** Detach-project shortcut on the chip; defaults to the non-project choice ability. */
   allowConversationWorkspaceDetach?: boolean;
   onSelectWorkspace: (workspaceTab: ChatEmptyWorkspaceMenuTab) => void;
   onSelectConversationWorkspace: () => void | Promise<void>;
@@ -217,31 +201,27 @@ export function ChatEmptyWorkspacePreviewMenu({
   allowOpenWorkspace?: boolean;
   allowRemoteWorkspace?: boolean;
   remoteWorkspaceSessions?: RemoteWorkspaceSessionEntry[];
-  onConnectRemote: (
-    options: RemoteTarget,
-    requestId?: string,
-  ) => Promise<string>;
+  onConnectRemote: (options: RemoteTarget, requestId?: string) => Promise<string>;
   onSelectRemoteProject: (
     sessionId: string,
     path: string,
     localWorkspacePath?: string,
   ) => Promise<void>;
   onCancelRemoteProject: (sessionId: string) => Promise<void>;
-  /** 调用方局部调整 workspace chip 外层视觉，不改变普通会话默认样式。 */
+  /** Caller-level chrome for the chip wrap; session default unchanged. */
   containerClassName?: string;
-  /** 调用方局部调整 workspace trigger 视觉，不改变普通会话默认样式。 */
+  /** Caller-level chrome for the trigger; session default unchanged. */
   triggerClassName?: string;
-  /** 调用方局部替换尾部 indicator；普通会话继续使用默认 Lucide chevron。 */
+  /** Caller override for the tail indicator; sessions keep the default chevron. */
   triggerIndicator?: ReactNode;
 }) {
   const { intl } = useZCodeIntl();
   const [sshDialogOpen, setSshDialogOpen] = useState(false);
   const [workspaceSearchQuery, setWorkspaceSearchQuery] = useState("");
   const showRemoteConnectionEntry = useRemoteConnectionEntryVisibility();
-  // Web 普通模式没有完整远程 workspace 会话链路，不能只依赖全局 feature visibility。
-  // 这里叠加壳层能力开关，确保本地 Web 模式的空态菜单不会露出必然失败的远程连接入口。
-  const canUseRemoteWorkspace =
-    allowRemoteWorkspace && showRemoteConnectionEntry;
+  // Plain web has no remote-session pipeline; feature visibility alone is not enough.
+  // And the shell ability flag, so local web never shows a doomed remote entry.
+  const canUseRemoteWorkspace = allowRemoteWorkspace && showRemoteConnectionEntry;
   const currentWorkspaceTab =
     workspaceTabs.find((workspaceTab) =>
       isWorkspaceMenuTabSelected(workspaceTab, {
@@ -249,8 +229,7 @@ export function ChatEmptyWorkspacePreviewMenu({
         workspaceIdentity,
       }),
     ) ?? null;
-  const isConversationWorkspace =
-    currentWorkspaceTab?.workspacePurpose === "conversation";
+  const isConversationWorkspace = currentWorkspaceTab?.workspacePurpose === "conversation";
   const canDetachProject =
     allowConversationWorkspaceSelection &&
     allowConversationWorkspaceDetach &&
@@ -264,9 +243,7 @@ export function ChatEmptyWorkspacePreviewMenu({
       : workspacePath;
   const homeWorkspacePath = inferWorkspaceHomePath(workspacePath);
   const homeWorkspaceLabel = intl.formatMessage({ id: "chat.empty.home" });
-  const isCurrentRemoteWorkspace = hasRemoteWorkspaceIdentity(
-    currentWorkspaceTab ?? {},
-  );
+  const isCurrentRemoteWorkspace = hasRemoteWorkspaceIdentity(currentWorkspaceTab ?? {});
   const visibleWorkspaceTabs = useMemo(
     () =>
       filterVisibleWorkspaceMenuTabs({
@@ -306,7 +283,11 @@ export function ChatEmptyWorkspacePreviewMenu({
             onClick={(event) => {
               event.stopPropagation();
               void runUserActionAsync({
-                input: { featureId: "workspace.project_binding", action: "detach", trigger: "button" },
+                input: {
+                  featureId: "workspace.project_binding",
+                  action: "detach",
+                  trigger: "button",
+                },
                 operation: () => Promise.resolve(onSelectConversationWorkspace()),
                 completed: { resultSource: "optimistic_projection" },
                 failureStage: "project_detach",
@@ -323,11 +304,9 @@ export function ChatEmptyWorkspacePreviewMenu({
             size="default"
             className={cn(
               "min-w-0 rounded-full bg-transparent text-ui-base/relaxed hover:bg-transparent",
-              // Bugfix: 远程控制页面空态文案区域更窄，workspacePath 过长会把同一行挤坏。
-              // 这里在远控模式收紧菜单触发按钮宽度，让超长路径在按钮内走省略号。
-              compactForRemoteControl
-                ? "max-w-44 pl-3 pr-2"
-                : "max-w-[15rem] pl-3 pr-2",
+              // Bugfix: the remote empty state is narrower; long paths broke the line.
+              // Tighten the trigger; long paths ellipsize inside it.
+              compactForRemoteControl ? "max-w-44 pl-3 pr-2" : "max-w-[15rem] pl-3 pr-2",
               triggerClassName,
             )}
             aria-label={intl.formatMessage({ id: "chat.empty.workspaceMenu" })}
@@ -336,26 +315,18 @@ export function ChatEmptyWorkspacePreviewMenu({
             <CurrentWorkspaceIcon
               className={cn(
                 "size-4 text-foreground-subtle transition-opacity",
-                // 关闭按钮和项目图标占用同一位置。只有允许脱离项目时才隐藏底层图标，
-                // 否则 X 会直接叠在图标上；定时任务禁用该能力时则让项目图标保持可见。
+                // Close and project icon share a slot; hide the icon only when detach is allowed,
+                // else X stacks on it; scheduled tasks keep the icon.
                 canDetachProject &&
                   "group-hover/workspace-chip:opacity-0 group-focus-within/workspace-chip:opacity-0",
               )}
             />
-            <span className="block max-w-full truncate">
-              {currentWorkspaceTitle}
-            </span>
-            {triggerIndicator ?? (
-              <ChevronDownIcon className="size-3.5 text-foreground-subtle" />
-            )}
+            <span className="block max-w-full truncate">{currentWorkspaceTitle}</span>
+            {triggerIndicator ?? <ChevronDownIcon className="size-3.5 text-foreground-subtle" />}
           </Button>
         </DropdownMenuTrigger>
       </div>
-      <DropdownMenuContent
-        align="start"
-        side="top"
-        className="w-72 p-0"
-      >
+      <DropdownMenuContent align="start" side="top" className="w-72 p-0">
         <div
           data-slot="command-input-wrapper"
           className="p-1 border-b border-border"
@@ -385,8 +356,7 @@ export function ChatEmptyWorkspacePreviewMenu({
             const isRemoteWorkspace = hasRemoteWorkspaceIdentity(workspaceTab);
             const WorkspaceIcon = isRemoteWorkspace
               ? Cloud
-              : inferWorkspaceHomePath(workspaceTab.workspacePath) ===
-                  workspaceTab.workspacePath
+              : inferWorkspaceHomePath(workspaceTab.workspacePath) === workspaceTab.workspacePath
                 ? House
                 : Folder;
 
@@ -400,7 +370,9 @@ export function ChatEmptyWorkspacePreviewMenu({
                 onSelect={() => {
                   runUserAction({
                     input: {
-                      featureId: isConversationWorkspace ? "workspace.project_binding" : "workspace.local.lifecycle",
+                      featureId: isConversationWorkspace
+                        ? "workspace.project_binding"
+                        : "workspace.local.lifecycle",
                       action: isConversationWorkspace ? "attach" : "switch",
                       trigger: "menu",
                       workspaceKind: isRemoteWorkspace ? "remote" : "local",
@@ -412,9 +384,7 @@ export function ChatEmptyWorkspacePreviewMenu({
                 }}
               >
                 <WorkspaceIcon className="size-4 text-foreground-subtle" />
-                <span className="min-w-0 flex-1 truncate">
-                  {workspaceTitle}
-                </span>
+                <span className="min-w-0 flex-1 truncate">{workspaceTitle}</span>
               </DropdownMenuCheckboxItem>
             );
           })}
@@ -435,13 +405,18 @@ export function ChatEmptyWorkspacePreviewMenu({
             <DropdownMenuItem
               data-testid={TID_COMPOSER_REMOTE_CONNECTION}
               onSelect={() => {
-                // 打开远程弹窗时必须让 DropdownMenu 执行默认关闭流程。
-                // 阻止默认 select 会让父菜单与 modal 同时保持打开，浮层层级调整后父菜单会覆盖弹窗。
+                // Opening the remote dialog must run the default menu close;
+                // preventDefault keeps both open and the parent overlaps the dialog.
                 logger.info(
                   `[ChatEmptyWorkspacePreviewMenu] open remote dialog from workspace menu workspace=${workspacePath}`,
                 );
                 runUserAction({
-                  input: { featureId: "workspace.remote.lifecycle", action: "open_dialog", trigger: "menu", workspaceKind: "remote" },
+                  input: {
+                    featureId: "workspace.remote.lifecycle",
+                    action: "open_dialog",
+                    trigger: "menu",
+                    workspaceKind: "remote",
+                  },
                   operation: () => setSshDialogOpen(true),
                   completed: { resultSource: "local_commit" },
                   failureStage: "dialog_open",
@@ -458,7 +433,11 @@ export function ChatEmptyWorkspacePreviewMenu({
               checked={isConversationWorkspace}
               onSelect={() =>
                 void runUserActionAsync({
-                  input: { featureId: "workspace.project_binding", action: "work_outside_project", trigger: "menu" },
+                  input: {
+                    featureId: "workspace.project_binding",
+                    action: "work_outside_project",
+                    trigger: "menu",
+                  },
                   operation: () => Promise.resolve(onSelectConversationWorkspace()),
                   completed: { resultSource: "optimistic_projection" },
                   failureStage: "project_detach",
@@ -466,9 +445,7 @@ export function ChatEmptyWorkspacePreviewMenu({
               }
             >
               <MessageCircle className="size-4 text-foreground-subtle" />
-              <span>
-                {intl.formatMessage({ id: "chat.empty.workOutsideProject" })}
-              </span>
+              <span>{intl.formatMessage({ id: "chat.empty.workOutsideProject" })}</span>
             </DropdownMenuCheckboxItem>
           ) : null}
         </div>

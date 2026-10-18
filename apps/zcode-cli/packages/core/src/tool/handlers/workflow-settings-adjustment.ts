@@ -1,15 +1,15 @@
 // ============================================================
-// 确认窗里调整的两项 run 设置（CreateWorkflow / AmendWorkflow 共用）
+// The two run settings adjustable in the confirm dialog (shared by CreateWorkflow / AmendWorkflow)
 // ============================================================
 // docs/dynamic-workflow/launch.md「Adjusting the settings in the window」。
 //
-// 三件事，一处实现：
-//   1. `resolveInput` 回填的 `adjustable_settings` 块（告诉确认窗这个 agent 会应用窗里改的值）；
-//   2. 批准之后把应答里的改动落进入参（executor 经 `ToolEntry.applyInputAdjustments` 调这里）；
-//   3. 结果文案里那句「批准之前，用户在确认窗里调整了设置」。
+// Three things, one implementation:
+//   1. the `adjustable_settings` block backfilled by `resolveInput` (tells the dialog this agent will apply in-dialog values);
+//   2. after approval, apply answer changes to the input (the executor calls via `ToolEntry.applyInputAdjustments`);
+//   3. the result-copy sentence "before approval, the user adjusted settings in the dialog".
 //
-// 落进入参之后的形状与 `resolveInput` 的产物完全相同——「一个规范形或没有」「一个数或没有」——所以
-// handler、run 端口与 journal 都不需要知道调整发生过；只有模型面的那句话需要。
+// The post-application shape equals resolveInput's product — "one canonical form or none", "a number or none" — so
+// handler, run port, and journal need not know an adjustment happened; only the model-facing sentence does.
 
 import {
   parseWorkflowSettingsAdjustment,
@@ -25,7 +25,7 @@ import type {
 import { normalizeWorkflowMaxConcurrency } from "./create-workflow-source.js";
 import { resolveModelReference } from "./model-reference.js";
 
-/** safeParse 即可的运行时 schema（两个工具的 strict 入参 schema）。 */
+/** A runtime schema where safeParse suffices (both tools' strict input schemas). */
 interface WorkflowInputSchemaLike {
   safeParse(value: unknown): { success: boolean };
 }
@@ -35,16 +35,16 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * 回填块：端口在场才写——没有 run 端口就不会有 run，窗里调什么都无处生效。模型那一格看目录端口：
- * 宿主解不了模型名，窗里就只让调上界（批准之后才因「这里选不了模型」失败，是把接线缺口记到用户头上）。
+ * The backfill block only when the port exists — no run port, no run, nowhere for a dialog value to land. The model cell reads the catalog port:
+ * a host that cannot resolve model names offers only the bound (failing after approval with "cannot choose models here" books a wiring gap to the user).
  */
 export function workflowAdjustableSettings(
   context: ToolInputResolutionContext,
 ): WorkflowAdjustableSettings | undefined {
   const port = context.dynamicWorkflowRunPort;
   if (port === undefined) return undefined;
-  // 线上键名 `concurrency_ceiling` 早于「默认并发」这个概念，为兼容旧端保留；它现在装的是默认
-  // 并发 D——步进器的提示与「等于默认 = 不设自己的界」的判据，不是上限。
+  // The wire key `concurrency_ceiling` predates the "default concurrency" concept and stays for old hosts; it now carries the default
+  // D — the stepper hint and the "equals default = no bound of its own" test, not a cap.
   const defaultConcurrency = port.defaultConcurrency?.();
   return {
     subagent_model: context.modelCatalogPort !== undefined,
@@ -53,8 +53,8 @@ export function workflowAdjustableSettings(
 }
 
 /**
- * 给一次成功的归一化结果补上回填块（无条件覆盖模型给的值：伪造它是无效的）。`includeWhen` 让调用方
- * 排除不会开窗的形状——AmendWorkflow 就地调并发的归一化结果没有脚本，也就没有确认窗。
+ * Adds the backfill block to a successful normalization (unconditionally overriding the model's value: forged is invalid). `includeWhen` lets the caller
+ * exclude shapes with no dialog — AmendWorkflow's in-place concurrency normalization has no script, hence no dialog.
  */
 export function withWorkflowAdjustableSettings(
   resolution: ToolInputResolutionResult,
@@ -71,7 +71,7 @@ export function withWorkflowAdjustableSettings(
   };
 }
 
-/** 窗里选的模型此刻解不出来（被删、被停用，或宿主没有目录）：整次调用失败，什么都不启动。 */
+/** The model chosen in the dialog cannot resolve right now (deleted, disabled, or no catalog): the whole call fails, nothing starts. */
 function adjustedModelFailure(errorCode: number, detail: string): ToolHandlerFailure {
   return {
     result: false,
@@ -80,13 +80,13 @@ function adjustedModelFailure(errorCode: number, detail: string): ToolHandlerFai
   };
 }
 
-/** 窗里选模型却没有目录：回填块在这种宿主上本来就说了 `subagent_model: false`，只防绕过它的客户端。 */
+/** Model chosen in the dialog but no catalog: the backfill block already said `subagent_model: false` on such hosts; this only guards bypassing clients. */
 const ADJUSTED_MODEL_WITHOUT_CATALOG = "This host cannot choose a subagent model.";
 
 /**
- * 把应答里的改动落进一份已归一化的入参。三态与 `AmendWorkflow` 模型面同规：字符串 → 经目录解析成
- * 规范形（窗里送来的就是规范形，命中第一层）；`null` → 删键（会话模型 / 默认并发）；数 → 向下
- * 取整到至少 1，没有上限。与入参原值相同的改动不算生效（`applied` 里没有它），好让结果文案不说一句空话。
+ * Applies answer changes onto an already-normalized input. Three states, same rules as AmendWorkflow's model face: string -> resolve via the catalog to
+ * canonical form (the dialog sends canonical, hits the first tier); `null` -> delete the key (session model / default concurrency); number -> floor
+ * to at least 1, no ceiling. A change equal to the input's current value does not count as applied (absent from `applied`), keeping the result copy free of empty words.
  */
 export function applyWorkflowSettingsAdjustments(
   input: unknown,
@@ -122,7 +122,7 @@ export function applyWorkflowSettingsAdjustments(
     next.max_concurrency = bound;
   }
 
-  // 落定后的入参必须仍过工具的运行时 schema：handler 只认那一种形状，不为调整另开一条路。
+  // The settled input must still pass the tool's runtime schema: the handler accepts that one shape and gets no second path for adjustments.
   if (!options.schema.safeParse(next).success) {
     return {
       result: false,
@@ -136,7 +136,7 @@ export function applyWorkflowSettingsAdjustments(
     : { result: true, input: next, applied };
 }
 
-/** handler 读 `context.inputAdjustments`：executor 交来的就是上面的 `applied`，这里只再收一次形状。 */
+/** The handler reads `context.inputAdjustments`: the executor passes exactly the `applied` above; this only re-checks the shape. */
 export function readAppliedWorkflowSettings(
   inputAdjustments: Readonly<Record<string, unknown>> | undefined,
 ): WorkflowSettingsAdjustment {
@@ -144,9 +144,9 @@ export function readAppliedWorkflowSettings(
 }
 
 /**
- * 结果文案里的那句话（docs/dynamic-workflow/launch.md「Adjusting the settings in the window」）。模型的
- * `tool_use` 块留着它自己传的参数，不说的话它会以为自己要的值在生效，甚至去「纠正」一个正按用户
- * 意思在跑的 run。只说改了的那一半；两个 `null` 各有一句话。以空格开头，直接接在前一句后面。
+ * The sentence in the result copy (docs/dynamic-workflow/launch.md "Adjusting the settings in the window"). The model's
+ * tool_use block keeps its own params; unsaid, it believes its values apply and may even "correct" a run that is following the
+ * user's intent. Only the changed half is named; each `null` gets its own sentence. Leading space, appended to the previous sentence.
  */
 export function describeWorkflowSettingsAdjustment(
   applied: WorkflowSettingsAdjustment,
@@ -176,8 +176,8 @@ export function describeWorkflowSettingsAdjustment(
 }
 
 /**
- * 结果文案里的三句设置话：调整句在前，没被调整的那一项照旧用它自己的句子（调整句已经替它说过了的
- * 那一项不再重复）。两个工具共用，好让同一件事在两种结果里是同一句话。
+ * The three settings sentences of the result copy: the adjustment sentence first; an unadjusted item keeps its own sentence (the adjustment
+ * sentence already covered it). Shared by both tools so the same fact is the same sentence in both results.
  */
 export function describeWorkflowRunSettings(options: {
   applied: WorkflowSettingsAdjustment;
@@ -185,8 +185,8 @@ export function describeWorkflowRunSettings(options: {
   describeLimit: () => string;
   describeModel: () => string;
   /**
-   * 脚本点名的模型那一句（列出全部绑定）：窗里改不了它们，所以它总是出现，好让模型下一次调用能
-   * 原样贴回每一个规范串。
+   * The script-named-models sentence (lists every binding): not adjustable in the dialog, so it always appears, letting the model
+   * paste every canonical string back verbatim next call.
    */
   describeScriptModels?: () => string;
 }): string {

@@ -37,9 +37,7 @@ export function getSourceMessageId(sourceId: GitChangeSourceId): string {
   }
 }
 
-export function getDiffFallbackMessageId(
-  availability: GitDiffResult["availability"],
-): string {
+export function getDiffFallbackMessageId(availability: GitDiffResult["availability"]): string {
   switch (availability) {
     case "binary":
       return "git.diff.binaryTitle";
@@ -70,8 +68,8 @@ export function getGitPaneDiffFindContent(diff: GitDiffResult | null): string | 
         ? previewPlan.lines
         : getPlainTextPatchContentLines(diff.patch);
 
-    // 全文内容降级后若直接搜索原始 patch，Git 文件头、index 和 hunk 头会
-    // 产生预览中不存在的伪命中。查找必须复用实际可见行，并剥掉不会显示的 diff marker。
+    // With full-text degraded, searching raw patch hits ghost matches in headers/index/hunks;
+    // search visible lines and strip markers that never render.
     return visibleLines
       .filter((line) => parseTruncatedMarkerOmittedLineCount(line) === null)
       .map(getPatchPreviewLineContent)
@@ -120,14 +118,13 @@ export function shouldRenderPatchOnlyGitDiffPreview(diff: GitDiffResult): boolea
     return false;
   }
 
-  // Repo 全文读取失败时 patch 仍然有效，但缺失的一侧不能再补成空文件交给
-  // MultiFileDiff。把“不完整内容对”并入既有 patch 安全预检，避免整文件误判为增删。
+  // Failed repo reads keep the patch valid but one side empty; do not fabricate files.
+  // Fold incomplete pairs into the patch safety precheck, not whole-file add/delete.
   if (diff.beforeContent === null || diff.afterContent === null) {
     return true;
   }
 
-  const fullContentCharCount =
-    (diff.beforeContent?.length ?? 0) + (diff.afterContent?.length ?? 0);
+  const fullContentCharCount = (diff.beforeContent?.length ?? 0) + (diff.afterContent?.length ?? 0);
   if (fullContentCharCount > MAX_RICH_DIFF_FULL_CONTENT_CHAR_COUNT) {
     return true;
   }
@@ -165,9 +162,9 @@ export function getGitPaneDiffPreviewPlan(diff: GitDiffResult | null): GitPaneDi
     };
   }
 
-  // Review 面板展开大文件时，MultiFileDiff 会在 React render 阶段同步比较
-  // before/after 整文件，并在初始高亮前构建整文件 plain AST。大文件只需要先看变更 hunk，
-  // 因此超阈值时改走 PatchDiff，保留异步高亮 worker，同时避开整文件主线程开销。
+  // Large files: MultiFileDiff compares whole files and builds ASTs in render;
+  // only hunks matter first. Past the threshold use PatchDiff with its async
+  // highlight worker, skipping whole-file main-thread cost.
   return { kind: "patch" };
 }
 
@@ -190,12 +187,10 @@ export function shouldRenderPlainTextDiffPreview(patch: string): string[] | null
     return null;
   }
 
-  // review 面板只该把纯文本新增/删除文件降级成轻量 preview。
-  // 底层通用 fallback 为了避免文件变更展开空白，会覆盖 JSON 等结构化文件；
-  // 这里重新按文件类型收口，避免结构化文件绕过 PatchDiff 的语义化渲染路径。
-  return getFiletypeFromFileName(patchFileName) === "text"
-    ? fallbackLines
-    : null;
+  // The review panel downsizes only plain-text add/delete files to light previews.
+  // The generic fallback covers structured files (JSON) to avoid blank expands;
+  // re-route by type so structured files keep PatchDiff semantics.
+  return getFiletypeFromFileName(patchFileName) === "text" ? fallbackLines : null;
 }
 
 function getPatchContentFileName(lines: readonly string[]): string | null {

@@ -22,14 +22,14 @@ const sourceSchema = z.object({
   topicContext: z.object({ messages: z.array(recordSchema), hasGap: z.boolean() }),
 });
 
-/** 原文只读取 runtime 保存的可信输入事实；消息正文和摘要都不能扩大检索范围。 */
+/** Originals read only the runtime's trusted input facts; message bodies and summaries never widen the retrieval scope. */
 export function readTopicArchive(
   messages: MessageWithParts[],
   query: ReadSessionContextInput,
 ): ReadSessionContextOutput {
   const sources = messages.flatMap(({ info }) => {
     if (info.role !== "user" || info.synthetic) return [];
-    // 新协议只保证 canonical 输入事实；存在时不能回退同条消息的旧字段，避免旧背景覆盖新记录。
+    // The new protocol guarantees canonical input facts only; when present, never fall back to the same message's older fields, or old background hides the new record.
     const metadata = info.metadata;
     const intent =
       metadata && Object.hasOwn(metadata, "conversationInputIntent")
@@ -74,7 +74,7 @@ export function readTopicArchive(
     const cost = estimateTokens(JSON.stringify(record));
     if (consumed + cost > budget - 100) {
       if (selected.length) break;
-      // 超长单条保留可辨认的预览并声明截断，不能伪装成完整原文。
+      // Over-long singles keep a recognizable preview declared as truncated, never disguised as the full original.
       let text = record.text;
       while (estimateTokens(JSON.stringify({ ...record, text })) > budget - 100 && text.length)
         text = text.slice(0, Math.floor(text.length * 0.8));

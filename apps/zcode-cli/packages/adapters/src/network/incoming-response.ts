@@ -2,27 +2,27 @@ import type http from "node:http";
 import { Readable } from "node:stream";
 
 /**
- * adapter 自己发请求时（代理、自定义 CA、公网 DNS 校验），把 Node 的 `IncomingMessage` 交给上层的唯一入口
- * （docs/design/v2/model/http-proxy.md「行为」）。
+ // The sole inlet handing Node's `IncomingMessage` upward when the adapter itself requests
+ // (docs/design/v2/model/http-proxy.md, behavior).
  *
- * 修复原因（2026-09-29 实测）：两处 adapter 都在 `http.request` 的回调里直接
- * `new Response(stream, { status })`。WHATWG `Response` 只收 200–599，204 / 205 / 304 还不许挂正文；
- * LinkedIn 对爬虫回 999，构造函数在回调里抛 RangeError，没人接得住，agent 进程以 uncaughtException
- * 退出，同一工作区的会话和 run 一起断了。所以：状态码原样读出来，无正文状态不给流，能不能变成
- * `Response` 由 {@link toWebResponse} 单独判断、以普通 reject 失败。
+ // Why (observed 2026-09-29): both adapters built `new Response(stream, { status })` directly in the
+ // `http.request` callback. A WHATWG `Response` takes 200-599 only, and 204 / 205 / 304 allow no body;
+ * LinkedIn answers crawlers with 999; the constructor would throw RangeError in the callback, no catcher exists, and the agent process dies via
+ // uncaughtException, taking the workspace's sessions and runs along. So: read the status verbatim, no stream for bodyless statuses, and whether it becomes
+ * a `Response` is judged separately by {@link toWebResponse}, failing as a plain reject.
  */
 
-/** Fetch 规范的 null body status：这些响应没有正文，`Response` 也不许给它们挂正文。 */
+/** Fetch-spec null body statuses: no body, and a `Response` may not carry one either. */
 const NULL_BODY_STATUSES: ReadonlySet<number> = new Set([101, 103, 204, 205, 304]);
-/** `Response` 能表示的状态码区间（含两端）。 */
+/** The status range a `Response` can express (both ends included). */
 const MIN_WEB_RESPONSE_STATUS = 200;
 const MAX_WEB_RESPONSE_STATUS = 599;
-/** Node 没给状态码时（理论上不会）按网关错误对待，与此前的兜底一致。 */
+/** With no status from Node (theoretically impossible), treat as a gateway error, matching the earlier fallback. */
 const MISSING_STATUS = 502;
 
 export const UNSUPPORTED_HTTP_STATUS_CODE = "ZCODE_UNSUPPORTED_HTTP_STATUS";
 
-/** 原样读出的响应：状态码不做任何裁剪，正文是流（无正文状态为 `null`）。 */
+/** The verbatim response: status untrimmed, body a stream (`null` for bodyless statuses). */
 export interface IncomingResponse {
   status: number;
   statusText: string;
@@ -31,7 +31,7 @@ export interface IncomingResponse {
 }
 
 /**
- * `Response` 表示不了的状态码。形状跟随原生 fetch 的网络失败（`TypeError`），调用方按错误码而不是文本区分。
+ * Statuses a `Response` cannot express. Shaped like native fetch's network failure (`TypeError`); callers distinguish by code, not text.
  */
 export class UnsupportedHttpStatusError extends TypeError {
   readonly code = UNSUPPORTED_HTTP_STATUS_CODE;
@@ -54,7 +54,7 @@ export function readIncomingResponse(message: http.IncomingMessage): IncomingRes
     }
   }
   const nullBody = NULL_BODY_STATUSES.has(status);
-  // 无正文状态照样把消息读完，socket 才能回到连接池。
+  // Bodyless statuses still drain the message so the socket returns to the pool.
   if (nullBody) message.resume();
   return {
     body: nullBody ? null : (Readable.toWeb(message) as ReadableStream<Uint8Array>),
@@ -64,7 +64,7 @@ export function readIncomingResponse(message: http.IncomingMessage): IncomingRes
   };
 }
 
-/** 交给只认 `Response` 的调用方（proxy-aware fetch）；表示不了的状态码抛 {@link UnsupportedHttpStatusError}。 */
+/** For callers accepting only `Response` (proxy-aware fetch); unrepresentable statuses throw {@link UnsupportedHttpStatusError}. */
 export function toWebResponse(incoming: IncomingResponse): Response {
   if (incoming.status < MIN_WEB_RESPONSE_STATUS || incoming.status > MAX_WEB_RESPONSE_STATUS) {
     throw new UnsupportedHttpStatusError(incoming.status);

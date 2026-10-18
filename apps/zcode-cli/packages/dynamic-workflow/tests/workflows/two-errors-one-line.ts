@@ -1,3 +1,3 @@
 // Two expected diagnostics on one line.
-const a: number = "one", b: string = 2; // error // error
-return [a, b];
+const pair: { a: number; b: string } = { a: "one", b: 2 }; // error // error
+return [pair.a, pair.b];

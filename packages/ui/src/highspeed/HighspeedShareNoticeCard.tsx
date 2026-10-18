@@ -41,8 +41,8 @@ export function HighspeedShareNoticeCard({
   const [open, setOpen] = useState(false);
   const payload = isHighspeedShareNoticePayload(notice.payload) ? notice.payload : null;
   if (!payload) return null;
-  // Bug 根因：此前由秒级取整字段重建指标再复检资格，边界倍率被系统性低估而隐藏 View（spec §9）。
-  // 现在与发布门禁共用同一份毫秒事实，复检只能与发布判定一致，纵深防御不再误伤已发布的卡。
+  // Bug: metrics rebuilt from second-rounded fields rechecked eligibility with a biased ratio and hid View (spec 9).
+  // Gate and recheck now share one millisecond fact set, so defense-in-depth never penalizes published cards.
   const metrics = resolveHighspeedShareNoticeMetrics(payload);
   const shareEligible = isHighspeedShareEligible(metrics);
   const openDetails = () => setOpen(true);
@@ -55,8 +55,8 @@ export function HighspeedShareNoticeCard({
           data-global-notice-type="highspeed-share"
           role="group"
         >
-          {/* Bug 原因：旧实现把设计稿背景拆成多个近似图层，主题切换时容易重复叠加或丢失描边。
-           * 直接使用设计交付的完整主题底图，前景元素仍按 Figma 坐标独立渲染。 */}
+          {/* Bug: the old build approximated the design background in layers, doubling or losing strokes per theme.
+           * Use the delivered theme background as-is; foreground elements stay at Figma coordinates. */}
           <img
             src={shareCardLightBackgroundUrl}
             alt=""
@@ -114,7 +114,7 @@ export function HighspeedShareNoticeCard({
   );
 }
 
-/** 数字从 0 增长到目标值；reduced-motion 或禁用时直接呈现终值。节奏与卡片各区块的 fade-up 交错对齐。 */
+/** Numbers count 0 -> target; reduced-motion/disabled renders final values. Tempo matches each block's fade-up stagger. */
 function useCountUpNumber(
   target: number,
   { enabled, delayMs, durationMs }: { enabled: boolean; delayMs: number; durationMs: number },
@@ -157,9 +157,9 @@ export function HighspeedShareDialog({
   const speedup = highspeedSpeedup(metrics);
   const savedDurationMs = metrics.savedDurationMs ?? calculateHighspeedSavedDurationMs(metrics);
   const savedSeconds = Math.max(0, Math.round(savedDurationMs / 1_000));
-  // Bug 原因：此前写成 1 - highspeedTps/regularTps，结果恒为负数被 clamp 成 0%。
+  // Bug: written as 1 - highspeedTps/regularTps the result was negative and clamped to 0%.
   const savedPercent = highspeedSavedPercent(metrics);
-  // 倍数与百分比在弹窗入场时从 0 增长到目标值；节奏对齐各自区块 fade-up 的 230ms/300ms 延迟。
+  // Multiple/percentage count 0 -> target on entrance; delays mirror each block's 230ms/300ms fade-up.
   const countUpEnabled = open && !prefersReducedMotion;
   const speedupCount = useCountUpNumber(speedup, {
     enabled: countUpEnabled,
@@ -200,10 +200,10 @@ export function HighspeedShareDialog({
       .catch(() => toast(intl.formatMessage({ id: "globalNotice.highspeed.textCopyFailed" })));
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      {/* Bug 原因：Radix Presence 等 overlay/content 的退出 CSS 动画 animationend 才卸载，且无超时兜底；
-       * Electron 窗口不可见时 compositor 停摆，animationend 永不触发，bg-black/60 遮罩无限滞留，
-       * 把左下角查看按钮罩灰并吞掉点击。关闭态由 highspeed-share.css 强制 animation:none，
-       * Radix 检测不到动画名即同步卸载（tw-merge 不合并 tw-animate 的 animate-out，类名方案不可靠）。 */}
+      {/* Bug: Radix unmounts overlay/content on animationend with no timeout fallback; a hidden Electron
+       * window stalls the compositor, animationend never fires, and the bg-black/60 veil lingers,
+       * greying the view button and eating clicks. Closed state forces animation:none via highspeed-share.css;
+       * Radix sees no animation name and unmounts synchronously (tw-merge drops animate-out; class tricks unreliable). */}
       <DialogContent
         className="highspeed-share-dialog__content"
         overlayClassName="highspeed-share-dialog__overlay"

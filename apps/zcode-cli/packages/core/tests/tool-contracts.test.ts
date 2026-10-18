@@ -420,7 +420,9 @@ describe("tool contract declarations", () => {
     expect(agentDescription).not.toContain("ID or name");
     expect(agentDescription).not.toContain(".claude/agents");
     expect(agentDescription).not.toContain("When you launch multiple agents for independent work");
-    expect(agentDescription).toContain("Available agent types are listed in <system-reminder> messages in the conversation.");
+    expect(agentDescription).toContain(
+      "Available agent types are listed in <system-reminder> messages in the conversation.",
+    );
     expect(agentDescription).not.toContain("- general-purpose:");
     expect(agentDescription).not.toContain("- Explore:");
     expect(agentDescription).not.toContain("model:");
@@ -1181,7 +1183,9 @@ describe("tool contract declarations", () => {
 
     const agentDescription = byName.get("Agent")?.description ?? "";
     expect(agentDescription).not.toContain("Tools: Glob, Grep");
-    expect(agentDescription).toContain("Available agent types are listed in <system-reminder> messages in the conversation.");
+    expect(agentDescription).toContain(
+      "Available agent types are listed in <system-reminder> messages in the conversation.",
+    );
     expect(agentDescription).not.toContain("(Tools:");
     expect(agentDescription).not.toContain("<system-reminder>\n");
 

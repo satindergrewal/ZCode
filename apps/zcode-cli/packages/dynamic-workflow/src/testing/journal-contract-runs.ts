@@ -1,8 +1,11 @@
 /**
- * 修复原因：journal-contract.ts 顶到 oxlint max-lines 上限（400 行），把run 记录（建 run / 结算袋 / 元数据列 / 用量）的用例拆到本文件；
- * 公开面仍从 journal-contract.ts 导出（`runJournalStoreContract` 按原顺序调用各主题的注册函数）。
+ * Split out because journal-contract.ts hit the oxlint max-lines cap (400 lines): the run-record
+ * cases (create run / settlement bag / metadata columns / usage) live here. The public surface
+ * is still exported from journal-contract.ts (`runJournalStoreContract` calls each topic's
+ * registration function in the original order).
  *
- * 注意：这里只登记 `it(...)`，不另开 describe——套件的分组与用例顺序必须与拆分前逐字相同。
+ * Note: only `it(...)` is registered here, no extra describe — the suite's grouping and case
+ * order must stay verbatim-identical to the pre-split layout.
  */
 
 import { expect, it } from "vitest";
@@ -35,9 +38,11 @@ export function registerRunCases(factory: () => JournalStorePort): void {
     expect(run?.stopReason).toBeUndefined();
   });
 
-  // 三终态（docs/execution-engine.md）：stopped 随 stopReason 一笔写，
-  // provider / interrupted 带 failure，user / model 不带。两个实现读回来必须逐字段一致——
-  // SQLite 侧物理列仍是旧词（cancelled + failure_json 信封），编解码是它自己的事。
+  // The three terminal states (docs/execution-engine.md): stopped is written in one stroke
+  // together with its stopReason; provider / interrupted carry a failure, user / model do not.
+  // Both implementations must read back identical field for field — SQLite's physical columns
+  // keep the legacy words (cancelled + failure_json envelope); decoding them is that side's
+  // own business.
   it("settles a stopped run with its reason and a ProviderStop failure", () => {
     const store = factory();
     store.createRun(baseRun("r1"));
@@ -86,8 +91,8 @@ export function registerRunCases(factory: () => JournalStorePort): void {
     expect(run?.failure?.code).toBe("Interrupted");
   });
 
-  // 结算袋存在的理由：终态与产物必须一笔写。分两笔写会开出一个崩溃窗口，
-  // 造出「completed 但产物不可恢复」的 run。
+  // Why the settlement bag exists: terminal state and artifact must land in one stroke. Two
+  // strokes open a crash window and mint a "completed but artifact unrecoverable" run.
   it("settles a completed run together with its artifact", () => {
     const store = factory();
     store.createRun(baseRun("r1"));
@@ -98,13 +103,13 @@ export function registerRunCases(factory: () => JournalStorePort): void {
     expect(run?.failure).toBeUndefined();
   });
 
-  // 产物是脚本的顶层返回值——任意 JSON 值，不只是 record。
+  // The artifact is the script's top-level return value — any JSON value, not just records.
   it.each([
     ["a string artifact", "plain text answer"],
     ["an array artifact", [1, "two", { three: true }]],
     ["a number artifact", 7],
     ["a boolean artifact", false],
-    // `null` 是合法产物，必须原样回来，而不是塌成「没有 result」。
+    // null is a legal artifact and must come back as null, not collapse into "no result".
     ["a null artifact", null],
   ])("round-trips %s", (_label, artifact) => {
     const store = factory();
@@ -126,8 +131,8 @@ export function registerRunCases(factory: () => JournalStorePort): void {
     expect(run?.result).toBeUndefined();
   });
 
-  // 结算袋缺省 = 「不触碰 failure 与 result」。既覆盖引擎自己的 `running` 写入，
-  // 也覆盖 0020 之前落库的历史行。
+  // Absent settlement bag = "do not touch failure or result". Covers both the engine's own
+  // `running` write and rows persisted before 0020.
   it("leaves result absent when no settlement bag is passed", () => {
     const store = factory();
     store.createRun(baseRun("r1"));
@@ -136,10 +141,13 @@ export function registerRunCases(factory: () => JournalStorePort): void {
     expect(store.getRun("r1")?.status).toBe("completed");
   });
 
-  // 规则三的存储侧（apps/zcode-cli/packages/dynamic-workflow/docs/execution-engine.md「Engine ownership」）。
-  // Bug 根因（2026-09-04）：第二个桌面实例的孤儿收敛在本进程引擎仍活着的 run 上写下终态失败，
-  // 引擎随后正常 completed——而「缺席 = 不触碰」的旧语义（SQLite 的 coalesce）让那份外来失败
-  // 原样留下，行同时说「完成了」和「被打断了」。失败三件套因此**整体改写**，产物不变。
+  // Storage side of rule three
+  // (apps/zcode-cli/packages/dynamic-workflow/docs/execution-engine.md "Engine ownership").
+  // Bug root cause (2026-09-04): the second desktop instance's orphan reconcile wrote a
+  // terminal failure onto a run whose engine was still alive in this process, and the engine
+  // then completed normally — while the old "absent = untouched" semantics (SQLite's coalesce)
+  // left the foreign failure in place, so the row claimed both "completed" and "interrupted".
+  // The failure triple is therefore **rewritten wholesale**; the artifact is left alone.
   it("clears a stale failure when a later settlement completes the run", () => {
     const store = factory();
     store.createRun(baseRun("r1"));
@@ -174,8 +182,10 @@ export function registerRunCases(factory: () => JournalStorePort): void {
     expect(store.getRun("r1")!.result).toEqual({ kept: true });
   });
 
-  // amend 停下的前驱：`superseded` 与后继 id 同一笔落库、同一封 envelope 读回
-  // （docs/execution-engine.md「Amend-resume」）。少了嗅探白名单里的那个值，整封解不出来、行退化成 user。
+  // A predecessor stopped by amend: `superseded` lands in the same stroke as the successor id
+  // and reads back inside the same envelope
+  // (docs/execution-engine.md "Amend-resume"). Missing the one value in the sniff allowlist,
+  // the envelope fails to decode as a whole and the row degrades to user.
   it("round-trips stopped(superseded) together with supersededBy", () => {
     const store = factory();
     store.createRun(baseRun("r1"));
@@ -185,17 +195,19 @@ export function registerRunCases(factory: () => JournalStorePort): void {
     expect(run?.stopReason).toBe("superseded");
     expect(run?.supersededBy).toBe("r2");
     expect(run?.failure).toBeUndefined();
-    // 其余原因不带后继指针。
+    // The other reasons carry no successor pointer.
     store.createRun(baseRun("r3"));
     store.updateRunStatus("r3", "stopped", { stopReason: "model" });
     expect(store.getRun("r3")?.supersededBy).toBeUndefined();
   });
 
-  // resume 语义：把 run 翻回非终态时，上一世的 settlement 残留必须一并清空。
-  // 引擎的 resume 分支写的是 `updateRunStatus(runId, "running")`（无结算袋），而
-  // 「缺席键 = 不触碰」的终态语义会让一个被孤儿收敛成 failed+Interrupted 的 run
-  // 恢复后带着陈旧的 failure_json 与 running 并存——journal 快照读面会同时报告
-  // 「在跑」和「已失败」。所以非终态写入的语义是**清空**，不是保留。
+  // Resume semantics: flipping a run back to a non-terminal status must also clear the previous
+  // generation's settlement leftovers. The engine's resume branch writes
+  // `updateRunStatus(runId, "running")` (no settlement bag), and under "absent key = untouched"
+  // terminal semantics, a run that orphan reconcile marked failed+Interrupted would come back
+  // from resume with stale failure_json coexisting with running — the journal snapshot read
+  // face would report "running" and "failed" at once. So a non-terminal write **clears**; it
+  // does not preserve.
   it("clears failure and stopReason when flipping a stopped run back to a non-terminal status", () => {
     const store = factory();
     store.createRun(baseRun("r1"));
@@ -212,8 +224,9 @@ export function registerRunCases(factory: () => JournalStorePort): void {
   });
 
   it("clears result when flipping a completed run back to a non-terminal status", () => {
-    // completed run 不在可恢复集里，但端口语义按状态类别定义、不按调用方好恶：
-    // 非终态 = 无 settlement。让语义带例外只会把门的知识泄漏进存储层。
+    // A completed run is not in the resumable set, but the port's semantics are defined by
+    // status class, not caller preference: non-terminal = no settlement. Carving exceptions
+    // into the semantics would leak gate knowledge into the storage layer.
     const store = factory();
     store.createRun(baseRun("r1"));
     store.updateRunStatus("r1", "completed", { result: { stale: true } });
@@ -224,25 +237,29 @@ export function registerRunCases(factory: () => JournalStorePort): void {
   });
 
   it("ignores a settlement bag on a non-terminal write (cleared, not stored)", () => {
-    // 非终态携带结算袋是调用方的矛盾请求：一个「在跑」的 run 没有结算。语义定为清空优先，
-    // 免得两个实现对这个矛盾各自发明不同的解释。
+    // A settlement bag on a non-terminal write is a contradictory request from the caller: a
+    // "running" run has no settlement. The semantics are clear-on-write, so the two
+    // implementations do not each invent their own reading of the contradiction.
     const store = factory();
     store.createRun(baseRun("r1"));
     store.updateRunStatus("r1", "running", { failure: { code: "DriverError", message: "x" } });
     expect(store.getRun("r1")?.failure).toBeUndefined();
   });
 
-  // createRun 也要认这个字段：内存实现整条克隆记录，SQLite 若不写这一列，同一个 record
-  // 存进两个实现再读回来就会分叉。引擎只以 running 建 run，但端口的语义不该有这个洞。
+  // createRun must honor this field too: the in-memory implementation clones the record whole,
+  // so if SQLite skips the column, one record stored through both implementations and read
+  // back diverges. The engine only creates runs as running, but the port's semantics should
+  // not have that hole.
   it("creates and reads back a run carrying an artifact", () => {
     const store = factory();
     store.createRun({ ...baseRun("r1"), status: "completed", result: { seeded: true } });
     expect(store.getRun("r1")!.result).toEqual({ seeded: true });
   });
 
-  // name 是 run 的展示标签（`input.name` → createRun → dwf_run.name），与 scriptText/cwd 同一条
-  // 元数据路。两个实现都有 createRun/getRun，所以它属于契约：SQLite 若漏写这一列，同一条
-  // record 存进两个实现再读回来就会分叉（result 列当年逐字同一条论证）。
+  // name is the run's display label (`input.name` -> createRun -> dwf_run.name), the same
+  // metadata path as scriptText/cwd. Both implementations have createRun/getRun, so it is
+  // contract: should SQLite skip the column, one record stored through both and read back
+  // diverges (verbatim the argument that once fixed the result column).
   it("round-trips a run name and keeps it absent when unnamed", () => {
     const store = factory();
     store.createRun({ ...baseRun("named"), name: "nightly triage" });
@@ -251,13 +268,14 @@ export function registerRunCases(factory: () => JournalStorePort): void {
     expect(store.getRun("named")?.name).toBe("nightly triage");
     const unnamed = store.getRun("unnamed");
     expect(unnamed?.name).toBeUndefined();
-    // 缺席的可选字段必须原样缺席地回来，而不是变成 name: null / name: undefined。
+    // An absent optional field must come back absent, not become name: null / name: undefined.
     expect(unnamed !== undefined && "name" in unnamed).toBe(false);
   });
 
-  // 实参（`dwf_run.args_json`，migration 0026）与 scriptText / name 同一条 createRun
-  // 元数据路，属于契约的理由更硬：resume **重放**存下来的实参，所以 SQLite 若漏写这一列，
-  // 恢复出来的 run 会带着 `{}` 静默跑一遍——「批准的是 A、恢复的是 B」。
+  // The args (`dwf_run.args_json`, migration 0026) ride the same createRun metadata path as
+  // scriptText / name, with an even harder contract case: resume **replays** the stored args,
+  // so if SQLite skips the column, the resumed run silently runs a whole pass with `{}` —
+  // "approved A, resumed B".
   it("round-trips the run args and keeps them absent when the run had none", () => {
     const store = factory();
     store.createRun({
@@ -272,8 +290,9 @@ export function registerRunCases(factory: () => JournalStorePort): void {
       nested: { deep: true },
     });
     const bare = store.getRun("no-args");
-    // 缺席的可选字段原样缺席地回来（0026 之前的老行走的正是这条路）：记录层面「没有
-    // 实参」与「实参是空袋」保持可分辨，沙箱侧才统一把缺席读作 `{}`。
+    // An absent optional field comes back absent (pre-0026 rows take exactly this path): at
+    // the record level "no args" and "empty args bag" stay distinguishable, so the sandbox
+    // side can uniformly read absence as `{}`.
     expect(bare?.args).toBeUndefined();
     expect(bare !== undefined && "args" in bare).toBe(false);
   });
@@ -282,12 +301,12 @@ export function registerRunCases(factory: () => JournalStorePort): void {
     const store = factory();
     store.createRun({ ...baseRun("r-args"), args: { keep: "me" } });
     store.updateRunStatus("r-args", "completed", { result: "done" });
-    // resume 能读回它，是因为结算那条 UPDATE 不碰这一列。
+    // Resume can read it back because the settlement UPDATE does not touch this column.
     expect(store.getRun("r-args")?.args).toEqual({ keep: "me" });
   });
 
-  // 结算只改状态与产物：name 不在 updateRunStatus 的写入面上（SQLite 侧那条 UPDATE 若把
-  // name 列进去，run 一结算就会丢名字）。
+  // Settlement touches status and artifact only: name is not in updateRunStatus's write
+  // surface (were the SQLite UPDATE to include the name column, settling would drop it).
   it("keeps the run name across a status settlement", () => {
     const store = factory();
     store.createRun({ ...baseRun("r1"), name: "keeps its name" });
@@ -295,9 +314,11 @@ export function registerRunCases(factory: () => JournalStorePort): void {
     expect(store.getRun("r1")?.name).toBe("keeps its name");
   });
 
-  // toolCallId 是发起 run 的 CreateWorkflow 工具调用 id——重启后工具卡 join 与 resume
-  // 的持久锚点（docs/execution-engine.md）。它与 scriptText/cwd 走同一条
-  // createRun 元数据路，属于契约：SQLite 若漏写这一列，重启后的发现查询拿不回关联键。
+  // toolCallId is the id of the CreateWorkflow tool call that started the run — the persistent
+  // anchor joining the tool card across a restart and on resume
+  // (docs/execution-engine.md). It rides the same createRun metadata path as
+  // scriptText/cwd and is contract: should SQLite skip the column, the post-restart discovery
+  // query loses the correlation key.
   it("round-trips the originating toolCallId and keeps it absent when not given", () => {
     const store = factory();
     store.createRun({ ...baseRun("anchored"), toolCallId: "call-42" });
@@ -306,25 +327,27 @@ export function registerRunCases(factory: () => JournalStorePort): void {
     expect(store.getRun("anchored")?.toolCallId).toBe("call-42");
     const bare = store.getRun("bare");
     expect(bare?.toolCallId).toBeUndefined();
-    // 缺席的可选字段必须原样缺席地回来，而不是变成 toolCallId: null / undefined。
+    // An absent optional field must come back absent, not become toolCallId: null / undefined.
     expect(bare !== undefined && "toolCallId" in bare).toBe(false);
   });
 
-  // 结算只改状态与产物：toolCallId 不在 updateRunStatus 的写入面上。
+  // Settlement touches status and artifact only: toolCallId is not in updateRunStatus's write
+  // surface.
   it("keeps the toolCallId across a status settlement and across a resume flip", () => {
     const store = factory();
     store.createRun({ ...baseRun("r1"), toolCallId: "call-7" });
     store.updateRunStatus("r1", "stopped", { stopReason: "user" });
     expect(store.getRun("r1")?.toolCallId).toBe("call-7");
-    // resume 把 run 翻回 running 清的是 settlement，锚点必须原样保留。
+    // The resume flip back to running clears the settlement; the anchor must survive as is.
     store.updateRunStatus("r1", "running");
     expect(store.getRun("r1")?.toolCallId).toBe("call-7");
   });
 
-  // resumedFrom 是 amend-resume 的 lineage 指针（本 run 修订自哪个前驱 run，
-  // docs/execution-engine.md）。与 toolCallId / args 同一条 createRun 元数据路，
-  // 属于契约的理由是它是**存续依赖**：修订 run 崩溃后的 plain resume 靠读回这个指针重建
-  // ImportedCache，SQLite 若漏写这一列，恢复出来的 run 会把全部未消费的缓存降级成 live 重跑。
+  // resumedFrom is the amend-resume lineage pointer (which predecessor run this run amends,
+  // docs/execution-engine.md). Same createRun metadata path as toolCallId / args; the contract
+  // case is that it is a **survival dependency**: after a amended run crashes, plain resume
+  // rebuilds the ImportedCache by reading this pointer back — should SQLite skip the column,
+  // the resumed run downgrades every unconsumed cache entry to a live re-run.
   it("round-trips the resumedFrom lineage pointer and keeps it absent for a fresh run", () => {
     const store = factory();
     store.createRun({ ...baseRun("amended"), resumedFrom: "run-predecessor" });
@@ -333,13 +356,14 @@ export function registerRunCases(factory: () => JournalStorePort): void {
     expect(store.getRun("amended")?.resumedFrom).toBe("run-predecessor");
     const fresh = store.getRun("fresh");
     expect(fresh?.resumedFrom).toBeUndefined();
-    // 缺席的可选字段必须原样缺席地回来（NULL 解码成缺席的键，不是 null / undefined）——
-    // 绝大多数 run 不是修订，这条才是常态路径。
+    // An absent optional field must come back absent (NULL decodes to an absent key, not
+    // null / undefined) — most runs are not amendments; this is the common path.
     expect(fresh !== undefined && "resumedFrom" in fresh).toBe(false);
   });
 
-  // 结算与 resume 翻转都不在 lineage 的写入面上：链式修订要沿着这个指针回溯任意深度的
-  // 祖先，任何一环在结算时丢掉指针，链就断在那里。
+  // Neither settlement nor the resume flip touches the lineage write surface: a chain of
+  // amendments walks this pointer back through ancestors of any depth, and one link losing
+  // the pointer at settlement breaks the chain right there.
   it("keeps resumedFrom across a status settlement and across a resume flip", () => {
     const store = factory();
     store.createRun({ ...baseRun("r1"), resumedFrom: "run-a" });
@@ -355,8 +379,9 @@ export function registerRunCases(factory: () => JournalStorePort): void {
     const artifact = { nested: { value: 1 } };
     store.updateRunStatus("r1", "completed", { result: artifact });
     artifact.nested.value = 999;
-    // r1 两行前刚 createRun，getRun 必命中；用非空断言代替 ?.，否则其后的 .nested.value 链式
-    // 访问在 lint 眼里是 unsafe optional chaining（?. 短路成 undefined 时会直接 throw）。
+    // r1 was createRun'd two lines up, so getRun must hit; a non-null assertion instead of ?.
+    // keeps the following .nested.value chain from reading as unsafe optional chaining in lint
+    // (?., short-circuiting to undefined, would throw right there).
     expect((store.getRun("r1")!.result as { nested: { value: number } }).nested.value).toBe(1);
   });
 
@@ -380,15 +405,16 @@ export function registerRunCases(factory: () => JournalStorePort): void {
   });
 
   it("persists accumulated usage without disturbing status or failure", () => {
-    // 用量是 run 结算之外的独立写入路径：askStats 每次累加都要落库，
-    // 否则 resume 会从零用量重来（阶段 1.5 的潜伏 bug）。
+    // Usage is a write path independent of run settlement: every askStats accumulation must
+    // land, or resume starts over from zero tokens (the stage-1.5 latent bug).
     const store = factory();
     store.createRun(baseRun("r1"));
     store.updateRunUsage("r1", 4200);
     expect(store.getRun("r1")).toMatchObject({ spentTokens: 4200, status: "running" });
     expect(store.getRun("r1")?.failure).toBeUndefined();
 
-    // 已结算（含 failure）的 run 上再写用量，状态与失败原因不得被改写。
+    // Writing usage onto an already-settled (failure included) run must not rewrite status or
+    // failure.
     store.updateRunStatus("r1", "errored", {
       failure: { code: "DriverError", message: "over" },
     });
@@ -404,10 +430,11 @@ export function registerRunCases(factory: () => JournalStorePort): void {
     expect(() => store.updateRunUsage("nope", 1)).toThrow();
   });
 
-  // `caps_max_concurrency` 的**第二个写入者**（docs/dynamic-workflow/concurrency.md
-  // 「Two bounds on a run」）：一次只改 `max_concurrency` 的修订就地作用在活着的 run 上，
-  // 而 resume 沿用行里的 caps——不落库，恢复出来的就还是旧上界。与用量同族的窄写入：
-  // 只碰这一列，状态 / 用量 / 结算袋一概不动。
+  // The **second writer** of `caps_max_concurrency`
+  // (docs/dynamic-workflow/concurrency.md "Two bounds on a run"): an amend that changes only
+  // `max_concurrency` applies in place to the live run, while resume keeps the caps stored in
+  // the row — not persisted, the restored run would keep the old bound. Same narrow-write
+  // family as usage: touch this column only; status / usage / settlement bag untouched.
   it("retunes the concurrency cap without disturbing status, usage or failure", () => {
     const store = factory();
     store.createRun(baseRun("r1"));
@@ -419,7 +446,8 @@ export function registerRunCases(factory: () => JournalStorePort): void {
       status: "running",
     });
 
-    // 已结算（含 failure）的 run 上再写上界，状态与失败原因不得被改写。
+    // Writing caps onto an already-settled (failure included) run must not rewrite status or
+    // failure.
     store.updateRunStatus("r1", "errored", {
       failure: { code: "DriverError", message: "over" },
     });

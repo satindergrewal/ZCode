@@ -81,8 +81,8 @@ export async function buildSessionSnapshot(input: {
     input.persistedGoalVerificationEvents ?? [],
     input.target === undefined ? runtimeProjection.target : input.target,
   );
-  // runtime projection 是运行期 eventStore reducer，恢复历史 session 时可能没有
-  // target_changed 账本；session_target 表才是 goal 权威状态，snapshot 必须以 DB 读取值为准。
+  // The runtime projection is the runtime eventStore reducer; a restored historical session may have no
+  // target_changed ledger. The session_target table is the goal authority; snapshots must follow the DB value.
   const projectionWithoutTitleFallback =
     input.target === undefined && input.lastError === undefined
       ? persistedGoalProjection
@@ -152,8 +152,8 @@ async function hydrateSnapshotFilePartUrl(
   app: Pick<ZCodeApp, "readToolResultArtifact">,
   part: ReturnType<typeof mapMessageWithParts>["parts"][number],
 ) {
-  // 历史图片附件持久化后只剩 zcode-artifact:// 引用，UI/手机端不能直接渲染。
-  // snapshot 出协议前在 agent 侧回填 data URL，避免把本地 artifact 目录读法泄漏给前端。
+  // Once persisted, historical image attachments are zcode-artifact:// references the UI/phone cannot render directly.
+  // Backfill a data URL agent-side before the snapshot leaves the protocol, never leaking local artifact path semantics to the frontend.
   if (part.type !== "file" || !isImageMime(part.mime) || isUsableDataUrl(part.url)) {
     return part;
   }
@@ -221,8 +221,8 @@ export async function mapSessionSettings(
 ): Promise<ZCodeSessionSettingsState> {
   const thoughtLevels = app.listThoughtLevels();
   const rawCurrentThoughtLevel = app.getThoughtLevel();
-  // setModel 后 runtime 可能短暂保留上一个模型的 thoughtLevel。
-  // 协议 snapshot 是 UI/测试共同事实源，不能返回不在当前模型可选列表里的 current。
+  // After setModel the runtime may briefly keep the previous model's thoughtLevel.
+  // The protocol snapshot is the shared UI/test truth; a current absent from the active model's option list must
   const currentThoughtLevel =
     rawCurrentThoughtLevel && thoughtLevels.includes(rawCurrentThoughtLevel)
       ? rawCurrentThoughtLevel
@@ -254,11 +254,11 @@ export async function mapSessionSettings(
       current: app.getMode(),
     },
     model: {
-      // app/stdio 场景下 provider catalog 属于 app 状态，不应随每次 session/read、
-      // setModel 回包返回完整模型市场；session settings 只需要表达当前运行模型即可。
+      // In app/stdio the provider catalog is app state; session/read and setModel replies must not carry the
+      // full model market every time. Session settings only need to express the running model.
       available: availableModels,
-      // Session 原选择是后续输入解析的依据；字符串和过滤后的档位会丢失原意图。
-      // current 允许暂时不可执行，展示/派发的有效性由公共 Selection View 决定。
+      // The session's original selection drives later input parsing; a string plus filtered tiers would lose the
+      // original intent. current may be temporarily non-executable; display/dispatch validity is the common
       current: app.runtime.getSessionModelSelection(),
       lastUsed: optionalModelSelectionFromString(currentModel),
     },
@@ -268,8 +268,8 @@ export async function mapSessionSettings(
     thoughtLevel: {
       available: thoughtLevels.map((level) => ({ label: level, value: level })),
       current: currentThoughtLevel,
-      // 云端 reasoning.defaultLevel 只存在于模型事实中，旧 settings
-      // 没有携带默认档位，UI 在 current 为空时只能误选 available[0]。
+      // The cloud reasoning.defaultLevel lives only in model facts; legacy settings carry no default tier, so with
+      // empty current the UI could only mis-pick available[0].
       ...(defaultThoughtLevel ? { defaultLevel: defaultThoughtLevel } : {}),
       enabled: thoughtLevels.length > 0,
     },
@@ -287,8 +287,8 @@ export function mapSessionInfo(input: {
   workspace: ZCodeWorkspaceRef;
 }): ZCodeSessionInfo {
   const sessionId = String(input.session?.id ?? input.app?.sessionId ?? "unknown");
-  // 刚创建的 protocol session 可能还没有持久化 session 行。
-  // 此时 runtime projection 的时间可能继承 workspace 预热 draft，不能作为正式 session 时间。
+  // A just-created protocol session may not have a persisted session row yet.
+  // The runtime projection's timestamps may then inherit workspace warmup drafts - not official session times.
   const createdAt =
     input.session?.time.created ??
     input.fallbackCreatedAt ??
@@ -357,18 +357,18 @@ export function mapSessionEvents(
 
 export function shouldExposeSessionEventToProtocol(event: SessionEvent): boolean {
   if (event.type === SessionEventType.StreamingToolLedgerUpdated) {
-    // 性能修复：StreamingToolLedgerUpdated 是 runtime replay 账本，常在 closed/queued/started/committed
-    // 阶段携带同一份完整 tool input。UI 协议流已有 model.streaming/tool.updated 生命周期，
-    // 继续透出会造成大参数反复全量跨进程传输，且 mapper 最终也不会消费这些内部状态。
+    // Perf fix: StreamingToolLedgerUpdated is the runtime replay ledger, often carrying the same full tool input
+    // across closed/queued/started/committed. The UI protocol stream already has model.streaming/tool.updated
+    // lifecycles; re-emitting these means repeatedly shipping large args cross-process, and the mapper never
     return false;
   }
 
   if (event.type === SessionEventType.DynamicWorkflowRunProgress) {
-    // 与上面同一个 seam、同一个理由：workflow run 事件对 v3 完全同构——v4 面已有权威投影
-    // （workflowRuns 状态键），v3 mapper 不消费这些内部状态，继续透出只是把每个节点相位
-    // 迁移都跨进程搬一遍。**注意与前置特性的偏斜危害不同**：这里的剥离不是为了防丢事件，
-    // 新类型不会被 v3 拒收（mapSessionEventType 的 default 落到 session.updated，其 payload
-    // 是宽松的 jsonObjectSchema），纯粹是带宽与语义干净。
+    // Same seam, same reason as above: workflow run events are fully isomorphic for v3 - the v4 side has the
+    // authoritative projection (the workflowRuns state key) and the v3 mapper does not consume that internal state;
+    // re-emitting just ships every node phase transition cross-process. Unlike the skew hazard of the previous
+    // feature, this strip is not about losing events: v3 does not reject the new types (mapSessionEventType's
+    // default falls to session.updated with a lenient jsonObjectSchema payload) - purely bandwidth and semantic
     return false;
   }
 
@@ -379,8 +379,8 @@ export function shouldExposeSessionEventToProtocol(event: SessionEvent): boolean
   const payload = asRecord(event.payload);
   const kind = stringValue(payload.kind);
   const delta = stringValue(payload.delta);
-  // UI 已支持工具参数预览后，tool_input_* 不能再在协议边界丢弃；
-  // 否则 Write/Edit 会在模型思考阶段完全不可见。小包压力由 runtime 合并 delta 控制。
+  // Now that the UI previews tool args, tool_input_* must survive the protocol boundary,
+  // else Write/Edit vanish during the model's thinking phase. Payload pressure is governed by the runtime's delta merging.
   if (kind === "text_delta" || kind === "reasoning_delta") {
     return Boolean(delta);
   }
@@ -431,8 +431,8 @@ function mapPermissionDeniedPayload(payload: unknown): Record<string, unknown> {
   const record = asRecord(payload);
   return {
     ...record,
-    // PermissionDenied 复用 permission.resolved 协议事件。
-    // 下游投影依赖 decision=deny 才会把已出现的工具卡收口成失败态。
+    // PermissionDenied reuses the permission.resolved protocol event.
+    // Downstream projections need decision=deny to close a visible tool card into failed.
     decision: "deny",
   };
 }
@@ -444,8 +444,8 @@ function mapToolCallStartedPayload(
   const record = asRecord(payload);
   return {
     ...record,
-    // ToolCallStarted 的 startedAt 来自 runtime Date 对象；协议跨进程后必须是
-    // 稳定 JSON 值，否则接收侧 strict schema 会把 started 事件当成无效消息丢弃。
+    // ToolCallStarted's startedAt is a runtime Date; across the protocol hop it must be a
+    // stable JSON value, else the receiving strict schema drops the started event as invalid.
     startedAt: protocolInstantValue(record.startedAt) ?? eventTimestamp.getTime(),
     kind: "started",
   };
@@ -467,8 +467,8 @@ function protocolInstantValue(value: unknown): number | string | undefined {
 
 function mapModelRequestPayload(payload: unknown): Record<string, unknown> {
   const record = asRecord(payload);
-  // 内存 event store 淘汰 sealed turn 时把 messages 瘦身为 messageCount（session-event-store-retention.md），
-  // 两种形态都要映射出同一个 messageCount。
+  // When the in-memory event store evicts a sealed turn it slims messages to messageCount (session-event-store-retention.md);
+  // both shapes must map to the same messageCount.
   const messageCount =
     typeof record.messageCount === "number"
       ? record.messageCount
@@ -490,8 +490,8 @@ function mapModelRequestPayload(payload: unknown): Record<string, unknown> {
       result[key] = record[key];
     }
   }
-  // model_request 的 messages 是发给模型的完整上下文，只用于 core 内部追踪。
-  // 之前映射成 session.updated 后会把全量上下文反复推给桌面，工具轮次越多单包越大。
+  // model_request's messages are the full model context, internal core tracing only.
+  // Mapping it to session.updated used to push the whole context to desktop repeatedly; the more tool rounds,
   return result;
 }
 
@@ -509,8 +509,8 @@ function mapModelNetworkStatusPayload(payload: unknown): Record<string, unknown>
       ...meta,
       zcode: {
         ...zcodeMeta,
-        // 网络重试是模型请求运行态，不属于可持久化消息内容。
-        // 这里通过 app 私有 meta 暴露给旧 task 投影，app 再写入 host runtime snapshot。
+        // Network retries are model-request run state, not persistable message content.
+        // Exposed to the legacy task projection via app-private meta; the app writes it into the host runtime
         apiRetry,
       },
     },
@@ -531,8 +531,8 @@ function mapStreamRecoveryPayload(payload: unknown): Record<string, unknown> {
       ...meta,
       zcode: {
         ...zcodeMeta,
-        // streamRecovery.updated 才是 SSE 断流恢复的核心进度事件。
-        // 之前只在后续 model_request_started 上补 meta，UI 错过该事件时不会显示重试次数。
+        // streamRecovery.updated is THE stream-recovery progress event.
+        // Previously only patched onto a later model_request_started as meta; missing it, the UI never showed
         apiRetry,
       },
     },
@@ -566,16 +566,16 @@ function mapRuntimeState(input: {
   projection: SessionProjection;
   stateRevision: number;
 }): ZCodeSessionRuntimeState {
-  // projection.currentTurnId 是投影最后处理过的 turn，不代表当前仍在运行。
-  // session 恢复/subscribe 快照如果把它回填成 runtime.activeTurnId，会让已 idle/complete 的任务误显示为 thinking。
+  // projection.currentTurnId is the last turn the projection processed, not necessarily still-running.
+  // Backfilling it as runtime.activeTurnId in resume/subscribe snapshots makes idle/complete tasks show thinking.
   const activeTurnId = input.activeTurn?.turnId;
   const contextUsage = resolveSessionContextUsage({
     messages: input.messages,
     persistedContextUsageBreakdownEvents: input.persistedContextUsageBreakdownEvents,
     projection: input.projection,
   });
-  // 共享 runtime schema 已用 activeTurnId/activeTurnKind 表达运行中 turn；
-  // mainActive 是旧 UI 派生字段，继续从 CLI 快照写出会让 bootstrap 独立 build 失败。
+  // The shared runtime schema already expresses the running turn via activeTurnId/activeTurnKind;
+  // mainActive is a legacy-UI derived field; writing it from the CLI snapshot would break the standalone bootstrap build.
   return {
     activeTurnId: activeTurnId ? String(activeTurnId) : undefined,
     activeTurnKind: input.activeTurn?.kind,
@@ -600,10 +600,10 @@ interface ContextUsageBreakdownCandidate {
 }
 
 /**
- * legacy snapshot 与 V4 usage 窄种子的共享计算口径。
+ * The shared computation for legacy snapshots and the V4 usage narrow seed.
  *
- * V4 冷恢复只需要 context usage，过去却通过 full legacy snapshot 间接读取。
- * 抽出纯投影后，两条路径继续共享 active-branch token/cache 与 breakdown 对齐规则。
+ * V4 cold resume needs only context usage yet used to read it via the full legacy snapshot. Extracted as a pure
+ * projection, both paths keep sharing the active-branch token/cache and breakdown alignment rules.
  */
 export function resolveSessionContextUsage(input: {
   messages: readonly MessageWithParts[];
@@ -666,8 +666,8 @@ function latestContextUsageBreakdownFromEvents(
       continue;
     }
     const contextWindow = positiveInteger(payload.contextWindow);
-    // 冷恢复只能从 eventStore 重建 context breakdown；必须用 usage/window 对齐，
-    // 避免把旧分支或 sidecar 模型请求的来源比例挂到当前 task meter 上。
+    // Cold resume rebuilds the context breakdown from the eventStore only; align on usage/window so legacy-branch
+    // and sidecar-model request proportions never hang on the current task meter.
     return {
       breakdown: parsed.data,
       ...(contextWindow !== undefined ? { contextWindow } : {}),
@@ -754,9 +754,9 @@ function contextUsageFromPersistedMessages(
           compactPart.compactBoundary.truePostCompactTokenCount ??
             compactPart.compactBoundary.postCompactTokenCount,
         );
-        // 成功 compact 的 usage 持久化在 user summary 的 boundary；
-        // 只扫描 assistant 会越过它并恢复压缩前水位。旧 assistant boundary 和
-        // 不完整历史仍走原有 fallback，且不能把压缩前 cache 重新挂到压缩后水位。
+        // A successful compact's usage persists on the user summary's boundary;
+        // scanning only assistants would cross it and restore the pre-compact level. Legacy assistant boundaries and
+        // incomplete histories keep the old fallback, never re-hanging pre-compact cache onto the post-compact level.
         if (used !== undefined) {
           return {
             cost: null,
@@ -773,8 +773,8 @@ function contextUsageFromPersistedMessages(
     if (used === undefined) {
       continue;
     }
-    // protocol eventStore 是运行期内存账本，重启 resume 后 projection.contextUsed 会回到 0。
-    // context window 消耗是 input + output；恢复时优先用 provider total，否则用持久化的 input/output 还原 meter。
+    // The protocol eventStore is an in-memory running ledger; after restart-resume projection.contextUsed returns to 0.
+    // Context usage is input + output; on restore prefer the provider total, else rebuild the meter from persisted input/output.
     return {
       ...(cache ? { cache } : {}),
       cost: null,
@@ -857,19 +857,17 @@ function contextCacheUsageFromMessages(
   };
 }
 
-function mapPendingPermission(
-  permission: PendingPermission,
-): ZCodePendingPermission {
-  // display / optionsPolicy 刻意不进 legacy v3 输出。
-  // 根因不是"扩 schema 只能单向兼容"，而是 strict schema 随 packages/shared 打进每个桌面端
-  // 的产物：今天把 zcodePendingPermissionSchema（shared/src/zcode-protocol/index.ts:1139）和
-  // zcodePermissionRequestedEventPayloadSchema（同文件:1536）改成可选，也保护不了已经装出去
-  // 的旧桌面。新 CLI 一旦在 v3 路径上带这两个字段，旧桌面会整份快照解析失败、并用 safeParse
-  // 静默丢弃整个 permission.requested 事件——确认窗本身就没了，这违反"只允许预览降级、
-  // 不允许 gate 降级"。剥离在源头是唯一对版本偏斜安全的做法；legacy 也没有画因果图的界面。
-  // optionsPolicy 的效果仍然生效：它作为 buildProtocolPermissionOptions 的输入裁掉
-  // allow_always，只有裁剪后的 options 列表过协议。会话免确认同样降级为裁剪：
-  // 旧桌面回传的是 response 原文，认不出会话语义（见 toLegacyPermissionOptionsPolicy）。
+function mapPendingPermission(permission: PendingPermission): ZCodePendingPermission {
+  // display / optionsPolicy deliberately stay out of the legacy v3 output.
+  // Not because "schema extension is one-way compatible", but because the strict schema ships inside packages/shared
+  // into every desktop build: making zcodePendingPermissionSchema (shared/src/zcode-protocol/index.ts:1139) and
+  // zcodePermissionRequestedEventPayloadSchema (same file:1536) optional protects already-shipped
+  // desktops not at all. Once a new CLI sends those fields on v3, old desktops fail the whole snapshot parse and safeParse
+  // silently drops the entire permission.requested event — the confirm dialog itself disappears, violating "preview degradation only,
+  // never gate degradation". Stripping at the source is the only version-skew-safe move; legacy has no causal-graph UI either.
+  // optionsPolicy still takes effect: as buildProtocolPermissionOptions input it trims
+  // allow_always, and only the trimmed option list crosses the protocol. Session always-allow degrades to the trim too:
+  // legacy desktops return the response verbatim and do not know session semantics (see toLegacyPermissionOptionsPolicy).
   return {
     input: permission.input,
     ...(permission.origin ? { origin: permission.origin } : {}),
@@ -886,11 +884,9 @@ function mapPendingPermission(
   };
 }
 
-function mapPermissionRequestedPayload(
-  payload: unknown,
-): Record<string, unknown> {
-  // 同 mapPendingPermission：这个 payload 是整体 spread 出去的，新字段必须在这里显式解构
-  // 剔除，否则会直接漏进 strict 的 zcodePermissionRequestedEventPayloadSchema。
+function mapPermissionRequestedPayload(payload: unknown): Record<string, unknown> {
+  // Same as mapPendingPermission: this payload is spread wholesale, so new fields must be destructured out
+  // here explicitly, else they leak into the strict zcodePermissionRequestedEventPayloadSchema.
   const { display: _display, optionsPolicy, ...record } = asRecord(payload);
   const toolName = stringValue(record.toolName) ?? "unknown";
   return {
@@ -1035,8 +1031,8 @@ function withGoalSummaryTitleFallback(
     ...projection,
     target: {
       ...target,
-      // 首条用户请求就是 goal 时，session 标题才是第一轮标题的持久来源；
-      // 老数据可能没有写 target.summaryTitle，恢复后需要用 session.title 补齐首轮标题。
+      // When the first user request IS the goal, the session title is the durable source of the first-round
+      // title; legacy rows may lack target.summaryTitle, so restore backfills round one from session.title.
       summaryTitle: session.title,
     },
   };
@@ -1116,17 +1112,17 @@ function buildGoalStats(
   return {
     contextUsed: projection.contextUsed,
     contextWindow: projection.contextWindow,
-    // goal 轮次只能由 verifier 生命周期边界推进；用户消息、TodoWrite
-    // 或手动继续都只是落入当前打开轮次，不能单独开新轮。
+    // Goal rounds advance only at verifier lifecycle boundaries; user messages, TodoWrite, or manual continues
+    // merely fall into the open round, never opening a new one.
     iterationCount: activeIterationCount,
-    // active goal run 已由 session_target.active_run_started_at 表达。
-    // 运行中不能再用 assistant 消息推导出的时间当已结算 base，否则 UI 会再叠加 live run 导致切换恢复后双算。
+    // The active goal run is already expressed by session_target.active_run_started_at.
+    // While running, never reuse an assistant-derived time as the settled base, or the UI stacks the live run and double-counts after a switch-back.
     timeUsedSeconds:
       target.timeUsedSeconds > 0 || target.activeRunStartedAtMs != null
         ? target.timeUsedSeconds
         : derivedTimeUsedSeconds,
-    // 旧 session_target 行可能没有 tokenBudget；协议 schema 需要稳定 JSON 值，
-    // 与 mapSessionGoal 保持一致用 null 表示未设置预算。
+    // Legacy session_target rows may lack tokenBudget; the protocol schema needs stable JSON, so like
+    // mapSessionGoal use null for unset budgets.
     tokenBudget: target.tokenBudget ?? null,
     tokensUsed: target.tokensUsed > 0 ? target.tokensUsed : derivedTokensUsed,
     toolCallCount: goalIterations.reduce((sum, iteration) => sum + iteration.toolCallCount, 0),

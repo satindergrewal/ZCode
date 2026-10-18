@@ -372,9 +372,10 @@ export function handleDesktopWindowCloseRequest(options: {
   explicitQuitRequested?: boolean;
   closeToTray?: boolean;
   /**
-   * Linux 关闭驻留的托盘能力（spec：docs/desktop/linux-close-to-tray.md）。
-   * GNOME 等无 StatusNotifierWatcher 的桌面托盘不渲染且不报错，必须在隐藏前显式确认能力；
-   * 空值按"不可用"安全默认，走确认退出路径，避免窗口隐藏后失联。
+   * Linux close-to-tray capability (spec: docs/desktop/linux-close-to-tray.md).
+   * On desktops without StatusNotifierWatcher (GNOME et al) the tray renders nothing and raises
+   * no error, so capability must be confirmed before hiding; missing values default safely to
+   * "unavailable" and take the confirm-quit path, avoiding a stranded hidden window.
    */
   closeToTraySupported?: boolean;
   isLastWindow: boolean;
@@ -385,9 +386,10 @@ export function handleDesktopWindowCloseRequest(options: {
   requestQuit: () => void;
   hideWindow?: () => void;
 }) {
-  // CR 修复:win32 不能短路丢弃 closeToTraySupported——它承载 resolveCloseToTraySupported
-  // 的合并裁决(Windows=托盘实例创建成功)。托盘创建失败时隐藏窗口即失联,与 spec
-  // "关窗分支与设置页能力查询都读同一合并结果"保持一致。
+  // CR fix: on win32, do not short-circuit away closeToTraySupported — it carries
+  // resolveCloseToTraySupported's merged verdict (Windows = tray instance created). Hiding the
+  // window when the tray failed strands the user; keeps the spec rule that the close branch and
+  // the settings capability query read the same merged result.
   const canHideToTray =
     (options.platform === "win32" || options.platform === "linux") &&
     options.closeToTraySupported === true;

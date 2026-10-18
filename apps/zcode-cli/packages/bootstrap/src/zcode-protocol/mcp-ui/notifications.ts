@@ -10,11 +10,11 @@ import { parseMcpUiSubscriberKey } from "./contract.js";
 import { mcpUiInstances } from "./instances.js";
 
 /**
- * MCP server 通知 → 会话。
- * - resources/updated / list_changed：按 subscriberKey 拆成各会话一条 live-only 事件（v4Gateway.ingest，seq 0），
- *   没有订阅者直接丢弃；插件归属从会话冻结 catalog 反查（server → pluginId）。
- * - notifications/message：进 agent 日志 `mcp:<server>`（error 及以上 → error，warning → warn，其余 debug）。
- * - tools/list_changed：adapter 已标 stale，这里只记 debug（回合边界重拉，A7）。
+ * MCP server notifications -> session.
+ // - resources/updated / list_changed: split per subscriberKey into one live-only event per session (v4Gateway.ingest, seq 0);
+ //   no subscribers, drop; plugin attribution via the session-frozen catalog (server -> pluginId).
+ // - notifications/message: into the agent log `mcp:<server>` (error+ -> error, warning -> warn, rest debug).
+ // - tools/list_changed: the adapter already marked stale; log debug only (re-pull at turn boundary, A7).
  */
 export function routeMcpServerNotification(
   context: ZCodeProtocolAgentServerContext,
@@ -96,7 +96,7 @@ export function routeMcpServerNotification(
               : SessionEventType.PluginUiResourceListChanged,
           timestamp: new Date(),
           traceId: String(record.traceContext.traceId) as never,
-          // 只进 live 投影、不落盘：seq 置 0 让 gateway 分配 transport 序号（与 elicitation 合成事件同法）。
+          // Live projection only, never persisted: seq 0 lets the gateway assign the transport sequence (as with synthesized elicitation events).
           sequenceNumber: 0,
           payload: (notification.kind === "resourceUpdated"
             ? { ...base, uri: notification.uri }

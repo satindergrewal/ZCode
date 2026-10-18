@@ -373,8 +373,9 @@ export interface AgentRuntimeCoreMethods {
     status?: "paused";
     traceContext: TraceContext;
   }): Promise<SessionGoal | null>;
-  pauseActiveTargetForCancellation(
-    input: { traceContext: TraceContext; reason?: string },
-  ): Promise<void>;
+  pauseActiveTargetForCancellation(input: {
+    traceContext: TraceContext;
+    reason?: string;
+  }): Promise<void>;
   activatePausedTargetAfterResume(traceContext: TraceContext): Promise<SessionGoal | null>;
 }

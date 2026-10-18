@@ -10,8 +10,8 @@ test("guarded renders only once/deny and rejects a forged project decision", () 
   const approval = approvalPrompt({ command: "rm -rf fixture" });
   approval.request.approvalMode = "user-once";
   const lines = collectTextNodes(ApprovalPanel({ approval, contentWidth: 60 }));
-  assert.ok(lines.some(line => line.text.includes("Allow once")));
-  assert.ok(!lines.some(line => line.text.includes("Always allow")));
+  assert.ok(lines.some((line) => line.text.includes("Allow once")));
+  assert.ok(!lines.some((line) => line.text.includes("Always allow")));
   assert.deepEqual(decisionsForApproval(approval.request), ["allow_once", "deny"]);
   assert.equal(createApprovalResult(approval.request, "allow_project").decision, "deny");
   assert.equal(createApprovalResult(approval.request, "allow_once").permissionUpdates, undefined);

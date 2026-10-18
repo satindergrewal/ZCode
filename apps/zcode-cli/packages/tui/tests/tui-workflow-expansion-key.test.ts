@@ -3,8 +3,8 @@ import test from "node:test";
 import type { KeyEvent } from "@mbears/opentui-core";
 import { workflowExpansionActionFor } from "../src/app-keyboard-helpers.js";
 
-// `+` / `-` 是可打印字符且 composer 默认持焦：这组测试钉住"绝不吃掉正常输入"的三层闸门
-// （无修饰键 + 草稿为空 + 至少一张 workflow 卡），任何一层松动都会破坏打字。
+// `+` / `-` are printable and the composer holds focus by default: these tests pin the three gates behind never eating input
+// (no modifier, empty draft, at least one workflow card); loosening any layer breaks typing.
 
 function key(name: string | undefined, overrides: Partial<KeyEvent> = {}): KeyEvent {
   return {
@@ -30,7 +30,11 @@ test("bare + with empty draft and cards expands; bare - collapses", () => {
 
 test("falls back to key.raw when key.name is absent", () => {
   assert.equal(
-    workflowExpansionActionFor({ key: key(undefined, { raw: "+" }), draftValue: "", hasCards: true }),
+    workflowExpansionActionFor({
+      key: key(undefined, { raw: "+" }),
+      draftValue: "",
+      hasCards: true,
+    }),
     "expand",
   );
 });
@@ -47,7 +51,7 @@ test("modified +/- are never claimed (Ctrl/Meta combos belong elsewhere)", () =>
 });
 
 test("a non-empty draft keeps +/- as ordinary typed characters", () => {
-  // 粘一段 diff、敲一个 flag、写连字符词——这些都以 +/- 起步或包含它们。
+  // Pasting a diff, typing a flag, writing hyphenated words -- all start with or contain +/-.
   assert.equal(
     workflowExpansionActionFor({ key: key("+"), draftValue: "diff --git", hasCards: true }),
     undefined,

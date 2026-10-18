@@ -20,12 +20,12 @@ import {
 } from "./list-workflow-runs.js";
 
 /**
-  * Result-card display payloads of the observation family of workflow tools (GetWorkflowRun / ListWorkflowRuns / EvalWorkflowSnippet /
-  * ListSavedWorkflows / ListModels).
+ * Result-card display payloads of the observation family of workflow tools (GetWorkflowRun / ListWorkflowRuns / EvalWorkflowSnippet /
+ * ListSavedWorkflows / ListModels).
  *
-  * Length caps mirror the producer side (core's workflow-observation-display.ts) one for one: display bypasses the
-  * result budget, so text fields and array lengths must be capped independently before entering live events and persisted metadata,
-  * with the producer flagging truncated on overflow.
+ * Length caps mirror the producer side (core's workflow-observation-display.ts) one for one: display bypasses the
+ * result budget, so text fields and array lengths must be capped independently before entering live events and persisted metadata,
+ * with the producer flagging truncated on overflow.
  */
 export const WORKFLOW_OBSERVATION_DISPLAY_MAX_LOG_ENTRIES = 40;
 export const WORKFLOW_OBSERVATION_DISPLAY_MAX_LOG_CHARS = 1_024;
@@ -42,12 +42,12 @@ export const WORKFLOW_OBSERVATION_DISPLAY_MAX_SUBAGENTS =
   GET_WORKFLOW_RUN_ROSTER_LIMITS.maxSubagents;
 
 /**
-  * One subagent on the card. Deliberately a **flat row**, not the tool output's nesting: the card draws one line, and
-  * the few facts in currentAsk (dispatched to what, which round, last tool touched) are the second half of that line;
-  * another nesting layer would only make the renderer destructure and reassemble.
+ * One subagent on the card. Deliberately a **flat row**, not the tool output's nesting: the card draws one line, and
+ * the few facts in currentAsk (dispatched to what, which round, last tool touched) are the second half of that line;
+ * another nesting layer would only make the renderer destructure and reassemble.
  *
-  * The enum sets stay **verbatim-equal and closed** with the tool face: consuming bundles reject unknown enum values (this once
-  * killed a whole subscription), so the two places always change together.
+ * The enum sets stay **verbatim-equal and closed** with the tool face: consuming bundles reject unknown enum values (this once
+ * killed a whole subscription), so the two places always change together.
  */
 export const getWorkflowRunToolResultDisplaySubagentSchema = z
   .object({
@@ -56,7 +56,7 @@ export const getWorkflowRunToolResultDisplaySubagentSchema = z
     name: z.string().max(GET_WORKFLOW_RUN_ROSTER_LIMITS.maxActorNameLength).optional(),
     state: z.enum(["idle", "executing", "waiting", "parked", "done", "failed", "unfinished"]),
     phaseName: z.string().max(GET_WORKFLOW_RUN_ROSTER_LIMITS.maxPhaseNameLength).optional(),
-        /** The current ask's task summary and progress reading (absent = unknown, never 0). */
+    /** The current ask's task summary and progress reading (absent = unknown, never 0). */
     instructionsHead: z
       .string()
       .max(GET_WORKFLOW_RUN_ROSTER_LIMITS.maxInstructionsHeadLength)
@@ -65,7 +65,7 @@ export const getWorkflowRunToolResultDisplaySubagentSchema = z
     turn: z.number().int().nonnegative().optional(),
     toolCalls: z.number().int().nonnegative().optional(),
     lastTool: GetWorkflowRunSubagentLastToolSchema.optional(),
-        /** What it waits on (reason text stays off the card: the card needs only waiting-on-slot vs backoff, plus the remaining delay). */
+    /** What it waits on (reason text stays off the card: the card needs only waiting-on-slot vs backoff, plus the remaining delay). */
     waitCause: z.enum(["slot", "backoff"]).optional(),
     retryAfterMs: z.number().nonnegative().optional(),
     waitSince: z.number().optional(),
@@ -81,20 +81,20 @@ export const getWorkflowRunToolResultDisplayLogEntrySchema = z
   .object({
     sequence: z.number(),
     message: z.string().max(WORKFLOW_OBSERVATION_DISPLAY_MAX_LOG_CHARS),
-        // Journal landing time of the event (epoch ms), same source as the tool output's logTail at; the card's age is
-        // computed against generatedAt. Optional: payloads predating the situation section lack it, optional in lockstep with shared.
+    // Journal landing time of the event (epoch ms), same source as the tool output's logTail at; the card's age is
+    // computed against generatedAt. Optional: payloads predating the situation section lack it, optional in lockstep with shared.
     at: z.number().optional(),
   })
   .strict();
 
 /**
-  * Structured failure on the tool card: **code and message only**, deliberately not reusing the tool output's
+ * Structured failure on the tool card: **code and message only**, deliberately not reusing the tool output's
  * `GetWorkflowRunErrorSchema`。
  *
-  * The two channels have different readers: the output is read by the model, which needs providerStop to know what to fix; display is
-  * read by the renderer, which strict-validates every frame against the mirror schema in packages/shared. Reuse would make
-  * display grow the output's fields, and a lagging mirror rejects the whole row -- session recovery fail-closed.
-  * This definition is the other side of that mirror; the two stay field-by-field in sync.
+ * The two channels have different readers: the output is read by the model, which needs providerStop to know what to fix; display is
+ * read by the renderer, which strict-validates every frame against the mirror schema in packages/shared. Reuse would make
+ * display grow the output's fields, and a lagging mirror rejects the whole row -- session recovery fail-closed.
+ * This definition is the other side of that mirror; the two stay field-by-field in sync.
  */
 export const getWorkflowRunToolResultDisplayErrorSchema = z
   .object({
@@ -104,9 +104,9 @@ export const getWorkflowRunToolResultDisplayErrorSchema = z
   .strict();
 
 /**
-  * GetWorkflowRun's result-card payload. Budget/actors reuse the tool output schema directly (plain numbers or already-bounded
-  * small structures); errors use the display-only schema above; logTail and result are capped independently on the display side --
-  * the output side's 2048 chars/entries and artifact serialization caps belong to the model channel; neither bound stands in for the other.
+ * GetWorkflowRun's result-card payload. Budget/actors reuse the tool output schema directly (plain numbers or already-bounded
+ * small structures); errors use the display-only schema above; logTail and result are capped independently on the display side --
+ * the output side's 2048 chars/entries and artifact serialization caps belong to the model channel; neither bound stands in for the other.
  */
 export const getWorkflowRunToolResultDisplayPayloadSchema = z
   .object({
@@ -114,19 +114,19 @@ export const getWorkflowRunToolResultDisplayPayloadSchema = z
     runId: z.string().min(1),
     label: z.string(),
     status: z.enum(WORKFLOW_RUN_LIFECYCLE_STATUSES),
-        /** Present only when status is stopped. */
+    /** Present only when status is stopped. */
     stopReason: z.enum(WORKFLOW_RUN_STOP_REASONS).optional(),
     possiblyInterrupted: z.boolean().optional(),
     /**
-          * The situation section: the one-line summary, snapshot instant, phase table, roster, health.
+     * The situation section: the one-line summary, snapshot instant, phase table, roster, health.
      *
-          * All five fields **optional**, though the producer always fills them. The reason is the **transcript already in the store**:
-          * get_workflow_run payloads persisted before the situation section lack these keys, and the display schema is
-          * strict -- requiring them would fail whole-card validation for every historical session opened after the upgrade,
-          * degrading to plain text. The text fallback is only for old rows with **no payload at all**, not payload-bearing ones.
+     * All five fields **optional**, though the producer always fills them. The reason is the **transcript already in the store**:
+     * get_workflow_run payloads persisted before the situation section lack these keys, and the display schema is
+     * strict -- requiring them would fail whole-card validation for every historical session opened after the upgrade,
+     * degrading to plain text. The text fallback is only for old rows with **no payload at all**, not payload-bearing ones.
      *
-          * generatedAt is the base for every how-long-ago on the card: computed against the snapshot instant, never render-time
-          * Date.now() -- on reopening a three-day-old transcript, the card's ages are still the then-current ages.
+     * generatedAt is the base for every how-long-ago on the card: computed against the snapshot instant, never render-time
+     * Date.now() -- on reopening a three-day-old transcript, the card's ages are still the then-current ages.
      */
     summary: z.string().max(GET_WORKFLOW_RUN_SUMMARY_MAX_CHARS).optional(),
     generatedAt: z.number().optional(),
@@ -160,8 +160,8 @@ export const listWorkflowRunsToolResultDisplayPayloadSchema = z
   .strict();
 
 /**
-  * EvalWorkflowSnippet's result-card payload. Diagnostics reuse the create_workflow display diagnostic schema
-  * (same TS diagnostic shape, same cap); logs take the tail, response capped independently.
+ * EvalWorkflowSnippet's result-card payload. Diagnostics reuse the create_workflow display diagnostic schema
+ * (same TS diagnostic shape, same cap); logs take the tail, response capped independently.
  */
 export const evalWorkflowSnippetToolResultDisplayPayloadSchema = z
   .object({
@@ -180,9 +180,9 @@ export const evalWorkflowSnippetToolResultDisplayPayloadSchema = z
   .strict();
 
 /**
-  * ListSavedWorkflows's result-card payload. Root cause: on the v4 wire output.text is formatModelContent's
-  * XML-style projection, so the UI's JSON probe never hits (falling into the raw-JSON fallback card) -- structured lists must travel through
-  * this display channel. description / whenToUse capped independently; args keep names only (declaration details belong to the confirmation dialog).
+ * ListSavedWorkflows's result-card payload. Root cause: on the v4 wire output.text is formatModelContent's
+ * XML-style projection, so the UI's JSON probe never hits (falling into the raw-JSON fallback card) -- structured lists must travel through
+ * this display channel. description / whenToUse capped independently; args keep names only (declaration details belong to the confirmation dialog).
  */
 export const savedWorkflowListToolResultDisplayPayloadSchema = z
   .object({
@@ -216,17 +216,17 @@ export const savedWorkflowListToolResultDisplayPayloadSchema = z
   .strict();
 
 /**
-  * ListModels's result-card payload. Same root cause as saved_workflow_list: on the v4 wire output.text is
-  * formatModelContent's models projection, so the UI's JSON probe never hits -- the structured catalog has only this channel.
+ * ListModels's result-card payload. Same root cause as saved_workflow_list: on the v4 wire output.text is
+ * formatModelContent's models projection, so the UI's JSON probe never hits -- the structured catalog has only this channel.
  *
-  * The fields are the tool output itself (everything the reader draws -- what exists, whence, which is current),
-  * plus one truncated. providerLabel / disabledReason are free text from the registry; display bypasses the result
-  * budget, so they are capped here; the rest are short ids and small numbers, passed through verbatim.
+ * The fields are the tool output itself (everything the reader draws -- what exists, whence, which is current),
+ * plus one truncated. providerLabel / disabledReason are free text from the registry; display bypasses the result
+ * budget, so they are capped here; the rest are short ids and small numbers, passed through verbatim.
  */
 export const listModelsToolResultDisplayPayloadSchema = z
   .object({
     kind: z.literal("list_models"),
-        /** The session's current model (canonical form); absent when nothing in the catalog matches. */
+    /** The session's current model (canonical form); absent when nothing in the catalog matches. */
     current: z.string().optional(),
     models: z
       .array(
@@ -265,11 +265,11 @@ export type ListModelsToolResultDisplayPayload = z.infer<
 >;
 
 /**
-  * ResumeWorkflowRun's result-card payload.
+ * ResumeWorkflowRun's result-card payload.
  *
-  * Deliberately minimal, runId only: all a resume card must convey is which run continues in the background -- the response guidance prose is
-  * model-channel wording and the UI has its own localization table; extra fields only add wire bytes with no reader. On the producer side, a
-  * failed safeParse of the output schema returns undefined (text fallback), the same skeleton as the four producers above.
+ * Deliberately minimal, runId only: all a resume card must convey is which run continues in the background -- the response guidance prose is
+ * model-channel wording and the UI has its own localization table; extra fields only add wire bytes with no reader. On the producer side, a
+ * failed safeParse of the output schema returns undefined (text fallback), the same skeleton as the four producers above.
  */
 export const resumeWorkflowRunToolResultDisplayPayloadSchema = z
   .object({

@@ -1,7 +1,7 @@
 /**
- * 用量事件：driver 每次 ask 结算回报 stats，引擎累计 run 级 spentTokens 并发 `usage-updated`。
- * 事件直接携带已花总量（docs/dynamic-workflow/authoring.md「Usage, not budget」），子进程协议不再搭载任何
- * 预算快照，脚本 facade 也没有 budget 全局量（不变式 3 / 4）。
+ * Usage events: the driver reports stats per ask settlement; the engine accumulates run-level spentTokens and emits `usage-updated`.
+ * The event carries the spent total directly (docs/dynamic-workflow/authoring.md, "Usage, not budget"); the child protocol carries no
+ * budget snapshot, and the script facade has no budget global (invariants 3/4).
  */
 
 import { describe, expect, it } from "vitest";

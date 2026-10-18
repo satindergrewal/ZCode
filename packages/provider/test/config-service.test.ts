@@ -127,7 +127,7 @@ function manualModelConfig(): ModelConfig {
 
 describe("ProviderConfigService", () => {
   it.each(["zai", "bigmodel"] as const)(
-    "%s 账号所有模式拒绝新禁用，旧禁用不阻断普通保存",
+    "%s account modes reject new disables while stale disables never block plain saves",
     async (accountType) => {
       for (const mode of [
         "start-plan",
@@ -172,7 +172,7 @@ describe("ProviderConfigService", () => {
       }
     },
   );
-  it("Provider 外层启停经过保存和成员操作仍保留，不修改配置内容", async () => {
+  it("keeps the outer provider enabled flag across saves and member ops without touching config content", async () => {
     const original = personalProvider(["A"]);
     const personal = new MemoryPersonalRepository(
       layerSnapshot("personal-1", new ProviderConfigMap([["p", original]])),
@@ -205,7 +205,7 @@ describe("ProviderConfigService", () => {
       service.dispose();
     }
   });
-  it("Todo90：添加固定配置同时保存模式；不完整时不得留下成员", async () => {
+  it("Todo90: saving a pinned config persists its mode too and leaves no members when incomplete", async () => {
     const builtin = new MutableSource(layerSnapshot("builtin-1"));
     const personal = new MemoryPersonalRepository(
       layerSnapshot("personal-1", new ProviderConfigMap([["p", personalProvider([])]])),
@@ -226,7 +226,7 @@ describe("ProviderConfigService", () => {
       service.dispose();
     }
   });
-  it("Todo89：直接写入也保护继承成员；新继承成员在已有顺序之前", async () => {
+  it("Todo89: direct writes protect inherited members and put new ones before the existing order", async () => {
     const builtin = new MutableSource(
       layerSnapshot("builtin-1", new ProviderConfigMap([["p", localProvider(["NEW", "A"])]])),
     );
@@ -253,7 +253,7 @@ describe("ProviderConfigService", () => {
       service.dispose();
     }
   });
-  it("Todo89：首次添加无需 Personal 根记录，保留排序且不复制继承成员", async () => {
+  it("Todo89: first add needs no Personal root record, keeps ordering and never copies inherited members", async () => {
     const builtin = new MutableSource(
       layerSnapshot("builtin-1", new ProviderConfigMap([["account", localProvider(["A", "B"])]])),
     );
@@ -285,7 +285,7 @@ describe("ProviderConfigService", () => {
     }
   });
 
-  it("Todo89：自定义供应商添加保留顺序；启停只更新最新 enabled，保留固定模式", async () => {
+  it("Todo89: custom-provider adds keep order; toggles update only the latest enabled and preserve the pinned mode", async () => {
     const builtin = new MutableSource(layerSnapshot("builtin-1"));
     const personal = new MemoryPersonalRepository(
       layerSnapshot(
@@ -334,7 +334,7 @@ describe("ProviderConfigService", () => {
     }
   });
 
-  it("动态账号成员的展示、编辑、排序共用快照，不复制成员且不允许重命名", async () => {
+  it("shares one snapshot across dynamic account member display, edit and reorder; no member copies, no renames", async () => {
     const builtin = new MutableSource(
       layerSnapshot(
         "builtin-1",
@@ -382,7 +382,7 @@ describe("ProviderConfigService", () => {
       refresh: registry.refresh.bind(registry),
     });
     try {
-      // 启停/编辑动态成员不创建根覆盖；随后仍必须能够首次添加个人模型。
+      // Toggling/editing dynamic members creates no root override; a first personal-model add must still work after.
       await facade.setPersonalModelEnabled("account", "glm-new", false);
       expect(personal.current.providers.has("account")).toBe(false);
       await facade.addPersonalModel("account", "personal-first", {});
@@ -398,7 +398,7 @@ describe("ProviderConfigService", () => {
         basedOnRevision: facade.getView().revision,
       });
       await facade.reorderPersonalModels("account", ["glm-next", "glm-new"]);
-      // 模拟磁盘上遗留的账号禁用：设置投影和真实 Registry 必须读取同一公共结果。
+      // Simulate a stale on-disk account disable: the Settings projection and the real Registry must read one shared result.
       await personal.update((current) => ({
         ...current,
         providers: current.providers.setRule({
@@ -521,7 +521,7 @@ describe("ProviderConfigService", () => {
     }
   });
 
-  it("把 ZCode Built-in Source 与 Personal Repository 聚合成 Registry Config Source", async () => {
+  it("folds the ZCode built-in Source and Personal Repository into one Registry Config Source", async () => {
     const zcodeBuiltin = new MutableSource(
       layerSnapshot(
         "zcodeBuiltin-1",
@@ -548,7 +548,7 @@ describe("ProviderConfigService", () => {
     expect(snapshot.personalProviders.keys()).toEqual(["personal"]);
   });
 
-  it("Personal 保存、删除和调序都通过 Repository 的原子 update", async () => {
+  it("routes Personal save, delete and reorder through the Repository's atomic update", async () => {
     const zcodeBuiltin = new MutableSource(layerSnapshot("zcodeBuiltin-1"));
     const personal = new MemoryPersonalRepository(
       layerSnapshot(
@@ -577,7 +577,7 @@ describe("ProviderConfigService", () => {
     expect(personal.current.providers.get("Y")?.modelOrder).toEqual(["m2", "m1"]);
   });
 
-  it("Built-in Provider 首次调序时创建只包含 modelOrder 的 Personal Overlay", async () => {
+  it("creates a modelOrder-only Personal Overlay on first Built-in reorder", async () => {
     const zcodeBuiltin = new MutableSource(
       layerSnapshot(
         "zcodeBuiltin-1",
@@ -597,7 +597,7 @@ describe("ProviderConfigService", () => {
     });
   });
 
-  it("普通 Provider 保存忽略陈旧成员字段，并保留 Repository 当前成员", async () => {
+  it("ignores stale member fields on plain saves and keeps the Repository's current members", async () => {
     const personal = new MemoryPersonalRepository(
       layerSnapshot(
         "personal-1",
@@ -625,7 +625,7 @@ describe("ProviderConfigService", () => {
     });
   });
 
-  it("保存 Built-in Overlay 时规范化 Personal 重复成员并保留 Built-in 身份", async () => {
+  it("dedupes Personal members and preserves the Built-in identity when saving the Overlay", async () => {
     const zcodeBuiltinProvider = localProvider(["builtin-model"]);
     const personal = new MemoryPersonalRepository(
       layerSnapshot(
@@ -656,7 +656,7 @@ describe("ProviderConfigService", () => {
     expect(personal.current.providers.get("builtin")?.personalModelIds).toEqual(["personal-model"]);
   });
 
-  it("Personal-only Provider 必须先显式创建，普通保存不能凭空创建", async () => {
+  it("requires explicit creation for Personal-only providers; plain saves never conjure one", async () => {
     const personal = new MemoryPersonalRepository(layerSnapshot("personal-1"));
     const service = new ProviderConfigService({
       zcodeBuiltinSource: new MutableSource(layerSnapshot("zcodeBuiltin-1")),
@@ -672,7 +672,7 @@ describe("ProviderConfigService", () => {
     expect(personal.current.providers.has("personal")).toBe(false);
   });
 
-  it("固定 Account Provider 的 Personal Overlay 不能改写 Access", async () => {
+  it("stops Personal Overlays of pinned Account Providers from rewriting Access", async () => {
     const zcodeBuiltin = new MutableSource(
       layerSnapshot(
         "zcodeBuiltin-1",
@@ -703,7 +703,7 @@ describe("ProviderConfigService", () => {
     expect(personal.current.providers.has("account:bigmodel-individual-coding-plan")).toBe(false);
   });
 
-  it("Provider label trim 后按大小写不敏感保持唯一", async () => {
+  it("keeps provider labels unique case-insensitively after trim", async () => {
     const personal = new MemoryPersonalRepository(
       layerSnapshot(
         "personal-1",
@@ -736,7 +736,7 @@ describe("ProviderConfigService", () => {
     ).rejects.toThrow("Provider name already exists");
   });
 
-  it("历史重名不阻断未引入新重名的 Provider 保存", async () => {
+  it("lets legacy duplicate names save when no new collision is introduced", async () => {
     const zcodeBuiltin = new MutableSource(
       layerSnapshot(
         "zcodeBuiltin-1",
@@ -787,7 +787,7 @@ describe("ProviderConfigService", () => {
     });
   });
 
-  it("原子创建下一个未占用的 Personal Provider 身份", async () => {
+  it("atomically creates the next unclaimed Personal Provider identity", async () => {
     const zcodeBuiltin = new MutableSource(
       layerSnapshot(
         "zcodeBuiltin-1",
@@ -821,7 +821,7 @@ describe("ProviderConfigService", () => {
     expect(personal.current.providerOrder).toEqual(["new-provider", "new-provider-3"]);
   });
 
-  it("使用调用方提供的 Template 名称种子并在原子创建中去重", async () => {
+  it("seeds names from the caller's Template and dedupes during atomic creation", async () => {
     const template = new ProviderTemplate({
       templateId: "deepseek",
       templateNameMap: { "zh-CN": "深度求索", "en-US": "DeepSeek" },
@@ -871,7 +871,7 @@ describe("ProviderConfigService", () => {
     ).rejects.toThrow();
   });
 
-  it("并发创建同一 Template 时仍生成唯一名称", async () => {
+  it("still yields unique names when the same Template is created concurrently", async () => {
     const template = new ProviderTemplate({
       templateId: "deepseek",
       templateNameMap: { "zh-CN": "深度求索", "en-US": "DeepSeek" },
@@ -904,7 +904,7 @@ describe("ProviderConfigService", () => {
     ).toEqual(["深度求索", "深度求索 2"]);
   });
 
-  it("写入 Provider 顺序使用未排序 Built-in、请求顺序、未排序 Personal 三段语义", async () => {
+  it("persists provider order as unsorted-Built-in, requested, unsorted-Personal segments", async () => {
     const zcodeBuiltin = new MutableSource(
       layerSnapshot(
         "zcodeBuiltin-1",
@@ -933,7 +933,7 @@ describe("ProviderConfigService", () => {
     expect(personal.current.providerOrder).toEqual(["personal-p", "personal-q"]);
   });
 
-  it("删除 Personal-only Provider 时同步清理精确模型规则", async () => {
+  it("prunes exact model rules when deleting a Personal-only provider", async () => {
     const exact = completeModelConfig();
     const pattern = new ModelConfig({
       properties: new ModelPropertiesConfig({ inputFormat: { supportsImage: true } }),
@@ -974,7 +974,7 @@ describe("ProviderConfigService", () => {
     ]);
   });
 
-  it("原子重命名 Personal Model 并保持列表位置和精确配置", async () => {
+  it("renames a Personal Model atomically, keeping list position and exact config", async () => {
     const modelConfig = completeModelConfig();
     const personal = new MemoryPersonalRepository(
       layerSnapshot(
@@ -1004,7 +1004,7 @@ describe("ProviderConfigService", () => {
     ]);
   });
 
-  it("一次事务同时重命名 Personal Model 并替换精确配置", async () => {
+  it("renames a Personal Model and swaps its exact config in one transaction", async () => {
     const oldConfig = new ModelConfig({ enabled: false });
     const nextConfig = manualModelConfig().overlay(
       new ModelConfig({
@@ -1051,7 +1051,7 @@ describe("ProviderConfigService", () => {
     );
   });
 
-  it("原子 Model Draft 在文件锁内拒绝过期 Personal revision", async () => {
+  it("rejects stale Personal revisions inside the file-locked atomic Model Draft", async () => {
     const personal = new MemoryPersonalRepository(
       layerSnapshot("personal-2", new ProviderConfigMap([["personal", personalProvider(["old"])]])),
     );
@@ -1072,7 +1072,7 @@ describe("ProviderConfigService", () => {
     expect(personal.current.providers.get("personal")?.personalModelIds).toEqual(["old"]);
   });
 
-  it("固定模式必须独立完整，拒绝提交时也不能先重命名成员", async () => {
+  it("requires pinned modes to be complete on their own and forbids renaming members on rejected commits", async () => {
     const personal = new MemoryPersonalRepository(
       layerSnapshot("personal-1", new ProviderConfigMap([["personal", personalProvider(["old"])]])),
     );
@@ -1095,7 +1095,7 @@ describe("ProviderConfigService", () => {
     expect(personal.current.models.getExact("personal", "next")).toBeUndefined();
   });
 
-  it("已有固定模式不能通过省略模式参数绕过完整性校验", async () => {
+  it("cannot bypass completeness checks on existing pinned modes by omitting the mode argument", async () => {
     const personal = new MemoryPersonalRepository(
       layerSnapshot(
         "personal-1",
@@ -1122,7 +1122,7 @@ describe("ProviderConfigService", () => {
     );
   });
 
-  it("原子新增 Personal Model，同时写入成员与初始精确配置", async () => {
+  it("adds a Personal Model atomically, writing membership and initial exact config together", async () => {
     const modelConfig = completeModelConfig();
     const personal = new MemoryPersonalRepository(
       layerSnapshot(
@@ -1144,7 +1144,7 @@ describe("ProviderConfigService", () => {
     expect(personal.current.models.getExact("personal", "new-model")).toEqual(modelConfig);
   });
 
-  it("新增 Personal Model 拒绝覆盖 Built-in 或已有 Personal 成员", async () => {
+  it("rejects Personal Model adds that would shadow Built-in or existing Personal members", async () => {
     const service = new ProviderConfigService({
       zcodeBuiltinSource: new MutableSource(
         layerSnapshot(
@@ -1168,7 +1168,7 @@ describe("ProviderConfigService", () => {
     ).rejects.toThrow("Model already exists: personal/personal-model");
   });
 
-  it("模型重命名拒绝覆盖 Built-in 或已有 Personal 成员", async () => {
+  it("rejectes model renames that would shadow Built-in or existing Personal members", async () => {
     const service = new ProviderConfigService({
       zcodeBuiltinSource: new MutableSource(
         layerSnapshot(
@@ -1192,7 +1192,7 @@ describe("ProviderConfigService", () => {
     );
   });
 
-  it("迁移边界可以原子替换完整 Personal Overlay", async () => {
+  it("lets the migration boundary atomically replace a complete Personal Overlay", async () => {
     const personal = new MemoryPersonalRepository(layerSnapshot("personal-1"));
     const service = new ProviderConfigService({
       zcodeBuiltinSource: new MutableSource(layerSnapshot("zcodeBuiltin-1")),
@@ -1213,7 +1213,7 @@ describe("ProviderConfigService", () => {
     expect(personal.current.models).toBe(models);
   });
 
-  it("删除 Personal Model 时原子删除成员和精确规则", async () => {
+  it("deletes membership and exact rules atomically with the Personal Model", async () => {
     const exact = completeModelConfig();
     const pattern = new ModelConfig({
       properties: new ModelPropertiesConfig({ contextWindow: 64_000 }),
@@ -1244,7 +1244,7 @@ describe("ProviderConfigService", () => {
     });
   });
 
-  it("保存 Personal Provider 不改写任何 Model Rules", async () => {
+  it("never touches Model Rules when saving a Personal Provider", async () => {
     const pattern = new ModelConfig({
       properties: new ModelPropertiesConfig({ inputFormat: { supportsImage: true } }),
     });
@@ -1304,7 +1304,7 @@ describe("ProviderConfigService", () => {
     ]);
   });
 
-  it("上游变化通知会驱动注入该 Service 的 Registry 刷新", async () => {
+  it("drives a Registry refresh of the injected Service on upstream-change notifications", async () => {
     const zcodeBuiltin = new MutableSource(
       layerSnapshot(
         "zcodeBuiltin-1",

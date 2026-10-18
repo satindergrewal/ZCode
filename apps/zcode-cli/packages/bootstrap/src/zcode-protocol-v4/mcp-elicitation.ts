@@ -1,15 +1,15 @@
 import type { UserInputQuestionPayload } from "@zcode/shared/zcode-protocol-v4";
 
 /**
- * MCP elicitation（server → client `elicitation/create`）与 ZCode 用户提问通道的映射
- * 。纯函数：requestedSchema → 问题列表，
- * 用户答案 → ElicitResult.content。broker 与 product-projection 共用，保证 live/v4 两条路径一致。
+ * MCP elicitation (server -> client `elicitation/create`) mapped onto the ZCode user-question channel
+ // . Pure function: requestedSchema -> question list,
+ // User answer -> ElicitResult.content. Shared by broker and product-projection, keeping live/v4 paths identical.
  */
 
-/** 合成 PermissionRequested 事件里用的工具名哨兵；projection 与 renderer 据此识别。 */
+/** Tool-name sentinel inside synthesized PermissionRequested events; projection and renderer key on it. */
 export const MCP_ELICITATION_TOOL_NAME = "McpElicitation";
 export const MCP_ELICITATION_INTERACTION = "mcp_elicitation";
-/** 自由文本题目在旧 userInput 通道里必须至少有一个选项；用这个哨兵值表示"请输入"。 */
+/** A free-text question needs at least one option on the legacy userInput channel; this sentinel means "type it in". */
 export const MCP_ELICITATION_FREE_TEXT_OPTION = "__zcode_free_text__";
 
 export interface McpElicitationSchemaField {
@@ -26,7 +26,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** 解析 MCP `requestedSchema`（扁平 object，属性只允许原始类型）；非法属性跳过。 */
+/** Parses the MCP `requestedSchema` (flat object, primitive-typed properties only); invalid properties skipped. */
 export function readMcpElicitationFields(requestedSchema: unknown): McpElicitationSchemaField[] {
   if (!isRecord(requestedSchema) || !isRecord(requestedSchema.properties)) return [];
   const required = new Set(
@@ -63,7 +63,7 @@ export function readMcpElicitationFields(requestedSchema: unknown): McpElicitati
   return fields;
 }
 
-/** 字段 → 用户提问；string/number 用自由文本哨兵选项，boolean 用 Yes/No，enum 用枚举值。 */
+/** Field -> user question; string/number use the free-text sentinel option, boolean Yes/No, enum its values. */
 export function mcpElicitationQuestions(
   message: string,
   requestedSchema: unknown,
@@ -82,7 +82,14 @@ export function mcpElicitationQuestions(
     const header = field.title ?? field.name;
     const question = field.description ?? `${message}\n\n${header}`;
     if (field.type === "boolean") {
-      return { header, question, options: [{ value: "true", label: "Yes" }, { value: "false", label: "No" }] };
+      return {
+        header,
+        question,
+        options: [
+          { value: "true", label: "Yes" },
+          { value: "false", label: "No" },
+        ],
+      };
     }
     if (field.type === "enum" && field.enumValues && field.enumValues.length > 0) {
       return {
@@ -117,7 +124,7 @@ function firstString(value: unknown): string | undefined {
   return undefined;
 }
 
-/** 用户答案 → MCP ElicitResult.content；按 requestedSchema 类型收敛，无法收敛的字段省略。 */
+/** User answer -> MCP ElicitResult.content; converged by requestedSchema type, unconvetible fields omitted. */
 export function mcpElicitationContentFromAnswers(
   requestedSchema: unknown,
   questions: UserInputQuestionPayload[],
@@ -136,7 +143,8 @@ export function mcpElicitationContentFromAnswers(
       case "number":
       case "integer": {
         const parsed = Number(raw);
-        if (Number.isFinite(parsed)) result[field.name] = field.type === "integer" ? Math.trunc(parsed) : parsed;
+        if (Number.isFinite(parsed))
+          result[field.name] = field.type === "integer" ? Math.trunc(parsed) : parsed;
         return;
       }
       default:

@@ -123,7 +123,9 @@ export async function prepareAccountConnectionSwitch(
           await services.providerSettingsService.refresh("account-connection-switched");
         } catch (error) {
           // The write completed; a refresh failure must not pose as unsaved. Later regular refreshes converge.
-          logger.lifecycle.warn("[AccountConnection] Connection saved; refresh not finished yet", { error });
+          logger.lifecycle.warn("[AccountConnection] Connection saved; refresh not finished yet", {
+            error,
+          });
         }
         return "switched";
       } finally {

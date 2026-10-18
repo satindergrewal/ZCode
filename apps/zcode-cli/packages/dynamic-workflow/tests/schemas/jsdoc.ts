@@ -1,4 +1,4 @@
-// JSDoc 采集：description、数值/字符串约束标签、@default，以及顶层类型的 description。
+// JSDoc collection: description, numeric/string constraint tags, @default, top-level type descriptions.
 /**
  * A validated registration form.
  */

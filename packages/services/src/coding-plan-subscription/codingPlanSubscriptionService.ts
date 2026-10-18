@@ -10,25 +10,25 @@ interface CodingPlanSubscriptionServiceDependencies {
   credentialService: Pick<ICredentialService, "load">;
   resolveOffPeakModelSelectionView?: () => Promise<ModelSelectionView>;
   /**
-   * 用户在设置里选的动态工作流模式（launch.md「The user's choice」）。只有拥有设置权威的装配
-   * （desktop 本地 Host、web/standalone server）注入；缺省时快照只含服务端的「提供」。
+   * User-selected dynamic-workflow mode (launch.md "The user's choice"). Only assemblers that own settings
+   * (desktop local host, web/standalone server) may inject it; otherwise the snapshot carries only the server offer.
    */
   resolveDynamicWorkflowUserMode?: () => Promise<unknown>;
 }
 
 /**
- * 原 service 把所有调用直接绑定到单一 BigModelCodingPlanSubscriptionProvider，
- * zai family 没有独立的 Team Plan 定价来源（死代码）。
+ * The old service bound every call to the single BigModelCodingPlanSubscriptionProvider,
+ * leaving the zai family without its own Team Plan pricing source (dead code).
  *
- * zai 与 bigmodel Team Plan 全链路对称化：
- * 同时持有 bigmodel 和 zai 两个 provider 实例；enterprise 读路径（getEnterprisePricing）按
- * request.family 路由到对应实例；缺省 family 时保持 bigmodel，向后兼容既有调用点。
+ * zai and bigmodel Team Plan are now symmetric end to end:
+ * both provider instances are held; the enterprise read path (getEnterprisePricing) routes by
+ * request.family; the default family stays bigmodel for backward compatibility.
  *
- * 其余方法（购买/staticConfigs/preview 等）语义与 family 无关或已在 provider 内部按
- * request.providerId 动态路由，统一委托给 bigmodel provider 即可：
- *   - 企业购买闭环（balance/order/pending/cancel/continue/status）按产品决策仍只走 bigmodel 域。
- *   - staticConfigs 是平台级 client/configs，与 family 无关。
- *   - 购买类（Stripe/PayPal/preview/createSign 等）已通过 request.providerId 在 provider 内路由。
+ * Remaining methods (purchase/staticConfigs/preview etc.) are family-agnostic or already route inside the provider by
+ * request.providerId, so delegating to the bigmodel base suffices:
+ *   - The enterprise purchase loop (balance/order/pending/cancel/continue/status) stays bigmodel-only by product decision.
+ *   - staticConfigs is the platform-level client/configs and family-agnostic.
+ *   - Purchase flows (Stripe/PayPal/preview/createSign etc.) route via request.providerId inside the provider.
  */
 export function createCodingPlanSubscriptionService(
   dependencies: CodingPlanSubscriptionServiceDependencies,
@@ -36,7 +36,7 @@ export function createCodingPlanSubscriptionService(
   const bigmodelProvider = new BigModelCodingPlanSubscriptionProvider(dependencies);
   const zaiProvider = new ZaiCodingPlanSubscriptionProvider(dependencies);
 
-  // 按 family 选择 enterprise 读路径 provider；缺省（含未指定 family 的历史调用）走 bigmodel。
+  // Pick the enterprise read-path provider by family; the default (including legacy callers without family) is bigmodel.
   const resolveEnterprisePricingProvider = (
     family?: "bigmodel" | "zai",
   ): BigModelCodingPlanSubscriptionProvider => (family === "zai" ? zaiProvider : bigmodelProvider);
@@ -49,10 +49,10 @@ export function createCodingPlanSubscriptionService(
     getManualClaimPlanPreviews: () => bigmodelProvider.getManualClaimPlanPreviews(),
     claimManualPlan: (request) => bigmodelProvider.claimManualPlan(request),
     getOffPeakClientConfig: (options) => bigmodelProvider.getOffPeakClientConfig(options),
-    // 动态工作流灰度：与 client/configs 同源，
-    // 因此和其它平台级配置一样固定走 bigmodel provider，与 family 无关。
-    // 用户选择在这里套到「提供」上，renderer 读到的就是生效值；规则只写在 shared 的
-    // applyDynamicWorkflowUserMode 里，renderer 不自己算。
+    // Dynamic-workflow gating shares the client/configs source,
+    // so like other platform-level config it always uses the bigmodel provider, family-agnostic.
+    // The user choice is folded into the offer here so renderers read the effective value; the rule lives only in the shared
+    // applyDynamicWorkflowUserMode, and renderers never recompute it.
     getDynamicWorkflowClientConfig: async (options) => {
       const offer = await bigmodelProvider.getDynamicWorkflowClientConfig(options);
       const resolveUserMode = dependencies.resolveDynamicWorkflowUserMode;

@@ -22,12 +22,12 @@ export async function startPresetSubscriptionLogin(params: {
     const { authorizeUrl, state, provider } = await params.oauthService.startOAuth(oauthProviderId);
     params.platform.registerOAuthState({ state, provider });
     params.platform.openExternal(authorizeUrl);
-    logger.info("[ModelProviderSection] 已发起模型供应商 App OAuth 登录", {
+    logger.info("[ModelProviderSection] Model provider app OAuth login requested", {
       presetId: params.presetId,
       provider,
     });
   } catch (error) {
-    logger.error("[ModelProviderSection] 发起模型供应商 App OAuth 登录失败", {
+    logger.error("[ModelProviderSection] Failed to start model provider app OAuth login", {
       presetId: params.presetId,
       error,
     });

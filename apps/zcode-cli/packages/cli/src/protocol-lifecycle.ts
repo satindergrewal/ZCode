@@ -36,7 +36,7 @@ export function createProtocolProcessLifecycle(
       PROTOCOL_SHUTDOWN_TIMEOUT_MS +
         (process.env.ZCODE_E2E_COVERAGE === "1" ? COVERAGE_FLUSH_ALLOWANCE_MS : 0);
     deadlineAt = Date.now() + timeoutMs;
-        // Keep the ref: even if the init Promise never settles and no IO remains, a terminal state must be delivered.
+    // Keep the ref: even if the init Promise never settles and no IO remains, a terminal state must be delivered.
     deadlineTimer = setTimeout(() => exit(exitCode), timeoutMs);
     if (error) controller.abort(error);
     else
@@ -55,7 +55,7 @@ export function createProtocolProcessLifecycle(
   for (const signal of signals) {
     const listener = () =>
       stop(new Error(`Protocol received ${signal}`), SIGNAL_EXIT_CODES[signal]);
-        // on, not once: repeated signals must neither bypass cleanup nor reset the first deadline.
+    // on, not once: repeated signals must neither bypass cleanup nor reset the first deadline.
     process.on(signal, listener);
   }
   source.on("end", onInputEnd);
@@ -64,7 +64,7 @@ export function createProtocolProcessLifecycle(
   output.on("error", onIoError);
   output.on("close", onOutputClose);
   input.on("error", onIoError);
-    // Consume raw stdin from startup to observe parent EOF; the backpressure buffer keeps bytes not yet consumed by the protocol.
+  // Consume raw stdin from startup to observe parent EOF; the backpressure buffer keeps bytes not yet consumed by the protocol.
   source.pipe(input);
   if ((source as NodeJS.ReadableStream & { readableEnded?: boolean }).readableEnded) onInputEnd();
 

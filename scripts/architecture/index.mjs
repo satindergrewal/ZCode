@@ -238,7 +238,8 @@ export async function checkArchitecture({ cwd = process.cwd(), changedFiles = nu
             file,
             detail: target,
             module,
-            message: "the UI layer must not depend directly on Repo, Runtime, or Service implementations",
+            message:
+              "the UI layer must not depend directly on Repo, Runtime, or Service implementations",
           }),
         );
       }

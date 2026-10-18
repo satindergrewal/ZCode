@@ -1,7 +1,7 @@
 /**
- * 留白在 cell 里、在站点处求值（docs/execution-engine.md「The vm cell」的 Holes 段与「## Holes」）。
- * 这些 lowered 体是手写的（与 security.test.ts 同一正当性）：被测对象是 `__host.hole` shim、
- * 线协议的 `hole` 请求、harness 的路由与控制面的 `fillHole` 绑定，不是编译器。
+ * Holes evaluate in the cell, at the site (the Holes section of "The vm cell" and "## Holes" in docs/execution-engine.md).
+ * These lowered bodies are handwritten (same justification as security.test.ts): under test are the __host.hole shim,
+ * the wire protocol's hole request, harness routing, and the control plane's fillHole binding -- not the compiler.
  */
 
 import { describe, expect, it } from "vitest";
@@ -29,8 +29,8 @@ interface RunLoweredOptions {
   askSpecs?: Map<string, AskSpec>;
   signal?: AbortSignal;
   /**
-   * 每条引擎事件都经这里（同步、在 driver.emit 里）；`engine()` 取控制面绑下来的这一世的引擎。
-   * 惰性取：首条 `run-started` 在引擎构造函数里发出，早于 harness 绑控制面。
+   * Every engine event passes here (synchronously, inside driver.emit); engine() returns the incarnation bound via the control plane.
+   * Lazy on purpose: the first run-started fires in the engine constructor, before the harness binds the control plane.
    */
   onEvent?: (event: RunEvent, engine: () => BoundEngine) => void;
 }
@@ -46,7 +46,7 @@ const untyped = (...ids: string[]): Map<string, AskSpec> =>
 
 let runSeq = 0;
 
-/** 直接投喂手写 lowered 体（自由标识符仅 `__host`），把控制面句柄与事件钩子接给测试。 */
+/** Feeds a handwritten lowered body (free identifier: __host only), wiring the control-plane handle and event hook to the test. */
 async function runLowered(
   lowered: string,
   opts: RunLoweredOptions = {},
@@ -86,7 +86,7 @@ async function runLowered(
   return { settlement, driver, journal };
 }
 
-/** 一份补全：规格表是原表的超集，新站点都带 `hole#1/` 前缀。 */
+/** One fill: the spec table is a superset of the original, new sites carrying the hole#1/ prefix. */
 function fillFor(code: string, overrides: Partial<HoleFill> = {}): HoleFill {
   return {
     siteId: "hole#1",
@@ -99,7 +99,7 @@ function fillFor(code: string, overrides: Partial<HoleFill> = {}): HoleFill {
   };
 }
 
-/** 在第一条 hole-reached 上补全（恰好一次），并把补全结果与到达事件留给断言。 */
+/** Fills on the first hole-reached (exactly once), keeping the fill result and arrival event for assertions. */
 function fillOnReach(code: string, overrides: Partial<HoleFill> = {}) {
   const reached: HoleReached[] = [];
   const results: FillHoleResult[] = [];
@@ -192,7 +192,7 @@ describe("holes — evaluated at the site", () => {
       { onEvent: hook.onEvent },
     );
     expect(artifactOf(settlement)).toEqual([10, 20, 30]);
-    // 一次到达、一次补全：后两轮由 cell 的 fill 表作答，不过线。
+    // One arrival, one fill: the last two rounds answer from the cell's fill table, never crossing the wire.
     expect(hook.reached).toHaveLength(1);
     expect(driver.eventsOfType("hole-reached")).toHaveLength(1);
     expect(driver.eventsOfType("hole-filled")).toHaveLength(1);
@@ -287,10 +287,10 @@ describe("holes — a parked hole is a request in flight", () => {
             openWhileSiblingSettled = reachedCount;
             siblingSettled = true;
           }
-          // 两件事都发生之后才补全，不论谁先到。修复原因：原先在兄弟 ask 结算的那一刻就补全，
-          // 兄弟若先于留白被到达就结算，补全被拒（hole_not_waiting），run 永远停在留白处，用例
-          // 5 秒超时——约三次里一次。停滞检测若开过火，run 早就 errored 了，结论不变。
-          // 先立旗再补全：fillHole 同步发出 hole-filled，会重入这个回调。
+          // Fill only after both happen, whichever lands first. Root cause of the fix: filling the moment the sibling settled
+          // rejected the fill (hole_not_waiting) when the sibling settled before the hole was reached, leaving the run stuck and the case
+          // timing out at 5s -- roughly one run in three. Had stall detection fired, the run would have errored sooner; same conclusion.
+          // Raise the flag before filling: fillHole emits hole-filled synchronously and reenters this callback.
           if (reachedCount > 0 && siblingSettled && !filled) {
             filled = true;
             results.push(engine().fillHole(fillFor("(async () => { return 1; })")));
@@ -299,7 +299,7 @@ describe("holes — a parked hole is a request in flight", () => {
       },
     );
     expect(artifactOf(settlement)).toEqual(["sibling done", 1]);
-    // 兄弟可能在留白被到达之前或之后结算；两种次序下留白都只被到达一次、补全一次。
+    // The sibling may settle before or after the hole is reached; in both orders the hole is reached once and filled once.
     expect([0, 1]).toContain(openWhileSiblingSettled);
     expect(reachedCount).toBe(1);
     expect(results).toEqual([{ ok: true }]);
@@ -343,18 +343,18 @@ describe("holes — a parked hole is a request in flight", () => {
       timeoutMs: 15000,
     });
     expect(typeof bound?.fillHole).toBe("function");
-    // 快照投影的两个只读面也经这条绑定交出去（run 已结算：停驻表空、本世没有补全）。
+    // The snapshot projection's two read-only surfaces ride the same binding (run settled: empty parked table, no fills this incarnation).
     expect(bound?.openHoles()).toEqual([]);
     expect(bound?.filledHoles()).toEqual([]);
-    // 结算之后是 no-op：`settled`，不写不发。
+    // After settlement it is a no-op: settled, no writes, no sends.
     expect(bound?.fillHole(fillFor("(async () => 1)"))).toEqual({ ok: false, reason: "settled" });
   });
 });
 
-/** 内层留白的站点 id 带外层前缀（docs/analysis.md「Sites」）：外层的体是有效脚本的一部分，体内的站点都是 `hole#1/…`。 */
+/** Inner-hole site ids carry the outer prefix (docs/analysis.md, "Sites"): the outer body is part of a valid script, its sites all hole#1/.... */
 const INNER = "hole#1/hole#1";
 
-/** 外层补全的体：声明一个 const，再到达一处内层留白，把内层的值原样返回。 */
+/** The outer fill body: declare a const, reach an inner hole, return the inner value verbatim. */
 const OUTER_WITH_INNER = [
   "(async () => {",
   '  const inside = "I" + (typeof i === "undefined" ? "" : i);',
@@ -385,8 +385,8 @@ describe("holes — recursive: a fill that contains an open hole", () => {
             results.push(engine().fillHole(fillFor(OUTER_WITH_INNER)));
             return;
           }
-          // 内层停驻期间只有它自己在飞：拖一段真时间再补全，停滞检测若把停驻的留白当成
-          // 「无在飞请求」，run 会在这段时间里 errored。
+          // While the inner hole is parked it is the only in-flight request: delay a real interval before filling. If stall detection counted
+          // the parked hole as no-in-flight, the run would error during that window.
           openWhileInnerParked = engine().openHoles();
           setTimeout(() => {
             results.push(
@@ -440,7 +440,7 @@ describe("holes — recursive: a fill that contains an open hole", () => {
       },
     );
     expect(artifactOf(settlement)).toEqual(["BI1", "BI2", "BI3"]);
-    // 两个站点各到达一次、各补全一次；后两轮外层与内层都不过线。
+    // Each site reached once, filled once; the last two rounds cross no wire, outer or inner.
     expect(driver.eventsOfType("hole-reached").map((e) => e.instance.siteId)).toEqual([
       "hole#1",
       INNER,

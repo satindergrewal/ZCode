@@ -17,7 +17,7 @@ interface Session {
   retryAt?: number;
 }
 
-/** 业务 JWT 与 PAT 生命周期不同；缓存只由 CLI 换证 adapter 持有。 */
+/** Business JWT and PAT live differently; the cache is held only by the CLI's recredentialing adapter. */
 export class ZaiBusinessTokenCache {
   #session?: Session;
   readonly #rejected = new WeakSet<ZaiBusinessToken>();
@@ -29,7 +29,7 @@ export class ZaiBusinessTokenCache {
   }
 
   invalidate(value: ZaiBusinessToken): void {
-    // 迟到的旧 401 不得清除其它请求已经换好的业务 JWT。
+    // A late stale 401 never clears a business JWT another request already refreshed.
     this.#rejected.add(value);
     if (this.#session?.value === value) this.#session.value = undefined;
   }
@@ -86,7 +86,7 @@ export class ZaiBusinessTokenCache {
       .catch((error: unknown) => {
         if (this.#session !== session) throw new Error("project_token_scope_invalidated");
         const value = session.value;
-        // 真实有效期未知时不能降级；保留原对象身份，让迟到的 401 仍能拒绝这一代 JWT。
+        // With the true lifetime unknown, never downgrade; keep the object identity so a late 401 can still reject that JWT generation.
         if (
           error instanceof ProjectAccessTokenTransientError &&
           value &&
@@ -103,7 +103,7 @@ export class ZaiBusinessTokenCache {
         throw error;
       })
       .finally(() => {
-        // 降级与清理属于共享 pending，所有并发调用必须获得同一个结果。
+        // Downgrade and cleanup belong to the shared pending; every concurrent caller gets the same outcome.
         if (session.pending === pending) session.pending = undefined;
       });
     session.pending = pending;

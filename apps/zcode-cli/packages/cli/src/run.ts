@@ -254,9 +254,9 @@ const runZCodeProtocolCommand = async (
   try {
     const env = prepareCliRuntimeEnv(deps.env ?? process.env);
     const workingDirectory = (deps.cwd ?? process.cwd)();
-        // The packaged app-server is the desktop host's internal protocol subprocess.
-        // Reading the user's .env upward from the workspace here would exit before protocol establishment on any read failure or env pollution;
-        // the outer layer would only see ZCode agent transport closed.
+    // The packaged app-server is the desktop host's internal protocol subprocess.
+    // Reading the user's .env upward from the workspace here would exit before protocol establishment on any read failure or env pollution;
+    // the outer layer would only see ZCode agent transport closed.
     const dotenvResult = shouldLoadCliDotenvForProtocolServer(env)
       ? (deps.loadDotenv ?? loadCliDotenv)({
           cwd: workingDirectory,
@@ -311,8 +311,8 @@ export const run = async (ctx: RunContext, deps: RunDependencies = {}): Promise<
     return await runPluginHostCommand(ctx, ctx.argv.slice(1));
   }
 
-    // Same reasoning as the plugin host, and equally before parseArgs: under SEA the dwf sandbox child re-execs this binary
-    // with the entry file path as the last argv item -- strict parseArgs would only report unknown arguments.
+  // Same reasoning as the plugin host, and equally before parseArgs: under SEA the dwf sandbox child re-execs this binary
+  // with the entry file path as the last argv item -- strict parseArgs would only report unknown arguments.
   if (isDwfChildInvocation(ctx.argv)) {
     return await runDwfChildCommand(ctx, ctx.argv.slice(1));
   }
@@ -463,8 +463,8 @@ export const run = async (ctx: RunContext, deps: RunDependencies = {}): Promise<
     return 1;
   }
 
-  // app-server 的 mode 归 Host 决定（launch.md「The standalone CLI: `--workflow-mode`」），
-  // 其余子命令不建会话；作用域与 --force-mcs 相同：只有 --prompt、--target 与 TUI。
+  // The app-server mode belongs to the Host (launch.md, "The standalone CLI: `--workflow-mode`");
+  // other subcommands create no session; the scope matches --force-mcs: only --prompt, --target, and the TUI.
   if (
     workflowModeOption !== undefined &&
     !isForceMcsSupportedInvocation({

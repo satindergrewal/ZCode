@@ -1,7 +1,7 @@
 /**
- * 站点权限设置标签页的能力目录（key = main 持久层的 permission 字符串，
- * 与 embeddedBrowserPermissionPolicy 的 PROMPT_PERMISSIONS 对齐）。
- * label 走 i18n；iconKey 复用 BrowserPermissionIcon 的能力字形。
+ * Capability catalog for the site-permissions tab (key = main's permission string,
+ * aligned with embeddedBrowserPermissionPolicy PROMPT_PERMISSIONS).
+ * label via i18n; iconKey reuses BrowserPermissionIcon glyphs.
  */
 export interface BrowserPermissionCapability {
   key: string;

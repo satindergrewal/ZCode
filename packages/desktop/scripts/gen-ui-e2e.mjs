@@ -104,7 +104,8 @@ if (!cssFiles.length)
 await Promise.all(
   cssFiles.map((name) => copyFile(join(desktop, "out/renderer/assets", name), join(output, name))),
 );
-// 正式正文会加载含 Unicode 正则的 Markdown runtime；fixture 也必须声明 UTF-8，避免本地文件按旧编码解析脚本。
+// Real bodies load a Markdown runtime containing Unicode regexes; the fixture must declare
+// UTF-8 as well, or local files parse scripts under a legacy encoding.
 await writeFile(
   join(output, "react.html"),
   `<!doctype html><head><meta charset="utf-8">${cssFiles.map((name) => `<link rel="stylesheet" href="${name}">`).join("")}</head><body><div id="root" style="padding:30px"></div><script src="react.js"></script></body>`,

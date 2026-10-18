@@ -117,9 +117,9 @@ export interface ContextBuilderConfig {
   skillMetadataBudget?: number;
   customSystemPrompt?: string;
   /**
-      * Identity input for a dynamic workflow subagent (workflow child). When present, the builder takes its third path:
-      * base sections (CLI prefix, safety line, Harness, memory) + the workflow-subagent contract + persona overlay,
-      * rather than replacing everything like `customSystemPrompt`. Mutually exclusive with `customSystemPrompt`.
+   * Identity input for a dynamic workflow subagent (workflow child). When present, the builder takes its third path:
+   * base sections (CLI prefix, safety line, Harness, memory) + the workflow-subagent contract + persona overlay,
+   * rather than replacing everything like `customSystemPrompt`. Mutually exclusive with `customSystemPrompt`.
    */
   workflowActor?: WorkflowActorContext;
   language?: string;

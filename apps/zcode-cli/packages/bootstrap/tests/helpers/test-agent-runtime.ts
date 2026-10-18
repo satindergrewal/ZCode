@@ -224,7 +224,9 @@ export function createTestModelSelection(
 }
 
 /** 把脚本化 adapter 包成测试 ModelFactory（与 createTestAgentRuntime 同一条换算）。 */
-export function createTestModelFactoryFromAdapter(modelAdapter: TestModelAdapter): RuntimeModelFactory {
+export function createTestModelFactoryFromAdapter(
+  modelAdapter: TestModelAdapter,
+): RuntimeModelFactory {
   return createTestModelFactory({
     generateText: (request) => modelAdapter.generateText(request),
     ...(modelAdapter.streamText
@@ -248,5 +250,9 @@ export function createTestAgentRuntime(
   const modelFactory =
     deps.modelFactory ??
     (modelAdapter ? createTestModelFactoryFromAdapter(modelAdapter) : createTestModelFactory({}));
-  return new AgentRuntime(sessionId, { ...config, modelSelection }, { ...runtimeDeps, modelFactory });
+  return new AgentRuntime(
+    sessionId,
+    { ...config, modelSelection },
+    { ...runtimeDeps, modelFactory },
+  );
 }

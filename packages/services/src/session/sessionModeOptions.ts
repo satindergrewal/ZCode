@@ -56,7 +56,7 @@ function normalizePersistedSessionMode(
     case "full_auto":
       return "yolo";
     case "agent":
-      // 该 modeId 专属于已下线的第三方 provider；不再映射到任何本地 mode。
+      // This modeId belongs to a retired third-party provider and maps to no local mode.
       return undefined;
     case "agent-full-access":
     case "agent_full_access":

@@ -71,7 +71,8 @@ export function spawnCancellableStep(step) {
       resolveRun(value);
     };
 
-    // 修复原因：spawn 的 error 过去会 reject Promise.all，导致其他 shard 未等待、manifest 未写入。
+    // Fix: a spawn error used to reject the Promise.all, leaving other shards unwaited and the
+    // manifest unwritten.
     child.once("error", (error) => settle(createStepStartFailure(error)));
     child.once("close", (code, signal) => {
       settle({ exitCode: code ?? 1, signal: signal ?? undefined });
@@ -92,12 +93,12 @@ export function spawnCancellableStep(step) {
       terminationRequested = true;
 
       if (process.platform === "win32") {
-        // pnpm 下还有 WDIO/Electron 等后代进程，Windows 必须按进程树强制终止。
+        // pnpm leaves WDIO/Electron descendants running; on Windows the whole tree must be killed.
         const killChildFallback = () => {
           try {
             child.kill();
           } catch {
-            // 原进程可能已在 taskkill 启动失败前退出。
+            // Already dead; nothing to clean up.
           }
         };
         let taskkill;
@@ -125,12 +126,12 @@ export function spawnCancellableStep(step) {
           try {
             child.kill("SIGKILL");
           } catch {
-            // SIGTERM 后已经退出时无需继续处理。
+            // Already dead; the close handler finalizes.
           }
         }, 5_000);
         forceKillTimer.unref?.();
       } catch {
-        // close/error 会负责产生最终结果，终止请求本身不应绕过收口。
+        // close/error produce the final result; the termination request must not bypass it.
       }
     },
   };

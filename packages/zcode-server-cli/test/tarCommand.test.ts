@@ -6,15 +6,15 @@ function stubPlatform(platform: NodeJS.Platform) {
 }
 
 describe("resolveHostTarCommand", () => {
-  it("非 Windows 宿主原样返回 PATH 解析的 tar，不触碰 System32（CR 复审回归）", () => {
+  it("returns the PATH-resolved tar untouched on non-Windows hosts, never System32 (CR review regression)", () => {
     stubPlatform("linux");
-    // 曾在平台判断前无条件解析 System32/tar.exe，POSIX 归档会直接抛错。
+    // System32/tar.exe used to be resolved before the platform check, throwing outright for POSIX archives.
     expect(resolveHostTarCommand()).toBe("tar");
     stubPlatform("darwin");
     expect(resolveHostTarCommand()).toBe("tar");
   });
 
-  it("Windows 宿主缺失 System32 tar.exe 时 fail-fast，不回退 PATH", () => {
+  it("fails fast on Windows when System32 tar.exe is missing instead of falling back to PATH", () => {
     stubPlatform("win32");
     const original = process.env.SystemRoot;
     process.env.SystemRoot = "Z:\\definitely-missing";
@@ -25,7 +25,7 @@ describe("resolveHostTarCommand", () => {
     }
   });
 
-  it("isTarCommand 同时命中裸 tar 与 System32 绝对路径形态", () => {
+  it("matches both bare tar and the absolute System32 path in isTarCommand", () => {
     expect(isTarCommand("tar")).toBe(true);
     expect(isTarCommand("C:\\Windows\\System32\\tar.exe")).toBe(true);
     expect(isTarCommand("/usr/bin/tar")).toBe(true);

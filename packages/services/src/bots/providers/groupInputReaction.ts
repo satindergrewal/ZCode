@@ -32,7 +32,7 @@ export function createGroupInputReactionUpdater(
     }
     entry.desired = state;
     const current = entry;
-    // 接收确认可能晚于开始/结束事件；单消息串行并禁止状态回退，避免覆盖终态。
+    // Acknowledgements can lag start/end events; serialize per message and never move state backwards over a final one.
     current.pending = current.pending
       .catch(() => {})
       .then(async () => {

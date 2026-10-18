@@ -83,7 +83,11 @@ export function gate(
   options: { code?: string; holdMs?: number } = {},
 ): FaultProgram {
   const verdict: StatusVerdict = { ...BUSY_3008, code: options.code ?? "3008" };
-  const served: Verdict = { kind: "delay", ms: options.holdMs ?? DEFAULT_GATE_HOLD_MS, next: SERVE };
+  const served: Verdict = {
+    kind: "delay",
+    ms: options.holdMs ?? DEFAULT_GATE_HOLD_MS,
+    next: SERVE,
+  };
   return (request) => (request.inFlight >= limit ? verdict : served);
 }
 
@@ -93,7 +97,8 @@ export function failFirst(
   status: number,
   options: { code?: string; message?: string; retryAfterMs?: number } = {},
 ): FaultProgram {
-  const retryAfterMs = options.retryAfterMs ?? (status === 429 ? DEFAULT_RETRY_AFTER_MS : undefined);
+  const retryAfterMs =
+    options.retryAfterMs ?? (status === 429 ? DEFAULT_RETRY_AFTER_MS : undefined);
   const verdict: Verdict = {
     kind: "status",
     status,

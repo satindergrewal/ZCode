@@ -21,7 +21,7 @@ interface InstanceRecord {
   pins: Set<string>;
   onActivity?: (callId: string, active: boolean) => void;
 }
-/** 单一凭证 owner。撤销先从登记表移除，再触发取消；迟到结果无法重新获得执行权。 */
+/** Single credential owner. Removal from the registry precedes cancellation; late results never regain execution. */
 export class McpUiInstances {
   private readonly runtimeId = randomUUID();
   private generation = 0;
@@ -98,7 +98,7 @@ export class McpUiInstances {
       record.binding.serverName !== scope.serverName
     )
       throw new Error("MCP App instance is no longer authorized");
-    // 先确认请求确属本实例，再用该连接快照撤销凭证。错 server / 旧代际的请求不能关闭合法页面。
+    // Confirm the request belongs to this instance, then revoke via that connection's snapshot. Wrong-server / stale-generation requests never close a live page.
     if (
       !source ||
       source.identity !== record.source.identity ||

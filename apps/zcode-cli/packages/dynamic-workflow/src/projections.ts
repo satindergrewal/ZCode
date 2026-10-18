@@ -1,14 +1,14 @@
 /**
-  * The browser-safe pure projection barrel:
+ * The browser-safe pure projection barrel:
  * `@zcode/dynamic-workflow/projections`。
  *
-  * Browser consumers freeze AnalysisCore into core.json, decode it in the browser, and recompute the site graph / causal graph /
-  * CFG / handoff graph / actor graph on the spot, then draw via *ToMermaid or the display contracts. That chain must not
-  * import typescript -- a multi-MB compiler needed only when the analyzer mints core -- nor belong in a frontend bundle.
+ * Browser consumers freeze AnalysisCore into core.json, decode it in the browser, and recompute the site graph / causal graph /
+ * CFG / handoff graph / actor graph on the spot, then draw via *ToMermaid or the display contracts. That chain must not
+ * import typescript -- a multi-MB compiler needed only when the analyzer mints core -- nor belong in a frontend bundle.
  *
-  * Hence this barrel **only** re-exports modules that import no typescript at runtime: core types and canonical text, JSON
-  * codecs, the five projections, the reducer, mermaid and text serializers, graph types. analyzeWorkflowScript, the
-  * compiler, lowering, and the engine are not here -- they use the root export.
+ * Hence this barrel **only** re-exports modules that import no typescript at runtime: core types and canonical text, JSON
+ * codecs, the five projections, the reducer, mermaid and text serializers, graph types. analyzeWorkflowScript, the
+ * compiler, lowering, and the engine are not here -- they use the root export.
  */
 export {
   isActorSite,
@@ -50,7 +50,12 @@ export {
   type TraceRegionKind,
 } from "./analysis/constants.js";
 export { projectSiteGraph } from "./analysis/graph.js";
-export { toActorGraph, type ActorEdge, type ActorGraph, type ActorNode } from "./analysis/actor-graph.js";
+export {
+  toActorGraph,
+  type ActorEdge,
+  type ActorGraph,
+  type ActorNode,
+} from "./analysis/actor-graph.js";
 export {
   MAIN_LANE,
   projectCausalityGraph,
@@ -107,4 +112,11 @@ export {
   serializeGraph,
   serializeHandoffGraph,
 } from "./analysis/serialize.js";
-export type { ActorSite, SiteEdge, SiteGraph, SiteKind, SiteLoc, SiteNode } from "./analysis/types.js";
+export type {
+  ActorSite,
+  SiteEdge,
+  SiteGraph,
+  SiteKind,
+  SiteLoc,
+  SiteNode,
+} from "./analysis/types.js";

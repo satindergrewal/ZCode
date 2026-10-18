@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 商店详情页把 hero/示例提示词/组件分区/信息区/高级折叠组织为一个连贯页面，与截图 1:1 对齐。 */
+/* eslint-disable max-lines -- the store detail lays out hero, sample prompts, component sections, info area and advanced fold as one page, 1:1 with the screenshot. */
 import { useState, type ReactNode } from "react";
 import {
   Anchor,
@@ -45,7 +45,7 @@ import {
 import type { PluginComponentDisplayGroup } from "@/settings/PluginComponentGroups.js";
 import type { PluginDescribeEntry } from "@/store/pluginManagementStore.js";
 
-// 组件分区顺序与截图一致：MCP 服务器 → 技能 → 命令 → 子智能体 → Hooks。
+// Component section order matches the screenshot: MCP servers, skills, commands, subagents, hooks.
 const SECTION_ORDER: ZCodePluginComponentKind[] = ["mcp", "skill", "command", "agent", "hook"];
 
 const SECTION_TITLE_IDS: Record<ZCodePluginComponentKind, string> = {
@@ -56,7 +56,7 @@ const SECTION_TITLE_IDS: Record<ZCodePluginComponentKind, string> = {
   hook: "settings.plugins.store.section.hooks",
 };
 
-// 与各资源设置列表共用同一图标语义，避免详情页用近似图标造成识别不一致。
+// Icon semantics shared with the per-resource settings lists, so the detail page never forks recognition with near-miss icons.
 const SECTION_ICONS: Record<ZCodePluginComponentKind, typeof Server> = {
   mcp: Server,
   skill: WandSparkles,
@@ -95,9 +95,9 @@ export function PluginStoreDetailView({
   actions: PluginStoreActions;
   describeEntry?: PluginDescribeEntry;
   onRetryDescribe: () => void;
-  /** 试用：标准新建任务并预填 canonical Plugin 引用 + 示例提示词（不自动发送）；未安装时先引导安装。 */
+  /** Trial: the standard new-task flow with a prefilled canonical Plugin reference + sample prompt (not auto-sent); install-first when absent. */
   onUsePrompt: (item: StorePluginItem, prompt: string) => void;
-  /** 高级折叠区（rootPath/Hook 明细/配置项），仅已安装且有运行时信息时由父级注入。 */
+  /** Advanced fold (rootPath/hook detail/config keys); parent-injected only when installed with runtime info. */
   advanced?: ReactNode;
 }) {
   const { intl, locale } = useZCodeIntl();
@@ -123,7 +123,7 @@ export function PluginStoreDetailView({
 
   return (
     <div className="space-y-8" data-testid="plugin-store-detail" data-plugin-id={item.id}>
-      {/* 头部：大图标后，显示名与菜单/主按钮同排；简介和来源提示另起一行。 */}
+      {/* Header: beside the large icon, name and menu/primary button share the row; description and source hint wrap below. */}
       <div className="space-y-3">
         <PluginStoreAvatar item={item} className="size-16 rounded-2xl" iconClassName="size-6" />
         <div
@@ -145,7 +145,7 @@ export function PluginStoreDetailView({
                   triggerVariant="outline"
                   triggerSize="icon-lg"
                 />
-                {/* 顶部试用与示例提示词共用同一 canonical 构造；空 prompt 表示只预填 Plugin mention。 */}
+                {/* Trial and sample prompt share one canonical builder; an empty prompt prefills only the Plugin mention. */}
                 <Button
                   type="button"
                   variant="default"
@@ -190,7 +190,7 @@ export function PluginStoreDetailView({
         ) : null}
       </div>
 
-      {/* Hero 区：横幅图上垂直堆叠示例提示词胶囊；无图但有提示词 → 纯胶囊列表；两者皆无 → 不渲染。 */}
+      {/* Hero: sample prompt pills stack vertically over the banner; no image but prompts = pills only; neither = nothing rendered. */}
       {isTrustedImageUrl(heroImage) || examplePrompts.length > 0 ? (
         <HeroSection
           item={item}
@@ -201,7 +201,7 @@ export function PluginStoreDetailView({
         />
       ) : null}
 
-      {/* 组件分区：已安装走权威枚举（ZCodePluginInfo.components），候选走 plugins/describe 按需拉取。 */}
+      {/* Component sections: installed via the authoritative enum (ZCodePluginInfo.components), candidates via plugins/describe on demand. */}
       {componentsLoading ? (
         <div
           className="flex items-center gap-2 py-2 text-ui-base text-foreground-subtle"
@@ -233,7 +233,7 @@ export function PluginStoreDetailView({
         orderedGroups.map((group) => <ComponentSection key={group.kind} group={group} />)
       )}
 
-      {/* 信息区：listing 优先，manifest（运行时/describe）回退；无值整行省略（ADR-0001）。 */}
+      {/* Info area: listing first, manifest (runtime/describe) fallback; valueless rows omitted (ADR-0001). */}
       <InfoSection item={item} describeMetadata={describeMetadata} />
 
       {advanced}
@@ -264,7 +264,7 @@ function HeroSection({
         type="button"
         data-testid="plugin-store-example-prompt"
         data-plugin-id={item.id}
-        // 彩色 Hero 上统一使用参考图的深色半透明胶囊，不随底图有无切换为普通卡片。
+        // On color heroes use the reference's dark translucent pill throughout, never swapping to a plain card by background.
         className="group/prompt flex w-fit max-w-2xl items-center gap-2.5 rounded-3xl bg-black/75 px-3.5 py-2.5 text-left text-ui-base text-white shadow-lg backdrop-blur-md transition-colors hover:bg-black/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
         onClick={() => onUsePrompt(item, prompt)}
       >
@@ -463,7 +463,7 @@ function InfoSection({
   );
 }
 
-/** 外链只放行 https（信息区渲染层统一收口，schema 不做校验）。 */
+/** External links allow https only (funneled in the info renderer; the schema does not validate). */
 function pickHttpsUrl(...candidates: Array<string | undefined>): string | undefined {
   return candidates.find(
     (candidate): candidate is string =>
@@ -471,7 +471,7 @@ function pickHttpsUrl(...candidates: Array<string | undefined>): string | undefi
   );
 }
 
-/** 高级折叠区外壳：详情页底部的「更多详情」，内容由父级注入（rootPath/Hook 明细/配置）。 */
+/** Advanced-fold shell: the detail footer's more-details block; content is parent-injected (rootPath/hook detail/config). */
 export function PluginStoreAdvancedSection({ children }: { children: ReactNode }) {
   const { intl } = useZCodeIntl();
   return (

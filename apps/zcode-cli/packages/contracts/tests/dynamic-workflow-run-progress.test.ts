@@ -1,6 +1,7 @@
-// 进度投影的契约面：一条引擎 RunEvent → 一条 dynamic_workflow_run_progress 会话事件。
-// 这里钉的是**有界化**（bounding）与词汇表，不是投影语义（那在 bootstrap 的
-// product-projection 测试里）。见 docs/dynamic-workflow/presentation.md「The run state the pane draws」。
+// Contract surface of the progress projection: one engine RunEvent -> one
+// dynamic_workflow_run_progress session event. This pins **bounding** and the vocabulary, not
+// projection semantics (bootstrap's product-projection tests own those). See
+// docs/dynamic-workflow/presentation.md "The run state the pane draws".
 import { describe, expect, it } from "vitest";
 import {
   DYNAMIC_WORKFLOW_RUN_EVENT_PAYLOAD_LIMITS,
@@ -9,12 +10,12 @@ import {
   type DynamicWorkflowRunProgressPayload,
 } from "../src/index.js";
 
-describe("dynamic workflow run progress 会话事件", () => {
-  it("事件类型进入 SessionEventType 词汇表", () => {
+describe("dynamic workflow run progress session events", () => {
+  it("event kind enters the SessionEventType vocabulary", () => {
     expect(SessionEventType.DynamicWorkflowRunProgress).toBe("dynamic_workflow_run_progress");
   });
 
-  it("payload 类型承载 runId / sequence / eventType 与端口同形的 JSON 载荷", () => {
+  it("payload type carries runId / sequence / eventType and the port-shaped JSON payload", () => {
     const payload: DynamicWorkflowRunProgressPayload = {
       runId: "dwfrun-1",
       toolCallId: "tc-1",
@@ -27,11 +28,11 @@ describe("dynamic workflow run progress 会话事件", () => {
 });
 
 describe("boundDynamicWorkflowRunEventPayload", () => {
-  it("小载荷逐字通过，不置 truncated", () => {
+  it("small payloads pass verbatim without truncated", () => {
     const source = {
       instance: { siteId: "ask#1", ordinal: 2 },
       outcome: "failed",
-      error: { code: "ValidationFailed", message: "字段 name 缺失" },
+      error: { code: "ValidationFailed", message: "field name missing" },
     };
     expect(boundDynamicWorkflowRunEventPayload(source)).toEqual({
       payload: source,
@@ -39,7 +40,7 @@ describe("boundDynamicWorkflowRunEventPayload", () => {
     });
   });
 
-  it("超长字符串按上限截断并置 truncated", () => {
+  it("oversize strings truncate at the cap and set truncated", () => {
     const long = "x".repeat(DYNAMIC_WORKFLOW_RUN_EVENT_PAYLOAD_LIMITS.maxStringLength + 100);
     const { payload, truncated } = boundDynamicWorkflowRunEventPayload({ finalText: long });
     expect(truncated).toBe(true);
@@ -48,8 +49,8 @@ describe("boundDynamicWorkflowRunEventPayload", () => {
     );
   });
 
-  it("截断不切开代理对（surrogate-safe）", () => {
-    // 上限位置刚好落在一个 4 字节 emoji 中间：宁可少一个字符，也不产出孤立代理项。
+  it("truncation never splits a surrogate pair (surrogate-safe)", () => {
+    // The cap lands mid-4-byte-emoji: prefer one char fewer over a lone surrogate.
     const emoji = "😀";
     const head = "a".repeat(DYNAMIC_WORKFLOW_RUN_EVENT_PAYLOAD_LIMITS.maxStringLength - 1);
     const { payload } = boundDynamicWorkflowRunEventPayload({ text: `${head}${emoji}` });
@@ -58,7 +59,7 @@ describe("boundDynamicWorkflowRunEventPayload", () => {
     expect(/[\uD800-\uDFFF]/.test(text)).toBe(false);
   });
 
-  it("超长数组按上限裁剪并置 truncated", () => {
+  it("oversize arrays clip at the cap and set truncated", () => {
     const violations = Array.from(
       { length: DYNAMIC_WORKFLOW_RUN_EVENT_PAYLOAD_LIMITS.maxArrayItems + 5 },
       (_, index) => ({ path: `/a/${index}` }),
@@ -70,17 +71,21 @@ describe("boundDynamicWorkflowRunEventPayload", () => {
     );
   });
 
-  it("过深嵌套在上限处剪断并置 truncated", () => {
+  it("over-deep nesting clips at the cap and sets truncated", () => {
     let deep: Record<string, unknown> = { leaf: 1 };
-    for (let level = 0; level < DYNAMIC_WORKFLOW_RUN_EVENT_PAYLOAD_LIMITS.maxDepth + 3; level += 1) {
+    for (
+      let level = 0;
+      level < DYNAMIC_WORKFLOW_RUN_EVENT_PAYLOAD_LIMITS.maxDepth + 3;
+      level += 1
+    ) {
       deep = { nested: deep };
     }
     const { truncated } = boundDynamicWorkflowRunEventPayload(deep);
     expect(truncated).toBe(true);
   });
 
-  it("非 JSON 值（Infinity / undefined / 函数）被规范化，绝不产出不可序列化载荷", () => {
-    // 任何非有限数经 JSON 都会变成 null；这里一次性折叠，落库前后才结构等价。
+  it("non-JSON values (Infinity / undefined / functions) normalize; never an unserializable payload", () => {
+    // Any non-finite number becomes null through JSON; fold once here so stored equals in-memory.
     const { payload } = boundDynamicWorkflowRunEventPayload({
       stats: { ratio: Number.POSITIVE_INFINITY, count: 98 },
       absent: undefined,
@@ -92,7 +97,7 @@ describe("boundDynamicWorkflowRunEventPayload", () => {
     expect(payload).not.toHaveProperty("fn");
   });
 
-  it("键数超上限时只保留前若干键并置 truncated", () => {
+  it("over-cap key counts keep only the first keys and set truncated", () => {
     const wide: Record<string, unknown> = {};
     for (let index = 0; index < DYNAMIC_WORKFLOW_RUN_EVENT_PAYLOAD_LIMITS.maxKeys + 4; index += 1) {
       wide[`k${index}`] = index;

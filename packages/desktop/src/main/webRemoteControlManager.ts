@@ -1,5 +1,5 @@
 import type { RendererTelemetryEventPayload } from "@zcode/shared";
-/* eslint-disable max-lines -- Web 远程控制 manager 承担外部 relay app payload 路由与 workspace bridge 编排。 */
+/* eslint-disable max-lines -- the web remote-control manager owns external relay app payload routing and workspace bridge orchestration. */
 import type { MessagePortMain, UtilityProcess as ElectronUtilityProcess } from "electron";
 import { randomUUID } from "node:crypto";
 import { MessagePortProtocol, type MessagePortLike, type MessagePortPayload } from "@zcode/rpc";
@@ -176,8 +176,9 @@ interface WebRemoteControlManagerDependencies {
   ) => WebRemoteControlDeviceTransportLike;
 }
 
-// Bugfix: 外部 relay 首次鉴权会受边缘层冷启动和网络抖动影响，实测可能略超 15s。
-// 这里等待到 30s，避免在 device 已经快进入 waiting_terminal 时过早销毁可用连接。
+// Bugfix: the external relay's first authentication is subject to edge cold starts and network
+// jitter; in practice it can slightly exceed 15s. Wait up to 30s here so a usable connection is
+// not destroyed too early while the device is about to enter waiting_terminal.
 const EXTERNAL_RELAY_QR_READY_TIMEOUT_MS = 30_000;
 const MOBILE_DISCONNECT_STATUS_GRACE_MS = 3_000;
 
@@ -259,7 +260,7 @@ function toExternalBridge(
 
   if (runtime.kind === "remote") {
     if (!runtime.workspaceIdentity || !runtime.remoteSessionId) {
-      throw new Error("远程 workspace bridge 缺少 workspaceIdentity 或 remoteSessionId。");
+      throw new Error("Remote workspace bridge is missing workspaceIdentity or remoteSessionId.");
     }
     return {
       ...base,
@@ -293,7 +294,8 @@ export function createWebRemoteControlManager(dependencies: WebRemoteControlMana
     try {
       dependencies.reportRemoteUsageEvent?.(windowId, event);
     } catch (error) {
-      // 埋点是旁路能力，任何异常都不能改变远控配对和 bridge 的业务结果。
+      // Telemetry is a side-channel; no exception here may alter the remote-control pairing or
+      // bridge business outcome.
       dependencies.logger.warn("[web-remote-control] remote usage telemetry failed", {
         elementName: event.elementName,
         error,
@@ -358,7 +360,8 @@ export function createWebRemoteControlManager(dependencies: WebRemoteControlMana
     context: WebRemoteControlContext,
   ): WebRemoteControlStartAuthorization {
     const now = Date.now();
-    // 同一窗口只保留最近一次 IPC dispatch 对应的内部票据，避免旧请求与新 workspace 上下文并存。
+    // Keep only the internal ticket from the most recent IPC dispatch per window, so stale
+    // requests never coexist with the new workspace context.
     clearStartAuthorizationsForWindow(windowId);
     for (const [token, authorization] of startAuthorizations) {
       if (authorization.expiresAt <= now) {
@@ -412,7 +415,7 @@ export function createWebRemoteControlManager(dependencies: WebRemoteControlMana
     try {
       bridge.hostProtocol?.disconnect();
     } catch {
-      // MessagePortProtocol 已经关闭时 dispose 失败不影响主流程。
+      // A dispose failure after MessagePortProtocol already closed must not affect the main flow.
     }
     if (bridge.attachmentId) {
       dependencies.releaseWorkspaceHostAttachment(bridge.attachmentId);
@@ -450,8 +453,9 @@ export function createWebRemoteControlManager(dependencies: WebRemoteControlMana
         ? {}
         : { bridgeGeneration: bridge.bridgeGeneration }),
       ...(bridge.recoveryId ? { recoveryId: bridge.recoveryId } : {}),
-      // Bugfix：checksum/oversize/future ACK 等 fault 不能伪装成 frame gap；
-      // app control 只传通用恢复原因，typed reasonCode 留在上面的安全日志。
+      // Bugfix: checksum/oversize/future-ACK faults must not masquerade as a frame gap;
+      // app control passes only the generic recovery reason, the typed reasonCode stays in the
+      // safety log above.
       reason: "rpc-transport-fault",
     });
   }
@@ -573,7 +577,8 @@ export function createWebRemoteControlManager(dependencies: WebRemoteControlMana
         return;
       }
       if (result.kind === "oversize") {
-        // Bugfix：永久 oversize 不能伪装成临时不可发送后反复进入 50 项 buffer。
+        // Bugfix: a permanently oversize payload must not pose as temporarily unsendable and
+        // re-enter the 50-item buffer forever.
         dependencies.logger.warn("[web-remote-control] dropped oversize app payload", {
           zcodeType: payload.zcode_type,
           bytes: result.bytes,
@@ -606,8 +611,9 @@ export function createWebRemoteControlManager(dependencies: WebRemoteControlMana
       });
       return;
     }
-    // Bugfix: relay suspect 窗口内 sendPayload 会返回 false。
-    // desktop 发出的响应/RPC 帧不能静默丢弃，先短暂缓冲，等 paired 恢复后再 flush。
+    // Bugfix: inside the relay suspect window sendPayload returns false.
+    // Response/RPC frames sent by desktop must not be dropped silently; buffer briefly and
+    // flush once paired recovers.
     bufferOutboundPayload(runtime, payload);
   }
 
@@ -691,10 +697,12 @@ export function createWebRemoteControlManager(dependencies: WebRemoteControlMana
   }
 
   function getRuntimeStatusTarget(runtime: WindowControlRuntime): WebRemoteControlWorkspaceTarget {
-    // Bugfix: 手机端可以在同一个远控会话里切到窗口内的其他 workspace。
-    // 之前 getStatus() 复用了当前 bridge 目标，导致桌面弹层按启动 workspace 轮询时误判为“不是同一会话”，
-    // 再次打开弹层会重启远控并把手机端踢成离线。状态接口保持窗口远控会话的原始目标，
-    // 手机当前 workspace 仍通过 mobileViewState / workspace list 表达。
+    // Bugfix: the phone can switch to another workspace inside the same remote-control session.
+    // getStatus() used to reuse the current bridge target, so when the desktop popup polled by
+    // launch workspace it misjudged "not the same session", and reopening the popup restarted
+    // remote control and kicked the phone offline. The status endpoint keeps the window remote
+    // session's original target; the phone's current workspace is still expressed via
+    // mobileViewState / workspace list.
     return {
       workspacePath: runtime.workspacePath,
       workspaceIdentity: runtime.workspaceIdentity,
@@ -710,8 +718,9 @@ export function createWebRemoteControlManager(dependencies: WebRemoteControlMana
     const workspaceByKey = new Map<string, WebRemoteControlWorkspaceTarget>();
 
     for (const workspace of availableWorkspacesByWindowId.get(runtime.windowId) ?? []) {
-      // Bugfix: 手机端 workspace 列表需要和桌面端一致展示已断开的 SSH 项目。
-      // 这里仅保留列表项；真正创建 bridge 时仍会校验 remoteSessionId，避免未连接项目被直接打开聊天。
+      // Bugfix: the phone workspace list must show disconnected SSH projects exactly like
+      // desktop. Keep only the list entry here; real bridge creation still validates
+      // remoteSessionId so unconnected projects cannot open chat directly.
       workspaceByKey.set(resolveWebRemoteControlWorkspaceKey(workspace), workspace);
     }
 
@@ -806,8 +815,9 @@ export function createWebRemoteControlManager(dependencies: WebRemoteControlMana
           workspace.kind,
           workspace.connectionState ?? "connected",
           workspace.remoteSessionId ?? "",
-          // Bugfix：连接状态不只包含枚举值；同一 disconnected 状态下错误原因也会变化，
-          // 手机 workspace card 直接展示 lastConnectionError，必须触发新快照。
+          // Bugfix: connection state is more than the enum; within the same disconnected state
+          // the error reason can change, and the phone workspace card renders
+          // lastConnectionError directly, so a new snapshot must be triggered.
           workspace.lastConnectionError ?? "",
         ]);
       })
@@ -818,21 +828,28 @@ export function createWebRemoteControlManager(dependencies: WebRemoteControlMana
         return JSON.stringify([
           workspaceKey,
           task.taskId,
-          // Bugfix：自动标题和用户重命名不会改变 task identity/membership；标题本身必须参与
-          // 首页快照去重，否则手机会一直保留旧文案。
+          // Bugfix: auto-title and user renames do not change task identity/membership, but the
+          // title itself must participate in home snapshot dedup or the phone keeps the stale
+          // text forever.
           task.title,
-          // Bugfix：远程 workspace 重连后 workspaceKey 可以保持不变，但 task target 绑定的
-          // remoteSessionId 会轮换；手机必须采用新连接身份，不能把它当成重复任务。
+          // Bugfix: after a remote workspace reconnect the workspaceKey can stay the same while
+          // the task target's remoteSessionId rotates; the phone must adopt the new connection
+          // identity, not treat it as a duplicate task.
           task.remoteSessionId ?? "",
-          // Bugfix：手机首页状态来自 renderer 已计算的 displayStatus；旧签名只比较 membership，
-          // running/completed/error 迁移会被误判为重复快照。缺失值按手机 fallback 归一为 idle。
+          // Bugfix: the phone home status comes from the renderer-computed displayStatus; the
+          // old signature compared membership only, so running/completed/error transitions were
+          // misjudged as duplicate snapshots. Missing values normalize to idle like the phone
+          // fallback.
           task.displayStatus ?? "idle",
-          // 后台工作起止决定手机列表运行层归属（排序），displayStatus 不变也要出新快照。
+          // Background work start/stop decides the phone list's running-layer placement
+          // (ordering); emit a new snapshot even when displayStatus is unchanged.
           Boolean(task.hasBackgroundWork),
-          // 工作流运行行的数据：phase 灯翻转、run 结束、子代理数变化都要让手机重画那一行。
+          // Workflow run-row data: phase light flips, run completion, and subagent count changes
+          // must all make the phone redraw that row.
           task.workflowActivity ?? null,
-          // Bugfix：unreadAt 是手机蓝点的事实字段；打开任务清除未读时 task membership 不变，
-          // 必须让时间戳到缺失值的迁移触发新快照。
+          // Bugfix: unreadAt is the phone blue-dot's source of truth; when opening a task clears
+          // unread, task membership is unchanged, so the timestamp→missing transition must
+          // trigger a new snapshot.
           typeof task.unreadAt === "number" ? task.unreadAt : "",
           Boolean(task.pinned),
           Boolean(task.archived),
@@ -840,8 +857,10 @@ export function createWebRemoteControlManager(dependencies: WebRemoteControlMana
       })
       .sort();
 
-    // Bugfix：title / connection error 是任意用户可见字符串，不能再用控制字符拼接 tuple；
-    // 否则字段值本身包含分隔符时不同快照可能得到相同签名。JSON tuple 保持字段边界且仍忽略数组顺序。
+    // Bugfix: title/connection error are arbitrary user-visible strings; stop gluing tuples with
+    // control characters, otherwise field values containing the separator could yield identical
+    // signatures across different snapshots. A JSON tuple keeps field boundaries and still
+    // ignores array order.
     return JSON.stringify([workspaceSignatureEntries, taskSignatureEntries]);
   }
 
@@ -899,10 +918,14 @@ export function createWebRemoteControlManager(dependencies: WebRemoteControlMana
       (workspace) => resolveWebRemoteControlWorkspaceKey(workspace) === request.workspaceKey,
     );
     if (!target) {
-      throw new Error("目标工作区不在当前桌面窗口中，无法创建 Web 远程控制 bridge。");
+      throw new Error(
+        "Target workspace is not in this desktop window; cannot create a web remote-control bridge.",
+      );
     }
     if (!isBridgeableRemoteTarget(target)) {
-      throw new Error("目标远程工作区尚未连接，无法创建 bridge，请先重连。");
+      throw new Error(
+        "Target remote workspace is not connected; reconnect before creating a bridge.",
+      );
     }
     const targetWorkspaceKey = resolveWebRemoteControlWorkspaceKey(target);
 
@@ -965,7 +988,8 @@ export function createWebRemoteControlManager(dependencies: WebRemoteControlMana
         },
       });
 
-      // Bugfix：raw adapter 是唯一 replay owner；main 不再把 rpc-frame 放进普通 50 项 buffer。
+      // Bugfix: the raw adapter is the only replay owner; main no longer puts rpc-frames into the
+      // ordinary 50-item buffer.
       const disposeHostToRelay = hostProtocol.onMessage((buffer) => {
         relayProtocol.protocol.send(buffer);
       });
@@ -1058,7 +1082,8 @@ export function createWebRemoteControlManager(dependencies: WebRemoteControlMana
         currentBridge?.bridgeSessionId === request.bridgeSessionId &&
         currentBridge.bridgeGeneration === request.bridgeGeneration
       ) {
-        // bridge-ready 必须先进入 ordinary app transport，才允许 queued raw frames 开闸。
+        // bridge-ready must enter the ordinary app transport before queued raw frames may open
+        // the gate.
         currentBridge.readyAnnounced = true;
         currentBridge.relayProtocol?.flushPendingFrames();
       }
@@ -1187,7 +1212,8 @@ export function createWebRemoteControlManager(dependencies: WebRemoteControlMana
         routeRpcTransportPayload(runtime, payload);
         break;
       case "telemetry-report":
-        // 手机已在创建边界构造事件；Main 只转发，不维护会话事实或干预 replayable 链路。
+        // The phone already built the event at the creation boundary; Main only forwards and keeps
+        // no session facts, nor intervenes in the replayable chain.
         dependencies.reportRendererTelemetryEvent?.(payload.event);
         break;
       case "mobile-diagnostic":
@@ -1206,8 +1232,9 @@ export function createWebRemoteControlManager(dependencies: WebRemoteControlMana
     runtime.transportState = state;
     if (state === "connecting" || state === "registering" || state === "authenticating") {
       if (runtime.mobileConnected) {
-        // Bugfix: 已配对会话的 relay 短抖会先经历 connecting/authenticating。
-        // 旧逻辑把 dialog 立刻切成“启动中”，用户会误以为远控重新启动；这里在宽限期内保持 active。
+        // Bugfix: a paired session's brief relay jitter passes through connecting/authenticating
+        // first. The old logic switched the dialog to "starting" immediately and made users think
+        // remote control restarted; keep active during the grace window.
         runtime.status = "active";
         scheduleMobileDisconnectGrace(runtime);
         emitRuntimeStatus(runtime);
@@ -1219,8 +1246,9 @@ export function createWebRemoteControlManager(dependencies: WebRemoteControlMana
     }
     if (state === "waiting_terminal") {
       if (runtime.mobileConnected) {
-        // Bugfix: 已配对会话恢复时 relay 可能短暂回 waiting。
-        // 旧逻辑会把 dialog 从 active 拉回“等待手机匹配”；这里先防抖，超时仍未 paired 再降级。
+        // Bugfix: when a paired session recovers, the relay may briefly return to waiting. The old
+        // logic pulled the dialog from active back to "waiting for phone match"; debounce first
+        // and downgrade only if still unpaired after the timeout.
         runtime.status = "active";
         scheduleMobileDisconnectGrace(runtime);
         emitRuntimeStatus(runtime);
@@ -1248,8 +1276,9 @@ export function createWebRemoteControlManager(dependencies: WebRemoteControlMana
       runtime.status = "active";
       runtime.mobileConnected = true;
       emitRuntimeStatus(runtime);
-      // Bugfix: 普通断线重连重新 paired 时 transport 不一定触发 onSendReady。
-      // 这里在状态恢复为可发送后主动 flush，避免重连窗口内缓冲的响应/RPC 帧超时丢弃。
+      // Bugfix: on ordinary reconnect, re-pairing does not necessarily fire onSendReady on the
+      // transport; flush actively once state returns to sendable so buffered response/RPC frames
+      // within the reconnect window are not dropped on timeout.
       flushPendingOutboundPayloads(runtime);
       return;
     }
@@ -1396,9 +1425,10 @@ export function createWebRemoteControlManager(dependencies: WebRemoteControlMana
             flushPendingOutboundPayloads(runtime);
             const relayProtocol = runtime.currentBridge?.relayProtocol;
             if (!relayProtocol || relayProtocol.isDegraded()) return;
-            // Bug 修复：relay 的 matched 只证明当前 peer 可发送，本地 WebSocket 未换代不代表
-            // 对端 peer 未换代，也不证明此前 data 已交付。必须重放同 bridge 的未 ACK 批次；
-            // adapter 会按 messageSeq 去重，且重放不刷新原始 45 秒 queued age。
+            // Bug fix: the relay's matched only proves the current peer is sendable; the local
+            // WebSocket not being regenerated does not mean the peer was not, nor that previous
+            // data was delivered. Must replay the same bridge's un-ACKed batches; the adapter
+            // dedups by messageSeq and replay does not refresh the original 45s queued age.
             relayProtocol.replayUnacknowledged();
           },
           onError: (error) => {
@@ -1491,8 +1521,9 @@ export function createWebRemoteControlManager(dependencies: WebRemoteControlMana
 
     async stop(windowId: number): Promise<void> {
       clearStartAuthorizationsForWindow(windowId);
-      // Bugfix: 清除自动恢复设置需要写磁盘，失败时不能阻止用户关闭当前远控连接。
-      // 先释放 transport 和 attachment，再把持久化错误返回 UI，保证本次运行立即停止。
+      // Bugfix: clearing auto-resume settings writes to disk; on failure the user must still be
+      // able to close the current remote-control connection. Release transport and attachment
+      // first, then surface the persistence error to the UI, guaranteeing this run stops now.
       await stopWindowRuntime(windowId, "manual-stop");
       await dependencies.startupRestoreStorageProvider.clear();
     },
@@ -1549,12 +1580,15 @@ export function createWebRemoteControlManager(dependencies: WebRemoteControlMana
       windowId: number,
       context: WebRemoteControlContext,
     ): Promise<WebRemoteControlStartResult> {
-      // Bugfix: refresh 入口和 start 一样受功能开关保护。
-      // 之前 gate 校验藏在后续 start 里，feature disabled 时会先清掉本地配对材料再抛错。
-      // 这里前置校验，避免禁用态 IPC 产生破坏性副作用。
+      // Bugfix: the refresh entry is guarded by the feature flag exactly like start. The gate
+      // check used to hide inside the later start, so with the feature disabled it would clear
+      // local pairing material first and only then throw. Validate up front so the disabled-state
+      // IPC has no destructive side effects.
       dependencies.featureGate.assertEnabled();
-      // Bugfix: 二维码 URL 里携带的 sid/hash 泄露后，重启当前 runtime 仍会复用持久化配对材料。
-      // 这里必须先关闭旧连接并清掉本地 relay auth，再重新注册设备，确保旧 URL 不再代表当前桌面端会话。
+      // Bugfix: if the sid/hash carried in the QR URL leaks, restarting the runtime would still
+      // reuse persisted pairing material. Close the old connection and clear local relay auth
+      // before re-registering the device, ensuring the old URL no longer represents this
+      // desktop session.
       await stopWindowRuntime(windowId, "leaked-qr");
       await resetExternalRelayDeviceAuth(
         dependencies.authStorageProvider,
@@ -1631,8 +1665,10 @@ export function createWebRemoteControlManager(dependencies: WebRemoteControlMana
           continue;
         }
 
-        // Bugfix: 远程 workspace session 只是某个 workspace/bridge 的依赖，不能把它的断开升级成
-        // 窗口级 Web 远控 device WS 失败；否则单个远端空闲退出会错误关闭电脑端全局远控入口。
+        // Bugfix: a remote workspace session is merely a dependency of some workspace/bridge; its
+        // disconnect must not be escalated to a window-level web remote-control device WS
+        // failure, or a single remote idle-exit would wrongly close the desktop's global
+        // remote-control entry.
         if (bridgeUsesRemoteSession) {
           disposeRuntimeBridgeResources(runtime);
           sendAppPayload(runtime, {

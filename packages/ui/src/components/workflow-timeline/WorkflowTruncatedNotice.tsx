@@ -3,15 +3,16 @@ import { cn } from "@/components/lib/utils.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 
 /**
- * 「仅展示 {shown}/{total} 步的详情」（docs/dynamic-workflow/presentation.md「The run card」
- * 与「The run pane」）：run 撞过 `WORKFLOW_RUNS_LIMITS.maxNodes` 之后，实例表停在界上，而它
- * 上面那些数（步数、结算数）已经把表外的算进来了。这一行说的正是这个差额——**没停的是 run，
- * 停的是每一步的详情**。
+ * Showing details for {shown}/{total} steps (docs/dynamic-workflow/presentation.md "The run card" and
+ * "The run pane"): once a run brushes `WORKFLOW_RUNS_LIMITS.maxNodes` the instance table stops at the
+ * UI, while the counts above it (steps, settled) already include the off-table ones. This line names
+ * exactly that gap — the run did not stop; the per-step details did.
  *
- * 卡与详情页共用一个实现：同一条 run 在两个面上必须说同一句话。
+ * Card and detail page share one implementation: the same run must say the same thing on both surfaces.
  *
- * 只在真有实例被拒之表外时出现。`truncated` 本身还会被 reports / artifacts / phases 等小表
- * 触界置位（workflow-runs.ts），那时步数一个不少，再念一句「仅展示 40/40 步」是句废话。
+ * Appears only when instances were truly turned away. `truncated` also gets set by smaller tables
+ * brushing their limits (reports / artifacts / phases, workflow-runs.ts); there not a step is missing
+ * and a showing-40-of-40 line would be noise.
  */
 export function WorkflowTruncatedNotice({
   className,
@@ -19,7 +20,7 @@ export function WorkflowTruncatedNotice({
   testId,
 }: {
   className?: string;
-  /** 活投影里的这条 run；缺席（run 已被淘汰出投影）即无从谈起。 */
+  /** The run in the live projection; absent (culled from it) means nothing to say. */
   run: WorkflowRunState | undefined;
   testId: string;
 }) {
@@ -33,8 +34,8 @@ export function WorkflowTruncatedNotice({
       className={cn("min-w-0 text-ui-xs text-foreground-subtlest", className)}
       data-testid={testId}
     >
-      {/* 两个数不加千分位：紧挨着的摘要行那一段（`{done}/{total} steps`）就是裸数字，
-          同一块里一个「2,001」一个「2001」比多一个分隔符更刺眼。 */}
+      {/* No thousands separators: the adjacent summary segment (`{done}/{total} steps`) is bare numbers,
+          and one 2,001 next to one 2001 in the same block jars more than a missing separator. */}
       {intl.formatMessage({ id: "chat.toolCall.workflow.run.truncated" }, { shown, total })}
     </p>
   );

@@ -1,4 +1,4 @@
-// 递归类型 → $defs/$ref：直接自引用与通过成员间接自引用。
+// Recursive types -> $defs/$ref: direct and member-mediated self references.
 interface TreeNode {
   value: number;
   children: TreeNode[];

@@ -18,7 +18,7 @@ export interface ModelRequestSecurityPort extends ModelRequestObservationSource 
   }): typeof globalThis.fetch;
 }
 
-/** 进程只共享可复用资源，每个模型执行器仍持有独立的请求状态。 */
+/** The process shares reusable resources only; each model executor keeps its own request state. */
 export interface ModelRequestSecurityState {
   createExecution(options: { logger?: Logger }): ModelRequestSecurityPort;
 }

@@ -1,13 +1,13 @@
 actor-node source
 actor-node workspace
-actor-node actor#1 "architect" @43:19
-actor-node actor#2 "harness" @48:17
-actor-node actor#3 @52:23 family=fan-out#1
-actor-node actor#4 "fixer" @57:15
-actor-node actor#5 "jury-a" @79:15
-actor-node actor#6 "jury-b" @80:15
-actor-node actor#7 "jury-c" @81:15
-actor-node actor#8 "polisher" @82:18
+actor-node actor#1 "architect" @44:19
+actor-node actor#2 "harness" @49:17
+actor-node actor#3 @53:23 family=fan-out#1
+actor-node actor#4 "fixer" @58:15
+actor-node actor#5 "jury-a" @84:15
+actor-node actor#6 "jury-b" @85:15
+actor-node actor#7 "jury-c" @86:15
+actor-node actor#8 "polisher" @87:18
 actor-node sink
 actor-edge source -> actor#1 exact count=1
 actor-edge source -> actor#2 exact count=1

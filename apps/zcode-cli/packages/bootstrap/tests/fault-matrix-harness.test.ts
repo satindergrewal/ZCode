@@ -33,62 +33,54 @@ describe("fault matrix harness — 脚本形状", () => {
 });
 
 describe("fault matrix harness — B1 healthy @ W2", () => {
-  it(
-    "driver 级：completed，请求数 = 逻辑请求数，闸门与时钟接上",
-    async () => {
-      const server = await startFakeProviderServer({ program: healthy() });
-      try {
-        const cell = await runFaultCell({
-          server,
-          shape: "W2",
-          apiFormat: "anthropic-messages",
-        });
-        await pause(200);
-        assertCommonInvariants(cell, { status: "completed", server });
-        expect(cell.logicalRequests).toBe(2 * (FAULT_CELL_TURNS + 1));
-        expect(server.requests.length).toBe(cell.logicalRequests);
-        expect(statusCount(cell.statusEvents, "model_request_completed")).toBe(cell.logicalRequests);
-        expect(statusCount(cell.statusEvents, "model_request_failed")).toBe(0);
-        // 闸门真的在管事：governor 见过这个 key（桶已建）。
-        expect(cell.governor.snapshot(cell.key)).toBeDefined();
-        expect(cell.governor.snapshot(cell.key)?.inFlight).toBe(0);
-      } finally {
-        await server.close();
-      }
-    },
-    30_000,
-  );
+  it("driver 级：completed，请求数 = 逻辑请求数，闸门与时钟接上", async () => {
+    const server = await startFakeProviderServer({ program: healthy() });
+    try {
+      const cell = await runFaultCell({
+        server,
+        shape: "W2",
+        apiFormat: "anthropic-messages",
+      });
+      await pause(200);
+      assertCommonInvariants(cell, { status: "completed", server });
+      expect(cell.logicalRequests).toBe(2 * (FAULT_CELL_TURNS + 1));
+      expect(server.requests.length).toBe(cell.logicalRequests);
+      expect(statusCount(cell.statusEvents, "model_request_completed")).toBe(cell.logicalRequests);
+      expect(statusCount(cell.statusEvents, "model_request_failed")).toBe(0);
+      // 闸门真的在管事：governor 见过这个 key（桶已建）。
+      expect(cell.governor.snapshot(cell.key)).toBeDefined();
+      expect(cell.governor.snapshot(cell.key)?.inFlight).toBe(0);
+    } finally {
+      await server.close();
+    }
+  }, 30_000);
 
-  it(
-    "run service 级：同一格走真 submit / waitForTask，观察面同形",
-    async () => {
-      const server = await startFakeProviderServer({ program: healthy() });
-      const harness = createFaultServiceHarness({ server, apiFormat: "anthropic-messages" });
-      try {
-        const runId = await harness.submit("W2");
-        const snapshot = await harness.settle(runId);
-        await pause(200);
-        expect(snapshot?.status).toBe("completed");
-        const settledAt = harness.settledAt(runId);
-        expect(settledAt).toBeDefined();
-        assertCommonInvariants(
-          {
-            runId,
-            settlement: { status: "completed", artifact: undefined },
-            events: harness.eventsOf(runId),
-            statusEvents: harness.statusEvents,
-            journal: harness.journal,
-            settledAt: settledAt!,
-          },
-          { status: "completed", server },
-        );
-        expect(server.requests.length).toBe(2 * (FAULT_CELL_TURNS + 1));
-        expect(harness.eventsOf(runId).some((event) => event.type === "run-settled")).toBe(true);
-      } finally {
-        await harness.dispose();
-        await server.close();
-      }
-    },
-    30_000,
-  );
+  it("run service 级：同一格走真 submit / waitForTask，观察面同形", async () => {
+    const server = await startFakeProviderServer({ program: healthy() });
+    const harness = createFaultServiceHarness({ server, apiFormat: "anthropic-messages" });
+    try {
+      const runId = await harness.submit("W2");
+      const snapshot = await harness.settle(runId);
+      await pause(200);
+      expect(snapshot?.status).toBe("completed");
+      const settledAt = harness.settledAt(runId);
+      expect(settledAt).toBeDefined();
+      assertCommonInvariants(
+        {
+          runId,
+          settlement: { status: "completed", artifact: undefined },
+          events: harness.eventsOf(runId),
+          statusEvents: harness.statusEvents,
+          journal: harness.journal,
+          settledAt: settledAt!,
+        },
+        { status: "completed", server },
+      );
+      expect(server.requests.length).toBe(2 * (FAULT_CELL_TURNS + 1));
+      expect(harness.eventsOf(runId).some((event) => event.type === "run-settled")).toBe(true);
+    } finally {
+      await harness.dispose();
+      await server.close();
+    }
+  }, 30_000);
 });

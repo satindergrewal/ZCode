@@ -10,7 +10,7 @@ function normalizePath(value: string): string {
 }
 
 describe("browser-client bundle boundary", () => {
-  it("只打包 Browser runtime，不带入 Agent Core", async () => {
+  it("bundles only the Browser runtime, with no Agent Core pulled in", async () => {
     const result = await build({
       absWorkingDir: packageRoot,
       bundle: true,
@@ -38,7 +38,8 @@ describe("browser-client bundle boundary", () => {
       expect.stringMatching(/contracts\/dist\/interfaces\/browser-control\.port\.js$/u),
     ]);
 
-    // Bug 原因：根 barrel 中的顶层注册有副作用，tree-shaking 无法去掉这些业务模块。
+    // Root cause: top-level registration in the root barrel has side effects, so tree-shaking
+    // cannot drop those business modules.
     expect(inputs).not.toEqual(
       expect.arrayContaining([
         expect.stringMatching(/(?:^|\/)core\/dist\/(?:agent|runtime|subagent|tool|workflow)\//u),

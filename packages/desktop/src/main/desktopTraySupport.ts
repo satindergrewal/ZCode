@@ -1,18 +1,19 @@
 import { execFile } from "node:child_process";
 
 /**
- * Linux 关闭驻留托盘能力检测（spec：docs/desktop/linux-close-to-tray.md）。
+ * Linux close-to-tray capability detection (spec: docs/desktop/linux-close-to-tray.md).
  *
- * 能力信号是 session DBus 上 org.kde.StatusNotifierWatcher 是否有 owner：
- * KDE/XFCE 原生提供；GNOME 默认移除了托盘，需用户安装 AppIndicator 类扩展。
- * Electron 的 new Tray() 在无 host 的 GNOME 上创建成功但不渲染、不报错（静默失败），
- * 因此驻留开关不能依赖托盘是否创建成功，必须显式探测该 DBus name。
+ * The capability signal is whether org.kde.StatusNotifierWatcher has an owner on the session bus:
+ * KDE/XFCE provide it natively; GNOME removed tray support by default and needs an
+ * AppIndicator-style extension. Electron's new Tray() on hostless GNOME succeeds without
+ * rendering or erroring (silent failure), so the toggle must not trust tray creation and must
+ * probe this DBus name.
  */
 
 export interface DesktopCloseToTrayCapability {
-  /** 关闭驻留托盘是否可用 */
+  /** Whether close-to-tray is available. */
   supported: boolean;
-  /** 是否为 GNOME 系桌面且无托盘；仅用于设置页置灰文案追加扩展安装提示 */
+  /** GNOME-family desktop without a tray; only appends the install-extension hint to settings copy. */
   gnomeLikeWithoutTray: boolean;
 }
 
@@ -35,7 +36,7 @@ const defaultExecutor: TraySupportCommandExecutor = (command, args, timeoutMs) =
     });
   });
 
-/** 依次尝试的探测工具：gdbus（GNOME 系标配）→ busctl（systemd 系标配）→ qdbus（QT 系） */
+/** Probe tools in order: gdbus (GNOME stock) -> busctl (systemd stock) -> qdbus (Qt). */
 const probeCommands: ReadonlyArray<{ command: string; args: string[] }> = [
   {
     command: "gdbus",
@@ -76,13 +77,13 @@ const probeCommands: ReadonlyArray<{ command: string; args: string[] }> = [
 ];
 
 /**
- * 解析三种工具的 NameHasOwner 输出：
- * gdbus `(true,)` / busctl `b "true"` / qdbus `true`。无法识别返回 null。
+ * Parse NameHasOwner output from the three tools:
+ * gdbus `(true,)` / busctl `b "true"` / qdbus `true`. Unrecognized shapes return null.
  */
 export function parseStatusNotifierOwnerOutput(stdout: string): boolean | null {
   const text = stdout.trim();
-  // busctl 的布尔输出是不带引号的 `b true` / `b false`（字符串类型才带引号）；
-  // 带引号变体一并接受，回退链路必须对实际工具输出保持兼容（CR-01）。
+  // busctl prints booleans unquoted (`b true` / `b false`; only strings get quotes); accept the
+  // quoted variant too - the fallback chain must tolerate real tool output (CR-01).
   if (/^\(true,?\)$/.test(text) || /^b\s+"?true"?$/.test(text) || text === "true") {
     return true;
   }
@@ -92,7 +93,7 @@ export function parseStatusNotifierOwnerOutput(stdout: string): boolean | null {
   return null;
 }
 
-/** XDG_CURRENT_DESKTOP 含 gnome（不区分大小写）视为 GNOME 系桌面 */
+/** XDG_CURRENT_DESKTOP containing gnome (case-insensitive) means a GNOME-family desktop. */
 export function isGnomeLikeDesktop(env: NodeJS.ProcessEnv): boolean {
   const desktop = env.XDG_CURRENT_DESKTOP ?? env.XDG_SESSION_DESKTOP ?? "";
   return desktop.toLowerCase().split(/[:;]/).includes("gnome");
@@ -109,11 +110,11 @@ export async function detectDesktopCloseToTrayCapability(options: {
   const env = options.env ?? process.env;
 
   if (options.platform !== "linux") {
-    // Windows 托盘始终可用；macOS 不使用托盘（关窗语义由系统 Dock 模型承担）。
+    // Windows trays are always available; macOS does not use trays (the Dock model owns close semantics).
     return { supported: true, gnomeLikeWithoutTray: false };
   }
 
-  // 任一工具给出明确结果即返回；全部失败按"不可用"处理（安全默认，绝不失联）。
+  // Return on the first conclusive tool result; total failure means "unavailable" (safe default, never strands the user).
   for (const probe of probeCommands) {
     try {
       const { stdout } = await execute(probe.command, probe.args, timeoutMs);
@@ -122,15 +123,16 @@ export async function detectDesktopCloseToTrayCapability(options: {
         return { supported: hasOwner, gnomeLikeWithoutTray: !hasOwner && isGnomeLikeDesktop(env) };
       }
     } catch {
-      // 工具缺失/执行失败/超时：尝试下一个
+      // Missing tool / failure / timeout: try the next.
     }
   }
   return { supported: false, gnomeLikeWithoutTray: isGnomeLikeDesktop(env) };
 }
 
 /**
- * 关窗分支是同步回调，不能 await 探测；main 进程用本 monitor 维护同步缓存。
- * 刷新时机：app ready 后首次探测、设置页 IPC 查询（stale 则重探）。
+ * The window-close branch is a synchronous callback and cannot await a probe; this monitor keeps
+ * the synchronous cache in main. Refresh points: first probe after app ready, settings IPC query
+ * (re-probe when stale).
  */
 export function createCloseToTrayCapabilityMonitor(options: {
   platform: NodeJS.Platform;
@@ -155,7 +157,7 @@ export function createCloseToTrayCapabilityMonitor(options: {
     });
 
   return {
-    /** 同步缓存；启动后首次探测完成前为 null（调用方按"不可用"安全默认处理） */
+    /** Sync cache; null until the first post-startup probe (callers default safely to "unavailable"). */
     getSync(): DesktopCloseToTrayCapability | null {
       return cached;
     },
@@ -180,13 +182,14 @@ export function createCloseToTrayCapabilityMonitor(options: {
 export type CloseToTrayCapabilityMonitor = ReturnType<typeof createCloseToTrayCapabilityMonitor>;
 
 /**
- * 关窗可隐藏能力的最终裁决（CR-01）：DBus watcher 存在只证明"桌面可能有托盘 host"，
- * 不能证明 Electron Tray 实例创建成功（图标缺失、会话未就绪等会让 new Tray() 抛错）。
- * 隐藏窗口前必须验证最终用户入口真实存在，否则违反 spec"不会隐藏后失联"的承诺。
- * - Windows：托盘实例创建成功即可（无 DBus 概念）
- * - Linux：托盘实例创建成功 ∧ DBus 能力探测通过（创建的前提即探测通过，双条件兜底
- *   watcher 中途下线的极端场景）
- * - 其它平台：不可隐藏（darwin 走系统默认，不进此分支）
+ * Final can-hide verdict for the close branch (CR-01): a DBus watcher only proves the desktop
+ * might have a tray host, not that the Electron Tray instance was created (missing icons or an
+ * unready session make new Tray() throw). The final user entry point must be verified before
+ * hiding, per the spec's no-stranding promise.
+ * - Windows: tray instance created (no DBus concept).
+ * - Linux: tray instance created AND DBus probe passed (creation implies the probe; the
+ *   conjunction guards the watcher disappearing mid-session).
+ * - Other platforms: cannot hide (darwin uses system behavior and never reaches here).
  */
 export function resolveCloseToTraySupported(input: {
   platform: NodeJS.Platform;
@@ -203,9 +206,10 @@ export function resolveCloseToTraySupported(input: {
 }
 
 /**
- * Linux 默认值归位（spec：设置项一节）。
- * shared 的 migrateCloseToTrayOnWindowsDefault 无平台概念，存量 Linux 用户已被归位为 true；
- * 但 Linux 此前没有设置入口，存量 true 不可能是用户显式选择，首次启动强制归位为默认关。
+ * Linux default normalization (spec: settings section). The shared
+ * migrateCloseToTrayOnWindowsDefault has no platform concept and already marked legacy Linux
+ * users true; Linux had no settings entry before, so legacy true cannot be a user choice - force
+ * default-off on first launch.
  */
 export function resolveCloseToTrayBootstrapValue(input: {
   platform: NodeJS.Platform;
@@ -222,10 +226,11 @@ export function resolveCloseToTrayBootstrapValue(input: {
 }
 
 /**
- * 迁移持久化失败后的运行时值裁决（CR-02）：持久层不可写（磁盘满/只读等）时，
- * 内存值回退为持久化文件的当前值，维持"文件是唯一可信来源"——否则 main 按 false
- * 处理而设置页读到文件里的 true，重新形成双数据源。迁移在下次启动重试；
- * 失败期间 Linux 用户保持旧行为（迁移未完成态），可接受。
+ * Post-failure runtime verdict (CR-02): when the persistence layer is unwritable (full/read-only
+ * disk), the in-memory value reverts to the persisted file's current value, keeping "the file is
+ * the single source of truth" - otherwise main treats false while settings reads true from the
+ * file, recreating dual sources. Migration retries next launch; until then Linux keeps the old
+ * (unmigrated) behavior, acceptable.
  */
 export function resolveCloseToTrayRuntimeValue(input: {
   platform: NodeJS.Platform;

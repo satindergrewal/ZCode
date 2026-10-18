@@ -92,11 +92,7 @@ describe("ToolScheduler", () => {
 
       const schedule = scheduler.schedule(tools);
 
-      expect(schedule.parallelGroups).toEqual([
-        ["tool_read_1"],
-        ["tool_write"],
-        ["tool_read_2"],
-      ]);
+      expect(schedule.parallelGroups).toEqual([["tool_read_1"], ["tool_write"], ["tool_read_2"]]);
       expect(schedule.items.map((item) => item.canRunParallel)).toEqual([true, false, true]);
     });
 

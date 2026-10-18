@@ -7,9 +7,9 @@ export const ZCODE_AGENT_PROVIDER_LABEL = "ZCode Agent";
 export const ZCODE_COMMAND_AGENT_SOURCE = "zcodeAgent" satisfies CommandAgentSource;
 
 /**
- * 解析持久化/relay 数据时的 provider 归一 schema：
- * 已移除的第三方 provider 历史值仅作为归一化输入保留，统一收敛为 glm；
- * 其它非法值保持拒绝，与收窄前的校验边界一致。
+ * Provider normalization schema for persisted/relay data:
+ * historical values of removed third-party providers stay valid normalization input and converge on glm;
+ * any other invalid value still rejects, matching the pre-narrowing validation boundary.
  */
 export const legacyZCodeProviderSchema = z
   .enum(["claude", "opencode", "gemini", "codex", "glm"])

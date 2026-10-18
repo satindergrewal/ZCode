@@ -1,5 +1,5 @@
-/* oxlint-disable eslint(max-lines) -- final payload 的归一化、关系验证和结构化 diff 必须共享同一字段表，拆文件会让白名单与 invariant 漂移。 */
-// 纯数据比较器：可由 Vitest、WDIO 或独立 Node runner 复用，不依赖测试框架全局变量。
+/* oxlint-disable eslint(max-lines) -- final-payload normalization, relation checks and the structured diff must share one field table; splitting the file lets whitelists and invariants drift. */
+// Pure data comparator: reusable from Vitest, WDIO or a standalone Node runner, with no test-framework globals.
 
 export const CONVERSATION_TELEMETRY_DIFF_CATEGORIES = [
   "MISSING_EVENT",
@@ -19,9 +19,10 @@ const CATEGORY_ORDER = new Map(
 
 const MISSING_VALUE = Symbol("conversation-telemetry-missing");
 
-// event_id/event_key 只标识单次上报，没有任何下游字段会引用它们。旧版并发执行
-// reportEvent 时，不同事件拿到 ID 和完成 fetch 的顺序并不稳定，因此这里只保留字段与类型，
-// 不给单次事件 ID 建立跨事件关系；真正需要验证关联的 request/message/session 等仍使用稳定 alias。
+// event_id/event_key identify a single report only; no downstream field references them. With
+// legacy concurrent reportEvent, the order of ID assignment and fetch completion is unstable, so
+// only fields and types are kept and no cross-event relations are built on single-event IDs;
+// relations that matter (request/message/session) still use stable aliases.
 const NON_RELATIONAL_EVENT_ID_KEYS = new Set(["event_id", "eventId", "event_key", "eventKey"]);
 
 const ID_KIND_BY_KEY = new Map([
@@ -69,7 +70,7 @@ const ID_KIND_BY_KEY = new Map([
   ["turnId", "turn"],
   ["product_turn_id", "turn"],
   ["productTurnId", "turn"],
-  // agent_step 的 step_id 是 renderer 生成的 turn 内不透明标识，也必须跨旧版/V4 归一。
+  // agent_step's step_id is a renderer-generated opaque per-turn id; normalize it across legacy/V4 too.
   ["step_id", "turn"],
   ["stepId", "turn"],
 ]);
@@ -157,9 +158,10 @@ function normalizeDynamicScalar(key, value, context) {
     (key === "metric_value" || key === "value");
   const isArmsTimingValue =
     key === "value" && context.channel === "arms" && TIMING_ARMS_EVENTS.has(context.eventName);
-  // 旧版 reasoning 的开始/结束由两条异步 renderer 回调分别取 Date.now()。即使 SSE fixture
-  // 留出了稳定间隔，事件循环仍可能把它们压到同一毫秒，因此这里只比较非负性；generation、
-  // tool 等 step 的历史固定零值仍按原值严格比较，避免把真正的口径变化归一掉。
+  // Legacy reasoning start/end come from two async renderer callbacks calling Date.now()
+  // independently. Even with a stable SSE-fixture gap, the event loop can compress them into the
+  // same millisecond, so only non-negativity is compared; historical fixed zeros for generation/
+  // tool steps still compare strictly, keeping real semantic changes visible.
   const isReasoningStepDuration =
     context.channel === "report" &&
     context.eventName === "agent_step" &&
@@ -224,7 +226,7 @@ function normalizeValue(value, key, aliases, context) {
 }
 
 /**
- * 每次调用使用独立 alias registry；同一次 capture 的 report/ARMS 共享关联表。
+ * Each call gets a fresh alias registry; the same capture's report/ARMS share one relation table.
  * @param {{ report: readonly unknown[]; arms: readonly unknown[] }} capture
  * @returns {{ report: unknown[]; arms: unknown[] }}
  */
@@ -365,9 +367,9 @@ function compareChannel(channel, expected, actual, differences) {
 }
 
 /**
- * 旧版同一个 terminal 会 fire-and-forget 两次异步 reportEvent；agent_step 与
- * message_completion 谁先完成网络请求不是统计口径。比较时按事件名配对，但同一事件名内部仍
- * 保留业务阶段顺序，例如 plan_request 的 started 必须先于 completed。
+ * The legacy terminal fire-and-forgets the same event twice asynchronously; which of agent_step
+ * /message_completion finishes its network request first is not a statistic. Pair by event name,
+ * but preserve business-phase order inside one name (plan_request started before completed).
  * @param {readonly unknown[]} events
  * @param {"report" | "arms"} channel
  */
@@ -506,7 +508,8 @@ function compareValue(expected, actual, path, channel, eventIndex, differences, 
 }
 
 /**
- * duration 的墙钟值可以因 Electron/CI 调度不同而变化，但每份 capture 内的旧公式必须成立。
+ * duration wall-clock values vary with Electron/CI scheduling, but the legacy formula must hold
+ * within each capture.
  * @param {{ report: readonly unknown[]; arms: readonly unknown[] }} capture
  */
 function collectTimingInvariantIssues(capture) {
@@ -553,9 +556,7 @@ function collectTimingInvariantIssues(capture) {
       const post = numericValue(detail.post_compact_tokens);
       const truePost = numericValue(detail.true_post_compact_tokens);
       const ratio = numericValue(detail.compact_ratio);
-      if (
-        [pre, post, truePost].some((value) => value !== null && value < 0)
-      ) {
+      if ([pre, post, truePost].some((value) => value !== null && value < 0)) {
         issues.report.push(`report[${index}] compaction token watermarks>=0`);
       }
       if (

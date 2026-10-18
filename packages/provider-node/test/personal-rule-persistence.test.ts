@@ -53,8 +53,8 @@ function service(
   });
 }
 
-describe("Todo104 个人规则原子落盘", () => {
-  it("Todo130：新手动规则实际写盘、重开、独立启停均不补隐藏系统叶子", async () => {
+describe("Todo104 personal rule atomic persistence", () => {
+  it("Todo130: fresh manual rules survive write/reopen/independent toggles without hidden system leaves added", async () => {
     const manual = {
       properties: {
         contextWindow: 1234,
@@ -97,7 +97,7 @@ describe("Todo104 个人规则原子落盘", () => {
       configService.dispose();
     }
   });
-  it("写入返回的快照与后续读取版本一致，外层对象字段顺序不制造第二次变更", async () => {
+  it("returns a snapshot whose later reads match version-for-version; outer key order never counts as a second change", async () => {
     const personal = repository();
     const saved = await personal.update(() => ({
       providers: new ProviderConfigMap([
@@ -115,7 +115,7 @@ describe("Todo104 个人规则原子落盘", () => {
     expect((await personal.read()).revision).toBe(saved.revision);
     expect(await readFile(path, "utf8")).toBe(raw);
   });
-  it("两个真实 Node 进程同时写 Provider 与默认选择，完整保留双方所有更新", async () => {
+  it("keeps both processes' updates when two real Node processes write provider and default selection concurrently", async () => {
     const personal = repository();
     await personal.read();
     const script = fileURLToPath(new URL("./fixtures/personal-config-writer.ts", import.meta.url));
@@ -139,7 +139,7 @@ describe("Todo104 个人规则原子落盘", () => {
         );
       });
     });
-    // 从创建时就观察失败；子进程启动异常不能成为未处理的 rejection。
+    // Observe failures from creation on; a child start crash must never become an unhandled rejection.
     const completed = Promise.all(outcomes);
     void completed.catch(() => undefined);
     try {
@@ -171,7 +171,7 @@ describe("Todo104 个人规则原子落盘", () => {
       await Promise.allSettled(outcomes);
     }
   }, 20_000);
-  it("默认选择适配器复用同一个 Personal Repository 的读写与通知，不拥有第二个文件或 watcher", async () => {
+  it("reuses one Personal Repository for default-selection reads, writes and notifications with no second file or watcher", async () => {
     const personal = repository();
     const source = new NodeModelSelectionConfigRepository({ personalRepository: personal });
     const changed = vi.fn();
@@ -194,7 +194,7 @@ describe("Todo104 个人规则原子落盘", () => {
     expect(changed).toHaveBeenCalledTimes(count);
     expect((await personal.read()).defaultModelSelection).toEqual(defaults);
   });
-  it("新外壳保留默认选择，Provider 修改与另一 Repository 设置默认并发不互相覆盖", async () => {
+  it("preserves defaults across envelope bumps while provider edits and another Repository's default set never clobber each other", async () => {
     const a = repository(),
       b = repository();
     await a.update((current) => ({ ...current, defaultModelSelection: defaults }));
@@ -219,7 +219,7 @@ describe("Todo104 个人规则原子落盘", () => {
     config.dispose();
   });
 
-  it("创建名称在同一文件锁内用当前语言去重，重读不会随模板改名", async () => {
+  it("dedupes created names by current locale under the file lock; rereads never follow template renames", async () => {
     const templates = parseProviderTemplateMap([
       { templateId: "t", templateNameMap: { "zh-CN": "模板", "en-US": "Template" }, config: {} },
     ]);
@@ -255,7 +255,7 @@ describe("Todo104 个人规则原子落盘", () => {
     fresh.dispose();
   });
 
-  it("不完整手动规则读取失败保留原始文件，不生成智能规则，也不覆盖合法默认", async () => {
+  it("keeps the original file when an incomplete manual rule fails to parse, minting no smart rules and clobbering no valid default", async () => {
     const filePath = join(directory, "provider_config.json");
     const bad = JSON.stringify({
       schemaVersion: 1,
@@ -284,7 +284,7 @@ describe("Todo104 个人规则原子落盘", () => {
     expect(await readFile(filePath, "utf8")).toBe(bad);
   });
 
-  it("最终文件缺默认代表已清除，不重新执行旧数据导入；全量替换可以清掉默认", async () => {
+  it("treats a missing default in the final file as cleared, never re-running legacy import; full replaces may clear it", async () => {
     const filePath = join(directory, "provider_config.json");
     const empty = { providers: ProviderConfigMap.empty(), models: ModelConfigRules.empty() };
     await writeFile(filePath, JSON.stringify(encodeProviderConfigFile(empty)));

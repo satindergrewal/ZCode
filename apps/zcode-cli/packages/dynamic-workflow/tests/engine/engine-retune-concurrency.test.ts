@@ -1,10 +1,7 @@
 /**
- * 就地改本 run 自己的并发上界（`engine.setMaxConcurrency`，docs/dynamic-workflow/concurrency.md
- * 「Two bounds on a run」）。这里测的是**第一条界**：调度器的在飞 ask 上界，单位是子代理。
- * 进程级共享 cap（单位是模型请求）住在 driver 之下，与本文件无关。
+ * Retuning this run's own concurrency bound in place (engine.setMaxConcurrency; docs/dynamic-workflow/
  *
- * 与 engine-concurrency-observations.test.ts 同一套 fixture 姿态，单独成文件：那份测的是
- * 引擎只 record 的三个观察，这份测的是引擎唯一的一条并发**命令**。
+ * Same fixture posture as engine-concurrency-observations.test.ts, separate file: that one covers the three
  */
 
 import { describe, expect, it } from "vitest";
@@ -38,8 +35,7 @@ function setup(caps: Caps, journal = new InMemoryJournalStore()) {
 }
 
 /**
- * 每个 actor 一个 ask：调度器串行同一个 actor，所以「还能不能再派发一个」只由并发上界决定。
- * 返回每个 ask 的 promise（按站点序）。
+ * One ask per actor: the scheduler serializes per actor, so can-one-more-dispatch is the bound alone.
  */
 function askEachOnItsOwnActor(engine: WorkflowEngine, count: number): Array<Promise<unknown>> {
   return SITES.slice(0, count).map((siteId, i) => {
@@ -51,8 +47,8 @@ function askEachOnItsOwnActor(engine: WorkflowEngine, count: number): Array<Prom
 const capsEvents = (driver: FakeDriver): Array<Extract<RunEvent, { type: "run-caps-changed" }>> =>
   driver.eventsOfType("run-caps-changed");
 
-describe("WorkflowEngine — setMaxConcurrency（就地改本 run 的并发上界）", () => {
-  it("调低：不再派发新 ask，在飞的照常跑完", async () => {
+describe("WorkflowEngine -- setMaxConcurrency (in-place bound retune)", () => {
+  it("lowering stops new dispatches while in-flight asks finish", async () => {
     const { engine, driver } = setup({ maxConcurrency: 2 });
     const [p1, p2, p3] = askEachOnItsOwnActor(engine, 3);
     await flush();
@@ -60,17 +56,17 @@ describe("WorkflowEngine — setMaxConcurrency（就地改本 run 的并发上�
 
     expect(engine.setMaxConcurrency(1)).toBe(true);
     await flush();
-    // 调低不会把已派发的 ask 召回，也不会凭空多派一个。
+    // Lowering recalls nothing dispatched and conjures no extra dispatch.
     expect(driver.startAskCount()).toBe(2);
     expect(driver.cancels).toEqual([]);
 
-    // 一个在飞 ask 结算后仍有 1 个在飞 ⇒ 队列里的第三个 ask 不得放行。
+    // One ask still in flight after another settles -> the queued third may not be released.
     engine.askTurnEnded(inst("ask#1"), "R1");
     await expect(p1).resolves.toBe("R1");
     await flush();
     expect(driver.startAskCount()).toBe(2);
 
-    // 降到 0 个在飞才轮到它。
+    // It waits for zero in flight.
     engine.askTurnEnded(inst("ask#2"), "R2");
     await expect(p2).resolves.toBe("R2");
     await flush();
@@ -79,7 +75,7 @@ describe("WorkflowEngine — setMaxConcurrency（就地改本 run 的并发上�
     await expect(p3).resolves.toBe("R3");
   });
 
-  it("抬高：排队中的 ask 立刻派发，不必等下一次结算", async () => {
+  it("raising dispatches queued asks immediately, no settlement needed", async () => {
     const { engine, driver } = setup({ maxConcurrency: 1 });
     const asks = askEachOnItsOwnActor(engine, 3);
     await flush();
@@ -93,7 +89,7 @@ describe("WorkflowEngine — setMaxConcurrency（就地改本 run 的并发上�
     await expect(Promise.all(asks)).resolves.toEqual(["R1", "R2", "R3"]);
   });
 
-  it("记一条事件，带改前改后的两份 caps，并把新值写进 journal 行", () => {
+  it("emits one event with before/after caps and writes the new value into the journal row", () => {
     const { engine, driver, journal } = setup({ maxConcurrency: 8 });
     expect(engine.setMaxConcurrency(2)).toBe(true);
 
@@ -106,17 +102,17 @@ describe("WorkflowEngine — setMaxConcurrency（就地改本 run 的并发上�
       },
     ]);
     expect(journal.getRun(RUN)?.caps).toEqual({ maxConcurrency: 2 });
-    // 只碰这一列：状态与用量不在这条写入的范围里。
+    // Only that column: status and usage are outside this write's scope.
     expect(journal.getRun(RUN)?.status).toBe("running");
 
-    // 事件也进了 journal（两条轨拿到的是同一条事件）。
+    // The event journals too (both tracks get the same object).
     const stored = journal
       .listEvents(RUN, { types: "all", reportItems: "all" })
       .filter((e) => e.event.type === "run-caps-changed");
     expect(stored).toHaveLength(1);
   });
 
-  it("同值：返回 false，不写库也不发事件", () => {
+  it("returns false on same-value with no write or event", () => {
     const { engine, driver, journal } = setup({ maxConcurrency: 4 });
     const eventsBefore = driver.events.length;
     expect(engine.setMaxConcurrency(4)).toBe(false);
@@ -125,7 +121,7 @@ describe("WorkflowEngine — setMaxConcurrency（就地改本 run 的并发上�
     expect(journal.getRun(RUN)?.caps).toEqual({ maxConcurrency: 4 });
   });
 
-  it("run 已结算：返回 false，不写库也不发事件（竞态下调用方回落到一次真正的 amend）", () => {
+  it("returns false once settled, no write or event (callers fall back to a real amend on races)", () => {
     const { engine, driver, journal } = setup({ maxConcurrency: 4 });
     engine.complete("done");
     const eventsBefore = driver.events.length;
@@ -136,16 +132,16 @@ describe("WorkflowEngine — setMaxConcurrency（就地改本 run 的并发上�
     expect(journal.getRun(RUN)?.caps).toEqual({ maxConcurrency: 4 });
   });
 
-  it("非有限值：按落库归一拒掉，不毒化 caps_max_concurrency", () => {
+  it("rejects non-finite values per the record normalization, never poisoning caps_max_concurrency", () => {
     const { engine, driver, journal } = setup({ maxConcurrency: 4 });
     expect(engine.setMaxConcurrency(Number.NaN)).toBe(false);
-    // 钳到 [1, …] 之后与当前值相同，同样是 no-op（真正的天花板钳制在调用侧）。
+    // Clamping into [1, ...] equaling the current value is a no-op too (real ceiling clamps live caller-side).
     expect(engine.setMaxConcurrency(0)).toBe(true);
     expect(journal.getRun(RUN)?.caps).toEqual({ maxConcurrency: 1 });
     expect(capsEvents(driver)).toHaveLength(1);
   });
 
-  it("resume 读到的是改后的值，且 replay 仍然确定（命中的 ask 零派发）", async () => {
+  it("reads the retuned value on resume with replay still deterministic, hit asks undispatched", async () => {
     const journal = new InMemoryJournalStore();
     const first = setup({ maxConcurrency: 8 }, journal);
     const actor = first.engine.createActor("actor#1");
@@ -156,7 +152,7 @@ describe("WorkflowEngine — setMaxConcurrency（就地改本 run 的并发上�
     await expect(p).resolves.toBe("R1");
     first.engine.stop("user");
 
-    // resume 的 caps 来自 journal 行（宿主侧同一条读：dynamic-workflow-run-submit 的 record.caps）。
+    // Resume caps come from the journal row (the host reads the same: dynamic-workflow-run-submit's record.caps).
     const resumedCaps = journal.getRun(RUN)!.caps;
     expect(resumedCaps).toEqual({ maxConcurrency: 2 });
 
@@ -164,7 +160,7 @@ describe("WorkflowEngine — setMaxConcurrency（就地改本 run 的并发上�
     const actor2 = second.engine.createActor("actor#1");
     await expect(second.engine.ask("ask#1", actor2, "A1")).resolves.toBe("R1");
     await flush();
-    // 命中即短路：journal 里多出的那条 run-caps-changed 不参与 replay 判定。
+    // Hits short-circuit: the extra run-caps-changed row never enters replay decisions.
     expect(second.driver.startAskCount()).toBe(0);
     expect(second.driver.cachedSettleOrder()).toEqual(["ask#1@1"]);
     expect(second.driver.eventsOfType("run-started")[0]?.caps).toEqual({ maxConcurrency: 2 });

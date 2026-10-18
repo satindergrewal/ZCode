@@ -154,7 +154,7 @@ function formatHuman(status: WorkspaceHookTrustCliStatus, action: string): strin
     );
   }
   if (status.reasonCode === "workspace_hooks_trust_store_corrupt") {
-        // With a corrupted store both grant and revoke are rejected; the recovery guidance must be to repair the file itself.
+    // With a corrupted store both grant and revoke are rejected; the recovery guidance must be to repair the file itself.
     lines.push(
       "The persistent trust store is corrupt; grant/revoke are rejected until it is fixed.",
       "The corrupted file was moved aside as workspace-hook-trust-v1.json.corrupt-<timestamp>.",

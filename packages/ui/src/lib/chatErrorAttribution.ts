@@ -35,14 +35,11 @@ const CONTEXT_MESSAGE_PATTERN =
   /context.{0,32}(?:length|window|exceed|limit)|prompt.{0,24}too long/iu;
 const AUTH_MESSAGE_PATTERN =
   /unauthori[sz]ed|authentication|invalid\s+(?:api\s+)?key|access\s+denied/iu;
-const NETWORK_MESSAGE_PATTERN =
-  /network|connection|econn(?:reset|refused)|enotfound|tls|proxy/iu;
+const NETWORK_MESSAGE_PATTERN = /network|connection|econn(?:reset|refused)|enotfound|tls|proxy/iu;
 const TIMEOUT_MESSAGE_PATTERN = /timeout|timed out/iu;
 const OVERLOAD_MESSAGE_PATTERN = /overload|overloaded|server busy/iu;
-const INVALID_REQUEST_MESSAGE_PATTERN =
-  /invalid\s+(?:request|argument|parameter)|bad request/iu;
-const EMPTY_MODEL_RESPONSE_MESSAGE_PATTERN =
-  /model\s+(?:returned|returning)\s+no\s+content/iu;
+const INVALID_REQUEST_MESSAGE_PATTERN = /invalid\s+(?:request|argument|parameter)|bad request/iu;
+const EMPTY_MODEL_RESPONSE_MESSAGE_PATTERN = /model\s+(?:returned|returning)\s+no\s+content/iu;
 const PROVIDER_REJECTED_MESSAGE_PATTERN =
   /provider\s+rejected|method\s+not\s+allowed|param(?:eter)?\s+incorrect|unsupported\s+parameter/iu;
 const PROVIDER_SERVER_ERROR_MESSAGE_PATTERN =

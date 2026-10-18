@@ -44,34 +44,37 @@ const patch = (modelId: string, apiType: string, baseUrl: string, reasoningLevel
   }).apply({}, { reasoningLevel, maxOutputTokens: 4096 });
 };
 
-describe("Todo113 第二轮：原厂、聚合、快照必须有独立正确配置", () => {
+describe("Todo113 round two: first-party, aggregated and snapshot configs must be independently correct", () => {
   it.each([
     ["gpt-5.4", 1050000, ["none", "low", "medium", "high", "xhigh"]],
     ["gpt-5.4-pro", 1050000, ["medium", "high", "xhigh"]],
     ["gpt-5.4-mini", 400000, ["none", "low", "medium", "high", "xhigh"]],
     ["gpt-5.4-nano", 400000, ["none", "low", "medium", "high", "xhigh"]],
-  ])("%s 原厂、Zen、OR 前缀与快照一致", (id, context, levels) => {
-    for (const [api, url, template, name] of [
-      ["openai-responses", "https://api.openai.com/v1", "openai", id],
-      ["openai-responses", "https://opencode.ai/zen/v1", "opencode-zen-responses", id],
-      ["anthropic-messages", "https://openrouter.ai/api", "openrouter", `openai/${id}`],
-    ]) {
-      const config = resolve(String(name), String(api), String(url), String(template));
-      expect(config.validateComplete()).toEqual([]);
-      expect(config.properties?.contextWindow).toBe(context);
-      expect(config.optionSpecs?.maxOutputTokens?.max).toBe(128000);
-      expect(config.optionSpecs?.reasoningLevel?.values).toEqual(levels);
-      expect(config.properties?.inputFormat.toJSON()).toMatchObject({
-        supportsImage: true,
-        supportsPdf: true,
-        supportsVideo: false,
-        supportsAudio: false,
-      });
-      expect(config.properties?.supportsJsonSchemaOutput).toBe(true);
-      expect(config.enabled).toBe(false);
-    }
-    expect(resolve(`vendor/${id}-2026-03-05`).properties?.contextWindow).toBe(context);
-  });
+  ])(
+    "%s keeps first-party, Zen and OR prefixes consistent with the snapshot",
+    (id, context, levels) => {
+      for (const [api, url, template, name] of [
+        ["openai-responses", "https://api.openai.com/v1", "openai", id],
+        ["openai-responses", "https://opencode.ai/zen/v1", "opencode-zen-responses", id],
+        ["anthropic-messages", "https://openrouter.ai/api", "openrouter", `openai/${id}`],
+      ]) {
+        const config = resolve(String(name), String(api), String(url), String(template));
+        expect(config.validateComplete()).toEqual([]);
+        expect(config.properties?.contextWindow).toBe(context);
+        expect(config.optionSpecs?.maxOutputTokens?.max).toBe(128000);
+        expect(config.optionSpecs?.reasoningLevel?.values).toEqual(levels);
+        expect(config.properties?.inputFormat.toJSON()).toMatchObject({
+          supportsImage: true,
+          supportsPdf: true,
+          supportsVideo: false,
+          supportsAudio: false,
+        });
+        expect(config.properties?.supportsJsonSchemaOutput).toBe(true);
+        expect(config.enabled).toBe(false);
+      }
+      expect(resolve(`vendor/${id}-2026-03-05`).properties?.contextWindow).toBe(context);
+    },
+  );
   it.each([
     ["qwen3.7-max", 131072, false, false, true],
     ["qwen3.7-max-2026-06-08", 131072, true, true, true],
@@ -79,22 +82,25 @@ describe("Todo113 第二轮：原厂、聚合、快照必须有独立正确配�
     ["qwen3.7-flash", 131072, true, true, false],
     ["qwen3.6-plus", 65536, true, true, false],
     ["qwen3.6-flash", 65536, true, true, false],
-  ] as const)("%s 不混淆默认别名、视觉快照、JSON 与 Schema", (id, max, image, video, schema) => {
-    for (const name of [id, `vendor/${id}`]) {
-      const config = resolve(name);
-      expect(config.properties?.contextWindow).toBe(1000000);
-      expect(config.optionSpecs?.maxOutputTokens?.max).toBe(max);
-      expect(config.optionSpecs?.reasoningLevel?.values).toEqual(["disabled", "enabled"]);
-      expect(config.properties?.inputFormat.toJSON()).toMatchObject({
-        supportsImage: image,
-        supportsVideo: video,
-        supportsAudio: false,
-        supportsPdf: false,
-      });
-      expect(config.properties?.supportsJsonSchemaOutput).toBe(schema);
-    }
-  });
-  it("Omni 独立容量、模态与值域，不套普通 Flash", () => {
+  ] as const)(
+    "%s keeps default aliases, vision snapshot, JSON and Schema apart",
+    (id, max, image, video, schema) => {
+      for (const name of [id, `vendor/${id}`]) {
+        const config = resolve(name);
+        expect(config.properties?.contextWindow).toBe(1000000);
+        expect(config.optionSpecs?.maxOutputTokens?.max).toBe(max);
+        expect(config.optionSpecs?.reasoningLevel?.values).toEqual(["disabled", "enabled"]);
+        expect(config.properties?.inputFormat.toJSON()).toMatchObject({
+          supportsImage: image,
+          supportsVideo: video,
+          supportsAudio: false,
+          supportsPdf: false,
+        });
+        expect(config.properties?.supportsJsonSchemaOutput).toBe(schema);
+      }
+    },
+  );
+  it("gives Omni its own capacity, modalities and ranges instead of inheriting plain Flash", () => {
     const c = resolve("qwen3.8-omni-flash");
     expect(c.properties?.contextWindow).toBe(65536);
     expect(c.optionSpecs?.maxOutputTokens?.max).toBe(16384);
@@ -116,7 +122,7 @@ describe("Todo113 第二轮：原厂、聚合、快照必须有独立正确配�
     expect(c.properties?.supportsJsonSchemaOutput).toBe(false);
     expect(c.properties?.supportsNativeWebSearch).toBe(false);
   });
-  it("高速 Code 不提供官方拒绝的关闭档，K2.6 不受影响", () => {
+  it("omits the officially-rejected disabled tier from high-speed Code and leaves K2.6 untouched", () => {
     for (const id of [
       "kimi-k2.7-code",
       "kimi-k2.7-code-highspeed",
@@ -132,7 +138,7 @@ describe("Todo113 第二轮：原厂、聚合、快照必须有独立正确配�
       "enabled",
     ]);
   });
-  it("网关能力与容量仅覆盖真实站点，不能污染原厂及相似恶意域名", () => {
+  it("scopes gateway capabilities to real sites only, never first-party or lookalike domains", () => {
     const router = (id: string) => resolve(id, "anthropic-messages", "https://openrouter.ai/api");
     expect(router("deepseek/deepseek-v4.1-flash").properties?.contextWindow).toBe(1048576);
     expect(router("deepseek/deepseek-v4.1-flash").properties?.supportsJsonSchemaOutput).toBe(true);
@@ -165,7 +171,7 @@ describe("Todo113 第二轮：原厂、聚合、快照必须有独立正确配�
     expect(resolve("deepseek-v4-flash").properties?.inputFormat.supportsImage).toBe(false);
     expect(resolve("deepseek-v4-pro").properties?.inputFormat.supportsImage).toBe(false);
   });
-  it("专用协议 Map 不向官方接口注入其他厂商字段", () => {
+  it("keeps vendor-specific map fields out of official endpoints", () => {
     expect(
       patch("gpt-5.4", "openai-chat-completions", "https://api.openai.com/v1", "none"),
     ).toEqual({ reasoning_effort: "none", max_completion_tokens: 4096 });
@@ -219,10 +225,10 @@ describe("Todo113 第二轮：原厂、聚合、快照必须有独立正确配�
     "qwen3.7-omni-flash",
     "qwen3.6-max-preview",
     "deepseek-v4.1-pro",
-  ])("相邻型号 %s 不被新规则吞掉", (id) => {
+  ])("keeps neighbor model %s unswallowed by the new rules", (id) => {
     expect(resolve(id).properties?.contextWindow).toBe(200000);
   });
-  it("个人参数仍可覆盖新 Built-in，不代写保存的选择", () => {
+  it("still lets personal settings override new Built-ins without ghost-writing saved choices", () => {
     const c = resolve("gpt-5.4").overlay(
       new ModelConfig({
         optionSpecs: new ModelOptionSpecsConfig({
@@ -233,7 +239,7 @@ describe("Todo113 第二轮：原厂、聚合、快照必须有独立正确配�
     expect(c.optionSpecs?.reasoningLevel?.values).toEqual(["personal"]);
     expect(c.optionSpecs?.reasoningLevel?.map).toBe('{"custom": true}');
   });
-  it("目录与精确默认成对维护，原厂退役不波及第三方和模型规则", () => {
+  it("keeps catalog and exact defaults paired; first-party retirements never touch third-party or model rules", () => {
     const ids = (id: string) =>
       release.config.providerConfigRules.templateRules.find((t) => t.templateId === id)!.config
         .builtinModelIds;

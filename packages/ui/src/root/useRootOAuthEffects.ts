@@ -180,7 +180,9 @@ export function useRootOAuthEffects({
       } catch (error) {
         // A failed startup refresh must not skip later subscriptions, or account-invalid coordination stops forever once offline.
         // Keep the current facts and let normal Provider View updates drive; no retry loop.
-        logger.warn("[Root] Startup account config refresh failed; watching later updates", { error });
+        logger.warn("[Root] Startup account config refresh failed; watching later updates", {
+          error,
+        });
       }
     }
 

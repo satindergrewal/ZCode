@@ -1076,7 +1076,8 @@ const enUS: Record<string, string> = {
   "browser.permission.deviceBluetooth": "Bluetooth devices",
   "browser.permission.unknownCapability": "an unknown capability",
   "browser.permission.screenShareTitle": "{origin} wants to share your screen",
-  "browser.permission.screenShareDescription": "Choose the screen or window to share. This choice applies only to this session.",
+  "browser.permission.screenShareDescription":
+    "Choose the screen or window to share. This choice applies only to this session.",
   "browser.permission.deviceTitle": "{origin} wants to connect a device",
   "browser.permission.connect": "Connect",
   "browser.permission.screenGroup.screen": "Entire Screen",
@@ -2478,9 +2479,11 @@ const enUS: Record<string, string> = {
   "settings.integratedTerminalShell.auto": "Auto",
   "settings.nativeSearchEnhancements": "Enhanced Find and Grep",
   "chat.mission.continuationOn": "Mission continuation ON — open tasks keep this session working.",
-  "chat.mission.continuationOff": "Mission continuation OFF — this session stops when the turn ends.",
+  "chat.mission.continuationOff":
+    "Mission continuation OFF — this session stops when the turn ends.",
   "settings.missionContinuation": "Mission continuation",
-  "settings.missionContinuationDescription": "Autonomous missions: when the session task list still has open items, the agent keeps working automatically after every turn instead of stopping. Enable for long unattended runs; Stop and your messages always interrupt it.",
+  "settings.missionContinuationDescription":
+    "Autonomous missions: when the session task list still has open items, the agent keeps working automatically after every turn instead of stopping. Enable for long unattended runs; Stop and your messages always interrupt it.",
   "settings.nativeSearchEnhancementsDescription":
     "Use enhanced Find and Grep in new sessions and sessions restored after an app restart. Active sessions keep their current setting; Find remains unchanged on Windows.",
   "settings.memory": "Memory",

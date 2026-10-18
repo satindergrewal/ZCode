@@ -67,7 +67,7 @@ export async function resolveAccountTeamPlanRuntimeMaterial(
           ...init,
           timeoutMs: TEAM_PLAN_RUNTIME_KEY_REQUEST_TIMEOUT_MS,
         }),
-      observe: (event) => log.warn(undefined, "团队项目 Token 获取失败", event),
+      observe: (event) => log.warn(undefined, "Failed to fetch team project token", event),
     });
   const result = await client.resolve({
     origin: host,

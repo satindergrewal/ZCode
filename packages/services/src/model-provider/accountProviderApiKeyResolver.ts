@@ -22,7 +22,7 @@ export function pickOrgAndProject(customerInfo: RemoteCustomerInfo): {
   const personalOrganizations = (customerInfo.organizations ?? [])
     .map((organization) => ({
       organization,
-      // Team Plan 项目会和个人项目一起返回；个人 Key 只能从非团队项目解析。
+      // Team Plan responses include personal projects; personal keys resolve only from non-team projects.
       projects: (organization.projects ?? []).filter(
         (project) => String(project.projectType ?? "").trim() !== "2",
       ),
@@ -68,7 +68,7 @@ export class AccountProviderApiKeyResolver {
           code: 200,
           data: await fetchRemoteData(url, init),
         }),
-        observe: (event) => log.warn(undefined, "项目 Token 获取失败", event),
+        observe: (event) => log.warn(undefined, "Failed to fetch project token", event),
       });
   }
 

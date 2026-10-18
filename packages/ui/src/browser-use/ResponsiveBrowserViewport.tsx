@@ -266,7 +266,7 @@ export function ResponsiveBrowserViewport({
     };
     const rect = canvas.getBoundingClientRect();
     updateCanvasSize({ width: rect.width, height: rect.height });
-      logger.debug("[browser-use] Re-measured the free-size Fit canvas", {
+    logger.debug("[browser-use] Re-measured the free-size Fit canvas", {
       desktopZoomFactor,
       height: rect.height,
       width: rect.width,

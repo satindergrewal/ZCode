@@ -1,16 +1,19 @@
 // ============================================================
-// 确认窗里的两项 run 设置（docs/dynamic-workflow/presentation.md「The confirmation window」）
+// The two run settings in the confirmation window (docs/dynamic-workflow/presentation.md "The confirmation window")
 // ============================================================
-// 两句话，句中的值就是控件：「子代理运行在 [模型 ▾] [思考 高 ▾]」「最多 [− 4 +] 个子代理同时运行 · 默认 13」。
-// 脚本给某些子代理点名了模型时第一句改口「子代理默认运行在」，那些名字本身不列（作者模型的选择）。
-// 没动过的值安静地待在句子里；改过的那一行值加粗，句尾跟一截「· 原为 X ↺」。
+// Two sentences whose values are the controls: subagents run on [model] [thinking high]; at most [− 4 +]
+// subagents at once, default 13. With the script pinning models for some subagents the first sentence
+// becomes run-by-default-on; those names are not listed (the author model's choice).
+// Untouched values sit quietly in their sentence; a changed line bolds its value and trails a was-X-reset.
 //
-// 块缺席（旧 agent 不回填 `adjustable_settings`）时画 `WorkflowAskPlainSettings`（WorkflowAskSettingsParts.tsx）：
-// 只有调用设了的字段、纯文本、不可调——agent 不会应用的改动，窗里就不提供。
+// Without the block (older agents never send `adjustable_settings`) render `WorkflowAskPlainSettings`
+// (WorkflowAskSettingsParts.tsx): caller-set fields only, plain text, not adjustable — changes the agent
+// would not apply get no controls here.
 //
-// 草稿住在这里，改动经 `onContentChange` 事件式地交给 PermissionDialog（它在 Allow 时把它放进应答的
-// `content`）；换请求靠父组件按 requestId 给 key 重挂，不靠 effect 追。唯一的 effect 是「所选模型
-// 不可用」：它取决于异步读回的模型清单，不是用户的一次操作，只能在清单到达后回报给父组件。
+// The draft lives here; edits reach PermissionDialog event-style via `onContentChange` (it puts them
+// into the response's `content` on Allow). A new request remounts by requestId key from the parent, no
+// effect chasing. The single effect is selected-model-unavailable: it depends on the asynchronously
+// loaded catalog, not one user action, so it can only be reported once the catalog lands.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ZCODE_AGENT_PROVIDER } from "@zcode/shared";
@@ -60,15 +63,15 @@ export function WorkflowAskSettings({
 }: {
   adjustable: WorkflowAdjustableSettings;
   disabled: boolean;
-  /** 确认窗的工具入参（CLI resolveInput 归一化过的那一份）。 */
+  /** The tool input for the confirmation window (as normalized by the CLI's resolveInput). */
   input: unknown;
   onContentChange?: (content: WorkflowAskSettingsContent | undefined) => void;
-  /** 所选模型读好清单后仍不可用：Allow 要等用户换一个（与弹层的 Apply 同一条规则）。 */
+  /** Selection still unavailable once the catalog loads: Allow waits for a different pick (the popover Apply's rule). */
   onBlockedChange?: (blocked: boolean) => void;
   scope: WorkflowSettingsModelScope;
 }) {
   const defaultConcurrency = adjustable.defaultConcurrency;
-  // 起点在挂载那一刻定下：父组件按 requestId 重挂，同一个请求的入参不会变。
+  // The starting point fixes at mount: the parent remounts by requestId, so one request's input never changes.
   const [initial] = useState(() => initialWorkflowAskSettingsDraft(input, defaultConcurrency));
   const [draft, setDraft] = useState<WorkflowRunSettingsDraft>(initial);
   const update = (next: WorkflowRunSettingsDraft) => {
@@ -126,8 +129,8 @@ function WorkflowAskModelLine({
   onReset: () => void;
   scope: WorkflowSettingsModelScope;
   /**
-   * 脚本给某些子代理点名了模型（`model_bindings`）：窗不逐名列出——那是作者模型的选择——只把这一句
-   * 改口成「子代理默认运行在」，因为它不再替每一个子代理说话。
+   * The script pins models for some subagents (`model_bindings`): the window does not name them — that
+   * was the author model's choice; it rewords to by-default-on, which no longer speaks for every subagent.
    */
   scriptNamesModels: boolean;
 }) {
@@ -136,12 +139,12 @@ function WorkflowAskModelLine({
   const choices = useWorkflowSettingsModelChoices(scope);
   const levelTriggerRef = useRef<HTMLSpanElement | null>(null);
   const [levelOpen, setLevelOpen] = useState(false);
-  // ModelConfigSelect 是 memo 组件：内联数组每次渲染都是新引用（reactStableReferences.test.ts）。
+  // ModelConfigSelect is memoized: an inline array is a new reference every render (reactStableReferences.test.ts).
   const leadingItems = useMemo(() => [choices.sessionModelItem], [choices.sessionModelItem]);
   const selectable = adjustable && !choices.noCatalog;
   const face = choices.describe(model);
   const blocked = selectable && face.unavailable;
-  // ModelConfigSelect 是 memo 组件：回调同样不能是内联函数。
+  // ModelConfigSelect is memoized: the callback must not be inline either.
   const { pick } = choices;
   const handleValueChange = useCallback(
     (value: string) => onChange(pick(value, model)),
@@ -154,7 +157,7 @@ function WorkflowAskModelLine({
   const labelOf = (choice: WorkflowRunSettingsModel) => {
     const canonical = workflowRunSettingsModelCanonical(choice);
     if (choice.kind === "session" || canonical === undefined) {
-      // 会话模型的名字读不出时，名字本身就是「会话模型」，不再叠一个同词徽标。
+      // When the session model's name is unreadable the name is session-model itself; no duplicate badge on top.
       const text =
         scope.sessionModel === undefined
           ? choices.sessionModelName
@@ -176,8 +179,9 @@ function WorkflowAskModelLine({
       ? "chat.permission.workflow.settings.model.leadDefault"
       : "chat.permission.workflow.settings.model.lead",
   });
-  // 选不了模型（宿主没有目录，或本机清单是空的）：句子不再有控件。入参里有模型（沿用来的）就照实说它，
-  // 没有才说「沿用会话模型」——不能让窗说一句与将要发生的事相反的话。
+  // No model can be picked (no host catalog, or the local list is empty): the sentence loses its
+  // controls. Name an input-carried model as carried over; only otherwise does the session model carry
+  // — the window must never say the opposite of what will happen.
   if (!selectable) {
     const current = labelOf(model);
     return (

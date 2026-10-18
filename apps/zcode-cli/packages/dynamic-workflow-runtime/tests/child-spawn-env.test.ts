@@ -1,17 +1,17 @@
 /**
- * 沙箱子进程 spawn env 契约：必须显式携带 `ELECTRON_RUN_AS_NODE=1` 且继承父进程 env。
+ * Sandbox child spawn-env contract: must carry ELECTRON_RUN_AS_NODE=1 explicitly and inherit the parent env.
  *
- * Bug 根因（2026-08-19 桌面实测）：桌面端 agent 进程由 Electron Helper 运行
- * （process.execPath 指向 Helper），而 CLI 启动时会把 ELECTRON_RUN_AS_NODE 从自身
- * process.env 里 sanitize 掉（shared/runtimeEnv.ts，防止 Bash/MCP 子进程误继承）。
- * harness 原先 spawn 子进程不传 env → 继承已被清洗的 env → Electron Helper 不进
- * Node 模式，按完整 Electron/Chromium 应用启动并卡在 GPU 初始化：子进程活着但永远
- * 沉默，run 卡在 run-started（journal 无 node/actor，无失败结算）。修复与
- * official-plugin-runtime.ts 同款：spawn env 显式带 ELECTRON_RUN_AS_NODE=1
- * （纯 Node 下该变量无效，无副作用）。
+ * Bug root cause (2026-08-19, desktop): the desktop agent process runs under the Electron Helper
+ * (process.execPath points at the Helper) while the CLI sanitizes ELECTRON_RUN_AS_NODE out of its own
+ * process.env at startup (shared/runtimeEnv.ts, keeping Bash/MCP children from inheriting it).
+ * The harness spawned children without env -> the sanitized env propagated -> the Electron Helper never entered
+ * Node mode, booted as a full Electron/Chromium app, and stalled in GPU init: the child alive but
+ * silent forever, the run stuck at run-started (no node/actor rows, no failure settlement). The fix mirrors
+ * official-plugin-runtime.ts: spawn env carries ELECTRON_RUN_AS_NODE=1 explicitly
+ * (inert under plain Node, no side effects).
  *
- * 两条断言缺一不可：只断言 flag 会漏掉「env 只剩 flag、丢掉 PATH 等继承项」的错误修法；
- * 只断言继承会漏掉 flag 本身。
+ * Both assertions are required: asserting only the flag misses the wrong fix that reduces env to the flag, dropping PATH and other inherited entries;
+ * asserting only inheritance misses the flag itself.
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -21,7 +21,7 @@ import { AutoDriver } from "./auto-driver.js";
 import { askSpecsFor, TEST_CWD } from "./helpers.js";
 import { InMemoryJournalStore } from "@zcode/dynamic-workflow";
 
-// 包一层真 spawn：只截获 options，子进程照常启动——桥接、结算全走真实路径。
+// Wraps the real spawn: only options are intercepted; the child starts normally -- bridging and settlement stay real.
 const spawnCalls: Array<{ options: Record<string, unknown> }> = [];
 vi.mock("node:child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:child_process")>();
@@ -45,9 +45,11 @@ describe("sandbox child spawn env", () => {
     process.env[CANARY_KEY] = "inherited";
 
     const journal = new InMemoryJournalStore();
-    const driver = new AutoDriver(journal, { asks: { "ask#1": () => ({ type: "text", finalText: "hi" }) } });
+    const driver = new AutoDriver(journal, {
+      asks: { "ask#1": () => ({ type: "text", finalText: "hi" }) },
+    });
     const settlement = await runWorkflowScript({
-    cwd: TEST_CWD,
+      cwd: TEST_CWD,
       scriptText: SCRIPT,
       runId: "run",
       caps: { maxConcurrency: 16 },
@@ -60,7 +62,7 @@ describe("sandbox child spawn env", () => {
       timeoutMs: 20000,
     });
 
-    // 真实链路仍然要跑完——env 传错（比如覆盖掉 PATH）会在这里以失败结算暴露。
+    // The real chain still runs to completion -- a broken env (say, a clobbered PATH) surfaces as a failed settlement here.
     expect(settlement).toEqual({ status: "completed", artifact: "hi" });
 
     expect(spawnCalls).toHaveLength(1);

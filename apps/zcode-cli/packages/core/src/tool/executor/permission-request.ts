@@ -17,7 +17,7 @@ import { racePermissionResponders } from "./permission-responder-race.js";
 import { linkAbortSignal } from "./timeout.js";
 import type { ToolExecutorDeps } from "./types.js";
 
-/** 同一个请求生命周期；user-once 和重判后的请求只关闭 Hook 应答方，不另起审批流水线。 */
+/** One request lifecycle; user-once and rechecked requests close only the Hook answerer, never a second approval pipeline. */
 export async function requestPermissionResponse(params: {
   deps: ToolExecutorDeps;
   toolCall: ExecutableToolCall;
@@ -45,7 +45,7 @@ export async function requestPermissionResponse(params: {
     );
   controller.signal.addEventListener("abort", onAbort, { once: true });
   if (controller.signal.aborted) onAbort();
-  // 根因：先发布会让立即响应早于 deferred 登记；异步 broker 必须明确通知登记完成。
+  // Root cause: publishing first lets an immediate response outrun deferred registration; an async broker must signal registration completion explicitly.
   const outcome = racePermissionResponders({
     signal: controller.signal,
     requestBroker: (brokerSignal, claimResponse) => {
@@ -74,7 +74,7 @@ export async function requestPermissionResponse(params: {
       );
       registered = response.registered;
       const publish = async () => {
-        // 登记可能晚于取消收口；不能重新发布已经失效的请求。
+        // Registration may land after cancel finalizes; never re-publish a request that is already void.
         if (controller.signal.aborted) return;
         await emitPermissionRequested(
           deps,
@@ -108,7 +108,7 @@ export async function requestPermissionResponse(params: {
     },
     onHookFailure: (error) =>
       deps.logger?.warn("PermissionRequest hook chain failed; waiting for client decision", {
-        // 拆分应答等待模块后仍保留原 trace/event，便于关联 Hook 退赛与最终用户响应。
+        // Keeps the original trace/event after the reply-wait split, correlating Hook withdrawal with the final user response.
         ...traceContextToLogContext(traceContext),
         event: "tool.permission.hook_race_forfeited",
         module: "core.tool.executor",
@@ -120,7 +120,7 @@ export async function requestPermissionResponse(params: {
       }),
   });
   try {
-    // 登记/发布与应答共同完成才可执行；取消或应答失败不等待慢 IO 的登记。
+    // Execution requires registration/publication and the answer together; cancel or a failed answer never waits on slow registration IO.
     const [, settled] = await Promise.race([
       Promise.all([published, outcome]),
       cancellation.promise,

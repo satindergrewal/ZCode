@@ -1,9 +1,9 @@
 // ============================================================
-// GUI「配置」的设置轮：怎么记、记成什么话
+// The GUI "Configure" settings turn: how it is recorded and worded
 // ============================================================
-// docs/dynamic-workflow/launch.md「The settings turn」。从 dynamic-workflow-run-settings.ts 拆出
-// （400 行纪律）：那边是决策与副作用的顺序，这里是「这件事怎么讲给模型和会话听」——入队、
-// 两项设置的 from/to、以及两条规范句（修订出了新 run / 就地生效还是同一个 run）。
+// docs/dynamic-workflow/launch.md "The settings turn". Split out of dynamic-workflow-run-settings.ts
+// (400-line discipline): that side owns decision and side-effect order; this side is "how this is told to the model and the session" —
+// enqueueing, the from/to of both settings, and the two canonical sentences (revision spawned a new run / in-place on the same run).
 
 import type { TraceContext, WorkflowSettingsAmendMeta } from "@zcode/contracts";
 import type { DynamicWorkflowRunSnapshot } from "@zcode/contracts";
@@ -12,16 +12,16 @@ import { createRuntimeCommandId } from "../command-queue.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import type { boundWorkflowLaunchMeta } from "@zcode/contracts";
 
-/** 本 run 的两项设置的归一形：缺席即默认（会话模型 / 默认并发）。 */
+/** Normalized shape of the run's two settings: absent means default (session model / default concurrency). */
 export interface RunSettings {
   subagentModel?: string;
   maxConcurrency?: number;
 }
 
 /**
- * 设置轮不在命令处理里直接落：主代理可能正在一轮里，user 消息插不进去。排进运行时队列，空闲时
- * 立即跑、忙时等当前轮结束；与通知同优先级，因而先于新 run 的任何通知（docs/dynamic-workflow/
- * launch.md「The settings turn」）。
+ * The settings turn does not land inside command handling: the main agent may be mid-turn and a user message cannot be inserted. It queues on the
+ * runtime queue — run immediately when idle, after the current turn when busy; same priority as notifications, hence before any notice of a new run (docs/dynamic-workflow/
+ * launch.md "The settings turn").
  */
 export function enqueueSettingsTurn(
   this: AgentRuntimeInternal,
@@ -51,12 +51,12 @@ export function fromTo<T>(from: T | undefined, to: T | undefined): { from?: T; t
 }
 
 /**
- * 设置轮的模型面规范句（英文，不本地化——它进 provider transcript）。只说改过的设置；两个 `null`
- * 各有一句话。末句劝阻模型再动这个 run：它已经在跑，进展以通知回来。
+ * Canonical model-side sentence for the settings turn (English, not localized — it enters the provider transcript). Only changed settings are named; each `null`
+ * gets its own sentence. The final sentence discourages further model changes to this run: it is already running and progress arrives via notifications.
  *
- * 两种结局在这里分岔，判据就是 `amend.predecessorRunId` 在不在场（缺席即就地生效，与元数据同
- * 一条读法）：修订出了一个新 run，就地调并发则还是同一个 run——照修订那句话写下去，模型会去找
- * 一个根本不存在的 run B。
+ * The two outcomes fork here on the presence of `amend.predecessorRunId` (absent = in-place, read the same way as the metadata):
+ * a revision spawned a new run, so in-place concurrency still targets the same run — follow the revision wording, or the model will hunt
+ * a run B that does not exist.
  */
 export function buildSettingsMessageText(input: {
   name?: string;
@@ -85,8 +85,8 @@ export function buildSettingsMessageText(input: {
 }
 
 /**
- * 「改了什么」的分句。就地生效那一条要把主语说全（「at most n of **its subagents**」）：那条路上
- * 没有模型分句在前，一句「at most n of them」就没有了指代对象。
+ * The "what changed" clause. The in-place variant must name its subject ("at most n of **its subagents**"): on that path
+ * no model clause precedes it, and a bare "at most n of them" has no referent.
  */
 function settingsChangeClauses(amend: WorkflowSettingsAmendMeta, inPlace: boolean): string[] {
   const changes: string[] = [];
@@ -112,8 +112,8 @@ function settingsChangeClauses(amend: WorkflowSettingsAmendMeta, inPlace: boolea
 }
 
 /**
- * 快照上的两项设置。两者都「无则缺席」：没指定过模型 = 会话模型，界等于默认并发 = 没有自己的界，
- * 所以缺席就是默认，与 {@link RunSettings} 同一个读法。
+ * The two settings on the snapshot. Both read absent-as-default: no model ever set = the session model, a bound equal to default concurrency = no bound of its own,
+ * so absence is the default — the same reading as {@link RunSettings}.
  */
 export function runSettingsOfSnapshot(snapshot: DynamicWorkflowRunSnapshot): RunSettings {
   return {

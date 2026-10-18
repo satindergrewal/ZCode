@@ -1,3 +1,4 @@
+/* oxlint-disable eslint(max-lines) -- abstract-state transitions form one match lattice over shared site ops; splitting scatters rule order. */
 import ts from "typescript";
 import type { WorkflowProgram } from "../compiler/compile.js";
 import type { HoleSite, IterationCandidate, SiteTable } from "./sites.js";
@@ -37,11 +38,20 @@ export class TaintState {
 
   // Site lookups keyed by their raw AST nodes (the table resolved them via the checker).
   readonly askByCall = new Map<ts.CallExpression, string>();
-  readonly askSites = new Map<string, { receiver: ts.Expression; instructions: ts.Expression | undefined }>();
-  readonly worldByCall = new Map<ts.CallExpression, { id: string; args: readonly ts.Expression[] }>();
-  readonly joinByCall = new Map<ts.CallExpression, { id: string; arg: ts.Expression | undefined }>();
+  readonly askSites = new Map<
+    string,
+    { receiver: ts.Expression; instructions: ts.Expression | undefined }
+  >();
+  readonly worldByCall = new Map<
+    ts.CallExpression,
+    { id: string; args: readonly ts.Expression[] }
+  >();
+  readonly joinByCall = new Map<
+    ts.CallExpression,
+    { id: string; arg: ts.Expression | undefined }
+  >();
   readonly actorByCall = new Map<ts.CallExpression, string>();
-  /** 留白调用 → 站点（开放与已补全都在；transfer 规则按有无 body 分派）。 */
+  /** Hole calls -> sites (open and filled; the transfer rules dispatch on body presence). */
   readonly holeByCall = new Map<ts.CallExpression, HoleSite>();
   /** Per-element callback calls (`xs.map(fn)`, `Array.from(xs, fn)`, …), keyed by the CALL. */
   readonly candByCall = new Map<ts.CallExpression, IterationCandidate>();
@@ -71,7 +81,10 @@ export class TaintState {
    */
   readonly condPlaces = new Map<ts.ConditionalExpression, AbstractValue>();
   /** Allocation-site places of container literals; see {@link literalPlaceOf}. */
-  readonly literalPlaces = new Map<ts.ObjectLiteralExpression | ts.ArrayLiteralExpression, AbstractValue>();
+  readonly literalPlaces = new Map<
+    ts.ObjectLiteralExpression | ts.ArrayLiteralExpression,
+    AbstractValue
+  >();
 
   // Script-local functions (excluding iteration callbacks, handled inline).
   readonly fnId = new Map<ts.Node, number>();
@@ -127,7 +140,7 @@ export class TaintState {
   readonly askInstr = new Map<string, AbstractValue>();
   readonly askRecv = new Map<string, AbstractValue>();
   readonly worldRead = new Map<string, AbstractValue>();
-  /** 开放留白的提示 sink（docs/analysis.md「Sites」：提示流入留白，如 ask 的 instructions）。 */
+  /** The open hole's prompt sink (docs/analysis.md "Sites": the prompt flows into the hole, like an ask's instructions). */
   readonly holePrompt = new Map<string, AbstractValue>();
   readonly joinInByPort = new Map<string, Map<number, AbstractValue>>();
   readonly fanoutInVal = new Map<string, AbstractValue>();
@@ -170,8 +183,10 @@ export class TaintState {
       this.askByCall.set(site.call, site.id);
       this.askSites.set(site.id, { instructions: site.instructions, receiver: site.receiver });
     }
-    for (const site of this.table.worldReads) this.worldByCall.set(site.call, { args: site.args, id: site.id });
-    for (const site of this.table.joins) this.joinByCall.set(site.call, { arg: site.arg, id: site.id });
+    for (const site of this.table.worldReads)
+      this.worldByCall.set(site.call, { args: site.args, id: site.id });
+    for (const site of this.table.joins)
+      this.joinByCall.set(site.call, { arg: site.arg, id: site.id });
     for (const site of this.table.actors) this.actorByCall.set(site.call, site.id);
     for (const site of this.table.holes) this.holeByCall.set(site.call, site);
     for (const cand of this.table.iterations) {
@@ -321,7 +336,10 @@ export class TaintState {
    * slot, and later passes merge the same slot into itself — an identity no-op. Snapshot
    * fields accumulate monotonically, exactly as an env slot bound to the literal always did.
    */
-  literalPlaceOf(node: ts.ObjectLiteralExpression | ts.ArrayLiteralExpression, fresh: AbstractValue): AbstractValue {
+  literalPlaceOf(
+    node: ts.ObjectLiteralExpression | ts.ArrayLiteralExpression,
+    fresh: AbstractValue,
+  ): AbstractValue {
     const place = this.literalPlaces.get(node);
     if (place === undefined) {
       this.literalPlaces.set(node, fresh);
@@ -511,7 +529,12 @@ export class TaintState {
     const promoted: PromotedFanout[] = this.table.iterations
       .filter((cand) => this.promotedOrders.has(cand.order))
       .sort((a, b) => a.order - b.order)
-      .map((cand) => ({ id: provisionalFanoutId(cand.order), label: "fan-out", loc: cand.loc, order: cand.order }));
+      .map((cand) => ({
+        id: provisionalFanoutId(cand.order),
+        label: "fan-out",
+        loc: cand.loc,
+        order: cand.order,
+      }));
 
     return {
       askActor,
@@ -573,10 +596,12 @@ export class TaintState {
     const out = emptyValue();
     for (const occ of value.occs.values()) addOcc(out, occ);
     for (const ph of value.phs.values()) this.resolvePlaceholder(out, ph, visiting);
-    for (const [key, field] of value.fields) out.fields.set(key, this.resolvePlaceholders(field, visiting, seen));
+    for (const [key, field] of value.fields)
+      out.fields.set(key, this.resolvePlaceholders(field, visiting, seen));
     // A bound function reaching an emission point (e.g. a returned bound function) must not
     // drop its prefix's taint; fold each resolved prefix arg in (collapsed at emission).
-    for (const el of value.bound ?? []) mergeInto(out, this.resolvePlaceholders(el, visiting, seen));
+    for (const el of value.bound ?? [])
+      mergeInto(out, this.resolvePlaceholders(el, visiting, seen));
     return out;
   }
 
@@ -586,7 +611,8 @@ export class TaintState {
       // record actuals positionally, so a rest param has many keyed slots).
       for (const [key, actual] of this.paramActuals) {
         const sep = key.indexOf(":");
-        if (Number(key.slice(0, sep)) !== ph.fnId || Number(key.slice(sep + 1)) < ph.param) continue;
+        if (Number(key.slice(0, sep)) !== ph.fnId || Number(key.slice(sep + 1)) < ph.param)
+          continue;
         if (visiting.has(key)) continue;
         visiting.add(key);
         mergeInto(out, this.resolvePlaceholders(actual, visiting));

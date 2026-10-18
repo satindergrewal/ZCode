@@ -33,7 +33,7 @@ export function createProtocolTopicResourcePort(
     async read(request, options) {
       options.signal.throwIfAborted();
       const requestId = randomUUID();
-      // 原因：Core trace 含 sessionId 等额外字段，原样发送会让 Host 严格校验失败并断开整个 CLI。
+      // Why: Core trace carries sessionId and more; sending verbatim fails the Host's strict validation and disconnects the whole CLI.
       const trace = options.trace ? protocolTraceFromTraceContext(options.trace) : undefined;
       const cancel = async () => {
         try {
@@ -44,8 +44,8 @@ export function createProtocolTopicResourcePort(
             { timeoutMs: RESOURCE_TIMEOUT_MS, trace },
           );
         } catch {
-          // 原因：断连时 requestClient 会同步抛错，不能从 abort listener 冒泡并终止 CLI。
-          // 取消是尽力通知；原读取请求仍保留取消／断连错误，不重连或重新执行。
+          // Why: on disconnect requestClient throws synchronously; it must not bubble from a cancel listener and kill the CLI.
+          // Cancellation is best-effort; the original read keeps its cancel/disconnect error, no reconnect or re-run.
         }
       };
       options.signal.addEventListener("abort", cancel, { once: true });

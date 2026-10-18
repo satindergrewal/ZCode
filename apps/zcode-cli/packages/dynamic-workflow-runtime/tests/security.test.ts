@@ -1,7 +1,7 @@
 /**
- * 沙箱安全：vm.createContext 求值单元的隔离契约（docs/execution-engine.md 的"The sandbox"）。
- * 这些脚本按设计**无法**通过 facade typecheck（直接摸 process/import 等），故绕开编译器，把手写的
- * lowered 函数体直接喂 harness——vm 契约本身才是被测对象，这是正当做法。
+ * Sandbox security: the vm.createContext evaluation unit's isolation contract ("The sandbox" in docs/execution-engine.md).
+ * These scripts deliberately cannot pass facade typecheck (raw process/import access), so they bypass the compiler:
+ * handwritten lowered bodies go straight to the harness -- the vm contract is the subject under test, legitimately.
  */
 
 import { describe, expect, it } from "vitest";
@@ -10,7 +10,7 @@ import { runWorkflowScript } from "../src/index.js";
 import { AutoDriver } from "./auto-driver.js";
 import { TEST_CWD } from "./helpers.js";
 
-/** 直接投喂手写 lowered 体（自由标识符仅 `__host`），返回结算。 */
+/** Feeds a handwritten lowered body (free identifier: __host only); returns the settlement. */
 async function runLowered(lowered: string): Promise<RunSettlement> {
   const journal = new InMemoryJournalStore();
   const driver = new AutoDriver(journal);
@@ -28,7 +28,7 @@ async function runLowered(lowered: string): Promise<RunSettlement> {
   });
 }
 
-/** 便捷：跑一个直接 return 表达式的沙箱体，取回 artifact。 */
+/** Convenience: runs a body that just returns an expression, handing back the artifact. */
 async function evalInSandbox(expr: string): Promise<unknown> {
   const settlement = await runLowered(`return ${expr};`);
   expect(settlement.status).toBe("completed");
@@ -37,18 +37,18 @@ async function evalInSandbox(expr: string): Promise<unknown> {
 
 describe("sandbox security — Node globals are absent", () => {
   it("process / fetch / require / globalThis.process are undefined", async () => {
-    expect(await evalInSandbox('typeof process')).toBe("undefined");
-    expect(await evalInSandbox('typeof fetch')).toBe("undefined");
-    expect(await evalInSandbox('typeof require')).toBe("undefined");
-    expect(await evalInSandbox('typeof globalThis.process')).toBe("undefined");
-    expect(await evalInSandbox('typeof Buffer')).toBe("undefined");
-    expect(await evalInSandbox('typeof global')).toBe("undefined");
+    expect(await evalInSandbox("typeof process")).toBe("undefined");
+    expect(await evalInSandbox("typeof fetch")).toBe("undefined");
+    expect(await evalInSandbox("typeof require")).toBe("undefined");
+    expect(await evalInSandbox("typeof globalThis.process")).toBe("undefined");
+    expect(await evalInSandbox("typeof Buffer")).toBe("undefined");
+    expect(await evalInSandbox("typeof global")).toBe("undefined");
   });
 
   it("ES intrinsics are present (curated globals, not a stripped realm)", async () => {
-    expect(await evalInSandbox('typeof JSON')).toBe("object");
-    expect(await evalInSandbox('typeof Promise')).toBe("function");
-    expect(await evalInSandbox('Array.isArray([1,2])')).toBe(true);
+    expect(await evalInSandbox("typeof JSON")).toBe("object");
+    expect(await evalInSandbox("typeof Promise")).toBe("function");
+    expect(await evalInSandbox("Array.isArray([1,2])")).toBe(true);
   });
 });
 
@@ -63,32 +63,40 @@ describe("sandbox security — dynamic import throws", () => {
 
 describe("sandbox security — runtime nondeterminism bans (belt)", () => {
   it("Date.now() throws", async () => {
-    expect(await evalInSandbox('(() => { try { Date.now(); return "NO"; } catch (e) { return e.message; } })()')).toContain(
-      "Date.now()",
-    );
+    expect(
+      await evalInSandbox(
+        '(() => { try { Date.now(); return "NO"; } catch (e) { return e.message; } })()',
+      ),
+    ).toContain("Date.now()");
   });
 
   it("argless new Date() throws; new Date(ms) is allowed", async () => {
-    expect(await evalInSandbox('(() => { try { new Date(); return "NO"; } catch (e) { return e.message; } })()')).toContain(
-      "argless new Date()",
-    );
-    // 带参构造仍可用（只有不确定性的无参形态被禁）。
+    expect(
+      await evalInSandbox(
+        '(() => { try { new Date(); return "NO"; } catch (e) { return e.message; } })()',
+      ),
+    ).toContain("argless new Date()");
+    // Argument-bearing construction still works (only the nondeterministic argless forms are banned).
     expect(await evalInSandbox("new Date(0).getTime()")).toBe(0);
   });
 
   it("Math.random() throws", async () => {
     expect(
-      await evalInSandbox('(() => { try { Math.random(); return "NO"; } catch (e) { return e.message; } })()'),
+      await evalInSandbox(
+        '(() => { try { Math.random(); return "NO"; } catch (e) { return e.message; } })()',
+      ),
     ).toContain("Math.random()");
   });
 });
 
 describe("sandbox security — eval binds to the same curated globals", () => {
   it('eval("process") sees undefined; eval("Date.now()") throws', async () => {
-    // 动态创建的代码也绑定同一套 curated 全局：证明隔离不是靠静态改写脚本文本。
+    // Dynamically created code binds the same curated globals: isolation is not static rewriting of the script text.
     expect(await evalInSandbox('eval("typeof process")')).toBe("undefined");
-    expect(await evalInSandbox('(() => { try { eval("Date.now()"); return "NO"; } catch (e) { return "THREW"; } })()')).toBe(
-      "THREW",
-    );
+    expect(
+      await evalInSandbox(
+        '(() => { try { eval("Date.now()"); return "NO"; } catch (e) { return "THREW"; } })()',
+      ),
+    ).toBe("THREW");
   });
 });

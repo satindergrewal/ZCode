@@ -217,8 +217,8 @@ export async function resumeFromStore(
   if (savedExecution.success && options?.modeOverride === undefined) {
     Object.assign(this.config, savedExecution.data);
   }
-  // onDemand 会话的工具面随记录恢复（launch.md「On demand: activation」）：entry 在场，或历史里
-  // 有过 `/workflow` / 十个工具的调用。要在首轮之前完成，所以放在 resume 里而不是等下一次 turn。
+  // onDemand sessions restore their tool surface with the record (launch.md "On demand: activation"): entry present, or history shows
+  // a past `/workflow` / ten-tool call. Must finish before the first turn, hence here in resume rather than the next turn.
   await restoreDynamicWorkflowActivationOnResume.call(this, messages);
 
   await restorePermissionGrantMarker(this, traceContext);

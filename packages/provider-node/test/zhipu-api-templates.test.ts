@@ -4,7 +4,7 @@ import { parseZCodeBuiltinModelConfigRules } from "@zcode/provider";
 
 describe("Zhipu four manual API templates", () => {
   it.each(["zcode-builtin.json", "zcode-builtin.test.json"])(
-    "%s 区分普通计费与套餐端点、签名准入、获取入口和媒体能力",
+    "%s separates metered vs plan endpoints, signed admission, fetch entry and media capabilities",
     async (filename) => {
       const release = JSON.parse(
         await readFile(new URL(`../../../config/provider/${filename}`, import.meta.url), "utf8"),

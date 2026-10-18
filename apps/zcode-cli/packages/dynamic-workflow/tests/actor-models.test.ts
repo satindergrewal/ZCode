@@ -3,9 +3,9 @@ import { analyzeWorkflowScript } from "../src/index.js";
 import { MODEL_REFERENCE_CODE } from "../src/analysis/actor-models.js";
 import { lowerWorkflowScript } from "../src/lowering/index.js";
 
-// 子代理模型名集合的封闭性（9010，docs/dynamic-workflow/authoring.md「Choosing a model per
-// subagent」）。规则判的是 persona `model` 属性的**类型**：ModelRef、字符串字面量类型或它们的
-// 联合才收；收下的每个字面量都进 `modelReferences`，launch 工具据此在确认窗之前解析全部名字。
+// Closure of the subagent model-name set (9010; docs/dynamic-workflow/authoring.md,
+// Choosing a model per subagent). The rule judges the persona model property's type: only ModelRef,
+// string literal types, or unions of those are admitted; each admitted literal lands in modelReferences
 
 function analyze(scriptText: string) {
   const result = analyzeWorkflowScript(scriptText);
@@ -13,7 +13,7 @@ function analyze(scriptText: string) {
   return { hits, result };
 }
 
-/** 干净脚本：没有任何诊断，返回收集到的名字（按出现顺序，含重复）。 */
+/** Clean script: no diagnostics; returns collected names in order, duplicates included. */
 function namesOf(scriptText: string): string[] {
   const { result } = analyze(scriptText);
   expect(result.diagnostics).toEqual([]);
@@ -24,7 +24,7 @@ function namesOf(scriptText: string): string[] {
 describe("persona model: accepted forms", () => {
   it("an inline string literal", () => {
     expect(
-      namesOf(`const a = agent("评审员", { system: "s", model: "GLM-5.3-Flash" });\nreturn 1;`),
+      namesOf(`const a = agent("reviewer", { system: "s", model: "GLM-5.3-Flash" });\nreturn 1;`),
     ).toEqual(["GLM-5.3-Flash"]);
   });
 
@@ -44,7 +44,7 @@ describe("persona model: accepted forms", () => {
         `agent("b", { model: hard ? "GLM-5.3$high" : FLASH });\n` +
         `return 1;`,
     );
-    // 联合成员的顺序是 checker 的（类型 id 序），不是源码序：只断言集合与次数。
+    // Union member order is the checker's (type-id order), not source order: assert the set and counts only.
     expect([...names].sort()).toEqual(["GLM-5.3$high", "GLM-5.3-Flash", "GLM-5.3-Flash"]);
   });
 
@@ -66,8 +66,8 @@ describe("persona model: accepted forms", () => {
     const script =
       `const MODELS = { light: model("GLM-5.3-Flash"), strong: model("GLM-5.3$high") };\n` +
       `interface Route { tier: "light" | "strong" }\n` +
-      `const route = await agent("分诊", { model: MODELS.light }).ask<Route>("pick");\n` +
-      `const answer = await agent("答复者", { model: MODELS[route.tier] }).ask("go");\n` +
+      `const route = await agent("triage", { model: MODELS.light }).ask<Route>("pick");\n` +
+      `const answer = await agent("answerer", { model: MODELS[route.tier] }).ask("go");\n` +
       `return answer;`;
     const { result } = analyze(script);
     expect(result.diagnostics).toEqual([]);
@@ -76,7 +76,7 @@ describe("persona model: accepted forms", () => {
       { name: "GLM-5.3-Flash", line: 1, column: 31 },
       { name: "GLM-5.3$high", line: 1, column: 63 },
     ]);
-    // 分析照常产出图：模型不是图的一部分。
+    // The analysis still produces graphs: models are not graph data.
     expect(result.graph).toBeDefined();
   });
 
@@ -93,8 +93,8 @@ describe("persona model: accepted forms", () => {
   it("a literal union answered by a router (the schema pins the enum)", () => {
     const names = namesOf(
       `interface Route { model: "GLM-5.3" | "GLM-5.3-Flash" }\n` +
-        `const r = await agent("分诊").ask<Route>("pick");\n` +
-        `await agent("答复者", { model: r.model }).ask("go");\n` +
+        `const r = await agent("triage").ask<Route>("pick");\n` +
+        `await agent("answerer", { model: r.model }).ask("go");\n` +
         `return 1;`,
     );
     expect([...names].sort()).toEqual(["GLM-5.3", "GLM-5.3-Flash"]);
@@ -121,7 +121,7 @@ describe("persona model: rejected forms (9010)", () => {
     expect(hits).toHaveLength(1);
     expect(hits[0]?.line).toBe(line);
     expect(result.ok).toBe(false);
-    // 与 world.run / phase 同席：图不产出。
+    // Rides with world.run/phase: no graph is produced.
     expect(result.graph).toBeUndefined();
     return hits[0]!;
   };
@@ -156,7 +156,7 @@ describe("persona model: rejected forms (9010)", () => {
 
   it("a model name computed from a subagent's answer", () => {
     expectRejected(
-      `const name = await agent("分诊").ask("which model?");\nagent("b", { model: name });\nreturn 1;`,
+      `const name = await agent("triage").ask("which model?");\nagent("b", { model: name });\nreturn 1;`,
       2,
     );
   });
@@ -221,8 +221,8 @@ describe("lowering model()", () => {
   it('erases model("x") to the string itself and leaves the persona object alone', () => {
     const result = lowerWorkflowScript(
       `const MODELS = { light: model("GLM-5.3-Flash") };\n` +
-        `const a = agent("评审员", { system: "s", model: MODELS.light });\n` +
-        `const b = agent("写手", { model: "GLM-5.3$high" });\n` +
+        `const a = agent("reviewer", { system: "s", model: MODELS.light });\n` +
+        `const b = agent("writer", { model: "GLM-5.3$high" });\n` +
         `return 1;`,
     );
     expect(result.ok).toBe(true);
@@ -238,7 +238,7 @@ describe("lowering model()", () => {
     const result = lowerWorkflowScript(
       `const MODELS = { light: model("GLM-5.3-Flash"), strong: model("GLM-5.3") };\n` +
         `const pick: "light" | "strong" = args.hard === true ? "strong" : "light";\n` +
-        `agent("答复者", { model: MODELS[pick] });\n` +
+        `agent("answerer", { model: MODELS[pick] });\n` +
         `return 1;`,
     );
     expect(result.ok).toBe(true);

@@ -26,8 +26,8 @@ const TOOL_SURFACE =
 
 /** Evidence bar: cite what was read/run, or the material shipped with the ask; only runs count, at the scale the ask names. */
 const EVIDENCE_RULE =
-    // "Only runs count" governs honesty, not scale —
-    // in production subagents substituted one test file or one build for the whole suite the ask named. This line governs scale.
+  // "Only runs count" governs honesty, not scale —
+  // in production subagents substituted one test file or one build for the whole suite the ask named. This line governs scale.
   "Ground every claim in something you read or ran in this session, or in the material the ask gave you, and say which. Cite code as `path:line`. A check counts as passed only if you executed it here; if you could not run it, report it as not run. Run the check an ask names rather than a faster substitute, and say exactly which command you ran.";
 
 function buildWorkflowContract(): string {
@@ -38,9 +38,9 @@ function buildWorkflowContract(): string {
     `- ${EVIDENCE_RULE}`,
     "- Report outcomes faithfully. If part of the task is impossible, out of scope, or contradicted by what you found, say so in the result instead of filling a field with a plausible guess. Never fake a passing result to satisfy an instruction.",
     "- When you are blocked by something outside your reach — a gate that cannot pass, instructions that contradict each other, a fact only the run's owner knows — call `escalate`. Questions written in prose reach nobody.",
-        // The artifact clause turns "files written by the subagent" from discouraged-and-untracked
-        // into a sanctioned escape hatch: subagents still have no artifact tools (only the script publishes; trust boundary unchanged), but
-        // when the ask names an output path, write there and hand the path back; the script publishes it to the user.
+    // The artifact clause turns "files written by the subagent" from discouraged-and-untracked
+    // into a sanctioned escape hatch: subagents still have no artifact tools (only the script publishes; trust boundary unchanged), but
+    // when the ask names an output path, write there and hand the path back; the script publishes it to the user.
     "- Do not write report or summary files on your own initiative; findings go in the result. When the ask names an output path, write exactly there and return that path in the result — the script publishes it to the user.",
   ].join("\n");
 }
@@ -52,8 +52,8 @@ function buildWorkflowActorIdentityPrompt(actor: WorkflowActorContext): string {
     `You are a subagent inside a dynamic workflow run${named}. A script created you and hands you work one ask at a time; the script — not a person — consumes what you return. There is no user in this conversation to talk to.`,
   ];
   const persona = actor.persona?.trim();
-    // No CLI prefix precedes this anymore ("You are ZCode, an interactive coding agent"
-    // is the wrong identity for a subagent), so this section is the system's first line and no longer starts with a blank line.
+  // No CLI prefix precedes this anymore ("You are ZCode, an interactive coding agent"
+  // is the wrong identity for a subagent), so this section is the system's first line and no longer starts with a blank line.
   const parts = [
     opening.join("\n"),
     ...(persona ? ["", persona] : []),

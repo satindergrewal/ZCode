@@ -71,8 +71,8 @@ export function formatZodError(error: z.ZodError): string {
 
 export const nonEmptyStringSchema = z.string().trim().min(1);
 export const stringArraySchema = z.array(z.string());
-// Task04B：topic physical-frame 计量器按 bridge/recovery id 的协议最大长度计算
-// mobile relay 外壳；不在不可信 payload 入口机械限长，1MiB 上限就只是估算。
+// Task04B: the topic physical-frame meter sizes the mobile relay shell by the protocol max of bridge/recovery ids;
+// no mechanical cap at the untrusted-payload ingress -- a 1MiB bound there would be a guess.
 const webRemoteControlTransportIdSchema = nonEmptyStringSchema
   .max(PROTOCOL_V4_LIMITS.transportEnvelopeIdMaxChars)
   .regex(/^[A-Za-z0-9._~-]+$/u);
@@ -324,8 +324,8 @@ const webRemoteControlAppPayloadSchemas = [
     success: z.literal(false),
     error: z.string(),
   }),
-  // Bugfix：04D-3 必须让 fragment/ACK 与 acknowledged adapter 原子切换。
-  // 继续接受 legacy 单片会让 raw bytes 绕过 ACK/replay owner 和 1MiB 外壳硬边界。
+  // Bugfix: 04D-3 must switch fragment/ACK and the acknowledged adapter atomically.
+  // Still accepting legacy single-fragments lets raw bytes bypass the ACK/replay owner and the 1MiB shell hard bound.
   webRemoteControlRpcTransportFrameSchema,
   webRemoteControlRpcTransportAckSchema,
   z.object({
@@ -372,10 +372,10 @@ const webRemoteControlAppPayloadSchemas = [
   }),
 ] as const;
 
-// Bugfix: app payload 里多个消息共享 zcode_type（例如 platform-response），
-// 不能直接用 z.discriminatedUnion("zcode_type")，否则 schema 初始化会因重复值失败。
-// 这里保留同一批运行时约束，改用普通 union，让外部 relay 的不可信 payload
-// 在进入 desktop/web 路由前仍然先被机械校验。
+// Bugfix: several messages in one app payload share a zcode_type (e.g. platform-response),
+// so z.discriminatedUnion("zcode_type") would fail at schema init on duplicate values.
+// The same runtime constraints stay, as a plain union, so the external relay's untrusted payload
+// still passes mechanical validation before desktop/web routing.
 export const webRemoteControlAppPayloadSchema = z.union(webRemoteControlAppPayloadSchemas);
 
 export function parseWebRemoteControlAppPayload(
@@ -520,7 +520,7 @@ export const hostInitLocalMessageSchema = z.object({
   feedbackApiBase: z.string().url().optional(),
   workspacePath: nonEmptyStringSchema.optional(),
   workspaceIdentity: nonEmptyStringSchema.optional(),
-  // 启动只预热 active workspace（desktop STARTUP_AGENT_WARMUP_LIMIT = 1），协议层同步收紧上限。
+  // Startup prewarms the active workspace only (desktop STARTUP_AGENT_WARMUP_LIMIT = 1); the protocol layer tightens in step.
   agentWarmupTargets: z.array(hostAgentWarmupTargetSchema).max(1).optional(),
   agentSpawnFallbackCwd: nonEmptyStringSchema.optional(),
   zcodeBuiltinProviderConfigFilePath: nonEmptyStringSchema,
@@ -768,7 +768,7 @@ export const hostLocalMediaPreviewPathAuthorizeResultMessageSchema = z
   })
   .strict();
 
-/** main → host：插件 UI 沙箱登记结果（PluginSandboxRegisterResultPayload）。 */
+/** main -> host: plugin-UI sandbox registration result (PluginSandboxRegisterResultPayload). */
 export const hostPluginSandboxRegisterResultMessageSchema = z
   .object({
     type: z.literal("plugin-sandbox-register-result"),
@@ -779,16 +779,16 @@ export const hostPluginSandboxRegisterResultMessageSchema = z
     initId: z.number().int().nonnegative().optional(),
     shellUrl: nonEmptyStringSchema.optional(),
     partition: nonEmptyStringSchema.optional(),
-    // 登记时生效的呈现字段（资源级优先合并后的值），回 renderer 定初始高度 / 边框。
-    // Bugfix：这条 schema 是 strict 的——句柄多带一个未声明字段，整条回包会被 host 拒收，桥永远等不到句柄，
-    // 卡片卡在 preparing（2026-09-12 inline e2e 复现）。改 PluginSandboxHandle 必须同步这里。
+    // Presentation fields effective at registration (resource-level-priority merge), returned for initial height/border.
+    // Bugfix: this schema is strict -- one undeclared handle field and the host rejects the whole reply, the bridge never sees a handle,
+    // the card sticks at preparing (reproduced 2026-09-12, inline e2e). Any PluginSandboxHandle change syncs here.
     resourceMeta: z
       .object({
         prefersBorder: z.boolean().optional(),
         heightHint: z.number().int().positive().optional(),
         minFrameHeight: z.number().int().positive().optional(),
         showInline: z.boolean().optional(),
-        // 资源声明的浏览器权限随句柄回 renderer（进 hostContext.permissions）；与登记请求的 permissions 同一枚举。
+        // Resource-declared browser permissions ride the handle to the renderer (into hostContext.permissions); same enum as the request.
         permissions: z
           .array(z.enum(["camera", "microphone", "geolocation", "clipboardWrite"]))
           .optional(),
@@ -1289,7 +1289,7 @@ export const hostLocalMediaPreviewPathAuthorizeRequestResponseSchema = z
   })
   .strict();
 
-/** host → main：登记已校验的插件 UI HTML。 */
+/** host -> main: registration-validated plugin UI HTML. */
 export const hostPluginSandboxRegisterRequestResponseSchema = z
   .object({
     type: z.literal("plugin-sandbox-register-request"),
@@ -1301,12 +1301,12 @@ export const hostPluginSandboxRegisterRequestResponseSchema = z
     sessionId: nonEmptyStringSchema,
     contentKind: z.literal("gen-ui").optional(),
     pluginId: nonEmptyStringSchema.optional(),
-    // 资源所属 MCP server 运行时名：沙箱 partition 按它派生。
+    // Owning MCP server runtime name: the sandbox partition derives from it.
     serverName: nonEmptyStringSchema.optional(),
-    // 沙箱作用域 id（`tool:<toolCallId>` / `surface:<surfaceId>`），main 只当不透明字符串。
+    // Sandbox scope id (`tool:<toolCallId>` / `surface:<surfaceId>`); main treats it as an opaque string.
     scopeId: nonEmptyStringSchema,
     html: z.string(),
-    // MCP Apps 资源级 CSP 的四类域；与 mcp-apps 的 mcpToolUiCspSchema 同步。
+    // The four domain classes of the MCP Apps resource CSP; synced with mcp-apps' mcpToolUiCspSchema.
     csp: z
       .object({
         connectDomains: z.array(z.string()).optional(),
@@ -1316,17 +1316,17 @@ export const hostPluginSandboxRegisterRequestResponseSchema = z
       })
       .strict()
       .optional(),
-    // 资源级 `_meta["zcode/csp"]` 放宽项；与 mcp-apps 的 mcpAppCspRelaxationsSchema 同步。
+    // Resource-level `_meta["zcode/csp"]` relaxations; synced with mcp-apps' mcpAppCspRelaxationsSchema.
     cspRelaxations: z
       .object({ unsafeEval: z.boolean().optional(), wasmUnsafeEval: z.boolean().optional() })
       .strict()
       .optional(),
-    // 资源级 `_meta.ui.permissions`（规范四键）；与 mcp-apps 的 MCP_APPS_RESOURCE_PERMISSIONS 同步。
+    // Resource-level `_meta.ui.permissions` (the spec's four keys); synced with mcp-apps' MCP_APPS_RESOURCE_PERMISSIONS.
     permissions: z
       .array(z.enum(["camera", "microphone", "geolocation", "clipboardWrite"]))
       .optional(),
     prefersBorder: z.boolean().optional(),
-    // 资源级尺寸提示，main 原样放进句柄的 resourceMeta。strict schema：改 PluginSandboxRegisterRequestPayload 必须同步这里。
+    // Resource-level size hints, placed verbatim into the handle resourceMeta. Strict schema: PluginSandboxRegisterRequestPayload changes sync here.
     heightHint: z.number().int().positive().optional(),
     minFrameHeight: z.number().int().positive().optional(),
     showInline: z.boolean().optional(),
@@ -1638,7 +1638,7 @@ export const zcodeTaskMetaSchema = z.object({
   model: z.string().optional(),
   thoughtLevel: nonEmptyStringSchema.optional(),
   runtimeEpoch: z.number().int().nonnegative().optional(),
-  // meta 直接解析自 tasks-index/旧 session 文件；历史 provider 值在此归一为 glm。
+  // meta parses straight from tasks-index/legacy session files; historical provider values normalize to glm here.
   provider: legacyZCodeProviderSchema.optional(),
   migrationSource: zcodeTaskMigrationSourceSchema.optional(),
   forkedFromTaskId: nonEmptyStringSchema.optional(),
@@ -1695,10 +1695,10 @@ export const zcodeTaskSessionBindingStateSchema = z.enum([
 ]);
 
 export const zcodeTaskSessionBindingSchema = z.object({
-  // 绑定状态由 services 从持久化数据投影；旧绑定残留的历史 provider 值在此归一为 glm。
+  // Binding state projects from persisted data in services; legacy bindings' historical provider values normalize to glm here.
   provider: legacyZCodeProviderSchema,
   sessionId: nonEmptyStringSchema,
-  // 绑定锚点需要支持空 task 的 -1，所以这里不能套 nonnegative。
+  // The binding anchor must support -1 for empty tasks, so nonnegative does not apply here.
   lastSyncedTurnIndex: z.number().int(),
   state: zcodeTaskSessionBindingStateSchema,
 });

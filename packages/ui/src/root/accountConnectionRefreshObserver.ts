@@ -51,7 +51,10 @@ export function createAccountConnectionRefreshObserver(
         });
       } catch (error) {
         // A failed notice query is not a new invalidation; repeated Views must not spawn endless notify/retry.
-        logger.lifecycle.warn("[AccountConnection] Failed to build the plan-invalidation notice; keeping the current selection", { error });
+        logger.lifecycle.warn(
+          "[AccountConnection] Failed to build the plan-invalidation notice; keeping the current selection",
+          { error },
+        );
       }
     },
     invalidate() {

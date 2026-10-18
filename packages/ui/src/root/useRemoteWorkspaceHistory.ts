@@ -437,7 +437,10 @@ export async function openRemoteWorkspaceFromHistoryEntry({
           workspaceIdentity,
         }),
       onWorkspaceActivated: (target) => {
-        logger.debug("[Root] Remote history workspace ready; committing tab and draft activation", target);
+        logger.debug(
+          "[Root] Remote history workspace ready; committing tab and draft activation",
+          target,
+        );
         onWorkspaceActivated?.(target);
       },
       options: {
@@ -884,7 +887,10 @@ export function useRemoteWorkspaceHistory({
               workspaceIdentity,
             }),
           onWorkspaceActivated: (target) => {
-            logger.debug("[Root] Remote workspace ready; committing tab and draft activation", target);
+            logger.debug(
+              "[Root] Remote workspace ready; committing tab and draft activation",
+              target,
+            );
             onWorkspaceActivated?.(target);
           },
           options: {
@@ -955,7 +961,9 @@ export function useRemoteWorkspaceHistory({
             .path;
         } catch (error) {
           // A failed path creation must not swallow real project restore; the later explicit new-conversation keeps its retryable error path.
-          logger.warn("[Root] Failed to resolve the conversation workspace during restore", { error });
+          logger.warn("[Root] Failed to resolve the conversation workspace during restore", {
+            error,
+          });
         }
       }
       // Startup restore of remote workspaces reconnects only the disconnected tabs already in the task list.
@@ -1182,13 +1190,16 @@ export function useRemoteWorkspaceHistory({
             workspaceKey,
           })
         ) {
-          logger.info("[Root] WSL session closed; skipping the failure write, awaiting the reconnect outcome", {
-            pendingReconnectRequestId,
-            sessionId,
-            workspaceIdentity: sessionEntry.workspaceIdentity ?? null,
-            workspacePath: sessionEntry.workspacePath,
-            workspaceKey,
-          });
+          logger.info(
+            "[Root] WSL session closed; skipping the failure write, awaiting the reconnect outcome",
+            {
+              pendingReconnectRequestId,
+              sessionId,
+              workspaceIdentity: sessionEntry.workspaceIdentity ?? null,
+              workspacePath: sessionEntry.workspacePath,
+              workspaceKey,
+            },
+          );
           continue;
         }
 

@@ -44,7 +44,9 @@ export function decodeZCodeBuiltinRelease(input: unknown): ZCodeBuiltinRelease {
   // or LKG must not republish it through the target host registry. Reject the whole
   // incompatible release and let the source fall back to a compatible candidate.
   if (providers.has(RETIRED_ZAPI_PROVIDER_ID)) {
-    throw new Error(`ZCode Built-in release contains a retired provider: ${RETIRED_ZAPI_PROVIDER_ID}`);
+    throw new Error(
+      `ZCode Built-in release contains a retired provider: ${RETIRED_ZAPI_PROVIDER_ID}`,
+    );
   }
   return Object.freeze({
     schemaVersion: ZCODE_BUILTIN_RELEASE_SCHEMA_VERSION,

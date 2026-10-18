@@ -395,7 +395,7 @@ function extractSpecE2EMarkers(text) {
         (text.match(/\bE2E_[A-Z0-9_]+\b/g) ?? []).map((marker) => marker.replace(/_+$/, "")),
       ),
     ]
-      // 修复：E2E_PROVIDER_* 是上游供应商配置的环境变量名，不是用例标记；曾被误报为未覆盖的 marker。
+      // Fix: E2E_PROVIDER_* are provider-config env names, not case markers; once misreported as uncovered markers.
       .filter((marker) => !ignoredMarkers.has(marker) && !marker.startsWith("E2E_PROVIDER_"))
       .sort()
   );

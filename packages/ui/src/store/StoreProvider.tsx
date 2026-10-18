@@ -1,7 +1,7 @@
 /**
- * StoreProvider —— 初始化 Zustand store 并通过 React Context 提供
+ * StoreProvider: creates the Zustand store and provides it via React Context.
  *
- * 在应用根部挂载，连接 broadcastService 实现跨窗口状态同步。
+ * Mounted at the app root; connects broadcastService for cross-window state sync.
  */
 import {
   createContext,
@@ -15,7 +15,7 @@ import { useStore } from "zustand";
 import type { IBroadcastService } from "@zcode/services";
 import { createZCodeStore, type ZCodeStore, type ZCodeState } from "./index.js";
 
-// 导出 Context 供测试直接注入已构造的 store 实例（如跨窗口广播抑制用例）。
+// Exported so tests can inject a prebuilt store instance (cross-window broadcast-suppression cases).
 export const StoreContext = createContext<ZCodeStore | null>(null);
 
 export function StoreProvider({
@@ -27,7 +27,7 @@ export function StoreProvider({
   initialIsRestoringOAuthSession?: boolean;
   children: ReactNode;
 }) {
-  // 只在首次渲染时创建 store，避免 HMR 重复订阅
+  // Create the store on first render only; avoids duplicate subscriptions under HMR.
   const storeRef = useRef<ZCodeStore | null>(null);
   if (!storeRef.current) {
     storeRef.current = createZCodeStore(broadcastService, {
@@ -39,29 +39,29 @@ export function StoreProvider({
 }
 
 /**
- * 消费 Zustand store 的 hook
+ * Hook that reads from the Zustand store.
  *
- * 用法：
+ * Usage:
  *   const theme = useZCodeStore(s => s.theme);
  *   const setTheme = useZCodeStore(s => s.setTheme);
  */
 export function useZCodeStore<T>(selector: (state: ZCodeState) => T): T {
   const store = useContext(StoreContext);
   if (!store) {
-    throw new Error("useZCodeStore 必须在 StoreProvider 内使用");
+    throw new Error("useZCodeStore must be used within a StoreProvider");
   }
   return useStore(store, selector);
 }
 
 /**
- * 带默认值的容错版 useZCodeStore（store 耦合剥离配套）。
+ * Fault-tolerant useZCodeStore with a default (part of the store-decoupling split).
  *
- * 使用场景：宿主组件（PermissionDialog / 各 markdown 弹窗等）负责从 store 取
- * theme / codePreviewSettings，再通过 props 注入纯展示组件。这些宿主在单测里常被
- * 无 Provider 直接 renderToStaticMarkup，此时返回 defaultValue 而不是抛错，
- * 与「展示组件不触 store」的约束保持一致；真实应用 Root 必挂 StoreProvider，走真实值。
+ * Host components (PermissionDialog / markdown dialogs) read theme/codePreviewSettings from the
+ * store and inject them into presentational children. In unit tests those hosts are often
+ * rendered via renderToStaticMarkup with no provider; return defaultValue instead of throwing,
+ * matching "presentational components never touch the store" (real Root always mounts the provider).
  *
- * 注意：selector 返回值与 defaultValue 都必须引用稳定，否则会造成无限重渲染。
+ * Note: selector results and defaultValue must be reference-stable, or this loops forever.
  */
 export function useZCodeStoreWithDefault<T>(
   selector: (state: ZCodeState) => T,

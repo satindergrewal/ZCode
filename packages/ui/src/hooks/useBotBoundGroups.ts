@@ -58,9 +58,9 @@ export function useBotBoundGroups(bot: BotConfig) {
     try {
       await refresh();
     } catch (cause) {
-      // 迟到的失败不能覆盖广播触发的新读取结果。
+      // Late failures never overwrite broadcast-triggered reads.
       if (!alive.current || requested !== revision.current) return;
-      logger.warn("读取已绑定群聊失败", { error: String(cause) });
+      logger.warn("failed to load bound groups", { error: String(cause) });
       setError("load");
       setLoading(false);
     }
@@ -86,14 +86,14 @@ export function useBotBoundGroups(bot: BotConfig) {
       try {
         await botsService.setGroupEnabled({ botId: bot.id, chatId, enabled });
         const next = await refresh();
-        // 旧接口可能返回成功但未改变授权，必须读取权威状态再确认。
+        // Legacy success may mean no change; confirm against authoritative state.
         const actual = projectBoundGroups(next, bot.id, bot.providerUserId).find(
           (row) => row.chatId === chatId,
         );
         if (actual?.enabled !== enabled) throw new Error("Group authorization was not updated");
       } catch (cause) {
         if (alive.current) {
-          logger.warn("保存群聊开关失败", { error: String(cause) });
+          logger.warn("failed to save group toggle", { error: String(cause) });
           setError("save");
         }
       } finally {

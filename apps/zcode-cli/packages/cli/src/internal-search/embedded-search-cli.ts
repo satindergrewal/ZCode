@@ -29,7 +29,7 @@ const GREP_BYPASS_PATTERNS = [
   /^---.*$/u,
   /^-@.*$/u,
   /^-.*-save-config.*$/u,
-    // ugrep's -z/-Z differ from GNU grep's null-data semantics; these flags must route back to the system grep.
+  // ugrep's -z/-Z differ from GNU grep's null-data semantics; these flags must route back to the system grep.
   /^-[Zz].*$/u,
   /^-[^-].*[Zz].*$/u,
   /^--null$/u,
@@ -131,13 +131,13 @@ function runNativeSearchCommand(
     };
 
     const onAbort = () => {
-            // The real search process of embedded search is spawned again by __internal-search;
-            // relying only on the outer Bash process-tree cleanup would leave native find/grep behind when remote/large-repo searches are cancelled.
+      // The real search process of embedded search is spawned again by __internal-search;
+      // relying only on the outer Bash process-tree cleanup would leave native find/grep behind when remote/large-repo searches are cancelled.
       requestChildTermination();
     };
 
-        // Internal grep often ends up in a grep ... | head pipeline; the downstream closes stdout once it has enough.
-        // Native grep/ugrep handle that SIGPIPE quietly; the Node relay must also swallow EPIPE and stop the child, keeping tool results unpolluted.
+    // Internal grep often ends up in a grep ... | head pipeline; the downstream closes stdout once it has enough.
+    // Native grep/ugrep handle that SIGPIPE quietly; the Node relay must also swallow EPIPE and stop the child, keeping tool results unpolluted.
     const stopAfterStdoutClosed = () => {
       stdoutClosed = true;
       requestChildTermination();
@@ -205,7 +205,7 @@ function runNativeSearchCommand(
       if (forceKillTimer) {
         clearTimeout(forceKillTimer);
       }
-      settle(signal.aborted ? exitCodeForAbortSignal(signal) : code ?? (childSignal ? 128 : 1));
+      settle(signal.aborted ? exitCodeForAbortSignal(signal) : (code ?? (childSignal ? 128 : 1)));
     });
 
     if (io.stdin) {
@@ -282,8 +282,8 @@ function terminateNativeSearchChild(
     return undefined;
   }
 
-    // Native find/grep are direct children of __internal-search;
-    // keep them inside the outer Bash process group so the Bash runner's two-stage cleanup still catches them, while the wrapper kills its own direct child.
+  // Native find/grep are direct children of __internal-search;
+  // keep them inside the outer Bash process group so the Bash runner's two-stage cleanup still catches them, while the wrapper kills its own direct child.
   child.kill("SIGTERM");
 
   const timer = setTimeout(() => {

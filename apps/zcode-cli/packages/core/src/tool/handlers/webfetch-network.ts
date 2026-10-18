@@ -50,7 +50,7 @@ export async function fetchAndExtractContent(options: {
 
   for (let redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount += 1) {
     // ZCode WebFetch egresses from the agent runtime host; with DNS preflight removed, each real GET is
- // still preceded by a URL-literal local/private-target check -- NO_PROXY must not bypass the boundary.
+    // still preceded by a URL-literal local/private-target check -- NO_PROXY must not bypass the boundary.
     await assertWebFetchLiteralEgress(currentUrl);
 
     const requestId = `net_${crypto.randomUUID()}`;
@@ -95,7 +95,7 @@ export async function fetchAndExtractContent(options: {
       });
     } catch (error) {
       // Node/undici top-level network errors are often just "fetch failed"; expose the deepest cause and
- // code, or connection-reset/DNS/proxy failures are indistinguishable in the tool result.
+      // code, or connection-reset/DNS/proxy failures are indistinguishable in the tool result.
       const errorMessage = formatWebFetchRequestError(error, currentUrl);
       await emitNetworkRequestStatus(options.context, {
         completedAt: new Date().toISOString(),
@@ -127,12 +127,7 @@ export async function fetchAndExtractContent(options: {
           error,
         );
       }
-      throw webFetchError(
-        "FetchFailed",
-        errorMessage,
-        { url: currentUrl.toString() },
-        error,
-      );
+      throw webFetchError("FetchFailed", errorMessage, { url: currentUrl.toString() }, error);
     }
 
     // The network layer settles by response class, keeping redirects/HTTP errors out of body extraction and the model path.

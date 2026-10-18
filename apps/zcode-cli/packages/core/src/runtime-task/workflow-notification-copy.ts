@@ -180,10 +180,10 @@ export function formatWorkflowEscalationNotification(
 }
 
 /**
- * 脚本到达一处留白、等主代理还它代码（docs/dynamic-workflow/transcript-and-notifications.md「What the
- * model reads」的 `<workflow-hole>`）。与升级问答同族：播报的是一件**还没被满足的义务**，没有超时替它
- * 兜底。文案把这几件事说死：去读草稿（函数体在留白处编译、看得见它之前的绑定）、只写语句、返回留白
- * 的类型、带 hole_id 调 FillWorkflowHole；只有这一支停着、run 其余照跑；通知丢了去 GetWorkflowRun。
+ * The script reached a hole and waits for the main agent to return code (docs/dynamic-workflow/transcript-and-notifications.md "What the
+ * model reads", `<workflow-hole>`). Kin of the escalation notice: it announces an **as-yet unmet obligation**, with no timeout backstop.
+ * The copy pins down: read the draft (the body compiles at the hole and sees prior bindings), statements only, return the hole
+ * type, call FillWorkflowHole with hole_id; only this branch pauses while the rest of the run continues; a lost notice is recovered via GetWorkflowRun.
  */
 export interface WorkflowHoleNotificationInput {
   runLabel: string;

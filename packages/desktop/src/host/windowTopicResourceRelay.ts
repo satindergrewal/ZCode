@@ -2,7 +2,7 @@ import type { IBotsService, ServiceCollection } from "@zcode/services";
 import { createTopicResourceRelayChannel } from "@zcode/services/node";
 import type { WindowHostAttachmentScope, ZCodeTopicResourceRelayRequest } from "@zcode/shared";
 
-/** 反向请求必须属于发起它的物理连接，并仍绑定当前 logical session，不能只比较文件路径。 */
+/** Reverse requests must belong to the physical connection that started them and stay bound to the current logical session; path equality alone is not enough. */
 export function createWindowTopicResourceRelay(deps: {
   getPeerServices(): ServiceCollection | undefined;
   resolveServices(scope: WindowHostAttachmentScope): ServiceCollection;

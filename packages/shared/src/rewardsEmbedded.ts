@@ -49,7 +49,7 @@ export function resolveRewardsOrigin(options: {
     )
       return new URL(options.override).origin;
   } catch {
-    // 配置值非法时回到受信任的环境地址，不让菜单点击直接抛异常。
+    // Fall back to the trusted env address when the configured value is invalid, instead of throwing on menu click.
   }
   return options.env === "test" ? "https://zcode.z.ai" : "https://zcode.z.ai";
 }

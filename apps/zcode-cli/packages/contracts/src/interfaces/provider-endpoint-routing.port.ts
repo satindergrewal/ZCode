@@ -12,9 +12,9 @@ export interface ProviderEndpointRoutingResolveOptions {
 }
 
 /**
- * 模型 provider transport 的动态 endpoint 决策边界。
+ * Dynamic endpoint decision boundary for model provider transports.
  *
- * 实现可以按需刷新远端配置，但不得修改或持久化 provider baseURL。
+ * Implementations may refresh remote configuration on demand, but must not modify or persist provider base URLs.
  */
 export interface ProviderEndpointRoutingPort {
   resolve(

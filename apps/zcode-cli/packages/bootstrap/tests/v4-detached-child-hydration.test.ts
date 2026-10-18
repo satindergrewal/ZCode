@@ -50,7 +50,11 @@ class EventLog {
 
   constructor(private readonly sessionId: string) {}
 
-  push(type: SessionEventTypeUnion, payload: unknown, opts: { turnId?: string } = {}): SessionEvent {
+  push(
+    type: SessionEventTypeUnion,
+    payload: unknown,
+    opts: { turnId?: string } = {},
+  ): SessionEvent {
     this.seq += 1;
     return {
       id: `${this.sessionId}-event-${this.seq}` as EventId,

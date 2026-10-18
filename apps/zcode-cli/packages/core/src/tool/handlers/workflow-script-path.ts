@@ -2,11 +2,11 @@
 // The workflow script file, model-facing form.
 // ============================================================
 // The journal always stores the **absolute path**: it is part of the run identity, and the session cwd
- moves (cd, another session reading the run) -- a stored relative path would point elsewhere later.
+// moves (cd, another session reading the run) -- a stored relative path would point elsewhere later.
 //
 // But the model should see the workspace form: its next act is Edit on that file, and workspace-relative
- is exactly the path style it uses everywhere else. One pure function apart -- minted once, shared by
- three model faces (terminal notification, GetWorkflowRun, tool response), so no drift.
+// is exactly the path style it uses everywhere else. One pure function apart -- minted once, shared by
+// three model faces (terminal notification, GetWorkflowRun, tool response), so no drift.
 
 import path from "node:path";
 

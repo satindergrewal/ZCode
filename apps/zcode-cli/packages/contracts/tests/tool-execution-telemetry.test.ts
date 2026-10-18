@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ToolExecutionTelemetrySchema } from "../src/tools/performance.js";
 
 describe("ToolExecutionTelemetrySchema", () => {
-  it("命令 detail 接受真实退出码", () => {
+  it("command detail accepts real exit codes", () => {
     expect(
       ToolExecutionTelemetrySchema.parse({
         detail: {
@@ -25,7 +25,7 @@ describe("ToolExecutionTelemetrySchema", () => {
     });
   });
 
-  it("文件 detail 在类型和运行时 Schema 中都不接受退出码", () => {
+  it("file detail accepts no exit code, in type and runtime schema", () => {
     expect(() =>
       ToolExecutionTelemetrySchema.parse({
         detail: {
@@ -39,7 +39,7 @@ describe("ToolExecutionTelemetrySchema", () => {
     ).toThrow();
   });
 
-  it("顶层不再接受兼容 exitCode", () => {
+  it("top level no longer accepts the legacy exitCode", () => {
     expect(() =>
       ToolExecutionTelemetrySchema.parse({
         exitCode: 0,

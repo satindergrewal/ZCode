@@ -566,7 +566,7 @@ export async function ensureSessionPersisted(
   if (!this.sessionStore || this.sessionPersisted) return;
   const pending = pendingSessionPersistence.get(this);
   if (pending) return pending;
-  // App sampling 可与首轮任务并发；同一任务创建必须合并，避免重复插入及模型配置覆盖。
+  // App sampling may run concurrently with the first turn; creation per task must be merged to avoid duplicate inserts and model-config overwrite.
   const created = persistSession
     .call(this, input, traceContext)
     .finally(() => pendingSessionPersistence.delete(this));
@@ -631,7 +631,7 @@ async function persistSession(
     await this.sessionStore.saveSessionEntry?.(
       buildExecutionStateEntry(this.sessionId, readRuntimeExecutionState(this)),
     );
-    // `/workflow` 作为首轮时激活先于落盘（launch.md「On demand: activation」），entry 在这里补写。
+    // When `/workflow` is the first turn, activation precedes persistence (launch.md "On demand: activation"); the entry is backfilled here.
     await writeDynamicWorkflowActivationEntryIfActivated(this);
     this.sessionPersisted = true;
     this.logger?.debug("Session persisted", {

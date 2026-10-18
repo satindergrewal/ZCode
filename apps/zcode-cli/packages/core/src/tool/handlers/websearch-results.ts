@@ -44,10 +44,10 @@ export function formatWebSearchModelContent(output: unknown): string {
   if (!parsed.success) return modelMessageContentToText(JSON.stringify(output) ?? "");
 
   const data = parsed.data;
-  const links = dedupeSources([
-    ...data.sources,
-    ...extractSourcesFromResults(data.results),
-  ]).slice(0, MAX_SOURCE_LINKS);
+  const links = dedupeSources([...data.sources, ...extractSourcesFromResults(data.results)]).slice(
+    0,
+    MAX_SOURCE_LINKS,
+  );
   const lines = [`Web search results for query: "${data.query}"`, ""];
 
   if (data.summary) {
@@ -87,7 +87,8 @@ function collectResults(value: unknown): WebSearchResultItem[] {
   if (Array.isArray(value.content)) {
     return value.content.flatMap((item) => collectResults(item));
   }
-  if (Array.isArray(value.sources)) return value.sources.flatMap((source) => collectResults(source));
+  if (Array.isArray(value.sources))
+    return value.sources.flatMap((source) => collectResults(source));
   return [];
 }
 
@@ -111,7 +112,7 @@ function extractSourcesFromSummary(summary: string | undefined): WebSearchSource
   if (!summary) return [];
 
   // Since WebSearch went streaming, provider citations sometimes appear only in the summary markdown,
- // never surfaced as sources/toolResults via ModelStreamEvent.
+  // never surfaced as sources/toolResults via ModelStreamEvent.
   const sources: WebSearchSource[] = [];
   const markdownLinkPattern = /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g;
   for (const match of summary.matchAll(markdownLinkPattern)) {
@@ -136,7 +137,8 @@ function collectSources(value: unknown): WebSearchSource[] {
   if (Array.isArray(value.content)) {
     return value.content.flatMap((item) => collectSources(item));
   }
-  if (Array.isArray(value.sources)) return value.sources.flatMap((source) => collectSources(source));
+  if (Array.isArray(value.sources))
+    return value.sources.flatMap((source) => collectSources(source));
   return [];
 }
 

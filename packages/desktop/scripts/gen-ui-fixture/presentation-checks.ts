@@ -149,7 +149,7 @@ export async function checkInlineLayout(
 }
 
 async function checkParentWidth(win: BrowserWindow, read: (code: string) => Promise<any>) {
-  // 修复回归：736/1024 是生成时的设计参考，不应在已经定宽的会话列中再次截断卡片。
+  // Regression fix: 736/1024 was the generation-time design reference; never re-truncate cards inside the fixed-width session column.
   const measurements = await win.webContents.executeJavaScript(`(async () => {
     const root=document.querySelector('#root'), result=[];
     const view=document.querySelector('webview');
@@ -303,7 +303,7 @@ async function checkContentSizing(
         }
       }
     }
-    // 修复回归：测量不得临时写 html 高度，影响原生滚动条布局。
+    // Regression fix: measuring must not temporarily write the html height and disturb native scrollbar layout.
     await read("new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))");
     await read("window.sizingRootMutations=0; document.querySelector('#size-tall').click()");
     await fitted();

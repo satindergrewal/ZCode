@@ -90,7 +90,7 @@ export function resolveCodingPlanEmbeddedOrigin({
   ) {
     return normalizeZCodeEndpointOrigin(normalizedOverride);
   }
-  // Bug 原因：本地开发默认注入 ZCODE_ENV=production，不能仅凭 Vite DEV 就打开未启动的官网本地页。
+  // Bug rationale: local dev injects ZCODE_ENV=production by default; Vite DEV alone must not open the not-running local site.
   if (dev && zcodeEnv === "test") {
     return "http://localhost:3000";
   }

@@ -1,12 +1,12 @@
 /**
- * MCP 用户目录模块 - TOML 解析和序列化
+ * MCP user-directory module - TOML parsing and serialization.
  */
 
 import type { McpServerConfig } from "@zcode/shared";
 
 /**
- * 解析 TOML 内联表格格式
- * 支持: { key = "value", key2 = "value2" }
+ * Parse the TOML inline-table shape.
+ * Supports: { key = "value", key2 = "value2" }
  */
 function parseTomlInlineTable(input: string): Record<string, unknown> | null {
   const inner = input.slice(1, -1).trim();
@@ -82,21 +82,23 @@ function parseTomlInlineTable(input: string): Record<string, unknown> | null {
 function parseTomlValue(value: string): unknown {
   const normalized = value.trim();
 
-  if ((normalized.startsWith('"') && normalized.endsWith('"')) ||
-      (normalized.startsWith("'") && normalized.endsWith("'"))) {
+  if (
+    (normalized.startsWith('"') && normalized.endsWith('"')) ||
+    (normalized.startsWith("'") && normalized.endsWith("'"))
+  ) {
     return normalized.slice(1, -1);
   }
 
   if (normalized === "true") return true;
   if (normalized === "false") return false;
 
-  // 支持内联表格格式 { key = "value", key2 = "value2" }
+  // Supports the inline-table shape { key = "value", key2 = "value2" }.
   if (normalized.startsWith("{") && normalized.endsWith("}")) {
     const parsed = parseTomlInlineTable(normalized);
     if (parsed) {
       return parsed;
     }
-    // 如果解析失败，尝试作为 JSON 解析（兼容旧格式）
+    // On parse failure, retry as JSON (legacy compat).
     try {
       return JSON.parse(normalized);
     } catch {
@@ -122,7 +124,7 @@ export function readTomlMcpServers(raw: string): Record<string, McpServerConfig>
   const servers: Record<string, Record<string, unknown>> = {};
   const lines = raw.split(/\r?\n/);
   let currentServerName: string | null = null;
-  // 当前写入目标：可能是 server 对象本身，也可能是子表（如 env）
+  // Current write target: the server object itself or a sub-table (e.g. env).
   let currentTarget: Record<string, unknown> | null = null;
   const mcpServerHeaderPattern = /^\[(?:mcpServers|mcp_servers)\.([^\]]+)\]$/;
 
@@ -144,11 +146,11 @@ export function readTomlMcpServers(raw: string): Record<string, McpServerConfig>
       const fullKey = tableMatch[1] ?? "";
       const dotIndex = fullKey.indexOf(".");
       if (dotIndex < 0) {
-        // 顶层 server header: [mcp_servers.context7]
+        // Top-level server header: [mcp_servers.context7]
         currentServerName = fullKey || null;
         currentTarget = currentServerName ? ensureServer(currentServerName) : null;
       } else {
-        // 子表 header: [mcp_servers.context7.env]
+        // Sub-table header: [mcp_servers.context7.env]
         const serverName = fullKey.slice(0, dotIndex);
         const subKey = fullKey.slice(dotIndex + 1);
         currentServerName = serverName;
@@ -160,7 +162,7 @@ export function readTomlMcpServers(raw: string): Record<string, McpServerConfig>
       continue;
     }
 
-    // 遇到非 MCP 的 table header 时结束当前 server
+    // A non-MCP table header ends the current server.
     if (/^\[[^\]]+\]$/.test(trimmed)) {
       currentServerName = null;
       currentTarget = null;
@@ -187,7 +189,7 @@ export function readTomlMcpServers(raw: string): Record<string, McpServerConfig>
     }
   }
 
-  // 过滤空的 server
+  // Drop empty servers.
   const result: Record<string, McpServerConfig> = {};
   for (const [name, config] of Object.entries(servers)) {
     if (Object.keys(config).length > 0) {
@@ -198,8 +200,8 @@ export function readTomlMcpServers(raw: string): Record<string, McpServerConfig>
 }
 
 /**
- * 序列化 TOML 值
- * 支持标准 TOML 格式输出，包括内联表格
+ * Serialize a TOML value.
+ * Emits standard TOML, including inline tables.
  */
 function serializeTomlValue(value: unknown): string {
   if (Array.isArray(value)) {
@@ -214,7 +216,7 @@ function serializeTomlValue(value: unknown): string {
   if (value == null) {
     return '""';
   }
-  // 处理对象：输出 TOML 内联表格格式 { key = "value" }
+  // Objects emit as TOML inline tables { key = "value" }.
   if (typeof value === "object") {
     const entries = Object.entries(value as Record<string, unknown>);
     if (entries.length === 0) {
@@ -260,20 +262,20 @@ export function serializeTomlMcpServers(
 ): string {
   const blocks = Object.entries(servers).map(([name, config]) => {
     const lines = [`[${configKeyName}.${name}]`];
-    // 先序列化非对象的字段（内联值）
+    // Serialize non-object fields first (inline values).
     const subTables: Array<[string, Record<string, unknown>]> = [];
     for (const [key, value] of Object.entries(config)) {
       if (value === undefined) {
         continue;
       }
-      // 纯对象（非数组）作为子表输出，保持 TOML 风格
+      // Plain objects (not arrays) become sub-tables, TOML-style.
       if (value !== null && typeof value === "object" && !Array.isArray(value)) {
         subTables.push([key, value as Record<string, unknown>]);
       } else {
         lines.push(`${key} = ${serializeTomlValue(value)}`);
       }
     }
-    // 输出子表 [mcp_servers.serverName.subKey]
+    // Emit sub-table [mcp_servers.serverName.subKey].
     for (const [subKey, subObj] of subTables) {
       lines.push("");
       lines.push(`[${configKeyName}.${name}.${subKey}]`);

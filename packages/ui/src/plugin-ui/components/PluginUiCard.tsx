@@ -12,17 +12,17 @@ export interface PluginUiCardProps {
   height: number;
   prefersBorder: boolean;
   error: string | null;
-  /** 侧栏模式撑满容器；内联模式按 height 固定。 */
+  /** Pane mode fills the container; inline mode fixes by height. */
   fill?: boolean;
   loadingLabel: string;
   errorLabel: string;
-  /** 错误态的"重新加载"；缺省不显示按钮。 */
+  /** Error-state reload; no button when absent. */
   retryLabel?: string;
   onRetry?: () => void;
   onWidthChange?: (width: number) => void;
 }
 
-/** 卡片只注册布局锚点；活 webview 由窗口页面管理器持有。 */
+/** The card registers layout anchors only; the window page manager owns the live webview. */
 export function PluginUiCard(props: PluginUiCardProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   useLayoutEffect(() => {

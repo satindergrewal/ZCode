@@ -60,9 +60,6 @@ export function createMarkdownSyntaxStyle(theme: TuiThemeTokens): SyntaxStyle | 
   }
 }
 
-function token(
-  scope: string[],
-  style: ThemeTokenStyle["style"],
-): ThemeTokenStyle {
+function token(scope: string[], style: ThemeTokenStyle["style"]): ThemeTokenStyle {
   return { scope, style };
 }

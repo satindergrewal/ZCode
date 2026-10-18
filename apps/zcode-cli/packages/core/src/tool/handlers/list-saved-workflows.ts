@@ -38,7 +38,7 @@ const listSavedWorkflowsHandler: ToolHandler = async (input, context) => {
   ListSavedWorkflowsInputSchema.parse(input);
 
   // cwd is always this session's working directory: the model may not scan across projects; also the
-// precondition of `sideEffectScope: "none"`.
+  // precondition of `sideEffectScope: "none"`.
 
   return {
     workflows: entries,

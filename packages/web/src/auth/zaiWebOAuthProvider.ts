@@ -172,7 +172,7 @@ export class ZaiWebOAuthProvider {
   }): string {
     const redirectUri = params.redirectUri ?? this.config.redirectUri;
     // The two providers share no param shape worth abstracting; a plain branch reads better
-  // than a mapping layer.
+    // than a mapping layer.
     if (params.provider === BIGMODEL_PROVIDER_ID) {
       const query = new URLSearchParams({
         redirect: redirectUri,

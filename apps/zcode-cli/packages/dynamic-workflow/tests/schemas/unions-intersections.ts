@@ -1,4 +1,4 @@
-// 一般 union → anyOf（含 null 的对象 union），交叉类型展平为一个 object。
+// Plain unions -> anyOf (object unions with null); intersections flatten to one object.
 interface Success {
   ok: true;
   value: string;

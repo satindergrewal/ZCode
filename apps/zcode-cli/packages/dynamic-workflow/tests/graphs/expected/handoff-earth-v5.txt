@@ -1,32 +1,32 @@
 node source
-node ask#1 "architect" @44:34 actors=actor#1 type="Contract"
-node join#1 "join" @50:39 type="[BuildReport, ...BuildReport[]]"
-node ask#2 "harness" @51:11 actors=actor#2 type="BuildReport"
-node fan-out#1 "fan-out" @52:6 type="BuildReport[]"
-node ask#3 "ask" @52:45 actors=actor#3 within=fan-out#1 type="BuildReport"
-node world-read#1 "run node" @60:27 type="WorldRunResult"
-node ask#4 "fixer" @62:29 actors=actor#4 type="FixReport"
-node world-read#2 "run node" @66:27 type="WorldRunResult"
-node ask#5 "fixer" @69:17 actors=actor#4 type="FixReport"
-node world-read#3 "run node" @87:29 type="WorldRunResult"
-node ask#6 "fixer" @89:17 actors=actor#4 type="FixReport"
-node join#2 "join" @92:34 type="JuryVerdict[]"
-node fan-out#2 "fan-out" @92:38 type="JuryVerdict[]"
-node ask#7 "j" @92:73 actors=actor#5,actor#6,actor#7 within=fan-out#2 type="JuryVerdict"
-node ask#8 "polisher" @97:18 actors=actor#8 type="FixReport"
-node world-read#4 "run node" @101:29 type="WorldRunResult"
-node ask#9 "juryA" @103:33 actors=actor#5 type="JuryVerdict"
-node world-read#5 "run node" @110:30 type="WorldRunResult"
-node world-read#6 "run node" @111:30 type="WorldRunResult"
+node ask#1 "architect" @45:34 actors=actor#1 type="Contract"
+node join#1 "join" @51:39 type="[BuildReport, ...BuildReport[]]"
+node ask#2 "harness" @52:11 actors=actor#2 type="BuildReport"
+node fan-out#1 "fan-out" @53:6 type="BuildReport[]"
+node ask#3 "ask" @53:45 actors=actor#3 within=fan-out#1 type="BuildReport"
+node world-read#1 "run node" @61:27 type="WorldRunResult"
+node ask#4 "fixer" @63:29 actors=actor#4 type="FixReport"
+node world-read#2 "run node" @67:27 type="WorldRunResult"
+node ask#5 "fixer" @70:17 actors=actor#4 type="FixReport"
+node world-read#3 "run node" @92:29 type="WorldRunResult"
+node ask#6 "fixer" @94:17 actors=actor#4 type="FixReport"
+node join#2 "join" @97:34 type="JuryVerdict[]"
+node fan-out#2 "fan-out" @98:5 type="JuryVerdict[]"
+node ask#7 "j" @98:40 actors=actor#5,actor#6,actor#7 within=fan-out#2 type="JuryVerdict"
+node ask#8 "polisher" @104:18 actors=actor#8 type="FixReport"
+node world-read#4 "run node" @108:29 type="WorldRunResult"
+node ask#9 "juryA" @110:33 actors=actor#5 type="JuryVerdict"
+node world-read#5 "run node" @117:30 type="WorldRunResult"
+node world-read#6 "run node" @118:30 type="WorldRunResult"
 node sink
-actor actor#1 "architect" @43:19
-actor actor#2 "harness" @48:17
-actor actor#3 @52:23 within=fan-out#1
-actor actor#4 "fixer" @57:15
-actor actor#5 "jury-a" @79:15
-actor actor#6 "jury-b" @80:15
-actor actor#7 "jury-c" @81:15
-actor actor#8 "polisher" @82:18
+actor actor#1 "architect" @44:19
+actor actor#2 "harness" @49:17
+actor actor#3 @53:23 within=fan-out#1
+actor actor#4 "fixer" @58:15
+actor actor#5 "jury-a" @84:15
+actor actor#6 "jury-b" @85:15
+actor actor#7 "jury-c" @86:15
+actor actor#8 "polisher" @87:18
 edge source -> ask#1 data exact
 edge source -> ask#2 data exact
 edge source -> fan-out#1 data exact

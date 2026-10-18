@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#161616" />
     <meta name="color-scheme" content="dark" />
-    <!-- Bugfix: Chrome dev 下可能不发 favicon 网络请求；内嵌小尺寸 App 图标，避免标签页回退到默认图标。 -->
+    <!-- Bugfix: Chrome dev may skip the favicon request; inline a small app icon so the tab never falls back to the default. -->
     <link
       rel="icon"
       type="image/png"
@@ -15,8 +15,8 @@
     <title>ZCode</title>
     <script>
       (() => {
-        // Bugfix: Web 远控跨 workspace 跳转时，JS bundle 还没执行前就会先渲染启动壳。
-        // 这里提前按本地主题偏好决定首屏底色，避免 dark 用户在这一帧看到白底闪烁。
+        // Bugfix: cross-workspace remote-control jumps render the boot shell before any JS bundle runs.
+        // Decide the first-paint background from the local theme preference so dark users never see a white flash.
         const STORAGE_KEY = "zcode-theme";
         const DEFAULT_THEME = "zai-dark";
         const BROWSER_THEME_COLORS = {
@@ -135,8 +135,8 @@
       html[data-zcode-browser-theme-surface],
       html[data-zcode-browser-theme-surface] body,
       html[data-zcode-browser-theme-surface] #root {
-        /* 修复原因：共享 UI 样式为 Electron vibrancy 强制透明根背景；浏览器入口必须用语义背景
-           覆盖该桌面专属行为，否则浏览器工具栏、overscroll 和页面画布会回退为系统白色。 */
+        /* Fix: shared UI styles force a transparent root for Electron vibrancy; the browser entry must paint a semantic
+           background over that desktop-only behavior or toolbars, overscroll and canvas fall back to system white. */
         background: var(--color-background, var(--zcode-bootstrap-bg, #161616)) !important;
       }
 
@@ -152,7 +152,7 @@
         justify-content: center;
         width: 100%;
         height: 100%;
-        /* Bugfix: UI 全局样式会把 body/#root 置为透明，预渲染壳必须自己承接主题背景，否则深色主题会露出浏览器白底。 */
+        /* Bugfix: global UI styles make body/#root transparent; the prerender shell must carry the theme background or dark mode shows browser white. */
         background: var(--zcode-bootstrap-bg, var(--color-background, #0f172a));
         color: var(--zcode-bootstrap-fg, var(--color-foreground, #e2e8f0));
       }
@@ -181,7 +181,7 @@
         inset: 0;
         pointer-events: none;
         content: "";
-        /* 修复原因：启动 logo 壳是固定深色底，边框不能跟随浅色主题 token，否则首屏边框过重。 */
+        /* Fix: the boot logo shell keeps a fixed dark base; its border must not follow light-theme tokens or the first frame looks too heavy. */
         border: 1px solid rgba(255, 255, 255, 0.1);
         border-radius: inherit;
       }
@@ -195,7 +195,7 @@
   </head>
   <body>
     <div id="root">
-      <!-- Bugfix: 远程控制跨 workspace 时会整页跳转；在 JS 入口执行前先给出 loading 壳，避免出现白屏空档。 -->
+      <!-- Bugfix: remote-control cross-workspace jumps reload the page; show a loading shell before JS boots to avoid a white gap. -->
       <div
         class="zcode-boot-loading"
         role="status"

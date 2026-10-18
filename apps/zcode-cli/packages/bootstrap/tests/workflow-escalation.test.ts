@@ -208,10 +208,14 @@ describe("workflow escalation — 停驻与结算", () => {
 
     // 同一个会话上派下一个 ask（per-actor FIFO 的常态）：计数归零，遗留停驻项一并撤下——
     // 新 ask 开跑之后，那些问题已经没有听众了，留在表里只会让快照说谎。
-    harness.driver.startAsk(session, { siteId: "ask#2", ordinal: 1 }, {
-      instructions: "next",
-      typed: false,
-    });
+    harness.driver.startAsk(
+      session,
+      { siteId: "ask#2", ordinal: 1 },
+      {
+        instructions: "next",
+        typed: false,
+      },
+    );
     await expect(Promise.allSettled(first)).resolves.toMatchObject([
       { status: "rejected" },
       { status: "rejected" },

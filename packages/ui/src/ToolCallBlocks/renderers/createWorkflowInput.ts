@@ -1,12 +1,12 @@
 /**
- * CreateWorkflow 工具入参的读取规则。
+ * Reading rules for the CreateWorkflow tool input.
  *
- * 从 `create-workflow.tsx` 拆出：这些是纯函数，而卡片组件本身随 run 态/诊断/图交互线性增长，
- * 两者叠在一处后该文件越过 oxlint max-lines(400)（`rows.ts → toolDisplay.ts`、
- * `ToolCallBlocks.tsx → resolveRenderer.ts` 是同一先例）。本文件不含 JSX，也不碰渲染。
+ * Split out of `create-workflow.tsx`: these are pure functions, while the card component grows
+ * with run state/diagnostics/graph interactions; together they pushed the file past oxlint
+ * max-lines(400) (`rows.ts -> toolDisplay.ts` and `ToolCallBlocks.tsx -> resolveRenderer.ts` are prior art). No JSX, no rendering here.
  *
- * 一处定义、三处消费——聊天卡片、运行确认窗、run 详情页——所以同一份入参在任何一个面上
- * 都不会被各自解析出不同的结果。
+ * One definition, three consumers (chat card, run approval dialog, run detail page), so the
+ * same input never gets parsed differently per surface.
  */
 
 export function isPlainRecord(value: unknown): value is Record<string, unknown> {
@@ -22,22 +22,22 @@ function readTrimmedString(value: unknown): string | undefined {
 }
 
 /**
- * 进行中的 kind 文案分相（run 尚未联接时）。「校验」只在 `running` 相成立——脚本在
- * `prepareApproval` 里早于确认弹窗就被 analyze 过一遍，而模型写脚本的 `inputStreaming` 相可以
- * 持续数十秒。相位只认适配器原样挂在 raw 上的 v4 状态；缺席就不猜。
+ * Phases for the in-progress kind copy (run not yet linked). "Validating" only holds while
+ * `running`: the script was analyzed in `prepareApproval` before the dialog, while the
+ * model-writing `inputStreaming` phase can last tens of seconds. Trust only the v4 status the adapter hangs on raw; if absent, do not guess.
  *
- * `amend` 为真时换成修订词汇：
- * 同一个渲染器、同一套相位，只是词不同——模型不是在启动什么，而是在改一个用户正看着的东西。
+ * When `amend` is set, switch to the amend vocabulary:
+ * same renderer, same phases, different words -- the model is not starting something but editing something the user is watching.
  */
 export function readWorkflowKindMessageId(
   raw: unknown,
   isRunning: boolean,
   amend: WorkflowKindVocabulary = false,
   /**
-   * 这次调用只在调并发上限（`isWorkflowRetuneInput`）：不写脚本、也不编译，所以在途期一个字都不
-   * 能提「校验」（docs/dynamic-workflow/concurrency.md）。修订词表的 `writing`「正在调整工作流」
-   * 对它恒真——无论最后是就地生效还是（run 已结算时）退回一次真修订——所以整个在途期都用它，
-   * 不为一个只活几百毫秒的相位新造一个词。待确认另说：那一相在场时它自己的词更有信息量。
+   * This call only tunes the concurrency cap (`isWorkflowRetuneInput`): no script is written and
+   * nothing compiles, so while in flight it must not say "validating"
+   * (docs/dynamic-workflow/concurrency.md). The amend table's `writing` entry is always true
+   * for it -- whether it lands in place or falls back to a real amend -- so it covers the whole in-flight window. Awaiting-confirmation is separate: its own word is more informative.
    */
   retuning = false,
 ): string {
@@ -58,12 +58,12 @@ export function readWorkflowKindMessageId(
 }
 
 /**
- * 启动前 ToolLayout 行的种类词：
- * - 编不过（有 display 且 `ok === false`）说「工作流草稿（调整草稿）」——什么都没跑，这是一稿待修正的草稿；
- * - 失败但没有 display（被拒、工具报错）仍说「工作流（调整）」；
- * - 编写中说「正在编写（调整）」，第 2 稿起说「正在修改…」——模型在回应反馈，而不是从头开始；
- * - 其余即待确认。
- * 与 `readWorkflowKindMessageId` 同一张词表，只是相位由渲染器算好了传进来。
+ * Pre-launch ToolLayout row kind wording:
+ * - compile errors with a display (`ok === false`) say draft: nothing ran yet, a draft awaiting fixes;
+ * - failed with no display (rejected, tool error) still says the ran wording;
+ * - while writing, the writing wording, from the second pass on the revising wording -- the model is reacting to feedback, not starting over;
+ * - anything else is awaiting confirmation.
+ * Same table as `readWorkflowKindMessageId`; only the phase is computed by the renderer.
  */
 export function readWorkflowPrelaunchKindMessageId(
   phase: { compileErrors: boolean; failed: boolean; writing: boolean; revising: boolean },
@@ -94,7 +94,7 @@ const CREATE_KIND_IDS: WorkflowKindIds = {
   draft: "chat.toolCall.workflow.draft",
 };
 
-/** 修订词汇。`running`（校验中）没有专门的词：校验与创建同一件事，沿用。 */
+/** Amend vocabulary. `running` (validating) has no word of its own: validating is creating, reuse it. */
 const AMEND_KIND_IDS: WorkflowKindIds = {
   writing: "chat.toolCall.workflow.amend.writing",
   revising: "chat.toolCall.workflow.amend.revising",
@@ -104,7 +104,7 @@ const AMEND_KIND_IDS: WorkflowKindIds = {
   draft: "chat.toolCall.workflow.amend.draft",
 };
 
-/** 留白补全词汇（docs/dynamic-workflow/presentation.md「The fill row」）；校验中同样沿用创建的词。 */
+/** Hole-fill vocabulary (docs/dynamic-workflow/presentation.md "The fill row"); validating reuses the create wording too. */
 const HOLE_KIND_IDS: WorkflowKindIds = {
   writing: "chat.toolCall.workflow.hole.writing",
   revising: "chat.toolCall.workflow.hole.revising",
@@ -114,7 +114,7 @@ const HOLE_KIND_IDS: WorkflowKindIds = {
   draft: "chat.toolCall.workflow.hole.draft",
 };
 
-/** 三套词表的选择：`true` 是修订（历史上的布尔参数），`"hole"` 是留白补全，其余是创建。 */
+/** Vocabulary picker: `true` amend (legacy boolean param), `"hole"` hole-fill, otherwise create. */
 export type WorkflowKindVocabulary = boolean | "hole";
 
 function workflowKindIds(vocabulary: WorkflowKindVocabulary): WorkflowKindIds {
@@ -122,7 +122,7 @@ function workflowKindIds(vocabulary: WorkflowKindVocabulary): WorkflowKindIds {
   return vocabulary ? AMEND_KIND_IDS : CREATE_KIND_IDS;
 }
 
-/** CreateWorkflow 工具入参里的可选展示名；聊天卡片与运行确认窗共用同一读取规则。 */
+/** Optional display name in the CreateWorkflow tool input; chat card and approval dialog share this reader. */
 export function readWorkflowName(input: unknown): string | undefined {
   if (isPlainRecord(input) && typeof input.name === "string") {
     const trimmed = input.name.trim();
@@ -134,7 +134,7 @@ export function readWorkflowName(input: unknown): string | undefined {
   return undefined;
 }
 
-/** CreateWorkflow 工具入参里的脚本原文；聊天卡片与运行确认窗共用同一读取规则。 */
+/** Raw script in the CreateWorkflow tool input; chat card and approval dialog share this reader. */
 export function readWorkflowScript(input: unknown): string | undefined {
   if (isPlainRecord(input) && typeof input.script === "string" && input.script.length > 0) {
     return input.script;
@@ -144,19 +144,19 @@ export function readWorkflowScript(input: unknown): string | undefined {
 }
 
 /**
- * AmendWorkflow 入参里被修订的前驱 run（`run_id`）。在场即本次是 supersede：以新脚本铸新 run，从这个前驱导入缓存，
- * 前驱还在跑就先停下它。
+ * Predecessor run being amended (`run_id`) in the AmendWorkflow input. Presence means this is a
+ * supersede: mint a new run from the new script, import the cache from the predecessor, stopping it first if still running.
  *
- * 与 `readWorkflowScript` 同一条纪律：走**入参通道**而不是 display，所以 lineage 事实零新
- * 载荷。只对 AmendWorkflow 行有意义——CreateWorkflow 的入参没有 `run_id`。
+ * Same discipline as `readWorkflowScript`: ride the input channel, not display, so lineage facts
+ * add zero payload. Only meaningful for AmendWorkflow rows -- CreateWorkflow inputs have no `run_id`.
  */
 export function readWorkflowAmendTarget(input: unknown): string | undefined {
   return isPlainRecord(input) ? readTrimmedString(input.run_id) : undefined;
 }
 
 /**
- * AmendWorkflow 入参里由 CLI `resolveInput` 回填的前驱事实块：确认窗据 `status` 决定要不要说「仍在运行，将被停止」。只读确认窗
- * 会用到的两个字段；权限判定读的 `owned_by_this_session` 在 CLI 侧，UI 不看它。
+ * Predecessor facts block backfilled by the CLI `resolveInput`: the dialog uses `status` to decide whether to say "still running, will be stopped". Only the
+ * two fields the dialog reads; `owned_by_this_session` for permissions lives CLI-side, the UI ignores it.
  */
 interface WorkflowAmendPredecessor {
   status: string | undefined;
@@ -175,12 +175,12 @@ export function readWorkflowAmendPredecessor(input: unknown): WorkflowAmendPrede
 }
 
 /**
- * `max_concurrency`：用户要求这次 run 最多同时跑几个子代理。Create 与 Amend 是同一个字段名，所以读取规则也只有一份。
+ * `max_concurrency`: how many subagents may run at once for this run. Create and Amend share the field name, so one reader.
  *
- * 只认正整数：Amend 的 `null`（去掉上限）与缺席在确认窗里是同一件事——没有上限可说，不摆这一行。
- * 到这里的值**已经是会生效的那个**：两个工具的 `resolveInput` 在开确认窗之前就把超过天花板的
- * 请求 clamp 过了。所以这里不重做 clamp——它既拿不到天花板，也不需要拿到。（run 跑起来之后
- * run 头的并发芯片显示的是 min(这条界, 共享 cap)，那是另一回事。）
+ * Positive integers only: Amend's `null` (lift the cap) and absence mean the same thing in the dialog -- no cap to state, no row.
+ * The value here is already the effective one: both tools' `resolveInput` clamp requests above
+ * the ceiling before the dialog opens, so no re-clamp here -- it has no ceiling and needs none
+ * (once running, the run header chip shows min(this bound, shared cap); that is another matter).
  */
 export function readWorkflowMaxConcurrency(input: unknown): number | undefined {
   if (!isPlainRecord(input)) {
@@ -191,26 +191,26 @@ export function readWorkflowMaxConcurrency(input: unknown): number | undefined {
 }
 
 /**
- * 这次 `AmendWorkflow` 调用**只在调并发上限**：`run_id` + `max_concurrency`，没有任何脚本来源、
- * 也不改模型、不改名字。run 还在飞时这样的调用就地生效（docs/dynamic-workflow/concurrency.md）：
- * 不停这次 run、不铸新 run、不编译，结果只有一句话，连 display 都没有。
+ * This `AmendWorkflow` call only tunes the concurrency cap: `run_id` + `max_concurrency`, no
+ * script source, no model/name change. While the run is in flight it lands in place
+ * (docs/dynamic-workflow/concurrency.md): no stop, no new run, no compile; the result is one sentence, not even a display.
  *
- * **入参是这条事实在线上的唯一落点**：工具的结构化输出不过 v4（只有 `text` 与 `display`），而
- * 三处 `create_workflow` display schema 都是 `.strict()` 的冻结字段集——多一个键会让旧端把整条
- * 工具结果丢掉。所以呈现按入参形状裁，零协议改动。
+ * The input is the only wire home for this fact: the tool's structured output skips v4 (only
+ * `text` and `display`), and all three `create_workflow` display schemas are frozen `.strict()`
+ * field sets -- one extra key and old hosts drop the whole result. So present per input shape, zero protocol changes.
  *
- * 只看**形状**，不预言结果：run 已经结算时同一个调用会退回一次真修订（带上前驱的脚本去编译）。
- * 那条路会留下 display、也会铸出一条按 toolCallId 联接得上的 run，两者都是接线层的判据。
- * 流式中入参只到了一半时这个形状也会短暂成立（脚本还没流到），所以在途只用它挑一个对两种结局
- * 都真的词，不据它改变行的形态。
+ * Judge by shape, never predict the outcome: once settled, the same call falls back to a real
+ * amend. That path leaves a display and mints a run joinable by toolCallId -- both are wiring-layer signals.
+ * The shape also holds briefly while the input streams in (script not yet arrived), so in-flight
+ * it only picks wording true for both outcomes; it never changes the row's shape.
  */
 export interface WorkflowRetuneCall {
   runId: string;
   /**
-   * 用户要求的上限；`null` = 解除本 run 自己的界（回到默认并发）。
+   * Requested cap; `null` = lift this run's own bound (back to default concurrency).
    *
-   * ⚠ **未经取整**：CLI 的 `resolveInput` 只把它向下取整到至少 1（没有上限），而这里读到的是模型
-   * 发出的那个数。等于默认并发的数与 `null` 一样读作「回到默认」，所以展示方要拿默认并发去比。
+   * Warning: **not rounded**. The CLI's `resolveInput` only floors it at 1 (no ceiling), and this
+   * reads the number as the model sent it. A value equal to the default reads like `null`: "back to default"; compare against the default when displaying.
    */
   requested: number | null;
 }
@@ -222,7 +222,7 @@ export function readWorkflowRetuneCall(input: unknown): WorkflowRetuneCall | und
   const bound = input.max_concurrency;
   const requested = bound === null ? null : readWorkflowMaxConcurrency(input);
   if (requested === undefined) return undefined;
-  // 任何一个别的意图在场都不是「只调并发上限」：脚本与 path 要编译，模型与名字要换一条 run。
+  // Any other intent present means not a cap-only retune: script/path compile, model/name mean a different run.
   if (readWorkflowScript(input) !== undefined || readTrimmedString(input.path) !== undefined) {
     return undefined;
   }
@@ -231,22 +231,22 @@ export function readWorkflowRetuneCall(input: unknown): WorkflowRetuneCall | und
 }
 
 /**
- * `subagent_model`：这次 run 的**子代理**跑在哪个模型上（docs/dynamic-workflow/launch.md）。
- * 与 `max_concurrency` 同一条纪律：Create 与 Amend 是同一个字段名，读取规则也只有一份。
+ * `subagent_model`: which model this run's subagents run on (docs/dynamic-workflow/launch.md).
+ * Same discipline as `max_concurrency`: Create and Amend share the field name, one reader.
  *
- * 只认非空字符串：Amend 的 `null`（退回会话模型）与缺席在确认窗里是同一件事——子代理跟随
- * 会话模型，没有第二个模型可说，不摆这一行。到这里的值**已经是会生效的那个**：两个工具的
- * `resolveInput` 在开确认窗之前就把用户给的名字解析成了规范串 `providerId/modelId[$level]`，
- * 解析不了的调用根本走不到窗前。所以这里不做任何形状校验——UI 不是第二个解析器。
+ * Non-empty strings only: Amend's `null` (back to session model) and absence mean the same
+ * thing in the dialog -- subagents follow the session model, no second model to name, no row.
+ * The value here is already effective: both tools' `resolveInput` normalize the given name to
+ * canonical `providerId/modelId[$level]` before the dialog; unresolvable calls never reach it. No shape validation here -- the UI is not a second resolver.
  */
 export function readWorkflowSubagentModel(input: unknown): string | undefined {
   return isPlainRecord(input) ? readTrimmedString(input.subagent_model) : undefined;
 }
 
 /**
- * 脚本给某些子代理点名了模型（CLI `resolveInput` 回填的 `model_bindings` 非空，docs/dynamic-workflow/
- * launch.md「Models the script names」）。确认窗不逐名列出它们——那是作者模型的选择——只据此把模型
- * 那一句改口成「子代理默认运行在」：它不再替每一个子代理说话。
+ * The script names models for some subagents (non-empty `model_bindings` backfilled by the CLI
+ * `resolveInput`, docs/dynamic-workflow/launch.md "Models the script names"). The dialog does
+ * not list them; it only rewords the model sentence to "subagents run on by default".
  */
 export function workflowScriptNamesModels(input: unknown): boolean {
   return (
@@ -256,21 +256,21 @@ export function workflowScriptNamesModels(input: unknown): boolean {
   );
 }
 
-/** CLI `resolveInput` 回填的「确认窗可调」事实（`adjustable_settings`）。 */
+/** Dialog-adjustable facts backfilled by the CLI `resolveInput` (`adjustable_settings`). */
 export interface WorkflowAdjustableSettings {
-  /** 宿主能解析窗里选的模型；false 时模型那一行只是一句话。 */
+  /** The host can resolve the model picked in the dialog; when false the model row is inert text. */
   subagentModel: boolean;
   /**
-   * 默认并发 D（线上键 `concurrency_ceiling`，名字早于「默认并发」）；缺席即未知。它不是上限：
-   * 步进器从 1 起没有上界，只拿它写「默认 N」与判「等于默认 = 不设自己的界」。
+   * Default concurrency D (wire key `concurrency_ceiling`, named before "default concurrency");
+   * absent means unknown. Not a cap: the stepper starts at 1 unbounded; it only renders "default N" and decides "equals default = no own bound".
    */
   defaultConcurrency?: number;
 }
 
 /**
- * 确认窗可调的两项设置（docs/dynamic-workflow/launch.md「Adjusting the settings in the window」）。
- * 走入参而不是 display：display 的字段集冻结，多一个键旧端会整块丢掉。块缺席即旧 agent——它不会
- * 应用窗里改的值，确认窗就照旧只画纯文本条件行。
+ * The two dialog-adjustable settings (docs/dynamic-workflow/launch.md "Adjusting the settings in
+ * the window"). Via input, not display: display field sets are frozen, one extra key and old
+ * hosts drop the whole block. Absent block = old agent: it would not apply dialog values, so the dialog keeps plain conditional text rows.
  */
 export function readWorkflowAdjustableSettings(
   input: unknown,
@@ -279,7 +279,7 @@ export function readWorkflowAdjustableSettings(
     return undefined;
   }
   const block = input.adjustable_settings;
-  // 线上键名 `concurrency_ceiling` 早于「默认并发」这个概念，为兼容旧端保留；它现在装的是 D。
+  // Wire key `concurrency_ceiling` predates "default concurrency"; kept for old-host compat. It now carries D.
   const defaultConcurrency = block.concurrency_ceiling;
   return {
     subagentModel: block.subagent_model === true,
@@ -292,17 +292,17 @@ export function readWorkflowAdjustableSettings(
 }
 
 /**
- * 这次修订沿用前驱的脚本。
- * 两个面各有一条证据，读法只有这一份：
+ * This amend reuses the predecessor's script.
+ * Each surface has its own evidence; this is the only reading:
  *
- *   - 确认窗读的是 CLI `resolveInput` 回填过的入参：脚本已经在里面，`predecessor.script_inherited`
- *     说它是沿用来的；
- *   - 聊天卡读的是**模型发出的**入参（行的 input 来自流式参数，回填发生在那之后）：两个脚本来源
- *     `script` 与 `path` **都**没有，才是省略了脚本。只缺 `script` 不算——`path` 修订（「Script
- *     files」的常态）同样不带 `script`，而它交上来的正是一份改过的脚本。
+ *   - The approval dialog reads CLI-`resolveInput`-backfilled input: the script is already in
+ *     there, and `predecessor.script_inherited` marks it inherited;
+ *   - The chat card reads the input as sent by the model (row input comes from streamed args,
+ *     backfill happens later): the script counts as omitted only when neither source `script` nor
+ *     `path` is present. Missing `script` alone does not count -- a `path` amend (the "Script files" norm) also omits `script` while submitting a changed script.
  *
- * 第二条只在入参**写完之后**成立——流式中脚本可能还没到，调用方负责只在非 `inputStreaming` 时问。
- * 入参不是记录（快照裁剪成预览、形状不明）时什么都不断言。
+ * The second reading only holds once the input is complete -- the script may still be streaming; callers ask only when not `inputStreaming`.
+ * Assert nothing when the input is not a record (snapshot-truncated preview, unknown shape).
  */
 export function readWorkflowAmendScriptInherited(input: unknown): boolean {
   if (!isPlainRecord(input)) {
@@ -315,9 +315,9 @@ export function readWorkflowAmendScriptInherited(input: unknown): boolean {
 }
 
 /**
- * 聊天卡上的判定：这一行的入参说「沿用前驱
- * 脚本」。入参被快照裁剪成预览时不说——那时缺的是字节，不是脚本。调用方另负责只对**写完的**修订行问
- * （流式中脚本可能还没到）。
+ * Chat-card predicate: the row input says "inherits the predecessor script". Stay silent when
+ * the input was snapshot-truncated to a preview -- bytes are missing, not the script. The caller
+ * also only asks for completed amend rows (the script may still be streaming).
  */
 export function readWorkflowCardKeptScript(toolCall: {
   input: unknown;
@@ -327,7 +327,7 @@ export function readWorkflowCardKeptScript(toolCall: {
   return !trimmed && readWorkflowAmendScriptInherited(toolCall.input);
 }
 
-/** 前驱仍在飞（pending / running）：修订会先停下它。 */
+/** Predecessor still in flight (pending/running): the amend stops it first. */
 export function isWorkflowAmendPredecessorLive(
   predecessor: WorkflowAmendPredecessor | undefined,
 ): boolean {
@@ -335,18 +335,18 @@ export function isWorkflowAmendPredecessorLive(
 }
 
 /**
- * CreateWorkflow 归一化入参里的 saved 来源（可复用工作流 spec 的「归一化形状」：
+ * `saved` source in the normalized CreateWorkflow input (the reusable-workflow spec's "normalized
  * `{name, script, saved: {name, args, path, scope}}`）。
  *
- * 与 `readWorkflowScript` 同一条纪律：这些字段走的是**入参通道**而不是 display，
- * 所以聊天卡片与运行确认窗共用这一份读取规则，两处不各自解析。`saved` 缺席就是内联提交，
- * 不是降级——内联路径逐字保持今天的样子。
+ * Same discipline as `readWorkflowScript`: these fields ride the input channel, not display, so
+ * chat card and approval dialog share this reader. Absent `saved` means inline submission --
+ * not a downgrade; the inline path stays verbatim, as today.
  */
 export interface WorkflowSavedSource {
   name: string;
   path: string | undefined;
   scope: string | undefined;
-  /** 校验回填后的实参袋。缺席或形状不符时为空对象，绝不是 undefined。 */
+  /** Argument bag after validation backfill; empty object (never undefined) when absent or malformed. */
   args: Record<string, unknown>;
 }
 
@@ -356,7 +356,7 @@ export function readWorkflowSaved(input: unknown): WorkflowSavedSource | undefin
   }
 
   const saved = input.saved;
-  // 名字是这条来源的身份：读不出名字就当作没有来源，而不是渲染一个空徽标。
+  // The name is this source's identity: an unreadable name means no source, not an empty badge.
   const name = typeof saved.name === "string" ? saved.name.trim() : "";
   if (name.length === 0) {
     return undefined;
@@ -371,8 +371,8 @@ export function readWorkflowSaved(input: unknown): WorkflowSavedSource | undefin
 }
 
 /**
- * 实参 / 默认值的展示形态：字符串原样（引号只会给中文实参添噪），其余走 JSON
- * ——声明的四种类型（string / number / boolean / json）由此都可读。
+ * Display for args/defaults: strings verbatim (quotes only add noise), everything else via
+ * JSON -- covers all four declared types (string / number / boolean / json).
  */
 export function formatWorkflowArgValue(value: unknown): string {
   if (typeof value === "string") {
@@ -382,7 +382,7 @@ export function formatWorkflowArgValue(value: unknown): string {
   try {
     return JSON.stringify(value) ?? String(value);
   } catch {
-    // 循环引用等不可序列化的值不该让整块确认窗崩掉。
+    // Non-serializable values (cyclic refs) must not crash the whole approval dialog.
     return String(value);
   }
 }

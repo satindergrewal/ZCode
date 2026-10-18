@@ -90,7 +90,7 @@ export interface AgentRuntimeInternal
   messageHistory: MessageHistory;
   readFileState: ReadFileStateMap;
   cachedTools: ModelToolContract[] | null;
-  /** 工作流工具面是否已注册（launch.md「On demand: activation」）；非 onDemand 会话出生即 true。 */
+  /** Whether the workflow tool surface is registered (launch.md "On demand: activation"); non-onDemand sessions are born true. */
   dynamicWorkflowToolsActivated: boolean;
   dynamicWorkflowActivationSource?: DynamicWorkflowActivationSource;
   contextBuilder: ContextBuilder | null;
@@ -111,7 +111,7 @@ export interface AgentRuntimeInternal
   residencyBlockingWorkCount: number;
   mcpInitialized: boolean;
   mcpToolsRegistered: boolean;
-  /** 初始化 / 上次刷新时注册的 MCP 工具名与集合签名。 */
+  /** MCP tool names and set signature registered at initialization / last refresh. */
   registeredMcpToolNames?: string[];
   mcpToolsSignature?: string;
   mcpToolListRevision?: number;

@@ -240,7 +240,11 @@ export function useWorkflowRunArtifacts(options: {
         return;
       }
       const message = caught instanceof Error ? caught.message : String(caught);
-      logger.warn("[workflow-artifacts] Failed to list artifacts", { error: message, runId, sessionId });
+      logger.warn("[workflow-artifacts] Failed to list artifacts", {
+        error: message,
+        runId,
+        sessionId,
+      });
       setError(message);
     }
   }, [runId, sessionId, workflowRunArtifacts]);

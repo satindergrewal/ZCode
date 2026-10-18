@@ -11,7 +11,7 @@ import { createApiKeyProviderConfig } from "./provider-config-fixtures.js";
 describe("resolveInitialModelSelection", () => {
   const registry = registryView();
 
-  it("只接受带合法 reasoning 的持久化 configured default", () => {
+  it("accepts only persisted configured defaults with valid reasoning", () => {
     expect(
       resolveInitialModelSelection({
         configuredDefault: {
@@ -31,7 +31,7 @@ describe("resolveInitialModelSelection", () => {
     });
   });
 
-  it("新草稿的 configured default 不可用时使用 Registry 推荐，不写回偏好", () => {
+  it("falls back to the Registry recommendation for unavailable configured defaults and never writes the preference back", () => {
     expect(
       resolveInitialModelSelection({
         configuredDefault: { providerId: "removed", modelId: "removed" },
@@ -47,7 +47,7 @@ describe("resolveInitialModelSelection", () => {
     });
   });
 
-  it("全新选择没有 configured default 时按可见 Provider 顺序初始化最高档", () => {
+  it("seeds the top tier by visible-provider order when a fresh selection has no configured default", () => {
     expect(
       resolveInitialModelSelection({
         registry,
@@ -62,7 +62,7 @@ describe("resolveInitialModelSelection", () => {
     });
   });
 
-  it("失效默认档位使整个默认偏好失效；新草稿重新取 Registry 推荐", () => {
+  it("invalidates the whole default preference when its tier dies; fresh drafts take the Registry recommendation again", () => {
     expect(
       resolveInitialModelSelection({
         configuredDefault: {
@@ -92,7 +92,7 @@ describe("resolveInitialModelSelection", () => {
 });
 
 describe("normalizeModelSelection", () => {
-  it("主动选择目标模型取其最高档，不继承来源模型的档位", () => {
+  it("takes the target model's top tier on explicit selection instead of inheriting the source tier", () => {
     expect(
       completeNewModelSelection(registryView(), {
         providerId: "provider-a",
@@ -105,7 +105,7 @@ describe("normalizeModelSelection", () => {
       options: { reasoningLevel: "high" },
     });
   });
-  it("新选择缺少 reasoning 时保留模型并清空 reasoning", () => {
+  it("keeps the model and clears reasoning when a new selection lacks it", () => {
     expect(
       normalizeModelSelection(registryView(), {
         providerId: "provider-a",
@@ -117,7 +117,7 @@ describe("normalizeModelSelection", () => {
     });
   });
 
-  it("显式但失效的 reasoning 也清空，不偷偷替换档位", () => {
+  it("clears explicit-but-invalid reasoning instead of silently swapping tiers", () => {
     expect(
       normalizeModelSelection(registryView(), {
         providerId: "provider-a",

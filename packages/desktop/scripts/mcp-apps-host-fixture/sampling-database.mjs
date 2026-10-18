@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
 
-/** Electron 与 Agent 已退出后重新打开 SQLite，验证统计确实持久化而非内存投影。 */
+/** P */
 export function verifySamplingDatabase(output) {
   const db = new DatabaseSync(join(output, "agent-data/session.sqlite"), { readOnly: true });
   try {

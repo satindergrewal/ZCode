@@ -390,7 +390,8 @@ export class ProviderConfigMap extends ConfigOverlay<ProviderConfigMap> {
     const values = new Map<ProviderId, ProviderConfigRule>();
     for (const entry of entries) {
       const rule = "providerId" in entry ? entry : { providerId: entry[0], config: entry[1] };
-      if (values.has(rule.providerId)) throw new Error(`Duplicate provider key: ${rule.providerId}`);
+      if (values.has(rule.providerId))
+        throw new Error(`Duplicate provider key: ${rule.providerId}`);
       values.set(rule.providerId, Object.freeze({ ...rule }));
     }
     this.#values = values;

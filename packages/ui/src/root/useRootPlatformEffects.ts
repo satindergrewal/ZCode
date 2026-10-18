@@ -205,7 +205,7 @@ export function useRootPlatformEffects({
               activeTab?.remoteSessionId || activeTab?.remoteTarget ? "remote" : "local",
           });
           setShareImportRevision((revision) => revision + 1);
-            logger.info("[Root] Received share-import deep link", {
+          logger.info("[Root] Received share-import deep link", {
             shareCodeLength: payload.shareCode.length,
           });
         })
@@ -524,8 +524,8 @@ export function useRootPlatformEffects({
 
     const connectedRemoteWorkspaces = buildConnectedRemoteWorkspaceSessionTargets({ tabs });
     if (connectedRemoteWorkspaces.length > 0) {
-      // Bugfix: Bot 远端连接状态查询依赖 main 进程里 remoteSessionId -> workspaceIdentity 的绑定。
-      // 之前这条绑定复用 Web 远控 workspace 同步，Web 远控未开启时不会执行，导致 UI 已连接但 Bot 误判未连接。
+      // Bugfix: the Bot remote-connection check depends on the main-process remoteSessionId -> workspaceIdentity binding.
+      // It reused the web-remote workspace sync and skipped when that was off: UI connected, Bot read disconnected.
       platform.syncWebRemoteControlWorkspaces(connectedRemoteWorkspaces);
     }
 

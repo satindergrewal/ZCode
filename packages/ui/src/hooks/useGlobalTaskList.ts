@@ -169,7 +169,10 @@ export function useGlobalTaskList(params: {
       } catch (error) {
         if (requestSerialRef.current === requestSerial) {
           // On Controller failure keep the last trusted list, so one source error never blanks other workspaces.
-          logger.error(`[useGlobalTaskList] Controller failed to load the ${params.kind} list`, error);
+          logger.error(
+            `[useGlobalTaskList] Controller failed to load the ${params.kind} list`,
+            error,
+          );
         }
       } finally {
         if (requestSerialRef.current === requestSerial) {

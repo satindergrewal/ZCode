@@ -27,7 +27,7 @@ describe("schema rejection fixtures", () => {
     it(fixture, () => {
       const source = readFileSync(join(errorsDir, fixture), "utf8");
       const workflow = createWorkflowProgram(source);
-      // 前置：脚本必须 typecheck 通过，否则是 fixture 自身的问题，而非 schema 拒绝。
+      // Precondition: the script must typecheck, else the fixture is broken, not the schema rejection.
       expect(collectDiagnostics(workflow.program)).toEqual([]);
       const { diagnostics } = synthesizeAskSchemas(workflow, collectSites(workflow));
       const expected = parseExpectedErrors(source);

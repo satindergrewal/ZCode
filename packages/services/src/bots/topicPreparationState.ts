@@ -2,7 +2,7 @@ import type { BotInboundMessage } from "@zcode/shared";
 
 export type TopicPreparationStatus = "preparing" | "waitingStop" | "failed";
 
-/** 仅保留未提交材料；对外投影不包含文件二进制，重试仍由入站授权链处理。 */
+/** Holds uncommitted material only; projections exclude file bytes and retries stay behind the inbound grant chain. */
 export function createTopicPreparationState() {
   const waitingStop = new Set<string>();
   const topics = new Map<
@@ -28,7 +28,7 @@ export function createTopicPreparationState() {
       entries.set(id, { message, status: waitingStop.has(key) ? "waitingStop" : "preparing" });
     },
     setWaitingStop(key: string, waiting: boolean) {
-      // 停止确认可能先于材料授权完成；保存话题阶段，让稍后加入的消息继承等待状态。
+      // Stop confirmations can land before material grants; keep the topic phase so later messages inherit the waiting state.
       if (waiting) waitingStop.add(key);
       else waitingStop.delete(key);
       for (const entry of topics.get(key)?.values() ?? []) {

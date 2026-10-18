@@ -2,8 +2,8 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import { compileModelOptionMap, tokenizeRestrictedCel } from "@zcode/model-option-map";
 
-describe("F98-01 Built-in 源 Map 结构排版", () => {
-  it("所有嵌套对象分层展开，简单三目同行，简单单层输出 Map 保持紧凑", async () => {
+describe("F98-01 Built-in source map layout", () => {
+  it("expands nested objects per level, keeps simple ternaries inline, and holds simple flat output maps compact", async () => {
     const document = JSON.parse(
       await readFile(
         new URL("../../../config/provider/zcode-builtin.json", import.meta.url),
@@ -36,7 +36,7 @@ describe("F98-01 Built-in 源 Map 结构排版", () => {
             for (const line of map.split("\n"))
               expect(line.match(/^ */)![0].length % 2, map).toBe(0);
           }
-          // 简单三目不拆行；结构分支由对象展开体现，不把规则变成一个 formatter。
+          // Simple ternaries stay inline; structure shows via object expansion, never a bespoke formatter.
           tokens.forEach((token, index) => {
             if (token.value !== "?" || tokens[index + 2]?.value !== ":") return;
             if (!["string", "identifier", "number"].includes(tokens[index + 1]!.kind)) return;

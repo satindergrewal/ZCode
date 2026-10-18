@@ -40,7 +40,8 @@ export class NodePersonalProviderConfigRepository implements PersonalProviderCon
   #disposed = false;
 
   constructor(options: NodePersonalProviderConfigRepositoryOptions) {
-    if (!options.filePath.trim()) throw new Error("Personal provider config filePath must not be empty");
+    if (!options.filePath.trim())
+      throw new Error("Personal provider config filePath must not be empty");
     this.#filePath = options.filePath;
     this.#importLegacy = options.importLegacy;
     this.#onRecovery = options.onRecovery;

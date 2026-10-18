@@ -399,7 +399,10 @@ describe("ToolExecutor trace propagation", () => {
         optionSpecs: model.optionSpecs,
         properties: model.properties,
       };
-    expect(capturedModels.map(identityOf)).toEqual([identityOf(activeModel), identityOf(activeModel)]);
+    expect(capturedModels.map(identityOf)).toEqual([
+      identityOf(activeModel),
+      identityOf(activeModel),
+    ]);
     for (const captured of capturedModels) {
       await expect(captured!.generateText({ messages: [] })).resolves.toEqual({
         finishReason: "stop",

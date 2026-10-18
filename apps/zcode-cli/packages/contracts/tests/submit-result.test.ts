@@ -13,7 +13,7 @@ describe("submit_result contracts", () => {
   });
 
   it("accepts arbitrary JSON as the generic result payload", () => {
-    // 声明的输入有意通用：具体 per-ask schema 在 ask epilogue 里，不进工具声明。
+    // The declared input is generically typed on purpose: per-ask schemas live in the ask epilogue, not the tool declaration.
     for (const result of [
       { any: "object", nested: { ok: true } },
       ["a", 1, null],
@@ -34,7 +34,7 @@ describe("submit_result contracts", () => {
 
   it("exposes a permissive JSON schema for result and forbids extra keys", () => {
     expect(SubmitResultInputJsonSchema.type).toBe("object");
-    // result 是无约束的任意 JSON：其子 schema 不带类型约束。
+    // result is unconstrained JSON: its sub-schema carries no type constraints.
     const resultSchema = (SubmitResultInputJsonSchema.properties as Record<string, unknown>).result;
     expect(resultSchema).toBeDefined();
     expect((resultSchema as Record<string, unknown>).type).toBeUndefined();
@@ -46,8 +46,9 @@ describe("submit_result contracts", () => {
     expect(SubmitResultOutputSchema.safeParse({ status: "rejected" }).success).toBe(false);
   });
 
-  // mono 子代理的 typed 声明（docs/execution-engine.md「Typed asks and `submit_result`」）：外层与通用声明同形，
-  // `result` 就是该 actor 唯一的 ask 结果 schema。
+  // A mono subagent's typed declaration
+  // (docs/execution-engine.md "Typed asks and `submit_result`"): outer shape matches the generic
+  // declaration; `result` is that actor's sole ask-result schema.
   it("builds the typed declaration around the ask schema, same outer shape as the generic one", () => {
     const resultSchema = {
       type: "object",

@@ -132,8 +132,8 @@ export function toAiSdkMessages(
               type: "tool-result",
               toolCallId: message.toolCallId,
               toolName,
-              // SDK 合并连续 tool message 时只保留首条的 providerOptions；
-              // 缓存标记必须跟随具体结果块，避免批次末尾标记丢失或被移到其他结果。
+              // When the SDK merges adjacent tool messages only the first's providerOptions survives;
+              // cache markers must follow their result block, or the batch-end marker is lost or lands on another result.
               ...providerOptionsForCacheControl(message.cacheControl),
               output: frameReferenceFailure
                 ? { type: "error-text", value: frameReferenceFailure }

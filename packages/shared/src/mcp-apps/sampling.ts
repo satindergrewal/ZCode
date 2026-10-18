@@ -34,7 +34,7 @@ const samplingBlockSchema = z.discriminatedUnion("type", [
         .string()
         .min(1)
         .max(Math.ceil(MCP_APPS_IMAGE_MAX_BYTES / 3) * 4)
-        // 重复四字符分组会在 MiB 级图片上耗尽 V8 正则栈；平坦字符检查保持线性。
+        // Repeated four-char groups exhaust the V8 regex stack on MiB-sized images; the flat per-char check stays linear.
         .refine((data) => data.length % 4 === 0 && /^[A-Za-z0-9+/]*={0,2}$/.test(data))
         .refine((data) => decodedBytes(data) <= MCP_APPS_IMAGE_MAX_BYTES),
       annotations,
@@ -43,7 +43,7 @@ const samplingBlockSchema = z.discriminatedUnion("type", [
     .strict(),
 ]);
 const priority = z.number().min(0).max(1).optional();
-/** 只开放宿主确实实现的官方子集；不静默剥除 tools/audio/模型配置等字段。 */
+/** Expose only the official subset the host actually implements; never silently strip tools/audio/model config fields. */
 export const mcpAppsSamplingParamsSchema = z
   .object({
     messages: z
@@ -86,7 +86,7 @@ export const mcpAppsSamplingParamsSchema = z
     let bytes = utf8Bytes(params.systemPrompt ?? "");
     for (const block of blocks)
       bytes += block.type === "image" ? decodedBytes(block.data) : utf8Bytes(block.text);
-    // metadata 不转发给 provider，但仍计入边界预算，避免任意扩展字段绕过载荷限制。
+    // metadata is not forwarded to the provider but still counts against the budget, so arbitrary extra fields cannot bypass payload caps.
     const metadataBytes = utf8Bytes(
       JSON.stringify({
         metadata: params.metadata,

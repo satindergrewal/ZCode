@@ -293,9 +293,12 @@ describe("desktopOAuthDeepLink workspace open routing", () => {
     const handled = handleOpenWorkspacePath(workspacePath, logger);
 
     expect(handled).toBe(false);
-    expect(logger.warn).toHaveBeenCalledWith("[deep-link] workspace open matched no window; ignored", {
-      path: workspacePath,
-    });
+    expect(logger.warn).toHaveBeenCalledWith(
+      "[deep-link] workspace open matched no window; ignored",
+      {
+        path: workspacePath,
+      },
+    );
 
     const targetWindow = createMockWindow(13);
     deliverPendingDeepLink(targetWindow.webContents);

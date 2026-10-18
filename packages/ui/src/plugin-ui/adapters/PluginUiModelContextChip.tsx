@@ -10,7 +10,7 @@ import {
 
 export const TID_PLUGIN_UI_MODEL_CONTEXT_CHIP = "plugin-ui-model-context-chip";
 
-/** composer 与历史用户消息共用的"插件上下文"pill；与 WebElementContextAttachmentChip 同构。 */
+/** The plugin-context pill shared by composer and historical user messages; WebElementContextChip isomorph. */
 export function PluginUiModelContextChip({
   contexts,
   contentAlign = "start",

@@ -44,11 +44,12 @@ export const TAIL = 4;
 export const STUB = 6;
 
 /**
- * 补全的头那一行（docs/dynamic-workflow/presentation.md「Holes on the timeline」）：只在有补全的时间线上
- * 存在，24px，压在弧道之上——笔 12px 对准第一枚新灯的 x，名字与 `· T` 跟在后面，没有底也没有线。
+ * The fill-head row (docs/dynamic-workflow/presentation.md "Holes on the timeline"): exists only on
+ * timelines with fills, 24px, pressed over the arc lane — the 12px pen aligns with the first new dot's
+ * x, name and `· T` trailing, no background and no rule.
  */
 export const HEAD_ROW = 24;
-/** 尾巴留白在末站之后多占的宽度：开着时是淡出的虚线残段，补全后是头落下的余地。 */
+/** Extra width the tail void occupies past the last station: a fading dashed stub while open, landing room for the head once filled. */
 export const TAIL_STUB = 40;
 
 export function timelineWidth(count: number, inset = 0, tail = false): number {
@@ -200,7 +201,7 @@ export interface TimelineLayout {
 export function timelineLayout(
   arcs: readonly TimelineArc[],
   bands: readonly TimelineBand[],
-  /** 有补全的时间线：最上面先留出头那一行（`HEAD_ROW`），其余整套式子原样下移。 */
+  /** Timelines with fills: reserve the head row on top (`HEAD_ROW`) and shift the rest of the formula down unchanged. */
   heads = false,
 ): TimelineLayout {
   const banded = bands.length > 0;

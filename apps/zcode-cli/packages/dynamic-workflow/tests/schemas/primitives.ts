@@ -1,4 +1,4 @@
-// 基础类型、字面量、字面量 union → enum。
+// Primitives, literals, and literal unions -> enum.
 interface Basics {
   title: string;
   count: number;

@@ -1,21 +1,27 @@
 /**
- * 执行引擎的确定性状态机（Boundary A 的实现 + 向下驱动 Boundary B + 向上回报 sink）。
+ * The execution engine's deterministic state machine (implements Boundary A, drives Boundary B
+ * downward, reports upward via the sink).
  *
- * 核心不做任何 I/O、不读时钟、不用随机数：随时间/调度变化的决策要么被 journal 记录、要么被
- * "每站点序号 + 每 actor FIFO 的 actorSeq"这套确定性规则固定，从而首次执行与 replay 逐字一致。
+ * The core does no IO, reads no clock, uses no randomness: time/scheduling-dependent decisions
+ * are either journaled or pinned by the deterministic "per-site ordinal + per-actor FIFO
+ * actorSeq" rules, so first run and replay agree byte for byte.
  *
- * 关键不变量：
- * - 实例身份 = 站点 id × 每站点执行序号（第 n 次 ask#3 = ask#3@n）。actor 身份 = 创建站点 × 序号。
- * - journal 决策：每次 host 调用先查 (siteId, ordinal)；命中即短路（无 driver 调用），并防御性
- *   校验 inputHash——不一致则整个 run 大声失败（结构化错误，绝不静默偏移）。
- * - 每 actor FIFO + actorSeq 准入顺序 + replay 的 hold 规则：见 scheduler.ts（本文件把 ask 生命周期委托给它）。
+ * Key invariants:
+ * - Instance identity = site id x per-site ordinal (nth ask#3 = ask#3@n). Actor identity =
+ *   creating site x ordinal.
+ * - Journal-first: every host call probes (siteId, ordinal); a hit short-circuits (no driver
+ *   call) and defensibly re-checks inputHash - mismatch fails the run loudly (structured error,
+ *   never a silent skew).
+ * - Per-actor FIFO + actorSeq admission order + replay hold rules: scheduler.ts (this file
+ *   delegates ask lifetime to it).
  *
- * 本文件聚焦 run 生命周期：host API 入口、用量记账、run 结算与事件记录。用户面产物、report、
- * world 节点与导入缓存、run 终态三条路径的方法体各在兄弟模块（engine-artifacts.ts / engine-report.ts /
- * engine-world.ts / engine-settlement.ts），经 engine-state.ts 的 {@link EngineState} 接缝读写这里的
- * 私有状态；本类上只留薄委托（拆分原因：oxlint max-lines 上限 400 行）。出生阶段坐标的两个
- * 打戳函数（事件与 ProviderStop）是纯函数，住在 engine-phase-stamp.ts，只读本类拥有的
- * `instancePhases` 表。
+ * This file owns run lifecycle: host API entries, usage accounting, run settlement, event
+ * recording. User-facing artifacts, reports, world nodes, the import cache, and the three
+ * terminal paths live in sibling modules (engine-artifacts.ts / engine-report.ts /
+ * engine-world.ts / engine-settlement.ts), touching private state through engine-state.ts's
+ * {@link EngineState} seam; this class keeps thin delegates only (split at the oxlint max-lines
+ * cap of 400). The two birth-phase stamping helpers (events and ProviderStop) are pure functions
+ * in engine-phase-stamp.ts, reading only this class's `instancePhases` table.
  */
 
 import { ImportedWorldQueue, matchImportedActor } from "./imported-cache.js";
@@ -62,14 +68,14 @@ import type {
   WorldReadOp,
 } from "./types.js";
 import { refToString, WorkflowError } from "./types.js";
-import { runLaunchedEvent } from "./engine-launch.js";
 import { normalizePersona } from "./persona.js";
+import { runLaunchedEvent } from "./engine-launch.js";
 import { enrichProviderStopPhase, stampBirthPhase } from "./engine-phase-stamp.js";
 
-/** 引擎构造配置（定义迁到 engine-config.ts，这里原地再导出）。 */
+/** Engine construction config (defined in engine-config.ts; re-exported here). */
 export type { EngineConfig } from "./engine-config.js";
 
-/** run 的最终结算（定义随结算模块的接缝迁到 engine-state.ts，这里原地再导出）。 */
+/** The run's final settlement (defined on the settlement seam in engine-state.ts; re-exported here). */
 export type { RunSettlement } from "./engine-state.js";
 
 interface SettledDeferred {
@@ -82,100 +88,104 @@ export class WorkflowEngine implements WorkflowHostApi, WorkflowReportSink {
   private readonly driver: WorkflowDriver;
   private readonly journal: JournalStorePort;
   /**
-   * 本 run 的并发上界。**可变**（见 {@link setMaxConcurrency}）：一次只改 `max_concurrency`
-   * 的修订就地作用在活着的 run 上。整份替换而不是原地改字段——已记进事件与 journal 的那几份
-   * caps 必须保持它们被记下时的样子（调用方递进来的那个对象同理不被回写）。
+   * This run's concurrency cap. **Mutable** (see {@link setMaxConcurrency}): a
+   * max_concurrency-only amendment applies in place to the living run. Replaced whole, not
+   * field-patched - copies already recorded in events and journal must stay as recorded (the
+   * caller's object is likewise never written back).
    */
   private caps: Caps;
   /**
-   * 每 ask 站点的静态规格。**可变**（见 {@link fillHole}）：一次补全把它整份换成有效脚本的表
-   * （原表的超集）。整份替换而不是原地改，与 caps 同一条纪律。
+   * Per-ask-site static specs. **Mutable** (see {@link fillHole}): a fill swaps in the valid
+   * script's table (a superset). Replaced whole, same discipline as caps.
    */
   private askSpecs: ReadonlyMap<string, AskSpec>;
   private readonly validate: ValidateFn;
   private readonly scheduler: AskScheduler;
 
-  /** 每站点执行序号计数器（ask / world-read / actor 共用，站点 id 互不相同）。 */
+  /** Per-site ordinal counters (ask / world-read / actor share them; site ids never collide). */
   private readonly ordinals = new Map<string, number>();
   /**
-   * 阶段进入次数，按名字。**不与**
-   * `ordinals` 共表：阶段名是作者的任意字符串，一个恰好叫 `report#1` 的阶段不能挪动那个
-   * 站点的节点序号（site-id stability），反之亦然。
+   * Phase entry counts, by name. **Deliberately not** the `ordinals` table: phase names are
+   * arbitrary author strings, and a phase literally named `report#1` must not shift that
+   * site's node ordinal (site-id stability), nor vice versa.
    */
   private readonly phaseOrdinals = new Map<string, number>();
   /**
-   * 控制流当前所在的阶段名（`enterPhase` 维护；第一个标记之前为 undefined）。只在铸造点被
-   * 读取——见 {@link nextOrdinal}。
+   * Phase name control flow currently sits in (`enterPhase` maintains; undefined before the
+   * first marker). Read only at mint - see {@link nextOrdinal}.
    */
   private currentPhase: string | undefined;
-  /** 站点 → 词法出生阶段（见 {@link EngineConfig.sitePhases}）。可变，与 `askSpecs` 同一条路换表。 */
+  /** Site -> lexical birth phase (see {@link EngineConfig.sitePhases}). Mutable; swapped like `askSpecs`. */
   private sitePhases: ReadonlyMap<string, string>;
-  /** 留白的停驻表与本世的补全记忆（engine-holes.ts）。 */
+  /** Parked holes and this life's fill memory (engine-holes.ts). */
   private readonly holes: HoleRegistry;
   /**
-   * 实例（`siteId@ordinal`）→ 它**出生时**的阶段名。写在铸造点、读在 {@link record} 的打戳漏斗：静态因果图按阶段拷贝
-   * 站点，运行时实例必须带同一个坐标，否则一条车道上的实例会被那个站点的每一份阶段拷贝
-   * 同时认领（本 bug 的形状：五个阶段各 20 个子代理，五张卡各显示 100 个）。
+   * Instance (`siteId@ordinal`) -> its **birth-time** phase name. Written at mint, read in
+   * {@link record}'s stamping funnel: the static causality graph copies sites per phase, so
+   * runtime instances must carry the same coordinate, or one lane's instance is claimed by every
+   * phase copy of that site (this bug's shape: 5 phases x 20 subagents, five cards x 100 each).
    */
   private readonly instancePhases = new Map<string, string>();
 
   /**
-   * 本 run 内已被认领的**非空有效 actor 名** → 认领它的 actor（用于失败信息里指认前一处）。
-   * 见 {@link createActor} 的查重与 replay 安全性说明。
+   * Claimed **non-empty valid actor names** in this run -> the claiming actor (failure messages
+   * point at the first occurrence). See {@link createActor}'s dedup / replay notes.
    */
   private readonly actorNames = new Map<string, string>();
 
-  /** amend-resume 的导入缓存（纯数据，缺席即本次不是修订续跑）。 */
+  /** The amend-resume import cache (plain data; absent = not an amend-resume). */
   private readonly importedCache?: ImportedRunCache;
-  /** world 导入队列的消费游标（第 n 次出现对第 n 条）。 */
+  /** Consumption cursor of the world import queue (nth occurrence to nth entry). */
   private readonly importedWorld: ImportedWorldQueue;
   /**
-   * 导入缓存是否已**关闭**：第一笔写入之前置真、永不重开
-   * ——某个 live 子代理即将执行改写工具（driver 上报 askMutating），或一条 world.run live 执行。
-   * 关闭后 world 节点与带工具的 ask 不再问导入表（哈希只比对文本，比不出工作区已被改写）；
-   * 纯 ask（toolCalls 0）照常命中。resume 时从 `import-cache-closed` 事件恢复，见 {@link recoverImportClosure}。
+   * Whether the import cache is **closed**: true from the first write, never reopened - a live
+   * subagent is about to run a mutating tool (driver-reported askMutating) or a world.run
+   * executes live. Once closed, world nodes and tool-bearing asks stop consulting the table
+   * (hashes compare text; they cannot see workspace rewrites); pure asks (toolCalls 0) still hit.
+   * Restored on resume from `import-cache-closed`; see {@link recoverImportClosure}.
    */
   private importClosed = false;
   /**
-   * replay 的结算次序闸（docs/execution-engine.md「Replaying the settle order」）：命中缓存的
-   * 结算按 journal 记下的**首生结算次序**释放，而不是按准入次序——join 之后的每一个站点序号
-   * 都由那个次序决定。非 resume 恒为空闸（人人放行）。
+   * The replay settle-order gate
+   * (docs/execution-engine.md "Replaying the settle order"): cache-hit settlements release in the
+   * journal's **first-born settlement order**, not admission order - every post-join site ordinal
+   * derives from it. Empty (everyone passes) outside resume.
    */
   private replaySettleOrder = ReplaySettleOrder.empty();
-  /** resume 时从事件恢复的「崩溃前曾 live 的 ask 实例」（`siteId@ordinal`）；非 resume 为空。 */
+  /** Ask instances live before the crash, recovered from events on resume (`siteId@ordinal`); empty otherwise. */
   private liveAskInstances: ReadonlySet<string> = new Set();
-  /** resume 时从事件次序恢复的「准入早于关门的 ask 实例」；续跑在飞 ask 的判定据此复原。 */
+  /** Instances whose admission preceded the gate close, recovered from event order; restores the in-flight-ask test. */
   private queuedBeforeImportClose: ReadonlySet<string> = new Set();
 
   /**
-   * 本 run 已发布的报告条数与 item 字节数（REPORT_CAPS 两个 run 级上限的计数器）。resume 时从
-   * journal 的 kind:"report" 行恢复——上限是 run 级的，跨 resume 必须连续计数，否则一个反复
-   * resume 的 run 可以无限报告。
+   * Published report count and item bytes of this run (counters for REPORT_CAPS' two run-level
+   * caps). Recovered on resume from the journal's kind:"report" rows - run-level caps must count
+   * continuously across resumes, else a repeatedly resumed run reports forever.
    */
   private reportTally: ReportTally = { count: 0, bytes: 0 };
   /**
-   * 本 run 每个**用户面产物** id 的状态。与 `reportTally`
-   * 同一条恢复法：resume 时从 journal 的 `kind: "artifact"` 行重建，此后在内存里维护——
-   * 上限（32 个 id / 每 id 16 版）与版本号都是 run 级的事实，跨 resume 必须连续，否则一个
-   * 反复 resume 的 run 可以无限发布。
+   * Per-**user-facing-artifact**-id state. Recovered like `reportTally`: rebuilt on resume from
+   * the journal's kind:"artifact" rows, in-memory after - the caps (32 ids / 16 versions per id)
+   * and version numbers are run-level facts, continuous across resumes, else a repeatedly resumed
+   * run publishes forever.
    *
-   * ⚠ 术语：artifact = 用户面产物，不是 `RunSettlement.artifact`（顶层返回值）。
+   * ⚠ artifact = user-facing artifact, not `RunSettlement.artifact` (the top-level return).
    */
   private readonly artifacts = new Map<string, ArtifactIdState>();
-  /** 累计 token 用量（观察面：只记账、只广播，永远不会让 run 失败）。 */
+  /** Cumulative token usage (observation: bookkeeping + broadcast only, never fails a run). */
   private spentTokens = 0;
   private runSettled = false;
   private runFailure?: WorkflowError;
 
   private readonly settledDeferred: SettledDeferred;
-  /** 兄弟模块自由函数读写私有状态的接缝（构造函数里用箭头闭包装配，见 engine-state.ts）。 */
+  /** Seam for sibling free-functions to touch private state (arrow-closure wired in the constructor; engine-state.ts). */
   private readonly state: EngineState;
 
   constructor(config: EngineConfig) {
     this.runId = config.runId;
     this.driver = config.driver;
     this.journal = config.driver.journal;
-    // 自己留一份：调用方（harness / run service）手里的那个对象不该因为一次 retune 而被改写。
+    // Keep our own copy: the caller's (harness / run service) object must survive a retune unwritten.
     this.caps = { maxConcurrency: config.caps.maxConcurrency };
     this.askSpecs = config.askSpecs;
     this.validate = config.validate;
@@ -219,21 +229,24 @@ export class WorkflowEngine implements WorkflowHostApi, WorkflowReportSink {
       markSettled: (failure) => {
         this.runSettled = true;
         if (failure !== undefined) this.runFailure = failure;
-        // 闸门随结算永久打开：还挂在次序表上的释放动作一律放掉，否则脚本那侧的 promise
-        // 永不兑现（沙箱会被关掉，但同进程跑脚本的装配就此挂死）。
+        // The gate opens permanently at settlement: release actions still on the order table are
+        // dropped, else the script side's promises never resolve (the sandbox shuts down, but the
+        // same-process rig running the script would hang).
         this.replaySettleOrder.open();
       },
       abortInFlight: (error, emitCancelled) => {
         this.scheduler.abortInFlight(error, emitCancelled);
-        // 停在留白上的分支与在飞 ask 同一笔拒绝：结算之后没有什么可以再补全它。
+        // Branches parked at holes share the in-flight asks' single rejection: nothing fills them post-settlement.
         this.holes.rejectAll(error);
       },
       resolveSettled: (settlement) => this.settledDeferred.resolve(settlement),
     };
 
-    // caps 对调度器是**现读**：setMaxConcurrency 整份换掉 this.caps，而派发判据必须看见新值
-    // （见 SchedulerHost.caps）。箭头闭包而不是对象字面量里的 `this`——后者指的是字面量自己。
+    // caps are read live by the scheduler: setMaxConcurrency swaps this.caps whole, and the
+    // dispatch test must see the new value (see SchedulerHost.caps). Arrow closure, not an
+    // object literal's this - the latter is the literal itself.
     const readCaps = (): Caps => this.caps;
+
     const host: SchedulerHost = {
       runId: this.runId,
       get caps(): Caps {
@@ -257,11 +270,17 @@ export class WorkflowEngine implements WorkflowHostApi, WorkflowReportSink {
     this.scheduler = new AskScheduler(host);
 
     const existing = this.journal.getRun(this.runId);
+    // Metadata lands once, at createRun; the script and session fields are kept for recovery and
+    // script_hash checks. name is later-arriving display metadata on the same path. Absent keys stay
+    // absent (never undefined-valued).
+    // Args ride the same metadata path as scriptText, written once at createRun: resume reads
+    // them back for replay and never accepts caller-supplied new args.
     if (existing === undefined) {
-      // 修订 run 从前驱的累计值起账；
-      // 全新 run 缺席即 0。归一（非有限值与负数按缺席、小数下取整）就在这一处：这个数要落
-      // `spent_tokens` 列，协议 schema 要求非负整数，而它是过了 harness 边界的纯数据——一个 NaN
-      // 会同时毒化列值与投影补丁，所以脏值必须死在写库之前，而不是死在投影的补丁校验里。
+      // Amended runs start from the predecessor's cumulative total; fresh runs absent = 0.
+      // Normalization (non-finite/negative as absent, floors fractions) happens right here: the
+      // number lands in the spent_tokens column and the protocol schema wants a non-negative
+      // integer, while it is plain data past the harness - one NaN poisons column and projection
+      // patch alike, so dirty values die before the write, not in the patch validation.
       const inherited = config.inheritedTokens ?? 0;
       this.spentTokens = Number.isFinite(inherited) ? Math.max(0, Math.floor(inherited)) : 0;
       this.journal.createRun({
@@ -269,11 +288,12 @@ export class WorkflowEngine implements WorkflowHostApi, WorkflowReportSink {
         caps: this.caps,
         spentTokens: this.spentTokens,
         status: "running",
-        // 元数据只在创建 run 时落库；保存传入的脚本与会话字段，供恢复和 script_hash 校验使用。
-        // name 是后来加入同一条路的展示元数据。缺省的字段保持缺席（不落成 undefined 键）。
+        // Metadata lands once, at createRun; script and session fields kept for recovery and
+        // script_hash checks. name is later-arriving display metadata on the same path. Absent
+        // keys stay absent (never undefined-valued).
         ...(config.scriptText === undefined ? {} : { scriptText: config.scriptText }),
-        // 实参与 scriptText 同一条元数据路，且同样只在建 run 时写一次：resume 从这里读回
-        // 重放，绝不接受调用方给的新实参。
+        // Args ride the same metadata path as scriptText, written once at createRun: resume
+        // replays these and never accepts caller-supplied new args.
         ...(config.args === undefined ? {} : { args: config.args }),
         ...(config.name === undefined ? {} : { name: config.name }),
         ...(config.scriptHash === undefined ? {} : { scriptHash: config.scriptHash }),
@@ -282,14 +302,16 @@ export class WorkflowEngine implements WorkflowHostApi, WorkflowReportSink {
           : { parentSessionId: config.parentSessionId }),
         ...(config.cwd === undefined ? {} : { cwd: config.cwd }),
         ...(config.toolCallId === undefined ? {} : { toolCallId: config.toolCallId }),
-        // lineage 也只在建 run 时写一次：修订是 supersede（新 run），前驱行零触碰。
+        // lineage is written once at createRun: amendment is supersede (a new run); the
+        // predecessor row is untouched.
         ...(config.resumedFrom === undefined ? {} : { resumedFrom: config.resumedFrom }),
       });
     } else {
-      // resume 的前置条件：脚本必须与建 run 时逐字节相同。哈希
-      // 不一致说明调用方拿另一份脚本复用了同一个 runId——站点 id 是 journal 的键，继续下去
-      // 会把新脚本的站点对上旧脚本的结果。拒绝**这次 resume**（同步抛出），而不是先接受
-      // 再 failRun：后者会把 failed 盖到一份仍能用正确脚本 resume 的记录上。
+      // Resume precondition: the script must equal createRun's byte for byte. A hash mismatch
+      // means the caller reused the runId for a different script - site ids are journal keys;
+      // continuing would match the new script's sites to the old results. Refuse this resume
+      // (throw) rather than accept-then-failRun: that stamps failed over a record still
+      // resumable with the right script.
       if (
         existing.scriptHash !== undefined &&
         config.scriptHash !== undefined &&
@@ -303,12 +325,13 @@ export class WorkflowEngine implements WorkflowHostApi, WorkflowReportSink {
           { mismatch: { expected: existing.scriptHash, got: config.scriptHash } },
         );
       }
-      // resume：次序闸、actor 的已记录 ask 数、报告计数与产物状态从 journal 恢复（engine-resume.ts）。
+      // resume: order gate, per-actor ask counts, report counters, artifact state - from the journal (engine-resume.ts).
       ({ replaySettleOrder: this.replaySettleOrder, reportTally: this.reportTally } =
         restoreFromJournal(this.state, this.scheduler));
-      // 用量从记录恢复（跨生命周期连续）。
+      // Usage recovers from the record (continuous across lifecycles).
       this.spentTokens = existing.spentTokens;
-      // 修订 run 的崩溃恢复：导入表被整表重建，而「门是否已关」不落库——从事件精确恢复。
+      // Amended-run crash recovery: the import table rebuilds wholesale, but gate-closed-ness
+      // is not stored - recover it exactly from events.
       if (this.importedCache !== undefined) {
         const recovered = recoverImportClosure(this.journal, this.runId);
         this.liveAskInstances = recovered.live;
@@ -318,25 +341,20 @@ export class WorkflowEngine implements WorkflowHostApi, WorkflowReportSink {
       this.journal.updateRunStatus(this.runId, "running");
     }
     this.record({ type: "run-started", runId: this.runId, caps: this.caps });
-    // 建 run 那一世才记锚点，且放在 run-started 之后：投影把 run-started 当作建条目事件，
-    // 锚点事件对它只是抬水位（reducer 的 default 分支）。
     if (existing === undefined && config.launch !== undefined) {
       this.record(runLaunchedEvent(config.launch, config));
     }
-    // 继承（amend）或恢复（resume）来的用量在这里补发一条：投影把 `run-started` 当作
-    // 「用量清零」（workflow-runs-started.ts 剥掉上一世的结算残影），所以不补发的话，卡片会在
-    // 第一轮 live turn 落地之前显示 0——而「这条 run 还没花钱」是假的。一世没有任何 live ask 时
-    // 更糟：投影会一直停在 0，直到冷回放才对得上行值。
-    // 零不发：reset 本身已经说了零，再发一条是每个全新 run 都要付的一条噪音事件。
+    // noise every fresh run pays: the reset already said zero; another event is noise every
+    // fresh run pays.
     if (this.spentTokens > 0) this.record({ type: "usage-updated", spentTokens: this.spentTokens });
   }
 
-  /** run 结算 promise：完成/失败/取消时兑现。 */
+  /** Run settlement promise; resolves on complete/fail/cancel. */
   get settled(): Promise<RunSettlement> {
     return this.settledDeferred.promise;
   }
 
-  /** 当前 run 状态。 */
+  /** Current run state. */
   status(): RunStatus {
     return this.journal.getRun(this.runId)?.status ?? "running";
   }
@@ -344,22 +362,25 @@ export class WorkflowEngine implements WorkflowHostApi, WorkflowReportSink {
   // ——————————————————————————————— Boundary A ———————————————————————————————
 
   /**
-   * 建一个 actor。**有效名**是 `normalizePersona` 之后的 `spec.name`（persona.name 压过 name
-   * 实参），非空即必须在本 run 内唯一——重名让整个 run 大声失败（DuplicateActorName）。
+   * Create one actor. The **effective name** is spec.name after normalizePersona (persona.name
+   * beats the name argument); non-empty must be unique in this run - duplicates fail the run
+   * loudly (DuplicateActorName).
    *
-   * 为什么是 run 级失败而不是改名/警告：具名 actor 是 amend-resume 缓存导入的身份键，而任何
-   * run 都是未来修订的潜在前驱，前驱里重名会让导入匹配歧义。
-   * 规则因此对所有 run 生效，不只是修订 run。匿名（缺席或空串）从不查、任意多个合法——
-   * 代价已裁决：没有缓存资格。
+   * Why run-level failure, not rename/warn: named actors are the amend-resume cache-import
+   * identity keys, and any run is a potential future amendment's predecessor; duplicates there
+   * make import matching ambiguous. The rule binds all runs, not just amended ones. Anonymous
+   * (absent/empty) never checks; any number legal - the ruled tradeoff: no cache eligibility.
    *
-   * **replay 安全**：查重表是纯内存的、随引擎实例而生。逐字节相同脚本的 resume 在一个**全新**
-   * 引擎实例里从头重跑同一串 createActor 调用，每个名字因此恰好被登记一次，不会把上一轮
-   * 自己的登记当成重名。这也是它不能落 journal 的理由——落库的表会在 resume 时与自己撞车。
+   * **Replay safety**: the dedup table is purely in-memory, born with the engine instance. A
+   * resume of a byte-identical script reruns the same createActor sequence in a **brand-new**
+   * engine, so each name registers exactly once - no self-collision with the previous life. Also
+   * why it cannot be journaled: a stored table would collide with itself on resume.
    *
-   * **导入缓存的附着也在这里**（amend-resume）：按有效名查 `importedCache.actors`，
-   * persona 规范化后一致才把候选挂到调度器的 actor 态上。比对之所以在**运行期**而不是
-   * 提交时静态比对两份脚本：名字与 persona 都是运行期值（`agent()` 的实参可以是动态表达式），
-   * 静态比对是第二份真相，恰是本包处处要防的（判定见 imported-cache.ts 的 `matchImportedActor`）。
+   * **Import-cache attach happens here too** (amend-resume): look up the effective name in
+   * importedCache.actors; attach the candidate to the scheduler's actor state once the normalized
+   * persona matches. Comparing at runtime, not statically diffing two scripts at submit: name and
+   * persona are runtime values (agent() args may be dynamic); a static diff is a second source of
+   * truth, what this package avoids everywhere (imported-cache.ts's matchImportedActor).
    */
   createActor(siteId: string, name?: string, persona?: string | PersonaSpec): ActorId {
     this.assertRunning("createActor");
@@ -371,7 +392,6 @@ export class WorkflowEngine implements WorkflowHostApi, WorkflowReportSink {
     if (effectiveName !== undefined && effectiveName !== "") {
       const claimed = this.actorNames.get(effectiveName);
       if (claimed !== undefined) {
-        // assertRunning 同姿态的同步表面：createActor 无 promise 可拒，只能抛。
         const err = new WorkflowError(
           "DuplicateActorName",
           `Subagent name "${effectiveName}" is used twice in this run (${claimed} and ${id}). ` +
@@ -382,15 +402,20 @@ export class WorkflowEngine implements WorkflowHostApi, WorkflowReportSink {
         throw err;
       }
       this.actorNames.set(effectiveName, id);
+      // compile artifacts stitched). A `?? { typed: false }` fallback would silently downgrade a
+      // typed ask to untyped: no submit_result registered, last-turn text as result, schema
+      // validation gone - a type system degraded to "always valid" is worse than none, so fail
+      // the run loudly instead.
+      this.actorNames.set(effectiveName, id);
     }
     this.scheduler.registerActor(ref, id, name, spec, matchImportedActor(this.importedCache, spec));
-    // putActor 是整条记录的替换，而 sessionId / resolvedModel 是 **driver 拥有**的字段
-    // （前者由 ensureSession 写、后者由宿主侧的 runtime 工厂写）。这里必须把既有值原样带过去，
-    // 否则 replay 命中同一 (siteId, ordinal) 时会把两者抹成空。
+    // putActor replaces the record whole, while sessionId / resolvedModel are driver-owned
+    // (ensureSession writes the former, the host-side runtime factory the latter). Carry the
+    // existing values through, or a replay hit on the same (siteId, ordinal) wipes them empty.
     const existing = this.journal.getActor(this.runId, siteId, ordinal);
     this.journal.putActor({
-      runId: this.runId,
       siteId,
+      runId: this.runId,
       ordinal,
       name,
       persona: spec,
@@ -404,17 +429,17 @@ export class WorkflowEngine implements WorkflowHostApi, WorkflowReportSink {
   ask(siteId: string, actorId: ActorId, instructions: string): Promise<unknown> {
     if (this.runSettled) return Promise.reject(this.runError());
     if (!this.scheduler.hasActor(actorId)) {
-      // 未知 actor：脚本/lowering 契约被破坏，整个 run 大声失败。
+      // Unknown actor: the script/lowering contract broke; fail the run loudly.
       const err = new WorkflowError("UnknownActor", `Unknown subagent handle: ${actorId}.`);
       this.failRun(err);
       return Promise.reject(err);
     }
     const spec = this.askSpecs.get(siteId);
     if (spec === undefined) {
-      // 站点表与 schema 合成来自同一次编译，所以 miss 只可能是接线错误（两份编译产物被
-      // 拼在一起）。`?? { typed: false }` 兜底会把 typed ask 静默降级成 untyped：
-      // 不注册 submit_result、拿末轮文本当结果、schema 校验整个消失——一个降级到
-      // 「结果永远合法」的类型系统比没有类型系统更糟，所以宁可让整个 run 大声失败。
+      // Site table and schema synth come from one compilation, so a miss is a wiring bug (two
+      // artifacts stitched). A ?? { typed: false } fallback would silently downgrade a typed ask:
+      // no submit_result, last-turn text as result, validation gone - a type system degraded to
+      // always-valid is worse than none; fail the run loudly instead.
       const err = new WorkflowError(
         "MissingAskSpec",
         `Ask site ${siteId} has no spec: askSpecs is incomplete (compile output mismatch).`,
@@ -425,7 +450,7 @@ export class WorkflowEngine implements WorkflowHostApi, WorkflowReportSink {
     return this.scheduler.admitAsk(siteId, actorId, instructions, spec);
   }
 
-  /** world 节点（world-read / world-run）：方法体在 engine-world.ts 的 readWorld。 */
+  /** World nodes (world-read / world-run): body in engine-world.ts's readWorld. */
   worldRead(siteId: string, op: WorldReadOp, args: unknown[]): Promise<unknown> {
     return readWorld(this.state, siteId, op, args);
   }
@@ -436,14 +461,14 @@ export class WorkflowEngine implements WorkflowHostApi, WorkflowReportSink {
   }
 
   /**
-   * 控制流经过了一个 `phase("…")` 标记（Boundary A 的 `enterPhase`）。与 `log` 同一副姿态：同步、无返回值、
-   * 结算后 no-op、**不落 journal 行**——标记不是站点，没有 `dwf_node` 可写。
+   * Control flow passed a phase("...") marker (Boundary A's enterPhase). log's posture: sync, no
+   * return, no-op after settlement, no journal row - a marker is not a site; no dwf_node exists.
    *
-   * ordinal 按名字计数，用自己的表（{@link phaseOrdinals}）：阶段名与 site id 互不消耗对方的
-   * 序号（site-id stability）。
-   * **每次求值都发**：`for { phase("B"); ask }` 的第二轮就是 B 的第二次进入；若「与当前阶段
-   * 同名即不发」，单阶段循环体的轮次就丢了。resume 重跑会把前缀再发一遍——这里刻意不去重
-   * （去重需要引擎读事件表），reducer 以 `rounds = max(rounds, ordinal)` 单调归约。
+   * Ordinals count per name in their own table (phaseOrdinals): phase names and site ids never
+   * consume each other's sequences (site-id stability).
+   * Emitted on every evaluation: round two of for { phase("B"); ask } is B's second entry; a
+   * same-as-current skip loses single-phase loops. Resume re-emits the prefix - deliberately
+   * not deduped (that needs reading events); reducers fold via rounds = max(rounds, ordinal).
    */
   enterPhase(name: string): void {
     if (this.runSettled) return;
@@ -451,20 +476,21 @@ export class WorkflowEngine implements WorkflowHostApi, WorkflowReportSink {
     if (trimmed.length === 0) return;
     const ordinal = (this.phaseOrdinals.get(trimmed) ?? 0) + 1;
     this.phaseOrdinals.set(trimmed, ordinal);
-    // 此后铸造的实例都出生在这个阶段。
+    // Instances minted hereafter are born in this phase.
     this.currentPhase = trimmed;
     this.record({ type: "phase-entered", name: trimmed, ordinal });
   }
 
-  /** 脚本到达一处未补全的留白（Boundary A 的 `hole`）：方法体在 engine-holes.ts 的 reachHole。 */
+  /** The script reached an unfilled hole (Boundary A's hole): body in engine-holes.ts's reachHole. */
   hole(siteId: string, name: string, prompt?: string): Promise<{ code: string }> {
     return reachHole(this.state, this.holes, siteId, name, prompt);
   }
 
   /**
-   * 主代理补全一处留白（docs/execution-engine.md「The engine's part」）：一个同步步骤里换掉规格表
-   * 与阶段表、写回有效脚本、记 `hole-filled`、记住代码、放行停驻的每一个分支。方法体在
-   * engine-holes.ts 的 fillHole；两条 no-op（`not_waiting` / `settled`）不写不发。
+   * The main agent fills one hole (docs/execution-engine.md "The engine's part"): one sync step
+   * swapping the spec and phase tables, writing back the valid script, recording hole-filled,
+   * remembering the code, releasing every parked branch. Body: engine-holes.ts's fillHole; the
+   * two no-ops (not_waiting / settled) write and emit nothing.
    */
   fillHole(fill: HoleFill): FillHoleResult {
     return fillHoleBody(this.state, this.holes, fill, (askSpecs, sitePhases) => {
@@ -473,83 +499,86 @@ export class WorkflowEngine implements WorkflowHostApi, WorkflowReportSink {
     });
   }
 
-  /** 仍在等的留白（快照投影：事件之外还要问引擎，进程死过之后没有 promise 在等）。 */
+  /** Holes still waiting (snapshot: ask the engine beyond events; after a process death no promise waits). */
   openHoles(): OpenHole[] {
     return this.holes.open();
   }
 
-  /** 本世已补全的留白。 */
+  /** Holes filled this life. */
   filledHoles(): FilledHole[] {
     return this.holes.filledList();
   }
 
-  /** 发布一条中间结果（Boundary A 的 `report`）：方法体在 engine-report.ts 的 publishReport。 */
+  /** Publish one intermediate result (Boundary A's report): body in engine-report.ts's publishReport. */
   report(siteId: string, item: unknown, artifactId?: string): void {
     publishReport(this.state, siteId, item, artifactId);
   }
 
   /**
-   * 发布一个**内容产物**（`artifact.file` / `artifact.markdown`）：方法体在 engine-artifacts.ts
-   * 的 publishContentArtifact。
+   * Publish a content artifact (artifact.file / artifact.markdown): body in
+   * engine-artifacts.ts's publishContentArtifact.
    */
   publishArtifact(siteId: string, op: ArtifactContentOp, args: unknown[]): Promise<ArtifactRef> {
     return publishContentArtifact(this.state, siteId, op, args);
   }
 
   /**
-   * 声明一个**预置产物**（`artifact.chart` / `table` / `metrics` / `board`）：方法体在
-   * engine-artifacts.ts 的 declarePresetArtifact。
+   * Declare a preset artifact (artifact.chart / table / metrics / board): body in
+   * engine-artifacts.ts's declarePresetArtifact.
    */
   declareArtifact(siteId: string, op: ArtifactPresetOp, args: unknown[]): void {
     declarePresetArtifact(this.state, siteId, op, args);
   }
 
-  // —————————————————————— 外部驱动的 run 生命周期 ——————————————————————
+  // ———————— externally driven run lifecycle ————————
 
-  /** 沙箱脚本成功返回顶层 artifact，结算为 completed：方法体在 engine-settlement.ts 的 settleCompleted。 */
+  /** The sandbox script returned the top-level artifact; settle completed: engine-settlement.ts's settleCompleted. */
+
   complete(artifact: unknown): void {
     settleCompleted(this.state, artifact);
   }
-
   /**
-   * 外部停止：中止在飞 ask（deferred 以 Cancelled reject、补发 node-settled(cancelled)），run
-   * 结算 `stopped(reason)`；已完结的 journal 条目保留（可 resume）。四个 reason 走同一条路：
-   * `user` / `model`（cancel 入口传进来的 initiator）、`interrupted`（harness 的沙箱故障）、
-   * `provider`（driver 经 `stopRun` 报上来的确定性模型侧错误）。`error` 只对后两者在场。
-   * first-wins：已结算即忽略。方法体在 engine-settlement.ts 的 settleStopped。
+   * External stop: abort in-flight asks (deferreds reject Cancelled, node-settled(cancelled)
+   * emitted), settle stopped(reason); settled journal rows remain (resumable). One path for all
+   * four reasons: user / model (cancel entry's initiator), interrupted (harness sandbox failure),
+   * provider (deterministic model-side error via driver stopRun). error only on the last two.
+   * First-wins once settled. Body: engine-settlement.ts settleStopped.
    */
   stop(reason: RunStopReason, error?: WorkflowError, supersededBy?: string): void {
     settleStopped(this.state, reason, error, supersededBy);
   }
 
   /**
-   * 外部失败：complete 的失败对偶。harness 用它把子进程 `{complete, ok:false, error}`（脚本抛出）、
-   * 子进程崩溃、墙钟超时、NDJSON 解析失败等都归为 run 失败，
-   * 而非伪装成 cancel——否则 journal 的 failure 与调用方看到的结果会分叉。
-   * 走内部 failRun 路径：first-wins（对 complete/cancel/内部失败）、driver 侧取消在飞 ask、
-   * journal run 状态 failed + failure_json、发 run-failure 事件、settled 结算为 failed。
+   * External failure: complete's failure dual. The harness classifies child
+   * {complete, ok:false, error} (script throw), child crashes, wall-clock timeouts, NDJSON parse
+   * failures and the like as run failures, not disguised cancels - else journal failure and the
+   * caller's view diverge. Internal failRun path: first-wins (vs complete/cancel/internal),
+   * driver-side abort of in-flight asks, journal failed + failure_json, a run-failure event,
+   * settled failed.
    */
   fail(error: WorkflowError): void {
     this.failRun(error);
   }
 
   /**
-   * 就地改本 run **自己**的并发上界（docs/dynamic-workflow/concurrency.md「Two bounds on a run」）。
-   * 一次只带 `max_concurrency` 的修订作用在活着的 run 上：同一个 runId、不铸后继、不 supersede、
-   * 在飞 ask 一个不丢——这正是它与 AmendWorkflow 的全部差别，也是它存在的唯一理由。
+   * Change this run's OWN concurrency cap in place
+   * (docs/dynamic-workflow/concurrency.md "Two bounds on a run"). A max_concurrency-only
+   * amendment on the living run: same runId, no successor, no supersede, not one in-flight ask
+   * lost - the whole difference from AmendWorkflow, and the only reason this exists.
    *
-   * 返回**这次是否真的改了**。两条 no-op 都返回 false 且不写库、不发事件：run 已结算（宿主的
-   * 存活判定与本调用之间的竞态——调用方据此回落到一次真正的 amend），以及新值与当前值相同。
-   *
-   * 改成时三件事在同一个同步步骤里发生，于是三者永远一致：整份换掉 caps（调度器现读）、写
-   * `dwf_run.caps_max_concurrency`（resume 沿用行里的 caps，不落库就恢复成旧上界）、记一条
-   * `run-caps-changed`。**抬高**还多一次 `pumpAll()`——上界是派发前现读的，但没有别的事件会
-   * 触发重扫，排队的 ask 否则要等到下一次结算。调低不召回在飞 ask：它们照常跑完，上界只管
-   * 「还能不能再放一个」。
-   *
-   * 钳到 `[1, 天花板]` 归调用方——天花板是宿主事实（机器核数），引擎既看不见也不该看见。
-   * 这里只做落库归一，与构造函数里的 `inheritedTokens` 同一条纪律：这个数要落
-   * `caps_max_concurrency`（integer not null），一个 NaN 会同时毒化列值与派发判据。
+   * Returns whether anything changed. Both no-ops return false, no write, no event: already
+   * settled (host liveness race - callers fall back to a real amend), or equal value.
+   * (cont)
+    //
+    // Post-settlement straggler stats (a real actor's usage is known only at turn resolution; the
+    // last ask's stats often arrive after complete/cancel) must not emit events - they would land
+    // after run-settled, which downstream projections do not expect (run-settled must be the
+    // stream's last). After settlement: bookkeeping only (the usage row and noteStats' node
+    // backfill are journal row updates, not events). The books still balance: a resumable run's
+    // usage is continuous across lifecycles.
+   * Clamping to [1, ceiling] is the caller's job - the ceiling is host fact (machine parallelism),
+   * invisible to the engine. Storage normalization only here, the constructor inheritedTokens
+   * discipline: the number lands in caps_max_concurrency (integer not null).
    */
   setMaxConcurrency(maxConcurrency: number): boolean {
     if (this.runSettled) return false;
@@ -565,20 +594,24 @@ export class WorkflowEngine implements WorkflowHostApi, WorkflowReportSink {
     return true;
   }
 
-  // ——————————————————————————— Boundary B（向上回报）———————————————————————————
-
+  // —————————— Boundary B (upward reports) ——————————
   askSubmitAttempted(instance: InstanceRef, payload: unknown): void {
     this.scheduler.submitAttempted(instance, payload);
   }
+
+  // The adaptive-concurrency pure observations: the engine only records,
+  // deciding nothing from them. Calls after the run / node settled are ignored - late
+  // observations; journaling them would grow a settled run a tail.
 
   askTurnEnded(instance: InstanceRef, finalText: string): void {
     this.scheduler.turnEnded(instance, finalText);
   }
 
   /**
-   * ask 内进度观察：**纯透传**，
-   * 与 askStats → usage-updated 同一副姿态——不改调度、不进 inputHash、replay 不比对它。
-   * 与用量同理，结算后到达的迟到观察只丢事件（这里没有账要入），不给已完结的 run 长尾巴。
+   * In-ask progress observation: pure passthrough,
+   * askStats -> usage-updated's posture - no scheduling change, not in inputHash, untested by
+   * replay. Like usage, post-settlement stragglers drop only the event (no ledger here), never
+   * growing the settled run a tail.
    */
   askProgress(instance: InstanceRef, progress: AskProgress): void {
     if (this.runSettled) return;
@@ -588,14 +621,15 @@ export class WorkflowEngine implements WorkflowHostApi, WorkflowReportSink {
   askStats(instance: InstanceRef, stats: AskStats): void {
     this.scheduler.noteStats(instance, stats);
     this.spentTokens += stats.tokens;
-    // 用量不能只在 createRun(0) 落库一次：累计不回写会让 resume 恢复出零用量。
-    // 累加后立刻持久化，且早于事件——事件载荷与列值在同一同步步骤产生，二者永远相等。
+    // Usage cannot be written once at createRun(0): without write-back resume restores zero.
+    // Persist right after accumulating, before the event - payload and column are produced in the
+    // same synchronous step and never diverge.
     this.journal.updateRunUsage(this.runId, this.spentTokens);
-    // 结算后到达的 straggler stats（真实 actor 的用量在 turn 解析后才知道，最后一个
-    // ask 的 stats 常晚于 complete/cancel 到达）不能照发事件——事件被追加在 run-settled 之后，
-    // 下游投影不预期（run-settled 必须是事件流最后一条）。结算后只记账（用量行 + noteStats
-    // 的节点回填都是 journal 行更新，不是事件），不再发事件。账仍要入：可 resume 的 run 用量
-    // 跨生命周期连续。
+    // Post-settlement stragglers (real actor usage known only at turn resolution; the last ask's
+    // stats often land after complete/cancel) must not emit - events after run-settled are
+    // unexpected (it must be the stream's last). Bookkeeping only (the usage row and noteStats
+    // node backfill are journal row updates, not events). Books still balance: a resumable run's
+    // usage is continuous across lifecycles.
     if (this.runSettled) return;
     this.record({ type: "usage-updated", spentTokens: this.spentTokens });
   }
@@ -605,35 +639,34 @@ export class WorkflowEngine implements WorkflowHostApi, WorkflowReportSink {
   }
 
   /**
-   * 确定性的模型侧错误：不结算节点，
-   * 整个 run 以 `stopped(provider)` 停下。run 已结算后到达的调用被 `stop` 的 first-wins 忽略。
+   * A deterministic model-side error: no node settlement; the whole run stops as
+   * stopped(provider). Post-settlement calls are ignored by stop's first-wins.
    */
   stopRun(error: WorkflowError): void {
     this.stop("provider", enrichProviderStopPhase(error, this.instancePhases));
   }
 
-  /** run 级停滞观察：只 record；run 已结算后到达的调用忽略。 */
+  /** Run-level stall observation: record only; ignored once settled. */
+  /** Run-level stall observation: record only; ignored once the run settled. */
   runStalled(info: RunStallInfo): void {
     if (this.runSettled) return;
     this.record({ type: "run-stalled", ...info });
   }
 
-  // 自适应并发的三个纯观察：引擎只 record，
-  // 不据它们做任何决策。run 已结算或节点已结算后到达的调用被忽略——那是迟到的观察，
-  // 落 journal 只会让一个已完结的 run 长出尾巴。
+  // The adaptive-concurrency pure observations: record only, no decisions from them.
+  // Post run/node-settlement calls are ignored - late observations; journaling grows a tail.
   askWaiting(instance: InstanceRef, info: AskWaitInfo): void {
     if (this.runSettled || !this.scheduler.isLive(instance)) return;
     this.record({ type: "node-waiting", instance, ...info });
   }
-
   askExecuting(instance: InstanceRef): void {
     if (this.runSettled || !this.scheduler.isLive(instance)) return;
     this.record({ type: "node-executing", instance });
   }
 
   /**
-   * 唯一一个引擎据以做决策的 driver 观察：在飞 ask 的子代理
-   * 即将改写工作区 ⇒ 关导入缓存。迟到的观察（run 或节点已结算）忽略，与上面两个同一姿态。
+   * The one driver observation the engine decides from: an in-flight ask's subagent is about to
+   * mutate the workspace => close the import cache. Late ones (run/node settled) ignored, as above.
    */
   askMutating(instance: InstanceRef): void {
     if (this.runSettled || !this.scheduler.isLive(instance)) return;
@@ -645,23 +678,23 @@ export class WorkflowEngine implements WorkflowHostApi, WorkflowReportSink {
     this.record({ type: "concurrency-changed", ...change });
   }
 
-  // ——————————————————————————————— 内部 ———————————————————————————————
+  // —————————————— internal ——————————————
 
-  /** run 级失败（first-wins）：方法体在 engine-settlement.ts 的 settleFailed。 */
+  /** Run-level failure (first-wins): body in engine-settlement.ts's settleFailed. */
   private failRun(error: WorkflowError): void {
     settleFailed(this.state, error);
   }
 
   /**
-   * 站点序号的**唯一**铸造点（createActor / admitAsk 第一行 / worldRead / report / artifact 全
-   * 同步经它），因此也是实例出生阶段的唯一记录点：这一行总在脚本调用的同一个 tick 里执行，
-   * 而事件未必——ask 的 `node-queued` 会被 hold 规则推迟到下一个标记之后才发出。
+   * The sole mint of site ordinals (createActor / admitAsk's first line / worldRead / report /
+   * artifact all sync here), hence also the only recorder of a birth phase: this line runs in
+   * the script call's tick; events may not - node-queued can be deferred past the next marker.
    */
   private nextOrdinal(siteId: string): number {
     const next = (this.ordinals.get(siteId) ?? 0) + 1;
     this.ordinals.set(siteId, next);
-    // 词法优先、动态兜底：并发的两个 future 各带自己的标记时，「最近经过的标记」是谁家的全凭
-    // 时序；编译期表里的阶段才是确认图上用户看到的那个（docs/execution-engine.md）。
+    // Lexical first, dynamic fallback: two concurrent futures with their own markers make
+    // latest-marker timing's call; the compile-time table's phase is what the graph shows.
     const phase = this.sitePhases.get(siteId) ?? this.currentPhase;
     if (phase !== undefined) this.instancePhases.set(refToString({ siteId, ordinal: next }), phase);
     return next;
@@ -680,10 +713,12 @@ export class WorkflowEngine implements WorkflowHostApi, WorkflowReportSink {
   }
 
   /**
-   * 每个事件既落 journal（dwf_event，持久）又经 driver.emit 扇出（Boundary C，实时）。
+   * Every event lands in the journal (dwf_event, durable) and fans out via driver.emit (Boundary
+   * C, live).
    *
-   * 所有事件的唯一漏斗，出生阶段也就在这里补上（{@link stampBirthPhase}）。两条路线拿到的
-   * 必须是**同一个对象**：bootstrap 的 `createJournalSequenceCapture` 按引用相等核对序号。
+   * The sole funnel of all events; birth phase is stamped here (stampBirthPhase). Both routes
+   * must receive the same object: bootstrap's createJournalSequenceCapture checks sequence
+   * identity by reference.
    */
   private record(event: RunEvent): void {
     const stamped = stampBirthPhase(event, this.instancePhases);

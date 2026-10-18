@@ -12,8 +12,8 @@ import {
 } from "../src/app-input.js";
 import type { TuiModelOption } from "../src/types.js";
 
-// 模型选项改为协议 Model Option（ref + label），别名（main/lite）已移除；
-// 行尾元信息改由 disabledReason 与 current 组成。
+// Model options are protocol Model Options (ref + label); the main/lite aliases are gone;
+// trailing row metadata is now disabledReason plus current.
 function modelOption(
   providerId: string,
   modelId: string,

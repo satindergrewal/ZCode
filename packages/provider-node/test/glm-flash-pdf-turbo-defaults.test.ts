@@ -3,9 +3,9 @@ import { describe, expect, it } from "vitest";
 import { ModelConfig, ModelConfigRules } from "@zcode/provider";
 import { NodeZCodeBuiltinProviderConfigSource } from "../src/index.js";
 
-describe("Todo126 发布配置的 Flash PDF 和模板 Turbo 默认", () => {
+describe("Todo126 released Flash PDF and template Turbo defaults", () => {
   it.each(["zai-standard-api", "bigmodel-standard-api"])(
-    "普通 API %s 的两个 Turbo 默认关闭，个人可开启",
+    "plain API %s ships both Turbo defaults off, personal can enable",
     async (templateId) => {
       const source = new NodeZCodeBuiltinProviderConfigSource({
         bundledFilePath: fileURLToPath(
@@ -51,7 +51,7 @@ describe("Todo126 发布配置的 Flash PDF 和模板 Turbo 默认", () => {
       }
     },
   );
-  it("Flash 的全部格式/站点/别名支持 PDF，其他型号和个人覆盖不变", async () => {
+  it("keeps PDF support across all Flash formats/sites/aliases while other models and personal overrides stay put", async () => {
     const source = new NodeZCodeBuiltinProviderConfigSource({
       bundledFilePath: fileURLToPath(
         new URL("../../../config/provider/zcode-builtin.json", import.meta.url),
@@ -122,7 +122,7 @@ describe("Todo126 发布配置的 Flash PDF 和模板 Turbo 默认", () => {
     }
   });
 
-  it("仅两个套餐 Key 模板的 Turbo 默认关闭，个人仍可开启", async () => {
+  it("defaults Turbo off only on the two plan-key templates, personal still able to enable", async () => {
     const source = new NodeZCodeBuiltinProviderConfigSource({
       bundledFilePath: fileURLToPath(
         new URL("../../../config/provider/zcode-builtin.json", import.meta.url),
@@ -145,7 +145,7 @@ describe("Todo126 发布配置的 Flash PDF 和模板 Turbo 默认", () => {
           apiType: "anthropic-messages",
           baseUrl: "https://example.test",
         });
-        // 普通 API 早已有 Turbo 默认关闭，保持；无模板的第三方仍沿用通用默认开启。
+        // Plain API already defaults Turbo off; keep it. Template-less third parties keep the generic on default.
         expect(config.enabled, templateId).toBe(templateId === "custom");
         expect(config.overlay(new ModelConfig({ enabled: true })).enabled).toBe(true);
         expect(config.overlay(new ModelConfig({ enabled: false })).enabled).toBe(false);

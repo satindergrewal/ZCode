@@ -2616,7 +2616,10 @@ describe("AgentRuntime manual compact", () => {
     const runtime = createTestAgentRuntime(
       sessionId,
       // 本场景固定截断预算；目录补齐另由 agent-listing-persistence 覆盖。
-      { systemPrompt: "You are a compact prompt-too-long test agent.", subagents: { enabled: false } },
+      {
+        systemPrompt: "You are a compact prompt-too-long test agent.",
+        subagents: { enabled: false },
+      },
       {
         eventStore,
         modelFactory: createTestModelFactory(

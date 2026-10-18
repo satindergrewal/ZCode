@@ -60,7 +60,7 @@ export function BrowserToolbar({
 }: {
   addressValue: string;
   browserState: BrowserState;
-  /** 地址栏左侧的站点设置入口；聚焦编辑 URL 时隐藏但不卸载。 */
+  /** Site entry left of the omnibox; hidden while the URL is edited, never unmounted. */
   permissionControl?: ReactNode;
   formatMessage: (descriptor: { id: string }) => string;
   onAddressChange: (value: string) => void;
@@ -122,7 +122,7 @@ export function BrowserToolbar({
           placeholder={formatMessage({ id: "browser.addressPlaceholder" })}
           spellCheck={false}
         />
-        {/* 编辑 URL 时隐藏入口但不卸载，避免将隐藏图标误当成关闭权限申请。 */}
+        {/* Hidden while editing, not unmounted; a vanished icon must not read as closed prompts. */}
         <div className="absolute top-1/2 left-0.5 -translate-y-1/2 group-has-[input:focus]/browser-address:hidden">
           {permissionControl}
         </div>

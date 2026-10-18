@@ -20,9 +20,9 @@ import { ASK_USER_QUESTION_E2E_CLOCK_SCALE_ENV } from "@zcode/shared";
 export type V4InteractionAnswer = {
   optionId?: string;
   freeText?: string;
-    // (elicitation-receipt convergence, kept in sync with shared command.ts resolveInteraction
-    // answer): with an action present the broker maps accept/decline/cancel exactly,
-    // content passes through the legacy userInput response's content semantics (multi-question answers/annotations lossless).
+  // (elicitation-receipt convergence, kept in sync with shared command.ts resolveInteraction
+  // answer): with an action present the broker maps accept/decline/cancel exactly,
+  // content passes through the legacy userInput response's content semantics (multi-question answers/annotations lossless).
   action?: "accept" | "decline" | "cancel";
   content?: Record<string, unknown>;
 };
@@ -73,12 +73,12 @@ export interface V4InteractionRegistrationOptions {
 }
 
 interface RegisteredInteraction {
-    /** Broker-side callback: maps the v4 answer onto the matching schema's reply and resolves the reverse request. */
+  /** Broker-side callback: maps the v4 answer onto the matching schema's reply and resolves the reverse request. */
   resolve: (answer: V4InteractionAnswer) => void;
   options?: V4InteractionRegistrationOptions;
   autoResolution?: V4InteractionAutoResolution;
   /**
-      * Timer eligibility, fixed at AskUserQuestion registration. Disable sets false permanently; re-enabling never retroacts on old questions.
+   * Timer eligibility, fixed at AskUserQuestion registration. Disable sets false permanently; re-enabling never retroacts on old questions.
    */
   fullAccessPending?: Promise<void>;
   autoResolutionEligible: boolean;
@@ -103,9 +103,9 @@ export class V4InteractionRegistry {
   }
 
   /**
-      * Registered when the broker fires a reverse request. Returns an unregister fn (the broker calls it in finally,
-      * however the race closes, preventing leaks). Re-registering the same interactionId (reannounce) overwrites
-      * the old callback -- that request was already invalidated by the broker's race/abort; this points at the latest wait.
+   * Registered when the broker fires a reverse request. Returns an unregister fn (the broker calls it in finally,
+   * however the race closes, preventing leaks). Re-registering the same interactionId (reannounce) overwrites
+   * the old callback -- that request was already invalidated by the broker's race/abort; this points at the latest wait.
    */
   register(
     interactionId: string,
@@ -153,20 +153,20 @@ export class V4InteractionRegistry {
   }
 
   /**
-      * Closes via the v4 resolveInteraction command: delivers the answer to the waiting broker deferred.
-      * Returns whether it hit -- on a miss (already answered/unregistered/unknown id) the command face closes as an idempotent success
-      * (proto.alreadyResolved semantics: multi-client first-wins, late answers harmless).
+   * Closes via the v4 resolveInteraction command: delivers the answer to the waiting broker deferred.
+   * Returns whether it hit -- on a miss (already answered/unregistered/unknown id) the command face closes as an idempotent success
+   * (proto.alreadyResolved semantics: multi-client first-wins, late answers harmless).
    */
   resolve(interactionId: string, answer: V4InteractionAnswer): boolean {
     const entry = this.pending.get(interactionId);
     if (!entry || entry.fullAccessPending) return false;
-        // Delete before resolving: resolve can synchronously trigger the broker finally's unregister, avoiding duplicate delivery on re-entry.
+    // Delete before resolving: resolve can synchronously trigger the broker finally's unregister, avoiding duplicate delivery on re-entry.
     this.remove(interactionId, entry);
     entry.resolve(answer);
     return true;
   }
 
-    /** Answers with permission side effects open only to the same-session capability on file; on failure the request stays for retry. */
+  /** Answers with permission side effects open only to the same-session capability on file; on failure the request stays for retry. */
   async resolveFullAccess(interactionId: string, sessionId: string): Promise<boolean> {
     const entry = this.pending.get(interactionId);
     if (!entry) return false;
@@ -190,7 +190,7 @@ export class V4InteractionRegistry {
     }
   }
 
-    /** The first valid action permanently pauses the current AskUserQuestion's auto-close; repeat/late calls noop. */
+  /** The first valid action permanently pauses the current AskUserQuestion's auto-close; repeat/late calls noop. */
   async snoozeAutoResolution(interactionId: string): Promise<boolean> {
     const entry = this.pending.get(interactionId);
     if (
@@ -206,8 +206,8 @@ export class V4InteractionRegistry {
   }
 
   /**
-      * Updates the global gate. Disabling cancels all timers at once and, before ACK, waits for running countdowns to persist as snoozed;
-      * re-enabling only times questions registered afterwards.
+   * Updates the global gate. Disabling cancels all timers at once and, before ACK, waits for running countdowns to persist as snoozed;
+   * re-enabling only times questions registered afterwards.
    */
   async setAskUserQuestionAutoResolutionEnabled(enabled: boolean): Promise<number> {
     this.interactionPreferenceCommandApplied = true;
@@ -215,8 +215,8 @@ export class V4InteractionRegistry {
   }
 
   /**
-      * The session-start handshake covers legacy Host compat and the first runtime's initial value only. Once an explicit workspace command
-      * arrives, a late start handshake must not overwrite the later setting commit.
+   * The session-start handshake covers legacy Host compat and the first runtime's initial value only. Once an explicit workspace command
+   * arrives, a late start handshake must not overwrite the later setting commit.
    */
   async initializeAskUserQuestionAutoResolutionEnabled(enabled: boolean): Promise<number> {
     if (this.interactionPreferenceCommandApplied) return 0;
@@ -245,7 +245,7 @@ export class V4InteractionRegistry {
     return this.pending.has(interactionId);
   }
 
-    /** Resident recycle check: does the session still hold interactions awaiting user answers (deactivation would drop them). */
+  /** Resident recycle check: does the session still hold interactions awaiting user answers (deactivation would drop them). */
   hasPendingForSession(sessionId: string): boolean {
     for (const entry of this.pending.values()) {
       if (entry.options?.sessionId === sessionId) return true;

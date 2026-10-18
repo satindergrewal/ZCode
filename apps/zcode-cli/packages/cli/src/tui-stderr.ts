@@ -12,7 +12,7 @@ export function isTuiInvocation(argv: readonly string[]): boolean {
   let parsed: ReturnType<typeof parseGlobalArgs>;
 
   try {
-        // Shares the argument definitions with run, including locale/browser/force-mcs and multi-value tool limits.
+    // Shares the argument definitions with run, including locale/browser/force-mcs and multi-value tool limits.
     parsed = parseGlobalArgs(extractDisallowedToolsArgs(argv).args);
   } catch {
     return false;

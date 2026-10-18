@@ -82,7 +82,7 @@ const BLOCK_TAGS = new Set([
 const markdown = new Marked({
   async: false,
   renderer: {
-    // Markdown 内嵌 HTML 作为文字；显式 html format 才进入 HTML 解析路径。
+    // Inline HTML in Markdown renders as text; only an explicit html format enters the HTML parse path.
     html: ({ text }) =>
       text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;"),
   },
@@ -104,7 +104,7 @@ function renderHtml(
   inline = false,
 ): ReactNode {
   if (text.length > 20_000 || typeof document === "undefined") return text;
-  // 云端 HTML 只在 inert template 内解析，不能把其 DOM 或属性直接带入宿主。
+  // Cloud HTML is parsed only inside an inert template; neither its DOM nor its attributes may enter the host directly.
   const template = document.createElement("template");
   template.innerHTML = text;
   let overDepth = false;
@@ -151,7 +151,7 @@ function renderHtml(
         children,
       );
     }
-    // 标题/按钮不能嵌套块级或交互节点；保留行内排版且沿用宿主动作。
+    // Headings and buttons must not nest block or interactive nodes; keep inline flow and the host's own action.
     return createElement(
       inline && BLOCK_TAGS.has(tag) ? "span" : tag,
       props,

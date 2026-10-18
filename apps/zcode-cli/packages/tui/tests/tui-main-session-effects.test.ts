@@ -1,9 +1,9 @@
-// WP-F 效果级回归：actor/子会话的原始事件绝不进主转写（user directive 2026-08-23）。
+// WP-F effect-level regression: raw actor/child-session events never enter the main transcript (user directive 2026-08-23).
 //
-// 与 tui-main-session-filter.test.ts 的分工：那个文件钉谓词，这个文件钉**流水线的效果**
-// （闸门 → 去重 → applySessionEventToState）。有些回归只在效果层面看得见——尤其是
-// actor 的 turn_complete 会不会经 applyTurnCompleteFallbackResponse 把 actor 的答案
-// 追加成主转写里的一条 agent 消息。
+// Division of labor with tui-main-session-filter.test.ts: that file pins the predicate, this one pins the pipeline's effects
+// (gate -> dedupe -> applySessionEventToState). Some regressions are visible only at the effect level -- above all,
+// whether an actor's turn_complete sneaks its answer into the main transcript as an agent message via
+// applyTurnCompleteFallbackResponse.
 import assert from "node:assert/strict";
 import test from "node:test";
 import { SessionEventType, createSessionEvent, type SessionEvent } from "@zcode/contracts";
@@ -17,10 +17,10 @@ const MAIN = "session-main";
 const ACTOR = "session-actor-1";
 
 /**
- * 收集所有可观察副作用，用来断言「什么都没发生」。
+ * Collects every observable side effect, to assert that nothing happened.
  *
- * 接的是 **getter** 而不是 id：显式传 `undefined` 会重新触发默认参数替换，
- * 于是「主会话 id 未知」这个用例其实还在按 MAIN 过滤——踩过一次，这里钉住。
+ * Takes the getter, not an id: passing `undefined` explicitly would re-trigger default-parameter substitution,
+ * so the unknown-main-session case would silently still filter by MAIN -- bitten once, pinned here.
  */
 function harness(getMainSessionId: () => string | undefined = () => MAIN) {
   const state = {
@@ -70,7 +70,7 @@ function event(sessionId: string, type: SessionEventType, payload: unknown = {})
   return { ...createSessionEvent(type, sessionId as never, payload), sessionId } as SessionEvent;
 }
 
-// ── 载荷最重的一条：actor 的 turn_complete 绝不经兜底写进主转写 ──
+// -- The heaviest case: an actor's turn_complete never reaches the transcript via the fallback --
 
 test("an actor turn_complete never appends its answer through the fallback", () => {
   const h = harness();
@@ -78,8 +78,8 @@ test("an actor turn_complete never appends its answer through the fallback", () 
     event(ACTOR, SessionEventType.TurnComplete, { response: "actor internal answer" }),
   );
   assert.equal(applied, false);
-  // 这条是整个 WP-F 里最要命的：兜底会把任意 turn_complete.response 追加成 agent 消息，
-  // 所以没有闸门的话 actor 的中间答案会原文出现在主转写里。
+  // The most dangerous WP-F regression: the fallback appends any turn_complete.response as an agent message,
+  // so without the gate, actor interim answers would land verbatim in the main transcript.
   assert.deepEqual(h.state.messages, []);
   assert.deepEqual(h.state.statuses, []);
 });
@@ -94,7 +94,7 @@ test("a main-session turn_complete still appends through the fallback", () => {
   assert.equal(h.state.messages[0]?.content, "the real answer");
 });
 
-// ── actor 的其余噪音：不产生任何转写 part、不改状态行 ──
+// -- Remaining actor noise: no transcript parts, no status-line changes ------------------------
 
 test("actor submit_result / tool_call_* create no transcript parts and no status changes", () => {
   const h = harness();
@@ -132,7 +132,7 @@ test("actor turn lifecycle events do not touch the main status line", () => {
   assert.deepEqual(h.state.statuses, []);
 });
 
-// ── 没有过滤过头：三个必须活着的表面 ──
+// -- Not over-filtered: three surfaces that must stay alive -------------------------------------
 
 test("dwf progress on the parent session still reduces into the mirror", () => {
   const h = harness();
@@ -146,14 +146,14 @@ test("dwf progress on the parent session still reduces into the mirror", () => {
     }),
   );
   assert.equal(applied, true);
-  // 卡片的生命线：闸门收得太紧就会把工具卡打回死的文本投影。
+  // The card's lifeline: an over-tight gate reverts tool cards to dead text projections.
   assert.equal(h.state.mirror.state.runs[0]?.runId, "dwfrun-1");
   assert.equal(h.state.mirror.state.runs[0]?.status, "running");
 });
 
 test("a mirrored subagent tool event still renders (it carries the parent sessionId)", () => {
-  // mirrorSubagentToolEvent 用 createSessionEvent(type, parentSessionId, ...) 铸造，
-  // 所以 Agent 工具的渲染不受 WP-F 影响。
+  // mirrorSubagentToolEvent mints via createSessionEvent(type, parentSessionId, ...),
+  // so Agent-tool rendering is untouched by WP-F.
   const h = harness();
   const applied = h.apply(
     event(MAIN, SessionEventType.ToolCallScheduled, {
@@ -167,7 +167,7 @@ test("a mirrored subagent tool event still renders (it carries the parent sessio
 });
 
 test("the actor gate does not depend on event kind — only on session", () => {
-  // 同一种事件，父会话过、子会话不过。闸门是会话级的，不是按类型拉黑名单。
+  // Same event type: parent passes, child does not. The gate is per session, not a type blacklist.
   const h = harness();
   assert.equal(h.apply(event(MAIN, SessionEventType.AssistantMessage, { content: "main" })), true);
   assert.equal(
@@ -180,14 +180,14 @@ test("the actor gate does not depend on event kind — only on session", () => {
   );
 });
 
-// ── 闸门与去重的组合 ──
+// -- Gate plus dedupe combined ------------------------------------------------------------------
 
 test("the gate runs before dedup, so actor events never consume dedup slots", () => {
   const h = harness();
   const actorEvent = event(ACTOR, SessionEventType.AssistantMessage, { content: "noise" });
   h.apply(actorEvent);
   h.apply(actorEvent);
-  // 主会话事件仍照常去重（第一条应用、第二条丢弃），证明窗口没被 actor 事件搅乱。
+  // Main-session events still dedupe (first applies, duplicate dropped), proving the window survives actor events.
   const mainEvent = event(MAIN, SessionEventType.AssistantMessage, { content: "signal" });
   assert.equal(h.apply(mainEvent), true);
   assert.equal(h.apply(mainEvent), false);

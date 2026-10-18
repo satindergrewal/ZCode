@@ -142,8 +142,7 @@ describe("legacy permission.requested 映射", () => {
 
     expect(zcodeSessionEventSchema.safeParse(mapped).success).toBe(true);
     expect(mapped.payload).not.toHaveProperty("optionsPolicy");
-    const options = (mapped.payload as { options: { optionId: string; kind: string }[] })
-      .options;
+    const options = (mapped.payload as { options: { optionId: string; kind: string }[] }).options;
     expect(options.map((option) => option.optionId)).toEqual(["allow_once", "deny"]);
     expect(options.some((option) => option.kind === "allow_session")).toBe(false);
   });
@@ -216,7 +215,9 @@ describe("legacy permission.requested 映射", () => {
         ],
         lanes: [{ id: "actor#1", name: "a" }],
         // 第二层是子代理导向：每阶段一张参与者卡 + 交接边（docs/dynamic-workflow/presentation.md）。
-        participants: [{ id: "unphased:actor#1", phase: "unphased", lane: "actor#1", steps: ["ask#1"] }],
+        participants: [
+          { id: "unphased:actor#1", phase: "unphased", lane: "actor#1", steps: ["ask#1"] },
+        ],
         handoffs: [],
         sink: ["ask#1"],
       },

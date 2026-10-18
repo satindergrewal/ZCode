@@ -1,7 +1,7 @@
 import { lstat, readlink, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
 
-/** 判断 linkPath 是否为指向 targetPath（同 realpath）的目录软链/交接点。 */
+/** True when linkPath is a directory symlink/junction resolving to targetPath (same realpath). */
 export async function symlinkPointsToTarget(
   linkPath: string,
   targetPath: string,
@@ -16,7 +16,7 @@ export async function symlinkPointsToTarget(
     if (stat.isSymbolicLink()) {
       rawLinked = await readlink(linkPath);
     } else if (process.platform === "win32") {
-      // 目录交接点（junction）在部分 Node 版本上 isSymbolicLink() 为 false，但仍可读 link 目标。
+      // On some Node versions directory junctions report isSymbolicLink() false yet still expose the target.
       try {
         rawLinked = await readlink(linkPath);
       } catch {

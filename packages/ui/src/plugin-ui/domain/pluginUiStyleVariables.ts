@@ -1,9 +1,9 @@
 import type { McpAppsStyleVariables } from "@zcode/shared/mcp-apps";
 
 /**
- * ZCode 主题 token（DESIGN.md / docs/design/zcode-tokens.md）→ MCP Apps 标准样式变量
- * （官方 `McpUiStyleVariableKey`）。每个标准键给出来源 token 与兜底字面量：token 读不到（非 DOM 环境、
- * 旧主题缺项）时用兜底，保证页面拿到的每个键都是可用的 CSS 值。颜色值原样透传（含 color-mix()）。
+ * ZCode theme tokens (DESIGN.md / docs/design/zcode-tokens.md) to MCP Apps standard style variables
+ * (official McUiStyleVariableKey). Each standard key pairs source token with fallback literal: when the token is
+ * unreadable (non-DOM, old themes) the fallback guarantees a usable CSS value. Colors pass through verbatim (color-mix included).
  */
 export interface PluginUiStyleVariableSource {
   token?: string;
@@ -94,7 +94,7 @@ export const PLUGIN_UI_STYLE_VARIABLE_SOURCES: Record<string, PluginUiStyleVaria
   "--shadow-lg": { fallback: "0 10px 15px -3px rgba(0, 0, 0, 0.1)" },
 };
 
-/** `readToken` 返回宿主根元素上该 token 的计算值（空串 / undefined 视为缺失）。 */
+/** readToken returns the computed value on the host root element (empty/undefined = missing). */
 export function buildPluginUiStyleVariables(
   readToken: (token: string) => string | undefined,
 ): McpAppsStyleVariables {

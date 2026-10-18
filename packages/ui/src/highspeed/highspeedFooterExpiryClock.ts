@@ -1,16 +1,16 @@
 /**
- * Highspeed 组尾 footer 的到期显隐时钟。
+ * Expiry show/hide clock for the Highspeed group-tail footer.
  *
- * 背景（spec §9.3）：footer「以上由 Highspeed 生成」的显隐由 ConversationTimeline 的
- * `liveNowMs` 越过卡片 `expiresAt` 驱动。到期唤醒基于 renderer `setTimeout`，窗口隐藏/被
- * 遮挡时会被 Chromium 冻结停摆——定时器不再触发，`liveNowMs` 停在到期前，footer 直到用户
- * 再发一条消息（运行态时钟把 `liveNowMs` 跳到当前时间）才出现，违反「不要求用户再发送一条
- * 消息」。
+ * Context (spec 9.3): footer visibility is driven by the ConversationTimeline's liveNowMs crossing
+ * the card expiresAt. The wake timer is a renderer setTimeout, frozen by Chromium while the window is
+ * hidden/occluded; liveNowMs then stalls pre-expiry and the footer appears only after the user sends
+ * one more message (the running clock jumps liveNowMs to now), breaking the no-extra-send rule.
  *
- * 因此这里在到期 `setTimeout` 之外，同时监听窗口恢复可见（`visibilitychange`）与获得焦点
- * （`focus`），窗口回到前台时立即补偿一次刷新，把 `liveNowMs` 追平当前时间。与 SessionPane
- * 的聚合链路窗口唤醒补偿（`highspeedAutoShareClock`）分工：那条刷新分享入口/查看按钮的
- * 完成态数据，这条刷新组尾 footer 的显隐时钟；两者都不依赖新消息或 snapshot 事件。
+ *
+ * So besides the expiry setTimeout, listen on visibilitychange and focus; compensate one refresh on return,
+ * snapping liveNowMs to now. vs SessionPane's wake compensation (highspeedAutoShareClock): that refreshes
+ * completed share-entry/view data, this one the footer show/hide clock; neither waits for new messages/snapshots.
+ *
  */
 
 type ExpiryClockWindow = Pick<
@@ -30,8 +30,8 @@ export interface HighspeedFooterExpiryClockDeps {
 }
 
 /**
- * 在下一张卡的到期边界唤醒一次 `onExpire`，并在窗口恢复可见/获得焦点时补偿唤醒。
- * 返回 dispose，用于清理定时器与监听（供 React effect 的 cleanup 调用）。
+ * Wake once at the next card's expiry boundary; compensate when the window reappears or refocuses.
+ * Returns dispose, clearing timer and listeners (for a React effect cleanup).
  */
 export function armHighspeedFooterExpiryClock(
   nextExpiryMs: number,
@@ -42,12 +42,12 @@ export function armHighspeedFooterExpiryClock(
   const documentTarget = deps.documentTarget ?? document;
   const now = deps.now ?? Date.now;
 
-  // +20ms 缓冲确保触发时确实已越过 expiresAt，避免边界抖动导致 footer 判定仍为未到期。
+  // +20ms ensures the fire is past expiresAt; boundary jitter otherwise keeps the footer reading not-expired.
   const delayMs = Math.max(0, nextExpiryMs - now()) + 20;
   const timer = windowTarget.setTimeout(onExpire, delayMs);
 
   const catchUpFromWindowWake = () => {
-    // 切到隐藏态不补偿（与 SessionPane 同口径）；只在回到前台时追平时钟。
+    // No compensation when hiding (as in SessionPane); snap the clock only on return to foreground.
     if (documentTarget.visibilityState === "hidden") return;
     onExpire();
   };

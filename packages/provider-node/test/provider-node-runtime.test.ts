@@ -34,7 +34,7 @@ afterEach(async () => {
   await Promise.all(
     temporaryDirectories
       .splice(0)
-      // Windows 上 runtime 句柄异步关闭，rm 立刻删会撞 EBUSY；带重试兜住句柄释放延迟
+      // Windows closes runtime handles asynchronously and an immediate rm hits EBUSY; retry to absorb handle-release lag
       .map((directory) =>
         rm(directory, { force: true, recursive: true, maxRetries: 10, retryDelay: 200 }),
       ),
@@ -42,7 +42,7 @@ afterEach(async () => {
 });
 
 describe("@zcode/provider-node", () => {
-  it("从 Built-in Model Config Rules 解析 ox-alpha 同策略别名和 API-specific reasoning", async () => {
+  it("resolves ox-alpha same-policy aliases and API-specific reasoning from Built-in Model Config Rules", async () => {
     const source = new NodeZCodeBuiltinProviderConfigSource({
       bundledFilePath: zcodeBuiltinProviderConfigFilePath,
       watch: false,
@@ -88,7 +88,7 @@ describe("@zcode/provider-node", () => {
         modelId,
         apiType: "openai-responses",
       });
-      // Todo138 已把通用兜底改为两档；Responses 没有 ox-alpha 专用值域，应继承该结果。
+      // Todo138 reduced the generic fallback to two tiers; Responses has no ox-specific range and must inherit that result.
       expect(responses.optionSpecs?.reasoningLevel?.toJSON()).toMatchObject({
         values: ["disabled", "enabled"],
       });
@@ -108,7 +108,7 @@ describe("@zcode/provider-node", () => {
     source.dispose();
   });
 
-  it("从 Built-in Config 解析模型能力、Access 协议和 Tool Schema 兼容事实", async () => {
+  it("resolves model capabilities, Access protocol and Tool Schema compatibility from the Built-in Config", async () => {
     const source = new NodeZCodeBuiltinProviderConfigSource({
       bundledFilePath: zcodeBuiltinProviderConfigFilePath,
       watch: false,
@@ -168,7 +168,7 @@ describe("@zcode/provider-node", () => {
     source.dispose();
   });
 
-  it("随包配置固定路径复用相同内容，升级后原子覆盖而不增加历史副本", async () => {
+  it("reuses identical content at the bundled-config path and atomically overwrites on upgrade without history copies", async () => {
     const root = await temporaryDirectory();
     const firstContent = JSON.stringify({
       schemaVersion: 1,
@@ -237,7 +237,7 @@ describe("@zcode/provider-node", () => {
     ]);
   });
 
-  it("只在 ZCode Built-in 与 Personal 路径同时存在时启用进程 Registry", () => {
+  it("enables the process Registry only when both ZCode Built-in and Personal paths exist", () => {
     expect(resolveNodeProviderRuntimePaths({})).toBeNull();
     expect(() =>
       resolveNodeProviderRuntimePaths({
@@ -264,7 +264,7 @@ describe("@zcode/provider-node", () => {
     });
   });
 
-  it("ZCode Built-in Source 每次读取当前版本化文件，revision 随内容改变", async () => {
+  it("reads the current versioned file on every ZCode Built-in Source read with content-driven revisions", async () => {
     const root = await temporaryDirectory();
     const filePath = join(root, "zcodeBuiltin.json");
     await writeZCodeBuiltin(filePath, "model-a");
@@ -283,7 +283,7 @@ describe("@zcode/provider-node", () => {
     source.dispose();
   });
 
-  it("ZCode Built-in Source 只为新的 content revision 发布一次变化", async () => {
+  it("notifies once per new content revision on the ZCode Built-in Source", async () => {
     const root = await temporaryDirectory();
     const filePath = join(root, "zcodeBuiltin.json");
     await writeZCodeBuiltin(filePath, "model-a");
@@ -307,7 +307,7 @@ describe("@zcode/provider-node", () => {
     source.dispose();
   });
 
-  it("Personal Repository 在跨调用文件锁内执行 read-modify-write", async () => {
+  it("runs read-modify-write inside a cross-call file lock in the Personal Repository", async () => {
     const root = await temporaryDirectory();
     const filePath = join(root, "provider-config.json");
     await writeFile(filePath, JSON.stringify(storedConfig(emptyUpdate())), "utf8");
@@ -330,7 +330,7 @@ describe("@zcode/provider-node", () => {
     second.dispose();
   });
 
-  it("Personal Repository 的显式更新不会被 polling 重复通知", async () => {
+  it("never double-notifies explicit Personal Repository updates from the poller", async () => {
     const root = await temporaryDirectory();
     const filePath = join(root, "provider-config.json");
     await writeFile(filePath, JSON.stringify(storedConfig(emptyUpdate())), "utf8");
@@ -352,7 +352,7 @@ describe("@zcode/provider-node", () => {
     repository.dispose();
   });
 
-  it("Personal Repository 不依赖文件事件也会发现正式原子写产生的新 revision", async () => {
+  it("still notices new revisions from proper atomic writes with no file events in the Personal Repository", async () => {
     const root = await temporaryDirectory();
     const filePath = join(root, "provider-config.json");
     await writeFile(filePath, JSON.stringify(storedConfig(emptyUpdate())), "utf8");
@@ -381,11 +381,11 @@ describe("@zcode/provider-node", () => {
     repository.dispose();
   });
 
-  it("Personal Repository 轮询读取暂时失败后会继续重试并恢复", async () => {
+  it("keeps retrying and recovers after transient Personal Repository poll failures", async () => {
     const root = await temporaryDirectory();
     const filePath = join(root, "provider-config.json");
-    // Windows 无开发者模式时 symlink 会 EPERM；直接把配置路径本身设为目录同样触发
-    // 读取失败（readFile 目录抛错），保持用例跨平台可跑；恢复阶段先删目录再写文件
+    // Windows EPERMs symlinks without developer mode; making the config path a plain directory triggers the same
+    // read failure (readFile on a dir throws) while staying cross-platform; recovery removes the dir before writing
     await mkdir(filePath);
     const pollingErrors: unknown[] = [];
     const reasons: string[] = [];
@@ -417,7 +417,7 @@ describe("@zcode/provider-node", () => {
     repository.dispose();
   });
 
-  it("Personal Repository 轮询不会重复执行 Legacy importer 或写迁移文件", async () => {
+  it("never re-runs the legacy importer or rewrites migration files from Personal Repository polls", async () => {
     const root = await temporaryDirectory();
     const filePath = join(root, "provider-config.json");
     const importLegacy = vi.fn(async () => null);
@@ -434,7 +434,7 @@ describe("@zcode/provider-node", () => {
     repository.dispose();
   });
 
-  it("Node Config Runtime 在新目标缺失时调用外部 Legacy Importer 并不产生备份", async () => {
+  it("calls the external Legacy Importer on missing new targets and leaves no backups", async () => {
     const root = await temporaryDirectory();
     const zcodeBuiltinFilePath = join(root, "zcodeBuiltin.json");
     const personalFilePath = join(root, "provider_config.json");
@@ -469,7 +469,7 @@ describe("@zcode/provider-node", () => {
     runtime.dispose();
 
     const repeatedImport = vi.fn(async () => {
-      throw new Error("已有 Personal Config 时不应再次导入旧 Provider Store");
+      throw new Error("must not re-import the legacy provider store once a Personal config exists");
     });
     const restartedRuntime = new NodeProviderConfigRuntime({
       zcodeBuiltinFilePath,
@@ -486,7 +486,7 @@ describe("@zcode/provider-node", () => {
     restartedRuntime.dispose();
   });
 
-  it("多个进程并发首次读取时只在目标文件锁内导入一次", async () => {
+  it("imports exactly once under the target file lock when processes race the first read", async () => {
     const root = await temporaryDirectory();
     const personalFilePath = join(root, "provider_config.json");
     const importLegacy = vi.fn(async () =>
@@ -517,7 +517,7 @@ describe("@zcode/provider-node", () => {
     second.dispose();
   });
 
-  it("Endpoint-scoped Config Runtime 向 Agent 暴露当前 Endpoint 的 Active 路径", async () => {
+  it("exposes only the current endpoint's Active path to the agent in endpoint-scoped Config Runtime", async () => {
     const root = await temporaryDirectory();
     const zcodeBuiltinFilePath = join(root, "zcodeBuiltin.json");
     const environmentConfigRoot = join(root, "environment");
@@ -548,12 +548,12 @@ describe("@zcode/provider-node", () => {
         zcodeEndpointOrigin: endpointOrigin,
       }).activeFilePath,
     );
-    // start 不等待后台下载；释放临时目录前等待首轮控制文件 lease 收尾，不能和 rm 竞态。
+    // start never awaits the background download; before removing the temp dir, wait out the first control-file lease, never racing rm.
     await runtime.refreshZCodeBuiltin();
     runtime.dispose();
   });
 
-  it("正式 Personal Config 损坏时保留原文件且不误调 Legacy Importer", async () => {
+  it("keeps the original file on corrupt official Personal configs without mis-firing the Legacy Importer", async () => {
     const root = await temporaryDirectory();
     const zcodeBuiltinFilePath = join(root, "zcodeBuiltin.json");
     const personalFilePath = join(root, "provider_config.json");
@@ -577,7 +577,7 @@ describe("@zcode/provider-node", () => {
     runtime.dispose();
   });
 
-  it("Node Registry Runtime 在进程级聚合 Config，并只发布完整 API Provider", async () => {
+  it("aggregates config per process in the Node Registry Runtime and publishes complete API providers only", async () => {
     const root = await temporaryDirectory();
     const zcodeBuiltinFilePath = join(root, "zcodeBuiltin.json");
     const personalFilePath = join(root, "personal.json");

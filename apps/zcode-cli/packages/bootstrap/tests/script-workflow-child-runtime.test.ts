@@ -428,11 +428,13 @@ describe("script workflow child runtime — 与父会话共享 model factory", (
       {
         eventStore: createInMemorySessionEventStore(),
         fileSystemPort: createNodeFileSystemAdapter(),
-        modelFactory: parentModelFactory as unknown as ScriptWorkflowAgentRuntimeDeps["modelFactory"],
+        modelFactory:
+          parentModelFactory as unknown as ScriptWorkflowAgentRuntimeDeps["modelFactory"],
       },
     );
     const deps = baseDeps(parentRuntime);
-    deps.modelFactory = parentModelFactory as unknown as ScriptWorkflowAgentRuntimeDeps["modelFactory"];
+    deps.modelFactory =
+      parentModelFactory as unknown as ScriptWorkflowAgentRuntimeDeps["modelFactory"];
 
     const actorRuntime = createScriptWorkflowAgentRuntime({
       childSessionId: createSessionId("dwf-actor-model-wiring"),
@@ -506,30 +508,26 @@ describe("script workflow child runtime — 对外交互端口由父 runtime 铸
     tempRoot = await mkdtemp(join(tmpdir(), "zcode-actor-routing-"));
     refreshes = [];
     permissionRequests = [];
-    parentRuntime = createTestAgentRuntime(
-      parentSessionId,
-      { workingDirectory: tempRoot },
-      {
-        eventStore: createInMemorySessionEventStore(),
-        fileSystemPort: createNodeFileSystemAdapter(),
-        // 主 runtime 的端口：每次调用报自己的 sessionId；child 拿到的是父 runtime 派生的实例，
-        // 派生层把 sessionId 改写成父会话（core 的 child-client-ports.ts）。
-        providerRuntimeHeadersPort: {
-          shouldRefreshBeforeModelRequest: () => true,
-          async refreshBeforeModelRequest(input) {
-            refreshes.push({ providerId: input.providerId, routedSessionId: input.sessionId });
-            return { headersApplied: true };
-          },
+    parentRuntime = createTestAgentRuntime(parentSessionId, { workingDirectory: tempRoot }, {
+      eventStore: createInMemorySessionEventStore(),
+      fileSystemPort: createNodeFileSystemAdapter(),
+      // 主 runtime 的端口：每次调用报自己的 sessionId；child 拿到的是父 runtime 派生的实例，
+      // 派生层把 sessionId 改写成父会话（core 的 child-client-ports.ts）。
+      providerRuntimeHeadersPort: {
+        shouldRefreshBeforeModelRequest: () => true,
+        async refreshBeforeModelRequest(input) {
+          refreshes.push({ providerId: input.providerId, routedSessionId: input.sessionId });
+          return { headersApplied: true };
         },
-        modelFactory: routingModelFactory,
-        permissionBroker: {
-          async requestPermission(request) {
-            permissionRequests.push({ sessionId: request.sessionId, origin: request.origin });
-            return { decision: "allow" };
-          },
+      },
+      modelFactory: routingModelFactory,
+      permissionBroker: {
+        async requestPermission(request) {
+          permissionRequests.push({ sessionId: request.sessionId, origin: request.origin });
+          return { decision: "allow" };
         },
-      } as never,
-    );
+      },
+    } as never);
   });
 
   afterEach(async () => {

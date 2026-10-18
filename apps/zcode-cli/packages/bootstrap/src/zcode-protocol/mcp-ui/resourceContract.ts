@@ -1,8 +1,8 @@
 /**
- * mcp-ui 资源契约（）：resources/list、resources/templates/list 与订阅。
- * 与 `contract.ts` 分开是为了让主契约保持在公开方法上限内；处理器接口经 extends 合成。
+ * The mcp-ui resource contract (): resources/list, resources/templates/list, and subscriptions.
+ // Separate from contract.ts to keep the main contract under the public-method cap; the handler interface composes via extends.
  */
-/** UI 请求的归属范围：会话 + MCP server（归属真相）+ pluginId（只做展示 / 日志；非插件 server 时等于 serverName）。 */
+/** The UI request's ownership scope: session + MCP server (ownership truth) + pluginId (display/logging; = serverName for non-plugin servers). */
 export interface McpUiPluginScope {
   workspace?: { workspacePath: string; workspaceIdentity?: string };
   instance: import("@zcode/shared/mcp-apps").McpAppInstance;
@@ -11,7 +11,7 @@ export interface McpUiPluginScope {
   serverName: string;
 }
 
-/** resources/list、resources/templates/list 与订阅的参数 / 结果。 */
+/** Parameters / results for resources/list, resources/templates/list, and subscribe. */
 export interface McpUiListResourcesParams extends McpUiPluginScope {
   cursor?: string;
 }
@@ -21,7 +21,7 @@ export interface McpUiResourceDescriptor {
   title?: string;
   description?: string;
   mimeType?: string;
-  /** 规范把资源级 csp / prefersBorder 放在 resources/list 条目的 `_meta` 上；宿主读 HTML 项缺 `_meta` 时回退到这里。 */
+  /** The spec puts resource-level csp / prefersBorder on resources/list entries' `_meta`; the host falls back here when an HTML item lacks `_meta`. */
   _meta?: Record<string, unknown>;
 }
 export interface McpUiListResourcesResult {
@@ -37,7 +37,7 @@ export interface McpUiResourceSubscriptionParams extends McpUiPluginScope {
   generation: number;
   uri: string;
 }
-/** 订阅者身份 = sessionId | scopeId | generation；会话关闭按 `sessionId|` 前缀清理。 */
+/** Subscriber identity = sessionId | scopeId | generation; session close sweeps the `sessionId|` prefix. */
 export function buildMcpUiSubscriberKey(
   sessionId: string,
   scopeId: string,
@@ -56,7 +56,7 @@ export function parseMcpUiSubscriberKey(
   return { sessionId: key.slice(0, first), scopeId: key.slice(first + 1, last), generation };
 }
 
-/** server 没声明 resources.subscribe 能力（或端口不支持资源）→ -32001 not_supported。 */
+/** The server declares no resources.subscribe capability (or the port lacks resources) -> -32001 not_supported. */
 export class McpUiNotSupportedError extends Error {
   readonly code = -32001;
   readonly reason = "not_supported" as const;
@@ -69,7 +69,7 @@ export class McpUiNotSupportedError extends Error {
   }
 }
 
-/** session 视图里的资源端口（端口透传；能力缺失由端口抛 McpResourceSubscribeUnsupportedError）。 */
+/** The session view's resource port (passthrough; missing capability surfaces as McpResourceSubscribeUnsupportedError). */
 export interface McpUiResourceSessionAccess {
   listResourcesForUi(
     serverName: string,

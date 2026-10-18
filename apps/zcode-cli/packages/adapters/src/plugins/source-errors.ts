@@ -49,9 +49,7 @@ export function redactPluginSource(source: string): string {
 
 function redactPluginDiagnosticText(text: string): string {
   return text
-    .replace(/\b[a-z][a-z\d+.-]*:\/\/[^\s"'<>()[\]{}]+/giu, (source) =>
-      redactPluginSource(source),
-    )
+    .replace(/\b[a-z][a-z\d+.-]*:\/\/[^\s"'<>()[\]{}]+/giu, (source) => redactPluginSource(source))
     .replace(/\b[^\s:@]+:[^\s@]+@[^\s]+/gu, "configured Git source");
 }
 

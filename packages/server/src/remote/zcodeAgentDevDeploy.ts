@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 开发态 agent 部署包含本地打包、远端 owner staging 与 wrapper 安装，后续独立拆分上传事务。 */
+/* eslint-disable max-lines -- dev agent deploy spans local packing, remote owner staging and wrapper install; split out the upload transaction later. */
 import { ZCODE_AGENT_PROVIDER, resolveZCodeRuntimeEnv } from "@zcode/shared";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
@@ -79,7 +79,7 @@ function shouldUseDevelopmentAgentBundle(): boolean {
     return true;
   }
 
-  // Vitest 里仓库真实 dist 可能存在；默认关闭，避免普通部署测试误走开发态分支。
+  // The repo's real dist may exist under Vitest; off by default so plain deploy tests never take the dev-mode branch.
   return !process.env.VITEST;
 }
 
@@ -242,8 +242,8 @@ async function shouldSkipDevelopmentZCodeAgentDeploy(params: {
     return false;
   }
 
-  // 旧发布包或另一客户端可能覆盖 bundle，却留下相同的 .dev-version。
-  // 标记只描述上次部署意图；跳过上传前必须在远端校验实际文件，避免 PAT 交给旧版 Agent 的过时鉴权逻辑。
+  // An old release or another client may overwrite the bundle yet leave the same .dev-version.
+  // The marker only records the previous deploy intent; verify the actual remote files before skipping the upload so the PAT never feeds a stale auth path.
   const verifyBundleScript =
     "require('node:fs/promises').readFile(process.argv[1]).then(content => {" +
     "process.exitCode = require('node:crypto').createHash('sha256').update(content).digest('hex') === process.argv[2] ? 0 : 1;" +
@@ -256,13 +256,13 @@ async function shouldSkipDevelopmentZCodeAgentDeploy(params: {
     );
   } catch {
     params.loggers.logWarn(
-      `[zcode-agent-deploy] ${ZCODE_AGENT_PROVIDER}: 远端 bundle SHA 不匹配或无法校验，重新上传`,
+      `[zcode-agent-deploy] ${ZCODE_AGENT_PROVIDER}: remote bundle SHA mismatch or unverifiable, re-uploading`,
     );
     return false;
   }
 
   params.loggers.log(
-    `[zcode-agent-deploy] ${ZCODE_AGENT_PROVIDER}: 开发态 zcode.cjs 未变化，跳过`,
+    `[zcode-agent-deploy] ${ZCODE_AGENT_PROVIDER}: dev zcode.cjs unchanged, skipping upload`,
   );
   return true;
 }
@@ -315,8 +315,8 @@ async function uploadDevelopmentOfficialPluginPackages(params: {
     ]);
 
     const ownerSuffix = `${Date.now()}-${randomUUID()}`;
-    // 开发态官方插件曾使用固定 packages.tar.gz；多个部署 owner 会覆盖彼此的上传。
-    // archive/extract 使用同一 owner 后缀，失败清理不会误删其他部署者的文件。
+    // Dev-mode official plugins used to share a fixed packages.tar.gz, letting concurrent deploy owners overwrite each other.
+    // archive/extract now share one owner suffix so failure cleanup never deletes another owner's files.
     const remoteArchivePath = `${params.remoteProviderDir}/${REMOTE_AGENT_OFFICIAL_PLUGIN_DIR_NAME}.tar.gz-${ownerSuffix}`;
     const remoteExtractDir = `${params.remoteProviderDir}/${REMOTE_AGENT_OFFICIAL_PLUGIN_DIR_NAME}.extract-${ownerSuffix}`;
     const extractedPackagesDir = `${remoteExtractDir}/${REMOTE_AGENT_OFFICIAL_PLUGIN_DIR_NAME}`;
@@ -328,11 +328,13 @@ async function uploadDevelopmentOfficialPluginPackages(params: {
         await waitForClose(cleanupStream);
       } catch (error) {
         params.loggers.logWarn(
-          `[zcode-agent-deploy] ${ZCODE_AGENT_PROVIDER}: 清理 owner staging 失败 (${ownerSuffix}): ${String(error)}`,
+          `[zcode-agent-deploy] ${ZCODE_AGENT_PROVIDER}: failed to clean owner staging (${ownerSuffix}): ${String(error)}`,
         );
       }
     };
-    params.loggers.log(`[zcode-agent-deploy] ${ZCODE_AGENT_PROVIDER}: 开发态上传官方插件资源`);
+    params.loggers.log(
+      `[zcode-agent-deploy] ${ZCODE_AGENT_PROVIDER}: uploading dev official plugin assets`,
+    );
     try {
       await params.backend.upload(archivePath, remoteArchivePath);
       await repairLegacyRemoteOfficialPluginDirectoryPermissions({
@@ -410,12 +412,12 @@ export async function deployDevelopmentZCodeAgentRuntime(
     return true;
   }
 
-  // 开发态 SSH 远端过去只会部署本地 zcode.cjs，不会携带 packages/*-plugin。
-  // builtin plugin seed 依赖 agent 包旁边的官方插件源资源，所以 dev 部署需要同步 bundle 与插件资源。
-  // 本地修改 apps/zcode-cli 后，远端测试仍运行滞后的发布包。这里改为上传 dev 启动时刚构建的
-  // dist/zcode.cjs，并用远端已部署的 node 包一层 wrapper 启动，保证 agent 仍运行在目标机器内。
+  // Dev-mode SSH remotes used to receive only the local zcode.cjs, without packages/*-plugin.
+  // The builtin plugin seed needs official plugin sources next to the agent bundle, so dev deploy must ship bundle and plugin assets together.
+  // After local apps/zcode-cli changes, remote tests kept running a stale release. Upload the
+  // dist/zcode.cjs freshly built at dev start and wrap it with the remote's deployed node, keeping the agent on the target machine.
   loggers.log(
-    `[zcode-agent-deploy] ${ZCODE_AGENT_PROVIDER}: 开发态上传本地 zcode.cjs ${devVersion.slice(0, 12)}`,
+    `[zcode-agent-deploy] ${ZCODE_AGENT_PROVIDER}: uploading local zcode.cjs ${devVersion.slice(0, 12)}`,
   );
   const mkdirStream = await backend.exec(`mkdir -p ${quotePosixPathArg(params.remoteProviderDir)}`);
   await waitForClose(mkdirStream);
@@ -458,7 +460,7 @@ export async function deployDevelopmentZCodeAgentRuntime(
   }
   await waitForClose(markerStream);
   loggers.log(
-    `[zcode-agent-deploy] ${ZCODE_AGENT_PROVIDER}: 开发态部署完成 ${devVersion.slice(0, 12)}`,
+    `[zcode-agent-deploy] ${ZCODE_AGENT_PROVIDER}: dev deploy complete ${devVersion.slice(0, 12)}`,
   );
   return true;
 }

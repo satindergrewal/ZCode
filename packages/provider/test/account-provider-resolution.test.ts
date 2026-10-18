@@ -44,7 +44,7 @@ function configuredProviders(): ProviderConfigMap {
 }
 
 describe("resolveAccountProviderConfigs", () => {
-  it("连接身份只留在运行态，不投影进 Provider Config", async () => {
+  it("keeps connection identity runtime-only and never projects it into Provider Config", async () => {
     const resolve = createAccountProviderConfigResolver(async () => [
       {
         providerId: "start-plan",
@@ -61,7 +61,7 @@ describe("resolveAccountProviderConfigs", () => {
     expect(result.states["start-plan"]?.connectionKey).toBe("opaque-scope");
     expect(JSON.stringify(result.providers.get("start-plan"))).not.toContain("opaque-scope");
   });
-  it("账号或 Team 身份已变更时 unknown 不得借用旧权益与展示事实", async () => {
+  it("stops unknown from borrowing stale entitlements or display facts once the account/team identity changes", async () => {
     const resolve = createAccountProviderConfigResolver(async () => [
       {
         providerId: "start-plan",
@@ -91,7 +91,7 @@ describe("resolveAccountProviderConfigs", () => {
       current: true,
     });
   });
-  it("状态与 Overlay 同轮返回，unknown 保留权益但不能恢复旧 current", async () => {
+  it("returns state and Overlay in one round; unknown keeps entitlements but never restores the old current", async () => {
     const resolve = createAccountProviderConfigResolver(async () => [
       {
         providerId: "start-plan",
@@ -120,7 +120,7 @@ describe("resolveAccountProviderConfigs", () => {
       "coding-plan": { availability: "available", current: false, entitled: true },
     });
   });
-  it("已生效但模型为空时保留权益并清空旧白名单；pending 不借用旧权益", () => {
+  it("keeps entitlements and clears the old allowlist when effective but empty; pending borrows nothing", () => {
     const previousProviders = new ProviderConfigMap([
       [
         "start-plan",
@@ -147,7 +147,7 @@ describe("resolveAccountProviderConfigs", () => {
       builtinModelIds: [],
     });
   });
-  it("把 Connection Resolver 接到 AccountProviderService 的 Config Resolver", async () => {
+  it("wires the Connection Resolver into the AccountProviderService config resolver", async () => {
     expect(configuredProviders().get("coding-plan")?.builtinModelIds).toEqual([
       "model-a",
       "model-c",
@@ -176,7 +176,7 @@ describe("resolveAccountProviderConfigs", () => {
     });
   });
 
-  it("available 连接只生成 entitlement/models Overlay，并沿用 Config 模型顺序", () => {
+  it("emits only an entitlement/models Overlay for available connections, keeping the Config model order", () => {
     const result = resolveAccountProviderConfigs({
       configuredProviders: configuredProviders(),
       previousProviders: ProviderConfigMap.empty(),
@@ -206,7 +206,7 @@ describe("resolveAccountProviderConfigs", () => {
     });
   });
 
-  it("available 只设置 Account Access entitlement，不复制 Provider 静态事实", () => {
+  it("sets only the Account Access entitlement for available and never copies provider static facts", () => {
     const result = resolveAccountProviderConfigs({
       configuredProviders: new ProviderConfigMap([
         [
@@ -234,7 +234,7 @@ describe("resolveAccountProviderConfigs", () => {
     });
   });
 
-  it("unknown 保留该 Provider 上次成功结果，unavailable 显式取消权益", () => {
+  it("keeps the last good result for unknown and explicitly revokes entitlements for unavailable", () => {
     const previousProviders = new ProviderConfigMap([
       [
         "start-plan",
@@ -269,7 +269,7 @@ describe("resolveAccountProviderConfigs", () => {
     });
   });
 
-  it("首次 unknown 时以 entitled=false fail-closed", () => {
+  it("fails closed with entitled=false on first unknown", () => {
     expect(
       Object.fromEntries(
         resolveAccountProviderConfigs({
@@ -286,7 +286,7 @@ describe("resolveAccountProviderConfigs", () => {
     });
   });
 
-  it("Start Plan 的明确空白名单同时适用于首次与刷新，不能恢复旧模型", () => {
+  it("applies Start Plan's explicit empty allowlist to both first resolve and refresh, never restoring old models", () => {
     const connection = {
       providerId: "start-plan",
       status: "available" as const,
@@ -327,7 +327,7 @@ describe("resolveAccountProviderConfigs", () => {
     });
   });
 
-  it("拒绝连接结果引用未配置或非 Account Provider", () => {
+  it("rejects connection results referencing unconfigured or non-account providers", () => {
     expect(() =>
       resolveAccountProviderConfigs({
         configuredProviders: configuredProviders(),
@@ -342,7 +342,7 @@ describe("resolveAccountProviderConfigs", () => {
     ).toThrow("Account connection references a non-account provider: api-provider");
   });
 
-  it("普通 api-key Provider 不属于 Account Overlay", () => {
+  it("excludes plain api-key providers from the Account Overlay", () => {
     const configured = new ProviderConfigMap([
       [
         "generic-api",

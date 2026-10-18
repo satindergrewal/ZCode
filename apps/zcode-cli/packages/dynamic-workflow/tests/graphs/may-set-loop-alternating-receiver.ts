@@ -9,7 +9,7 @@ const white = agent("white");
 let board = "empty";
 let turn = true;
 while (board.length < 40) {
-  board = await (turn ? black : white).ask<string>(`move on ${board}`);
+  board = await(turn ? black : white).ask<string>(`move on ${board}`);
   turn = !turn;
 }
 return board;

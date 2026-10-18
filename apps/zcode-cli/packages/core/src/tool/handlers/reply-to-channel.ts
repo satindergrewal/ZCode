@@ -6,7 +6,7 @@ import type { ToolEntry, ToolHandler } from "../types.js";
 
 const inputSchema = z.object({ parts: channelReplyPartsSchema }).strict();
 const TIMEOUT_MS = 60_000;
-// 最多 50 个名字各返回 10 个候选，预算需容纳完整澄清结果，避免截断后误报匹配。
+// At most 50 names x 10 candidates each; the budget must hold the full clarification result, avoiding truncated false matches.
 const OUTPUT_BYTES = 2 * 1024 * 1024;
 export const replyToChannelHandler: ToolHandler = async (input, context) => {
   const parsed = inputSchema.parse(input);
@@ -16,7 +16,7 @@ export const replyToChannelHandler: ToolHandler = async (input, context) => {
   const messages = await context.sessionStore.messages({
     sessionID: context.sessionId as SessionId,
   });
-  // 工具运行前已落盘 tool part，以 assistant.parentID 绑定实际执行输入；不能拿队尾的新消息授权。
+  // The tool part persists before the run, binding the actual execution input via assistant.parentID; never authorize from the newest queued message.
   const owners = messages.filter(
     ({ info, parts }) =>
       info.role === "assistant" &&
@@ -33,7 +33,7 @@ export const replyToChannelHandler: ToolHandler = async (input, context) => {
     metadata && Object.hasOwn(metadata, "conversationInputIntent")
       ? metadata.conversationInputIntent
       : metadata?.inputIntent;
-  // 渠道来源属于消息；发送绑定属于任务，由 Host 唯一解析，客户端续聊无需复制旧来源。
+  // Channel origin belongs to the message; the send binding belongs to the task, resolved solely by the Host — continuing a chat never copies the old origin.
   const identity = z.object({ sourceCommandId: z.string().min(1) }).safeParse(intent);
   if (!identity.success)
     throw new Error("Channel reply execution input unavailable; retrying will not restore it");
@@ -64,7 +64,7 @@ export const replyToChannelToolEntry: ToolEntry = {
     needsApproval: false,
   },
   handler: replyToChannelHandler,
-  // Provider schema 不暴露 anyOf；字段组合仍由 runtimeInputSchema 的严格 union 校验。
+  // The provider schema has no anyOf; the field combination is still enforced by runtimeInputSchema's strict union.
   inputSchema: {
     type: "object",
     additionalProperties: false,

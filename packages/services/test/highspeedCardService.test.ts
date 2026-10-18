@@ -849,7 +849,7 @@ describe("Highspeed HTTP contract", () => {
     );
     expect(warn).toHaveBeenCalledWith(
       undefined,
-      "Highspeed 接口 HTTP 请求失败",
+      "Highspeed HTTP request failed",
       expect.objectContaining({
         operation: "draw",
         method: "POST",
@@ -893,7 +893,7 @@ describe("Highspeed HTTP contract", () => {
 
     expect(warn).toHaveBeenCalledWith(
       undefined,
-      "Highspeed 接口网络请求失败",
+      "Highspeed network request failed",
       expect.objectContaining({
         operation: "share",
         method: "POST",
@@ -925,7 +925,7 @@ describe("Highspeed HTTP contract", () => {
 
     expect(warn).toHaveBeenCalledWith(
       undefined,
-      "Highspeed 接口 HTTP 请求失败",
+      "Highspeed HTTP request failed",
       expect.objectContaining({
         operation: "healthy",
         method: "GET",
@@ -999,7 +999,7 @@ describe("Highspeed HTTP contract", () => {
 
     expect(warn).toHaveBeenCalledWith(
       undefined,
-      "Highspeed 接口业务失败",
+      "Highspeed business failure",
       expect.objectContaining({
         operation: "draw",
         status: 200,
@@ -1046,7 +1046,7 @@ describe("Highspeed HTTP contract", () => {
       expect(await settled).toBe("rejected");
       expect(warn).toHaveBeenCalledWith(
         undefined,
-        "Highspeed 接口网络请求失败",
+        "Highspeed network request failed",
         expect.objectContaining({ operation: "draw", method: "POST" }),
       );
     } finally {

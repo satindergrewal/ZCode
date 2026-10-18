@@ -30,8 +30,8 @@ const cases = [
   },
 ];
 
-describe("Provider 数据校验与完整性使用同一合同", () => {
-  it("Todo104：新成员/endpoint字段唯一，null清除保留，旧未发布拼写拒绝", () => {
+describe("Provider data validation and completeness share one contract", () => {
+  it("Todo104: member/endpoint fields stay unique, null-clears persist, legacy unrepublished spellings rejected", () => {
     const config = parseProviderConfig({
       group: "standard-personal",
       access: access.toJSON(),
@@ -68,7 +68,7 @@ describe("Provider 数据校验与完整性使用同一合同", () => {
       [...scenario.paths, ["group"], ["access"], ["api"], ["api", "type"], ["api", "baseUrl"]].map(
         (path) => ({ path, label: path.join(".") }),
       ),
-    )(`${scenario.name} 的 $label 缺省/null 可保存，但不完整`, ({ path }) => {
+    )(`$label absent/null is saveable but incomplete for ${scenario.name}`, ({ path }) => {
       for (const replacement of [undefined, null]) {
         const value: Record<string, unknown> = structuredClone(complete);
         let parent = value;
@@ -86,17 +86,17 @@ describe("Provider 数据校验与完整性使用同一合同", () => {
           );
       }
     });
-    it(`${scenario.name} 的 Registry 序列化保留完整合同`, () => {
+    it(`Registry serialization keeps the full contract for ${scenario.name}`, () => {
       const result = createRegistryProviderConfig(parseProviderConfig(complete));
       expect(result.ok).toBe(true);
-      if (!result.ok) throw new Error("fixture 应为完整配置");
+      if (!result.ok) throw new Error("fixture must be a complete config");
       const serialized = serializeRegistryProviderConfig(result.config);
       expect(completeProviderConfigDataSchema.parse(serialized)).toEqual(complete);
       expect(Object.isFrozen(result.config)).toBe(true);
     });
   }
-  it("未知 API type 不能凭借非空绕过 Registry 准入", () => {
-    // 模拟不可信 JS 调用；不能把 TS 静态类型当作运行时校验。
+  it("lets no unknown API type bypass Registry admission by being non-empty", () => {
+    // Simulate an untrusted JS caller; TS static types are never runtime validation.
     const config = new ProviderConfig({
       group: "standard-personal",
       access,
@@ -106,13 +106,13 @@ describe("Provider 数据校验与完整性使用同一合同", () => {
     expect(createRegistryProviderConfig(config).ok).toBe(false);
   });
 
-  it("未知 group 不能凭借非空绕过 Registry 准入", () => {
+  it("lets no unknown group bypass Registry admission by being non-empty", () => {
     const config = new ProviderConfig({ group: "unknown" as ProviderGroup, access, api });
     expect(() => parseProviderConfig(config.toJSON())).toThrow();
     expect(createRegistryProviderConfig(config).ok).toBe(false);
   });
 
-  it("可选管理 URL 填写后也遵守 schema 的合法 URL 约束", () => {
+  it("holds the optional admin URL to the schema's URL constraint once filled", () => {
     const config = new ProviderConfig({
       group: "standard-personal",
       api,
@@ -122,7 +122,7 @@ describe("Provider 数据校验与完整性使用同一合同", () => {
     expect(createRegistryProviderConfig(config).ok).toBe(false);
   });
 
-  it("未声明可选展示/成员字段和显式 null 不影响完整性", () => {
+  it("keeps optional display/member fields and explicit nulls out of completeness", () => {
     const config = parseProviderConfig({
       group: "standard-personal",
       api: { ...api.toJSON(), headers: null },
@@ -137,7 +137,7 @@ describe("Provider 数据校验与完整性使用同一合同", () => {
     expect(parseProviderConfig(config.toJSON()).toJSON()).toEqual(config.toJSON());
   });
 
-  it("Account 的 false 权益完整，清空必填值不完整，切换 Access 不保留旧 Key", () => {
+  it("treats false Account entitlements as complete, cleared required values as incomplete, and drops old keys on Access switches", () => {
     const original = new ProviderConfig({ group: "zai-family", access, api });
     const replaced = original.overlay(
       new ProviderConfig({

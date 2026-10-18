@@ -1,5 +1,5 @@
 import { useCodingPlanEntryGate } from "@/settings/CodingPlanEntryButton.js";
-/* eslint-disable max-lines -- 定时任务主视图集中维护列表、创建/编辑整页路由与启停/删除操作，集中更利于交互一致。 */
+/* eslint-disable max-lines -- the scheduled-task main view owns list, create/edit routes and run/stop/delete in one place; central keeps interactions consistent. */
 import {
   useCallback,
   useEffect,
@@ -147,24 +147,24 @@ import { AutomationTemplateSkeletonGrid } from "@/settings/AutomationTemplateSke
 interface AutomationsSectionProps {
   workspacePath?: string | null;
   workspaceIdentity?: string;
-  /** 「Create via chat」:切到会话让 agent 用 CronCreate 创建;缺省则回退到手动创建整页。
-   * target = 工作流所属项目；定时任务的「通过对话创建」不带 target，落到活动项目。 */
+  /** Create via chat: switch to a conversation and let the agent CronCreate; without it, fall back to the manual full-page form.
+   * target = the workflow's project; scheduled-task create-via-chat carries none and lands on the active project. */
   onCreateViaChat?: (prompt: string, target?: SavedWorkflowProjectTarget) => void;
-  /** 会话内创建卡片的详情导航目标；定位成功后由调用方清空。 */
+  /** Navigation target for the in-conversation create card; the caller clears it once located. */
   openAutomationId?: string | null;
-  /** 推荐提示词携带的一次性 tab 导航目标；仅在目标 tab 可见时应用。"workflow" 落到顶级「工作流」标签。 */
+  /** One-shot tab target carried by the prompt; applied only while that tab is visible. workflow lands on the top-level workflows tab. */
   openAutomationTab?: AutomationsNavigationTab | null;
   onOpenAutomationConsumed?: () => void;
-  /** 工作流「运行」= GUI 直接启动：accepted 后切到新会话。 */
+  /** Workflow run = a direct GUI start: on accepted, switch to the new conversation. */
   onNavigateToLaunchedRun?: (target: SavedWorkflowLaunchTarget, sessionId: string) => void;
-  /** 工作流运行历史「查看实例」：切到发起它的会话并打开实例详情页。 */
+  /** Run history, view instance: open the originating conversation plus the instance page. */
   onOpenWorkflowRun?: (params: SavedWorkflowsOpenRunParams) => void;
-  /** 产物 chip → `workflow-artifact` tab。 */
+  /** Artifact chip to the workflow-artifact tab. */
   onOpenWorkflowArtifact?: (params: SavedWorkflowsOpenArtifactParams) => void;
-  /** 深链直接落到详情页；透传给 SavedWorkflowsSection，定位后由调用方清空。global 只需 name。 */
+  /** Deep link straight to the detail page; passed to SavedWorkflowsSection, cleared by the caller once located. global needs the name only. */
   openWorkflow?: SavedWorkflowsOpenTarget | null;
   onOpenWorkflowConsumed?: () => void;
-  /** 打开某次运行关联的会话；管理页列出所有项目，必须携带 automation 所属 workspace。 */
+  /** Open the conversation of a given run; the manage page lists all projects, so carry the automation's workspace. */
   onOpenSession?: (params: {
     sessionId: string;
     workspacePath: string;
@@ -191,7 +191,7 @@ function OffPeakCreateButton({
   onCreate: () => void;
 }) {
   const { intl } = useZCodeIntl();
-  // disabled 按钮 pointer-events-none，tooltip 必须挂在外层可指针元素上。
+  // A disabled button is pointer-events-none; the tooltip must hang on a pointer-receiving wrapper.
   const button = (
     <Button
       type="button"
@@ -218,7 +218,7 @@ function OffPeakCreateButton({
   );
 }
 
-/** 创建表单的预填草稿(来自「More ideas」模板)。 */
+/** Prefill draft for the create form (from a More ideas template). */
 export interface AutomationDraft {
   templateId?: string;
   title: string;
@@ -226,7 +226,7 @@ export interface AutomationDraft {
   prompt: string;
 }
 
-/** 主视图内部路由:列表 / 新建 / 编辑。 */
+/** Main-view internal routes: list / new / edit. */
 type AutomationsView =
   | { mode: "list" }
   | { mode: "create"; draft: AutomationDraft | null }
@@ -234,7 +234,7 @@ type AutomationsView =
   | { mode: "offpeak-create"; draft?: OffPeakCreateDraft }
   | { mode: "offpeak-edit"; task: ZCodeOffPeakTask };
 
-/** 主视图标签页：Scheduled 常驻，Idle-time 受灰度控制（D31）；不设 All 混排视图。 */
+/** Main view tabs: Scheduled always; Idle-time behind the rollout (D31); no mixed All view. */
 export type AutomationsTab = "scheduled" | "idle";
 
 const SCHEDULED_ONLY_AUTOMATION_TABS: readonly AutomationsTab[] = ["scheduled"];
@@ -286,8 +286,8 @@ export function resolveAutomationTemplateVisibility({
   showOffPeakTemplates: boolean;
   showScheduledTemplates: boolean;
 } {
-  // 移除 All tab 后空首页仍默认落在 Scheduled，导致闲时模板被 tab 条件误隐藏。
-  // 无任务时恢复两类模板并列展示；有任务后继续由 Scheduled / Idle tab 分流。
+  // Without the All tab the empty landing defaulted to Scheduled, hiding idle templates behind the tab gate.
+  // With no tasks show both template sets; once tasks exist, Scheduled / Idle split them again.
   const showAllTemplates = !hasAnyTasks;
   return {
     showOffPeakTemplates: offPeakCreationEnabled && (showAllTemplates || tab === "idle"),
@@ -300,7 +300,7 @@ const STATUS_META: Record<
   { icon: ComponentType<SVGProps<SVGSVGElement>>; className: string }
 > = {
   active: { icon: AutomationClockIcon, className: "text-success" },
-  // 设计稿的暂停态是 stop-circle 描边图标，不能回退为圆圈内实心方块。
+  // The design's paused state is a stroked stop-circle icon, never a filled square-in-circle fallback.
   paused: { icon: AutomationPausedIcon, className: "text-foreground-subtle" },
   completed: { icon: CircleCheck, className: "text-foreground-subtle" },
   failed: { icon: TriangleAlert, className: "text-destructive" },
@@ -331,7 +331,7 @@ export function getAutomationRunNowToastId(
 
 export type AutomationActionError = "create" | "update" | "toggle" | "restart" | "delete";
 
-/** 原始 Agent/RPC 错误留在 logger；界面只展示当前动作对应的可理解提示。 */
+/** Raw agent/RPC errors stay in the logger; the UI shows only the human phrase for the current action. */
 export function getAutomationActionErrorToastId(action: AutomationActionError): string {
   return `automations.error.${action}`;
 }
@@ -361,12 +361,12 @@ export function resolveAutomationDetailNavigation(
   return target ? { status: "found", target } : { status: "missing" };
 }
 
-/** D49：openAutomationId 里 `offpeak-` 前缀 id 的判别（生成点唯一：offPeakTaskService 的 offpeak-${uuid}）。 */
+/** D49: tells offpeak- prefixed ids inside openAutomationId apart (single origin: offPeakTaskService offpeak-uuid). */
 export function isOffPeakDetailNavigationId(automationId: string | null | undefined): boolean {
   return Boolean(automationId?.trim().startsWith("offpeak-"));
 }
 
-/** D49：闲时轮尾卡跳转的并行解析路径；与 cron 的 resolveAutomationDetailNavigation 对称。 */
+/** D49: parallel resolve path for idle-tail-card jumps; mirrors cron resolveAutomationDetailNavigation. */
 export function resolveOffPeakDetailNavigation(
   tasks: readonly ZCodeOffPeakTask[],
   offPeakTaskId: string | null | undefined,
@@ -379,7 +379,7 @@ export function resolveOffPeakDetailNavigation(
   | { status: "found"; target: ZCodeOffPeakTask } {
   const targetId = offPeakTaskId?.trim();
   if (!targetId || !listReady) return { status: "pending" };
-  // review：store.refresh 吞错保留旧列表；列表不可信时不能做 found/missing 终审。
+  // review: store.refresh swallows errors and keeps the old list; never final-rule found/missing on an untrusted list.
   if (listError) return { status: "unavailable" };
   const target = tasks.find((task) => task.offPeakTaskId === targetId) ?? null;
   return target ? { status: "found", target } : { status: "missing" };
@@ -418,7 +418,7 @@ function AutomationActionsMenu({
           data-testid={TID_AUTOMATION_CARD_MENU}
           aria-label={intl.formatMessage({ id: "automations.moreActions" })}
           disabled={busy}
-          // 卡片可点进编辑;菜单点击不冒泡到卡片。
+          // The card opens edit; menu clicks must not bubble into the card.
           onClick={(event) => event.stopPropagation()}
         >
           <AutomationMoreHorizontalIcon
@@ -433,7 +433,7 @@ function AutomationActionsMenu({
         className="w-[190px]"
         onClick={(event) => event.stopPropagation()}
       >
-        {/* 立即运行：当前 RPC 期间用 busy 防重，返回后恢复入口；活动 run 由 host single-flight 判重。 */}
+        {/* Run now: busy-gate for this RPC, restore the entry on return; the host single-flights active runs. */}
         <DropdownMenuItem
           className="gap-1"
           disabled={busy}
@@ -456,7 +456,7 @@ function AutomationActionsMenu({
             {intl.formatMessage({ id: "automations.restart" })}
           </DropdownMenuItem>
         ) : null}
-        {/* 终态任务不展示 pause/resume：failed 可 Restart，completed 彻底收口只保留查看/删除。 */}
+        {/* Terminal tasks hide pause/resume: failed offers Restart, completed is fully closed to view/delete. */}
         {canToggle ? (
           <DropdownMenuItem
             data-testid={TID_AUTOMATION_ACTION_TOGGLE}
@@ -503,7 +503,7 @@ function AutomationActionsMenu({
   );
 }
 
-/** 状态筛选命中 0 条时的占位；复用闲时空态卡的描边样式，文案与「还没有任务」区分开。 */
+/** Empty state for a status filter with no hits; reuses the idle empty-card stroke, worded apart from no-tasks-yet. */
 function AutomationStatusFilterEmpty() {
   const { intl } = useZCodeIntl();
   return (
@@ -585,8 +585,8 @@ export function AutomationsSection({
 
   const [refreshing, setRefreshing] = useState(false);
   const [view, setView] = useState<AutomationsView>({ mode: "list" });
-  // tab 与状态筛选同居一个状态：所有 setTab 调用都经 resolveAutomationTabState 归约，
-  // tab 一变筛选即回到全部，切走再切回也不会恢复旧筛选。
+  // Tab and status filter share one state: every setTab funnels through resolveAutomationTabState,
+  // and any tab change resets the filter to all; leaving and returning never resurrects an old filter.
   const [tabState, setTabState] = useState<AutomationTabState<AutomationsTab>>({
     tab: "scheduled",
     filter: DEFAULT_AUTOMATION_STATUS_FILTER,
@@ -603,17 +603,17 @@ export function AutomationsSection({
     (filter: AutomationStatusFilter) => setTabState((previous) => ({ ...previous, filter })),
     [],
   );
-  // 动态工作流灰度：未命中就没有「工作流」标签，
-  // 页面退回单一的「自动化」。快照未就绪时 enabled 为 false，宁可标题晚半拍长出切换，也不先闪
-  // 一个标签再收起——中枢很少是用户进 app 后第一眼看的东西。
+  // Dynamic-workflow rollout: no hit means no workflows tab,
+  // the page stays plain Automations. While the snapshot is pending enabled is false; growing the toggle
+  // half a beat late beats flashing a tab and pulling it, the hub is nobody's first glance.
   const { enabled: dynamicWorkflowEnabled } = useDynamicWorkflowAvailability();
-  // 顶级标签「自动化 / 工作流」：页标题即切换。中枢已是跨项目视图，记忆不再按项目分桶，用 app 级单 key。
+  // Top-level tabs Automations / Workflows: the page title is the switch. The hub is cross-project, so memory is one app-level key, not per project.
   const [storedPageTab, setPageTabState] = useState<AutomationsPageTab>(() =>
     readAutomationsPageTab(),
   );
-  // 灰度关时忽略 sessionStorage 里记住的「工作流」：只收窄读出来的值，记忆本身不清，
-  // 灰度再开时用户仍然回到上次那一页。中枢只在 `pageTab === "workflow"` 分支挂载，
-  // 收窄 pageTab 等于 SavedWorkflowsSection 永不挂载，不会有一帧的误挂载去发查询。
+  // With the rollout off, ignore a remembered workflows value from sessionStorage: narrow on read, keep the memory,
+  // so re-enabling returns the user to their page. The hub mounts only in the pageTab === workflow branch,
+  // and narrowing pageTab means SavedWorkflowsSection never mounts, not even for a frame, so no stray queries.
   const pageTab: AutomationsPageTab = dynamicWorkflowEnabled ? storedPageTab : "automation";
   const setPageTab = useCallback((next: AutomationsPageTab) => {
     setPageTabState(next);
@@ -624,11 +624,11 @@ export function AutomationsSection({
     return activeTab && isWorkspaceTab(activeTab) ? activeTab : undefined;
   });
   const currentWorkspaceIsRemote = isRemoteAutomationWorkspace(activeWorkspaceTab);
-  // 灰度中途翻转：只藏创建入口；有非终态存量仍展示并跑到终态。
+  // Mid-rollout flips hide only the create entry; existing non-terminal runs stay visible and run to completion.
   const offPeakGrayEnabled = offPeakGrayConfig?.enabled === true;
   const offPeakCreationEnabled = offPeakGrayEnabled && !currentWorkspaceIsRemote;
-  // 扫描全部 provider 会把未选中的 Coding Plan 当成当前执行凭证。
-  // mock 演示字段仍可覆盖；真实路径只接受与当前 family/selectedKey 一致的脱敏 resolver 快照。
+  // Scanning every provider would treat unselected Coding Plans as the current execution credential.
+  // Mock demo fields may still override; the real path accepts only redacted resolver snapshots matching family/selectedKey.
   const offPeakNoPlan =
     offPeakGrayConfig?.codingPlanActive === false ||
     (offPeakGrayConfig?.codingPlanActive === undefined &&
@@ -653,11 +653,11 @@ export function AutomationsSection({
   const hasVisibleTemplates = showOffPeakTemplates || showScheduledTemplates;
   const showTaskTemplateSeparator = hasVisibleTaskCards && hasVisibleTemplates;
   const [loadedWorkspaceKey, setLoadedWorkspaceKey] = useState<string | null>(null);
-  // 相对时间基准;刷新列表时更新,避免频繁 setInterval。
+  // Relative-time base; refreshed with the list instead of a hot interval.
   const [now, setNow] = useState(() => Date.now());
 
-  // 创建准入 fail-closed。只有服务端成功返回 canTakeNumber=true 才放行；资格不符、
-  // loading/idle/error 与额度 false 都禁入，避免依赖异常被吞掉后直到真实创建才报错。
+  // Creation admission is fail-closed. Proceed only on a server-side canTakeNumber=true; mismatched eligibility,
+  // loading/idle/error and false quotas all bar entry, so a swallowed probe error surfaces at creation time at the latest.
   const offPeakCreateGrey = useMemo(() => {
     const reason = resolveOffPeakCreateBlockReason({
       availabilityStatus: offPeakTakeNumberAvailabilityStatus,
@@ -692,7 +692,7 @@ export function AutomationsSection({
     offPeakTakeNumberAvailabilityStatus,
   ]);
 
-  // 列表按当前项目加载(主视图由 WorkspaceShellLayout 传入当前 workspace)。
+  // The list loads for the current project (the main view gets the workspace from WorkspaceShellLayout).
   useEffect(() => {
     if (!workspacePath) return;
     const workspaceKey = resolveWorkspaceKey({
@@ -717,15 +717,15 @@ export function AutomationsSection({
   useEffect(() => {
     const nextTab = resolveAutomationTabAfterOffPeakChange(tab, offPeakVisible);
     if (nextTab === tab) return;
-    // 后台关闭闲时灰度后，Idle tab 会被隐藏；旧状态若继续停在 idle，
-    // 定时任务列表也会被 tab === "idle" 一并隐藏。回到 Scheduled，确保定时任务始终可访问。
+    // If idle rollout turns off backstage, the Idle tab hides; a state parked on idle
+    // would hide the scheduled list too via tab === idle. Return to Scheduled so scheduled tasks stay reachable.
     setTab(nextTab);
   }, [offPeakVisible, tab]);
 
   useEffect(() => {
     if (!openAutomationTab) return;
-    // 灰度关：请求的「工作流」标签不存在，
-    // 落到「自动化」并把深链消费掉——不消费会让请求一直挂着，反复把页面拉回来。
+    // Rollout off: the requested workflows tab does not exist,
+    // land on Automations and consume the deep link, or the pending request keeps pulling the page back.
     if (openAutomationTab === "workflow" && !dynamicWorkflowEnabled) {
       setPageTab("automation");
       onOpenAutomationConsumed?.();
@@ -736,8 +736,8 @@ export function AutomationsSection({
       onOpenAutomationConsumed?.();
       return;
     }
-    // 闲时详情导航由下方 offpeak 分支统一 setTab("idle") + 消费；这里若先按
-    // 当前（可能尚未加载的）可见 tab 回退到 scheduled 并消费，会把 pending 的详情导航一并清掉。
+    // Idle detail navigation is handled by the offpeak branch below via setTab(idle) plus consume; resolving
+    // earlier against the (possibly unloaded) visible tab to scheduled would also drop the pending detail jump.
     if (isOffPeakDetailNavigationId(openAutomationId)) return;
     const currentWorkspaceKey = workspacePath
       ? resolveWorkspaceKey({ workspacePath, workspaceIdentity })
@@ -768,7 +768,7 @@ export function AutomationsSection({
     workspacePath,
   ]);
 
-  // 服务端给出准确恢复时间；到点后重查。刷新期间及失败后继续禁入，直到成功返回 true。
+  // The server states the exact reset time; re-probe on it. Keep barred while refreshing or after failure, until a true returns.
   useEffect(() => {
     const nextTakeAt = offPeakTakeNumberAvailability?.nextTakeAt;
     if (offPeakTakeNumberAvailability?.canTakeNumber !== false || nextTakeAt === undefined) return;
@@ -780,7 +780,7 @@ export function AutomationsSection({
     return () => clearTimeout(timer);
   }, [offPeakRefreshTakeNumberAvailability, offPeakTaskService, offPeakTakeNumberAvailability]);
 
-  // 额度 Tooltip 曾改成不会递减的绝对日期；按远端实现推进分钟边界，保持剩余时长准确。
+  // The quota tooltip once showed a non-counting absolute date; advance the minute edge like the remote does so remaining time stays true.
   useEffect(() => {
     const nextTakeAt = offPeakTakeNumberAvailability?.nextTakeAt;
     if (offPeakTakeNumberAvailability?.canTakeNumber !== false || nextTakeAt === undefined) return;
@@ -793,7 +793,7 @@ export function AutomationsSection({
     return () => clearTimeout(timer);
   }, [now, offPeakTakeNumberAvailability]);
 
-  // 位次/状态轮询刷新（host offPeakTaskSync 写库，renderer 每 10s 读快照；无任务不轮）。
+  // Rank/status poll refresh (host offPeakTaskSync writes, renderer reads the snapshot every 10s; no tasks, no poll).
   useEffect(() => {
     if (view.mode !== "list" || offPeakTasks.length === 0) return;
     const timer = setInterval(() => {
@@ -823,7 +823,7 @@ export function AutomationsSection({
     zcodeAgentService,
   ]);
 
-  // New task 页模板卡跳转过来：消费预填草稿 → 切 idle tab + 打开创建表单预填。
+  // Arriving from a New-task template card: consume the prefilled draft, switch to the idle tab, open the prefilled form.
   useEffect(() => {
     const draft = consumePendingCreateDraft();
     if (!draft) return;
@@ -850,8 +850,8 @@ export function AutomationsSection({
     const eventText = intl.formatMessage({
       id: "settings.modelProvider.codingPlan.upgrade",
     });
-    // 埋点缺失原因：Automations 的闲时入口此前绕过了购买漏斗 context，只打开弹窗。
-    // 这里在用户点击时冻结入口套餐状态，后续 OAuth 只刷新鉴权，不重建 funnel。
+    // Why the telemetry needed adding: the idle entry bypassed the purchase-funnel context and opened the dialog bare.
+    // Freeze the plan state at click; later OAuth refreshes auth only, never rebuilding the funnel.
     openCodingPlanUpgrade({
       providerId,
       initialAudience: "personal",
@@ -890,9 +890,9 @@ export function AutomationsSection({
     );
   }, [intl]);
 
-  // 会话内 OffPeakCreate 由 agent 直接落库，不经过 UI store；store 的 loading 初值也
-  // 是 false（"未加载"与"已加载"不可分）。因此每次 offpeak 导航都强制刷新列表，并以
-  // 「本次导航 id 的刷新已完成」作为唯一就绪信号，避免拿陈旧/空列表误判 targetNotFound。
+  // In-conversation OffPeakCreate persists via the agent, never the UI store; the store loading starts
+  // false too (unreadable from loaded). So every offpeak navigation force-refreshes the list and treats
+  // this navigation refresh-complete as the only ready signal, keeping stale or empty lists from misreading targetNotFound.
   const [offPeakNavRefreshed, setOffPeakNavRefreshed] = useState<{
     id: string | null;
     error: string | null;
@@ -902,7 +902,7 @@ export function AutomationsSection({
     let disposed = false;
     void offPeakRefresh(offPeakTaskService).finally(() => {
       if (disposed) return;
-      // review：refresh 不 reject，失败只写 store.error；把它随就绪信号一起带出。
+      // review: refresh never rejects; failure lands in store.error. Carry it out with the ready signal.
       setOffPeakNavRefreshed({
         id: openAutomationId ?? null,
         error: useOffPeakTaskStore.getState().error ?? null,
@@ -914,8 +914,8 @@ export function AutomationsSection({
   }, [openAutomationId, offPeakRefresh, offPeakTaskService]);
 
   useEffect(() => {
-    // 闲时轮尾卡携带 offpeak- 前缀 id，从并行路径解析进 offpeak-edit 视图；
-    // 不能落进 cron 解析（必然 missing 并误报 targetNotFound）。
+    // The idle tail card carries an offpeak- id; resolve through the parallel path into offpeak-edit,
+    // never the cron resolver (guaranteed missing, a false targetNotFound).
     if (isOffPeakDetailNavigationId(openAutomationId)) {
       const result = resolveOffPeakDetailNavigation(
         offPeakTasks,
@@ -928,7 +928,7 @@ export function AutomationsSection({
         setTab("idle");
         setView({ mode: "offpeak-edit", task: result.target });
       } else if (result.status === "unavailable") {
-        // 列表刷新失败：落到闲时 tab 并提示加载失败，不误报"任务不存在"。
+        // List refresh failed: land on the idle tab with a load-failed note, not a false missing-task.
         setTab("idle");
         toast(intl.formatMessage({ id: "offPeak.nav.listUnavailable" }));
       } else {
@@ -949,7 +949,7 @@ export function AutomationsSection({
     if (result.status === "found") {
       setView({ mode: "edit", automation: result.target });
     } else {
-      // 目标任务可能已删除；失效的一次性导航必须提示并消费，不能影响后续进入页面。
+      // The target may already be deleted; stale one-shot navigation must note and consume, never block later entries.
       toast(intl.formatMessage({ id: "automations.error.targetNotFound" }));
     }
     onOpenAutomationConsumed?.();
@@ -973,15 +973,15 @@ export function AutomationsSection({
     setView({ mode: "create", draft: null });
   }, [automationCreateLimitReached, showAutomationCreateLimitToast]);
 
-  // 「Create via chat」:交给 parent 切到会话视图;未提供则回退到手动创建整页。
+  // Create via chat: hand to the parent to switch views; without it, fall back to the manual full-page form.
   const handleCreateViaChat = useCallback(() => {
     if (automationCreateLimitReached) {
       showAutomationCreateLimitToast();
       return;
     }
     if (currentWorkspaceIsRemote) {
-      // Automations 创建只能绑定本地项目；远端当前会话不能隐式成为创建目标。
-      // 仍保留管理页，但把创建收敛到带本地项目选择器的表单。
+      // Automation creation binds local projects only; a remote conversation never implicitly becomes the target.
+      // The manage page stays; creation funnels into the form with its local-project picker.
       setView({ mode: "create", draft: null });
       return;
     }
@@ -1011,7 +1011,7 @@ export function AutomationsSection({
     [automationCreateLimitReached, locale, showAutomationCreateLimitToast],
   );
 
-  // 创建/编辑整页提交:创建可指定目标项目;编辑锁定原项目。
+  // Full-page create/edit submit: creation may pick the target project, editing keeps the original.
   const handleEditSubmit = useCallback(
     async ({
       input,
@@ -1085,8 +1085,8 @@ export function AutomationsSection({
       const message = useAutomationManagementStore.getState().error;
       if (message) toast(intl.formatMessage({ id: getAutomationActionErrorToastId("toggle") }));
       else {
-        // 编辑页 view 持有进入页面时的 automation 对象；列表刷新不会自动替换
-        // 这个局部对象，导致菜单点击 Pause/Resume 后文案仍停在旧状态。
+        // The edit view holds the automation object from entry; list refreshes never swap that local
+        // object, so Pause/Resume from the menu left stale copy behind.
         setView((prev) =>
           prev.mode === "edit" && prev.automation.automationId === automation.automationId
             ? {
@@ -1122,7 +1122,7 @@ export function AutomationsSection({
 
   const handleRunNow = useCallback(
     async (automation: ZCodeAutomation, source: "list" | "editor" = "list") => {
-      logger.debug("[automations] 立即运行交互开始", {
+      logger.debug("[automations] run-now interaction start", {
         automationId: automation.automationId,
         source,
       });
@@ -1133,7 +1133,7 @@ export function AutomationsSection({
         providerSettingsView,
       });
       const result = await runAutomationNow(automation.automationId, zcodeAgentService);
-      logger.debug("[automations] 立即运行交互结束", {
+      logger.debug("[automations] run-now interaction end", {
         automationId: automation.automationId,
         source,
         result,
@@ -1170,8 +1170,8 @@ export function AutomationsSection({
         );
         setNow(Date.now());
       } else if (result === "duplicate") {
-        // 连续点击或上一条 manual run 仍在执行时，store/host 会返回 duplicate。
-        // 这里必须给出可见反馈，否则用户会以为按钮没响应。
+        // Rapid clicks or an in-flight manual run return duplicate from store/host.
+        // The user needs visible feedback or the button reads dead.
         toast(intl.formatMessage({ id: getAutomationRunNowToastId(result) }));
       } else if (result === "failed") {
         toast(intl.formatMessage({ id: getAutomationRunNowToastId(result) }));
@@ -1199,8 +1199,8 @@ export function AutomationsSection({
         ),
         confirmLabel: intl.formatMessage({ id: "common.delete" }),
         confirmVariant: "destructive",
-        // 共享确认弹窗默认在按钮右侧渲染 esc / ⏎，在删除场景会被视为额外图标。
-        // 定时任务删除按钮只保留动作文字，且不改变其他确认弹窗的键盘提示策略。
+        // The shared confirm dialog renders esc/enter hints right of the button; in delete flows they read as stray icons.
+        // The scheduled-delete button keeps action text only, leaving other confirms key hints untouched.
         showKeyboardHints: false,
       });
       if (!confirmed) return;
@@ -1213,7 +1213,7 @@ export function AutomationsSection({
       await deleteAutomation(automation.automationId, zcodeAgentService);
       const message = useAutomationManagementStore.getState().error;
       if (message) toast(intl.formatMessage({ id: getAutomationActionErrorToastId("delete") }));
-      // 若在编辑该任务的整页,删除后回列表。
+      // Deleting from the edit page returns to the list.
       setView((prev) =>
         prev.mode === "edit" && prev.automation.automationId === automation.automationId
           ? { mode: "list" }
@@ -1236,8 +1236,8 @@ export function AutomationsSection({
   );
 
   const handleOffPeakOpen = useCallback((task: ZCodeOffPeakTask) => {
-    // 有 session 的卡片主点击不能直接跳会话：会使 Settings/History
-    // 无法稳定到达。卡片主路径始终进入任务详情，会话只保留为显式次级动作。
+    // A card with a session must not jump conversations on its primary click: Settings/History
+    // could no longer reach it reliably. The primary path always opens task details; the conversation stays an explicit secondary action.
     setView({ mode: "offpeak-edit", task });
   }, []);
 
@@ -1370,7 +1370,7 @@ export function AutomationsSection({
     );
   }
 
-  // 闲时任务创建/编辑整页（表单范式）。
+  // Idle-task create/edit page (the form paradigm).
   if (view.mode === "offpeak-create" || view.mode === "offpeak-edit") {
     const editingTask =
       view.mode === "offpeak-edit"
@@ -1406,7 +1406,7 @@ export function AutomationsSection({
     );
   }
 
-  // 创建/编辑整页(带 Settings/History tab)。
+  // Create/edit page with Settings/History tabs.
   if (view.mode !== "list") {
     return (
       <>
@@ -1438,8 +1438,8 @@ export function AutomationsSection({
           onOpenSession={
             view.mode === "edit" && onOpenSession
               ? (sessionId) => {
-                  // 运行历史的跳转入口之前没有从父层接入导航回调，导致即使 run.sessionId
-                  // 已经写入 automation_runs，菜单里也会把“跳到会话”隐藏掉。
+                  // The run-history jump never got a navigation callback from the parent, so even with run.sessionId
+                  // already in automation_runs the menu hid jump-to-conversation.
                   onOpenSession({
                     sessionId,
                     workspacePath: view.automation.workspacePath,
@@ -1453,8 +1453,8 @@ export function AutomationsSection({
     );
   }
 
-  // 页标题即顶级切换：「自动化 / 工作流」两个标题词
-  // 并排，30/34 沿用 h1 的页面标题层级；副标题随标签换。
+  // The page title is the top-level switch: the two words sit
+  // side by side at 30/34, the h1 scale; the subtitle follows the tab.
   const pageHeader = (
     <div className="flex flex-col gap-3">
       <AutomationsPageTitle
@@ -1495,13 +1495,13 @@ export function AutomationsSection({
     <div data-automations-content className={cn(SETTINGS_FRAME_CONTENT_CLASSNAME, "flex flex-col")}>
       {pageHeader}
 
-      {/* Tab：Scheduled 常驻；Idle 仅在灰度命中或有闲时存量时出现（D31），不再提供 All 混排视图。
-         有任务时右上对齐创建（4866-1735）；空态创建入口在大卡内（4889-2013），不重复顶栏按钮。 */}
+      {/* Tabs: Scheduled always; Idle only on rollout hit or with idle legacy (D31); no mixed All view.
+                  With tasks, create aligns top-right (4866-1735); on empty, create lives inside the big card (4889-2013), not the header too. */}
       {visibleTabs.length > 0 ? (
         <div className="mt-8 flex items-center justify-between">
-          {/* 修复原因：tab 曾与右侧操作组共用 12px 间距，未体现最新设计要求的 8px 紧凑节奏。 */}
+          {/* Fix note: tabs once shared the actions row 12px gap, missing the 8px compact rhythm. */}
           <div className="flex items-center gap-2" data-testid={TID_OFFPEAK_TAB}>
-            {/* 修复原因：未选中态旧实现强制显示 surface 背景，无法与 hover、选中态形成层级。 */}
+            {/* Fix note: the unselected state forced a surface ground and could not layer against hover or selected. */}
             {visibleTabs.map((key) => (
               <button
                 key={key}
@@ -1555,8 +1555,8 @@ export function AutomationsSection({
         </div>
       ) : null}
 
-      {/* 状态筛选：定时 / 闲时共用一组（全部 / 进行中 / 已完成 / 失败），只在当前 tab 有任务时出现。
-         样式沿用顶栏 tab 的胶囊，但字号与内边距更小以体现层级。 */}
+      {/* Status filter: one set for scheduled and idle (all / running / done / failed), only when the tab has tasks.
+                  Same pill as the header tabs, smaller type and padding for hierarchy. */}
       {visibleTabs.length > 0 && hasVisibleTaskCards ? (
         <div
           className="mt-3 flex flex-wrap items-center gap-1.5"
@@ -1589,13 +1589,13 @@ export function AutomationsSection({
         <div
           className={cn(
             "flex flex-col gap-8",
-            // 列表态提示栏与 action row 旧间距为 16px，小于设计稿要求的 20px。
+            // The list hint bar to action row gap was 16px; the design asks 20px.
             hasAnyTasks ? "mt-5" : "mt-8",
           )}
         >
           <div className="flex w-full flex-col gap-4">
-            {/* keep-awake 是全局开关（与设置页「常规」镜像），定时任务运行会话同样受益，
-               在定时/闲时两个 tab 都展示。列表态放在任务卡之前，空态保持大空卡在前。 */}
+            {/* Keep-awake is a global switch (mirrored in settings general); scheduled sessions benefit too,
+                              so it shows on both tabs, above the task list, empty state keeping the big card first. */}
             {hasAnyTasks ? (
               <AutomationKeepAwakeNotice
                 checked={sharedSettings?.keepAwakeWhileRunning ?? false}
@@ -1607,7 +1607,7 @@ export function AutomationsSection({
               />
             ) : null}
 
-            {/* 去掉 All 混排视图后两类任务不再共用统一 grid；保留该锚点标记任务区起点。 */}
+            {/* Without the mixed All view the two kinds no longer share a grid; the anchor marks the task area start. */}
             <div data-automations-task-grid className="contents">
               {offPeakVisible && tab !== "scheduled" && offPeakTasks.length > 0 ? (
                 <section className="flex w-full flex-col gap-4">
@@ -1630,15 +1630,15 @@ export function AutomationsSection({
                 </section>
               ) : null}
 
-              {/* Task created：当前项目已创建的真实定时任务(全部)。点整张卡片进编辑。
-                 闲时任务 tab 下整个定时任务区（卡片/空状态/通过对话创建）都不渲染。 */}
+              {/* Task created: real scheduled tasks in this project (all). The whole card opens edit.
+                                  On the idle tab none of the scheduled region renders, card, empty state or create-via-chat. */}
               {tab === "idle" ? null : automations.length > 0 ? (
                 <section className="flex w-full flex-col gap-4">
                   <div className="flex items-center justify-between">
                     <h2 className="text-ui-base font-medium leading-5 text-foreground-subtle">
                       {intl.formatMessage({ id: "automations.createdLabel" })}
                     </h2>
-                    {/* 无 tab 行时创建入口落在本区标题右侧；有 tab 行时入口已在顶栏，避免重复。 */}
+                    {/* Without a tab row the create entry sits right of this section title; with one it lives in the header, never both. */}
                     {visibleTabs.length === 0 ? (
                       <AutomationCreateDropdown
                         onViaChat={handleCreateViaChat}
@@ -1653,8 +1653,8 @@ export function AutomationsSection({
                       data-testid={TID_AUTOMATIONS_LIST}
                       className={cn(
                         "grid grid-cols-1 auto-rows-[132px] gap-x-4 gap-y-4 lg:grid-cols-2",
-                        // 设计规范最多露出 8 张卡片；grid 自身负责滚动。阈值按筛选后的数量算，
-                        // 否则筛出少量卡片时仍锁高度会留下大块空白。
+                        // The spec shows at most 8 cards; the grid scrolls. Threshold on the filtered count,
+                        // or a narrow filter locks height and leaves a void.
                         visibleAutomations.length > 8 &&
                           "max-h-[1198px] overflow-y-auto overscroll-contain lg:max-h-[606px]",
                       )}
@@ -1670,9 +1670,9 @@ export function AutomationsSection({
                           now,
                           intl,
                         );
-                        // completed/paused/失败态的调度不再推进，但有限次任务跑完后
-                        // nextRunAt 仍可能指向未来时刻，曾被拼进卡片误显“下次运行”。只有活跃
-                        // 且未失败的卡片才追加下次运行时间，其余一律只展示频率摘要。
+                        // completed/paused/failed schedules no longer advance, yet a capped run
+                        // nextRunAt can still point ahead and once read as next run on the card. Only active,
+                        // unfailed cards append a next run; everything else shows the frequency summary.
                         const scheduleCardText =
                           status === "active" && !hasFailure && formattedNextRun
                             ? `${scheduleText} · ${intl.formatMessage(
@@ -1680,15 +1680,15 @@ export function AutomationsSection({
                                 { when: formattedNextRun },
                               )}`
                             : scheduleText;
-                        // Card 展示的是定时 + 手动派发的累计次数；maxRuns 只约束定时计划，
-                        // 若作为分母会让用户误以为“立即运行”也消耗有限任务额度。
+                        // The card counts scheduled plus manual dispatches; maxRuns caps the schedule only,
+                        // and as a denominator would imply run-now spends the capped quota too.
                         const runCountText = intl.formatMessage(
                           { id: "automations.runCount" },
                           { count: String(automation.runCount) },
                         );
                         const busy = operationId?.endsWith(`:${automation.automationId}`) ?? false;
-                        // completed 表示有限次任务已经自然结束，不能再通过 Restart 复活；
-                        // failed 才是可恢复终态，允许用户手动重排下一次运行。
+                        // completed means a capped task finished naturally and Restart cannot revive it;
+                        // failed is the recoverable terminal and may be rescheduled by hand.
                         const canRestart = canRestartAutomation(automation);
                         const canToggle = canToggleAutomation(automation);
                         return (
@@ -1705,9 +1705,9 @@ export function AutomationsSection({
                               }
                             }}
                             className={cn(
-                              // 任务卡与模板卡曾分别使用 surface/border，跨主题下描边深浅不一致。
+                              // Task and template cards once split surface/border grounds, reading differently per theme.
                               "group relative flex h-full min-h-0 cursor-pointer gap-3 overflow-hidden rounded-xl border border-card-border bg-background p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-input-border-focused",
-                              // 已完成任务保持静态弱化，不在 hover 时恢复透明度或改变背景。
+                              // Completed tasks rest in a static muted state; hover restores no opacity nor ground.
                               status === "completed" ? "opacity-60" : "hover:bg-hover",
                             )}
                           >
@@ -1736,7 +1736,7 @@ export function AutomationsSection({
                                           })}
                                         </span>
                                       </span>
-                                      {/* 失败态也只展示 cron 摘要，禁止把已过期 nextRunAt 误写成“下次运行”。 */}
+                                      {/* Failed states show the cron summary only; a stale nextRunAt never reads as next run. */}
                                       <span className="inline-flex min-w-0 items-center rounded-md bg-success/10 py-0.5 pl-1 pr-2 font-normal text-success opacity-40">
                                         <span className="flex size-5 shrink-0 items-center justify-center">
                                           <AutomationClockIcon
@@ -1778,7 +1778,7 @@ export function AutomationsSection({
                                         })}
                                       </span>
                                       {status === "paused" || status === "completed" ? (
-                                        /* 暂停/完成后调度不再推进，只展示 cron 摘要，不展示 nextRunAt。 */
+                                        /* Paused or done, the schedule no longer advances: cron summary, no nextRunAt. */
                                         <AutomationScheduleBadge
                                           dimmed
                                           text={scheduleCardText}
@@ -1825,7 +1825,7 @@ export function AutomationsSection({
                   )}
                 </section>
               ) : (
-                /* 空状态卡先于 Keep-awake，按钮组整体较卡片中心下移 8px。 */
+                /* Empty-state card precedes Keep-awake; the button group sits 8px below card center. */
                 <div
                   data-automations-empty-state
                   className="flex h-[226px] w-full items-center justify-center rounded-2xl border border-card-border bg-background px-4"
@@ -1839,7 +1839,7 @@ export function AutomationsSection({
                         onViaChat={handleCreateViaChat}
                         onManually={handleCreateManually}
                       />
-                      {/* 有闲时任务时右上已有创建入口，空卡不再重复（4866-1735 vs 4889-2013）。 */}
+                      {/* With idle tasks the header already creates; the empty card does not repeat it (4866-1735 vs 4889-2013). */}
                       {offPeakCreationEnabled && offPeakTasks.length === 0 ? (
                         <OffPeakCreateButton
                           greyReason={offPeakCreateGrey.reason}
@@ -1853,7 +1853,7 @@ export function AutomationsSection({
               )}
             </div>
 
-            {/* Figma 4798:2443：空态保持唤醒提示条位于大空卡之后。 */}
+            {/* Figma 4798:2443: on empty the wake hint follows the big card. */}
             {!hasAnyTasks ? (
               <AutomationKeepAwakeNotice
                 checked={sharedSettings?.keepAwakeWhileRunning ?? false}
@@ -1866,9 +1866,9 @@ export function AutomationsSection({
             ) : null}
           </div>
 
-          {/* 修复原因：真实任务卡与模板此前只靠空白分区，遗漏了 Figma 4835:5515 的分割线；
-             分割线使用 surface 在 Light 下过淡，因此与 Card 统一使用 card-border。
-             外层 gap-8 加本容器 py-2，使卡片到线、线到模板标题均保持 40px。 */}
+          {/* Fix note: real and template cards were separated by whitespace alone, missing Figma 4835:5515 rule;
+                          surface is too faint in Light, so both use card-border.
+                          Outer gap-8 plus py-2 here keep 40px card-to-rule and rule-to-template-title. */}
           {showTaskTemplateSeparator ? (
             <div
               data-automations-task-template-separator
@@ -1879,7 +1879,7 @@ export function AutomationsSection({
             </div>
           ) : null}
 
-          {/* Idle-time task template（灰度命中；Figma 4889-2013；与 New task 页同源文案 D30-4）。 */}
+          {/* Idle-time task template (rollout hit; Figma 4889-2013; copy shared with the New task page, D30-4). */}
           {showOffPeakTemplates ? (
             <section
               data-automations-idle-templates
@@ -1935,7 +1935,7 @@ export function AutomationsSection({
                                 },
                           });
                         }}
-                        // Grid wrapper 虽已拉伸到行高，卡片本体仍需 h-full 才能继承同一行的最大高度；只设 min-height 时短文案卡会矮一截。
+                        // The grid wrapper stretches to the row, but each card needs h-full to inherit the row max height; min-height alone leaves short-copy cards squat.
                         className="flex h-full min-h-[114px] w-full flex-col gap-2 overflow-hidden rounded-xl border border-card-border bg-background p-3 text-left transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-input-border-focused"
                       >
                         <div className="flex items-center gap-0.5 text-foreground">
@@ -1979,7 +1979,7 @@ export function AutomationsSection({
             </section>
           ) : null}
 
-          {/* Scheduled task template：Client Scenes 候选目录；点击只预填新建整页。闲时任务 tab 不显示。 */}
+          {/* Scheduled task template: the Client Scenes catalog; clicks only prefill the create page. Hidden on the idle tab. */}
           {showScheduledTemplates ? (
             <section
               data-automations-scheduled-templates
@@ -2021,7 +2021,7 @@ export function AutomationsSection({
                             {resolveAutomationTemplateText(template.title, locale)}
                           </span>
                         </div>
-                        {/* Bug 原因：定时模板首次实现时把周期时间拼进标题行，和闲时模板的底部时间层级不一致。 */}
+                        {/* Bug: the first cut put the period into the title row, out of hierarchy with the idle template footer time. */}
                         <p className="line-clamp-2 flex-1 text-ui-base font-normal leading-5 text-foreground-subtle">
                           {resolveAutomationTemplateText(template.description, locale)}
                         </p>

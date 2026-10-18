@@ -41,8 +41,8 @@ function fieldPaths(value: Record<string, unknown>, prefix: string[] = []): stri
   });
 }
 
-describe("Model schema 的完整/稀疏派生合同", () => {
-  it("MFJS只属于properties，显式false/null不能回退或丢失", () => {
+describe("Model schema complete/sparse derivation contract", () => {
+  it("keeps MFJS inside properties; explicit false/null never falls back or vanishes", () => {
     for (const value of [true, false, null]) {
       const overlay = parseModelConfig({ properties: { requiresMfjsToolSchema: value } });
       const merged = parseModelConfig(complete).overlay(overlay);
@@ -55,11 +55,11 @@ describe("Model schema 的完整/稀疏派生合同", () => {
   it.each([
     { key: "reasoningLevel", type: "enum" },
     { key: "maxOutputTokens", type: "limit" },
-  ])("拒绝未发布的 $key.type 字段，不静默兼容", ({ key, type }) => {
+  ])("rejectes the unpublished $key.type field instead of silently compat-ing", ({ key, type }) => {
     expect(() => parseModelConfig({ optionSpecs: { [key]: { type } } })).toThrow();
   });
   it.each(fieldPaths(complete).map((path) => ({ path, label: path.join(".") })))(
-    "$label 的缺省/null只在稀疏覆盖合法，不能进入Registry",
+    "$label absent/null is legal only in sparse overlays, never in the Registry",
     ({ path }) => {
       for (const replacement of [undefined, null]) {
         const value: Record<string, unknown> = structuredClone(complete);
@@ -81,7 +81,7 @@ describe("Model schema 的完整/稀疏派生合同", () => {
     },
   );
 
-  it("合法完整配置parse/class/JSON往返一致，冻结与overlay行为不变", () => {
+  it("keeps parse/class/JSON round-trips identical for valid complete configs, freezing and overlay behavior intact", () => {
     const parsed = parseModelConfig(complete);
     expect(JSON.parse(JSON.stringify(parsed))).toEqual(complete);
     expect(completeModelConfigDataSchema.parse(parsed.toJSON())).toEqual(complete);

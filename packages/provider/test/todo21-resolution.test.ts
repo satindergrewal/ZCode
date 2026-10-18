@@ -14,7 +14,7 @@ import {
 } from "../src/index.js";
 
 describe("Todo 21 resolver", () => {
-  it("Builtin-wins，单数组重复保留第一个，不创建冲突身份", () => {
+  it("prefers Builtin, keeps the first of in-array duplicates, and mints no conflicting identities", () => {
     const result = resolve({
       builtinModelIds: ["a", "a", "b"],
       personalModelIds: ["b", "c", "c"],
@@ -38,7 +38,7 @@ describe("Todo 21 resolver", () => {
     expect(result.issues.some((issue) => issue.code === "duplicate-model")).toBe(false);
   });
 
-  it("按未排序 Built-in + modelOrder 有效成员 + 未排序 Personal 生成唯一顺序", () => {
+  it("derives one order from unsorted Built-in, modelOrder effective members, then unsorted Personal", () => {
     const result = resolve({
       builtinModelIds: ["new-builtin", "builtin-a"],
       personalModelIds: ["personal-a", "manual-personal"],
@@ -59,7 +59,7 @@ describe("Todo 21 resolver", () => {
     ]);
   });
 
-  it("Model enabled 是唯一模型执行门禁，Provider hidden 只影响 selectable", () => {
+  it("makes Model enabled the only execution gate while Provider hidden affects selectable only", () => {
     const result = resolve({ visibility: "hidden", disabledModelId: "b" });
 
     expect(result.resolvedProviders[0]?.models).toMatchObject([

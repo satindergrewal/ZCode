@@ -2,8 +2,8 @@ import type { JSONRPCMessage, Transport } from "@modelcontextprotocol/client";
 import type { PluginSandboxTransportPort } from "@zcode/shared/mcp-apps";
 
 /**
- * 宿主 renderer 侧的 MCP `Transport`：一条 MessagePort（main 建的 channel 的 port2）上跑原始 JSON-RPC，
- * 另一端是 relay shell → 插件 iframe 里的官方 `App`（或手写 JSON-RPC）。不解析业务，只做 JSON-RPC 帧的最小形状检查。
+ * Host-renderer MCP Transport: raw JSON-RPC over one MessagePort (port2 of a main-built channel),
+ * peer being the official App inside the relay shell's plugin iframe (or hand-rolled JSON-RPC). No business parsing; minimal frame-shape checks only.
  */
 export function createPluginUiMessagePortTransport(port: PluginSandboxTransportPort): Transport {
   let closed = false;

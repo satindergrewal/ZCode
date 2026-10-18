@@ -54,10 +54,10 @@ describe("embedded search bash prelude", () => {
     });
 
     expect(command).toContain(
-      'command -v \'/tmp/z code\' >/dev/null 2>&1 || { command grep "$@"; return; }',
+      "command -v '/tmp/z code' >/dev/null 2>&1 || { command grep \"$@\"; return; }",
     );
     expect(command).toContain(
-      'command \'/tmp/z code\' __internal-search \'quoted\'\\\'\'value\' grep "$@"',
+      "command '/tmp/z code' __internal-search 'quoted'\\''value' grep \"$@\"",
     );
   });
 
@@ -73,10 +73,10 @@ describe("embedded search bash prelude", () => {
     });
 
     expect(command).toContain(
-      'ELECTRON_RUN_AS_NODE=1 command \'/Applications/ZCode Helper\' /tmp/zcode.cjs __internal-search find "$@"',
+      "ELECTRON_RUN_AS_NODE=1 command '/Applications/ZCode Helper' /tmp/zcode.cjs __internal-search find \"$@\"",
     );
     expect(command).toContain(
-      'ELECTRON_RUN_AS_NODE=1 command \'/Applications/ZCode Helper\' /tmp/zcode.cjs __internal-search grep "$@"',
+      "ELECTRON_RUN_AS_NODE=1 command '/Applications/ZCode Helper' /tmp/zcode.cjs __internal-search grep \"$@\"",
     );
   });
 

@@ -31,7 +31,9 @@ export async function deployRuntimeTools(
       options.selectedResourcePackageIds &&
       !options.selectedResourcePackageIds.includes(componentId)
     ) {
-      loggers.log(`[tool-deploy] ${toolId}: resource package ${componentId} not selected; skipping check and deploy`);
+      loggers.log(
+        `[tool-deploy] ${toolId}: resource package ${componentId} not selected; skipping check and deploy`,
+      );
       continue;
     }
 

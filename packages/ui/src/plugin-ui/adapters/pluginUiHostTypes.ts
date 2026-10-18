@@ -19,36 +19,36 @@ export interface UsePluginUiHostInput {
   displayMode: McpAppsDisplayMode;
   toolInput: Record<string, unknown> | undefined;
   toolResult: McpAppsToolResultPayload | undefined;
-  /** 投喂的是哪次调用；变化（面板换到新一次调用）时把 toolInput 作为 tool-input 通知推给页面。 */
+  /** Which call is fed; on change (pane moves to a newer call) toolInput goes out as a tool-input notice. */
   toolCallId?: string;
-  /** 宿主工具被停止；变为 true 时向页面发一次 tool-cancelled。 */
+  /** Host tool stopped: flips true once, sending one tool-cancelled. */
   toolCancelled?: boolean;
   hostVersion: string;
-  /** 本实例真实可切换到的模式；缺省两种都可。变化时经 host-context-changed 通知页面。 */
+  /** Modes switchable here; both when absent. Changes push host-context-changed. */
   availableDisplayModes?: readonly McpAppsDisplayMode[];
   onDisplayModeRequest?: (mode: McpAppsDisplayMode) => McpAppsDisplayMode;
   onOpenExternal?: (url: string) => void;
-  /** 容器宽度，用于 hostContext.containerDimensions；未知时 0。 */
+  /** Container width for hostContext.containerDimensions; 0 when unknown. */
   width: number;
-  /** fullscreen 容器的头部；inline 不传。 */
+  /** fullscreen header; absent inline. */
   titleBar?: McpAppsHostTitleBar;
-  /** false 时不创建沙箱（如侧栏已接管同一作用域）；默认 true。 */
+  /** false skips sandbox creation (e.g. pane already owns the scope); default true. */
   enabled?: boolean;
-  /** 会话交互回调：缺省时对应请求回 -32601，能力声明也不带该项。 */
+  /** Session interaction callbacks; without them requests answer -32601 and capabilities omit the entry. */
   interactions?: Pick<PluginUiHostControllerDeps, "onSendFollowUpMessage" | "onUpdateModelContext">;
 }
 
 export interface UsePluginUiHostResult {
-  /** 平台或服务不支持插件 UI 时为 false，调用方回退到普通 MCP 卡片。 */
+  /** false when the platform/service cannot host plugin UI; callers fall back to the plain MCP card. */
   pageKey: string;
   supported: boolean;
   phase: PluginUiHostPhase;
   handle: PluginSandboxHandle | null;
   height: number;
   error: string | null;
-  /** 页面 `ui/initialize` 声明的能力；握手前 undefined。`availableDisplayModes` 决定宿主能否把它切到 fullscreen。 */
+  /** Capabilities declared at ui/initialize; undefined pre-handshake. availableDisplayModes gates fullscreen. */
   appCapabilities: McpUiAppCapabilities | undefined;
-  /** 销毁当前实例并重新 prepare（Agent 运行凭证换代）；guest 崩溃 / 加载失败后由错误态按钮触发。 */
+  /** Destroy and re-prepare (agent credentials rotated); the error-state button fires it after guest crash/load failure. */
   reload(): void;
 }
 

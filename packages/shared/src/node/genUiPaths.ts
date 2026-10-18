@@ -11,7 +11,7 @@ export function getGenUiOutputDirectory(outputRoot: string, scope: GenUiScope): 
   if (!isAbsolute(outputRoot) || !isAbsolute(scope.workspacePath))
     throw new Error("Gen UI output root and workspace must be absolute");
   const root = resolve(outputRoot);
-  // 根因：固定输出目录被误当成工作区外限制，打开 Home 时会阻断上下文初始化。
-  // 目录由 Host 决定；工作区可以包含它，workspace/session 子目录只负责组织生成文件。
+  // Root cause: the fixed output dir was mistaken for an outside-workspace limit, blocking context init when Home was opened.
+  // The Host owns the directory; workspaces may contain it, and workspace/session subdirs only organize generated files.
   return join(root, createHash("sha256").update(buildGenUiScopeKey(scope)).digest("hex"));
 }

@@ -103,7 +103,7 @@ export class InMemorySessionEventStore implements SessionEventStorePort {
         state.evictedEvents += 1;
         continue;
       }
-      // 同一淘汰节拍：已 sealed 且已持久化的 turn，其 model_request 只需保留元数据。
+      // Same eviction beat: a sealed, persisted turn keeps only metadata on its model_request copy.
       retained.push(
         event.turnId && turnIds.has(event.turnId) ? slimRetainedModelRequest(event) : event,
       );

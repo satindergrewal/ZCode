@@ -219,7 +219,7 @@ export class NodePluginAdapter implements PluginPort {
           enabled,
           declaredMcpServerNames,
           request.config.options[loaded.id] ?? {},
-          // 插件 UI 面板入口（A5）：与启用态无关地解析，禁用插件的入口由 listUiSurfaces 过滤。
+          // Plugin UI panel entries (A5): resolved regardless of enabled state; disabled plugins' entries filtered by listUiSurfaces.
           parsePluginUiSurfaces({ loaded, declaredMcpServerNames, diagnostics }),
         ),
       );

@@ -5,8 +5,9 @@ import {
   WORKSPACE_MUTATING_SIDE_EFFECT_SCOPES,
 } from "../src/tools/contract.js";
 
-// 「第一笔写入」的判定（apps/zcode-cli/packages/dynamic-workflow/docs/execution-engine.md「Amend-resume」）：
-// 执行器上载荷、driver 读载荷，两边用的就是这一个函数。
+// The "first write" test
+// (apps/zcode-cli/packages/dynamic-workflow/docs/execution-engine.md "Amend-resume"): the
+// executor stamps the payload, the driver reads it - both via this one function.
 describe("isWorkspaceMutatingToolCall", () => {
   it("only workspace, git and system scopes touch the workspace", () => {
     expect([...WORKSPACE_MUTATING_SIDE_EFFECT_SCOPES].sort()).toEqual([
@@ -42,7 +43,7 @@ describe("isWorkspaceMutatingToolCall", () => {
   });
 });
 
-// 「碰过外部世界」的判定（同一份 spec）：决定一条缓存条目是不是纯的。
+// The "touched the outside world" test (same spec): decides whether a cache entry stays pure.
 describe("isWorldTouchingToolCall", () => {
   it("only the protocol scopes are exempt: handing a result back or asking is not touching the world", () => {
     for (const scope of ["session", "userInteraction"] as const) {
@@ -55,7 +56,7 @@ describe("isWorldTouchingToolCall", () => {
 
   it("a read counts: Read declares scope none, yet its answer depends on the workspace", () => {
     expect(isWorldTouchingToolCall({ sideEffectScope: "none" })).toBe(true);
-    // 与「写」的判定分工：读不关门，但它让条目不再是纯的。
+    // Division of labor with the write test: reads never close the gate, but they un-pure the entry.
     expect(isWorkspaceMutatingToolCall({ readOnly: true, sideEffectScope: "none" })).toBe(false);
   });
 

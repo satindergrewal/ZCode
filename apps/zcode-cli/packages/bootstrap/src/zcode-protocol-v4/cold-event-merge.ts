@@ -19,9 +19,9 @@ export interface ConversationMaterializationSource {
   goalVerificationEntries: HydratedGoalVerificationEntry[];
   memoryEvents: SessionEvent[];
   messages: MessageWithParts[];
-    /** shared_context bodies remain provider-only; only redacted handover metadata goes out here. */
+  /** shared_context bodies remain provider-only; only redacted handover metadata goes out here. */
   sharedContextImport?: ConversationSnapshot["sharedContextImport"];
-    /** Exists only once the session_target read succeeded; an explicit null is durable authority too. */
+  /** Exists only once the session_target read succeeded; an explicit null is durable authority too. */
   target?: SessionGoal | null;
 }
 
@@ -47,11 +47,11 @@ interface PersistedConversationMaterializationStore {
 }
 
 /**
-  * The single durable-fact entrance of cold materialization.
+ * The single durable-fact entrance of cold materialization.
  *
-  * The legacy bridge read only full message/part, never session.revert to trim
-  * rolled-back branches, nor session_target; so runtime resume / stable fork already used the
-  * active branch while the refreshed projection revived old ones and reset the goal to null.
+ * The legacy bridge read only full message/part, never session.revert to trim
+ * rolled-back branches, nor session_target; so runtime resume / stable fork already used the
+ * active branch while the refreshed projection revived old ones and reset the goal to null.
  */
 export async function loadPersistedConversationMaterialization(input: {
   memoryEvents: readonly SessionEvent[];
@@ -60,8 +60,8 @@ export async function loadPersistedConversationMaterialization(input: {
   store?: PersistedConversationMaterializationStore;
 }): Promise<ConversationMaterializationSource> {
   if (!input.store) {
-        // Without a sessionStore the legacy bridge hand-filled target:null, misreading "not read" as
-        // "explicitly cleared", suppressing the only in-memory TargetChanged and forcing synthesized.
+    // Without a sessionStore the legacy bridge hand-filled target:null, misreading "not read" as
+    // "explicitly cleared", suppressing the only in-memory TargetChanged and forcing synthesized.
     return {
       goalVerificationEntries: [],
       memoryEvents: [...input.memoryEvents],
@@ -166,10 +166,10 @@ const MEMORY_ONLY_EVENT_TYPES = new Set<string>([
   SessionEventType.BackgroundTaskStarted,
   SessionEventType.BackgroundTaskUpdated,
   SessionEventType.BackgroundTaskCompleted,
-    // Workflow run progress: authority lives in the dwf_event journal and memory events; the durable transcript (message/part)
-    // never synthesizes it, so it is BackgroundTask-like -- memory-only authority. Not classifying it loses no events
-    // (the fallback keeps them); it just logs one unclassified diagnostic per cold restore, drowning the
-    // "the vocabulary really is missing" signal.
+  // Workflow run progress: authority lives in the dwf_event journal and memory events; the durable transcript (message/part)
+  // never synthesizes it, so it is BackgroundTask-like -- memory-only authority. Not classifying it loses no events
+  // (the fallback keeps them); it just logs one unclassified diagnostic per cold restore, drowning the
+  // "the vocabulary really is missing" signal.
   SessionEventType.DynamicWorkflowRunProgress,
   SessionEventType.TargetChanged,
   SessionEventType.RewindTriggered,
@@ -215,8 +215,8 @@ function hookInvocationTurnIds(events: readonly SessionEvent[]): Map<string, str
       if (!invocationId) continue;
       const eventName = stringField(event.payload, "hookEventName");
       if (eventName === "SessionStart") {
-                // The startup SessionStart may carry a not-yet-mapped runtime turnId; only a later real
-                // TurnStarted yields the durable product turn. A resolved async terminal keeps its answer.
+        // The startup SessionStart may carry a not-yet-mapped runtime turnId; only a later real
+        // TurnStarted yields the durable product turn. A resolved async terminal keeps its answer.
         if (!resolved.has(invocationId)) pending.add(invocationId);
         continue;
       }
@@ -231,11 +231,11 @@ function hookInvocationTurnIds(events: readonly SessionEvent[]): Map<string, str
     if (event.type !== SessionEventType.TurnStarted || !event.turnId || pending.size === 0) {
       continue;
     }
-        // Model-only maintenance turns (manual /compact, goal continuation) must not carry
-        // the SessionStart summary; a resume SessionStart waits for the next user-visible real turn.
+    // Model-only maintenance turns (manual /compact, goal continuation) must not carry
+    // the SessionStart summary; a resume SessionStart waits for the next user-visible real turn.
     if (stringField(event.payload, "inputVisibility") === "model-only") continue;
-        // In the Runtime the resume SessionStart precedes the next real TurnStarted; cold merge must build attribution
-        // along the same event order -- never append it at history's end nor let the renderer guess the latest round.
+    // In the Runtime the resume SessionStart precedes the next real TurnStarted; cold merge must build attribution
+    // along the same event order -- never append it at history's end nor let the renderer guess the latest round.
     for (const invocationId of pending) resolved.set(invocationId, String(event.turnId));
     pending.clear();
   }
@@ -402,9 +402,9 @@ function queueStateEventIndexes(events: readonly SessionEvent[]): Set<number> {
     const queuedLifecycle = queuedLifecycleById.get(id) ?? [];
     const dispatch = latestDispatchById.get(id);
     const deliveryChange = latestDeliveryChangeById.get(id);
-        // In legacy events editQueueItem may resend only the new text; the full intent/attachments/source
-        // still live only on the first queued event. Cold replay from an empty projection must keep this id's
-        // whole queued lifetime since its last admission, letting the reducer merge fields in place.
+    // In legacy events editQueueItem may resend only the new text; the full intent/attachments/source
+    // still live only on the first queued event. Cold replay from an empty projection must keep this id's
+    // whole queued lifetime since its last admission, letting the reducer merge fields in place.
     for (const queued of queuedLifecycle) keep.add(queued);
     const latestQueued = queuedLifecycle.at(-1) ?? -1;
     if (dispatch !== undefined && dispatch > latestQueued) keep.add(dispatch);
@@ -525,9 +525,9 @@ function eventMessageIds(event: SessionEvent): string[] {
 }
 
 /**
-  * The transcript message -> hydration turn map builds on durable entity ids only.
-  * An assistant without text parts may not directly yield assistantMessageId, so durable
-  * parentID / anchor.turnId propagate instead; never guess turn membership by text or time proximity.
+ * The transcript message -> hydration turn map builds on durable entity ids only.
+ * An assistant without text parts may not directly yield assistantMessageId, so durable
+ * parentID / anchor.turnId propagate instead; never guess turn membership by text or time proximity.
  */
 function durableTurnByMessageId(
   messages: readonly MessageWithParts[],
@@ -570,10 +570,10 @@ function durableTurnByMessageId(
 }
 
 /**
-  * Hook lifecycles carry only the runtime turnId, no persistent messageId, while the cold transcript
-  * regenerates hydrate-turn-*. Build the unambiguous identity map from durable message anchors only;
-  * never guess by text or time proximity. If one runtime anchor maps to several hydration turns, prefer
-  * keeping the event for an explicit restore boundary over hanging the Hook on the wrong turn.
+ * Hook lifecycles carry only the runtime turnId, no persistent messageId, while the cold transcript
+ * regenerates hydrate-turn-*. Build the unambiguous identity map from durable message anchors only;
+ * never guess by text or time proximity. If one runtime anchor maps to several hydration turns, prefer
+ * keeping the event for an explicit restore boundary over hanging the Hook on the wrong turn.
  */
 function durableTurnByRuntimeAnchor(
   messages: readonly MessageWithParts[],
@@ -599,9 +599,9 @@ function durableTurnByRuntimeAnchor(
 }
 
 /**
-  * One queue drain can split several product turns inside a single runtime turn; the Hook still carries only
-  * the runtime turnId, so follow the durable message boundary in event order. Once the first lifecycle
-  * resolves, freeze the invocation attribution -- no re-hanging after a background terminal crosses the boundary.
+ * One queue drain can split several product turns inside a single runtime turn; the Hook still carries only
+ * the runtime turnId, so follow the durable message boundary in event order. Once the first lifecycle
+ * resolves, freeze the invocation attribution -- no re-hanging after a background terminal crosses the boundary.
  */
 function durableHookTurnByInvocationId(
   events: readonly SessionEvent[],
@@ -723,8 +723,8 @@ function resequence(events: readonly SessionEvent[]): SessionEvent[] {
 }
 
 /**
-  * The three-source cold merge: message/part is the completed-body authority; session_entry supplements legacy goals only;
-  * memory events supplement unfinished turns and current state lacking a transcript form.
+ * The three-source cold merge: message/part is the completed-body authority; session_entry supplements legacy goals only;
+ * memory events supplement unfinished turns and current state lacking a transcript form.
  */
 export function mergeColdConversationEvents(input: MergeInput): ColdEventMergeResult {
   const diagnostics = new Map<ColdEventMergeDiagnostic["code"], ColdEventMergeDiagnostic>();
@@ -732,9 +732,9 @@ export function mergeColdConversationEvents(input: MergeInput): ColdEventMergeRe
   const authorityTurns = memoryAuthorityTurnIds(input.memoryEvents, input.messages);
   const authorityTurnIds = authorityTurns.turnIds;
   for (const event of authorityTurns.ambiguousLegacyStarts) {
-        // A legacy TurnStarted with no messageId and no same-turn anchor in the transcript:
-        // never guess entity identity from input text/time. Equal text can be two real submissions;
-        // keep the memory turn with an explicit diagnostic rather than deleting unpersisted in-flight as a duplicate.
+    // A legacy TurnStarted with no messageId and no same-turn anchor in the transcript:
+    // never guess entity identity from input text/time. Equal text can be two real submissions;
+    // keep the memory turn with an explicit diagnostic rather than deleting unpersisted in-flight as a duplicate.
     recordDiagnostic(diagnostics, "cold_merge.ambiguous_legacy_turn_preserved", event);
   }
   const durableMessages = input.messages.filter(
@@ -790,9 +790,9 @@ export function mergeColdConversationEvents(input: MergeInput): ColdEventMergeRe
   input.memoryEvents.forEach((event, index) => {
     if (HOOK_LIFECYCLE_EVENT_TYPES.has(event.type)) {
       const invocationId = stringField(event.payload, "hookInvocationId");
-            // The invocation scan corrects the startup/resume SessionStart's provisional runtime turn to the
-            // later real TurnStarted, so it outranks a turnId without product mapping on the
-            // single event. Ordinary prompt/tool invocations keep the same runtime turn.
+      // The invocation scan corrects the startup/resume SessionStart's provisional runtime turn to the
+      // later real TurnStarted, so it outranks a turnId without product mapping on the
+      // single event. Ordinary prompt/tool invocations keep the same runtime turn.
       const resolvedTurnId = invocationId
         ? (hookTurnIdByInvocationId.get(invocationId) ??
           (event.turnId ? String(event.turnId) : undefined))
@@ -810,15 +810,15 @@ export function mergeColdConversationEvents(input: MergeInput): ColdEventMergeRe
         const eventName = stringField(event.payload, "hookEventName");
         const target = eventName === "SessionStart" ? prefixEventsByTurnId : boundaryEventsByTurnId;
         const events = target.get(durableTurnId) ?? [];
-                // Memory Hooks keep the runtime turnId while transcript synthesis uses
-                // hydrate-turn-*; comparing them directly turns a completed Hook into an orphan row
-                // and leaves SessionStart pending. After the rewrite to the hydration turn, the existing
-                // ProductProjection TurnStarted mapping converges on the stable message product turn.
+        // Memory Hooks keep the runtime turnId while transcript synthesis uses
+        // hydrate-turn-*; comparing them directly turns a completed Hook into an orphan row
+        // and leaves SessionStart pending. After the rewrite to the hydration turn, the existing
+        // ProductProjection TurnStarted mapping converges on the stable message product turn.
         events.push({ ...event, turnId: durableTurnId as TurnId });
         target.set(durableTurnId, events);
       } else {
-                // A resume SessionStart with history opened but no next real turn stays projection-pending;
-                // no synthetic turn for it -- a later live TurnStarted completes the placement.
+        // A resume SessionStart with history opened but no next real turn stays projection-pending;
+        // no synthetic turn for it -- a later live TurnStarted completes the placement.
         supplements.push(event);
       }
       return;
@@ -829,21 +829,21 @@ export function mergeColdConversationEvents(input: MergeInput): ColdEventMergeRe
         recordDiagnostic(diagnostics, "cold_merge.durable_event_suppressed", event);
         return;
       }
-            // When the durable boundary fails to write part/session_entry, the memory event is the only fact left.
-            // The boundary's durable entity anchor outranks the active runtime turn at arrival time;
-            // else a late boundary is misleft at an unfinished turn's tail.
+      // When the durable boundary fails to write part/session_entry, the memory event is the only fact left.
+      // The boundary's durable entity anchor outranks the active runtime turn at arrival time;
+      // else a late boundary is misleft at an unfinished turn's tail.
       const anchorMessageId = boundaryAnchorMessageId(event);
       const durableTurnId = anchorMessageId ? turnByMessageId.get(anchorMessageId) : undefined;
       if (durableTurnId) {
         const events = boundaryEventsByTurnId.get(durableTurnId) ?? [];
-                // durableEvents + supplements must not be concatenated: even with a durable message anchor the boundary
-                // would be dragged to the transcript's end. Rewrite to the hydration product turn and insert at that turn's tail --
-                // identity and physical order aligned in one pass.
+        // durableEvents + supplements must not be concatenated: even with a durable message anchor the boundary
+        // would be dragged to the transcript's end. Rewrite to the hydration product turn and insert at that turn's tail --
+        // identity and physical order aligned in one pass.
         events.push({ ...event, turnId: durableTurnId as TurnId });
         boundaryEventsByTurnId.set(durableTurnId, events);
       } else {
-                // Legacy without an explicit/parsable anchor: place after the last known host per the frozen fallback;
-                // the memory_boundary_preserved diagnostic keeps the degradation observable.
+        // Legacy without an explicit/parsable anchor: place after the last known host per the frozen fallback;
+        // the memory_boundary_preserved diagnostic keeps the degradation observable.
         supplements.push(event);
       }
       recordDiagnostic(diagnostics, "cold_merge.memory_boundary_preserved", event);
@@ -873,13 +873,13 @@ export function mergeColdConversationEvents(input: MergeInput): ColdEventMergeRe
       return;
     }
     if (event.type === SessionEventType.TargetChanged && hasPersistedTargetAuthority) {
-            // session_target is durable authority, yet the legacy merge appended in-memory TargetChanged as
-            // an ephemeral tail, letting cold-restore terminal state be overridden by the old goal; an explicit null must override too.
+      // session_target is durable authority, yet the legacy merge appended in-memory TargetChanged as
+      // an ephemeral tail, letting cold-restore terminal state be overridden by the old goal; an explicit null must override too.
       recordDiagnostic(diagnostics, "cold_merge.durable_event_suppressed", event);
       return;
     }
     if (LIVE_ONLY_EVENT_TYPES.has(event.type)) {
-      // 插件 UI 资源通知只对当时活着的沙箱实例有意义，冷恢复一律丢弃。
+      // Plugin-UI resource notices matter only to the sandbox instance alive at that moment; cold restore always drops them.
       recordDiagnostic(diagnostics, "cold_merge.non_product_event_suppressed", event);
       return;
     }
@@ -888,8 +888,8 @@ export function mergeColdConversationEvents(input: MergeInput): ColdEventMergeRe
       return;
     }
     if (resumedSubagentIndexes.has(index)) {
-            // The SendMessage tool transcript does not synthesize the child lifecycle it restored; deduping it like ordinary
-            // transcript-derived Subagent* loses the running row and Stop control on replayable reconnect.
+      // The SendMessage tool transcript does not synthesize the child lifecycle it restored; deduping it like ordinary
+      // transcript-derived Subagent* loses the running row and Stop control on replayable reconnect.
       supplements.push(event);
       return;
     }
@@ -897,8 +897,8 @@ export function mergeColdConversationEvents(input: MergeInput): ColdEventMergeRe
       recordDiagnostic(diagnostics, "cold_merge.durable_event_suppressed", event);
       return;
     }
-        // ProductProjection may ignore such events today, but the reader must not silently drop unknown legacy facts;
-        // keep the event and aggregate diagnostics, so the next normalizer vocabulary extension has input to trace.
+    // ProductProjection may ignore such events today, but the reader must not silently drop unknown legacy facts;
+    // keep the event and aggregate diagnostics, so the next normalizer vocabulary extension has input to trace.
     supplements.push(event);
     recordDiagnostic(diagnostics, "cold_merge.unclassified_event_preserved", event);
   });

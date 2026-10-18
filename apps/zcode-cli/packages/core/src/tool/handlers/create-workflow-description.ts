@@ -1,11 +1,11 @@
-// CreateWorkflow 的常驻描述（docs/dynamic-workflow/authoring.md「The authoring surface」）。
+// CreateWorkflow's standing description (docs/dynamic-workflow/authoring.md "The authoring surface").
 //
-// 2026-09-21 起刻意收短：facade 声明、写作规则、阶段与命名规则、字段的完整语义都搬进了
-// `dynamic-workflows` 技能的「Tool reference」一节，由 resolveInput 上的技能门
-// （handlers/workflow-skill-gate.ts）保证模型在写脚本之前一定读过。此前这段描述连同 facade
-// 约 8k token，随每一次模型请求重发；现在只留三件必须常驻的事——它是什么、何时（不）用、
-// 先读技能。路由规则留在这里而不是技能里，因为它决定的是「要不要调这个工具」，在技能加载之前
-// 就得被读到。
+// Deliberately shortened since 2026-09-21: facade declarations, authoring rules, phase/naming rules, and full field semantics moved into
+// the `dynamic-workflows` skill's "Tool reference" section, enforced by the skill gate on resolveInput
+// (handlers/workflow-skill-gate.ts) so the model has read it before writing a script. The description plus facade used to be
+// ~8k tokens resent with every model request; now three things stay resident — what it is, when (not) to use it,
+// read the skill first. Routing stays here, not in the skill, because it decides whether to call the tool at all and must be
+// readable before the skill loads.
 
 import { DYNAMIC_WORKFLOW_SKILL_NAME } from "@zcode/contracts";
 
@@ -13,8 +13,8 @@ const INTRO =
   "Create and run a dynamic workflow: a TypeScript script that orchestrates multiple model-driven subagents with plain control flow (loops, conditionals, fan-out) and typed intermediate results. The script is typechecked, the user is asked to confirm it, and the run starts in the background; you are notified with its final result when it settles. Compilation errors come back as diagnostics.";
 
 /**
- * 只按「用户是否点名」路由（用户裁决 2026-09-16，docs/dynamic-workflow/launch.md「When the
- * model may call it」）：工作流只能由 `/workflow` 或明确请求发起，模型不得自行决定开一条。
+ * Routed only by "did the user ask" (user ruling 2026-09-16, docs/dynamic-workflow/launch.md "When the
+ * model may call it"): workflows start only via `/workflow` or an explicit request; the model never decides to start one itself.
  */
 const WHEN_TO_USE = [
   "When to use:",

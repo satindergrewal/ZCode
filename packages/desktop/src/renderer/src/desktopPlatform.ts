@@ -97,7 +97,8 @@ export function createDesktopPlatform(options: {
     syncWindowUnreadCount: (count) => window.zcode.syncWindowUnreadCount(count),
     syncActiveTaskSession: (sessionId) => window.zcode.syncActiveTaskSession(sessionId),
     syncAppSettings: (patch) => window.zcode.syncAppSettings?.(patch),
-    // 桥缺失（旧 preload 升级窗口）时按 supported 兜底，与 Windows 现状一致，设置开关可用。
+    // With the bridge missing (old preload during upgrade) default to supported, matching Windows
+    // behavior, so the settings toggle stays usable.
     getCloseToTrayCapability: () =>
       window.zcode.getCloseToTrayCapability?.() ??
       Promise.resolve({ supported: true, gnomeLikeWithoutTray: false }),

@@ -1,6 +1,6 @@
-actor-node actor#1 @9:52 family=fan-out#1
-actor-node actor#2 "planner" @10:17
-actor-node actor#3 @12:49 family=fan-out#2
+actor-node actor#1 @10:21 family=fan-out#1
+actor-node actor#2 "planner" @12:17
+actor-node actor#3 @15:19 family=fan-out#2
 actor-node sink
 actor-edge actor#1 -> actor#2 exact count=1 types="Draft"
 actor-edge actor#1 -> sink exact count=1 types="Draft"

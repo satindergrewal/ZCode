@@ -48,7 +48,7 @@ export async function persistToolResultMediaAttachments(input: {
     const existingArtifactUri = block.source?.uri?.startsWith("zcode-artifact://")
       ? block.source.uri
       : undefined;
-    // 已完成工具的媒体属于结果收尾；继承本轮 Stop 信号会中断保存并丢失冷恢复内容。
+    // Media of finished tools belongs to result finalization; inheriting this turn's Stop signal would abort the save and lose cold-restore content.
     const artifactUri =
       existingArtifactUri ??
       (

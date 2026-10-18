@@ -180,8 +180,8 @@ function mapOffPeakTemplates(scenes: readonly ClientSceneConfig[]): OffPeakAutom
 const HOMEPAGE_REMOTE_OFF_PEAK_TEMPLATE_LIMIT = 2;
 
 /**
- * New task 首页专用选择规则；Automations 模板区必须保持远程目录原样。
- * 首页始终使用本地 Customize，避免远程同名项占用两条远程模板名额或改变最后一项的位置。
+ * New-task-home-only selection rule; the Automations template area keeps the remote catalog verbatim.
+ * The home always prefers the local Customize entry, so a same-named remote item cannot take a second remote slot or shift the last row.
  */
 export function appendLocalCustomizeTemplate(
   templates: readonly OffPeakAutomationTemplate[],

@@ -60,11 +60,11 @@ describe("shell init snapshot", () => {
     expect(script).toContain('echo "# Snapshot file" >| "$SNAPSHOT_FILE"');
     expect(script).toContain('echo "shopt -s expand_aliases" >> "$SNAPSHOT_FILE"');
     expect(script).toContain("declare -F | cut -d' ' -f3 | grep -vE '^_[^_]'");
-    expect(script).toContain("encoded_func=$(declare -f \"$func\" | base64 )");
+    expect(script).toContain('encoded_func=$(declare -f "$func" | base64 )');
     expect(script).toContain("base64 -d");
-    expect(script).toContain('shopt -p | head -n 1000');
+    expect(script).toContain("shopt -p | head -n 1000");
     expect(script).toContain('set -o | grep "on"');
-    expect(script).toContain("alias | grep -v \"='winpty \"");
+    expect(script).toContain('alias | grep -v "=\'winpty "');
     expect(script).toContain("sed 's/^/alias -- /'");
     expect(script).toContain("head -n 1000");
     expect(script).toContain("export PATH=");
@@ -81,9 +81,9 @@ describe("shell init snapshot", () => {
     expect(script).toContain("SNAPSHOT_FILE='/tmp/zcode-zsh-snapshot.sh'");
     expect(script).toContain('source "/home/user/.zshrc" < /dev/null');
     expect(script).toContain("typeset +f | grep -vE '^_[^_]'");
-    expect(script).toContain("typeset -f \"$func\"");
+    expect(script).toContain('typeset -f "$func"');
     expect(script).toContain("setopt | sed 's/^/setopt /' | head -n 1000");
-    expect(script).toContain("alias | grep -v \"='winpty \"");
+    expect(script).toContain('alias | grep -v "=\'winpty "');
     expect(script).not.toContain("declare -f");
     expect(script).not.toContain("shopt -s expand_aliases");
   });
@@ -251,10 +251,7 @@ describe("shell init snapshot", () => {
       await writeFile(match[1], "alias ll='ls -l fresh'\n");
       return { stdout: "", stderr: "" };
     });
-    const nowSpy = vi
-      .spyOn(Date, "now")
-      .mockReturnValueOnce(1_000)
-      .mockReturnValueOnce(2_000);
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValueOnce(1_000).mockReturnValueOnce(2_000);
 
     try {
       const staleManager = new ShellInitSnapshotManager({ execFile });

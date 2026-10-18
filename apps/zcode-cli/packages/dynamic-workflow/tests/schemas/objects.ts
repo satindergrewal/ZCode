@@ -1,4 +1,4 @@
-// object：可选属性排除出 required、嵌套对象、闭合对象 additionalProperties: false。
+// Objects: optional props excluded from required, nested objects, closed via additionalProperties:false.
 interface Address {
   city: string;
   zip?: string;

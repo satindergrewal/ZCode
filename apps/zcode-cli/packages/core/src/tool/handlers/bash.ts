@@ -47,7 +47,7 @@ export {
 import { readStringProperty } from "./bash-metadata.js";
 import { formatBashModelContent, formatPersistedBashModelContent } from "./bash-model-content.js";
 
-/** session shell selection 尚未初始化时 guarded matcher 采用的文法；与 readonly 判定的假设一致。 */
+/** Grammar the guarded matcher assumes while the session shell selection is uninitialized; consistent with the readonly test. */
 const GUARDED_DEFAULT_DIALECT: ExecutionShellSelection["dialect"] = "posix";
 import { createBashProviderDescription } from "./bash-prompt.js";
 import {
@@ -117,8 +117,8 @@ export function resolveBashPermissionCapability(
 ): ToolRuntimePermissionCapability | undefined {
   const command = readStringProperty(input, "command");
   if (command && context?.mode === "guarded") {
-    // selection 缺失是基础设施状态而非语法边界；与下方 isRuntimeReadOnlyBashCommand 一致按 POSIX
-    // 文法匹配，避免 guarded 在 selection 尚未初始化时静默退回 YOLO。显式 legacy-shell 仍 unsupported。
+    // A missing selection is infrastructure state, not a syntax boundary; match POSIX
+    // grammar like isRuntimeReadOnlyBashCommand below, so guarded never silently degrades to YOLO while selection is uninitialized. Explicit legacy-shell stays unsupported.
     const match = matchDangerousCommand(
       command,
       context.bashShellSelection?.dialect ?? GUARDED_DEFAULT_DIALECT,

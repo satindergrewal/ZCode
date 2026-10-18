@@ -267,7 +267,7 @@ test("sidebar toggle hides visible panes and opens narrow panes as overlays", ()
 });
 
 test("sidebar section toggles preserve the other section", () => {
-  // 子代理与 Todos 也成为可折叠区块，默认展开，切换其一不影响其他区块。
+  // Subagents and Todos are collapsible sections too, expanded by default; toggling one leaves the others alone.
   assert.deepEqual(toggleSidebarSectionState(DEFAULT_SIDEBAR_STATE.sections, "modifiedFiles"), {
     apis: true,
     mcp: true,

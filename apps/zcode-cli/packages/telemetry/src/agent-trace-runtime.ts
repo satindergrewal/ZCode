@@ -1,5 +1,5 @@
 import { recordRequestObservation } from "./request-security-edition/index.js";
-/* oxlint-disable eslint(max-lines) -- concrete Writer 在同一文件显式维护各自 canonical key，避免运行时 Schema/Registry 再造一层映射。 */
+/* oxlint-disable eslint(max-lines) -- each concrete Writer maintains its canonical keys inline in this file instead of adding yet another Schema/Registry mapping layer at runtime. */
 import {
   context,
   ROOT_CONTEXT,
@@ -591,7 +591,7 @@ export class AgentExecutionTelemetryRuntime
             spanName,
           });
         } catch {
-          // 健康回调同样属于旁路。
+          // Health callbacks are bypassed too.
         }
       }
       return fallback;
@@ -609,7 +609,7 @@ export class AgentExecutionTelemetryRuntime
           spanName,
         });
       } catch {
-        // 健康回调同样属于旁路。
+        // Health callbacks are bypassed too.
       }
       return fallback;
     }
@@ -624,7 +624,7 @@ export class AgentExecutionTelemetryRuntime
           errorType: error instanceof Error ? error.name : typeof error,
         });
       } catch {
-        // Metric 与健康回调都属于旁路。
+        // Metrics and health callbacks are both bypassed.
       }
     }
   }
@@ -726,8 +726,8 @@ abstract class TrackedBaseWriter extends BaseSpanWriter {
     super(span, parentContext, metadata, lifecycle, health, (outcome, durationMs, observation) => {
       const writer = terminalTarget.writer;
       if (writer) {
-        // 终态 Metric 从 Writer 已记录的实时事实投影，覆盖显式 finish、业务异常、
-        // missing_terminal 和进程回收；不能只埋在各 finishXxx 分支里留下缺口。
+        // Terminal metrics are projected from live facts the Writer already recorded, covering explicit finish, business errors,
+        // missing_terminal, and process reaping; burying them in individual finishXxx branches would leave gaps.
         writer.safe(() => onRemoved(writer));
         writer.safe(() => writer.recordTerminalDetailMetrics(outcome, observation));
         writer.safe(() =>

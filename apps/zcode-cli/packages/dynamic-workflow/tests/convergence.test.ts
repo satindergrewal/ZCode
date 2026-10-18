@@ -21,8 +21,11 @@ function analyze(script: string) {
   return { causality, result };
 }
 
-const hasEdge = (edges: ReadonlyArray<{ from: string; to: string }>, from: string, to: string): boolean =>
-  edges.some((edge) => edge.from === from && edge.to === to);
+const hasEdge = (
+  edges: ReadonlyArray<{ from: string; to: string }>,
+  from: string,
+  to: string,
+): boolean => edges.some((edge) => edge.from === from && edge.to === to);
 
 describe("convergence — container literals are allocation-site places", () => {
   it("converges when a callee writes a NEW field through a parameter bound to an inline object literal", () => {

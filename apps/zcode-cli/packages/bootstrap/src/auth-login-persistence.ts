@@ -56,7 +56,7 @@ export async function persistStandaloneCodingPlanConnection(input: {
     input.personalProviderConfigPath ??
     input.env[ZCODE_PERSONAL_PROVIDER_CONFIG_FILE_ENV]?.trim() ??
     join(dirname(input.credentialStore.filePath), PERSONAL_PROVIDER_CONFIG_FILE_NAME);
-  // 登录与运行时共享文件和事务；首次写入仍先保留旧用户 Provider，不能仅写默认值。
+  // Login and the runtime share files and transactions; the first write must preserve the existing user provider, not just write defaults.
   const personalRepository = new NodePersonalProviderConfigRepository({
     filePath: path,
     importLegacy: () => readLegacyCliPersonalProviderConfig({}),
@@ -100,7 +100,7 @@ export async function logoutZCodeCli(
   const sourceKeys = providerIds.map(standaloneAccountAuthSourceCredentialKey);
   const identities = await credentialStore.loadMany([...identityKeys, ...sourceKeys]);
   const dynamicApiKeyKeys = providerIds.flatMap((providerId) => {
-    // OAuth 退出不能解密旧派生 Key；坏密文不应阻止清理当前登录态。
+    // OAuth logout never decrypts legacy derived keys; bad ciphertext must not block clearing the current login.
     if (identities[standaloneAccountAuthSourceCredentialKey(providerId)] !== "manual") return [];
     const identity = identities[standaloneAccountIdentityCredentialKey(providerId)]?.trim();
     return identity

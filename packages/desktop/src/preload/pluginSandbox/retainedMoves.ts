@@ -1,4 +1,4 @@
-/** 在 Electron 注册 webview 前于主世界执行；函数不能捕获 preload 的闭包。 */
+/** Runs in the main world before Electron registers the webview; functions must not capture preload closures. */
 export function enableSandboxRetainedMoves(): boolean {
   if (typeof Element.prototype.moveBefore !== "function") return false;
   const define = customElements.define;
@@ -9,8 +9,8 @@ export function enableSandboxRetainedMoves(): boolean {
         disconnectedCallback(): void;
         connectedMoveCallback?: () => void;
       };
-      // Electron 41 未注册移动回调，moveBefore 仍会走断开/重连并清空 guest。
-      // 仅标记的沙箱跳过这对回调；真正 remove 与普通 webview 保持原行为。
+      // Electron 41 has no move callbacks registered; moveBefore still detaches/reattaches and
+      // wipes the guest. Marked-only sandboxes skip this pair; real removes keep stock webview behavior.
       if (!prototype.connectedMoveCallback) {
         const connect = prototype.connectedCallback,
           disconnect = prototype.disconnectedCallback;

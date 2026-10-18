@@ -7,11 +7,11 @@ export interface HighspeedOutputFooterTarget {
   metrics: HighspeedShareMetrics;
 }
 
-/** 由 footer 收口逻辑写回渲染单元的标记字段，宿主类型只需声明这两个可选字段。 */
+/** Marker fields written back by the footer settle logic; host types declare these two optionals only. */
 export interface HighspeedOutputFooterMark {
-  /** 同一 Highspeed cardId 对应的当前最后一个 turn；仅该组尾可展示来源 footer。 */
+  /** The last turn of this Highspeed cardId; only a group tail may render the source footer. */
   showHighspeedOutputFooter?: true;
-  /** 冷恢复时由同卡全部持久化 turn metadata 聚合出的可信分享参数。 */
+  /** Trusted share args aggregated from every persisted turn of the card on cold restore. */
   highspeedOutputFooterTarget?: HighspeedOutputFooterTarget;
 }
 
@@ -27,10 +27,10 @@ interface HighspeedCardFooterState {
 }
 
 /**
- * 给同一张卡覆盖的最后一个渲染单元打上 footer 标记。
+ * Marks the last render unit covered by a card with the footer flag.
  *
- * Bug 根因：footer 过去在单个 turn 内按 accelerated 判定，一张卡覆盖多轮时会重复显示。
- * 必须在虚拟化前按持久化 cardId 和过期时间统一收口，组尾才能随新 turn 与倒计时稳定后移。
+ * Bug: the footer decided per turn via accelerated, so one card spanning turns repeated.
+ * Settle once per persisted cardId/expiry before virtualization; the tail then tracks turns and countdown stably.
  */
 export function markHighspeedOutputFooterUnits<T extends HighspeedFooterUnit>(
   units: readonly T[],
@@ -62,8 +62,8 @@ function resolveHighspeedOutputFooters(
       const current = cardStateById.get(card.cardId);
       cardStateById.set(card.cardId, {
         lastUnitIndex: index,
-        // Bug 原因：组尾异常/中断可能自身没有正文，但前序 accelerated turn 已有输出。
-        // footer 属于整张卡，不能只看最后一轮；timeline 边界不是模型 output，不计入。
+        // Bug: an interrupted group tail may have no text of its own while earlier accelerated turns do.
+        // The footer belongs to the card, not the last turn; timeline boundaries are not model output.
         hasOutput:
           (current?.hasOutput ?? false) ||
           (card.outputTokens ?? 0) > 0 ||
@@ -148,7 +148,7 @@ function aggregatePersistedHighspeedMetrics(
       : {}),
     savedDurationMs,
     regularTps: outputTokens / regularDurationSeconds,
-    // healthy 返回卡级累计 TPS，同卡各 turn 持久化的是同一个权威值。
+    // healthy returns the card-level total TPS; every turn of the card persists that same authoritative value.
     highspeedTps: metas[0]!.highspeedTps!,
   };
 }

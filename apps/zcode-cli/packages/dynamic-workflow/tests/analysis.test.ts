@@ -363,7 +363,8 @@ describe("mermaid emitters", () => {
   });
 });
 
-describe("actor-graph agent-relevance filter", () => {  function actorGraph(scriptText: string) {
+describe("actor-graph agent-relevance filter", () => {
+  function actorGraph(scriptText: string) {
     const result = analyzeWorkflowScript(scriptText);
     expect(result.diagnostics).toEqual([]);
     const graph = result.graph;
@@ -388,7 +389,13 @@ describe("actor-graph agent-relevance filter", () => {  function actorGraph(scri
     expect(ids).toContain("actor#1");
     expect(graph.edges).toContainEqual({ count: 1, exact: true, from: "source", to: "actor#1" });
     // The ask's `string` artifact type rides the actor#1 -> sink edge as a message type.
-    expect(graph.edges).toContainEqual({ count: 1, exact: true, from: "actor#1", to: "sink", types: ["string"] });
+    expect(graph.edges).toContainEqual({
+      count: 1,
+      exact: true,
+      from: "actor#1",
+      to: "sink",
+      types: ["string"],
+    });
   });
 });
 
@@ -406,7 +413,12 @@ describe("artifact types", () => {
   }
   const nodeType = (graph: SiteGraph, id: string): string | undefined =>
     graph.nodes.find((node) => node.id === id)?.artifactType;
-  const findEdge = (graph: SiteGraph, from: string, to: string, port?: number): SiteEdge | undefined =>
+  const findEdge = (
+    graph: SiteGraph,
+    from: string,
+    to: string,
+    port?: number,
+  ): SiteEdge | undefined =>
     graph.edges.find((e) => e.kind === "data" && e.from === from && e.to === to && e.port === port);
 
   it("labels producer nodes and data edges with named / default / glob types", () => {
@@ -516,7 +528,9 @@ describe("facade-siting diagnostics", () => {
       `expected a diagnostic at ${expected.line}:${expected.column}; got ${JSON.stringify(result.diagnostics)}`,
     ).toBeDefined();
     expect(match?.code).toBe(FACADE_SITING_CODE);
-    expect(match?.message).toContain(`facade function '${expected.name}' may only be called directly`);
+    expect(match?.message).toContain(
+      `facade function '${expected.name}' may only be called directly`,
+    );
   }
 
   function expectAccepted(script: string): void {
@@ -793,7 +807,9 @@ describe("facade-siting diagnostics", () => {
     // An un-annotated `let` narrows to `Agent` at the use, so `.ask` still resolves to the
     // facade and the call IS sited — this is not a laundering boundary, only an explicit
     // `: any`/`: unknown` annotation is. The assignment-boundary arm must not flag it.
-    expectAccepted(`let x;\nx = agent("planner");\nconst out = await x.ask<string>("go");\nreturn out;`);
+    expectAccepted(
+      `let x;\nx = agent("planner");\nconst out = await x.ask<string>("go");\nreturn out;`,
+    );
   });
 
   // ————————————————————————————————————————————————————————————————
@@ -833,17 +849,20 @@ describe("facade-siting diagnostics", () => {
       `const s = await git.status();\nlog(\`clean=\${s.clean}\`);\nreturn s.branch ?? "detached";`,
     );
     expect(result.diagnostics).toEqual([]);
-    const table = collectSites(createWorkflowProgram(
-      `const s = await git.status();\nlog(\`clean=\${s.clean}\`);\nreturn s.branch ?? "detached";`,
-    ));
+    const table = collectSites(
+      createWorkflowProgram(
+        `const s = await git.status();\nlog(\`clean=\${s.clean}\`);\nreturn s.branch ?? "detached";`,
+      ),
+    );
     expect(table.worldReads.map((site) => site.op)).toEqual(["git-status"]);
   });
 
   it("rejects aliasing files.grep", () => {
-    expectRejected(
-      `const g = files.grep;\nconst hits = await g("TODO");\nreturn hits.length;`,
-      { column: 17, line: 1, name: "grep" },
-    );
+    expectRejected(`const g = files.grep;\nconst hits = await g("TODO");\nreturn hits.length;`, {
+      column: 17,
+      line: 1,
+      name: "grep",
+    });
   });
 
   it("rejects computed access to the new members (defense in depth)", () => {
@@ -890,9 +909,8 @@ describe("facade-siting diagnostics", () => {
   });
 });
 
-// report 站点（execution-engine.md 的 "Progressive results"，docs/analysis.md 的
-// 「Sites」）。三件事在这里钉住：站点身份存在且有自己的
-// per-kind 计数器、facade-siting 规则确实约束它、以及它对两张图**完全没有**影响。
+// The report site (execution-engine.md, Progressive results; docs/analysis.md, Sites). Three pins: a distinct
+// site identity with its own per-kind counter, facade-siting restraining it, and zero effect on either graph.
 describe("report sites", () => {
   const table = (scriptText: string) => collectSites(createWorkflowProgram(scriptText));
 
@@ -901,15 +919,13 @@ describe("report sites", () => {
       `report("one");\nconst out = await agent("a").ask<string>("go");\nreport({ out });\nreturn out;`,
     );
     expect(t.reports.map((site) => site.id)).toEqual(["report#1", "report#2"]);
-    // 实参被捕获（编译侧的可序列化检查读它），但**不进** taint 的 sink 集合。
+    // Args are captured (the compile-side serializability check reads them) but never enter the taint sinks.
     expect(t.reports.every((site) => site.item !== undefined)).toBe(true);
     expect(t.reports[0]?.loc).toEqual({ column: 1, line: 1 });
   });
 
   it("leaves every other per-kind id counter bit-for-bit unchanged", () => {
-    // 站点 id 稳定性规则真正保护的那条不变式：report 有自己的计数器，所以在 ask 之间插
-    // report 不会挪动任何 ask#N / actor#N / world-read#N。它只消耗全局 `order` 发现序，
-    // 而 order 只是输出的归并键（execution-engine.md 的 "Site-id stability"）。
+    // The invariant site-id stability exists to protect: report's own counter means inserting reports between
     const withoutReports = table(
       `const a = agent("a");\nconst paths = await files.glob("src/**");\nconst x = await a.ask<string>("1");\nconst y = await a.ask<string>("2");\nreturn [x, y, paths.length];`,
     );
@@ -927,7 +943,7 @@ describe("report sites", () => {
   });
 
   it("mints no report site for a script-local function of the same name", () => {
-    // 身份按声明判定，与 registry 的其余部分一致。
+    // Identity follows the declaration, consistent with the rest of the registry.
     const t = table(
       `const report = (item: unknown): void => { void item; };\nreport({ a: 1 });\nreturn 1;`,
     );
@@ -935,7 +951,7 @@ describe("report sites", () => {
   });
 
   it("draws no node and no edge in either graph", () => {
-    // report 发的是进度而不是次序：没有什么能等它，也就没有什么可以让一条边去表示。
+    // report signals progress, not order: nothing awaits it, so no edge could mean anything.
     const result = analyzeWorkflowScript(
       `const a = agent("a");\nconst out = await a.ask<string>("go");\nreport({ out });\nreturn out;`,
     );
@@ -943,21 +959,21 @@ describe("report sites", () => {
     const text = serializeGraph(result.graph!);
     expect(text).not.toContain("report");
     expect(result.graph!.nodes.some((n) => n.id.startsWith("report#"))).toBe(false);
-    expect(result.graph!.edges.some((e) => e.from.startsWith("report#") || e.to.startsWith("report#"))).toBe(false);
+    expect(
+      result.graph!.edges.some((e) => e.from.startsWith("report#") || e.to.startsWith("report#")),
+    ).toBe(false);
     expect(result.causality!.steps.some((s) => s.id.startsWith("report#"))).toBe(false);
   });
 
   it("leaves all three serialized graphs byte-identical when reports are added between asks", () => {
-    // 上一条证明 report 不画自己，这一条证明它不**扰动**别人——包括实参没有被当作 sink
-    // （否则 `plan` 流进 report 会多出一条 data 边）。这是那条排除规则最容易悄悄破掉的一半。
-    const base =
-      `interface Plan { steps: string[]; }\nconst p = agent("p");\nconst r = agent("r");\nconst plan = await p.ask<Plan>("draft");\nconst first = await r.ask<string>(plan.steps[0] ?? "x");\nreturn first;`;
-    const reported =
-      `interface Plan { steps: string[]; }\nconst p = agent("p");\nconst r = agent("r");\nconst plan = await p.ask<Plan>("draft");\nreport(plan);\nreport({ n: plan.steps.length });\nconst first = await r.ask<string>(plan.steps[0] ?? "x");\nreport(first);\nreturn first;`;
+    // The prior case drew no self edges; this one shows none perturbing others either: args are not sinks (plan
+    // flowing into report would add a data edge) -- the exclusion rule's most silently-breakable half.
+    const base = `interface Plan { steps: string[]; }\nconst p = agent("p");\nconst r = agent("r");\nconst plan = await p.ask<Plan>("draft");\nconst first = await r.ask<string>(plan.steps[0] ?? "x");\nreturn first;`;
+    const reported = `interface Plan { steps: string[]; }\nconst p = agent("p");\nconst r = agent("r");\nconst plan = await p.ask<Plan>("draft");\nreport(plan);\nreport({ n: plan.steps.length });\nconst first = await r.ask<string>(plan.steps[0] ?? "x");\nreport(first);\nreturn first;`;
     const a = analyzeWorkflowScript(base);
     const b = analyzeWorkflowScript(reported);
     expect(a.ok && b.ok).toBe(true);
-    // 位置行号会因插入的行而变，所以比对的是去掉 @line:col 之后的图结构。
+    // Line numbers shift with insertions, so compare graph structure stripped of @line:col.
     const strip = (text: string): string => text.replace(/ @\d+:\d+/g, "");
     expect(strip(serializeGraph(b.graph!))).toBe(strip(serializeGraph(a.graph!)));
     expect(strip(serializeActorGraph(toActorGraph(b.graph!)))).toBe(
@@ -966,8 +982,7 @@ describe("report sites", () => {
   });
 });
 
-// report 落在 facade-siting 规则的**产生站点**那一半（而不是 log 那一半仅受限的半边）：
-// 它有一行按站点建键的 journal，所以身份论证对它完全成立（docs/analysis.md）。
+// report sits in facade-siting's site-producing half (not log's merely-restrained half):
 describe("report facade-siting", () => {
   it("rejects const-aliasing report (const r = report)", () => {
     const result = analyzeWorkflowScript(`const r = report;\nr({ a: 1 });\nreturn 1;`);
@@ -987,8 +1002,7 @@ describe("report facade-siting", () => {
   });
 
   it("accepts a direct report call (no misuse diagnostic for the sited form)", () => {
-    // 反向防线：report 加入产生站点的清单之后，**普通用法**绝不能被 pass 2 误伤——
-    // 那一趟拒绝的是"产生站点却没被 site 掉"的调用，所以站点表必须收录 report。
+    // The counter-guard: once report joins the site-producing list, ordinary use must survive pass 2 --
     const result = analyzeWorkflowScript(
       `const a = agent("a");\nconst out = await a.ask<string>("go");\nreport({ out });\nlog("done");\nreturn out;`,
     );

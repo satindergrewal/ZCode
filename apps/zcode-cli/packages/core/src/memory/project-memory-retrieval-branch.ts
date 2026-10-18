@@ -1,6 +1,6 @@
 export type ProjectMemoryRetrievalBranch = "default-index" | "semantic-recall";
 
-// 当前默认检索分支关闭 Semantic Recall；未来切换只修改这一处值。
+// The default retrieval branch keeps Semantic Recall off for now; flipping it later touches this one value only.
 const PROJECT_MEMORY_SEMANTIC_RECALL_ENABLED = false;
 
 export function resolveProjectMemoryRetrievalBranch(

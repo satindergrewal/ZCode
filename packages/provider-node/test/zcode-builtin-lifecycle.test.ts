@@ -24,8 +24,8 @@ const disposers: (() => void)[] = [];
 afterEach(async () => {
   for (const dispose of disposers.splice(0)) dispose();
   vi.useRealTimers();
-  // dispose 中止进行中的下载后，同步器仍会异步加锁写 control.json 释放租约（cancelled）；
-  // 直接删除临时目录会与锁文件和原子写竞争，偶发 ENOTEMPTY。以控制文件的租约释放为准等收尾完成。
+  // After dispose aborts an in-flight download the syncer still locks control.json asynchronously to release the lease (cancelled);
+  // deleting the temp dir outright races the lock file and atomic write with sporadic ENOTEMPTY. Wait for the control-file lease release instead.
   await Promise.all(roots.map((root) => vi.waitFor(() => expectLeaseReleased(root))));
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
@@ -63,8 +63,8 @@ async function setup(
   return runtime;
 }
 
-describe("Built-in 环境生命周期检查", () => {
-  it("每分钟检查，一小时 TTL 不重复下载，但 Account 恢复每次可运行", async () => {
+describe("built-in environment lifecycle checks", () => {
+  it("checks every minute, skips re-downloads within the one-hour TTL, and still runs on every Account recovery", async () => {
     vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
     const fetchRelease = vi.fn(async () => null);
     const runtime = await setup(fetchRelease);
@@ -85,7 +85,7 @@ describe("Built-in 环境生命周期检查", () => {
     runtime.dispose();
     expect(vi.getTimerCount()).toBe(0);
   });
-  it("失败退避到期才下载，失败不阻止 Account 恢复；dispose 取消进行中请求", async () => {
+  it("downloads only after failure backoff, never blocks Account recovery, and cancels in-flight requests on dispose", async () => {
     vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
     let signal: AbortSignal | undefined;
     const fetchRelease = vi.fn(async (_endpoint: string, value: AbortSignal) => {

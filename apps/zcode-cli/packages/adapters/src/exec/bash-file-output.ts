@@ -187,8 +187,7 @@ export async function diagnoseLostBashOutput(outputPath: string): Promise<string
     const outputDirectory = dirname(outputPath);
     const fileSystem = await statfs(outputDirectory, { bigint: true });
     const availableMegabytes = (fileSystem.bavail * fileSystem.bsize) / (1024n * 1024n);
-    const recoveryHint =
-      "Free up space on this filesystem.";
+    const recoveryHint = "Free up space on this filesystem.";
     if (availableMegabytes < 0n) return undefined;
     if (availableMegabytes < 10n) {
       return `Command output was lost: the temp filesystem at ${outputDirectory} is full (${availableMegabytes}MB free). The child process's stdout/stderr writes failed with ENOSPC. ${recoveryHint}`;
@@ -196,8 +195,6 @@ export async function diagnoseLostBashOutput(outputPath: string): Promise<string
     if (fileSystem.files > 0n && fileSystem.ffree < 1000n) {
       return `Command output was lost: the temp filesystem at ${outputDirectory} is out of inodes (${fileSystem.ffree} free). The child process's stdout/stderr writes failed with ENOSPC. ${recoveryHint}`;
     }
-  } catch {
-
-  }
+  } catch {}
   return undefined;
 }

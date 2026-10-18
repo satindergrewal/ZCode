@@ -11,40 +11,40 @@ import {
 } from "@zcode/shared/mcp-apps";
 import type { PluginUiHostBridge } from "./pluginUiHostBridge.js";
 
-/** tools/list 翻页上限：够取满 50 个工具，防页面返回无穷游标。 */
+/** tools/list paging cap: enough for 50 tools, guarding against endless cursors. */
 const MAX_TOOL_LIST_PAGES = 10;
 /**
- * 认领与回传按 callId 幂等：传输失败重试；`accepted: false` 是 agent 的明确裁决，不重试。
- * 总等待（0.5 s + 1 s）留在 5 s 认领期限内。
+ * Claim/return are idempotent by callId: transport failures retry; accepted false is the agent's verdict, no retry.
+ * Total wait (0.5s + 1s) fits inside the 5s claim window.
  */
 export const PLUGIN_UI_APP_TOOL_RPC_ATTEMPTS = 3;
 export const PLUGIN_UI_APP_TOOL_RPC_RETRY_DELAY_MS = 500;
 
 export interface PluginUiAppTools {
   isBusy(): boolean;
-  /** 新端口到达：注销上一个页面实例的登记（新实例握手后按自己的能力重新登记）。 */
+  /** New port: unregister the previous page instance (it re-registers per its own capabilities post-handshake). */
   resetForAttach(): void;
-  /** 握手完成：页面声明了 appCapabilities.tools 才发现并登记，声明 listChanged 时监听变更。 */
+  /** Handshake done: discover/register only when appCapabilities.tools is declared; listen for listChanged when declared. */
   onInitialized(
     active: PluginUiHostBridge,
     capabilities: McpUiAppCapabilities | undefined,
     isCurrent: () => boolean,
   ): void;
-  /** 信箱投递到达：认领并让页面执行（按 callId 去重）。 */
+  /** Mailbox delivery: claim and run on the page (dedup by callId). */
   execute(active: PluginUiHostBridge, call: McpAppsAppToolCallRequest): void;
-  /** 实例销毁：注销登记（best effort）。 */
+  /** Instance destroyed: unregister (best effort). */
   dispose(): void;
 }
 
 /**
- * App-Provided Tools 的渲染端：发现页面工具并登记到 agent；模型发起的调用经实例信箱到达后
- * 认领 → 页面 tools/call → 回传。登记表与调用态都由 agent 持有，这里只记本实例已经开始处理的 callId。
+ * Render-side of App-Provided Tools: discover page tools and register with the agent; model calls arrive via the instance mailbox,
+ * claim, page tools/call, return. The agent owns the registry and call state; here only callIds this instance began.
  */
 export function createPluginUiAppTools(deps: {
   bridge: IPluginUiAppToolsService;
   pluginScope: () => PluginUiPluginScope;
   scopeId: string;
-  /** 当前实例代际；端口未到达时 undefined。 */
+  /** Current instance generation; undefined until the port arrives. */
   currentGeneration: () => number | undefined;
   setTimer: (callback: () => void, ms: number) => () => void;
   now?: () => number;
@@ -101,7 +101,7 @@ export function createPluginUiAppTools(deps: {
       if (!isCurrent() || runEpoch !== epoch) return;
       await deps.bridge.registerAppTools({ ...bound, tools });
       if (!isCurrent() || runEpoch !== epoch) {
-        // 登记在途时实例已被替换 / 销毁：补一次注销，避免 agent 暴露已关闭页面的工具。
+        // The instance was replaced/destroyed mid-registration: add a cleanup unregister so closed pages vanish from the agent.
         void deps.bridge.unregisterAppTools(bound).catch(() => undefined);
         return;
       }
@@ -119,7 +119,7 @@ export function createPluginUiAppTools(deps: {
     }
   };
 
-  // list_changed 节流：两次重新登记至少间隔 1 s，窗口内的多次通知合并为一次尾随刷新。
+  // list_changed throttle: re-registrations at least 1s apart; bursts in the window collapse into one trailing refresh.
   const schedule = (active: PluginUiHostBridge, isCurrent: () => boolean) => {
     if (refreshing) {
       pendingRefresh = true;
@@ -208,7 +208,7 @@ export function createPluginUiAppTools(deps: {
         started.add(call.callId);
         return;
       }
-      // 信箱按 callId 去重：投影重放 / 重复投递不会让页面执行两次。
+      // Mailbox dedup by callId: replays/redeliveries never run the page twice.
       if (started.has(call.callId)) return;
       started.add(call.callId);
       const cancel = new AbortController();

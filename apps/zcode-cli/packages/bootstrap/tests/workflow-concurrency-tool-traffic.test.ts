@@ -46,7 +46,10 @@ const TOOL_REQUESTS_PER_ACTOR = 3;
 function testProviderConfig(providerId: string): RegistryProviderConfig {
   return new ProviderConfig({
     access: new ApiKeyAccessConfig({ apiKey: "test-api-key" }),
-    api: new ProviderApiConfig({ baseUrl: "https://adapter.test/v1", type: "openai-chat-completions" }),
+    api: new ProviderApiConfig({
+      baseUrl: "https://adapter.test/v1",
+      type: "openai-chat-completions",
+    }),
     builtinModelIds: [],
     enabled: true,
     id: providerId,

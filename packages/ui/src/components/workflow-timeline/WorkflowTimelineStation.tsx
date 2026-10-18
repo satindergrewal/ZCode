@@ -20,12 +20,12 @@ import { stationLampClass } from "./WorkflowTimelineLedge.js";
 import { slideClass, slideStyle, type FillSlide } from "./use-fill-growth.js";
 
 /**
- * 站头：名字 + 元数据，一枚没有背景的
- * 药丸。没有带时它排在轨道行上、灯的右边；有带时它搬到站台行，
- * 灯留在自己那条轨道上——两处的标记完全一样，所以从 `WorkflowTimeline.tsx` 拆出来共用一份。
+ * Station header: name plus metadata, a background-free pill. Without a branch it sits on the rail row
+ * beside the dot; with one it moves to the platform row while the dot stays on its own rail — the
+ * markup is identical in both places, hence split out of `WorkflowTimeline.tsx` to share one copy.
  *
- * 不可点的站头是 `span` 而不是禁用的 `button`：浏览器对禁用控件不派发
- * click，整块开关就收不到；span 没有语义，点击照常冒泡。
+ * A non-clickable header is a `span`, not a disabled `button`: browsers dispatch no click on disabled
+ * controls and the whole-card toggle would never receive it; a span has no semantics and clicks bubble.
  */
 export function StationHead({
   caret,
@@ -37,16 +37,17 @@ export function StationHead({
 }: {
   station: TimelineStation;
   name: string;
-  /** 草稿里跟着笔走的光标；其余时候 null。 */
+  /** The draft caret that follows the pen; null otherwise. */
   caret: ReactNode;
   foldClass: string;
   title: string;
-  /** 缺席即站头不是控件——点击冒泡给宿主（轮尾摘要的整块开关）。 */
+  /** Absent means the header is not a control — clicks bubble to the host (the digest's whole-card toggle). */
   onSelect?: () => void;
 }) {
   const pending = station.status === undefined || station.status === "pending";
-  // 留白站（docs/dynamic-workflow/presentation.md「Holes on the timeline」）：名字到达前 subtle，
-  // 等待时元数据位写「等待补全」；无阶段的补全在名字之后放一枚笔标。类型不上界面。
+  // Hole station (docs/dynamic-workflow/presentation.md "Holes on the timeline"): subtle until the name
+  // arrives, metadata slot reading awaiting-fill while waiting; a phase-less fill puts a pen mark after
+  // the name. Types never reach the UI.
   const hole = station.hole;
   const head = (
     <>
@@ -95,9 +96,9 @@ export function StationHead({
 
 interface RowProps {
   stations: readonly TimelineStation[];
-  /** 补全的生长（`use-fill-growth.ts`）：下标大于 `after` 的站带 `wf-slide`，从 −shift 滑到位。 */
+  /** Fill growth (`use-fill-growth.ts`): stations past `after` take `wf-slide`, gliding in from −shift. */
   slide?: FillSlide;
-  /** 站的全名，按下标；草稿里笔只写出前几个字。 */
+  /** Station full names by index; in a draft the pen has typed only a prefix. */
   fullNames: readonly string[];
   folded: ReadonlySet<number>;
   titleOf: (station: TimelineStation) => string;
@@ -105,8 +106,9 @@ interface RowProps {
 }
 
 /**
- * 轨道行（没有带时）：站头（灯 + 名字 + 元数据）与到下一站的轨道段，一站一格。折到檐上的站只留
- * 轨道段；药丸列不折（用户修订：两侧对称）——它们只随滚动走，在视口真正的边界处渐隐。
+ * Rail row (branchless): station header (dot + name + metadata) and the segment toward the next
+ * station, one cell each. Folded stations keep only the segment; pill columns never fold (user revision:
+ * symmetric sides) — they merely scroll, fading at the viewport's true bounds.
  */
 export function WorkflowStationRow({
   draft,
@@ -123,15 +125,15 @@ export function WorkflowStationRow({
   top,
   width,
 }: RowProps & {
-  /** 相邻两站之间的轨道段，按 `railKey` 查。 */
+  /** Rail segments between adjacent stations, looked up by `railKey`. */
   rails: ReadonlyMap<string, TimelineRail>;
   draft: boolean;
   pen: TypewriterState;
   top: number;
   width: number;
-  /** 末站是尾巴留白：`open` 在它之后画 40px 淡出的虚线残段，`filled` 只留余地。 */
+  /** The last station is a tail void: `open` draws a 40px fading dashed stub past it, `filled` keeps only the room. */
   tailStub?: "open" | "filled";
-  /** 刚接进 run 的补全所写的站：灯落地、轨道段长出（`wf-land` / `wf-rail-grow`）。 */
+  /** Stations written by a fill newly joined to the run: dot lands, segment grows (`wf-land` / `wf-rail-grow`). */
   fresh?: ReadonlySet<string>;
 }) {
   const n = stations.length;
@@ -184,7 +186,7 @@ export function WorkflowStationRow({
             <StationHead
               caret={
                 penHere ? (
-                  // 光标跟着笔：写字时稳住，追上流时闪烁。
+                  // Caret follows the pen: steady while writing, blinking once it catches the stream.
                   <span
                     aria-hidden
                     className={cn(
@@ -209,14 +211,15 @@ export function WorkflowStationRow({
                 aria-hidden
                 className={cn(
                   "wf-ink relative h-0 flex-1 rounded-full border-t border-foreground-subtlest",
-                  // 流轨（presentation.md「Stream rails」）：线在正中让出 chevron 的缺口（`::before`
-                  // 画线、border 透明），至少 42px 宽，三枚两侧各留得下一段线；它从不叠行进的光。
+                  // Stream rail (presentation.md "Stream rails"): the line gaps for the chevrons at center
+                  // (line drawn by ::before, border transparent), at least 42px so a segment remains on both
+                  // sides; it never layers march light.
                   stream ? "wf-rail-stream min-w-[42px]" : "min-w-3",
                   landing && "wf-rail-grow",
                   rail === undefined && "invisible",
-                  // 触到开着的留白的段是虚线：那里还不是代码（docs/dynamic-workflow/presentation.md）。
+                  // Segments touching an open hole are dashed: no code there yet (docs/dynamic-workflow/presentation.md).
                   rail?.dashed && "border-dashed",
-                  // 行进的段照常画底线，再叠一道不动的光（`.wf-rail-march::after`）：朝着灯渐亮。
+                  // Marching segments draw the base line as usual plus still light (`.wf-rail-march::after`): brightening toward the dot.
                   !stream && rail?.ink === "march" && "wf-rail-march",
                 )}
                 data-rail-dashed={rail?.dashed ? "true" : undefined}
@@ -232,7 +235,7 @@ export function WorkflowStationRow({
                 ) : null}
               </span>
             ) : tailStub === "open" ? (
-              // 尾巴留白：轨道在它之后再跑 40px 并淡出——脚本的结尾还没有写下。
+              // Tail void: the rail runs 40px further, fading — the script's ending is not written yet.
               <span
                 aria-hidden
                 className="wf-tail-stub h-0 shrink-0 border-t border-dashed border-foreground-subtlest"
@@ -248,9 +251,9 @@ export function WorkflowStationRow({
 }
 
 /**
- * 站台行：有带时站头一律搬到轨道下面
- * 这一行，灯留在自己的轨道上，分支轨道的站由一条点状引线接回名字——主线的站不需要，它的灯就在
- * 名字正上方。草稿永远没有带，所以这里不必管笔。
+ * Platform row: with a branch every header moves to this row below the rail, dots stay on their own
+ * rails, and branch stations are tied back to their names by a dotted leader — main-line stations need
+ * none, their dot sits right above the name. Drafts never branch, so the pen is no concern here.
  */
 export function WorkflowStationPlatform({
   folded,

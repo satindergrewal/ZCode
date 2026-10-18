@@ -41,7 +41,7 @@ afterEach(async () => {
 });
 
 describe("AgentExecutionTelemetryRuntime V5", () => {
-  it("为 Auto Compact 记录触发时的上下文预算事实", () => {
+  it("records context budget facts when Auto Compact triggers", () => {
     const harness = createHarness();
     const compaction = harness.runtime.startCompaction({
       maxAttempts: 3,
@@ -65,7 +65,7 @@ describe("AgentExecutionTelemetryRuntime V5", () => {
     compaction.finishCompleted();
   });
 
-  it("创建稳定的 Turn -> Step -> Tool -> Command 拓扑，并由事实源写终态", async () => {
+  it("builds a stable Turn -> Step -> Tool -> Command topology with terminals written by the fact source", async () => {
     const harness = createHarness();
     const turn = harness.runtime.startTurn({
       context: executionContext(),
@@ -129,7 +129,7 @@ describe("AgentExecutionTelemetryRuntime V5", () => {
     ).toBe(false);
   });
 
-  it("run 对同步/异步异常只执行一次业务回调，并自动收口缺失 terminal", async () => {
+  it("runs the business callback once for sync/async throws and auto-closes missing terminals", async () => {
     const harness = createHarness();
     let calls = 0;
     const thrown = harness.runtime.startDetachedOperation({
@@ -169,7 +169,7 @@ describe("AgentExecutionTelemetryRuntime V5", () => {
     });
   });
 
-  it("Detached 使用独立 Root + Link，且身份只投影在 Turn Root", async () => {
+  it("detached runs use a separate root plus link, with identity projected only on the turn root", async () => {
     const harness = createHarness();
     harness.runtime.updateIdentity({
       identityState: "authenticated",
@@ -219,7 +219,7 @@ describe("AgentExecutionTelemetryRuntime V5", () => {
     expect(detachedSpan.attributes["zcode.execution.user_subject_id"]).toBeUndefined();
   });
 
-  it("被调用方等待的前台 Operation 使用真实 Parent，不伪造成跨 Trace Link", async () => {
+  it("foreground operations awaited by the caller use a real parent, not a fake cross-trace link", async () => {
     const harness = createHarness();
     const turn = harness.runtime.startTurn({
       context: executionContext(),
@@ -247,7 +247,7 @@ describe("AgentExecutionTelemetryRuntime V5", () => {
     expect(operationSpan.links).toHaveLength(0);
   });
 
-  it("显式 Causation 不会被执行时另一个 Active Context 覆盖", async () => {
+  it("explicit causation is not overwritten by another active context at execution time", async () => {
     const harness = createHarness();
     const sourceTurn = harness.runtime.startTurn({
       context: { ...executionContext(), sessionId: "session-source" },
@@ -288,7 +288,7 @@ describe("AgentExecutionTelemetryRuntime V5", () => {
     expect(operationSpan.parentSpanContext?.spanId).not.toBe(unrelatedSpan?.spanContext().spanId);
   });
 
-  it("前台 Subagent Turn 作为 Agent Tool 子树，后台 Subagent 使用独立 Trace + Link", async () => {
+  it("foreground subagent turns nest under the agent tool; background subagents get a separate trace plus link", async () => {
     const harness = createHarness();
     const parentTurn = harness.runtime.startTurn({
       context: executionContext(),
@@ -466,7 +466,7 @@ describe("AgentExecutionTelemetryRuntime V5", () => {
     });
   });
 
-  it("Tool 与 Command 不共享退出码语义，非命令 Tool 不产生 exit code", () => {
+  it("tools and commands do not share exit-code semantics; non-command tools produce no exit code", () => {
     const harness = createHarness();
     const tool = harness.runtime.startTool({
       registeredToolName: "Read",
@@ -478,7 +478,7 @@ describe("AgentExecutionTelemetryRuntime V5", () => {
     expect(toolSpan.attributes["process.exit.code"]).toBeUndefined();
   });
 
-  it("显式失败接口保留清洗后的错误归因", () => {
+  it("the explicit failure path keeps sanitized error attribution", () => {
     const harness = createHarness();
     const error = Object.assign(new Error("authorization: Bearer private-token user@example.com"), {
       code: "E_PROVIDER",
@@ -507,7 +507,7 @@ describe("AgentExecutionTelemetryRuntime V5", () => {
     );
   });
 
-  it("同一源异常只在最靠近来源的 Span 记录一次正文", () => {
+  it("a source exception is recorded once, on the span closest to its origin", () => {
     const harness = createHarness();
     const networkCause = Object.assign(
       new Error("socket reset authorization: Bearer secret-token"),
@@ -576,7 +576,7 @@ describe("AgentExecutionTelemetryRuntime V5", () => {
     expect(span(spans, "model_call").attributes).not.toHaveProperty("error.cause.message");
   });
 
-  it("活动 Writer 达到容量时旁路新 Span，不阻塞业务", () => {
+  it("bypasses new spans once the active writer is at capacity instead of blocking the business path", () => {
     const harness = createHarness({ maxActiveWriters: 1 });
     const first = harness.runtime.startTurn({
       context: executionContext(),
@@ -596,7 +596,7 @@ describe("AgentExecutionTelemetryRuntime V5", () => {
     first.finishCompleted();
   });
 
-  it("原始 usage 只写 Attempt，父 Span 不复制无必要聚合", async () => {
+  it("raw usage lands only on the attempt; parent spans skip needless aggregates", async () => {
     const harness = createHarness();
     const turn = harness.runtime.startTurn({
       context: executionContext(),
@@ -660,7 +660,7 @@ describe("AgentExecutionTelemetryRuntime V5", () => {
     });
   });
 
-  it("missing terminal 和进程回收仍会输出终态明细 Metric", async () => {
+  it("missing terminals and process reaping still emit terminal detail metrics", async () => {
     const metrics = new RecordingMetrics();
     const harness = createHarness({ metrics });
     const turn = harness.runtime.startTurn({

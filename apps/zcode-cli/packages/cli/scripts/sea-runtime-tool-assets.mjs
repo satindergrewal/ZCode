@@ -70,7 +70,7 @@ export const collectSeaRuntimeToolAssets = async ({ root, stagingDirectory, targ
   });
   await writeFile(manifestPath, JSON.stringify(manifest, null, 2));
   assets[seaRuntimeToolManifestAssetKey] = manifestPath;
-  // 单文件 SEA 同样分发原生工具，许可声明与来源清单随二进制内嵌，不依赖 dist 旁的伴随文件。
+  // The single-file SEA ships native tools too; license notices and provenance manifests are embedded in the binary, with no sidecar files next to dist.
   const legal = await readNativeSearchNotices(root);
   for (const [name, bytes] of [
     ["THIRD-PARTY-NOTICES.txt", legal.bytes],

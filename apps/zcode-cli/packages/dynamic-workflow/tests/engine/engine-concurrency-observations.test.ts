@@ -1,7 +1,6 @@
 /**
- * 引擎侧的三个自适应并发观察事件（docs/dynamic-workflow/concurrency.md「What the driver observes」）。
- * 引擎只 record，不据它们做任何决策；与 engine.test.ts 同一套 fixture 姿态，单独成文件只为不再往
- * 那份 1500 行的文件上堆。进程级闸门本身住在 driver 之下（bootstrap），这里没有槽位可言。
+ * The engine side of the three adaptive-concurrency observations (docs/dynamic-workflow/concurrency.md,
+ * The engine only records them, deciding nothing; the fixture posture matches engine.test.ts, in its own file
  */
 
 import { describe, expect, it } from "vitest";
@@ -34,20 +33,25 @@ function setup() {
 
 const eventTypes = (driver: FakeDriver): string[] => driver.events.map((e) => e.type);
 
-describe("WorkflowEngine — 派发不经任何槽位", () => {
-  it("WorkflowDriver 没有 acquireSlot；会话就绪后立即 node-dispatched + startAsk", async () => {
+describe("WorkflowEngine -- dispatch through no slots", () => {
+  it("has no acquireSlot on WorkflowDriver; node-dispatched plus startAsk right after the session", async () => {
     const { engine, driver } = setup();
     expect((driver as { acquireSlot?: unknown }).acquireSlot).toBeUndefined();
     const actor = engine.createActor("actor#1");
     const p = engine.ask("ask#1", actor, "A");
     await flush();
-    expect(eventTypes(driver)).toEqual(["run-started", "actor-created", "node-queued", "node-dispatched"]);
+    expect(eventTypes(driver)).toEqual([
+      "run-started",
+      "actor-created",
+      "node-queued",
+      "node-dispatched",
+    ]);
     expect(driver.startAskCount()).toBe(1);
     engine.askTurnEnded(inst("ask#1"), "RA");
     await expect(p).resolves.toBe("RA");
   });
 
-  it("driver 侧失败以 DriverError 落 node-settled（模型层归因字段已退场）", async () => {
+  it("records driver-side failures as node-settled with DriverError (model-layer attribution fields are gone)", async () => {
     const { engine, driver } = setup();
     const actor = engine.createActor("actor#1");
     const p = engine.ask("ask#1", actor, "A");
@@ -58,9 +62,8 @@ describe("WorkflowEngine — 派发不经任何槽位", () => {
     expect(settled[0]?.error).toEqual({ code: "DriverError", message: "boom" });
   });
 
-  // 确定性模型侧错误（docs/execution-engine.md）：driver 不结算节点，整个 run 以
-  // stopped(provider) 停下，在飞 ask 与 cancel 同款 abort，failure 随 run-settled 与 journal 落库。
-  it("stopRun(ProviderStop) 停下整个 run：在飞 ask abort、run-settled 带 stopReason 与 error", async () => {
+  // Deterministic model-side error (docs/execution-engine.md): no node settlement; the run stops
+  it("stops the whole run on stopRun(ProviderStop): in-flight asks abort, run-settled carries stopReason and error", async () => {
     const { engine, driver, journal } = setup();
     const actor = engine.createActor("actor#1");
     const p = engine.ask("ask#1", actor, "A");
@@ -92,14 +95,14 @@ describe("WorkflowEngine — 派发不经任何槽位", () => {
     expect(run?.status).toBe("stopped");
     expect(run?.stopReason).toBe("provider");
     expect(run?.failure).toEqual(stop.toJSON());
-    // first-wins：结算后的第二次 stopRun / fail 都是 no-op。
+    // First-wins: a second stopRun or fail after settlement is a no-op.
     engine.stopRun(stop);
     engine.fail(new WorkflowError("DriverError", "late"));
     expect(driver.eventsOfType("run-settled")).toHaveLength(1);
   });
 
-  // 引擎给 ProviderStop 补上触发子代理的出生阶段：driver 只知道 actor ref，阶段只有引擎知道。
-  it("stopRun 用 instancePhases 给 providerStop 补 phase；没有标记或已带 phase 时原样", async () => {
+  // The engine backfills the triggering subagent's birth phase onto ProviderStop: the driver knows only the actor ref.
+  it("fills providerStop phase from instancePhases, passing through when absent or already set", async () => {
     const { engine, driver } = setup();
     engine.enterPhase("Verify");
     const actor = engine.createActor("actor#1");
@@ -107,7 +110,11 @@ describe("WorkflowEngine — 派发不经任何槽位", () => {
     await flush();
     engine.stopRun(
       new WorkflowError("ProviderStop", "Model GLM-5.3 is not available.", {
-        providerStop: { kind: "model_unavailable", reason: "invalid_request", subagent: "actor#1@1" },
+        providerStop: {
+          kind: "model_unavailable",
+          reason: "invalid_request",
+          subagent: "actor#1@1",
+        },
       }),
     );
     const settled = driver.eventsOfType("run-settled")[0];
@@ -134,7 +141,7 @@ describe("WorkflowEngine — 派发不经任何槽位", () => {
     });
   });
 
-  it("runStalled 落一条 run-stalled；run 结算后忽略", async () => {
+  it("records run-stalled once and ignores it after settlement", async () => {
     const { engine, driver, journal } = setup();
     const actor = engine.createActor("actor#1");
     void engine.ask("ask#1", actor, "A").catch(() => {});
@@ -155,8 +162,8 @@ describe("WorkflowEngine — 派发不经任何槽位", () => {
   });
 });
 
-describe("WorkflowEngine — 并发观察事件", () => {
-  it("askWaiting(slot) / askWaiting(backoff) / askExecuting / concurrencyChanged 各落一条对应事件", async () => {
+describe("WorkflowEngine -- concurrency observation events", () => {
+  it("records one event each for askWaiting(slot), askWaiting(backoff), askExecuting, concurrencyChanged", async () => {
     const { engine, driver, journal } = setup();
     const actor = engine.createActor("actor#1");
     const p = engine.ask("ask#1", actor, "A");
@@ -171,7 +178,14 @@ describe("WorkflowEngine — 并发观察事件", () => {
       delayMs: 20_000,
       retryAfterMs: 20_000,
     });
-    engine.concurrencyChanged({ key: "p/m", previous: 8, next: 4, reason: "rate_limited", lastGood: 4, cooldownMs: 20_000 });
+    engine.concurrencyChanged({
+      key: "p/m",
+      previous: 8,
+      next: 4,
+      reason: "rate_limited",
+      lastGood: 4,
+      cooldownMs: 20_000,
+    });
     engine.askExecuting(inst("ask#1"));
 
     expect(driver.eventsOfType("node-waiting")).toEqual([
@@ -191,15 +205,23 @@ describe("WorkflowEngine — 并发观察事件", () => {
       { type: "node-executing", instance: inst("ask#1") },
     ]);
     expect(driver.eventsOfType("concurrency-changed")).toEqual([
-      { type: "concurrency-changed", key: "p/m", previous: 8, next: 4, reason: "rate_limited", lastGood: 4, cooldownMs: 20_000 },
+      {
+        type: "concurrency-changed",
+        key: "p/m",
+        previous: 8,
+        next: 4,
+        reason: "rate_limited",
+        lastGood: 4,
+        cooldownMs: 20_000,
+      },
     ]);
-    // 观察事件不写 dwf_node：节点记录仍是准入时的 running。
+    // Observation events write no dwf_node: the node keeps its admission-time running row.
     expect(journal.getNode(RUN, "ask#1", 1)?.status).toBe("running");
     engine.askTurnEnded(inst("ask#1"), "RA");
     await expect(p).resolves.toBe("RA");
   });
 
-  it("未知实例 / 已结算实例 / 已结算 run 上的观察被忽略", async () => {
+  it("ignores observations for unknown instances, settled instances, and settled runs", async () => {
     const { engine, driver } = setup();
     const actor = engine.createActor("actor#1");
     const p = engine.ask("ask#1", actor, "A");
@@ -208,7 +230,12 @@ describe("WorkflowEngine — 并发观察事件", () => {
     engine.askExecuting(inst("nope"));
     engine.askTurnEnded(inst("ask#1"), "RA");
     await p;
-    engine.askWaiting(inst("ask#1"), { cause: "backoff", reason: "timeout", attempt: 1, delayMs: 1 });
+    engine.askWaiting(inst("ask#1"), {
+      cause: "backoff",
+      reason: "timeout",
+      attempt: 1,
+      delayMs: 1,
+    });
     engine.askExecuting(inst("ask#1"));
     engine.complete("done");
     await engine.settled;

@@ -36,9 +36,9 @@ const MODE_ICONS: Record<DynamicWorkflowMode, ComponentType<SVGProps<SVGSVGEleme
 };
 
 /**
- * 设置行要显示什么（docs/dynamic-workflow/launch.md「The user's choice」）。快照加载中、读取失败、
- * 服务端未提供功能时都返回 null：行不渲染，灰度对用户不可见。值与「默认」都取 Host 算好的结果，
- * renderer 不自己套用户选择。
+ * What the row shows (docs/dynamic-workflow/launch.md, the user's choice). Returns null while the snapshot
+ * loads, on read failure, or when the server lacks the feature: no row, rollout invisible. Value and default come
+ * precomputed from the Host; the renderer never applies the user's choice itself.
  */
 export function resolveDynamicWorkflowModeSettingView(
   snapshot: DynamicWorkflowAvailabilitySnapshot,
@@ -48,7 +48,7 @@ export function resolveDynamicWorkflowModeSettingView(
   return { value: config.mode, offeredMode: config.offeredMode };
 }
 
-/** 选回服务端提供的模式等于删除选择（空串哨兵，服务层归一成删除），安装继续跟随服务端翻转。 */
+/** Re-picking the server-provided mode equals deleting the choice (empty-string sentinel, normalized to a delete); installs keep following the server flip. */
 export function buildDynamicWorkflowModePatch(
   next: DynamicWorkflowMode,
   offeredMode: DynamicWorkflowMode,
@@ -62,8 +62,8 @@ export function DynamicWorkflowModeSetting() {
   const { intl } = useZCodeIntl();
   const { update } = useSettings();
   const view = resolveDynamicWorkflowModeSettingView(useDynamicWorkflowAvailability());
-  // 选择落盘 → Root 通知 Host 重发策略 → 快照重读，整条链要几百毫秒；期间触发器先显示用户刚选的值。
-  // 行可见即功能已提供，此时生效模式必然等于用户所选，所以乐观值与最终值一致。
+  // Persist, Root tells the Host to republish policy, snapshot rereads: hundreds of ms. The trigger shows the user's fresh pick meanwhile.
+  // A visible row means the feature is present, so the effective mode must equal the choice; optimistic equals final.
   const [pending, setPending] = useState<DynamicWorkflowMode | null>(null);
   const settledValue = view?.value;
   useEffect(() => {
@@ -82,18 +82,18 @@ export function DynamicWorkflowModeSetting() {
       await update(buildDynamicWorkflowModePatch(next, view.offeredMode));
     } catch (error) {
       setPending(null);
-      logger.warn("[settings] 保存动态工作流模式失败", { error: String(error) });
+      logger.warn("[settings] Failed to save dynamic workflow mode", { error: String(error) });
       toast(intl.formatMessage({ id: "settings.dynamicWorkflow.saveError" }));
     }
   };
 
-  // 不包外层元素：SettingsRow 靠 first:border-t-0 画行间分隔线，包一层会让它变成首行而丢掉上边框。
+  // No wrapper element: SettingsRow draws separators via first:border-t-0; wrapping would make this the first row and drop the top border.
   return (
     <SettingsRow
       label={label}
       description={intl.formatMessage({ id: "settings.dynamicWorkflowDescription" })}
-      // Bugfix：默认控件列只有 192px，flex 会把 260px 的触发器压到 192px，跟随触发器宽度的列表也随之过窄；
-      // wide 布局给 280px 控件列（手机宽度下换到标签下方），触发器与列表都按设计稿的 260px 显示。
+      // Bugfix: the default control column is 192px and flex crushed the 260px trigger, narrowing the list with it;
+      // wide gives the control column 280px (under the label on phone widths), so trigger and list keep the designed 260px.
       controlLayout="wide"
       control={
         <Select value={value} onValueChange={(next) => void handleValueChange(next)}>
@@ -105,9 +105,9 @@ export function DynamicWorkflowModeSetting() {
           >
             <SelectValue />
           </SelectTrigger>
-          {/* 两行选项用 popper 展开在触发器下方，item-aligned 会盖住本行的标签与说明。
-              Bugfix：popper 只给了 min-width，列表宽度会被最长的一行说明撑开；固定为触发器宽度（260px），
-              说明在列表内折行，与设计稿一致。 */}
+          {/* Two-line options open popper-style under the trigger; item-aligned would cover this row's label and note.
+              Bugfix: popper only min-widths, so the longest note stretched the list; fix the width to the trigger's (260px),
+              notes wrapping inside, per the design. */}
           <SelectContent
             position="popper"
             align="end"

@@ -15,10 +15,10 @@ void main();
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
-    // The storage mode can also run inside a Host Worker; it must not rename the whole Host process.
+  // The storage mode can also run inside a Host Worker; it must not rename the whole Host process.
   if (!argv.includes("--prepare-storage")) setCliProcessTitle();
-    // A real zcode CLI process may still hold a few paths that read process.env directly.
-    // The entry first sanitizes NODE_ENV, proxy, and certificate variables injected by the user's shell; network vars are sealed away solely for later Bash/tool subprocess restoration.
+  // A real zcode CLI process may still hold a few paths that read process.env directly.
+  // The entry first sanitizes NODE_ENV, proxy, and certificate variables injected by the user's shell; network vars are sealed away solely for later Bash/tool subprocess restoration.
   applyCliRuntimeEnvSanitization(process.env);
   const isProtocol = isProtocolServerInvocation(argv);
   const isTui = isTuiInvocation(argv);
@@ -27,10 +27,10 @@ async function main(): Promise<void> {
     isProtocol && !argv.includes("--prepare-storage")
       ? createProtocolProcessLifecycle()
       : undefined;
-    // app-server/agent-server stdout is a strict ZCode Protocol frame channel; plain output such as
-    // console.debug from third-party SDKs must not hit stdout directly. Before run/bootstrap loads, the
-    // process-level console must be redirected to stderr, or one plain log line from any dependency crashes transport-layer JSON parsing.
-    // The TUI owns stdout too; the AI SDK's first hint uses console.info and must not bypass the stderr capture.
+  // app-server/agent-server stdout is a strict ZCode Protocol frame channel; plain output such as
+  // console.debug from third-party SDKs must not hit stdout directly. Before run/bootstrap loads, the
+  // process-level console must be redirected to stderr, or one plain log line from any dependency crashes transport-layer JSON parsing.
+  // The TUI owns stdout too; the AI SDK's first hint uses console.info and must not bypass the stderr capture.
   const restoreConsole =
     isProtocol || isTui ? installStderrConsoleBoundary(process.stderr) : undefined;
   const runtimeWarnings = interceptKnownRuntimeWarnings(process.stderr);
@@ -57,8 +57,8 @@ async function main(): Promise<void> {
       stdin: process.stdin,
       stdout: process.stdout,
     };
-        // plugin-host carries plugins only; importing run first would evaluate Agent, the tool registry, and workflow modules,
-        // making every MCP subprocess hold the full business dependency set even when no AgentRuntime is created.
+    // plugin-host carries plugins only; importing run first would evaluate Agent, the tool registry, and workflow modules,
+    // making every MCP subprocess hold the full business dependency set even when no AgentRuntime is created.
     if (isPluginHostInvocation(argv)) {
       process.exitCode = await runPluginHostCommand(context, argv.slice(1));
       return;
@@ -88,7 +88,7 @@ async function main(): Promise<void> {
     process.exitCode = 1;
   } finally {
     await waitForPendingWarnings();
-        // Lifecycle and stderr guard stay until actual exit; a late error must not re-enter and corrupt the stream.
+    // Lifecycle and stderr guard stay until actual exit; a late error must not re-enter and corrupt the stream.
     if (lifecycle) {
       await lifecycle.complete(normalizeProcessExitCode(process.exitCode));
     } else {
@@ -97,8 +97,8 @@ async function main(): Promise<void> {
       }
       runtimeWarnings.restore();
       disposeProcessErrorBoundary?.();
-            // plugin-host's main() returns once server.connect() settles, but at that moment the
-            // stdio handles are precisely the server's liveness condition. The one-shot CLI watchdog must not misjudge them as leaks and force-exit.
+      // plugin-host's main() returns once server.connect() settles, but at that moment the
+      // stdio handles are precisely the server's liveness condition. The one-shot CLI watchdog must not misjudge them as leaks and force-exit.
       const exitCode = normalizeProcessExitCode(process.exitCode);
       if (!isPluginHostInvocation(argv) || exitCode !== 0) {
         scheduleCliExitWatchdog({ exitCode });

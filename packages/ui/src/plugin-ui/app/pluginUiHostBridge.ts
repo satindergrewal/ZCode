@@ -29,15 +29,15 @@ import type {
   McpUiUpdateModelContextRequest,
 } from "@modelcontextprotocol/ext-apps/app-bridge";
 
-/** 官方 SDK 请求 handler 的上下文子集：中止信号在 `ctx.mcpReq.signal`。 */
+/** Context subset for official SDK request handlers: abort signal at ctx.mcpReq.signal. */
 export interface PluginUiRequestContext {
   mcpReq?: { signal?: AbortSignal };
 }
 
 /**
- * 控制器用到的官方 `AppBridge` 成员子集。生产用 `new AppBridge(null, …)`，测试可注入假实现。
- * 自定义方法（ZCode 扩展与需要放宽 schema 的 ui/message）走基类的三参 `setRequestHandler`；
- * 规范方法（resources/subscribe）走二参形式，handler 拿到完整 request。
+ * The AppBridge members the controller uses. Production news up new AppBridge(null, ...); tests inject fakes.
+ * Custom methods (ZCode extensions and loose-schema ui/message) use the base three-arg setRequestHandler;
+ * spec methods (resources/subscribe) use two args so the handler sees the full request.
  */
 export interface PluginUiHostBridge {
   connect(transport: Transport): Promise<void>;
@@ -50,10 +50,10 @@ export interface PluginUiHostBridge {
     params: Record<string, never>,
     options?: { timeout?: number; signal?: AbortSignal },
   ): Promise<unknown>;
-  /** `initialized` 之后可读；页面声明的 availableDisplayModes 决定宿主能否切它到 fullscreen。 */
+  /** Readable after initialized; the page's availableDisplayModes gates fullscreen switches. */
   getAppCapabilities(): McpUiAppCapabilities | undefined;
   notification(notification: { method: string; params?: Record<string, unknown> }): Promise<void>;
-  /** App-Provided Tools：宿主发现页面工具、把模型调用交给页面执行。 */
+  /** App-Provided Tools: discover page tools, run model-initiated calls on the page. */
   listTools(
     params: ListToolsRequest["params"],
     options?: { timeout?: number; signal?: AbortSignal },

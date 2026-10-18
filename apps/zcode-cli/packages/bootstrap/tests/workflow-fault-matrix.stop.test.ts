@@ -82,7 +82,10 @@ const STOP_ROWS: StopRow[] = [
   },
 ];
 
-async function runCell(server: FakeProviderServer, cell: CellCoordinate): Promise<FaultCellObservation> {
+async function runCell(
+  server: FakeProviderServer,
+  cell: CellCoordinate,
+): Promise<FaultCellObservation> {
   const observation = await runFaultCell({
     server,
     shape: cell.shape,
@@ -156,9 +159,9 @@ for (const row of STOP_ROWS) {
           expect(providerFailed.length).toBeGreaterThan(0);
           expect(providerFailed.length).toBeLessThanOrEqual(stopResponses.length);
           expect(failed.every((event) => event.retryable === false)).toBe(true);
-          expect(providerFailed.every((event) => event.providerErrorCode === row.verdict.code)).toBe(
-            true,
-          );
+          expect(
+            providerFailed.every((event) => event.providerErrorCode === row.verdict.code),
+          ).toBe(true);
           expect(obs.statusEvents.some((event) => event.type === "model_retry_scheduled")).toBe(
             false,
           );

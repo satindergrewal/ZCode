@@ -1,11 +1,9 @@
 /**
- * resume 的 journal 读形状（docs/execution-engine.md「Reading the journal」）：
+ * Resume's journal-read shape (docs/execution-engine.md, Reading the journal):
  *
- * - 报告行只数不读：一个 run 可以有 65,536 条 report，resume 恢复它们的计数与重放它们的去重，
- *   都不需要把任何一条 item 读进内存；
- * - 节点表只读一次：每个 actor 的已记录 ask 数从 resume 已读好的 ask 行建表，而不是每注册一个
- *   actor 就整表读一遍（修复前是 O(actor × 行) 次解码）；
- * - 事件只读结算次序与导入关门判定要的那几种类型。
+ * - report rows are counted, not read: 65,536 reports restore counts and replay dedupe without
+ * - the node table reads once: per-actor ask counts build from the already-read ask rows, not a full table
+ * - events read only the types the settle order and import-close verdicts need.
  */
 
 import { describe, expect, it } from "vitest";
@@ -32,7 +30,7 @@ function inst(siteId: string, ordinal = 1): InstanceRef {
 
 const specs = new Map<string, AskSpec>([["ask#1", { typed: false } as AskSpec]]);
 
-/** 转发到真 store、并记下每一次读的形状的 journal。 */
+/** A journal forwarding to the real store, recording each read's shape. */
 class RecordingJournal extends InMemoryJournalStore {
   readonly nodeReads: ListNodesOptions[] = [];
   readonly eventReads: ListEventsOptions[] = [];
@@ -79,7 +77,7 @@ function engineOn(journal: JournalStorePort) {
   return { driver, engine };
 }
 
-/** 同一段「脚本」：ACTORS 个 actor 各问一次，然后报 REPORTS 条。第一世逐个作答，第二世全部命中。 */
+/** One script: ACTORS actors ask once each, then REPORTS. Incarnation one answers all; two hits all. */
 async function runScript(
   engine: WorkflowEngine,
   answer: (i: number) => void,
@@ -112,33 +110,33 @@ describe("resume reads only what it uses", () => {
     await runScript(resumed.engine, () => {});
     journal.recording = false;
 
-    // 节点表：恰好两次读（工作行不带结果 + 产物行），与 actor 个数无关；没有一次读报告行。
+    // Node table: exactly two reads (work rows without results, plus artifact rows), actor-count independent.
     expect(journal.nodeReads).toEqual([
       { kinds: ["ask", "world-read", "world-run"], withResult: false },
       { kinds: ["artifact"], withResult: true },
     ]);
-    // 报告的条数与字节数都是聚合：count(*) 与 sum(octet_length(result_json))。
+    // Report count and bytes are aggregates: count(*) and sum(octet_length(result_json)).
     expect(journal.counts).toEqual(["report"]);
     expect(journal.byteSums).toEqual(["report"]);
-    // 事件：只读结算次序要的类型，且 report item 一条不读。
+    // Events: only settle-order types, and not one report item read.
     expect(journal.eventReads.length).toBeGreaterThan(0);
     for (const read of journal.eventReads) {
       expect(read.types).not.toBe("all");
       expect(read.reportItems).toEqual({ limit: 0 });
     }
-    // 报告的重放去重只比对哈希。
+    // Report replay dedupe compares hashes only.
     const reportPoints = journal.pointReads.filter((read) => read.siteId === "report#1");
     expect(reportPoints).toHaveLength(REPORTS);
     for (const read of reportPoints) expect(read.opts).toEqual({ withResult: false });
 
-    // 行为不变：全部命中、一条 report 都不重发、没有派发新的 ask。
+    // Behavior unchanged: all hit, no report re-emitted, no new dispatches.
     expect(resumed.driver.eventsOfType("report")).toEqual([]);
     expect(resumed.driver.startAskCount()).toBe(0);
   });
 
   it("still holds a live ask behind the actor's recorded asks after a resume", async () => {
-    // recordedCount 从 resume 读好的 ask 行建表：一个 actor 在第一世答完两问，第二世多问一句——
-    // 第三问必须排在两条命中之后才派发（hold 规则），而且只派发它自己。
+    // recordedCount builds from the ask rows resume already read: an actor answered twice in incarnation one,
+    // the third ask must dispatch after both hits (the hold rule) and alone.
     const journal = new InMemoryJournalStore();
     const first = engineOn(journal);
     const actor = first.engine.createActor("actor#1");

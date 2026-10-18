@@ -65,14 +65,14 @@ export const attachTuiAppQueries = (
 
   submitPrompt.listWorkflowRuns = async () => {
     const activeApp = await getApp();
-        // Session-level summaries; the server already orders most-recent-update-first and the reader does not re-sort (ruled in the port comment).
+    // Session-level summaries; the server already orders most-recent-update-first and the reader does not re-sort (ruled in the port comment).
     return (await activeApp.listDynamicWorkflowRuns?.({})) ?? [];
   };
 
   submitPrompt.replayWorkflowRuns = async (input) => {
     const activeApp = await getApp();
-        // The same chain as v4 cold materialization: journal -> the same
-        // progress payload shape as live -> the mirrored shared reducer.
+    // The same chain as v4 cold materialization: journal -> the same
+    // progress payload shape as live -> the mirrored shared reducer.
     return (await activeApp.replayDynamicWorkflowRuns?.(input)) ?? [];
   };
 };

@@ -43,7 +43,10 @@ export function decodeProviderConfigFile(input: unknown): ProviderConfigLayerUpd
   let candidate = input;
   let version = readSchemaVersion(candidate);
   if (version === null) {
-    throw new UnsupportedProviderConfigVersionError("Provider config is missing schemaVersion", null);
+    throw new UnsupportedProviderConfigVersionError(
+      "Provider config is missing schemaVersion",
+      null,
+    );
   }
   if (version > CURRENT_SCHEMA_VERSION) {
     throw new UnsupportedProviderConfigVersionError(

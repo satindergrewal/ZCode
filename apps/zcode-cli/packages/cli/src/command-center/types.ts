@@ -58,7 +58,7 @@ export type CommandCenterPluginSetResult = {
 };
 
 export type CommandCenterPluginUninstallResult = {
-    // null means the plugin is not installed (idempotent no-op).
+  // null means the plugin is not installed (idempotent no-op).
   removed: { id: string; name: string } | null;
 };
 
@@ -225,25 +225,25 @@ export type CommandCenterApp = {
     runId?: string;
   }): Promise<CommandCenterExpertWorkflowResult>;
   /**
-      * Enumeration face of workflow runs, serving /dwf list. Optional capability: with the dwf journal unavailable the whole run service
-      * is not constructed and this member is absent -- the command replies unavailable instead of showing an empty table.
-      * The server filters by parent session (listRunsByParentSession); every returned row belongs to this session.
+   * Enumeration face of workflow runs, serving /dwf list. Optional capability: with the dwf journal unavailable the whole run service
+   * is not constructed and this member is absent -- the command replies unavailable instead of showing an empty table.
+   * The server filters by parent session (listRunsByParentSession); every returned row belongs to this session.
    */
   listDynamicWorkflowRuns?(input: { limit?: number }): Promise<DynamicWorkflowRunSessionSummary[]>;
   /**
-      * Cold replay of workflow runs, serving the TUI mirror's cold start:
-      * journal -> the same progress payload shape as live. Optional capability; absence conditions as for {@link listDynamicWorkflowRuns}.
+   * Cold replay of workflow runs, serving the TUI mirror's cold start:
+   * journal -> the same progress payload shape as live. Optional capability; absence conditions as for {@link listDynamicWorkflowRuns}.
    */
   replayDynamicWorkflowRuns?(input: {
     excludeRunIds: ReadonlySet<string>;
   }): Promise<DynamicWorkflowRunProgressPayload[]>;
   /**
-      * Cancellation face of workflow runs, serving /dwf cancel. runId = taskId = workId (a single identity).
+   * Cancellation face of workflow runs, serving /dwf cancel. runId = taskId = workId (a single identity).
    */
   cancelBackgroundTask?(taskId: string): Promise<BackgroundTaskCancelResult>;
   /**
-      * Resume face of workflow runs, serving /dwf resume. Failures travel as a structured reason, never a throw;
-      * the command presents the server's verdict verbatim -- resumable is never re-derived client-side.
+   * Resume face of workflow runs, serving /dwf resume. Failures travel as a structured reason, never a throw;
+   * the command presents the server's verdict verbatim -- resumable is never re-derived client-side.
    */
   resumeWorkflowRun?(input: {
     workId: string;
@@ -319,14 +319,14 @@ export type CommandCenterDeps = {
     kind?: "slash_command",
   ) => Promise<unknown> | unknown;
   resumeApp(sessionId?: string): Promise<CommandCenterApp>;
-    /** Persist the full default selection after a user-initiated successful switch; session resume and auto-init do not call this. */
+  /** Persist the full default selection after a user-initiated successful switch; session resume and auto-init do not call this. */
   saveDefaultModelSelection?: (selection: ModelSelection) => Promise<void>;
   logout?: () => Promise<CommandCenterLogoutResult>;
   setLocale?: (locale: UiLocale) => Promise<CommandCenterLocaleResult> | CommandCenterLocaleResult;
   setMode?: (mode: SwitchableCommandCenterMode) => Promise<CommandCenterMode> | CommandCenterMode;
   /**
-   * 本进程的 `--workflow-mode`（launch.md「The standalone CLI: `--workflow-mode`」）。`disabled` 时
-   * `/workflow` 与 `/dwf resume` 给本地提示；缺席不设门（单测、嵌入方），CLI 入口总会传入。
+   * This process's `--workflow-mode` (launch.md, "The standalone CLI: `--workflow-mode`"). When `disabled`,
+   * `/workflow` and `/dwf resume` show a local hint; absent means no gate (unit tests, embedders). The CLI entry always passes it.
    */
   workflowMode?: DynamicWorkflowMode;
 };

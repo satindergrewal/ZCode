@@ -42,9 +42,9 @@ export const sessionWorkflowPhaseSummarySchema = z.object({
    */
   alongside: z.array(z.number().int().nonnegative()).max(WORKFLOW_RUNS_LIMITS.maxPhases).optional(),
   /**
-   * 这一站是一处**还开着的留白**（docs/dynamic-workflow/presentation.md「Holes on the timeline」）：
-   * `open` = 还没走到，`waiting` = run 停在这里等主代理补全。侧栏据此把灯画成虚线（等待时警示色）。
-   * 补全之后它就是一个普通的站，键缺席。只有声明表那条路有这个事实（`run.phaseHoles`）。
+   * This stop is an **open hole** (docs/dynamic-workflow/presentation.md, 'Holes on the timeline'):
+   * `open` = not reached yet, `waiting` = the run is parked here for the main agent to fill. The sidebar draws these lights dashed (warning color while waiting).
+   * Once filled it is a plain stop and the key is absent. Only the declaration-table path knows this (`run.phaseHoles`).
    */
   hole: z.enum(["open", "waiting"]).optional(),
 });
@@ -69,9 +69,9 @@ export const sessionWorkflowRunSummarySchema = z.object({
   /// Subagent count with status === "running" (the tooltip's "{n} agents working").
   agentsWorking: z.number().int().nonnegative(),
   /**
-   * 正在等主代理补全的留白名（`run.holes` 里第一条 waiting 的 `name`）：侧栏运行行写
-   * 「{name} · 等待补全」（docs/dynamic-workflow/presentation.md「Holes on the timeline」的「The sidebar」）。
-   * 没有停驻的留白时缺席。
+   * Name of the hole waiting for the main agent (the first waiting entry's `name` in `run.holes`); the sidebar run row shows
+   * '{name} - awaiting fill' (docs/dynamic-workflow/presentation.md, 'Holes on the timeline', 'The sidebar').
+   * Absent when no hole is parked.
    */
   waitingHole: z.string().min(1).max(WORKFLOW_RUNS_LIMITS.maxPhaseNameLength).optional(),
 });
@@ -111,8 +111,8 @@ function phaseNameMatches(stationName: string, stamp: string): boolean {
 }
 
 /**
- * 站点表的唯一推导。侧栏运行行（经 `summarizeRun`）与任务岛的 run 行都读它，所以两处的灯
- * 永远对同一件事说同一句话；任务岛不另写第二套。
+ * Sole derivation of the stop table. Both the sidebar run row (via `summarizeRun`) and the task-island run row read it, so both lights
+ * always say the same thing about the same fact; the task island never writes a second version.
  */
 export function deriveSessionWorkflowPhases(run: WorkflowRunState): SessionWorkflowPhaseSummary[] {
   const entered = new Set((run.phases ?? []).map((phase) => phase.name));
@@ -121,7 +121,7 @@ export function deriveSessionWorkflowPhases(run: WorkflowRunState): SessionWorkf
   // The alongside indices address the **declared table**, so they mean something only on that path; the degraded path
   // (entered + current phase) is another index space, and the whole table is omitted then.
   let alongside: readonly (readonly number[])[] | undefined;
-  // 还开着的留白（声明表的下标）；等待中的按名字从 `run.holes` 认——留白名按规则 9012 唯一。
+  // Open holes (indexes into the declaration table); waiting ones are recognized by name from `run.holes` -- hole names are unique per rule 9012.
   let holeIndexes: ReadonlySet<number> = new Set();
   const waitingNames = new Set(
     (run.holes ?? []).filter((hole) => hole.state === "waiting").map((hole) => hole.name),
@@ -161,7 +161,7 @@ export function deriveSessionWorkflowPhases(run: WorkflowRunState): SessionWorkf
     const beside = (alongside?.[index] ?? []).filter(
       (other) => Number.isInteger(other) && other >= 0 && other < emitted && other !== index,
     );
-    // 留白站：等待中的按 `run.holes` 认（名字唯一），其余下标表点名的是还没走到的留白。
+    // Hole stops: waiting ones match via `run.holes` (names unique); the index table names the not-yet-reached holes.
     const hole = waitingNames.has(name) ? "waiting" : holeIndexes.has(index) ? "open" : undefined;
     return {
       name,
@@ -177,7 +177,7 @@ function summarizeRun(
   work: BackgroundWorkSummary | undefined,
 ): SessionWorkflowRunSummary {
   const name = work?.title.trim();
-  // 在跑的 run 才有「等补全」可言：终态 run 的 waiting 记录已被 reducer 剥掉，这里再守一道。
+  // Only a live run can be 'awaiting fill': the reducer strips waiting records from terminal runs, so guard again here.
   const waitingHole = isSessionWorkflowRunLive(run.status)
     ? (run.holes ?? []).find((hole) => hole.state === "waiting")?.name
     : undefined;

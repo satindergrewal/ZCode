@@ -1,4 +1,4 @@
-// 非可选位置上的 undefined 成员 —— 拒绝（可选性应通过 `?` 表达，而不是 `| undefined`）。
+// undefined in a non-optional position -- reject (optionality belongs on ?, not | undefined).
 interface R {
   value: string | undefined;
 }

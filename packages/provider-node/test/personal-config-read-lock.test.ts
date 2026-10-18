@@ -88,8 +88,8 @@ afterEach(async () => {
   await rm(directory, { recursive: true, force: true });
 });
 
-describe("Personal 配置纯读取与写锁边界", () => {
-  it("正常读取不创建锁元数据，即使另一个 writer 持锁也返回已提交配置", async () => {
+describe("Personal config read-only vs write-lock boundary", () => {
+  it("creates no lock metadata on plain reads and returns the committed config even under a live writer", async () => {
     const held = await holdLock();
     vi.mocked(mkdir).mockClear();
     const reader = repository();
@@ -108,7 +108,7 @@ describe("Personal 配置纯读取与写锁边界", () => {
     await held.done;
   });
 
-  it("轮询在 writer 尚未释放锁时观察完整的新文档，不创建自己的锁", async () => {
+  it("observes the complete new document while a writer holds the lock, minting no lock of its own", async () => {
     const reader = repository({ pollingIntervalMs: 10 });
     await reader.read();
     const reasons: string[] = [];
@@ -127,7 +127,7 @@ describe("Personal 配置纯读取与写锁边界", () => {
   });
 
   it.each(["missing", "noncanonical"] as const)(
-    "%s 文件等待写锁后重读，不用旧内容覆盖其他 writer",
+    "%s re-reads after the write lock and never clobbers other writers with stale content",
     async (kind) => {
       if (kind === "missing") await rm(filePath);
       else {
@@ -156,7 +156,7 @@ describe("Personal 配置纯读取与写锁边界", () => {
     },
   );
 
-  it("规范化确实需要写回时仍然使用写锁", async () => {
+  it("still takes the write lock when normalization truly must write back", async () => {
     const document = encodeProviderConfigFile(config("original"));
     await writeFile(filePath, JSON.stringify({ config: document.config, schemaVersion: 1 }));
     const reader = repository();
@@ -165,7 +165,7 @@ describe("Personal 配置纯读取与写锁边界", () => {
     expect(await readFile(filePath, "utf8")).toBe(JSON.stringify(document, null, 2));
   });
 
-  it("慢轮询期间显式读取不会再启动一轮轮询", async () => {
+  it("starts no second poll when an explicit read lands during a slow poll", async () => {
     const reader = repository({ pollingIntervalMs: 10 });
     await reader.read();
     const paused = await pauseNextRead();
@@ -179,7 +179,7 @@ describe("Personal 配置纯读取与写锁边界", () => {
     paused.release();
   });
 
-  it("旧轮询晚返回不能把本 Repository 新提交的版本倒退或重复发布", async () => {
+  it("never lets a late poll regress or republish versions this Repository already committed", async () => {
     const reader = repository({ pollingIntervalMs: 10 });
     await reader.read();
     const reasons: string[] = [];
@@ -195,7 +195,7 @@ describe("Personal 配置纯读取与写锁边界", () => {
     expect((await reader.read()).providers.keys()).toEqual(["newer"]);
   });
 
-  it("真实独立 Node 读者在父进程持续持有写锁时仍可读取完整配置", async () => {
+  it("lets an independent Node reader read the full config while the parent holds the write lock", async () => {
     const held = await holdLock();
     const script = fileURLToPath(new URL("./fixtures/personal-config-reader.ts", import.meta.url));
     const child = fork(script, [filePath], {
@@ -236,7 +236,7 @@ describe("Personal 配置纯读取与写锁边界", () => {
     }
   });
 
-  it("旧轮询的失败晚于成功保存返回时同样丢弃，不发布过期故障", async () => {
+  it("discards a failed poll returning after a good save, publishing no stale failure", async () => {
     const reader = repository({ pollingIntervalMs: 10 });
     await reader.read();
     const reasons: string[] = [];
@@ -251,7 +251,7 @@ describe("Personal 配置纯读取与写锁边界", () => {
     expect(reasons).toEqual(["updated"]);
   });
 
-  it("实际保存失败仍拒绝操作、保留原文，不发布成功变更", async () => {
+  it("rejectes the op and keeps the original on a failed save, publishing no success", async () => {
     const reader = repository();
     const original = await readFile(filePath, "utf8");
     const changed = vi.fn();

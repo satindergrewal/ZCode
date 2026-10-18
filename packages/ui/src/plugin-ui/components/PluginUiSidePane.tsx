@@ -1,7 +1,7 @@
 import { PluginUiCard } from "@/plugin-ui/components/PluginUiCard.js";
 import type { PluginUiSidePaneViewProps } from "@/plugin-ui/contract.js";
 
-/** 纯侧栏视图：不读取会话、lease、projection 或 workspace store。 */
+/** Pure pane view: reads no session, lease, projection or workspace store. */
 export function PluginUiSidePaneView({
   scopeRef,
   host,

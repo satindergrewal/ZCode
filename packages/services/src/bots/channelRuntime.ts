@@ -85,9 +85,7 @@ export function isBotRuntimeLockConflictError(error: unknown): boolean {
 function isBotRuntimeLockCleanupRetryable(error: unknown): boolean {
   return (
     isNodeError(error) &&
-    (error.code === "EPERM" ||
-      error.code === "EBUSY" ||
-      error.code === "ENOTEMPTY")
+    (error.code === "EPERM" || error.code === "EBUSY" || error.code === "ENOTEMPTY")
   );
 }
 
@@ -189,10 +187,7 @@ async function acquireBotRuntimeLock(
         }
         const currentOwner = await readBotRuntimeLockOwner(lockPath);
         if (currentOwner) {
-          const leaseAt = await readBotRuntimeLockLeaseAt(
-            lockPath,
-            currentOwner.nonce,
-          );
+          const leaseAt = await readBotRuntimeLockLeaseAt(lockPath, currentOwner.nonce);
           const leaseAge = Date.now() - leaseAt;
           if (
             isProcessAlive(currentOwner.pid) &&

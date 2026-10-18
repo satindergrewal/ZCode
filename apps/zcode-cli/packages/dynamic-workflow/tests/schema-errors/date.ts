@@ -1,4 +1,4 @@
-// Date 是宿主对象，不是纯数据 —— 拒绝。
+// Date is a host object, not plain data -- reject.
 interface WithDate {
   createdAt: Date;
 }

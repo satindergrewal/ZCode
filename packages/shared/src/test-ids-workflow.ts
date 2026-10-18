@@ -56,8 +56,8 @@ export const TID_WORKFLOW_ARTIFACT_CHIP = "workflow-run-artifact-chip";
 // the payloads differ, and e2e must target "chips on the notice row" and "chips on the hub history row" separately.
 export const TID_CHAT_WORKFLOW_ARTIFACT_CHIP = "workflow-notification-artifact-chip";
 
-// 动态工作流模式设置行与中枢跳转（docs/dynamic-workflow/launch.md「The user's choice」）。
+// Dynamic workflow mode setting row and hub jump (docs/dynamic-workflow/launch.md, 'The user's choice').
 export const TID_SETTINGS_DYNAMIC_WORKFLOW_MODE_TRIGGER = "settings-dynamic-workflow-mode-trigger";
-/** 动态后缀为模式（disabled / onDemand / alwaysOn）。 */
+/** The dynamic suffix is the mode (disabled / onDemand / alwaysOn). */
 export const TID_SETTINGS_DYNAMIC_WORKFLOW_MODE_ITEM = "settings-dynamic-workflow-mode-item";
 export const TID_WORKFLOWS_OPEN_SETTINGS = "workflows-open-settings";

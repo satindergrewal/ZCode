@@ -38,7 +38,7 @@ export async function checkRuntimeWidgets(read: Read) {
   );
   assert.equal(await read("document.getElementById('shared-panel').hidden"), false);
 
-  // 上游只为 focus-visible 自动打开；脚本 focus 不等于用户键盘输入，悬停走实际延迟路径。
+  // Upstream auto-opens for focus-visible only; scripted focus is not keyboard input, and hover takes the real delayed path.
   await read(
     "document.getElementById('tip').dispatchEvent(new PointerEvent('pointerover',{pointerType:'mouse',bubbles:true}))",
   );

@@ -14,8 +14,8 @@ interface ReferenceCandidate {
   end: number;
   decode(): unknown;
 }
-// 引用字段均为字符串；完整字符串后仍可能停在 key、冒号、value 或逗号处。
-// 仅识别 JSON 参数前缀，不能把缺失右括号后出现的普通正文一起隐藏。
+// Reference fields are strings; a complete value may still stop at key/colon/comma.
+// Only the JSON-args prefix hides; prose after a missing brace stays visible.
 const jsonString = String.raw`"(?:[^"\\\r\n]|\\.)*"`;
 const jsonParameterPrefix = new RegExp(
   String.raw`^\s*(?:${jsonString}\s*:\s*${jsonString}\s*,\s*)*(?:${jsonString}(?:\s*:\s*(?:${jsonString})?)?)?\s*$`,
@@ -23,13 +23,13 @@ const jsonParameterPrefix = new RegExp(
 export function projectGenUiReferences(text: string, completed: boolean): GenUiPart[] {
   const ranges = findMarkdownCodeRanges(text);
   const parts: GenUiPart[] = [];
-  // 实际模型即使读到 Unicode 示例也会输出 ::visualize；复用既有参数解析后统一校验，
-  // 避免正文被当作普通文字，也避免绕过代码区排除、完成门槛或执行端路径约束。
+  // Real models emit ::visualize even from the Unicode sample; reuse the arg parser,
+  // validate uniformly, and keep code-fence/completion/executor rules intact.
   const candidates: ReferenceCandidate[] = extractAssistantDirectives(text, "visualize").map(
     (directive) => ({
       ...directive,
-      // 实际回复会保留 skill 的 JSON 参数但输出 ::visualize 前缀；通用 directive
-      // 只解析 key=value，需在 Gen UI 内解码 JSON，再走同一严格 schema，不能放宽其他指令。
+      // Replies keep the skill JSON but prefix ::visualize; the generic directive
+      // parses key=value only, so decode JSON here into the same strict schema.
       decode: () =>
         directive.parameters ?? JSON.parse(directive.raw.slice(directive.raw.indexOf("{"))),
     }),

@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 外部 relay transport 需要集中维护握手、配对、心跳和重连状态机。 */
+/* eslint-disable max-lines -- the external relay transport must keep handshake, pairing, heartbeat and reconnect state machines in one place. */
 import { WebSocket, type RawData } from "ws";
 import { createHash } from "node:crypto";
 import {
@@ -76,8 +76,9 @@ export interface WebRemoteControlDeviceTransportOptions {
 }
 
 function parseRelayMessage(raw: RawData): WebRemoteControlRelayIncomingMessage | null {
-  // Bugfix：必须在 JSON.parse/字符串复制前按未压缩 raw bytes 硬闸；WebSocket compression
-  // 只影响线上字节，不能让解压后的超限 app payload 进入 parser。
+  // Bugfix: hard-gate on uncompressed raw bytes before JSON.parse/string copy; WebSocket
+  // compression only affects wire bytes and must not let an over-limit decompressed app payload
+  // reach the parser.
   if (estimateRawDataBytes(raw) > WEB_REMOTE_CONTROL_RPC_TRANSPORT_LIMITS.maxPhysicalFrameBytes) {
     return null;
   }
@@ -190,8 +191,10 @@ export class WebRemoteControlDeviceTransport {
   private heartbeatAckWatchdogTimer?: ReturnType<typeof setTimeout>;
   private reconnectTimer?: ReturnType<typeof setTimeout>;
   private staleWaitingRecoveryTimer?: ReturnType<typeof setTimeout>;
-  // Bugfix: relay message trace 在开发态也会按消息流频率写入 logs/web-remote-control。
-  // 当前默认完全关闭，避免本地排查时产生高频落盘和敏感摘要残留；如需恢复必须先更新日志 spec。
+  // Bugfix: the relay message trace used to write logs/web-remote-control at message-flow
+  // frequency even in dev. It is now fully off by default to avoid high-frequency disk writes
+  // and sensitive-summary leftovers while debugging locally; re-enabling requires a log-spec
+  // update first.
   private readonly traceRelayMessages = false;
   private connectStartedAt = 0;
   private connectAttempt = 0;
@@ -261,13 +264,14 @@ export class WebRemoteControlDeviceTransport {
     this.options.logger.info("[web-remote-control] external relay device connecting");
 
     const relayUrl = new URL(this.options.relayWsUrl);
-    // Bugfix: 实测外部 relay 的边缘层可能只按 query.mid 做分片，单独依赖
-    // X-Device-ID 会导致 desktop 和手机落到不同后端，双方都停在 waiting。
+    // Bugfix: in practice the external relay edge may shard by query.mid only; relying on
+    // X-Device-ID alone puts desktop and phone on different backends and both stick in waiting.
     relayUrl.searchParams.set("mid", this.options.deviceMid);
 
     const socket = new WebSocket(relayUrl.toString(), {
-      // Bugfix: relay 支持时优先协商 permessage-deflate，降低大体积 rpc-frame 的网络传输开销。
-      // 服务端不支持时会自动回退为未压缩，不影响协议语义和数据完整性。
+      // Bugfix: when the relay supports it, negotiate permessage-deflate first to cut network
+      // overhead for large rpc-frames. Without server support it falls back to uncompressed with
+      // no protocol-semantic or data-integrity impact.
       perMessageDeflate: true,
       headers: {
         "X-Device-ID": this.options.deviceMid,
@@ -279,8 +283,7 @@ export class WebRemoteControlDeviceTransport {
       if (socket !== this.socket) {
         return;
       }
-      const negotiatedExtensions =
-        typeof socket.extensions === "string" ? socket.extensions : "";
+      const negotiatedExtensions = typeof socket.extensions === "string" ? socket.extensions : "";
       this.options.logger.info("[web-remote-control] external relay negotiated extensions", {
         perMessageDeflate: negotiatedExtensions.includes("permessage-deflate"),
         extensions: negotiatedExtensions || undefined,
@@ -301,12 +304,15 @@ export class WebRemoteControlDeviceTransport {
     });
 
     socket.on("message", (raw) => {
-      // Bugfix: jitter 延迟重连期间旧 socket 仍可能投递排队事件；只处理当前 socket，
-      // 避免 stale ACK/data 改写新连接状态或进入业务层。
+      // Bugfix: during jittered delayed reconnect the old socket may still deliver queued events;
+      // handle only the current socket so stale ACK/data cannot rewrite new-connection state or
+      // reach the business layer.
       if (socket !== this.socket) {
         return;
       }
-      if (estimateRawDataBytes(raw) > WEB_REMOTE_CONTROL_RPC_TRANSPORT_LIMITS.maxPhysicalFrameBytes) {
+      if (
+        estimateRawDataBytes(raw) > WEB_REMOTE_CONTROL_RPC_TRANSPORT_LIMITS.maxPhysicalFrameBytes
+      ) {
         this.options.logger.warn("[web-remote-control] oversize external relay message dropped", {
           bytes: estimateRawDataBytes(raw),
           maxBytes: WEB_REMOTE_CONTROL_RPC_TRANSPORT_LIMITS.maxPhysicalFrameBytes,
@@ -322,8 +328,8 @@ export class WebRemoteControlDeviceTransport {
       this.logRelayTrace("recv", {
         ...summarizeRelayMessageForTrace(message),
         bytes: estimateRawDataBytes(raw),
-        // Bugfix: 之前仅靠 bytes 无法区分“同一帧重发”和“不同帧同大小”。
-        // 这里在开发态加短 hash，便于快速定位重复传输来源。
+        // Bugfix: bytes alone cannot tell "same frame resent" from "different frame, same size";
+        // add a short hash in dev to locate duplicate-transmission sources quickly.
         contentHash: createMessageHashFromRaw(raw),
       });
       void this.handleMessage(message);
@@ -374,8 +380,10 @@ export class WebRemoteControlDeviceTransport {
             deviceSid: message.device_sid,
             passHash: this.activeAuth.passHash,
           });
-          // Bugfix: 首次注册成功后，后续同一 transport 内的 relay 重连不能继续走 register。
-          // 否则已配对会话遇到短暂 waiting 后会重新注册 device，旧二维码里的 sid 失效，手机刷新也连不回来。
+          // Bugfix: after the first successful registration, later relay reconnects within the
+          // same transport must not register again; otherwise a paired session hitting a brief
+          // waiting would re-register the device, invalidate the sid in the old QR code, and
+          // leave the phone unable to reconnect even after refreshing.
           this.activeAuth = {
             mode: "persisted",
             deviceSid: message.device_sid,
@@ -432,15 +440,17 @@ export class WebRemoteControlDeviceTransport {
   }
 
   private applyPairStatus(status: "waiting" | "matched"): void {
-    // Bugfix: 休眠恢复后可能出现 WebSocket 半开（本地未 close、relay 端已回收）。
-    // 只要还能收到 pair_status_ack，就更新最近心跳应答时间；后续由心跳超时守卫判断是否需要重连。
+    // Bugfix: after sleep/wake the WebSocket can be half-open (local not closed, relay already
+    // reclaimed). As long as pair_status_ack still arrives, refresh last-heartbeat-answer time;
+    // the heartbeat-timeout guard later decides whether to reconnect.
     this.lastPairStatusAckAt = Date.now();
     this.armHeartbeatAckWatchdog();
     if (status === "waiting") {
       if (this.wasPaired) {
-        // Bugfix: relay 偶发把已配对会话的一次心跳 ACK 报成 waiting。
-        // 首次 waiting 先进入“可恢复怀疑态”（staleWaitingCount>0，sendPayload 会暂停业务发送），
-        // 避免桌面端立刻降级为 waiting_terminal，而手机端仍按 paired 继续请求造成两端状态撕裂。
+        // Bugfix: the relay occasionally reports a paired session's heartbeat ACK as waiting.
+        // On first waiting, enter the recoverable-suspect state (staleWaitingCount>0, sendPayload
+        // pauses business sends) instead of degrading to waiting_terminal at once, which would
+        // tear state while the phone keeps requesting as paired.
         this.staleWaitingCount += 1;
         this.startHeartbeat();
         if (this.staleWaitingCount === 1) {
@@ -450,8 +460,9 @@ export class WebRemoteControlDeviceTransport {
         this.reconnectAfterStaleWaiting();
         return;
       }
-      // Bugfix: relay 在 waiting_terminal 阶段同样可能按空闲连接超时回收。
-      // 这里持续发送 pair_status_query 作为轻量保活，避免手机尚未扫码时桌面端每分钟被动断连。
+      // Bugfix: the relay may also reclaim idle connections during waiting_terminal; keep sending
+      // pair_status_query as a lightweight keepalive so the desktop is not passively disconnected
+      // every minute before the phone scans.
       this.setState("waiting_terminal");
       this.startHeartbeat();
       return;
@@ -480,8 +491,9 @@ export class WebRemoteControlDeviceTransport {
     message: string,
   ): Promise<void> {
     if (code === "KICKED") {
-      // Bugfix: KICKED 的业务语义是同一远控链接只能有一个手机 terminal。
-      // desktop device 端在心跳超时后重建 socket 时也可能短暂收到该错误，不能因此关闭桌面远控 runtime。
+      // Bugfix: KICKED means one remote-control link allows only one phone terminal. The desktop
+      // device side can also briefly receive it when rebuilding the socket after a heartbeat
+      // timeout — do not shut down the desktop remote-control runtime for it.
       this.options.logger.warn("[web-remote-control] external relay device KICKED, reconnecting", {
         message,
       });
@@ -512,8 +524,9 @@ export class WebRemoteControlDeviceTransport {
         this.enterWaitingForPairAfterRelayError(new Error(message || code));
         return;
       }
-      // Bugfix: 外部 relay 在 terminal 快速刷新/重连时可能短暂返回 INTERNAL。
-      // 这类错误不代表用户主动结束配对，不能设置 terminalClose，否则 close 后不会自动重连。
+      // Bugfix: the external relay may briefly return INTERNAL when the terminal refreshes or
+      // reconnects quickly. Such errors do not mean the user ended pairing; do not set
+      // terminalClose or the post-close auto-reconnect never happens.
       this.enterRecoverableError(new Error(message || code));
       return;
     }
@@ -565,8 +578,9 @@ export class WebRemoteControlDeviceTransport {
           device_sid: this.deviceSid,
           client_ts: Date.now(),
         });
-        // Bugfix: 固定 setInterval 会让同一批同时配对的设备长期同相发送心跳；
-        // 每次发送后重新抽样有界 jitter，只打散调度相位，不改变平均 10 秒周期。
+        // Bugfix: a fixed setInterval keeps simultaneously-paired devices in a long-term heartbeat
+        // phase lock; re-sample a bounded jitter after every send. This only spreads scheduling
+        // phase, never changing the 10-second average period.
         this.scheduleHeartbeat();
       },
       getWebRemoteControlHeartbeatDelayMs(
@@ -588,8 +602,9 @@ export class WebRemoteControlDeviceTransport {
       if (this.state !== "paired" && this.state !== "waiting_terminal") {
         return;
       }
-      // Bugfix: ACK deadline 必须独立于下一次 jittered heartbeat；否则随机间隔会把
-      // 原本 30 秒的失联判定漂移到 32~36 秒，并在半开 socket 上继续黑洞发送。
+      // Bugfix: the ACK deadline must be independent of the next jittered heartbeat; random
+      // intervals would drift the 30-second lost-contact verdict to 32-36s and keep black-holing
+      // sends on a half-open socket.
       const staleMs = Date.now() - this.lastPairStatusAckAt;
       this.options.logger.warn(
         "[web-remote-control] external relay heartbeat ack timeout, reconnecting",
@@ -643,8 +658,9 @@ export class WebRemoteControlDeviceTransport {
     if (this.staleWaitingRecoveryTimer) {
       return;
     }
-    // Bugfix：生产心跳间隔是 10 秒，旧的 1.5 秒窗口会在下一次 matched 确认前强制重连，
-    // 把 relay 的单次 waiting 抖动放大成手机断线。延长到 15 秒，至少覆盖一轮心跳和网络抖动。
+    // Bugfix: the production heartbeat interval is 10s, so the old 1.5s window force-reconnected
+    // before the next matched confirmation, amplifying a single relay waiting blip into a phone
+    // disconnect. Extend to 15s to cover at least one heartbeat plus network jitter.
     this.staleWaitingRecoveryTimer = setTimeout(() => {
       this.staleWaitingRecoveryTimer = undefined;
       if (this.state === "paired" && this.staleWaitingCount > 0) {
@@ -670,8 +686,9 @@ export class WebRemoteControlDeviceTransport {
     const staleSocket = this.socket;
     this.socket = undefined;
     if (reconnectDelayMs > 0) {
-      // Bugfix: 延迟重连期间旧 socket 已经不可用，必须先切出 paired 状态，避免
-      // manager 继续把该 transport 当成可发送连接并接收旧 socket 的业务帧。
+      // Bugfix: during delayed reconnect the old socket is already unusable; leave paired state
+      // first so the manager neither treats this transport as sendable nor accepts business
+      // frames from the old socket.
       this.setState("connecting");
     }
     staleSocket?.close();
@@ -706,9 +723,10 @@ export class WebRemoteControlDeviceTransport {
   }
 
   private enterWaitingForPairAfterRelayError(error: Error): void {
-    // Bugfix: zcode-remote-hub 在已认证连接上转发 data 找不到对端时只返回 INTERNAL，
-    // 不会关闭当前 device WS。这里不能把“手机端暂时不在”升级成桌面全局 WS 断开，
-    // 只暂停业务发送并继续用 pair_status_query 等待 terminal 重新 matched。
+    // Bugfix: on an authenticated connection zcode-remote-hub returns only INTERNAL when data
+    // forwarding finds no peer, without closing the device WS. Do not escalate "phone temporarily
+    // absent" to a desktop-global WS disconnect; pause business sends and keep waiting via
+    // pair_status_query for the terminal to re-match.
     this.options.onError(error);
     this.clearStaleWaitingRecoveryTimer();
     this.staleWaitingCount = 0;
@@ -765,8 +783,9 @@ export class WebRemoteControlDeviceTransport {
     if (this.socket?.readyState !== WebSocket.OPEN) {
       return false;
     }
-    // Bugfix: 之前 send 方向只记录消息摘要，缺少字节大小，无法和 recv 的 bytes 做对照排查。
-    // 这里按实际写入 socket 的 UTF-8 文本长度记录 bytes，便于分析消息体膨胀与链路异常。
+    // Bugfix: the send direction used to log only a message digest without byte size, making it
+    // impossible to cross-check against recv bytes. Log the UTF-8 length actually written to the
+    // socket to analyze payload growth and link anomalies.
     this.logRelayTrace("send", {
       ...summarizeRelayMessageForTrace(message),
       bytes: Buffer.byteLength(serialized, "utf8"),

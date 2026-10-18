@@ -126,7 +126,7 @@ async function fixture(t: TestContext, providerId: "zai" | "bigmodel" = "bigmode
       sleeps.push(ms);
       now += ms;
     },
-    // OAuth 登录只解析项目访问材料，不再落盘派生 API Key（staging 9af2a442d3 改为请求期换取 Token）。
+    // OAuth login parses only the project access material and no longer persists a derived API key (staging 9af2a442d3 moved to per-request token exchange).
     apiKeyResolver: {
       async resolveMaterial(input, options) {
         assert.equal(input.family, providerId);
@@ -170,7 +170,7 @@ for (const providerId of ["zai", "bigmodel"] as const) {
     assert.equal(attempts, 5);
     assert.deepEqual(f.sleeps, [1000, 1000, 1000, 1000]);
     assert.equal(await f.store.load(keys.zcodeJwtToken), "test-backend-jwt");
-    // Z.ai 以账号用户 ID 为连接身份；BigModel 以组织与项目的稳定摘要为连接身份。
+    // Z.ai uses the account user id as the connection identity; BigModel uses a stable org/project digest.
     const expectedIdentity =
       providerId === "zai"
         ? "test-account"

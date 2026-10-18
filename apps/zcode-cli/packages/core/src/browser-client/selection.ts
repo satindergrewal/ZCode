@@ -66,10 +66,10 @@ function urlMatchRank(target: URL, candidate: URL): number | undefined {
 }
 
 /**
-  * Tab-reuse matching for open(url): pick the agent-owned tab most worth navigating in place.
-  * Reuse threshold rank <= 2 (same hostname); rank 3 parent/child domains may be different sites — too risky to navigate, do not copy.
-  * On equal rank prefer the active tab, otherwise the newest (latest) in the list.
-  * Pure function like selectBrowserForUrl, so contract cases can be shared.
+ * Tab-reuse matching for open(url): pick the agent-owned tab most worth navigating in place.
+ * Reuse threshold rank <= 2 (same hostname); rank 3 parent/child domains may be different sites — too risky to navigate, do not copy.
+ * On equal rank prefer the active tab, otherwise the newest (latest) in the list.
+ * Pure function like selectBrowserForUrl, so contract cases can be shared.
  */
 export function selectTabForUrl<T extends { url?: string; active?: boolean }>(
   targetValue: string,
@@ -89,7 +89,7 @@ export function selectTabForUrl<T extends { url?: string; active?: boolean }>(
     if (
       best === undefined ||
       rank < best.rank ||
-            // Equal rank: active wins; otherwise the later (newer) entry in the list.
+      // Equal rank: active wins; otherwise the later (newer) entry in the list.
       (rank === best.rank && (tab.active === true || best.tab.active !== true))
     ) {
       best = { tab, rank };
@@ -99,8 +99,8 @@ export function selectTabForUrl<T extends { url?: string; active?: boolean }>(
 }
 
 /**
-  * URL selection is pure so one set of contract cases can pin IAB/extension/CDP.
-  * Explicit browser selection bypasses this path, so this fallback can never switch backends silently.
+ * URL selection is pure so one set of contract cases can pin IAB/extension/CDP.
+ * Explicit browser selection bypasses this path, so this fallback can never switch backends silently.
  */
 export function selectBrowserForUrl(
   infos: readonly BrowserInfo[],
@@ -127,7 +127,7 @@ export function selectBrowserForUrl(
         const rank = urlMatchRank(target, parseUrl(value));
         if (rank !== undefined && (best === undefined || rank < best)) best = rank;
       } catch {
-                // One bad URL from the backend must not invalidate the whole registry.
+        // One bad URL from the backend must not invalidate the whole registry.
       }
     }
     return best === undefined ? [] : [{ info, matchRank: best }];

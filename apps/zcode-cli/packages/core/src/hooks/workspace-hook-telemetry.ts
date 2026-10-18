@@ -12,8 +12,8 @@ export type WorkspaceHookTelemetryEvent =
   | "workspace_hook.trust_store_failure"
   | "workspace_hook.toggle_failure"
   | "workspace_hook.config_rebuild_failure"
-    // revoke needs dedicated observability: when triaging "panel dead after revoke", logs must show
-    // whether the revoke succeeded and attribute later failures to revoke vs grant, or triage crawls.
+  // revoke needs dedicated observability: when triaging "panel dead after revoke", logs must show
+  // whether the revoke succeeded and attribute later failures to revoke vs grant, or triage crawls.
   | "workspace_hook.revoked"
   | "workspace_hook.stale_response";
 

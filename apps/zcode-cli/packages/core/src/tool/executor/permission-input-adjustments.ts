@@ -1,11 +1,11 @@
 // ============================================================
-// 确认窗里的入参调整：授权之后、handler 之前的那一步
+// Input adjustments in the confirm dialog: after approval, before the handler
 // ============================================================
 // docs/dynamic-workflow/launch.md「Adjusting the settings in the window」。
 //
-// broker 把用户在确认窗里改过的字段放在结果的 `inputAdjustments` 上；这里把它交给工具自己的
-// `applyInputAdjustments`，换回调整后的入参。放在 permission flow 的尾部而不是 handler 里，是因为
-// 调整属于「用户批准了什么」，而 handler 只该面对一份已经落定的入参——与 `resolveInput` 同一条理由。
+// The broker puts fields the user changed in the dialog on the result's `inputAdjustments`; hand them to the tool's own
+// `applyInputAdjustments` to get the adjusted input back. Placed at the tail of the permission flow, not in the handler, because
+// an adjustment belongs to "what the user approved", while the handler should see only settled input — same reason as `resolveInput`.
 
 import { traceContextToLogContext, type TraceContext } from "@zcode/contracts";
 import type {
@@ -26,8 +26,8 @@ export type PermissionInputAdjustmentOutcome =
   | { ok: false; result: ToolExecutionResult };
 
 /**
- * `resolveInput` 与 `applyInputAdjustments` 共用的上下文。两处读的必须是同一组端口：确认窗之前按
- * 这份目录解析过的模型，批准之后也按这份目录再解析一遍。
+ * Context shared by `resolveInput` and `applyInputAdjustments`. Both must read the same ports: the model resolved before the
+ * approval must resolve again through the same catalog.
  */
 export function buildToolInputResolutionContext(
   deps: ToolExecutorDeps,
@@ -65,8 +65,8 @@ export function applyPermissionInputAdjustments(options: {
     toolName: toolCall.name,
   };
   if (!entry.applyInputAdjustments) {
-    // broker 只为声明了这一步的工具合成调整；走到这里说明 broker 与工具声明不同步。照原入参执行
-    // 并留痕，而不是替用户拒绝一次他已经批准的调用。
+    // The broker synthesizes adjustments only for tools declaring this step; reaching here means broker and tool declaration diverged. Execute with the original input
+    // and leave a trace, rather than rejecting on the user's behalf a call they already approved.
     deps.logger?.warn("Permission input adjustments ignored: the tool does not apply them", {
       ...logContext,
       event: "tool.permission.input_adjustments_ignored",

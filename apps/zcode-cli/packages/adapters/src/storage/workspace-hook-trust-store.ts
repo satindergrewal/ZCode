@@ -32,10 +32,7 @@ interface LockOwnerMetadata {
   startTime?: number;
 }
 
-async function defaultWriteLockOwnerMetadata(
-  handle: FileHandle,
-  content: string,
-): Promise<void> {
+async function defaultWriteLockOwnerMetadata(handle: FileHandle, content: string): Promise<void> {
   await handle.writeFile(content, "utf8");
 }
 
@@ -167,10 +164,7 @@ export class FileWorkspaceHookTrustStore {
   private readonly renameFile: typeof rename;
   private readonly renameRetryDelaysMs: readonly number[];
   private readonly probeProcessStartTime: (pid: number) => Promise<number | null>;
-  private readonly writeLockOwnerMetadata: (
-    handle: FileHandle,
-    content: string,
-  ) => Promise<void>;
+  private readonly writeLockOwnerMetadata: (handle: FileHandle, content: string) => Promise<void>;
   private mutationQueue: Promise<unknown> = Promise.resolve();
 
   constructor(options: FileWorkspaceHookTrustStoreOptions) {
@@ -210,9 +204,7 @@ export class FileWorkspaceHookTrustStore {
       // An empty array yields an empty Set, the filter keeps everything and silently succeeds, so callers
       // cannot tell revoke-all (undefined) from an invalid no-target request. Fix the tri-state: undefined
       // revokes the whole workspace, non-empty revokes exactly, empty rejects before any IO.
-      return Promise.reject(
-        new Error("hookDeclarationDigests must be undefined or non-empty"),
-      );
+      return Promise.reject(new Error("hookDeclarationDigests must be undefined or non-empty"));
     }
     const selected = options.hookDeclarationDigests
       ? new Set(options.hookDeclarationDigests)
@@ -388,7 +380,7 @@ export class FileWorkspaceHookTrustStore {
     }
   }
 
-/** pid liveness via signal 0; EPERM (Windows, no permission) counts alive, ESRCH/EINVAL dead. */
+  /** pid liveness via signal 0; EPERM (Windows, no permission) counts alive, ESRCH/EINVAL dead. */
   private isProcessAlive(pid: number): boolean {
     if (pid === process.pid) return true;
     try {
@@ -487,12 +479,7 @@ export class FileWorkspaceHookTrustStore {
       await handle.close();
       handle = undefined;
       await this.beforeRename?.();
-      await renameWithRetry(
-        this.renameFile,
-        tempPath,
-        this.filePath,
-        this.renameRetryDelaysMs,
-      );
+      await renameWithRetry(this.renameFile, tempPath, this.filePath, this.renameRetryDelaysMs);
       await chmod(this.filePath, 0o600);
     } catch (error) {
       await handle?.close().catch(() => undefined);

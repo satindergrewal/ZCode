@@ -1,4 +1,4 @@
-// 通过已有 Electron 的 MediaRecorder 生成原创小型 WebM fixture，stdout 输出 base64。
+// Uses a running Electron's MediaRecorder to produce a small original WebM fixture; base64 on stdout.
 const { app, BrowserWindow } = require("electron");
 app
   .whenReady()

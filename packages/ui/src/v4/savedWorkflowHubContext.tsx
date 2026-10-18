@@ -1,13 +1,13 @@
-// 完成卡上那两个**壳级**落点（docs/dynamic-workflow/transcript-and-notifications.md
+// The two **shell-level** targets from the completed card (docs/dynamic-workflow/transcript-and-notifications.md
 // 「Saving the run, and running it again」）：
 //
-//   openWorkflow  ── 「已保存」芯片 → 工作流中枢里那一页；
-//   navigateToRun ── 「再次运行」启动成功 → 切到新建的那个会话。
+//   openWorkflow -- the saved chip -> that page in the workflow hub;
+//   navigateToRun -- a successful run-again -> switch to the newly created session.
 //
-// 与 WorkflowRunOpenProvider 同一条理由用 context 而不是逐层 props：这两件事只有壳知道怎么做，
-// 而卡片长在会话时间线与 run 侧板两处，中间隔着 pane / 行上下文好几层，没有一层需要知道
-// 「中枢在哪」。没有 provider（手机远控壳、单测、静态回放）时芯片只是文字、启动不切页——
-// 手机远控壳本来就不提供中枢。
+// Same reasoning as WorkflowRunOpenProvider for context over prop drilling: only the shell knows how,
+// and the card lives in both the conversation timeline and the run side pane, layers away from either;
+// no layer needs where-the-hub-is. Without a provider (mobile shell, tests, static replay) the chip is text and run-again never switches --
+// the mobile shell has no hub to begin with.
 import { createContext, useContext, useMemo, useRef, type ReactNode } from "react";
 import type { ZCodeSavedWorkflowScope } from "@zcode/shared";
 import type { SavedWorkflowLaunchTarget } from "@/settings/saved-workflows/useSavedWorkflowLauncher.js";
@@ -15,7 +15,7 @@ import type { SavedWorkflowLaunchTarget } from "@/settings/saved-workflows/useSa
 export interface SavedWorkflowHubTarget {
   name: string;
   scope: ZCodeSavedWorkflowScope;
-  /** 项目档所属的项目；全局档忽略它（中枢的全局组不按项目分）。 */
+  /** The project a project-scoped entry belongs to; global entries ignore it (the hub's global group is not per-project). */
   workspacePath: string;
   workspaceIdentity?: string;
 }
@@ -34,7 +34,7 @@ export function SavedWorkflowHubProvider({
 }: SavedWorkflowHubHandlers & { children: ReactNode }) {
   const ref = useRef({ openWorkflow, navigateToRun });
   ref.current = { openWorkflow, navigateToRun };
-  // 引用恒定：芯片挂在虚拟列表里的卡上，回调换引用就等于整列重渲染。
+  // Stable identity: the chip hangs on a virtualized card; a new callback reference re-renders the whole list.
   const stable = useMemo<SavedWorkflowHubHandlers>(
     () => ({
       openWorkflow: (target) => ref.current.openWorkflow(target),

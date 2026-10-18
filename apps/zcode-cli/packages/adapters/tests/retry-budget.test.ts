@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { ModelFailureReason, ModelRetryBudget, type ModelNetworkStatusEvent } from "@zcode/contracts";
+import {
+  ModelFailureReason,
+  ModelRetryBudget,
+  type ModelNetworkStatusEvent,
+} from "@zcode/contracts";
 import type { AiSdkModelRuntime } from "../src/model/runner-runtime.js";
 import { executeAdapterGenerateText, executeAdapterStreamText } from "./test-adapter-model.js";
 import {
@@ -40,7 +44,9 @@ describe("retry budget predicates", () => {
     expect(isUnboundedRetryBudget(ModelRetryBudget.Unbounded)).toBe(true);
     expect(retryBudgetAllows(ModelRetryBudget.Unbounded, 1_000, 3)).toBe(true);
     expect(retryAttemptLoopContinues(ModelRetryBudget.Unbounded, 1_000, 3)).toBe(true);
-    expect(retryBudgetMaxAttempts(ModelRetryBudget.Unbounded, 11)).toBe(UNBOUNDED_RETRY_MAX_ATTEMPTS);
+    expect(retryBudgetMaxAttempts(ModelRetryBudget.Unbounded, 11)).toBe(
+      UNBOUNDED_RETRY_MAX_ATTEMPTS,
+    );
     expect(UNBOUNDED_RETRY_MAX_ATTEMPTS).toBe(0);
   });
 
@@ -63,9 +69,9 @@ describe("retry budget predicates", () => {
     expect(
       retryAttemptLoopContinues(ModelRetryBudget.SingleAttempt, 2, SINGLE_ATTEMPT_MAX_ATTEMPTS),
     ).toBe(false);
-    expect(retryBudgetMaxAttempts(ModelRetryBudget.SingleAttempt, SINGLE_ATTEMPT_MAX_ATTEMPTS)).toBe(
-      1,
-    );
+    expect(
+      retryBudgetMaxAttempts(ModelRetryBudget.SingleAttempt, SINGLE_ATTEMPT_MAX_ATTEMPTS),
+    ).toBe(1);
   });
 });
 
@@ -117,7 +123,9 @@ describe("AiSdkModelAdapter with modelRetryBudget = single-attempt", () => {
         streamText() {
           attempts += 1;
           return {
-            fullStream: failingStream(apiError("overloaded", { isRetryable: true, statusCode: 529 })),
+            fullStream: failingStream(
+              apiError("overloaded", { isRetryable: true, statusCode: 529 }),
+            ),
           } as never;
         },
       },
@@ -185,8 +193,11 @@ describe("AiSdkModelAdapter with modelRetryBudget = unbounded", () => {
       }),
     });
     await expect(
-      executeAdapterGenerateText(adapter, { providerId: "test" as never,
-      modelId: "model-a" as never, messages: [{ role: "user", content: "Ping" }] }),
+      executeAdapterGenerateText(adapter, {
+        providerId: "test" as never,
+        modelId: "model-a" as never,
+        messages: [{ role: "user", content: "Ping" }],
+      }),
     ).rejects.toBeInstanceOf(AiSdkModelAdapterError);
     expect(attempts).toBe(RETRY.maxAttempts);
   });
@@ -202,15 +213,14 @@ describe("AiSdkModelAdapter with modelRetryBudget = unbounded", () => {
       }),
     });
     const rejection = await executeAdapterGenerateText(adapter, {
-        providerId: "test" as never,
-        modelId: "model-a" as never,
-        messages: [{ role: "user", content: "Ping" }],
-        modelRetryBudget: ModelRetryBudget.Unbounded,
-      })
-      .then(
-        () => undefined,
-        (error: unknown) => error,
-      );
+      providerId: "test" as never,
+      modelId: "model-a" as never,
+      messages: [{ role: "user", content: "Ping" }],
+      modelRetryBudget: ModelRetryBudget.Unbounded,
+    }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
     expect(rejection).toBeInstanceOf(AiSdkModelAdapterError);
     expect((rejection as AiSdkModelAdapterError).context).toMatchObject({
       reason: ModelFailureReason.AuthFailed,
@@ -357,16 +367,15 @@ describe("AiSdkModelAdapter with modelRetryBudget = unbounded", () => {
       }),
     });
     const rejection = await executeAdapterGenerateText(adapter, {
-        providerId: "test" as never,
-        modelId: "model-a" as never,
-        messages: [{ role: "user", content: "Ping" }],
-        modelRetryBudget: ModelRetryBudget.Unbounded,
-        abortSignal: controller.signal,
-      })
-      .then(
-        () => undefined,
-        (error: unknown) => error,
-      );
+      providerId: "test" as never,
+      modelId: "model-a" as never,
+      messages: [{ role: "user", content: "Ping" }],
+      modelRetryBudget: ModelRetryBudget.Unbounded,
+      abortSignal: controller.signal,
+    }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
     expect(rejection).toBeInstanceOf(AiSdkModelAdapterError);
     expect((rejection as AiSdkModelAdapterError).context).toMatchObject({
       reason: ModelFailureReason.Cancelled,
@@ -388,7 +397,9 @@ describe("AiSdkModelAdapter with modelRetryBudget = unbounded", () => {
           attempts += 1;
           if (attempts <= TRANSIENT_FAILURES_BEYOND_BUDGET) {
             return {
-              fullStream: failingStream(apiError("overloaded", { isRetryable: true, statusCode: 503 })),
+              fullStream: failingStream(
+                apiError("overloaded", { isRetryable: true, statusCode: 503 }),
+              ),
             } as never;
           }
           return {

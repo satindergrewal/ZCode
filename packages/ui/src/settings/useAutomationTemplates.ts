@@ -39,9 +39,12 @@ export function useAutomationTemplates(
 
   useEffect(() => {
     if (catalog.rejectedScheduledTemplateIds.length === 0) return;
-    logger.warn("[automation-templates] rejected scheduled templates with empty title or uneditable schedule", {
-      templateIds: catalog.rejectedScheduledTemplateIds,
-    });
+    logger.warn(
+      "[automation-templates] rejected scheduled templates with empty title or uneditable schedule",
+      {
+        templateIds: catalog.rejectedScheduledTemplateIds,
+      },
+    );
   }, [catalog.rejectedScheduledTemplateIds]);
 
   return {

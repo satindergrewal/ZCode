@@ -98,10 +98,10 @@ export function SavedWorkflowsSection({
   const { intl, locale } = useZCodeIntl();
   const tabs = useTabStore((store) => store.tabs);
   const openSettingsTab = useTabStore((store) => store.openSettingsTab);
-  // launch.md「The hub page」「The user's choice」：标题行的「工作流设置」直达设置 › 常规的模式行，
-  // 旁边写当前生效模式。中枢只在生效模式不是关闭时出现，所以这里不处理关闭态。
-  // 链接与它要打开的设置行同进同退：行只在功能被提供时出现（isDynamicWorkflowOffered），旧 Host 的
-  // 快照没有 offeredMode，行不出，链接也不出——否则点过去是一个找不到的设置。
+  // launch.md, hub page and user's choice: the title-row Workflow settings link opens the Settings General mode row,
+  // which shows the current effective mode. The hub exists only when the mode is not off, so the off state is not handled here.
+  // Link and target row appear together: the row exists only while the feature is offered (isDynamicWorkflowOffered); on old hosts
+  // the snapshot lacks offeredMode, so no row and no link -- otherwise the link lands on a missing setting.
   const dynamicWorkflowConfig = useDynamicWorkflowAvailability().config;
   const dynamicWorkflowMode = dynamicWorkflowConfig?.mode;
   const showWorkflowSettings =

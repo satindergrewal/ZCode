@@ -67,10 +67,10 @@ export function recordHighspeedTurn(record: HighspeedTurnRecord): void {
 }
 
 /**
- * 冷启动恢复与跨端追平：到期时 renderer 可能不在场，内存 store 没有机会登记/收口这张卡；
- * 远控 Renderer 也可能先登记运行中 row、桌面端随后才把完成态持久化进 transcript。
- * 合并口径见 planHighspeedTranscriptHydration；这里只负责按序落库并发一次通知。
- * 返回产生变化的 row 数；无变化不发通知，重复水合不会造成渲染抖动。
+ * Cold-start recovery and cross-device catch-up: the renderer may be absent at expiry, so the memory store
+ * never registered/closed the card; a remote renderer may register a running row before desktop persists.
+ * Merge rules live in planHighspeedTranscriptHydration; this only persists in order and notifies once.
+ * Returns the changed-row count; no change, no notify, so repeat hydration never renders jitter.
  */
 export function hydrateHighspeedTurnsFromTranscript(
   sessionId: string,
@@ -153,9 +153,9 @@ export function getHighspeedCardTps(cardId: string): number | undefined {
 }
 
 /**
- * 卡级 healthy 查询防重必须跨 SessionPane 生命周期存在；组件 ref 会在重挂载后清空，
- * 导致同一张已过期卡持续请求并放大服务端限流。每张卡最多允许到期查询一次，
- * 若当时仍有 Turn 运行，再允许最后一轮结束后补查一次。
+ * The card-level healthy-query dedupe must outlive SessionPane: a component ref clears on remount,
+ * re-requesting one expired card and amplifying server rate limits. Each card queries once at expiry,
+ * plus one catch-up after the last turn ends if turns were still running.
  */
 export function claimHighspeedHealthyAttempt(cardId: string, allTurnsCompleted: boolean): boolean {
   const attempts = healthyAttemptsByCardId.get(cardId) ?? {
@@ -203,10 +203,7 @@ export function markHighspeedTurnMetricsPersisted(
   if (changed) publishChange();
 }
 
-export function markHighspeedCardAutoShared(
-  cardId: string,
-  autoSharedAt = Date.now(),
-): void {
+export function markHighspeedCardAutoShared(cardId: string, autoSharedAt = Date.now()): void {
   let changed = false;
   records = records.map((record) => {
     if (record.card.cardId !== cardId || record.autoSharedAt !== undefined) return record;
@@ -314,12 +311,12 @@ export function listHighspeedCardAutoShareCandidates(
       return [];
     }
     const metrics = aggregateHighspeedCardMetrics(cardId);
-    // Bug 原因：零输出卡过去仍会进入自动分享，build request 再把 token_usage 强制成 1，
-    // 既违背“没有生成内容不展示/分享”的产品语义，也会向后端写入虚假 usage。
+    // Bug: zero-output cards still auto-shared and build request coerced token_usage to 1,
+    // breaking no-content-no-share and writing fake usage upstream.
     if (metrics.outputTokens <= 0) return [];
-    // 未达标（总体加速倍率 ≤1.2x）不发布左下角分享卡：发布门禁与「查看」按钮门禁同口径，
-    // 否则会出现「卡弹出来却没有查看按钮」的半残态（spec §9）。诊断 blocker below-min-speedup
-    // 与此保持一致，避免达标判定漂移或静默丢卡。
+    // Below threshold (overall <=1.2x) no bottom-left card: same gate as the View button, else half-states
+    // like card-without-button appear (spec 9). The blocker diagnostic below-min-speedup stays
+    // aligned so pass checks never drift or drop cards silently.
     if (!isHighspeedShareEligible(metrics)) return [];
     return [
       {
@@ -376,9 +373,7 @@ export function aggregateHighspeedCardMetrics(cardId: string): HighspeedShareMet
   const regularDurationSeconds = records.reduce(
     (total, record) =>
       total +
-      (record.metrics.regularTps > 0
-        ? record.metrics.outputTokens / record.metrics.regularTps
-        : 0),
+      (record.metrics.regularTps > 0 ? record.metrics.outputTokens / record.metrics.regularTps : 0),
     0,
   );
   const hasRealTiming =
@@ -416,9 +411,7 @@ export function aggregateHighspeedCardMetrics(cardId: string): HighspeedShareMet
       : {}),
     savedDurationMs,
     regularTps:
-      regularDurationSeconds > 0
-        ? Number((outputTokens / regularDurationSeconds).toFixed(3))
-        : 0,
+      regularDurationSeconds > 0 ? Number((outputTokens / regularDurationSeconds).toFixed(3)) : 0,
     highspeedTps,
   };
 }

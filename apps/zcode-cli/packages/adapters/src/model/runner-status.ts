@@ -16,8 +16,8 @@ import {
   resolveModelApiCallObservation,
 } from "@zcode/contracts";
 import { UNBOUNDED_RETRY_MAX_ATTEMPTS } from "./retry-budget.js";
-// 请求归因 header 一族住在 runner-attribution.ts（max-lines 拆分）；公开面仍从本文件导出，
-// 既有 importer 不必改路径。
+// Request-attribution headers live in runner-attribution.ts (max-lines split); the public surface still exports here,
+// so existing importers keep their paths.
 import { resolveModelRequestSessionType } from "./runner-attribution.js";
 import type { AiSdkModelTextRequest, ResolvedAiSdkModel } from "./runner-runtime.js";
 import type { ModelRequestObservationSource } from "./request-security.js";
@@ -122,8 +122,8 @@ export function createAttemptStatusContext(
 
   return {
     ...statusContext,
-    // adapter retry 会发起新的物理 provider 请求；
-    // 复用首轮 requestId 会让上游日志和 retry-after 诊断串错请求。
+    // An adapter retry starts a new physical provider request;
+    // reusing the first requestId would cross-wire upstream logs and retry-after diagnostics.
     requestId: crypto.randomUUID(),
   };
 }
@@ -149,8 +149,8 @@ function initialReasoningObservation(
 }
 
 /**
- * 准入等待两端的状态事件：`admitAttempt` 的 `tryAcquire` 未命中即 `queued`，拿到票即
- * `admitted`（带排队时长）。此时还没有票据，所以不经 ticket 投递——治理器不需要这两条。
+ * Status events at both admission ends: tryAcquire miss emits queued, a granted token emits
+ * admitted (with queue time). No token exists yet, so delivery skips the ticket; the governor needs neither.
  */
 export function admissionWaitPublishers(
   statusContext: ModelStatusContext,
@@ -189,8 +189,8 @@ export async function publishModelStatus(
   event: ModelNetworkStatusEvent,
   options: {
     /**
-     * 本次尝试的准入票据：它是该尝试专属的
-     * 状态事件汇，治理器从这里读结果。与 request/telemetry sink 同一条投递纪律（失败只告警）。
+     * This attempt's admission token: the attempt-private
+     * status-event sink the governor reads results from. Same delivery discipline as request/telemetry sinks (warn on failure).
      */
     admissionTicket?: ModelStatusSink;
     requestObservations?: ModelRequestObservationSource;
@@ -242,9 +242,9 @@ export async function publishModelStatus(
 }
 
 /**
- * attempt 终态前，把 signer 暂存的签名观测按 requestId 取出并只发给进程级 Telemetry Sink。
- * 必须先于终态事件投递：recorder 收到终态后会释放该 attempt 的 span writer。
- * 本地日志已在 fetch 层即时写入，这里不重复记录。
+ * Before the attempt's terminal state, take the signer's staged signature observations by requestId and emit them only to the process-level Telemetry Sink.
+ // Must preceder the terminal event: once the recorder sees a terminal state it frees that attempt's span writer.
+ // The local log already wrote at the fetch layer; no duplicate here.
  */
 async function publishRequestObservations(
   event: ModelNetworkStatusEvent,
@@ -279,8 +279,8 @@ async function publishRequestObservations(
 }
 
 /**
- * Provider 流式里程碑只发给进程级 Telemetry Sink，不写 SessionEvent。
- * requestStatusSink 属于对话产品状态，不能被纯观测事件污染。
+ * Provider streaming milestones go only to the process-level telemetry sink, never into SessionEvent:
+ * requestStatusSink is conversation product state and must stay unpolluted by pure observability.
  */
 export async function publishModelTelemetryMilestone(
   event: Extract<
@@ -316,7 +316,7 @@ export function modelStatusContextToLogContext(
     attempt,
     baseURL: statusContext.baseURL,
     maxAttempts: statusContext.maxAttempts,
-    // maxAttempts 为 0 表示无上限：maxRetries 同样以 0 表达，而不是 max(0, -1) 巧合得到的 0。
+    // maxAttempts 0 means unbounded: express maxRetries as 0 too, not the accidental max(0, -1).
     maxRetries:
       statusContext.maxAttempts === UNBOUNDED_RETRY_MAX_ATTEMPTS
         ? UNBOUNDED_RETRY_MAX_ATTEMPTS
@@ -426,7 +426,7 @@ function logStatusEvent(event: ModelNetworkStatusEvent, logger?: Logger): void {
       return;
 
     case "model_request_observation":
-      // fetch 层已即时写入本地日志，这里只负责 telemetry 投递。
+      // The fetch layer already wrote the local log; this only delivers telemetry.
       return;
   }
 }

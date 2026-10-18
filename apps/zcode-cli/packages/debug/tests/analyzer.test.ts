@@ -140,7 +140,11 @@ describe("debug analyzer", () => {
         payload: { resultType: "success" },
       },
     ];
-    await writeFile(eventPath, `${events.map((event) => JSON.stringify(event)).join("\n")}\n`, "utf8");
+    await writeFile(
+      eventPath,
+      `${events.map((event) => JSON.stringify(event)).join("\n")}\n`,
+      "utf8",
+    );
 
     const detail = await inspectTrace("trace-spans", {
       eventPath,
@@ -279,7 +283,9 @@ describe("debug analyzer", () => {
             warnings: ["当前 token 来自本地估算。"],
           },
         },
-      ].map((entry) => JSON.stringify(entry)).join("\n")}\n`,
+      ]
+        .map((entry) => JSON.stringify(entry))
+        .join("\n")}\n`,
       "utf8",
     );
 
@@ -456,7 +462,10 @@ describe("debug analyzer", () => {
       dbPath: fixture.dbPath,
     });
 
-    expect(all.projects.map((project) => project.projectId)).toEqual(["project-new", "project-old"]);
+    expect(all.projects.map((project) => project.projectId)).toEqual([
+      "project-new",
+      "project-old",
+    ]);
     expect(all.traces).toHaveLength(10);
 
     const filtered = await listTraces({
@@ -481,7 +490,9 @@ describe("debug analyzer", () => {
       hitRate: 0.2,
     });
     expect(detail.cacheReports[0]?.segments).toEqual([]);
-    expect(detail.cacheReports[0]?.limitations[0]).toBe("SQLite 里有聚合缓存 token，但没有逐文本 cache report。");
+    expect(detail.cacheReports[0]?.limitations[0]).toBe(
+      "SQLite 里有聚合缓存 token，但没有逐文本 cache report。",
+    );
     expect(detail.contextUsageSnapshots[0]).toMatchObject({
       totalTokens: 100,
       tokenMethod: "provider_usage",
@@ -612,7 +623,11 @@ async function createProjectFixture() {
     sessionId: "session-old",
     payload: { resultType: "success" },
   });
-  await writeFile(eventPath, `${events.map((event) => JSON.stringify(event)).join("\n")}\n`, "utf8");
+  await writeFile(
+    eventPath,
+    `${events.map((event) => JSON.stringify(event)).join("\n")}\n`,
+    "utf8",
+  );
   await writeFile(join(logDir, "zcode.jsonl"), "", "utf8");
 
   const db = new DatabaseSync(dbPath);

@@ -1,5 +1,5 @@
-// MCP Apps App-Provided Tools → core 工具条目。条目只描述「模型怎么看见、审批怎么走、结果怎么进模型」；
-// 调用本身交给宿主注入的执行器（bootstrap 的实例信箱：待执行调用投递给托管页面的渲染端，页面执行后回传）。
+// MCP Apps app-provided tools -> core tool entries. An entry only describes how the model sees it, how approval flows, and how the result reaches the model;
+// the invocation itself is delegated to the host-injected executor (bootstrap's instance mailbox: pending calls are delivered to the hosted page's renderer, which executes and returns the result).
 
 import type { JsonSchema, McpToolCallResult, McpToolDescriptor } from "@zcode/contracts";
 import {
@@ -10,21 +10,21 @@ import type { ToolEntry, ToolExecutionContext } from "../tool/types.js";
 import { normalizeMcpToolResultForModel } from "./image-normalization.js";
 import { McpToolOutputJsonSchema, formatMcpToolResult } from "./index.js";
 
-/** 条目级超时：认领期限 + 执行期限 + 余量；真正的两段期限由执行器按规范值判定。 */
+/** Per-entry timeout: claim deadline + execution deadline + slack; the real two-phase deadlines are judged by the executor against spec values. */
 export const MCP_APP_PROVIDED_TOOL_ENTRY_TIMEOUT_MS =
   MCP_APPS_APP_TOOL_CLAIM_TIMEOUT_MS + MCP_APPS_APP_TOOL_CALL_TIMEOUT_MS + 5_000;
 
 export interface McpAppProvidedToolDefinition {
   retainExecution?: ToolEntry["retainExecution"];
-  /** 模型侧名字 `app__<server>__<tool>`。 */
+  /** Model-side name `app__<server>__<tool>`. */
   modelName: string;
   serverName: string;
-  /** 只做展示 / 键位（非插件 server 时等于 serverName）。 */
+  /** Display / keying only (equals serverName for non-plugin servers). */
   pluginId: string;
-  /** 暴露该工具的页面实例（同 server 最近初始化的实例）：沙箱作用域 + 代际。 */
+  /** Page instance exposing this tool (most recently initialized for the server): sandbox scope + generation. */
   scopeId: string;
   generation: number;
-  /** 页面里的原始工具名。 */
+  /** The raw tool name inside the page. */
   toolName: string;
   title?: string;
   description?: string;
@@ -50,7 +50,7 @@ export function createMcpAppProvidedToolEntry(
 ): ToolEntry {
   const readOnly = definition.readOnlyHint === true;
   const destructive = definition.destructiveHint === true;
-  // 只读自动放行，其余走现有审批；页面是不可信的沙箱代码，风险至少 medium。
+  // Read-only calls auto-approve, the rest follow the existing approval path; a page is untrusted sandbox code, so the risk floor is medium.
   const needsApproval = !readOnly;
   const riskLevel = destructive ? "high" : readOnly ? "low" : "medium";
   const source = `the ${definition.serverName} app page`;
@@ -98,7 +98,7 @@ export function createMcpAppProvidedToolEntry(
       needsApproval,
       patternSources: ["toolName", "input"],
       denyPriority: "beforeAsk",
-      // 模型侧名字跨会话会被别的页面复用：「始终允许」只在本会话生效，不写持久规则。
+      // Model-side names get reused across sessions by other pages: always-allow is per-session only, never a persisted rule.
       askOptions: { allowAlways: "session" },
     },
     resultBudget: {

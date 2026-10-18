@@ -1,4 +1,4 @@
-// symbol 与 bigint 不可 JSON 序列化 —— 拒绝。
+// symbol and bigint are not JSON-serializable -- reject.
 interface WithSymbol {
   tag: symbol;
 }

@@ -109,7 +109,7 @@ export interface ZCodeAgentSkillReferenceCatalogParams extends ZCodeAgentWorkspa
   sessionId?: string;
 }
 
-/** 插件 UI：UI 发起的 `ui://` 资源读取。 */
+/** Plugin UI: UI-initiated ui:// resource reads. */
 export interface ZCodeAgentReadMcpResourceParams extends ZCodeAgentWorkspaceTarget {
   instance: import("@zcode/shared/mcp-apps").McpAppInstance;
   sessionId: string;
@@ -118,10 +118,10 @@ export interface ZCodeAgentReadMcpResourceParams extends ZCodeAgentWorkspaceTarg
   uri: string;
 }
 
-/** 插件 UI 页面发起的 `resources/read`；参数与 readMcpResource 同形，结果受 8 MiB 与 mimeType 白名单约束。 */
+/** Plugin-UI resources/read; same shape as readMcpResource, results capped at 8 MiB and mime-allow-listed. */
 export type ZCodeAgentReadMcpResourceForUiParams = ZCodeAgentReadMcpResourceParams;
 
-/** 插件 UI：UI 回调本插件工具；不进审批流，归属由 agent 侧 catalog fail closed。 */
+/** Plugin UI: UI invokes this plugin's tool; no approval flow, attribution resolved fail-closed by the agent catalog. */
 export interface ZCodeAgentCallMcpToolForUiParams extends ZCodeAgentWorkspaceTarget {
   instance: import("@zcode/shared/mcp-apps").McpAppInstance;
   sessionId: string;
@@ -129,10 +129,10 @@ export interface ZCodeAgentCallMcpToolForUiParams extends ZCodeAgentWorkspaceTar
   serverName: string;
   toolName: string;
   arguments?: Record<string, unknown>;
-  /** 宿主生成的调用 id，配合 cancelMcpToolCallForUi。 */
+  /** Host-generated call id, paired with cancelMcpToolCallForUi. */
   callId: string;
 }
-/** 插件 UI 页面发起的 resources/list、resources/templates/list、subscribe、unsubscribe。 */
+/** Plugin-UI resources/list, resources/templates/list, subscribe, and unsubscribe. */
 export interface ZCodeAgentListMcpResourcesForUiParams extends ZCodeAgentWorkspaceTarget {
   instance: import("@zcode/shared/mcp-apps").McpAppInstance;
   sessionId: string;
@@ -140,7 +140,7 @@ export interface ZCodeAgentListMcpResourcesForUiParams extends ZCodeAgentWorkspa
   serverName: string;
   cursor?: string;
 }
-/** App-Provided Tools：实例身份 = 会话 + 沙箱作用域 + 代际。 */
+/** App-Provided Tools: instance identity = session + sandbox scope + generation. */
 export interface ZCodeAgentAppToolInstanceForUiParams extends ZCodeAgentWorkspaceTarget {
   instance: import("@zcode/shared/mcp-apps").McpAppInstance;
   sessionId: string;

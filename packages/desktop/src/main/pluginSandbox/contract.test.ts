@@ -9,14 +9,14 @@ import {
 } from "./contract.js";
 
 describe("plugin-sandbox contract", () => {
-  it("shell 与插件 iframe 落在不同 origin", () => {
+  it("shell and plugin iframe land on different origins", () => {
     expect(buildPluginSandboxShellUrl("sb-1", "trusted")).toBe(
       "zcode-sandbox://shell-trusted/instance/sb-1/",
     );
     expect(buildPluginSandboxPluginOrigin("sb-1")).toBe("zcode-sandbox://plugin-sb-1");
   });
 
-  it("partition 按可信 App 身份派生，所有来源均隔离工作区", () => {
+  it("partition derives from the trusted app identity, isolating workspaces for all sources", () => {
     const plugin = buildPluginSandboxPartition({ appIdentity: "source-a" });
     expect(plugin.startsWith(PLUGIN_SANDBOX_PARTITION_PREFIX)).toBe(true);
     expect(plugin).not.toBe(buildPluginSandboxPartition({ appIdentity: "source-b" }));
@@ -25,7 +25,7 @@ describe("plugin-sandbox contract", () => {
     );
   });
 
-  it("示例注册表实现满足派生规则", () => {
+  it("example registry implementation satisfies the derived rules", () => {
     const registry: PluginSandboxRegistryPort = {
       register: (input) => ({
         instance: input.instance,

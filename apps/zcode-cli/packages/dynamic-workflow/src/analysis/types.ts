@@ -17,15 +17,15 @@ export type SiteKind = "ask" | "world-read" | "join" | "fan-out" | "hole" | "sou
 export type SiteLoc = ScriptLoc;
 
 /**
-  * When the name only materializes at runtime (a template receiver), the statically knowable shape:
-  * the literal before the first hole (head) and after the last hole (tail).
+ * When the name only materializes at runtime (a template receiver), the statically knowable shape:
+ * the literal before the first hole (head) and after the last hole (tail).
  *
-  * Why only the shape: folding the template into 8 concrete names would require expanding the map, and xN /
-  * maybe stack exist precisely to refuse expansion. So this is a shape, never names.
+ * Why only the shape: folding the template into 8 concrete names would require expanding the map, and xN /
+ * maybe stack exist precisely to refuse expansion. So this is a shape, never names.
  *
-  * Invariants: at least one of head/tail present (else undefined, never an empty pattern), both trimmed,
-  * each with at least one letter or digit -- a trailing-dash-only affix renders worse than unnamed-actor, so it is dropped.
-  * The ellipsis is added at **render time**; this only carries data.
+ * Invariants: at least one of head/tail present (else undefined, never an empty pattern), both trimmed,
+ * each with at least one letter or digit -- a trailing-dash-only affix renders worse than unnamed-actor, so it is dropped.
+ * The ellipsis is added at **render time**; this only carries data.
  */
 export interface NamePattern {
   head?: string;
@@ -54,8 +54,8 @@ export interface SiteNode {
   loc?: SiteLoc;
   label: string;
   /**
-      * When label only gets the fallback string (an inline agent(...).ask(...) whose receiver is a call expression,
-      * neither literal nor identifier, hence ask): the template's static shape. Only ask nodes carry it.
+   * When label only gets the fallback string (an inline agent(...).ask(...) whose receiver is a call expression,
+   * neither literal nor identifier, hence ask): the template's static shape. Only ask nodes carry it.
    */
   labelPattern?: NamePattern;
   actors?: string[];
@@ -74,9 +74,9 @@ export interface ActorSite {
   loc: SiteLoc;
   name?: string;
   /**
-      * When name is absent (agent()'s first arg not a literal) but that arg is a template: the static shape. In practice
-      * exclusive with name: literals give names, templates shapes. **Deliberately not written into name** --
-      * name's contract is the author's verbatim word; mixing in reconstructions would blur literal-vs-inferred forever.
+   * When name is absent (agent()'s first arg not a literal) but that arg is a template: the static shape. In practice
+   * exclusive with name: literals give names, templates shapes. **Deliberately not written into name** --
+   * name's contract is the author's verbatim word; mixing in reconstructions would blur literal-vs-inferred forever.
    */
   namePattern?: NamePattern;
   within?: string;

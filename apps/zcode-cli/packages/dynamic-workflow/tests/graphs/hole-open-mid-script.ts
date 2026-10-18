@@ -12,7 +12,10 @@ interface Plan {
 }
 phase("摸底");
 const survey = await agent("勘察员").ask<Survey>("列出最慢的测试文件");
-const plan = await hole<Plan>("决定分组", `最慢的是 ${survey.slowest}，共 ${survey.count} 个文件；决定怎么分组`);
+const plan = await hole<Plan>(
+  "决定分组",
+  `最慢的是 ${survey.slowest}，共 ${survey.count} 个文件；决定怎么分组`,
+);
 phase("执行");
 const done = await agent("执行者").ask<string>(`按 ${plan.groups.length} 组执行`);
 return done;

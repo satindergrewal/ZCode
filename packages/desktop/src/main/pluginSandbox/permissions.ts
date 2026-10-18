@@ -3,8 +3,9 @@ import type { McpAppsResourcePermission } from "@zcode/shared/mcp-apps";
 import { PLUGIN_SANDBOX_SCHEME } from "./contract.js";
 
 /**
- * 页面浏览器权限的纯规则：Electron 权限名 → 规范四键、放行裁决、确认框文案。零 IO，Electron 接线在
- * permissionGate / session。camera / microphone / geolocation 需要用户确认；clipboardWrite 按声明放行。
+ * Pure rules for page browser permissions: Electron permission name → canonical four keys,
+ * allow verdicts, confirm-dialog copy. Zero IO; Electron wiring lives in permissionGate/session.
+ * camera/microphone/geolocation need user consent; clipboardWrite is allowed by declaration.
  */
 export type PluginSandboxPromptedPermission = Exclude<McpAppsResourcePermission, "clipboardWrite">;
 export type PluginSandboxPermissionDecision = "allow" | "deny" | "prompt";
@@ -17,8 +18,9 @@ const PROMPTED: ReadonlySet<McpAppsResourcePermission> = new Set([
 const PLUGIN_HOST_PREFIX = "plugin-";
 
 /**
- * request handler 的 Electron 权限名 → 需要的规范权限；返回 null 表示不属于四键（一律拒绝）。
- * `media` 同时要音视频时两个都要求；mediaTypes 缺省按两者都要（Chromium 未给类型时保守）。
+ * request handler: Electron permission name → required canonical permissions; null means outside
+ * the four keys (always reject). `media` requiring both audio and video demands both; missing
+ * mediaTypes defaults to both (conservative when Chromium gives no types).
  */
 export function resolvePluginSandboxRequestedPermissions(
   permission: string,
@@ -36,7 +38,7 @@ export function resolvePluginSandboxRequestedPermissions(
   return result.length > 0 ? result : null;
 }
 
-/** check handler（同步查询，如 permissions.query）的权限名 + mediaType → 规范权限。 */
+/** check handler (sync query, e.g. permissions.query): permission name + mediaType → canonical permissions. */
 export function resolvePluginSandboxCheckedPermission(
   permission: string,
   details: { mediaType?: string } | undefined,
@@ -65,7 +67,7 @@ export function decidePluginSandboxPermission(input: {
   return pending.length > 0 ? { decision: "prompt", pending } : { decision: "allow", pending: [] };
 }
 
-/** 同步查询只报已经能直接放行的：剪贴板写入按声明，其余要已同意。 */
+/** Sync queries report only already-grantable states: clipboard-write by declaration, the rest need consent. */
 export function isPluginSandboxPermissionGranted(input: {
   permission: McpAppsResourcePermission;
   declared: readonly McpAppsResourcePermission[];
@@ -75,7 +77,7 @@ export function isPluginSandboxPermissionGranted(input: {
   return !PROMPTED.has(input.permission) || input.consented.has(input.permission);
 }
 
-/** 发起请求的 frame URL 必须是 `zcode-sandbox://plugin-<sandboxId>`；shell 或其他来源返回 null（拒绝）。 */
+/** The requesting frame URL must be `zcode-sandbox://plugin-<sandboxId>`; shell or other origins return null (reject). */
 export function readPluginSandboxIdFromPluginUrl(url: string | undefined): string | null {
   if (!url) return null;
   let parsed: URL;

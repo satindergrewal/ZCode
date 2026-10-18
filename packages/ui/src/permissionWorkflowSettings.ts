@@ -1,27 +1,27 @@
 // ============================================================
-// 工作流确认窗的「调整设置」：PermissionDialog 这一侧
+// The workflow dialog's adjust-settings, PermissionDialog side:
 // ============================================================
-// docs/dynamic-workflow/launch.md「Adjusting the settings in the window」「The options」；外观与键盘
-// 见 docs/dynamic-workflow/presentation.md「The confirmation window」。
+// docs/dynamic-workflow/launch.md "Adjusting the settings in the window" / "The options"; visuals and keys in
+// docs/dynamic-workflow/presentation.md "The confirmation window".
 //
-// 从 PermissionDialog.tsx 拆出：那边是所有确认窗共用的选项列表，这里只放工作流确认窗多出来的
-// 三件事——改过的设置存在哪、哪些选项带着它走、Shift+Tab 从选项列表回到设置控件。
+// Split from PermissionDialog.tsx: that file owns the shared option list; this adds the three
+// workflow-only pieces: where edited settings live, which options carry them, and the Shift+Tab return.
 
 import { useCallback, useState } from "react";
 import type { ZCodePermissionOption } from "@zcode/shared";
 import type { WorkflowAskSettingsContent } from "@/components/workflow-timeline/workflowAskSettings.js";
 import { getPermissionOptionDisplayKind } from "@/lib/permissionRequest.js";
 
-/** 设置块的定位属性：Shift+Tab 从第一个选项回到这里。 */
+/** Settings block anchor: Shift+Tab from the first option lands here. */
 export const WORKFLOW_PERMISSION_SETTINGS_SELECTOR = '[data-testid="workflow-permission-settings"]';
 
 const FOCUSABLE_SELECTOR =
   'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /**
- * 窗里改过的设置与「所选模型不可用」。两份状态都记下它属于哪个 requestId，读时不匹配即视为没有：
- * 同一个对话框实例换请求时不靠 effect 归零——子组件按 requestId 重挂后会先回报新请求的状态，
- * 父组件的归零 effect 晚于它执行，会把新回报的「不可用」抹掉。
+ * Edited settings and model-unavailable, both tagged with their requestId; a mismatch reads as none:
+ * no reset-by-effect. Remounted children report the new request first and a later parent
+ * reset effect would wipe the fresh unavailable flag.
  */
 export function usePermissionWorkflowSettings(requestId: string) {
   const [content, setContent] = useState<{
@@ -45,13 +45,13 @@ export function usePermissionWorkflowSettings(requestId: string) {
   };
 }
 
-/** 设置只随放行应答走：拒绝什么都不启动，Refine 的下一个窗带着模型改过的调用重来。 */
+/** Settings ride allow replies only: deny starts nothing; Refine re-asks with the edited call. */
 export function isWorkflowSettingsCarrier(option: ZCodePermissionOption): boolean {
   const kind = getPermissionOptionDisplayKind(option.kind);
   return kind === "allowOnce" || kind === "allowAlways";
 }
 
-/** 改过设置后，前两个选项说清这次应答带着什么走；其余描述不变。 */
+/** With edits, the first two options say what the reply carries; other descriptions unchanged. */
 export function workflowAdjustedOptionDescriptionId(messageId: string | null): string | null {
   switch (messageId) {
     case "chat.permission.allowOnce.description":
@@ -64,8 +64,8 @@ export function workflowAdjustedOptionDescriptionId(messageId: string | null): s
 }
 
 /**
- * Shift+Tab 在第一个选项上：离开选项列表，落到设置块的最后一个控件（倒着走的下一站），
- * 让焦点次序与阅读次序一致。块不在或没有可聚焦控件即返回 false，交回选项列表自己的循环。
+ * Shift+Tab on the first option exits to the settings block's last control (the next stop
+ * backwards), matching reading order. No block/focusable returns false to the list's own loop.
  */
 export function focusLastWorkflowSettingsControl(root: HTMLElement | null): boolean {
   const block = root?.querySelector<HTMLElement>(WORKFLOW_PERMISSION_SETTINGS_SELECTOR);

@@ -13,7 +13,8 @@ it("packages the same pinned runtime assets used by standalone export", async ()
   );
   const manifest = JSON.parse(await readFile(new URL("runtime-manifest.json", source), "utf8"));
   try {
-    // 清单只承载当前资源的完整性数据，避免把无关的构建元数据带入分发包。
+    // The manifest carries integrity data for exactly these assets; unrelated build metadata
+    // stays out of the distributable.
     expect(Object.keys(manifest)).toEqual(["files"]);
     expect(Object.keys(manifest.files).sort()).toEqual([
       "calendar.js",

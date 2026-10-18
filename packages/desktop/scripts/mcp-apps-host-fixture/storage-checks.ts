@@ -76,7 +76,8 @@ export async function checkClearing(input: {
   const clear = storage.clearStorageData.bind(storage);
   const entered = Promise.withResolvers<void>();
   const release = Promise.withResolvers<void>();
-  // 只控制真实清理开始的时序；释放后仍调用 Electron 原生实现，不用 mock 成功代替持久化验证。
+  // Only the timing of the real cleanup is controlled; after release the Electron native
+  // implementation still runs, and no mocked success replaces persistence verification.
   storage.clearStorageData = async (options) => {
     entered.resolve();
     await release.promise;
@@ -89,7 +90,8 @@ export async function checkClearing(input: {
   try {
     await entered.promise;
     await destroyed;
-    // Electron guest 的包装对象 destroyed 不等于插件文档退出；旧实现这里稳定失败。
+    // Electron's guest wrapper destroyed does not mean the plugin document exited; the old
+    // implementation reliably failed here.
     assert.equal(frame.isDestroyed(), true, "plugin frame must stop before storage clearing");
     assert.equal(completed, false);
     assert.equal(

@@ -57,7 +57,8 @@ export async function startAgent(
   const port = (control.address() as { port: number }).port;
   const data = join(root, "agent-data");
   await mkdir(data, { recursive: true });
-  // 不继承 API key、真实用户认证及 Electron Node 标志，模型测试也只通过显式传入的隔离配置访问本地 fixture。
+  // Inherit no API key, real-user auth or Electron Node flags; model tests reach the local
+  // fixture only via the explicitly passed isolated config.
   const child = spawn(node, [cli, "app-server"], {
     cwd: data,
     env: {

@@ -1,10 +1,10 @@
 node source
 node world-read#1 "glob *.md" @7:27 type="string[]"
 node fan-out#1 "fan-out" @8:13 type="string[][]"
-node fan-out#2 "fan-out" @9:3 within=fan-out#1 type="string[]"
-node ask#1 "inner" @9:33 actors=actor#1 within=fan-out#2 type="string"
+node fan-out#2 "fan-out" @8:30 within=fan-out#1 type="string[]"
+node ask#1 "inner" @8:60 actors=actor#1 within=fan-out#2 type="string"
 node sink
-actor actor#1 "inner" @9:18 within=fan-out#2
+actor actor#1 "inner" @8:45 within=fan-out#2
 edge source -> world-read#1 data exact
 edge world-read#1 -> fan-out#1 data exact type="string[]"
 edge world-read#1 -> fan-out#2 data exact type="string[]"

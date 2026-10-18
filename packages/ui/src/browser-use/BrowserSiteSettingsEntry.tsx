@@ -5,10 +5,10 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 
 /**
- * 地址栏左侧的站点设置入口（spec：docs/browser-use/2026-10-08-embedded-browser-permission-governance-spec.md
- * 「站点权限设置标签页」）。恒为滑杆图标、不随权限请求变化；点击弹出站点信息气泡，
- * 唯一操作「权限设置」进入独立设置标签页。URL 聚焦编辑时由地址栏隐藏本入口，
- * 不结算任何待处理权限申请。
+ * Site settings entry left of the omnibox (docs/browser-use/2026-10-08-embedded-browser-permission-governance-spec.md
+ * site permissions tab). Always the sliders icon; click opens the site bubble whose
+ * only action, Permissions, opens that tab. Hidden while the URL is edited;
+ * never settles pending prompts.
  */
 export function BrowserSiteSettingsEntry({
   origin,
@@ -19,11 +19,11 @@ export function BrowserSiteSettingsEntry({
 }) {
   const { intl } = useZCodeIntl();
   const t = (id: string) => intl.formatMessage({ id: `browser.permission.${id}` });
-  // Bug 原因：弹窗内容渲染在 body portal，而 trigger 在浏览器 tab 的 TabsContent 里。
-  // 点「权限设置」后设置标签激活、浏览器 tab 被 display:none（forceMount 不卸载），
-  // 若弹窗内容仍在（含 100ms 退出动画的窗口期），floating 锚点会随隐藏 trigger 尺寸
-  // 归零，残影塌到窗口左上角。因此这里受控 open，且关闭时直接卸载内容（不播退出
-  // 动画），保证弹窗消失与标签切换同帧完成。
+  // Bug: dialog content portals to body while the trigger lives in the browser tab's TabsContent.
+  // Opening settings activates that tab and display:none's the browser tab (forceMount),
+  // so during the 100ms exit window the floating anchor collapses to the corner.
+  // Controlled open + unmount on close (no exit animation) keeps
+  // dialog-gone and tab-switch in the same frame.
   const [open, setOpen] = useState(false);
   return (
     <Popover open={open} onOpenChange={setOpen}>

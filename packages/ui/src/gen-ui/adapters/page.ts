@@ -115,7 +115,7 @@ export function createGenUiPage(input: GenUiPageInput): GenUiPage {
   const offPorts = platform.onPorts((event) => {
     if (disposed || event.sandboxId !== handle?.sandboxId || event.initId !== handle.initId) return;
     void bridge?.close();
-    // SDK 持有上一份上下文用于差异比较，不能与可写投影共享同一对象。
+    // The SDK keeps the prior context for diffing; never share it with the writable one.
     const active = new AppBridge(
       null,
       { name: "zcode-gen-ui", version: "1" },
@@ -130,7 +130,7 @@ export function createGenUiPage(input: GenUiPageInput): GenUiPage {
       pushContext();
     };
     active.onsizechange = ({ height }) => {
-      // 预览使用独立视口；保持正文占位高度，避免遮罩下的时间线跳动。
+      // Preview has its own viewport; hold body height so masked timelines do not jump.
       if (
         context.displayMode !== "fullscreen" &&
         typeof height === "number" &&
@@ -149,7 +149,7 @@ export function createGenUiPage(input: GenUiPageInput): GenUiPage {
         throw new Error("External links require an absolute HTTP(S) URL");
       if (!(await platform.consumeUserGesture(handle!.sandboxId)))
         throw new Error("External links require a user gesture");
-      // 手势校验跨进程返回时，卡片可能已隐藏或重建，不能执行旧页面的打开请求。
+      // Gesture returns cross-process; the card may be hidden/rebuilt, drop stale opens.
       current();
       assertCurrent();
       await input.openExternal(link.href);
@@ -227,7 +227,7 @@ export function createGenUiPage(input: GenUiPageInput): GenUiPage {
       },
     );
     clearTimeout(handshake);
-    // 超时只报告握手失败，不参与同步或恢复。
+    // Timeouts report handshake failure only; no sync/recovery role.
     handshake = setTimeout(() => fail(new Error("Gen UI handshake timed out")), 15_000);
     void active.connect(createPluginUiMessagePortTransport(event.port)).catch(fail);
   });
@@ -263,7 +263,7 @@ export function createGenUiPage(input: GenUiPageInput): GenUiPage {
       return;
     }
     handle = prepared;
-    // 登记 HTML 含状态快照；随后读取最新状态，且不以迟到查询覆盖期间已收到的通知。
+    // Register the HTML state snapshot, read latest, never let late replies mask newer events.
     const revision = stateRevision;
     const latest = await input.state.getState(stateTarget);
     if (revision === stateRevision) context[GEN_UI_STATE_CONTEXT_KEY] = latest;

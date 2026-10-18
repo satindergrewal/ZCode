@@ -5,7 +5,7 @@ import type { PluginSandboxRegistryPort } from "./contract.js";
 import { PLUGIN_SANDBOX_SCHEME, buildPluginSandboxPluginOrigin } from "./contract.js";
 import { parsePluginSandboxUrl } from "./protocol.js";
 
-/** will-attach-webview 时 `params.src` 是否指向插件沙箱 shell。 */
+/** Whether will-attach-webview's `params.src` points at the plugin sandbox shell. */
 export function isPluginSandboxSrc(src: string | undefined): boolean {
   return typeof src === "string" && src.startsWith(`${PLUGIN_SANDBOX_SCHEME}://`);
 }
@@ -18,8 +18,9 @@ export type PluginSandboxGuestDecision =
     };
 
 /**
- * 沙箱 guest 的 webPreferences 硬化。与内置浏览器 guest 相反：不恢复 allowpopups、
- * 不开 nodeIntegrationInSubFrames、关 webviewTag，并要求 sandboxId / partition / owner 三者匹配。
+ * webPreferences hardening for sandbox guests. Unlike built-in browser guests: no allowpopups
+ * restore, no nodeIntegrationInSubFrames, webviewTag off, and sandboxId/partition/owner must all
+ * match.
  */
 export function configurePluginSandboxGuest(input: {
   webPreferences: WebPreferences;
@@ -80,9 +81,10 @@ export interface AttachPluginSandboxGuestInput {
 }
 
 /**
- * did-attach-webview 后的 guest 策略：拒绝所有 popup，导航只允许同 sandbox origin，
- * dom-ready 后建一条 MessageChannel（上面跑原始 JSON-RPC），port1 给 guest（经 preload 转交 relay shell），
- * port2 给宿主 renderer 的 AppBridge；input-event 记用户手势（before-input-event 只覆盖键盘，鼠标点击不会触发）。
+ * Post did-attach-webview guest policy: reject all popups, navigation only within the sandbox
+ * origin. After dom-ready open a MessageChannel carrying raw JSON-RPC: port1 to the guest (via
+ * preload to the relay shell), port2 to the host renderer's AppBridge; input-event records user
+ * gestures (before-input-event covers keys only, mouse clicks never fire it).
  */
 export function attachPluginSandboxGuest(input: AttachPluginSandboxGuestInput): () => void {
   const record = input.registry.get(input.sandboxId);
@@ -97,7 +99,8 @@ export function attachPluginSandboxGuest(input: AttachPluginSandboxGuestInput): 
   let pluginLoaded = false;
   const openPorts: PluginSandboxMessagePort[] = [];
 
-  // H14：挂上即 pin，guest 销毁 / 宿主 detach 时 unpin（只减一次）；活实例不会被 TTL / 容量淘汰。
+  // H14: pin on attach, unpin on guest destroy/host detach (exactly once); live instances are
+  // never evicted by TTL or capacity.
   input.registry.pin(input.sandboxId);
   let pinned = true;
   const unpin = () => {
@@ -120,18 +123,19 @@ export function attachPluginSandboxGuest(input: AttachPluginSandboxGuestInput): 
       event.preventDefault();
     }
   });
-  // guest 控制台转到 main 日志：沙箱内 CSP 拒绝、脚本报错否则无处可见。
+  // Forward guest console to main logs: CSP rejections and script errors are invisible otherwise.
   input.guest.on("console-message", (event: unknown, ...legacy: unknown[]) => {
     const detail = event as { level?: unknown; message?: unknown } | undefined;
     const level = detail?.level ?? legacy[0];
     const message = detail?.message ?? legacy[1];
     const line = `[plugin-sandbox] guest console(${String(level)}): ${String(message)}`;
-    // SDK 的逐条协议日志属于 debug，不能提升为生产 info 持续落盘。
+    // Per-message SDK protocol logs are debug; never promote them to production info on disk.
     if (level === "debug" || level === 0) input.logger?.debug?.(line);
     else if (level === "error" || level === 3) input.logger?.warn(line);
     else input.logger?.info?.(line);
   });
-  // 任一 frame 加载失败都记 warn（含错误码与 URL）：插件页面空白时据此区分被拦截、404 与网络错误。
+  // Warn on any frame load failure (with code and URL): when the plugin page blanks, this
+  // distinguishes blocked/404/network causes.
   input.guest.on(
     "did-fail-load",
     (
@@ -170,7 +174,7 @@ export function attachPluginSandboxGuest(input: AttachPluginSandboxGuestInput): 
       input.registry.markUserGesture(input.sandboxId);
     }
   });
-  // 页面主动重载不能继承上一文档的浏览器授权或 MessagePort。
+  // A page-initiated reload must not inherit the previous document's grants or MessagePort.
   input.guest.on("did-start-navigation", (event) => {
     if (
       !event.isSameDocument &&
@@ -186,11 +190,13 @@ export function attachPluginSandboxGuest(input: AttachPluginSandboxGuestInput): 
     const channel = input.createMessageChannel();
     openPorts.push(channel.port1, channel.port2);
     const payload = { sandboxId: current.sandboxId, initId: current.initId };
-    // 先给宿主 renderer 再给 guest：renderer 先登记 initId，shell 的 init 到达时不会因宿主未就绪而丢。
+    // Host renderer first, then guest: the renderer registers initId first so the shell's init
+    // is not dropped while the host is not ready.
     input.hostWebContents.postMessage(InternalChannels.PluginSandboxPorts, payload, [
       channel.port2,
     ] as never);
-    // 资源声明的权限 → 插件 iframe 的 `allow`（shell 据此把 Permissions Policy 委托给跨源 iframe）。
+    // Declared permissions → the plugin iframe's `allow` (the shell delegates Permissions Policy
+    // to the cross-origin iframe based on it).
     input.guest.postMessage(
       PluginSandboxChannels.Init,
       { ...payload, allow: buildMcpAppsIframeAllow(current.permissions) },

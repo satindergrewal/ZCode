@@ -157,8 +157,8 @@ async function runModelBackedTurnStepImpl(
   const assistantPersistenceAnchor = captureAssistantPersistenceAnchor(this);
   const querySource = querySourceForTask(this.config.taskType);
   const executionModelSelection = { providerId: model.providerId, modelId: model.modelId };
-  // 请求预算由 Agent 执行链显式决定。普通 Turn 选择打满模型声明的上限，
-  // ModelFactory 不再把该请求参数伪装成长期 ModelSelection/Active Model 状态。
+  // The request budget is the Agent chain explicit call: plain Turns take the full declared limit;
+  // the ModelFactory no longer dresses request params as long-lived model state.
   const executionMaxOutputTokens = model.optionSpecs.maxOutputTokens.max;
   const executionContextWindow = model.properties.contextWindow;
   const modelTraceContext = createChildTraceContext(state.turnTraceContext, {
@@ -199,7 +199,7 @@ async function runModelBackedTurnStepImpl(
   const modelRequestEvent = this.createEvent(
     SessionEventType.ModelRequest,
     {
-      // 自动续写提示只属于本次请求，不应写入持久化的 ModelRequest 轨迹。
+      // The continuation hint is request-local; never into the persisted ModelRequest trace.
       messages: options.recordedMessages,
       providerId: String(model.providerId),
       modelId: String(model.modelId),
@@ -279,9 +279,9 @@ async function runModelBackedTurnStepImpl(
       status: state.turnAbortSignal.aborted ? "cancelled" : "error",
     });
     const failedRequestId = latestFailedModelRequestId ?? latestModelRequestId;
-    // 执行 Selection 的声明式退回必须先于同模型 stream recovery：明确归因到加速 provider/network
-    // 边界的请求失败都要退回会话模型（spec §2.2）。若 recovery 在前，流中断后会先在加速模型上
-    // 重试到预算耗尽，降级形同虚设。
+    // The execution Selection's declared fallback must precede same-model stream recovery: failures attributed to the speed-up provider/network
+    // boundary must fall back to the session model (spec 2.2). With recovery first, a dropped stream retries on the speed-up model
+    // until the budget dies, making the fallback a no-op.
     const selectionFallbackMatch = matchExecutionSelectionFallback({
       error: finalError,
       executionProviderId: String(executionModelSelection.providerId),
@@ -301,16 +301,16 @@ async function runModelBackedTurnStepImpl(
         })
       : undefined;
     if (selectionFallbackResult?.applied) {
-      // Bug 根因：fallback settlement 已提交工具结果并建立新 anchor，却继承了此前 length 链的计数，
-      // 使退回模型第一次截断就可能提前耗尽。只按工具计数增量重置，纯文本 tail discard 不绕过上限。
+      // Root cause: fallback settlement commits tool results and a new anchor but inherited the earlier length-chain counter,
+      // so the post-fallback model could exhaust the limit on its first truncation. Reset by tool-count delta only; plain-text tail discard does not bypass the cap.
       if (state.toolCallCount > toolCallCountBeforeSelectionFallback) {
         completeOutputTokenRecovery(state.turnRequestState);
       }
       return "continue";
     }
     const toolCallCountBeforeStreamRecovery = state.toolCallCount;
-    // Bug 根因：退回目标解析失败后若继续进入通用恢复，会重新请求同一个已失败的 execution provider。
-    // 命中声明就已消费本轮恢复决策；无处可退必须保留原错误并直接失败。
+    // Root cause: after target resolution fails, entering generic recovery would re-request the same failed execution provider.
+    // A declaration hit consumes this turn's recovery decision; with nowhere to fall back, keep the original error and fail.
     if (
       !selectionFallbackMatch &&
       (await streamingToolCoordinator.recoverFromModelFailure(
@@ -335,8 +335,8 @@ async function runModelBackedTurnStepImpl(
       !state.turnAbortSignal.aborted &&
       admissionRetryDelayMs !== undefined
     ) {
-      // 第二轮及以后 Start Plan 可能在首 token 前被 admission 并发限制拒绝；
-      // 这时没有文本或 tool anchor，旧 stream recovery 不会启动，必须关闭空 assistant 后短重试。
+      // Later Start Plan rounds can hit admission concurrency pre-first-token;
+      // no anchor yet, so stream recovery will not fire — close the empty assistant, retry briefly.
       const recoveryAttempt = beginStartPlanBusyAdmissionRetryAttempt(state);
       this.logger?.warn("Main turn retrying after Start Plan admission busy", {
         ...traceContextToLogContext(modelTraceContext),
@@ -401,11 +401,11 @@ async function runModelBackedTurnStepImpl(
       !state.turnAbortSignal.aborted &&
       isStartPlanBusyStreamRecoveryFailure(finalError)
     ) {
-      // Start Plan 运行中断流会先走 core stream recovery；恢复次数耗尽后，
-      // 继续抛原 provider 文案会和首轮繁忙失败无法区分，UI 也就不能展示“自动重试达到最大次数”。
+      // A Start Plan mid-run stall tries core recovery first; once exhausted,
+      // the raw provider text is indistinguishable from first-round busy and the UI cannot show auto-retry-exhausted.
       finalError = createStartPlanBusyAutoRetryExhaustedError(finalError);
     }
-    // 无 fallback target 时工具已在上方 settlement；再次 abandon 会发布与终态矛盾的 ledger 事件。
+    // Without a fallback target the tools settled above; abandoning again would publish a ledger event contradicting the terminal state.
     if (!selectionFallbackResult?.settledAcceptedTools) {
       await streamingToolCoordinator.abandon(
         state.turnAbortSignal.aborted ? "cancelled" : "model_failed",
@@ -423,8 +423,8 @@ async function runModelBackedTurnStepImpl(
       });
       const reasoning = latestStreamSnapshot.reasoning.filter(hasAssistantReasoningContent);
       if (latestStreamSnapshot.text.length > 0 || reasoning.length > 0) {
-        // 取消时 durable snapshot 已经持久化，但成功路径的 live history commit
-        // 和 historyRoundCount 不会执行，导致当前进程与 cold resume 的 provider history 不一致。
+        // On cancel the durable snapshot persisted, but the success-path live commit
+        // and historyRoundCount never run — live and cold provider history diverge.
         commitTurnRequestEntries(this, state.turnRequestState, [
           createRuntimeAssistantEntry(
             latestStreamSnapshot.text,
@@ -459,12 +459,12 @@ async function runModelBackedTurnStepImpl(
           data: {
             message: finalError instanceof Error ? finalError.message : String(finalError),
             ...(persistedErrorCode ? { code: persistedErrorCode } : {}),
-            // live TurnError 有结构化归因，但 transcript 过去未持久化，冷恢复后会丢成 runtime。
+            // live TurnError is structured, but the transcript never kept it — cold restore degraded it to runtime.
             ...(persistedErrorProjection.attribution
               ? { attribution: persistedErrorProjection.attribution }
               : {}),
-            // 用户 Stop 的模型中止过去只持久化通用 error name/message，
-            // cold hydration 无法区分正常取消和真实 provider 失败，最终错误地生成 TurnError。
+            // User-Stop aborts once persisted generic name/message only;
+            // cold hydration could not tell cancel from provider failure and minted a wrong TurnError.
             ...(persistedTurnResult ? { turnResult: persistedTurnResult } : {}),
           },
         },
@@ -499,8 +499,8 @@ async function runModelBackedTurnStepImpl(
   const providerToolCallCount = toolCalls.length;
   const localTerminalResponse = state.automationCreateLimitReached === true;
   if (state.automationCreateLimitReached && toolCalls.length > 0) {
-    // 即使 provider 在 tools=[] 后仍幻觉出工具调用，也不能重新进入执行器；
-    // 上限命中后的当前用户 turn 已经是纯文本终止边界。
+    // Even hallucinated tool calls after tools=[] re-enter no executor;
+    // post-cap this user turn is a text-only terminal.
     this.logger?.warn("Ignored tool calls after automation create limit was reached", {
       event: "automation.create_limit.tool_calls_ignored",
       module: "core.runtime",
@@ -515,8 +515,8 @@ async function runModelBackedTurnStepImpl(
   const usage = result.usage ?? {};
   const responseLength = state.modelResponse.length;
   const rawFinishReason = readRawFinishReason(result.providerMetadata);
-  // Automation create-limit 已经接管当前响应的终止语义；若在清空
-  // provider tool calls 后仍重新解释 length/context reason，纯文本终态会再续跑 3 次。
+  // Automation create-limit owns this response termination; re-interpreting
+  // length/context after clearing calls would re-run the text terminal 3 times.
   const outputTokenContinuation = localTerminalResponse
     ? "none"
     : classifyOutputTokenContinuation({
@@ -549,8 +549,8 @@ async function runModelBackedTurnStepImpl(
     toolCalls.length === 0 &&
     isContextExceededFinishReason(result.finishReason, rawFinishReason)
   ) {
-    // 超窗 provider 可能返回空内容和 zero usage；必须先识别 overflow，
-    // 否则会被 suspicious empty 包成普通 ModelError，后续 reactive compact 无法触发。
+    // An over-window provider can return empty content, zero usage; classify overflow first
+    // or suspicious-empty wraps it as a plain ModelError and reactive compact never fires.
     const contextError = createModelContextExceededFinishError({
       finishReason: result.finishReason,
       rawFinishReason,
@@ -591,8 +591,8 @@ async function runModelBackedTurnStepImpl(
       rawFinishReason,
     });
   }
-  // AI SDK 可能把非标准 output-limit 归一化为 other；Runtime 已确认恢复语义后，
-  // live 事件与持久化必须统一使用 length，同时由上方 diagnostics 保留 provider 原始事实。
+  // The SDK can normalize odd output-limits to other; with recovery semantics confirmed,
+  // live and persisted use length; diagnostics above keep the provider truth.
   if (outputTokenContinuation !== "none") result.finishReason = "length";
   for (const reasoning of result.reasoning ?? []) {
     if (!hasAssistantReasoningContent(reasoning)) continue;
@@ -631,8 +631,8 @@ async function runModelBackedTurnStepImpl(
 
   const cacheHit =
     querySource === "main_turn" ? recordMainTurnCacheHitUsage(this, result.usage) : undefined;
-  // subagent 的文件 checkpoint 已经持久化，但旧 gate 只允许 main_turn 把
-  // 汇总写入 ModelComplete，导致 child 详情无法从权威事件恢复摘要和撤销入口。
+  // The subagent file checkpoint persisted, but the old gate let only main_turn write the
+  // summary to ModelComplete, so child details lost summary/restore from the authoritative event.
   const supportsTurnFileChanges = querySource === "main_turn" || querySource === "subagent";
   const fileChanges =
     supportsTurnFileChanges && toolCalls.length === 0
@@ -642,9 +642,9 @@ async function runModelBackedTurnStepImpl(
     SessionEventType.ModelComplete,
     {
       content: state.modelResponse,
-      // 桌面 continuous 实时事件只携带当前 model_complete payload。
-      // 如果主轮次只发 usage 不发 contextWindow，旧 task stream 无法生成 usage_update，
-      // 长程任务中输入栏会拿不到 context meter 的 size 而隐藏。
+      // Desktop continuous events carry only the current model_complete payload.
+      // Without contextWindow next to usage, the old task stream emits no usage_update
+      // and long runs lose the context-meter size, hiding the input bar.
       ...(querySource === "main_turn" && executionContextWindow !== undefined
         ? { contextWindow: executionContextWindow }
         : {}),
@@ -691,8 +691,8 @@ async function runModelBackedTurnStepImpl(
   const executableToolCalls = toolCalls.filter((toolCall) => !toolCall.providerExecuted);
   const streamedToolResults = await streamingToolCoordinator.drain(executableToolCalls);
   if (outputTokenContinuation !== "none") {
-    // 首次命中 output-limit 时，当前 request 可能带有一次性的 project-memory attachment；
-    // query-local 状态必须从实际请求数组推进，不能退回请求前的数组。
+    // On first output-limit, the request may carry a one-shot project-memory attachment;
+    // query-local state advances from the actual request array, never the pre-request one.
     state.turnRequestState.entries = options.requestEntries;
     const assistantCommitted = await persistCompletedAssistantStep(this, state, {
       assistantPersistenceAnchor,
@@ -733,8 +733,8 @@ async function runModelBackedTurnStepImpl(
         data: {
           ...(exhaustedErrorProjection.code ? { code: exhaustedErrorProjection.code } : {}),
           message: exhaustedErrorProjection.message,
-          // 既有 cold hydration 用 retryable 恢复 UI recoverable；这里复用该字段，
-          // 不为单一错误扩展 transcript/hydration schema。
+          // Cold hydration maps retryable to UI recoverable; reuse the field,
+          // no schema growth for one error.
           retryable: exhaustedError.recoverable,
           ...(exhaustedErrorProjection.attribution
             ? { attribution: exhaustedErrorProjection.attribution }
@@ -746,8 +746,8 @@ async function runModelBackedTurnStepImpl(
       modelTraceContext,
     });
     if (state.activeTurn) state.activeTurn.steerable = false;
-    // 上游 query loop 会把 max_output_tokens API-error assistant 交给外层；这里复用
-    // 既有 ModelError -> TurnError 收口表达同一实时错误，同时只结束当前 Turn command。
+    // The upstream loop hands max_output_tokens API-error assistants outward; reuse
+    // the ModelError -> TurnError path for the live error, ending only this Turn command.
     throw exhaustedError;
   }
   completeOutputTokenRecovery(state.turnRequestState);
@@ -762,8 +762,8 @@ async function runModelBackedTurnStepImpl(
   }
 
   state.toolCallCount += executableToolCalls.length;
-  // 合并修复：工具调用 assistant 必须同时进入 canonical history 与本轮 request history。
-  // 只写 canonical history 会让紧随其后的工具结果失去对应 assistant tool-call。
+  // Merge fix: tool-call assistants enter canonical AND this-round request history.
+  // Canonical-only orphaned the following tool results from their assistant call.
   if (commitAssistantToTurnRequest(this, state, result, executableToolCalls)) {
     recordModelHistoryRound(state);
   }
@@ -780,7 +780,7 @@ async function runModelBackedTurnStepImpl(
 
 function buildAutomationCreateLimitFallback(input: string): string {
   if (/\p{Script=Han}/u.test(input)) {
-    return "定时任务已达到 20 个上限，本次未创建。请前往“自动化”手动删除一个已有任务后重试。";
+    return "Cron tasks hit the 20 cap; not created. Delete one under Automation, then retry.";
   }
   return "The limit of 20 scheduled tasks has been reached, so no task was created. Manually delete an existing task on the Automations page, then try again.";
 }

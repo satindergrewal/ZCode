@@ -14,7 +14,7 @@ import { buildPluginSandboxCsp } from "./csp.js";
 
 const DEFAULT_TTL_MS = 6 * 60 * 60 * 1000;
 const DEFAULT_MAX_ENTRIES = 64;
-/** 与 HTML transient activation 一致：一次输入事件给 5 秒窗口，一次性消费。 */
+/** Mirrors HTML transient activation: one input event buys a 5s window, consumed once. */
 export const PLUGIN_SANDBOX_USER_GESTURE_TTL_MS = 5_000;
 
 export interface CreatePluginSandboxRegistryOptions {
@@ -22,7 +22,7 @@ export interface CreatePluginSandboxRegistryOptions {
   ttlMs?: number;
   maxEntries?: number;
   createId?: () => string;
-  /** dispose 时通知宿主收尾（关 ports；partition 持久且按可信 App 身份隔离，不撤 protocol、不清存储）。 */
+  /** Notifies the host to finalize on dispose (close ports; the partition is persistent per trusted app identity — keep protocol and storage). */
   onDispose?: (record: PluginSandboxRecord) => void;
 }
 
@@ -31,32 +31,35 @@ interface RegistryEntry {
   expiresAt: number;
   lastUsedAt: number;
   gestureAt: number | null;
-  /** 活 guest 数；> 0 时不参与 TTL 过期。 */
+  /** Live guest count; > 0 exempts from TTL expiry. */
   pinned: number;
 }
 
 /**
- * 沙箱注册表：main 进程内插件 UI 沙箱内容与生命周期的唯一 owner。
- * 先例：`createLocalMediaPreviewPathRegistry`——同样是 host 校验后登记、按 TTL / maxEntries 清理。
+ * Sandbox registry: the single owner of plugin UI sandbox content and lifecycle in the main process.
+ * Precedent: `createLocalMediaPreviewPathRegistry` — also host-validated registration with
+ * TTL/maxEntries cleanup.
  */
 export function createPluginSandboxRegistry(
   options: CreatePluginSandboxRegistryOptions = {},
 ): PluginSandboxRegistryPort & {
-  /** 幂等 key → sandboxId，供测试与诊断。 */
+  /** Idempotency key → sandboxId, for tests and diagnostics. */
   size(): number;
   clear(): void;
 } {
   const now = options.now ?? Date.now;
   const ttlMs = options.ttlMs ?? DEFAULT_TTL_MS;
   const maxEntries = options.maxEntries ?? DEFAULT_MAX_ENTRIES;
-  // sandboxId 进入资源路径；origin 由可信 appIdentity 派生。历史 ID 仍保持合法 host 字符集。
-  // CSP host-source 只允许 ALPHA / DIGIT / "-"：带下划线的 source 会被 Chromium 整条忽略，
-  // frame-ancestors 退化为 'none'，插件 iframe 直接被 ERR_BLOCKED_BY_RESPONSE 拦成空白页。
+  // sandboxId enters resource paths; the origin derives from the trusted appIdentity. Historic
+  // IDs stay within the legal host charset. CSP host-source allows only ALPHA/DIGIT/"-": a
+  // source with underscores is ignored wholesale by Chromium, frame-ancestors degrades to 'none',
+  // and the plugin iframe gets blanked by ERR_BLOCKED_BY_RESPONSE.
   const createId = options.createId ?? (() => `sb-${randomUUID().replaceAll("-", "")}`);
   const entries = new Map<string, RegistryEntry>();
   const idByIdempotencyKey = new Map<string, string>();
 
-  // 修复：不同插件可声明同名 surface，缺少 plugin/workspace 会复用并覆盖另一插件的 HTML。
+  // Fix: different plugins may declare same-named surfaces; missing plugin/workspace would reuse
+  // and overwrite another plugin's HTML.
   const idempotencyKey = (
     input: Pick<
       PluginSandboxRegisterInput,
@@ -96,8 +99,9 @@ export function createPluginSandboxRegistry(
     }
   };
 
-  // 句柄只带登记输入里声明过的呈现字段（host 桥已按"资源级优先、工具级兜底"合并）；prefersBorder 在
-  // record 上缺省为 false，所以按输入而不是 record 判断"是否声明"。
+  // The handle carries only presentation fields declared in registration input (the host bridge
+  // already merged resource-level-first, tool-level-fallback); prefersBorder defaults to false on
+  // the record, so "declared" is judged from input, not the record.
   const resourceMetaOf = (
     input: Pick<
       PluginSandboxRegisterInput,
@@ -138,7 +142,8 @@ export function createPluginSandboxRegistry(
       const existingId = idByIdempotencyKey.get(key);
       const existing = existingId ? entries.get(existingId) : undefined;
       if (existing) return toHandle(existing.record);
-      // 未挂载的 prepare 也可能仍在传输；回收由页面 owner 完成，Main 不抢占其他窗口的登记。
+      // Unattached prepares may still be in transport; reclamation belongs to the page owner —
+      // Main never hijacks another window's registration.
       if (entries.size >= maxEntries) throw new PluginSandboxQuotaError(maxEntries);
       const sandboxId = createId();
       const record: PluginSandboxRecord = {
@@ -220,7 +225,7 @@ export function createPluginSandboxRegistry(
     },
     size: () => entries.size,
     clear() {
-      // Map.forEach 中删除当前项是安全的，不需要先拷贝 key 列表。
+      // Deleting the current entry inside Map.forEach is safe; no need to copy keys first.
       entries.forEach((_entry, sandboxId) => remove(sandboxId, true));
     },
   };

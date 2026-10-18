@@ -11,7 +11,7 @@ import {
 } from "@zcode/shared";
 
 export interface AccountRequestAuthMaterial {
-  /** 私有传输字段兼容旧命名；套餐 OAuth 实际传入短期 Project Token。 */
+  /** Private wire field keeps the legacy name; plan OAuth passes a short-lived project token. */
   apiKey?: string;
   apiKeyId?: string;
   headers?: Record<string, string>;
@@ -103,7 +103,7 @@ class AccountProviderRequestAuthService implements AccountRequestAuthResolver {
             input.rejectedProjectTokenFingerprint,
           );
     if (scoped) {
-      // 换证 IO 前后校验原请求身份，避免 401 重试或闲时票据串用新账号/项目。
+      // Reverify the request identity around token IO so 401 retries/off-peak tickets never cross accounts/projects.
       const latest = await this.#resolveAccess(input.accountAccess);
       if (!latest || accountScope !== (await this.#scope(latest)))
         throw new Error("project_token_scope_invalidated");

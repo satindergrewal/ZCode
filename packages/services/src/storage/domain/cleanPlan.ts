@@ -1,5 +1,5 @@
 /**
- * 清理计划：给定类别与候选文件列表，决定哪些能删。纯函数，删除动作由 adapters 执行。
+ * Clean plan: given a category and candidate files, decide what is deletable. Pure; adapters delete.
  */
 import {
   classifyStoragePath,
@@ -20,7 +20,7 @@ export interface StorageCleanPlan {
   skippedCount: number;
 }
 
-/** 子代理产物：会话目录 24 小时内有更新就整个跳过，避免删掉进行中 subagent 的 transcript。 */
+/** Subagent products: skip the whole session dir when touched within 24h, sparing live subagent transcripts. */
 export const SUBAGENT_ACTIVE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 export function planStorageClean(params: {
@@ -33,7 +33,7 @@ export function planStorageClean(params: {
   if (getStorageCategoryCleanability(categoryId) === "none") {
     return { targets: [], skippedCount: candidates.length };
   }
-  // 候选来自按前缀枚举，可能混入其他类别（如 cli/plugins 下的 cache）；只保留分类一致且未受保护的。
+  // Prefix enumeration can mix categories (cache under cli/plugins); keep only same-category, unprotected entries.
   const owned = candidates.filter(
     (candidate) =>
       classifyStoragePath(candidate.relativePath, context).categoryId === categoryId &&
@@ -43,8 +43,8 @@ export function planStorageClean(params: {
   if (categoryId === "logs") {
     targets = owned.filter((candidate) => !isSameLocalDay(candidate.mtimeMs, now));
   } else if (categoryId === "subagentTranscripts") {
-    // 活动判定如果只看 owned（已按类别过滤，只剩 transcript.jsonl），会漏掉同目录下
-    // 刚写入的 metadata/output 文件，把进行中 subagent 的 transcript 判成不活跃。这里用全部候选算活动时间。
+    // Activity judged on owned files only (category-filtered to transcript.jsonl) would miss
+    // fresh metadata/output siblings and mark live transcripts inactive; use every candidate for recency.
     targets = filterInactiveSessionDirs(owned, candidates, now);
   }
   return { targets, skippedCount: candidates.length - targets.length };
@@ -60,7 +60,7 @@ function isSameLocalDay(a: number, b: number): boolean {
   );
 }
 
-/** 会话目录 = 前三段（cli/agents/sess_x）；任一文件在活动窗口内则整组跳过。 */
+/** Session dir = first three segments (cli/agents/sess_x); any recent file skips the group. */
 function filterInactiveSessionDirs(
   targets: StorageCleanCandidate[],
   allCandidates: StorageCleanCandidate[],

@@ -86,7 +86,7 @@ export async function prepareMarketingHero(
     try {
       fallbackSrc = await prepareMarketingImage(fallback, service);
     } catch {
-      /* 主资源仍可独立成功。 */
+      /* The primary resource can still succeed on its own. */
     }
   }
   try {

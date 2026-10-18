@@ -17,17 +17,13 @@ import { decodeSessionRow } from "../codecs.js";
 import { encodeJson } from "../json.js";
 import type { SessionRow } from "../rows.js";
 
-export function createSession(
-  db: DatabaseSync,
-  input: CreateSessionInput,
-): SessionInfo {
+export function createSession(db: DatabaseSync, input: CreateSessionInput): SessionInfo {
   const now = Date.now();
   const timeCreated = input.time?.created ?? now;
   const timeUpdated = input.time?.updated ?? timeCreated;
 
-  db
-    .prepare(
-      `
+  db.prepare(
+    `
       insert into session (
         id, project_id, workspace_id, parent_id, trace_id, task_type, slug, directory, path,
         title, title_source, title_message_id, version,
@@ -53,27 +49,26 @@ export function createSession(
         time_title_updated = excluded.time_title_updated,
         time_updated = excluded.time_updated
       `,
-    )
-    .run(
-      input.id,
-      input.projectID,
-      input.workspaceID ?? null,
-      input.parentID ?? null,
-      input.traceID ?? null,
-      input.taskType ?? "interactive",
-      input.slug,
-      input.directory,
-      input.path ?? null,
-      input.title,
-      input.titleSource ?? "first_input",
-      input.titleMessageID ?? null,
-      input.version,
-      input.shareURL ?? null,
-      encodeJson(input.permission),
-      timeCreated,
-      timeUpdated,
-      input.titleSource || input.titleMessageID ? timeUpdated : null,
-    );
+  ).run(
+    input.id,
+    input.projectID,
+    input.workspaceID ?? null,
+    input.parentID ?? null,
+    input.traceID ?? null,
+    input.taskType ?? "interactive",
+    input.slug,
+    input.directory,
+    input.path ?? null,
+    input.title,
+    input.titleSource ?? "first_input",
+    input.titleMessageID ?? null,
+    input.version,
+    input.shareURL ?? null,
+    encodeJson(input.permission),
+    timeCreated,
+    timeUpdated,
+    input.titleSource || input.titleMessageID ? timeUpdated : null,
+  );
 
   return mustGetSession(db, input.id);
 }
@@ -108,9 +103,8 @@ export async function updateSession(
   const titleChanged = input.title !== undefined && input.title !== current.title;
   const nextTitleSource = input.titleSource ?? current.titleSource ?? "first_input";
 
-  db
-    .prepare(
-      `
+  db.prepare(
+    `
       update session set
         directory = ?,
         path = ?,
@@ -127,42 +121,36 @@ export async function updateSession(
         time_title_updated = ?,
         time_compacting = ?,
         time_archived = ?,
-        -- 修复原因：路径自愈可能携带并发读取前的旧时间，不能回退真实活动时间。
+        -- Why: path self-healing may carry a pre-concurrent-read timestamp; never roll real activity time back.
         time_updated = max(time_updated, ?)
       where id = ?
       `,
-    )
-    .run(
-      input.directory ?? current.directory,
-      input.path === undefined ? (current.path ?? null) : input.path,
-      input.title ?? current.title,
-      nextTitleSource,
-      input.titleMessageID === undefined
-        ? (current.titleMessageID ?? null)
-        : input.titleMessageID,
-      input.shareURL === undefined ? (current.shareURL ?? null) : input.shareURL,
-      summary === null ? null : (summary.additions ?? null),
-      summary === null ? null : (summary.deletions ?? null),
-      summary === null ? null : (summary.files ?? null),
-      summary === null ? null : encodeJson(summary.diffs),
-      input.revert === undefined ? encodeJson(current.revert) : encodeJson(input.revert),
-      input.permission === undefined ? encodeJson(current.permission) : encodeJson(input.permission),
-      titleChanged || input.titleSource !== undefined || input.titleMessageID !== undefined
-        ? now
-        : (current.time.titleUpdated ?? null),
-      input.timeCompacting === undefined ? (current.time.compacting ?? null) : input.timeCompacting,
-      input.timeArchived === undefined ? (current.time.archived ?? null) : input.timeArchived,
-      input.timeUpdated ?? now,
-      input.id,
-    );
+  ).run(
+    input.directory ?? current.directory,
+    input.path === undefined ? (current.path ?? null) : input.path,
+    input.title ?? current.title,
+    nextTitleSource,
+    input.titleMessageID === undefined ? (current.titleMessageID ?? null) : input.titleMessageID,
+    input.shareURL === undefined ? (current.shareURL ?? null) : input.shareURL,
+    summary === null ? null : (summary.additions ?? null),
+    summary === null ? null : (summary.deletions ?? null),
+    summary === null ? null : (summary.files ?? null),
+    summary === null ? null : encodeJson(summary.diffs),
+    input.revert === undefined ? encodeJson(current.revert) : encodeJson(input.revert),
+    input.permission === undefined ? encodeJson(current.permission) : encodeJson(input.permission),
+    titleChanged || input.titleSource !== undefined || input.titleMessageID !== undefined
+      ? now
+      : (current.time.titleUpdated ?? null),
+    input.timeCompacting === undefined ? (current.time.compacting ?? null) : input.timeCompacting,
+    input.timeArchived === undefined ? (current.time.archived ?? null) : input.timeArchived,
+    input.timeUpdated ?? now,
+    input.id,
+  );
 
   return mustGetSession(db, input.id);
 }
 
-export function getSession(
-  db: DatabaseSync,
-  sessionID: SessionId,
-): SessionInfo | null {
+export function getSession(db: DatabaseSync, sessionID: SessionId): SessionInfo | null {
   const row = db.prepare("select * from session where id = ?").get(sessionID) as
     | SessionRow
     | undefined;
@@ -236,9 +224,9 @@ export function claimLegacySessionWorkspace(
 ): number {
   const sessionIDs = [...new Set(input.sessionIDs)];
   if (sessionIDs.length === 0) return 0;
-  // 3.3.6 的 SSH/WSL session 没有 workspace_id，3.4 sessions-index 又按完整
-  // identity 严格查询，升级后历史任务全部不可见。这里只认 host tasks-index 给出的精确
-  // taskId allowlist，并叠加实际目录和 NULL identity，不能退化成按路径批量认领。
+  // 3.3.6 SSH/WSL sessions lack workspace_id while the 3.4 sessions-index queries strict full
+  // identity, hiding every historical task after upgrade. Accept only the exact
+  // taskId allowlist from the host tasks-index, plus real dir and NULL identity; never degenerate to path-wide claims.
   const result = db
     .prepare(
       `update session
@@ -255,8 +243,8 @@ export function repairLegacyRemoteSessionWorkspace(
   db: DatabaseSync,
   input: RepairLegacyRemoteSessionWorkspaceInput,
 ): boolean {
-  // 3.4.2 把 WSL identity 当成执行路径，生产路径还可能先被 path.resolve
-  // 拼到真实 cwd 后落库。只按单 session 和完整旧目录精确迁移，禁止模糊搜索或批量认领。
+  // 3.4.2 treated the WSL identity as a path, and production may have path.resolve
+  // joined it onto the real cwd before persisting. Migrate per session against the exact old dir only; no fuzzy search, no batch claims.
   const result = db
     .prepare(
       `update session
@@ -282,8 +270,8 @@ export function repairRemoteSessionPaths(
   db: DatabaseSync,
   input: RepairRemoteSessionPathsInput,
 ): boolean {
-  // 路径自愈曾复用全字段 updateSession，把读取快照中的标题、权限、回滚和
-  // 归档状态覆盖到并发新值上。维护性迁移只能拥有路径字段，并用旧路径做 CAS。
+  // Path self-heal once reused the full updateSession, overlaying the read snapshot's title/permissions/rollback/
+  // archive state onto concurrent newer values. Maintenance migrations own the path fields only, CASing on the old path.
   const result = db
     .prepare(
       `update session
@@ -337,9 +325,10 @@ export async function clearRevert(db: DatabaseSync, sessionID: SessionId): Promi
 }
 
 export function touchSession(db: DatabaseSync, sessionID: SessionId, timeUpdated: number): void {
-  db
-    .prepare("update session set time_updated = max(time_updated, ?) where id = ?")
-    .run(timeUpdated, sessionID);
+  db.prepare("update session set time_updated = max(time_updated, ?) where id = ?").run(
+    timeUpdated,
+    sessionID,
+  );
 }
 
 function normalizeSessionTaskTypes(taskTypes: readonly SessionTaskType[] | undefined): string[] {

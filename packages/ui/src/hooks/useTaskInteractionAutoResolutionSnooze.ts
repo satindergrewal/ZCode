@@ -60,11 +60,14 @@ export function useTaskInteractionAutoResolutionSnooze(
     async (interactionId: string): Promise<boolean> => {
       const agentService = targetServices?.zcodeAgentService;
       if (!agentService) {
-        logger.warn("[task-interaction] target workspace not connected for auto-resolution snooze", {
-          interactionId,
-          sessionId: target.sessionId,
-          workspaceKey: workspaceIdentity ?? target.workspacePath,
-        });
+        logger.warn(
+          "[task-interaction] target workspace not connected for auto-resolution snooze",
+          {
+            interactionId,
+            sessionId: target.sessionId,
+            workspaceKey: workspaceIdentity ?? target.workspacePath,
+          },
+        );
         return false;
       }
       if (!loggedInteractionIdsRef.current.has(interactionId)) {

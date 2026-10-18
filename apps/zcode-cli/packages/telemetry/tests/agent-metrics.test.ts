@@ -15,7 +15,7 @@ afterEach(async () => {
 });
 
 describe("OtelAgentTelemetryMetrics", () => {
-  it("只接受每个 Instrument 的低基数标签，机械丢弃身份和内容字段", async () => {
+  it("accepts only low-cardinality labels per instrument and drops identity and content fields", async () => {
     const { exporter, metrics, provider } = createHarness();
     metrics.recordModelTokenDelta("input", 12, {
       model: "claude-sonnet-4",

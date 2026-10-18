@@ -8,7 +8,11 @@ import { pipeline } from "node:stream/promises";
 import type { ReadableStream as NodeWebReadableStream } from "node:stream/web";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { SERVER_RUNTIME_NODE_VERSION } from "../contracts.js";
-import { currentServerTarget, supportedServerTargets, type ServerTarget } from "../runtime/manifest.js";
+import {
+  currentServerTarget,
+  supportedServerTargets,
+  type ServerTarget,
+} from "../runtime/manifest.js";
 import { stageRelease } from "./stage.js";
 import { resolveNodeDistBase } from "./nodeDistMirror.js";
 
@@ -28,7 +32,8 @@ async function findRepoRoot(startDir: string): Promise<string> {
   while (true) {
     if (await pathExists(join(current, "pnpm-workspace.yaml"))) return current;
     const parent = dirname(current);
-    if (parent === current) throw new Error("Unable to locate workspace root (pnpm-workspace.yaml)");
+    if (parent === current)
+      throw new Error("Unable to locate workspace root (pnpm-workspace.yaml)");
     current = parent;
   }
 }
@@ -39,7 +44,8 @@ async function runCommand(command: string, args: readonly string[], cwd: string)
     child.once("error", rejectPromise);
     child.once("exit", (code) => {
       if (code === 0) resolvePromise();
-      else rejectPromise(new Error(`${command} ${args.join(" ")} exited with code ${code ?? "null"}`));
+      else
+        rejectPromise(new Error(`${command} ${args.join(" ")} exited with code ${code ?? "null"}`));
     });
   });
 }
@@ -49,17 +55,17 @@ async function downloadFile(url: string, destinationPath: string): Promise<void>
   if (!response.ok || !response.body) {
     throw new Error(`Download failed: HTTP ${response.status} (${url})`);
   }
-  // DOM fetch 的 ReadableStream 与 node:stream/web 的同名类型在 @types/node 下不兼容，
-  // 这里做一次显式桥接；运行时对象本身就是 Node 的 web stream。
+  // The DOM fetch ReadableStream and its node:stream/web namesake are incompatible under @types/node,
+  // so bridge explicitly once; at runtime the object already is a Node web stream.
   const body = response.body as unknown as NodeWebReadableStream<Uint8Array>;
   await pipeline(Readable.fromWeb(body), createWriteStream(destinationPath, { flags: "w" }));
 }
 
 /**
- * 准备目标平台的 Node 二进制（固定 v22.16.0）。查找顺序：
- * 1. 现有远端资产链的 mock-cdn 缓存（避免重复下载）；
- * 2. 本包自有缓存；
- * 3. 从 Node dist 镜像（见 resolveNodeDistBase）下载 tar.xz 并解出 bin/node 后写入自有缓存。
+ * Prepare the target platform's Node binary (pinned v22.16.0). Lookup order:
+ * 1. the existing remote-asset mock-cdn cache (avoids duplicate downloads);
+ * 2. this package's own cache;
+ * 3. download the tar.xz from the Node dist mirror (see resolveNodeDistBase), extract bin/node, and fill the own cache.
  */
 async function ensureNodeBinary(repoRoot: string, target: ServerTarget): Promise<string> {
   const mockCdnReleasesDir = join(repoRoot, "packages/desktop/mock-cdn/releases");
@@ -78,7 +84,11 @@ async function ensureNodeBinary(repoRoot: string, target: ServerTarget): Promise
   const nodeVersion = `v${SERVER_RUNTIME_NODE_VERSION}`;
   const isWindows = target.startsWith("win32-");
   const nodeTarget = isWindows ? target.replace(/^win32-/u, "win-") : target;
-  const cacheDir = join(repoRoot, "node_modules/.cache/zcode-server-cli", `node-${nodeVersion}-${target}`);
+  const cacheDir = join(
+    repoRoot,
+    "node_modules/.cache/zcode-server-cli",
+    `node-${nodeVersion}-${target}`,
+  );
   const cachedBinaryPath = join(cacheDir, isWindows ? "node.exe" : "node");
   if (await pathExists(cachedBinaryPath)) {
     log(`reuse cached node runtime: ${cachedBinaryPath}`);
@@ -94,9 +104,31 @@ async function ensureNodeBinary(repoRoot: string, target: ServerTarget): Promise
     await downloadFile(url, archivePath);
     await mkdir(cacheDir, { recursive: true });
     if (isWindows) {
-      await runCommand("tar", ["-xf", archivePath, "--strip-components=1", "-C", cacheDir, `node-${nodeVersion}-${nodeTarget}/node.exe`], repoRoot);
+      await runCommand(
+        "tar",
+        [
+          "-xf",
+          archivePath,
+          "--strip-components=1",
+          "-C",
+          cacheDir,
+          `node-${nodeVersion}-${nodeTarget}/node.exe`,
+        ],
+        repoRoot,
+      );
     } else {
-      await runCommand("tar", ["-xJf", archivePath, "--strip-components=2", "-C", cacheDir, `node-${nodeVersion}-${nodeTarget}/bin/node`], repoRoot);
+      await runCommand(
+        "tar",
+        [
+          "-xJf",
+          archivePath,
+          "--strip-components=2",
+          "-C",
+          cacheDir,
+          `node-${nodeVersion}-${nodeTarget}/bin/node`,
+        ],
+        repoRoot,
+      );
     }
     await chmod(cachedBinaryPath, 0o755);
     return cachedBinaryPath;
@@ -112,7 +144,11 @@ async function ensureAgentBundle(repoRoot: string, skipBuild: boolean): Promise<
     throw new Error(`Agent bundle missing: ${bundlePath} (remove --skip-agent-build to build it)`);
   }
   log("agent bundle missing, building via scripts/build-desktop-agent-cli.mjs");
-  await runCommand(process.execPath, [join(repoRoot, "scripts/build-desktop-agent-cli.mjs")], repoRoot);
+  await runCommand(
+    process.execPath,
+    [join(repoRoot, "scripts/build-desktop-agent-cli.mjs")],
+    repoRoot,
+  );
   if (!(await pathExists(bundlePath))) {
     throw new Error(`Agent bundle still missing after build: ${bundlePath}`);
   }
@@ -120,20 +156,25 @@ async function ensureAgentBundle(repoRoot: string, skipBuild: boolean): Promise<
 }
 
 async function resolveNativeToolsDir(repoRoot: string, target: ServerTarget): Promise<string> {
-  // 修复：此前按“文件存在”复用 mock-cdn/releases/*/tools 或 bundled-tools。远端 macOS 资源固定为 rg13，
-  // 会被当成独立 Server 发行包的 rg14 复用；这些目录也可能缺少工具许可声明。现在统一交给
-  // prepare-native-search-tools.mjs 按目标 release plan 准备到 server-cli 自有缓存：内网依赖源已配置时下载，
-  // 未配置时解包仓库归档；缓存命中同样要通过版本、摘要与架构校验，并刷新同目录声明。
+  // Fix: reuse used to be purely existence-based across mock-cdn/releases/*/tools or bundled-tools. The remote macOS asset is pinned to rg13 and
+  // was mistaken for the standalone Server release's rg14; those dirs can also lack license notices. Everything now goes through
+  // prepare-native-search-tools.mjs, which prepares into the server-cli own cache per the target release plan: download via the internal registry when configured,
+  // else unpack the repo archive; cache hits still pass version, digest and arch checks and refresh the sibling notice.
   const [platform, arch] = target.split("-");
   const cacheDir = join(repoRoot, "node_modules/.cache/zcode-server-cli", "tools", target);
   log(`prepare native search target assets: ${target}`);
-  await runCommand(process.execPath, [
-    join(repoRoot, "scripts/prepare-native-search-tools.mjs"),
-    `--platform=${platform}`,
-    `--arch=${arch}`,
-    `--output-dir=${cacheDir}`,
-  ], repoRoot);
-  if (!(await pathExists(cacheDir))) throw new Error(`Native search tools preparation produced no directory for ${target}`);
+  await runCommand(
+    process.execPath,
+    [
+      join(repoRoot, "scripts/prepare-native-search-tools.mjs"),
+      `--platform=${platform}`,
+      `--arch=${arch}`,
+      `--output-dir=${cacheDir}`,
+    ],
+    repoRoot,
+  );
+  if (!(await pathExists(cacheDir)))
+    throw new Error(`Native search tools preparation produced no directory for ${target}`);
   return cacheDir;
 }
 
@@ -146,10 +187,12 @@ async function resolveWorkspacePackageDirs(repoRoot: string): Promise<Map<string
       const packageJsonPath = join(root, entry.name, "package.json");
       if (!(await pathExists(packageJsonPath))) continue;
       try {
-        const packageJson = JSON.parse(await readFile(packageJsonPath, "utf8")) as { name?: string };
+        const packageJson = JSON.parse(await readFile(packageJsonPath, "utf8")) as {
+          name?: string;
+        };
         if (packageJson.name) map.set(packageJson.name, join(root, entry.name));
       } catch {
-        // 非 package 目录不影响其它 workspace 包 staging。
+        // Non-package dirs do not affect staging of other workspace packages.
       }
     }
   }
@@ -161,7 +204,9 @@ function parseTarget(argv: readonly string[]): ServerTarget {
   if (index < 0) return currentServerTarget();
   const value = argv[index + 1];
   if (!value || !supportedServerTargets.includes(value as ServerTarget)) {
-    throw new Error(`Invalid --target: ${value ?? "<missing>"} (supported: ${supportedServerTargets.join(", ")})`);
+    throw new Error(
+      `Invalid --target: ${value ?? "<missing>"} (supported: ${supportedServerTargets.join(", ")})`,
+    );
   }
   return value as ServerTarget;
 }
@@ -171,7 +216,7 @@ async function main(): Promise<void> {
   const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
   const repoRoot = await findRepoRoot(packageRoot);
   const target = parseTarget(argv);
-  // 构建只读取并附带已有声明，校验由显式 licenses 命令负责；运行时 server 不依赖仓库脚本。
+  // The build only reads and ships existing notices; the explicit licenses command validates. The runtime server never depends on repo scripts.
   const { readThirdPartyNotices, readNodeNotices } = (await import(
     pathToFileURL(join(repoRoot, "scripts/third-party-notices.mjs")).href
   )) as {
@@ -185,10 +230,14 @@ async function main(): Promise<void> {
 
   const distDir = join(packageRoot, "dist");
   if (!(await pathExists(join(distDir, "server-cli.js")))) {
-    throw new Error(`Missing tsup output in ${distDir}; run pnpm --filter @zcode/server-cli build first`);
+    throw new Error(
+      `Missing tsup output in ${distDir}; run pnpm --filter @zcode/server-cli build first`,
+    );
   }
 
-  const appVersion = (JSON.parse(await readFile(join(repoRoot, "package.json"), "utf8")) as { version: string }).version;
+  const appVersion = (
+    JSON.parse(await readFile(join(repoRoot, "package.json"), "utf8")) as { version: string }
+  ).version;
   const [agentBundlePath, nodeBinaryPath] = await Promise.all([
     ensureAgentBundle(repoRoot, argv.includes("--skip-agent-build")),
     ensureNodeBinary(repoRoot, target),

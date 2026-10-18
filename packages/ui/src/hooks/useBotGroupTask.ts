@@ -37,14 +37,15 @@ export function useBotGroupTask(
         const savedProvider = Object.values(nextContext?.group?.inputs ?? {})[0]?.source.provider;
         setProvider(savedProvider);
         if (nextContext && !savedProvider) {
-          // 首次准备还没有 accepted source，渠道名称取当前机器人配置，不默认猜作飞书。
+          // No accepted source yet on first prepare; name from the bot config, never assume.
           const config = await botsService.getConfig();
           if (disposed || revision !== requested) return;
           const configured = config.bots.find((bot) => bot.id === nextContext.botId)?.provider;
           setProvider(configured && isFeishuBotProvider(configured) ? configured : undefined);
         }
       } catch (error) {
-        if (!disposed) logger.warn("读取群任务同步状态失败", { error: String(error) });
+        if (!disposed)
+          logger.warn("failed to load group task sync state", { error: String(error) });
       }
     };
     setContext(null);
@@ -84,7 +85,7 @@ export function useBotGroupTask(
             : current,
         );
       } catch (error) {
-        logger.warn("重发群结果失败", { error: String(error) });
+        logger.warn("failed to resend group result", { error: String(error) });
       } finally {
         setBusyId(null);
       }
@@ -118,7 +119,7 @@ export function useBotGroupTask(
             : current,
         );
       } catch (error) {
-        logger.warn("核对群结果失败", { error: String(error) });
+        logger.warn("failed to verify group result", { error: String(error) });
       } finally {
         setBusyId(null);
       }
@@ -140,7 +141,7 @@ export function useBotGroupTask(
           messageId,
         });
       } catch (error) {
-        logger.warn("重试话题材料失败", { error: String(error) });
+        logger.warn("failed to retry topic material", { error: String(error) });
       } finally {
         setBusyId(null);
       }

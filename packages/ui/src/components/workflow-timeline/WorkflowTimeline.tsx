@@ -58,46 +58,46 @@ import {
 export { STATION_GAP, STATION_PITCH, STATION_WIDTH, timelineWidth } from "./timeline-geometry.js";
 
 /**
- * 横向时间线：一根轨道、站在轨道上、
- * 药丸挂在站下、弧在轨道上方的空气里。纯 DOM + 一层 SVG（只画弧），没有画布库。
+ * Horizontal timeline: one rail, stations standing on it,
+ * pills hanging under stations, arcs in the air above the rail. Pure DOM + one SVG layer (arcs only), no canvas library.
  *
- * 几何常量与设计画布逐字相同（`timeline-geometry.ts`）：站宽 168、站距 24（五站 = 936，装进 960 的
- * 会话列），轨道行 24，弧道距 14。灯落在药丸头像列（站左缘 + 17），名字落在子代理名列（站左缘 + 34）
- * ——站头就是一枚没有背景的药丸。
+ * Geometry constants match the design canvas verbatim (`timeline-geometry.ts`): station width 168, pitch 24 (five stations = 936, inside the 960
+ * session column), rail row 24, arc lane gap 14. Dots sit in the pill avatar column (station left + 17), names in the subagent column (station left + 34);
+ * the station header is just a background-free pill.
  *
- * 宽过容器就自由滚动：灯滚出视口的站折叠到那一侧的**边檐**上——同一枚灯、16px 一枚，
- * 落在视口边缘干净的底上；轨道行在檐旁渐隐 40px，药丸只在视口真正的边界渐隐；位置在底部一根 2px 的滚动条里。
- * 原生滚动条隐藏，右缘不再涂渐变，表头也不再需要秩带。镜头照旧对准正在运行的站；镜头在飞时目标站不折
- * （视口在 scrollTo 之前量过，飞行中按陈旧位置算它在视野外是误报）。
+ * Wider than the container and it scrolls freely: stations scrolled out of view fold onto that side's **ledge** — the same dot, one per 16px,
+ * on clean ground at the viewport edge; the rail fades 40px near the ledge, pills fade only at the viewport's true bounds; position lives in a 2px scrollbar at the bottom.
+ * The native scrollbar is hidden, the right edge gets no gradient, and the header no longer needs rank badges. The camera still tracks the running station; while flying, the target station does not fold
+ * (the viewport is measured before scrollTo; computing out-of-view from a stale position mid-flight is a false positive).
  *
- * 草稿（`model.draft`）由笔写出：站按声明序一站一站揭示，轨道段从左伸出、
- * 灯落地、名字逐字写出，光标跟着笔走、追上流时闪烁。笔没到的站还不在轨道上。
+ * The draft (`model.draft`) is written by the pen: stations reveal one by one in declaration order, rail segments extend from the left,
+ * dots land, names type out character by character, the cursor follows the pen and blinks once it catches up to the stream. Stations the pen has not reached are not on the rail yet.
  */
 function stationHeight(station: TimelineStation): number {
-  // 过了阈值的站是五枚钉住的药丸加一行「还有 n 个」：那一行就是第六枚
-  // 药丸，所以一站永远不高于六枚药丸。
+  // Past the threshold a station is five pinned pills plus an "n more" row: that row is the sixth
+  // pill, so a station never holds more than six pills.
   const roster = stationRosterOf(station, ROSTER_PINS_CARD);
   const n = roster === undefined ? station.pills.length : roster.pinned.length + 1;
   return n === 0 ? 0 : n * PILL_HEIGHT + (n - 1) * PILL_GAP;
 }
 
 /**
- * 时间线的整体高度（弧道 + 轨道行 + 站台行 + 最高的一列药丸）。轮尾摘要展开 /
- * 收起时把外框的高度在两个值之间过渡，所以它必须能在渲染之外算出来——行的排布因此是
- * `timeline-geometry.ts` 里的纯函数。末尾 8px 留白是滚动条的家（药丸下 6px、2px 一根，
- * 悬停 4px）——它贴着底缘叠在留白上，不改高度。
+ * Overall timeline height (arc lane + rail row + platform row + tallest pill column). The run-tail digest's expand /
+ * collapse transitions the outer frame's height between two values, so it must be computable outside render — the row layout is therefore
+ * a pure function in `timeline-geometry.ts`. The trailing 8px gap is the scrollbar's home (6px below the pills, 2px tall,
+ * 4px on hover) — it overlays the gap at the bottom edge without changing the height.
  */
 export function timelineHeight(model: WorkflowTimelineModel): number {
   const rows = timelineLayout(model.arcs, model.bands, hasFillHeads(model));
   return rows.pillsTop + Math.max(0, ...model.stations.map(stationHeight)) + 8;
 }
 
-/** 有补全的时间线才有头那一行（docs/dynamic-workflow/presentation.md「Holes on the timeline」）。 */
+/** Only timelines with fills get the header row (docs/dynamic-workflow/presentation.md "Holes on the timeline"). */
 function hasFillHeads(model: Pick<WorkflowTimelineModel, "fills">): boolean {
   return (model.fills?.length ?? 0) > 0;
 }
 
-/** 药丸依次落地的间隔（与设计画布同值）。 */
+/** Delay between successive pill landings (same value as the design canvas). */
 export const PILL_STAGGER_MS = 30;
 
 function pillName(pill: TimelinePill, format: Parameters<typeof laneDisplayName>[1]): string {
@@ -107,24 +107,24 @@ function pillName(pill: TimelinePill, format: Parameters<typeof laneDisplayName>
 export interface WorkflowTimelineProps {
   model: WorkflowTimelineModel;
   className?: string;
-  /** 点一个站；缺席即站头不是控件——点击冒泡给宿主（轮尾摘要的整块开关）。 */
+  /** Click a station; absent means the station header is not a control — clicks bubble to the host (the digest's whole-card toggle). */
   onSelectStation?: (station: TimelineStation) => void;
   /**
-   * 点名册站的「还有 n 个」那一行：开 run 详情、落到这一站。与站头的
-   * `onSelectStation` 分开门控：轮尾摘要里站头仍是整块开关的一部分，那一行
-   * 却是一扇门。缺席即那一行是静态的。
+   * Clicking a roster station's "n more" row: opens run details, landed on this station. Gated apart from the header's
+   * `onSelectStation`: in the digest the header remains part of the whole-card toggle while that row
+   * is a door of its own. Absent means the row is static.
    */
   onOpenMore?: (station: TimelineStation) => void;
-  /** 点一枚药丸（有会话开 transcript，没有开占位）；缺席即不可点。 */
+  /** Click a pill (with a session opens the transcript, without opens a placeholder); absent means not clickable. */
   onOpenPill?: (pill: TimelinePill) => void;
   /**
-   * 点脚本药丸：开整个 run 的脚本 transcript，
-   * 落到这一站；缺席即脚本药丸不可点。与 `onOpenPill` 各自门控各自的车道。
+   * Click the script pill: opens the whole run's script transcript
+   * and lands on this station; absent means not clickable. Gated separately from `onOpenPill` — each in its own lane.
    */
   onOpenWorkspace?: (pill: TimelinePill) => void;
   /**
-   * 点一次补全的头（docs/dynamic-workflow/presentation.md「Holes on the timeline」）：开侧板、落到补全的
-   * 标题（它写下的第一站）。缺席即头不是控件。
+   * Clicking a fill's head (docs/dynamic-workflow/presentation.md "Holes on the timeline"): opens the side panel, landed on the fill's
+   * title (the first station it wrote). Absent means the head is not a control.
    */
   onOpenFill?: (fill: TimelineFill) => void;
 }
@@ -142,14 +142,14 @@ export const WorkflowTimeline = memo(function WorkflowTimeline({
   const format = intl.formatMessage.bind(intl);
   const markerId = useId();
   const scrollRef = useRef<HTMLDivElement>(null);
-  // 滚动层元素同时进状态：草稿首帧 n === 0 返回 null，滚动层晚一帧才挂上——视口钩子以元素为依赖，
-  // 元素出现才接监听（以 ref 对象为依赖时首帧的 null 让它永远接不上）。
+  // The scroll layer element lives in state too: the draft's first frame returns null and the scroll layer mounts a frame later — the viewport hook depends on the element,
+  // attaching listeners only once it exists (keyed on the ref object, the first frame's null would never attach).
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
   const attachScroller = useCallback((element: HTMLDivElement | null) => {
     scrollRef.current = element;
     setScroller(element);
   }, []);
-  // 镜头的一班飞行：起飞时记下，落地或用户接手时清空；飞行中目标站不折。
+  // One camera flight: recorded at takeoff, cleared on landing or user takeover; the target station does not fold mid-flight.
   const [flight, setFlight] = useState<CameraFlight | undefined>(undefined);
 
   const { arcs } = model;
@@ -159,12 +159,12 @@ export const WorkflowTimeline = memo(function WorkflowTimeline({
   const stations = draft ? model.stations.slice(0, pen.visible) : model.stations;
   const n = stations.length;
   const rails = draft ? model.rails.filter((rail) => rail.to < n) : model.rails;
-  // 行的排布：有带时主线落在最下面
-  // 一行、分支叠在它上面、站头搬到站台行；没有带时整套式子逐像素退回从前的「弧道 + 轨道行」，
-  // DOM 也走原来那一支。
-  // 补全（docs/dynamic-workflow/presentation.md「Holes on the timeline」）：有头时最上面多一行 24px；尾巴
-  // 留白在末站之后多 40px；指针或键盘焦点落在哪个**头**上（`data-fill-head`，无阶段补全的笔标也是）由根节点
-  // 委托得出，那一个框据此画出。站与药丸不点亮任何东西——修复原因见 timeline-frames.ts。
+  // Row layout: with a branch the main line sits on the bottom
+  // row, branches stack above it, and the station header moves to the platform row; without one the whole formula reduces pixel-for-pixel to the previous "arc lane + rail row",
+  // and the DOM takes the original branch too.
+  // Fills (docs/dynamic-workflow/presentation.md "Holes on the timeline"): with a head, one extra 24px row on top; tail padding
+  // grows 40px past the last station; which **head** holds pointer or keyboard focus (`data-fill-head`, the pen marker of phase-less fills too) is
+  // delegated from the root, and that one frame draws accordingly. Stations and pills light nothing up — see timeline-frames.ts for why.
   const fills = (model.fills ?? []).filter((fill) => fill.to < n);
   const layout = timelineLayout(model.arcs, model.bands, fills.length > 0);
   const { banded, inset, pillsTop } = layout;
@@ -183,25 +183,25 @@ export const WorkflowTimeline = memo(function WorkflowTimeline({
   });
   const fillTarget = useFillHeadTarget(frames.length > 0);
   const fresh = useFreshFills(frames);
-  // 生长：补全接进 run 时插入列右侧的站滑开（`use-fill-growth.ts`）。
+  // Growth: when a fill attaches to the run, stations right of the inserted column slide over (`use-fill-growth.ts`).
   const slide = useFillGrowth(model);
-  // 药丸按站从左到右、站内从上到下依次落地：第 k 枚延迟 k × 30 ms（「还有 n 个」那一行也排队）。
+  // Pills land station by station left to right, top to bottom within one: pill k is delayed k x 30 ms (the "n more" row queues too).
   let pillOrdinal = 0;
   const nextDelay = () => {
     const delay = PILL_STAGGER_MS * pillOrdinal;
     pillOrdinal += 1;
     return delay;
   };
-  // 轨道段按**一对站**查：带里一站可以同时长出主线的一条、
-  // 分叉的一条与双线段。
+  // Rail segments are keyed by a **pair of stations**: within a branch one station can grow the main line's segment,
+  // a branch segment, and a double-line segment at once.
   const railByPair = useMemo(
     () => new Map(rails.map((rail) => [railKey(rail.from, rail.to), rail])),
     [rails],
   );
 
-  // 视口：滚到哪、多宽、内容多宽。量不到（jsdom）时三者为 0，下面什么都不折。
+  // Viewport: scroll position, width, content width. Unmeasurable (jsdom) means all three are 0 and nothing below folds.
   const viewport = useTimelineViewport(scroller, width);
-  // 每次滚动采样后结算飞行：落地或偏离即结束。只由位置决定，不用计时器。
+  // The flight settles after every scroll sample: over on arrival or divergence. Driven by position alone, no timers.
   useEffect(() => {
     setFlight((current) => flightAfterScroll(current, viewport.scrollLeft));
   }, [viewport.scrollLeft]);
@@ -210,7 +210,7 @@ export const WorkflowTimeline = memo(function WorkflowTimeline({
     ? foldStations(n, viewport.scrollLeft, viewport.clientWidth, flight?.index, inset)
     : NO_FOLD;
   const folded = useMemo(() => new Set([...fold.left, ...fold.right]), [fold]);
-  // 遮罩分两带：轨道带在檐旁渐隐，药丸带只在视口真正的边界渐隐。
+  // Two mask bands: the rail band fades near the ledges, the pill band only at the viewport's true bounds.
   const mask = overflow
     ? timelineMaskStyle(fold, pillsTop - 8, {
         left: viewport.scrollLeft > 0,
@@ -223,13 +223,13 @@ export const WorkflowTimeline = memo(function WorkflowTimeline({
     if (element === null) return;
     element.scrollTo({ behavior: prefersReducedMotion() ? "auto" : "smooth", left });
   }, []);
-  // 檐上的灯：镜头把那一站带回正中（与运行站的镜头同一条规则）。
+  // Ledge dots: the camera centers that station again (same rule as the running station's camera).
   const selectFolded = useCallback(
     (index: number) =>
       scrollTo(stationCameraLeft(index, scrollRef.current?.clientWidth ?? 0, inset)),
     [inset, scrollTo],
   );
-  // 焦点在站头或檐上的灯时，← → 各滚一站。
+  // With focus on a station header or a ledge dot, the arrow keys scroll one station at a time.
   const onKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>) => {
       if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
@@ -243,9 +243,9 @@ export const WorkflowTimeline = memo(function WorkflowTimeline({
     [scrollTo],
   );
 
-  // 镜头：宽过容器时把焦点站滚进视野；用户自己滚过就不再抢（只在焦点站变化时重锚）。
-  // run 里焦点是正在运行的站（居中）；草稿里焦点跟着笔走——最新揭示的站贴着右缘。
-  // 草稿的落点是 index·PITCH + STATION_WIDTH − clientWidth：不能多加一个站距（会 24px 过冲，只有靠浏览器夹紧才落对）。
+  // Camera: scrolls the focused station into view when content overflows; never fights the user once they scroll (re-anchors only on focus change).
+  // In a run the focus is the running station (centered); in a draft focus follows the pen — the newest revealed hugs the right edge.
+  // The draft target is index·PITCH + STATION_WIDTH − clientWidth: adding one more pitch overshoots by 24px (only browser clamping lands it right).
   const focusIndex = draft ? (n > 0 ? n - 1 : undefined) : model.runningIndex;
   useEffect(() => {
     const element = scrollRef.current;
@@ -254,7 +254,7 @@ export const WorkflowTimeline = memo(function WorkflowTimeline({
     const left = draft
       ? Math.max(0, stationX(focusIndex, inset) + STATION_WIDTH - element.clientWidth)
       : stationCameraLeft(focusIndex, element.clientWidth, inset);
-    // 起飞：目标按可滚范围夹紧；已在目标上就不算飞。
+    // Takeoff: clamp the target to the scrollable range; already at the target is not a flight.
     const target = Math.min(left, element.scrollWidth - element.clientWidth);
     const from = element.scrollLeft;
     setFlight(Math.abs(from - target) <= 1 ? undefined : { from, index: focusIndex, target });
@@ -277,10 +277,10 @@ export const WorkflowTimeline = memo(function WorkflowTimeline({
   const renderPill = (pill: TimelinePill) => {
     const enterDelayMs = nextDelay();
     const label = pillName(pill, format);
-    // 活的 run 里的子代理药丸一律可开：有会话开 transcript，还没启动的
-    // 开同一个 tab 的占位——槽位身份（`pill.slot`）就是它的抓手。没有 run 就没有槽位。
-    // 脚本药丸同一套打开语法：活的 run 里有抓手
-    // 就可开，落到这一站的第一张卡。没有色相，悬停的描边退回 border-hover（药丸自己的规则）。
+    // Subagent pills in a live run are always openable: with a session, the transcript; not yet started,
+    // a placeholder in the same tab — the slot identity (`pill.slot`) is the handle. No run, no slot.
+    // The script pill follows the same opening grammar: with a handle in a live run it
+    // opens, landed on the station's first card. No hue; the hover border falls back to border-hover (the pill's own rule).
     const open =
       onOpenPill !== undefined && pill.slot !== undefined
         ? {
@@ -326,7 +326,7 @@ export const WorkflowTimeline = memo(function WorkflowTimeline({
       onKeyDown={onKeyDown}
       {...fillTarget.handlers}
     >
-      {/* 檐与滚动条叠在滚动层之上，以它（而不是带 padding 的外框）为基准定位。 */}
+      {/* Ledge and scrollbar sit above the scroll layer, positioned against it (not the padded outer frame). */}
       <div className="relative">
         <div
           className="wf-scroller overflow-x-auto overflow-y-hidden"
@@ -344,7 +344,7 @@ export const WorkflowTimeline = memo(function WorkflowTimeline({
           style={mask}
         >
           <div className="relative" style={{ height, width }}>
-            {/* 补全的框（在一切之下）与头（在头那一行）：docs/dynamic-workflow/presentation.md「Holes on the timeline」。 */}
+            {/* The fill frame (beneath everything) and its head (in the header row): docs/dynamic-workflow/presentation.md "Holes on the timeline". */}
             <WorkflowTimelineFills
               active={fillTarget.active}
               fills={fills}
@@ -364,7 +364,7 @@ export const WorkflowTimeline = memo(function WorkflowTimeline({
               stations={model.stations}
               width={width}
             >
-              {/* 有带时轨道也进这一层 SVG：分叉与汇合是曲线，DOM 的 border 画不出来。 */}
+              {/* With a branch the rail joins this SVG layer too: forks and merges are curves a DOM border cannot draw. */}
               {banded ? (
                 <WorkflowTimelineTracks
                   folded={folded}
@@ -414,7 +414,7 @@ export const WorkflowTimeline = memo(function WorkflowTimeline({
 
             {stations.map((station, i) => {
               const roster = stationRosterOf(station, ROSTER_PINS_CARD);
-              // 名册在就还有话说：一站的药丸全被界淘汰掉时剩下「还有 n 个」那一行，而不是凭空消失。
+              // The roster still has something to say: when a station's pills are all culled by the cap, the "n more" row remains rather than vanishing.
               if (station.pills.length === 0 && roster === undefined) return null;
               return (
                 <div
@@ -438,8 +438,8 @@ export const WorkflowTimeline = memo(function WorkflowTimeline({
                   {roster === undefined ? (
                     station.pills.map(renderPill)
                   ) : (
-                    // 名册站：钉住的五枚沿用药丸的接线，之后一行
-                    // 「还有 n 个」——点它开 run 详情、落到这一站（`onOpenMore`，自己的门）。
+                    // Roster station: the five pinned keep the pill wiring, then a row
+                    // of "n more" — clicking opens run details, landed on this station (`onOpenMore`, a gate of its own).
                     <>
                       {roster.pinned.map(renderPill)}
                       <WorkflowMoreRow
@@ -454,7 +454,7 @@ export const WorkflowTimeline = memo(function WorkflowTimeline({
             })}
           </div>
         </div>
-        {/* 边檐（追记「边檐」）：折到视口两侧的站，一排灯落在轨道行上，檐下的内容已被遮罩清空。 */}
+        {/* Ledges (the "ledge" postscript): stations folded to the viewport's sides, a row of dots on the rail row, the content beneath cleared by the mask. */}
         <WorkflowLedge
           indexes={fold.left}
           side="left"

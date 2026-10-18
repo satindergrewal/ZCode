@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 远程连接字段较多，SSH/WSL/Docker 分支暂集中在单文件维护。 */
+/* eslint-disable max-lines -- many connection fields; SSH/WSL/Docker branches stay together for now. */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   DockerContainerInfo,
@@ -178,9 +178,9 @@ export function RemoteConnectionFields({
       return;
     }
 
-    // Popover 嵌在 Dialog 中时，外层滚动锁会吞掉默认滚轮行为，
-    // 导致 alias CommandList 只能拖滚动条、不能直接滚轮滚动。
-    // 这里显式驱动列表自身 scrollTop，确保鼠标滚轮和触控板都能滚动候选项。
+    // Inside a Dialog the scroll lock eats wheel events,
+    // so the alias CommandList scrolled by bar only.
+    // Drive scrollTop directly so wheel and trackpad both scroll options.
     listElement.scrollTop += event.deltaY;
     event.preventDefault();
     event.stopPropagation();
@@ -340,13 +340,13 @@ export function RemoteConnectionFields({
             </p>
           </div>
 
-          {/* Bugfix: Electron / Chromium 的原生 autocomplete 在 SSH 向导里不稳定，
-              而且默认值（如 localhost / 22）会把历史候选提前过滤掉。
-              这里改成用应用自身持久化的远程连接历史做显式候选，focus 时先展示完整历史；密码仍然不参与历史回填。 */}
-          {/* Bugfix: 建议列表之前直接跟着全宽输入框展开，在大对话框里会变成长条。
-              这里把宽度限制在字段语义范围内，只收窄建议列表，不改变原输入框布局。 */}
-          {/* Bugfix: 示例值直接作为 placeholder 会被误认为已有默认值。
-              这里改成“输入提示 + 示例”，让用户知道仍需手动填写必填字段。 */}
+          {/* Bugfix: Chromium native autocomplete misbehaves in the SSH wizard and
+              defaults (localhost/22) pre-filter history. Explicit candidates come
+              from app-persisted history on focus; passwords never backfill. */}
+          {/* Bugfix: full-width suggestions stretched into bars in the wide dialog;
+              cap to the field's semantic width, input layout unchanged. */}
+          {/* Bugfix: examples as placeholder read as prefilled values;
+              hint + example keeps required fields visibly manual. */}
           <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_6.5rem]">
             <RemoteConnectionHistoryInput
               className="h-9 text-ui-base"
@@ -375,8 +375,8 @@ export function RemoteConnectionFields({
             />
           </div>
 
-          {/* Bugfix: 认证方式之前复用了端口的 6.5rem 窄列，两个选项扣除 padding 后会把中英文文案挤到换行或溢出。
-              这里单独给认证方式保留 12rem，并禁止选项文字换行。 */}
+          {/* Bugfix: auth reused the port's narrow 6rem column and wrapped/overflowed;
+              reserve 12rem and keep option labels one-line. */}
           <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_12rem] sm:items-end">
             <RemoteConnectionHistoryInput
               className="h-9 text-ui-base"
@@ -680,9 +680,7 @@ export function RemoteConnectionFields({
               )}
             >
               {intl.formatMessage({
-                id: wslUserIsInvalid
-                  ? "wsl.validation.invalidUser"
-                  : "wsl.userDescription",
+                id: wslUserIsInvalid ? "wsl.validation.invalidUser" : "wsl.userDescription",
               })}
             </p>
           </div>

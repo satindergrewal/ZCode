@@ -7,7 +7,7 @@ import {
 import type { IDisposable } from "@zcode/rpc";
 import type { ZCodeProtocolClient } from "#src/zcode-agent/zcodeProtocolClient.js";
 
-/** 仅由本机子进程 spawn 点登记；remote RPC/手机 attachment 不登记也不透传启停。 */
+/** Registered only at local child-process spawn points; remote RPC/phone attachments never register or relay start/stop. */
 export class LocalRuntimeNetworkCapture {
   private readonly clients = new Map<
     ZCodeProtocolClient,
@@ -44,7 +44,7 @@ export class LocalRuntimeNetworkCapture {
         if (message.method !== zcodeProtocolNotifications.processNetworkRequests) return;
         const result = networkCaptureBatchSchema.safeParse(message.params);
         if (!result.success || result.data.captureId !== this.captureId) return;
-        // PID/角色来自本机 spawn 登记，不能采用对端自报身份。
+        // PID/role come from the local spawn registry, never peer-reported identity.
         this.sink?.({
           ...result.data,
           records: result.data.records.map((record) => ({
@@ -58,7 +58,7 @@ export class LocalRuntimeNetworkCapture {
     void client
       .notify(zcodeProtocolMethods.processNetworkCapture, { captureId: this.captureId })
       .catch(() => {
-        /* 已退出进程无需重试或重启 */
+        /* Exited processes need no retry or restart */
       });
   }
 }

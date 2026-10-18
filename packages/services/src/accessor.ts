@@ -88,12 +88,12 @@ export interface IServiceAccessor {
   readonly skillsService: ISkillsService;
   readonly skillSyncService: ISkillSyncService;
   readonly mcpSyncService: IMcpSyncService;
-  /** 插件 UI 桥；web 或旧 host 可不提供，UI 据此回退普通 MCP 卡片。 */
+  /** Plugin UI bridge; web or legacy hosts may omit it, the UI falls back to plain MCP cards. */
   readonly genUiService?: IGenUiService;
   readonly pluginUiBridgeService?: IPluginUiBridgeService;
-  /** 页面 sampling；只有桌面本地任务开放。 */
+  /** Page sampling; only exposed to desktop-local tasks. */
   readonly pluginUiSamplingService?: IPluginUiSamplingService;
-  /** App-Provided Tools；只有桌面本地 agent 时存在。 */
+  /** App-Provided Tools; only present for desktop-local agents. */
   readonly pluginUiAppToolsService?: IPluginUiAppToolsService;
   readonly pluginSyncService: IPluginSyncService;
   readonly pluginsService: IPluginsService;

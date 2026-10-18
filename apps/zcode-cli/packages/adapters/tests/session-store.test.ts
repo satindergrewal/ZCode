@@ -509,8 +509,8 @@ describe("SQLite session store", () => {
       "0018_session_input_failed_status",
       "0019_dwf_journal",
       "0020_provider_model_selection",
-        "0021_official_glm_selection",
-        "0022_backfilled_session_reasoning",
+      "0021_official_glm_selection",
+      "0022_backfilled_session_reasoning",
     ];
 
     try {

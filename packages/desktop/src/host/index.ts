@@ -1,17 +1,17 @@
-/* eslint-disable max-lines -- Host 入口集中编排 local/remote service wiring，本次退出保护需要在同一处桥接 host 上报。 */
-/* eslint-disable max-lines -- host process 入口集中维护 local/remote 初始化和资源回收，realtime bridge 接入后先保持同文件收口。 */
+/* eslint-disable max-lines -- host entry orchestrates local/remote service wiring; exit guards must bridge host reports here. */
+/* eslint-disable max-lines -- host process entry keeps local/remote init and resource teardown in one file after the realtime bridge landed. */
 /**
- * Host Process 入口 —— 每个窗口对应一个独立的 host process
+ * Host process entry -- one isolated host process per window.
  *
- * 同一窗口的 Renderer 和手机 都 attachment 到这个 Host：
+ * The window's renderer and mobile clients attach to this host:
  *   Renderer / Mobile ←MessagePort→ Window Host
  *                                      ├─ local services
  *                                      └─ remote connection registry
  *
- * 启动流程：
- * 1. main 进程通过 Electron `utilityProcess.fork()` 创建本进程
- * 2. main 进程只发送一次 init-local 初始化窗口 Host
- * 3. 后续远端 connect / scoped attachment 都由同一 Host 处理
+ * Startup:
+ * 1. main spawns this process via Electron `utilityProcess.fork()`
+ * 2. main sends init-local exactly once to initialize the window host
+ * 3. later remote connects / scoped attachments are handled by the same host
  */
 import { createHostDatabaseStartup } from "./hostDatabaseStartup.js";
 import { createHostNetworkCapture } from "./hostNetworkCapture.js";
@@ -103,9 +103,9 @@ import {
   parseHostIncomingMessageEvent,
   rejectUnavailableAttachedServicePort,
 } from "./hostMessagePortGuard.js";
-// remote backend 相关模块延迟加载：ssh2 的 CJS 依赖链（asn1 等）在 asar 打包后路径断裂，
-// 静态 import 会导致 local 模式的 host process 也崩溃。
-// 改为动态 import，仅 remote 模式时才加载。
+// Lazy-load remote backend modules: ssh2's CJS dep chain (asn1 etc.) breaks inside asar,
+// and a static import would crash the host process even in local mode.
+// Dynamic-import it only for remote mode.
 import type {
   ConnectOptions,
   DeployLockMode,
@@ -195,8 +195,8 @@ type RemoteAssetDirs = Pick<
 const { parentPort } = process;
 const hostNetworkCapture = createHostNetworkCapture(parentPort);
 
-// 进程检索体验优化：host 由 utilityProcess 拉起时外壳仍是 Electron Helper，
-// 这里根据 main 传入的窗口 label 补一层稳定的 zcode-* title，方便系统进程列表过滤。
+// Process-list readability: utilityProcess spawns still show as Electron Helper,
+// so retitle with a stable zcode-* name derived from the window label for easy filtering.
 process.title = formatZCodeHostProcessName(process.env["ZCODE_PROCESS_LABEL"]);
 
 type HostLogLevel = "info" | "warn" | "error";
@@ -246,8 +246,8 @@ const pluginSandboxRegistrationBridge = createPluginSandboxRegistrationBridge({
   },
 });
 
-// browser-use host↔main 桥：把 agent 的 browser 命令经 parentPort 转给 main（WebContentsView+CDP）。
-// parentPort 为空（不应发生于 host 进程）时 postToMain 抛错，bridge 自身返回 backend_unavailable。
+// browser-use host<->main bridge: forwards agent browser commands to main (WebContentsView+CDP) via parentPort.
+// If parentPort is missing (should not happen in the host process) postToMain throws and the bridge reports backend_unavailable.
 const browserControlMainBridge = createBrowserControlMainBridge({
   postToMain: (message) => {
     if (!parentPort) {
@@ -262,8 +262,8 @@ const browserControlMainBridge = createBrowserControlMainBridge({
       if (!workspaceIdentity?.trim()) {
         throw new Error("remote Browser recording materialization requires workspaceIdentity");
       }
-      // Window Host 重构后同一进程可同时持有多个远端连接，旧的进程级
-      // remoteConnection 会串 session。必须用完整 scope 从 registry 的权威 entry 取 uploader。
+      // After the window-host refactor one process holds several remote connections; the old
+      // process-level remoteConnection crossed sessions. Resolve the uploader from the registry's authoritative entry by full scope.
       remoteBackend = windowRemoteConnectionRegistry.resolveScopedCapabilities({
         kind: "remote",
         remoteSessionId: input.remoteSessionId,
@@ -291,7 +291,7 @@ function reportHostLog(level: HostLogLevel, args: unknown[]): void {
       message: args.map((arg) => stringifyHostLogArg(arg)).join(" "),
     });
   } catch {
-    // 日志上报失败不应影响 host 主流程。
+    // Log reporting failures must not break the host main flow.
   }
 }
 
@@ -314,7 +314,7 @@ const remoteConnectionProgressContext = createRemoteConnectionProgressContext({
         message: args.map((arg) => stringifyHostLogArg(arg)).join(" "),
       });
     } catch {
-      // 连接进度上报失败不应中断 SSH/WSL/Docker 的真实连接流程。
+      // Connection progress report failures must not abort the SSH/WSL/Docker connection.
     }
   },
 });
@@ -342,9 +342,9 @@ function createFullFeedbackLogArchiveViaMain(
       reject,
       onProgress: options?.onProgress,
     });
-    // 问题反馈以前在 host service 内走 compactLogArchive 的 full fallback，
-    // 收集范围和“导出日志”不一致，缺少 zcode-cli 日志、rollout/debug 以及导出链路脱敏。
-    // 这里把完整日志打包委托给 main process 的导出日志同源逻辑，host 只拿 zip 路径继续上传。
+    // Feedback used to fall back to compactLogArchive inside the host service, whose scope
+    // diverged from "export logs" (no zcode-cli logs, rollout/debug, or export-path redaction).
+    // Delegate the full archive to main's export-logs path; the host only needs the zip path to upload.
     try {
       parentPort.postMessage({
         type: HostResponseTypes.FeedbackLogArchiveRequest,
@@ -367,24 +367,28 @@ const logger = {
 const cronAutomationRepo = new AutomationRepo();
 const cronRunSubscriptions = new Map<string, { dispose(): void }>();
 
-// ---- 闲时任务（off-peak）派发：与 cron 并行的独立链路（表/消息/常量互不复用）----
+// ---- Off-peak task dispatch: independent lane next to cron (no shared tables/messages/constants) ----
 const offPeakTaskRepo = new OffPeakTaskRepo();
 const offPeakRunSubscriptions = new Map<string, { dispose(): void }>();
 /**
- * 续跑提示词（"实现时定"的落地）：3h 时间盒到期 / app 重启恢复后 resume 同一
- * session 续发。不重发原始 prompt（会让模型从头再做一遍），而是指示接续未完成的工作。
+ * Resume prompt (the "decide at implementation" landing): when the 3h timebox expires or after
+ * an app-restart recovery, resume the same session and continue. Do not resend the original
+ * prompt (the model would redo everything); instead instruct it to continue the unfinished work.
  */
 const OFF_PEAK_RESUME_PROMPT =
   "Continue the previous task from where it left off. The run was interrupted " +
   "(app restart or execution window expired). Do not start over; review what has " +
   "already been done and complete the remaining work.";
 
-// ---- off-peak 运行时装配（server client + 进程内 mock 网关 + 编排服务，host 域属主）----
-// ⚠ 多窗口=多 host 会各自跑一份 sync 轮询（批量接口幂等、写入同库同数据，重复仅多耗请求）；
-// mock 网关用固定端口单实例共享票据状态。若多窗口轮询放大成本，再加跨 host 选主。
+// ---- off-peak runtime wiring (server client + in-process mock gateway + orchestration
+// service; host-domain owner) ----
+// Note: multi-window = multi-host, each running its own sync polling (batch endpoints are
+// idempotent and write the same data to the same DB; duplicates only cost extra requests).
+// The mock gateway shares ticket state as a fixed-port singleton. If multi-window polling
+// amortizes badly, add cross-host leader election later.
 interface OffPeakRuntime {
   service: OffPeakTaskService;
-  /** 派发时按本段票据构造逐请求鉴权；静态模型事实由 CLI Built-in Config 提供。 */
+  /** Builds per-request auth from this segment's ticket at dispatch; static model facts come from the CLI built-in config. */
   buildRequestAuth: OffPeakRequestAuthBuilder;
   validateSelection: (selection: {
     providerId: string;
@@ -442,7 +446,7 @@ function disposeOffPeakRunSubscription(key: string): void {
   disposable.dispose();
 }
 
-/** 终态回填 files_changed：复用现有 task diff 汇总（工具写盘型统计，Bash 改动不计入，接受）。 */
+/** Terminal-state files_changed backfill: reuse the task diff summary (tool file-writes only; Bash edits not counted, accepted). */
 async function resolveOffPeakFilesChanged(params: {
   zcodeTaskService: IZCodeTaskService;
   taskId: string;
@@ -457,15 +461,15 @@ async function resolveOffPeakFilesChanged(params: {
     });
     const fileChanges = snapshot?.fileChanges;
     if (!fileChanges) return undefined;
-    // 汇总为空（无文件改动）按 0 计——"改了 0 个文件"对完成通知是真实信息。
+    // Empty summary (no file changes) counts as 0 -- "changed 0 files" is honest in the completion notice.
     return buildTaskChangeSummary(fileChanges)?.fileCount ?? 0;
   } catch (error) {
-    logger.warn("off-peak files_changed 汇总失败（不阻塞终态落库）:", error);
+    logger.warn("off-peak files_changed summary failed (terminal write not blocked):", error);
     return undefined;
   }
 }
 
-/** loop 终态 → off_peak_tasks 终态：succeeded→completed、stopped→cancelled（用户手动停止）、其余→failed。 */
+/** Loop terminal state -> off_peak_tasks: succeeded->completed, stopped->cancelled (user stop), else->failed. */
 async function finalizeOffPeakRun(params: {
   zcodeTaskService: IZCodeTaskService;
   offPeakTaskId: string;
@@ -475,8 +479,8 @@ async function finalizeOffPeakRun(params: {
   outcome: ZCodeAutomationRunOutcome;
   error?: string;
 }): Promise<void> {
-  // 自动续跑：票据过期（active 3h 到期 / ready 废票）不是失败——
-  // 同 task_id 重取号回 queued，等下一个 ready 再 resume 同 session 续跑。
+  // Auto-continuation: an expired ticket (3h window over / voided ready ticket) is not a failure --
+  // requeue the same task_id as queued, then resume the same session on the next ready ticket.
   if (params.outcome === "failed" && isOffPeakTicketExpiredError(params.error)) {
     const runtime = await ensureOffPeakRuntime();
     if (runtime) {
@@ -486,7 +490,7 @@ async function finalizeOffPeakRun(params: {
       );
       return;
     }
-    // 运行时不可用（服务缺失）时按普通失败落库，避免任务卡在 running。
+    // No runtime (missing service): record a plain failure so the task never sticks in running.
   }
   const status =
     params.outcome === "succeeded"
@@ -502,7 +506,7 @@ async function finalizeOffPeakRun(params: {
     ...(filesChanged !== undefined ? { filesChanged } : {}),
   });
   if (!updated) {
-    // 终态不可逆出：任务已被用户先一步取消/删除等，丢弃迟到回写（幂等兜底）。
+    // Terminal writes are not reversible: the user already cancelled/deleted the task; drop the late writeback (idempotent guard).
     logger.info(
       `off-peak terminal writeback dropped (already terminal) task=${params.offPeakTaskId}`,
     );
@@ -511,7 +515,7 @@ async function finalizeOffPeakRun(params: {
   logger.info(
     `off-peak run finished task=${params.offPeakTaskId} status=${status} filesChanged=${filesChanged ?? "n/a"}`,
   );
-  // 后台完成统一置未读，打开 task 时由导航链路清除（与 cron 同款）。
+  // Background completions mark unread; the navigation flow clears it when the task opens (same as cron).
   void params.zcodeTaskService.setTaskUnread({
     taskId: params.taskId,
     workspacePath: params.workspacePath,
@@ -542,16 +546,16 @@ function trackOffPeakRunOutcome(params: {
         ...(params.workspaceIdentity ? { workspaceIdentity: params.workspaceIdentity } : {}),
         outcome: result.outcome,
         ...(result.error ? { error: result.error } : {}),
-      }).catch((error) => logger.warn("off-peak 终态回写失败:", error));
+      }).catch((error) => logger.warn("off-peak terminal writeback failed:", error));
     },
   );
   offPeakRunSubscriptions.set(key, disposable);
 }
 
 /**
- * 把一次闲时任务派发提交给当前 host 的 V4 task service。
- * 首跑（无 conversationId）createTask 新建专属 session；续跑/中断恢复 resume
- * 同一会话并以续跑提示词继续。闲时完整 Selection/鉴权仅注入本次执行。
+ * Submit one off-peak dispatch to this host's V4 task service.
+ * First run (no conversationId) creates a dedicated session via createTask; resume/recovery
+ * reuses the same session with the resume prompt. Off-peak selection/auth applies to this run only.
  */
 async function dispatchOffPeakRun(request: OffPeakRunDispatchRequest): Promise<{
   conversationId: string;
@@ -566,17 +570,19 @@ async function dispatchOffPeakRun(request: OffPeakRunDispatchRequest): Promise<{
     throw new Error("off-peak runtime is not available");
   }
   if (!request.serverTicketId) {
-    // schedulable 必然已取号；无票派发说明快照失序，按 transient 回执等下轮（轮询会补票）。
+    // schedulable implies the ticket was taken; a dispatch without one means a disordered
+    // snapshot — reply transient and wait for the next round (polling refills tickets).
     throw new Error("off-peak dispatch without server ticket");
   }
-  // idle plan 使用普通 Selection；单次执行约束保证它不写入 Session Selection。
+  // Idle plan uses a plain Selection; the single-run guarantee keeps it out of the Session Selection.
   const idleSelection = request.modelSelection;
   if (!(await runtime.validateSelection(idleSelection))) {
     throw new OffPeakModelUnavailableError("idlePlan");
   }
   const requestAuth = await runtime.buildRequestAuth(request.serverTicketId);
-  // 首次派发与复用会话的恢复派发需要在轮次事实中可区分；该字段只描述
-  // 当前自动 turn 的调度阶段，不改变稳定 task ID、独立 message ID 或手动消息语义。
+  // First dispatch and resumed-session dispatch must be distinguishable in turn facts; this
+  // field only describes the scheduling phase of the current automated turn and never changes
+  // stable task IDs, dedicated message IDs, or manual-message semantics.
   const dispatchKind = resolveOffPeakDispatchKind(request);
   const offPeakRunType = dispatchKind === "resume" ? "resume" : "init";
   let trackedKey: string | null = null;
@@ -585,9 +591,11 @@ async function dispatchOffPeakRun(request: OffPeakRunDispatchRequest): Promise<{
     let traceId: TraceId;
     let promptContent = request.prompt;
     if (dispatchKind === "bound-first-run") {
-      // 绑定首跑：会话内创建的任务在创建它的会话里执行（对齐 dispatchCronRun 的 targetTaskId 路径）。
-      // 先探测再写配置：绑定的是用户的工作会话，忙碌时直接 transient 交给调度器退避，
-      // 不能先 setMode 再被 session/send 以 -32010 拒绝（那会悄悄改掉用户会话的权限模式）。
+      // Bound first run: tasks created in a session run in the session that created them
+      // (mirroring dispatchCronRun's targetTaskId path). Probe before writing config: the bound
+      // target is the user's working session; when busy, return transient to the scheduler
+      // backoff instead of setMode first and being rejected by session/send with -32010 (which
+      // would silently change the user session's permission mode).
       taskId = request.sessionId!;
       traceId = `${request.offPeakTaskId}:bound:${randomUUID()}` as TraceId;
       const workspaceScope = {
@@ -606,7 +614,7 @@ async function dispatchOffPeakRun(request: OffPeakRunDispatchRequest): Promise<{
       await zcodeTaskService.resumeTask({
         ...workspaceScope,
         taskId,
-        // 绑定会话首次盖章归属标记，侧栏归入闲时分组（机制同 cron targetTaskId）。
+        // Stamp the ownership marker on this first bound run so the sidebar groups it under off-peak (same mechanism as cron targetTaskId).
         offPeakTaskId: request.offPeakTaskId,
       });
       await zcodeTaskService.setConfigOption({
@@ -616,38 +624,38 @@ async function dispatchOffPeakRun(request: OffPeakRunDispatchRequest): Promise<{
         value: request.permissionMode,
       });
     } else if (dispatchKind === "resume") {
-      // 续跑段：resume 同一 session（冷恢复水合历史；send 前必须先 resume）。
+      // Resume leg: resume the same session (cold restore hydrates history; always resume before send).
       taskId = request.conversationId!;
-      // 原因：offPeakTaskId 只用于跨 talk 关联；每次自动轮必须生成独立消息身份，
-      // 不能复用 task ID，也不能依赖同毫秒时间戳避免碰撞。
+      // offPeakTaskId exists for cross-talk correlation only; every automatic turn needs its own
+      // message identity -- never reuse the task ID, nor rely on same-millisecond timestamps.
       traceId = `${request.offPeakTaskId}:resume:${randomUUID()}` as TraceId;
       promptContent = OFF_PEAK_RESUME_PROMPT;
       await zcodeTaskService.resumeTask({
         taskId,
         workspacePath: request.workspacePath,
         workspaceIdentity: request.workspaceIdentity,
-        // pre-打点会话续跑时补写归属标记（bootstrap 回填之外的双保险）。
+        // Backfill the ownership marker when resuming a pre-stamped session (belt-and-braces beyond the bootstrap backfill).
         offPeakTaskId: request.offPeakTaskId,
       });
-      // 权限模式随派发下发（resume 后显式设置，幂等）。
+      // Permission mode ships with the dispatch (set explicitly after resume; idempotent).
       await zcodeTaskService.setConfigOption({
         taskId,
         traceId,
         configId: "mode",
         value: request.permissionMode,
       });
-      // 档位是 idle Selection 的一部分，只在 sendPrompt 注入；单独写档位会污染用户会话。
+      // The reasoning level is part of the idle Selection, injected via sendPrompt only; writing it separately would pollute the user session.
     } else {
       const task = await zcodeTaskService.createTask({
         workspacePath: request.workspacePath,
         workspaceIdentity: request.workspaceIdentity,
-        // 空 Session 沿用普通初始化；idle Selection 只在下方执行中注入。
-        // 在此写入会让闲时轮结束后的普通消息继续使用无票的隐藏 Provider。
+        // Empty session keeps normal initialization; the idle Selection is injected in the execution below.
+        // Writing it here would chain later normal messages onto the ticketless hidden provider.
         mode: request.permissionMode as ZCodeTaskMode,
-        // 闲时任务是无界面的 createTask + sendPrompt 连续派发；空 session 必须在首条
-        // V4 admission 内先持久化，否则 session_input 外键会先于 session 主记录写入。
+        // Off-peak is a headless createTask + sendPrompt burst; the empty session must persist
+        // within the first V4 admission, else the session_input FK lands before the session row.
         deferPersistenceUntilFirstPrompt: true,
-        // 创建时即盖章持久归属标记（月亮图标/后续系统分组只看该标记，不再反查 store）。
+        // Stamp the persistent ownership marker at creation (moon icon/grouping reads only this marker, no store lookups).
         offPeakTaskId: request.offPeakTaskId,
       });
       taskId = task.taskId;
@@ -667,13 +675,15 @@ async function dispatchOffPeakRun(request: OffPeakRunDispatchRequest): Promise<{
       traceId,
       content: promptContent,
       clientMode: "desktop-continuous",
-      // Bug 原因：闲时自动 turn 以前只注入 idle plan，没有限制工具面，模型可在后台创建
-      // 持久化定时任务。首跑与续跑在此收敛，显式隐藏 CronCreate 且不伪造 cron automation 归属。
-      // 闲时轮同时隐藏 OffPeakCreate，OffPeakList 只读保留。
+      // Regression root cause: off-peak automated turns used to inject only the idle plan with
+      // no tool-surface limit, letting the model create persistent scheduled tasks in the
+      // background. First run and resume converge here: hide CronCreate explicitly and do not
+      // fabricate cron automation ownership. Off-peak turns also hide OffPeakCreate; OffPeakList
+      // stays as read-only.
       toolDenylist: ["CronCreate", "OffPeakCreate"],
       modelSelection: idleSelection,
       modelExecution: {
-        // 闲时执行凭据只服务主 Turn；完成后不再派生自动 Memory 请求。
+        // Off-peak credentials serve the main turn only; no derived automatic memory requests afterwards.
         memoryExtraction: "skip",
         selectionScope: "execution",
         requestAuth,
@@ -685,7 +695,7 @@ async function dispatchOffPeakRun(request: OffPeakRunDispatchRequest): Promise<{
       offPeakTaskId: request.offPeakTaskId,
       offPeakRunType,
     });
-    // 只有 init 实际新建；绑定首跑和跨票续跑只是原 Session 的后续输入。
+    // Only init creates a session; bound first runs and cross-ticket resumes are follow-up input on the existing session.
     if (dispatchKind === "init") {
       reportHostSessionCreate(parentPort, {
         sessionId: taskId,
@@ -719,7 +729,7 @@ function resolveAutomationTargetServices(request: {
   const remoteSession = windowRemoteConnectionRegistry.findSessionForWorkspace(request);
   if (remoteSession) {
     if (!remoteSession.workspaceIdentity) {
-      throw new Error("Automation 目标 Remote Host 缺少 workspaceIdentity");
+      throw new Error("Automation target remote host is missing workspaceIdentity");
     }
     return windowRemoteConnectionRegistry.resolveScopedServices({
       kind: "remote",
@@ -728,10 +738,10 @@ function resolveAutomationTargetServices(request: {
       workspaceIdentity: remoteSession.workspaceIdentity,
     });
   }
-  // 远程 Automation 找不到目标 logical session 时，旧派发会静默落到 Local Host，
-  // 从而使用本地模型首选与 Registry。远程身份只能失败，不能跨 Environment fallback。
+  // When a remote automation cannot find its logical session, the old path silently fell back to the
+  // local host with local model defaults/registry. Remote identity must fail, never cross environments.
   if (request.workspaceIdentity && isRemoteWorkspaceIdentity(request.workspaceIdentity)) {
-    throw new Error("Automation 目标 Remote Host 当前不可用");
+    throw new Error("Automation target remote host is unavailable");
   }
   if (!activeServices) {
     throw new Error("Local Host services are not initialized.");
@@ -836,7 +846,7 @@ function trackCronRunOutcome(params: {
         repo: cronAutomationRepo,
         logWarn: (message, error) => logger.warn(message, error),
       });
-      // 定时任务在后台完成后统一置为未读，真正打开 task 时再由导航链路清除。
+      // Background cron completions mark unread; the navigation flow clears it when the task opens.
       void params.zcodeTaskService.setTaskUnread({
         taskId: params.taskId,
         workspacePath: params.workspacePath,
@@ -863,8 +873,8 @@ function trackCronRunOutcome(params: {
 }
 
 /**
- * 把一次 cron/manual run 直接提交给当前 host 的 V4 task service。
- * 会话内 automation 可能绑定到未激活 session，必须先恢复再应用保存的运行参数。
+ * Submit one cron/manual run directly to this host's V4 task service.
+ * In-session automations may bind to an inactive session; restore it before applying saved run config.
  */
 async function dispatchCronRun(request: CronRunDispatchRequest): Promise<{
   taskId: string;
@@ -877,17 +887,18 @@ async function dispatchCronRun(request: CronRunDispatchRequest): Promise<{
   }
   const modelSelectionService = targetServices.getOptional(IModelSelectionService);
   if (!modelSelectionService) {
-    throw new Error("目标 Host Model Selection service is not initialized.");
+    throw new Error("Target host model selection service is not initialized.");
   }
-  // 长期配置是原意图；首次派发在目标 Host 解析后固定。已有 run 必须直接复用，
-  // 不能因账号变化或本次 Registry 读取失败重新解释历史执行选择。
+  // Long-lived config is the original intent; first dispatch pins it once the target Host
+  // resolves. Existing runs must be reused as-is, never re-interpreting historical execution
+  // choices because the account changed or this Registry read failed.
   const existingRun = await cronAutomationRepo.getRun(request.runId);
   const resolvedSubmissionModelSelection = await resolveAutomationSubmissionModelSelection({
     selection: request.modelSelection,
     fixedSelection: existingRun?.modelSelection,
     modelSelectionService,
-    // Repo 已在读取前完成离线导入；不再为迁移绕行 Agent/账号服务。
-    // 未迁入或损坏的新值仍由此入口明确拒绝，不能当成跟随 Workspace。
+    // The repo finished offline import before this read; no more agent/account detours for migration.
+    // Unmigrated or corrupt values are rejected here, never treated as follow-the-workspace.
     readSelection: () =>
       cronAutomationRepo.getModelSelectionForDispatch(
         request.automationId,
@@ -913,13 +924,13 @@ async function dispatchCronRun(request: CronRunDispatchRequest): Promise<{
           thoughtLevel: submissionModelSelection.options?.reasoningLevel,
           automationId: request.automationId,
         });
-    // 未绑定会话时不能沿用 createTask 的 session trace 作为首条 prompt trace：
-    // CLI 无法从 inputId 还原 manual/schedule admission。
-    // 建会话 trace 与执行 runId 是两种身份；两条派发路径的 prompt 都必须统一使用 runId。
+    // An unbound session's createTask trace cannot double as the first prompt trace: the CLI cannot
+    // recover manual/schedule admission from inputId. Session-creation trace and run ID are distinct
+    // identities; both dispatch paths must address prompts by run ID.
     const promptTraceId = request.runId as TraceId;
     if (request.targetTaskId) {
-      // 绑定会话在 app 重启或切换 workspace 后通常不处于 active；旧实现直接
-      // setConfig/sendPrompt 会立即报 Session is not active，看起来像「立即运行」没有触发。
+      // Bound sessions are usually inactive after an app restart or workspace switch; the old code
+      // hit "Session is not active" immediately, looking like Run Now never fired.
       await zcodeTaskService.resumeTask({
         taskId: task.taskId,
         workspacePath: request.workspacePath,
@@ -950,7 +961,7 @@ async function dispatchCronRun(request: CronRunDispatchRequest): Promise<{
           botsService,
         });
       } catch (error) {
-        // Bot 回推是 best-effort 辅助通道；配置/凭据/订阅失败不能阻断 automation 派发与结算。
+        // Bot delivery is a best-effort side channel; config/credential/subscription failures must not block dispatch or settlement.
         logger.warn(
           `automation Bot delivery subscription failed automation=${request.automationId} provider=unknown`,
           error,
@@ -977,7 +988,7 @@ async function dispatchCronRun(request: CronRunDispatchRequest): Promise<{
       clientMode: "desktop-continuous",
       automationId: request.automationId,
     });
-    // prompt 创建的定时任务带 targetTaskId，追加原会话不能计成 session_create。
+    // Prompt-created automations carry targetTaskId; appending to that session is not a session_create.
     if (!request.targetTaskId) {
       reportHostSessionCreate(parentPort, {
         sessionId: task.taskId,
@@ -1046,26 +1057,27 @@ async function dispatchManualAutomationRun(params: {
       dispatchedAt: Date.now(),
     });
   } catch (error) {
-    // prompt 已经 accepted/queued，台账和累计次数回写失败不能伪装成派发失败并提前释放锁；
-    // 真实终态仍由 trackCronRunOutcome 收口，避免同一 automation 重复排队。
+    // The prompt is already accepted/queued; a ledger/cumulative-count write-back failure must
+    // not masquerade as dispatch failure and release the lock early. The real terminal state is
+    // still finalized by trackCronRunOutcome, avoiding duplicate queueing of the same automation.
     logger.warn(
-      `回写 manual automation dispatched 状态与运行次数失败 automation=${params.automation.automationId} runId=${params.run.runId}`,
+      `failed to write back manual automation dispatched state and run count automation=${params.automation.automationId} runId=${params.run.runId}`,
       error,
     );
   }
-  // sendPrompt ACK 可能只表示进入 busy queue；manual claim 必须保留到对应 turn 终态。
+  // A sendPrompt ACK may only mean busy-queued; the manual claim must live until the turn settles.
   logger.info(
     `direct manual automation dispatch accepted automation=${params.automation.automationId} runId=${params.run.runId} taskId=${result.taskId}`,
   );
 }
 
-// Node warning 不是远端连接失败，改成结构化 warn，避免默认 stderr 被误染成 error。
+// Node warnings are not remote-connection failures; record a structured warn instead of stderr error noise.
 process.on("warning", (warning) => logger.warn(`${warning.name}: ${warning.message}`));
 
 registerHostNetworkTelemetry(parentPort);
-// Host 进程自身的 60 秒采样：一次读数两个出口——门控后写本地
-// `[memory]` 行，同一次读数换算成 HostResourceSample 经 parentPort 送 main 作 heap 来源。
-// services 计数器由各 service 工厂自注册。
+// Host self-sampling every 60s: one reading, two outlets -- the gated local `[memory]` line, and
+// the same reading converted to a HostResourceSample for main (heap source) via parentPort.
+// Service counters are registered by each service factory.
 const hostSelfResourceTelemetry = startHostSelfResourceTelemetry({
   logger,
   collectCounters: collectServiceMemoryDiagnostics,
@@ -1325,14 +1337,14 @@ function createReportingRemoteZCodeTaskService<T extends object>(
       timestamp: Date.now(),
     });
 
-    // 写路径（send/stop/交互回执）已收敛 v4 命令面；本镜像属**读路径**——
-    // taskRealtimePort → 手机 relay → 手机端
-    // zcodeSessionStore 的整条消费链词表都是 ZCodeStreamEvent。两个方案的评估结论：
-    // a) relay 直接转发 v4 帧、手机端消费 v4 store（正解）：需要重做 relay stream-op
-    //    协议 + 手机端 store；
-    // b) 帧→ZCodeStreamEvent 薄映射：等价复刻 adapter mapSessionEvent，
-    //    否决。
-    // 结论：本镜像保持 legacy 源不动。
+    // The write path (send/stop/interaction receipts) has converged on the v4 command surface;
+    // this mirror is the read path — taskRealtimePort → phone relay → phone client. The whole
+    // zcodeSessionStore consumption chain speaks ZCodeStreamEvent. Evaluation of both options:
+    // a) relay forwards v4 frames directly and the phone consumes a v4 store (the proper fix):
+    //    requires redoing the relay stream-op protocol plus the phone-side store;
+    // b) thin frame→ZCodeStreamEvent mapping: equivalent to duplicating adapter mapSessionEvent —
+    //    rejected.
+    // Conclusion: this mirror keeps the legacy source untouched.
     const dynamicStreamEvent = Reflect.get(target, "onDynamicStreamEvent");
     const streamDisposable =
       typeof dynamicStreamEvent === "function"
@@ -1352,8 +1364,8 @@ function createReportingRemoteZCodeTaskService<T extends object>(
     try {
       return await sendPrompt.call(target, params);
     } finally {
-      // 远端 zcode-server 没有 desktop realtime port；由窗口 Host 内的
-      // remote facade 接管 lease 和 stream mirror，确保 UI 能持续收到远端会话流。
+      // The remote zcode-server has no desktop realtime port; the window host's remote facade takes
+      // over the lease and stream mirror so the UI keeps receiving the remote session stream.
       streamDisposable?.dispose();
       taskRealtimePort.releaseTaskRunLease(mirrorTarget);
     }
@@ -1388,8 +1400,9 @@ function createReportingRemoteZCodeTaskService<T extends object>(
     return true;
   }
 
-  // remote workspace 的 ZCode Agent manager 跑在远端 server，desktop main 不能直接看到
-  // `handles` 状态。sendPrompt Promise 只是远端 ACK，必须等待 task ready 才能允许回收 workspace。
+  // The remote workspace's ZCode Agent manager runs on the remote server; desktop main cannot
+  // see `handles` state directly. The sendPrompt Promise is only the remote ACK — wait for task
+  // ready before allowing workspace reclamation.
   return new Proxy(service, {
     get(target, property, receiver) {
       const value = Reflect.get(target, property, receiver);
@@ -1429,8 +1442,8 @@ function createReportingRemoteZCodeTaskService<T extends object>(
               workspacePath: string;
               workspaceIdentity?: string;
             };
-            // pooled Host 不随 tab 退出；runtime 成功释放后必须同步解除 Host 代理层引用，
-            // 否则 task meta 和动态事件 listener 会在整个应用生命周期内单调增长。
+            // Pooled hosts outlive tabs; once the runtime release succeeds the host proxy layer must
+            // drop its references, else task metas and dynamic listeners grow for the app lifetime.
             workspaceProxyState.clearWorkspace(workspaceContext);
             workspaceTaskTracker.clearWorkspace(workspaceContext);
           }
@@ -1473,8 +1486,8 @@ function createReportingRemoteZCodeTaskService<T extends object>(
                 started: beginWorkspaceTask(target, promptParams.taskId, taskMeta),
               };
             } else if (options?.reportRunningPromptCount !== false) {
-              // task meta 缺失时无法安全伪造 workspace identity；仅保留 ACK 期间的 Host 退出诊断，
-              // 不让该 fallback 参与 workspace runtime 的释放裁决。
+              // Without task meta we cannot fabricate a workspace identity safely; keep only the
+              // ACK-lifetime host-exit diagnostic and keep this fallback out of runtime release decisions.
               tracksOnlyRpcLifetime = true;
               untrackedPromptRpcCount += 1;
               reportHostRunningTaskCount();
@@ -1540,9 +1553,10 @@ function warmUpZCodeAgent(
         );
         return;
       }
-      // 模型候选和首选项已经由目标 Host ModelSelectionView 提供；workspace
-      // presentation 只剩 mode 与 slash commands。预热不能为读取 presentation 额外创建
-      // Agent App，否则其 MCP close 会占住协议通道并阻塞真正的 Session 初始化。
+      // Model candidates and preferences already come from the target Host's ModelSelectionView;
+      // workspace presentation only has mode and slash commands left. Warmup must not create an
+      // extra Agent App just to read presentation, or its MCP close would occupy the protocol
+      // channel and block the real Session initialization.
       logger.info(
         `ZCode agent warmup ready (${reason}) workspace=${workspacePath} transport=${result.transportKind ?? "unknown"}`,
       );
@@ -1552,7 +1566,7 @@ function warmUpZCodeAgent(
     });
 }
 
-// 后台输出轮询仍需独立的 debug logger，不能随其他日志调用方移除而丢失工厂导入。
+// Background output polling still needs this dedicated debug logger; keep the factory import.
 const rpcDebugLogger = createServiceLogger("rpc");
 
 function logRpc(message: string, ...args: unknown[]): void {
@@ -1594,8 +1608,8 @@ console.warn = (...args: unknown[]) => {
 
 console.error = (...args: unknown[]) => {
   rawConsole.error(...args);
-  // Electron 会把 Node warning 先走 console.error，而 process warning listener 随后还会
-  // 结构化记录 warn；若这里继续上报，就会为同一个 warning 留下一条 error 和一条 warn。
+  // Electron routes Node warnings through console.error while the process warning listener also
+  // records a structured warn; reporting here too would leave one error plus one warn per warning.
   if (!shouldReportHostConsoleError(args)) {
     return;
   }
@@ -1603,14 +1617,14 @@ console.error = (...args: unknown[]) => {
   remoteConnectionProgressContext.report("error", args);
 };
 
-/** 当前 host 已注册的服务集合，进程退出时用于统一回收本地资源 */
+/** Services registered on this host; torn down together on process exit. */
 let databaseStartup: ReturnType<typeof createHostDatabaseStartup> | undefined;
 const pendingStartupAttachments = new Map<string, () => void>();
 let activeServices: ServiceCollection | null = null;
 let activeHostApiNetworkTransport: HostApiNetworkTransport | null = null;
-/** 本地 host services 的资源遥测订阅；远端连接的订阅由各自的 connection handle 持有。 */
+/** Resource-telemetry subscription for local host services; remote connections own theirs via connection handles. */
 let activeLocalResourceTelemetry: IDisposable | null = null;
-// 资源管理器采样只在 main 请求时执行一次，Host 不维护任何周期定时器。
+// Resource-manager sampling runs once per main request; the host keeps no periodic timers.
 const hostResourceUsageResponder = createHostResourceUsageResponder({
   getAgentService: () => activeServices?.getOptional(IZCodeAgentService),
   postMessage: (message) => parentPort?.postMessage(message),
@@ -1621,7 +1635,7 @@ let disposeHostResourcesInFlight: Promise<HostShutdownResult> | null = null;
 
 function requireActiveHostApiNetworkTransport(): HostApiNetworkTransport {
   if (!activeHostApiNetworkTransport) {
-    // Bug 原因：remote asset 若在 Host 网络策略就绪前回退 global fetch，会绕过设置页显式代理。
+    // Bug: remote assets falling back to global fetch before the host network policy is ready bypass the explicit proxy from settings.
     throw new Error("Window Host network transport is not initialized");
   }
   return activeHostApiNetworkTransport;
@@ -1645,7 +1659,7 @@ async function resolveDesktopRemoteRuntimeNetwork(
       noProxy: settings.httpProxyNoProxy,
     };
   } catch {
-    // 设置读取失败时保留原有远程连接行为，不让网络增强把 WSL 工作区直接阻断。
+    // On settings-read failure keep the legacy remote behavior; network hardening must not block WSL workspaces.
     return undefined;
   }
 }
@@ -1668,7 +1682,7 @@ async function createWindowRemoteConnectionHandle(params: {
   const localSettingService = activeServices.get(ISettingService);
   const localOnboardingRecordService = activeServices.get(IOnboardingRecordService);
   if (params.signal.aborted) {
-    throw new Error("远程连接已取消");
+    throw new Error("Remote connection cancelled");
   }
   const closeListeners = new Set<(event: WindowRemoteConnectionCloseEvent) => void>();
   let peerServices: ServiceCollection | undefined;
@@ -1710,7 +1724,7 @@ async function createWindowRemoteConnectionHandle(params: {
   if (params.signal.aborted) {
     topicResourceRelay?.dispose();
     await disposeHostRemoteConnection(connection);
-    throw new Error("远程连接已取消");
+    throw new Error("Remote connection cancelled");
   }
 
   const services =
@@ -1766,8 +1780,9 @@ async function createWindowRemoteConnectionHandle(params: {
           });
         })();
 
-  // 动态工作流用户选择（docs/dynamic-workflow/launch.md「The user's choice」）：desktop-attached remote
-  // Host 读不到桌面设置，由这里推送。在 handle 交给 registry 之前 await，任何 workspace 请求都晚于它。
+  // Dynamic-workflow user choice (docs/dynamic-workflow/launch.md "The user's choice"): the
+  // desktop-attached remote Host cannot read desktop settings, so push it from here. Await
+  // before the handle is handed to the registry; every workspace request comes after it.
   if (params.target.kind !== "server") {
     const dynamicWorkflowUserMode = await localSettingService
       .get()
@@ -1782,14 +1797,17 @@ async function createWindowRemoteConnectionHandle(params: {
 
   peerServices = services;
   let disposed = false;
-  // 远端 workspace 的 CLI 与 MCP 样本走与本地同一条路径：远端 zcode-server → 本地 Host → main。
-  // 订阅寿命等于这份远端 services 的寿命：由 connection handle 持有，registry 释放 entry
-  // （WSL idle 回收、最后一个 logical session 关闭、掉线后的 session 清理）时随 dispose 一起收口。
+  // The remote workspace's CLI and MCP samples follow the same path as local: remote
+  // zcode-server → local Host → main. Subscription lifetime equals this remote services
+  // instance's lifetime: held by the connection handle and finalized with dispose when the
+  // registry releases the entry (WSL idle reclaim, last logical session closed, post-drop
+  // session cleanup).
   const resourceTelemetry = registerHostServiceResourceTelemetry({
     services,
     postMessage: (message) => parentPort?.postMessage(message),
     runtimeSurface: "remote",
-    // 独立旧 Server 不认识新增事件时会在对端抛错，必须在发送订阅前按能力门控。
+    // A legacy standalone Server unfamiliar with new events throws on the peer; gate by
+    // capability before sending subscriptions.
     telemetrySupported:
       params.target.kind !== "server" ||
       ("serverInfo" in connection &&
@@ -1865,8 +1883,9 @@ const windowRemoteConnectionRegistry = createWindowRemoteConnectionRegistry<
     );
   },
   onSessionClosed: (event) => {
-    // logical session 已离线时 attachment 仍持有旧 services/订阅；后续 sessionId
-    // 换代只释放 transport，无法按旧 ID 找回这些端口。Host 在失效源头统一关闭所有 clientMode。
+    // When a logical session goes offline its attachment still holds old services/subscriptions;
+    // later sessionId generations release only the transport and cannot find these ports by the
+    // old ID. The Host closes all clientMode ports at the invalidation source.
     windowHostAttachmentRegistry.detachRemoteSessionAttachments(event.remoteSessionId);
     const session = windowRemoteConnectionRegistry.getSession(event.remoteSessionId);
     if (session?.workspacePath && session.workspaceIdentity) {
@@ -1917,7 +1936,7 @@ const windowHostControllerRuntime = createWindowHostControllerRuntime({
         sourceAvailability: "online" as const,
       };
     }
-    // 远程 history scope 未连接或已被移除时，绝不能落回本地 tasks-index。
+    // A disconnected/removed remote history scope must never fall back to the local tasks-index.
     if (scope.workspaceIdentity && isRemoteWorkspaceIdentity(scope.workspaceIdentity)) {
       return null;
     }
@@ -1952,7 +1971,7 @@ function disposeLocalResourceTelemetry(): void {
   try {
     activeLocalResourceTelemetry?.dispose();
   } catch {
-    // 资源遥测释放失败不能阻塞 Host 的既有 shutdown barrier。
+    // Telemetry dispose failures must not block the host's existing shutdown barrier.
   } finally {
     activeLocalResourceTelemetry = null;
   }
@@ -1995,7 +2014,7 @@ function createControllerRoutedTaskService(
       if (property === "setTaskPinned") {
         return async (params: Parameters<IZCodeTaskService["setTaskPinned"]>[0]) => {
           const meta = await route(params, { kind: "pin", pinned: params.pinned });
-          if (!meta) throw new Error("pin mutation 后 task 投影缺失");
+          if (!meta) throw new Error("task projection missing after pin mutation");
           return meta;
         };
       }
@@ -2009,7 +2028,7 @@ function createControllerRoutedTaskService(
             kind: "archive",
             archived: property === "archiveTask",
           });
-          if (!meta) throw new Error("archive mutation 后 task 投影缺失");
+          if (!meta) throw new Error("task projection missing after archive mutation");
           return meta;
         };
       }
@@ -2058,7 +2077,7 @@ function createControllerRoutedTaskService(
                     : {}),
                 },
           );
-          if (!meta) throw new Error("unread mutation 后 task 投影缺失");
+          if (!meta) throw new Error("task projection missing after unread mutation");
           return meta;
         };
       }
@@ -2090,9 +2109,9 @@ function exposeServicesOnMessagePort(
 ): ExposedServicePortHandle {
   const wrappedPort = wrapElectronPort(port);
   const protocol = new MessagePortProtocol(wrappedPort);
-  // remote 模式延迟发送 Initialize：远程建连需要时间，如果构造时就发 Initialize，
-  // renderer 会立即发请求但 channel 还没注册，导致 "Unknown channel" 超时错误。
-  // attach 模式复用已就绪服务，必须立即初始化新的 RPC MessagePort。
+  // Defer Initialize in remote mode: connecting takes time, and an immediate Initialize lets the
+  // renderer request channels that are not registered yet ("Unknown channel" timeouts).
+  // Attach mode reuses ready services and must initialize the new RPC MessagePort immediately.
   logger.info(`creating ChannelServer (deferInit=${deferInit})`);
   const rawServer = new ChannelServer(protocol, "host", 1000, deferInit);
   const loggedServer = new LoggingChannelServer(rawServer, logRpc);
@@ -2109,7 +2128,7 @@ function exposeServicesOnMessagePort(
   const overrides = new Map<string, unknown>([
     [IWindowControllerService.channelName, controllerAttachment],
   ]);
-  // 远端媒体必须按 attachment 的 clientMode 选择数据面：桌面使用 Host loopback Range，手机保持 inline。
+  // Remote media picks its data plane by attachment clientMode: desktop uses the host loopback Range, mobile stays inline.
   const remoteMediaPreviewProxy =
     attachmentScope.kind === "remote" && clientMode === "desktop-continuous"
       ? capabilities?.remoteMediaPreviewFactory?.(attachmentScope)
@@ -2129,8 +2148,8 @@ function exposeServicesOnMessagePort(
   }
   const conversationShareService = services.getOptional(IConversationShareService);
   if (conversationShareService) {
-    // Share service 若继续持有 raw Agent，会绕过当前 MessagePort 已握手的 trusted carrier，
-    // rowsRange 会以 connection untrusted 拒绝。必须复用同一 attachment connection scope。
+    // A share service holding the raw agent bypasses the trusted carrier handshaken on this
+    // MessagePort and rowsRange gets rejected as untrusted. Reuse the attachment connection scope.
     overrides.set(
       IConversationShareService.channelName,
       scopeConversationShareServiceForAttachment(
@@ -2156,8 +2175,8 @@ function exposeServicesOnMessagePort(
   };
   const flowStateDisposable = protocol.onFlowState((state) => {
     if (disposed) return;
-    // MessagePort sideband 已在 protocol 层与 Uint8Array 分流；这里只把 owning scope
-    // 的 edge 串行送往 CLI，不能由 control object 指定 connectionId。
+    // The MessagePort sideband is already split from Uint8Array at the protocol layer; forward only
+    // the owning scope's edges to the CLI, serially -- the control object must not pick connectionId.
     void forwardFlowState(state).catch(() => {});
   });
   const handle: ExposedServicePortHandle = {
@@ -2170,8 +2189,8 @@ function exposeServicesOnMessagePort(
       void remoteMediaPreviewProxy?.dispose().catch((error: unknown) => {
         logger.warn("failed to dispose remote media preview proxy", error);
       });
-      // close 排在所有已接收 SAT/DRN 之后；scope.dispose 自身会再次幂等确保 closed，
-      // 但绝不让迟到 saturated 在 close 后复活 CLI pause state。
+      // close lands after all received SAT/DRN; scope.dispose re-runs idempotently to guarantee
+      // closed, but a late saturated must never revive the CLI pause state after close.
       void forwardFlowState("closed")
         .catch(() => {})
         .then(() => connectionScope?.dispose());
@@ -2192,13 +2211,13 @@ const windowHostAttachmentRegistry = createWindowHostAttachmentRegistry<
   resolveScope: (scope: WindowHostAttachmentScope) => {
     if (scope.kind === "local") {
       if (!activeServices) {
-        throw new Error("local services 尚未初始化");
+        throw new Error("local services not initialized");
       }
       return { services: activeServices, generation: 1 };
     }
     const session = windowRemoteConnectionRegistry.getSession(scope.remoteSessionId);
     if (!session) {
-      throw new Error(`未找到远程 logical session，remoteSessionId=${scope.remoteSessionId}`);
+      throw new Error(`Remote logical session not found, remoteSessionId=${scope.remoteSessionId}`);
     }
     return {
       services: windowRemoteConnectionRegistry.resolveScopedServices(scope),
@@ -2262,7 +2281,7 @@ async function disposeHostResources(reason: string): Promise<HostShutdownResult>
 
     const servicesToDispose = activeServices;
     activeServices = null;
-    // Registry 是全部远端 connection 的唯一 owner；释放失败不能阻塞本地服务继续收口。
+    // The registry is the sole owner of every remote connection; dispose failures must not block local teardown.
     const shutdownResult = await runHostShutdownPhases(
       [
         {
@@ -2359,7 +2378,7 @@ process.once("SIGINT", () => {
 });
 
 process.once("disconnect", () => {
-  // parent IPC 消失后不会再有人发送 Dispose；有界清理结束后必须明确退出，避免 Host 常驻。
+  // Once parent IPC dies nobody sends Dispose; exit explicitly after bounded cleanup so the host never lingers.
   void disposeHostResources("disconnect").finally(() => process.exit(1));
 });
 
@@ -2418,9 +2437,9 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
     if (service) {
       void service.publishFocus(msg.event);
     } else {
-      // 取不到服务时过去静默丢弃，focus-changed 于是从链路上凭空消失
-      // （dev 实测 0 条，正式包同期 92 条）。补这条才能把「main 没发」与
-      // 「host 收到了但服务没注册」分开。
+      // A missing service used to drop the event silently, making focus-changed vanish
+      // in production (0 seen in dev, 92 in packaged builds). This log separates
+      // "main never sent" from "host received but service not registered".
       logger.warn("[cua-pip-session] focus event dropped: service unavailable");
     }
     return;
@@ -2446,7 +2465,7 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
       pending.resolve({ path: msg.path, size: msg.size });
       return;
     }
-    pending.reject(new Error(msg.error ?? "反馈日志归档创建失败"));
+    pending.reject(new Error(msg.error ?? "Failed to create feedback log archive"));
     return;
   }
 
@@ -2458,7 +2477,7 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
       logger.info("local media preview path authorization OK");
       pending.resolve(msg.path);
     } else {
-      pending.reject(new Error(msg.error ?? "本地视频预览路径授权失败"));
+      pending.reject(new Error(msg.error ?? "Local media preview path authorization failed"));
     }
     return;
   }
@@ -2530,8 +2549,8 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
           offPeakTaskId: msg.offPeakTaskId,
           ok: false,
           error: error instanceof Error ? error.message : String(error),
-          // 确定性模型/凭证配置错误重试不会自愈；交给 scheduler 转 failed，
-          // 未知及生命周期错误仍按 transient 保持原退避语义。
+          // Deterministic model/credential config errors never heal on retry; let the scheduler
+          // mark failed. Unknown and lifecycle errors stay transient with the original backoff.
           failureKind: error instanceof OffPeakPermanentDispatchError ? "permanent" : "transient",
         });
       }
@@ -2540,7 +2559,7 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
   }
 
   if (msg.type === HostMessageTypes.BrowserExecuteResult) {
-    // main 的 WebContentsView+CDP 执行完 browser 命令，按 requestId 关联回 bridge 的 pending。
+    // Main finished the browser command via WebContentsView+CDP; correlate it back to the bridge pending by requestId.
     void browserControlMainBridge.handleResult({
       requestId: msg.requestId,
       result: msg.result,
@@ -2549,8 +2568,8 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
   }
 
   if (msg.type === HostMessageTypes.Dispose) {
-    // main 进程通知清理（窗口关闭 / app 退出时）
-    // 这里必须等待统一资源清理完成（含异步收尾写回），再让进程退出；main 侧仍有强杀 timer 兜底。
+    // Main requests teardown (window closed / app quit). Wait for the unified resource cleanup
+    // (including async writebacks) before exiting; main still runs a hard-kill timer as backstop.
     const result = await disposeHostResources("parent dispose");
     process.exit(result.exitCode);
     return;
@@ -2623,7 +2642,7 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
         requestId: msg.requestId,
         environmentKey: msg.environmentKey,
         status: "failed",
-        error: "Remote Environment registration 已失效",
+        error: "Remote environment registration is stale",
         errorCode: "session-unavailable",
       });
       return;
@@ -2641,7 +2660,7 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
             windowRemoteConnectionRegistry.resolveScopedServices(scope),
           );
           if (!provisioningService) {
-            throw new Error("Remote Environment 不支持 Provider Provisioning");
+            throw new Error("Remote environment does not support provider provisioning");
           }
           return provisioningService.syncLocalToRemote();
         })(),
@@ -2720,15 +2739,17 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
                 sourceAvailability: "online",
               });
             } catch (error) {
-              // source 已连接但 task-index 暂时不可读时不能回滚 transport，也不能删除上一代
-              // 离线可信投影。Controller 会保留 pending replacement，后续 query 成功后原子替换。
+              // While the source is connected but task-index is temporarily unreadable, neither
+              // roll back the transport nor delete the previous generation's offline trusted
+              // projection. The Controller keeps the pending replacement and swaps atomically
+              // once a later query succeeds.
               logger.warn("failed to atomically replace disconnected Controller source", error);
             }
           }
           windowHostAttachmentRegistry.detachRemoteSessionAttachments(replaced.remoteSessionId);
           await windowRemoteConnectionRegistry.disposeSession(replaced.remoteSessionId);
-          // 重连替换后旧 remoteSessionId 已不再可 attachment；同步清理 Main 的端口请求关联，
-          // 但不向 Renderer 伪报一次新的 transport failure。
+          // After reconnect-replace the old remoteSessionId no longer accepts attachments; clear
+          // main's port-request association, but do not fake a new transport failure to the renderer.
           parentPort.postMessage({
             type: HostResponseTypes.RemoteWorkspaceClosed,
             remoteSessionId: replaced.remoteSessionId,
@@ -2775,7 +2796,7 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
     }
     const current = windowRemoteConnectionRegistry.getSession(msg.remoteSessionId);
     if (current) {
-      // scope generation 换代后，旧 Renderer/手机 attachment 不得继续持有远端 IO facade。
+      // After a scope generation bump, stale renderer/mobile attachments must not keep the remote IO facade.
       windowHostAttachmentRegistry.detachStaleRemoteSessionAttachments(
         msg.remoteSessionId,
         current.generation,
@@ -2836,8 +2857,9 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
     msg.type === HostMessageTypes.BotRemoteWorkspaceConnectionStatusResult ||
     msg.type === HostMessageTypes.BotRemoteWorkspaceRuntimePort
   ) {
-    // Bugfix: Bot bridge 也监听 parentPort，main 回传的 runtime MessagePort 是给 Bot 作为
-    // 远端 RPC client 使用的。host 入口必须跳过这些控制消息，避免误把同一个端口注册成 ChannelServer。
+    // Bugfix: the Bot bridge also listens on parentPort; the runtime MessagePort relayed by main
+    // is for the Bot to use as a remote RPC client. The host entry must skip these control
+    // messages, or the same port gets mistakenly registered as a ChannelServer.
     return;
   }
 
@@ -2847,7 +2869,7 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
       return;
     }
     if (msg.scope.kind === "local" && databaseStartup?.coordinator.snapshot.phase !== "ready") {
-      // 刷新/手机 attachment 复用同一 Host，等待现有准备，不启动第二个执行者。
+      // Refresh/mobile attachments reuse this host: wait for the existing preparation, never start a second executor.
       pendingStartupAttachments.set(msg.attachmentId, () => {
         windowHostAttachmentRegistry.attach({ ...msg, port });
       });
@@ -2856,8 +2878,9 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
     }
     try {
       if (msg.scope.kind === "remote") {
-        // Bind 与 Attach 共用 parentPort，但 WSL 上一代 workspace release 可能仍在途。
-        // 持有已转移 port 等待 Host 内 generation barrier，避免新 attachment 踩过旧 runtime 清理。
+        // Bind and Attach share parentPort, but on WSL a previous generation's workspace release
+        // may still be in flight. Hold the transferred port until the in-Host generation barrier
+        // so a new attachment cannot stomp the old runtime cleanup.
         await windowRemoteConnectionRegistry.waitForScopedServices(msg.scope);
       }
       windowHostAttachmentRegistry.attach({
@@ -2872,8 +2895,9 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
       );
       logWindowHostTopology("attachment-added");
     } catch (error) {
-      // 跨 logical session 或旧 identity 的 port 若继续暴露，会把远端请求路由到错误 source。
-      // scope 校验失败必须关闭已转移端口并明确记录，禁止回退 active local services。
+      // If ports from other logical sessions or stale identities stay exposed, remote requests
+      // get routed to the wrong source. On scope-check failure, close the transferred ports and
+      // log explicitly; never fall back to the active local services.
       rejectUnavailableAttachedServicePort(port, false);
       logger.warn(`failed to attach scoped service port, attachmentId=${msg.attachmentId}`, error);
     }
@@ -2934,8 +2958,9 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
       initializeServices: async () => {
         logger.info("initializing local services");
         activeSessionRealtimePort = createTaskRealtimeBridgeForHostInit(msg, parentPort);
-        // 旧 Team 补组织必须与网络代理读取共用同一个 Setting 实例及写队列。
-        // 只注入 service 会跳过默认装配分支，导致缺组织的升级用户永远无法恢复连接。
+        // Legacy Team org-completion must share the same Setting instance and write queue as the
+        // network-proxy read. Injecting only the service skips the default assembly branch, so
+        // upgraded users missing orgs could never recover connectivity.
         const { service: settingService, prepareLegacyAccountConnections } =
           createSettingServiceWithMigrations();
         const hostApiNetworkTransport = createHostApiNetworkTransport(async () => {
@@ -2956,7 +2981,8 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
               prepareLegacyAccountConnections,
               hostApiNetworkTransport,
               authorizeLocalMediaPreviewPath,
-              // launch.md「The user's choice」：本机用户选择变化后，推给本窗口所有在线的远程 Host。
+              // launch.md "The user's choice": after the local user choice changes, push to all
+              // online remote Hosts of this window.
               forwardDynamicWorkflowUserMode: (mode) => {
                 void pushDynamicWorkflowUserModeToRemoteHosts(
                   windowRemoteConnectionRegistry
@@ -3001,10 +3027,10 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
                   trigger,
                 });
               },
-              // browser-use：agent 的 interaction/browserExecute 经 zcodeAgentService 转到这个 executor，
-              // 再经 parentPort 到 main 的 WebContentsView+CDP 执行。
+              // browser-use: agent interaction/browserExecute routes via zcodeAgentService to this
+              // executor, then over parentPort to main's WebContentsView+CDP.
               browserControlExecutor: browserControlMainBridge,
-              // CUA 顶部提示属于物理 Windows 桌面投影；非 Windows 和远端 authority 都不得上报。
+              // CUA top-of-screen hints are physical-Windows desktop projections; never report from non-Windows or remote authority.
               cuaOperationStateReporter:
                 process.platform === "win32" ? cuaOperationStateReporter : undefined,
             });
@@ -3037,8 +3063,9 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
                   },
                 ]
               : [];
-        // Main 已把启动预热限制为 active workspace 1 个；Host 必须显式消费这份固定名单，
-        // 不能让后续 task-list observer 再隐式扩大，也不能因失败扫描补位。
+        // Main already limits startup warmup to 1 per active workspace; the Host must consume
+        // exactly this fixed list — later task-list observers must not implicitly grow it, and
+        // failed scans must not backfill.
         agentWarmupTargets.forEach((target, index) => {
           warmUpZCodeAgent(
             services,
@@ -3076,7 +3103,7 @@ async function setupRemoteConnection(
   if (target.kind === "server") {
     throw new Error("server remote target must use the server remote connector");
   }
-  // 延迟加载 remote backend，避免 local 模式下因 ssh2 依赖链进入 asar 后崩溃
+  // Lazy-load the remote backend so the ssh2 dep chain cannot crash local mode inside asar.
   const { createRemoteBackend, connectRemote, pickRemoteRuntimeEnv } =
     await import("@zcode/server/remote");
   const backend = await createRemoteBackend(target);
@@ -3086,14 +3113,16 @@ async function setupRemoteConnection(
     remoteAssetNetwork,
     remoteRuntimeNetwork,
     signal,
-    // SSH/Docker 远端 server 由 host process 单独启动，不能依赖桌面 main 的环境继承。
-    // 这里显式透传编译期版本，避免漏导入后生成裸 ZCODE_VERSION 引用导致 SSH 初始化直接 ReferenceError。
+    // SSH/Docker remote servers are started by the host process itself and cannot rely on env
+    // inheritance from desktop main. Pass the compile-time version explicitly here; a missed
+    // import would generate a bare ZCODE_VERSION reference and ReferenceError at SSH init.
     appVersion: ZCODE_VERSION,
-    // 远端 zcode-server/agent 是独立进程，不能继承 host 里的测试/生产 endpoint 选择。
-    // 这里只透传 server 侧白名单允许的公开环境变量，避免把 credential/token 带到远端机器。
+    // The remote zcode-server/agent is a separate process and must not inherit the host's
+    // test/production endpoint selection. Pass only public env vars whitelisted for the server
+    // side, keeping credentials/tokens off the remote machine.
     remoteRuntimeEnv: pickRemoteRuntimeEnv(process.env),
     assetInstallMode: target.kind === "ssh" ? target.assetInstallMode : undefined,
-    // SSH 由窗口级 registry 串行复用，其余 transport 仍保留远端 connector 自身锁。
+    // SSH is serialized by the window-level registry; other transports keep the remote connector's own lock.
     deployLockMode,
     onDidRemoteClose: ({ code }) => {
       onDidRemoteClose(code);

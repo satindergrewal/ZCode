@@ -16,7 +16,7 @@ export const zhipuAccountModeDataSchema = z.enum([
   "individual-coding-plan",
   "team-coding-plan",
   "off-peak",
-  // 加速卡访问类别；与 zcodeProviderAccountAccessSchema.mode 同值，改动需同步两处。
+  // High-speed access category; mirrors zcodeProviderAccountAccessSchema.mode, keep both in sync.
   "highspeed",
 ]);
 export const providerVisibilityDataSchema = z.enum(["visible", "hidden"]);

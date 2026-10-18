@@ -6,13 +6,13 @@ import {
   ListModelsOutputSchema,
 } from "../src/tools/list-models.js";
 
-// docs/dynamic-workflow/launch.md：dwf 选型的发现面。只读、无入参、输出的每一行都能逐字
-// 填进 `subagent_model`。
+// docs/dynamic-workflow/launch.md: the discovery surface for dwf model selection. Read-only, no
+// input; every output line pastes verbatim into \`subagent_model\`.
 describe("ListModels contract", () => {
   it("names the tool exactly as it registers and takes no input", () => {
     expect(LIST_MODELS_TOOL_NAME).toBe("ListModels");
     expect(ListModelsInputSchema.parse({})).toEqual({});
-    // 没有过滤 / 分页旋钮：多一个就多一处让模型以为「没列全」的地方。
+    // No filter/paging knobs: each extra one is a new spot for the model to believe the list is incomplete.
     expect(ListModelsInputSchema.safeParse({ provider: "zhipu" }).success).toBe(false);
     const schema = ListModelsInputJsonSchema as {
       properties?: Record<string, unknown>;
@@ -35,7 +35,7 @@ describe("ListModels contract", () => {
           defaultReasoningLevel: "high",
           contextWindow: 200_000,
         },
-        // 没有推理档位的模型是**空数组**而不是缺席：读侧据此知道接 `$level` 是错的。
+        // Models without reasoning levels are an **empty array**, not absent: readers learn that appending `$level` is wrong.
         { id: "anthropic/haiku", providerId: "anthropic", modelId: "haiku", reasoningLevels: [] },
       ],
     };

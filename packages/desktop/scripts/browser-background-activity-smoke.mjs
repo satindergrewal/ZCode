@@ -4,7 +4,8 @@ const BACKGROUND_SETTLE_MS = 800;
 const ACTIVE_SAMPLE_MS = 400;
 const CAPTURING_SAMPLE_MS = 1000;
 const CAPTURING_GUEST_MIN_INTERVAL_MS = 200;
-// executeJavaScript 自身会短时调度少量帧；timer 计数用于补足后台静止的稳定判据。
+// executeJavaScript itself schedules a few frames briefly; the timer count completes the
+// quiet-background criterion.
 const THROTTLED_MAX_FRAMES = 12;
 const THROTTLED_MAX_TIMERS = 3;
 

@@ -1,7 +1,7 @@
 /* oxlint-disable eslint(max-lines) -- re-home artifact: legacy protocol message/session load-bearing types centralized to keep a single-file contract surface. */
 // Re-home migration artifact (paves the way for deleting the legacy protocol tree).
 // This file hosts the load-bearing types and schemas of the legacy ZCode Protocol still consumed by live stacks
- //(validation / background-task-notifications / the v4 projection etc.): ZCodeSessionInfo / ZCodeMessageWithParts /
+//(validation / background-task-notifications / the v4 projection etc.): ZCodeSessionInfo / ZCodeMessageWithParts /
 // ZCodePermissionResponse / ZCodeInteractionRequestOrigin and their dependency closure.
 // Once the legacy protocol dies (zcode-protocol/index.ts deleted), this is that surface's only survivor.
 

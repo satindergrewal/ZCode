@@ -47,11 +47,11 @@ export interface WorkflowCompletionCardProps {
   onOpenRun?: () => void;
   onOpenArtifact?: (artifactId: string) => void;
   /**
-   * 表头状态之前的插槽：「已保存」芯片（docs/dynamic-workflow/transcript-and-notifications.md
-   * 「Saving the run, and running it again」）。宿主建，卡只摆。
+   * Slot before the header status: the saved chip (docs/dynamic-workflow/transcript-and-notifications.md
+   * "Saving the run, and running it again"). The host builds it; the card only places it.
    */
   headerLeading?: ReactNode;
-  /** 表头 ⤢ 之前的插槽：「保存」/「再次运行」。缺席即这张卡没有会话上下文，或两道门关着。 */
+  /** Slot before the header expand: Save / Run again. Absent when the card has no session context or a gate is shut. */
   headerTrailing?: ReactNode;
   testIdKey: string;
 }
@@ -204,8 +204,9 @@ export function WorkflowCompletionCard({
   return (
     <section
       aria-label={format({ id: WORKFLOW_RUN_KIND_ID.completed })}
-      // `@container/wf-card`：窄卡（<480px）上动词只剩图标——判据必须是**卡自己的宽度**，
-      // 视口断点在分栏、侧板与手机三种窄法之间对不上（docs/dynamic-workflow/transcript-and-notifications.md）。
+      // `@container/wf-card`: on narrow cards (<480px) the verb collapses to its icon — the test must be
+      // the card's own width; viewport breakpoints cannot reconcile split view, pane and phone narrowness
+      // (docs/dynamic-workflow/transcript-and-notifications.md).
       className="wf-motion wf-arrive @container/wf-card flex w-full min-w-0 flex-col gap-2.5 rounded-xl border border-border/70 bg-card/70 px-3.5 pb-3 pt-1.5"
       data-testid={`workflow-completion-card-${testIdKey}`}
       data-workflow-completion-card="true"

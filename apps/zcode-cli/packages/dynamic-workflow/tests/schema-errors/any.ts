@@ -1,4 +1,4 @@
-// any 几乎总是失误 —— 拒绝，逼迫改用 unknown 或具体接口。
+// any is almost always a mistake -- reject it, forcing unknown or a concrete interface.
 interface WithAny {
   blob: any;
 }

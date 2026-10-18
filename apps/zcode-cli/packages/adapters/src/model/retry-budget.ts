@@ -2,19 +2,19 @@ import { ModelRetryBudget } from "@zcode/contracts";
 import type { ResolvedAiSdkModelRetryOptions } from "./retry-policy.js";
 
 /**
- * 重试预算档位的判定。
+ * Retry budget tiering.
  *
- * 「无上限」**只**放宽瞬态失败的放弃条件：runner 的 attempt 循环、失败后「还能不能再试」两处闸门；
- * 退避曲线（2s→60s、jitter、Retry-After 优先）、`isRetryableFailure` 的分类、
- * `emittedRetryBoundaryEvent` 之后不重试、空补全重试与 compact 路径一律不动。
+ * Unbounded only relaxes give-up-on-transient gates: the runner attempt loop and the retry-again-after-failure check.
+ * The backoff curve (2s to 60s, jitter, Retry-After first), isRetryableFailure classification, no-retry after
+ * emittedRetryBoundaryEvent, empty-completion retry and the compact path are all untouched.
  *
- * 「单次尝试」只把本次请求的 `maxAttempts` 收敛为 1：runner 两处闸门与 empty completion 重试都读
- * 同一个 `retry.maxAttempts`，因此瞬态失败首次即上抛；鉴权刷新/签名修复的额外尝试不占预算，语义不变。
+ * "Single attempt" only collapses this request's maxAttempts to 1: both runner gates and the empty-completion retry read
+ // the same retry.maxAttempts, so a transient failure surfaces on the first try; auth-refresh/signature-repair attempts stay budget-free, semantics unchanged.
  */
 
-/** 状态事件里 `maxAttempts` 表示「无上限」的哨兵（Infinity 不可序列化，0 不占用合法计数）。 */
+/** Sentinel for unbounded `maxAttempts` in status events (Infinity is not serializable; 0 is not a legal count). */
 export const UNBOUNDED_RETRY_MAX_ATTEMPTS = 0;
-/** `single-attempt` 预算下本次请求允许的总尝试数（含首次）。 */
+/** Total attempts allowed for this request under the single-attempt budget (first included). */
 export const SINGLE_ATTEMPT_MAX_ATTEMPTS = 1;
 
 export function isUnboundedRetryBudget(budget: ModelRetryBudget | undefined): boolean {
@@ -26,8 +26,8 @@ export function isSingleAttemptRetryBudget(budget: ModelRetryBudget | undefined)
 }
 
 /**
- * 按预算档位解析本次请求实际生效的 retry 选项。runner 入口统一走这里，避免在 attempt 循环、
- * 失败闸门、empty completion 与状态事件四处分别特判档位。
+ * Resolves the effective retry options for this request by budget tier. The runner enters only here, so attempt loops,
+ // failure gates, empty completion, and state events never special-case the tier separately.
  */
 export function resolveRetryOptionsForBudget(
   retry: ResolvedAiSdkModelRetryOptions,
@@ -38,7 +38,7 @@ export function resolveRetryOptionsForBudget(
     : retry;
 }
 
-/** 失败之后还允许再试一次吗（等价于既有的 `retryBudgetAttempt < maxAttempts`，unbounded 恒真）。 */
+/** May the failure be retried once more (equals legacy `retryBudgetAttempt < maxAttempts`; always true unbounded)? */
 export function retryBudgetAllows(
   budget: ModelRetryBudget | undefined,
   retryBudgetAttempt: number,
@@ -47,7 +47,7 @@ export function retryBudgetAllows(
   return isUnboundedRetryBudget(budget) || retryBudgetAttempt < maxAttempts;
 }
 
-/** attempt 循环的继续条件（等价于既有的 `attempt <= loopMaxAttempts`，unbounded 恒真）。 */
+/** Attempt-loop continuation (equals legacy `attempt <= loopMaxAttempts`; always true unbounded). */
 export function retryAttemptLoopContinues(
   budget: ModelRetryBudget | undefined,
   attempt: number,
@@ -56,7 +56,7 @@ export function retryAttemptLoopContinues(
   return isUnboundedRetryBudget(budget) || attempt <= loopMaxAttempts;
 }
 
-/** 写进状态事件 / 日志的 maxAttempts：unbounded 下是哨兵 0。 */
+/** maxAttempts written to status events/logs: the sentinel 0 when unbounded. */
 export function retryBudgetMaxAttempts(
   budget: ModelRetryBudget | undefined,
   maxAttempts: number,

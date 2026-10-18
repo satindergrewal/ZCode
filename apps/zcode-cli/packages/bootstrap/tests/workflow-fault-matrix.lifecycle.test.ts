@@ -39,10 +39,15 @@ async function waitFor(predicate: () => boolean, timeoutMs: number, what: string
   }
 }
 
-function settledEvents(harness: FaultServiceHarness, runId: string): Extract<RunEvent, { type: "run-settled" }>[] {
+function settledEvents(
+  harness: FaultServiceHarness,
+  runId: string,
+): Extract<RunEvent, { type: "run-settled" }>[] {
   return harness
     .eventsOf(runId)
-    .filter((event): event is Extract<RunEvent, { type: "run-settled" }> => event.type === "run-settled");
+    .filter(
+      (event): event is Extract<RunEvent, { type: "run-settled" }> => event.type === "run-settled",
+    );
 }
 
 // ————————————————————————————————————————————————————————————————
@@ -50,7 +55,9 @@ function settledEvents(harness: FaultServiceHarness, runId: string): Extract<Run
 // ————————————————————————————————————————————————————————————————
 
 describe("fault matrix · B15 flip — provider 停下后 resume 从断点续跑", () => {
-  it.each(cells([{ shape: "W4" }], [{ shape: "S-phase" }]).map((cell) => [cellName(cell), cell] as const))(
+  it.each(
+    cells([{ shape: "W4" }], [{ shape: "S-phase" }]).map((cell) => [cellName(cell), cell] as const),
+  )(
     "%s：第一段 stopped(provider)；翻转后 resume 完成，已完结 ask 不再请求",
     async (_name, cell: CellCoordinate) => {
       // 先放行 K+1 个请求（恰好让一个子代理完整走完），之后一律 401：第一段停下时
@@ -97,7 +104,11 @@ describe("fault matrix · B15 flip — provider 停下后 resume 从断点续跑
         expect(resume).toBeDefined();
         const resumed = await resume!(runId);
         expect(resumed).toMatchObject({ ok: true, runId });
-        await waitFor(() => settledEvents(harness, runId).length >= 2, CELL_TIMEOUT_MS - 5_000, "second run-settled");
+        await waitFor(
+          () => settledEvents(harness, runId).length >= 2,
+          CELL_TIMEOUT_MS - 5_000,
+          "second run-settled",
+        );
         await pause(POST_SETTLE_GRACE_MS);
         const second = await harness.service.getTask(runId);
         expect(second?.runStatus).toBe("completed");

@@ -176,18 +176,25 @@ describe("Guarded executor authorization boundary", () => {
       if (requests) {
         await vi.waitFor(() => expect(h.broker.listPendingRequests()).toHaveLength(1));
         expect(h.handler).not.toHaveBeenCalled();
-        expect(h.broker.resolvePermission(h.requests[0]!.requestId, {
-          decision, reason: "Keep deletion fixture",
-        })).toBe(true);
+        expect(
+          h.broker.resolvePermission(h.requests[0]!.requestId, {
+            decision,
+            reason: "Keep deletion fixture",
+          }),
+        ).toBe(true);
       }
       const result = await pending;
       expect(result.success).toBe(success);
       expect(h.requests).toHaveLength(requests);
       if (requests) {
         expect(h.requests[0]).toMatchObject({
-          approvalMode: "user-once", ruleId: `safety.bash.${rule}`, input: { command },
+          approvalMode: "user-once",
+          ruleId: `safety.bash.${rule}`,
+          input: { command },
         });
-        expect(h.broker.resolvePermission(h.requests[0]!.requestId, { decision: "allow" })).toBe(false);
+        expect(h.broker.resolvePermission(h.requests[0]!.requestId, { decision: "allow" })).toBe(
+          false,
+        );
       }
       expect(h.handler).toHaveBeenCalledTimes(success ? 1 : 0);
       if (success) {

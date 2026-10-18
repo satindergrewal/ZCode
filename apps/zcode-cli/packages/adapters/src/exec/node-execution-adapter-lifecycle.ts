@@ -302,12 +302,7 @@ export class NodeExecutionAdapterLifecycle extends NodeExecutionAdapterRun {
     sessionId: string,
   ): Promise<BackgroundBashOutputResult> {
     const record = this.backgroundTasks.get(workId);
-    if (
-      !record ||
-      record.sessionId !== sessionId ||
-      !record.isBash ||
-      !record.outputPath
-    )
+    if (!record || record.sessionId !== sessionId || !record.isBash || !record.outputPath)
       return { kind: "unavailable", workId };
     // Freeze state before reading files; only then can a later query return a terminal state and final tail.
     const snapshot = this.snapshot(record);

@@ -131,8 +131,7 @@ function fakeFileSystemPort(
       globRequests.push(request);
       const all = options.globFiles ?? [];
       // 复刻真适配器的截断语义：maxResults 之内切片，truncated 表示还有剩余。
-      const files =
-        request.maxResults === undefined ? [...all] : all.slice(0, request.maxResults);
+      const files = request.maxResults === undefined ? [...all] : all.slice(0, request.maxResults);
       return {
         path: request.path,
         pattern: request.pattern,
@@ -277,23 +276,11 @@ describe("git world reads — exact argv", () => {
     await withPath.driver.executeWorldRead("git-diff", ["main", "src/a.ts"]);
     // `--` 是契约的一部分：一个恰好与分支同名的路径不能被 git 解读成 ref（也不能反过来）。
     // 显式 path **取代**缺省 pathspec。
-    expect(withPath.gitCalls[0]?.argv).toEqual([
-      "diff",
-      "--relative",
-      "main",
-      "--",
-      "src/a.ts",
-    ]);
+    expect(withPath.gitCalls[0]?.argv).toEqual(["diff", "--relative", "main", "--", "src/a.ts"]);
 
     const pathOnly = makeDriver({ git: [{ stdout: "diff" }] });
     await pathOnly.driver.executeWorldRead("git-diff", [undefined, "src/a.ts"]);
-    expect(pathOnly.gitCalls[0]?.argv).toEqual([
-      "diff",
-      "--relative",
-      "HEAD",
-      "--",
-      "src/a.ts",
-    ]);
+    expect(pathOnly.gitCalls[0]?.argv).toEqual(["diff", "--relative", "HEAD", "--", "src/a.ts"]);
   });
 
   it("does not need a prefix lookup for the patch diff (git --relative does that base)", async () => {
@@ -638,13 +625,7 @@ describe("git world reads — argument validation", () => {
   it("accepts a legitimate nested path", async () => {
     const { driver, gitCalls } = makeDriver({ git: [{ stdout: "" }] });
     await driver.executeWorldRead("git-diff", ["HEAD", "sub/nested/deep.ts"]);
-    expect(gitCalls[0]?.argv).toEqual([
-      "diff",
-      "--relative",
-      "HEAD",
-      "--",
-      "sub/nested/deep.ts",
-    ]);
+    expect(gitCalls[0]?.argv).toEqual(["diff", "--relative", "HEAD", "--", "sub/nested/deep.ts"]);
   });
 
   it("rejects an absolute or escaping path", async () => {

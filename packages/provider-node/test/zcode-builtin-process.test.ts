@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { expect, it, vi } from "vitest";
 import { NodeZCodeBuiltinProviderConfigSource, decodeZCodeBuiltinRelease } from "../src/index.js";
 
-it("两个真实消费进程观察同一 Active 原子替换，各自发布同版 Account / Registry", async () => {
+it("has two real consumer processes observe one atomic Active swap and publish the same-version Account/Registry each", async () => {
   const root = await mkdtemp(join(tmpdir(), "builtin-process-"));
   const release = {
     schemaVersion: 1,

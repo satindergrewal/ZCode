@@ -93,8 +93,8 @@ async function run() {
       throw new Error("transparent bootstrap unexpectedly focused the owner window");
     }
 
-    // 与 controller 一致：先给 Viz 一个有界 presentation grace，再为 owner/guest
-    // 各建立两份重叠 capturer；同一 turn 立即 capture 会触发 UnknownVizError。
+    // Match the controller: give Viz a bounded presentation grace, then build two overlapping
+    // capturers each for owner/guest; capturing in the same turn raises UnknownVizError.
     await wait(100);
     const bootstrapImages = await Promise.all([
       captureWithTimeout(win.webContents, ACTIVITY_CAPTURE_RECT, "owner bootstrap capture A"),
@@ -110,7 +110,8 @@ async function run() {
       );
     }
 
-    // 真实产品在 renderer 两帧稳定 Ready 后执行 markPrepared；模拟该边界再恢复 hidden。
+    // The real product runs markPrepared only after two stable Ready frames in the renderer;
+    // mimic that boundary before hiding again.
     await wait(50);
     win.hide();
     win.setOpacity(originalOpacity);

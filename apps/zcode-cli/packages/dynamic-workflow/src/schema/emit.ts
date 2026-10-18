@@ -4,16 +4,16 @@ import type { JsonSchema, JsonValue } from "./types.js";
 import { MAX_UNION_MEMBERS } from "./types.js";
 
 /**
-  * The type-to-JSON-Schema emitter, driven by the checker's structural view (generics / aliases /
-  * mapped / conditional already flattened by the checker).
+ * The type-to-JSON-Schema emitter, driven by the checker's structural view (generics / aliases /
+ * mapped / conditional already flattened by the checker).
  *
-  * Recursive types via defs and refs: only types actually re-referenced by themselves (on the synthesis stack) become
-  * named defs; non-recursive named types stay inlined, keeping snapshots readable. Detection: push a stack frame per composite type;
-  * if the same ts.Type is entered again while emitting its subtree, mark it requested and return a
-  * ref; at frame end, a requested type registers into defs.
+ * Recursive types via defs and refs: only types actually re-referenced by themselves (on the synthesis stack) become
+ * named defs; non-recursive named types stay inlined, keeping snapshots readable. Detection: push a stack frame per composite type;
+ * if the same ts.Type is entered again while emitting its subtree, mark it requested and return a
+ * ref; at frame end, a requested type registers into defs.
  *
-  * Non-JSON-serializable types throw {@link SchemaRejection}, which the synthesizer turns into a diagnostic
-  * pinned to the ask site (the analysis pipeline's diagnostic shape and UX).
+ * Non-JSON-serializable types throw {@link SchemaRejection}, which the synthesizer turns into a diagnostic
+ * pinned to the ask site (the analysis pipeline's diagnostic shape and UX).
  */
 
 /** Emission failure: the reason plus the offending JSON path, for the synthesizer to assemble a located diagnostic. */
@@ -28,8 +28,8 @@ export class SchemaRejection extends Error {
 }
 
 /**
-  * Built-in objects rejected by name: host objects and class instances, not pure data. Promise included,
-  * with a clearer diagnostic than the plain function-type one. User classes fall through to the class flag.
+ * Built-in objects rejected by name: host objects and class instances, not pure data. Promise included,
+ * with a clearer diagnostic than the plain function-type one. User classes fall through to the class flag.
  */
 const REJECTED_BUILTINS = new Set<string>([
   "Date",
@@ -84,7 +84,7 @@ export class SchemaEmitter {
     private readonly location: ts.Node,
   ) {}
 
-    /** Emit the root type; any produced defs hang off the root schema. */
+  /** Emit the root type; any produced defs hang off the root schema. */
   emitTop(type: ts.Type): JsonSchema {
     const schema = this.emit(type, "$");
     if (this.defs.size === 0) return schema;
@@ -104,10 +104,14 @@ export class SchemaEmitter {
 
     const flags = type.flags;
     if (flags & ts.TypeFlags.Any) {
-      throw new SchemaRejection("type 'any' is not allowed; use 'unknown' or a concrete type", path);
+      throw new SchemaRejection(
+        "type 'any' is not allowed; use 'unknown' or a concrete type",
+        path,
+      );
     }
     if (flags & ts.TypeFlags.Unknown) return {};
-    if (flags & ts.TypeFlags.Never) throw new SchemaRejection("type 'never' cannot be represented", path);
+    if (flags & ts.TypeFlags.Never)
+      throw new SchemaRejection("type 'never' cannot be represented", path);
     if (flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Void)) {
       throw new SchemaRejection("'undefined' is only allowed on optional properties", path);
     }
@@ -126,12 +130,13 @@ export class SchemaEmitter {
     }
     if (type.isUnion()) return this.composite(type, () => this.emitUnion(type, path));
     if (type.isIntersection()) return this.composite(type, () => this.emitIntersection(type, path));
-    if (flags & ts.TypeFlags.Object) return this.composite(type, () => this.emitObjectLike(type, path));
+    if (flags & ts.TypeFlags.Object)
+      return this.composite(type, () => this.emitObjectLike(type, path));
 
     throw new SchemaRejection("type is not JSON-serializable", path);
   }
 
-    /** A composite type's stack-frame wrapper: re-referenced by itself during emission -> promoted to a def, returns a ref. */
+  /** A composite type's stack-frame wrapper: re-referenced by itself during emission -> promoted to a def, returns a ref. */
   private composite(type: ts.Type, build: () => JsonSchema): JsonSchema {
     this.inProgress.set(type, { requested: false });
     const schema = build();
@@ -143,7 +148,7 @@ export class SchemaEmitter {
     return { $ref: `#/$defs/${name}` };
   }
 
-    /** Assign a stable, unique def name (from the alias/symbol name), lazy and deduped. */
+  /** Assign a stable, unique def name (from the alias/symbol name), lazy and deduped. */
   private nameFor(type: ts.Type): string {
     const cached = this.defName.get(type);
     if (cached !== undefined) return cached;
@@ -179,20 +184,21 @@ export class SchemaEmitter {
     return this.emitMembers(members, path);
   }
 
-    /** Member types -> enum (when all-literal) or anyOf. Also reused by the optional-property de-undefined path. */
+  /** Member types -> enum (when all-literal) or anyOf. Also reused by the optional-property de-undefined path. */
   emitMembers(members: readonly ts.Type[], path: string): JsonSchema {
     const literals = this.asLiterals(members);
     if (literals !== undefined) return { enum: literals };
     return { anyOf: members.map((member, index) => this.emit(member, `${path}|${index}`)) };
   }
 
-    /** If every member is a literal (string/number/boolean literal or null), return the value array. */
+  /** If every member is a literal (string/number/boolean literal or null), return the value array. */
   private asLiterals(members: readonly ts.Type[]): JsonValue[] | undefined {
     const values: JsonValue[] = [];
     for (const member of members) {
       const flags = member.flags;
       if (flags & ts.TypeFlags.StringLiteral) values.push((member as ts.StringLiteralType).value);
-      else if (flags & ts.TypeFlags.NumberLiteral) values.push((member as ts.NumberLiteralType).value);
+      else if (flags & ts.TypeFlags.NumberLiteral)
+        values.push((member as ts.NumberLiteralType).value);
       else if (flags & ts.TypeFlags.BooleanLiteral) values.push(this.booleanValue(member));
       else if (flags & ts.TypeFlags.Null) values.push(null);
       else return undefined;
@@ -200,8 +206,8 @@ export class SchemaEmitter {
     return values;
   }
 
-    /** Intersection: merged into one object (the checker merged members' properties onto it). Branded
-      * primitives (a string with a brand) emit as their primitive. */
+  /** Intersection: merged into one object (the checker merged members' properties onto it). Branded
+   * primitives (a string with a brand) emit as their primitive. */
   private emitIntersection(type: ts.IntersectionType, path: string): JsonSchema {
     for (const member of type.types) {
       if (member.flags & ts.TypeFlags.String) return { type: "string" };
@@ -239,7 +245,10 @@ export class SchemaEmitter {
     for (const prop of this.checker.getPropertiesOfType(type)) {
       const optional = (prop.flags & ts.SymbolFlags.Optional) !== 0;
       const propPath = `${path}.${prop.name}`;
-      const propType = this.checker.getTypeOfSymbolAtLocation(prop, prop.valueDeclaration ?? this.location);
+      const propType = this.checker.getTypeOfSymbolAtLocation(
+        prop,
+        prop.valueDeclaration ?? this.location,
+      );
       const base = optional ? this.emitOptional(propType, propPath) : this.emit(propType, propPath);
       properties[prop.name] = mergeConstraints(base, harvestConstraints(prop, this.checker));
       if (!optional) required.push(prop.name);
@@ -249,17 +258,18 @@ export class SchemaEmitter {
     if (Object.keys(properties).length > 0) schema.properties = properties;
     if (required.length > 0) schema.required = required;
 
-        // Closed objects (no string index signature) emit additionalProperties false.
-        // Not TS-faithful: TS object types are structurally open (excess-property checks fire only on object
-        // literals), so a one-prop object accepts extra keys. The real reason for false is validation UX and the structured-
-        // output convention: extra keys almost always signal misunderstanding, and false turns that into one clear repair hint,
-        // matching strict structured-output practice. With a string index signature, use the value schema.
+    // Closed objects (no string index signature) emit additionalProperties false.
+    // Not TS-faithful: TS object types are structurally open (excess-property checks fire only on object
+    // literals), so a one-prop object accepts extra keys. The real reason for false is validation UX and the structured-
+    // output convention: extra keys almost always signal misunderstanding, and false turns that into one clear repair hint,
+    // matching strict structured-output practice. With a string index signature, use the value schema.
     const indexInfo = this.checker.getIndexInfoOfType(type, ts.IndexKind.String);
-    schema.additionalProperties = indexInfo !== undefined ? this.emit(indexInfo.type, `${path}[*]`) : false;
+    schema.additionalProperties =
+      indexInfo !== undefined ? this.emit(indexInfo.type, `${path}[*]`) : false;
     return schema;
   }
 
-    /** Optional property: strip undefined from the type, then emit (optionality lives in required, not the type). */
+  /** Optional property: strip undefined from the type, then emit (optionality lives in required, not the type). */
   private emitOptional(propType: ts.Type, path: string): JsonSchema {
     if (!propType.isUnion()) return this.emit(propType, path);
     const rest = propType.types.filter(
@@ -290,7 +300,11 @@ export class SchemaEmitter {
         continue;
       }
       const optional = (flag & ts.ElementFlags.Optional) !== 0;
-      prefixItems.push(optional ? this.emitOptional(arg, `${path}[${index}]`) : this.emit(arg, `${path}[${index}]`));
+      prefixItems.push(
+        optional
+          ? this.emitOptional(arg, `${path}[${index}]`)
+          : this.emit(arg, `${path}[${index}]`),
+      );
       if (flag & ts.ElementFlags.Required) minItems += 1;
     }
     const schema: JsonSchema = { type: "array", prefixItems, minItems };
@@ -313,7 +327,10 @@ export class SchemaEmitter {
   private isThenable(type: ts.Type): boolean {
     const then = this.checker.getPropertyOfType(type, "then");
     if (then === undefined) return false;
-    const thenType = this.checker.getTypeOfSymbolAtLocation(then, then.valueDeclaration ?? this.location);
+    const thenType = this.checker.getTypeOfSymbolAtLocation(
+      then,
+      then.valueDeclaration ?? this.location,
+    );
     return thenType.getCallSignatures().length > 0;
   }
 }

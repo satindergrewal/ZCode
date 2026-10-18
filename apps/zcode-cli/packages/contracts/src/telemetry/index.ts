@@ -351,7 +351,7 @@ export interface ModelAttemptSpanWriter extends AgentTelemetryScope {
   markFirstContent(): void;
   markFirstText(): void;
   markStreamStalled(idleMs: number): void;
-  /** 请求观测交由发行实现映射到 Attribute 与 Event。 */
+  /** Request observation mapping to Attributes/Events is left to the distributing implementation. */
   recordRequestObservation(observation: ModelRequestObservation): void;
   finishCompleted(): void;
   finishFailed(

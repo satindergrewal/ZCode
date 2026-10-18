@@ -21,8 +21,8 @@ export function collectAgentListingAttachment(input: {
   const announced = new Set<string>();
   for (const entry of input.entries) {
     if (entry.kind !== "attachment" || entry.metadata.source !== "agent_listing_delta") continue;
-    // 历史写入/恢复边界已校验并复制 delta；本轮新增 delta 由收集器生成。
-    // 此处只读名称增删，避免每次请求重复校验并分配临时数组与 Set。
+    // The history write/restore boundary already validated and copied deltas; this turn's new deltas come from the collector.
+    // Read only the name add/remove here, avoiding re-validation and temp array/Set allocation on every request.
     const delta = entry.metadata.agentListingDelta;
     if (!delta) continue;
     for (const name of delta.addedTypes) announced.add(name);

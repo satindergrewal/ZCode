@@ -41,18 +41,10 @@ export function backgroundTaskOutputMetadata(
     stringProperty(launchOutput, "outputFile") ??
     stdoutFile ??
     stderrFile;
-  const stdoutBytes =
-    numberProperty(stdout, "bytes") ??
-    numberProperty(snapshot, "stdoutBytes");
-  const stderrBytes =
-    numberProperty(stderr, "bytes") ??
-    numberProperty(snapshot, "stderrBytes");
-  const stdoutTail =
-    stringProperty(stdout, "text") ||
-    stringProperty(snapshot, "stdoutTail");
-  const stderrTail =
-    stringProperty(stderr, "text") ||
-    stringProperty(snapshot, "stderrTail");
+  const stdoutBytes = numberProperty(stdout, "bytes") ?? numberProperty(snapshot, "stdoutBytes");
+  const stderrBytes = numberProperty(stderr, "bytes") ?? numberProperty(snapshot, "stderrBytes");
+  const stdoutTail = stringProperty(stdout, "text") || stringProperty(snapshot, "stdoutTail");
+  const stderrTail = stringProperty(stderr, "text") || stringProperty(snapshot, "stderrTail");
   const workflowOutput = recordProperty(snapshot, "output");
   const workflowTail = stringProperty(workflowOutput, "response");
   const outputBytes =

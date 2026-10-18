@@ -21,7 +21,8 @@ export async function checkPermissions(
         resolve: (value: { response: number; checkboxChecked: boolean }) => void;
       }>();
       const original = dialog.showMessageBox;
-      // 只替代原生确认框的用户回答；Chromium 请求、frame 绑定及权限 gate 均为生产代码。
+      // Substitute only the native dialog's user answer; the Chromium request, frame binding and
+      // permission gate are all production code.
       dialog.showMessageBox = (() =>
         new Promise((resolve) => prompts.emit({ resolve }))) as typeof original;
       const request = () =>

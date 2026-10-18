@@ -99,11 +99,7 @@ describe("ambient-modifier diagnostics", () => {
   });
 });
 
-// 脚本以 `strict` 编译但**关闭** `noUncheckedIndexedAccess`（决策记录：docs/dynamic-workflow/
-// authoring.md「Compiler options」）。模型按该开关关闭的世界书写——训练语料几乎全是关闭的——
-// 开着时 `items[i]` 上的 TS2532/TS18048 是编译失败的最大单一来源，且几乎全落在周围逻辑已经
-// 证明了边界的索引上。这里钉住两侧：索引读取不再报 undefined；而 `strictNullChecks` 覆盖的
-// 真实风险（`.find()`、`match()`、可选属性、可选参数）仍然照旧报错。
+// Scripts compile under strict with noUncheckedIndexedAccess OFF (decision record: docs/dynamic-workflow/
 describe("undefined diagnostics under the chosen strictness", () => {
   it("accepts an unguarded array index", () => {
     const result = compileWorkflowScript(
@@ -151,7 +147,7 @@ describe("undefined diagnostics under the chosen strictness", () => {
 
 // The submit path compiles once and shares the one `ts.Program` across all four
 // consumers (diagnostics / site table / schema synthesis / lowering); see the
-// 「编译一次」 boundary in docs/dynamic-workflow/presentation.md. These assertions pin the
+// The compile-once boundary in docs/dynamic-workflow/presentation.md. These assertions pin the
 // promotion of `createWorkflowProgram` + `collectSites` onto the public surface, and
 // that one program yields byte-identical site ids to the three-program convenience
 // entries. Site ids are journal keys: a drift here surfaces as a `script_hash` /
@@ -195,7 +191,10 @@ describe("public one-program chain", () => {
       .filter((n) => n.kind === "ask" || n.kind === "world-read")
       .map((n) => n.id)
       .sort();
-    const tableSiteIds = [...table.asks.map((a) => a.id), ...table.worldReads.map((w) => w.id)].sort();
+    const tableSiteIds = [
+      ...table.asks.map((a) => a.id),
+      ...table.worldReads.map((w) => w.id),
+    ].sort();
     expect(graphSiteIds).toEqual(tableSiteIds);
     expect(tableSiteIds).toEqual(["ask#1", "ask#2", "world-read#1"]);
 

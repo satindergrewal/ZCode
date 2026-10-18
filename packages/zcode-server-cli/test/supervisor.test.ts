@@ -18,7 +18,12 @@ class FakeCore extends EventEmitter {
   public exitOnKill = true;
 
   public send(message: unknown): boolean {
-    if (typeof message === "object" && message !== null && "command" in message && message.command === "shutdown") {
+    if (
+      typeof message === "object" &&
+      message !== null &&
+      "command" in message &&
+      message.command === "shutdown"
+    ) {
       this.shutdownRequested = true;
       if (this.exitOnShutdown) queueMicrotask(() => this.emit("exit", 0, null));
     }
@@ -32,13 +37,15 @@ class FakeCore extends EventEmitter {
   }
 
   public reportReady(generation: number): void {
-    queueMicrotask(() => this.emit("message", {
-      type: "ready",
-      host: "127.0.0.1",
-      port: 43123,
-      version: "test",
-      generation,
-    }));
+    queueMicrotask(() =>
+      this.emit("message", {
+        type: "ready",
+        host: "127.0.0.1",
+        port: 43123,
+        version: "test",
+        generation,
+      }),
+    );
   }
 }
 
@@ -48,7 +55,9 @@ async function waitForState(supervisor: Supervisor, state: string): Promise<void
     if (supervisor.status().state === state) return;
     await new Promise<void>((resolve) => setImmediate(resolve));
   }
-  throw new Error(`Timed out waiting for supervisor state ${state}, got ${supervisor.status().state}`);
+  throw new Error(
+    `Timed out waiting for supervisor state ${state}, got ${supervisor.status().state}`,
+  );
 }
 
 describe("Supervisor lifecycle", () => {
@@ -120,11 +129,15 @@ describe("Supervisor lifecycle", () => {
 
     await supervisor.start();
     await waitForState(supervisor, "ready");
-    const apply = requestControl(layout.controlEndpoint, { command: "apply-update", force: true }, 10_000);
+    const apply = requestControl(
+      layout.controlEndpoint,
+      { command: "apply-update", force: true },
+      10_000,
+    );
 
-    // Bugfix: Windows 不允许 rename 覆盖正被 readFile 打开的 current.json；轮询文件会与
-    // atomicWriteJson 争抢句柄并制造 EPERM。candidate 启动发生在 transaction/current
-    // 写入完成之后，以生命周期信号等待同一个稳定观察点，不改变锁竞争语义。
+    // Bugfix: Windows forbids rename over a current.json held open by readFile; polling the file races
+    // atomicWriteJson for the handle and raises EPERM. The candidate starts only after the transaction/current
+    // writes finish, so wait on the lifecycle signal for the same stable observation point without changing lock-race semantics.
     await Promise.race([
       candidateLaunched,
       new Promise<never>((_, reject) =>
@@ -138,7 +151,9 @@ describe("Supervisor lifecycle", () => {
       version: "test",
     });
     await expect(competing.start()).rejects.toThrow(/already running/i);
-    expect(JSON.parse(await readFile(layout.currentFile, "utf8"))).toMatchObject({ version: "new" });
+    expect(JSON.parse(await readFile(layout.currentFile, "utf8"))).toMatchObject({
+      version: "new",
+    });
     await expect(readFile(layout.updateTransactionFile, "utf8")).resolves.toContain("old");
 
     candidate?.reportReady(2);
@@ -174,10 +189,10 @@ describe("Supervisor lifecycle", () => {
   });
 
   it("keeps applying the update after a client timeout while rollback finishes", async () => {
-    // Bugfix: Windows 上 `/tmp` 会解析到当前盘根目录且普通用户通常无写权限；
-    // 使用系统临时目录，让用例只验证客户端超时后的 update 生命周期。
-    // macOS AF_UNIX endpoint 有较短的路径上限；系统临时目录已经包含随机前缀，
-    // 这里保持 fixture 前缀短，避免测试自身把 control.sock 路径推过上限。
+    // Bugfix: on Windows `/tmp` resolves to the current drive root and regular users often cannot write there;
+    // use the OS temp dir so the case only exercises the post-client-timeout update lifecycle.
+    // macOS AF_UNIX endpoints have a tight path limit and the system temp dir already carries random segments,
+    // so keep the fixture prefix short and never push control.sock past the cap from the test side.
     const root = await mkdtemp(join(tmpdir(), "z2-"));
     const layout = resolveServerLayout(join(root, "server"));
     const releases = new ReleaseManager(layout);
@@ -201,8 +216,8 @@ describe("Supervisor lifecycle", () => {
         },
       },
       version: "test",
-      // waitForUpdateReady 以 50ms 轮询；留出一个完整轮询周期，确保旧 release
-      // rollback 的 ready 终态也被观察到，而不是只观察到短暂的 starting/ready 窗口。
+      // waitForUpdateReady polls at 50ms; leave one full poll period so the old release's
+      // rollback ready finality is observed, not just a fleeting starting/ready window.
       coreReadyTimeoutMs: 120,
       coreStopGraceTimeoutMs: 20,
       coreKillTimeoutMs: 5,
@@ -220,7 +235,9 @@ describe("Supervisor lifecycle", () => {
   });
 
   it("launches the recovered release after claiming a stale startup lock", async () => {
-    const root = await mkdtemp(join(process.platform === "win32" ? tmpdir() : "/tmp", "zsr-stale-"));
+    const root = await mkdtemp(
+      join(process.platform === "win32" ? tmpdir() : "/tmp", "zsr-stale-"),
+    );
     const layout = resolveServerLayout(join(root, "server"));
     const releases = new ReleaseManager(layout);
     await releases.ensure();
@@ -249,8 +266,12 @@ describe("Supervisor lifecycle", () => {
 
     await supervisor.start();
     expect(launchedRelease).toBe("old");
-    expect(JSON.parse(await readFile(layout.currentFile, "utf8"))).toMatchObject({ version: "old" });
-    await expect(readFile(layout.updateTransactionFile, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    expect(JSON.parse(await readFile(layout.currentFile, "utf8"))).toMatchObject({
+      version: "old",
+    });
+    await expect(readFile(layout.updateTransactionFile, "utf8")).rejects.toMatchObject({
+      code: "ENOENT",
+    });
     await supervisor.stop();
   });
 
@@ -296,14 +317,14 @@ describe("Supervisor lifecycle", () => {
     for (let crashIndex = 0; crashIndex < CRASH_BACKOFF_MS.length; crashIndex++) {
       cores[crashIndex]?.emit("exit", 1, null);
       expect(supervisor.status().state).toBe("crashed");
-      // 退避序列必须与 spec 的 1/2/4/8/16 秒一致：提前一毫秒不应重启。
+      // The backoff sequence must match the spec's 1/2/4/8/16s: one millisecond early must not restart.
       await vi.advanceTimersByTimeAsync((CRASH_BACKOFF_MS[crashIndex] ?? 0) - 1);
       expect(cores.length).toBe(crashIndex + 1);
       await vi.advanceTimersByTimeAsync(1);
       expect(cores.length).toBe(crashIndex + 2);
     }
 
-    // 第六次 crash 超出 5 次/5 分钟预算，熔断且不再拉起新 Core。
+    // The sixth crash exceeds the 5-per-5-minutes budget: trip the breaker and stop spawning Cores.
     cores[CRASH_BACKOFF_MS.length]?.emit("exit", 1, null);
     expect(supervisor.status().state).toBe("crash-loop-stopped");
     await vi.advanceTimersByTimeAsync(60_000);
@@ -319,7 +340,10 @@ describe("Supervisor lifecycle", () => {
     const releases = new ReleaseManager(layout);
     await releases.ensure();
     await mkdir(join(layout.releasesDir, "2.0.0"), { recursive: true });
-    await releases.writePending({ version: "2.0.0", releaseDir: join(layout.releasesDir, "2.0.0") });
+    await releases.writePending({
+      version: "2.0.0",
+      releaseDir: join(layout.releasesDir, "2.0.0"),
+    });
 
     const cores: FakeCore[] = [];
     const supervisor = new Supervisor({
@@ -340,33 +364,45 @@ describe("Supervisor lifecycle", () => {
     cores[0]?.emit("message", { type: "task-activity", runningTaskCount: 2 });
     await new Promise<void>((resolve) => setImmediate(resolve));
 
-    await expect(requestControl(layout.controlEndpoint, { command: "prepare-update" })).resolves.toMatchObject({
+    await expect(
+      requestControl(layout.controlEndpoint, { command: "prepare-update" }),
+    ).resolves.toMatchObject({
       status: "blocked",
       runningTaskCount: 2,
     });
-    await expect(requestControl(layout.controlEndpoint, { command: "apply-update" })).rejects.toThrow(/--force/);
-    // guard 拒绝时不得中断 Core（R2-CLI-09）。
+    await expect(
+      requestControl(layout.controlEndpoint, { command: "apply-update" }),
+    ).rejects.toThrow(/--force/);
+    // A guard rejection must never interrupt the Core (R2-CLI-09).
     expect(supervisor.status().state).toBe("ready");
 
-    // R2-CLI-10：有运行任务时 confirm-uninstall 必须被拒绝并保持原状态。
+    // R2-CLI-10: confirm-uninstall must be rejected with state preserved while tasks run.
     await expect(
-      requestControl(layout.controlEndpoint, { command: "confirm-uninstall", confirmation: "DELETE" }),
+      requestControl(layout.controlEndpoint, {
+        command: "confirm-uninstall",
+        confirmation: "DELETE",
+      }),
     ).rejects.toThrow(/Cannot uninstall/);
     expect(supervisor.status().state).toBe("ready");
 
-    // --force 明确允许中断运行任务后应用 release。
-    await expect(requestControl(layout.controlEndpoint, { command: "apply-update", force: true })).resolves.toMatchObject({
+    // --force explicitly allows interrupting running tasks to apply the release.
+    await expect(
+      requestControl(layout.controlEndpoint, { command: "apply-update", force: true }),
+    ).resolves.toMatchObject({
       applied: true,
       version: "2.0.0",
     });
     expect(supervisor.status().state).toBe("ready");
     expect(cores.length).toBe(2);
 
-    // 任务清零后 uninstall 放行并停止 Server。
+    // Once tasks drain to zero, uninstall proceeds and stops the Server.
     cores[1]?.emit("message", { type: "task-activity", runningTaskCount: 0 });
     await new Promise<void>((resolve) => setImmediate(resolve));
     await expect(
-      requestControl(layout.controlEndpoint, { command: "confirm-uninstall", confirmation: "DELETE" }),
+      requestControl(layout.controlEndpoint, {
+        command: "confirm-uninstall",
+        confirmation: "DELETE",
+      }),
     ).resolves.toMatchObject({ uninstalled: true });
     await waitForState(supervisor, "stopped");
   });
@@ -397,9 +433,13 @@ describe("Supervisor lifecycle", () => {
     });
     await supervisor.start();
     await waitForState(supervisor, "ready");
-    await expect(requestControl(layout.controlEndpoint, { command: "apply-update", force: true })).rejects.toThrow(/failed while applying/);
+    await expect(
+      requestControl(layout.controlEndpoint, { command: "apply-update", force: true }),
+    ).rejects.toThrow(/failed while applying/);
     await waitForState(supervisor, "ready");
-    expect(JSON.parse(await (await import("node:fs/promises")).readFile(layout.currentFile, "utf8"))).toMatchObject({ version: "old" });
+    expect(
+      JSON.parse(await (await import("node:fs/promises")).readFile(layout.currentFile, "utf8")),
+    ).toMatchObject({ version: "old" });
     expect(cores.length).toBe(3);
     await supervisor.stop();
   });
@@ -433,22 +473,26 @@ describe("Supervisor lifecycle", () => {
     await supervisor.start();
     await waitForState(supervisor, "ready");
 
-    // 回滚文件操作可能被慢盘/杀毒软件拖过首个 crash backoff；期间不得让旧的
-    // crashed 状态放行自动重启，否则坏 release 会再次启动并丢失 Supervisor 所有权。
+    // Slow disks or antivirus can drag rollback file work past the first crash backoff; the stale
+    // crashed state must not admit an auto-restart, or the broken release boots again and Supervisor ownership is lost.
     const internal = supervisor as unknown as { releaseManager: ReleaseManager };
-    const originalRestoreCurrent = internal.releaseManager.restoreCurrent.bind(internal.releaseManager);
+    const originalRestoreCurrent = internal.releaseManager.restoreCurrent.bind(
+      internal.releaseManager,
+    );
     internal.releaseManager.restoreCurrent = async (manifest) => {
       await new Promise<void>((resolve) => setTimeout(resolve, CRASH_BACKOFF_MS[0] + 100));
       await originalRestoreCurrent(manifest);
     };
 
-    await expect(requestControl(layout.controlEndpoint, { command: "apply-update", force: true }, 10_000)).rejects.toThrow(
-      /failed while applying update/i,
-    );
+    await expect(
+      requestControl(layout.controlEndpoint, { command: "apply-update", force: true }, 10_000),
+    ).rejects.toThrow(/failed while applying update/i);
     await waitForState(supervisor, "ready");
 
     expect(cores.map(({ release }) => release)).toEqual(["old", "new", "old"]);
-    expect(JSON.parse(await readFile(layout.currentFile, "utf8"))).toMatchObject({ version: "old" });
+    expect(JSON.parse(await readFile(layout.currentFile, "utf8"))).toMatchObject({
+      version: "old",
+    });
     await supervisor.stop();
   });
 
@@ -482,9 +526,9 @@ describe("Supervisor lifecycle", () => {
     await waitForState(supervisor, "ready");
     await import("node:fs/promises").then(({ rm }) => rm(oldDir, { recursive: true, force: true }));
 
-    await expect(requestControl(layout.controlEndpoint, { command: "apply-update", force: true })).rejects.toThrow(
-      /rollback pointer restore failed/i,
-    );
+    await expect(
+      requestControl(layout.controlEndpoint, { command: "apply-update", force: true }),
+    ).rejects.toThrow(/rollback pointer restore failed/i);
     expect(supervisor.status()).toMatchObject({ state: "stop-failed", pid: null });
     expect(supervisor.status().lastExitReason).toMatch(/rollback pointer restore failed/i);
     await expect(readFile(layout.updateTransactionFile, "utf8")).resolves.toContain("old");
@@ -509,7 +553,7 @@ describe("Supervisor lifecycle", () => {
       launcher: {
         launch: (generation, release) => {
           if (release?.version === "new") {
-            // 使用真实 ChildProcess 复现 Node 的 spawn 失败序列：error + close，无 exit。
+            // Use a real ChildProcess to replay Node's spawn-failure sequence: error + close, no exit.
             return fork(join(root, "never-loaded.js"), [], {
               execPath: join(root, "nonexistent-node"),
               stdio: ["ignore", "ignore", "ignore", "ipc"],
@@ -532,7 +576,9 @@ describe("Supervisor lifecycle", () => {
     ).rejects.toThrow(/failed while applying/);
     await waitForState(supervisor, "ready");
 
-    expect(JSON.parse(await readFile(layout.currentFile, "utf8"))).toMatchObject({ version: "old" });
+    expect(JSON.parse(await readFile(layout.currentFile, "utf8"))).toMatchObject({
+      version: "old",
+    });
     expect(oldCores).toHaveLength(2);
     expect(supervisor.status().lastExitReason).toContain("spawn");
     await supervisor.stop();
@@ -568,7 +614,11 @@ describe("Supervisor lifecycle", () => {
     await supervisor.start();
     await waitForState(supervisor, "ready");
 
-    const apply = requestControl(layout.controlEndpoint, { command: "apply-update", force: true }, 30_000);
+    const apply = requestControl(
+      layout.controlEndpoint,
+      { command: "apply-update", force: true },
+      30_000,
+    );
     await expect(apply).rejects.toThrow(/failed while applying|Timed out/);
     await waitForState(supervisor, "ready");
     expect(hangingCore?.shutdownRequested).toBe(true);
@@ -747,9 +797,15 @@ describe("Supervisor lifecycle", () => {
     await supervisor.start();
     await waitForState(supervisor, "ready");
 
-    const apply = requestControl(layout.controlEndpoint, { command: "apply-update", force: true }, 5_000);
+    const apply = requestControl(
+      layout.controlEndpoint,
+      { command: "apply-update", force: true },
+      5_000,
+    );
     while (cores.length < 2) await new Promise<void>((resolve) => setImmediate(resolve));
-    await expect(requestControl(layout.controlEndpoint, { command: "restart" })).rejects.toMatchObject({
+    await expect(
+      requestControl(layout.controlEndpoint, { command: "restart" }),
+    ).rejects.toMatchObject({
       code: "operation-in-progress",
       retryable: true,
     });
@@ -783,7 +839,9 @@ describe("Supervisor lifecycle", () => {
     expect(core.shutdownRequested).toBe(true);
     expect(core.killRequested).toBe(true);
     expect(supervisor.status()).toMatchObject({ state: "stop-failed", pid: 42 });
-    await expect(requestControl(layout.controlEndpoint, { command: "status" })).resolves.toMatchObject({
+    await expect(
+      requestControl(layout.controlEndpoint, { command: "status" }),
+    ).resolves.toMatchObject({
       state: "stop-failed",
       pid: 42,
     });
@@ -842,11 +900,19 @@ describe("Supervisor lifecycle", () => {
     cores[0]?.reportReady(1);
     cores[1]?.reportReady(999);
     await vi.runAllTicks();
-    expect(supervisor.status()).toMatchObject({ state: "starting", generation: 2, runningTaskCount: 0 });
+    expect(supervisor.status()).toMatchObject({
+      state: "starting",
+      generation: 2,
+      runningTaskCount: 0,
+    });
 
     cores[1]?.reportReady(2);
     await vi.runAllTicks();
-    expect(supervisor.status()).toMatchObject({ state: "ready", generation: 2, runningTaskCount: 0 });
+    expect(supervisor.status()).toMatchObject({
+      state: "ready",
+      generation: 2,
+      runningTaskCount: 0,
+    });
 
     vi.useRealTimers();
     await supervisor.stop();

@@ -1,15 +1,15 @@
 /**
- * 隐藏子命令 `__zcode-dwf-child` 的分派与执行。
+ * Dispatch and execution of the hidden `__zcode-dwf-child` subcommand.
  *
- * Bug 根因（docs/dynamic-workflow/launch.md「Single-executable builds」）：SEA 单文件二进制不解释 Node
- * CLI 旗标，harness 缺省的 `node --max-old-space-size=… <entry>` 在 SEA 下会把旗标交给严格
- * parseArgs，子进程立刻报错退出——SEA 下每一个 dwf run 必然失败。修法与 official plugin host
- * 同款：自 re-exec 本二进制 + 在 parseArgs **之前**分派。
+ * Bug root cause (docs/dynamic-workflow/launch.md, "Single-executable builds"): the SEA single-file binary does not interpret Node
+ * CLI flags; the harness default `node --max-old-space-size=... <entry>` hands the flags to strict
+ * parseArgs and the child exits instantly -- every dwf run failed under SEA. The fix mirrors the official plugin host:
+ * re-exec this binary and dispatch before parseArgs.
  *
- * 2026-09-09 追记之后 argv 末位是入口文件路径（payload 不再过命令行）。两件事必须钉住：
- *   1. 分派发生在 parseArgs 之前——任何进了 parseArgs 的形态都会把路径当未知参数报错；
- *   2. 子进程真的跑起来：子命令 `import()` 入口文件、注入真实 vm/readline/stdio 调它的 `start`，
- *      把 NDJSON 写回 stdout。入口文件由 harness 同一个 `renderChildEntry` 渲染，与生产同形。
+ * After the 2026-09-09 change, the last argv item is the entry file path (the payload no longer rides the command line). Two things are pinned:
+ *   1. dispatch happens before parseArgs -- any form reaching parseArgs errors on the path as an unknown argument;
+ *   2. the child really runs: the subcommand imports the entry file, injects real vm/readline/stdio, calls its `start`,
+ *      and writes NDJSON to stdout. The entry file is rendered by the same harness `renderChildEntry` as in production.
  */
 
 import assert from "node:assert/strict";
@@ -39,9 +39,9 @@ const createCapturedStdout = () => {
 };
 
 /**
- * 子进程语境的 RunContext：stdin 必须是**真** Readable（childMain 拿它建 readline，
- * cli.unit.test.ts 里那个 `{ isTTY: false }` 假 stdin 会直接让 readline 抛错）。
- * 这里给一条立即 EOF 的空流：本用例的脚本不发 ask，父进程也就没有 response 要喂。
+ * A child-context RunContext: stdin must be a real Readable (childMain builds readline from it;
+ * the `{ isTTY: false }` fake stdin in cli.unit.test.ts makes readline throw).
+ * Here it is an immediately-EOF empty stream: this case's script issues no ask, so the parent has no response to feed.
  */
 const createChildContext = (
   argv: string[],
@@ -61,12 +61,14 @@ const createChildContext = (
 };
 
 /**
- * 用生产同一个渲染器写一份入口文件。刻意**不**经引擎/编译器：这里被测的是 CLI 边界的契约
- * （argv 末位的路径 + 入口文件的 `start` 导出），不是 workflow 的编译管线。
- * 不带 `maxOldSpaceSizeMb`：入口文件在 `execArgv` 缺旗标时会对**本进程** best-effort 设堆上限，
- * 测试进程不该被它改。
+ * Writes an entry file with the production renderer. Deliberately not via engine/compiler: under test is the CLI-boundary contract
+ * (the trailing argv path plus the entry's `start` export), not the workflow compilation pipeline.
+ * No `maxOldSpaceSizeMb`: with the flag missing from `execArgv`, the entry best-effort sets a heap cap for this very process,
+ * and the test process must not be touched by it.
  */
-const writeEntry = async (lowered: string): Promise<{ path: string; dispose: () => Promise<void> }> => {
+const writeEntry = async (
+  lowered: string,
+): Promise<{ path: string; dispose: () => Promise<void> }> => {
   const root = await mkdtemp(join(tmpdir(), "dwf-child-cmd-"));
   const path = join(root, "run.mjs");
   await writeFile(path, renderChildEntry({ lowered }, { runId: "run" }), "utf8");
@@ -78,7 +80,7 @@ test("recognises the dwf child subcommand only as argv[0]", () => {
   assert.equal(isDwfChildInvocation([ZCODE_DWF_CHILD_COMMAND]), true);
   assert.equal(isDwfChildInvocation([]), false);
   assert.equal(isDwfChildInvocation(["--help"]), false);
-  // 出现在别处不算：否则一个普通 prompt 里提到这个词就能改变 CLI 的行为。
+  // Occurrences elsewhere do not count: a plain prompt mentioning the word must not change CLI behavior.
   assert.equal(isDwfChildInvocation(["-p", ZCODE_DWF_CHILD_COMMAND]), false);
 });
 
@@ -128,7 +130,7 @@ test("fails with usage when the entry path argument is missing", async () => {
   const exitCode = await run(ctx);
 
   assert.equal(exitCode, 1);
-  // stdout 是父进程的 NDJSON 通道，接线错误只许走 stderr。
+  // stdout is the parent's NDJSON channel; wiring errors go to stderr only.
   assert.equal(stdout(), "");
   assert.match(stderr(), new RegExp(`Usage: ${ZCODE_DWF_CHILD_COMMAND}`));
 });

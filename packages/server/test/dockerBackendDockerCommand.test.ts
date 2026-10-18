@@ -99,7 +99,7 @@ describe("DockerBackend docker command resolution", () => {
     mocks.spawn.mockImplementation(() => createSpawnChild());
   });
 
-  it("exec 链路中的 docker exec 使用解析后的 Docker CLI", async () => {
+  it("uses the resolved Docker CLI in the exec path", async () => {
     const backend = createBackend();
 
     await backend.exec("printf ok");
@@ -117,7 +117,7 @@ describe("DockerBackend docker command resolution", () => {
     );
   });
 
-  it("无进度上传也应由容器用户流式写入，避免 docker cp 文件所有权错配", async () => {
+  it("streams uploads as the container user even without progress, avoiding docker cp ownership mismatches", async () => {
     mocks.spawn.mockImplementation(() => {
       const child = createSpawnChild();
       child.stdin.resume();
@@ -141,7 +141,7 @@ describe("DockerBackend docker command resolution", () => {
     ).toBe(true);
   });
 
-  it("流式上传失败时应保留容器 stderr 诊断", async () => {
+  it("keeps container stderr diagnostics when streamed upload fails", async () => {
     mocks.spawn.mockImplementation(() => {
       const child = createSpawnChild();
       child.stdin.resume();
@@ -161,7 +161,7 @@ describe("DockerBackend docker command resolution", () => {
     );
   });
 
-  it("带 progress 选项时改走 exec 流式上传并上报字节", async () => {
+  it("switches to streamed exec upload and reports bytes when the progress option is set", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "docker-upload-progress-"));
     const localPath = join(tempDir, "attachment.bin");
     await writeFile(localPath, Buffer.alloc(96 * 1024, "a"));

@@ -299,8 +299,8 @@ export function parseGoalCompletionVerificationText(
 }
 
 export function failedGoalCompletionVerification(reason: string): GoalCompletionVerificationOutput {
-    // The verifier gates goal completion, but sporadic provider bad-JSON is judge-chain failure;
-    // fail-open per product semantics so an already-delivered goal never stalls on formatting.
+  // This fallback means the verifier itself failed, not a model-proposed next step.
+  // Writing nextAction would render internal control prose as the next iteration's title.
   return {
     passed: false,
     reason,
@@ -310,8 +310,8 @@ export function failedGoalCompletionVerification(reason: string): GoalCompletion
 export function failOpenGoalCompletionVerification(
   reason: string,
 ): GoalCompletionVerificationOutput {
-  // This fallback means the verifier itself failed, not a model-proposed next step.
-  // Writing nextAction would render internal control prose as the next iteration's title.
+  // Verifier infrastructure/format failure, not a verdict that the goal is incomplete.
+  // Defaulting to pass keeps a goal from sticking forever on judge-chain flakiness; reason stays for logs and UI triage.
   return {
     passed: true,
     reason,
@@ -321,8 +321,8 @@ export function failOpenGoalCompletionVerification(
 function parseJsonObject(text: string): Record<string, unknown> | undefined {
   const candidates = collectJsonObjectCandidates(text);
 
-  // This fallback means the verifier itself failed, not a model-proposed next step.
-  // Writing nextAction would render internal control prose as the next iteration's title.
+  for (const candidate of candidates) {
+    const parsed = parseJsonObjectCandidate(candidate);
     if (parsed) return parsed;
   }
   return undefined;
@@ -332,8 +332,8 @@ function collectJsonObjectCandidates(text: string): string[] {
   const trimmed = text.trim();
   const candidates = [trimmed];
   const stringValue = parseJsonString(trimmed);
-  // Verifier infrastructure/format failure, not a verdict that the goal is incomplete.
-  // Defaulting to pass keeps a goal from sticking forever on judge-chain flakiness; reason stays for logs and UI triage.
+  if (stringValue) candidates.push(stringValue);
+  const fenced = extractFencedJsonCandidate(trimmed);
   if (fenced) candidates.push(fenced);
   if (stringValue) {
     const fencedStringValue = extractFencedJsonCandidate(stringValue);
@@ -394,8 +394,8 @@ export const TargetReadInputJsonSchema = GoalReadInputJsonSchema;
 export const TargetReadOutputSchema = GoalReadOutputSchema;
 export type TargetReadOutput = GoalReadOutput;
 export const TargetReadOutputJsonSchema = GoalReadOutputJsonSchema;
-  // The goal verifier sometimes wraps structured JSON in Markdown fences,
-  // or receives it outer-encoded as a string; strip fenced content first, then run the same JSON-object parse.
+// The goal verifier sometimes wraps structured JSON in Markdown fences,
+// or receives it outer-encoded as a string; strip fenced content first, then run the same JSON-object parse.
 export const normalizeTargetObjective = normalizeGoalObjective;
 export const formatTargetStateForModel = formatGoalStateForModel;
 export const formatTargetContinuationPrompt = formatGoalContinuationPrompt;

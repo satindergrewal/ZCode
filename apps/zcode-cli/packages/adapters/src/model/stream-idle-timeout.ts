@@ -49,8 +49,7 @@ export function isModelStreamIdleTimeoutError(
 
   const record = error as Record<string, unknown>;
   return (
-    record.code === "MODEL_STREAM_IDLE_TIMEOUT" ||
-    record.name === "ModelStreamIdleTimeoutError"
+    record.code === "MODEL_STREAM_IDLE_TIMEOUT" || record.name === "ModelStreamIdleTimeoutError"
   );
 }
 

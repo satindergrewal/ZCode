@@ -1,4 +1,4 @@
-/* oxlint-disable eslint(max-lines) -- 发布、远端 staging、安全轮询和原子导入共享同一 attempt 生命周期，拆分会让清理与进度状态失去单一 owner。 */
+/* oxlint-disable eslint(max-lines) -- publish, remote staging, security polling, and atomic import share one attempt lifecycle; splitting would orphan cleanup and progress state. */
 import { createHash, randomUUID } from "node:crypto";
 import type { Dirent } from "node:fs";
 import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
@@ -71,15 +71,15 @@ import { formatSharedContextV1 } from "./sharedContextFormatter.js";
 
 const DEFAULT_CONFIRM_POLL_INTERVAL_MS = 5_000;
 const DEFAULT_CONFIRM_POLL_TIMEOUT_MS = 120_000;
-// download 兜底不能是裸 fetch（无 AbortSignal/超时）：对象存储连接挂住时导入会停在
-// downloading 阶段直到 undici 默认 ~300s 兜底，体验上等于卡死。120s 覆盖慢速下行的大 artifact。
+// The download fallback cannot be bare fetch (no AbortSignal/timeout): a hung object-storage connection parks import in
+// downloading until undici\x27s ~300s default, which reads as frozen. 120s covers large artifacts on slow downlinks.
 const DOWNLOAD_TIMEOUT_MS = 120_000;
 const MISSING_ARTIFACT_ERRNOS = new Set(["ENOENT", "ENOTDIR", "EISDIR"]);
-// 预检快照的兜底上限：单次分享最多写入所选轮次数量的条目，200 足够覆盖正常会话，
-// 又能保证长驻 host 不会因为「一直预检、从不发布」而无限增长。
+// Preview-snapshot cap: one share writes at most one entry per selected turn; 200 covers normal conversations
+// while keeping long-lived hosts from growing without bound on preview-without-publish loops.
 const PREVIEW_PREFLIGHT_SNAPSHOT_MAX_ENTRIES = 200;
-// 预检 stat 的并发上限：本地几乎无差别，SSH/远程 workspace 下每次 stat 都是一次
-// 网络往返，串行会让「下一步」长时间停在 checking。上限保证不把远端 host 打爆。
+// Preview stat concurrency: irrelevant locally, but on SSH/remote workspaces each stat is a network round trip and
+// serial execution parks the dialog on checking. The cap keeps remote hosts from being hammered.
 const SHARE_PREFLIGHT_STAT_CONCURRENCY = 6;
 
 function wait(delayMs: number): Promise<void> {
@@ -87,11 +87,11 @@ function wait(delayMs: number): Promise<void> {
 }
 
 /**
- * 有界并发 map，保持输出与输入同序。
+ * Bounded-concurrency map preserving input order in output.
  *
- * 预检的每次 stat 在 SSH/远程 workspace 下都是一次网络往返，串行会让「下一步」
- * 长时间停在 checking。并发上限存在的意义是不把远端 host 打爆；结果按下标回填，
- * 因此 issue 的产生顺序仍然是确定的（与串行实现完全一致）。
+ * Each preview stat is a network round trip on SSH/remote workspaces; serial runs park the dialog
+ * on checking. The concurrency cap protects remote hosts; results backfill by index,
+ * so issue ordering stays deterministic and identical to the serial implementation.
  */
 async function mapWithConcurrency<Input, Output>(
   items: readonly Input[],
@@ -112,7 +112,7 @@ async function mapWithConcurrency<Input, Output>(
   return results;
 }
 
-/** stat 的结果或失败原因；并发阶段只收集，分类仍在同序的第二轮里做。 */
+/** Stat result or failure; the concurrent phase only collects, classification happens in-order afterwards. */
 type SettledResult<Value> = { ok: true; value: Value } | { ok: false; error: unknown };
 
 async function settle<Value>(run: () => Promise<Value>): Promise<SettledResult<Value>> {
@@ -170,10 +170,10 @@ export interface ConversationShareServiceOptions {
   sleep?: (delayMs: number) => Promise<void>;
   zcodeSessionService?: Pick<IZCodeSessionService, "createSession" | "listSessions">;
   download?: (url: string, init?: { signal?: AbortSignal }) => Promise<Response>;
-  /** 单个 artifact 下载的超时（含读 body）；缺省 120s。 */
+  /** Per-artifact download timeout incl. body read; 120s default. */
   downloadTimeoutMs?: number;
   conversationWorkspaceRoot?: string;
-  /** 只由 Desktop Host 注入的 canonical share 页面根地址。 */
+  /** Canonical share-page origin, injected by the desktop host only. */
   shareWebUrl?: string;
   logger?: ServiceLogger;
 }
@@ -186,7 +186,7 @@ type ConversationShareAgentService = Pick<
   | "conversationAttachmentStatV4"
 >;
 
-/** Symbol method 不可由 string-command ProxyChannel 调用，仅供 Desktop Host attachment 装配。 */
+/** Symbol methods are unreachable via string-command ProxyChannels; desktop host assembly only. */
 export const conversationShareConnectionScopeFactory = Symbol(
   "conversationShareConnectionScopeFactory",
 );
@@ -231,8 +231,8 @@ function previewPreflightKey(
 }
 
 /**
- * 导入会话的标题前缀。services 层没有 intl，这里只维护一份最小映射；
- * 前缀在导入时定型并持久化为 session.title（titleSource: "custom"），之后切界面语言不再改写。
+ * Imported-session title prefix. The services layer has no intl, so keep one minimal map;
+ * the prefix fixes at import into session.title (titleSource: "custom") and never rewrites on locale switches.
  */
 const IMPORTED_SHARE_TITLE_PREFIX: Readonly<Record<Locale, string>> = {
   "zh-CN": "来自分享：",
@@ -252,14 +252,14 @@ function localizePublishedShare(
   return shareUrl === share.share_url ? share : { ...share, share_url: shareUrl };
 }
 
-/** 本端产出的只读副本格式版本；与 wire 的 schema_version 各自独立演进。 */
+/** Format version of locally produced read-only snapshots; evolves independently of the wire schema_version. */
 const IMPORTED_CONVERSATION_SHARE_FORMAT_VERSION = 1;
 
 /**
- * 落盘的只读副本形状；来自磁盘，渲染前必须校验。
+ * On-disk read-only snapshot shape; loaded from disk and validated before rendering.
  *
- * formatVersion 与 rows 都刻意宽容：用户在新版导入过会话后回退到旧版时，只读块应该尽量
- * 显示出来（认不出的行跳过 + 顶部软提示），而不是整块静默消失让人以为内容丢了。
+ * formatVersion and rows are deliberately lenient: after importing on a newer version and downgrading, the read-only block should still
+ * render (skip unknown rows plus a soft banner) instead of silently disappearing as if content were lost.
  */
 const importedConversationShareFileSchema = z
   .object({
@@ -317,18 +317,18 @@ function hasUnsupportedArtifactReference(value: unknown): boolean {
 }
 
 /**
- * V1 公开投影承载不了的已定稿内部结构静默移除：删掉不能公开的字段或整行，保留该轮其余
- * 内容，让发布不再被整体打死，也不把内部渲染结构暴露成用户错误。
+ * Finalized internal structure the V1 projection cannot carry is silently reduced: drop non-public fields or whole rows, keep the rest of the turn,
+ * so publishing survives and internal render structures never surface as user errors.
  *
- * 只降级「已定稿但无法承载」的内容；运行中的轮次/行/工具/子代理仍由
- * collectShareStructureIssues 阻断 —— 那些内容尚未定稿，跳过等于分享半成品。
+ * Only finalized-but-unrepresentable content degrades; in-flight turns/rows/tools/subagents still block via
+ * collectShareStructureIssues; that work is unfinished and skipping would publish a half-product.
  */
 function sanitizeUnsupportedShareStructures(rows: readonly ConversationRow[]): ConversationRow[] {
   const sanitized: ConversationRow[] = [];
   for (const row of rows) {
     if (row.kind === "timelineMarker") {
-      // 运行中的 marker 留着，让 collectShareStructureIssues 照旧阻断——内容尚未定稿。
-      // 被阻断的发布不会进入投影，保留该 marker 无副作用。
+      // Keep in-progress markers so collectShareStructureIssues still blocks; that work is not final.
+      // A blocked publish never reaches the projection, so keeping the marker is free.
       const markerRunning =
         (row.marker.type === "compact" && row.marker.status === "running") ||
         (row.marker.type === "goalVerify" && row.marker.outcome === "running");
@@ -341,21 +341,21 @@ function sanitizeUnsupportedShareStructures(rows: readonly ConversationRow[]): C
         row.marker.type === "forkCreated" ||
         row.marker.type === "checkpointRestored"
       ) {
-        // 分支/回滚 marker 只携带本地会话关系，公开页本来就不渲染；直接移除，不能把
-        // 内部时间线结构计入“文件被跳过”或打扰用户。
+        // Branch/rollback markers carry local-only session relations and never render publicly; drop them outright rather than count
+        // internal timeline structures as skipped files or bother the sharer.
         continue;
       }
-      // 其余 marker 静默剥掉，不打扰分享者：
-      // - compact（上下文已压缩）纯运行时记账，对只读读者没有价值；而且它的 lane 是
-      //   assistantWork，留在 flow 尾部会顶掉「最终正文」折叠锚点，让整轮过程默认展开
-      //   （conversationTurnWorkSegments.ts 的 assistantHistoryDefaultOpen）——这是它必须走的主因。
-      // - goalVerify / goalSet / retryNotice 在分享页本来就不渲染，纯占位吃 max_rows 配额。
-      // - modelChange 只能显示一句泛化的「模型已切换」，信息量低且暴露内部切模型行为。
+      // Strip remaining markers silently:
+      // - compact is runtime bookkeeping with no value for read-only readers, and its assistantWork lane
+      //   would displace the final-body collapse anchor and force the whole turn open by default
+      //   (assistantHistoryDefaultOpen in conversationTurnWorkSegments.ts), the main reason it must go.
+      // - goalVerify/goalSet/retryNotice never render on the share page and merely burn max_rows quota.
+      // - modelChange renders only a generic model-switched line: low value, exposes internal switching.
       continue;
     }
     if (row.kind === "toolCall" && row.toolName === "EnterPlanMode") {
-      // EnterPlanMode 只是内部模式切换边界，渲染层（isVisibleAssistantWorkRow）本来就过滤掉，
-      // 但它仍会进 payload 白吃 max_rows / max_payload_bytes 配额，永远不显示。
+      // EnterPlanMode is an internal mode boundary the renderer already filters (isVisibleAssistantWorkRow),
+      // but it still rides in the payload burning max_rows/max_payload_bytes while never showing.
       continue;
     }
     sanitized.push(row);
@@ -436,8 +436,8 @@ function collectShareStructureIssues(
     }
     if (row.kind === "subagent" && row.status === "running") add(row, "active_subagent");
     if (row.kind === "timelineMarker") {
-      // 只有「运行中」的时间线操作仍阻断；fork/checkpoint/compact summaryRef 已由
-      // sanitizeUnsupportedShareStructures 降级为跳过。
+      // Only in-progress timeline operations still block; fork/checkpoint/compact summaryRefs are already
+      // degraded to skips by sanitizeUnsupportedShareStructures.
       if (
         (row.marker.type === "compact" && row.marker.status === "running") ||
         (row.marker.type === "goalVerify" && row.marker.outcome === "running")
@@ -484,7 +484,7 @@ function normalizedMimeType(mime: string): string {
 }
 
 function attachmentDisplayName(fileName: string): string {
-  return basename(fileName.replace(/\\/gu, "/")) || "附件";
+  return basename(fileName.replace(/\\/gu, "/")) || "attachment";
 }
 
 function allowedArtifactFor(
@@ -501,11 +501,11 @@ function allowedArtifactFor(
 }
 
 /**
- * 附件错误分类统一走协议侧稳定 fault 码（见 attachment-faults.ts）。
+ * Attachment error classification keys on stable protocol fault codes (see attachment-faults.ts).
  *
- * 不能按 `error.message` 正则分类：RPC 包装/schema 校验一变就失效——
- * 超大附件的 ZodError 曾因此被误判成「未知」并降级成 deferred，静默丢内容。
- * 仅在 fault 码缺席时保留一条 errno 文本兜底，用于尚未带结构化码的旧 zcode-cli。
+ * Never classify by error.message regexes: any RPC wrapper/schema change breaks them.
+ * An oversized-attachment ZodError once read as unknown, degraded to deferred, and silently dropped content.
+ * Keep one errno-text fallback for fault-code-less legacy zcode-cli builds only.
  */
 function isDefiniteMissingAttachment(error: unknown): boolean {
   const faultCode = readZCodeAttachmentFaultCode(error);
@@ -533,7 +533,7 @@ function isAttachmentAuthorizationError(error: unknown): boolean {
   return /shareStatNotAuthorized|shareReadNotAuthorized|connectionUntrusted/iu.test(message);
 }
 
-/** 附件体积超出协议/通道可承载范围：选择阶段就应作为确定阻断呈现。 */
+/** Attachment over the protocol/channel size budget: a definite block surfaced at selection time. */
 function isAttachmentTooLargeError(error: unknown): boolean {
   const faultCode = readZCodeAttachmentFaultCode(error);
   return (
@@ -570,8 +570,8 @@ function buildTurnPreflightResults(
 }
 
 function removeIndependentArtifactRows(rows: readonly ConversationRow[]): ConversationRow[] {
-  // 文件候选来自用户输入附件和最终可见的 Assistant 预览卡片；内嵌图片随后独立转换。历史 artifact row
-  // 若没有对应预览卡片，不再作为第三条独立发现来源进入公开 projection。
+  // File candidates come from user attachments and final visible assistant preview cards; inline images convert separately. Legacy artifact rows
+  // without a preview card no longer enter the public projection as a third discovery source.
   return rows.filter((row) => row.kind !== "artifact");
 }
 
@@ -644,8 +644,8 @@ function selectRows(
 
   return {
     productTurnIds: orderedProductTurnIds,
-    // 旧投影可能缺 productTurnId；只要 turnId 落在已选轮次也必须保留，让校验显式拒绝，
-    // 不能在过滤时静默丢行后发布一份不完整会话。
+    // Legacy projections may lack productTurnId; keep any turnId inside the selection and let validation reject explicitly
+    // instead of silently dropping rows and publishing an incomplete conversation.
     rows: rows.filter(
       (row) =>
         (row.productTurnId !== undefined && selectedProductTurnIds.has(row.productTurnId)) ||
@@ -678,12 +678,12 @@ export class ConversationShareService implements IConversationShareService {
   private readonly importIndexPath: string;
   private readonly logger: ServiceLogger;
   private readonly publishPhases = new Map<string, ConversationSharePublishProgress["phase"]>();
-  // 选择阶段与发布阶段共享“最终可见卡片”边界；发布仍会重新 stat/read，但不会重新
-  // 纳入选择阶段已经因缺失而被 UI 隐藏的候选。
+  // Selection and publish share the final-visible-card boundary; publish re-stats/reads but never re-admits
+  // candidates the UI already hid as missing during selection.
   //
-  // 生命周期：desktop host 是长驻进程，这张表原来只在 stat 未 settle 时删单条，
-  // 会随使用时长单调增长。现在有两道回收：发布终态按 session 前缀清理，
-  // 以及 set 时的 FIFO 上限兜底（覆盖用户中途放弃分享、永远不发布的路径）。
+  // Lifecycle: the desktop host is long-lived and this table only dropped single entries while stats were pending,
+  // growing forever. Two reclaim paths now: terminal publish cleans by session prefix, and
+  // set enforces a FIFO cap (covering abandoned never-published shares).
   private readonly previewPreflightSnapshots = new Map<
     string,
     ConversationSharePreviewPreflightSnapshot
@@ -711,10 +711,10 @@ export class ConversationShareService implements IConversationShareService {
     this.downloadTimeoutMs = options.downloadTimeoutMs ?? DOWNLOAD_TIMEOUT_MS;
     this.conversationWorkspaceRoot =
       options.conversationWorkspaceRoot ?? getConversationWorkspaceDir();
-    // 兜底写死生产站 https://zcode.z.ai/cn/share，于是测试环境（API base 走
-    // 配置的 ZCode origin）导入后回链仍指向生产站，点分割线打开的是另一个环境的分享。
-    // 改用与 API base 同一个环境解析器（buildRuntimeZCodeApiUrl 也走它），保证同环境。
-    // 优先级不变：显式 option > ZCODE_CONVERSATION_SHARE_WEB_URL > 按环境推导。
+    // The fallback hard-codes the production share URL, so staging (API base from
+    // the configured origin) links back to production and the divider opens another env\x27s share.
+    // Use the same environment resolver as the API base (buildRuntimeZCodeApiUrl) to guarantee env parity.
+    // Precedence unchanged: explicit option > ZCODE_CONVERSATION_SHARE_WEB_URL > environment-derived.
     this.shareWebUrl = (
       options.shareWebUrl ??
       process.env.ZCODE_CONVERSATION_SHARE_WEB_URL ??
@@ -732,12 +732,12 @@ export class ConversationShareService implements IConversationShareService {
     return this.client.getCapabilities();
   }
 
-  /** 写入预检快照，并在超过上限时按插入序淘汰最旧条目（Map 保持插入序）。 */
+  /** Stores a preview snapshot, evicting the oldest-by-insertion entries past the cap (Map keeps insertion order). */
   private setPreviewPreflightSnapshot(
     key: string,
     snapshot: ConversationSharePreviewPreflightSnapshot,
   ): void {
-    // 重新写同一 key 时先删再插，让它回到插入序末尾，淘汰才是真正的「最久未更新」。
+    // Delete-then-set on rewrites so the key moves to the insertion tail and eviction truly means least-recently-updated.
     this.previewPreflightSnapshots.delete(key);
     this.previewPreflightSnapshots.set(key, snapshot);
     while (this.previewPreflightSnapshots.size > PREVIEW_PREFLIGHT_SNAPSHOT_MAX_ENTRIES) {
@@ -747,7 +747,7 @@ export class ConversationShareService implements IConversationShareService {
     }
   }
 
-  /** 分享结束后回收该 workspace+session 的全部预检快照。 */
+  /** Reclaims every preview snapshot for the workspace+session once the share ends. */
   private clearPreviewPreflightSnapshots(
     input: Pick<
       PublishTextConversationInput | ConversationSharePreflightInput,
@@ -832,8 +832,8 @@ export class ConversationShareService implements IConversationShareService {
     });
 
     const turnOrdinalByProductTurnId = turnOrdinalByProductTurn(conversation.rows);
-    // 先把需要 stat 的附件收集齐，再有界并发跑，最后按原顺序分类。
-    // 拆成两轮是为了在拿到远程并发收益的同时，让 issue 的产生顺序与串行实现一致。
+    // Collect the stats needed, run them with bounded concurrency, then classify in the original order.
+    // The two-phase split keeps remote-concurrency speed while matching the serial issue ordering.
     const attachmentChecks: {
       row: Extract<ConversationRow, { kind: "userInput" }> & {
         entityId: string;
@@ -908,12 +908,12 @@ export class ConversationShareService implements IConversationShareService {
       if (settled.ok) {
         const stat = settled.value;
         if (!allowed) {
-          // 即使类型不支持，也必须先完成选择阶段存在性检查；只有存在的附件才展示
-          // artifact_type_not_allowed，避免把已经清理的附件误报成能力问题。
+          // Even for unsupported types, run the selection-phase existence check first; only existing attachments may raise
+          // artifact_type_not_allowed, so cleaned-up files do not read as capability problems.
           //
-          // 类型判定必须排在体积判定之前：不支持的类型根本不会被上传，它的体积
-          // 与分享无关。反过来会把「格式不支持（可跳过）」升级成「体积超限（阻断）」，
-          // 用户被一个压缩也解决不了的错误挡住。
+          // Type checks precede size checks: unsupported types never upload, so their size
+          // is irrelevant. The reverse would escalate "unsupported type (skippable)" into "over limit (blocking)",
+          // stranding users on an error compression cannot fix.
           skippableWarnings.push({
             code: "artifact_type_not_allowed",
             ...baseIssue,
@@ -948,8 +948,8 @@ export class ConversationShareService implements IConversationShareService {
             artifactDisplayName: attachmentDisplayName(attachment.fileName),
           });
         } else if (isAttachmentTooLargeError(error)) {
-          // 附件大到连 stat 都无法表达时，仍然是「已知容量超限」这一确定阻断，
-          // 绝不能降级成 deferred —— 那会让发布悄悄丢掉这个附件。
+          // When a file is too large for stat to express, it is still a definite over-limit block,
+          // never deferred, or publish would silently drop the file.
           blockingIssues.push({
             code: "artifact_size_limit",
             ...baseIssue,
@@ -1017,7 +1017,7 @@ export class ConversationShareService implements IConversationShareService {
       capabilities,
       registeredProjection.artifacts,
     ).map((issue) => {
-      // 内嵌图片的容量问题必须带轮次定位，否则拆分 turn 缓存时会漏掉文件级阻断。
+      // Inline-image capacity issues must carry the turn, or per-turn caches lose the file-level block.
       const row = selectedRows.find(
         (candidate) =>
           candidate.kind === "artifact" && candidate.displayName === issue.artifactDisplayName,
@@ -1102,8 +1102,8 @@ export class ConversationShareService implements IConversationShareService {
       const visibleCandidates: ConversationPreviewArtifactCandidate[] = [];
       const previewCanonicalPaths = new Set<string>();
       let previewStatSettled = this.artifactSource.stat !== undefined;
-      // stat 并发发起，判定仍按候选原顺序进行：去重和可见卡片上限都依赖顺序，
-      // 而每次 stat 在远程 workspace 下都是一次往返。
+      // Stats run concurrently but decisions stay in candidate order: dedupe and the visible-card cap depend on it,
+      // and every stat is a round trip on remote workspaces.
       const artifactSourceStat = this.artifactSource.stat;
       const candidateStats = artifactSourceStat
         ? await mapWithConcurrency(candidates, SHARE_PREFLIGHT_STAT_CONCURRENCY, (candidate) =>
@@ -1128,8 +1128,8 @@ export class ConversationShareService implements IConversationShareService {
           allowedArtifacts: supportedArtifactTypes,
         } satisfies Omit<ConversationShareFailureIssue, "code">;
 
-        // 先检查候选上限内的全部路径，再从存在的路径里取 UI 同样的可见卡片上限。
-        // 这样不会因为前面几个文件存在就漏掉后续候选的存在性检查。
+        // Check every path within the candidate cap first, then apply the UI\x27s visible-card cap over the existing ones.
+        // Otherwise early hits would skip existence checks for later candidates.
         const settled = candidateStats[candidateIndex];
         if (!settled) {
           previewStatSettled = false;
@@ -1145,7 +1145,7 @@ export class ConversationShareService implements IConversationShareService {
           previewCanonicalPaths.add(settled.value.canonicalPath);
         } else {
           if (isMissingArtifactReadError(settled.error)) {
-            // Assistant 预览文件已不存在时，UI 也不会显示这张卡片，因此不产生 Share warning。
+            // When the assistant preview file is gone the UI hides the card anyway, so no share warning.
             continue;
           }
           previewStatSettled = false;
@@ -1243,7 +1243,7 @@ export class ConversationShareService implements IConversationShareService {
     });
   }
 
-  /** Host attachment 内部 facade：复用同一业务 service，只替换 V4 Rows/File 查询的可信 Agent scope。 */
+  /** Host-attachment internal facade: same service, with only the trusted agent scope of V4 row/file queries swapped. */
   [conversationShareConnectionScopeFactory](
     agentService: ConversationShareAgentService,
   ): IConversationShareService {
@@ -1275,14 +1275,14 @@ export class ConversationShareService implements IConversationShareService {
   }
 
   /**
-   * 下载单个 artifact 的字节：带单请求超时（含读 body）与 Content-Length 预检。
+   * Downloads one artifact: per-request timeout (incl. body) plus a Content-Length precheck.
    *
-   * download 兜底不能是裸 fetch（无 AbortSignal），且 size/SHA-256 校验不能在
-   * arrayBuffer() 之后才执行——挂住的连接会让导入无限停在 downloading 阶段（undici 默认
-   * ~300s 兜底，体验上等于卡死）；被篡改的存储还能让客户端先把超大 payload 全量读进内存
-   * 再发现不符。超时按 network 失败；Content-Length 声明超过 manifest 的 size_bytes 时
-   * 在读 body 前直接判 integrity 失败并中断连接——完整性校验放在无界下载之后只保证
-   * 正确性，不保护客户端资源。
+   * The fallback cannot be bare fetch (no AbortSignal), and size/SHA-256 checks must not wait until after
+   * arrayBuffer(): a hung connection parks import in downloading (undici defaults to ~300s,
+   * reads as frozen), and tampered storage would pull the whole oversized payload into memory
+   * before the mismatch shows. Timeouts fail as network; when Content-Length exceeds the manifest size_bytes,
+   * fail integrity and close before reading the body; checking after an unbounded download protects
+   * correctness only, not client resources.
    */
   private async downloadArtifactBytes(
     artifact: ConversationShareContinuation["artifacts"][number],
@@ -1314,7 +1314,7 @@ export class ConversationShareService implements IConversationShareService {
       }
       const declaredBytes = Number(response.headers.get("content-length"));
       if (Number.isFinite(declaredBytes) && declaredBytes > artifact.size_bytes) {
-        // body 已确定不会通过校验：先中断连接再抛错，不把超大响应读进内存。
+        // The body cannot pass validation: close the connection before throwing instead of buffering the oversized response.
         controller.abort();
         throw new ConversationShareServiceError(
           "invalid_contract",
@@ -1405,9 +1405,9 @@ export class ConversationShareService implements IConversationShareService {
     if (!this.zcodeSessionService) {
       throwServiceError("feature_disabled", "Conversation share import is unavailable");
     }
-    // 两个摘要已在 ConversationShareHttpClient.getContinuation 里对服务端原样发来的值复核过。
-    // 不能在这里拿解析产物重算：zod 默认剥掉未知字段，那样发布端加一个 optional 字段就会让
-    // 所有老客户端算出不同的哈希，把纯 additive 的演进误报成「分享文件校验失败」。
+    // Both digests were verified against server-verbatim values in ConversationShareHttpClient.getContinuation.
+    // Never recompute from parsed output: zod strips unknown keys, so one added optional field would give
+    // every old client a different hash and misreport additive evolution as "share file verification failed".
     const continuation = await this.getContinuation(input);
 
     const remoteTarget =
@@ -1427,9 +1427,9 @@ export class ConversationShareService implements IConversationShareService {
     const importId = randomUUID();
     const contextId = `shared-context-${randomUUID()}`;
     const sessionId = `share-import-${randomUUID()}`;
-    // 这个 URL 会进持久化的 provenance 与 sharedContextImport 快照，而
-    // sharedContextImportV2StateSchema 只接受规范的 /cn/share/<code>；durable 记录也不该
-    // 存随界面语言变化的值（用户之后切语言，存的就错了）。本地化只在展示时做。
+    // This URL lands in persisted provenance and sharedContextImport snapshots, and
+    // sharedContextImportV2StateSchema accepts only canonical /cn/share/<code>; durable records also
+    // should not store locale-dependent values. Localize at display time only.
     const shareUrl = `${this.shareWebUrl}/${encodeURIComponent(input.shareCode)}`;
     await mkdir(shareRoot, { recursive: true });
     try {
@@ -1464,10 +1464,10 @@ export class ConversationShareService implements IConversationShareService {
         await rm(importRoot, { recursive: true, force: true });
       }
     } catch {
-      // 没有 marker 或 marker 不完整时继续创建；非本次 share 的目录不会被删除。
+      // Create on when the marker is missing or partial; directories from other shares are never removed.
     }
-    // 语义是「失败时是否还允许删 importRoot」，不是「我创建了它」：session 一旦提交
-    // 就必须解除武装（见下方 createSession 之后）。
+    // The flag means "may still remove importRoot on failure", not "I created it": once the session commits
+    // cleanup must be disarmed (see after createSession below).
     let importRootCleanupArmed = false;
     try {
       await mkdir(importRoot);
@@ -1551,13 +1551,13 @@ export class ConversationShareService implements IConversationShareService {
             },
           );
         }
-        // content-type 不一致不能直接判 invalid_contract，否则 .md 一律导入失败——
-        // 对象存储/CDN 按自己的规则给下载打标签（.md 常被标成 text/plain 或
-        // application/octet-stream），与发布时的 mime_type 无关。
+        // A content-type mismatch must not fail import as invalid_contract or every .md breaks:
+        // object storage/CDNs label downloads by their own rules (.md often becomes text/plain or
+        // application/octet-stream), regardless of the published mime_type.
         //
-        // 而到这一行字节已经通过 size + SHA-256 校验，且清单本身由 artifact_set_sha256 覆盖，
-        // 所以 artifact.mime_type 才是权威值，响应头不提供任何额外完整性保证——
-        // 拿它当门禁只会造成误拒。这里降级为记录，不再阻断。
+        // By this point bytes passed size + SHA-256 and the manifest is covered by artifact_set_sha256,
+        // so artifact.mime_type is authoritative and headers add no integrity guarantee;
+        // gating on them only causes false rejections. Downgrade to a recorded note, non-blocking.
         if (
           responseMimeType &&
           responseMimeType.toLowerCase() !== artifact.mime_type.toLowerCase()
@@ -1613,11 +1613,11 @@ export class ConversationShareService implements IConversationShareService {
         "utf8",
       );
       await rename(stagingPath, finalArtifactsPath);
-      // 只读块要能永久离线打开：分享可能过期或尚未上线，渲染时不能回源，
-      // 所以把公开 rows 与结果物元数据一起落在 importRoot 内，随失败清理一起删除。
+      // The read-only block must open offline forever: shares expire or predate launch, so rendering never refetches;
+      // store public rows plus artifact metadata under importRoot, removed with failure cleanup.
       //
-      // 写 rawRows 而不是解析产物：本端认不出的行和字段照样存下来，用户升级之后就能看到，
-      // 不会因为导入当天的版本较旧而被永久抹掉。
+      // Persist rawRows, not parse output: unknown rows/fields survive so a later upgrade reveals them
+      // instead of being lost to the importing version.
       await writeFile(
         conversationPath,
         JSON.stringify({
@@ -1643,7 +1643,7 @@ export class ConversationShareService implements IConversationShareService {
         installedArtifacts,
       });
       if (context.unsupportedKinds.length > 0) {
-        // 模型侧 shared_context 少了内容：不阻断导入，但必须留痕。
+        // The model-side shared_context is missing content: import continues, but leave a trace.
         this.logger.info(undefined, "shared context skipped row kinds this build cannot format", {
           kinds: context.unsupportedKinds,
         });
@@ -1677,9 +1677,9 @@ export class ConversationShareService implements IConversationShareService {
         persistence: "immediate",
         importedHistory: {
           source: "sharedContext",
-          // 会话标题加前缀，让导入的会话在任务列表里一眼可识别。
-          // 注意 UI 侧没有任何地方读 sharedContextImport.title（只读 contextId/status/shareUrl），
-          // 所以前缀不会污染展示；CLI 已直接用 importedHistory.title 写 session.title。
+          // Prefix the session title so imports stand out in the task list.
+          // Nothing in the UI reads sharedContextImport.title (only contextId/status/shareUrl),
+          // so the prefix never leaks into displays; the CLI writes session.title from importedHistory.title directly.
           title: formatImportedShareSessionTitle(continuation.share.title, input.locale),
           markdown: context.markdown,
           provenance: {
@@ -1698,10 +1698,10 @@ export class ConversationShareService implements IConversationShareService {
           },
         },
       });
-      // session 已提交，且它的 provenance 引用 importRoot 里已安装的
-      // artifacts。此后 marker 清理或进度上报一旦抛错，旧的 catch 会 rm -rf importRoot，
-      // 用户就拿到一个引用缺失文件的会话。失败半径必须止于 createSession 之前，
-      // 所以这里立刻解除清理武装；marker 是纯痕迹文件，删不掉也不该让导入失败。
+      // The session is committed and its provenance references artifacts installed under importRoot.
+      // From here, a throw in marker cleanup or progress reporting hits the old catch and rm -rf importRoot,
+      // leaving a session with missing files. The failure radius must end at createSession,
+      // so disarm cleanup immediately; the marker is a pure trace and its removal never fails the import.
       importRootCleanupArmed = false;
       await rm(markerPath, { force: true }).catch(() => undefined);
       this.reportImportProgress(
@@ -1725,8 +1725,8 @@ export class ConversationShareService implements IConversationShareService {
             : { fallbackReason: "default_workspace" as const }),
       };
     } catch (error) {
-      // 导入改为落在现有 workspace 后，删除 workspace 根目录会损坏用户项目；
-      // 失败清理只能触及本次 import-owned 子目录。
+      // Since imports land in existing workspaces, deleting the workspace root would corrupt user projects;
+      // failure cleanup may only touch import-owned subdirectories.
       if (importRootCleanupArmed) {
         await rm(importRoot, { recursive: true, force: true }).catch(() => undefined);
       }
@@ -1735,11 +1735,11 @@ export class ConversationShareService implements IConversationShareService {
   }
 
   /**
-   * 按 contextId 找回导入时落盘的公开 rows。
+   * Recovers the persisted public rows for a contextId.
    *
-   * 目录名用的是 share_id 而不是 contextId（二者不等价），所以扫 .zcode-share/ 下各
-   * importRoot 并比对文件内的 contextId —— 不额外维护索引，历史导入也能被读到。
-   * 内容来自磁盘，属跨存储边界，必须过 schema 再交给渲染层。
+   * Directory names use share_id, not contextId (not equivalent), so scan each importRoot under .zcode-share/
+   * and match the in-file contextId; no side index, so historical imports stay readable.
+   * Content comes from disk across a storage boundary; validate against the schema before rendering.
    */
   async getImportedConversation(input: {
     workspacePath: string;
@@ -1765,8 +1765,8 @@ export class ConversationShareService implements IConversationShareService {
       const validated = importedConversationShareFileSchema.safeParse(parsed);
       if (!validated.success || validated.data.contextId !== input.contextId) continue;
       const decoded = decodeConversationShareRows(validated.data.rows);
-      // formatVersion 比本端新（用户在新版导入后回退到旧版）时，认不出的行照样计入
-      // unsupportedRowCount，让 UI 出软提示——不能静默少内容。
+      // When formatVersion is newer than this build (imported on newer, downgraded after), unknown rows still count into
+      // unsupportedRowCount so the UI shows the soft banner; content must never vanish silently.
       const unsupportedRowCount =
         decoded.unsupportedCount +
         (validated.data.formatVersion > IMPORTED_CONVERSATION_SHARE_FORMAT_VERSION ? 1 : 0);
@@ -1850,11 +1850,11 @@ export class ConversationShareService implements IConversationShareService {
   }
 
   private persistCompletedImportIndex(): Promise<void> {
-    // 链条原来不 catch，首个写入失败后 importIndexWriteChain 永久 rejected，
-    // 之后每一次 persist 都变成静默 no-op（调用点还 .catch(() => undefined) 吞掉）。
-    // 索引一丢就没有恢复源（marker 在成功时已删），再导入同一 share 会撞 mkdir EEXIST
-    // 而永久报 "already in progress"。修法：存起来的链条始终 resolved，只用来串行化；
-    // 返回值保持可观测，让调用方自己决定是否吞掉本次失败。
+    // The chain never caught, so the first write failure left importIndexWriteChain rejected forever and
+    // every later persist became a silent no-op (call sites swallow via .catch(() => undefined)).
+    // A lost index has no recovery source (the marker deletes on success), so re-importing hits mkdir EEXIST
+    // and reports "already in progress" forever. Fix: the stored chain stays resolved and only serializes;
+    // the returned promise stays observable so callers decide whether to swallow this failure.
     const run = this.importIndexWriteChain
       .catch(() => undefined)
       .then(() => this.writeCompletedImportIndexOnce());
@@ -1883,8 +1883,8 @@ export class ConversationShareService implements IConversationShareService {
         operationId,
         phase: "complete",
       });
-      // 发布成功即本次分享结束，该 session 的预检快照不再有消费者：立刻回收，
-      // 否则长生命周期的 desktop host 会无限累积 workspace+session+turn 条目。
+      // A successful publish ends the share; the session\x27s preview snapshots have no readers left, so reclaim now
+      // or the long-lived desktop host accumulates workspace+session+turn entries forever.
       this.clearPreviewPreflightSnapshots(input);
       return result;
     } catch (rawError) {
@@ -1970,8 +1970,8 @@ export class ConversationShareService implements IConversationShareService {
 
     const conversation = await this.loadAllRows(input, agentService);
     const selected = selectRows(conversation.rows, input.selection);
-    // 无法公开承载的已定稿结构先降级：删字段或丢整行，换成非阻断提示，
-    // 后续所有投影与产物发现都基于这份 sanitized rows。
+    // Degrade finalized structures the projection cannot carry first: drop fields/rows into non-blocking notes;
+    // every later projection and artifact discovery works from these sanitized rows.
     const inlineImages = materializeConversationShareInlineImages(
       removeIndependentArtifactRows(sanitizeUnsupportedShareStructures(selected.rows)),
       capabilities,
@@ -1987,8 +1987,8 @@ export class ConversationShareService implements IConversationShareService {
       ...inlineImages.warnings,
       ...artifactSanitized.warnings,
     ];
-    // 修复原因：此前公开投影遇到第一个不支持结构就直接退出，用户无法知道还有哪些轮次需要取消；
-    // 现在先完成整组选中内容的结构预检，返回脱敏 issues 让 UI 给出逐项可操作建议。
+    // Fix: the projection used to bail on the first unsupported structure, leaving users blind to remaining turns;
+    // now the whole selection preflights and returns sanitized issues so the UI can offer per-item actions.
     const structureIssues = collectShareStructureIssues(selectedRows, conversation.rows);
     if (structureIssues.length > 0) {
       const structureKind = structureIssues.some(
@@ -2004,8 +2004,8 @@ export class ConversationShareService implements IConversationShareService {
         { issues: structureIssues },
       );
     }
-    // 本地运行投影包含 subagent 详情与写入态 ID，后端 V1 会以 3205 拒绝；
-    // confirm 前必须先生成独立的公开投影，不能直接发送选中的本地 rows。
+    // Local-run projections carry subagent details and write-state ids that backend V1 rejects with 3205;
+    // build the public projection before confirm instead of sending local rows verbatim.
     const registeredProjection = buildConversationSharePublicProjection({
       rows: selectedRows,
       selectedProductTurnIds: selected.productTurnIds,
@@ -2043,8 +2043,8 @@ export class ConversationShareService implements IConversationShareService {
       publishWarnings.push(...artifactSnapshot.warnings);
     }
     if (publishWarnings.length > 0) {
-      // 非阻断：正文引用的文件或用户输入附件无法物化时，发布照常继续，但要让分享者
-      // 知道哪些真实文件没有进入链接；内部 marker 已移除，内嵌图片已转换为 artifact。
+      // Non-blocking: when referenced files or user attachments cannot materialize, publish proceeds but the sharer
+      // learns which real files missed the link; internal markers are stripped and inline images already converted.
       report("collecting", 0, 0, sanitizeConversationShareIssues(publishWarnings));
     }
     const publicProjection = buildConversationSharePublicProjection({
@@ -2160,8 +2160,8 @@ export class ConversationShareService implements IConversationShareService {
     report("checking", uploadedArtifacts, publicProjection.artifacts.length);
     const share = await this.confirmUntilReady(preparation.preparation_id, confirmRequest);
     report("complete", uploadedArtifacts, publicProjection.artifacts.length);
-    // 服务端目前不接收 locale，只能把下发的链接改写到界面语言对应的站点；
-    // localizeConversationShareUrl 只认已知分享路径形状，其它形状原样保留。
+    // The server takes no locale, so rewrite the issued link to the UI locale\x27s site;
+    // localizeConversationShareUrl only rewrites known share path shapes, leaving others verbatim.
     return localizePublishedShare(share, input.locale);
   }
 
@@ -2208,8 +2208,8 @@ export class ConversationShareService implements IConversationShareService {
   private async cleanupAbandonedImports(): Promise<void> {
     if (!this.zcodeSessionService) return;
     await this.completedImportsLoaded;
-    // 只扫描默认 conversation workspace 的 import-owned 子目录；其它 workspace 的 marker
-    // 在下一次带 target 的导入请求中处理，避免启动期枚举并触碰用户项目目录。
+    // Scan only import-owned subdirectories of the default conversation workspace; other workspaces\x27 markers
+    // wait for the next targeted import instead of enumerating user project dirs during startup.
     const shareRoot = join(this.conversationWorkspaceRoot, ".zcode-share");
     const imports = await readdir(shareRoot, { withFileTypes: true }).catch(() => []);
     for (const entry of imports) {
@@ -2267,11 +2267,11 @@ export class ConversationShareService implements IConversationShareService {
           }
           await rm(markerPath, { force: true });
         } else {
-          // 只删除带合法 marker 且没有匹配 session 的本次 importRoot。
+          // Remove only this importRoot: valid marker present and no matching session.
           await rm(importRoot, { recursive: true, force: true });
         }
       } catch {
-        // 无法证明 session 状态时保留 importRoot，禁止把暂时性错误升级为数据删除。
+        // Keep importRoot when session state is unproven; transient errors never escalate to deletion.
       }
     }
   }
@@ -2391,8 +2391,8 @@ export class ConversationShareService implements IConversationShareService {
         lastStatus = error.status ?? lastStatus;
         lastCode = error.code ?? lastCode;
 
-        // 3215 是后端安全检查的非终态，同一 preparation/DTO 必须串行重试；
-        // 不能重新 prepare，也不能无限等待。
+        // 3215 is a non-terminal security-check state: retry the same preparation/DTO serially;
+        // never re-prepare, never wait forever.
         const currentTime = this.now();
         deadline ??= currentTime + this.confirmPollTimeoutMs;
         const remainingMs = deadline - currentTime;

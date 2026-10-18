@@ -47,7 +47,8 @@ describe("Skill integration", () => {
     });
 
     const result = builder.build();
-    const system = result.systemMessages.find((message) => message.role === "system")?.content ?? "";
+    const system =
+      result.systemMessages.find((message) => message.role === "system")?.content ?? "";
     const skillReminder =
       result.metaUserAttachments.find((attachment) => attachment.source === "skills_listing")
         ?.content ?? "";

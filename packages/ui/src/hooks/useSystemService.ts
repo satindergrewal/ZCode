@@ -1,5 +1,5 @@
 /**
- * useSystemService —— 系统服务 hooks
+ * useSystemService: system-service hooks.
  */
 import { useState, useEffect, useCallback, useRef } from "react";
 import type {
@@ -38,10 +38,7 @@ function normalizeRequiredSuccessCountForStableKey(
     return 1;
   }
 
-  if (
-    typeof requiredSuccessCount !== "number" ||
-    !Number.isFinite(requiredSuccessCount)
-  ) {
+  if (typeof requiredSuccessCount !== "number" || !Number.isFinite(requiredSuccessCount)) {
     return 1;
   }
 
@@ -83,10 +80,8 @@ function normalizeProbeTargetForStableKey(target: IntranetProbeTarget) {
   };
 }
 
-/** 生成 request 的稳定 key，避免调用方传 inline object 时因引用变化导致重复自动探测 */
-export function createIntranetProbeRequestStableKey(
-  request: IntranetProbeRequest | null,
-): string {
+/** Stable request key so inline-object props do not retrigger probes per render. */
+export function createIntranetProbeRequestStableKey(request: IntranetProbeRequest | null): string {
   if (!request) {
     return "null";
   }
@@ -102,12 +97,12 @@ export function createIntranetProbeRequestStableKey(
   });
 }
 
-/** 只允许最后一次探测写回，防止并发请求乱序覆盖新状态 */
+/** Last-probe-wins writeback; no out-of-order overwrites. */
 export function shouldApplyIntranetProbeRunResult(runId: number, latestRunId: number): boolean {
   return runId === latestRunId;
 }
 
-/** 获取系统信息，自带 loading/error/refresh 状态管理 */
+//** Get system info with loading/error/refresh. */
 export function useSystemInfo() {
   const { systemService } = useServices();
   const [info, setInfo] = useState<SystemInfo | null>(null);
@@ -139,7 +134,7 @@ interface UseIntranetProbeOptions {
   autoProbe?: boolean;
 }
 
-/** 探测当前运行环境是否满足内网判定条件 */
+/** Probe whether this environment satisfies the intranet rules. */
 export function useIntranetProbe(
   request: IntranetProbeRequest | null,
   options: UseIntranetProbeOptions = {},
@@ -156,8 +151,8 @@ export function useIntranetProbe(
   const requestStableKey = createIntranetProbeRequestStableKey(request);
 
   const probeNow = useCallback(async () => {
-    // 并发探测需要代际控制，否则先发起的请求可能晚返回并覆盖新状态。
-    // 这里用 runId 守卫，只允许最新一次探测落库，避免 isIntranet 在网络抖动时来回闪烁。
+    // Concurrent probes need generations: a slow first request could overwrite newer state.
+    // runId guards the write so isIntranet never flickers on network jitter.
     const runId = latestProbeRunIdRef.current + 1;
     latestProbeRunIdRef.current = runId;
     const latestRequest = latestRequestRef.current;
@@ -185,7 +180,7 @@ export function useIntranetProbe(
         return null;
       }
       setError(normalizedError);
-      logger.warn("[IntranetProbe] 内网探测失败", normalizedError);
+      logger.warn("[IntranetProbe] intranet probe failed", normalizedError);
       return null;
     } finally {
       if (shouldApplyIntranetProbeRunResult(runId, latestProbeRunIdRef.current)) {
@@ -199,9 +194,9 @@ export function useIntranetProbe(
       return;
     }
 
-    // 自动探测不能依赖 request 对象引用：调用方传 inline object 时，每次 render 都会变引用，
-    // 使 effect 持续重探测。因此 probeNow 通过 ref 读取最新 request，并保持自身引用稳定；
-    // effect 使用 requestStableKey 感知内容变化，避免仅引用变化就触发自动探测。
+    // Auto-probe never keys off the request object: inline objects change identity per render
+    // and would loop the effect. probeNow reads the latest request via a stable ref;
+    // the effect watches requestStableKey so only content changes retrigger.
     void probeNow();
   }, [autoProbe, enabled, probeNow, requestStableKey]);
 

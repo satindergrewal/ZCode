@@ -76,10 +76,15 @@ function optionalString(value: unknown, field: string, index: number): string | 
 function normalizeOperations(value: unknown, index: number): readonly StorageFsFaultOperation[] {
   if (value === undefined) return ["any"];
   if (!Array.isArray(value) || value.length === 0) {
-    throw new Error(`Invalid fs fault rule at index ${index}: operations must be a non-empty array`);
+    throw new Error(
+      `Invalid fs fault rule at index ${index}: operations must be a non-empty array`,
+    );
   }
   return value.map((operation) => {
-    if (typeof operation !== "string" || !SUPPORTED_OPERATIONS.has(operation as StorageFsFaultOperation)) {
+    if (
+      typeof operation !== "string" ||
+      !SUPPORTED_OPERATIONS.has(operation as StorageFsFaultOperation)
+    ) {
       throw new Error(
         `Invalid fs fault rule at index ${index}: unsupported operation ${String(operation)}`,
       );
@@ -92,7 +97,9 @@ function normalizeRule(rule: StorageFsFaultRule, index: number): NormalizedStora
   const record = rule as unknown as Record<string, unknown>;
   const maxMatches = record.maxMatches === undefined ? 1 : record.maxMatches;
   if (typeof maxMatches !== "number" || !Number.isInteger(maxMatches) || maxMatches < 0) {
-    throw new Error(`Invalid fs fault rule at index ${index}: maxMatches must be a non-negative integer`);
+    throw new Error(
+      `Invalid fs fault rule at index ${index}: maxMatches must be a non-negative integer`,
+    );
   }
   const pathRegexRaw = optionalString(record.pathRegex, "pathRegex", index);
 
@@ -131,14 +138,19 @@ function parseRules(rawValue: string): StorageFsFaultRule[] {
   });
 }
 
-function operationMatches(rule: NormalizedStorageFsFaultRule, operation: StorageFsFaultOperation): boolean {
+function operationMatches(
+  rule: NormalizedStorageFsFaultRule,
+  operation: StorageFsFaultOperation,
+): boolean {
   return rule.operations.has("any") || rule.operations.has(operation);
 }
 
 function pathMatches(rule: NormalizedStorageFsFaultRule, path: string): boolean {
   const normalizedPath = normalizePath(path);
-  const includes = rule.pathIncludes === undefined || normalizedPath.includes(normalizePath(rule.pathIncludes));
-  const endsWith = rule.pathEndsWith === undefined || normalizedPath.endsWith(normalizePath(rule.pathEndsWith));
+  const includes =
+    rule.pathIncludes === undefined || normalizedPath.includes(normalizePath(rule.pathIncludes));
+  const endsWith =
+    rule.pathEndsWith === undefined || normalizedPath.endsWith(normalizePath(rule.pathEndsWith));
   const regex = rule.pathRegex === undefined || rule.pathRegex.test(normalizedPath);
   return includes && endsWith && regex;
 }

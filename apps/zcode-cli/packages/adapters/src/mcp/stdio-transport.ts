@@ -33,9 +33,7 @@ type ProcessTreeStdioServerParameters = StdioServerParameters & {
 };
 
 export interface ProcessTreeStdioClientTransportOptions {
-  windowsJobObjectFactory?: (
-    pid: number,
-  ) => Promise<WindowsJobObjectController | undefined>;
+  windowsJobObjectFactory?: (pid: number) => Promise<WindowsJobObjectController | undefined>;
 }
 
 /**

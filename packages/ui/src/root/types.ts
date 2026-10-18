@@ -30,7 +30,7 @@ export interface WebRemoteControlWorkspaceSwitcherApi {
     workspaceKey: string,
     options?: WebRemoteControlWorkspaceSwitchOptions,
   ): Promise<void>;
-  /** 手机任务首页确认用户查看了当前 bridge 内的未读 task；桌面任务选择链路不使用。 */
+  /** Phone task home confirms the user saw unread tasks in the current bridge; unused by desktop task selection. */
   markTaskRead?(task: WebRemoteControlTaskTarget): Promise<void>;
   updateMobileViewState?(workspaceKey: string, taskId?: string): Promise<void>;
   reconnectWorkspace?(workspaceKey: string): Promise<void>;
@@ -43,47 +43,47 @@ export interface WebRemoteControlWorkspaceSwitcherApi {
 export interface RootProps {
   services: IServiceAccessor;
   platform: IPlatformService;
-  /** 如果从 main 进程传入则跳过项目选择页 */
+  /** Skips the project picker when passed from the main process. */
   initialWorkspaceAbsPath?: string;
-  /** app-owned workspace 展示分类；缺省为真实项目。 */
+  /** App-owned workspace display kind; defaults to a real project. */
   initialWorkspacePurpose?: import("@zcode/shared").WorkspacePurpose;
-  /** 桌面启动时精确 active 的本地 workspace 不可用；仅用于本次 renderer 生命周期。 */
+  /** The desktop-startup exactly-active local workspace was unavailable; this renderer session only. */
   unavailableWorkspacePath?: string;
-  /** 初始 workspace 的身份隔离键，远程工作区需要透传 */
+  /** Identity isolation key of the initial workspace; required for remote workspaces. */
   initialWorkspaceIdentity?: string;
-  /** 初始要打开的 task，从全局 task 列表进入时透传 */
+  /** Initial task to open, passed when entering from the global task list. */
   initialTaskId?: string;
-  /** Electron renderer 传 true，用于启用自绘标题栏 */
+  /** True in the Electron renderer; enables the custom title bar. */
   isDesktop?: boolean;
-  /** macOS 桌面端需要给红绿灯按钮预留安全区 */
+  /** macOS desktop reserves safe space for the traffic lights. */
   isMacDesktop?: boolean;
-  /** Windows 桌面端需要展示更准确的资源管理器文案 */
+  /** Windows desktop needs more precise Explorer copy. */
   isWindowsDesktop?: boolean;
-  /** 是否恢复上次关闭时的标签页，首个窗口 true，新窗口 false */
+  /** Restore tabs closed last session; true for the first window, false for new ones. */
   restoreSession?: boolean;
-  /** 是否允许访问本地设置服务，远程窗口 false */
+  /** Whether the local settings service is reachable; false in remote windows. */
   supportsSettings?: boolean;
-  /** 是否允许在当前壳层里切换/新开工作区 */
+  /** Whether this shell may switch or add workspaces. */
   allowOpenWorkspace?: boolean;
-  /** 是否优先使用服务端目录浏览器，Web 普通模式不能依赖系统目录选择框 */
+  /** Prefer the server directory browser; plain web cannot rely on the system picker. */
   preferDirectoryBrowser?: boolean;
-  /** 是否支持 Electron 内嵌浏览器 side pane，默认仅桌面端支持 */
+  /** Whether the Electron embedded-browser side pane is supported (desktop only by default). */
   supportsEmbeddedBrowser?: boolean;
-  /** 是否启用远程工作区能力，Web 普通模式先只支持本地 server 工作区 */
+  /** Whether remote workspaces are enabled; plain web starts local-server-only. */
   allowRemoteWorkspace?: boolean;
-  /** Web 远程控制模式下的已打开 workspace 切换入口 */
+  /** Switcher for already-open workspaces in web remote control mode. */
   webRemoteControlWorkspaceSwitcher?: WebRemoteControlWorkspaceSwitcherApi;
-  /** Web 远控跨 workspace 点击任务后的单次移动端落点 */
+  /** One-shot mobile destination after a cross-workspace task click in web remote. */
   initialWebRemoteControlMobileNavigationIntent?: WebRemoteControlMobileNavigationIntent;
-  /** Web 远控没有可 bridge workspace 时，手机首页预先拿到的 workspace/task 列表 */
+  /** Workspaces/tasks prefetched for the phone home when no bridgeable workspace exists. */
   initialWebRemoteControlWorkspaceList?: WebRemoteControlWorkspaceListResult;
-  /** Web 远控手机端 relay terminal transport 状态，用于已进入页面后的轻量恢复提示 */
+  /** Relay terminal transport state for phone web remote; drives the light recovery hint after entry. */
   webRemoteControlTerminalTransportState?: WebRemoteControlTerminalTransportState;
-  /** 手机 Web 远控初始 workspace 注入前继续展示的入口 loading，桌面端不使用 */
+  /** Entry loading kept until the phone web-remote initial workspace is injected; unused on desktop. */
   initialWorkspaceLoadingFallback?: ReactNode;
-  /** Web 远程控制入口能力开关；默认只在 development 启用 */
+  /** Web remote control entry flag; development-only by default. */
   webRemoteControlFeatureEnabled?: boolean;
-  /** Assistant code-comment 卡片灰度；默认关闭，关闭时保留原始 directive。 */
+  /** Assistant code-comment card rollout; off keeps the raw directive. */
   assistantCodeCommentCardsEnabled?: boolean;
 }
 

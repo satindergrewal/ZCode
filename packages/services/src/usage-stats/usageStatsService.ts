@@ -67,17 +67,14 @@ export function createUsageStatsService(
       ? { officialMcpCredentialSource: dependencies.officialMcpCredentialSource }
       : {}),
   });
-  const regularTpsCache = new Map<
-    string,
-    { expiresAt: number; value: number | undefined }
-  >();
+  const regularTpsCache = new Map<string, { expiresAt: number; value: number | undefined }>();
   const regularTpsInFlight = new Map<string, Promise<number | undefined>>();
 
   function regularTpsCacheKey(request: CodingPlanRegularTpsRequest): string {
     return JSON.stringify([
       request.preferredProviderId,
-      // Team scope（organizationId/projectId）已内含在 accountAccess 里，整体入 key，
-      // 避免同一 provider 下不同账号或不同团队项目共用同一条 TPS 缓存。
+      // Team scope (organizationId/projectId) is inside accountAccess; key on the whole thing so
+      // sibling accounts/team projects never share one TPS cache entry.
       request.accountAccess,
       request.timeZone ?? null,
     ]);

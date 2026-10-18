@@ -1,4 +1,4 @@
-// 数组、只读数组、元组（定长/可选/rest）、Record → additionalProperties。
+// Arrays, readonly arrays, tuples (fixed/optional/rest), Records -> additionalProperties.
 interface Collections {
   tags: string[];
   frozen: readonly number[];

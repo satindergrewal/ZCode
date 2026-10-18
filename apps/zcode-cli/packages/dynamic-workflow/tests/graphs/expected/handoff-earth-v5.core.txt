@@ -1,30 +1,30 @@
-actor actor#1 "architect" @43:19 order=3
-ask ask#1 "architect" @44:34 order=4 type="Contract"
-actor actor#2 "harness" @48:17 order=6
-join join#1 "join" @50:39 order=7 type="[BuildReport, ...BuildReport[]]" ports="BuildReport","BuildReport"
-ask ask#2 "harness" @51:11 order=8 type="BuildReport"
-fan-out fan-out#1 "fan-out" @52:6 order=9 count=5 type="BuildReport[]"
-ask ask#3 "ask" head="builder-" @52:45 order=10 within=fan-out#1 type="BuildReport"
-actor actor#3 head="builder-" @52:23 order=11 within=fan-out#1
-actor actor#4 "fixer" @57:15 order=14
-world-read world-read#1 "run node" @60:27 order=15 type="WorldRunResult"
-ask ask#4 "fixer" @62:29 order=16 type="FixReport"
-world-read world-read#2 "run node" @66:27 order=18 type="WorldRunResult"
-ask ask#5 "fixer" @69:17 order=19 type="FixReport"
-actor actor#5 "jury-a" @79:15 order=20
-actor actor#6 "jury-b" @80:15 order=21
-actor actor#7 "jury-c" @81:15 order=22
-actor actor#8 "polisher" @82:18 order=23
-world-read world-read#3 "run node" @87:29 order=24 type="WorldRunResult"
-ask ask#6 "fixer" @89:17 order=25 type="FixReport"
-join join#2 "join" @92:34 order=26 type="JuryVerdict[]"
-fan-out fan-out#2 "fan-out" @92:38 order=27 count=3 type="JuryVerdict[]"
-ask ask#7 "j" @92:73 order=28 within=fan-out#2 type="JuryVerdict"
-ask ask#8 "polisher" @97:18 order=31 type="FixReport"
-world-read world-read#4 "run node" @101:29 order=32 type="WorldRunResult"
-ask ask#9 "juryA" @103:33 order=33 type="JuryVerdict"
-world-read world-read#5 "run node" @110:30 order=35 type="WorldRunResult"
-world-read world-read#6 "run node" @111:30 order=36 type="WorldRunResult"
+actor actor#1 "architect" @44:19 order=3
+ask ask#1 "architect" @45:34 order=4 type="Contract"
+actor actor#2 "harness" @49:17 order=6
+join join#1 "join" @51:39 order=7 type="[BuildReport, ...BuildReport[]]" ports="BuildReport","BuildReport"
+ask ask#2 "harness" @52:11 order=8 type="BuildReport"
+fan-out fan-out#1 "fan-out" @53:6 order=9 count=5 type="BuildReport[]"
+ask ask#3 "ask" head="builder-" @53:45 order=10 within=fan-out#1 type="BuildReport"
+actor actor#3 head="builder-" @53:23 order=11 within=fan-out#1
+actor actor#4 "fixer" @58:15 order=14
+world-read world-read#1 "run node" @61:27 order=15 type="WorldRunResult"
+ask ask#4 "fixer" @63:29 order=16 type="FixReport"
+world-read world-read#2 "run node" @67:27 order=18 type="WorldRunResult"
+ask ask#5 "fixer" @70:17 order=19 type="FixReport"
+actor actor#5 "jury-a" @84:15 order=20
+actor actor#6 "jury-b" @85:15 order=21
+actor actor#7 "jury-c" @86:15 order=22
+actor actor#8 "polisher" @87:18 order=23
+world-read world-read#3 "run node" @92:29 order=24 type="WorldRunResult"
+ask ask#6 "fixer" @94:17 order=25 type="FixReport"
+join join#2 "join" @97:34 order=26 type="JuryVerdict[]"
+fan-out fan-out#2 "fan-out" @98:5 order=27 count=3 type="JuryVerdict[]"
+ask ask#7 "j" @98:40 order=28 within=fan-out#2 type="JuryVerdict"
+ask ask#8 "polisher" @104:18 order=31 type="FixReport"
+world-read world-read#4 "run node" @108:29 order=32 type="WorldRunResult"
+ask ask#9 "juryA" @110:33 order=33 type="JuryVerdict"
+world-read world-read#5 "run node" @117:30 order=35 type="WorldRunResult"
+world-read world-read#6 "run node" @118:30 order=36 type="WorldRunResult"
 fact ask-data ask#3 <- fan-out#1 exact
 fact ask-data ask#4 <- world-read#1 exact
 fact ask-data ask#5 <- world-read#2 exact
@@ -57,44 +57,44 @@ fact return <- join#2 exact
 fact return <- fan-out#2 exact
 fact return <- ask#9 exact
 region seq#1 seq entered
-region fanout#1 fanout parent=seq#1 @52:6 label="map"
-region fanout#2 fanout parent=seq#1 @54:35 label="map"
-region choice#1 choice parent=seq#1 @59:21 entered
-region branch#1 branch parent=choice#1 @59:46
-region loop#1 loop parent=seq#1 @59:1
-region choice#2 choice parent=loop#1 @61:3 entered
-region branch#2 branch parent=choice#2 @61:27
-region choice#3 choice parent=loop#1 @68:3 entered
-region branch#3 branch parent=choice#3 @68:20
-region choice#4 choice parent=seq#1 @72:1 entered
-region branch#4 branch parent=choice#4 @72:18
-region loop#2 loop parent=seq#1 @86:1
-region choice#5 choice parent=loop#2 @88:3 entered
-region branch#5 branch parent=choice#5 @88:29
-region fanout#3 fanout parent=loop#2 @92:38 label="map"
-region call#1 call parent=loop#2 @93:10 entered label="consolidate"
+region fanout#1 fanout parent=seq#1 @53:6 label="map"
+region fanout#2 fanout parent=seq#1 @55:35 label="map"
+region choice#1 choice parent=seq#1 @60:21 entered
+region branch#1 branch parent=choice#1 @60:46
+region loop#1 loop parent=seq#1 @60:1
+region choice#2 choice parent=loop#1 @62:3 entered
+region branch#2 branch parent=choice#2 @62:27
+region choice#3 choice parent=loop#1 @69:3 entered
+region branch#3 branch parent=choice#3 @69:20
+region choice#4 choice parent=seq#1 @73:1 entered
+region branch#4 branch parent=choice#4 @73:18
+region loop#2 loop parent=seq#1 @91:1
+region choice#5 choice parent=loop#2 @93:3 entered
+region branch#5 branch parent=choice#5 @93:29
+region fanout#3 fanout parent=loop#2 @98:5 label="map"
+region call#1 call parent=loop#2 @100:10 entered label="consolidate"
 region loop#3 loop parent=call#1 @38:3
-region loop#4 loop parent=loop#3 @38:29
-region fanout#4 fanout parent=call#1 @39:10 label="sort"
-region choice#6 choice parent=loop#2 @94:17 entered
-region branch#6 branch parent=choice#6 @94:36
-region fanout#5 fanout parent=branch#6 @94:36 label="every"
-region choice#7 choice parent=loop#2 @95:3 entered
-region branch#7 branch parent=choice#7 @95:20
-region fanout#6 fanout parent=loop#2 @96:17 label="filter"
-region choice#8 choice parent=seq#1 @100:1 entered
-region branch#8 branch parent=choice#8 @100:18
-region choice#9 choice parent=branch#8 @102:3 entered
-region branch#9 branch parent=choice#9 @102:29
-region call#2 call parent=branch#9 @104:12 entered label="consolidate"
+region loop#4 loop parent=loop#3 @39:5
+region fanout#4 fanout parent=call#1 @40:10 label="sort"
+region choice#6 choice parent=loop#2 @101:17 entered
+region branch#6 branch parent=choice#6 @101:36
+region fanout#5 fanout parent=branch#6 @101:36 label="every"
+region choice#7 choice parent=loop#2 @102:3 entered
+region branch#7 branch parent=choice#7 @102:20
+region fanout#6 fanout parent=loop#2 @103:17 label="filter"
+region choice#8 choice parent=seq#1 @107:1 entered
+region branch#8 branch parent=choice#8 @107:18
+region choice#9 choice parent=branch#8 @109:3 entered
+region branch#9 branch parent=choice#9 @109:29
+region call#2 call parent=branch#9 @111:12 entered label="consolidate"
 region loop#5 loop parent=call#2 @38:3
-region loop#6 loop parent=loop#5 @38:29
-region fanout#7 fanout parent=call#2 @39:10 label="sort"
-region choice#10 choice parent=branch#9 @105:19 entered
-region branch#10 branch parent=choice#10 @105:38
-region fanout#8 fanout parent=branch#10 @105:38 label="every"
-region choice#11 choice parent=seq#1 @113:15 entered
-region branch#11 branch parent=choice#11 @113:42
+region loop#6 loop parent=loop#5 @39:5
+region fanout#7 fanout parent=call#2 @40:10 label="sort"
+region choice#10 choice parent=branch#9 @112:19 entered
+region branch#10 branch parent=choice#10 @112:38
+region fanout#8 fanout parent=branch#10 @112:38 label="every"
+region choice#11 choice parent=seq#1 @120:15 entered
+region branch#11 branch parent=choice#11 @120:42
 mark phase#1 in=seq#1
 spawn actor#1 in=seq#1
 issue ask#1 in=seq#1 phase=phase#1
@@ -155,8 +155,8 @@ control branch#7 maybe=ask#7,ask#9
 control branch#9 by=world-read#4
 control branch#10 maybe=ask#7,ask#9
 control branch#11 by=world-read#5
-phase phase#1 "总设计" @42:1
-phase phase#2 "并行构建" @47:1
-phase phase#3 "集成与门禁" @56:1
-phase phase#4 "视觉评审" @77:1
-phase phase#5 "终验与交付" @109:1
+phase phase#1 "总设计" @43:1
+phase phase#2 "并行构建" @48:1
+phase phase#3 "集成与门禁" @57:1
+phase phase#4 "视觉评审" @82:1
+phase phase#5 "终验与交付" @116:1

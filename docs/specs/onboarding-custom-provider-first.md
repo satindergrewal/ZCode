@@ -9,11 +9,11 @@
 
 ## State Owners
 
-| State | Single Owner | Notes |
-| ----- | ------------ | ----- |
-| Login screen mode | `mode` prop on `WelcomeScreen` (`"startup" \| "login-entry"`) | Only decision point for which variant renders |
-| Reason → mode mapping | `Root.tsx` welcome render | `manual-login` / `provider-request` → `login-entry`; everything else → `startup` |
-| Cancel visibility | `allowCancel` prop on `LoginApiKeyForm` | Startup variant has no providers view to return to, so Cancel is hidden |
+| State                 | Single Owner                                                  | Notes                                                                            |
+| --------------------- | ------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Login screen mode     | `mode` prop on `WelcomeScreen` (`"startup" \| "login-entry"`) | Only decision point for which variant renders                                    |
+| Reason → mode mapping | `Root.tsx` welcome render                                     | `manual-login` / `provider-request` → `login-entry`; everything else → `startup` |
+| Cancel visibility     | `allowCancel` prop on `LoginApiKeyForm`                       | Startup variant has no providers view to return to, so Cancel is hidden          |
 
 ## Interfaces
 

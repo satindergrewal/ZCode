@@ -1246,17 +1246,20 @@ describe("AgentRuntime model selection event", () => {
             yield { id: "text-1", type: "text_start" };
             if (providerId === highspeedProviderId) {
               yield { id: "text-1", text: "partial accelerated output", type: "text_delta" };
-              throw Object.assign(new Error("Network connection failed for the provider request."), {
-                code: "model_request_failed",
-                context: {
-                  providerId,
-                  modelId: "GLM-5.3",
-                  reason: "network_error",
-                  retryable: true,
-                  source: "network",
+              throw Object.assign(
+                new Error("Network connection failed for the provider request."),
+                {
+                  code: "model_request_failed",
+                  context: {
+                    providerId,
+                    modelId: "GLM-5.3",
+                    reason: "network_error",
+                    retryable: true,
+                    source: "network",
+                  },
+                  name: "AiSdkModelAdapterError",
                 },
-                name: "AiSdkModelAdapterError",
-              });
+              );
             }
             yield { id: "text-1", text: "continued with the session model", type: "text_delta" };
             yield { id: "text-1", type: "text_end" };

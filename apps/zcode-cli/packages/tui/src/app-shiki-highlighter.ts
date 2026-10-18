@@ -1,5 +1,10 @@
 import path from "node:path";
-import { bundledLanguages, createHighlighter, type BundledLanguage, type BundledTheme } from "shiki";
+import {
+  bundledLanguages,
+  createHighlighter,
+  type BundledLanguage,
+  type BundledTheme,
+} from "shiki";
 import type { TuiThemeMode } from "./theme/index.js";
 
 const SHIKI_DARK_THEME = "github-dark";

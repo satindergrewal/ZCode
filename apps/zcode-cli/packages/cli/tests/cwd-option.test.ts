@@ -196,7 +196,7 @@ test("passes --cwd into TUI app, skills, and session listing", async () => {
         return { keys: [], loaded: false };
       },
       runTui: async (options) => {
-        // 初始模型随 loadStartupOptions 在启动屏首帧后返回，App 也在此时按 --cwd 创建。
+        // The initial model arrives via loadStartupOptions after the splash frame; the App is created with --cwd at the same point.
         const startup = { ...options, ...(await options.loadStartupOptions?.()) };
         assert.equal(startup.initialModel, "openai/gpt-test");
         assert.equal(options.workspaceDirectory, cwd);

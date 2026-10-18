@@ -67,9 +67,15 @@ return await agent("summarizer").ask<string>(JSON.stringify(out));
     // The named callback's ask sits inside the map's fanout, as an inlined call.
     const fanout = regionsOf(result.regions, "fanout").find((region) => region.label === "map");
     expect(fanout).toBeDefined();
-    expect(regionsOf(result.regions, "call").some((region) => region.parent === fanout?.id && region.label === "review")).toBe(true);
+    expect(
+      regionsOf(result.regions, "call").some(
+        (region) => region.parent === fanout?.id && region.label === "review",
+      ),
+    ).toBe(true);
     // And the summarizer runs AFTER the reviewers, never before (the sweep artifact).
-    expect(result.causality.edges.some((edge) => edge.from === "ask#2" && edge.to === "ask#1")).toBe(false);
+    expect(
+      result.causality.edges.some((edge) => edge.from === "ask#2" && edge.to === "ask#1"),
+    ).toBe(false);
   });
 
   it("inlines a callback invoked through a helper's parameter", () => {
@@ -105,7 +111,9 @@ return edited;
     // may-claim with frame scoping, analyzer-strands-plan.md「The walk」).
     expect(call?.strand).toBe(true);
     const events = core.trace.events;
-    const settle = events.findIndex((event) => event.at === "settle" && event.steps.includes("ask#1"));
+    const settle = events.findIndex(
+      (event) => event.at === "settle" && event.steps.includes("ask#1"),
+    );
     const issue = events.findIndex((event) => event.at === "issue" && event.step === "ask#2");
     expect(settle).toBeGreaterThanOrEqual(0);
     expect(settle).toBeLessThan(issue);
@@ -159,7 +167,10 @@ const b = agent("b").ask<string>("y");
 const r = await Promise.all([a, b]).catch(() => agent("fallback").ask<string>("recover"));
 return r;
 `);
-    const into = result.causality.edges.filter((edge) => edge.to === "ask#3").map((edge) => edge.from).sort();
+    const into = result.causality.edges
+      .filter((edge) => edge.to === "ask#3")
+      .map((edge) => edge.from)
+      .sort();
     expect(into).toEqual(["ask#1", "ask#2"]);
   });
 
@@ -186,7 +197,11 @@ const settled = await Promise.resolve(draft)
   .finally(() => log("done"));
 return settled;
 `);
-    expect(regionsOf(regions, "call").map((region) => region.label)).toEqual(["then", "then", "finally"]);
+    expect(regionsOf(regions, "call").map((region) => region.label)).toEqual([
+      "then",
+      "then",
+      "finally",
+    ]);
     expect(regionsOf(regions, "choice").filter((region) => region.exhaustive === true)).toEqual([]);
   });
 
@@ -203,14 +218,20 @@ return await pick(seed);
     const choice = regionsOf(regions, "choice").find(
       (region) =>
         region.exhaustive === true &&
-        regions.some((arm) => arm.parent === region.id && calls.some((call) => call.parent === arm.id)),
+        regions.some(
+          (arm) => arm.parent === region.id && calls.some((call) => call.parent === arm.id),
+        ),
     );
     expect(choice).toBeDefined();
     const arms = regions.filter((region) => region.parent === choice?.id);
     expect(arms.every((arm) => arm.kind === "branch" && arm.entered === false)).toBe(true);
     const labels = arms.map((arm) => calls.find((call) => call.parent === arm.id)?.label).sort();
     expect(labels).toEqual(["fast", "slow"]);
-    expect(causality.steps.filter((step) => step.id !== "ask#1").every((step) => step.certainty === "maybe")).toBe(true);
+    expect(
+      causality.steps
+        .filter((step) => step.id !== "ask#1")
+        .every((step) => step.certainty === "maybe"),
+    ).toBe(true);
   });
 
   it("inlines a script class constructor at `new`, labelled by the class", () => {
@@ -278,7 +299,12 @@ return [a, b];
 `);
     expect(regionsOf(regions, "fanout")).toEqual([]);
     // Each user method inlines as a call; the callback inlines inside it through the parameter.
-    expect(regionsOf(regions, "call").map((region) => region.label)).toEqual(["map", undefined, "then", undefined]);
+    expect(regionsOf(regions, "call").map((region) => region.label)).toEqual([
+      "map",
+      undefined,
+      "then",
+      undefined,
+    ]);
     expect(regions.filter((region) => region.detached === true)).toEqual([]);
   });
 

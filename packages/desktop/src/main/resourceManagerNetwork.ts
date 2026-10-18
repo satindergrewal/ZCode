@@ -21,7 +21,7 @@ function sendControl(child: UtilityProcess): void {
   try {
     child.postMessage({ type: HostMessageTypes.NetworkCapture, control: { captureId } });
   } catch {
-    /* Host 已退出，观测不重启进程 */
+    /* Host exited; observation never restarts processes */
   }
 }
 
@@ -35,7 +35,7 @@ export function startResourceManagerNetwork(
   currentHosts = hosts;
   buffer.start(captureId);
   nodeCapture.setCaptureId(captureId);
-  // 只订阅 App 拥有的 session；内置浏览器/录屏的独立 session 不进入采集。
+  // Subscribe only to sessions the app owns; embedded-browser/recording sessions stay out of capture.
   const sessions = [
     session.defaultSession,
     session.fromPartition("persist:zcode-coding-plan"),
@@ -114,7 +114,7 @@ export function registerResourceManagerNetworkIpc(): void {
   });
   ipcMain.handle(PlatformChannels.ClearNetworkCapture, (event) => {
     authorize(event.sender.id);
-    // 清空需要切换 captureId，否则 Host/CLI 尚未发出的旧批次会把列表填回来。
+    // Clearing must rotate captureId, or in-flight Host/CLI batches repopulate the list.
     captureId = randomUUID();
     buffer.start(captureId);
     nodeCapture.setCaptureId(captureId);

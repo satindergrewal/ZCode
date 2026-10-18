@@ -207,10 +207,12 @@ describe("WindowRemoteConnectionRegistry", () => {
 
     pendingDocker.resolve(createHandle("docker-services").handle);
     await dockerConnect;
-    expect(registry.listReadyConnections().map((entry) => entry.services).sort()).toEqual([
-      "docker-services",
-      "ssh-services",
-    ]);
+    expect(
+      registry
+        .listReadyConnections()
+        .map((entry) => entry.services)
+        .sort(),
+    ).toEqual(["docker-services", "ssh-services"]);
 
     await registry.dispose();
     expect(registry.listReadyConnections()).toEqual([]);
@@ -231,7 +233,7 @@ describe("WindowRemoteConnectionRegistry", () => {
     });
     registry.cancelConnect("request-late");
 
-    await expect(result).rejects.toThrow("远程连接已取消");
+    await expect(result).rejects.toThrow("Remote connection cancelled");
     pending.resolve(connection.handle);
     await Promise.resolve();
     await Promise.resolve();
@@ -251,8 +253,7 @@ describe("WindowRemoteConnectionRegistry", () => {
     const registry = createWindowRemoteConnectionRegistry({
       connect: (request) => {
         observedRequests.push({
-          password:
-            request.target.kind === "ssh" ? request.target.password : undefined,
+          password: request.target.kind === "ssh" ? request.target.password : undefined,
           signal: request.signal,
         });
         connectionId += 1;
@@ -267,7 +268,7 @@ describe("WindowRemoteConnectionRegistry", () => {
       remoteAssets: {},
     });
     registry.cancelConnect("request-first");
-    await expect(first).rejects.toThrow("远程连接已取消");
+    await expect(first).rejects.toThrow("Remote connection cancelled");
 
     const second = registry.connect({
       requestId: "request-second",
@@ -322,7 +323,7 @@ describe("WindowRemoteConnectionRegistry", () => {
     });
 
     registry.cancelConnect("request-first");
-    await expect(first).rejects.toThrow("远程连接已取消");
+    await expect(first).rejects.toThrow("Remote connection cancelled");
     expect(observedSignals).toHaveLength(1);
     expect(observedSignals[0]?.aborted).toBe(false);
 
@@ -354,7 +355,7 @@ describe("WindowRemoteConnectionRegistry", () => {
       remoteAssets: {},
     });
     registry.cancelConnect("request-first");
-    await expect(first).rejects.toThrow("远程连接已取消");
+    await expect(first).rejects.toThrow("Remote connection cancelled");
 
     expect(observedSignals[0]?.aborted).toBe(false);
     const second = registry.connect({
@@ -395,7 +396,7 @@ describe("WindowRemoteConnectionRegistry", () => {
       remoteAssets: {},
     });
     registry.cancelConnect("request-first");
-    await expect(first).rejects.toThrow("远程连接已取消");
+    await expect(first).rejects.toThrow("Remote connection cancelled");
     expect(observedSignals[0]?.aborted).toBe(false);
 
     const second = registry.connect({
@@ -438,7 +439,7 @@ describe("WindowRemoteConnectionRegistry", () => {
       remoteAssets: {},
     });
     registry.cancelConnect("request-cancelled");
-    await expect(cancelled).rejects.toThrow("远程连接已取消");
+    await expect(cancelled).rejects.toThrow("Remote connection cancelled");
 
     expect(connection.dispose).not.toHaveBeenCalled();
     await registry.connect({
@@ -477,7 +478,7 @@ describe("WindowRemoteConnectionRegistry", () => {
         workspacePath: "/work/demo",
         workspaceIdentity: "remote:ssh:other:/work/demo",
       }),
-    ).toThrow("远程 attachment scope 与 logical session 不匹配");
+    ).toThrow("Remote attachment scope does not match the logical session");
     expect(() =>
       registry.resolveScopedServices({
         kind: "remote",
@@ -485,7 +486,7 @@ describe("WindowRemoteConnectionRegistry", () => {
         workspacePath: "/other",
         workspaceIdentity: "remote:ssh:dev:/work/demo",
       }),
-    ).toThrow("远程 attachment scope 与 logical session 不匹配");
+    ).toThrow("Remote attachment scope does not match the logical session");
   });
 
   it("连接断开后保留 logical session 离线事实，但所有 scoped IO fail-closed", async () => {

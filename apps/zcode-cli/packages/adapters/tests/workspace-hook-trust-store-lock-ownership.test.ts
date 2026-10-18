@@ -167,9 +167,7 @@ describe("FileWorkspaceHookTrustStore lock ownership（CR-02）", () => {
         throw new Error("disk full while writing lock metadata");
       },
     });
-    await expect(store.grant([record("/ws/owner-b", DIGEST_A)])).rejects.toThrow(
-      /disk full/,
-    );
+    await expect(store.grant([record("/ws/owner-b", DIGEST_A)])).rejects.toThrow(/disk full/);
     // 关键：open("wx") 成功但 metadata 写失败后，必须清理自己刚建的空锁，
     // 否则下一个 writer 会读到一个无法解析的无主锁。
     await expect(stat(lockPath)).rejects.toMatchObject({ code: "ENOENT" });
@@ -318,9 +316,7 @@ describe("FileWorkspaceHookTrustStore lock ownership（CR-02）", () => {
     const final = await createFileWorkspaceHookTrustStore({ filePath }).load();
     expect(final.status).toBe("ok");
     if (final.status !== "ok") return;
-    expect(
-      final.records.some((item) => item.workspaceIdentity === "/ws/victim"),
-    ).toBe(false);
+    expect(final.records.some((item) => item.workspaceIdentity === "/ws/victim")).toBe(false);
     expect(final.records).toHaveLength(3);
   });
 });

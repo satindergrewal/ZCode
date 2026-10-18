@@ -71,7 +71,7 @@ function createBigModelTeamPlanApiKeyPayload(): {
   return {
     name: BIGMODEL_TEAM_PLAN_API_KEY_NAME,
     keyType: BIGMODEL_TEAM_PLAN_API_KEY_TYPE,
-    // keyType 描述团队 Key 类型，usageScene 描述编程套餐用途，两者不能互相替代。
+    // keyType describes the team key type; usageScene describes the coding-plan use. Not interchangeable.
     usageScene: API_KEY_USAGE_SCENE.CODING_PLAN,
   };
 }

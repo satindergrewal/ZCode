@@ -64,7 +64,7 @@ export async function main() {
             setup(builder) {
               builder.onLoad({ filter: /\.[jt]s$/ }, async ({ path }) => {
                 if (!blockedModules.has(path)) return undefined;
-                // 回归要挡住模块求值，而非只看包大小；构建仍保留普通 CLI 所需代码。
+                // The regression must block module evaluation, not merely check bundle size; the build keeps what the plain CLI needs.
                 return {
                   contents: `throw new Error(${JSON.stringify(forbiddenEvaluation)});\n${await readFile(path, "utf8")}`,
                   loader: path.endsWith(".ts") ? "ts" : "js",
@@ -97,8 +97,8 @@ export async function main() {
         ZCODE_CUA_PERMISSION_BROKER_SOCKET: brokerSocket,
         ZCODE_CUA_PERMISSION_BROKER_TOKEN: "test-scoped-token",
         ZCODE_CUA_PLUGIN_AUTHORITY: "test-official-authority",
-        // broker 已改身份模式（Helper 按对端代码签名裁决连接），凭据组只剩 socket +
-        // pluginAuthority；captured 凭据只允许启动 shared node_repl 宿主，由这个标记声明。
+        // The broker moved to identity mode (the Helper admits connections by peer code signature), leaving the credential set with socket +
+        // pluginAuthority only; the captured credentials may start just the shared node_repl host, declared by this marker.
         ZCODE_CUA_NODE_REPL_HOST: "1",
       };
       const authorized = await execFileAsync(
@@ -110,16 +110,16 @@ export async function main() {
       assert.deepEqual(JSON.parse(authorized.stdout), {
         args: ["--permission-broker-socket", brokerSocket],
         nodeEnvRemoved: true,
-        // socket 被 sanitize 收进 capture，插件模块求值时读不到；只有 plugin host 在
-        // 确认是可信 node_repl 宿主后才恢复到 env，供 broker bridge 读取。
+        // The socket is sanitized into the capture and unreadable during plugin module evaluation; only the plugin host
+        // restores it to env after verifying the trusted node_repl host, for the broker bridge to read.
         socketVisibleAtImport: false,
         socketVisibleAtMain: true,
-        // token 已从凭据组删除，宿主不再恢复它。
+        // The token was removed from the credential set and is no longer restored by the host.
         tokenVisibleAtMain: false,
       });
 
-      // 非 node_repl 宿主必须在插件 import 前被拒绝，不能因入口提前分流绕过产品鉴权。
-      // 旧契约比对 argv 上的 socket 值，身份模式下改为要求宿主标记；拦截时机的要求不变。
+      // Non-node_repl hosts must be rejected before the plugin import; early entry branching must not bypass product auth.
+      // The old contract compared the argv socket value; identity mode requires the host marker instead. The interception timing requirement is unchanged.
       await writeFile(serverPath, 'throw new Error("UNAUTHORIZED_PLUGIN_IMPORTED");');
       const { ZCODE_CUA_NODE_REPL_HOST: _hostMarker, ...unauthorizedEnv } = authorizedEnv;
       await assert.rejects(
@@ -134,7 +134,7 @@ export async function main() {
           !error.stderr.includes("UNAUTHORIZED_PLUGIN_IMPORTED"),
       );
 
-      // 证明探针实际生效：普通命令仍进入业务分支，触发被注入的求值错误。
+      // Proves the probe is live: a plain command still reaches the business branch and triggers the injected evaluation error.
       await assert.rejects(
         execFileAsync(process.execPath, [outfile, "--version"], { timeout: processTimeoutMs }),
         (error) => error.stderr.includes(forbiddenEvaluation),

@@ -1,7 +1,7 @@
 /**
- * mcp-apps-protocol 模块清单（architecture-governance managed 模块）。
- * 纯 domain：MCP Apps 的 ZCode 扩展常量、`_meta` 归一化、`display.ui` schema 与沙箱契约类型，零 IO。
- * 页面 ↔ 宿主的线协议由官方 `@modelcontextprotocol/ext-apps` 承担，本模块不再持有状态机。
+ * mcp-apps-protocol module manifest (architecture-governance managed module).
+ * Pure domain: the ZCode extensions for MCP Apps -- constants, `_meta` normalization, the `display.ui` schema, sandbox contract types. No IO.
+ * The page<->host wire protocol belongs to the official `@modelcontextprotocol/ext-apps` SDK; this module holds no state machine.
  */
 export const mcpAppsProtocolModule = {
   id: "mcp-apps-protocol",

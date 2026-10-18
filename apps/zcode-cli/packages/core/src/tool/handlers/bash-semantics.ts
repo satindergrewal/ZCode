@@ -225,8 +225,8 @@ export function isBashResultTruncated(output: { stderr?: string; stdout?: string
 
 export function stripClaudeCodeHintLines(stdout: string): string {
   if (!stdout.includes("<claude-code-hint")) return stdout;
-  // 修复原因：成功路径上先剥离内部 claude-code-hint 行，再继续 image/persisted mapping；
-  // 这些内部 hint 不应成为 provider-visible Bash stdout。
+  // Why: the success path strips internal claude-code-hint lines before image/persisted mapping;
+  // those internal hints must not become provider-visible Bash stdout.
   return stdout.replace(CLAUDE_CODE_HINT_LINE_RE, "").replace(/\n{3,}/g, "\n\n");
 }
 

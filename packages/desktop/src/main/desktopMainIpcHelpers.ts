@@ -18,7 +18,7 @@ export async function openFileUrlInDefaultApp(
     const filePath = fileURLToPath(url);
     await openPathInDefaultApp(filePath, logger);
   } catch (error) {
-    logger.warn("[open-external] file URL 打开失败", {
+    logger.warn("[open-external] failed to open file URL", {
       url,
       error: error instanceof Error ? error.message : String(error),
     });

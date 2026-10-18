@@ -11,10 +11,10 @@ export interface PluginUiLauncherItemsProps {
   workspacePath: string;
   workspaceIdentity?: string;
   remoteSessionId?: string;
-  /** 正式会话 id；草稿态为 null，此时不显示入口（面板是会话级，第一版不支持草稿）。 */
+  /** Real session id; null while drafting, which hides the entry (panes are session-scoped, v1 no drafts). */
   sessionId: string | null;
   onOpenPluginUi: (request: OpenPluginUiSideTabRequest) => void;
-  /** 菜单复用标准菜单项；空白页继续使用入口按钮样式。 */
+  /** The menu reuses standard items; the empty page keeps the entry-button look. */
   variant?: "launcher" | "menu";
   itemClassName?: string;
 }
@@ -24,8 +24,8 @@ export function buildPluginUiLauncherItemId(pluginId: string, surfaceId: string)
 }
 
 /**
- * "打开标签页"里的插件面板入口，与内建项共用列表/网格。
- * 旧分组容器会占据一个网格单元，导致插件全部挤在同一列；使用 Fragment 让按钮直接参与父级布局。
+ * Plugin pane entries inside Open tabs, sharing list/grid with built-ins.
+ * The old group wrapper ate a grid cell, cramming plugins into one column; a Fragment lets buttons join the parent layout.
  */
 export function PluginUiLauncherItems(props: PluginUiLauncherItemsProps) {
   const { locale } = useZCodeIntl();

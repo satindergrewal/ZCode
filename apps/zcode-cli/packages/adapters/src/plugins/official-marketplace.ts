@@ -32,17 +32,11 @@ export function writeCdnOfficialMarketplacePartitionSync(input: {
   return rebuildOfficialMarketplaceSync(input.storageRoot);
 }
 
-export function loadBundledOfficialPluginRootsSync(
-  storageRoot: string,
-): string[] | undefined {
+export function loadBundledOfficialPluginRootsSync(storageRoot: string): string[] | undefined {
   const bundledPartition = readBundledPartition(storageRoot);
   if (!bundledPartition) return undefined;
 
-  const officialCacheRoot = resolve(
-    storageRoot,
-    "cache",
-    ZCODE_OFFICIAL_PLUGIN_MARKETPLACE,
-  );
+  const officialCacheRoot = resolve(storageRoot, "cache", ZCODE_OFFICIAL_PLUGIN_MARKETPLACE);
   return readPluginEntries(bundledPartition.manifest).flatMap((plugin) => {
     const name = readPluginName(plugin);
     const cachePath = typeof plugin.cachePath === "string" ? plugin.cachePath : undefined;
@@ -72,7 +66,7 @@ function rebuildOfficialMarketplaceSync(storageRoot: string): Record<string, unk
   });
 
   // Builtin and CDN plugins once had two marketplace ids; the UI treated the builtin market as
- // sourceless and refreshed it into not-found. Persist both shards independently before merging,
+  // sourceless and refreshed it into not-found. Persist both shards independently before merging,
   // or the startup seed would cover the CDN catalog or vice versa. On name conflicts the
   // refreshable CDN entry wins, but only filter the merged catalog, never delete the builtin cache.
   const merged = {

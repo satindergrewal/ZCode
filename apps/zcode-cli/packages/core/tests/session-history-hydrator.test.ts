@@ -53,13 +53,19 @@ describe("session history hydrator", () => {
     });
     const pendingHistory = new MessageHistoryImpl();
     pendingHistory.init("system prompt");
-    await hydrateMessageHistoryFromSession({ history: pendingHistory, messages: [makeMessage("pending")] });
+    await hydrateMessageHistoryFromSession({
+      history: pendingHistory,
+      messages: [makeMessage("pending")],
+    });
     expect(pendingHistory.toRuntimeEntries()).toHaveLength(1);
     expect(JSON.stringify(pendingHistory.toRuntimeEntries())).not.toContain("shared markdown");
 
     const attachedHistory = new MessageHistoryImpl();
     attachedHistory.init("system prompt");
-    await hydrateMessageHistoryFromSession({ history: attachedHistory, messages: [makeMessage("attached")] });
+    await hydrateMessageHistoryFromSession({
+      history: attachedHistory,
+      messages: [makeMessage("attached")],
+    });
     expect(attachedHistory.toRuntimeEntries()).toHaveLength(2);
     expect(JSON.stringify(attachedHistory.toRuntimeEntries())).toContain("shared markdown");
   });

@@ -27,11 +27,11 @@ export function MarketingFailureDialog({
         showCloseButton={false}
       >
         <DialogTitle className="sr-only">{title}</DialogTitle>
-        {/* Alert 默认卡片外观会形成双层容器；这里只保留提示语义和图文布局。 */}
+        {/* Alert's default card chrome would nest a second container; keep only the alert semantics and the image/text layout. */}
         <Alert className="min-w-0 border-0 bg-transparent p-0">
           <InfoIcon aria-hidden="true" className="size-4" />
           <DialogDescription asChild>
-            {/* 服务端文案只能作为文本，防止 HTML/Markdown 被误当作可执行或可点击内容。 */}
+            {/* Server copy renders as text only, so HTML/Markdown is never mistaken for executable or clickable content. */}
             <AlertDescription
               data-slot="alert-description"
               className="min-w-0 max-h-64 overflow-y-auto whitespace-pre-wrap break-words text-foreground"

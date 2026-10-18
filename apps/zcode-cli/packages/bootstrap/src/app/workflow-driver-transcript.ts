@@ -19,26 +19,26 @@ import { countActorTranscript, seedActorTranscript } from "./workflow-actor-tran
 import type { AgentRuntimeWorkflowDriverDeps, SessionState } from "./workflow-driver-types.js";
 
 /**
-  * Diverged-actor transcript seeding (amend-resume): copy the source session's first N messages into the fresh session, then let the runtime
-  * open on that context.
+ * Diverged-actor transcript seeding (amend-resume): copy the source session's first N messages into the fresh session, then let the runtime
+ * open on that context.
  *
-  * The order is load-bearing; none of the three steps may swap:
-  *   1. factory returned => the session row is persisted (`message.session_id` has an FK to `session(id)`; copying first would fail);
-  *   2. copy into the **persistent layer**, not in-memory history -- two readers depend on the persisted copy: this run's rehydration,
-  *      and **future revisions of this run** (the chain walk reads this session as a transcript source);
-  *   3. rehydrate via the existing `resumeFromStore` (the same machinery as resume re-attach); never a second hydration path.
-  *      Session row and messages are freshly persisted, so skip launch's `SessionNotFound -> brand-new`
-  *      degradation branch: its cause is "session cleaned up", which here only means wiring is wrong -- fail loudly.
+ * The order is load-bearing; none of the three steps may swap:
+ *   1. factory returned => the session row is persisted (`message.session_id` has an FK to `session(id)`; copying first would fail);
+ *   2. copy into the **persistent layer**, not in-memory history -- two readers depend on the persisted copy: this run's rehydration,
+ *      and **future revisions of this run** (the chain walk reads this session as a transcript source);
+ *   3. rehydrate via the existing `resumeFromStore` (the same machinery as resume re-attach); never a second hydration path.
+ *      Session row and messages are freshly persisted, so skip launch's `SessionNotFound -> brand-new`
+ *      degradation branch: its cause is "session cleaned up", which here only means wiring is wrong -- fail loudly.
  *
-  * Step 3's **condition**: anything copied => hydrate; zero copied plus the journal already recording this session id
-  * means the runtime factory just re-attached via the resume path (launch's attachActorSession); hydrating again
-  * would only emit an extra SessionResumed and rerun SessionStart hooks. When neither holds (skipped copy
-  * and no journal record = the previous generation crashed between copy and putActor), still hydrate, or the runtime opens
-  * a message-filled session on an empty context.
+ * Step 3's **condition**: anything copied => hydrate; zero copied plus the journal already recording this session id
+ * means the runtime factory just re-attached via the resume path (launch's attachActorSession); hydrating again
+ * would only emit an extra SessionResumed and rerun SessionStart hooks. When neither holds (skipped copy
+ * and no journal record = the previous generation crashed between copy and putActor), still hydrate, or the runtime opens
+ * a message-filled session on an empty context.
  *
-  * The condition holds for **both** of {@link seedActorTranscript}' skips, no need to distinguish which: both key on
-  * "the target session already has its own content", and `attachActorSession`'s re-attach decision uses the same predicate
-  * (whether the journal has this actor's sessionId), so the two sides always agree.
+ * The condition holds for **both** of {@link seedActorTranscript}' skips, no need to distinguish which: both key on
+ * "the target session already has its own content", and `attachActorSession`'s re-attach decision uses the same predicate
+ * (whether the journal has this actor's sessionId), so the two sides always agree.
  */
 export async function seedActorSession(
   deps: AgentRuntimeWorkflowDriverDeps,
@@ -91,19 +91,19 @@ export async function countSessionTranscript(
 }
 
 /**
-  * Writes the message-count boundary into this ask's journal row (`NodeRecord.messageBoundary`).
+ * Writes the message-count boundary into this ask's journal row (`NodeRecord.messageBoundary`).
  *
-  * Same family as the stats backfill: the engine's settled record lacks this field (a driver-owned fact), so the same
-  * read-modify-write applies -- `getNode` the just-settled record, add the boundary, `putNode`, touching nothing else
-  * (status / result / actorSeq / inputHash / stats). After settlement is mandatory: the engine's settle is whole-row replacement;
-  * written earlier it would be erased.
+ * Same family as the stats backfill: the engine's settled record lacks this field (a driver-owned fact), so the same
+ * read-modify-write applies -- `getNode` the just-settled record, add the boundary, `putNode`, touching nothing else
+ * (status / result / actorSeq / inputHash / stats). After settlement is mandatory: the engine's settle is whole-row replacement;
+ * written earlier it would be erased.
  *
-  * Written for every ask, named/anonymous, revision or not: **anonymity is decided only at import time**, and any run
-  * is a potential predecessor of a future revision. Cost: one small write per ask.
+ * Written for every ask, named/anonymous, revision or not: **anonymity is decided only at import time**, and any run
+ * is a potential predecessor of a future revision. Cost: one small write per ask.
  *
-  * The two early returns each have a reason: a missing record (run already cleaned) has nowhere to be written; a changed `currentInstance`
-  * means the next ask already started on this session, so the length counted now no longer belongs to this exchange -- prefer an absent boundary
-  * (the ask cannot be imported) over an oversized value (the truncation would carry the next ask's opening).
+ * The two early returns each have a reason: a missing record (run already cleaned) has nowhere to be written; a changed `currentInstance`
+ * means the next ask already started on this session, so the length counted now no longer belongs to this exchange -- prefer an absent boundary
+ * (the ask cannot be imported) over an oversized value (the truncation would carry the next ask's opening).
  */
 export function journalAskMessageBoundary(
   deps: AgentRuntimeWorkflowDriverDeps,
@@ -119,8 +119,8 @@ export function journalAskMessageBoundary(
     if (recorded === undefined) return;
     deps.journal.putNode({ ...recorded, messageBoundary: boundary });
   } catch (error) {
-        // An accounting-write failure must not kill an already-settled ask (and this runs on a floating promise; a throw
-        // would only become an unhandled rejection). Same cost as a count failure: the ask cannot be imported, the run cannot be a predecessor.
+    // An accounting-write failure must not kill an already-settled ask (and this runs on a floating promise; a throw
+    // would only become an unhandled rejection). Same cost as a count failure: the ask cannot be imported, the run cannot be a predecessor.
     deps.logger?.warn?.("Dynamic workflow ask message boundary write failed", {
       errorMessage: error instanceof Error ? error.message : String(error),
       event: "dynamic_workflow.ask.message_boundary.write_failed",

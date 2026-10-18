@@ -24,7 +24,7 @@ afterEach(async () => {
 });
 
 describe("ZCode Built-in Release", () => {
-  it("失败按 1/2/4 分钟退避并封顶一小时；日志区分未到期与 lease", async () => {
+  it("backs off 1/2/4 minutes capped at one hour; logs distinguish not-yet-due from lease holds", async () => {
     const root = await temporaryRoot();
     const bundledFilePath = join(root, "bundled.json");
     const controlFilePath = join(root, "control.json");
@@ -72,7 +72,7 @@ describe("ZCode Built-in Release", () => {
       source.dispose();
     }
   });
-  it("严格解析两层 Release，并拒绝缺字段和旧单层形状", () => {
+  it("parses the two-layer release strictly, rejecting missing fields and the legacy single-layer shape", () => {
     const release = decodeZCodeBuiltinRelease(releaseObject(2, "model-b"));
 
     expect(release.revision).toBe(2);
@@ -90,7 +90,7 @@ describe("ZCode Built-in Release", () => {
     ).toThrow();
   });
 
-  it("拒绝远端或缓存重新发布已退出产品的 ZAPI", () => {
+  it("rejects ZAPI republishes of retired products from remote or cache", () => {
     const release = releaseObject(2, "model-b");
 
     expect(() =>
@@ -121,7 +121,7 @@ describe("ZCode Built-in Release", () => {
     ).toThrow("builtin:zapi");
   });
 
-  it("缓存路径按平台、App 版本和规范化 Endpoint 隔离", () => {
+  it("isolates cache paths by platform, App version and normalized endpoint", () => {
     const first = resolveZCodeBuiltinCachePaths({
       environmentConfigRoot: "/environment",
       platform: "darwin-aarch64",
@@ -141,7 +141,7 @@ describe("ZCode Built-in Release", () => {
       zcodeEndpointOrigin: "https://staging.example.com",
     });
     expect(first).toEqual(equivalent);
-    // 路径断言保留全部隔离层级，不能用 POSIX 分隔符让 Windows 正确实现误报。
+    // Path assertions keep every isolation layer; never fold separators so a correct Windows impl false-fails.
     expect(dirname(dirname(first.activeFilePath))).toBe(
       join("/environment", "runtime", "provider", "darwin-aarch64", "3.0.0"),
     );
@@ -161,7 +161,7 @@ describe("ZCode Built-in Release", () => {
     ).toThrow("platform");
   });
 
-  it("启动选择兼容且 revision 最大的候选，并将它物化为活动文件", async () => {
+  it("starts from the compatible highest-revision candidate and materializes it as the active file", async () => {
     const root = await temporaryRoot();
     const bundledFilePath = join(root, "bundled.json");
     const activeFilePath = join(root, "cache", "active.json");
@@ -182,7 +182,7 @@ describe("ZCode Built-in Release", () => {
     source.dispose();
   });
 
-  it("损坏、过旧或不兼容 Active 不覆盖 Bundled", async () => {
+  it("never lets a corrupt, stale or incompatible Active overwrite Bundled", async () => {
     const root = await temporaryRoot();
     const bundledFilePath = join(root, "bundled.json");
     const activeFilePath = join(root, "cache", "active.json");
@@ -203,7 +203,7 @@ describe("ZCode Built-in Release", () => {
     source.dispose();
   });
 
-  it("Bundled 与 Active 的相同 revision 冲突时丢弃 Active 并以 Bundled 启动", async () => {
+  it("drops a conflicting same-revision Active and boots from Bundled", async () => {
     const root = await temporaryRoot();
     const bundledFilePath = join(root, "bundled.json");
     const activeFilePath = join(root, "cache", "active.json");
@@ -224,7 +224,7 @@ describe("ZCode Built-in Release", () => {
     source.dispose();
   });
 
-  it("Active 缓存无法物化时仍直接使用 Bundled 完成启动", async () => {
+  it("still boots straight from Bundled when the Active cache cannot materialize", async () => {
     const root = await temporaryRoot();
     const bundledFilePath = join(root, "bundled.json");
     const activeFilePath = join(root, "cache", "active.json");
@@ -242,7 +242,7 @@ describe("ZCode Built-in Release", () => {
     source.dispose();
   });
 
-  it("远端更高 revision 原子更新；同 revision 同内容去重、不同内容拒绝", async () => {
+  it("applies higher remote revisions atomically; dedupes same-revision-same-content and rejects content drift", async () => {
     const root = await temporaryRoot();
     const bundledFilePath = join(root, "bundled.json");
     const activeFilePath = join(root, "cache", "active.json");
@@ -274,7 +274,7 @@ describe("ZCode Built-in Release", () => {
     source.dispose();
   });
 
-  it("多个同步器通过落盘 lease 合并请求，并按 endpoint 隔离 TTL", async () => {
+  it("coalesces syncers through an on-disk lease with per-endpoint TTL isolation", async () => {
     const root = await temporaryRoot();
     const bundledFilePath = join(root, "bundled.json");
     const activeFilePath = join(root, "cache", "active.json");
@@ -330,7 +330,7 @@ describe("ZCode Built-in Release", () => {
     source.dispose();
   });
 
-  it("Endpoint 切换后丢弃旧 Endpoint 的晚到响应", async () => {
+  it("drops late responses from the previous endpoint after a switch", async () => {
     const root = await temporaryRoot();
     const bundledFilePath = join(root, "bundled.json");
     const activeFilePath = join(root, "cache", "active.json");
@@ -365,7 +365,7 @@ describe("ZCode Built-in Release", () => {
     source.dispose();
   });
 
-  it("不同 Endpoint 使用独立 Active/LKG，不做跨 Endpoint revision 比较", async () => {
+  it("keeps per-endpoint Active/LKG and never compares revisions across endpoints", async () => {
     const root = await temporaryRoot();
     const bundledFilePath = join(root, "bundled.json");
     await writeRelease(bundledFilePath, 1, "bundled-model");
@@ -406,7 +406,7 @@ describe("ZCode Built-in Release", () => {
     source.dispose();
   });
 
-  it("相同发布序号跨 Endpoint 仍更新完整 Registry，Host 与 Worker 使用同一来源标识", async () => {
+  it("still refreshes the full Registry on equal publish sequence across endpoints, with Host and Worker sharing one source id", async () => {
     const root = await temporaryRoot();
     const bundledFilePath = join(root, "bundled.json");
     await writeRelease(bundledFilePath, 1, "bundled");
@@ -462,7 +462,7 @@ describe("ZCode Built-in Release", () => {
       }
       endpoint = "https://A.example.com/";
       expect((await source.read()).revision).toBe(first.config.zcodeBuiltinRevision);
-      // 等待来源通知触发的刷新完成后再拆除临时目录，不与后台文件锁竞争清理。
+      // Tear the temp dir down only after the source-notification refresh settles, never racing the background file lock.
       await registry.refresh("endpoint-back");
     } finally {
       registry.dispose();
@@ -472,7 +472,7 @@ describe("ZCode Built-in Release", () => {
     }
   });
 
-  it("有效 lease 连显式刷新也不能绕过，过期后可接管", async () => {
+  it("makes a live lease block even explicit refreshes until it expires", async () => {
     const root = await temporaryRoot();
     const bundledFilePath = join(root, "bundled.json");
     const activeFilePath = join(root, "cache", "active.json");
@@ -514,7 +514,7 @@ describe("ZCode Built-in Release", () => {
     source.dispose();
   });
 
-  it("失败进入递增退避，显式刷新只绕过 nextEligibleAt", async () => {
+  it("escalates backoff on failures while explicit refresh only bypasses nextEligibleAt", async () => {
     const root = await temporaryRoot();
     const bundledFilePath = join(root, "bundled.json");
     const activeFilePath = join(root, "cache", "active.json");
@@ -549,7 +549,7 @@ describe("ZCode Built-in Release", () => {
     source.dispose();
   });
 
-  it("dispose 后到达的远端响应不写入 Active", async () => {
+  it("never writes post-dispose remote responses into Active", async () => {
     const root = await temporaryRoot();
     const bundledFilePath = join(root, "bundled.json");
     const activeFilePath = join(root, "cache", "active.json");

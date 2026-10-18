@@ -1,6 +1,6 @@
 import { readPluginUiStyleVariables } from "@/plugin-ui/hostPrimitives.js";
 
-/** Gen UI 使用正文层级与中性色控件；不覆盖第三方 MCP App 的标准 token 投影。 */
+/** Gen UI uses body-tier type and neutral controls; never MCP App tokens. */
 export function readGenUiStyleVariables(): Record<string, string> {
   const variables = readPluginUiStyleVariables();
   const root = getComputedStyle(document.documentElement);

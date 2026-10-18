@@ -9,14 +9,14 @@ export const CLAUDE_OFFICIAL_PLUGIN_MARKETPLACE = "claude-plugins-official";
 export const ZCODE_INLINE_PLUGIN_MARKETPLACE = "inline";
 export const ZCODE_PLUGIN_HOST_COMMAND = "__zcode-plugin-host";
 /**
-  * Hidden subcommand: the dynamic-workflow sandbox child entry (zcode-dwf-child <entry path>; the last argv item is
-  * the entry file path written by the harness; the payload never touches the command line).
+ * Hidden subcommand: the dynamic-workflow sandbox child entry (zcode-dwf-child <entry path>; the last argv item is
+ * the entry file path written by the harness; the payload never touches the command line).
  *
-  * Same family and mechanism as {@link ZCODE_PLUGIN_HOST_COMMAND}: a SEA single-file binary does not interpret Node CLI flags,
-  * so the harness default of node --max-old-space-size=... <entry> would hand the flags to strict
-  * parseArgs under SEA and fail inevitably. Under SEA it re-execs this binary instead, dispatched by run.ts before parseArgs.
-  * The constant lives in contracts, not dynamic-workflow-runtime: the latter deliberately avoids depending on contracts (app-free proof),
-  * and bootstrap hands it to the harness as argsPrefix after the SEA check.
+ * Same family and mechanism as {@link ZCODE_PLUGIN_HOST_COMMAND}: a SEA single-file binary does not interpret Node CLI flags,
+ * so the harness default of node --max-old-space-size=... <entry> would hand the flags to strict
+ * parseArgs under SEA and fail inevitably. Under SEA it re-execs this binary instead, dispatched by run.ts before parseArgs.
+ * The constant lives in contracts, not dynamic-workflow-runtime: the latter deliberately avoids depending on contracts (app-free proof),
+ * and bootstrap hands it to the harness as argsPrefix after the SEA check.
  */
 export const ZCODE_DWF_CHILD_COMMAND = "__zcode-dwf-child";
 
@@ -99,7 +99,7 @@ export type PluginComponentKind = "agent" | "command" | "skill" | "hook" | "mcp"
 
 export interface PluginComponentItem {
   name: string;
-    /** Description from component frontmatter / manifest; omitted when missing, never fabricated. */
+  /** Description from component frontmatter / manifest; omitted when missing, never fabricated. */
   description?: string;
 }
 
@@ -109,16 +109,16 @@ export interface PluginComponentGroup {
 }
 
 /**
-  * Store-listing metadata carried by marketplace catalog entries: describes how the plugin is presented in a store,
-  * with no effect on behavior. All fields optional; the UI degrades when missing (letter avatar / hidden block / omitted row).
+ * Store-listing metadata carried by marketplace catalog entries: describes how the plugin is presented in a store,
+ * with no effect on behavior. All fields optional; the UI degrades when missing (letter avatar / hidden block / omitted row).
  */
 export interface PluginStoreListing {
-    /** Card/detail display name; falls back to the plugin name slug. */
+  /** Card/detail display name; falls back to the plugin name slug. */
   displayName?: string;
   displayNameI18n?: Record<string, string>;
-    /** Localized variants of the catalog description (the description itself has its own field). */
+  /** Localized variants of the catalog description (the description itself has its own field). */
   descriptionI18n?: Record<string, string>;
-    /** Icon image: an https URL, or a local asset path for bundled plugins. */
+  /** Icon image: an https URL, or a local asset path for bundled plugins. */
   icon?: string;
   category?: string;
   author?: string;
@@ -126,15 +126,15 @@ export interface PluginStoreListing {
   homepage?: string;
   privacyPolicy?: string;
   termsOfService?: string;
-    /** Detail-page hero banner image. */
+  /** Detail-page hero banner image. */
   heroImage?: string;
-    /** Detail-page example-prompt chips; clicking starts a prefilled new session. */
+  /** Detail-page example-prompt chips; clicking starts a prefilled new session. */
   examplePrompts?: string[];
   examplePromptsI18n?: Record<string, string[]>;
   /**
-      * Needs a paid plan to be useful: the entry declares requiresPaidPlan: true and store card/detail titles show a hint icon beside them.
-      * It expresses a usage precondition, not that the plugin itself is a paid product,
-      * so it takes no part in install gating or billing; the name is not tied to a plan product and survives plan renames.
+   * Needs a paid plan to be useful: the entry declares requiresPaidPlan: true and store card/detail titles show a hint icon beside them.
+   * It expresses a usage precondition, not that the plugin itself is a paid product,
+   * so it takes no part in install gating or billing; the name is not tied to a plan product and survives plan renames.
    */
   requiresPaidPlan?: boolean;
 }
@@ -157,25 +157,25 @@ export interface PluginManifest {
   repository?: string;
   settings?: unknown;
   skills?: unknown;
-  /** 插件 UI：`ui.surfaces[]` 面板入口声明，adapters 解析。 */
+  /** Plugin UI: `ui.surfaces[]` panel entry declarations, parsed by adapters. */
   ui?: unknown;
   userConfig?: Record<string, PluginUserConfigOption>;
   version?: string;
 }
 
-/** 面板生命周期：第一版只接受会话级；`draft` 留待需要时放开。 */
+/** Panel lifecycle: v1 accepts session-level only; `draft` reserved for later. */
 export type PluginUiSurfaceAvailability = "session";
-/** 标题：单一字符串或按 locale 键的映射（`{ "zh-CN": "...", "en-US": "..." }`）。 */
+/** Title: a single string or a map keyed by locale (`{ "zh-CN": "...", "en-US": "..." }`). */
 export type PluginUiSurfaceTitle = string | Record<string, string>;
 export interface PluginUiSurfaceDefinition {
   id: string;
   title: PluginUiSurfaceTitle;
   icon?: string;
-  /** 运行时 namespaced MCP server 名（`plugin:${name}:${server}`），UI 直接用它调 mcp/uiReadResource。 */
+  /** Runtime namespaced MCP server name (`plugin:${name}:${server}`); the UI calls mcp/uiReadResource with it directly. */
   server: string;
-  /** 清单里声明的原始 server 键，仅供诊断与展示。 */
+  /** Original server key as declared in the manifest; diagnostics/display only. */
   declaredServer: string;
-  /** 必须以 `ui://` 开头。 */
+  /** Must start with `ui://`. */
   resourceUri: string;
   availability: PluginUiSurfaceAvailability;
 }
@@ -190,13 +190,13 @@ export interface PluginConfig {
 }
 
 export interface PluginMetadata {
-    /** Author name from the manifest (plugin.json), normalized to a string; detail-page fallback when store info is missing. */
+  /** Author name from the manifest (plugin.json), normalized to a string; detail-page fallback when store info is missing. */
   author?: string;
   authorUrl?: string;
   commandRootCount: number;
   /**
-      * Authoritative component inventory (name + optional description), enumerated by the loader from the plugin root at parse time,
-      * enablement aside. The detail UI renders it directly, with no UI-side join against Skills/Commands/Agents.
+   * Authoritative component inventory (name + optional description), enumerated by the loader from the plugin root at parse time,
+   * enablement aside. The detail UI renders it directly, with no UI-side join against Skills/Commands/Agents.
    */
   components: PluginComponentGroup[];
   configuredOptions?: PluginOptionValues;
@@ -204,7 +204,7 @@ export interface PluginMetadata {
   declaredMcpServerNames: string[];
   description?: string;
   enabled: boolean;
-    /** homepage from the manifest (plugin.json); detail-page fallback when store info is missing. */
+  /** homepage from the manifest (plugin.json); detail-page fallback when store info is missing. */
   homepage?: string;
   id: string;
   manifestPath: string;
@@ -216,7 +216,7 @@ export interface PluginMetadata {
   skillCount: number;
   skillRootCount: number;
   source: PluginSource;
-  /** 清单 `ui.surfaces[]` 解析结果（已校验）；未声明或全部非法时缺省。 */
+  /** Parsed (validated) manifest `ui.surfaces[]`; absent when undeclared or all invalid. */
   uiSurfaces?: PluginUiSurfaceDefinition[];
   userConfig?: Record<string, PluginUserConfigOption>;
   version?: string;
@@ -237,31 +237,31 @@ export interface PluginDiagnostic {
 // ============================================================
 
 export interface PluginReferenceCatalogEntry {
-    /** Stable plugin ID: manifest name at marketplace; the sole identity behind canonical plugin:// links. */
+  /** Stable plugin ID: manifest name at marketplace; the sole identity behind canonical plugin:// links. */
   pluginId: string;
-    /** manifest name (base of the Skill/MCP/Subagent runtime namespaces); for display and provenance matching, not authoritative. */
+  /** manifest name (base of the Skill/MCP/Subagent runtime namespaces); for display and provenance matching, not authoritative. */
   name: string;
   marketplace: string;
-    /** Enablement at catalog freeze; disabled entries are kept for disabled_in_session diagnostics and are not referenceable. */
+  /** Enablement at catalog freeze; disabled entries are kept for disabled_in_session diagnostics and are not referenceable. */
   enabled: boolean;
   /**
-      * Other enabled plugin stable IDs sharing this entry's manifest name.
-      * Non-empty means a V1 fail-closed conflict: the picker disables selection, the runtime skips as ambiguous,
-      * and last-write-wins or display-name guessing is forbidden.
+   * Other enabled plugin stable IDs sharing this entry's manifest name.
+   * Non-empty means a V1 fail-closed conflict: the picker disables selection, the runtime skips as ambiguous,
+   * and last-write-wins or display-name guessing is forbidden.
    */
   conflictingPluginIds: string[];
-    /** Identity-declared Skill qualified names (name:skill); from component enumeration, decoupled from live discovery. */
+  /** Identity-declared Skill qualified names (name:skill); from component enumeration, decoupled from live discovery. */
   skillQualifiedNames: string[];
-    /** Identity-declared namespaced MCP server names (plugin:name:server). */
+  /** Identity-declared namespaced MCP server names (plugin:name:server). */
   mcpServerNames: string[];
-    /** Identity-declared canonical subagent names (name:agent); from component enumeration. */
+  /** Identity-declared canonical subagent names (name:agent); from component enumeration. */
   subagentNames: string[];
   /**
-      * Plugin root dir, for runtime provenance tracing of live Skills/Subagents only (rootPath prefix check).
-      * Never enters provider reminders or protocol projections -- paths are outside the identifiers-only contract.
+   * Plugin root dir, for runtime provenance tracing of live Skills/Subagents only (rootPath prefix check).
+   * Never enters provider reminders or protocol projections -- paths are outside the identifiers-only contract.
    */
   rootPath: string;
-  /** 面板入口声明（A5）；供 host 在 session 冻结 catalog 里查面板定义。 */
+  /** Panel entry declaration (A5); lets the host look up panel definitions in the session-frozen catalog. */
   uiSurfaces?: PluginUiSurfaceDefinition[];
 }
 
@@ -274,7 +274,7 @@ export interface PluginLoadOutcome {
   diagnostics: PluginDiagnostic[];
   hooks: Partial<Record<HookEventName, HookMatcherConfig[]>>;
   mcpServers: Record<string, McpServerConfig>;
-    /** Store listing keyed by the full plugin ID, for CLI/TUI display; takes no part in runtime identity. */
+  /** Store listing keyed by the full plugin ID, for CLI/TUI display; takes no part in runtime identity. */
   pluginListingsById?: Record<string, PluginStoreListing>;
   plugins: PluginMetadata[];
   skillRoots: SkillRoot[];
@@ -283,9 +283,9 @@ export interface PluginLoadOutcome {
 export interface PluginDiscoverRequest {
   config: PluginConfig;
   env?: Record<string, string | undefined>;
-    // bootstrap may pass the ids of official plugins safe to enable by default,
-    // so they work without a prior zcode plugins enable (e.g. content-only skill-creator).
-    // Defaults to empty; existing plugins (heavy ones like ios-simulator/android-emulator) behave unchanged.
+  // bootstrap may pass the ids of official plugins safe to enable by default,
+  // so they work without a prior zcode plugins enable (e.g. content-only skill-creator).
+  // Defaults to empty; existing plugins (heavy ones like ios-simulator/android-emulator) behave unchanged.
   officialPluginsEnabledByDefault?: ReadonlySet<string>;
   officialPluginRoots?: string[];
   storageRoot: string;

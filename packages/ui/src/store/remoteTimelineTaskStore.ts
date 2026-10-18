@@ -196,11 +196,14 @@ export async function refreshRemoteTimelineTasksForSession({
 }): Promise<void> {
   const session = getRemoteWorkspaceSession(sessionId);
   if (!session) {
-        logger.warn("[remoteTimelineTaskStore] Remote session not registered; skipping the timeline read", {
-      sessionId,
-      workspacePath,
-      workspaceIdentity,
-    });
+    logger.warn(
+      "[remoteTimelineTaskStore] Remote session not registered; skipping the timeline read",
+      {
+        sessionId,
+        workspacePath,
+        workspaceIdentity,
+      },
+    );
     return;
   }
 

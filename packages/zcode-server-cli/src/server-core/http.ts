@@ -40,9 +40,9 @@ const log = createServiceLogger("server-core");
 
 async function closeWebSocketServer(wss: WebSocketServer): Promise<void> {
   for (const client of wss.clients) {
-    // HTTP server.close() 不会收敛已经 upgrade 的 WebSocket，活跃 desktop
-    // continuous 连接会让 Core 的 shutdown ack 永远发不出去。先发 close frame 给正常
-    // 客户端一个短暂排空窗口，再 terminate 兜底，保证 Supervisor 能在预算内释放资源。
+    // HTTP server.close() never settles upgraded WebSockets; live desktop
+    // continuous connections would keep the Core's shutdown ack from ever sending. Send a close frame to give well-behaved
+    // clients a brief drain window, then terminate as the backstop so the Supervisor frees resources within budget.
     client.close(1001, "Server shutting down");
   }
   const deadline = Date.now() + WEBSOCKET_DRAIN_TIMEOUT_MS;
@@ -136,7 +136,7 @@ export async function createCoreHttpServer(
   const { injectWebSocket, upgradeWebSocket, wss } = createNodeWebSocket({ app });
   const host = options.host ?? "127.0.0.1";
   if (!isLoopbackHost(host)) {
-    // R2 当前只有本机/SSH 隧道入口，Core 尚未接入 token middleware；对外监听必须 fail-closed。
+    // R2 only has loopback/SSH-tunnel entries and the Core has no token middleware yet; external binds must fail closed.
     throw new Error(
       `Non-loopback host ${host} requires authentication before the server can listen`,
     );
@@ -153,8 +153,8 @@ export async function createCoreHttpServer(
       processResourceTelemetry: true,
     },
   };
-  // 裸 Set 无法落实 expiresAt，未消费的 capability 会一直有效并持续累积。
-  // 使用与 packages/server 兼容的 TTL 一次性 store，使有效期和消费语义与返回信息一致。
+  // A bare Set cannot honor expiresAt; unredeemed capabilities would live forever and accumulate.
+  // Use the packages/server-compatible TTL one-shot store so expiry and redemption semantics match the returned info.
   const capabilities = options.hostCapabilityStore ?? createHostCapabilityStore();
   app.get("/api/server-info", (context) => context.json(info));
   app.get(

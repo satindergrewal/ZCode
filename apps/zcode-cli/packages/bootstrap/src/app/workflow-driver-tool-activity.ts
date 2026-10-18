@@ -37,53 +37,53 @@ import type { AskLastTool } from "@zcode/dynamic-workflow";
 import { summarizeToolCall } from "./workflow-driver-tool-target.js";
 
 /**
-  * At most this many unclaimed scheduled-arg stashes. Normally each is claimed by its started, but permission-
-  * rejected, cancelled, or bulk-skipped calls are not -- unbounded, one long ask turns them into a memory leak.
-  * On overflow drop the oldest (Map iterates in insertion order): the newest call is the answer to "what is it doing".
+ * At most this many unclaimed scheduled-arg stashes. Normally each is claimed by its started, but permission-
+ * rejected, cancelled, or bulk-skipped calls are not -- unbounded, one long ask turns them into a memory leak.
+ * On overflow drop the oldest (Map iterates in insertion order): the newest call is the answer to "what is it doing".
  */
 const MAX_PENDING_SCHEDULED_CALLS = 64;
 
 /** Tool-call counts observed within one ask (two fields of `AskStats`). */
 export interface ActorToolCounts {
-    /** Every call, protocol tools such as `submit_result` / `escalate` included. */
+  /** Every call, protocol tools such as `submit_result` / `escalate` included. */
   toolCalls: number;
-    /** Those that saw or touched the outside world (read files, run commands, network); 0 = the ask is pure. */
+  /** Those that saw or touched the outside world (read files, run commands, network); 0 = the ask is pure. */
   worldToolCalls: number;
 }
 
 interface ActorToolActivity {
-    /** Zeroed on ask change: counting restarts, and the next ask's first write must be reported once more. */
+  /** Zeroed on ask change: counting restarts, and the next ask's first write must be reported once more. */
   reset(): void;
-    /** Tool calls observed in this ask so far. */
+  /** Tool calls observed in this ask so far. */
   counts(): ActorToolCounts;
   /**
-      * Tool calls **still running** (started minus result / error, deduped by toolCallId, so four parallel
-      * WebSearches in one round count as 4).
+   * Tool calls **still running** (started minus result / error, deduped by toolCallId, so four parallel
+   * WebSearches in one round count as 4).
    *
-      * The only reader is the seat gate (workflow-seat-gate.ts): admission calls carry only `{model}`, unable to tell a model request
-      * for this subagent's next turn step from one inside its tools -- and **tool-side requests never park**. Any tool
-      * running means tool-side; none means the next turn step. Pair started/ended instead of "the last event":
-      * with parallel calls the latter misreads idle at the first tool's return.
+   * The only reader is the seat gate (workflow-seat-gate.ts): admission calls carry only `{model}`, unable to tell a model request
+   * for this subagent's next turn step from one inside its tools -- and **tool-side requests never park**. Any tool
+   * running means tool-side; none means the next turn step. Pair started/ended instead of "the last event":
+   * with parallel calls the latter misreads idle at the first tool's return.
    */
   inFlight(): number;
-    /** The **latest** tool call that actually started in this ask; absent when none. */
+  /** The **latest** tool call that actually started in this ask; absent when none. */
   lastTool(): AskLastTool | undefined;
-    /** Subscribes runtime `ToolCallStarted` session events; a noop on minimal stub runtimes without subscribeEvents. */
+  /** Subscribes runtime `ToolCallStarted` session events; a noop on minimal stub runtimes without subscribeEvents. */
   observe(runtime: AgentRuntime, sessionId: SessionId): void;
   unsubscribe(): void;
 }
 
 export function createActorToolActivity(handlers: {
-    /** A subagent of the current ask is about to run a workspace-mutating tool (at most once per ask). */
+  /** A subagent of the current ask is about to run a workspace-mutating tool (at most once per ask). */
   onMutating(): void;
 }): ActorToolActivity {
   let reported = false;
   let toolCalls = 0;
   let worldToolCalls = 0;
   let lastTool: AskLastTool | undefined;
-    /** toolCallId -> name and args at scheduled time, awaiting the started claim. */
+  /** toolCallId -> name and args at scheduled time, awaiting the started claim. */
   const scheduled = new Map<string, ToolCallSummaryHold>();
-    /** toolCallIds started but still awaiting result / error (see {@link ActorToolActivity.inFlight}). */
+  /** toolCallIds started but still awaiting result / error (see {@link ActorToolActivity.inFlight}). */
   const running = new Set<string>();
   let unsubscribeEvents: (() => void) | undefined;
   return {
@@ -93,8 +93,8 @@ export function createActorToolActivity(handlers: {
       worldToolCalls = 0;
       lastTool = undefined;
       scheduled.clear();
-            // No tool should be running at an ask boundary (the previous ask's turn landed or was aborted); zeroing just keeps
-            // one abnormal path from carrying leftovers into the next ask -- the gate would admit them as tool-side requests forever.
+      // No tool should be running at an ask boundary (the previous ask's turn landed or was aborted); zeroing just keeps
+      // one abnormal path from carrying leftovers into the next ask -- the gate would admit them as tool-side requests forever.
       running.clear();
     },
     counts: () => ({ toolCalls, worldToolCalls }),
@@ -109,8 +109,8 @@ export function createActorToolActivity(handlers: {
             holdScheduled(scheduled, event.payload as ToolCallScheduledPayload);
             return;
           }
-                    // One call's end: the executor emits on both arms of the post-started try/catch, so a started always has its pair
-                    // (permission rejects, schema failures, registry misses happen before started and emit error only -- pairing unaffected).
+          // One call's end: the executor emits on both arms of the post-started try/catch, so a started always has its pair
+          // (permission rejects, schema failures, registry misses happen before started and emit error only -- pairing unaffected).
           if (
             event.type === SessionEventType.ToolCallResult ||
             event.type === SessionEventType.ToolCallError

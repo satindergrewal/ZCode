@@ -5,15 +5,15 @@ import {
   v4BackgroundBashOutputParamsSchema,
   type BackgroundBashOutputResult,
 } from "@zcode/shared/zcode-protocol-v4";
-// V4 conversation 网关（host 通道层 CLI 侧）。
-// 职责：per-session ConversationTopicPublisher 注册表 + flushWindowMs 定时调度
-// + v4/command → CommandInbox → 宿主 executor 的收口。
+// V4 conversation gateway (host-channel layer, CLI side).
+// Responsibilities: per-session ConversationTopicPublisher registry + flushWindowMs scheduling
+// + closing the loop v4/command -> CommandInbox -> host executor.
 //
-// 分层纪律：
-// - 本类不做网络 IO：物理帧经 host.emitWireFrame 交给宿主（stdio notification / 测试收集器）。
-// - 命令副作用不在本类实现：inbox 裁决通过后经 host.executeCommand 调宿主操作
-//   未实现的命令通过结构化错误返回。
-// - flush 定时器是唯一的时间源，publisher 本身保持纯推进（边界不变）。
+// Layering discipline:
+// - this class does no network IO: physical frames go to the host via host.emitWireFrame (stdio notification / test collector).
+// - command side effects are not implemented here: once the inbox rules, they go through host.executeCommand
+//   and unimplemented commands return a structured error.
+// - the flush timer is the only source of time; the publisher itself stays pure advancement (boundary unchanged).
 import type {
   DynamicWorkflowRunArtifact,
   DynamicWorkflowRunArtifactBytes,
@@ -149,8 +149,8 @@ import { CuaPermissionObservationNormalizer } from "./cua-permission-observation
 import { V4CapabilityUnsupportedError } from "./commands/handlers/interaction-background.js";
 
 function toRuntimeTurnId(turnId: string | null): TurnId | null {
-  // conversation projection 为了 row 索引用 string 保存 product turnId；
-  // 离开 gateway 调 runtime 文件摘要/回退能力时，需要恢复 contracts 的品牌类型。
+  // The conversation projection keeps product turnIds as strings for row-indexing;
+  // calls leaving the gateway for runtime file summary/fallback need the contracts branded type restored.
   return turnId as TurnId | null;
 }
 
@@ -173,32 +173,32 @@ function rowTargetActionForCommand(
 interface PersistedEventsLoadResult {
   events: SessionEvent[];
   synthesized: boolean;
-  /** durable transcript 重放后、live buffer 补回前注入的 store-verified child manifest。 */
+  /** Store-verified child manifest injected after durable replay, before live-buffer backfill. */
   subagentsSeed?: SessionSubagentsSeed;
-  /** shared_context 不生成可见 row；只把脱敏 handover metadata 下发。 */
+  /** shared_context creates no visible row; only sanitized handover metadata is published. */
   sharedContextImport?: ConversationSnapshot["sharedContextImport"];
-  /** memory eventStore 取快照时已包含的 raw sequence 水位。 */
+  /** Raw-sequence level already included when the memory eventStore snapshotted. */
   sourceEventSeq?: number;
-  /** 与本次历史事件使用同一容量的种子；null 表示已查询但没有历史水位。 */
+  /** Seed sharing the capacity of this historical event; null = queried but no historical level. */
   usageSeed?: SessionUsageSeed | null;
 }
 
 export type V4GatewayErrorContext = Record<string, unknown>;
 
 /**
- * 一条已读回的**整份字节**，供分块读取复用。
+ * One read-back whole-byte payload, for reuse by chunked reads.
  *
- * 两个家族共用这张表：已发送附件的预览（`attachmentRead`）与 dwf 用户面产物的字节
- * （`workflowRunArtifactRead`）。共用是有意的——两者的失效规则逐字相同（TTL、字节预算、
- * 最旧先逐、会话销毁时按 `sessionId` 清），而分成两张表会得到两份**各自**的字节预算，
- * 于是"最多缓存多少字节"这条约束就再也说不清了。
+ * Two families share this table: previews of sent attachments (attachmentRead) and the bytes of dwf user-facing artifacts
+ * (workflowRunArtifactRead). Sharing is deliberate: their invalidation rules are identical word for word (TTL, byte budget,
+ * oldest evicted first, cleared by sessionId on session destroy), while two tables would mean two independent byte budgets
+ * and the "how many bytes may be cached" constraint would become unstatable.
  *
- * 键空间靠**首段标签**区分（`att` / `dwfart`），不靠字段个数或内容——两个家族的键都是
- * NUL 分隔的四五段，段数相同、内容也可能撞（一个叫 "1" 的产物 id 与一个 attachmentIndex
- * 1 会长得一样），只有一个不可能相等的首段才是可证明的隔离。
+ * Key spaces are distinguished by a leading tag segment (att / dwfart), not by field count or content: both families key
+ * on NUL-separated four-or-five segments where the count matches and contents can collide (an artifact id named "1" and an
+ * attachmentIndex 1 look alike); only an impossible-to-equal leading segment is provable isolation.
  *
- * `bytes` 为 null 表示读还在飞：此时它不计入预算，也不会被按预算逐出（逐出一个正在被
- * await 的条目只会让下一块重新读一遍整份文件，正是这张表要消灭的事）。
+ * bytes=null means the read is in flight: the entry does not count against the budget and is not evicted by it (evicting an
+ * awaited entry just re-reads the whole file for the next chunk, which is exactly what this table exists to prevent).
  */
 interface BinaryReadCacheEntry {
   sessionId: string;
@@ -209,11 +209,11 @@ interface BinaryReadCacheEntry {
 
 export interface V4GatewayHost {
   cliVersion?: string;
-  /** 会话是否在宿主注册表中活跃（inbox 的 sessionNotFound 裁决依据）。 */
+  /** Whether the session is live in the host registry (basis for the inbox sessionNotFound verdict). */
   sessionExists(sessionId: string): boolean;
   /**
-   * V4 冷恢复钩子。gateway 用同一个 READY promise 包住 runtime activation 与 projection
-   * hydration；宿主只负责恢复 record。
+   * V4 cold-restore hook. The gateway wraps runtime activation and projection hydration in one
+   * READY promise; the host only restores the record.
    */
   resumePersistedSession?(
     sessionId: string,
@@ -221,86 +221,86 @@ export interface V4GatewayHost {
     workspace?: ZCodeWorkspaceRef,
   ): Promise<ColdSessionResumeOutcome>;
   /**
-   * 下行物理帧出口（宿主负责投递：stdio notification / MessagePort / ws）。
+   * Downstream physical-frame sink (the host delivers: stdio notification / MessagePort / ws).
    *
-   * 逻辑帧 fallback 会绕过 1MiB 上限、分片和接收端原子组装边界；因此生产
-   * host 与测试 host 都必须显式接收 physical wire，类型层不再允许退回逻辑帧。
+   * The logical-frame fallback bypasses the 1MiB cap, chunking, and the receiver's atomic-assembly boundary; both the production
+   * host and test hosts must therefore accept physical wire explicitly; the type layer no longer allows falling back to logical frames.
    */
   emitWireFrame(frame: RoutedTopicWireFrame): void;
-  /** 当前进程 live ingest 的无正文事实；不缓存、不进入 topic replay。 */
+  /** Body-less facts of live ingest in this process; not cached, never in topic replay. */
   emitConversationTelemetryFact?(fact: ConversationTelemetryFact): void;
   emitLocalTtftFacts?(facts: import("@zcode/shared").LocalTtftFacts): void;
-  /** 当前进程 live request_access 权限事实；不缓存、不进入 topic replay。 */
+  /** live request_access permission facts of this process; not cached, never in topic replay. */
   emitCuaPermissionObservation?(observation: CuaPermissionObservation): void;
   /**
-   * sessions-index：会话 → 所属 workspaceId（列表 topic 的分桶键）。
-   * 未实现（旧宿主）→ sessions-index 路径整体不激活（no-op），不影响 conversation。
+   * sessions-index: session -> owning workspaceId (the bucket key for list topics).
+   * Unimplemented (legacy host): the whole sessions-index path stays inactive (no-op) and does not affect conversation.
    */
   getSessionWorkspaceId?(sessionId: string): string | null;
-  /** sessions-index：会话的列表用元信息（createdAt/父会话/最后活动时刻）。 */
+  /** sessions-index: list-facing metadata for a session (createdAt/parent/last activity). */
   getSessionIndexMeta?(sessionId: string): {
     createdAt: number;
     lastActivityAt: number;
     parentSessionId?: string;
   } | null;
   /**
-   * config 种子：会话 runtime 的当前真值（模型选型/思考深度/协作模式）。
-   * 投影初值不能写死空值——runtime 的启动默认模型、项目持久化 mode 偏好、历史会话
-   * resume 恢复的上次选型都只活在 runtime 里（ModelSelected 仅在 switchModelConfig 后
-   * 补发，日志里可能根本没有），种子是它们进投影的唯一通道。
-   * 会话不在册返回 null（gateway 跳过，保持空初值）；未实现（旧宿主/测试桩）同。
+   * config seed: the session runtime's current truth (model selection, reasoning depth, collaboration mode).
+   * Projection initial values must not hardcode empties. The runtime's startup default model, the project-persisted mode preference, and the
+   * previous selection restored on resume live only in the runtime (ModelSelected is emitted only after
+   * switchModelConfig and may be absent from the log); the seed is their only path into the projection.
+   * Unknown session returns null (gateway skips, initial value stays empty); unimplemented (legacy host/test stub) likewise.
    */
   getSessionConfigSeed?(sessionId: string): SessionConfigSeed | null;
-  /** 只读会话创建期 App 开关，不读取实时设置或推断 Memory 工具使用。 */
+  /** Read-only session-creation App switches; never reads live settings or infers Memory tool usage. */
   getSessionMemoryEnabled?(sessionId: string): boolean | undefined;
   /**
-   * 冷恢复 usage 种子：transcript 合成路径可能只能生成 0/默认窗口的占位
-   * ModelComplete；宿主可从持久化 assistant tokens / runtime snapshot 提供真实水位。
-   * 未实现时保持事件日志归约结果。
+   * Cold-restore usage seed: transcript synthesis may only produce 0/default-window placeholder
+   * ModelCompletes; the host can supply real levels from persisted assistant tokens / the runtime
+   * snapshot. Unimplemented -> keep the event-log reduction result.
    */
   getSessionUsageSeed?(
     sessionId: string,
     persistedMessages?: MessageWithParts[],
   ): Promise<SessionUsageSeed | null> | SessionUsageSeed | null;
-  /** sessions-index：某 workspace 下当前在册的会话 id（冷启动 snapshot 用）。 */
+  /** sessions-index: session ids currently registered under a workspace (cold-start snapshot). */
   listWorkspaceSessionIds?(workspaceId: string): string[];
   /**
-   * sessions-index：draft 判定——deferred 持久化且未发首条输入的会话不进列表。
-   * 旧 workspace prepare 路径会预建 deferred 会话（历史上列表读 sqlite、
-   * deferred 不落盘故不可见）；sessions-index 从活注册表派生后这些幽灵 draft 会
-   * 以「新任务」出现在侧栏。首条 sendText 把 persistence 提升为 immediate 后，
-   * 事件流自然触发 fanOutToIndex 使会话入列。未实现（旧宿主/测试桩）→ 不过滤。
+   * sessions-index: draft decision. Sessions persisted as deferred with no first input stay out of the list.
+   * The legacy workspace prepare path pre-creates deferred sessions (historically the list read sqlite and
+   * deferred rows were not persisted, hence invisible); once sessions-index derives from the live registry those ghost drafts
+   * appear as "new tasks" in the sidebar. After the first sendText promotes persistence to immediate,
+   * the event flow triggers fanOutToIndex and the session enters the list. Unimplemented (legacy host/test stub): no filtering.
    */
   isDraftSession?(sessionId: string): boolean;
   /**
-   * sessions-index：从持久化 store 直接构造某 workspace 全部会话的轻量摘要（冷启动种子）。
-   * 未加载（无 live publisher）的会话靠它进列表；已加载的会话由 gateway 用 live 投影覆盖。
-   * store 读取是异步的，故允许返回 Promise（gateway 订阅时 await；同步 stub 直接返回数组）。
+   * sessions-index: build lightweight summaries for all of a workspace's sessions straight from the persisted store (cold-start seed).
+   * Sessions without a live publisher enter the list through it; loaded sessions are overridden by the gateway's live projection.
+   * The store read is async, so returning a Promise is allowed (the gateway awaits on subscribe; a sync stub returns the array directly).
    */
   getStoredSessionSummaries?(workspaceId: string): Promise<SessionSummary[]> | SessionSummary[];
   /**
-   * 3.3.6 远端历史兼容：用精确 task allowlist 幂等认领后返回严格 identity 摘要。
-   * 非远端 workspace 返回 null；失败可降级为空数组，后续携带 allowlist 的订阅会重试。
+   * 3.3.6 remote-history compatibility: claim idempotently with the exact task allowlist, then return the strict identity summary.
+   * Non-remote workspaces return null; on failure degrade to an empty array, later subscriptions carrying the allowlist retry.
    */
   refreshLegacySessionSummaries?(
     workspaceId: string,
     legacyTaskIds: readonly string[],
   ): Promise<SessionSummary[] | null> | SessionSummary[] | null;
   /**
-   * workspace-config：某 workspace 的配置目录（config options + slash 命令）。
-   * 订阅时的种子与 invalidateWorkspaceConfig 重拉都走这里。
-   * 未实现（旧宿主 / 测试桩）→ workspace-config 路径退化为空目录快照。
+   * workspace-config: a workspace's config directory (config options + slash commands).
+   * Both the subscribe-time seed and the invalidateWorkspaceConfig re-pull go through here.
+   * Unimplemented (legacy host / test stub): the workspace-config path degrades to an empty directory snapshot.
    */
   getWorkspaceConfig?(
     workspaceId: string,
   ): Promise<WorkspaceConfigState | null> | WorkspaceConfigState | null;
   readBackgroundBashOutput?(sessionId: string, workId: string): Promise<BackgroundBashOutputResult>;
-  /** 执行 accepted 命令的副作用；返回值进 ACK.result（fork/createSession 带 sessionId）。 */
+  /** Side effects for accepted commands; the return value goes into ACK.result (fork/createSession carry sessionId). */
   executeCommand(
     envelope: CommandEnvelope,
     admission?: { admissionSeq: number; admittedAt: number; queueItemId: string },
   ): Promise<CommandResult | undefined>;
-  /** 输入命令执行前先落 durable admission；返回同一份完整 intent 供 inbox pin。 */
+  /** Persist durable admission before running a command; returns the full intent for the inbox to pin. */
   admitCommandInput?(
     envelope: CommandEnvelope,
     admission: { admissionSeq: number; admittedAt: number; queueItemId: string },
@@ -310,32 +310,32 @@ export interface V4GatewayHost {
     queueItemId: string,
     reason: string,
   ): Promise<void>;
-  /** projection 运行中越过 16MiB 时终止当前 turn；同一 fault 周期由 gateway 保证只调用一次。 */
+  /** Terminate the current turn when the projection exceeds 16MiB; the gateway guarantees once per fault cycle. */
   terminateTurnForProjectionFault?(
     sessionId: string,
     reasonCode: "proto.payloadTooLarge",
   ): Promise<void> | void;
-  /** commands/query 持久化 fallback；四个来源必须按 sourceCommandId 精确命中。 */
+  /** commands/query persistence fallback; all four sources must match exactly by sourceCommandId. */
   lookupTranscriptCommand?(key: CommandKey): Promise<CommandAck | null> | CommandAck | null;
   lookupTimelineCommand?(key: CommandKey): Promise<CommandAck | null> | CommandAck | null;
   lookupChildCommand?(key: CommandKey): Promise<CommandAck | null> | CommandAck | null;
   lookupDiscardedCommand?(key: CommandKey): Promise<CommandAck | null> | CommandAck | null;
-  /** transcript 原子 promotion 后同步失效旧 lazy seed，再解除 CommandInbox live pin。 */
+  /** After transcript atomic promotion: invalidate stale lazy seeds, then release the CommandInbox live pin. */
   invalidatePersistentCommandFacts?(sessionId: string): void;
-  /** canonical goal complete 已进入 projection；宿主副作用必须 detached，禁止阻塞 ingest。 */
+  /** Canonical goal complete entered the projection; host side effects must be detached, never blocking ingest. */
   onTargetCompleted?(sessionId: string, event: SessionEvent): void;
-  /** Highspeed 真实耗时在 CLI 终态落 transcript；宿主副作用必须 detached。 */
+  /** The real Highspeed elapsed time lands in the transcript on CLI terminal state; host side effects must be detached. */
   onHighspeedTurnTerminal?(
     sessionId: string,
     event: SessionEvent,
     snapshot: ConversationSnapshot,
   ): void;
-  /** 完整 chunk transaction commit 后一次性写 session artifact。 */
+  /** Written once per completed chunk transaction; stores the session artifact. */
   putSessionAttachment?(
     sessionId: string,
     input: { fileName: string; mime: string; bytes: Uint8Array },
   ): Promise<{ ref: string }>;
-  /** 已发送 image/video/PDF 只读查询；gateway 完成 row/ref 授权后才允许进入宿主。 */
+  /** Read-only query for sent image/video/PDF; the gateway completes row/ref authorization before the host is touched. */
   readSessionAttachment?(
     sessionId: string,
     input: {
@@ -346,7 +346,7 @@ export interface V4GatewayHost {
       attachmentIndex?: number;
     },
   ): Promise<{ bytes: Uint8Array; mediaType: string }>;
-  /** Share 选择阶段的 userInput 附件 metadata stat；gateway 先完成 row/index 授权。 */
+  /** Share-selection userInput attachment metadata stat; the gateway completes row/index authorization first. */
   statSessionAttachment?(
     sessionId: string,
     input: {
@@ -356,7 +356,7 @@ export interface V4GatewayHost {
       attachmentIndex?: number;
     },
   ): Promise<{ totalBytes: number; mediaType: string; mtimeMs?: number }>;
-  /** Desktop local 已发送视频路径；gateway 完成 row/index 授权后才允许进入宿主。 */
+  /** Desktop-local sent-video path; the gateway completes row/index authorization before the host is touched. */
   resolveSessionAttachmentPreviewSource?(
     sessionId: string,
     input: {
@@ -379,26 +379,26 @@ export interface V4GatewayHost {
     targetTurnId: TurnId | null,
   ): Promise<V4ConversationFileRewindPreviewResult>;
   /**
-   * workflow run 的事件日志分页（详情页审计面）。缺席 = 该会话 runtime 没有这个能力
-   * （dwf journal 不可用 → run service 整个没构造），gateway 据此回结构化能力不支持错误。
+   * Paginated event log of a workflow run (the detail page's audit surface). Absent = the session runtime lacks the
+   * capability (no dwf journal -> no run service at all); the gateway returns a structured capability-unsupported error.
    */
   listDynamicWorkflowRunEvents?(
     sessionId: string,
     input: { runId: string; afterSequence?: number; limit?: number; maxBytes?: number },
   ): Promise<DynamicWorkflowRunEventsResult>;
   /**
-   * dwf run 的枚举面（重启后的发现查询）。
-   * 缺席条件同 {@link listDynamicWorkflowRunEvents}。
+   * Enumeration surface for dwf runs (post-restart discovery).
+   * Absence conditions as {@link listDynamicWorkflowRunEvents}.
    */
   listDynamicWorkflowRuns?(
     sessionId: string,
     input: { limit?: number },
   ): Promise<DynamicWorkflowRunSessionSummary[]>;
   /**
-   * workflow run 的**用户面产物**读面。三条一起在场、
-   * 一起缺席（app 侧同一个条件注册）。缺席条件同 {@link listDynamicWorkflowRunEvents}。
+   * Read facade for a workflow run's user-facing artifacts. All three appear together or not at
+   * all (registered under one app-side condition). Absence as {@link listDynamicWorkflowRunEvents}.
    *
-   * ⚠ 术语：artifact = 脚本经 `artifact.*` 发布给用户看的产出，不是 run 的顶层返回值。
+   * Terminology: artifact = output the script published to the user via artifact.*, NOT the run's top-level return value.
    */
   listDynamicWorkflowRunArtifacts?(
     sessionId: string,
@@ -420,8 +420,8 @@ export interface V4GatewayHost {
     input: { runId: string; artifactId: string; version: number },
   ): Promise<DynamicWorkflowRunArtifactBytes | undefined>;
   /**
-   * workflow run 的工作区 transcript：两条一起在场、
-   * 一起缺席。授权在宿主侧（run 属于本会话）；拒绝与未知都回 `undefined`。
+   * A workflow run's workspace transcript: the two arrive together and are absent together.
+   * Authorization is on the host side (the run belongs to this session); denied and unknown both return undefined.
    */
   listDynamicWorkflowRunWorkspaceNodes?(
     sessionId: string,
@@ -432,24 +432,24 @@ export interface V4GatewayHost {
     input: { runId: string; siteId: string; ordinal: number; maxBytes: number },
   ): Promise<DynamicWorkflowRunWorkspaceNodeResult | undefined>;
   /**
-   * hydration：读取 session 的持久化事件用于冷订阅重建投影（fork child / resume /
-   * app-restart）。`synthesized=true` 表示事件日志覆盖不了 transcript，events 是从
-   * transcript 反向合成的——此时即便已有 cold publisher（fork resume 的 ingest 抢先
-   * 建的）也要**重建**，否则历史不进投影。`synthesized=false`（完整事件日志）则保留
-   * 已有 live publisher（流式不能被重建打断）。未实现（旧宿主）冷订阅退化为空投影。
+   * Hydration: read the session's persisted events to rebuild the projection for cold subscription (fork child / resume /
+   * app-restart). synthesized=true means the event log cannot cover the transcript and events were reverse-synthesized from it;
+   * then even an existing cold publisher (built by the fork resume's racing ingest) must be REBUILT, or history never enters
+   * the projection. synthesized=false (complete event log) keeps the existing live publisher (streaming must not be interrupted by a rebuild).
+   * Unimplemented (legacy host): cold subscription degrades to an empty projection.
    */
   loadPersistedEvents?(
     sessionId: string,
     persistedMessages?: MessageWithParts[],
   ): Promise<PersistedEventsLoadResult>;
-  /** 仅用于低频生命周期和恢复裁决；高频 event/stream trace 禁止走生产日志。 */
+  /** For low-frequency lifecycle and recovery verdicts only; never route high-frequency event/stream traces to the production log. */
   onDebug?(message: string): void;
   onError?(scope: string, error: unknown, context?: V4GatewayErrorContext): void;
 }
 
 export interface ConversationV4GatewayOptions {
   now?: () => number;
-  /** logEpoch 生成器（默认进程内随机；测试注入固定值保证确定性）。 */
+  /** logEpoch generator (in-process random by default; tests inject a fixed value for determinism). */
   createLogEpoch?: (sessionId: string) => string;
 }
 
@@ -470,19 +470,19 @@ interface HydrationBuffer {
 }
 
 interface RawSequenceState {
-  /** 已经由 cold snapshot 或 live replay 消费的 runtime raw cursor。 */
+  /** Runtime raw cursor already consumed by cold snapshot or live replay. */
   sourceEventSeq: number;
-  /** transportSeq = rawSeq + offset；遇到 sequence=0 时会向前校正。 */
+  /** transportSeq = rawSeq + offset; corrected forward when sequence=0 appears. */
   offset: number;
   lastTransportSeq: number;
   seenEventIds: Set<string>;
-  /** publisher 已成功 apply 的 event；runtime sink 已看见但仍在 gap buffer 的不在此集合。 */
+  /** Events the publisher successfully applied; runtime-sink-seen-but-still-gap-buffered events are not here. */
   appliedEventIds: Set<string>;
-  /** publisher apply 失败事实；临时 sink 迟到注册 waiter 时也必须立即 reject。 */
+  /** Publisher apply-failure facts; also reject late-registered temporary sink waiters immediately. */
   failedEventById: Map<string, Error>;
-  /** notify sink 可乱序；只有从 sourceEventSeq+1 连续时才可向投影 drain。 */
+  /** The notify sink may be out of order; drain into the projection only from sourceEventSeq+1 contiguously. */
   pendingByRawSeq: Map<number, SessionEvent>;
-  /** synthesized hydration 重建投影时，补回持久读取边界之后已经到达的 raw 事实。 */
+  /** During synthesized-hydration rebuilds, backfill raw facts that arrived after the persisted read boundary. */
   recentRawEventsById: Map<string, SessionEvent>;
 }
 
@@ -493,7 +493,7 @@ interface ProjectionEventCommitWaiter {
 
 const PROJECTION_EVENT_COMMIT_TIMEOUT_MS = 25_000;
 const MAX_TELEMETRY_EVENT_IDS = 2_000;
-/** detached subagent child 终态后无订阅者时，publisher 由低频 tick 释放前的保留时长。 */
+/** Retention for a terminal detached-subagent-child publisher with no subscribers, before the low-frequency tick reclaims it. */
 export const DETACHED_CHILD_PUBLISHER_GRACE_MS = 120_000;
 
 class ProjectionEventCommitWaitError extends Error {
@@ -514,8 +514,8 @@ class ProjectionEventCommitWaitError extends Error {
 }
 
 /**
- * server 内部分派结果：initial frame 只供 request-scoped post-response outbox
- * 消费，公共 JSON-RPC result schema 始终严格为 `{ ack }`。
+ * Server-internal dispatch result: the initial frame is consumed only by the request-scoped
+ * post-response outbox; the public JSON-RPC result schema always strictly `{ ack }`.
  */
 export interface V4SubscribeDispatchResult<TFrame> {
   ack: SubscribeAck & { openTiming?: ConversationOpenTiming };
@@ -537,7 +537,7 @@ export function encodeReservedTopicFrame(
   }) as RoutedTopicWireFrame[];
 }
 
-/** 所有 physical wire 都被下游接受后才 commit publisher 水位。 */
+/** Commit the publisher watermark only after every downstream accepted the physical wire. */
 export function emitReservedTopicFrame<F extends RoutedTopicFrame>(
   reservation: TopicFrameReservation<F>,
   emit: (wire: RoutedTopicWireFrame) => unknown,
@@ -559,7 +559,7 @@ function artifactRefBelongsToSession(ref: string, sessionId: string): boolean {
   return ref.startsWith(`zcode-artifact://${encodeURIComponent(sessionId)}/`);
 }
 
-/** 附件在文件系统层「确定不存在」的错误码集合。 */
+/** Error codes for attachments provably absent at the filesystem layer. */
 const MISSING_ATTACHMENT_FS_CODES = new Set<FileSystemErrorCode>([
   "not_found",
   "is_directory",
@@ -567,9 +567,9 @@ const MISSING_ATTACHMENT_FS_CODES = new Set<FileSystemErrorCode>([
 ]);
 
 /**
- * 把 host / FileSystemPort 抛出的错误归一成带稳定码的附件 fault。
- * host 已经给出结构化 fault 码时原样透传，其余按 FileSystemPortError.code 判定；
- * 都不匹配则保持原错误，让上层按「未知」处理，而不是猜成确定分类。
+ * Normalize errors thrown by the host / FileSystemPort into attachment faults with stable codes.
+ * A structured fault code from the host passes through untouched; otherwise decide by FileSystemPortError.code;
+ * no match keeps the original error for upper layers to treat as "unknown", instead of guessing a definite class.
  */
 function toShareStatFault(error: unknown): unknown {
   if (readZCodeAttachmentFaultCode(error)) return error;
@@ -583,43 +583,43 @@ function toShareStatFault(error: unknown): unknown {
 
 export class ConversationV4Gateway {
   private readonly publishers = new Map<string, ConversationTopicPublisher>();
-  /** sessions-index：workspaceId → 列表 publisher（与 conversation 并列，独立 seq/logEpoch）。 */
+  /** sessions-index: workspaceId -> list publisher (parallel to conversation; independent seq/logEpoch). */
   private readonly indexPublishers = new SessionsIndexPublisherRegistry();
-  /** workspace-config：workspaceId → 配置目录 publisher（conflated 整体替换态）。 */
+  /** workspace-config: workspaceId -> config-directory publisher (conflated wholesale-replace state). */
   private readonly configPublishers = new Map<string, WorkspaceConfigPublisher>();
-  /** 已完成首次 hydration 的 session（避免重复重建 / 双计，见 hydratePublisher）。 */
+  /** Sessions whose first hydration completed (avoids duplicate rebuilds/double count; see hydratePublisher). */
   private readonly hydratedSessions = new Set<string>();
-  /** 首次 hydration 按 session 单飞；并发 pane 共享同一份重建结果。 */
+  /** First hydration is single-flight per session; concurrent panes share one rebuild result. */
   private readonly hydrationInFlight = new Map<string, Promise<ConversationTopicPublisher>>();
-  /** cold activation 到 hydration 的 READY 水位；只阻塞本次恢复期间的 command/query。 */
+  /** READY level from cold activation to hydration; blocks only this recovery's commands/queries. */
   private readonly readyFlights = new Map<string, Promise<ConversationTopicPublisher>>();
-  /** load await 窗口内的 raw accepted events；重建后按 cursor/eventId 补回。 */
+  /** Raw accepted events within the load-await window; backfilled by cursor/eventId after rebuild. */
   private readonly hydrationBuffers = new Map<string, HydrationBuffer>();
-  /** transcript 合成序列与 runtime raw 序列之间的 per-session 单调映射。 */
+  /** Per-session monotonic map between transcript-synthesized and runtime raw sequences. */
   private readonly rawSequenceStates = new Map<string, RawSequenceState>();
-  /** connection-independent；command admission 与 transport subscription 生命周期解耦。 */
+  /** Connection-independent; command admission decoupled from transport subscription lifetime. */
   private readonly projectionEventCommitWaiters = new Map<
     string,
     Map<string, Set<ProjectionEventCommitWaiter>>
   >();
-  /** 没有独立 bootstrap record、但由父 runtime 持续转发 raw events 的 live child。 */
+  /** A live child with no bootstrap record of its own, fed raw events by the parent runtime. */
   private readonly detachedLiveSessions = new Set<string>();
   /**
-   * detached subagent child 的父 record 归属与终态时间。child 没有自己的 record，publisher 只能随父 record 释放，
-   * 或在 turn 结束且无订阅者、超过 grace 后由低频 tick 释放；否则会驻留到进程退出。
+   * Parent-record attribution and terminal time for a detached subagent child. The child has no record of its own; the publisher can only be
+   * released with the parent record, or by a low-frequency tick after turn end with no subscribers past the grace window; otherwise it lingers until process exit.
    */
   private readonly detachedChildParent = new Map<string, string>();
   private readonly detachedChildrenByParent = new Map<string, Set<string>>();
   private readonly detachedTerminalAt = new Map<string, number>();
-  /** 冷恢复协调器（既有 activation 单飞 + 错误分型）。 */
+  /** Cold-restore coordinator (existing activation single-flight + error typing). */
   private readonly coldResume: ColdSessionResumeCoordinator;
-  /** 订阅 → flush 调度状态（publisher 内部不持有定时器，调度归网关）。 */
+  /** Per-subscription flush scheduling (the publisher holds no timers; scheduling belongs to the gateway). */
   private readonly flushStates = new Map<string, FlushState>();
-  /** ACK/outbox 尚未 admission 的 control reservation 禁止被 online flush 抢先发送。 */
+  /** Control reservations awaiting ACK/outbox admission must not be pre-sent by online flush. */
   private readonly controlReservations = new WeakSet<object>();
-  /** transport high-water pause 只按 trusted connectionId 隔离，不改变 ingest/publisher 真值。 */
+  /** Transport high-water pauses key on trusted connectionId only; never touches ingest/publisher truth. */
   private readonly pausedConnections = new Set<string>();
-  /** 一个越界周期只触发一次 runtime stop；终态事件到达后解除。 */
+  /** One over-budget cycle triggers at most one runtime stop; cleared once the terminal event arrives. */
   private readonly projectionFaultedSessions = new Set<string>();
   private readonly inbox: CommandInbox;
   private readonly attachmentUploads: AttachmentUploadRegistry;
@@ -638,7 +638,7 @@ export class ConversationV4Gateway {
       if (parsed.success) this.host.emitLocalTtftFacts?.(parsed.data);
     },
   );
-  /** 高频进度事件的 index fan-out 节流（14-sessions-index「事件 fan-out 节奏」）。 */
+  /** Index fan-out throttle for high-frequency progress events (14-sessions-index "event fan-out cadence"). */
   private readonly indexFanoutThrottle = new SessionsIndexFanoutThrottle({
     publish: (sessionId) => this.publishCurrentSummaryToIndex(sessionId),
   });
@@ -650,7 +650,7 @@ export class ConversationV4Gateway {
   private readonly telemetryEventIds = new Set<string>();
   private disposed = false;
 
-  /** session entry 状态变更后的轻量 metadata 更新，不重放 conversation event。 */
+  /** Lightweight metadata refresh after session-entry state changes; no conversation event replay. */
   updateSharedContextImport(
     sessionId: string,
     source: ConversationSnapshot["sharedContextImport"],
@@ -673,7 +673,7 @@ export class ConversationV4Gateway {
     this.inbox = new CommandInbox({
       getRevision: (sessionId) => {
         if (!this.host.sessionExists(sessionId)) return null;
-        // 已知会话但尚无事件 → 投影未建，revision 视为 0（draft 起点）。
+        // Known session, no events yet -> no projection; treat revision as 0 (draft baseline).
         return this.publishers.get(sessionId)?.getSnapshot().revision ?? 0;
       },
       getLogEpoch: (sessionId) => this.publishers.get(sessionId)?.getSnapshot().logEpoch ?? null,
@@ -767,14 +767,14 @@ export class ConversationV4Gateway {
     }
   }
 
-  /** 权威事件入口：投影推进 + 各订阅者按 profile.flushWindowMs 调度打帧。 */
+  /** Authoritative event ingress: advance the projection and schedule framing per subscriber profile.flushWindowMs. */
   ingest(sessionId: string, event: SessionEvent): void {
     if (this.disposed) return;
     const hydrationBuffer = this.hydrationBuffers.get(sessionId);
     if (hydrationBuffer) {
       const eventId = String(event.id);
       if (hydrationBuffer.eventIds.has(eventId)) return;
-      // 先记 raw fact；它可能因前序尚未到而暂时不进 publisher。
+      // Record the raw fact first; it may wait for predecessors before entering the publisher.
       hydrationBuffer.eventIds.add(eventId);
       hydrationBuffer.rawEvents.push(event);
     }
@@ -786,7 +786,7 @@ export class ConversationV4Gateway {
         try {
           this.host.onError?.("v4.localTtft.observe", error);
         } catch {
-          /* 诊断回调也不能阻断实际内容。 */
+          /* Diagnostic callbacks must not block real content either. */
         }
       }
       this.ingestNormalizedEvent(sessionId, normalizedEvent);
@@ -795,9 +795,9 @@ export class ConversationV4Gateway {
 
   private emitLiveTelemetryFact(sessionId: string, event: SessionEvent): void {
     const eventId = String(event.id);
-    // 主 session 与 detached child 各自维护事件序列，eventId 不能假设跨
-    // session 全局唯一。旧去重只用 eventId，会把 child 的同号事件误判成主会话重放，
-    // 导致前台 Subagent 的真实轮次事实被静默丢弃。
+    // Main session and detached children keep separate event sequences; eventId is not globally
+    // unique across sessions. Deduping by eventId alone misread same-numbered child events as
+    // main-session replays, silently dropping the foreground subagent's real turn facts.
     const telemetryEventKey = `${sessionId}\0${eventId}`;
     if (this.telemetryEventIds.has(telemetryEventKey)) return;
     this.telemetryEventIds.add(telemetryEventKey);
@@ -819,19 +819,19 @@ export class ConversationV4Gateway {
         this.host.emitConversationTelemetryFact?.(fact);
       }
     } catch (error) {
-      // 轮次事实绝不能反向阻断 conversation 投影；严格 schema 失败只记录诊断。
+      // Turn facts must never block the conversation projection in reverse; strict-schema failures only log a diagnostic.
       this.host.onError?.("v4.telemetry.normalize", error);
     }
     try {
       const observation = this.cuaPermissionNormalizer.normalize(sessionId, event);
       if (observation) this.host.emitCuaPermissionObservation?.(observation);
     } catch (error) {
-      // 权限观察只是 live UI 提示，schema 或投影异常不能阻断 conversation 主链路。
+      // Permission observations are live-UI hints only; schema or projection failures must not block the conversation main line.
       this.host.onError?.("v4.cuaPermissionObservation.normalize", error);
     }
   }
 
-  /** 等待指定 raw event 真正完成 reorder drain + publisher projection apply。 */
+  /** Waits until the given raw event finishes reorder drain and publisher projection apply. */
   waitForProjectionEventCommit(
     sessionId: string,
     eventId: string,
@@ -886,9 +886,9 @@ export class ConversationV4Gateway {
         },
       };
       const onAbort = () => {
-        // 只 reject 当前 waiter 会让 raw gap 中的 TurnStarted 继续存活；
-        // command 已 cancelled 后补齐 gap，迟到事件仍会进入 canonical projection。
-        // event failure 必须固化到 sequence state，后续 drain 只推进 cursor、不再 apply。
+        // Rejecting only the current waiter would leave TurnStarted inside the raw gap alive;
+        // after the command is cancelled the gap gets filled and late events still enter the canonical projection.
+        // The event failure must be pinned into sequence state; later drains only advance the cursor and never apply again.
         this.rejectProjectionEventCommit(
           sessionId,
           eventId,
@@ -915,7 +915,7 @@ export class ConversationV4Gateway {
     });
   }
 
-  /** 授权已经提交到任务事务，失败重试必须重放权威日志，不能再次提权或丢弃提交事实。 */
+  /** Authorization already committed to the task transaction: retries must replay the authoritative log, never re-grant or drop the commit. */
   async waitForPermissionGrantCommit(sessionId: string, eventId: string): Promise<void> {
     const state = this.getOrCreateRawSequenceState(sessionId);
     if (state.failedEventById.has(eventId)) {
@@ -1009,9 +1009,9 @@ export class ConversationV4Gateway {
     }
     if (!promotedQueueRemoval) {
       if (removedQueueItems.length > 0) {
-        // delete/clear 已先把 durable session_input 写成 cancelled，但本 session
-        // 的 persistent command index 可能缓存过旧空结果。必须先失效再解除 live pin，
-        // 否则 LRU 淘汰后同 commandId 查询仍可能 unknown 并被重复执行。
+        // delete/clear already wrote the durable session_input as cancelled, but this session's
+        // persistent command index may have cached a stale empty result. Invalidate before releasing the live pin,
+        // or after LRU eviction the same commandId still reads unknown and gets re-executed.
         this.host.invalidatePersistentCommandFacts?.(sessionId);
       }
       for (const item of removedQueueItems) {
@@ -1024,15 +1024,15 @@ export class ConversationV4Gateway {
     if (event.type === SessionEventType.SessionInputPromoted) {
       const sourceCommandId = (event.payload as { sourceCommandId?: string }).sourceCommandId;
       if (sourceCommandId) {
-        // persistent index 可能早于本条 user message 被 query 过；先失效再解 pin，
-        // 后续 LRU 淘汰回源时才能重读刚提交的 transcript，而不是命中旧空 seed。
+        // The persistent index may have been queried before this user message existed; invalidate before unpinning,
+        // so a later LRU-eviction re-read hits the just-committed transcript instead of the stale empty seed.
         this.host.invalidatePersistentCommandFacts?.(sessionId);
         this.inbox.releaseLiveInput({ sessionId, commandId: sourceCommandId });
       }
     }
-    // assistant 守恒：投影拒收了正文流（订阅中途建 publisher、错过
-    // TurnStarted 的典型形态）→ 撤销 hydrated 标记，下次订阅强制从持久事实重新
-    // hydration 补齐缺段——静默丢会让内容缺失直到用户手动刷新才恢复。
+    // Assistant conservation: the projection rejected a body stream (the classic subscribe-mid-turn /
+    // missed-TurnStarted shape) -> clear the hydrated flag so the next subscription re-hydrates missing
+    // segments from persisted facts; a silent drop keeps content missing until the user manually refreshes.
     if (publisher.getDroppedContentStreamEventCount() > 0 && this.hydratedSessions.has(sessionId)) {
       this.hydratedSessions.delete(sessionId);
       this.host.onError?.(
@@ -1046,13 +1046,13 @@ export class ConversationV4Gateway {
       if (state.sessionId !== sessionId) continue;
       this.scheduleFlush(routeKey, state, publisher);
     }
-    // sessions-index fan-out（防御式：任何异常都不能打断 conversation 主路径）。
+    // sessions-index fan-out (defensive: no exception may break the conversation main path).
     this.fanOutToIndex(sessionId, event);
   }
 
   /**
-   * subagent child 使用父 record 的外部 sink，但保留独立 session topic。显式登记这类
-   * detached live session，避免把任意偶然存在的 cold publisher 都误判为运行中 child。
+   // A subagent child uses the parent record's external sink but keeps its own session topic. Register such
+   // detached live sessions explicitly, so an accidentally present cold publisher is never misread as a running child.
    */
   ingestDetachedLiveSession(
     sessionId: string,
@@ -1072,8 +1072,8 @@ export class ConversationV4Gateway {
       }
       children.add(sessionId);
     }
-    // child 是一次性 session，没有 record 也没有后继 turn，publisher 曾驻留到进程退出。
-    // 记下终态时间，供 pruneDetachedChildPublishers 在 grace 后释放；child 再次开 turn 则撤销。
+    // A child is a one-shot session: no record and no successor turn; its publisher used to linger until process exit.
+    // Record the terminal time so pruneDetachedChildPublishers can release after grace; a new child turn revokes it.
     if (event.type === SessionEventType.TurnComplete || event.type === SessionEventType.TurnError) {
       this.detachedTerminalAt.set(sessionId, Date.now());
     } else if (event.type === SessionEventType.TurnStarted) {
@@ -1083,8 +1083,8 @@ export class ConversationV4Gateway {
   }
 
   /**
-   * 低频 tick 兜底：释放已终态、无订阅者、且没有自己 record 的 detached child publisher。
-   * 释放后再被订阅走既有 cold resume（child 作为 subagent_child 持久化在 session store）。返回释放数。
+   * Low-frequency tick backstop: release detached child publishers that are terminal, subscriber-less, and record-less.
+   * A released child re-subscribes through the normal cold resume (the child is persisted as subagent_child in the session store). Returns the released count.
    */
   pruneDetachedChildPublishers(
     nowMs: number = Date.now(),
@@ -1107,15 +1107,15 @@ export class ConversationV4Gateway {
   }
 
   /**
-   * 把某会话的最新摘要推进到其 workspace 的 sessions-index publisher，并 flush 给列表订阅者。
-   * projection 必须在无列表订阅者时也继续推进，保证下一次 snapshot 读取权威当前态；
-   * 高频流式增量（ModelStreaming）不触发列表重算，避免抖动（预览在 turn 收口/其他事件时更新）。
-   * 旧宿主无 getSessionWorkspaceId → 整体 no-op。
+   * Advance a session's latest summary into its workspace's sessions-index publisher and flush to list subscribers.
+   * The projection must keep advancing with no list subscribers, so the next snapshot read sees authoritative current state;
+   * high-frequency streaming deltas (ModelStreaming) do not recompute the list, avoiding jitter (previews update on turn settle/other events).
+   * Legacy host without getSessionWorkspaceId: a whole-path no-op.
    */
   private fanOutToIndex(sessionId: string, event: SessionEvent): void {
     if (event.type === SessionEventType.ModelStreaming) return;
-    // 工作流进度同样是高频流（实测 8s 4000 条），但列表要继续动，所以不是丢弃而是
-    // leading + trailing 窗口节流：窗内合并为窗末一帧，终态仍在一个窗口内送达。
+    // Workflow progress is a high-frequency stream too (measured 4000 events in 8s), but the list must keep moving:
+    // leading+trailing window throttle; events inside a window merge into one frame at window end, terminals still deliver within one window.
     if (event.type === SessionEventType.DynamicWorkflowRunProgress) {
       this.indexFanoutThrottle.request(sessionId);
       return;
@@ -1124,15 +1124,15 @@ export class ConversationV4Gateway {
   }
 
   /**
-   * 把当前完整 projection 发布到 sessions-index。
+   * Publish the current complete projection to sessions-index.
    *
-   * fork child 的 resume 会先用少量 live event 建出暂态 draft publisher，
-   * 随后的 synthesized hydration 才补齐继承历史。只在 ingest(event) 时 fan-out 的话，
-   * hydration 完成后若没有下一条 runtime event，child 就永远停在 draft 基线，
-   * task-index syncer 无法观察到 draft→visible，也就不会创建侧栏 task row。
+   // A fork child's resume first builds a transient draft publisher from a few live events;
+   // synthesized hydration fills in the inherited history afterwards. If fan-out happened only on ingest(event),
+   // a child with no further runtime event would stay on its draft baseline forever;
+   // the task-index syncer would never observe draft->visible and never create the sidebar task row.
    */
   private publishCurrentSummaryToIndex(sessionId: string): void {
-    // 这一次发布带的就是窗内合并后的当前摘要：待发的 trailing 到此被满足，不重复发帧。
+    // This publish already carries the merged within-window summary: the pending trailing frame is satisfied here, not sent twice.
     this.indexFanoutThrottle.notePublished(sessionId);
     const getWorkspaceId = this.host.getSessionWorkspaceId;
     if (!getWorkspaceId) return;
@@ -1154,7 +1154,7 @@ export class ConversationV4Gateway {
     }
   }
 
-  /** 会话列表元信息（宿主 hook 缺省时的兜底：createdAt=0，lastActivityAt=now）。 */
+  /** Session list metadata (host-hook fallback: createdAt=0, lastActivityAt=now). */
   private resolveIndexMeta(sessionId: string): {
     createdAt: number;
     lastActivityAt: number;
@@ -1168,7 +1168,7 @@ export class ConversationV4Gateway {
     };
   }
 
-  /** 把某 workspace index publisher 的未发增量帧推给所有列表订阅者。 */
+  /** Push an index publisher's pending delta frames to all list subscribers. */
   private flushIndex(workspaceId: string, onlyConnectionId?: string): void {
     const publisher = this.indexPublishers.get(workspaceId);
     if (!publisher) return;
@@ -1192,8 +1192,8 @@ export class ConversationV4Gateway {
   }
 
   /**
-   * sessions-index 订阅：订阅某 workspace 的会话列表（与 conversation subscribe 并列，
-   * 同一 RPC 方法按 topic 前缀分派）。冷启动：store 摘要种子 + 已加载会话 live 投影覆盖。
+   * sessions-index subscription: subscribe to a workspace's session list (parallel to conversation subscribe;
+   * the same RPC method dispatches on the topic prefix). Cold start: store summary seed + live-projection override for loaded sessions.
    */
   async subscribeSessionsIndex(
     rawParams: unknown,
@@ -1212,7 +1212,7 @@ export class ConversationV4Gateway {
       throw new Error(`Not a sessions-index topic: ${params.topic}`);
     }
     const publisher = await this.ensureIndexPublisher(workspaceId, params.legacyTaskIds);
-    // ensure 内部可能跨异步 store/claim；dispose 发生在 await 返回前时禁止继续登记订阅。
+    // ensure may cross async store/claim boundaries; if dispose happens before the await returns, the subscription must not be registered.
     this.indexPublishers.ensureActive();
     const result = publisher.subscribeReserved(params.connectionId, params.base);
     try {
@@ -1226,14 +1226,14 @@ export class ConversationV4Gateway {
         () => this.flushIndex(workspaceId),
       );
     } catch (error) {
-      // initial logical frame 在 physical encode 阶段即可因 16MiB 上限失败；
-      // 已登记订阅/in-flight reservation 后失败必须 rollback，否则会留下永远无法退订的幽灵 owner。
+      // The initial logical frame can already fail physical encode on the 16MiB cap;
+      // failure after registering the subscription/in-flight reservation must roll back, or a ghost owner that can never unsubscribe remains.
       result.rollback();
       throw error;
     }
   }
 
-  /** 建/取某 workspace 的 index publisher；建时 store 摘要种子 + live 投影覆盖。 */
+  /** Get-or-create a workspace's index publisher; on create, seed from store summaries overridden by live projections. */
   private async ensureIndexPublisher(
     workspaceId: string,
     legacyTaskIds?: readonly string[],
@@ -1248,7 +1248,7 @@ export class ConversationV4Gateway {
     );
   }
 
-  /** 同 workspace 串行区：可重试 claim/重读与 publisher 构造必须观察同一份最终快照。 */
+  /** Per-workspace serialization: retryable claims/rereads and publisher construction must observe the same final snapshot. */
   private async ensureIndexPublisherExclusive(
     workspaceId: string,
     legacyTaskIds?: readonly string[],
@@ -1259,8 +1259,8 @@ export class ConversationV4Gateway {
         : null;
     const existing = this.indexPublishers.get(workspaceId);
     if (existing) {
-      // claim 不能绑定到首次构造：空种子一旦进 Map 就永久挡住重试。
-      // 重读只补缺失项，避免冷存储默认态覆盖已有 live projection。
+      // The claim must not bind to the first construction: once an empty seed enters the Map it blocks retries forever.
+      // The re-read only fills missing entries, so cold-store defaults never override a live projection.
       if (refreshed && existing.mergeMissingStoredSummaries(refreshed)) {
         this.flushIndex(workspaceId);
       }
@@ -1271,15 +1271,15 @@ export class ConversationV4Gateway {
       this.createLogEpoch(`sessions-index/${workspaceId}`),
       this.now,
     );
-    // 种子 1：store 里全部会话的轻量摘要（未加载的靠它进列表）。
+    // Seed 1: lightweight summaries for every session in the store (unloaded ones enter the list).
     const stored = refreshed ?? (await this.host.getStoredSessionSummaries?.(workspaceId)) ?? [];
     for (const summary of stored) publisher.seed(summary);
-    // 种子 2：已加载会话用 live 投影覆盖（更准的 phase/preview/backgroundWork）。
+    // Seed 2: loaded sessions overridden by live projection (more accurate phase/preview/backgroundWork).
     const liveIds = this.host.listWorkspaceSessionIds?.(workspaceId) ?? [...this.publishers.keys()];
     for (const sessionId of liveIds) {
       const conversationPublisher = this.publishers.get(sessionId);
       if (!conversationPublisher) continue;
-      // draft（deferred 未发首条）不进冷启动种子，与 fanOutToIndex 的过滤一致。
+      // Drafts (deferred, no first input) stay out of the cold-start seed, matching fanOutToIndex's filter.
       if (this.host.isDraftSession?.(sessionId)) continue;
       publisher.ingestConversation(
         conversationPublisher.getSnapshot(),
@@ -1291,8 +1291,8 @@ export class ConversationV4Gateway {
   }
 
   /**
-   * workspace-config 订阅：订阅某 workspace 的配置目录（与 conversation subscribe 并列，
-   * 同一 RPC 方法按 topic 前缀分派）。订阅时经宿主钩子拉取当前配置作种子。
+   * workspace-config subscription: subscribe to a workspace's config directory (parallel to conversation subscribe;
+   * the same RPC method dispatches on the topic prefix). The subscribe-time seed pulls current config through the host hook.
    */
   async subscribeWorkspaceConfig(
     rawParams: unknown,
@@ -1323,17 +1323,17 @@ export class ConversationV4Gateway {
         () => this.flushConfig(workspaceId),
       );
     } catch (error) {
-      // 与 sessions-index 同一原子边界：encode 失败 = subscribe 未 admission。
+      // Same atomic boundary as sessions-index: encode failure = subscribe not admitted.
       result.rollback();
       throw error;
     }
   }
 
   /**
-   * 配置目录发布入口（宿主在 provider registry 应用 / workspace 默认项变更后调用，
-   * 直接携带已构建好的目录，不回头重拉宿主，避免重复 buildWorkspaceState 的临时 app 成本）。
-   * conflation 在 publisher 内完成（未变化不产帧）；无 publisher 时同步建一个空种子的
-   * publisher 存住最新态，后续订阅者据此拿到完整 snapshot。
+   * Config-directory publish entry (called by the host after provider-registry application / workspace default changes,
+   * carrying the already-built directory; no host re-pull, avoiding a second throwaway app from buildWorkspaceState).
+   * Conflation happens in the publisher (no frame when unchanged); with no publisher, build one synchronously with an empty seed
+   * holding the latest state, so later subscribers get a complete snapshot from it.
    */
   publishWorkspaceConfig(workspaceId: string, state: WorkspaceConfigState): void {
     if (this.disposed) return;
@@ -1358,7 +1358,7 @@ export class ConversationV4Gateway {
     return (await this.host.getWorkspaceConfig(workspaceId)) ?? null;
   }
 
-  /** 建/取某 workspace 的 config publisher；建时经宿主钩子拉取当前目录作种子。 */
+  /** Get-or-create a workspace's config publisher; on create, seed via the host hook. */
   private async ensureConfigPublisher(workspaceId: string): Promise<WorkspaceConfigPublisher> {
     const existing = this.configPublishers.get(workspaceId);
     if (existing) return existing;
@@ -1372,14 +1372,14 @@ export class ConversationV4Gateway {
       return null;
     });
     if (seed) publisher.publish(seed);
-    // await 期间的并发订阅可能已注册同 workspace publisher → 以先注册者为准。
+    // Concurrent subscribes during the await may have registered a publisher for the same workspace; first registration wins.
     const raced = this.configPublishers.get(workspaceId);
     if (raced) return raced;
     this.configPublishers.set(workspaceId, publisher);
     return publisher;
   }
 
-  /** 把某 workspace config publisher 的未发增量帧推给所有订阅者。 */
+  /** Push a config publisher's pending delta frames to all subscribers. */
   private flushConfig(workspaceId: string, onlyConnectionId?: string): void {
     const publisher = this.configPublishers.get(workspaceId);
     if (!publisher) return;
@@ -1402,7 +1402,7 @@ export class ConversationV4Gateway {
     }
   }
 
-  /** v4/conversation/subscribe：裁决 + server 内部 initial frame，公共响应由 server 只取 ACK。 */
+  /** v4/conversation/subscribe: verdict + server-internal initial frame; the public response takes only the ACK. */
   async subscribe(rawParams: unknown): Promise<V4SubscribeDispatchResult<ConversationTopicFrame>> {
     const dispatch = await this.subscribeReserved(rawParams);
     dispatch.commit();
@@ -1421,11 +1421,11 @@ export class ConversationV4Gateway {
     this.host.onDebug?.(
       `subscribe conversation session=${sessionId} coldResume=${String(!isLiveConversation)}`,
     );
-    // Hydration：首次订阅时从权威来源重建投影。
-    // - 无 publisher（cold）→ 建 + 重放。
-    // - 有 publisher 但事件日志覆盖不了 transcript（fork child：resume 的 ingest 抢先
-    //   建了个只含 fork 事件的 cold publisher）→ 用 transcript 合成**重建**。
-    // - 有 publisher 且事件日志完整（流式 live）→ 保留，重放会双计且打断流。
+    // Hydration on first subscription rebuilds the projection from authoritative sources:
+    // - no publisher (cold) -> build + replay;
+    // - publisher present but event log cannot cover the transcript (fork child: resume's ingest raced in
+    //   a cold publisher holding only fork events) -> REBUILD synthesized from the transcript;
+    // - publisher present with a complete event log (streaming live) -> keep it; a replay would double-count and interrupt the stream.
     const restoreStartedAt = performance.now();
     const existingReady = this.readyFlights.get(sessionId);
     const publisher = existingReady
@@ -1440,18 +1440,18 @@ export class ConversationV4Gateway {
     const cliSessionRestoreMs = !isLiveConversation
       ? Math.max(0, Math.round(performance.now() - restoreStartedAt))
       : undefined;
-    // 旧入口允许 UI 自选 deliveryProfile，桌面调用遗漏时还会默认成
-    // replayable。现在只认 host attachment 注入的可信 clientMode。
+    // The legacy entry let the UI pick any deliveryProfile, defaulting to replayable when desktop
+    // calls omitted it. Now only the trusted clientMode injected by the host attachment counts.
     const profileName = params.clientMode === "desktop-continuous" ? "continuous" : "replayable";
-    // subscribeReserved 已构建 wire projection；若在它之后才开始计时，大会话的
-    // 行过滤/窗口截断会落在 restore 与 encode 两段之外。起点必须覆盖构建与 physical encode。
+    // subscribeReserved already built the wire projection; starting the clock after it would put large-session
+    // row filtering/window truncation outside both the restore and encode spans. The start must cover build and physical encode.
     const initialFrameEncodeStartedAt = performance.now();
     const result = publisher.subscribeReserved({
       connectionId: params.connectionId,
       base: params.base,
       deliveryProfile: profileName,
-      // 与 clientMode 同族的可信注入：能力位来自该连接的 clientHello，缺席一律按旧消费者办
-      // （整键 patch + 旧界裁剪）。resync / rehydrate 沿用订阅上已记下的这一位，不再重取。
+      // Trusted injection in the same family as clientMode: the capability bit comes from this connection's clientHello and absence
+      // always means legacy consumer (whole-key patch + legacy-UI trimming). resync/rehydrate reuse the bit recorded on the subscription, never re-fetch.
       workflowRunDeltas: params.workflowRunDeltas === true,
     });
     const routeKey = subscriptionRouteKey(
@@ -1479,12 +1479,12 @@ export class ConversationV4Gateway {
         },
       };
     } catch (error) {
-      // 重订 initial encode 失败时客户端仍持有旧 subId；replacement 必须
-      // 原子 rollback，旧 publisher subscription 与 flush timer 都继续有效。
+      // When resubscribe initial encode fails the client still holds the old subId; the
+      // replacement must roll back atomically, keeping old publisher subscription and flush timer.
       result.rollback();
       throw error;
     }
-    // encode 成功后 replacement 才 admission；此时再清旧调度状态，失败路径不碰旧 owner。
+    // replacement is admitted only after encode succeeds; clear the old scheduling state then, and keep failure paths off the old owner.
     for (const [staleRouteKey, staleState] of this.flushStates) {
       if (staleState.sessionId !== sessionId) continue;
       if (publisher.hasSubscription(staleState.subscriptionId, staleState.connectionId)) {
@@ -1506,8 +1506,8 @@ export class ConversationV4Gateway {
   }
 
   /**
-   * v4/conversation/resync：按 owned topic/connection 精确命中现有 subscription，
-   * 保持 subId/profile 不变，从客户端 base 重新裁决 resume/snapshot。
+   * v4/conversation/resync: hit the existing subscription exactly by owned topic/connection,
+   * keeping subId/profile, and re-adjudicate resume/snapshot from the client's base.
    */
   resyncReserved(rawParams: unknown): V4SubscribeDispatchResult<RoutedTopicFrame> {
     const params = v4ConversationResyncParamsSchema.parse(rawParams);
@@ -1539,8 +1539,8 @@ export class ConversationV4Gateway {
           if (state) this.scheduleFlush(routeKey, state, publisher);
         });
       } catch (error) {
-        // physical encode 在 ACK admission 前失败时，same-sub recovery
-        // 不能留下新的 inFlight 或取消旧 online flush；原子恢复旧状态后重挂 timer。
+        // If physical encode fails before ACK admission, same-sub recovery must leave no new
+        // inFlight nor cancel the old online flush; restore old state atomically and re-arm the timer.
         result.rollback();
         if (flushState) this.scheduleFlush(routeKey, flushState, publisher);
         throw error;
@@ -1598,9 +1598,9 @@ export class ConversationV4Gateway {
   }
 
   /**
-   * v4/conversation/rowsRange：按 beforeRowId 游标向上取一窗
-   * 历史行。只读 query，不建订阅；数据源 = 该会话投影全量行——冷会话（重启后直开
-   * 历史）复用与 subscribe 相同的冷恢复 + hydration 管线先把投影建起来。
+   * v4/conversation/rowsRange: fetch one window of history rows upward by the beforeRowId cursor.
+   * Read-only query, no subscription; the data source is the session projection's full rows. A cold session (opened straight after
+   * restart) reuses the same cold-recovery + hydration pipeline as subscribe to build the projection first.
    */
   async rowsRange(rawParams: unknown): Promise<V4ConversationRowsRangeResult> {
     const params = v4ConversationRowsRangeParamsSchema.parse(rawParams);
@@ -1615,12 +1615,12 @@ export class ConversationV4Gateway {
         ...(params.beforeRowId !== undefined ? { beforeRowId: params.beforeRowId } : {}),
         limit: params.limit,
       },
-      // clientMode 决定行可见性过滤档位：桌面 continuous（默认）/ 断线恢复 replayable。
+      // clientMode picks the row-visibility filter tier: desktop continuous (default) / disconnected-recovery replayable.
       params.clientMode === "desktop-continuous" ? "continuous" : "replayable",
     );
   }
 
-  /** 完整有效 projection 的终态计划目录；冷会话复用订阅 hydration。 */
+  /** Terminal plan directory of the fully valid projection; cold sessions reuse subscribe hydration. */
   async plans(rawParams: unknown): Promise<V4ConversationPlansResult> {
     const params = v4ConversationPlansParamsSchema.parse(rawParams);
     const existingReady = this.readyFlights.get(params.sessionId);
@@ -1633,14 +1633,14 @@ export class ConversationV4Gateway {
   }
 
   /**
-   * workflow run 事件日志的分页读取（cursor = journal sequence）。
+   * Paginated read of a workflow run's event log (cursor = journal sequence).
    *
-   * 与 rows/range、plans 同族：只读、无状态、超时重发安全。刻意**不是** v4 command——
-   * command 的 ACK 结果是那个封闭的「变更结果」判别联合，一页只读事件不属于那个词汇表。
+   * Kin to rows/range and plans: read-only, stateless, safe to re-send on timeout. Deliberately NOT a v4 command:
+   * a command ACKs with that closed "mutation result" discriminated union; a read-only page does not belong to that vocabulary.
    *
-   * 一页的条数与字节两道界在这里定（docs/execution-engine.md「Reading the journal」）：条数取
-   * 调用方的 limit，缺省为协议上限；字节恒为协议上限，renderer 不能放宽。`hasMore` 由存储层
-   * 判定——页可能因字节提前收尾，「取满 limit」已经不是判据。
+   * Both the row-count and byte bounds are set here (docs/execution-engine.md, "Reading the journal"): the count is the
+   * caller's limit, defaulting to the protocol cap; the byte bound is always the protocol cap, the renderer cannot loosen it. hasMore is
+   * decided by the store: a page may end early on bytes, so "filled the limit" is no longer the criterion.
    */
   async workflowRunEvents(rawParams: unknown): Promise<V4ConversationWorkflowRunEventsResult> {
     const params = v4ConversationWorkflowRunEventsParamsSchema.parse(rawParams);
@@ -1658,9 +1658,9 @@ export class ConversationV4Gateway {
   }
 
   /**
-   * dwf run 的枚举 query。与
-   * workflowRunEvents 同族：只读、无状态、超时重发安全。limit 的缺省与钳制在 CLI 侧
-   * （run service），这里只透传；`resumable` 由 CLI 按 resume 门的同一个谓词算好。
+   * Enumerated query for dwf runs. Kin to
+   * workflowRunEvents: read-only, stateless, safe to re-send on timeout. limit defaulting/clamping lives on the CLI side
+   * (run service); this only passes through, and resumable is computed by the CLI with the same predicate as the resume gate.
    */
   async workflowRuns(rawParams: unknown): Promise<V4ConversationWorkflowRunsResult> {
     const params = v4ConversationWorkflowRunsParamsSchema.parse(rawParams);
@@ -1675,14 +1675,14 @@ export class ConversationV4Gateway {
   }
 
   /**
-   * workflow run 的**用户面产物**清单。
-   * 与 workflowRunEvents 同族：只读、无状态、超时重发安全。
+   * A workflow run's user-facing artifact listing.
+   * Same family as workflowRunEvents: read-only, stateless, safe to re-send on timeout.
    *
-   * ⚠ 术语：这里的 artifact 是脚本经 `artifact.*` 发布给用户看的产出，不是 run 的顶层
-   * 返回值（引擎内部对后者的同名叫法）。
+   * Terminology: artifact here means output published to the user by a script via `artifact.*`,
+   * not the run's top-level return value (the engine's same-named notion).
    *
-   * 未知 runId 回空清单而不是错误：一个已被淘汰 / 从未存在的 run 没有产物，这是一个
-   * 事实而不是故障——同一姿态见事件日志对越界 cursor 的处理。
+   * An unknown runId returns an empty list, not an error: an evicted/never-existing run simply has no artifacts. That is a
+   * fact, not a failure; see the event log's handling of out-of-range cursors for the same posture.
    */
   async workflowRunArtifacts(
     rawParams: unknown,
@@ -1699,10 +1699,10 @@ export class ConversationV4Gateway {
   }
 
   /**
-   * 预置看板的取数面：喂给某个产物的 `report` 条目分页。
+   * Preset-dashboard fetch facade: paginate the `report` entries of one artifact.
    *
-   * 条数的**缺省与钳制**、以及字节上界都在这里定（存储层精确兑现、绝不自造页大小也绝不再钳）。`fields` 原样下传：看板只要 spec 点名的字段，由 SQLite 取出；`hasMore` 由存储层判定——页可能因字节提前收尾，所以判据绝不能是
-   * 「这页正好满」，也不再是网关多取一条。
+   * Count defaulting/clamping and the byte bound are set here (the store implements them exactly, never inventing page sizes nor re-clamping). fields passes through: the board wants only the spec-named fields, fetched by SQLite; hasMore is the store's call, since a page may end early on bytes, so the criterion is never
+   * "this page happens to be full", nor the gateway fetching one extra row.
    */
   async workflowRunArtifactData(
     rawParams: unknown,
@@ -1734,16 +1734,16 @@ export class ConversationV4Gateway {
   }
 
   /**
-   * 内容产物的字节，**逐字照 attachmentRead**：一次一块、≤ 512 KiB（schema 已钉住 limit 的
-   * 上界），`nextOffset` 为 null 即读到尾。
+   * Artifact content bytes, verbatim like attachmentRead: one chunk at a time, <= 512 KiB (the
+   * schema pins the limit bound), `nextOffset` null means the end.
    *
-   * **授权全在宿主侧**（端口实现）：该 run 必须属于 `sessionId` 这个会话 ∧ journal 里有
-   * `(artifactId, version)` 的 completed 行，然后才拿**行上的** uri 去 store 读。网关只做
-   * 参数校验与分块——它没有 journal，也不该有第二份授权判据（两处各判一次，同一个 id
-   * 迟早会在两层上得到不同的解释）。宿主回 `undefined` = 无此版本 / 不是你的 run /
-   * 这是块看板（没有字节），三者对调用方是同一个业务事实，这里归一成结构化的 not found。
+   * Authorization lives entirely host-side (the port implementation): the run must belong to session `sessionId` and the journal must
+   * have a completed (artifactId, version) row; only then is the row's uri used to read from the store. The gateway does
+   * parameter validation and chunking only: it has no journal and must not grow a second authorization criterion (two layers judging the same id
+   * will eventually disagree). A host undefined = no such version / not your run /
+   * it is a board block (no bytes): all three are the same business fact to the caller, normalized here into a structured not-found.
    *
-   * `offset` 越界不是错误：返回空块 + `nextOffset: null`，与读到尾同一形态。
+   * An out-of-range `offset` is not an error: empty chunk + `nextOffset: null`, same shape as EOF.
    */
   async workflowRunArtifactRead(
     rawParams: unknown,
@@ -1767,12 +1767,12 @@ export class ConversationV4Gateway {
   }
 
   /**
-   * 工作区 transcript 的清单：一个 run 的
-   * `files.*` / `git.*` / `world.run` 行，不带正文。
+   * A workspace transcript listing: a run's
+   * `files.*` / `git.*` / `world.run` rows, without bodies.
    *
-   * 宿主回 `undefined`（未知 run / 不是你的 run）得到空清单而不是错误：与产物清单同一姿态，
-   * 也是授权链「不告诉越权者猜对了哪一半」的要求。清单超过 maxNodes 截尾并置 `truncated`——
-   * 一个循环里跑了三千次 `world.run` 的 run 不该把侧板撑爆。
+   * A host undefined (unknown run / not your run) yields an empty list, not an error: same posture as the artifact list,
+   * also required by the authorization rule "do not tell an unauthorized caller which half they guessed". Lists over maxNodes are truncated with `truncated`:
+   * a run that looped world.run three thousand times must not blow up the side panel.
    */
   async workflowRunWorkspace(
     rawParams: unknown,
@@ -1797,9 +1797,9 @@ export class ConversationV4Gateway {
   }
 
   /**
-   * 一个工作区节点的正文，按 `maxBytes` 保形有界化（缺省与上限都是 resultMaxBytes，钳在这里）。
-   * 授权全在宿主侧；宿主回 `undefined` = 无此节点 / 不是你的 run / 不是 world 行，归一成
-   * 结构化的 not found。
+   * The body of a workspace node, size-bounded by maxBytes (default and cap both resultMaxBytes, clamped here).
+   * Authorization is entirely host-side; a host undefined = no such node / not your run / not a world row, normalized into a
+   * structured not-found.
    */
   async workflowRunNodeResult(
     rawParams: unknown,
@@ -1831,24 +1831,24 @@ export class ConversationV4Gateway {
   }
 
   /**
-   * 一个产物版本的**整份**字节，带缓存。
+   * One artifact version's entire bytes, cached.
    *
-   * 端口的 `readArtifact` 返回的是整份字节，而
-   * `workflowRunArtifactRead` 是**分块**查询——不缓存的话，一个 20 MiB 的 PDF 按 512 KiB
-   * 分 40 块取，就会把整份文件从 store 读 40 遍（800 MiB 的 I/O），而且每一块都要重走一遍
-   * journal 授权链。`attachmentRead` 早就有这张表，这里复用它（见 {@link BinaryReadCacheEntry}
-   * 关于两个家族共用一张表的论证）。
+   * The port's `readArtifact` returns whole bytes while
+   * `workflowRunArtifactRead` is chunked — uncached, a 20 MiB PDF taken in 512 KiB chunks would
+   * read the whole file from the store 40 times (800 MiB of IO), each chunk also redoing the
+   * journal authorization chain. `attachmentRead` already has this table; reuse it (see
+   * {@link BinaryReadCacheEntry} for why both families share one table).
    *
-   * 缓存的是 **promise 而不是结果**，且在发起前就写进表里：并发抓取的多个分块因此共享
-   * 同一次读，而不是各自发起一次再各自写一遍缓存。
+   * What's cached is the promise, not the result, and it's written before the read starts: concurrent
+   * chunk fetches share one read instead of each issuing one and each writing the cache.
    *
-   * 授权不因缓存被绕过：键里带着 `sessionId`，而 `sessionId` 正是端口那条授权链
-   * （run 的 parentSessionId 必须等于它）的比对对象——换一个会话就是另一个键，必然重新
-   * 走一次端口。会话销毁时按 `sessionId` 整片清掉，与附件同一条规则。
+   * Authorization cannot be bypassed by the cache: the key carries sessionId, the very object of the port's authorization check
+   * (the run's parentSessionId must equal it); a different session is a different key and necessarily re-enters the port. On session destroy the
+   * whole key space clears by sessionId, the same rule as attachments.
    *
-   * 宿主回 `undefined`（不是你的 run / 无此版本 / 是块看板）在这里**抛错**而不是被缓存：
-   * 走既有的 catch 分支把条目删掉，于是一个"发布刚落库、读稍微早了一步"的竞态不会被
-   * 负缓存钉死 30 秒。
+   * Host `undefined` (not your run / no such version / dashboard block) throws here instead of
+   * being cached: the existing catch branch deletes the entry, so a "just-published, read slightly
+   * too early" race isn't pinned by a negative cache for 30s.
    */
   private readWorkflowArtifactPayload(params: {
     sessionId: string;
@@ -1858,7 +1858,7 @@ export class ConversationV4Gateway {
   }): Promise<{ bytes: Uint8Array; mediaType: string }> {
     const now = this.now();
     this.pruneBinaryReadCache(now);
-    // 首段标签 `dwfart`：与附件预览共用同一张表，靠首段隔离（见 BinaryReadCacheEntry）。
+    // First-segment tag `dwfart`: shares the attachment table, isolated by the first segment (see BinaryReadCacheEntry).
     const key = `dwfart\u0000${params.sessionId}\u0000${params.runId}\u0000${params.artifactId}\u0000${params.version}`;
     const cached = this.binaryReadCache.get(key);
     if (cached) {
@@ -1883,8 +1883,8 @@ export class ConversationV4Gateway {
           this.binaryReadCacheBytes += artifact.bytes.byteLength;
           this.pruneBinaryReadCache(this.now());
         }
-        // contentType 归一成表里的 mediaType 词汇；值仍是 journal 记录上的那一份
-        // （UI 分派渲染器的精确匹配契约），不是 store 按文件名再推的那个。
+        // contentType normalizes into the table's mediaType vocabulary; the value is still the one recorded in the journal
+        // (the UI dispatcher's exact-match contract), not the one the store guesses from the filename.
         return { bytes: artifact.bytes, mediaType: artifact.contentType };
       })
       .catch((error: unknown) => {
@@ -1901,24 +1901,24 @@ export class ConversationV4Gateway {
   }
 
   /**
-   * dwf 两个 journal 读面的宿主 record 前置。
+   * Host-record precondition for the two dwf journal read facades.
    *
-   * 这两个 query 都经 app 能力读 journal，而宿主按 sessionId 找 record——历史
-   * 会话的 record 只由**订阅**路径激活。renderer 里发现查询的 effect 声明在 lease/订阅
-   * effect 之前，而 CLI 严格串行派发请求（`zcode-protocol/transport.ts`，只有 session/stop
-   * 越队），于是「重启后打开历史会话」时它必然先于订阅被处理、必然拿到 sessionNotFound：
-   * 工具卡的 join 回退整块消失，卡片退回编译态，被打断的 run 连入口都没有。
+   * Both queries read the journal through app capability while the host finds the record by sessionId; a history
+   * session's record is activated only by the subscribe path. In the renderer the query-declaring effect is declared before the lease/subscription
+   * effect, and the CLI dispatches requests strictly in order (zcode-protocol/transport.ts; only session/stop
+   * jump the queue), so on "open a history session after restart" the query necessarily precedes the subscription and gets sessionNotFound:
+   * the tool card's join fallback disappears whole, the card falls back to its compiled state, and the interrupted run has no entry at all.
    *
-   * 只拉 record，**不**建 READY publisher：journal 与 conversation log 无关，读一页 run
-   * 不需要投影（同一判断见这两个 query 刻意不带 atSeq/atLogEpoch）。习语与 attachmentBegin
-   * 逐字相同；`ensureResumed` 自带按会话单飞，与并发订阅共享同一次 activation。
+   * Fetch the record only, do NOT build a READY publisher: the journal is unrelated to the conversation log, and reading one page of a run
+   * needs no projection (see these queries deliberately carrying no atSeq/atLogEpoch). The idiom matches attachmentBegin
+   * word for word; ensureResumably single-flights per session and shares one activation with concurrent subscribes.
    *
-   * 活性判定必须与 subscribe 同一条
-   * `hasLiveConversation`，不能只看 `sessionExists`。dwf actor transcript 是 detached live
-   * 会话——真 runtime 活在 run service 里、宿主刻意没有 record；嵌套 SessionPane 的发现
-   * 查询带着 actor id 打到这里，旧判定就对一条**正在运行**的会话物化出第二个（幽灵）
-   * runtime：它向同一份事件日志追加 SessionResumed、丢弃 pending steer、重放 resume hooks，
-   * 双写把序列账搞乱，transcript 从此定格（症状是直播冻结在「已工作 xx 秒」）。
+   * Liveness must reuse subscribe's very own
+   * hasLiveConversation, never a bare sessionExists. A dwf actor transcript is a detached live
+   * session: the real runtime lives in the run service and the host deliberately has no record; a nested SessionPane discovery
+   * query arriving here with an actor id would, under the old check, materialize a second (ghost) runtime for a RUNNING
+   * session: appending SessionResumed to the same event log, dropping pending steers, replaying resume hooks;
+   * the double write scrambles the sequence ledger and the transcript freezes (symptom: the live view stuck at "working for xx s").
    */
   private async ensureHostRecordForJournalRead(sessionId: string): Promise<void> {
     if (this.hasLiveConversation(sessionId)) return;
@@ -1949,7 +1949,7 @@ export class ConversationV4Gateway {
 
   async backgroundBashOutput(rawParams: unknown): Promise<BackgroundBashOutputResult> {
     const { sessionId, workId } = v4BackgroundBashOutputParamsSchema.parse(rawParams);
-    // 观察查询不能 hydrate/恢复冷会话；任务由现有 runtime 授权。
+    // Observation queries must not hydrate/resume cold sessions; existing runtimes authorize the task.
     if (!this.host.readBackgroundBashOutput) return { kind: "unsupported", workId };
     return backgroundBashOutputResultSchema.parse(
       await this.host.readBackgroundBashOutput(sessionId, workId),
@@ -1995,7 +1995,7 @@ export class ConversationV4Gateway {
     return resolution;
   }
 
-  /** begin 只 admission metadata，不解码/暂存 full payload。 */
+  /** begin admits metadata only; never decodes/stages the full payload. */
   async attachmentBegin(rawParams: unknown): Promise<V4AttachmentBeginResult> {
     const params = v4AttachmentBeginParamsSchema.parse(rawParams);
     if (!this.host.putSessionAttachment) {
@@ -2038,8 +2038,8 @@ export class ConversationV4Gateway {
       params.attachmentIndex,
     );
     if (!resolution) {
-      // renderer 传来的 ref 不能直接成为文件路径；必须先由当前 session
-      // 的权威 user row 证明归属，避免跨 session 或任意路径读取。
+      // A renderer-supplied ref is not a path yet; ownership must be proven by the current session's
+      // authoritative user row first, avoiding cross-session or arbitrary-path reads.
       throw new Error("fault.attachment.previewRefNotAuthorized");
     }
 
@@ -2152,13 +2152,13 @@ export class ConversationV4Gateway {
         attachmentIndex: params.attachmentIndex,
       });
     } catch (error) {
-      // 「附件确实不在了」是 share 预检唯一能确定判定为跳过的分类，必须以稳定码上抛；
-      // 否则 service 只能猜错误文本。
+      // "Attachment is really gone" is the only share-precheck classification decidable as skip; it
+      // must surface as a stable code, else the service can only guess at error text.
       throw toShareStatFault(error);
     }
-    // stat 结果曾被 30MiB 的 schema 上限卡住，超大附件在这里抛 ZodError，
-    // 于是 share 预检把「已知容量超限」这个确定阻断降级成 deferred 并静默丢内容。
-    // 上限放宽后仍需要一个显式出口：真的超过协议可表达范围时给出稳定码。
+    // stat results used to be stuck by the 30MiB schema cap: oversized attachments threw ZodError here,
+    // so the share precheck degraded a definite "known size over cap" block into deferred and silently dropped content.
+    // Even with the cap raised, an explicit exit remains necessary: a stable code when the size truly exceeds what the protocol can express.
     if (result.totalBytes > PROTOCOL_V4_LIMITS.attachmentStatMaxBytes) {
       throw new ZCodeAttachmentFaultError(ZCODE_ATTACHMENT_FAULT_CODES.shareStatTooLarge);
     }
@@ -2210,8 +2210,8 @@ export class ConversationV4Gateway {
   ): { attachment: AttachmentRef; messageId?: string; attachmentIndex?: number } | null {
     const isPreviewable = (attachment: AttachmentRef) => {
       const mime = attachment.mime.split(";", 1)[0]?.trim().toLowerCase() ?? "";
-      // 根因：原预览仅放行图片、视频和 PDF，文本附件即使归属当前行也被拒绝。
-      // 文本只开放既有材料标记，后续仍须通过权威行、附件索引和 ref 的归属校验。
+      // Root cause: the original preview admitted only images/video/PDF, rejecting text attachments even when owned by the current row.
+      // Text is opened only for the existing material marker; ownership still must pass the authoritative row, attachment index, and ref checks.
       return (
         mime.startsWith("image/") ||
         mime.startsWith("video/") ||
@@ -2233,8 +2233,8 @@ export class ConversationV4Gateway {
       if (!attachment || !isPreviewable(attachment) || !matchesRef(attachment)) {
         return null;
       }
-      // 热态 renderer 可能还持有 original ref，而 hydrate 后的权威 row 已补
-      // previewRef；两者属于同一个 row/index，授权不能因投影时序不同而误判为跨行读取。
+      // A hot renderer may still hold the original ref while the hydrated authoritative row already carries
+      // previewRef; both belong to the same row/index, so authorization must not misread projection timing as a cross-row read.
       const messageId = publisher.getMessageIdForRow(row.rowId);
       return {
         attachment,
@@ -2243,8 +2243,8 @@ export class ConversationV4Gateway {
       };
     }
 
-    // 旧 renderer 没有 row target，无法按消息定位持久 artifact；一旦
-    // previewRef 存在就只能授权该 durable ref，不能重新放行可变的原始路径。
+    // Legacy renderers have no row target and cannot locate the persisted artifact by message; once
+    // previewRef exists only that durable ref may be authorized — never re-admit the mutable raw path.
     for (const row of publisher.getSnapshot().rows.window) {
       if (row.kind === "userInput") {
         for (const attachment of row.attachments ?? []) {
@@ -2257,12 +2257,12 @@ export class ConversationV4Gateway {
         artifactRefBelongsToSession(ref, sessionId) &&
         extractMarkdownArtifactImageRefs(row.text).includes(ref)
       ) {
-        // assistant Markdown 可以引用工具产出的 session artifact，
-        // 但旧授权只查看 userInput.attachments，导致合法图片到 UI 后被 harden
-        // 拦截。仍以当前 session 的权威投影做精确 ref 授权，绝不接受 renderer
-        // 自报的任意 artifact/path。Markdown 是模型可控文本，所以 URI authority
-        // 还必须与当前请求 session 精确匹配；仅“当前投影里出现过”不能证明它有权
-        // 读取另一个 session 的 artifact。
+        // Assistant markdown may reference session artifacts produced by tools,
+        // but the legacy authorization looked only at userInput.attachments, so legitimate images got blocked by harden in the UI.
+        // Authorization still uses the current session's authoritative projection for exact refs, never accepting
+        // renderer-reported artifact/path. Markdown is model-controlled text, so the URI authority
+        // must also match the requesting session exactly; "appeared in the current projection" does not prove the right
+        // to read another session's artifact.
         return {
           attachment: {
             ref,
@@ -2277,12 +2277,12 @@ export class ConversationV4Gateway {
   }
 
   /**
-   * 读取附件全部字节（带 TTL/容量缓存）。
+   * Read all attachment bytes (TTL/capacity cached).
    *
-   * 注意语义：conversationAttachmentRead 的 offset/limit 是**切片**，不是流式读取——
-   * 每个首次请求都会把整个附件物化进内存再切片，后续 chunk 命中同一份缓存。
-   * 接入方不要把 chunk 协议当作「按需分段拉取」来规划超大文件；真正的 range 读取
-   * 需要 host 侧 readBinaryFile 支持 offset（尚未实现）。
+   * Semantics note: conversationAttachmentRead's offset/limit is a slice, not streaming — each
+   * first request materializes the whole attachment in memory, later chunks hit the same cache.
+   * Integrators must not plan huge files around this as on-demand segment fetch; true range reads
+   * need host-side readBinaryFile offset support (not yet implemented).
    */
   private readAttachmentPayload(
     sessionId: string,
@@ -2294,8 +2294,8 @@ export class ConversationV4Gateway {
   ): Promise<{ bytes: Uint8Array; mediaType: string }> {
     const now = this.now();
     this.pruneBinaryReadCache(now);
-    // 首段标签 `att`：这张表与 dwf 产物字节共用（见 BinaryReadCacheEntry），两个键空间
-    // 只能靠一个不可能相等的首段隔离。
+    // First-segment tag `att`: this table is shared with dwf artifact bytes (see
+    // BinaryReadCacheEntry); the key spaces are isolated only by the provably unequal first segment.
     const key = `att\u0000${sessionId}\u0000${messageId ?? "legacy"}\u0000${attachmentIndex ?? -1}\u0000${ref}`;
     const cached = this.binaryReadCache.get(key);
     if (cached) {
@@ -2303,8 +2303,8 @@ export class ConversationV4Gateway {
       return cached.payload;
     }
 
-    // 预览读取曾复用上传的 20MiB 总量上限；video 使用已有全局输入上限，
-    // image 和上传事务继续保持原边界。
+    // Preview reads used to reuse the upload's 20MiB total cap; video keeps the existing global
+    // input cap, image and the upload transaction keep their original bounds.
     const maxBytes = allowGeneric
       ? PROTOCOL_V4_LIMITS.attachmentPreviewMaxBytes
       : mime.startsWith("video/")
@@ -2398,20 +2398,20 @@ export class ConversationV4Gateway {
     if (!state) return;
     if (state?.timer) clearTimeout(state.timer);
     this.flushStates.delete(routeKey);
-    // 裸 subscriptionId 在不同 topic/connection 可碰撞；旧网关先按 subId
-    // 反查再对三类 publisher 广撒网，会删掉别的连接。topic + connection 必须同时命中。
+    // A bare subscriptionId can collide across topics/connections; the old gateway looked up by subId and
+    // sprayed all three publisher kinds, deleting other connections. topic + connection must both match.
     this.publishers.get(sessionId)?.unsubscribe(params.subscriptionId, params.connectionId);
   }
 
   /**
-   * v4/command：inbox 六态裁决；accepted 时执行副作用并把终态随响应返回。
+   * v4/command: the inbox's six-way ruling; on accepted, run the side effects and return the terminal state with the response.
    *
-   * 这里曾经"立即回初始 ACK、后台 settle"，
-   * 导致 createSession/forkAssistant 的调用方拿不到 result.sessionId（settle 只回填
-   * 幂等表，只有同 commandId 重试才能读到）——违反
-   * 「accepted 即时带 result」。命令副作用本身是快返回的（sendPrompt 后台起 turn），
-   * await 不会把 RPC 挂到整个 turn 结束，所以同步等待终态。
-   * settle 仍然固化结果供 duplicate 重放。
+   * This used to "ACK immediately, settle in background",
+   * so createSession/forkAssistant callers never saw result.sessionId (settle only filled the
+   * idempotency table, readable only by retrying with the same commandId), violating
+   * "accepted carries result immediately". Command side effects return fast (sendPrompt starts the turn in background),
+   * so awaiting does not hold the RPC for the whole turn: wait for the terminal state synchronously.
+   * settle still pins the result for duplicate replay.
    */
   async handleCommand(rawParams: unknown): Promise<CommandAck> {
     let ttftCapacityRejected = false;
@@ -2427,7 +2427,7 @@ export class ConversationV4Gateway {
         control?.canStop === true,
       );
     }
-    // READY 只存在于冷恢复窗口；正常命令直接进入 inbox，避免重复解析信封。
+    // READY exists only in the cold-recovery window; normal commands go straight into the inbox, avoiding envelope re-parsing.
     if (this.readyFlights.size > 0) {
       const parsed = parseCommandEnvelope(rawParams);
       const sessionId = parsed.ok ? parsed.envelope.sessionId : null;
@@ -2449,7 +2449,7 @@ export class ConversationV4Gateway {
       try {
         this.host.onError?.(scope, error);
       } catch {
-        // 错误观察器不能反向破坏 command final 与 session FIFO 的收口。
+        // Error observers must not break command-final or session-FIFO closing in reverse.
       }
     };
     const settleOnce = (final: CommandFinal): CommandAck => {
@@ -2468,7 +2468,7 @@ export class ConversationV4Gateway {
       try {
         await this.host.cancelCommandInput?.(outcome.envelope, outcome.queueItemId, reason);
       } catch (cancelError) {
-        // 原命令 ACK 必须保留真实执行结果；ledger cancel 失败单独告警，不能覆盖原错误。
+        // The original command ACK must keep the real execution result; a ledger-cancel failure warns separately and never overwrites the original error.
         reportError("v4.command.input.cancel", cancelError);
       }
     };
@@ -2523,7 +2523,7 @@ export class ConversationV4Gateway {
         this.inbox.pinLiveInput(outcome.envelope.sessionId, durableInputIntent);
       }
       const result = await this.host.executeCommand(outcome.envelope, admission);
-      // 新建/侧聊命令采用结果会话的开关，避免把父会话或当前 App 设置误记到新会话。
+      // New-session/side-chat commands adopt the result session's toggles, so parent-session or global App settings are not misrecorded onto the new session.
       const telemetrySessionId =
         result?.type === "createSession" || result?.type === "createSelectionSideSession"
           ? result.sessionId
@@ -2538,7 +2538,7 @@ export class ConversationV4Gateway {
       };
       return settleOnce(final);
     } catch (error) {
-      // noop 不是失败（同值切换收口）：不进 onError，noop ACK 返回。
+      // Noop is not failure (same-value switch resolved): skip onError, return the noop ACK.
       if (error instanceof V4CommandNoopError) {
         await cancelDurableInput(error.reasonCode);
         const final = {
@@ -2549,8 +2549,8 @@ export class ConversationV4Gateway {
         return settleOnce(final);
       }
       reportError("v4.command.execute", error);
-      // 携带 reasonCode 的领域错误（V4PromptRejectedError / heldQueueDispositionRequired 等）
-      // 原样上行，客户端才能按 guard 错误码分流；否则归一 executionFailed。
+      // Domain errors carrying reasonCode (V4PromptRejectedError / heldQueueDispositionRequired etc.)
+      // pass through untouched so the client can branch on guard codes; everything else normalizes to executionFailed.
       const domainReasonCode =
         typeof (error as { reasonCode?: unknown } | null)?.reasonCode === "string"
           ? String((error as { reasonCode: string }).reasonCode)
@@ -2568,8 +2568,8 @@ export class ConversationV4Gateway {
       return settleOnce(final);
     } finally {
       if (!settledAck) {
-        // publisher/measure/admission 任一同步异常过去会跳过 settle，
-        // 导致相同 command 永久等待、同 session FIFO 也无法继续 admission。
+        // A synchronous exception in publisher/measure/admission used to skip settle, leaving the
+        // same command waiting forever and blocking the session's FIFO admission too.
         const final = {
           status: "failed" as const,
           reasonCode: "fault.command.executionFailed",
@@ -2581,11 +2581,11 @@ export class ConversationV4Gateway {
     }
   }
 
-  /** v4/commands/query：同 key 与 handleCommand 共用 CommandInbox gate。 */
+  /** v4/commands/query: shares the CommandInbox gate with handleCommand for the same key. */
   async queryCommands(rawParams: unknown): Promise<CommandsQueryResult> {
     const receivedAt = localTtftNow();
     const params = commandsQueryParamsSchema.parse(rawParams);
-    // 校准是纯时钟探测，不能触发命令账本查询、恢复或 admission gate。
+    // Calibration is a pure clock probe: it must not trigger command-ledger queries, recovery, or the admission gate.
     if (params.clock)
       return {
         results: params.commands.map((key) => ({ key, result: "unknown" as const })),
@@ -2630,7 +2630,7 @@ export class ConversationV4Gateway {
     return this.publishers.get(sessionId)?.getSnapshot().queue.items.length ?? 0;
   }
 
-  /** Resident 回收保护：publisher queue 与 CommandInbox pinned facts 任一存在都不可关闭。 */
+  /** Resident reclamation guard: with a publisher queue or pinned CommandInbox facts present, never close. */
   hasResidencyBlockingCommands(sessionId: string): boolean {
     return this.getQueueLength(sessionId) > 0 || this.inbox.hasPinnedSessionState(sessionId);
   }
@@ -2655,8 +2655,8 @@ export class ConversationV4Gateway {
   }
 
   /**
-   * 当前输入路由模式（v4 原生能力，供命令层 host.getInputRoutingMode 使用）：
-   * held choice 裁决（heldQueueInputRequiresChoice）读投影 inputRouting.mode。
+   * Current input-routing mode (v4-native; used by the command layer's host.getInputRoutingMode):
+   * held-choice verdicts (heldQueueInputRequiresChoice) read projection inputRouting.mode.
    */
   getInputRoutingMode(
     sessionId: string,
@@ -2669,8 +2669,8 @@ export class ConversationV4Gateway {
   }
 
   /**
-   * rowId → 权威 messageId（v4 原生能力，供 forkAssistant/retryTurn 定位 assistant 行）。
-   * 会话无 publisher / 行不存在 / 非 assistant 行 → null（命令层据此 reject，不静默兜底）。
+   * rowId -> authoritative messageId (v4-native; lets forkAssistant/retryTurn address assistant rows).
+   * No publisher / missing row / non-assistant row -> null (the command layer rejects; no silent fallback).
    */
   getMessageIdForRow(sessionId: string, rowId: number): string | null {
     return this.publishers.get(sessionId)?.getMessageIdForRow(rowId) ?? null;
@@ -2684,12 +2684,12 @@ export class ConversationV4Gateway {
     return this.publishers.get(sessionId)?.resolveRowActionTarget(target, action) ?? null;
   }
 
-  /** rowId → 所属 product turn 内所有 transcript messageId（文件摘要撤销 / diff 查询）。 */
+  /** rowId -> every transcript messageId in the owning product turn (file-summary undo / diff queries). */
   getMessageIdsForTurnRow(sessionId: string, rowId: number): string[] {
     return this.publishers.get(sessionId)?.getMessageIdsForTurnRow(rowId) ?? [];
   }
 
-  /** fork 目标必须是所属轮最后一段 assistantText（无投影 → null，按未知处理）。 */
+  /** Fork targets must be the owning turn's last assistantText segment (no projection -> null, treated as unknown). */
   isLatestAssistantSegmentRow(sessionId: string, rowId: number): boolean | null {
     return this.publishers.get(sessionId)?.isLatestAssistantSegmentRow(rowId) ?? null;
   }
@@ -2698,31 +2698,31 @@ export class ConversationV4Gateway {
     return this.publishers.get(sessionId)?.resolveStableForkCandidate(rowId) ?? null;
   }
 
-  /** latestAssistantRetryOnly：retry 目标必须是全时间线最新且有 realUser cause 的 assistantText。 */
+  /** latestAssistantRetryOnly: the retry target must be the newest assistantText with a realUser cause. */
   isLatestRetryAssistantRow(sessionId: string, rowId: number): boolean | null {
     return this.publishers.get(sessionId)?.isLatestRetryAssistantRow(rowId) ?? null;
   }
 
-  /** latestQueryEditOnly：edit 目标必须是当前投影里的最后一条 realUser userInput row。 */
+  /** latestQueryEditOnly: the edit target must be the current projection's last realUser userInput row. */
   isLatestEditableUserRow(sessionId: string, rowId: number): boolean | null {
     return this.publishers.get(sessionId)?.isLatestEditableUserRow(rowId) ?? null;
   }
 
-  /** rowId → product turnId（editUserQuery 无 assistant anchor 时回查 user messageId）。 */
+  /** rowId -> product turnId (editUserQuery's user-messageId lookup without an assistant anchor). */
   getTurnIdForRow(sessionId: string, rowId: number): string | null {
     return this.publishers.get(sessionId)?.getTurnIdForRow(rowId) ?? null;
   }
 
   /**
-   * rowId → 所属 turn 的 rewind 锚点 messageId（供 editUserQuery：user 行无 messageId，
-   * 用同 turn 内 assistant 行的 messageId 作 `/rewind` 目标）。
+   * rowId -> the owning turn's rewind anchor messageId (for editUserQuery: the user row has no
+   * messageId, so a same-turn assistant row's messageId serves as the /rewind target).
    */
   getTurnRewindAnchor(sessionId: string, rowId: number): string | null {
     return this.publishers.get(sessionId)?.getTurnRewindAnchor(rowId) ?? null;
   }
 
-  /** 会话关闭：清 publisher 与其全部订阅调度；hydration 标记同清（重开走冷启动重建）；
-   *  并从其 workspace index 移除该会话（session.removed 推给列表订阅者）。 */
+  /** Session close: drop the publisher, its subscription scheduling, and hydration flags (reopen
+   *  rebuilds cold); also remove it from the workspace index (session.removed to list subscribers). */
   disposeSession(sessionId: string): void {
     this.cleanupSessionRuntime(sessionId, {
       clearCommandInbox: false,
@@ -2731,9 +2731,9 @@ export class ConversationV4Gateway {
   }
 
   /**
-   * Resident 容量去激活：与 disposeSession 相同的内存运行态清理，但**不**从 sessions-index
-   * 移除会话（不发 session.removed）——去激活是纯内存优化，侧边栏列表项必须原样
-   * 保留，再次订阅经冷恢复透明重建。
+   * Resident deactivation: the same in-memory cleanup as disposeSession, but the session is NOT
+   * removed from sessions-index (no session.removed) — deactivation is a pure memory optimization;
+   * the sidebar entry must survive untouched, and a later subscribe transparently cold-restores.
    */
   deactivateSession(sessionId: string): void {
     this.cleanupSessionRuntime(sessionId, {
@@ -2743,22 +2743,22 @@ export class ConversationV4Gateway {
   }
 
   /**
-   * Resident 回收纯预检：调用方可在拆 runtime event subscription 前拒绝不安全回收。
-   * deactivateSession 内仍复用同一校验，防止未来新增调用方绕过执行面 preflight。
+   * Resident reclamation precheck only: callers may reject an unsafe reclaim before tearing down the runtime event subscription.
+   * deactivateSession reuses the same check so future callers cannot bypass the execution-side preflight.
    */
   assertSessionRuntimeDeactivatable(sessionId: string): void {
     if (!this.inbox.hasPinnedSessionState(sessionId)) return;
     throw new Error(`Session command inbox is still pinned: ${sessionId}`);
   }
 
-  /** Resident 回收判定：该会话是否还有 conversation 订阅者（桌面 tab / 手机 remote）。 */
+  /** Resident-reclamation verdict: does the session still have conversation subscribers (desktop tab / phone remote)? */
   hasConversationSubscribers(sessionId: string): boolean {
     return this.publishers.get(sessionId)?.hasSubscribers() ?? false;
   }
 
   /**
-   * 内存诊断计数器。只读 size，不触碰状态。
-   * detachedLive 用于观察子 session publisher 是否随父 session 释放。
+   * Memory diagnostics counters. Read sizes only, touch no state.
+   * detachedLive observes whether child-session publishers die with their parent session.
    */
   collectMemoryDiagnostics(): Record<string, number> {
     return {
@@ -2774,8 +2774,8 @@ export class ConversationV4Gateway {
     options: { clearCommandInbox: boolean; notifyIndexRemoved: boolean },
   ): void {
     if (options.clearCommandInbox) {
-      // 清掉 in-flight/live 命令会破坏幂等与 FIFO。resident facts 已在回收前
-      // 拦截；若这里仍命中，必须在拆 publisher 之前失败，不能留下半清状态。
+      // Clearing in-flight/live commands breaks idempotency and FIFO. Resident facts are intercepted before reclamation;
+      // if one still appears here, fail before tearing down the publisher; never leave a half-cleared state.
       this.assertSessionRuntimeDeactivatable(sessionId);
     }
     this.rejectProjectionEventWaiters(
@@ -2790,13 +2790,13 @@ export class ConversationV4Gateway {
       if (entry.sessionId === sessionId) this.deleteBinaryReadCacheEntry(key);
     }
     if (options.notifyIndexRemoved) {
-      // 先取 workspaceId（会话 record 还在时），把 session.removed 推给列表订阅者。
+      // Take workspaceId first (while the session record lives) and push session.removed to list subscribers.
       try {
         const workspaceId = this.host.getSessionWorkspaceId?.(sessionId) ?? null;
         if (workspaceId !== null) {
           const indexPublisher = this.indexPublishers.get(workspaceId);
-          // 无订阅者时也必须先更新 projection，避免已有 publisher 在下次
-          // subscribe 的 snapshot 中复活已删除会话；flushIndex 对空订阅自然 no-op。
+          // Even with no subscribers the projection must update first, or an existing publisher would
+          // subscribe's snapshot; flushIndex is a natural no-op with no subscribers.
           if (indexPublisher?.removeSession(sessionId)) {
             this.flushIndex(workspaceId);
           }
@@ -2823,7 +2823,7 @@ export class ConversationV4Gateway {
     this.telemetryNormalizer.clearSession(sessionId);
     this.detachedLiveSessions.delete(sessionId);
     this.projectionFaultedSessions.delete(sessionId);
-    // detached child 归属清理：自己作为 child 从父表摘除；作为父则连带释放没有 record 的 child。
+    // Detached-child attribution cleanup: remove self from the parent table as a child; as a parent, also release record-less children.
     this.detachedTerminalAt.delete(sessionId);
     const parentId = this.detachedChildParent.get(sessionId);
     if (parentId !== undefined) {
@@ -2883,7 +2883,7 @@ export class ConversationV4Gateway {
     this.pausedConnections.clear();
   }
 
-  /** 测试探针：立即排空某订阅（绕过定时器）。 */
+  /** Test probe: drain a subscription immediately, bypassing timers. */
   flushNow(subscriptionId: string): ConversationTopicFrame | null {
     const match = [...this.flushStates.entries()].find(
       ([, state]) => state.subscriptionId === subscriptionId,
@@ -2909,17 +2909,17 @@ export class ConversationV4Gateway {
         now: this.now,
       });
       this.publishers.set(sessionId, publisher);
-      // config 种子：创建即注入 runtime 真值（不产 delta / 不 bump revision）。
+      // Config seed: inject runtime truth at creation (no delta / no revision bump).
       this.seedPublisherConfig(sessionId, publisher);
     }
     return publisher;
   }
 
   /**
-   * config 种子注入（防御式：种子失败不打断 conversation 主路径）。
-   * 幂等且事件优先（seedConfig 跳过事件触碰过的字段），故在 publisher 创建与
-   * hydration 收尾两处都调用——创建时机可能早于 record 完全就位（createSessionRecord
-   * 事件接线期间），hydration 处补一次兜住该窗口。
+   * Config seed injection (defensive: seed failure never breaks the conversation main path).
+   * Idempotent and events-first (seedConfig skips event-touched fields), so it runs at both
+   * publisher creation and hydration end — creation may precede the record being fully wired
+   * (during createSessionRecord event plumbing); the hydration pass covers that window.
    */
   private seedPublisherConfig(sessionId: string, publisher: ConversationTopicPublisher): void {
     const getSeed = this.host.getSessionConfigSeed;
@@ -2933,8 +2933,8 @@ export class ConversationV4Gateway {
   }
 
   /**
-   * 冷恢复 READY 只在明确需要 activation 的入口创建；hydratePublisher 保持 projection-only。
-   * 注册 promise 早于 activation，避免 record 提前入册后并发 command/query 越过恢复水位。
+   * Cold-recovery READY is created only at entries that explicitly need activation; hydratePublisher stays projection-only.
+   * The registration promise precedes activation, so once a record is registered early, concurrent commands/queries cannot jump the recovery watermark.
    */
   private ensureColdReadyPublisher(
     sessionId: string,
@@ -2943,7 +2943,7 @@ export class ConversationV4Gateway {
   ): Promise<ConversationTopicPublisher> {
     const existingFlight = this.readyFlights.get(sessionId);
     if (existingFlight) return existingFlight;
-    // 先登记同一个 READY，再开始所有耗时工作。
+    // Register the same READY before any slow work starts.
     const operation = Promise.resolve().then(async () => {
       const persistedMessages = await this.coldResume.ensureResumed(
         sessionId,
@@ -2953,7 +2953,7 @@ export class ConversationV4Gateway {
       return this.hydratePublisher(sessionId, persistedMessages);
     });
     this.readyFlights.set(sessionId, operation);
-    // 成功和失败都由同一清理函数释放；不创建会重复传播 rejection 的派生 promise。
+    // Success and failure release through the same cleanup; no derived promise that could propagate the rejection twice.
     const clear = () => {
       if (this.readyFlights.get(sessionId) === operation) this.readyFlights.delete(sessionId);
     };
@@ -2962,8 +2962,8 @@ export class ConversationV4Gateway {
   }
 
   /**
-   * 首次订阅时的投影重建（hydration）。语义见 subscribe 注释；
-   * synthesized 事件按 sequenceNumber 去重（publisher 已 ingest 过的 live 事件不重放）。
+   * First-subscribe projection rebuild (hydration). Semantics per the subscribe comment;
+   * synthesized events dedupe by sequenceNumber (already-ingested live events are not replayed).
    */
   private hydratePublisher(
     sessionId: string,
@@ -2971,7 +2971,7 @@ export class ConversationV4Gateway {
     forceRebuild = false,
   ): Promise<ConversationTopicPublisher> {
     const existing = this.publishers.get(sessionId);
-    // 已 hydrate 过的 live publisher：直接复用（避免重复重建 / 双计）。
+    // Already-hydrated live publisher: reuse as-is (no duplicate rebuild/double count).
     if (existing && this.hydratedSessions.has(sessionId)) return Promise.resolve(existing);
 
     const inFlight = this.hydrationInFlight.get(sessionId);
@@ -3037,12 +3037,12 @@ export class ConversationV4Gateway {
       throw new Error(`v4 hydration cancelled for session ${sessionId}`);
     }
 
-    // assistant 守恒：拒收过正文流的 publisher 不可信——它建立于
-    // TurnStarted 之后，缺段无法用 append-only 重放补进中间位置，只能整体重建。
+    // Assistant conservation: a publisher that rejected a body stream is not trustworthy. It was built after
+    // TurnStarted; missing segments cannot be appended into the middle by append-only replay and must be rebuilt whole.
     const latestPublisher = this.publishers.get(sessionId);
     const existingDroppedContent =
       latestPublisher !== undefined && latestPublisher.getDroppedContentStreamEventCount() > 0;
-    // 事件日志完整（synthesized=false）且已有健康 live publisher（流式）→ 保留，不重放。
+    // Complete event log (synthesized=false) with a healthy live publisher (streaming) -> keep it, no replay.
     if (
       existingAtStart &&
       latestPublisher === existingAtStart &&
@@ -3050,7 +3050,7 @@ export class ConversationV4Gateway {
       !forceRebuild &&
       !existingDroppedContent
     ) {
-      // 创建时种子可能落空（record 尚未入册），首次订阅补一次（幂等、事件优先）。
+      // The creation-time seed may have landed empty (record not yet registered); refill on first subscription (idempotent, events win).
       this.hydrationBuffers.delete(sessionId);
       this.seedPublisherConfig(sessionId, latestPublisher);
       if (loaded.sharedContextImport) {
@@ -3067,9 +3067,9 @@ export class ConversationV4Gateway {
       return latestPublisher;
     }
 
-    // 只记住 await 之前的 existing 引用是不够的：load 等待期间 raw event
-    // 会继续推进这个 publisher，synthesized 返回后却把它整体删除，queue/stream 随之
-    // 消失。重建以 sourceEventSeq 为 raw snapshot 边界，并把等待窗口内事件补回。
+    // Remembering only the pre-await existing reference is not enough: while load awaits, raw events
+    // keep advancing that publisher, yet the synthesized result deletes it whole, and queue/stream vanish with it.
+    // The rebuild takes sourceEventSeq as the raw snapshot boundary and replays events from the waiting window back in.
     const publisher = latestPublisher ?? existingAtStart ?? this.ensurePublisher(sessionId);
     this.rejectProjectionEventWaiters(
       sessionId,
@@ -3079,9 +3079,9 @@ export class ConversationV4Gateway {
       ),
     );
     publisher.rehydrate(loaded.events, {
-      // 恢复时 transcript/event store 可能仍含运行期已拒绝的超大正文。不能让同一事实
-      // 在 CLI 重启后再次把 subscribe 卡死；跳过该不可传输 projection event，继续归约
-      // 后续持久 TurnError/TurnComplete，使冷快照停在最后一个可恢复边界。
+      // On recovery the transcript/event store may still hold oversized bodies rejected at runtime. The same fact
+      // must not re-deadlock subscribe after a CLI restart: skip that untransmittable projection event and keep reducing
+      // later persisted TurnError/TurnComplete, so the cold snapshot rests on the last recoverable boundary.
       onPayloadTooLarge: (error) =>
         this.host.onError?.("v4.hydrate.payloadTooLarge", error, {
           phase: "publisher.rehydrate",
@@ -3092,7 +3092,7 @@ export class ConversationV4Gateway {
       publisher.seedSharedContextImport(loaded.sharedContextImport);
     }
     if (loaded.subagentsSeed) publisher.seedSubagents(loaded.subagentsSeed);
-    // 同次恢复的种子先应用，再补 live buffer；较新的使用量和选模事件始终获胜。
+    // In the same recovery, apply the seed first, then the live buffer; newer usage/selection events always win.
     if (loaded.usageSeed) publisher.seedUsage(loaded.usageSeed);
     const sourceEventSeq = Math.max(
       0,
@@ -3113,11 +3113,11 @@ export class ConversationV4Gateway {
       recentRawEventsById: new Map(),
     };
     this.rawSequenceStates.set(sessionId, sequenceState);
-    // 持久读取的 sourceEventSeq 是 load 开始时的水位；hydration buffer
-    // 只能记录 load 开始后的事件。若 seq=N 已在 buffer 创建前进入 live publisher，而
-    // load 只读到 N-1 时，rehydrate 后不能仅重放 N+1：raw reorder 会永久等待已经被
-    // 丢掉的 N，连带让 running Agent 控制行消失。保留与 publisher 相同大小的 raw tail，
-    // 与 await 窗口 buffer 合并后从持久边界连续重放。
+    // The persisted read's sourceEventSeq is the watermark when load started; the hydration buffer
+    // may only record events from after load started. If seq=N entered the live publisher before the buffer existed
+    // while load read only N-1, rehydrate must not replay from N+1: the raw reorder would wait forever for the
+    // discarded N, and the running agent's control row would vanish with it. Keep a raw tail the size of the publisher's,
+    // merge with the await-window buffer, and replay continuously from the persisted boundary.
     const replayByEventId = new Map<string, SessionEvent>();
     for (const rawEvent of previousSequenceState?.recentRawEventsById.values() ?? []) {
       if (rawEvent.sequenceNumber <= 0 || rawEvent.sequenceNumber > sourceEventSeq) {
@@ -3160,14 +3160,14 @@ export class ConversationV4Gateway {
         }
       }
     }
-    // publisher 已替换且 buffer 已同步补齐；在 usage seed 的异步等待窗口内，新 raw
-    // event 直接走上面的 per-session sequence state 进入新 publisher，不再需要二次 replay。
+    // Publisher replaced and buffer backfilled; during the usage seed's async wait, new raw events
+    // enter the new publisher via the per-session sequence state above — no second replay.
     if (this.hydrationBuffers.get(sessionId) === buffer) {
       this.hydrationBuffers.delete(sessionId);
     }
-    // 冷恢复种子（重放之后）：resume 已把历史会话的上次选型写回 runtime
-    // （reconcileResumedRuntimeSettings），而合成/持久化事件里可能没有 ModelSelected——
-    // 种子只填事件未触碰的字段，日志有值时以日志为准（冷恢复口径）。
+    // Cold-recovery seed (after replay): resume has written the history session's last selection back into the runtime
+    // (reconcileResumedRuntimeSettings), while synthesized/persisted events may contain no ModelSelected;
+    // the seed fills only untouched fields; when the log has a value, the log wins (cold-recovery semantics).
     this.seedPublisherConfig(sessionId, publisher);
     if (loaded.usageSeed === undefined) {
       await this.seedPublisherUsage(sessionId, publisher, persistedMessages);
@@ -3198,9 +3198,9 @@ export class ConversationV4Gateway {
   }
 
   /**
-   * cold 合成会把事件重新编号为 1..N，而 runtime 仍沿用 eventStore raw seq。这里用
-   * source cursor 建立 N-C 偏移；raw seq=0（live-only child）则顺延，并同步校正后续偏移。
-   * eventId 兜住 snapshot/buffer 同时看见同一事件的竞态，cursor 兜住已入 snapshot 的事件。
+   * Cold synthesis renumbers events 1..N while the runtime keeps the eventStore raw seq. The source cursor
+   * establishes the N-C offset; raw seq=0 (live-only child) continues the sequence, and later offsets are corrected in step.
+   * eventId catches the race of snapshot/buffer both seeing one event; the cursor covers events already in the snapshot.
    */
   private normalizeRuntimeEventSequence(sessionId: string, event: SessionEvent): SessionEvent[] {
     const state = this.getOrCreateRawSequenceState(sessionId);
@@ -3220,11 +3220,11 @@ export class ConversationV4Gateway {
       return [{ ...event, sequenceNumber: state.lastTransportSeq }];
     }
     if (event.type === SessionEventType.SessionResumed) {
-      // 旧 runtime 在 unsubscribe/重建窗口时可能遗漏尾部 raw event。新 runtime
-      // 延续持久 eventStore 高水位时，SessionResumed 的 raw seq 会大于旧 cursor；
-      // 若只处理 seq 回退，resume 和后续 TurnStarted 就会永久等待无法补齐的旧 gap。
-      // SessionResumed 是明确 epoch 边界：丢弃边界前的旧 pending，同时保留可能乱序先到的
-      // 新 epoch 后续事件，再从 resume 自身连续 drain。
+      // A legacy runtime can drop tail raw events across unsubscribe/rebuild. When the new runtime continues the persisted
+      // eventStore high-water mark, SessionResumed's raw seq can exceed the old cursor;
+      // handling only seq regressions would leave resume and later TurnStarted waiting forever for an uncoverable old gap.
+      // SessionResumed is an explicit epoch boundary: drop old pendings before it, keep new-epoch events that arrived early,
+      // and drain continuously from the resume itself.
       for (const pendingSeq of state.pendingByRawSeq.keys()) {
         if (pendingSeq <= rawSeq) state.pendingByRawSeq.delete(pendingSeq);
       }
@@ -3240,9 +3240,9 @@ export class ConversationV4Gateway {
     state.seenEventIds.add(eventId);
     if (!state.pendingByRawSeq.has(rawSeq)) state.pendingByRawSeq.set(rawSeq, event);
     const ready: SessionEvent[] = [];
-    // eventStore 先编号，各事件各自 await 持久化后再 notify，
-    // 因此 N+1 可以先于 N 到达。高水位过滤会把迟到 N 错判成 duplicate；
-    // 必须按 raw seq 暂存，只连续 drain，才能保住 queue/stream 总序。
+    // The eventStore numbers first; each event awaits persistence before notify, so N+1 can arrive
+    // before N. High-water filtering would misjudge late N as duplicate; buffer by raw seq and
+    // drain only contiguously to preserve total queue/stream order.
     for (;;) {
       const nextRawSeq = state.sourceEventSeq + 1;
       const next = state.pendingByRawSeq.get(nextRawSeq);
@@ -3255,9 +3255,9 @@ export class ConversationV4Gateway {
       }
       state.sourceEventSeq = nextRawSeq;
       state.lastTransportSeq = transportSeq;
-      // waiter timeout/abort 只清 listener 是不够的，还要终止已在 raw gap 中的
-      // event。command 返回 failed 后，缺失 seq 一到仍会把同一 TurnStarted 投影出来。
-      // 失败事件仍消费 raw 序号以解除后续事件阻塞，但绝不能再成为 canonical fact。
+      // A waiter timeout/abort clearing only the listener is not enough; events already inside the raw gap must be
+      // terminated too. After the command returns failed, the missing seq's arrival would still project the same TurnStarted.
+      // The failed event still consumes its raw seq to unblock later events, but must never become canonical fact again.
       if (state.failedEventById.has(String(next.id))) {
         continue;
       }
@@ -3312,9 +3312,9 @@ export class ConversationV4Gateway {
   }
 
   /**
-   * 运行中 subagent 没有独立 bootstrap record，但 raw child events 会先建立 publisher。
-   * publisher 已存在就代表 conversation live 可订阅，不能再把同一 child cold resume 成
-   * 第二个 runtime；真正的历史 session 仍由 host record / persisted resume 负责。
+   * A running subagent has no bootstrap record of its own, but raw child events build a publisher first.
+   * An existing publisher means the conversation live side is subscribable; the same child must not be cold-resumed into
+   * a second runtime; genuine history sessions remain the host record's / persisted resume's business.
    */
   private hasLiveConversation(sessionId: string): boolean {
     return this.host.sessionExists(sessionId) || this.detachedLiveSessions.has(sessionId);
@@ -3349,9 +3349,9 @@ export class ConversationV4Gateway {
     if (state.timer !== null) return;
     const timer = setTimeout(() => {
       state.timer = null;
-      // timer 排队后可能收到 SAT；reserve 前必须二次检查，不能产生竞态帧。
+      // SAT may arrive while the timer is already queued; re-check before reserving, no racy frames.
       if (this.pausedConnections.has(state.connectionId)) return;
-      // 惰性清理：订阅已被替换/退订→ 删调度状态，不产帧。
+      // Lazy cleanup: subscription replaced/unsubscribed -> drop scheduling state, no frame.
       if (!publisher.hasSubscription(state.subscriptionId, state.connectionId)) {
         this.flushStates.delete(routeKey);
         return;
@@ -3364,7 +3364,7 @@ export class ConversationV4Gateway {
         this.host.onError?.("v4.frame.emit", error);
       }
     }, state.flushWindowMs);
-    // CLI 进程退出不被 flush 定时器挂住。
+    // CLI process exit must not be held by flush timers.
     timer.unref?.();
     state.timer = timer;
   }
@@ -3372,8 +3372,8 @@ export class ConversationV4Gateway {
   private emitReservation<F extends RoutedTopicFrame>(
     reservation: TopicFrameReservation<F>,
   ): boolean {
-    // resync/subscribe recovery 已进入 request-scoped outbox 时，online
-    // flush 若复用同一 inFlight 会让 physical wire 抢在 ACK response 前出站。
+    // Once resync/subscribe recovery enters the request-scoped outbox, an online flush reusing the
+    // same inFlight would let physical wire leave before the ACK response.
     if (this.controlReservations.has(reservation)) return false;
     const sessionId = parseConversationTopic(reservation.frame.topic);
     const route = this.flushStates.get(
@@ -3424,7 +3424,7 @@ export class ConversationV4Gateway {
           ...(this.host.cliVersion ? { cliVersion: this.host.cliVersion } : {}),
           ...(header ? { productTurnId: header.turnId } : {}),
         });
-        // 转正前后的内容可能被同批发送；按实际 row 所属原输入携带事实，不能取最新队列项。
+        // Content from before/after promotion may arrive in one batch; carry facts by the original input the row actually belongs to, never the newest queue item.
         if (observation.success) observations.push(observation.data);
       }
       if (observations.length) {
@@ -3458,9 +3458,9 @@ export class ConversationV4Gateway {
         const committed = reservation.commit();
         if (committed && !afterCommitRan) {
           afterCommitRan = true;
-          // control reservation 等 ACK/outbox admission 时，既有 flush timer
-          // 可能已触发并因同一 inFlight 被抑制。commit 后必须主动重驱动 publisher，
-          // 否则期间积累的 delta 会一直等到下一次 ingest/publish 才可见。
+          // While a control reservation waits for ACK/outbox admission, an existing flush timer may
+          // have fired and been suppressed by the same inFlight. After commit, re-drive the
+          // publisher explicitly, or accumulated deltas wait for the next ingest/publish.
           afterCommit?.();
         }
         return committed;
@@ -3469,7 +3469,7 @@ export class ConversationV4Gateway {
   }
 }
 
-/** 宿主 executor 对未接线命令抛出此错误 → ACK failed fault.notImplemented。 */
+/** Thrown by the host executor for unwired commands -> ACK failed fault.notImplemented. */
 export class V4CommandNotImplementedError extends Error {
   constructor(type: string) {
     super(`v4 command not implemented in M3: ${type}`);
@@ -3478,10 +3478,10 @@ export class V4CommandNotImplementedError extends Error {
 }
 
 /**
- * 命令 handler 的 noop 收口通道（「同值切换 ACK 必须可判别」）：
- * handler 判定命令无事可做（如 switchModelConfig/switchCollaborationMode 命中
- * runtime 当前值）时抛出，gateway 映射为 ACK status="noop" + reasonCode——
- * 不得以 accepted（无 result）静默吞掉，客户端才能区分「已生效」与「本来就是这个值」。
+ * The no-op exit channel for command handlers ("a same-value switch ACK must be distinguishable"):
+ * thrown when a handler decides there is nothing to do (e.g. switchModelConfig/switchCollaborationMode matching
+ * the runtime's current value); the gateway maps it to ACK status="noop" + reasonCode.
+ * Never swallow it as accepted-without-result; clients must be able to tell "took effect" from "already that value".
  */
 export class V4CommandNoopError extends Error {
   constructor(

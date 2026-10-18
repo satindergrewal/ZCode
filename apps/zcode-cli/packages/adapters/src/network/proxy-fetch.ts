@@ -64,12 +64,7 @@ export function createNetworkProxyFetch(options: NetworkProxyFetchOptions): Netw
 }
 
 function hasNetworkFetchPolicy(options: NetworkProxyFetchOptions): boolean {
-  return Boolean(
-    options.caCertFile ||
-      options.env ||
-      options.httpProxy ||
-      options.noProxy,
-  );
+  return Boolean(options.caCertFile || options.env || options.httpProxy || options.noProxy);
 }
 
 function readFetchInputUrl(input: Parameters<NetworkFetch>[0]): URL | undefined {
@@ -171,8 +166,8 @@ function fetchWithAgent(
         responseMessage = message;
         responseMessage.once("close", cleanupAll);
         responseMessage.once("error", onResponseError);
-        // 回调里抛出的东西没人接得住、会打死整个 agent 进程（network/incoming-response.ts）：
-        // 表示不了的状态码只让这一次请求失败。
+        // Anything thrown in the callback has no catcher and kills the agent process (network/incoming-response.ts):
+        // an unrepresentable status fails this request only.
         let response: Response;
         try {
           response = toWebResponse(readIncomingResponse(message));

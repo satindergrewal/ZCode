@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 内置 Agent CLI 的安装/卸载状态、随机进度模板与设置同步目前集中在同一 hook，先保持收口，避免把同一条交互链拆散。 */
+/* eslint-disable max-lines -- install/uninstall state, staged progress, and settings sync in one hook; do not split the interaction chain. */
 import { useCallback, useMemo, useState } from "react";
 import type { ZCodeProvider } from "@zcode/shared";
 import { useSettings } from "@/hooks/useSettingService.js";
@@ -124,9 +124,7 @@ function easeOutCubic(t: number): number {
 }
 
 function easeInOutCubic(t: number): number {
-  return t < 0.5
-    ? 4 * t ** 3
-    : 1 - ((-2 * t + 2) ** 3) / 2;
+  return t < 0.5 ? 4 * t ** 3 : 1 - (-2 * t + 2) ** 3 / 2;
 }
 
 function easeInCubic(t: number): number {
@@ -156,7 +154,10 @@ function pickInstallStageDurations(
     randomInt(template.stageDurationRatioRanges[2][0], template.stageDurationRatioRanges[2][1]) /
     100;
   const minStage4Ratio = template.stageDurationRatioRanges[3][0] / 100;
-  const normalizedStage4Ratio = Math.max(minStage4Ratio, 1 - stage1Ratio - stage2Ratio - stage3Ratio);
+  const normalizedStage4Ratio = Math.max(
+    minStage4Ratio,
+    1 - stage1Ratio - stage2Ratio - stage3Ratio,
+  );
   const ratioSum = stage1Ratio + stage2Ratio + stage3Ratio + normalizedStage4Ratio;
   const normalizedRatios: [number, number, number, number] = [
     stage1Ratio / ratioSum,
@@ -177,15 +178,14 @@ function pickInstallStageDurations(
 
 function createInstallProgressPlan(): InstallProgressPlan {
   const template = pickInstallTemplate();
-  const totalDurationMs = randomInt(
-    MIN_INSTALL_DURATION_MS,
-    MAX_INSTALL_DURATION_MS,
-  );
+  const totalDurationMs = randomInt(MIN_INSTALL_DURATION_MS, MAX_INSTALL_DURATION_MS);
   const stage1End = randomInt(template.stage1EndRange[0], template.stage1EndRange[1]);
   const stage2End = randomInt(template.stage2EndRange[0], template.stage2EndRange[1]);
   const stage3End = randomInt(template.stage3EndRange[0], template.stage3EndRange[1]);
-  const [stage1Duration, stage2Duration, stage3Duration] =
-    pickInstallStageDurations(totalDurationMs, template);
+  const [stage1Duration, stage2Duration, stage3Duration] = pickInstallStageDurations(
+    totalDurationMs,
+    template,
+  );
 
   const stages: InstallStagePlan[] = [
     {
@@ -233,10 +233,7 @@ function createInstallProgressPlan(): InstallProgressPlan {
       Math.floor(((phase2To3PauseEnd - phase2To3PauseStart) * index) / stage2To3PauseCount);
     const segmentEnd =
       phase2To3PauseStart +
-      Math.floor(
-        ((phase2To3PauseEnd - phase2To3PauseStart) * (index + 1)) /
-          stage2To3PauseCount,
-      );
+      Math.floor(((phase2To3PauseEnd - phase2To3PauseStart) * (index + 1)) / stage2To3PauseCount);
 
     pauses.push({
       triggerProgress: clamp(
@@ -253,8 +250,8 @@ function createInstallProgressPlan(): InstallProgressPlan {
   }
 
   pauses.push({
-    // Bugfix: 之前尾段的停顿靠概率触发，偶发会完全错过“快完成但还要收尾”的重停感。
-    // 这里改成在阶段 3 -> 4 交界前预排一个必定触发的重停点，让尾段节奏稳定可复现。
+    // Bugfix: tail pauses were probabilistic and sometimes skipped entirely;
+    // schedule one guaranteed pause before the 3->4 boundary.
     triggerProgress: clamp(stage3End - randomInt(1, 2), stage2End + 1, 99),
     durationMs: randomInt(
       template.stage3To4PauseDurationRange[0],
@@ -270,24 +267,15 @@ function createInstallProgressPlan(): InstallProgressPlan {
   };
 }
 
-function getInstallTargetProgressAtElapsed(
-  plan: InstallProgressPlan,
-  elapsedMs: number,
-): number {
+function getInstallTargetProgressAtElapsed(plan: InstallProgressPlan, elapsedMs: number): number {
   const clampedElapsed = clamp(elapsedMs, 0, plan.totalDurationMs);
   const lastStage = plan.stages[plan.stages.length - 1];
   if (!lastStage) {
     return 100;
   }
-  const activeStage =
-    plan.stages.find((stage) => clampedElapsed <= stage.endAtMs) ??
-    lastStage;
+  const activeStage = plan.stages.find((stage) => clampedElapsed <= stage.endAtMs) ?? lastStage;
   const stageDuration = Math.max(1, activeStage.endAtMs - activeStage.startAtMs);
-  const stageElapsed = clamp(
-    clampedElapsed - activeStage.startAtMs,
-    0,
-    stageDuration,
-  );
+  const stageElapsed = clamp(clampedElapsed - activeStage.startAtMs, 0, stageDuration);
   const easedProgress = activeStage.easing(stageElapsed / stageDuration);
   return Math.floor(
     activeStage.startProgress +
@@ -313,9 +301,9 @@ async function simulateInstallProgress(
 
     const nextProgressTarget = getInstallTargetProgressAtElapsed(plan, elapsed);
     if (progress < nextProgressTarget) {
-      // Bugfix: 之前的百分比推进混杂了“目标曲线”和“随机停顿”两类职责，
-      // 越调越难预测。这里拆成“计划目标 + 1% 追赶”模型，既能保证 0-100 不跳号，
-      // 又能让四阶段节奏只由阶段曲线本身决定。
+      // Bugfix: progress mixed target curve with random pauses, unpredictable.
+      // Plan target + 1% chase keeps 0-100 gapless and lets the four phases
+      // own their rhythm.
       progress += 1;
       setProgress(provider, progress);
 
@@ -359,10 +347,7 @@ export function useBuiltinAgentCli() {
   >({});
   const [error, setError] = useState<string | null>(null);
 
-  const enabledProviders = useMemo(
-    () => getEnabledBuiltinAgentCliProviders(settings),
-    [settings],
-  );
+  const enabledProviders = useMemo(() => getEnabledBuiltinAgentCliProviders(settings), [settings]);
   const activeMutatingProvider = enablingProvider ?? disablingProvider;
   const hasPendingMutation = activeMutatingProvider !== null;
 
@@ -388,8 +373,7 @@ export function useBuiltinAgentCli() {
   );
 
   const canMutateProvider = useCallback(
-    (provider: ZCodeProvider) =>
-      !hasPendingMutation || activeMutatingProvider === provider,
+    (provider: ZCodeProvider) => !hasPendingMutation || activeMutatingProvider === provider,
     [activeMutatingProvider, hasPendingMutation],
   );
 
@@ -426,11 +410,7 @@ export function useBuiltinAgentCli() {
           enabledBuiltinAgentCliProviders: nextEnabledProviders,
         });
       } catch (installError) {
-        setError(
-          installError instanceof Error
-            ? installError.message
-            : String(installError),
-        );
+        setError(installError instanceof Error ? installError.message : String(installError));
         throw installError;
       } finally {
         setEnablingProvider((current) => (current === provider ? null : current));
@@ -459,25 +439,19 @@ export function useBuiltinAgentCli() {
       try {
         await simulateUninstallDelay();
 
-        const nextEnabledProviders = enabledProviders.filter(
-          (candidate) => candidate !== provider,
-        );
+        const nextEnabledProviders = enabledProviders.filter((candidate) => candidate !== provider);
         await update({
           enabledBuiltinAgentCliProviders: nextEnabledProviders,
         });
 
-        // Bugfix: 卸载内置 CLI 后如果仍保留 localStorage 里的“最近一次选中的 provider”，
-        // 新建 workspace / 新建草稿时默认 provider 还是会回到这个已卸载的值，
-        // 菜单触发器看起来就像“它依然可用”。这里同步把持久化偏好回退到始终可用的 glm。
+        // Bugfix: after uninstall, a stored last-provider pref still wins
+        // in new workspace/draft pickers, reading as available.
+        // Fall back to always-available glm.
         if (readLastSelectedAgentProvider() === provider) {
           persistLastSelectedAgentProvider("glm");
         }
       } catch (uninstallError) {
-        setError(
-          uninstallError instanceof Error
-            ? uninstallError.message
-            : String(uninstallError),
-        );
+        setError(uninstallError instanceof Error ? uninstallError.message : String(uninstallError));
         throw uninstallError;
       } finally {
         setDisablingProvider((current) => (current === provider ? null : current));
@@ -498,8 +472,7 @@ export function useBuiltinAgentCli() {
     canMutateProvider,
     getEffectiveProvider,
     getStatus,
-    getInstallProgress: (provider: ZCodeProvider) =>
-      installProgressByProvider[provider] ?? null,
+    getInstallProgress: (provider: ZCodeProvider) => installProgressByProvider[provider] ?? null,
     installProvider,
     uninstallProvider,
     refresh,

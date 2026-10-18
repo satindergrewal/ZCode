@@ -1,6 +1,6 @@
 import type { ResourceUsageCategory, ResourceUsageProcess } from "@zcode/shared";
 
-/** 三组固定顺序：基础服务 / 内置插件 / 社区插件 */
+/** Fixed group order: core services / built-in plugins / community. */
 export const RESOURCE_USAGE_CATEGORY_ORDER: readonly ResourceUsageCategory[] = [
   "base",
   "builtin-plugin",
@@ -12,9 +12,9 @@ export interface ResourceUsageGroupView {
   processCount: number;
   cpuPercent: number;
   memoryBytes: number;
-  /** 组内是否有指标尚未采到的进程 */
+  /** Any process missing samples in this group. */
   hasUnsampled: boolean;
-  /** 按 CPU 降序、内存降序、pid 升序 */
+  /** CPU desc, memory desc, pid asc. */
   processes: ResourceUsageProcess[];
 }
 

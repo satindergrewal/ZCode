@@ -26,7 +26,7 @@ export function buildPromptWithConversationSelections(
   references: readonly ConversationSelectionText[],
 ): string {
   if (references.length === 0) return visibleContent;
-  // 文件选段曾只发正文，导致模型与历史丢失文件来源；只保留路径，不发送内部身份字段。
+  // File excerpts once shipped content only, losing provenance for model and history; keep paths, never internal identity fields.
   const block = [
     "# userselect:",
     "```userselect",

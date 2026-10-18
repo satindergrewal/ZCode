@@ -105,8 +105,9 @@ interface CapturedNotification {
 /** 通知在 runtime 上产出（enqueueBackgroundTaskNotification 是原型方法），实例桩即可截获。 */
 function captureNotifications(runtime: AgentRuntime): CapturedNotification[] {
   const captured: CapturedNotification[] = [];
-  (runtime as unknown as { enqueueBackgroundTaskNotification: (n: CapturedNotification) => void })
-    .enqueueBackgroundTaskNotification = (notification) => {
+  (
+    runtime as unknown as { enqueueBackgroundTaskNotification: (n: CapturedNotification) => void }
+  ).enqueueBackgroundTaskNotification = (notification) => {
     captured.push(notification);
   };
   return captured;

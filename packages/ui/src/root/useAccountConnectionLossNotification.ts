@@ -34,7 +34,10 @@ export function useAccountConnectionLossNotification(
       try {
         suggestion = await prepareAccountConnectionSwitch(services, event);
       } catch (error) {
-        logger.lifecycle.warn("[AccountConnection] Could not confirm the alternate plan; surfacing status only", { error });
+        logger.lifecycle.warn(
+          "[AccountConnection] Could not confirm the alternate plan; surfacing status only",
+          { error },
+        );
       }
       if (!event.isCurrent()) return;
       const { intl: copy } = latest.current;
@@ -71,7 +74,10 @@ export function useAccountConnectionLossNotification(
             try {
               await latest.current.refreshAppSettings?.();
             } catch (error) {
-              logger.lifecycle.warn("[AccountConnection] Connection saved; settings snapshot refresh failed", { error });
+              logger.lifecycle.warn(
+                "[AccountConnection] Connection saved; settings snapshot refresh failed",
+                { error },
+              );
             }
           } catch (error) {
             logger.lifecycle.warn("[AccountConnection] Manual plan switch failed", { error });
@@ -121,7 +127,10 @@ export function useAccountConnectionLossNotification(
       .getView()
       .then(accept)
       .catch((error) => {
-        logger.lifecycle.warn("[AccountConnection] Initial read failed; waiting for the regular refresh", { error });
+        logger.lifecycle.warn(
+          "[AccountConnection] Initial read failed; waiting for the regular refresh",
+          { error },
+        );
       });
     return () => {
       observer.dispose();

@@ -71,8 +71,12 @@ function mintCore(
   // (a named callback `xs.map(review)`, a helper called from the inline callback, and so on
   // transitively, per the call oracle). "Nearest" = the innermost containing span, i.e. the
   // one with the greatest start offset.
-  const spanOf = (node: ts.Node): { start: number; end: number } => ({ end: node.getEnd(), start: node.getStart(scriptFile) });
-  const insideSpan = (pos: number, span: { start: number; end: number }): boolean => span.start <= pos && pos < span.end;
+  const spanOf = (node: ts.Node): { start: number; end: number } => ({
+    end: node.getEnd(),
+    start: node.getStart(scriptFile),
+  });
+  const insideSpan = (pos: number, span: { start: number; end: number }): boolean =>
+    span.start <= pos && pos < span.end;
   const promotedSpans: Array<{ id: string; start: number; end: number }> = [];
   for (const cand of table.iterations) {
     const id = fanoutId.get(provisionalFanoutId(cand.order));
@@ -123,7 +127,13 @@ function mintCore(
     order: site.order,
     ...withinOf(site.call),
   }));
-  const simple = (site: { id: string; order: number; label: string; loc: CoreSimpleSite["loc"]; call: ts.Node }): CoreSimpleSite => ({
+  const simple = (site: {
+    id: string;
+    order: number;
+    label: string;
+    loc: CoreSimpleSite["loc"];
+    call: ts.Node;
+  }): CoreSimpleSite => ({
     id: site.id,
     label: site.label,
     loc: site.loc,
@@ -144,7 +154,7 @@ function mintCore(
   const checker = workflow.program.getTypeChecker();
   const fanouts: CoreFanoutSite[] = facts.promoted.map((fanout) => {
     const cand = candByOrder.get(fanout.order);
-        // Literal cardinality is a mint-time fact too: it reads the iterated expression's AST and bindings; the projection reads a number.
+    // Literal cardinality is a mint-time fact too: it reads the iterated expression's AST and bindings; the projection reads a number.
     const cardinality = cand === undefined ? undefined : literalCardinality(cand.iterated, checker);
     return {
       id: fanoutId.get(fanout.id) as string,
@@ -155,8 +165,9 @@ function mintCore(
       ...(cardinality === undefined ? {} : { cardinality }),
     };
   });
-  // 只有开放的留白是站点（docs/analysis.md「Sites」）：已补全的留白是一个阶段，不是一步。
-  // 名字 / 类型缺席的留白在 9012 处已挡下，这里的兜底只是把不变量写下来。
+  // Only open holes are sites (docs/analysis.md "Sites"): a filled hole is a phase, not a step.
+  // Holes lacking name / type were already blocked at 9012; this guard just states the
+  // invariant.
   const holes: CoreHoleSite[] = table.holes
     .filter((site) => site.body === undefined)
     .map((site) => ({
@@ -195,7 +206,11 @@ function mintFacts(
   rename: (site: string) => string,
 ): CoreFacts {
   const renameOccs = (occs: TaintOcc[]): TaintOcc[] =>
-    occs.map((occ) => ({ exact: occ.exact, site: rename(occ.site), ...(occ.port === undefined ? {} : { port: occ.port }) }));
+    occs.map((occ) => ({
+      exact: occ.exact,
+      site: rename(occ.site),
+      ...(occ.port === undefined ? {} : { port: occ.port }),
+    }));
   const renameMap = (map: Map<string, TaintOcc[]>): Map<string, TaintOcc[]> => {
     const out = new Map<string, TaintOcc[]>();
     for (const [sink, occs] of map) out.set(sink, renameOccs(occs));

@@ -116,9 +116,8 @@ describe("config adapters", () => {
         ).suppressed,
       ).toBe(false);
       expect(
-        (
-          await removePluginFromFileConfig(configPath, "computer-use@zcode-plugins-official")
-        ).removedEnabled,
+        (await removePluginFromFileConfig(configPath, "computer-use@zcode-plugins-official"))
+          .removedEnabled,
       ).toBe(true);
       expect(JSON.parse(await readFile(configPath, "utf8"))).toEqual({
         plugins: { enabledPlugins: {}, suppressedBuiltins: [] },

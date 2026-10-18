@@ -54,8 +54,8 @@ function resolveInitialWebRemoteControlMobilePage(
     return "chat";
   }
 
-  // Bugfix: 手机端在聊天页刷新时，React 内存状态会丢失，但浏览器会保留当前 history.state。
-  // 这里复用点击进入聊天页时写入的 history state，避免刷新后只恢复 task 选中态却回到任务首页。
+  // Bugfix: on chat refresh React memory state is lost but history.state survives;
+  // reuse the state written on chat entry, or refresh lands on home despite the selected task.
   if (
     typeof window !== "undefined" &&
     isWebRemoteControlMobileChatHistoryState(window.history.state)
@@ -96,10 +96,7 @@ export function WebRemoteControlMobileShell({
     taskId: string,
     targetWorkspaceIdentity?: string,
   ) => void;
-  onStartDraftInWorkspace?: (
-    targetWorkspacePath: string,
-    targetWorkspaceIdentity?: string,
-  ) => void;
+  onStartDraftInWorkspace?: (targetWorkspacePath: string, targetWorkspaceIdentity?: string) => void;
   renderChatHeader: (options: { onBackHome: () => void }) => ReactNode;
   chatContent: ReactNode;
   chatOverlay?: ReactNode;
@@ -129,11 +126,11 @@ export function WebRemoteControlMobileShell({
 
   const handleTaskHomePreferencesChange = useCallback(
     (preferences: WebRemoteControlMobileTaskHomePreferences) => {
-      // Bugfix: 手机远控任务首页进入 task 后只是卸载组件，shell 内存 state 足够保留排序；
-      // 但刷新页面会重建整个 React tree，之前的默认值会覆盖用户选择。
-      // 这里在更新 shell state 的同时写入 localStorage，让刷新后也能恢复同一排序/分组偏好。
+      // Bugfix: entering a task only unmounts the home; shell memory keeps sort prefs,
+      // but a refresh rebuilds the tree and defaults would override the user's choice;
+      // mirror to localStorage so a refresh restores the same sort/grouping.
       persistWebRemoteControlMobileTaskHomePreferences(preferences);
-      logger.debug("[WebRemoteControlMobileShell] 更新手机端任务首页偏好", preferences);
+      logger.debug("[WebRemoteControlMobileShell] phone home preferences updated", preferences);
       setTaskHomePreferences(preferences);
     },
     [],
@@ -193,29 +190,22 @@ export function WebRemoteControlMobileShell({
     }
     syncedMobileViewStateRef.current = dedupeKey;
 
-    // Bugfix: 手机端“新建任务/分叉”会自动切到新 task，但之前只有点任务列表项才会上报 mobileViewState。
-    // 这样桌面端会继续认为手机还在旧 task，导致新 task 列表刷新滞后。
-    // 这里在 activeTaskId 变化时立即同步，确保跨端选中态和任务列表收敛一致。
-    void switcher
-      .updateMobileViewState(workspaceKey, activeTaskId ?? undefined)
-      .catch((error) => {
-        const message = error instanceof Error ? error.message : String(error);
-        logger.warn("[WebRemoteControlMobileShell] 同步 mobileViewState 失败", {
-          error: message,
-          workspaceKey,
-          taskId: activeTaskId ?? null,
-        });
+    // Bugfix: new-task/fork auto-switches tasks but only explicit list clicks reported mobileViewState,
+    // so desktop kept the phone on the old task and list refreshes lagged;
+    // sync on activeTaskId change so cross-device selection and lists converge.
+    void switcher.updateMobileViewState(workspaceKey, activeTaskId ?? undefined).catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn("[WebRemoteControlMobileShell] failed to sync mobileViewState", {
+        error: message,
+        workspaceKey,
+        taskId: activeTaskId ?? null,
       });
-  }, [
-    activeTaskId,
-    activeWorkspaceIdentity,
-    activeWorkspacePath,
-    switcher,
-  ]);
+    });
+  }, [activeTaskId, activeWorkspaceIdentity, activeWorkspacePath, switcher]);
 
-  // Bugfix: 移动端聊天/侧栏都是 flex 子树，默认 min-width:auto 会按长消息的
-  // min-content 宽度撑开抽屉；窄屏随后从左侧裁掉正文。沿整条宽度链显式允许收缩，
-  // 让 subagent 输出、进程面板和正文在抽屉内换行。
+  // Bugfix: chat/sidebar are flex children; min-width:auto sized drawers to long-message
+  // min-content and clipped body text on narrow screens; allow shrinking down the
+  // whole width chain so subagent output, panes, and body wrap inside the drawer.
   return (
     <div className="relative flex h-full min-h-0 min-w-0 flex-col bg-background">
       {currentPage === "home" ? (
@@ -261,15 +251,13 @@ export function WebRemoteControlMobileShell({
             <main
               className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
               aria-hidden={shouldInertChatSurface ? true : undefined}
-              data-mobile-chat-surface={
-                shouldInertChatSurface ? "inert" : undefined
-              }
+              data-mobile-chat-surface={shouldInertChatSurface ? "inert" : undefined}
               inert={shouldInertChatSurface ? true : undefined}
             >
-              {/* Bugfix: 手机侧栏打开时底部 composer 会被抽屉覆盖。
-                  如果聊天区仍留在交互树里，模型选择等控件会被遮挡但仍可被浏览器命中，
-                  造成“按钮不可点”的误导。这里把被覆盖的聊天表面设为 inert，
-                  让右侧抽屉成为唯一可交互区域。 */}
+              {/* Bugfix: with the sidebar open it covers the bottom composer.
+                  Chat left interactable keeps controls hit-testable under the drawer,
+                  the classic dead-button trap. Mark the covered chat surface inert so the right
+                  drawer is the only interactable area. */}
               {chatContent}
             </main>
             {sidePaneContent ? (
@@ -293,9 +281,9 @@ export function WebRemoteControlMobileShell({
                     isSidePaneOpen ? "translate-x-0" : "translate-x-full",
                   ].join(" ")}
                 >
-                  {/* Bugfix: 手机远控之前把 side pane 作为底部纵向面板渲染，
-                      会挤压聊天区且不像桌面右侧栏。这里改成右侧覆盖抽屉，
-                      只覆盖手机聊天区，不改变桌面端分栏布局。 */}
+                  {/* Bugfix: the side pane rendered as a bottom panel, squeezing chat and
+                      unlike desktop's right rail. Now a right overlay drawer, phone chat only;
+                      the desktop split layout is untouched. */}
                   {sidePaneContent}
                 </div>
               </div>
@@ -305,8 +293,8 @@ export function WebRemoteControlMobileShell({
                 className="pointer-events-none absolute inset-0 z-40"
                 data-mobile-chat-overlay="true"
               >
-                {/* Bugfix: 查找框属于聊天视觉区域，但不能成为 inert 聊天表面的后代。
-                    独立 overlay 保留抽屉隔离，同时让文件变更查找仍可聚焦、切换和关闭。 */}
+                {/* Bugfix: find belongs to chat visuals but must not descend from the inert surface;
+                    a separate overlay keeps drawer isolation while find stays focusable/closable. */}
                 <div className="pointer-events-auto">{chatOverlay}</div>
               </div>
             ) : null}

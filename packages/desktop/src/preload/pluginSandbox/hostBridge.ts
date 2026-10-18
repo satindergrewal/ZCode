@@ -7,8 +7,8 @@ export function installPluginSandboxHostBridge(): void {
   const supportsRetainedMove =
     contextBridge.executeInMainWorld({ func: enableSandboxRetainedMoves }) === true;
   /**
-   * 插件 UI 沙箱：独立命名空间，不进 window.zcode。只暴露明确的沙箱操作；
-   * 端口不能过 contextBridge，走下面的 window.postMessage transfer。
+   * Plugin UI sandbox: its own namespace, not on window.zcode. Only explicit sandbox operations
+   * are exposed; ports cannot cross contextBridge, use the window.postMessage transfer below.
    */
   contextBridge.exposeInMainWorld("zcodePluginSandbox", {
     supportsRetainedMove,

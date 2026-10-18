@@ -4,11 +4,13 @@ import type {
 } from "./embeddedBrowserPermissionPolicy.js";
 
 /**
- * 内置浏览器站点同意记录的模块级管理器：
- * - permission check/request handler 需要同步读取（Electron check handler 无异步版），
- *   因此记录常驻内存，持久化（store）在写路径异步落盘；
- * - 设置页「网站权限」与「清除浏览器数据」经同一模块读写，保证与决策口径一致。
- * 模块级单例与 getPluginSandboxHost 同款模式：main 进程单实例，无并发写竞争。
+ * Module-level manager for embedded-browser site consent records:
+ * - permission check/request handlers need synchronous reads (Electron check handlers have no
+ *   async form), so records stay in memory and the store persists asynchronously on the write path;
+ * - settings "site permissions" and "clear browser data" read/write through this same module,
+ *   keeping decision semantics consistent.
+ * Module singleton, same pattern as getPluginSandboxHost: one instance in main, no concurrent
+ * write races.
  */
 let record: EmbeddedBrowserSitePermissionRecord = {};
 let store: EmbeddedBrowserSitePermissionStore | null = null;
@@ -50,7 +52,7 @@ export async function writeEmbeddedBrowserSitePermission(
   await persist();
 }
 
-/** state 传 "ask" 表示删除该条记录（回到每次询问）。 */
+/** state "ask" deletes the record (back to asking every time). */
 export async function removeEmbeddedBrowserSitePermission(
   origin: string,
   permission: string,
@@ -79,12 +81,13 @@ async function persist(): Promise<void> {
   try {
     await store.persist(record);
   } catch (error) {
-    // 内存记录已生效，落盘失败只降级为重启后回退到「每次询问」，不阻塞决策。
+    // The in-memory record is already effective; a persist failure only degrades to "ask every
+    // time" after restart and never blocks the decision.
     logger?.warn("[embedded-browser-permission] site permission store persist failed:", error);
   }
 }
 
-/** 仅测试用：隔离模块级状态。 */
+/** Test-only: isolates module-level state. */
 export function resetEmbeddedBrowserSitePermissionsForTest(): void {
   record = {};
   store = null;

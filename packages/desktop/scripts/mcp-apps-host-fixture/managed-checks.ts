@@ -72,7 +72,8 @@ export async function checkManaged(
         JSON.stringify(pdf),
       );
       const rejected = await page("window.readResourceFixture('fixture://unsupported.bin')");
-      // 测试 IPC 的异常只保留 message，页面侧核对拒绝原因；结构化 reason 由 Agent 单测覆盖。
+      // Test-IPC exceptions keep the message only; the page asserts the rejection text and the
+      // structured reason is covered by agent unit tests.
       assert.match(rejected.error ?? "", /application\/x-msdownload.*not allowed/);
       const svg = await page("window.readResourceFixture('fixture://vector.svg')");
       assert.deepEqual(

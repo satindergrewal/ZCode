@@ -51,9 +51,9 @@ describe("ChunkStream", () => {
   });
 });
 
-// ── PersistentProtocol 两个补丁（docs/v4-refactor/05 §@zcode/rpc）──
+// -- PersistentProtocol, two patches (docs/v4-refactor/05, @zcode/rpc) --
 
-/** 可注入数据的假 socket：write 收集出站帧，emitData 模拟对端来包。 */
+/** Injectable fake socket: write collects outbound frames, emitData fakes peer traffic. */
 class FakeSocket implements ISocket {
   private readonly _onData = new Emitter<VSBuffer>();
   onData = this._onData.event;
@@ -74,7 +74,7 @@ class FakeSocket implements ISocket {
   dispose(): void {}
 }
 
-/** 构造对端 ACK 帧（type=Ack, 13 字节 header, 无 payload）。 */
+/** Build a peer ACK frame (type=Ack, 13-byte header, no payload). */
 function ackFrame(ack: number): VSBuffer {
   const buffer = VSBuffer.alloc(13);
   buffer.writeUInt8(ProtocolMessageType.Ack, 0);
@@ -89,8 +89,8 @@ function lastWrittenType(socket: FakeSocket): ProtocolMessageType {
   return frame.readUInt8(0) as ProtocolMessageType;
 }
 
-describe("PersistentProtocol 拥塞信号（补丁 1）", () => {
-  it("结构上满足公共只读 ConnectionFlowControl", () => {
+describe("PersistentProtocol congestion signals (patch 1)", () => {
+  it("structurally satisfies the public read-only ConnectionFlowControl", () => {
     const socket = new FakeSocket();
     const protocol: ConnectionFlowControl = new PersistentProtocol(socket);
 
@@ -100,13 +100,13 @@ describe("PersistentProtocol 拥塞信号（补丁 1）", () => {
     (protocol as PersistentProtocol).dispose();
   });
 
-  it("unacknowledgedBytes 随 send 增长、随 ACK 回落", () => {
+  it("grows unacknowledgedBytes on send and drains on ACK", () => {
     const socket = new FakeSocket();
     const protocol = new PersistentProtocol(socket);
     protocol.send(VSBuffer.fromString("aaaa"));
     protocol.send(VSBuffer.fromString("bb"));
     expect(protocol.unacknowledgedBytes).toBe(6);
-    // 对端确认到第 1 条。
+    // Peer acknowledges the first frame.
     socket.emitData(ackFrame(1));
     expect(protocol.unacknowledgedBytes).toBe(2);
     socket.emitData(ackFrame(2));
@@ -114,7 +114,7 @@ describe("PersistentProtocol 拥塞信号（补丁 1）", () => {
     protocol.dispose();
   });
 
-  it("越过高水位 onSaturated（边沿触发），回落低水位 onDrained", () => {
+  it("fires edge-triggered onSaturated past the high watermark and onDrained below the low one", () => {
     const socket = new FakeSocket();
     const protocol = new PersistentProtocol(socket, {
       saturationHighWaterMarkBytes: 10,
@@ -125,26 +125,26 @@ describe("PersistentProtocol 拥塞信号（补丁 1）", () => {
     protocol.onSaturated(() => saturatedCount++);
     protocol.onDrained(() => drainedCount++);
 
-    protocol.send(VSBuffer.fromString("12345678")); // 8B，未过水位
+    protocol.send(VSBuffer.fromString("12345678")); // 8B, below watermark
     expect(saturatedCount).toBe(0);
-    protocol.send(VSBuffer.fromString("1234")); // 12B，越过高水位
+    protocol.send(VSBuffer.fromString("1234")); // 12B, past high watermark
     expect(saturatedCount).toBe(1);
-    protocol.send(VSBuffer.fromString("x")); // 持续饱和不重复通知
+    protocol.send(VSBuffer.fromString("x")); // stays saturated, no repeat notify
     expect(saturatedCount).toBe(1);
 
-    socket.emitData(ackFrame(1)); // 剩 5B，仍高于低水位
+    socket.emitData(ackFrame(1)); // 5B left, still above low watermark
     expect(drainedCount).toBe(0);
-    socket.emitData(ackFrame(2)); // 剩 1B ≤ 4 → drained
+    socket.emitData(ackFrame(2)); // 1B left <= 4 -> drained
     expect(drainedCount).toBe(1);
     protocol.dispose();
   });
 });
 
-describe("PersistentProtocol 重放缓冲有界（补丁 2）", () => {
+describe("PersistentProtocol replay buffer bound (patch 2)", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  it("未 ACK 字节越过上限 → 发 Disconnect 并 onClose（客户端走 subscribe(base)）", () => {
+  it("sends Disconnect and onClose once unacked bytes pass the cap (client via subscribe(base))", () => {
     const socket = new FakeSocket();
     const protocol = new PersistentProtocol(socket, {
       replayBufferMaxBytes: 10,
@@ -154,16 +154,16 @@ describe("PersistentProtocol 重放缓冲有界（补丁 2）", () => {
 
     protocol.send(VSBuffer.fromString("12345678"));
     expect(closed).toBe(0);
-    protocol.send(VSBuffer.fromString("1234")); // 12B > 10 → 放弃会话
+    protocol.send(VSBuffer.fromString("1234")); // 12B > 10 -> give up the session
     expect(closed).toBe(1);
     expect(lastWrittenType(socket)).toBe(ProtocolMessageType.Disconnect);
 
-    protocol.send(VSBuffer.fromString("more")); // 已放弃，不重复触发
+    protocol.send(VSBuffer.fromString("more")); // already given up, no repeat
     expect(closed).toBe(1);
     protocol.dispose();
   });
 
-  it("最老未 ACK 消息超过宽限窗 → 放弃会话", () => {
+  it("gives up the session when the oldest unacked message passes the grace window", () => {
     const socket = new FakeSocket();
     const protocol = new PersistentProtocol(socket, {
       replayBufferGraceMs: 30_000,
@@ -172,14 +172,14 @@ describe("PersistentProtocol 重放缓冲有界（补丁 2）", () => {
     protocol.onClose(() => closed++);
 
     protocol.send(VSBuffer.fromString("hello"));
-    vi.advanceTimersByTime(20_000); // 首次 ackCheck：年龄 20s < 30s
+    vi.advanceTimersByTime(20_000); // first ackCheck: age 20s < 30s
     expect(closed).toBe(0);
-    vi.advanceTimersByTime(20_000); // 第二次：年龄 40s > 30s → 放弃
+    vi.advanceTimersByTime(20_000); // second: age 40s > 30s -> give up
     expect(closed).toBe(1);
     protocol.dispose();
   });
 
-  it("及时 ACK 时宽限窗不触发", () => {
+  it("never trips the grace window when ACKs land in time", () => {
     const socket = new FakeSocket();
     const protocol = new PersistentProtocol(socket, {
       replayBufferGraceMs: 30_000,
@@ -189,7 +189,7 @@ describe("PersistentProtocol 重放缓冲有界（补丁 2）", () => {
 
     protocol.send(VSBuffer.fromString("hello"));
     vi.advanceTimersByTime(10_000);
-    socket.emitData(ackFrame(1)); // 队列清空
+    socket.emitData(ackFrame(1)); // queue drained
     vi.advanceTimersByTime(60_000);
     expect(closed).toBe(0);
     protocol.dispose();
@@ -225,11 +225,17 @@ class FakeMessagePort implements MessagePortLike {
   peer?: FakeMessagePort;
   readonly posted: unknown[] = [];
 
-  addEventListener(_type: "message", listener: (event: { data: MessagePortPayload }) => void): void {
+  addEventListener(
+    _type: "message",
+    listener: (event: { data: MessagePortPayload }) => void,
+  ): void {
     this.listeners.add(listener);
   }
 
-  removeEventListener(_type: "message", listener: (event: { data: MessagePortPayload }) => void): void {
+  removeEventListener(
+    _type: "message",
+    listener: (event: { data: MessagePortPayload }) => void,
+  ): void {
     this.listeners.delete(listener);
   }
 

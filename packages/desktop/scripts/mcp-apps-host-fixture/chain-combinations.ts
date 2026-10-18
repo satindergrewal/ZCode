@@ -115,7 +115,8 @@ export async function checkCombinations(context: {
         assert.ok((await result).error);
         agent.release("source-a", key);
       } else {
-        // 同一轮发出，允许任一合法赢家；以 Agent 的取消接纳结果核对页面终态。
+        // Emitted in the same turn; any legal winner is accepted, and the page's terminal state is
+        // checked against the agent's cancellation-accept result.
         const cancellation = cancel(key);
         agent.release("source-a", key);
         const [ack, response] = await Promise.all([cancellation, result]);
@@ -190,7 +191,8 @@ export async function checkCombinations(context: {
       const peerUrl = await evalPage(second, "location.href");
       assert.equal(new URL(ownUrl).host, new URL(peerUrl).host);
       assert.notEqual(ownUrl, peerUrl);
-      // 使用 CSP 本来允许的 self script：避免 connect-src none 让正负样本都失败，掩盖 guest 校验。
+      // Use CSP-allowed self script: connect-src none would fail both samples and mask the guest
+      // check under test.
       const ownAsset = new URL("__zcode__/alias.js", ownUrl).href;
       const peerAsset = new URL("__zcode__/alias.js", peerUrl).href;
       const loadAsset = (target: BrowserWindow, url: string) =>

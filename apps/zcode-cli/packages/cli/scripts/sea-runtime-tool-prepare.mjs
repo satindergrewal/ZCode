@@ -29,8 +29,8 @@ export const prepareSeaRuntimeToolAssets = async ({
   const plan = resolveSeaRuntimeToolPreparationPlan({ root, target });
 
   if (plan.enabled) {
-    // 与 desktop prepare:native-search 共用同一准备入口：内网依赖源已配置时仍下载，
-    // 未配置时解包 root 下的仓库归档，并统一写入工具目录旁的许可声明。
+    // Shares the prepare entry with desktop prepare:native-search: still downloads when an internal registry is configured,
+    // otherwise unpackes the repo archive under root and writes license notices next to the tool directory.
     await prepareNativeSearchTools({
       platform: plan.platform,
       arch: plan.arch,

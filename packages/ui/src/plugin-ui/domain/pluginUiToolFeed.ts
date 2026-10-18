@@ -4,7 +4,7 @@ import type { ConversationRow, ToolCallRow } from "@zcode/shared/zcode-protocol-
 import type { PluginUiPresentation } from "../contract.js";
 import { parseJsonText, readPluginUiPresentation } from "./readPluginUiPresentation.js";
 
-/** 内联卡片与侧栏共用的 legacy ChatToolCall 子集（toolCallRowAdapter 输出）。 */
+/** legacy ChatToolCall subset shared by inline card and pane (toolCallRowAdapter output). */
 export interface PluginUiLegacyToolCall {
   status: string;
   input: unknown;
@@ -22,14 +22,14 @@ export function readPluginUiToolInput(
     : undefined;
 }
 
-/** 被停止的工具不再伪装成普通结果，而是走 ui/notifications/tool-cancelled。 */
+/** Stopped tools stop posing as results and emit ui/notifications/tool-cancelled. */
 export function isPluginUiToolCancelled(toolCall: PluginUiLegacyToolCall | null): boolean {
   return toolCall?.status === "stopped";
 }
 
 /**
- * 工具行 → MCP Apps tool-result 通知载荷。legacy 状态词表：pending / in_progress / completed / failed / stopped；
- * 未完成不产出；stopped 不产出（改发 cancelled 通知）。structuredContent / widgetMeta 从 display.ui 的 JSON 文本恢复。
+ * Tool row to MCP Apps tool-result payload. Legacy status words: pending/in_progress/completed/failed/stopped;
+ * unfinished emits nothing; stopped emits nothing (cancelled notice instead). structuredContent/widgetMeta restore from display.ui JSON.
  */
 export function buildPluginUiToolResult(
   toolCall: PluginUiLegacyToolCall | null,
@@ -40,7 +40,7 @@ export function buildPluginUiToolResult(
   if (isPluginUiToolCancelled(toolCall)) return undefined;
   const structured = parseJsonText(presentation.structuredContent);
   const meta = parseJsonText(presentation.widgetMeta);
-  // H12：优先用 agent 投影的原始 content 数组（图片 / 资源块不丢）；没有时退回纯文本。
+  // H12: prefer the agent projection's raw content array (images/resource blocks survive); else plain text.
   const rawContent = parseJsonText(presentation.content);
   const content = Array.isArray(rawContent)
     ? (rawContent.filter(
@@ -51,7 +51,7 @@ export function buildPluginUiToolResult(
       : [];
   const baseMeta =
     typeof meta === "object" && meta !== null ? (meta as Record<string, unknown>) : {};
-  // H12：超限字段已被 agent 省略；页面从 _meta["zcode/truncated"].bytes 得知并可用 tools/call 重取。
+  // H12: over-limit fields were agent-elided; the page learns via _meta zcode/truncated bytes and may re-call tools/call.
   const mergedMeta = presentation.truncated
     ? { ...baseMeta, [MCP_APPS_TRUNCATED_META_KEY]: { bytes: presentation.truncatedBytes ?? 0 } }
     : baseMeta;
@@ -73,7 +73,7 @@ export function findToolRowById(
   return row && row.kind === "toolCall" ? row : null;
 }
 
-/** 面板投喂快照里的一条工具行摘要。 */
+/** One tool-row summary in the pane feed snapshot. */
 export interface PluginUiSurfaceFeedEntry {
   rowId: number;
   toolCallId: string;
@@ -83,9 +83,9 @@ export interface PluginUiSurfaceFeedEntry {
 }
 
 /**
- * 面板（surface）投喂快照。`latest` 是该 surface 最新一条工具行（任意状态，投喂 tool-input、
- * 判断 cancelled）；`result` 是最后一次成功结果，running / failed / cancelled / MCP isError 不覆盖它——面板在下一次成功前
- * 一直显示上一份好结果。两者只按 rowId 单调前进，投影窗口被裁掉旧行时快照仍在。
+ * Pane (surface) feed snapshot. latest is the surface's newest row of any state (feeds tool-input,
+ * drives cancelled); result is the last success -- running/failed/cancelled/MCP-isError never overwrite it, so the pane
+ * keeps the last good result until the next success. Both advance by rowId only; snapshot survives window truncation.
  */
 export interface PluginUiSurfaceFeed {
   latest: PluginUiSurfaceFeedEntry | null;
@@ -94,8 +94,8 @@ export interface PluginUiSurfaceFeed {
 
 export const EMPTY_PLUGIN_UI_SURFACE_FEED: PluginUiSurfaceFeed = { latest: null, result: null };
 
-// v4 status → buildPluginUiToolResult 用的 legacy 词表（与 v4/toolCallRowAdapter 的 STATUS_MAP 同义，
-// 这里不引 adapter：domain 只依赖协议行类型）。
+// v4 status to the legacy words buildPluginUiToolResult uses (same as v4/toolCallRowAdapter STATUS_MAP;
+// the adapter is not imported: domain depends only on protocol row types).
 const LEGACY_STATUS: Record<ToolCallRow["status"], string> = {
   inputStreaming: "pending",
   pendingApproval: "pending",
@@ -134,8 +134,8 @@ function toSurfaceFeedEntry(
 }
 
 /**
- * 纯归约：把一批投影行并进快照。同一 rowId 只在状态变化时更新 `latest`；`result` 在成功行首次出现时构造一次，
- * 之后同 rowId 不重建（保持引用稳定，宿主据引用判断是否重发 tool-result）。无变化时返回原对象。
+ * Pure reduce: fold projection rows into the snapshot. Per rowId, latest updates on state change; result is built once
+ * at first success and never rebuilt (stable reference tells the host whether to re-emit tool-result). Unchanged returns the same object.
  */
 export function reducePluginUiSurfaceFeed(
   previous: PluginUiSurfaceFeed,
@@ -163,7 +163,7 @@ export function reducePluginUiSurfaceFeed(
     ) {
       latest = toSurfaceFeedEntry(row, presentation);
     }
-    // MCP isError 的调用在 v4 行上是 success（模型视角已完成），对面板来说是失败：不覆盖上一份好结果。
+    // MCP isError is success on the v4 row (model view) but failure for the pane: never overwrite the last good result.
     if (
       row.status === "success" &&
       !presentation.isError &&
@@ -179,7 +179,7 @@ export function reducePluginUiSurfaceFeed(
   return latest === previous.latest && result === previous.result ? previous : { latest, result };
 }
 
-/** 两份快照按 rowId 取新（store 合并用）：谁的行更新用谁的。 */
+/** Newer-by-rowId merge for two snapshots (store combine): whichever's rows are newer wins. */
 export function mergePluginUiSurfaceFeed(
   current: PluginUiSurfaceFeed,
   candidate: PluginUiSurfaceFeed,

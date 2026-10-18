@@ -11,7 +11,7 @@ import {
 } from "../src/remote/wslProxy.js";
 
 describe("WSL proxy resolution helpers", () => {
-  it("识别 loopback 主机并保留 IPv6 替换格式", () => {
+  it("detectes loopback hosts and preserves the IPv6 replacement form", () => {
     expect(isLoopbackProxyHostname("localhost")).toBe(true);
     expect(isLoopbackProxyHostname("127.0.0.1")).toBe(true);
     expect(isLoopbackProxyHostname("[::1]")).toBe(true);
@@ -21,7 +21,7 @@ describe("WSL proxy resolution helpers", () => {
     );
   });
 
-  it("规范化裸代理地址并解析探测结果", () => {
+  it("normalizes bare proxy addresses and parses probe results", () => {
     expect(normalizeWslProxyUrl("127.0.0.1:7890")).toBe("http://127.0.0.1:7890/");
     expect(parseWslProxyPortProbeOutput("reachable\n")).toBe(true);
     expect(parseWslProxyPortProbeOutput("unreachable")).toBe(false);
@@ -31,7 +31,7 @@ describe("WSL proxy resolution helpers", () => {
     );
   });
 
-  it("只从网关输出中接受合法 IP，并在日志中隐藏凭据和路径", () => {
+  it("accepts only valid IPs from gateway output and hides credentials and paths in logs", () => {
     expect(parseWslHostGatewayOutput("nameserver 172.21.240.1\n")).toBe("172.21.240.1");
     expect(parseWslHostGatewayOutput("route=127.0.0.53")).toBeNull();
     expect(parseWslHostGatewayOutput("8.8.8.8")).toBeNull();

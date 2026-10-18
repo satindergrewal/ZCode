@@ -101,7 +101,7 @@ export function FeedbackSubmitForm({
   const [description, setDescription] = useState("");
   const [contact, setContact] = useState(() => readFeedbackContactPreference());
   const [screenshots, setScreenshots] = useState<ScreenshotAttachmentDraft[]>([]);
-  // 新反馈默认附带诊断日志；显式草稿值保留用户取消勾选及后台恢复时的选择。
+  // New feedback attaches diagnostics by default; an explicit draft value preserves the opt-out.
   const [includeLogs, setIncludeLogs] = useState(initialDraft?.includeLogs ?? true);
   const [ticketType, setTicketType] = useState<FeedbackTicketType>(DEFAULT_FEEDBACK_TYPE);
   const [ticketSeverity, setTicketSeverity] =

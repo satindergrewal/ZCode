@@ -94,9 +94,7 @@ function createClosedStream(
   const stderr = new PassThrough();
   const closeListeners: Array<(code: number) => void> = [];
   let closeScheduled = false;
-  const onClose: Event<number> = (
-    listener: (code: number) => void,
-  ): IDisposable => {
+  const onClose: Event<number> = (listener: (code: number) => void): IDisposable => {
     closeListeners.push(listener);
     if (!closeScheduled) {
       closeScheduled = true;
@@ -126,10 +124,7 @@ function stubManifestFetch(manifest: unknown): void {
   );
 }
 
-function stubManifestAndHeadFetch(
-  manifest: unknown,
-  contentLength: number,
-): void {
+function stubManifestAndHeadFetch(manifest: unknown, contentLength: number): void {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
@@ -169,19 +164,8 @@ function resolveLocalShellCommand(): string | null {
   }
 
   const gitShellCandidates = [
-    join(
-      process.env.ProgramFiles ?? "C:\\Program Files",
-      "Git",
-      "bin",
-      "sh.exe",
-    ),
-    join(
-      process.env.ProgramFiles ?? "C:\\Program Files",
-      "Git",
-      "usr",
-      "bin",
-      "sh.exe",
-    ),
+    join(process.env.ProgramFiles ?? "C:\\Program Files", "Git", "bin", "sh.exe"),
+    join(process.env.ProgramFiles ?? "C:\\Program Files", "Git", "usr", "bin", "sh.exe"),
   ];
   return gitShellCandidates.find((candidate) => existsSync(candidate)) ?? null;
 }
@@ -191,8 +175,8 @@ function toLocalShellPath(filePath: string): string {
     return filePath;
   }
 
-  // Bugfix: Git Bash 的 sha256sum 读取 C:\... 这类反斜杠路径时，会为了转义文件名在校验值前输出反斜杠，
-  // 导致测试误判为 sha mismatch。远端真实路径是 POSIX 风格，这里把 Windows 临时路径转成 /c/... 来贴近远端形态。
+  // Bugfix: Git Bash sha256sum emits a backslash before the checksum for backslash paths like C:\... (filename escaping),
+  // which read as a sha mismatch. Real remote paths are POSIX, so convert the Windows temp path to /c/... to mirror the remote shape.
   const normalized = filePath.replaceAll("\\", "/");
   return normalized.replace(
     /^([A-Za-z]):\//u,
@@ -200,11 +184,9 @@ function toLocalShellPath(filePath: string): string {
   );
 }
 
-async function detectLocalShellSha256Tool(
-  shellCommand: string,
-): Promise<RemoteSha256Tool> {
-  // Bugfix: Windows Git Bash 环境常有 sha256sum/openssl 但没有 shasum；测试硬编码 shasum
-  // 会让“备用 URL 校验失败后重试”的用例在真正执行到重试逻辑前就失败。
+async function detectLocalShellSha256Tool(shellCommand: string): Promise<RemoteSha256Tool> {
+  // Bugfix: Windows Git Bash often has sha256sum/openssl but no shasum; hardcoding shasum made the
+  // "retry after fallback URL check fails" case fail before its retry logic ever ran.
   const { stdout } = await execFileAsync(shellCommand, [
     "-c",
     "if command -v sha256sum >/dev/null 2>&1; then printf sha256sum; elif command -v shasum >/dev/null 2>&1; then printf shasum; elif command -v openssl >/dev/null 2>&1; then printf openssl; else exit 1; fi",
@@ -226,12 +208,8 @@ describe("remote asset installer command builders", () => {
     });
 
     expect(command).toContain("curl");
-    expect(command).toContain(
-      "'https://cdn.example.test/a b/component.tar.gz'",
-    );
-    expect(command).toContain(
-      "\"$HOME\"'/.zcode/server/asset-cache/staging/a b/component.tar.gz'",
-    );
+    expect(command).toContain("'https://cdn.example.test/a b/component.tar.gz'");
+    expect(command).toContain("\"$HOME\"'/.zcode/server/asset-cache/staging/a b/component.tar.gz'");
   });
 
   it("emits remote download progress lines while downloading artifacts", () => {
@@ -275,9 +253,7 @@ describe("remote asset installer command builders", () => {
       const shellOutputPath = toLocalShellPath(outputPath);
       await writeFile(badArchive, "stale artifact");
       await writeFile(goodArchive, "current artifact");
-      const expectedSha256 = createHash("sha256")
-        .update("current artifact")
-        .digest("hex");
+      const expectedSha256 = createHash("sha256").update("current artifact").digest("hex");
 
       const command = buildRemoteArtifactDownloadCommand({
         tool: "curl",
@@ -290,9 +266,7 @@ describe("remote asset installer command builders", () => {
 
       await execFileAsync(shellCommand, ["-c", command]);
 
-      await expect(readFile(outputPath, "utf8")).resolves.toBe(
-        "current artifact",
-      );
+      await expect(readFile(outputPath, "utf8")).resolves.toBe("current artifact");
     },
   );
 
@@ -307,22 +281,22 @@ describe("remote asset installer command builders", () => {
 });
 
 describe("LocalUploadAssetInstaller", () => {
-  it("已取消连接不得开始写入远端 staging", async () => {
+  it("never starts writing remote staging on a cancelled connection", async () => {
     const releaseDir = await mkdtemp(join(tmpdir(), "zcode-installer-pre-cancel-test-"));
     await mkdir(join(releaseDir, "server"), { recursive: true });
     await writeFile(join(releaseDir, "server", "zcode-server.cjs"), "server", "utf8");
     const controller = new AbortController();
     controller.abort();
     const backend = new InstallerBackend();
-    const upload = vi.spyOn(backend, "upload").mockImplementation(
-      async (_localPath, _remotePath, options) => {
+    const upload = vi
+      .spyOn(backend, "upload")
+      .mockImplementation(async (_localPath, _remotePath, options) => {
         if (options?.signal?.aborted) {
           const error = new Error("Remote upload canceled");
           error.name = "AbortError";
           throw error;
         }
-      },
-    );
+      });
     const installer = new LocalUploadAssetInstaller(
       backend,
       {
@@ -345,14 +319,10 @@ describe("LocalUploadAssetInstaller", () => {
     expect(upload).not.toHaveBeenCalled();
   });
 
-  it("把连接取消信号传给远端文件上传", async () => {
+  it("propagates the cancellation signal into the remote file upload", async () => {
     const releaseDir = await mkdtemp(join(tmpdir(), "zcode-installer-abort-test-"));
     await mkdir(join(releaseDir, "server"), { recursive: true });
-    await writeFile(
-      join(releaseDir, "server", "zcode-server.cjs"),
-      "server",
-      "utf8",
-    );
+    await writeFile(join(releaseDir, "server", "zcode-server.cjs"), "server", "utf8");
     const controller = new AbortController();
     const backend = new InstallerBackend();
     const installer = new LocalUploadAssetInstaller(
@@ -374,7 +344,7 @@ describe("LocalUploadAssetInstaller", () => {
     expect(backend.uploads[0]?.signal).toBe(controller.signal);
   });
 
-  it("新的 SSH 文件上传会先清理超过 24 小时的同路径 owner staging", async () => {
+  it("cleans same-path owner staging older than 24 hours before a new SSH file upload", async () => {
     const releaseDir = await mkdtemp(join(tmpdir(), "zcode-installer-stale-file-test-"));
     await mkdir(join(releaseDir, "server"), { recursive: true });
     await writeFile(join(releaseDir, "server", "zcode-server.cjs"), "server", "utf8");
@@ -402,7 +372,7 @@ describe("LocalUploadAssetInstaller", () => {
     expect(backend.commands[0]).toContain("-exec rm -rf");
   });
 
-  shellBackedIt("SSH staging janitor 只删除超过 24 小时的 owner 文件", async () => {
+  shellBackedIt("SSH staging janitor deletes only owner files older than 24 hours", async () => {
     const rootDir = await mkdtemp(join(tmpdir(), "zcode-installer-stale-shell-test-"));
     try {
       const releaseDir = join(rootDir, "release");
@@ -445,7 +415,7 @@ describe("LocalUploadAssetInstaller", () => {
     }
   });
 
-  it("文件上传取消后不再执行正式文件替换", async () => {
+  it("skips the final file swap once the upload is cancelled", async () => {
     const releaseDir = await mkdtemp(join(tmpdir(), "zcode-installer-cancel-test-"));
     await mkdir(join(releaseDir, "server"), { recursive: true });
     await writeFile(join(releaseDir, "server", "zcode-server.cjs"), "server", "utf8");
@@ -455,23 +425,21 @@ describe("LocalUploadAssetInstaller", () => {
     const uploadStarted = new Promise<void>((resolve) => {
       markUploadStarted = resolve;
     });
-    vi.spyOn(backend, "upload").mockImplementation(
-      async (_localPath, _remotePath, options) => {
-        markUploadStarted();
-        await new Promise<never>((_resolve, reject) => {
-          const rejectAbort = () => {
-            const error = new Error("Remote upload canceled");
-            error.name = "AbortError";
-            reject(error);
-          };
-          if (options?.signal?.aborted) {
-            rejectAbort();
-            return;
-          }
-          options?.signal?.addEventListener("abort", rejectAbort, { once: true });
-        });
-      },
-    );
+    vi.spyOn(backend, "upload").mockImplementation(async (_localPath, _remotePath, options) => {
+      markUploadStarted();
+      await new Promise<never>((_resolve, reject) => {
+        const rejectAbort = () => {
+          const error = new Error("Remote upload canceled");
+          error.name = "AbortError";
+          reject(error);
+        };
+        if (options?.signal?.aborted) {
+          rejectAbort();
+          return;
+        }
+        options?.signal?.addEventListener("abort", rejectAbort, { once: true });
+      });
+    });
     const installer = new LocalUploadAssetInstaller(
       backend,
       {
@@ -495,7 +463,7 @@ describe("LocalUploadAssetInstaller", () => {
     expect(backend.commands[0]).toContain("mkdir -p");
   });
 
-  it("目录上传取消后不再通过已释放连接执行远端清理", async () => {
+  it("skips remote cleanup over a disposed connection once the directory upload is cancelled", async () => {
     const releaseDir = await mkdtemp(join(tmpdir(), "zcode-installer-dir-cancel-test-"));
     const sourceDir = join(releaseDir, "tools", "linux-x64", "ripgrep");
     await mkdir(sourceDir, { recursive: true });
@@ -506,23 +474,21 @@ describe("LocalUploadAssetInstaller", () => {
     const uploadStarted = new Promise<void>((resolve) => {
       markUploadStarted = resolve;
     });
-    vi.spyOn(backend, "upload").mockImplementation(
-      async (_localPath, _remotePath, options) => {
-        markUploadStarted();
-        await new Promise<never>((_resolve, reject) => {
-          const rejectAbort = () => {
-            const error = new Error("Remote upload canceled");
-            error.name = "AbortError";
-            reject(error);
-          };
-          if (options?.signal?.aborted) {
-            rejectAbort();
-            return;
-          }
-          options?.signal?.addEventListener("abort", rejectAbort, { once: true });
-        });
-      },
-    );
+    vi.spyOn(backend, "upload").mockImplementation(async (_localPath, _remotePath, options) => {
+      markUploadStarted();
+      await new Promise<never>((_resolve, reject) => {
+        const rejectAbort = () => {
+          const error = new Error("Remote upload canceled");
+          error.name = "AbortError";
+          reject(error);
+        };
+        if (options?.signal?.aborted) {
+          rejectAbort();
+          return;
+        }
+        options?.signal?.addEventListener("abort", rejectAbort, { once: true });
+      });
+    });
     const installer = new LocalUploadAssetInstaller(
       backend,
       {
@@ -546,7 +512,7 @@ describe("LocalUploadAssetInstaller", () => {
     expect(backend.commands[0]).toContain("mkdir -p");
   });
 
-  it("新的 SSH 目录上传会先清理超过 24 小时的归档和解压 staging", async () => {
+  it("cleans archive and extract staging older than 24 hours before a new SSH directory upload", async () => {
     const releaseDir = await mkdtemp(join(tmpdir(), "zcode-installer-stale-dir-test-"));
     const sourceDir = join(releaseDir, "tools", "linux-x64", "ripgrep");
     await mkdir(sourceDir, { recursive: true });
@@ -575,7 +541,7 @@ describe("LocalUploadAssetInstaller", () => {
     expect(backend.commands[0]).toContain("-mtime +0");
   });
 
-  it("把连接取消信号传给远端目录归档上传", async () => {
+  it("propagates the cancellation signal into the remote directory archive upload", async () => {
     const releaseDir = await mkdtemp(join(tmpdir(), "zcode-installer-dir-abort-test-"));
     const sourceDir = join(releaseDir, "tools", "linux-x64", "ripgrep");
     await mkdir(sourceDir, { recursive: true });
@@ -604,11 +570,7 @@ describe("LocalUploadAssetInstaller", () => {
   it("uses a unique staging path for each uploaded file replacement", async () => {
     const releaseDir = await mkdtemp(join(tmpdir(), "zcode-installer-test-"));
     await mkdir(join(releaseDir, "server"), { recursive: true });
-    await writeFile(
-      join(releaseDir, "server", "zcode-server.cjs"),
-      "server",
-      "utf8",
-    );
+    await writeFile(join(releaseDir, "server", "zcode-server.cjs"), "server", "utf8");
     const backend = new InstallerBackend();
     const installer = new LocalUploadAssetInstaller(
       backend,
@@ -625,13 +587,11 @@ describe("LocalUploadAssetInstaller", () => {
     expect(backend.uploads[0]?.remotePath).toMatch(
       /^~\/\.zcode\/server\/zcode-server\.cjs\.new-[\w-]+$/u,
     );
-    expect(backend.commands.join("\n")).toContain(
-      backend.uploads[0]!.remotePath.split("/").at(-1),
-    );
+    expect(backend.commands.join("\n")).toContain(backend.uploads[0]!.remotePath.split("/").at(-1));
     expect(backend.commands[0]).not.toContain("find");
   });
 
-  it("非取消文件替换失败时清理当前 owner staging", async () => {
+  it("cleans the current owner staging when a non-cancelled file swap fails", async () => {
     const releaseDir = await mkdtemp(join(tmpdir(), "zcode-installer-cleanup-test-"));
     await mkdir(join(releaseDir, "node"), { recursive: true });
     await writeFile(join(releaseDir, "node", "node"), "node", "utf8");
@@ -690,9 +650,9 @@ describe("LocalUploadAssetInstaller", () => {
       { log: () => undefined, logWarn: () => undefined },
     );
 
-    await expect(
-      installer.resolveComponentVersion("node-runtime"),
-    ).resolves.toBe("24.10.0-node-runtime");
+    await expect(installer.resolveComponentVersion("node-runtime")).resolves.toBe(
+      "24.10.0-node-runtime",
+    );
     expect(requestedComponents).toEqual([["node-runtime"]]);
   });
 
@@ -705,19 +665,13 @@ describe("LocalUploadAssetInstaller", () => {
     );
 
     await expect(
-      installer.tryResolveLocalPath(
-        ["node-pty"],
-        "node-pty/linux-x64/missing.node",
-      ),
+      installer.tryResolveLocalPath(["node-pty"], "node-pty/linux-x64/missing.node"),
     ).resolves.toBeNull();
 
     await mkdir(join(releaseDir, "server"), { recursive: true });
     await writeFile(join(releaseDir, "server", "zcode-server.cjs"), "server");
     await expect(
-      installer.tryResolveLocalPath(
-        ["server-bundle"],
-        "server/zcode-server.cjs",
-      ),
+      installer.tryResolveLocalPath(["server-bundle"], "server/zcode-server.cjs"),
     ).resolves.toBe(join(releaseDir, "server", "zcode-server.cjs"));
   });
 
@@ -749,9 +703,7 @@ describe("LocalUploadAssetInstaller", () => {
     const remoteTarPaths = backend.uploads.map((upload) => upload.remotePath);
     expect(new Set(remoteTarPaths)).toHaveLength(2);
     for (const remoteTarPath of remoteTarPaths) {
-      expect(remoteTarPath).toMatch(
-        /^~\/.zcode\/server\/tools\/ripgrep\.tar\.gz-[\w-]+$/u,
-      );
+      expect(remoteTarPath).toMatch(/^~\/.zcode\/server\/tools\/ripgrep\.tar\.gz-[\w-]+$/u);
     }
     expect(backend.commands.join("\n")).toContain("ripgrep.extract-");
     expect(backend.commands.join("\n")).toContain("trap cleanup_staging EXIT");
@@ -762,9 +714,9 @@ describe("LocalUploadAssetInstaller", () => {
     await writeFile(uploadedArchive, backend.uploads[0]!.content);
     await extractTarGzArchive(uploadedArchive, extractDir);
 
-    await expect(
-      readFile(join(extractDir, "ripgrep", "rg"), "utf8"),
-    ).resolves.toBe("ripgrep binary");
+    await expect(readFile(join(extractDir, "ripgrep", "rg"), "utf8")).resolves.toBe(
+      "ripgrep binary",
+    );
   });
 
   it("falls back to CDN cache when local directory exists but required child paths are missing", async () => {
@@ -773,15 +725,9 @@ describe("LocalUploadAssetInstaller", () => {
     const cdnReleaseDir = join(rootDir, "cdn-release");
     const sourceRelativePath = "glm/linux-x64/packages";
     await mkdir(join(staleReleaseDir, sourceRelativePath), { recursive: true });
-    await mkdir(
-      join(
-        cdnReleaseDir,
-        sourceRelativePath,
-        "skill-creator-plugin",
-        ".zcode-plugin",
-      ),
-      { recursive: true },
-    );
+    await mkdir(join(cdnReleaseDir, sourceRelativePath, "skill-creator-plugin", ".zcode-plugin"), {
+      recursive: true,
+    });
     await writeFile(
       join(
         cdnReleaseDir,
@@ -826,11 +772,9 @@ describe("LocalUploadAssetInstaller", () => {
     const fetchMock = vi.fn(
       async (_input: RequestInfo | URL, init?: RequestInit) =>
         await new Promise<Response>((_resolve, reject) => {
-          init?.signal?.addEventListener(
-            "abort",
-            () => reject(init.signal?.reason),
-            { once: true },
-          );
+          init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), {
+            once: true,
+          });
         }),
     );
     vi.stubGlobal("fetch", fetchMock);
@@ -858,7 +802,7 @@ describe("LocalUploadAssetInstaller", () => {
 });
 
 describe("RemoteDownloadAssetInstaller", () => {
-  it("已取消连接不得启动远端下载或 staging 命令", async () => {
+  it("starts no remote download or staging commands on a cancelled connection", async () => {
     stubManifestFetch(validManifest);
     const controller = new AbortController();
     controller.abort();
@@ -887,15 +831,14 @@ describe("RemoteDownloadAssetInstaller", () => {
     vi.unstubAllGlobals();
   });
 
-  it("远端下载模式的本地 manifest 和 HEAD 使用注入网络出口", async () => {
-    const remoteAssetFetch = vi.fn<typeof fetch>(
-      async (_input, init) =>
-        init?.method === "HEAD"
-          ? new Response(null, {
-              status: 200,
-              headers: { "content-length": "1024" },
-            })
-          : new Response(JSON.stringify(validManifest), { status: 200 }),
+  it("routes local manifest and HEAD requests through the injected egress in remote-download mode", async () => {
+    const remoteAssetFetch = vi.fn<typeof fetch>(async (_input, init) =>
+      init?.method === "HEAD"
+        ? new Response(null, {
+            status: 200,
+            headers: { "content-length": "1024" },
+          })
+        : new Response(JSON.stringify(validManifest), { status: 200 }),
     );
     const directFetch = vi
       .spyOn(globalThis, "fetch")
@@ -921,18 +864,14 @@ describe("RemoteDownloadAssetInstaller", () => {
       });
 
       expect(directFetch).not.toHaveBeenCalled();
-      expect(
-        remoteAssetFetch.mock.calls.some(([, init]) => init?.method === "HEAD"),
-      ).toBe(true);
-      expect(
-        remoteAssetFetch.mock.calls.some(([, init]) => init?.method !== "HEAD"),
-      ).toBe(true);
+      expect(remoteAssetFetch.mock.calls.some(([, init]) => init?.method === "HEAD")).toBe(true);
+      expect(remoteAssetFetch.mock.calls.some(([, init]) => init?.method !== "HEAD")).toBe(true);
     } finally {
       directFetch.mockRestore();
     }
   });
 
-  it("本地 HEAD 请求迟到完成后不得启动已取消的远端下载", async () => {
+  it("never starts the cancelled remote download when the local HEAD completes late", async () => {
     let markHeadStarted!: () => void;
     const headStarted = new Promise<void>((resolve) => {
       markHeadStarted = resolve;
@@ -1008,9 +947,7 @@ describe("RemoteDownloadAssetInstaller", () => {
     expect(command).toContain("while ! mkdir");
     expect(command).toContain("stat -c %Y");
     expect(command).toContain("stat -f %m");
-    expect(command).toContain(
-      "stale lock for server-bundle@1.0.0-server-bundle",
-    );
+    expect(command).toContain("stale lock for server-bundle@1.0.0-server-bundle");
     expect(command).toContain(
       'touch "$HOME"\'/.zcode/server/asset-cache/components/linux-x64/server-bundle/',
     );
@@ -1150,9 +1087,7 @@ describe("RemoteDownloadAssetInstaller", () => {
     const expectedCacheSegment = "b".repeat(64);
     const backend = new InstallerBackend(
       [],
-      new Set([
-        `~/.zcode/server/asset-cache/components/linux-x64/glm/${oldCacheSegment}/.ready`,
-      ]),
+      new Set([`~/.zcode/server/asset-cache/components/linux-x64/glm/${oldCacheSegment}/.ready`]),
     );
     const logs: string[] = [];
     const warnings: string[] = [];
@@ -1178,15 +1113,11 @@ describe("RemoteDownloadAssetInstaller", () => {
 
     const commands = backend.commands.join("\n");
     expect(commands).toContain("curl -fL");
-    expect(commands).toContain(
-      `asset-cache/components/linux-x64/glm/${expectedCacheSegment}`,
-    );
+    expect(commands).toContain(`asset-cache/components/linux-x64/glm/${expectedCacheSegment}`);
     expect(commands).not.toContain(
       `rm -rf "$HOME"'/.zcode/server/asset-cache/components/linux-x64/glm/${oldCacheSegment}'`,
     );
-    expect(logs).not.toContain(
-      `[remote-assets] remote component cache hit: glm@${hashedVersion}`,
-    );
+    expect(logs).not.toContain(`[remote-assets] remote component cache hit: glm@${hashedVersion}`);
     expect(warnings).toContain(
       `[remote-assets] download required: component=glm reason=remote component cache missing path=~/.zcode/server/asset-cache/components/linux-x64/glm/${expectedCacheSegment}/.ready`,
     );

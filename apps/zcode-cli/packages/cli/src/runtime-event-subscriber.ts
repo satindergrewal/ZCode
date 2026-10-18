@@ -7,12 +7,12 @@
 import type { SessionEvent } from "@zcode/contracts";
 
 /**
-  * Dynamically read a function member off unknown.
+ * Dynamically read a function member off unknown.
  *
-  * Taking unknown and probing dynamically is **not** to defend against a real AgentRuntime (those members are
-  * required there) but because RunDependencies.createZCodeApp is a public injection point (the cli-types.ts comment
-  * says tests, embedders) and a test double's runtime can be any shape. A ?. on a required member is judged an
-  * always-true condition by TS -- so the boundary lives here, expressed as one explicit dynamic read.
+ * Taking unknown and probing dynamically is **not** to defend against a real AgentRuntime (those members are
+ * required there) but because RunDependencies.createZCodeApp is a public injection point (the cli-types.ts comment
+ * says tests, embedders) and a test double's runtime can be any shape. A ?. on a required member is judged an
+ * always-true condition by TS -- so the boundary lives here, expressed as one explicit dynamic read.
  */
 export const readRuntimeFunction = (
   source: unknown,
@@ -28,10 +28,10 @@ type RuntimeEventSubscriber = (sink: {
 }) => () => void;
 
 /**
-  * Read the runtime's cross-turn event subscription.
+ * Read the runtime's cross-turn event subscription.
  *
-  * **No silent downgrade**: return `undefined` when the subscription is unavailable; the caller falls back to per-turn `onEvent` (single-turn visibility,
-  * as before the change). That is the honest this-host-lacks-the-capability answer, not a pretended subscription.
+ * **No silent downgrade**: return `undefined` when the subscription is unavailable; the caller falls back to per-turn `onEvent` (single-turn visibility,
+ * as before the change). That is the honest this-host-lacks-the-capability answer, not a pretended subscription.
  */
 export const readRuntimeEventSubscriber = (
   runtime: unknown,

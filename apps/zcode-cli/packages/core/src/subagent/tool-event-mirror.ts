@@ -83,9 +83,9 @@ export function mirrorSubagentToolEvent(
 }
 
 /**
- * 只镜像交互事件（PermissionRequested / Resolved / Denied），不镜像工具活动。
- * 供 class 外构造的子 runtime（dwf actor）使用：它们的工具活动有自己的呈现面（run 卡片 /
- * 子会话 transcript），父 timeline 不该出现；但确认窗只从父会话的实时投影生成，交互必须过来
+ * Mirrors interaction events only (PermissionRequested / Resolved / Denied), never tool activity.
+ * For child runtimes built outside the class (dwf actor): their tool activity has its own surface (run card /
+ * child transcript) and must not hit the parent timeline; but the confirm dialog comes only from the parent's live projection, so interactions must cross.
  * （docs/dynamic-workflow/launch.md「Permissions inside a run」）。
  */
 export function mirrorSubagentInteractionEvent(
@@ -112,8 +112,8 @@ function mirrorInteraction(
   toolName: string | undefined,
   context: SubagentInteractionOriginContext & { background?: boolean },
 ): SessionEvent {
-  // 修复原因：V4 只从父 task 的实时投影生成阻塞交互；仅转发 broker request 会让
-  // 子 agent 的 permission / AskUserQuestion 停留在子 session，父界面无法响应。
+  // Why: v4 generates blocking interactions only from the parent task's live projection; forwarding the broker request alone leaves
+  // alone would strand the child permission/AskUserQuestion in the child session where the parent UI cannot answer.
   const mirroredPayload = {
     ...payload,
     toolCallId,

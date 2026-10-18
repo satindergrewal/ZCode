@@ -261,18 +261,18 @@ describe("WebAuthService", () => {
 });
 
 /**
- * BigModel 登录。
+ * BigModel sign-in.
  *
- * 起因：private 分享的 owner 判定用的是 provider 自己的 user id（BigModel 是
- * CustomerNumber 数字串，Z.ai 是 sub UUID），所以桌面端用 BigModel 发布的私享分享，
- * 在只能 z.ai 登录的分享页上永远匹配不到 owner，服务端按存在性隐匿返回 404/3211。
+ * Why: private-share owner matching uses the provider's own user id (BigModel: a
+ * CustomerNumber digit string; Z.ai: the sub UUID). A desktop-published private share using BigModel
+ * never matches its owner on a z.ai-only share page, and the server returns 404/3211 per existence-hiding.
  */
 describe("WebAuthService BigModel provider", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it("授权 URL 用 BigModel 的参数名（redirect/appId），不是 ZAI 的那套", () => {
+  it("uses BigModel's authorization params (redirect/appId), not ZAI's", () => {
     const { assigned, service, sessionStorage } = createService();
 
     service.startLogin({
@@ -284,15 +284,15 @@ describe("WebAuthService BigModel provider", () => {
     expect(url.pathname).toBe("/login");
     expect(url.searchParams.get("redirect")).toBe("https://zcode.z.ai/cn/share/callback");
     expect(url.searchParams.get("appId")).toBe("zcode");
-    // ZAI 专用参数不能出现，否则 BigModel 侧会忽略 redirect 直接回默认地址
+    // ZAI-specific params must be absent or BigModel ignores redirect and returns its default
     expect(url.searchParams.get("redirect_uri")).toBeNull();
     expect(url.searchParams.get("client_id")).toBeNull();
     expect(url.searchParams.get("response_type")).toBeNull();
-    // 回调页要靠它知道用哪个 provider 换 token
+    // the callback page needs it to know which provider exchanges the token
     expect(sessionStorage.getItem("oauth_pending_provider")).toBe("bigmodel");
   });
 
-  it("换 token 时带 provider，并从 data.bigmodel.access_token 取值", async () => {
+  it("sends the provider on token exchange and reads data.bigmodel.access_token", async () => {
     const { localStorage, service, sessionStorage } = createService();
     sessionStorage.setItem("oauth_pending_nonce", "nonce-1");
     sessionStorage.setItem("oauth_pending_provider", "bigmodel");
@@ -319,11 +319,11 @@ describe("WebAuthService BigModel provider", () => {
     expect(localStorage.getItem("oauth:active_provider")).toBe("bigmodel");
     expect(localStorage.getItem("oauth:bigmodel:access_token")).toBe("bigmodel-token");
     expect(localStorage.getItem("zcodejwttoken")).toBe("jwt-token");
-    // pending provider 用完即清，避免污染下一次登录
+    // clear the pending provider after use so it never leaks into the next login
     expect(sessionStorage.getItem("oauth_pending_provider")).toBeNull();
   });
 
-  it("缺少 pending provider 时按 zai 兜底，保持旧回调链接可用", async () => {
+  it("falls back to zai when the pending provider is missing, keeping legacy callback links alive", async () => {
     const { localStorage, service, sessionStorage } = createService();
     sessionStorage.setItem("oauth_pending_nonce", "nonce-1");
     const state = buildOAuthState({ nonce: "nonce-1" });
@@ -346,7 +346,7 @@ describe("WebAuthService BigModel provider", () => {
     expect(localStorage.getItem("oauth:active_provider")).toBe("zai");
   });
 
-  it("BigModel 响应缺 access_token 时不落半个登录态", async () => {
+  it("persists no half-signed-in state when BigModel responses lack access_token", async () => {
     const { localStorage, service, sessionStorage } = createService();
     sessionStorage.setItem("oauth_pending_nonce", "nonce-1");
     sessionStorage.setItem("oauth_pending_provider", "bigmodel");

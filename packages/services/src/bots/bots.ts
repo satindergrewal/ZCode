@@ -51,7 +51,7 @@ export interface BotUserConfigOptionsParams {
 }
 
 export interface BotAutomationRunWatchParams {
-  /** 与该次 sendPrompt.traceId 一致，避免排队期间污染其他轮次。 */
+  /** Matches the sendPrompt.traceId for this run so queued work cannot pollute other turns. */
   runId?: string;
   target: ZCodeAutomationBotDeliveryTarget;
   taskId: string;

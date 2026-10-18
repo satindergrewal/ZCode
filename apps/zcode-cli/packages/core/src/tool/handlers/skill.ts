@@ -14,20 +14,20 @@ import {
 } from "@zcode/contracts";
 import type { ToolEntry, ToolHandler } from "../types.js";
 
-/** 技能正文的默认字节上限；超出部分由 adapter 从尾部截掉。 */
+/** Default byte cap on skill bodies; the adapter truncates from the tail beyond it. */
 export const MAX_SKILL_BYTES = 100_000;
 
 /**
- * `dynamic-workflows` 技能的字节上限（docs/dynamic-workflow/authoring.md「The skill」）。
- * 2026-09-30 放宽：这份技能从 09-22 起一直贴在 100 000 上，每加一个功能都得先删掉已有的指导。
- * 判据是请求里的名字，与技能门认的是同一个（workflow-skill-gate.ts）。
+ * Byte cap for the `dynamic-workflows` skill (docs/dynamic-workflow/authoring.md "The skill").
+ * Relaxed 2026-09-30: pinned at 100,000 since 09-22, forcing deletion of existing guidance for every new feature.
+ * The criterion is the name in the request, the same one the skill gate checks (workflow-skill-gate.ts).
  */
 export const WORKFLOW_SKILL_MAX_BYTES = 200_000;
 
-/** 结果外壳（`<skill_content>` 标签、标题、Base directory 行）的余量；工具级预算要装得下它。 */
+/** Overhead of the result shell (`<skill_content>` tags, title, Base directory line); the tool-level budget must fit it. */
 export const SKILL_RESULT_WRAPPER_BYTES = 4_096;
 
-/** 工具级结果预算是静态的，所以取最大的正文上限再加外壳。 */
+/** The tool-level result budget is static, so take the largest body cap plus the shell. */
 const MAX_SKILL_RESULT_BYTES = WORKFLOW_SKILL_MAX_BYTES + SKILL_RESULT_WRAPPER_BYTES;
 
 function skillMaxBytes(skill: string): number {

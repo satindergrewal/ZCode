@@ -80,7 +80,6 @@ function flagsAndPositionalsAllowed(
       }
 
       if (flagValue === "optionalString") {
-
         // Intercept only standalone argv strings that look like options; do not swallow the next argument.
         index += 1;
         continue;

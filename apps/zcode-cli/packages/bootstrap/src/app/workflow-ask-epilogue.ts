@@ -11,11 +11,11 @@
 // has the full work toolset, and the epilogue is one text again.
 
 /**
-  * Every ask's quality epilogue: the content bar for results -- evidence,
-  * the ran-vs-believed distinction, honest gaps, escalate when blocked. Added to typed and untyped alike; for typed,
-  * a schema epilogue follows. When the schema's top-level properties include `evidence` / `confidence`, name those
-  * fields; otherwise stay generic.
-  * Format (this comment is the contract): two blank lines + divider + title line + bullet list.
+ * Every ask's quality epilogue: the content bar for results -- evidence,
+ * the ran-vs-believed distinction, honest gaps, escalate when blocked. Added to typed and untyped alike; for typed,
+ * a schema epilogue follows. When the schema's top-level properties include `evidence` / `confidence`, name those
+ * fields; otherwise stay generic.
+ * Format (this comment is the contract): two blank lines + divider + title line + bullet list.
  */
 export function qualityEpilogue(schema: unknown): string {
   const fields = topLevelSchemaProperties(schema);
@@ -26,8 +26,8 @@ export function qualityEpilogue(schema: unknown): string {
     "Standard for this result:",
     "- Every finding cites what you read or ran: path and line for code; the exact command and its output for a check; the part of the ask for material the ask itself gave you.",
     "- A check counts as passed only if you ran it during this ask. Otherwise report it as not run.",
-        // Subagents pick the fastest-greening command and call it "tests ran" -- the ask meant the whole suite, they ran one file;
-        // the ask meant e2e, they ran unit tests. The contract only demands honesty; this line sets the scale: report the stand-in as a stand-in, naming what ran.
+    // Subagents pick the fastest-greening command and call it "tests ran" -- the ask meant the whole suite, they ran one file;
+    // the ask meant e2e, they ran unit tests. The contract only demands honesty; this line sets the scale: report the stand-in as a stand-in, naming what ran.
     "- Run the check the ask names, at the scale it names. A narrower or faster substitute — one test file for the suite, a build for the tests — is reported as what it is, never as the ask's check; say the exact command you ran.",
     "- Anything you could not do, verify, or find is stated as such — never filled with a plausible guess.",
     ...(fields.has("evidence") ? ["- Put each finding's citation in its `evidence` field."] : []),

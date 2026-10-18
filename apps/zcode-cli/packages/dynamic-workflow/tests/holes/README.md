@@ -14,7 +14,7 @@ progress repro here neither breaks the build nor gets snapshot-tested.
 
 **Workflow for a fix round.** A `.ts` file placed here is a minimized,
 skeptic-verified repro of a confirmed soundness bug: it typechecks clean (or, for
-a facade-siting escape, wrongly *fails to produce* a diagnostic) and its analyzed
+a facade-siting escape, wrongly _fails to produce_ a diagnostic) and its analyzed
 graph is missing a genuine may-flow edge, so it must NOT be snapshot-tested yet —
 a snapshot would enshrine the buggy output. Each file's header comment states the
 missing runtime flow and the root cause. Run one through the debug harness:

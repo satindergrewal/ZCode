@@ -14,7 +14,7 @@ installCliProcessErrorBoundary({
 });
 const frame = (value: string) =>
   process.stdout.write(JSON.stringify({ id: value, result: {} }) + "\n");
-// 故意模拟启动/handler 永不返回；deadline 必须从输入失效开始，而不是从 run 返回开始。
+// Deliberately simulates a startup/handler that never returns; the deadline must start at input invalidation, not at run return.
 if (mode !== "startup-hung" && mode !== "handler-hung") {
   lifecycle.signal.addEventListener("abort", () => {
     void lifecycle.complete(0);

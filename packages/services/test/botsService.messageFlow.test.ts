@@ -3947,7 +3947,7 @@ describe("botsService messageFlow", () => {
     expect(legacyTaskService.sendPrompt).toHaveBeenCalledWith(
       expect.objectContaining({
         content: expect.stringContaining(
-          "请查看附件并根据内容协助我。\n\n附件：demo.png (image/png, 3B)，已作为图片输入提供，并保存到：",
+          "请查看附件并根据内容协助我。\n\nAttachment: demo.png (image/png, 3B), provided as an image input and saved to: ",
         ),
         attachments: [
           expect.objectContaining({
@@ -3962,7 +3962,7 @@ describe("botsService messageFlow", () => {
     );
     expect(legacyTaskService.sendPrompt).toHaveBeenCalledWith(
       expect.objectContaining({
-        content: expect.stringContaining("不要下载或访问临时/远程 URL"),
+        content: expect.stringContaining("instead of downloading or hitting temporary/remote URLs"),
       }),
     );
     service.disposeAll();
@@ -4000,7 +4000,7 @@ describe("botsService messageFlow", () => {
     expect(legacyTaskService.sendPrompt).toHaveBeenCalledWith(
       expect.objectContaining({
         content: expect.stringContaining(
-          "总结这个文件\n\n附件：notes.txt (text/plain, 5B)，已保存到：",
+          "总结这个文件\n\nAttachment: notes.txt (text/plain, 5B), saved to: ",
         ),
         attachments: undefined,
       }),
@@ -5429,7 +5429,7 @@ describe("botsService messageFlow", () => {
           actor: weixinActor,
         });
         if (incomplete) {
-          await expect(sending).rejects.toThrow("Submission 模型");
+          await expect(sending).rejects.toThrow("Failed to resolve the submission model");
           expect(taskService.createTask).not.toHaveBeenCalled();
           expect((await repo.readState()).bots["weixin-1"]?.draftOptions?.modelSelection).toEqual(
             original,

@@ -578,8 +578,8 @@ export const browserCommandSchema = z.discriminatedUnion("method", [
     })
     .strict(),
   z.object({ method: z.literal("turnEnded"), turnId: z.string().min(1).optional() }).strict(),
-  // closeTabs：连同该 session 名下的 tab 一起关（含已释放回该 session 的）。只给永不回来认领的
-  // session 用——dwf 子代理（docs/browser-use/2026-07-14-browser-tab-conversation-isolation-spec.md §2.3）。
+  // closeTabs also closes every tab owned by the session (including ones already released back to it). Reserved for
+  // sessions that never come back to claim them -- dwf subagents (docs/browser-use/2026-07-14-browser-tab-conversation-isolation-spec.md 2.3).
   z.object({ method: z.literal("closeSession"), closeTabs: z.boolean().optional() }).strict(),
   z.object({ method: z.literal("cancelRequest"), requestId: z.string().min(1) }).strict(),
   // close: close the given controlled tab (tabId absent = current). Manager-side: detach + tell the renderer to unload the webview.

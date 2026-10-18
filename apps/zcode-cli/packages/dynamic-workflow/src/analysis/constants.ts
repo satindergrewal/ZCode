@@ -1,10 +1,10 @@
 /**
-  * Trace vocabulary: region kinds, jump kinds, fallback phase id. These lived in causality-order.ts, but that file
-  * imports typescript at runtime (the AST walk itself), while the read-only core projections (causality-graph /
-  * flow-phase / phase-graph) need only these values. A zero-dependency file keeps the projection modules from
-  * dragging typescript into their runtime closure -- the premise that makes the portfolio browser bundle
-  * (@zcode/dynamic-workflow/projections) viable. causality-order.ts re-exports verbatim,
-  * leaving every existing import site and behavior untouched.
+ * Trace vocabulary: region kinds, jump kinds, fallback phase id. These lived in causality-order.ts, but that file
+ * imports typescript at runtime (the AST walk itself), while the read-only core projections (causality-graph /
+ * flow-phase / phase-graph) need only these values. A zero-dependency file keeps the projection modules from
+ * dragging typescript into their runtime closure -- the premise that makes the portfolio browser bundle
+ * (@zcode/dynamic-workflow/projections) viable. causality-order.ts re-exports verbatim,
+ * leaving every existing import site and behavior untouched.
  */
 
 /**

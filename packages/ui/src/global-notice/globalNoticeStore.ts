@@ -76,9 +76,9 @@ function readState(
     };
     if (!isLegacyHighspeedMockNotice(state.latest)) return state;
 
-    // Bug 根因：早期 Highspeed mock 通知使用 latest-only 持久化，关闭 mock 后重启仍会恢复假分享数据。
+    // Bug: early Highspeed mock notices used latest-only persistence; mocks revived after restart.
     const cleaned = { ...state, latest: null };
-    // 清理写失败不能把整份状态（含 24h 静默）打回空：内存态照常用 cleaned。
+    // A failed clean must not blank state (incl. the 24h mute): memory keeps cleaned.
     try {
       storage.setItem(STORAGE_KEY, JSON.stringify(cleaned));
     } catch (error) {
@@ -93,7 +93,7 @@ function readState(
 export function createGlobalNoticeStore(options: {
   storage: GlobalNoticeStorage;
   now?: () => number;
-  /** 持久化失败（QuotaExceeded、存储被禁用）的受控回调；缺省静默，浏览器入口接 logger.warn。 */
+  /** Controlled persist-failure callback (QuotaExceeded, disabled storage); silent by default. */
   onPersistError?: (error: unknown) => void;
 }): GlobalNoticeStore {
   const now = options.now ?? Date.now;
@@ -101,10 +101,10 @@ export function createGlobalNoticeStore(options: {
   const listeners = new Set<() => void>();
 
   const persist = () => {
-    // Bug 根因：setItem 抛错会让 publish/dismiss 抛出，订阅者收不到已更新的内存态；而调用方
-    // （SessionPane 自动分享）已先 claim 再 publish，异常会留下不可重试的 claim，用户看不到分享卡且
-    // 当前 Renderer 生命周期内无法恢复。持久化只是展示增强：内存态先更新、写存储 best-effort、
-    // 无论成败都通知订阅者（spec §6）。
+    // Bug: a throwing setItem made publish/dismiss throw after the claim, leaving an
+    // unretryable claim and an invisible share card for the session.
+    // Persistence is an enhancement: update memory, best-effort write,
+    // always notify (spec 6).
     try {
       options.storage.setItem(STORAGE_KEY, JSON.stringify(state));
     } catch (error) {
@@ -176,13 +176,13 @@ function describeError(error: unknown): string {
   return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
 }
 
-/** localStorage 在隐私模式、被禁用或沙箱 iframe 中访问即抛 SecurityError；退回内存存储，通知在本次会话内仍可用。 */
+/** localStorage throws in private mode/disabled/sandboxed iframes; fall back to memory for the session. */
 function resolveBrowserNoticeStorage(): GlobalNoticeStorage {
   try {
     const storage = window.localStorage;
     if (storage) return storage;
   } catch (error) {
-    logger.warn("[global-notice] localStorage 不可用，改用内存存储", {
+    logger.warn("[global-notice] localStorage unavailable; memory storage only", {
       error: describeError(error),
     });
   }
@@ -195,7 +195,7 @@ export const browserGlobalNoticeStore =
     : createGlobalNoticeStore({
         storage: resolveBrowserNoticeStorage(),
         onPersistError: (error) =>
-          logger.warn("[global-notice] 通知持久化失败，仅保留内存态", {
+          logger.warn("[global-notice] persist failed; memory state only", {
             error: describeError(error),
           }),
       });

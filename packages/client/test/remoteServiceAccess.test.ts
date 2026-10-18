@@ -4,7 +4,7 @@ import { IMediaPreviewService, IClientConfigService } from "@zcode/services";
 import { RemoteServiceAccess } from "../src/remoteServiceAccess.js";
 
 describe("RemoteServiceAccess", () => {
-  it("公开配置经独立频道 RPC 读取", async () => {
+  it("reads public config over the dedicated-channel RPC", async () => {
     const call = vi.fn(async () => ({ pluginStoreOrder: null }));
     const requested: string[] = [];
     const services = new RemoteServiceAccess({

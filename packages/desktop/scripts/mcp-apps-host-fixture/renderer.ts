@@ -12,7 +12,8 @@ import type { PluginSandboxHandle, PluginSandboxPortsEvent } from "@zcode/shared
 import { createPluginUiMessagePortTransport } from "../../../ui/src/plugin-ui/adapters/messagePortTransport.js";
 import { createPluginUiPagePlane } from "../../../ui/src/plugin-ui/adapters/pluginUiPagePlane.js";
 const harness = (window as any).harness;
-// 记录生产承载层的活动 window 监听器，重复切换后必须保持恒定。
+// Record the production plane's live window listeners; the count must stay constant across
+// repeated switches.
 const tracked = new Map<string, Set<EventListenerOrEventListenerObject>>();
 const add = window.addEventListener.bind(window),
   remove = window.removeEventListener.bind(window);
@@ -181,7 +182,8 @@ void manager.add(page).then(start);
   off?.();
   off = undefined;
   manager.visibility(page, false);
-  // 可控期限触发生产 manager 的五分钟回收规则，不依赖实际等待五分钟。
+  // A controlled deadline triggers the production manager's five-minute reclamation; never wait
+  // the real five minutes.
   const completed = Promise.withResolvers<void>();
   const suspend = page.suspend;
   page.suspend = async () => {

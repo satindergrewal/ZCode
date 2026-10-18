@@ -320,7 +320,7 @@ export type {
   FeedbackTicketType,
 } from "@zcode/shared";
 
-// 插件 UI 桥：描述符、参数类型与工厂；App-Provided Tools 另有独立描述符。
+// Plugin UI bridge: descriptors, param types, and factories; App-Provided Tools carry separate descriptors.
 export {
   createPluginUiBridgeService,
   createPluginUiAppToolsService,

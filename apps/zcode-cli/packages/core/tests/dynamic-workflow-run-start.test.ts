@@ -47,9 +47,7 @@ const PHASED_SCRIPT = [
 ].join("\n");
 const BAD_SCRIPT = 'const x: number = "nope";\nreturn x;';
 const MODEL_CATALOG: ModelCatalogPort = {
-  listModels: () => [
-    { providerId: "acme", modelId: "gpt-5", reasoningLevels: [], current: true },
-  ],
+  listModels: () => [{ providerId: "acme", modelId: "gpt-5", reasoningLevels: [], current: true }],
 };
 
 const dirs: string[] = [];
@@ -565,4 +563,3 @@ describe("startSavedWorkflowRun — 成功路径", () => {
     });
   });
 });
-

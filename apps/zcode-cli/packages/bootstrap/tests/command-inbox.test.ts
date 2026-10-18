@@ -288,9 +288,7 @@ describe("CommandInbox pinned facts 与持久化 fallback（§7.3）", () => {
     expect(inbox.hasPinnedSessionState("s-1")).toBe(false);
     expect(inbox.clearSession("s-1")).toBe(true);
 
-    const afterColdStart = await inbox.handle(
-      envelope({ commandId: "settled-before-deactivate" }),
-    );
+    const afterColdStart = await inbox.handle(envelope({ commandId: "settled-before-deactivate" }));
     expect(afterColdStart.kind).toBe("execute");
     if (afterColdStart.kind === "execute") {
       expect(afterColdStart.admissionSeq).toBe(1);

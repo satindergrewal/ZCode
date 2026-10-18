@@ -24,7 +24,10 @@ test("renders non-filterable selections without a filter prompt", () => {
 
   const textNodes = collectTextNodes(panel);
 
-  assert.equal(textNodes.some((node) => node.text.includes("filter:")), false);
+  assert.equal(
+    textNodes.some((node) => node.text.includes("filter:")),
+    false,
+  );
   assert.ok(textNodes.some((node) => node.text === baseSelection.help));
   assert.ok(textNodes.some((node) => node.text === "Z.AI Coding Plan"));
   const detailNode = textNodes.find((node) => node.text.includes("Open browser login"));
@@ -48,7 +51,7 @@ test("non-filterable selections ignore typed filter keys", () => {
     key("x"),
     selection,
     (next) => {
-      selection = typeof next === "function" ? next(selection) : next ?? selection;
+      selection = typeof next === "function" ? next(selection) : (next ?? selection);
     },
     (status) => statuses.push(status),
     async (value) => {
@@ -112,7 +115,10 @@ test("pending selections replace options and keep escape as cancel", () => {
   const textNodes = collectTextNodes(panel);
 
   assert.ok(textNodes.some((node) => node.text === "Waiting for Z.AI authorization"));
-  assert.equal(textNodes.some((node) => node.text === "Z.AI Coding Plan"), false);
+  assert.equal(
+    textNodes.some((node) => node.text === "Z.AI Coding Plan"),
+    false,
+  );
 });
 
 test("pending selection escape aborts and restores setup choices", () => {
@@ -136,7 +142,7 @@ test("pending selection escape aborts and restores setup choices", () => {
     key("escape"),
     selection,
     (next) => {
-      selection = typeof next === "function" ? next(selection) : next ?? selection;
+      selection = typeof next === "function" ? next(selection) : (next ?? selection);
     },
     (status) => statuses.push(status),
     async () => undefined,
@@ -163,7 +169,7 @@ test("pending row submission preserves the selection panel while it waits", () =
     key("return"),
     selection,
     (next) => {
-      selection = typeof next === "function" ? next(selection) : next ?? selection;
+      selection = typeof next === "function" ? next(selection) : (next ?? selection);
     },
     (status) => statuses.push(status),
     async (value, options) => {
@@ -211,7 +217,10 @@ test("input selections replace options with an inline hidden input", () => {
 
   assert.ok(textNodes.some((node) => node.text === "Enter Z.AI Coding Plan API Key"));
   assert.ok(textNodes.some((node) => node.text === "> **********"));
-  assert.equal(textNodes.some((node) => node.text === "BigModel Coding Plan"), false);
+  assert.equal(
+    textNodes.some((node) => node.text === "BigModel Coding Plan"),
+    false,
+  );
 });
 
 test("input row submission stays in the setup panel before saving the key", () => {

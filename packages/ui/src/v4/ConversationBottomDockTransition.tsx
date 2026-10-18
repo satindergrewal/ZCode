@@ -71,10 +71,10 @@ export function ConversationBottomDockTransition({
           key={mode}
           data-testid="conversation-bottom-dock-transition-layer"
           data-conversation-bottom-dock-mode={mode}
-          // grid 子项默认 min-width:auto，最小尺寸等于内容的 min-content；
-          // 隐式列轨道是 auto，其下限被这个最小尺寸顶住，于是面板收窄时 composer
-          // 仍按 min-content（约 465px）撑开轨道，超出容器宽度后右侧被裁掉。
-          // min-w-0 关掉自动最小尺寸，轨道才能跟随容器一起收缩。
+          // grid items default to min-width:auto, i.e. a min-content floor;
+          // the implicit column track is auto and its minimum is that floor, so when the panel narrows the composer
+          // still expands the track to min-content (about 465px) and the right side clips past the container width.
+          // min-w-0 disables the automatic minimum so the track shrinks with the container.
           className="col-start-1 row-start-1 w-full min-w-0 origin-bottom self-end will-change-transform"
           initial={motionConfig.initial}
           animate={motionConfig.animate}

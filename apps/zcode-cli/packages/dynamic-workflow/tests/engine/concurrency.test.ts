@@ -1,7 +1,7 @@
 /**
- * ConcurrencyController 的纯状态机用例（docs/dynamic-workflow/concurrency.md「The controller」
- * 的两行控制器用例）。无时钟：`now` 由用例传入。度量是模型请求（决策 34），阻尼靠 epoch（决策 35），
- * 减系数 0.75、K = 4、lastGood 只由完成的 streak 设定（决策 40）。
+ * Pure state-machine cases for ConcurrencyController (the controller rows of docs/dynamic-workflow/concurrency.md,
+ * The controller). Clock-free: tests supply now. The measured unit is the model request (decision 34), damping via
+ * epochs (decision 35), backoff factor 0.75, K = 4, lastGood set only by completed streaks (decision 40).
  */
 
 import { describe, expect, it } from "vitest";
@@ -17,14 +17,14 @@ const KEY = "anthropic/claude";
 const K = CONCURRENCY_INCREASE_AFTER_SUCCESSES;
 const T0 = 1_000_000;
 
-/** 准入 n 个请求，返回它们的 epoch。 */
+/** Admits n requests, returning their epoch. */
 function admit(c: ConcurrencyController, n: number, now = T0): number[] {
   const epochs: number[] = [];
   for (let i = 0; i < n; i++) epochs.push(c.admitted(now));
   return epochs;
 }
 
-/** 准入 n 个请求并让它们全部在当前 epoch 成功；返回期间产生的全部 change。 */
+/** Admits n requests, succeeds them all in the current epoch; returns every change produced along the way. */
 function roundTrip(c: ConcurrencyController, n: number, now = T0) {
   const changes = [];
   for (let i = 0; i < n; i++) {
@@ -34,71 +34,93 @@ function roundTrip(c: ConcurrencyController, n: number, now = T0) {
   return changes;
 }
 
-/** 一个当前 epoch 的 429（先准入再限流）。 */
-function throttleNow(c: ConcurrencyController, reason: "rate_limited" | "provider_overloaded" | "offpeak_queued" = "rate_limited", retryAfterMs?: number, now = T0) {
+/** One current-epoch 429 (admit, then throttle). */
+function throttleNow(
+  c: ConcurrencyController,
+  reason: "rate_limited" | "provider_overloaded" | "offpeak_queued" = "rate_limited",
+  retryAfterMs?: number,
+  now = T0,
+) {
   const epoch = c.admitted(now);
   return c.throttled(now, epoch, reason, retryAfterMs);
 }
 
-describe("ConcurrencyController — 常量（决策 40）", () => {
-  it("减系数 0.75、每级 4 次成功", () => {
+describe("ConcurrencyController -- constants (decision 40)", () => {
+  it("backs off by 0.75 with 4 successes per step", () => {
     expect(CONCURRENCY_DECREASE_FACTOR).toBe(0.75);
     expect(K).toBe(4);
   });
 });
 
-describe("ConcurrencyController — 减（决策 4/6/11/35/40）", () => {
-  it("当前 epoch 的限流 → cap × 0.75 向下取整并翻 epoch；反复限流一路减到地板 1", () => {
+describe("ConcurrencyController -- decrease (decisions 4/6/11/35/40)", () => {
+  it("floors current-epoch 429s to cap x 0.75 and rolls the epoch; repeated throttling descends to the floor of 1", () => {
     const c = new ConcurrencyController(KEY, 16);
     expect(c.snapshot().epoch).toBe(0);
-    // 减 cap 不设 lastGood（未被证明），只记 lastBad = 撞墙时的 cap。
-    expect(throttleNow(c)).toEqual([{ key: KEY, previous: 16, next: 12, reason: "rate_limited", lastBad: 16 }]);
+    // Lowering the cap sets no lastGood (unproven); it records lastBad = the cap at the wall.
+    expect(throttleNow(c)).toEqual([
+      { key: KEY, previous: 16, next: 12, reason: "rate_limited", lastBad: 16 },
+    ]);
     expect(c.snapshot()).toMatchObject({ epoch: 1, lastBad: 16 });
     expect(c.snapshot().lastGood).toBeUndefined();
     for (const expected of [9, 6, 4, 3, 2, 1]) {
       const [change] = throttleNow(c, "provider_overloaded");
       expect(change?.next).toBe(expected);
     }
-    expect(c.snapshot()).toMatchObject({ cap: CONCURRENCY_FLOOR, epoch: 7, inFlight: 0, lastBad: 2 });
-    // 地板上再限流：cap 不变、无 Retry-After ⇒ 不发事件，但仍翻一页（同一批请求只裁决一次）。
+    expect(c.snapshot()).toMatchObject({
+      cap: CONCURRENCY_FLOOR,
+      epoch: 7,
+      inFlight: 0,
+      lastBad: 2,
+    });
+    // Throttling at the floor: cap unchanged, no Retry-After -> no event, but the epoch still rolls
     expect(throttleNow(c)).toEqual([]);
     expect(c.snapshot().epoch).toBe(8);
   });
 
-  it("同一批 13 个同 epoch 的 429 只减一次、只发一条事件；其余只清 streak、减 inFlight", () => {
+  it("decrements once and emits once for thirteen same-epoch 429s, clearing streaks and inFlight otherwise", () => {
     const c = new ConcurrencyController(KEY, 13);
     const epochs = admit(c, 13);
     expect(new Set(epochs)).toEqual(new Set([0]));
     expect(c.snapshot().inFlight).toBe(13);
     const changes = [];
     for (const epoch of epochs) changes.push(...c.throttled(T0, epoch, "rate_limited"));
-    expect(changes).toEqual([{ key: KEY, previous: 13, next: 9, reason: "rate_limited", lastBad: 13 }]);
+    expect(changes).toEqual([
+      { key: KEY, previous: 13, next: 9, reason: "rate_limited", lastBad: 13 },
+    ]);
     expect(c.snapshot()).toMatchObject({ cap: 9, epoch: 1, inFlight: 0, successStreak: 0 });
   });
 
-  it("旧 epoch 的 429 不动 cap、不发事件，但清 streak、减 inFlight、刷新 cooldown", () => {
+  it("leaves cap and events alone on stale-epoch 429s while clearing streak, cutting inFlight, refreshing cooldown", () => {
     const c = new ConcurrencyController(KEY, 8);
     const stale = admit(c, 3); // epoch 0
     throttleNow(c); // 8→6, epoch 1
     c.waiters(T0, 1);
-    roundTrip(c, K - 1); // 当前 epoch 的成功：streak K−1（还差一次兑现）
+    roundTrip(c, K - 1); // current-epoch successes: streak K-1, one short of cashing in
     expect(c.snapshot()).toMatchObject({ cap: 6, successStreak: K - 1, inFlight: 3 });
     expect(c.throttled(T0, stale[0]!, "rate_limited", 9_000)).toEqual([]);
-    expect(c.snapshot()).toMatchObject({ cap: 6, epoch: 1, successStreak: 0, inFlight: 2, cooldownUntil: T0 + 9_000 });
-    // 更早的 Retry-After 不会把 cooldown 往前拉。
+    expect(c.snapshot()).toMatchObject({
+      cap: 6,
+      epoch: 1,
+      successStreak: 0,
+      inFlight: 2,
+      cooldownUntil: T0 + 9_000,
+    });
+    // An earlier Retry-After never pulls cooldown earlier.
     expect(c.throttled(T0, stale[1]!, "rate_limited", 1_000)).toEqual([]);
     expect(c.snapshot().cooldownUntil).toBe(T0 + 9_000);
   });
 
-  it("下一次裁决必须来自新 cap 下发出的请求：旧 epoch 全部撞墙后，新 epoch 的 429 才再减", () => {
+  it("verdicts only on requests issued under the new cap: after stale-epoch 429s, a new-epoch 429 decrements again", () => {
     const c = new ConcurrencyController(KEY, 13);
     const stale = admit(c, 13);
-    for (const epoch of stale) c.throttled(T0, epoch, "rate_limited"); // 13→9 一次
+    for (const epoch of stale) c.throttled(T0, epoch, "rate_limited"); // 13 to 9, once
     expect(c.snapshot().cap).toBe(9);
-    expect(throttleNow(c)).toEqual([{ key: KEY, previous: 9, next: 6, reason: "rate_limited", lastBad: 9 }]);
+    expect(throttleNow(c)).toEqual([
+      { key: KEY, previous: 9, next: 6, reason: "rate_limited", lastBad: 9 },
+    ]);
   });
 
-  it("Retry-After 冻结新准入直到 deadline；地板上带 Retry-After 的限流仍发事件", () => {
+  it("freezes new admissions until the Retry-After deadline; floor-level throttling with one still emits", () => {
     const c = new ConcurrencyController(KEY, 4);
     const [change] = throttleNow(c, "rate_limited", 20_000);
     expect(change).toMatchObject({ previous: 4, next: 3, cooldownMs: 20_000 });
@@ -112,7 +134,7 @@ describe("ConcurrencyController — 减（决策 4/6/11/35/40）", () => {
     ]);
   });
 
-  it("canAdmit 在 inFlight ≥ cap 时为假，release 后为真", () => {
+  it("makes canAdmit false at inFlight >= cap and true again after release", () => {
     const c = new ConcurrencyController(KEY, 2);
     const [a, b] = admit(c, 2);
     expect(c.canAdmit(T0)).toBe(false);
@@ -123,7 +145,7 @@ describe("ConcurrencyController — 减（决策 4/6/11/35/40）", () => {
     void b;
   });
 
-  it("瞬态非限流失败只清 streak、减 inFlight，cap 不动", () => {
+  it("clears streak and cuts inFlight on transient non-throttle failures, cap untouched", () => {
     const c = new ConcurrencyController(KEY, 8);
     c.waiters(T0, 1);
     roundTrip(c, K - 1);
@@ -133,7 +155,7 @@ describe("ConcurrencyController — 减（决策 4/6/11/35/40）", () => {
     expect(c.snapshot()).toMatchObject({ cap: 8, successStreak: 0, inFlight: 0, epoch: 0 });
   });
 
-  it("ended 只减 inFlight", () => {
+  it("has ended only decrement inFlight", () => {
     const c = new ConcurrencyController(KEY, 8);
     c.waiters(T0, 1);
     roundTrip(c, K - 1);
@@ -143,23 +165,25 @@ describe("ConcurrencyController — 减（决策 4/6/11/35/40）", () => {
   });
 });
 
-describe("ConcurrencyController — 增（决策 4/15/33/35/40）", () => {
+describe("ConcurrencyController -- increase (decisions 4/15/33/35/40)", () => {
   function lowered(): ConcurrencyController {
     const c = new ConcurrencyController(KEY, 16);
-    throttleNow(c); // cap 12, lastBad 16, lastGood 缺席, epoch 1
+    throttleNow(c); // cap 12, lastBad 16, no lastGood, epoch 1
     return c;
   }
 
-  it("K 次当前 epoch 的连续成功证明当前 cap（lastGood = cap），有等待者才 +1", () => {
+  it("proves the current cap after K same-epoch successes (lastGood = cap), +1 only with waiters", () => {
     const c = lowered();
     c.waiters(T0, 1);
     expect(roundTrip(c, K - 1)).toEqual([]);
     expect(c.snapshot().lastGood).toBeUndefined();
-    expect(roundTrip(c, 1)).toEqual([{ key: KEY, previous: 12, next: 13, reason: "recovered", lastGood: 12, lastBad: 16 }]);
+    expect(roundTrip(c, 1)).toEqual([
+      { key: KEY, previous: 12, next: 13, reason: "recovered", lastGood: 12, lastBad: 16 },
+    ]);
     expect(c.snapshot().successStreak).toBe(0);
   });
 
-  it("无等待者时 streak 照累积、lastGood 照证明，但 cap 不兑现；等待者出现后下一次成功即兑现", () => {
+  it("accumulates streaks and proves lastGood without waiters but raises only once waiters appear", () => {
     const c = lowered();
     c.waiters(T0, 0);
     expect(roundTrip(c, K)).toEqual([]);
@@ -168,7 +192,7 @@ describe("ConcurrencyController — 增（决策 4/15/33/35/40）", () => {
     expect(roundTrip(c, 1)[0]?.next).toBe(13);
   });
 
-  it("旧 epoch 的成功不计 streak（减 cap 后仍在飞的那批请求跑完不算证据）", () => {
+  it("excludes stale-epoch successes from the streak (draining the old batch proves nothing)", () => {
     const c = new ConcurrencyController(KEY, 32);
     c.waiters(T0, 3);
     const stale = admit(c, 32);
@@ -176,11 +200,11 @@ describe("ConcurrencyController — 增（决策 4/15/33/35/40）", () => {
     for (const epoch of stale.slice(1)) expect(c.succeeded(T0, epoch)).toEqual([]);
     expect(c.snapshot()).toMatchObject({ cap: 24, successStreak: 0, inFlight: 0 });
     expect(c.snapshot().lastGood).toBeUndefined();
-    // 新 epoch 的 K 次成功才兑现。
+    // Only K new-epoch successes cash in.
     expect(roundTrip(c, K)[0]?.next).toBe(25);
   });
 
-  it("永不越过天花板；天花板上的完整 streak 仍把它证明为 lastGood", () => {
+  it("never passes the ceiling; a full streak at the ceiling still proves it as lastGood", () => {
     const c = new ConcurrencyController(KEY, 2);
     throttleNow(c); // cap 1
     c.waiters(T0, 1);
@@ -190,8 +214,8 @@ describe("ConcurrencyController — 增（决策 4/15/33/35/40）", () => {
   });
 });
 
-describe("ConcurrencyController — 记住可用水位（决策 22/40）", () => {
-  /** 从 cap 16 减到 12，再一路爬到 target（每级 K 次成功）。 */
+describe("ConcurrencyController -- remembering the proven level (decisions 22/40)", () => {
+  /** From cap 16 down to 12, then climbing to target (K successes per step). */
   function climbTo(target: number): ConcurrencyController {
     const c = new ConcurrencyController(KEY, 16);
     throttleNow(c);
@@ -200,7 +224,7 @@ describe("ConcurrencyController — 记住可用水位（决策 22/40）", () =>
     return c;
   }
 
-  it("lastGood 之上被限流 → 退回 lastGood 并记 lastBad，不按系数减，仍翻 epoch", () => {
+  it("falls back to lastGood above it, recording lastBad without the factor, still rolling the epoch", () => {
     const c = climbTo(14);
     expect(c.snapshot()).toMatchObject({ cap: 14, lastGood: 13, epoch: 1 });
     expect(throttleNow(c)).toEqual([
@@ -209,16 +233,18 @@ describe("ConcurrencyController — 记住可用水位（决策 22/40）", () =>
     expect(c.snapshot().epoch).toBe(2);
   });
 
-  it("lastGood 及以下被限流 → 墙下移：按系数减、清掉 lastGood（已证伪）、记 lastBad", () => {
+  it("moves the wall when hit at or below lastGood: factor decrease, lastGood cleared as falsified, lastBad recorded", () => {
     const c = climbTo(14);
-    throttleNow(c); // 回 13
-    expect(throttleNow(c)).toEqual([{ key: KEY, previous: 13, next: 9, reason: "rate_limited", lastBad: 13 }]);
+    throttleNow(c); // back to 13
+    expect(throttleNow(c)).toEqual([
+      { key: KEY, previous: 13, next: 9, reason: "rate_limited", lastBad: 13 },
+    ]);
     expect(c.snapshot().lastGood).toBeUndefined();
   });
 
-  it("每级需 K 次成功（K−1 次不够）；新 cap 要靠自己的 streak 重新证明", () => {
+  it("needs K successes per step (K-1 falls short); a new cap must re-prove itself", () => {
     const c = climbTo(14);
-    throttleNow(c); // 14 > lastGood 13 ⇒ 回 13
+    throttleNow(c); // 14 > lastGood 13 -> back to 13
     expect(throttleNow(c)[0]).toMatchObject({ previous: 13, next: 9 });
     expect(roundTrip(c, K - 1)).toEqual([]);
     expect(c.snapshot().lastGood).toBeUndefined();
@@ -228,11 +254,11 @@ describe("ConcurrencyController — 记住可用水位（决策 22/40）", () =>
     small.waiters(T0, 1);
     roundTrip(small, K); // cap 5, lastGood 4
     roundTrip(small, K); // cap 6, lastGood 5
-    throttleNow(small); // 6 > lastGood 5 ⇒ 回 5，lastBad 6
+    throttleNow(small); // 6 > lastGood 5 -> back to 5, lastBad 6
     expect(small.snapshot()).toMatchObject({ cap: 5, lastGood: 5, lastBad: 6 });
   });
 
-  it("真实上限 5、天花板 13：13 →429→ 9 →429→ 6 →429→ 4 → 5 → 6 →429→ 5，稳定在 5", () => {
+  it("true ceiling 5, cap 13: 13-429-9-429-6-429-4-5-6-429-5, settling at 5", () => {
     const c = new ConcurrencyController(KEY, 13);
     c.waiters(T0, 1);
     expect(throttleNow(c)[0]?.next).toBe(9);
@@ -241,7 +267,7 @@ describe("ConcurrencyController — 记住可用水位（决策 22/40）", () =>
     expect(roundTrip(c, K)[0]).toMatchObject({ next: 5, lastGood: 4 });
     expect(roundTrip(c, K)[0]).toMatchObject({ next: 6, lastGood: 5 });
     expect(throttleNow(c)[0]).toMatchObject({ previous: 6, next: 5, lastGood: 5, lastBad: 6 });
-    // 此后每 K 次成功探一次 6，每次只花一个 429、退回 5。
+    // Afterwards each K successes probe 6, costing one 429 and falling back to 5.
     for (let round = 0; round < 3; round++) {
       expect(roundTrip(c, K)[0]?.next).toBe(6);
       expect(throttleNow(c)[0]).toMatchObject({ previous: 6, next: 5, lastBad: 6 });
@@ -250,8 +276,8 @@ describe("ConcurrencyController — 记住可用水位（决策 22/40）", () =>
   });
 });
 
-describe("ConcurrencyController — 空闲重置（决策 20）", () => {
-  it("空闲 5 分钟且无在飞时，任一信号先重置到天花板并清空 lastGood/lastBad/cooldown，翻 epoch", () => {
+describe("ConcurrencyController -- idle reset (decision 20)", () => {
+  it("resets to the ceiling on any idle signal after 5 idle minutes with nothing in flight, clearing lastGood/lastBad/cooldown", () => {
     const c = new ConcurrencyController(KEY, 16);
     throttleNow(c, "rate_limited", 60_000); // cap 12, epoch 1, inFlight 0
     const later = T0 + CONCURRENCY_IDLE_RESET_MS;
@@ -261,12 +287,12 @@ describe("ConcurrencyController — 空闲重置（决策 20）", () => {
     expect(c.snapshot().lastGood).toBeUndefined();
     expect(c.snapshot().lastBad).toBeUndefined();
     expect(c.snapshot().cooldownUntil).toBeUndefined();
-    // 重置是幂等的：再来一个空闲信号不再发事件、不再翻页。
+    // Resets are idempotent: another idle signal emits nothing and rolls nothing.
     expect(c.observe(later + 1)).toEqual([]);
     expect(c.snapshot().epoch).toBe(2);
   });
 
-  it("有在飞时不重置", () => {
+  it("skips the reset while work is in flight", () => {
     const c = new ConcurrencyController(KEY, 16);
     admit(c, 1);
     throttleNow(c); // inFlight 1
@@ -274,18 +300,17 @@ describe("ConcurrencyController — 空闲重置（决策 20）", () => {
     expect(c.snapshot().cap).toBe(12);
   });
 
-  it("重置后从天花板起步的第一次 429 按系数减（lastGood 已清空）；重置与限流在同一信号里是两条 change", () => {
+  it("factors the first post-reset 429 (lastGood cleared); reset and throttle are two changes in one signal", () => {
     const c = new ConcurrencyController(KEY, 16);
     throttleNow(c);
     const later = T0 + CONCURRENCY_IDLE_RESET_MS;
-    // 治理器的准入路径：observe（重置）→ admitted → …；这里模拟一个跳过 observe 直接带旧 epoch 来的 429：
-    // idleReset 先翻页，所以它按旧 epoch 处理——不减，只有 idle_reset 一条。
+    // Governor admission path: observe (reset) -> admitted -> ...; this simulates a 429 skipping observe with a stale
     const epoch = c.admitted(T0);
     c.ended(T0);
     expect(c.throttled(later, epoch, "rate_limited")).toEqual([
       { key: KEY, previous: 12, next: 16, reason: "idle_reset" },
     ]);
-    // 走正规路径：observe 之后准入再限流，才是对天花板的评价。
+    // The proper path: observe, admit, then throttle -- that is what judges the ceiling.
     expect(c.observe(later)).toEqual([]);
     expect(throttleNow(c, "rate_limited", undefined, later)).toEqual([
       { key: KEY, previous: 16, next: 12, reason: "rate_limited", lastBad: 16 },
@@ -293,8 +318,8 @@ describe("ConcurrencyController — 空闲重置（决策 20）", () => {
   });
 });
 
-describe("ConcurrencyController — 增长上限（docs/dynamic-workflow/concurrency.md「Increase」「The governor」）", () => {
-  it("起点是 initial；自动增长越过 initial、停在 growthLimit；完整 streak 仍把 growthLimit 证明为 lastGood", () => {
+describe("ConcurrencyController -- growth limit (docs/dynamic-workflow/concurrency.md, Increase and The governor)", () => {
+  it("starts at initial, grows past it to growthLimit, and still proves growthLimit as lastGood", () => {
     const c = new ConcurrencyController(KEY, 4, 8);
     expect(c.snapshot()).toMatchObject({ initial: 4, growthLimit: 8, cap: 4 });
     c.waiters(T0, 1);
@@ -304,14 +329,14 @@ describe("ConcurrencyController — 增长上限（docs/dynamic-workflow/concurr
     expect(c.snapshot()).toMatchObject({ cap: 8, lastGood: 8 });
   });
 
-  it("缺省 growthLimit = initial：与从前「天花板即上界」逐字相同", () => {
+  it("defaults growthLimit to initial: verbatim the old ceiling-is-the-cap behavior", () => {
     const c = new ConcurrencyController(KEY, 6);
     expect(c.snapshot()).toMatchObject({ initial: 6, growthLimit: 6 });
     c.waiters(T0, 1);
     expect(roundTrip(c, K * 3)).toEqual([]);
   });
 
-  it("抬高增长上限不立刻动 cap、不发事件；cap 此后一级一级爬上去", () => {
+  it("raises the growth limit without touching cap or emitting; cap climbs one step at a time after", () => {
     const c = new ConcurrencyController(KEY, 4, 8);
     expect(c.setGrowthLimit(T0, 20)).toEqual([]);
     expect(c.snapshot()).toMatchObject({ growthLimit: 20, cap: 4 });
@@ -322,13 +347,13 @@ describe("ConcurrencyController — 增长上限（docs/dynamic-workflow/concurr
     expect(c.snapshot().cap).toBe(20);
   });
 
-  it("压低到 cap 之下：cap 当场拉到新上限、发 limit_lowered、lastGood 夹到上限、清 streak、翻 epoch", () => {
+  it("on lowering below cap: cap snaps to the new limit, limit_lowered emits, lastGood clamps, streak clears, epoch rolls", () => {
     const c = new ConcurrencyController(KEY, 4, 20);
     c.waiters(T0, 1);
     roundTrip(c, K * 12); // cap 16，lastGood 15
     expect(c.snapshot().cap).toBe(16);
     roundTrip(c, 2); // streak 2
-    const stale = c.admitted(T0); // 旧 cap 下发出的请求
+    const stale = c.admitted(T0); // requests issued under the old cap
     const epochBefore = c.snapshot().epoch;
     expect(c.setGrowthLimit(T0, 8)).toEqual([
       { key: KEY, previous: 16, next: 8, reason: "limit_lowered", lastGood: 8 },
@@ -340,25 +365,25 @@ describe("ConcurrencyController — 增长上限（docs/dynamic-workflow/concurr
       successStreak: 0,
       epoch: epochBefore + 1,
     });
-    // 那个旧 cap 下发出的请求撞 429：不是对新 cap 的裁决，不再减。
+    // A 429 on those old-cap requests judges nothing about the new cap; no further decrease.
     expect(c.throttled(T0, stale, "rate_limited")).toEqual([]);
     expect(c.snapshot().cap).toBe(8);
   });
 
-  it("压低但 cap 本就不高于新上限：不动 cap、不发事件、不翻 epoch", () => {
+  it("lowers nothing when cap already sits at or below the new limit: no cap change, event, or epoch roll", () => {
     const c = new ConcurrencyController(KEY, 4, 20);
     const epoch = c.snapshot().epoch;
     expect(c.setGrowthLimit(T0, 8)).toEqual([]);
     expect(c.snapshot()).toMatchObject({ growthLimit: 8, cap: 4, epoch });
   });
 
-  it("增长上限永不低于 initial", () => {
+  it("never lets the growth limit drop below initial", () => {
     const c = new ConcurrencyController(KEY, 6, 12);
     expect(c.setGrowthLimit(T0, 2)).toEqual([]);
     expect(c.snapshot()).toMatchObject({ growthLimit: 6, cap: 6 });
   });
 
-  it("空闲重置回 initial，而不是回增长上限", () => {
+  it("idle-resets to initial, not to the growth limit", () => {
     const c = new ConcurrencyController(KEY, 4, 8);
     c.waiters(T0, 1);
     roundTrip(c, K * 10); // cap 8
@@ -370,8 +395,8 @@ describe("ConcurrencyController — 增长上限（docs/dynamic-workflow/concurr
   });
 });
 
-describe("ConcurrencyController — 抬高上界时直接起跳（seed，docs/dynamic-workflow/concurrency.md「Seeding」）", () => {
-  it("seed 把 cap 当场拉到目标（不超过增长上限），发 seeded，清 lastGood、清 streak、翻 epoch", () => {
+describe("ConcurrencyController -- seeding straight to a higher bound (docs/dynamic-workflow/concurrency.md, Seeding)", () => {
+  it("snaps cap to the target (never past the growth limit), emits seeded, clears lastGood and streak, rolls the epoch", () => {
     const c = new ConcurrencyController(KEY, 8, 32);
     c.waiters(T0, 1);
     roundTrip(c, K + 2); // cap 9，lastGood 8，streak 2
@@ -382,12 +407,12 @@ describe("ConcurrencyController — 抬高上界时直接起跳（seed，docs/dy
     expect(c.snapshot().lastBad).toBeUndefined();
   });
 
-  it("目标超过增长上限时只跳到增长上限", () => {
+  it("caps the jump at the growth limit", () => {
     const c = new ConcurrencyController(KEY, 8, 20);
     expect(c.seed(T0, 50)).toEqual([{ key: KEY, previous: 8, next: 20, reason: "seeded" }]);
   });
 
-  it("目标不高于 cap：什么都不做", () => {
+  it("does nothing when the target is at or below cap", () => {
     const c = new ConcurrencyController(KEY, 8, 32);
     const epoch = c.snapshot().epoch;
     expect(c.seed(T0, 8)).toEqual([]);
@@ -395,7 +420,7 @@ describe("ConcurrencyController — 抬高上界时直接起跳（seed，docs/dy
     expect(c.snapshot()).toMatchObject({ cap: 8, epoch });
   });
 
-  it("起跳之后第一次 429 按系数减（32 → 24），而不是退回旧的 lastGood", () => {
+  it("factors the first post-seed 429 (32 to 24) instead of falling back to the old lastGood", () => {
     const c = new ConcurrencyController(KEY, 8, 32);
     c.waiters(T0, 1);
     roundTrip(c, K); // lastGood 8
@@ -405,21 +430,21 @@ describe("ConcurrencyController — 抬高上界时直接起跳（seed，docs/dy
     ]);
   });
 
-  it("五分钟内有过任何 429（哪怕是旧 epoch 的）即不起跳；过了五分钟再起跳", () => {
+  it("skips the seed on any 429 within five minutes, stale epoch included, and seeds after", () => {
     const c = new ConcurrencyController(KEY, 8, 32);
     const stale = c.admitted(T0);
-    throttleNow(c); // 当前 epoch：8 → 6
-    c.throttled(T0 + 1_000, stale, "rate_limited"); // 旧 epoch，同样算「刚被拒过」
+    throttleNow(c); // current epoch: 8 to 6
+    c.throttled(T0 + 1_000, stale, "rate_limited"); // stale epoch, still recently-throttled
     expect(c.snapshot().lastThrottledAt).toBe(T0 + 1_000);
     expect(c.seed(T0 + 2_000, 32)).toEqual([]);
     expect(c.snapshot().cap).toBe(6);
-    // 一直有请求在飞，所以不会空闲重置；五分钟后证据过期，起跳放行。
+    // Work stays in flight so no idle reset; after five minutes the evidence expires and the seed goes.
     c.admitted(T0 + 1_000);
     const later = T0 + 1_000 + CONCURRENCY_IDLE_RESET_MS;
     expect(c.seed(later, 32)).toEqual([{ key: KEY, previous: 6, next: 32, reason: "seeded" }]);
   });
 
-  it("空闲重置清掉 lastThrottledAt", () => {
+  it("clear lastThrottledAt on idle reset", () => {
     const c = new ConcurrencyController(KEY, 8, 32);
     throttleNow(c);
     const later = T0 + CONCURRENCY_IDLE_RESET_MS;

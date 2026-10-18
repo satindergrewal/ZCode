@@ -14,7 +14,7 @@ import type {
 } from "@zcode/services";
 import { logger } from "@/logger.js";
 
-/** 384KiB 可被 3 整除，除末片外 base64 不含 padding；同时为两层 envelope 留足空间。 */
+/** 384KiB divides by 3, so base64 padding appears only in the last chunk; it also leaves room for the two envelope layers. */
 export const ATTACHMENT_UPLOAD_CHUNK_BYTES = 384 * 1024;
 
 export interface AttachmentUploadAgent {
@@ -88,7 +88,7 @@ function encodeBase64(bytes: Uint8Array): string {
 
 async function checksum(bytes: Uint8Array): Promise<string> {
   if (!globalThis.crypto?.subtle) throw new Error("fault.attachment.checksumUnavailable");
-  // WebCrypto 的 BufferSource 要求 ArrayBuffer；复制也避免调用期间底层 view 被复用。
+  // WebCrypto BufferSource needs ArrayBuffer; copying also guards the underlying view from reuse mid-call.
   const digest = await globalThis.crypto.subtle.digest("SHA-256", Uint8Array.from(bytes).buffer);
   const hex = [...new Uint8Array(digest)]
     .map((value) => value.toString(16).padStart(2, "0"))
@@ -104,10 +104,10 @@ function createUploadId(): string {
   return `upload-${[...words].map((word) => word.toString(16).padStart(8, "0")).join("")}`;
 }
 
-/** 用 production ChannelClient 相同的 serializer 计量完整 method+args physical request。 */
+/** Sizes the full method+args physical request with the same serializer as the production ChannelClient. */
 export function measureAttachmentChannelRequestBytes(method: string, params: unknown): number {
   const writer = new BufferWriter();
-  // RequestType.Promise=100；max int id 比正常短生命周期 request id 更保守。
+  // RequestType.Promise=100; a max-int id is more conservative than normal short-lived request ids.
   serialize(writer, [100, 2_147_483_647, ServiceChannels.ZCodeAgent, method]);
   serialize(writer, [params]);
   return writer.buffer.byteLength;

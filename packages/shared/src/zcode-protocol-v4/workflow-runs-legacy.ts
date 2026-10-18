@@ -1,14 +1,14 @@
 // ============================================================
-// 给**没有** `workflowRunDeltas` 能力的消费者的 workflowRuns 裁剪
+// workflowRuns trimming for consumers **without** the `workflowRunDeltas` capability
 // ============================================================
-// 这一条不是展示预算，是 wire 兼容：旧消费者二进制里的 actors / nodes 校验界是 256
-// （{@link WORKFLOW_RUNS_LEGACY_LIMITS}），而已知键上的解析错误**不会被剥掉一个键**——它让整个
-// `state.updated` patch 失败、整帧被丢，那条订阅从此静默。所以我们把界抬到 1024 之后，发给旧
-// 消费者的每一帧（增量折叠出来的整键 patch，以及快照）都必须先过这里。
+// Not a display budget -- wire compat: legacy consumers' compiled actors / nodes bound is 256
+// ({@link WORKFLOW_RUNS_LEGACY_LIMITS}), and a parse error on a known key does **not** strip one key -- it fails
+// the whole `state.updated` patch, drops the frame, and the subscription goes silently dead. Past the 1024 raise, every
+// frame toward legacy consumers (the coalesced whole-key patch, and snapshots) passes through here.
 //
-// 留下的是哪 256 条，则与归约侧的腾位同一条道理（workflow-runs-eviction.ts）：**还在动的先留**。
-// 旧手机画的和新客户端画的是同一件事——此刻谁在跑——而一刀切「前 256 条」会让一个宽 run 在
-// 那一代客户端上永远停在最早那批已经结束的身上。名额有余时按表序补最早的条目，输出仍按原表序。
+// Which 256 survive follows the reducer's eviction rule (workflow-runs-eviction.ts): keep what still moves.
+// Legacy phones and new clients draw the same thing -- who is running now -- and a flat first-256 would freeze a wide
+// run on its earliest finished entries forever. Spare slots backfill oldest-by-table-order; output stays in table order.
 
 import { canonicalWorkflowRun } from "./workflow-runs-delta.js";
 import {
@@ -19,13 +19,13 @@ import {
 } from "./workflow-runs.js";
 
 /**
- * 按旧界裁剪；裁过的 run 置 `truncated: true`（读面据它显示「仅展示 N/M 步的详情」）。
+ * Trim to the legacy bound; trimmed runs get `truncated: true` (readers show details for N of M steps only).
  *
- * **不裁别的**：旧消费者认不出的新可选键是无害的（容器非 strict，多余的键被剥掉而已），
- * 而为了"干净"去剥它们反而要维护第二份字段表——那正是 2026-09-04 事故的形状。
+ * **Nothing else is trimmed**: unknown new optional keys are harmless to legacy consumers (the container is not strict,
+ * extra keys strip) and stripping them for cleanliness would maintain a second field table -- the 2026-09-04 incident's shape.
  *
- * 无需裁剪时返回**同一个对象**：这个函数在每次 flush 上都会跑一遍，白白造一份新状态会让
- * 下游所有按引用 memo 的地方失效。
+ * Returns the **same object** when nothing needs trimming: this runs on every flush, and a gratuitous new state
+ * invalidates every reference-memo downstream.
  */
 export function clampWorkflowRunsForLegacy(state: WorkflowRunsState): WorkflowRunsState {
   let clamped = false;
@@ -42,19 +42,19 @@ export function clampWorkflowRunsForLegacy(state: WorkflowRunsState): WorkflowRu
     );
     if (actors === run.actors && nodes === run.nodes) return run;
     clamped = true;
-    // 走规范键序：`truncated` 可能是这条 run 上的新键，直接展开会把它缀在对象尾部，
-    // 而同一份状态在别处（归约出口、增量 apply）都是 schema 序。
+    // Canonical key order: `truncated` may be a new key on this run, and a plain spread would trail it
+    // object-tail while the same state elsewhere (reducer egress, delta apply) is schema-ordered.
     return canonicalWorkflowRun({ ...run, actors, nodes, truncated: true });
   });
   return clamped ? { revision: state.revision, runs } : state;
 }
 
 /**
- * 裁到 `limit` 条：先按表序收下**还在动的**，名额有余再按表序补最早的条目，最后按**原表序**
- * 输出（两遍取下标、一遍 filter，所以顺序是表序而不是「活的在前」）。
+ * Trim to `limit`: keep the still-moving in table order, backfill oldest-by-table-order into spare slots, output
+ * in the **original table order** (two index passes, one filter -- table order, not live-first).
  *
- * 活条目本身多过名额时按表序取前 `limit` 条——这一条仍然要有界，旧消费者的校验界不接受
- * 任何解释。界内时返回同一个数组。
+ * Live entries alone over the limit: take the first `limit` by table order -- still bounded; the legacy compiled
+ * bound accepts no excuses. Under the bound, the same array returns.
  */
 function clampKeepingLive<T>(
   list: readonly T[],

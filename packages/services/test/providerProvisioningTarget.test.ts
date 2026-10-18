@@ -346,7 +346,7 @@ describe("Provider Provisioning Target", () => {
           credentials: [{ scope: "oauth-session", key: "ssh:password", value: "secret" }],
         }),
       ),
-    ).rejects.toThrow("不允许同步");
+    ).rejects.toThrow("Credential key not allowed for sync");
     expect(settingUpdate).not.toHaveBeenCalled();
   });
 
@@ -362,7 +362,7 @@ describe("Provider Provisioning Target", () => {
           ],
         }),
       ),
-    ).rejects.toThrow("不允许同步");
+    ).rejects.toThrow("Credential key not allowed for sync");
     expect(settingUpdate).not.toHaveBeenCalled();
   });
 });

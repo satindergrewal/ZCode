@@ -141,7 +141,10 @@ test("renders expanded thought content with plus and minus markers", () => {
   assert.equal(thoughtPlaceholderLabel(part, EN_COPY), "Thought");
   assert.ok(lines.some((line) => line.includes("- Thought")));
   assert.ok(lines.some((line) => line.includes("private thinking")));
-  assert.equal(lines.some((line) => line.includes("hidden")), false);
+  assert.equal(
+    lines.some((line) => line.includes("hidden")),
+    false,
+  );
   assert.equal(collectRootStyle(frame).marginBottom, 1);
 });
 

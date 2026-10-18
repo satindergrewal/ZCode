@@ -1,12 +1,12 @@
 node source
 node join#1 "join" @5:22 type="[string, string]"
-node ask#1 "alpha" @6:18 actors=actor#1 type="string"
-node ask#2 "beta" @7:17 actors=actor#2 type="string"
-node ask#3 "merger" @9:62 actors=actor#3 type="string"
+node ask#1 "alpha" @5:42 actors=actor#1 type="string"
+node ask#2 "beta" @5:74 actors=actor#2 type="string"
+node ask#3 "merger" @6:62 actors=actor#3 type="string"
 node sink
-actor actor#1 "alpha" @6:3
-actor actor#2 "beta" @7:3
-actor actor#3 "merger" @9:46
+actor actor#1 "alpha" @5:27
+actor actor#2 "beta" @5:60
+actor actor#3 "merger" @6:46
 edge source -> ask#1 data exact
 edge source -> ask#2 data exact
 edge join#1 -> ask#3 data inexact type="[string, string]"

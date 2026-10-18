@@ -136,8 +136,8 @@ export function createLocalMediaPreviewPathRegistry(
  */
 export function registerLocalMediaPreviewScheme(
   protocol: LocalMediaPreviewSchemeRegistrar,
-  // registerSchemesAsPrivileged 只能调用一次（后一次覆盖前一次），其他 privileged scheme
-  // （如插件 UI 沙箱的 zcode-sandbox）必须在这同一次调用里一起注册。
+  // registerSchemesAsPrivileged may be called once (the later call wins); other privileged schemes
+  // (such as the plugin UI sandbox's zcode-sandbox) must register in that same call.
   additionalSchemes: Array<{ scheme: string; privileges: Record<string, boolean> }> = [],
 ): void {
   protocol.registerSchemesAsPrivileged([

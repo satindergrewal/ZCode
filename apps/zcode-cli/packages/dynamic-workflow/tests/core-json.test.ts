@@ -11,16 +11,18 @@ import {
   type AnalysisCoreJson,
 } from "../src/index.js";
 
-// `AnalysisCore` 的 JSON 往返（docs/chat/workflow-portfolio.md「样例包格式」）：作品集把 core
-// 冻结成 core.json，站内投影全部在解码结果上算，所以解码结果必须与原 core 在规范文本上逐字节
-// 相同，且 Map 的插入序（emission 的确定性求值序）不能被往返打乱。整个语料库都过一遍——
-// 编解码器是按类型写的，任何一个 fixture 暴露出的形状（多端口 join、家族、detached 体、
-// 阶段词汇）都应该同样过得去。
+// AnalysisCore JSON round trips (the sample-bundle format in docs/chat/workflow-portfolio.md): the portfolio
+// freezes the core into core.json and every in-app projection computes over the decode, so the decode must match
+// the original byte-for-byte in canonical text, with Map insertion order (emission's deterministic evaluation
+// order) intact. The whole corpus runs through -- the codec is typed, so any shape a fixture exposes (multi-port
+// joins, families, detached bodies, phase vocab) must survive too.
 const graphsDir = join(dirname(fileURLToPath(import.meta.url)), "graphs");
 
-/** 真正走一遍 JSON 文本，而不只是对象层面的 encode/decode。 */
+/** Really walks JSON text, not just object-level encode/decode. */
 function roundTrip(core: AnalysisCore): AnalysisCore {
-  return decodeAnalysisCore(JSON.parse(JSON.stringify(encodeAnalysisCore(core))) as AnalysisCoreJson);
+  return decodeAnalysisCore(
+    JSON.parse(JSON.stringify(encodeAnalysisCore(core))) as AnalysisCoreJson,
+  );
 }
 
 function mapKeys(core: AnalysisCore): string[][] {
@@ -53,10 +55,12 @@ describe("AnalysisCore JSON codec", () => {
       withCore += 1;
       const decoded = roundTrip(core);
       expect(serializeCore(decoded)).toBe(serializeCore(core));
-      // 插入序：serializeCore 对 fact 分组按 sink id 排过序，单靠它看不出 Map 序被打乱。
+      // Insertion order: serializeCore sorts fact groups by sink id, hiding Map-order corruption on its own.
       expect(mapKeys(decoded)).toEqual(mapKeys(core));
-      // 编码是稳定的：再编码一次得到同一份 JSON 文本（导出器的 core.json 可 diff）。
-      expect(JSON.stringify(encodeAnalysisCore(decoded))).toBe(JSON.stringify(encodeAnalysisCore(core)));
+      // Encoding is stable: re-encoding yields the same JSON text (the exporter's core.json stays diffable).
+      expect(JSON.stringify(encodeAnalysisCore(decoded))).toBe(
+        JSON.stringify(encodeAnalysisCore(core)),
+      );
     });
   }
 
@@ -65,12 +69,12 @@ describe("AnalysisCore JSON codec", () => {
   });
 });
 
-/** 一份手工 core：语料里没有端口类型带洞的 join，这里直接构造一个。 */
+/** A hand-built core: the corpus lacks a hole-typed port join, so construct one. */
 function tinyCore(): AnalysisCore {
   return {
     facts: {
       askActor: new Map([["ask#2", [{ exact: true, site: "actor#1" }]]]),
-      // 故意用非字典序插入，检验往返不排序。
+      // Inserted in non-alphabetical order on purpose, proving the round trip never sorts.
       askData: new Map([
         ["ask#2", [{ exact: true, site: "ask#1" }]],
         ["ask#1", [{ exact: false, port: 1, site: "join#1" }]],
@@ -107,7 +111,14 @@ function tinyCore(): AnalysisCore {
       phases: [],
       regions: [
         { entered: true, id: "region#0", kind: "seq" },
-        { entered: true, id: "call#1", kind: "call", label: "helper", parent: "region#0", strand: true },
+        {
+          entered: true,
+          id: "call#1",
+          kind: "call",
+          label: "helper",
+          parent: "region#0",
+          strand: true,
+        },
         { entered: true, id: "call#2", kind: "call", parent: "region#0", strand: true },
       ],
       root: "region#0",
@@ -138,9 +149,7 @@ describe("AnalysisCore JSON codec: edge cases", () => {
     expect(serializeCore(decoded)).toContain('ports="A",-,"B"');
   });
 
-  // 并发词汇（analyzer-strands-plan.md「Trace changes」）是**加法式**的两个可选字段，所以
-  // core-json 仍停在 version 1：往返必须原样带回 `OrderRegion.strand` 与 `SettleEvent.joins`，
-  // 不然冻结在作品集里的 core.json 会把并发折回成一条串行时间线。
+  // The concurrency vocabulary (analyzer-strands-plan.md, Trace changes) is additive -- two optional fields -- so
   it("round-trips the strand flag and a settle's joins", () => {
     const core = tinyCore();
     const decoded = roundTrip(core);
@@ -153,8 +162,7 @@ describe("AnalysisCore JSON codec: edge cases", () => {
     expect(text).toBe(serializeCore(core));
   });
 
-  // 只 join 不结算的屏障：`steps` 为空数组，往返后仍必须是数组而不是缺席，否则冻结的
-  // core.json 会让控制流投影把那条 strand 永远停在 park 状态。
+  // A join-only barrier with empty steps must round-trip as an array, not absent -- else frozen core.json
   it("round-trips a join-only settle and prints it without a step token", () => {
     const core = tinyCore();
     const decoded = roundTrip(core);
@@ -173,8 +181,7 @@ describe("AnalysisCore JSON codec: edge cases", () => {
     expect([...decoded.types.siteType.keys()]).toEqual(["ask#2", "ask#1"]);
   });
 
-  // 留白的两个键（`sites.holes` / `facts.holeData`）是 2026-09-28 后加的：早于它冻结的样例包
-  // 没有这两个键，解码必须按「没有留白」补齐，而不是让投影在 undefined 上翻车。
+  // The two hole keys (sites.holes / facts.hole) postdate 2026-09-28: bundles frozen earlier lack them, and
   it("decodes a frozen core that predates holes (no holes / holeData keys)", () => {
     const encoded = encodeAnalysisCore(tinyCore());
     const { holeData: _holeData, ...facts } = encoded.facts;

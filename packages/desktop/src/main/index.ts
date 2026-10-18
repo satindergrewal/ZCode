@@ -276,9 +276,10 @@ import {
 registerLocalMediaPreviewScheme(protocol, [PLUGIN_SANDBOX_PRIVILEGED_SCHEME]);
 const localMediaPreviewPathRegistry = createLocalMediaPreviewPathRegistry();
 
-// e2e 由 Chromedriver 管理远程调试端口；如果这里继续固定到 9229，
-// 会和开发态已打开的 ZCode Dev 抢端口，导致 WebDriver session 创建前白屏超时。
-// 仅本地开发运行默认开启远程调试端口，并允许 e2e 通过环境变量交给 Chromedriver 接管。
+// e2e lets Chromedriver own the remote debugging port; keeping 9229 fixed here would race the
+// already-running ZCode Dev in dev mode and blank-screen before the WebDriver session is
+// created. Only local dev runs enable the port by default, and e2e may hand it to Chromedriver
+// via env.
 if (!app.isPackaged && process.env.ZCODE_DISABLE_FIXED_REMOTE_DEBUGGING_PORT !== "1") {
   app.commandLine.appendSwitch("remote-debugging-port", "9229");
 }
@@ -318,17 +319,20 @@ const linuxDesktopIntegrationIconPath =
     : iconPath;
 let currentApplicationLocale: Locale = DEFAULT_LOCALE;
 let closeToTrayOnWindows = true;
-// CR-01：托盘实例创建结果（模块级，关窗分支读取）。DBus 能力探测通过不等于 Electron
-// Tray 创建成功；隐藏窗口前必须确认最终用户入口真实存在，否则隐藏即失联。
+// CR-01: tray instance creation result (module-level, read by the close-to-tray branch).
+// A passing DBus capability probe does not mean the Electron Tray was created; before hiding
+// the window we must confirm the final user entry point really exists, otherwise hiding
+// strands the user.
 let desktopTrayReady = false;
-// 关闭驻留托盘能力 monitor（spec：docs/desktop/linux-close-to-tray.md）。
-// Linux 关窗分支是同步回调，只能读缓存；启动后首次探测完成前按"不可用"安全默认。
+// Close-to-tray capability monitor (spec: docs/desktop/linux-close-to-tray.md).
+// The Linux close branch is a synchronous callback and can only read caches; before the first
+// probe completes, default safely to "unavailable".
 const closeToTrayCapabilityMonitor = createCloseToTrayCapabilityMonitor({
   platform: process.platform,
 });
-// keep-awake：全局开关 keepAwakeWhileRunning。打开后主进程持有
-// powerSaveBlocker("prevent-app-suspension")，阻止系统闲置休眠（防不了合盖/手动睡眠）。
-// 不再绑定闲时任务活跃计数——设置页「常规」与 Automations 入口镜像同一配置。
+// keep-awake: global keepAwakeWhileRunning switch. When on, main holds
+// powerSaveBlocker("prevent-app-suspension") to block idle sleep (not lid close/manual sleep).
+// No longer tied to the off-peak active count -- Settings "General" and the Automations entry mirror the same flag.
 let keepAwakeWhileRunning = false;
 let powerSaveBlockerId: number | null = null;
 function reconcileKeepAwakeBlocker(): void {
@@ -340,7 +344,7 @@ function reconcileKeepAwakeBlocker(): void {
     try {
       powerSaveBlocker.stop(powerSaveBlockerId);
     } catch {
-      // 忽略：id 可能已失效。
+      // Ignore: the id may already be stale.
     }
     logger.info(`[keep-awake] powerSaveBlocker stopped id=${powerSaveBlockerId}`);
     powerSaveBlockerId = null;
@@ -359,10 +363,11 @@ ipcMain.on(PlatformChannels.EmbeddedBrowserJavaScriptDialog, (event, payload: un
     payload,
   );
 });
-// browser-use CDP-on-guest pivot：main 进程按 key 管理 `<webview>` guest 的
-// webContents + CDP，为 executor 提供 ControlledView。所有 execute/attach 出口都走这里。
-// BrowserGuestManager 虽是 main singleton，但 tab owner 带 window/workspace/session/generation；
-// create/close 只投递到 owner window，禁止旧的全窗口广播造成跨窗口 attach。
+// browser-use CDP-on-guest pivot: the main process tracks `<webview>` guest webContents + CDP
+// by key and hands ControlledView to the executor. Every execute/attach path goes through here.
+// BrowserGuestManager is a main singleton, but tab ownership carries window/workspace/session/
+// generation; create/close are delivered only to the owner window — no legacy whole-window
+// broadcast causing cross-window attach.
 const browserScreenshotSurfaceCoordinator = createDesktopBrowserScreenshotSurfaceCoordinator({
   fromId: (windowId) => BrowserWindow.fromId(windowId),
   fromWebContentsId: (webContentsId) => webContents.fromId(webContentsId) ?? null,
@@ -435,9 +440,10 @@ const browserGuestManager = new BrowserGuestManager(
   },
   browserScreenshotSurfaceCoordinator,
   {
-    // Browser shell/pageState 不跨进程恢复，以保持“完整退出即清空”的语义，
-    // 并避免恢复的 shell 与新 webview 重复 attach。因此不注入 recoveryStore；
-    // 进程内 residency 事件仍保留给现有 IPC 兼容层。
+    // Browser shell/pageState is not restored across processes, keeping the "full exit clears
+    // everything" semantics and avoiding a restored shell double-attaching with new webviews.
+    // Therefore do not inject recoveryStore; in-process residency events remain for the
+    // existing IPC compat layer.
     onSuspendTabRequested: (payload) => {
       const tabOwner = browserGuestManager.getTabOwner(payload.tabId);
       const win = tabOwner ? BrowserWindow.fromId(tabOwner.windowId) : null;
@@ -475,14 +481,14 @@ const browserGuestManager = new BrowserGuestManager(
         createElectronBrowserWebmRecorder(input, (message) => logger.debug(message)),
     },
   },
-  // 隐藏窗口截图的透明 presentation：capture 期间 showInactive + opacity 0 主动要帧。
+  // Transparent presentation for hidden-window screenshots: showInactive + opacity 0 while requesting frames.
   (windowId) => BrowserWindow.fromId(windowId),
 );
 setBrowserUseGuestWebContentsIdsProvider(() => browserGuestManager.listGuestWebContentsIds());
 
-// browser-use：带诊断日志地执行 browser 命令（两处 spawnHostProcess wiring 共用）。
-// 打入口/出口便于定位卡点（如 navigate loadURL 挂起、CDP 报错等）。
-// CDP-on-guest pivot：execute 走 browserGuestManager（不再传 win —— guest 已由 attachGuest 关联）。
+// browser-use: run browser commands with diagnostic logs (shared by both spawnHostProcess wirings).
+// Entry/exit logs localize stalls (navigate loadURL hangs, CDP errors, ...).
+// CDP-on-guest pivot: execute goes through browserGuestManager (no win -- the guest is bound by attachGuest).
 async function runBrowserCommandOnView(params: {
   win: BrowserWindow;
   requestId: string;
@@ -520,8 +526,8 @@ async function runBrowserCommandOnView(params: {
       resetsResizeBaseline,
     });
   };
-  // 交互说明：绝大多数 Tab API 都显式携带 tabId，可在命令真正执行前亮起操作图标；
-  // newTab / default-tab 兼容调用要等 manager 返回真实 meta.tabId 后再补发，避免猜 tab identity。
+  // Most Tab APIs carry an explicit tabId, so the operation icon can light up before execution;
+  // newTab/default-tab compat calls wait for the manager's real meta.tabId instead of guessing.
   if (requestedTabId) sendOperation(requestedTabId);
   logger.debug(
     `[browser-use] execute start browserId=${params.browserId ?? "legacy-iab"} sessionId=${params.sessionId} method=${method}`,
@@ -569,8 +575,8 @@ const WINDOWS_AGENT_FORCE_KILL_TIMEOUT_MS = 2_000;
 
 const broadcastHub = new BroadcastHub();
 const taskRealtimeBus = new TaskRealtimeBus({ logger });
-// 内存诊断计数器：desktopResourceTelemetry 每 60s collect
-// 一次写主日志。will-download 监听数用于观察关窗后 defaultSession 是否残留监听。
+// Memory diagnostics counters: desktopResourceTelemetry collects every 60s into the main log.
+// The will-download listener count tracks defaultSession listener leaks after window close.
 mainMemoryDiagnosticsRegistry.register("taskBus", () => taskRealtimeBus.collectMemoryDiagnostics());
 mainMemoryDiagnosticsRegistry.register("broadcast", () => broadcastHub.collectMemoryDiagnostics());
 mainMemoryDiagnosticsRegistry.register("guest", () =>
@@ -590,8 +596,9 @@ let runtimeProcessEnvPrewarmSequence = 0;
 function createRuntimeProcessEnvPreparation(): RuntimeProcessEnvPreparation {
   const prewarmId = ++runtimeProcessEnvPrewarmSequence;
   const startedAt = Date.now();
-  // Windows process.env 保留 Path 的原始大小写，展开到普通对象后不再大小写不敏感。
-  // dotenv 先合并、真实进程环境后合并，再统一成唯一 PATH，保持旧 Host 继承的优先级语义。
+  // Windows keeps the original case of Path in process.env; once spread into a plain object it
+  // is no longer case-insensitive. dotenv merges first, the real process env second, then it is
+  // unified into a single PATH, preserving the priority semantics the legacy Host inherited.
   const baseEnv = normalizeRuntimeProcessEnv(
     {
       ...hostProcessLocalEnv,
@@ -632,7 +639,7 @@ function createRuntimeProcessEnvPreparation(): RuntimeProcessEnvPreparation {
   return { patchPromise, fallbackPatch };
 }
 
-// 首窗在 Main import 时就开始采集；后续窗口各自刷新，避免永久复用进程启动时的 shell snapshot。
+// Capture for the first window at import time; later windows refresh their own, never reusing the process-start shell snapshot.
 let initialRuntimeProcessEnvPreparation: RuntimeProcessEnvPreparation | null =
   createRuntimeProcessEnvPreparation();
 function takeRuntimeProcessEnvPreparation(): RuntimeProcessEnvPreparation {
@@ -666,9 +673,9 @@ const windowsCuaOperationIndicator = createWindowsCuaOperationIndicator({
   logger,
 });
 
-// 常驻 cron scheduler 进程句柄；app ready 后拉起，退出前销毁。
+// Long-lived cron scheduler process handle; spawned on app ready, disposed before quit.
 let cronScheduler: CronSchedulerHandle | null = null;
-// host → main 的定时任务派发结果，转交给 scheduler 结算。经模块变量转发以避免 spawn 顺序耦合。
+// Host->main cron/off-peak results, forwarded to the scheduler for settlement via module vars to avoid spawn-order coupling.
 function forwardCronRunResult(
   result: Parameters<CronSchedulerHandle["handleCronRunResult"]>[0],
 ): void {
@@ -683,10 +690,10 @@ function wakeCronScheduler(automationId: string): void {
   cronScheduler?.wake(automationId);
 }
 function wakeOffPeakScheduler(offPeakTaskId?: string): void {
-  // 复用同一条 scheduler-wake 通道（tick 同时覆盖 cron 与 off-peak 分支），仅日志标签区分。
+  // Reuses the scheduler-wake channel (one tick covers both cron and off-peak branches); only the log label differs.
   cronScheduler?.wake(`offpeak:${offPeakTaskId ?? "sync"}`);
 }
-// 选一个本地 host 执行派发：本期本地 workspace 由任一本地窗口 host 的 createTask 按 path 拉起/复用 agent。
+// Pick a local host for dispatch: this phase lets any local window host's createTask spawn/reuse the agent by path.
 function resolveCronDispatchHost(): ElectronUtilityProcess | null {
   const first = windowHostProcessMap.values().next();
   return first.done ? null : first.value;
@@ -722,7 +729,7 @@ function resolveDesktopContextPromptEnabledForHost(): boolean {
   if (!rollout) {
     return false;
   }
-  // Host 创建时顺便触发过期刷新，但只读取当前快照；网络请求不能阻塞 Local/Remote Host。
+  // Host creation also triggers a stale-refresh, but only the current snapshot is read; network requests must never block Local/Remote Host.
   void rollout.refresh();
   return rollout.getSnapshot().enabled;
 }
@@ -740,13 +747,13 @@ function refreshMissionContinuationEnabledCache(settings: {
   missionContinuationEnabledCache = settings.missionContinuationEnabled === true;
 }
 
-// 首个 Host 创建前的有界灰度裁决门。Host/Agent 的 presentation surface 在进程启动时
-// 冻结（services/node.ts 顶层 const + CLI --surface），而灰度请求是旁路、不阻塞 Host。若首个
-// Host fork 早于请求 resolve，成功结果（enabled:true）对已冻结的 Host/Agent 无可达生效路径。
-// 这里给"成功结果"一条有界的生效路径：首 Host fork 前 await 一次裁决（≤2s），失败/超时仍按当前
-// 快照继续（desktopContextPrompt fail-open）。first-only 永久
-// latch——后续 Host fork await 已 resolve 的 promise（近乎 0ms），且各 resolve*ForHost()
-// 同步读取已被刷新的 live 快照。
+// Bounded gating decision before the first Host spawn. Host/Agent presentation surface freezes at
+// process start (services/node.ts top-level const + CLI --surface) while the rollout request is
+// sideband and non-blocking. If the first Host fork wins the race, a later enabled:true has no path
+// into the already-frozen Host/Agent. Give the success result one bounded path: await the decision
+// once before the first Host fork (<=2s); on failure/timeout continue with the current snapshot
+// (desktopContextPrompt fail-open). The latch is first-only -- later Host forks await an already
+// resolved promise (~0ms) and the resolve*ForHost() helpers read the refreshed live snapshot.
 const DESKTOP_FIRST_HOST_SPAWN_DECISION_TIMEOUT_MS = 2_000;
 let firstHostSpawnDecisionPromise: Promise<void> | null = null;
 function awaitFirstHostSpawnDecision(): Promise<void> {
@@ -767,7 +774,7 @@ function awaitFirstHostSpawnDecision(): Promise<void> {
         configVersion: decision.configVersion,
       });
     } catch (error) {
-      // awaitFirstDecision 永不 reject（refresh 内部已 catch + timeout 回退快照），此处仅兜底。
+      // awaitFirstDecision never rejects (refresh catches internally + timeout falls back to snapshot); this is just a backstop.
       logger.warn("[desktop-context-prompt] first host spawn decision failed, fail-open", {
         error,
       });
@@ -798,7 +805,7 @@ function reportRemoteUsageEventForRenderer(rendererId: number, event: TelemetryE
     });
     return;
   }
-  // 最终失败由 TelemetryCore 统一记录一条脱敏告警；这里仅隔离远程连接主链路。
+  // Terminal failure is logged once (redacted) by TelemetryCore; this only isolates the remote-connection hot path.
   void appTelemetryCore.reportEvent({ context, ...event }).catch(() => {});
 }
 
@@ -808,15 +815,15 @@ function syncAppTelemetryInteractiveState(): void {
       (win) => !win.isDestroyed() && win.isVisible() && win.isFocused(),
     ),
   );
-  // 登出/切号发生在 host 子进程，主进程无即时信号；窗口聚焦时兜底刷新 ARMS user.name
+  // Sign-out/account switch happens in host child processes with no immediate main-process signal; refresh ARMS user.name on focus as a backstop.
   void armsUserIdentitySync.refresh();
 }
 
 app.on("browser-window-focus", (_event, win) => {
   syncAppTelemetryInteractiveState();
   rebuildMenu();
-  // 设置/更新等无 Host 的 ZCode 窗口也算前台：router 会先把旧 workspace Host 清成 null，
-  // 再把无 Host 的新窗口事实静默丢弃，避免旧会话 PiP 继续显示。
+  // Settings/update windows without a Host still count as foreground: the router first clears the
+  // stale workspace Host to null, then silently drops the no-Host window fact so stale PiP goes away.
   cuaPipFocusRouter.focusWindow(resolveCuaPipWindowKey(win));
 });
 app.on("browser-window-blur", (_event, win) => {
@@ -846,14 +853,14 @@ const webRemoteControlSharedHostAttachments = createWebRemoteControlSharedHostAt
   logger,
 });
 const deviceMid = ensureDesktopDeviceMidSync();
-// 帮助配置是公开读取，不能复用下面附带账号鉴权的灰度响应缓存。
+// The help config is a public read; do not reuse the authed rollout response cache below.
 const readHelpConfig = createDesktopHelpConfigReader({
   appVersion: ZCODE_VERSION || app.getVersion(),
   deviceMid,
   resolveEndpointOrigin: resolveCurrentZCodeEndpointOrigin,
 });
-// 同一个 /api/v1/client/configs fetcher 供两个灰度 rollout 共用（请求参数与鉴权完全一致，
-// 各自独立缓存/去重，服务端按 data.configs.<key> 区分功能）。
+// One /api/v1/client/configs fetcher shared by both rollout consumers (identical params/auth,
+// independent caching/dedup; the server keys features by data.configs.<key>).
 const electronClientConfigsFetcher = createElectronDesktopContextPromptConfigFetcher({
   appVersion: ZCODE_VERSION || app.getVersion(),
   deviceMid,
@@ -1055,7 +1062,7 @@ const primaryWindowCoordinator = createPrimaryWindowCoordinator({
 
     return resolveStartupWindowBootstrap({
       settingsFile,
-      // dataBaseDir 可能在 bootstrap 设置阶段被覆盖，必须在真正解析启动工作区时再取值。
+      // dataBaseDir can still be overridden during bootstrap; resolve it only when actually resolving the startup workspace.
       conversationWorkspaceDir: getConversationWorkspaceDir(),
       logger,
     });
@@ -1068,8 +1075,8 @@ const primaryWindowCoordinator = createPrimaryWindowCoordinator({
       return true;
     }
 
-    // 强制升级命中后，Dock/托盘/activate/deep link 不能绕过 app-ready gate 创建旧版主界面。
-    logger.warn(`[force-update] 已阻止主窗口创建入口：${reason}`);
+    // Once force-update gates, Dock/tray/activate/deep-link must not bypass the app-ready gate into the old UI.
+    logger.warn(`[force-update] main window creation blocked: ${reason}`);
     focusForceUpdateGateWindow();
     return false;
   },
@@ -1108,8 +1115,8 @@ function syncImmediateAppSettings(patch: Partial<AppSettings>) {
   }
 
   if (typeof patch.receivePreviewUpdates === "boolean") {
-    // receivePreviewUpdates 由 renderer host 写入 setting.json。
-    // main 进程的自动更新器不会订阅 host 设置变化，必须借 syncAppSettings 这条即时通道刷新 manifest channel。
+    // receivePreviewUpdates is written by the renderer host. Main's auto-updater does not
+    // subscribe to host settings changes; refresh the manifest channel via this immediate channel.
     refreshAutoUpdaterReleaseChannel(
       patch.receivePreviewUpdates,
       "settings receivePreviewUpdates changed",
@@ -1117,10 +1124,10 @@ function syncImmediateAppSettings(patch: Partial<AppSettings>) {
   }
 
   if (patch.shortcutBindings !== undefined) {
-    // 快捷键改绑：
-    // 落盘已完成（useSettings.update 先 await settingService.update 再走本通道），
-    // 这里重建应用菜单 accelerator，并通知所有窗口刷新设置快照 —— 其他窗口的
-    // useAppKeyboard 生效表与设置页跟随更新。先例：setAutoDownloadAndInstallUpdates 的全窗口广播。
+    // Shortcut rebinding: persistence already done (useSettings.update awaits settingService.update
+    // first). Rebuild the app menu accelerators and notify every window to refresh its settings
+    // snapshot, so each window's useAppKeyboard effective map follows. Precedent: the
+    // setAutoDownloadAndInstallUpdates all-window broadcast.
     rebuildMenu();
     for (const win of getApplicationWindowsExcludingCuaIndicator()) {
       if (!win.isDestroyed()) {
@@ -1156,8 +1163,9 @@ async function prepareAppQuit(reason: string, kind: AppShutdownKind = "normal"):
   activeAppShutdownKind = selection.kind;
   activeAppShutdownPolicy = selection.policy;
   if (selection.upgraded && (hasPreparedAppQuit || appQuitPreparationInFlight)) {
-    // 更新请求可能晚于普通退出屏障。已创建的 4s timer 无法靠修改全局策略延长；
-    // 明确保留既有预算，并允许更新继续进入 fail-open 资源扫描和安装器。
+    // The update request can land after the normal exit barrier. The created 4s timer cannot be
+    // extended by mutating global policy; explicitly keep the existing budget and let the update
+    // proceed into fail-open resource scanning and the installer.
     logger.warn(
       `[app-quit] update install joined an existing normal shutdown barrier (${reason}); existing timers keep their original budget`,
     );
@@ -1173,8 +1181,9 @@ async function prepareAppQuit(reason: string, kind: AppShutdownKind = "normal"):
   markForceQuit(reason);
   windowsCuaOperationIndicator.dispose();
   browserScreenshotSurfaceCoordinator.dispose();
-  // Bug 根因：资源样本改为 5 分钟窗口后，退出仍直接 stop 会清空未满窗口的数据。
-  // 退出时只排空已存在的角色 / Agent 内存窗口，不启动新采样、目录扫描或外部探针。
+  // Regression root cause: after resource samples moved to a 5-minute window, a plain stop on
+  // exit would drop partially-filled window data. On exit, drain only existing role/agent memory
+  // windows; start no new sampling, directory scans or external probes.
   stopDesktopResourceTelemetry({ flushPendingWindows: true });
   stopDesktopZCodeDataSizeTelemetry();
   stopDesktopNetworkTelemetry();
@@ -1198,17 +1207,20 @@ async function prepareAppQuit(reason: string, kind: AppShutdownKind = "normal"):
   );
 
   appQuitPreparationInFlight = Promise.all([
-    // 退出屏障结束后再启动窗口尺寸写入，可能在 app.exit 前留下 setting.json.lock。
-    // 尺寸已在 resize 防抖或最大化状态变化时保存，退出屏障不再创建新的尺寸写入。
-    // 修复原因：Main 过去不会等待仍在发送的 /event/report，正常退出也会直接丢事件。
-    // 与其它 owner 并行进入既有屏障，最多等待 2 秒，避免 telemetry 串行放大退出预算。
+    // Starting the window-size write after the exit barrier could leave a setting.json.lock
+    // behind if app.exit fires first. Sizes are already saved on resize debounce or maximize
+    // changes; the exit barrier creates no new size writes.
+    // Fix: Main never used to wait for in-flight /event/report, dropping events even on normal
+    // exit. Join the existing barrier in parallel with the other owners, waiting at most 2s so
+    // telemetry does not serialize and stretch the exit budget.
     appTelemetryCore.flushPendingReports({ timeoutMs: 2_000 }),
     localTtftExporter.shutdown(),
     rendererActionTraceBroker.shutdown().catch((error) => {
       logger.warn(`[app-quit] renderer action trace shutdown failed (${reason}):`, error);
     }),
-    // 旧流程先等待 Cron 的 1.5s deadline，再启动 Host timer，导致声明的
-    // 4.5s/9s 退出总预算被串行放大。两类 owner 无关闭依赖，统一并行进入同一屏障。
+    // The old flow waited for Cron's 1.5s deadline before starting the Host timer, serially
+    // stretching the declared 4.5s/9s total exit budget. The two owner classes have no shutdown
+    // dependency; both join the same barrier in parallel.
     (async () => {
       try {
         await cronSchedulerToDispose?.dispose();
@@ -1216,8 +1228,9 @@ async function prepareAppQuit(reason: string, kind: AppShutdownKind = "normal"):
         logger.warn(`[app-quit] cron scheduler dispose failed (${reason}):`, error);
       }
     })(),
-    // remote session、attachment 和 transport 都由窗口 Host 持有；这里先清理
-    // Main 的请求关联，再由下方每窗口唯一 Host 的 shutdown barrier 释放真实连接与 Agent。
+    // Remote sessions, attachments and transports are owned by the per-window Host; clear Main's
+    // request correlations here first, then the unique per-window Host shutdown barrier below
+    // releases the real connections and agents.
     remoteSessionManager.disposeAllAndWaitForAppShutdown(reason),
     ...hostProcesses.map((child, index) =>
       disposeHostProcessAndWait(
@@ -1239,9 +1252,9 @@ async function prepareAppQuit(reason: string, kind: AppShutdownKind = "normal"):
       logger.error(`[app-quit] host process cleanup failed (${reason}):`, error);
     })
     .finally(() => {
-      // before-quit 是同步事件。只发 Dispose 就继续退出 main 的话，
-      // host 还没等到 agent 进程树的 SIGTERM/SIGKILL 兜底完成就被带走，zcode-cli 会被 init 接管成残留进程。
-      // 这里先拦截第一次退出，等待 host 清理完成后再放行第二次 app.quit。
+      // before-quit is synchronous. If main only sends Dispose and exits, the host is taken down
+      // before the agent tree's SIGTERM/SIGKILL backstop completes and zcode-cli gets reparented
+      // to init as a leftover. Intercept the first quit; release the second app.quit after host cleanup.
       hasPreparedAppQuit = true;
       appQuitPreparationInFlight = null;
     });
@@ -1255,10 +1268,10 @@ function exitPreparedApp(reason: string): never | void {
     flushMainE2ECoverage((error) => {
       logger.warn("[e2e-coverage] main coverage flush failed", error);
     });
-    // ChromeDriver 正在执行 deleteSession 时，Electron app.exit(0)
-    // 和进程内的 process.kill 都可能被 Electron 生命周期吞掉。这里只在 E2E
-    // run 身份明确、且 prepareAppQuit 已完成 host/agent 回收之后，启动独立系统
-    // 命令终止当前 PID；不按名称扫描，也不会影响产品退出或下一轮 session。
+    // ChromeDriver's deleteSession can swallow both Electron app.exit(0) and in-process
+    // process.kill. Only when the E2E run identity is explicit and prepareAppQuit has finished
+    // reaping hosts/agents, kill this PID via a standalone system command -- no name-based scan,
+    // no impact on product quit or the next session.
     const killer =
       process.platform === "win32"
         ? spawn("taskkill", ["/PID", String(process.pid), "/F"], {
@@ -1311,7 +1324,7 @@ async function execWithTimeout(
       try {
         process.kill(child.pid!, "SIGKILL");
       } catch {
-        // 进程可能已自行退出，忽略
+        // The process may already have exited on its own.
       }
     }, timeoutMs);
     child.on("close", (code, signal) => {
@@ -1395,8 +1408,9 @@ function logWindowsBundledRuntimeIntegrityDiagnostic() {
     return;
   }
 
-  // bundled runtime 缺失不一定影响用户当前 provider，启动阶段只静默落日志。
-  // 这样既能在下次用户日志里确认安装资源是否已损坏，也不会因为未使用的 provider 缺失打断启动。
+  // A missing bundled runtime does not necessarily affect the user's current provider; during
+  // startup only log it quietly. That still confirms in the next user log whether installed
+  // resources are corrupted, without aborting startup over an unused provider.
   logger.warn(
     `[startup] Windows bundled runtime missing providers: ${missingProviders.join(", ")} resources=${JSON.stringify(
       snapshotWindowsPackagedResources(process.resourcesPath),
@@ -1411,10 +1425,10 @@ async function prepareWindowsProcessesForUpdateInstall() {
   logWindowsPackagedResourceSnapshot("before-dispose");
 
   const resourceLockMarkers = resolveWindowsPackagedResourceLockMarkers(process.resourcesPath);
-  // prepareAppQuit 已经用同一屏障回收每窗口唯一 Host，并在 7.5 秒强杀、
-  // 9 秒收口；Windows 专项阶段不能再追加一轮等待，也不能用退出前记录的 Host/Agent PID
-  // 强杀，因为 PID 可能已经复用。这里只清理实时扫描仍引用随包资源的 runtime 进程，
-  // 当前 main/renderer 的最终退出交给 updater 与 NSIS。
+  // prepareAppQuit already reaped every per-window host under the same barrier (7.5s force-kill,
+  // 9s settle). This Windows-specific pass must not add another wait, and must not kill by
+  // PIDs recorded before quit -- they may be reused. Only terminate runtime processes whose live
+  // scan still references packaged resources; final main/renderer exit belongs to the updater/NSIS.
   const cleanup = await runWindowsUpdateProcessCleanup({
     resourceLockMarkers,
     lockReleaseGraceMs: WINDOWS_UPDATE_LOCK_RELEASE_GRACE_MS,
@@ -1437,10 +1451,12 @@ async function prepareWindowsProcessesForUpdateInstall() {
     return;
   }
 
-  // 少量 Windows 用户更新后安装目录里的 bundled agent 文件会缺失。
-  // 根因通常是 NSIS 覆盖 resources/glm 等目录时，旧 agent/helper 进程或杀软触发的残留进程仍持有句柄；
-  // 只杀 host 上报过的 agent pid 会漏掉未登记或已经脱离登记的后代。这里在更新前按命令行再扫描一次安装资源路径，
-  // 对仍引用随包资源的进程树做强制清理，降低半更新导致环境损坏的概率。
+  // On some Windows users, bundled agent files go missing in the install dir after an update.
+  // The usual root cause: while NSIS overwrites resources/glm and friends, old agent/helper
+  // processes or antivirus-spawned leftovers still hold handles. Killing only agent pids
+  // reported by the host misses unregistered or deregistered descendants, so before updating,
+  // re-scan install resource paths by command line and force-kill any process tree still
+  // referencing bundled resources, lowering the chance of a half-updated broken environment.
   logger.info(
     `[auto-update] Windows taskkill results: ${JSON.stringify(cleanup.terminationResults)}`,
   );
@@ -1459,7 +1475,7 @@ async function prepareWindowsProcessesForUpdateInstall() {
 }
 
 function shouldConfirmAppQuit() {
-  // 开发环境里的普通会话经常需要重启 Electron，只在 production 下拦截，避免打断调试。
+  // Dev sessions often need Electron restarts; gate only in production to stay debuggable.
   return ZCODE_ENV === "production" && getRunningAgentSessionCount() > 0;
 }
 
@@ -1474,7 +1490,7 @@ function confirmAppQuit(originWindow?: BrowserWindow | null) {
   const detailLines = [
     runningAgentSessionCount > 0
       ? isZh
-        ? `正在进行的会话：${runningAgentSessionCount} 个，退出后会被中断。`
+        ? `${runningAgentSessionCount} session(s) still running; quitting will interrupt them.`
         : `In-progress sessions: ${runningAgentSessionCount}. They will be interrupted after quitting.`
       : null,
   ].filter((line): line is string => line !== null);
@@ -1549,9 +1565,9 @@ async function handleZCodeEndpointChanged() {
   }
 }
 
-/** 快捷键设置页录制态（renderer 经 SetShortcutRecordingActive 同步）；true 时菜单摘除可配置 accelerator。 */
+/** Shortcut recording state synced from the renderer via SetShortcutRecordingActive; while true the menu drops configurable accelerators. */
 let shortcutRecordingActive = false;
-/** 发起录制的 webContents id；窗口关闭/崩溃时 renderer 不会发复位 IPC，main 侧据此收口。 */
+/** webContents id that started recording; the renderer sends no reset IPC on window close/crash, so main settles it here. */
 let shortcutRecordingOwnerWebContentsId: number | null = null;
 
 function setShortcutRecordingActive(active: boolean, ownerWebContentsId: number | null = null) {
@@ -1569,10 +1585,11 @@ function setShortcutRecordingActive(active: boolean, ownerWebContentsId: number 
 }
 
 /**
- * 录制态是跨进程的临时全局状态，收口不能依赖 renderer 合作——录制中关窗
- * 或渲染进程崩溃时 React cleanup 与复位 IPC 都不会执行，标志会永久为 true，之后所有
- * rebuildMenu（切语言/zoom/设置同步）都建出无 accelerator 的菜单且波及全部窗口。
- * 在既有窗口销毁清理里按发起 webContents 复位。
+ * Recording state is transient global state across processes; cleanup cannot rely on renderer
+ * cooperation — when a window closes or the renderer crashes mid-recording, neither React
+ * cleanup nor the reset IPC runs, the flag stays true forever, and every later rebuildMenu
+ * (language/zoom/settings sync) builds menus without accelerators across all windows.
+ * Reset by originating webContents in the existing window-destroyed cleanup.
  */
 function resetShortcutRecordingForWebContents(webContentsId: number) {
   if (!shortcutRecordingActive || shortcutRecordingOwnerWebContentsId !== webContentsId) {
@@ -1592,10 +1609,11 @@ function rebuildMenu() {
         zcodeEndpointSelection,
         executeDesktopCommand: executeDesktopCommandForApp,
         currentZoomLevel: resolveFocusedDesktopZoomLevel(),
-        // 菜单 accelerator 跟随用户快捷键设置（shortcutBindings 用户覆盖）
+        // Menu accelerators follow user shortcut settings (shortcutBindings overrides)
         shortcutBindings: settings.shortcutBindings,
-        // 快捷键录制态：摘掉可配置 accelerator，防止录制 menu 通道命令时按键直接触发原命令
-        // （macOS 系统菜单先于 renderer 吃掉按键，renderer 侧 preventDefault 拦不住）。
+        // Shortcut recording state: detach the configurable accelerator so pressing keys while
+        // recording via the menu channel does not trigger the original command (on macOS the
+        // system menu consumes keys before the renderer, where preventDefault cannot help).
         disableShortcutAccelerators: shortcutRecordingActive,
       });
     },
@@ -1638,9 +1656,9 @@ function syncUpdateStatusWindowChrome(win: BrowserWindow) {
   if (win.isDestroyed() || process.platform !== "darwin") {
     return;
   }
-  // 独立更新窗口的红绿灯位置不能只依赖 BrowserWindow 构造参数。
-  // macOS 在窗口 show / resize 后可能继续沿用 hidden titlebar 的默认坐标，
-  // 因此每次同步布局时都显式写入更靠上的按钮位置。
+  // The standalone update window's traffic-light position cannot rely on constructor args alone:
+  // macOS may keep hidden-titlebar defaults after show/resize, so write the higher button
+  // position on every layout sync.
   win.setWindowButtonPosition(UPDATE_STATUS_WINDOW_TRAFFIC_LIGHT_POSITION);
 }
 
@@ -1672,13 +1690,13 @@ function syncUpdateStatusWindowLayout(win: BrowserWindow) {
     win.setMaximumSize(UPDATE_STATUS_WINDOW_WIDTH, height);
   }
   if (bounds.width !== UPDATE_STATUS_WINDOW_WIDTH || bounds.height !== height) {
-    // 独立更新窗口复用页内 Dialog 的 240px 高度后，普通状态只有两行内容，
-    // footer 会吃掉剩余网格行形成大块空白；按状态收紧窗口高度，让内容贴合实际密度。
-    // 取消下载会从 download-progress 回到 update-available；这里同步 min/max 再 setSize，
-    // 避免 macOS 在非 resizable BrowserWindow 上沿用下载态高度，导致弹窗没有收回。
+    // Reusing the in-page Dialog's 240px height leaves the normal state with two content rows and
+    // the footer eating the rest of the grid as blank space; tighten window height per state so
+    // content matches its density. Cancelling download returns to update-available; sync min/max
+    // before setSize so macOS does not keep download-state height on a non-resizable window.
     if (shouldUseUpdateStatusWindowContentSize()) {
-      // Linux 的系统标题栏会占用 BrowserWindow 外框高度。
-      // 如果继续用 setSize 锁外框，WebContents 实际高度会少一截，底部按钮被裁掉。
+      // The Linux system titlebar takes space outside the BrowserWindow frame; using setSize would
+      // shrink the actual WebContents height and clip the bottom buttons.
       win.setContentSize(UPDATE_STATUS_WINDOW_WIDTH, height);
     } else {
       win.setSize(UPDATE_STATUS_WINDOW_WIDTH, height);
@@ -1723,8 +1741,8 @@ function openUpdateStatusWindow() {
     maximizable: false,
     fullscreenable: false,
     show: false,
-    // 更新状态已经从页内 Dialog 改成独立 BrowserWindow。
-    // 独立窗口应保留系统窗口控件，不能沿用页内弹窗时期的无边框透明窗口配置。
+    // The update state moved from an in-page dialog to a standalone BrowserWindow. The standalone
+    // window keeps system window controls; do not reuse the frameless transparent dialog config.
     frame: true,
     ...(process.platform === "darwin"
       ? {
@@ -1752,8 +1770,8 @@ function openUpdateStatusWindow() {
       additionalArguments: [`--device-id=${deviceMid}`],
     },
   });
-  // 更新窗口要保留系统窗口控件，但不能允许缩放或全屏。
-  // 构造参数之外再显式锁定一次，避免不同平台对标题栏控件能力的默认处理不一致。
+  // The update window keeps system window controls but must not zoom or fullscreen; lock it
+  // explicitly beyond constructor args -- platform defaults for titlebar controls differ.
   win.setResizable(false);
   win.setMinimizable(true);
   win.setMaximizable(false);
@@ -1796,8 +1814,8 @@ function openUpdateStatusWindow() {
     syncAutoUpdaterStateToWindow(win);
     syncReadyUpdateToWindow(win);
     syncPostUpdateReleaseNotesToWindow(win);
-    // 更新窗口在开发态或部分 macOS 渲染路径下不一定稳定触发 ready-to-show。
-    // 加载完成后也尝试显示，避免窗口已加载却保持隐藏，让更新入口看起来无响应。
+    // ready-to-show is not reliable in dev or on some macOS render paths; also attempt to show
+    // on dom-ready so a loaded window never sits hidden making the update entry look dead.
     setTimeout(showUpdateStatusWindow, 0);
   });
   win.once("ready-to-show", () => {
@@ -1807,8 +1825,9 @@ function openUpdateStatusWindow() {
     if (forceQuitRef.current || !isUpdateStatusWindowCloseLocked(getAutoUpdaterState())) {
       return;
     }
-    // 下载开始后更新窗口承担安装状态反馈，用户仍可最小化，但不能误关闭窗口。
-    // close 事件兜底拦截 native close / 快捷键路径，setClosable(false) 只负责系统控件状态。
+    // Once the download starts, the update window owns install-status feedback; the user may
+    // still minimize but must not close it accidentally. The close handler is the backstop for
+    // native close/shortcut paths; setClosable(false) only drives the system controls.
     event.preventDefault();
     if (win.isMinimized()) {
       win.restore();
@@ -1844,8 +1863,10 @@ function createWindowInstance(startupBootstrap: StartupWindowBootstrap = {}) {
         forceQuit: forceQuitRef.current,
         explicitQuitRequested: explicitQuitRef.current,
         closeToTray: closeToTrayOnWindows,
-        // 空缓存按不可用处理：隐藏前兜底确认托盘真的可渲染，防 GNOME 静默失败失联。
-        // CR-01：DBus 探测 ∧ Tray 实例创建成功才可隐藏；任一不满足按不可用走确认退出。
+        // Treat an empty cache as unavailable: before hiding, confirm the tray really renders,
+        // preventing silent GNOME failure from stranding the user.
+        // CR-01: hide only when the DBus probe passes AND the Tray instance was created;
+        // otherwise take the confirm-quit path as unavailable.
         closeToTraySupported: resolveCloseToTraySupported({
           platform: process.platform,
           desktopTrayReady,
@@ -1907,7 +1928,7 @@ function createWindowInstance(startupBootstrap: StartupWindowBootstrap = {}) {
             const { requestId: _requestId, ...registerInput } = input;
             return host.registerFromHost(registerInput);
           },
-          // Bugfix: bot service 运行在本地窗口 host 内，/reconnect 必须能从本地 host 请求 main 创建远端 session。
+          // Bugfix: the bot service runs inside the local window host; /reconnect must be able to ask main to create the remote session.
           handleBotRemoteWorkspaceReconnectRequest: async ({
             win,
             requestId,
@@ -1945,8 +1966,8 @@ function createWindowInstance(startupBootstrap: StartupWindowBootstrap = {}) {
             workspaceIdentity,
           }) => ({
             ok: true,
-            // Bugfix: Bot 远端连接状态必须按 workspaceIdentity/workspacePath 精确隔离。
-            // 只按 SSH target 判断会把同一台机器上的其他目录误判为当前 workspace 已连接。
+            // Bugfix: bot remote-connection status must be isolated by workspaceIdentity/workspacePath.
+            // Matching by SSH target alone misreads other directories on the same machine as connected.
             connected: remoteSessionManager.hasRemoteWorkspaceSessionForTarget(win, target, {
               workspacePath,
               workspaceIdentity,
@@ -1977,7 +1998,7 @@ function createWindowInstance(startupBootstrap: StartupWindowBootstrap = {}) {
               };
             }
           },
-          // browser-use：main 用 WebContentsView+CDP 执行命令。
+          // browser-use: main executes commands via WebContentsView+CDP.
           handleBrowserExecuteRequest: ({ win: browserWin, ...request }) =>
             runBrowserCommandOnView({ win: browserWin, ...request }),
         },
@@ -2015,8 +2036,9 @@ function createWindowInstance(startupBootstrap: StartupWindowBootstrap = {}) {
       unavailableWorkspacePath: startupBootstrap.unavailableWorkspacePath,
     },
     agentWarmupTargets: startupBootstrap.agentWarmupTargets,
-    // startupBootstrap 只标记 active workspace 是否不可用，但 local Host 会为所有
-    // 已恢复 workspace 建立后台索引。始终注入 canonical fallback，才能覆盖非 active 历史目录已删除的情况。
+    // startupBootstrap only marks whether the active workspace is unavailable, but the local
+    // Host builds background indexes for every restored workspace. Always inject the canonical
+    // fallback so deleted non-active history directories are covered too.
     agentSpawnFallbackCwd: getConversationWorkspaceDir(),
     deviceMid,
     runtimeProcessEnvPatchPromise: runtimeProcessEnvPreparation.patchPromise,
@@ -2040,13 +2062,13 @@ app.on("open-url", (event, url) => {
   event.preventDefault();
   const workspacePath = extractOpenWorkspacePathFromDeepLinkUrl(url);
   if (workspacePath && forceUpdateMainWindowCreationBlocked) {
-    logger.warn("[force-update] 已忽略强制升级期间的 open-url workspace 请求");
+    logger.warn("[force-update] open-url workspace request ignored during force-update gate");
     focusForceUpdateGateWindow();
     return;
   }
   if (workspacePath && getApplicationWindowsExcludingCuaIndicator().length === 0) {
-    // macOS 冷启动 Finder Service 会先触发 open-url，再创建首窗。
-    // 把目标目录按 deep link 来源记录，首窗 bootstrap 前仍要走确认 gate。
+    // macOS cold-start Finder Service fires open-url before the first window exists; record the
+    // directory as deep-link source so the confirmation gate still applies before first-window bootstrap.
     startupOpenWorkspaceRequest = { path: workspacePath, source: "deep-link" };
     if (app.isReady()) {
       void primaryWindowCoordinator.ensurePrimaryWindow("open-url-workspace");
@@ -2104,29 +2126,31 @@ app.whenReady().then(async () => {
   installLocalMediaPreviewProtocol(session.defaultSession.protocol, {
     isPathAuthorized: localMediaPreviewPathRegistry.isAuthorized,
   });
-  // 插件 UI 沙箱：注册表 + renderer 可调 IPC；scheme 的 privileged 注册已随 zcode-media 在 ready 前完成。
+  // Plugin UI sandbox: registry + renderer-callable IPC; the scheme's privileged registration
+  // already happened before ready along with zcode-media.
   installPluginSandboxHost({
     preloadPath: join(import.meta.dirname, "../preload/pluginSandbox.cjs"),
     rendererDir: join(import.meta.dirname, "../renderer"),
     aliasDir: join(import.meta.dirname, "../plugin-sandbox"),
-    // 开发模式 out/renderer 没有 shell 产物，从 renderer dev server 代理（同 cua-permission-panel 的做法）。
+    // Dev-mode out/renderer has no shell artifacts; proxy from the renderer dev server (same
+    // approach as cua-permission-panel).
     ...(!app.isPackaged && process.env["ELECTRON_RENDERER_URL"]
       ? { devServerUrl: process.env["ELECTRON_RENDERER_URL"] }
       : {}),
     logger: console,
-    // e2e L05（配额）：只在 e2e run 里允许缩小注册表容量。
+    // e2e L05 (quotas): allow shrinking the registry capacity only during e2e runs.
     ...(process.env.ZCODE_E2E_RUN_ID?.trim() &&
     Number.isInteger(Number(process.env.ZCODE_E2E_PLUGIN_SANDBOX_MAX_ENTRIES)) &&
     Number(process.env.ZCODE_E2E_PLUGIN_SANDBOX_MAX_ENTRIES) > 0
       ? { registryMaxEntries: Number(process.env.ZCODE_E2E_PLUGIN_SANDBOX_MAX_ENTRIES) }
       : {}),
   });
-  // Electron 的 net.request 只能在 app ready 后使用；灰度请求仍是旁路预热，不阻塞首个 Host。
+  // Electron's net.request requires app ready; rollout requests stay sideband warmup and never block the first Host.
   void desktopContextPromptRollout?.refresh();
   installBrowserRestoreBootstrapProtocol(
     session.fromPartition(EMBEDDED_BROWSER_PARTITION).protocol,
   );
-  // Bootstrap: 从设置文件读取自定义数据目录，在所有 host 进程启动前生效
+  // Bootstrap: read the custom data dir from settings before any host process starts.
   let loadedBootstrapLocale = false;
   let bootstrapSettings: AppSettings | undefined;
   try {
@@ -2138,18 +2162,20 @@ app.whenReady().then(async () => {
       loadedBootstrapLocale = true;
       currentApplicationLocale = bootstrapSettings.locale;
     }
-    // Linux 默认值归位迁移（spec：docs/desktop/linux-close-to-tray.md）：shared 迁移无平台
-    // 概念、曾把存量 Linux 用户归为 true，但 Linux 此前无设置入口，存量 true 非用户显式
-    // 选择；首次启动强制归位为默认关并落标记，之后尊重用户选择。
+    // Linux close-to-tray default migration (spec: docs/desktop/linux-close-to-tray.md): the
+    // shared migration has no platform concept and used to classify existing Linux users as
+    // true, but Linux had no settings entry before, so legacy true was never a user choice;
+    // force the default-off on first launch with a marker, then respect user choice.
     const closeToTrayBootstrap = resolveCloseToTrayBootstrapValue({
       platform: process.platform,
       stored: bootstrapSettings.closeToTrayOnWindows,
       linuxMigrationInitialized: bootstrapSettings.closeToTrayLinuxMigrationInitialized,
     });
-    // CR-02：必须 await 持久化完成再继续启动，renderer 设置页才不会读到文件旧值。
-    // 写失败时不阻断启动，但内存值回退为文件当前值（resolveCloseToTrayRuntimeValue）：
-    // 持久层不可写时维持"文件是唯一可信来源"，避免 main 按 false、设置页显示 true 的
-    // 双数据源；迁移在下次启动重试，失败期间保持迁移未完成的旧行为。
+    // CR-02: await persistence before continuing startup so the renderer settings page never
+    // reads a stale file. On write failure do not block startup, but revert the in-memory value
+    // to the current file value (resolveCloseToTrayRuntimeValue): while the persistence layer is
+    // unwritable, "the file is the single source of truth" avoids main=false / settings=true
+    // dual sources; migration retries next launch and keeps the not-migrated behavior meanwhile.
     let closeToTrayMigrationPersisted = true;
     if (closeToTrayBootstrap.needsLinuxMigration) {
       try {
@@ -2171,13 +2197,13 @@ app.whenReady().then(async () => {
     keepAwakeWhileRunning = bootstrapSettings.keepAwakeWhileRunning ?? false;
     currentDesktopZoomLevel = clampDesktopZoomLevel(bootstrapSettings.desktopZoomLevel ?? 0);
     currentDesktopWindowSize = bootstrapSettings.desktopWindowSize;
-    // 全局 keep-awake：启动时若设置已开，立刻持有 powerSaveBlocker，不必等设置变更事件。
+    // Global keep-awake: hold powerSaveBlocker immediately at startup if enabled, without waiting for a settings event.
     reconcileKeepAwakeBlocker();
   } catch {
-    // 读取失败不影响启动，使用默认 homedir
+    // Read failure must not block startup; fall back to the default homedir.
   }
 
-  // scheduler 也会打开 tasks-index；等 Host 完成统一准备，避免在启动页出现前抢先迁移。
+  // The scheduler also opens tasks-index; wait for unified host preparation so it never migrates before the startup screen.
   configureDatabaseStartupQuit(() => {
     markExplicitQuit("database-startup-exit");
     app.quit();
@@ -2188,7 +2214,7 @@ app.whenReady().then(async () => {
         hostProcessLocalEnv,
         logger,
         resolveDispatchHost: resolveCronDispatchHost,
-        // keep-awake 已改为纯设置驱动；计数上报保留给后续诊断/配额用途，不再联动 blocker。
+        // keep-awake is purely settings-driven now; count reporting remains for diagnostics/quota and no longer drives the blocker.
         onOffPeakActiveCountChanged: () => {},
       });
     } catch (error) {
@@ -2197,8 +2223,8 @@ app.whenReady().then(async () => {
   });
 
   if (process.platform === "win32") {
-    // 打包态必须与 NSIS 快捷方式使用同一 AUMID，否则 Shell 把它们当成不同应用。
-    // 使用构建期产品身份，不依赖用户机器环境；开发态继续保持独立身份。
+    // Packaged builds must share the NSIS shortcut's AUMID or Shell treats them as different apps.
+    // Use build-time product identity, independent of machine env; dev keeps its own identity.
     app.setAppUserModelId(
       resolveWindowsAppUserModelIdForFlavor(ZCODE_PRODUCT_FLAVOR, { isPackaged: app.isPackaged }),
     );
@@ -2228,8 +2254,9 @@ app.whenReady().then(async () => {
     logger.warn("[desktop-network] Chromium network policy bootstrap failed:", error);
   }
 
-  // 内置浏览器权限闸门（CNVD 未授权访问修复）：必须在任何 guest attach 前完成注册。
-  // 弹窗桥把策略决策点接到主窗口 UI；store 落盘「访问此网站时允许/阻止」的站点同意记录。
+  // Built-in browser permission gate (CNVD unauthorized-access fix): must be registered before
+  // any guest attach. The dialog bridge connects policy decision points to the main-window UI;
+  // the store persists per-site allow/block-on-visit consent records.
   const embeddedBrowserPermissionUiBridge = createEmbeddedBrowserPermissionUiBridge({ logger });
   embeddedBrowserPermissionUiBridge.registerResolveListener();
   setActiveEmbeddedBrowserPermissionUiBridge(embeddedBrowserPermissionUiBridge);
@@ -2250,10 +2277,10 @@ app.whenReady().then(async () => {
   await hydratePendingPostUpdateReleaseNotes(mainSettingService);
   logWindowsBundledRuntimeIntegrityDiagnostic();
 
-  // 启动自动更新检查（后台执行，不阻塞主界面）
-  // Preview 身份无论连接哪个后端都不自动更新：stable feed 上只分发正式 ZCode 安装包，
-  // 不向 Preview 渠道提供更新。构建期未启用自动更新时同样不更新
-  // （见 docs/desktop/build-time-optional-capabilities.md）。
+  // Kick off the update check in the background.
+  // Preview flavor never auto-updates regardless of backend: the stable feed only ships
+  // No updates for the Preview channel. Also no updates when auto-update is not enabled at
+  // build time (see docs/desktop/build-time-optional-capabilities.md).
   void initAutoUpdater({
     // Privacy hardening: disable auto-update checks. The update manifest request reports
     // device_mid, and installing official builds would silently overwrite this hardened
@@ -2300,9 +2327,11 @@ app.whenReady().then(async () => {
     },
     logger,
   };
-  // CR-01：托盘实例是否创建成功必须成为可隐藏能力的一部分。DBus watcher 只能证明桌面
-  // 可能有 host，new Tray() 仍可能因图标缺失/会话未就绪抛错；此时隐藏窗口会让用户失去
-  // 唯一入口（失联）。trayReady 由创建结果置位，关窗与设置页能力查询都读它。
+  // CR-01: whether the Tray instance was created must be part of the can-hide capability. A
+  // DBus watcher only proves a desktop host might exist; new Tray() can still throw on missing
+  // icons or unready sessions, and hiding then would remove the user's only entry point.
+  // trayReady is set by the creation result; both the close branch and the settings capability
+  // query read it.
   if (process.platform === "win32") {
     desktopTrayReady = createDesktopTray(desktopTrayOptions) !== null;
   }
@@ -2311,9 +2340,11 @@ app.whenReady().then(async () => {
     if (process.platform !== "linux" || desktopTrayReady) {
       return;
     }
-    // Linux 托盘创建跟随能力而非设置开关（spec：docs/desktop/linux-close-to-tray.md）：
-    // 无 StatusNotifierWatcher 的桌面（GNOME 默认）上 new Tray() 静默失败，注册无人渲染的
-    // DBus name 没有意义；能力探测通过后再创建。用户装扩展后经设置页查询也会走到这里补建。
+    // Linux tray creation follows capability, not the settings switch (spec:
+    // docs/desktop/linux-close-to-tray.md): on desktops without StatusNotifierWatcher (GNOME
+    // default) new Tray() fails silently and registering an unrendered DBus name is pointless;
+    // create only after the capability probe passes. When the user installs the extension, the
+    // settings-page query path reaches here and creates it retroactively.
     const capability = await closeToTrayCapabilityMonitor.refresh();
     if (capability.supported) {
       desktopTrayReady = createDesktopTray({ ...desktopTrayOptions, platform: "linux" }) !== null;
@@ -2328,7 +2359,7 @@ app.whenReady().then(async () => {
   registerPlatformIpcHandlers({
     fetchHelpConfig: readHelpConfig,
     logger,
-    // CDP-on-guest pivot：renderer `<webview>` dom-ready 上报 guest webContentsId → attach。
+    // CDP-on-guest pivot: renderer `<webview>` dom-ready reports guest webContentsId -> attach.
     attachBrowserGuest: (key, webContentsId, options) => {
       const result = browserGuestManager.attachGuest(key, webContentsId, options);
       if (result.ok && options?.windowId !== undefined) {
@@ -2379,8 +2410,8 @@ app.whenReady().then(async () => {
         homeDir: app.getPath("home"),
         logger,
       });
-      // Windows Explorer 右键菜单是注册表持久项，renderer 切换语言不会自动刷新。
-      // 这里跟 macOS Finder Service 一样在 locale 变化时重写菜单文案，避免继续显示旧语言。
+      // Windows Explorer context entries are persistent registry items; a renderer locale switch does not refresh them.
+      // Like the macOS Finder Service, rewrite the entries on locale change to avoid stale language.
       await installWindowsOpenFolderContextMenu({
         platform: process.platform,
         executablePath: process.execPath,
@@ -2432,9 +2463,12 @@ app.whenReady().then(async () => {
     syncWebRemoteControlTasks: (windowId, tasks) =>
       webRemoteControlManager.syncAvailableTasks(windowId, tasks),
     syncAppSettings: syncImmediateAppSettings,
-    // 设置页置灰查询：monitor 带 stale 缓存，装完 AppIndicator 扩展重开设置页即可刷新。
-    // 设置页置灰查询：先确保托盘实例就绪（用户装扩展后首次查询会补建），再返回合并了
-    // trayReady 的最终能力，避免设置页显示可开启但关窗实际走确认退出的不一致（CR-01）。
+    // Settings greyed-out query: the monitor carries a stale cache; reopening settings after
+    // installing the AppIndicator extension refreshes it.
+    // Settings greyed-out query: first ensure the tray instance exists (the first query after
+    // the user installs the extension creates it), then return the final capability merged with
+    // trayReady, avoiding settings showing "can enable" while close-to-tray actually confirm-
+    // quits (CR-01).
     refreshCloseToTrayCapability: async () => {
       await ensureLinuxDesktopTray();
       const capability = await closeToTrayCapabilityMonitor.refresh();
@@ -2487,10 +2521,10 @@ app.whenReady().then(async () => {
     listSSHConfigAliases,
   });
 
-  // 等待 ARMS 完成 init（含渲染进程注入监听），避免首窗 dom-ready 早于 SDK 注册导致无上报
+  // Wait for ARMS init (including renderer injection listeners) so the first dom-ready never beats SDK registration.
   await armsInitPromise;
 
-  // ARMS init 完成后首次写入 user.name（落 device_mid）
+  // First user.name write (device_mid) after ARMS init.
   void armsUserIdentitySync.refresh();
 
   // Privacy hardening: with telemetry hard-disabled the ARMS SDK never initializes, so the
@@ -2522,7 +2556,7 @@ app.whenReady().then(async () => {
   }
   registerDesktopStabilityMonitors(logger, crashCapturePaths);
   registerDesktopResourceTelemetry(logger);
-  // 主窗口 renderer 的 60 秒 heap 样本入口；随 App 生命周期常驻，只注册一次。
+  // 60s heap sample entry for the main window renderer; lives for the app lifetime, registered once.
   registerRendererHeapSampleIpc();
   const defaultDataBaseDir = process.env.HOME?.trim() || homedir();
   registerDesktopZCodeDataSizeTelemetry({
@@ -2543,12 +2577,12 @@ app.whenReady().then(async () => {
   });
   registerDesktopNetworkTelemetry(logger);
 
-  // 本地未打包 dev 构建（app.isPackaged === false）必须跳过远端强制升级 gate。
-  // 原因：force-update gate 只看 ZCODE_ENV === "production"，但 dev 构建（如 dev:desktop:cua
-  // 连真实后端测 computer use）虽指向 production 后端，版本号却滞后于线上 release（feature
-  // 分支不 bump 版本），会被 release minimalVersion 误判为"需强制升级"而启动秒退。force-update
-  // 是面向打包发布客户端的安全门，对未打包 dev 运行时无意义。打包版 app.isPackaged === true，
-  // gate 照常生效，对真实用户零影响。
+  // Unpackaged local dev builds (app.isPackaged === false) must skip the remote force-update gate.
+  // The gate only checks ZCODE_ENV === "production", but dev builds pointed at production (e.g.
+  // dev:desktop:cua testing computer use) carry versions behind the live release (feature branches
+  // do not bump versions) and would be force-updated into an instant exit. Force-update is a
+  // safety gate for packaged releases; it is meaningless for unpacked dev runtimes. Packaged
+  // builds (app.isPackaged === true) keep the gate with zero user impact.
   const skipForceUpdateForLocalDevRuntime = !app.isPackaged;
   const forceUpdateGuardResult =
     ZCODE_PRODUCT_FLAVOR === "production" && !skipForceUpdateForLocalDevRuntime
@@ -2562,15 +2596,15 @@ app.whenReady().then(async () => {
         })
       : { blocked: false };
   if (ZCODE_PRODUCT_FLAVOR !== "production") {
-    logger.info("[force-update] Preview 跳过远端强制升级检查");
+    logger.info("[force-update] Preview flavor skips remote force-update check");
   } else if (skipForceUpdateForLocalDevRuntime) {
-    logger.info("[force-update] 本地 dev 构建（未打包）跳过远端强制升级检查");
+    logger.info("[force-update] local dev build (unpackaged) skips remote force-update check");
   }
   if (forceUpdateGuardResult.blocked) {
     return;
   }
 
-  logger.info("[startup] 创建主窗口");
+  logger.info("[startup] creating main window");
   await primaryWindowCoordinator.ensurePrimaryWindow("app-ready");
 
   const primaryWindow = getApplicationWindowsExcludingCuaIndicator()[0];
@@ -2578,15 +2612,15 @@ app.whenReady().then(async () => {
     scheduleReportPerfAppStartAfterMainViewReady(primaryWindow.webContents, logger);
   }
 
-  // 启动后检测 CPU 架构是否匹配（如 Apple 芯片误装 x64 版本经 Rosetta 转译运行），
-  // 命中后异步弹框提示安装原生架构版本，不阻塞主界面。
+  // Detect CPU architecture mismatch after startup (e.g. x64 build running under Rosetta on
+  // Apple silicon) and prompt for the native build asynchronously without blocking the UI.
   void maybeWarnArchitectureMismatch({
     locale: currentApplicationLocale,
     logger,
     parentWindow: getApplicationWindowsExcludingCuaIndicator()[0] ?? null,
     icon: nativeImage.createFromPath(iconPath),
   }).catch((error) => {
-    logger.warn("[architecture] 架构检测弹框失败:", error);
+    logger.warn("[architecture] architecture check dialog failed:", error);
   });
 
   const protocolUrl = extractDeepLinkUrlFromArgs(process.argv);
@@ -2608,16 +2642,17 @@ app.on("browser-window-created", (_, win) => {
     if (windowUnreadCountMap.delete(win.id)) {
       syncApplicationUnreadBadge(windowUnreadCountMap);
     }
-    // Electron 进入 closed 回调时，win.webContents 可能已经被销毁。
-    // 之前这里现取 win.webContents.id，会在关窗收尾阶段抛出 "Object has been destroyed"。
-    // 改为在窗口创建时缓存 webContents id，确保清理 OAuth 路由时不再访问已销毁对象。
+    // By the closed callback, win.webContents may already be destroyed; reading it here used to
+    // throw "Object has been destroyed" during teardown. Cache the webContents id at creation so
+    // OAuth route cleanup never touches destroyed objects.
     clearOAuthRoutesForWindow(windowWebContentsId);
-    // 录制中关窗/崩溃时 renderer 不会发复位 IPC，这里按发起 webContents 复位录制态，
-    // 防止菜单 accelerator 被永久摘除。
+    // When a window closes or the renderer crashes mid-recording, no reset IPC arrives; reset
+    // the recording state by originating webContents here so menu accelerators are not
+    // permanently detached.
     resetShortcutRecordingForWebContents(windowWebContentsId);
   });
-  // 渲染进程崩溃但窗口存活时 closed 不会触发，崩溃路径同样按 owner 复位
-  // （owner 不匹配时天然幂等）。
+  // When the renderer crashes but the window survives, closed never fires; the crash path
+  // resets by owner too (naturally idempotent on owner mismatch).
   win.webContents.on("render-process-gone", () => {
     resetShortcutRecordingForWebContents(windowWebContentsId);
   });
@@ -2631,12 +2666,12 @@ app.on("window-all-closed", () => {
   app.quit();
 });
 app.on("before-quit", (event) => {
-  // Windows 最后窗口关闭会在 close 阶段提前确认并标记 forceQuit；
-  // macOS 的 Cmd+Q / 菜单退出不会走该窗口关闭确认，必须在 before-quit 保留应用级确认兜底。
+  // Closing the last window on Windows confirms early and marks forceQuit; macOS Cmd+Q / menu quit
+  // skips that window-close confirmation, so keep the app-level confirmation here as a backstop.
   if (!forceQuitRef.current && shouldConfirmAppQuit() && !confirmAppQuit()) {
     event.preventDefault();
-    // 托盘退出等显式退出如果被确认框取消，不能继续保留 explicitQuit。
-    // 否则用户下一次点 Windows 关闭按钮会绕过“隐藏到托盘”设置，误触发完整退出路径。
+    // Explicit quits (tray etc.) cancelled by the dialog must drop explicitQuit, or the next
+    // Windows close button would bypass hide-to-tray and trigger a full quit.
     explicitQuitRef.current = false;
     return;
   }
@@ -2649,10 +2684,10 @@ app.on("before-quit", (event) => {
       logger.info(
         `[app-quit] preparation finished, resuming quit with windows=${remainingWindows.length}`,
       );
-      // ChromeDriver 关闭最后一个 renderer 后才触发 app.quit 时，
-      // 第一次 before-quit 会被异步 host 清理拦截；清理完成时窗口可能仍处于
-      // closing 状态，此时重入 app.quit 会被 Electron 忽略，ChromeDriver 会等待
-      // 约 70 秒。这里把最后一次退出绑定到真实 closed 事件，不依赖超时猜测。
+      // When ChromeDriver's app.quit races the async host cleanup, the first before-quit is
+      // intercepted; by completion windows may still be closing and a reentrant app.quit would be
+      // ignored, stalling ChromeDriver ~70s. Bind the final exit to the real closed event instead
+      // of guessing with timeouts.
       if (remainingWindows.length === 0) {
         exitPreparedApp("no-windows-after-preparation");
         return;

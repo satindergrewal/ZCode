@@ -1,6 +1,6 @@
 import type { HttpClientPort, Logger } from "@zcode/contracts";
 
-/** 由 bootstrap 注入的运行环境；实现不得修改 Provider 的持久化配置。 */
+/** The runtime environment, injected by bootstrap; implementations never mutate the provider's persisted config. */
 export interface ProviderEndpointRoutingFactoryOptions {
   endpointOrigin: string;
   appVersion?: string;

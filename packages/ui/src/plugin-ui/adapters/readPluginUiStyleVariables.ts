@@ -2,8 +2,8 @@ import type { McpAppsStyleVariables } from "@zcode/shared/mcp-apps";
 import { buildPluginUiStyleVariables } from "../domain/pluginUiStyleVariables.js";
 
 /**
- * 从宿主根元素读主题 token 的计算值（`.dark` / zai 主题类切换后随之变化），
- * 非 DOM 环境（单测、SSR）全部落到兜底值。
+ * Read theme tokens' computed values from the host root (follows .dark / zai theme class flips);
+ * non-DOM (tests, SSR) always falls back.
  */
 export function readPluginUiStyleVariables(): McpAppsStyleVariables {
   if (typeof document === "undefined" || typeof getComputedStyle !== "function") {

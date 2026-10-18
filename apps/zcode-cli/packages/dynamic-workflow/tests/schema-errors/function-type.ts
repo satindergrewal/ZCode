@@ -1,4 +1,4 @@
-// 函数类型不可序列化 —— 拒绝（顶层函数类型与对象上的方法成员都算）。
+// Function types are not serializable -- reject (top-level functions and object methods alike).
 interface WithMethod {
   transform: (input: string) => number;
 }

@@ -1,5 +1,5 @@
-// 会话派生（stable fork / 编辑前分叉 / 辅助对话）的常驻 Selection 推导。
-// 从 v4-bridge 抽出：这些函数是纯选型推导，与网关接线无关，需要独立回归测试。
+// Resident-Selection derivation for session derivatives (stable fork / pre-edit fork / side conversation).
+// Extracted from v4-bridge: pure selection logic, no gateway wiring, independently regression-tested.
 import type { ModelSelection } from "@zcode/contracts";
 import { isHighspeedProviderId } from "@zcode/shared";
 
@@ -19,7 +19,7 @@ export function modelSelectionWithOptionFallback(
   fallback: ModelSelection | undefined,
 ): ModelSelection | undefined {
   if (!selection) return fallback && cloneModelSelection(fallback);
-  // 兼容旧 fork 消息可能缺少 reasoning；输出预算属于单次请求，不属于 Selection。
+  // Legacy forks may lack reasoning; the output budget is per-request, not part of the Selection.
   const reasoningLevel = selection.options?.reasoningLevel ?? fallback?.options?.reasoningLevel;
   return {
     providerId: selection.providerId,
@@ -29,14 +29,14 @@ export function modelSelectionWithOptionFallback(
 }
 
 /**
- * 派生会话的初始常驻 Selection：优先继承分叉点消息上的选型，加速卡选型必须跳过。
+ * The derived session's initial resident Selection: inherit the fork-point message's, skipping speed-up card selections.
  *
- * Bug 根因：加速轮的 user/assistant 消息按 highspeed-card-spec §5 记录本轮真实执行模型
- * `account:*-highspeed-card`，那是 `selectionScope=execution` 的单轮事实，只有与同一轮
- * requestAuth 成对才有效（加速轮从不改写会话常驻 Selection）。派生会话直接继承这条消息选型，
- * 子会话就常驻在一个无凭据、模型列表里也不存在的加速 Provider 上：用户看到「加速中的会话
- * 分叉后原模型没带过来」，子会话首次发送还会以 ModelRequestAuthMissing 失败。跳过加速选型后
- * 退回父会话常驻 Selection——加速期间它正是用户的原模型（与 §3 规则 13 同一口径）。
+ * Root cause: speed-up turns record the turn's real execution model per highspeed-card-spec 5 on user/assistant messages
+ // as account:*-highspeed-card, a selectionScope=execution single-turn fact valid only paired with that turn's
+ // requestAuth (speed-up turns never rewrite the resident Selection). Inherit it directly and the child session
+ // resides on a credential-less speed-up provider absent from the model list: the user sees "the original model
+ // did not come over" and the child's first send fails with ModelRequestAuthMissing. Skipping speed-up selections
+ // falls back to the parent's resident — during speed-up that is exactly the user's original model (same basis as 3, rule 13).
  */
 export function derivedSessionModelSelection(
   messageSelection: ModelSelection | undefined,

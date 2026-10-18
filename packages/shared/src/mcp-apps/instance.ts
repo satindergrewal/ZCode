@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-/** Agent 签发的内存凭证；Main 的 initId 只用于端口握手。 */
+/** In-memory credential issued by the agent; Main's initId is for the port handshake only. */
 export const mcpAppInstanceSchema = z
   .object({
     runtimeId: z.string().min(1),

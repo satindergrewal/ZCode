@@ -187,9 +187,12 @@ export async function reconnectRemoteWorkspaceHistoryEntry({
         workspaceIdentity: resolvedWorkspaceIdentity,
       })
     ) {
-      logger.warn("[Root] Remote workspace removed during reconnect; skipping restore and recycling the session", {
-        workspacePath: resolvedWorkspacePath,
-      });
+      logger.warn(
+        "[Root] Remote workspace removed during reconnect; skipping restore and recycling the session",
+        {
+          workspacePath: resolvedWorkspacePath,
+        },
+      );
       await disposeRemoteWorkspaceSession(sessionId);
       return;
     }
@@ -240,7 +243,7 @@ export async function reconnectRemoteWorkspaceHistoryEntry({
     ]);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-      logger.warn("[Root] Manual reconnect of the remote workspace failed", {
+    logger.warn("[Root] Manual reconnect of the remote workspace failed", {
       workspacePath: resolvedWorkspacePath,
       error: message,
     });

@@ -23,45 +23,45 @@ export interface DynamicWorkflowRunSettledNotice {
 }
 
 interface RunServiceLifecycleDeps {
-    /** Read-only `getRun`: foreign-terminal detection needs the row's status. */
+  /** Read-only `getRun`: foreign-terminal detection needs the row's status. */
   journal: Pick<JournalStorePort, "getRun">;
   logger?: Logger;
   parentSessionId: string;
-    /** See the service's `DynamicWorkflowRunServiceDeps.registerResidencyBlockingWork` (invariant 6). */
+  /** See the service's `DynamicWorkflowRunServiceDeps.registerResidencyBlockingWork` (invariant 6). */
   registerResidencyBlockingWork?: (work: Promise<unknown>) => void;
-    /** The service's registry itself (not a snapshot): settle evicts old terminal entries, close enumerates live ones, foreign-rows sets the mark. */
+  /** The service's registry itself (not a snapshot): settle evicts old terminal entries, close enumerates live ones, foreign-rows sets the mark. */
   runs: Map<string, RunRegistryEntry>;
 }
 
 interface RunServiceLifecycle {
-    /** Runs not yet settled (entries with `terminal === undefined` in the registry). */
+  /** Runs not yet settled (entries with `terminal === undefined` in the registry). */
   countLiveRuns(): number;
-    /** Subscribes settlement notices (sent after bookkeeping; listener errors only log). Returns the unsubscribe fn. */
+  /** Subscribes settlement notices (sent after bookkeeping; listener errors only log). Returns the unsubscribe fn. */
   subscribeRunSettled(listener: (notice: DynamicWorkflowRunSettledNotice) => void): () => void;
-    /** Settlement bookkeeping (shared by submit / amend / resume): terminal into entry, failure normalized, residency registered. Never rejects. */
+  /** Settlement bookkeeping (shared by submit / amend / resume): terminal into entry, failure normalized, residency registered. Never rejects. */
   trackSettlement(
     runId: string,
     entry: RunRegistryEntry,
     launched: Promise<RunSettlement>,
   ): Promise<RunSettlement>;
-    /** See {@link createRunServiceLifecycle}'s close note. Idempotent. */
+  /** See {@link createRunServiceLifecycle}'s close note. Idempotent. */
   close(): Promise<void>;
-    /** A launch after close is a wiring error: throw, rather than adding a member to contracts' rejection enum. */
+  /** A launch after close is a wiring error: throw, rather than adding a member to contracts' rejection enum. */
   assertOpen(): void;
-    /** A terminal row under a live entry => foreign write; one warn per entry. */
+  /** A terminal row under a live entry => foreign write; one warn per entry. */
   noteForeignTerminalRow(runId: string): void;
 }
 
 /**
-  * Close (service-header invariant 7).
+ * Close (service-header invariant 7).
  *
-  * The engine is a closure of this App (actor runtimes, event wiring, cancel controllers, settlement
-  * promises live here); once the App closes it has no host, while journal rows sit at running -- the next activation could
-  * only guess via orphan convergence. So close **stops actively**: abort every in-flight entry with `"interrupted"`; the harness normalizes
-  * to `engine.stop("interrupted", Interrupted)` and the engine itself writes the row as a resumable stopped.
+ * The engine is a closure of this App (actor runtimes, event wiring, cancel controllers, settlement
+ * promises live here); once the App closes it has no host, while journal rows sit at running -- the next activation could
+ * only guess via orphan convergence. So close **stops actively**: abort every in-flight entry with `"interrupted"`; the harness normalizes
+ * to `engine.stop("interrupted", Interrupted)` and the engine itself writes the row as a resumable stopped.
  *
-  * Wait without timeout: the harness settles synchronously on stop, and "wait for the predecessor's own settlement promise" is the very
-  * discipline amend already uses (never a timer in place of state). Settlement promises never reject (see {@link RunServiceLifecycle.trackSettlement}).
+ * Wait without timeout: the harness settles synchronously on stop, and "wait for the predecessor's own settlement promise" is the very
+ * discipline amend already uses (never a timer in place of state). Settlement promises never reject (see {@link RunServiceLifecycle.trackSettlement}).
  */
 export function createRunServiceLifecycle(deps: RunServiceLifecycleDeps): RunServiceLifecycle {
   const { runs } = deps;
@@ -72,7 +72,7 @@ export function createRunServiceLifecycle(deps: RunServiceLifecycleDeps): RunSer
     for (const entry of runs.values()) if (entry.terminal === undefined) live += 1;
     return live;
   };
-    // The settlement notice fires **after** bookkeeping: listeners (the host's registry safety boundary) must read a count that already excludes this run.
+  // The settlement notice fires **after** bookkeeping: listeners (the host's registry safety boundary) must read a count that already excludes this run.
   const notifySettled = (runId: string): void => {
     if (settledListeners.size === 0) return;
     const notice: DynamicWorkflowRunSettledNotice = { runId, liveRunCount: countLiveRuns() };
@@ -107,9 +107,9 @@ export function createRunServiceLifecycle(deps: RunServiceLifecycleDeps): RunSer
   };
 
   /**
-      * Settlement bookkeeping (shared by submit and resume): terminal into entry, failure normalized.
-      * Failures from outside the harness (engine construction throwing, ...) normalize to errored, never stopped -- in the journal
-      * the two differ in semantics and resume UX (stopped is resumable, errored only amendable).
+   * Settlement bookkeeping (shared by submit and resume): terminal into entry, failure normalized.
+   * Failures from outside the harness (engine construction throwing, ...) normalize to errored, never stopped -- in the journal
+   * the two differ in semantics and resume UX (stopped is resumable, errored only amendable).
    */
   const trackSettlement = (
     runId: string,
@@ -143,9 +143,9 @@ export function createRunServiceLifecycle(deps: RunServiceLifecycleDeps): RunSer
         return result;
       },
     );
-        // Service-header invariant 6: the three entrances (submit / amend / resume) share this one registration point, and it must be in launch's
-        // same synchronous slice -- one microtask late and a residency rebalance lands between start and registration. What registers is the
-        // post-settlement promise (`settlement` never rejects; bookkeeping done); the count releases in its finally.
+    // Service-header invariant 6: the three entrances (submit / amend / resume) share this one registration point, and it must be in launch's
+    // same synchronous slice -- one microtask late and a residency rebalance lands between start and registration. What registers is the
+    // post-settlement promise (`settlement` never rejects; bookkeeping done); the count releases in its finally.
     deps.registerResidencyBlockingWork?.(settlement);
     return settlement;
   };
@@ -153,8 +153,8 @@ export function createRunServiceLifecycle(deps: RunServiceLifecycleDeps): RunSer
   let closed = false;
   let closePromise: Promise<void> | undefined;
   const close = (): Promise<void> => {
-        // Idempotent and **synchronously** set: `closed` must be true within this slice, or a launch arriving during close
-        // slips in and mints an unowned engine.
+    // Idempotent and **synchronously** set: `closed` must be true within this slice, or a launch arriving during close
+    // slips in and mints an unowned engine.
     closePromise ??= (async () => {
       closed = true;
       const live = [...deps.runs.values()].filter((entry) => entry.terminal === undefined);
@@ -177,9 +177,9 @@ export function createRunServiceLifecycle(deps: RunServiceLifecycleDeps): RunSer
   };
 
   /**
-      * A launch after close is a **wiring error**, not a business rejection: the residency pool's close gate already blocks the command face,
-      * so reaching here means someone bypassed it. Hence throw, not a new contracts rejection member -- that would make every caller
-      * handle a branch that never occurs in normal operation.
+   * A launch after close is a **wiring error**, not a business rejection: the residency pool's close gate already blocks the command face,
+   * so reaching here means someone bypassed it. Hence throw, not a new contracts rejection member -- that would make every caller
+   * handle a branch that never occurs in normal operation.
    */
   const assertOpen = (): void => {
     if (closed) {
@@ -190,15 +190,15 @@ export function createRunServiceLifecycle(deps: RunServiceLifecycleDeps): RunSer
   };
 
   /**
-      * A terminal row under a live entry => foreign write; one warn per entry.
+   * A terminal row under a live entry => foreign write; one warn per entry.
    *
-      * A second desktop instance cold-restored the same session; its orphan convergence wrote this
-      * process's still-running run as a terminal row. The read faces already ignore it via the live
-      * {@link RunRegistryEntry} (observation's synthesizeRunStatus), but the event itself must be recorded -- else "two instances fighting"
-      * stays guesswork after the fact.
+   * A second desktop instance cold-restored the same session; its orphan convergence wrote this
+   * process's still-running run as a terminal row. The read faces already ignore it via the live
+   * {@link RunRegistryEntry} (observation's synthesizeRunStatus), but the event itself must be recorded -- else "two instances fighting"
+   * stays guesswork after the fact.
    *
-      * Once per entry: the tracker polls `getTask` every second; without the mark that is one identical warn per second. While unset,
-      * one extra `getRun` (a single-row indexed query); once set, even that is saved.
+   * Once per entry: the tracker polls `getTask` every second; without the mark that is one identical warn per second. While unset,
+   * one extra `getRun` (a single-row indexed query); once set, even that is saved.
    */
   const noteForeignTerminalRow = (runId: string): void => {
     const entry = deps.runs.get(runId);

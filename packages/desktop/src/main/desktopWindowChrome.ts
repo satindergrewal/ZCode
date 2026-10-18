@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 桌面窗口 chrome、webview 安全策略和 popup 路由共享同一 BrowserWindow 生命周期上下文。 */
+/* eslint-disable max-lines -- desktop window chrome, webview security policy, and popup routing share one BrowserWindow lifecycle. */
 import { app, BrowserWindow, Menu, nativeImage, nativeTheme, screen, shell } from "electron";
 import { join } from "node:path";
 import type {
@@ -40,8 +40,8 @@ import {
 import { getPluginSandboxHost, isPluginSandboxSrc } from "./pluginSandbox/index.js";
 import { installEmbeddedBrowserBluetoothDeviceGuard } from "./embeddedBrowserBluetoothGuard.js";
 import { getEmbeddedBrowserDevicePicker } from "./embeddedBrowserPermissionUiBridge.js";
-// CDP-on-guest pivot：内置浏览器改回 `<webview>` 渲染，宿主 BrowserWindow 需重新开 webviewTag，
-// 并在 will/did-attach-webview 里做 guest 硬化 + URL 白名单 + popup 路由回内部 tab。
+// CDP-on-guest pivot: the built-in browser renders via <webview> again, so the host BrowserWindow re-enables webviewTag
+// and hardens guests plus URL allowlisting and popup routing back to internal tabs in will/did-attach-webview.
 const ALLOWED_EMBEDDED_BROWSER_PROTOCOLS = new Set([
   "about:",
   "data:",
@@ -56,13 +56,13 @@ const embeddedBrowserJavaScriptDialogPreloadPath = join(
   import.meta.dirname,
   "../preload/embeddedBrowserJavaScriptDialog.cjs",
 );
-// Coding Plan 官网页专用 preload：挂 window.zcodeBridge 供官网回传购买完成信号。
+// Coding Plan storefront preload: exposes window.zcodeBridge so the storefront can report purchase completion.
 const codingPlanWebviewPreloadPath = join(import.meta.dirname, "../preload/codingPlanWebview.cjs");
 
 /**
- * 判断 webview 是否加载 Coding Plan 官网购买页（/coding-plan?...&embedded=app）。
- * 用于在 will-attach-webview 里把这种 webview 的 preload 切到 codingPlanWebviewPreloadPath，
- * 其余 webview（如内置浏览器）仍用 embeddedBrowserJavaScriptDialogPreloadPath。
+ * Whether the webview loaded the Coding Plan purchase page (/coding-plan?...&embedded=app).
+ * Used in will-attach-webview to switch such webviews to codingPlanWebviewPreloadPath while every other webview
+ * (the built-in browser included) keeps embeddedBrowserJavaScriptDialogPreloadPath.
  */
 function isCodingPlanEmbeddedWebviewSrc(src: string | undefined): boolean {
   if (!src) return false;
@@ -85,11 +85,11 @@ function isCodingPlanEmbeddedWebviewSrc(src: string | undefined): boolean {
 }
 
 /**
- * 宽松判断 webview 当前 URL 是否属于 coding-plan 购买页。
+ * Loose check whether the webview URL is still a coding-plan purchase page.
  *
- * setWindowOpenHandler 回调触发时 webview 可能已发生 locale 重定向
- * （/coding-plan → /cn/coding-plan），故 pathname 用 includes 匹配。
- * embedded=app 仍是硬条件，避免误判内置浏览器的外链。
+ * The webview may have locale-redirected by the time setWindowOpenHandler runs
+ * (/coding-plan to /cn/coding-plan), so match the pathname via includes.
+ * embedded=app stays a hard condition so external links in the built-in browser never match.
  */
 function isCodingPlanWebviewUrl(src: string | undefined): boolean {
   if (!src) return false;
@@ -150,22 +150,22 @@ function buildDesktopWindowVisualOptions() {
   if (process.platform === "win32") {
     return {
       backgroundColor: "#00000000",
-      // Windows 窗口操作由 renderer 绘制，禁用原生标题栏，避免出现两套按钮。
+      // Windows window controls are renderer-drawn; disable the native title bar to avoid two button sets.
       frame: false,
       backgroundMaterial: "acrylic" as const,
     };
   }
 
   return {
-    // 不透明 BrowserWindow 会把 renderer 的圆角裁切重新填成直角黑底，
-    // Linux 外壳无法与内层 12px 面板形成同心圆弧。透明底只负责露出四角，
-    // renderer 根面仍使用不透明 token，避免桌面底色混入侧栏。
+    // An opaque BrowserWindow fills the renderer's rounded corners back to square black,
+    // so the Linux shell cannot form concentric arcs with the inner 12px panel. Transparency only reveals the corners;
+    // the renderer root stays opaque so the desktop background never bleeds into the sidebar.
     backgroundColor: "#00000000",
     transparent: true,
-    // Linux 原生标题栏会和 renderer 自绘顶部菜单重复，隐藏 frame 后统一用自定义窗口控制。
+    // A native Linux title bar duplicates the renderer-drawn menu; hiding the frame centralizes custom window controls.
     frame: false,
-    // Linux 部分窗口管理器会给 frameless 窗口绘制额外外侧阴影/描边，
-    // 用户看到的是窗口外缘黑线。只在 Linux 禁用系统阴影，避免影响 macOS/Windows 的原生材质。
+    // Some Linux window managers draw an extra outer shadow/border on frameless windows,
+    // seen as a black outline. Disable system shadow on Linux only, preserving native materials on macOS/Windows.
     hasShadow: false,
   };
 }
@@ -175,9 +175,9 @@ export function applyAppIcon(iconPath: string) {
     return;
   }
 
-  // TypeScript 不会因为 process.platform === "darwin" 自动收窄 app.dock。
-  // app.dock 的类型在定义上仍然可能是 undefined，直接调用会持续报 ts(18048)。
-  // 这里把平台判断和空值判断合并，既符合运行时语义，也让类型系统明确知道 Dock 一定存在。
+  // TypeScript does not narrow app.dock from a process.platform === "darwin" check.
+  // app.dock is typed as possibly undefined, so direct calls keep raising ts(18048).
+  // Combine the platform and null checks: runtime-correct and proves to the type system that the Dock exists.
   const dockIcon = nativeImage.createFromPath(iconPath);
   if (!dockIcon.isEmpty()) {
     app.dock.setIcon(dockIcon);
@@ -253,14 +253,14 @@ function attachWindowsWindowRepaint(targetWindow: BrowserWindow) {
   };
 
   targetWindow.on("resized", () => {
-    // Windows 手动拉伸结束后，Electron/Chromium 偶发只更新窗口 bounds，
-    // 但 renderer 最后一帧没有完整 repaint，新扩展区域会留下宿主底色。resized 是低频结束事件，
-    // 这里补一次完整窗口重绘，确保内容层按最终 viewport 尺寸重新铺满。
+    // After a manual Windows resize, Electron/Chromium sometimes updates only the window bounds
+    // without a full renderer repaint, leaving host-colored areas. resized is a low-frequency end event;
+    // repaint the whole window once so content fills the final viewport.
     scheduleRepaint();
   });
   targetWindow.on("show", () => {
-    // Windows Acrylic 窗口 hide 到托盘后再次 show 时可能继续复用失效的合成 surface，
-    // renderer 与 host 仍存活但窗口只剩宿主底色；复用 resize 的有界双帧重绘，不 reload renderer 或会话。
+    // A Windows Acrylic window re-shown from the tray can reuse a stale compositor surface,
+    // leaving host background only. Reuse the bounded two-frame repaint from resize; never reload renderer or session.
     scheduleRepaint();
   });
 }
@@ -290,8 +290,8 @@ function isCodingPlanPaypalNavigationUrl(url: string): boolean {
     const parsed = new URL(url);
     if (parsed.protocol !== "https:") return false;
     if (isPaypalHostname(parsed.hostname)) return true;
-    // 后端下发的 PayPal approveUrl 可能先指向 Z.AI 支付 API 中转地址，
-    // 由该地址再 302 到 PayPal。中转 URL 也必须留在当前 webview，否则会被系统浏览器接管。
+    // The backend's PayPal approveUrl may first point at a Z.AI payment relay that 302s to PayPal.
+    // That relay URL must also stay in this webview or the system browser takes over.
     return (
       CODING_PLAN_ZAI_PAYPAL_RELAY_HOSTS.has(parsed.hostname) &&
       parsed.pathname.startsWith("/api/pay/paypal/")
@@ -364,8 +364,8 @@ function attachEmbeddedBrowserWindowOpenHandler(options: {
   let externalBrowserModifierActive = false;
 
   options.guestWebContents.on("before-input-event", (_event, input) => {
-    // 某些平台的 keyUp 仍可能带 modifier 标记，直接记最近一次 modifiers
-    // 会让"用系统浏览器打开"的状态粘住，导致后续普通点击也被外部打开。
+    // Some platforms report modifiers on keyUp; remembering the last modifiers directly
+    // makes open-in-system-browser stick, so later plain clicks open externally too.
     if (input.type === "keyUp" && isExternalBrowserModifierKey(input)) {
       externalBrowserModifierActive = false;
       return;
@@ -381,10 +381,10 @@ function attachEmbeddedBrowserWindowOpenHandler(options: {
       return { action: "deny" };
     }
 
-    // Coding Plan webview 的外链（条款/管理等 target=_blank）直接拉起系统默认浏览器，
-    // 不路由到内部 Browser tab（对齐原生购买面板行为）。回调触发时 webview URL 已
-    // 加载完成，可能因 locale 重定向变成 /cn/coding-plan，用宽松判断。
-    // 支付链接走 location.href（不触发 setWindowOpenHandler），不受影响。
+    // Coding Plan webview external links (terms/admin, target=_blank) open the system default browser directly
+    // instead of internal tabs (matching the native purchase panel). By callback time the webview URL
+    // has finished loading and may be /cn/coding-plan after locale redirect; use the loose match.
+    // Payment links use location.href (no setWindowOpenHandler) and are unaffected.
     const guestUrl =
       typeof options.guestWebContents.getURL === "function"
         ? options.guestWebContents.getURL()
@@ -395,8 +395,8 @@ function attachEmbeddedBrowserWindowOpenHandler(options: {
       isCodingPlanPaypalNavigationUrl(guestUrl);
     if (shouldRouteCodingPlanPopup) {
       if (isAllowedCodingPlanEmbeddedNavigationUrl(url)) {
-        // PayPal 授权/回调是 Coding Plan 购买流程的一部分，不能走系统浏览器，
-        // 否则授权回跳会脱离当前 webview 并丢失购买上下文。popup 形态改为当前 guest 导航。
+        // PayPal authorize/callback is part of the Coding Plan purchase and must not escape to the system browser,
+        // or the return trip loses purchase context; popups navigate the current guest instead.
         void options.guestWebContents.loadURL(url).catch((error: unknown) => {
           options.logger.warn(
             "[browser-pane] failed to load coding-plan embedded popup in webview",
@@ -459,7 +459,7 @@ function attachEmbeddedBrowserWindowOpenHandler(options: {
         })
       )
         return;
-      // 邀请页离开受信任路径必须外开，不能让第三方页面使用已注入凭据的容器。
+      // Leaving the trusted invite flow must open externally; third-party pages must not reuse the credentialed container.
       event.preventDefault();
       if (isAllowedEmbeddedBrowserNewWindowUrl(url))
         void shell
@@ -484,13 +484,13 @@ function attachEmbeddedBrowserWindowOpenHandler(options: {
       return;
     }
     if (isAllowedCodingPlanEmbeddedNavigationUrl(url)) {
-      // 官网用 location.href 发起 PayPal 授权时会触发主 frame 导航。
-      // PayPal/中转/可信官网回跳需要留在当前 webview，后续 callback 才能继续订阅。
+      // A storefront location.href PayPal authorize triggers a main-frame navigation.
+      // PayPal/relay/trusted-storefront returns must stay in this webview for the callback to continue the subscription.
       return;
     }
 
-    // Coding Plan 专用 preload 会在后续主 frame 导航中继续存在。
-    // 离开可信购买页时必须阻断 guest 导航并交给系统浏览器，避免第三方页面继承 zcodeBridge。
+    // The Coding Plan preload persists across later main-frame navigations.
+    // Off the trusted purchase pages, block guest navigation and hand off to the system browser so third parties never inherit zcodeBridge.
     event.preventDefault();
     void shell.openExternal(url).catch((error: unknown) => {
       options.logger.warn("[browser-pane] failed to open coding-plan navigation externally", {
@@ -563,13 +563,13 @@ export function createBrowserWindow(options: {
   title?: string;
   bootstrap?: WindowBootstrapOptions;
   logger: { warn: (...args: unknown[]) => void };
-  /** 桌面端设备标识符（基于 userData 路径的 SHA-256），用于 renderer 同步读取 */
+  /* Desktop device identifier (SHA-256 of the userData path) for synchronous renderer reads */
   deviceMid?: string;
-  /** 桌面端持久化页面缩放档位；窗口创建时先应用，避免首屏回到默认大小。 */
+  /* Persisted desktop page-zoom level; applied at window creation so the first paint keeps the chosen size. */
   initialDesktopZoomLevel?: number;
-  /** 主进程设置服务读取的最近一次普通窗口尺寸与最大化状态。 */
+  /* Last normal-window bounds and maximized state, read by the main-process settings service. */
   initialWindowSize?: DesktopWindowSize;
-  /** 每次弹出原生菜单时读取，确保应用切换语言后无需重建窗口。 */
+  /* Read on each native menu popup so language switches apply without rebuilding the window. */
   currentApplicationLocale?: () => Locale;
   resolveBrowserViewOwner?: (webContentsId: number) =>
     | {
@@ -592,29 +592,29 @@ export function createBrowserWindow(options: {
     width: initialWindowSize.width,
     height: initialWindowSize.height,
     minWidth: MIN_DESKTOP_WINDOW_WIDTH,
-    // 1280x720 桌面环境的可用高度通常低于 768，过高的最小高度会导致用户无法继续缩小窗口。
+    // 1280x720 desktops often have less than 768px usable height; a taller minimum blocks shrinking.
     minHeight: MIN_DESKTOP_WINDOW_HEIGHT,
     title: options.title,
     icon: options.iconPath,
-    // Linux frameless 后部分桌面环境仍可能显示 Electron 原生菜单栏，自动隐藏避免顶部出现两套菜单。
+    // Some Linux environments still show Electron's menu bar when frameless; auto-hide avoids double menu bars.
     autoHideMenuBar: isLinuxDesktopWindow(),
     ...buildDesktopWindowVisualOptions(),
     webPreferences: {
       preload: options.preloadPath,
       contextIsolation: true,
       nodeIntegration: false,
-      // CDP-on-guest pivot：内置浏览器改回 `<webview>` 渲染，宿主需开 webviewTag。
+      // CDP-on-guest pivot: the built-in browser renders via <webview>, so the host enables webviewTag.
       webviewTag: true,
-      // 永久 backgroundThrottling=false 会唤醒整窗 renderer、所有 webview guest
-      // 和 GPU。窗口保持默认节流；截图期只临时唤醒 owner renderer 与当前目标 guest。
+      // A permanent backgroundThrottling=false wakes the whole renderer, every webview guest, and the GPU.
+      // Keep default throttling; wake only the owner renderer and target guest during capture.
       zoomFactor: initialDesktopZoomFactor,
-      // 将 deviceMid 透传给 preload，供 renderer 在 React 渲染前同步读取
+      // Pass deviceMid through to preload for a synchronous pre-React read
       additionalArguments: [`--device-id=${options.deviceMid ?? ""}`],
     },
   });
 
-  // 缩放命令原本只改当前运行窗口，没有在重启后恢复。
-  // 创建窗口时由 main 进程先应用 setting.json 中的桌面缩放档位，同时覆盖 Chromium 可能残留的 per-host zoom。
+  // Zoom commands used to affect only the live window and never survived restart.
+  // At creation, main applies the setting.json desktop zoom level and overrides any per-host zoom Chromium kept.
   win.webContents.setZoomFactor(initialDesktopZoomFactor);
   if (process.platform === "win32") registerCustomWindowsControls(win);
   syncWindowControlsOverlayForZoomLevel(win, initialDesktopZoomLevel);
@@ -632,16 +632,16 @@ export function createBrowserWindow(options: {
   win.on("maximize", () => syncDesktopWindowChromeState(win));
   win.on("unmaximize", () => syncDesktopWindowChromeState(win));
   attachWindowsWindowRepaint(win);
-  // will-attach 与 did-attach 按顺序配对；队列元素记录 guest 种类，did-attach 据此分派策略。
+  // will-attach and did-attach pair in order; queue entries record the guest kind so did-attach dispatches the right policy.
   const pendingWebviewGuestKinds: Array<
     | { kind: "browser" | "codingPlan"; isRewards: boolean }
     | { kind: "pluginSandbox"; sandboxId: string }
   > = [];
 
   win.webContents.once("did-finish-load", () => {
-    // 生产包使用 loadFile(file://...) 导航时，Chromium 可能在页面加载完成后重放
-    // origin 级 zoom 状态，把窗口创建阶段设置的持久化缩放覆盖回默认值。
-    // did-finish-load 后再按 setting.json 的档位重放一次，确保生产包和开发态 localhost 行为一致。
+    // With packaged loadFile(file://...) navigation, Chromium can replay origin-level zoom after load,
+    // overriding the persisted zoom applied at creation back to defaults.
+    // Replay the setting.json level after did-finish-load so packaged and dev localhost behave the same.
     win.webContents.setZoomFactor(initialDesktopZoomFactor);
     syncWindowControlsOverlayForZoomLevel(win, initialDesktopZoomLevel);
     syncWindowFullscreenState(win);
@@ -650,8 +650,8 @@ export function createBrowserWindow(options: {
     "did-fail-load",
     (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
       if (!isMainFrame) return;
-      // 导航失败时 CDP target 元数据可能仍保留原 file:// URL，而 renderer
-      // 实际 document 已经进入 chrome-error://；记录主 frame 失败才能定位真实导航根因。
+      // On navigation failure CDP target metadata can keep the old file:// URL while the renderer document
+      // is already chrome-error://; log the main-frame failure to find the real cause.
       options.logger.warn("[desktop-window] renderer did-fail-load", {
         errorCode,
         errorDescription,
@@ -662,14 +662,14 @@ export function createBrowserWindow(options: {
   );
 
   win.webContents.on("will-attach-webview", (event, webPreferences, params) => {
-    // CDP 在原生 Dialog 已创建后再替换 UI，macOS 仍可能显示已经排队的
-    // Chromium NSAlert。固定 preload 在每个 frame 调用原生 API 前拦截，且隔离世界只
-    // 暴露 alert/confirm 同步桥；网页主世界仍没有 Node 或任意 IPC 能力。
+    // CDP swaps the UI after the native dialog exists; macOS can still show an already-queued
+    // Chromium NSAlert. The pinned preload intercepts before native calls in every frame, and the isolated world exposes
+    // only a synchronous alert/confirm bridge; the page world keeps no Node or arbitrary IPC.
     //
-    // Coding Plan 官网页例外：它需要 window.zcodeBridge 回传购买完成信号，
-    // 改用专用 preload（codingPlanWebview.ts），其余 webview 保持原生 Dialog 桥。
+    // Exception: the Coding Plan storefront needs window.zcodeBridge for purchase-completion signals,
+    // so it uses the dedicated preload (codingPlanWebview.ts); all other webviews keep the native dialog bridge.
     const targetUrl = params.src ?? "about:blank";
-    // 插件 UI 沙箱 guest：独立分支，不走内置浏览器的 preload / allowpopups / 协议白名单。
+    // Plugin UI sandbox guest: dedicated branch, no embedded-browser preload/allowpopups/protocol allowlist.
     if (isPluginSandboxSrc(targetUrl)) {
       const host = getPluginSandboxHost();
       const decision = host?.configureGuest({
@@ -710,17 +710,17 @@ export function createBrowserWindow(options: {
 
     delete params.preload;
     delete params.nodeintegration;
-    // nodeIntegrationInSubFrames 是 guest 创建期偏好；派生 WebPreferences 与原始 attach
-    // 参数都固定为 true，确保发生真实导航的子 frame 在网页脚本前加载同一 preload。
-    // 无 src 的继承型空 frame 不触发 preload，由 preload 内的同源 frame 观察器接管。
+    // nodeIntegrationInSubFrames is a guest-creation preference; pin it true in both the derived WebPreferences and the original
+    // attach args so a navigating subframe loads the same preload before page scripts.
+    // Empty inherited frames without src skip preload; the preload's same-origin frame observer covers them.
     params.nodeintegrationinsubframes = "true";
     delete params.disablewebsecurity;
     delete params.allowpopups;
 
-    // webview 内 target=_blank/window.open 如果完全禁用 popup 会表现为点击无响应；
-    // 如果放任 Electron 默认处理，又会创建脱离 ZCode 的 BrowserWindow。这里由宿主重新打开
-    // allowpopups，并在 did-attach-webview 中用 setWindowOpenHandler 统一 deny 默认窗口创建，
-    // 再把合法 URL 路由到内部 Browser tab 或系统浏览器。
+    // Fully disabling popups makes target=_blank/window.open in webviews look dead;
+    // letting Electron default roam creates BrowserWindows outside ZCode. The host re-opens
+    // allowpopups, then did-attach-webview adds a setWindowOpenHandler denying default window creation and
+    // routes legit URLs to internal tabs or the system browser.
     params.allowpopups = "true";
 
     if (!isAllowedEmbeddedBrowserUrl(targetUrl)) {
@@ -752,14 +752,15 @@ export function createBrowserWindow(options: {
       guestWebContents,
       hostWebContents: win.webContents,
       resolveBrowserViewOwner: options.resolveBrowserViewOwner,
-      // PayPal/relay 的 30x 重定向不保证逐跳触发 will-navigate。
-      // Coding Plan guest 身份必须按初始 src 粘住，不能由当前 URL 解防护。
+      // PayPal/relay 30x redirects do not reliably fire will-navigate per hop.
+      // Stick the Coding Plan guest identity to the initial src; never derive protection from the current URL.
       isCodingPlanGuest: guestKind.kind === "codingPlan",
       isRewardsGuest: guestKind.isRewards,
       logger: options.logger,
     });
-    // 蓝牙设备选择事件挂在 guest WebContents 上（Session 只覆盖 hid/usb/serial）；
-    // 仅内置浏览器 guest 安装守卫，阻断 Electron 未监听时静默授权第一个设备的默认行为。
+    // Bluetooth device-selection events hang off the guest WebContents (Session covers only
+    // hid/usb/serial); install the guard on embedded-browser guests only, blocking Electron's
+    // silent first-device grant when nothing listens.
     if (guestKind.kind === "browser") {
       installEmbeddedBrowserBluetoothDeviceGuard(guestWebContents, options.logger.warn, {
         devicePicker: getEmbeddedBrowserDevicePicker(),
@@ -769,8 +770,8 @@ export function createBrowserWindow(options: {
   });
 
   win.webContents.on("context-menu", (_event, params) => {
-    // 只设置 Electron role 时，菜单文案跟随系统/Electron 语言，可能与应用语言不一致。
-    // 每次右键时读取当前 locale 并显式设置 label，切换语言后下一次打开即可生效。
+    // Role-only items follow system/Electron language, which can diverge from the app language.
+    // Read the locale per context-menu and set labels explicitly; the next open after a switch is correct.
     const template = buildTextContextMenuTemplate(
       params,
       options.currentApplicationLocale?.() ?? DEFAULT_LOCALE,
@@ -792,14 +793,14 @@ export function createBrowserWindow(options: {
       return;
     }
 
-    // 之前为避免和终端等 DOM 右键菜单双弹，生产环境完全不弹 Electron 原生菜单；
-    // 但普通文本选区和输入框没有 DOM 菜单，导致右键复制/粘贴像被禁用。这里仅在文本编辑语义下补原生菜单。
+    // Production once skipped native menus entirely to avoid double menus with DOM menus (terminal);
+    // but plain selections/inputs have none, making copy/paste look broken. Add native menus only for text-editing contexts.
     Menu.buildFromTemplate(template).popup({ window: win });
   });
 
   void Promise.resolve(loadWindow(win, "index", options.bootstrap)).catch((error: unknown) => {
-    // loadFile/loadURL 返回的导航 Promise 过去被丢弃，长跑中的导航失败
-    // 只会表现为 chrome-error 页面，主进程日志没有原始异常可供追踪。
+    // The loadFile/loadURL promise used to be dropped; late navigation failures
+    // surfaced only as chrome-error pages with no original exception in main logs.
     options.logger.warn("[desktop-window] renderer navigation rejected", error);
   });
   return win;

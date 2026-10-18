@@ -136,7 +136,7 @@ describe("EventReducer", () => {
           {
             error: {
               type: "1220",
-              message: "[1220][您无权访问glm-5.2。][trace-a]",
+              message: "[1220][No access to glm-5.2.][trace-a]",
             },
             turnPhase: "model",
           },
@@ -319,7 +319,7 @@ describe("EventReducer", () => {
           contextWindow: 1_000_000,
         }),
         createSessionEvent(SessionEventType.ModelComplete, sessionId, {
-          content: "你好！我是 zcode-agent。",
+          content: "Hi! I am zcode-agent.",
           querySource: "main_turn",
           stopReason: "stop",
           usage: {
@@ -329,7 +329,7 @@ describe("EventReducer", () => {
           },
         }),
         createSessionEvent(SessionEventType.ModelComplete, sessionId, {
-          content: "中文问候",
+          content: "CJK greeting",
           querySource: "session_title",
           stopReason: "stop",
           usage: {
@@ -407,11 +407,11 @@ describe("EventReducer", () => {
     });
 
     it("should persist target completion verification timeline without duplicating completed summaries", () => {
-      const target = buildTarget(sessionId, "实现 goal verify 横条", "active");
+      const target = buildTarget(sessionId, "land the goal verify banner", "active");
       const verification = {
-        nextAction: "继续补 UI 回归。",
+        nextAction: "Keep going on UI regression.",
         passed: false,
-        reason: "还缺交互验证。",
+        reason: "Interactive verification still missing.",
       };
       const events: SessionEvent[] = [
         createSessionEvent(SessionEventType.SessionCreated, sessionId, {
@@ -457,7 +457,7 @@ describe("EventReducer", () => {
     });
 
     it("should add failed closed target completion verification to the summary ledger", () => {
-      const target = buildTarget(sessionId, "处理失败关闭校验", "active");
+      const target = buildTarget(sessionId, "handle failed-closed verification", "active");
       const verification = {
         passed: false,
         reason: "Completion verifier request failed: network timeout",
@@ -492,9 +492,9 @@ describe("EventReducer", () => {
     });
 
     it("should clear target completion verification timeline when a new target is set", () => {
-      const target = buildTarget(sessionId, "旧目标", "active");
+      const target = buildTarget(sessionId, "old goal", "active");
       const nextTarget = {
-        ...buildTarget(sessionId, "新目标", "active"),
+        ...buildTarget(sessionId, "new goal", "active"),
         targetID: "target_2",
       };
       const events: SessionEvent[] = [
@@ -702,15 +702,15 @@ describe("EventReducer", () => {
           },
           { traceId: "trace_1" as TraceId, turnId: "turn_1" as any },
         );
-      const first = queued("q1", "第一条", 1);
+      const first = queued("q1", "first item", 1);
       const events: SessionEvent[] = [
         createSessionEvent(SessionEventType.SessionCreated, sessionId, {
           mode: "build",
           contextWindow: 200000,
         }),
         first,
-        queued("q2", "第二条", 2),
-        queued("q1", "第一条改", 1),
+        queued("q2", "second item", 2),
+        queued("q1", "first item edited", 1),
         createSessionEvent(
           SessionEventType.TurnSteerReordered,
           sessionId,
@@ -728,7 +728,7 @@ describe("EventReducer", () => {
         "q1",
       ]);
       expect(projection.pendingSteerInputs[1]).toMatchObject({
-        input: "第一条改",
+        input: "first item edited",
         queuedAt: first.timestamp,
         intent: {
           sourceCommandId: "command-q1",

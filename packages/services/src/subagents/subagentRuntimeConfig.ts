@@ -34,7 +34,7 @@ async function listDocuments(root: string): Promise<string[]> {
       throw error;
     },
   );
-  // 自定义 profile 的发现范围与 depth:0 监听一致，避免深层定义只在重扫时变化。
+  // Custom-profile discovery matches the depth:0 watcher so deep definitions change on events, not just rescans.
   return entries
     .filter((entry) => entry.isFile() && /\.(md|markdown)$/iu.test(entry.name))
     .map((entry) => join(root, entry.name));
@@ -64,7 +64,7 @@ async function loadDocuments(
       }
       context.signal.throwIfAborted();
       const content = await readFile(path, "utf8").catch((error: NodeJS.ErrnoException) => {
-        // 删除可能先于 change 的读取完成，以实际文件不存在为准，不回填旧 profile。
+        // Deletes can beat the change-handler read; trust actual absence, never re-fill the old profile.
         if (error.code === "ENOENT") return undefined;
         throw error;
       });
@@ -85,7 +85,7 @@ const profiles = (documents: Profiles) =>
     .sort(([a], [b]) => a.localeCompare(b))
     .flatMap(([, parsed]) => (parsed.profile ? [parsed.profile] : []));
 
-/** Host 是解析结果的唯一 owner；每个父 turn 的 RPC 只复制已完成的内存 snapshot。 */
+/** The host solely owns resolution; each parent-turn RPC copies the completed in-memory snapshot only. */
 export function createSubagentRuntimeConfigCache(reader: ConfigReader) {
   let disposed = false;
   let user: { path: string; scope: Scope<Profiles> } | undefined;
@@ -101,7 +101,7 @@ export function createSubagentRuntimeConfigCache(reader: ConfigReader) {
     if (disposed || !user || !state) return;
     for (const [workspaceKey, project] of workspaces) {
       const scopes = [user.scope, state.scope, project];
-      // 只保留已有完整快照；首次超时回退可用各范围的完整结果恢复，不必等共享刷新结束。
+      // Keep completed snapshots only; a first-time timeout recovers from per-scope complete results without waiting for the shared refresh.
       if (snapshots.get(workspaceKey)?.kind === "ready" && scopes.some((scope) => scope.busy))
         continue;
       if (scopes.some((scope) => scope.failed))
@@ -138,7 +138,7 @@ export function createSubagentRuntimeConfigCache(reader: ConfigReader) {
       do {
         await Promise.all(scopes.map((scope) => scope.settle()));
       } while (waiting && scopes.some((scope) => scope.busy));
-      // 首次 ready 在 scope 的 onSettled 之后才完成；启动方已返回时也必须发布。
+      // First-ready completes after the scope settles; publish even if the caller already returned.
       publish();
     })();
     try {
@@ -147,15 +147,19 @@ export function createSubagentRuntimeConfigCache(reader: ConfigReader) {
         new Promise<void>((resolve) => {
           timer = setTimeout(() => {
             waiting = false;
-            logger.warn(undefined, "Subagent 配置初始化等待到期，继续启动并保留后台加载", {
-              waitMs: INITIAL_LOAD_WAIT_MS,
-            });
+            logger.warn(
+              undefined,
+              "Subagent config init wait elapsed; starting anyway and loading in background",
+              {
+                waitMs: INITIAL_LOAD_WAIT_MS,
+              },
+            );
             resolve();
           }, INITIAL_LOAD_WAIT_MS);
         }),
       ]);
     } finally {
-      // 只结束调用方等待，不中止共享加载或清除文件事件；销毁仍由 scope 负责取消。
+      // Release the caller only; never abort the shared load nor drop file events. The scope owns cancellation.
       waiting = false;
       if (timer) clearTimeout(timer);
     }
@@ -169,7 +173,7 @@ export function createSubagentRuntimeConfigCache(reader: ConfigReader) {
         await Promise.all([reader.readUserRoot(), reader.readStatePath()])
       ).map((path) => resolve(path)) as [string, string];
       assertActive();
-      // 新 workspace 复用共享缓存；既有 workspace 的显式重启才重建监听并全量读取。
+      // New workspaces reuse the shared cache; only an explicit restart rebuilds watchers and full reads.
       const reload = !workspace || workspaces.has(key(workspace));
       if (!user || user.path !== userPath || reload) {
         user?.scope.dispose();
@@ -183,7 +187,7 @@ export function createSubagentRuntimeConfigCache(reader: ConfigReader) {
           scope: createSubagentConfigScope({
             root: dirname(statePath),
             file: statePath,
-            // 使用准备时固定的路径，文件事件不重读 CLI 配置，也不切换到另一 storage root。
+            // Use the path pinned at prepare; file events never re-read CLI config nor switch storage roots.
             load: async (_previous, _changes, context) => {
               await context.waitForStableFile(statePath);
               context.signal.throwIfAborted();

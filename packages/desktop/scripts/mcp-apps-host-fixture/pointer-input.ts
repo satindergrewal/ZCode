@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import type { BrowserWindow, WebContents } from "electron";
 import { evaluateGuest } from "./guest-evaluation.js";
 
-/** 从宿主坐标发送鼠标事件，避免直接向 guest 注入点击绕过透明层命中测试。 */
+/** P */
 export async function clickHostPoint(win: BrowserWindow, point: { x: number; y: number }) {
   win.webContents.debugger.attach("1.3");
   try {

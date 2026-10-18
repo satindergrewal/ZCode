@@ -19,18 +19,18 @@ import type {
 } from "./appToolsContract.js";
 
 /**
- * App-Provided Tools 登记表：会话内页面实例的工具、暴露给模型的集合与待执行调用的唯一 owner。
- * 只在内存；会话关闭清空，不持久化。模型调用经"实例信箱"（`publishCall` → live-only 投影增量）投递给
- * 唯一实例，渲染端认领（claim）后页面 tools/call，结果经 resolve 回传。
+ * The App-Provided Tools registry: the session's page instances, the exposed model-facing set, and the single owner of pending calls.
+ // Memory only; cleared on session close, never persisted. Model calls travel the instance mailbox (`publishCall` -> live-only projection delta) to the
+ // single instance; the renderer claims it, the page runs tools/call, and the result returns via resolve.
  */
 export interface McpUiAppToolsHost {
-  /** 把暴露集合同步到会话 runtime（整体替换）；会话不在时返回 null。 */
+  /** Sync the exposed set to the session runtime (wholesale replace); null when the session is gone. */
   applyTools(
     sessionId: string,
     definitions: readonly McpAppProvidedToolDefinition[],
     execute: McpAppProvidedToolExecutor,
   ): string[] | null;
-  /** 信箱投递：一次待执行调用 → 该会话的 live 投影（只投给 instance 一个实例）。 */
+  /** Mailbox delivery: one pending call -> the session's live projection (to that one instance only). */
   publishCall(
     sessionId: string,
     target: {
@@ -52,7 +52,7 @@ interface InstanceRecord {
   instance: McpUiAppToolInstance;
   pluginId: string;
   serverName: string;
-  /** 首次登记序号：同 server 只暴露序号最大的实例；重新登记不变。 */
+  /** First-registered ordinal: per server only the highest ordinal exposes; re-registration keeps it. */
   seq: number;
   tools: McpAppsAppToolDescriptor[];
 }
@@ -71,7 +71,7 @@ interface SessionState {
   pending: Map<string, PendingCall>;
 }
 
-/** 实例键 = 沙箱作用域 + 代际；同作用域的新代际替换旧代际。 */
+/** Instance key = sandbox scope + generation; a new generation in the same scope replaces the old. */
 export const buildMcpUiAppToolInstanceKey = (instance: McpUiAppToolInstance) =>
   `${instance.scopeId}|${instance.generation}`;
 const jsonBytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value) ?? "", "utf8");
@@ -97,7 +97,7 @@ export class McpUiAppToolRegistry {
   register(params: McpUiRegisterAppToolsParams): McpUiRegisterAppToolsResult {
     const session = this.sessionOf(params.sessionId);
     const key = buildMcpUiAppToolInstanceKey(params);
-    // 同一沙箱作用域的新代际（页面重载 / 重挂载）替换旧代际。
+    // A new generation in the same sandbox scope (page reload / remount) replaces the old one.
     for (const [existingKey, record] of Array.from(session.instances)) {
       if (existingKey !== key && record.instance.scopeId === params.scopeId) {
         this.dropInstance(params.sessionId, session, existingKey, "App page was reloaded");
@@ -141,7 +141,7 @@ export class McpUiAppToolRegistry {
     const pending = session?.pending.get(params.callId);
     const key = buildMcpUiAppToolInstanceKey(params);
     if (!session || !pending || pending.instanceKey !== key) return false;
-    // callId 幂等：同一实例重放认领仍回 true，不重置执行计时；渲染端按 callId 去重，不会执行两次。
+    // callId idempotency: a replayed claim on the same instance returns true without resetting timers; the renderer dedupes by callId, never executing twice.
     if (pending.claimed) return true;
     pending.cancelTimer();
     pending.claimed = true;
@@ -182,7 +182,7 @@ export class McpUiAppToolRegistry {
     return true;
   }
 
-  /** 会话关闭：结束全部待执行调用并丢弃登记（runtime 随会话关闭，不再同步工具）。 */
+  /** Session close: fail every pending call and drop registrations (the runtime dies with the session; no more tool sync). */
   clearSession(sessionId: string): void {
     const session = this.sessions.get(sessionId);
     if (!session) return;
@@ -235,7 +235,7 @@ export class McpUiAppToolRegistry {
               reject(outcome.error);
             }
           },
-          // 认领期限：没有渲染端认领视为页面未运行（信箱不重发），结束调用并注销该实例。
+          // Claim deadline: no renderer claim means the page is not running (the mailbox does not retry); end the call and deregister the instance.
           cancelTimer: this.setTimer(() => {
             pending.settle({
               error: new Error(`The ${instance.serverName} app page is not running`),
@@ -288,7 +288,7 @@ export class McpUiAppToolRegistry {
     });
   }
 
-  /** 计算暴露集合（同 server 只暴露最近登记的实例）并同步到 runtime；返回暴露的定义。 */
+  /** Compute the exposed set (per server, only the latest registered instance) and sync; returns the exposed definitions. */
   private sync(sessionId: string, session: SessionState): McpAppProvidedToolDefinition[] {
     const latestByServer = new Map<string, InstanceRecord>();
     for (const record of session.instances.values()) {

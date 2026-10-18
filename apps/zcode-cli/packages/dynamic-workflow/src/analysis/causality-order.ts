@@ -78,10 +78,10 @@ export type {
  * transfer with its target region already resolved). The causality projection looks
  * through all of it; the control-flow projection is built from it.
  *
-  * Split: this file sat at oxlint's max-lines cap (400), so the walk was split by duty into sibling modules --
-  * causality-order-types (product types), -state (explicit shared state + primitives), -settle (await barriers and
-  * oracle reads), -walk (node visitors), -loops (loops), -calls (calls and inlining), -functions (function
-  * resolution). Only orchestration remains here: build state, walk the root statement table, final sweeps. Public surface unchanged.
+ * Split: this file sat at oxlint's max-lines cap (400), so the walk was split by duty into sibling modules --
+ * causality-order-types (product types), -state (explicit shared state + primitives), -settle (await barriers and
+ * oracle reads), -walk (node visitors), -loops (loops), -calls (calls and inlining), -functions (function
+ * resolution). Only orchestration remains here: build state, walk the root statement table, final sweeps. Public surface unchanged.
  */
 
 /** Walk the authored body in evaluation order and record the ordering trace. */
@@ -91,7 +91,8 @@ export function traceOrder(
   oracle: OrderOracle,
 ): OrderTrace {
   const state = createTraceState(workflow, table, oracle, walkNode);
-  const { controls, events, fnStack, issued, phases, regions, returnTargets, root, walkedFns } = state;
+  const { controls, events, fnStack, issued, phases, regions, returnTargets, root, walkedFns } =
+    state;
 
   walkStatements(state, state.body.statements, [root]);
 

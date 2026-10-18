@@ -89,10 +89,7 @@ export function readCapturedCwd(
   }
 }
 
-export function normalizeCapturedCwdForHost(
-  value: string,
-  dialect: ExecutionShellDialect,
-): string {
+export function normalizeCapturedCwdForHost(value: string, dialect: ExecutionShellDialect): string {
   return dialect === "git-bash" ? gitBashPathToWindowsPath(value) : value;
 }
 

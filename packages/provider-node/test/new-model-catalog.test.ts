@@ -2,8 +2,8 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import { parseZCodeBuiltinModelConfigRules } from "@zcode/provider";
 
-describe("2026-09 新模型官方目录", () => {
-  it("模型身份、能力和值域独立声明，不能从旧型号宽匹配猜测", async () => {
+describe("2026-09 new-model official catalog", () => {
+  it("declares identity, capabilities and ranges per model instead of guessing from legacy broad matches", async () => {
     const release = JSON.parse(
       await readFile(
         new URL("../../../config/provider/zcode-builtin.json", import.meta.url),

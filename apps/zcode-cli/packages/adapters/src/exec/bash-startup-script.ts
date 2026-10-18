@@ -40,10 +40,7 @@ export function applyBashSourcesToExecutionRequest(
   request: ExecutionRequest,
   options: ApplyBashSourcesOptions,
 ): ExecutionRequest {
-  if (
-    request.command.mode !== "shell" ||
-    request.command.shellProfile !== "posix-bash"
-  ) {
+  if (request.command.mode !== "shell" || request.command.shellProfile !== "posix-bash") {
     return request;
   }
 
@@ -61,10 +58,7 @@ export function applyBashSourcesToExecutionRequest(
     sessionId: options.sessionId,
     shellDialect: options.shellDialect,
   });
-  const sources = [
-    ...(options.leadingSources ?? []),
-    ...(materialized ? [materialized] : []),
-  ];
+  const sources = [...(options.leadingSources ?? []), ...(materialized ? [materialized] : [])];
   const command = applyBashSourceScripts(request.command.command, sources);
   if (command === request.command.command) return request;
 

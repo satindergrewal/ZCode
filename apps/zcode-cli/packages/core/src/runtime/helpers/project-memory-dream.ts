@@ -51,7 +51,7 @@ export function selectProjectDreamSessions(input: {
   });
 }
 
-// 当前产品链路不自动触发 Dream；保留可等待的 handler，待 project transcript 隔离方案确定后再接线。
+// The current product flow never auto-triggers Dream; the awaitable handler stays until the project-transcript isolation design lands.
 export async function runProjectMemoryDream(
   runtime: AgentRuntimeInternal,
   input: { traceContext: TraceContext },
@@ -181,7 +181,7 @@ async function executeProjectMemoryDream(
             priorMtimeMs: acquiredPriorMtimeMs,
           });
         } catch {
-          // Dream 已失败；lock 恢复失败不改变前台 turn，也不追加第二套恢复机制。
+          // Dream has already failed; a lock-restore failure neither touches the foreground turn nor adds a second recovery mechanism.
         }
       }
     }
@@ -201,8 +201,8 @@ async function recentModelIoSessionIds(
           path: join(runtime.modelIoDir!, `model-io-${session.id}.jsonl`),
           trace: context.traceContext,
         });
-        // 修复原因：gate 以真实 transcript mtime 为准；SessionStore.updated 只描述
-        // durable session，不能代替 transcript 是否在上次 consolidation 后发生变化。
+        // Why: the gate keys on the real transcript mtime; SessionStore.updated only describes the
+        // durable session, not whether the transcript changed since the last consolidation.
         return result.kind === "file" &&
           result.mtimeMs !== undefined &&
           result.mtimeMs > lastConsolidatedAtMs

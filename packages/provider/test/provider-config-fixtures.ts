@@ -33,7 +33,7 @@ interface AccountProviderFixtureInput extends CommonProviderFixtureInput {
   readonly entitled?: boolean | null;
 }
 
-/** 测试夹具把常用字段压平；生产 Schema 仍使用 access/api 两个明确边界。 */
+/** Test fixtures flatten common fields; the production Schema keeps the distinct access/api boundaries. */
 export function createApiKeyProviderConfig(input: ApiKeyProviderFixtureInput = {}): ProviderConfig {
   return new ProviderConfig({
     group: input.group === null ? undefined : (input.group ?? "standard-personal"),

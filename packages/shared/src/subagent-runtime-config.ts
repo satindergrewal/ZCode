@@ -17,7 +17,7 @@ export const subagentRuntimeStateSchema = z
   .strict();
 export type SubagentRuntimeState = z.infer<typeof subagentRuntimeStateSchema>;
 
-/** snapshot 已经解析；读取失败的回退与 RPC 断连错误不能混为一谈。 */
+/** The snapshot is already parsed; read-failure fallback and RPC disconnect errors are distinct paths. */
 export const subagentRuntimeConfigSchema = z.discriminatedUnion("kind", [
   z
     .object({
@@ -33,7 +33,7 @@ export const subagentRuntimeConfigSchema = z.discriminatedUnion("kind", [
 ]);
 export type SubagentRuntimeConfig = z.infer<typeof subagentRuntimeConfigSchema>;
 
-/** 仅从解析缓存组合结果；启停变化不重新读取或解析 Markdown。 */
+/** Composed from the parse cache only; enable/disable changes never re-read or re-parse markdown. */
 export function resolveSubagentRuntimeProfiles(
   profiles: readonly AgentProfile[],
   state: SubagentRuntimeState,

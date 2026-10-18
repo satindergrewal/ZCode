@@ -67,15 +67,15 @@ export const DEFAULT_E2E_DESKTOP_BUILD_INPUTS = [
 
 export const E2E_DESKTOP_BUILD_ENV_NAMES = [
   "CDN_DOMAIN",
-  // Bugfix: tsup 会根据 CI 分支或 Tag 判断是否为正式发布构建；这些值必须参与缓存指纹，
-  // 否则可能把未注入 Agent OTLP 配置的普通构建错误复用到发布场景。
+  // Bugfix: tsup decides release-vs-normal from CI branch/tag; those values must join the cache
+  // fingerprint or a normal build lacking agent OTLP config can be reused for a release.
   "CI",
   "CI_COMMIT_BRANCH",
   "CI_COMMIT_TAG",
   "NODE_ENV",
   "OSS_PATH_PREFIX",
   "VITE_CODING_PLAN_WEBVIEW_ORIGIN",
-  // 邀请页地址被编译进 renderer，变化时必须使 E2E 构建缓存失效。
+  // The invite URL is compiled into the renderer; any change must invalidate the E2E build cache.
   "VITE_REWARDS_WEBVIEW_ORIGIN",
   "VITE_ZAI_OAUTH_CLIENT_ID",
   "VITE_ZAI_OAUTH_ORIGIN",
@@ -179,9 +179,9 @@ export function resolveE2EDesktopBuildInputPaths({
     }
   }
 
-  // Bug 根因：手写输入目录遗漏了 tsup noExternal 内联的 @zcode/server，导致同一
-  // HEAD 下修改 server 仍可能命中旧 bundle。依赖图作为权威输入，新增 workspace
-  // 依赖时无需再同步维护缓存白名单。
+  // Root cause: the hand-written input list missed @zcode/server, which tsup noExternal inlines,
+  // so server edits at the same HEAD could still hit a stale bundle. The dependency graph is the
+  // authoritative input; new workspace deps need no cache-allowlist maintenance.
   return [...new Set([...DEFAULT_E2E_DESKTOP_BUILD_INPUTS, ...packageInputPaths])].sort();
 }
 
@@ -251,8 +251,9 @@ export function ensureE2EDesktopBuild({
   stampPath = STAMP_PATH,
 } = {}) {
   return withE2EDesktopBuildLock({ ...lockOptions, lockPath }, () => {
-    // Bug 根因：两个 full runner 会在锁外同时观察 miss，随后递归清理并重写同一个
-    // packages/desktop/out。fingerprint 与 cache hit 必须在获得共享写锁后重新计算和检查。
+    // Root cause: two full runners can observe the miss outside the lock and then recursively
+    // clean and rewrite the same packages/desktop/out. Fingerprint and cache-hit checks must be
+    // redone after acquiring the shared write lock.
     const fingerprint = createE2EDesktopBuildFingerprint({ ...fingerprintOptions, env });
     const forceBuild = env.ZCODE_E2E_FORCE_DESKTOP_BUILD === "1";
     if (
@@ -268,8 +269,9 @@ export function ensureE2EDesktopBuild({
     }
 
     console.log(`[e2e-build-cache] miss ${fingerprint.slice(0, 12)}`);
-    // 构建一旦开始，旧 stamp 就不再能证明共享 out 完整；即使后续失败时入口文件
-    // 恰好已生成，也必须保持无 stamp，让下一位 lock owner 重新构建。
+    // Once a build starts, the old stamp no longer proves shared-out integrity; even if the entry
+    // file happens to exist after a later failure, keep stamp-less state so the next lock owner
+    // rebuilds.
     rmSync(stampPath, { force: true });
     if (buildDesktop) {
       buildDesktop();

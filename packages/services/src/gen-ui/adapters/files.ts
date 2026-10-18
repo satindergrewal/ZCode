@@ -24,11 +24,11 @@ export async function readGenUiDocument(
   const root = resolve(outputRoot),
     file = normalize(input.path);
   const child = relative(root, file);
-  // 根因：fork 会保留父会话的 HTML 路径，生成目录分组不能作为当前会话的读取限制。
-  // 读取范围只由执行端 Host 的固定输出根目录决定，widget state 仍使用当前会话身份。
+  // Root cause: forks keep the parent session\x27s HTML paths, so generation-dir grouping must not limit reads for the current session.
+  // Read scope comes only from the executing host\x27s fixed output root; widget state keeps the current session identity.
   if (!child || child === ".." || child.startsWith(`..${sep}`) || isAbsolute(child))
     throw new Error("Gen UI file is outside the host output directory");
-  // 修复依据：realpath 后再做前缀判断仍可能放行替换中的符号链接；逐级拒绝链接并核对打开的文件身份。
+  // Fix rationale: prefix checks after realpath can still admit swapped symlinks; reject links per segment and verify the opened inode.
   const canonicalRoot = await realpath(root);
   let current = canonicalRoot;
   for (const segment of child.split(sep)) {

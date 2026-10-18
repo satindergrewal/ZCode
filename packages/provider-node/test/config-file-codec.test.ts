@@ -13,41 +13,44 @@ import {
 } from "../src/provider-config-file-codec.js";
 
 describe("provider-node private config codecs", () => {
-  it.each([true, false])("Todo134：旧手动 MFJS=%s 可读取，但不继续固化隐藏字段", (value) => {
-    const config = {
-      properties: {
-        contextWindow: 1234,
-        requiresMfjsToolSchema: value,
-        inputFormat: { supportsImage: false, supportsVideo: false, supportsPdf: true },
-        supportsJsonSchemaOutput: false,
-        supportsNativeWebSearch: false,
-        supportsMidConversationSystem: true,
-      },
-      optionSpecs: {
-        reasoningLevel: { values: ["high"], map: "{}" },
-        maxOutputTokens: { max: 128 },
-      },
-    };
-    const input = {
-      schemaVersion: 1,
-      config: {
-        providerConfigRules: { providerRules: [] },
-        modelConfigRules: {
-          providerModelRules: [],
-          manualProviderModelRules: [{ providerId: "p", modelId: "m", config }],
+  it.each([true, false])(
+    "Todo134: legacy manual MFJS=%s stays readable without re-freezing hidden fields",
+    (value) => {
+      const config = {
+        properties: {
+          contextWindow: 1234,
+          requiresMfjsToolSchema: value,
+          inputFormat: { supportsImage: false, supportsVideo: false, supportsPdf: true },
+          supportsJsonSchemaOutput: false,
+          supportsNativeWebSearch: false,
+          supportsMidConversationSystem: true,
         },
-      },
-    };
-    const output = encodeProviderConfigFile(decodeProviderConfigFile(input));
-    expect(output.config.modelConfigRules.manualProviderModelRules[0]?.config).toEqual(
-      extractManualModelConfig(config),
-    );
-    expect(config.properties.requiresMfjsToolSchema).toBe(value);
-    expect(encodeProviderConfigFile(decodeProviderConfigFile(output))).toEqual(output);
-    Object.assign(config.properties, { unknown: true });
-    expect(() => decodeProviderConfigFile(input)).toThrow();
-  });
-  it("Todo130：仅在文件读取规范化合法旧完整手动规则，保留顺序/默认/启停；再写不含系统叶子", () => {
+        optionSpecs: {
+          reasoningLevel: { values: ["high"], map: "{}" },
+          maxOutputTokens: { max: 128 },
+        },
+      };
+      const input = {
+        schemaVersion: 1,
+        config: {
+          providerConfigRules: { providerRules: [] },
+          modelConfigRules: {
+            providerModelRules: [],
+            manualProviderModelRules: [{ providerId: "p", modelId: "m", config }],
+          },
+        },
+      };
+      const output = encodeProviderConfigFile(decodeProviderConfigFile(input));
+      expect(output.config.modelConfigRules.manualProviderModelRules[0]?.config).toEqual(
+        extractManualModelConfig(config),
+      );
+      expect(config.properties.requiresMfjsToolSchema).toBe(value);
+      expect(encodeProviderConfigFile(decodeProviderConfigFile(output))).toEqual(output);
+      Object.assign(config.properties, { unknown: true });
+      expect(() => decodeProviderConfigFile(input)).toThrow();
+    },
+  );
+  it("Todo130: normalizes legacy complete manual rules only at read, keeping order/default/toggles; rewrites drop system leaves", () => {
     const legacy = {
       enabled: false,
       properties: {
@@ -160,7 +163,7 @@ describe("provider-node private config codecs", () => {
     ).toThrow();
   });
 
-  it("拒绝 Personal Provider Config 中的全局 match 规则", () => {
+  it("rejects global match rules in Personal Provider Config", () => {
     expect(() =>
       decodeProviderConfigFile({
         schemaVersion: 1,

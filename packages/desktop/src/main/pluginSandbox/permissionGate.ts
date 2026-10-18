@@ -9,9 +9,11 @@ import {
 } from "./permissions.js";
 
 /**
- * 沙箱 partition 的权限闸门：Electron request / check handler 只把原始参数交给这里。
- * 来源必须是登记过的插件 origin；资源声明与同意记录决定放行；需要确认时同一 partition + 权限组合只弹一个框。
- * 同意记录只在内存（按 partition，即按 server）：本次运行期间有效，重启后再次询问。
+ * Permission gate for sandbox partitions: Electron request/check handlers pass raw args here.
+ * The origin must be a registered plugin origin; resource declarations and consent records
+ * decide; when confirmation is needed, one dialog per partition+permission combination.
+ * Consent lives in memory only (per partition, i.e. per server): valid for this run, asked again
+ * after restart.
  */
 export interface PluginSandboxPermissionGate {
   request(input: {
@@ -33,12 +35,12 @@ const EMPTY: ReadonlySet<McpAppsResourcePermission> = new Set();
 
 export function createPluginSandboxPermissionGate(deps: {
   registry: Pick<PluginSandboxRegistryPort, "get">;
-  /** 原生确认框；true = 用户允许。 */
+  /** Native confirm dialog; true = allowed. */
   prompt(input: {
     record: PluginSandboxRecord;
     permissions: PluginSandboxPromptedPermission[];
   }): Promise<boolean>;
-  /** macOS 系统级媒体授权（askForMediaAccess）；其他平台缺省视为允许。 */
+  /** macOS system-level media authorization (askForMediaAccess); other platforms default to allowed. */
   requestSystemMediaAccess?(kind: "camera" | "microphone"): Promise<boolean>;
   logger?: { warn: (...args: unknown[]) => void; info?: (...args: unknown[]) => void };
 }): PluginSandboxPermissionGate {
@@ -121,7 +123,8 @@ export function createPluginSandboxPermissionGate(deps: {
         if (!(await flight)) return false;
       }
       if (!(await systemAccess(requested)) || !valid()) return false;
-      // 系统授权也可能晚于页面撤销；完成全部异步验证后才能保存同意记录。
+      // System authorization can also land after the page is torn down; save consent only after
+      // every async check completes.
       if (decision === "prompt") {
         const granted = consented.get(record.partition) ?? new Set();
         for (const item of pending) granted.add(item);

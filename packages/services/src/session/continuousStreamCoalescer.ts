@@ -34,20 +34,24 @@ interface ContinuousStreamCoalescer {
   dispose(): void;
 }
 
-function isContinuousCoalescibleChunk(event: ZCodeStreamEvent): event is ContinuousCoalescibleChunk {
+function isContinuousCoalescibleChunk(
+  event: ZCodeStreamEvent,
+): event is ContinuousCoalescibleChunk {
   return (
     event.type === "agent_thought_chunk" ||
     (event.type === "agent_message_chunk" && !event.zcodeTimeline)
   );
 }
 
-function isContinuousCoalescibleState(event: ZCodeStreamEvent): event is ContinuousCoalescibleState {
+function isContinuousCoalescibleState(
+  event: ZCodeStreamEvent,
+): event is ContinuousCoalescibleState {
   if (event.type === "usage_update") {
     return true;
   }
 
-  // Bugfix: api_retry 会以 session_info_update 高频推送，但 title/target 是会话元信息变更。
-  // 这里只合并纯重试状态，避免标题或目标补丁被延迟后影响任务列表/目标展示的一致性。
+  // Bugfix: api_retry floods session_info_update, yet title/target are session metadata changes.
+  // Coalesce retry state only, or delayed title/target patches desync the task list and target display.
   return (
     event.type === "session_info_update" &&
     event.title === undefined &&
@@ -66,16 +70,12 @@ function getContinuousChunkMergeKey(event: ContinuousCoalescibleChunk): string {
     event.taskId,
     event.traceId,
     normalizeChunkParentToolUseId(event),
-    event.type === "agent_message_chunk" ? event.messageId ?? "" : "",
+    event.type === "agent_message_chunk" ? (event.messageId ?? "") : "",
   ].join(CONTINUOUS_CHUNK_KEY_SEPARATOR);
 }
 
 function getContinuousStateMergeKey(event: ContinuousCoalescibleState): string {
-  return [
-    event.type,
-    event.taskId,
-    event.traceId,
-  ].join(CONTINUOUS_CHUNK_KEY_SEPARATOR);
+  return [event.type, event.taskId, event.traceId].join(CONTINUOUS_CHUNK_KEY_SEPARATOR);
 }
 
 function mergeContinuousChunks(
@@ -157,8 +157,8 @@ export function createContinuousStreamCoalescer(params: {
       return;
     }
 
-    // Bugfix: usage/apiRetry 这类状态事件会跟正文流同频到达。逐条透给桌面 continuous
-    // 会让 renderer 反复写 store 并触发 React 同步渲染；按帧只保留最新状态即可保持 UI 语义。
+    // Bugfix: usage/apiRetry state events arrive at body-stream frequency. Forwarding each one to desktop continuous
+    // makes the renderer rewrite the store per event; keep only the latest per frame to preserve UI semantics.
     pendingItems.push({ kind: "state", event, stateKey });
     if (pendingItems.length >= maxEvents || flushDelayMs <= 0) {
       flushPending();
@@ -179,9 +179,9 @@ export function createContinuousStreamCoalescer(params: {
       }
 
       if (!isContinuousCoalescibleChunk(event)) {
-        // Bugfix: 桌面 continuous 之前把几千个 1-5 字符 chunk 逐条塞进 RPC，
-        // terminal 和 sendPrompt 返回会排在这些小包后面。这里在结构化事件前先 flush，
-        // 保持工具、权限、快照和终态事件的相对顺序，同时把普通正文流收敛到帧级别。
+        // Bugfix: desktop continuous used to push thousands of 1-5 char chunks as individual RPCs,
+        // queueing terminal/sendPrompt returns behind them. Flush before structured events,
+        // preserving tool/permission/snapshot/terminal ordering while collapsing body text to frame granularity.
         flushPending();
         params.emit(event);
         return;

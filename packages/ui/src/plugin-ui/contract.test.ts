@@ -10,7 +10,7 @@ import {
 } from "./contract.js";
 
 describe("plugin-ui contract", () => {
-  it("侧栏与渲染面同时隔离 workspace/session/plugin", () => {
+  it("pane and render plane isolate workspace/session/plugin together", () => {
     const request = {
       workspacePath: "/repo",
       parentSessionId: "s1",
@@ -35,7 +35,7 @@ describe("plugin-ui contract", () => {
     );
   });
 
-  it("作用域解析：surfaceId 优先，两者都缺为 null", () => {
+  it("scope resolution: surfaceId wins, both missing is null", () => {
     expect(readPluginUiScopeRef({ toolCallId: "c1" })).toEqual({
       kind: "toolCall",
       toolCallId: "c1",
@@ -47,7 +47,7 @@ describe("plugin-ui contract", () => {
     expect(readPluginUiScopeRef({})).toBeNull();
   });
 
-  it("示例请求生成 session 作用域的 tab", () => {
+  it("example request creates a session-scoped tab", () => {
     const tab = exampleOpenSideTab({
       parentSessionId: "s1",
       toolCallId: "c1",
@@ -73,11 +73,11 @@ describe("plugin-ui contract", () => {
     expect(surfaceTab.serverName).toBe(examplePresentation.serverName);
   });
 
-  it("默认卡片高度符合宿主约定", () => {
+  it("default card height matches the host contract", () => {
     expect(PLUGIN_UI_CARD_DEFAULT_HEIGHT_PX).toBe(240);
   });
 
-  it("4a-0 / S3：会话动作只剩 sendFollowUp，命令端口是 sendText + uploadAttachment（widgetState 不再经会话命令）", () => {
+  it("4a-0/S3: session actions reduce to sendFollowUp; command port is sendText + uploadAttachment (widgetState bypasses session commands)", () => {
     const port: PluginUiSessionCommandPort = {
       sendText: async () => "sent",
       uploadAttachment: async (input) => ({

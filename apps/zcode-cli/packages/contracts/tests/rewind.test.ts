@@ -192,8 +192,13 @@ describe("rewind contracts", () => {
   });
 
   it("selects only the latest append-only branch across consecutive branch cuts", () => {
-    const messages = ["old-user", "old-assistant", "edited-user", "edited-assistant", "final-user"]
-      .map((id) => ({ info: { id: id as MessageId } }));
+    const messages = [
+      "old-user",
+      "old-assistant",
+      "edited-user",
+      "edited-assistant",
+      "final-user",
+    ].map((id) => ({ info: { id: id as MessageId } }));
 
     expect(
       selectActiveConversationBranch(messages, {

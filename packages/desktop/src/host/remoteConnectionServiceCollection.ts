@@ -55,8 +55,9 @@ export function createRemoteConnectionServiceCollection(params: {
       credentialService: params.credentialService,
     }),
   });
-  // 修复原因：remote connection host 直接暴露给 renderer 的 service 集合也要包含
-  // 远端文件系统相关服务；否则远端 skill 同步会命中 Unknown channel 或误回落到本机。
+  // Fix: the service collection the remote connection host exposes to the renderer must also
+  // include remote-filesystem services, or remote skill sync hits Unknown channel or silently
+  // falls back to the local machine.
   return (
     new ServiceCollection()
       .register(IFileService, params.connectionServices.fileService)
@@ -98,7 +99,7 @@ export function createRemoteConnectionServiceCollection(params: {
       .register(IMcpSyncService, params.connectionServices.mcpSyncService)
       .register(IPluginSyncService, params.connectionServices.pluginSyncService)
       .register(IPluginsService, params.connectionServices.pluginsService)
-      // M5 ③-3：远端设置页插件管理也必须打到远端 agent（插件目录在远端文件系统）。
+      // M5 3-3: remote-settings plugin management must also hit the remote agent (plugin dirs live on the remote filesystem).
       .register(IPluginManagementService, params.connectionServices.pluginManagementService)
       .register(ICommandsService, params.connectionServices.commandsService)
       .register(

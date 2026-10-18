@@ -47,15 +47,15 @@ const listWorkflowRunsHandler: ToolHandler = async (input, context) => {
 
   const port = context.dynamicWorkflowRunPort;
   // "Port absent" and "port present, method absent" yield one business failure: to the model it is the
-// same fact. Optional members probed via typeof (precedent: `cancel` in the port contract).
+  // same fact. Optional members probed via typeof (precedent: `cancel` in the port contract).
   if (port === undefined || typeof port.listRuns !== "function") {
     return workflowIntrospectionUnavailableFailure();
   }
 
   const result = await port.listRuns({
     // cwd is always this session's working directory: no cross-project scans; also the precondition of
-// `sideEffectScope: "none"`. Literal-equality match, no path normalization -- written raw, queried raw;
-// normalizing would create one-sided misses.
+    // `sideEffectScope: "none"`. Literal-equality match, no path normalization -- written raw, queried raw;
+    // normalizing would create one-sided misses.
     // The limit is clamped to [1, 50] by the input schema (preprocess); the port never sees an unbounded scan.
     limit: parsed.limit,
     ...(parsed.statuses === undefined ? {} : { statuses: parsed.statuses }),
@@ -162,7 +162,7 @@ export const listWorkflowRunsToolEntry: ToolEntry = {
     alwaysAllowPatternSources: ["toolName"],
     denyPriority: "beforeAsk",
     // Deliberately NOT inheriting CreateWorkflow's alwaysAsk: that gate exists for "runs a block of code";
-// reading state is not that.
+    // reading state is not that.
   },
   resultBudget: {
     maxInlineBytes: LIST_WORKFLOW_RUNS_MODEL_BYTES,
@@ -183,7 +183,8 @@ export const listWorkflowRunsToolEntry: ToolEntry = {
   cancellation: {
     supported: false,
     cleanup: "none",
-    userVisibleMessage: "ListWorkflowRuns reads the run journal synchronously and cannot be cancelled",
+    userVisibleMessage:
+      "ListWorkflowRuns reads the run journal synchronously and cannot be cancelled",
   },
   trace: {
     required: true,

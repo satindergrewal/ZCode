@@ -2,7 +2,10 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { NodeReplRequestMeta, NodeReplSession } from "@zcode/core";
 import { setupBrowserRuntime } from "../src/browser-client.js";
-import { createBrowserBridgeGlobals, type ActiveNodeReplCall } from "@zcode/node-repl-host/browser-bridge";
+import {
+  createBrowserBridgeGlobals,
+  type ActiveNodeReplCall,
+} from "@zcode/node-repl-host/browser-bridge";
 import { readNodeReplBrowserRuntimeBridge } from "@zcode/node-repl-host/runtime-bridge";
 
 describe("subagent browser boundary", () => {
@@ -20,7 +23,7 @@ describe("subagent browser boundary", () => {
       documentationRoot: resolve(process.cwd(), "docs"),
       generation: 1,
       getActiveCall: activeCall,
-      // 本用例只走本地 documentation guard，不会执行需要 response meta 的 transport。
+      // This case only exercises the local documentation guard; no response-meta transport runs.
       session: () => undefined as unknown as NodeReplSession,
     });
 

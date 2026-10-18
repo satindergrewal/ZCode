@@ -32,7 +32,7 @@ function release(revision: number) {
   });
 }
 
-it("同内容并发启动复用固定资源且不改写文件", async () => {
+it("reuses the pinned asset on concurrent same-content starts without rewriting the file", async () => {
   const environmentConfigRoot = await environmentRoot();
   const options = { environmentConfigRoot, content: release(1) };
   const file = await materializeZCodeBuiltinProviderConfig(options);
@@ -46,7 +46,7 @@ it("同内容并发启动复用固定资源且不改写文件", async () => {
   expect(await readdir(dirname(file))).toEqual(["zcode-builtin.json"]);
 });
 
-it("替换期间并发读取只见完整旧版或新版，不产生 hash 历史文件", async () => {
+it("lets concurrent reads see only a complete old or new version during swap, with no hash-history files", async () => {
   const environmentConfigRoot = await environmentRoot();
   const file = await materializeZCodeBuiltinProviderConfig({
     environmentConfigRoot,
@@ -76,7 +76,7 @@ it("替换期间并发读取只见完整旧版或新版，不产生 hash 历史�
   expect(await readdir(dirname(file))).toEqual(["zcode-builtin.json"]);
 });
 
-it("资源校验或原子写入失败时保留旧内容，错误向调用方报告", async () => {
+it("keeps the old content when validation or the atomic write fails and reports the error to the caller", async () => {
   const environmentConfigRoot = await environmentRoot();
   const file = await materializeZCodeBuiltinProviderConfig({
     environmentConfigRoot,

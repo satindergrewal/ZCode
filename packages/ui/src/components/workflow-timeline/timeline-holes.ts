@@ -6,44 +6,47 @@ import type { WorkflowCausalityGraphData } from "@/components/workflow-graph/typ
 import type { TimelineRail, TimelineStation, WorkflowTimelineModel } from "./timeline-model.js";
 
 /**
- * 留白在时间线模型上的派生（docs/dynamic-workflow/presentation.md「Holes on the timeline」）。
- * 从 timeline-model.ts 拆出（max-lines 门）：那里只在建站时问一句「这一站是留白吗」、在收尾时
- * 问一句「头在哪、尾巴要不要多 40px」，规则全在这里。无 React、无 DOM、无时间。
+ * Hole derivations on the timeline model (docs/dynamic-workflow/presentation.md Holes on the timeline).
+ * Split out of timeline-model.ts (max-lines gate): that file only asks is-this-station-a-hole at build and
+ * where-is-the-head / does-the-tail-need-40px at finish; every rule lives here. No React, no DOM, no time.
  *
- * 一个留白就是一个阶段（id = 站点 id、name = 字面量，规则 9012 保证名字唯一）：
- *   - **开着**：display 的 `holes[]` 列出它（是否尾巴）；run 停在它上时 `run.holes` 说它 waiting。
- *   - **补全了**：display 的 `holes[]` 不再列它；它写下的阶段与站点带 `fill: <它的 id>`。有阶段的补全，
- *     体的站站在留白的位置，留白只剩一个**头**（笔 · 名）悬在它们之上；没有阶段的补全，留白自己
- *     的阶段装着体的 ask，站保留名字、名字旁进一枚笔标。
- * 补全后的名字在 display 上没有落点（它不是站点了），所以从 `run.holes` 取；没有 run 的静态图
- * （确认窗、补全行）由调用方递 `holeLabels`；两处都没有时退回站点 id——总比空着强。
- * 留白的类型（`hole<T>` 的 T）线上有、界面上没有：它是编译契约，不是给用户读的。
+ * A hole IS a phase (id = site id, name = literal; rule 9012 keeps names unique):
+ *   - open: display holes[] lists it (tail or not); while the run parks on it, run.holes says waiting.
+ *   - filled: display holes[] no longer lists it; the phases and sites it wrote carry fill: <its id>. With
+ *     phases, the body's stations stand where the hole was and the hole keeps only a HEAD (pen - name) above
+ *     them; without phases, the hole's own phase holds the body's asks, the station keeps its name and grows
+ *     a pen mark.
+ * The filled name has no display anchor (no longer a site), so it comes from run.holes; run-less static graphs
+ * (confirm dialog, completion row) get holeLabels from the caller; with neither, fall back to the site id,
+ * better than blank. The hole kind (T of hole<T>) exists on the wire only, a compile-time contract, not UI copy.
  *
- * **嵌套**：补全里可以再留白。留白 id 是名字键（`hole#<8 位十六进制>`），不随深度增长，所以嵌套
- * 关系不在 id 里：一个留白**自己的**阶段 / 站带 `fill: <包着它的留白>`（顶层留白没有），由此得出
- * 父表 {@link HoleTable.parents}。外层的头覆盖「`fill` 是它或它里面任一层留白」的全部站，内层的区域
- * 落在外层的里面；头按 `from` 升序、同起点外层在前（区域先画外层、内层叠在上面）。
- * 修复原因：2026-09-29 之前 id 逐层拼接（`hole#1/hole#1`），接龙八九步就顶到协议的 64 字符上界。
+ * Nesting: holes inside completions. The hole id is a name key (hole# + 8 hex), depth-free, so nesting does not
+ * live in the id: a hole's OWN phase/station carries fill: <enclosing hole> (top-level holes none), yielding
+ * the parent map HoleTable.parents. The outer head covers every station whose fill is it or any hole inside it;
+ * the inner region lands inside the outer. Heads sort by from, outer first on ties (outer region paints first,
+ * inner stacks above). Fix history: pre-2026-09-29 ids concatenated per level (hole#1/hole#1) and hit the
+ * protocol's 64-char bound after eight-ish steps.
  *
- * 站的 `fill` 回答「这一站属于哪片补全区域」：一般就是阶段的 `fill`；**已补全的留白自己的站**属于
- * 它自己的区域（悬停它亮它自己、它刚补全时它一起落地），所以取它自己的 id，见 {@link stationFillOf}。
+ * A station's fill answers which completion region it belongs to: usually the phase's fill, but a filled hole's
+ * OWN station belongs to its own region (hovering lights itself; it lands with its completion), hence its own
+ * id; see stationFillOf.
  */
 export type TimelineHoleState = "open" | "waiting" | "filled";
 
 export interface TimelineHole {
   siteId: string;
   state: TimelineHoleState;
-  /** 主代理收到的提示语（等待中，来自 `run.holes`）；侧板的等待体画它。 */
+  /** Prompt the main agent received (waiting, from run.holes); the side pane's waiting body renders it. */
   prompt?: string;
-  /** 脚本的尾巴：轨道在它之后多跑 40px。 */
+  /** The script's tail: rails run 40px past it. */
   tail?: true;
-  /** 到达时刻（等待中）；补全时刻（补全后）。 */
+  /** Arrival time (waiting); completion time (filled). */
   since?: number;
   filledAt?: number;
   filledBy?: string;
 }
 
-/** 一次有阶段的补全留下的头：覆盖 `from..to` 这几站（下标指向 `stations`）。 */
+/** A phase-carrying completion's head: covers stations from..to (subscripts into stations). */
 export interface TimelineFill {
   holeId: string;
   name: string;
@@ -58,10 +61,10 @@ export function isHoleSiteId(id: string): boolean {
   return WORKFLOW_HOLE_SITE_ID_PATTERN.test(id);
 }
 
-/** 留白 id → 包着它的留白 id（顶层留白不在表里）。 */
+/** Hole id to enclosing hole id (top-level holes absent). */
 export type HoleParents = Readonly<Record<string, string>>;
 
-/** `id` 起、沿父表一路向外的每一层留白（自己在最前）；防环：同一个 id 不走第二次。 */
+/** Every layer from id outward along the parents (self first); loop-safe, an id never repeats. */
 function holeAncestors(id: string, parents: HoleParents): string[] {
   const out: string[] = [];
   for (
@@ -74,14 +77,15 @@ function holeAncestors(id: string, parents: HoleParents): string[] {
   return out;
 }
 
-/** `id` 是补全 `holeId` 本身、还是它里面（任意深度）的留白。 */
+/** Whether id is completion holeId itself or a hole inside it (any depth). */
 export function fillContains(holeId: string, id: string, parents: HoleParents): boolean {
   return holeAncestors(id, parents).includes(holeId);
 }
 
 /**
- * 父表：每个留白自己的阶段与站上的 `fill` 就是包着它的留白（分析器的约定，docs/analysis.md「Sites」）。
- * 阶段优先（补全过的留白只剩阶段），站兜底（开着的留白在 display 上是一个 kind hole 的站）。
+ * Parents: each hole's own phase and station carry fill = enclosing hole (analyzer convention, docs/analysis.md
+ * Sites). Phase first (filled holes keep only the phase), station fallback (an open hole is a kind-hole station
+ * on the display).
  */
 export function holeParentsOf(
   graph: Pick<WorkflowCausalityGraphData, "steps">,
@@ -100,10 +104,11 @@ export function holeParentsOf(
 }
 
 /**
- * 把「头已经代表了它」的留白阶段从时间线上拿掉：已补全、自己没有成员、而它的体里另有站的留白。
- * 分析器把这种阶段留在表里（侧栏与 `phaseNames` 靠它念得出接龙每一步的名字，docs/analysis.md
- * 「Sites」），但时间线上它只会是体前面一盏空灯——头已经说了它的名字。拿掉时把进它的边接到出它的
- * 边上（`a → h → b` 成 `a → b`），轨道因此不断；没有体站的补全不拿（它的站带笔标，是唯一的痕迹）。
+ * Drop hole phases already represented by a head from the timeline: filled, memberless, and with other
+ * stations inside its body. The analyzer keeps such phases in the table (side pane and phaseNames need them to
+ * name each chain step, docs/analysis.md Sites) but on the timeline it would be a bare lamp before the body,
+ * the head already says its name. Dropping rewires in-edges to out-edges (a-h-b becomes a-b) so rails stay
+ * whole; completions without body stations stay (their marked stations are the only trace).
  */
 export function withoutHeadedHolePhases(
   graph: WorkflowCausalityGraphData,
@@ -130,7 +135,7 @@ export function withoutHeadedHolePhases(
       .map((phase) => phase.id),
   );
   if (hidden.size === 0) return graph;
-  // 逐个收缩：每拿掉一个就把经过它的路径接上，连续的几个被拿掉的阶段因此也接得通。
+  // Shrink one by one, rewiring paths through each drop so consecutive drops connect too.
   let edges = [...(graph.phaseEdges ?? [])];
   for (const id of hidden) {
     const into = edges.filter((edge) => edge.to === id && edge.from !== id);
@@ -161,8 +166,9 @@ export function withoutHeadedHolePhases(
 }
 
 /**
- * 时间线从哪张图建站：头已代表的留白阶段拿掉（{@link withoutHeadedHolePhases}），父表却从**拿掉
- * 之前**的图算——被拿掉的留白仍是它体里留白的父，嵌套才不断。
+ * Which graph the timeline builds stations from: headed hole phases dropped (withoutHeadedHolePhases) while
+ * the parent map computes from the PRE-drop graph, dropped holes still parent their body's holes, keeping
+ * nesting intact.
  */
 export function timelineHoleGraph(full: WorkflowCausalityGraphData): {
   graph: WorkflowCausalityGraphData;
@@ -173,7 +179,7 @@ export function timelineHoleGraph(full: WorkflowCausalityGraphData): {
   return { graph, parents: holeParentsOf(full, full.phases ?? []), phases: graph.phases ?? [] };
 }
 
-/** 一站属于哪片补全区域（摊进站的字段）：已补全的留白自己的站属于它自己，其余站属于阶段的 `fill`。 */
+/** Which completion region a station belongs to (folded onto the station): a filled hole's own station its own region, others the phase's fill. */
 export function stationFillOf(
   phase: { id: string; fill?: string },
   hole: TimelineHole | undefined,
@@ -183,23 +189,24 @@ export function stationFillOf(
 }
 
 export interface HoleTable {
-  /** 阶段 id → 这一站是留白（自己的阶段还在表里的那些）。 */
+  /** Phase id to is-this-station-a-hole (those whose own phase survives the table). */
   byPhase: ReadonlyMap<string, TimelineHole>;
-  /** 有阶段的补全的头，按 `from` 升序。 */
+  /** Heads of phase-carrying completions, ascending by from. */
   fills: TimelineFill[];
-  /** 留白之间的包含关系（见 {@link holeParentsOf}）。 */
+  /** Containment among holes (see holeParentsOf). */
   parents: HoleParents;
 }
 
 /**
- * 从 display 与 run 读出留白表。`phases` 是模型建站用的那张阶段表（隐式阶段已合成），下标与站一致。
+ * Read the hole table from display and run. phases is the model's station-building phase table (implicit phase
+ * synthesized), subscript-aligned with stations.
  */
 export function holeTable(
   graph: WorkflowCausalityGraphData,
   phases: readonly NonNullable<WorkflowCausalityGraphData["phases"]>[number][],
   run: WorkflowRunState | undefined,
   labels: HoleLabels | undefined,
-  /** 从**收缩之前**的图算出的父表（被拿掉的留白阶段仍然是它体里留白的父）；缺席时就地算。 */
+  /** Parents from the PRE-shrink graph (dropped hole phases still parent their body's holes); computed here when absent. */
   parents: HoleParents = holeParentsOf(graph, phases),
 ): HoleTable {
   const runHoles = new Map((run?.holes ?? []).map((hole) => [hole.siteId, hole]));
@@ -218,10 +225,10 @@ export function holeTable(
       ...(waiting && live.prompt !== undefined ? { prompt: live.prompt } : {}),
     });
   }
-  // 补全过的留白：run 记过 filled 的、被某个阶段 / 站点的 `fill` 点名的、阶段 id 本身就是留白 id 的。
+  // Filled holes: recorded filled by the run, named by some phase/site fill, or whose phase id is a hole id.
   const filled = new Set<string>();
   for (const hole of runHoles.values()) if (hole.state === "filled") filled.add(hole.siteId);
-  // 被点名的留白连同它的每一层外层：内层补全后外层可能不再被任何阶段直接点名。
+  // Named holes plus every outer layer: once the inner fills, outers may no longer be named by any phase.
   for (const phase of phases) {
     if (phase.fill !== undefined)
       for (const id of holeAncestors(phase.fill, parents)) filled.add(id);
@@ -238,8 +245,8 @@ export function holeTable(
     const live = runHoles.get(holeId);
     const label = labels?.get(holeId);
     const own = index.get(holeId);
-    // 体：`fill` 是它、或是它里面任一层留白的站——外层的跨度盖住内层的。它自己的站不在体里
-    // （它的 `fill` 是外层），紧挨在体之前时下面把它归进头下。
+    // Body: stations whose fill is it or any hole inside, the outer span covers the inner. Its own station is
+    // not body (its fill is the outer); directly before the body, the head claim below takes it.
     const body = phases.flatMap((phase, i) =>
       phase.fill !== undefined && fillContains(holeId, phase.fill, parents) ? [i] : [],
     );
@@ -247,14 +254,14 @@ export function holeTable(
       byPhase.set(holeId, {
         siteId: holeId,
         state: "filled",
-        // 站在表末的留白就是脚本的尾巴：补全后仍留 40px，头才放得下。
+        // A hole at the table's end is the script's tail: keep 40px after fill so the head fits.
         ...(own === last && body.length === 0 ? { tail: true as const } : {}),
         ...(live?.filledAt === undefined ? {} : { filledAt: live.filledAt }),
         ...(live?.filledBy === undefined ? {} : { filledBy: live.filledBy }),
       });
     }
     if (body.length === 0) continue;
-    // 留白自己的阶段紧挨在体之前时也归进头下（体在首个标记之前的语句落在那一站）。
+    // The hole's own phase directly before the body joins the head too (body statements before the first marker land there).
     const from = own !== undefined && own === Math.min(...body) - 1 ? own : Math.min(...body);
     fills.push({
       holeId,
@@ -264,8 +271,9 @@ export function holeTable(
       ...(live?.filledAt === undefined ? {} : { filledAt: live.filledAt }),
     });
   }
-  // 同起点的外层在前：跨度长的在前，跨度也相同时按嵌套深度（外层浅）。修复原因：id 不再逐层
-  // 拼接后，沿父表收集的次序是由内向外的，靠插入次序会把内层的头排到外层前面。
+  // Same-start outers first: longer span, then nesting depth (outer shallow). Fix note: once ids stopped
+  // concatenating per level, parent-walk collection runs inner-to-outer and insertion order would put inner
+  // heads above outer ones.
   const depth = (id: string): number => holeAncestors(id, parents).length;
   fills.sort(
     (left, right) =>
@@ -274,14 +282,14 @@ export function holeTable(
   return { byPhase, fills, parents };
 }
 
-/** 尾巴留白：开着 / 等着 → 虚线残段 40px 淡出；无阶段补全后 → 只留 40px 的余地（头要落下）。 */
+/** Tail hole: open/waiting draws a 40px fading dashed stub; after a phase-less fill only 40px reserved (the head must land). */
 export function tailStubOf(stations: readonly TimelineStation[]): "open" | "filled" | undefined {
   const hole = stations[stations.length - 1]?.hole;
   if (hole === undefined || hole.tail !== true) return undefined;
   return hole.state === "filled" ? "filled" : "open";
 }
 
-/** 触到开着 / 等着的留白的轨道段是虚线：那里还不是代码。 */
+/** Rail segments touching an open/waiting hole are dashed: no code there yet. */
 export function railTouchesHole(
   stations: readonly TimelineStation[],
   rail: Pick<TimelineRail, "from" | "to">,
@@ -294,9 +302,10 @@ export function railTouchesHole(
 }
 
 /**
- * 补全行的草稿阶段线（docs/dynamic-workflow/presentation.md「The fill row」）：父轨道上补全所在的那一截
- * ——补全的站全墨、两侧各一个邻站 ghost（40%）——其余站不画。弧、带、运行态一律不带：这是一张说
- * 「新的站落在哪两站之间」的静态图。留白不认识时 undefined。
+ * The completion row's draft phase line (docs/dynamic-workflow/presentation.md The fill row): the parent
+ * rail's stretch where the completion sits. Full ink on the completion's stations, one ghost neighbor each side
+ * (40 percent), other stations undrawn. No arcs, bands or live state: a static graph saying between which two
+ * stations the new ones land. Undefined when the hole is unknown.
  */
 export function narrowTimelineToFill(
   model: WorkflowTimelineModel,

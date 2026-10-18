@@ -1,15 +1,15 @@
 /**
- * 沙箱入口文件的落盘契约（docs/dynamic-workflow/launch.md「Single-executable builds」）。
+ * The sandbox entry file's on-disk contract (docs/dynamic-workflow/launch.md, "Single-executable builds").
  *
- * Bug 根因：harness 原先把整份 lowered 脚本 base64 后放在子进程命令行上，Windows 的命令行上限是
- * 32,767 字符，脚本一过约 18 KB 就 `spawn ENAMETOOLONG`——Windows 上稍长的 run 一个都起不来。
- * 次生缺陷：这类 spawn 失败在 Node 里是**同步抛错**，绕过引擎，journal 行永远停在 running。
+ * Bug root cause: the harness used to base64 the whole lowered body onto the child command line; Windows caps those at
+ * 32,767 chars, so past ~18KB every spawn is ENAMETOOLONG -- no longer run starting on Windows.
+ * Secondary defect: such spawn failures throw synchronously in Node, bypassing the engine and leaving journal rows running forever.
  *
- * 四件事钉住：
- *   1. 入口文件落在 `<cwd>/.zcode/workflow-runs/<runId>.mjs`，同目录有 `.gitignore`，run 结算后文件仍在；
- *   2. **回归护栏**：脚本再大，命令行长度也不变（与 200 KB 的 lowered 体无关）；
- *   3. 项目 `.zcode` 写不进 → 回落 tmpdir + onWarning，run 照常；
- *   4. spawn 同步抛错 → 经引擎结算 failed，journal 行 status 是 failed 而不是 running。
+ * Four things pinned:
+ *   1. the entry lands at <cwd>/.zcode/workflow-runs/<runId>.mjs with a .gitignore beside it, surviving settlement;
+ *   2. regression guard: command-line length stays flat no matter the script size (200KB lowered body included);
+ *   3. unwritable project .zcode -> tmpdir fallback + onWarning, run proceeds;
+ *   4. a synchronous spawn throw -> engine-settled failed, journal status failed, not running.
  */
 
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
@@ -28,9 +28,11 @@ import {
 } from "../src/index.js";
 import { AutoDriver } from "./auto-driver.js";
 
-// 包一层真 spawn：截获 args，子进程照常启动；`spawnOverride` 存在时改为调用它（同步抛错用例）。
+// Wraps the real spawn: args intercepted, child starts normally; spawnOverride replaces it when set (the sync-throw case).
 const spawnCalls: Array<{ args: readonly string[] }> = [];
-let spawnOverride: ((...args: Parameters<typeof spawnType>) => ReturnType<typeof spawnType>) | undefined;
+let spawnOverride:
+  | ((...args: Parameters<typeof spawnType>) => ReturnType<typeof spawnType>)
+  | undefined;
 vi.mock("node:child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:child_process")>();
   const wrapped: typeof spawnType = ((...args: Parameters<typeof spawnType>) => {
@@ -55,11 +57,14 @@ async function tempRoot(prefix: string): Promise<string> {
   return root;
 }
 
-/** 跑一份手写 lowered 体（无 ask 站点），返回结算与 journal。 */
+/** Runs a handwritten lowered body (no ask sites); returns settlement and journal. */
 async function runLowered(
   lowered: string,
   extra: Partial<Parameters<typeof runWorkflowScript>[0]> = {},
-): Promise<{ settlement: Awaited<ReturnType<typeof runWorkflowScript>>; journal: InMemoryJournalStore }> {
+): Promise<{
+  settlement: Awaited<ReturnType<typeof runWorkflowScript>>;
+  journal: InMemoryJournalStore;
+}> {
   const journal = new InMemoryJournalStore();
   const driver = new AutoDriver(journal);
   const settlement = await runWorkflowScript({
@@ -91,18 +96,22 @@ describe("child entry file", () => {
     expect(settlement).toEqual({ status: "completed", artifact: 7 });
     const entryPath = join(cwd, ".zcode", "workflow-runs", "dwfrun-1234.mjs");
     expect(spawnCalls[0]!.args).toEqual(["--max-old-space-size=256", entryPath]);
-    // 保留是裁决：目录兼作每次 run 实际执行体的存档。
+    // Keeping them is the ruling: the directory doubles as the archive of what actually executed per run.
     const text = await readFile(entryPath, "utf8");
     expect(text).toContain("// zcode dynamic workflow run dwfrun-1234");
-    expect(text).toContain('export const payload = {"lowered":"return __host.args.x;","args":{"x":7},"maxOldSpaceSizeMb":256}');
+    expect(text).toContain(
+      'export const payload = {"lowered":"return __host.args.x;","args":{"x":7},"maxOldSpaceSizeMb":256}',
+    );
     expect(text).toContain("export const start = ");
-    // 只由 harness 写一份 `*`，绝不碰项目自己的 .gitignore。
-    await expect(readFile(join(cwd, ".zcode", "workflow-runs", ".gitignore"), "utf8")).resolves.toBe("*\n");
+    // The harness writes exactly one `*` and never touches the project's own .gitignore.
+    await expect(
+      readFile(join(cwd, ".zcode", "workflow-runs", ".gitignore"), "utf8"),
+    ).resolves.toBe("*\n");
   });
 
   it("keeps the command line short no matter how large the script is (Windows ENAMETOOLONG guard)", async () => {
     const cwd = await tempRoot("dwf-entry-big-");
-    // 200 KB 的 lowered 体：远超 Windows 32,767 字符的命令行上限，也超过 Linux 128 KB 的单参数上限。
+    // A 200KB lowered body: far past Windows' 32,767-char command line and Linux' 128KB per-arg limit.
     const lowered = `const pad = ${JSON.stringify("x".repeat(200_000))};\nreturn pad.length;`;
 
     const { settlement } = await runLowered(lowered, { cwd });
@@ -115,7 +124,7 @@ describe("child entry file", () => {
 
   it("falls back to os.tmpdir() and warns when the project .zcode cannot be created", async () => {
     const cwd = await tempRoot("dwf-entry-fallback-");
-    // `.zcode` 是个普通文件：mkdir 必然 ENOTDIR/EEXIST，正是「项目里写不进」的一种。
+    // .zcode as a plain file: mkdir fails with ENOTDIR/EEXIST -- one real unwritable-project shape.
     await writeFile(join(cwd, ".zcode"), "not a directory", "utf8");
     const warnings: HarnessWarning[] = [];
 
@@ -143,7 +152,7 @@ describe("child entry file", () => {
   it("settles a synchronous spawn failure as stopped(interrupted) through the engine, so the journal row is not left running", async () => {
     const cwd = await tempRoot("dwf-entry-throw-");
     spawnOverride = () => {
-      // Node 对 ENAMETOOLONG / E2BIG 正是这样同步抛的（只有 EACCES/EAGAIN/EMFILE/ENFILE/ENOENT 走 error 事件）。
+      // Node throws ENAMETOOLONG/E2BIG synchronously exactly like this (only EACCES/EAGAIN/EMFILE/ENFILE/ENOENT become error events).
       const error = new Error("spawn ENAMETOOLONG") as Error & { code: string };
       error.code = "ENAMETOOLONG";
       throw error;
@@ -155,8 +164,8 @@ describe("child entry file", () => {
     expect(settlement.status === "stopped" ? settlement.error?.message : "").toContain(
       "spawn ENAMETOOLONG",
     );
-    // 引擎结算过：journal 行是 stopped(interrupted)，不是永远 running 的孤儿（那会让 AmendWorkflow
-    // 被「has not settled yet」拒绝）；宿主侧故障可 resume。
+    // Engine-settled: the row is stopped(interrupted), not a forever-running orphan (which would make AmendWorkflow
+    // reject with has-not-settled-yet); host-side faults are resumable.
     expect(journal.getRun("run")).toMatchObject({ status: "stopped", stopReason: "interrupted" });
   });
 });
@@ -183,6 +192,8 @@ describe("writeChildEntryFile", () => {
 
     writeChildEntryFile({ cwd, runId: "r2", source: "" });
 
-    await expect(readFile(join(workflowRunsDir(cwd), ".gitignore"), "utf8")).resolves.toBe("custom\n");
+    await expect(readFile(join(workflowRunsDir(cwd), ".gitignore"), "utf8")).resolves.toBe(
+      "custom\n",
+    );
   });
 });

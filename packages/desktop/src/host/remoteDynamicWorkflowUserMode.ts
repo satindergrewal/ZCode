@@ -2,12 +2,9 @@ import type { DynamicWorkflowMode, RemoteTarget } from "@zcode/shared";
 import type { IZCodeAgentService } from "@zcode/services";
 
 /**
- * 把动态工作流的用户选择推给远程 Host（docs/dynamic-workflow/launch.md「The user's choice」）。
+ * Pushes the dynamic-workflow user choice to remote Hosts (docs/dynamic-workflow/launch.md "The user's choice").
  *
- * desktop-attached remote Host（SSH / WSL / Docker）读不到桌面的设置文件，选择只能由 desktop 推送：
- * 建远程 workspace services 时推一次，本机 Host 收到选择变化信号后再推给本窗口所有在线连接。
- * standalone server 有自己的设置权威，不推。单个连接失败（旧版本不认识该方法、连接已断）只上报，
- * 不影响其它连接，也不阻断远程连接建立。
+ * Desktop-attached remote Hosts (SSH/WSL/Docker) cannot read desktop settings, so only the desktop can push the choice: once when remote workspace services are created, and again to every online connection of this window when the local Host sees a change. A standalone server owns its settings and gets nothing. A per-connection failure (unknown method on old versions, dropped link) is reported only - other connections are unaffected and connection setup never blocks.
  */
 export async function pushDynamicWorkflowUserModeToRemoteHosts(
   connections: ReadonlyArray<{

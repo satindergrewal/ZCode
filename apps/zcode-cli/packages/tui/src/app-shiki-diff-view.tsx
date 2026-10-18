@@ -1,10 +1,7 @@
 import { RGBA, StyledText, type TextChunk } from "@mbears/opentui-core";
 import React from "react";
 import type { ToolResultDisplayHunk, ToolResultDisplayLine } from "./app-model.js";
-import {
-  highlightShikiCodeLines,
-  type ShikiHighlightSegment,
-} from "./app-shiki-highlighter.js";
+import { highlightShikiCodeLines, type ShikiHighlightSegment } from "./app-shiki-highlighter.js";
 import { activeTuiTheme, type TuiThemeTokens } from "./theme/index.js";
 
 const SPLIT_DIFF_WIDTH_BREAKPOINT = 120;
@@ -284,18 +281,23 @@ function highlightChunks(
 }
 
 function truncatedNode(theme: TuiThemeTokens): React.ReactElement {
-  return h("text", {
-    key: "diff-truncated",
-    style: {
-      fg: theme.diffLineNumber,
-      width: "100%",
+  return h(
+    "text",
+    {
+      key: "diff-truncated",
+      style: {
+        fg: theme.diffLineNumber,
+        width: "100%",
+      },
     },
-  }, "    ... diff truncated");
+    "    ... diff truncated",
+  );
 }
 
 function gutterText(row: DiffDisplayRow | undefined, side: "left" | "right" | "unified"): string {
   if (!row) return `${EMPTY_LINE_NUMBER.padStart(LINE_NUMBER_WIDTH)}   `;
-  const lineNumber = side === "left" ? row.oldLine : side === "right" ? row.newLine : displayLine(row);
+  const lineNumber =
+    side === "left" ? row.oldLine : side === "right" ? row.newLine : displayLine(row);
   const marker = side === "unified" ? row.marker : markerForSplitSide(row, side);
   return `${String(lineNumber ?? "").padStart(LINE_NUMBER_WIDTH)} ${marker}${GUTTER_TRAILING_SPACE}`;
 }

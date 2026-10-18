@@ -114,15 +114,15 @@ function CloudContentDialogInstance({
       <DialogContent
         ref={content}
         data-testid="cloud-content-dialog"
-        // macOS 窗口合成中，backdrop-filter 与隔离 iframe 叠加会在圆角外留下方形暗块；父层裁切无效。
+        // In macOS window compositing, backdrop-filter over an isolated iframe leaves square dark corners outside the radius; parent clipping does not help.
         overlayClassName={
           payload.dialog.hero?.type === "interactive_bundle" ? "backdrop-filter-none!" : undefined
         }
         onOpenAutoFocus={(event) => {
           opener.current =
             document.activeElement instanceof HTMLElement ? document.activeElement : null;
-          // Radix 默认先聚焦 Hero iframe，跨文档的 Escape 不会冒泡到父弹窗。
-          // 初始焦点留在关闭按钮；用户仍可用 Tab 或指针主动进入 Hero。
+          // Radix focuses the Hero iframe first, and a cross-document Escape never bubbles to the dialog.
+          // Initial focus stays on the close button; Tab or pointer still reaches the Hero.
           if (payload.dialog.hero?.type === "interactive_bundle") {
             const close = content.current?.querySelector<HTMLButtonElement>(
               '[data-slot="dialog-close"]',
@@ -134,17 +134,17 @@ function CloudContentDialogInstance({
           }
         }}
         onCloseAutoFocus={(event) => {
-          // 受控弹窗没有 Radix Trigger，默认关闭会丢失焦点；仅恢复仍在页面中的打开来源。
+          // A controlled dialog has no Radix Trigger; the default close would drop focus. Restore only openers still in the document.
           event.preventDefault();
           const target = returnFocusRef?.current ?? opener.current;
           if (target?.isConnected) target.focus();
         }}
-        // Hero 背景独立于 App 主题，关闭按钮用固定媒体覆盖层配色保证可见。
+        // The Hero background ignores the app theme; the close button uses fixed overlay colors to stay visible.
         className="cloud-content-dialog max-h-[calc(100dvh-2rem)] w-[min(480px,calc(100vw-2rem))] max-w-none gap-0 overflow-y-auto border-0 p-0 [&_[data-slot=dialog-close]]:rounded-full"
       >
         {payload.dialog.hero ? (
           <div
-            // Hero 与外壳共用顶部圆角，不依赖资源内容自行适配。
+            // Hero and shell share the top radius regardless of asset content.
             className="aspect-[4/3] w-full overflow-hidden rounded-t-2xl bg-surface"
             data-testid="cloud-dialog-hero-slot"
           >
@@ -218,7 +218,7 @@ function CloudContentDialogInstance({
                     if (action) void run(action, button.actionId);
                   }}
                 >
-                  {/* 动作类型不代表视觉语义，远端文案可能是“取消”；内容按钮统一不自动加图标。 */}
+                  {/* Action type implies no visual semantics; remote copy may read "Cancel". Content buttons never auto-add icons. */}
                   {copiedActionId === button.actionId && labels.copySucceeded ? (
                     labels.copySucceeded
                   ) : (

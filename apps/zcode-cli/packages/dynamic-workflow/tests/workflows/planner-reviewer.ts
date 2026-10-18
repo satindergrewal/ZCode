@@ -1,13 +1,11 @@
-// 测试语料，**不是**作者范例：末尾 `findings.findings.map((f) => agent("judge")…)` 里那个静态
-// 名是**故意留着**的，别把它「修好」。这段脚本运行期会撞 DuplicateActorName、编译期拿一条
-// 9006（docs/execution-engine.md「Amend-resume」），所以它不可提交——
-// 而语料要的恰恰是这个形状：本文件与 tests/graphs/planner-reviewer.ts 是同一段源码的两份，
-// 后者的图快照（tests/graphs/expected/planner-reviewer*.txt）钉住分析器对「fan-out 里的具名
-// actor」的全部产物（`ActorNode.family`、actor 标签、因果图）。改成
-// `` agent(`judge-${f.testId}`) `` 会把两边一起搬到 `ActorSite.namePattern` 那条**另一条**
-// 代码路径上，等于删掉这份覆盖；语料对 9006 的豁免见 tests/helpers/analysis-corpus.ts。
-// （注释只加在这一份：graphs 那份的快照记录行号，加一行注释就是一次假 diff。）
-// 要照抄的作者范例在 packages/bundled-skills/skills/dynamic-workflows/。
+// Test corpus, NOT an authoring example: the static name in the trailing findings.map is deliberate --
+// do not fix it. The script hits DuplicateActorName at runtime and draws one 9006 at compile time
+// (docs/execution-engine.md, Amend-resume), so it is unsubmittable -- exactly the shape the corpus wants:
+// this file and tests/graphs/planner-reviewer.ts are two copies of one source, and the graph snapshots there
+// pin every product of named actors inside fan-out. Rewriting to template names migrates both onto the
+// ActorSite.namePattern path, deleting the coverage; the corpus exemption lives in helpers/analysis-corpus.ts.
+// (Comments live only in this copy: the graphs copy's snapshots pin line numbers; a comment there is a fake diff.)
+// Authoring examples to copy live in packages/bundled-skills/skills/dynamic-workflows/.
 interface Flaky {
   findings: {
     testId: string;

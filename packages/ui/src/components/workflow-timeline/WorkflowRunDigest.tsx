@@ -37,7 +37,7 @@ export interface WorkflowRunDigestProps {
   runId: string;
   /** The run's originating graph (looked up by toolCallId); without it no phase line (the row window lacks the origin row). */
   graph: WorkflowCausalityGraphData | undefined;
-  /** 补全过的留白的名字与类型（补全行入参），头的文字从它取（投影没记类型时）。 */
+  /** Filled holes' name and type (fill-row input); the head's text derives from it when the projection recorded no type. */
   holeLabels?: HoleLabels;
   /**
    * The live projection's join summary. Absent = the run left the projection (evicted by
@@ -174,8 +174,8 @@ export function WorkflowRunDigest({
         {questionsLabel}
       </button>
     );
-  // 「{n} 处留白待补全」（docs/dynamic-workflow/presentation.md「Holes on the timeline」）：笔芯片，落在问题
-  // 芯片的槽位上，两枚可以同时在；点它开整个 run。
+  // The {n} holes-awaiting-fill chip (docs/dynamic-workflow/presentation.md "Holes on the timeline"): the
+  // pen chip in the question chip's slot; both can coexist. Clicking opens the whole run.
   const holesWaiting = (run?.holes ?? []).filter((hole) => hole.state === "waiting").length;
   const leading =
     questions === undefined && holesWaiting === 0 ? undefined : (
@@ -283,7 +283,7 @@ export function WorkflowRunDigest({
               ? {}
               : {
                   onOpenMore: (station) => onOpenRun({ phaseId: station.id }),
-                  // 补全的头：开侧板、落到它写下的第一站（那一站的节头就是补全的标题）。
+                  // Fill head: opens the pane on the first station it wrote (that station's section header is the fill's title).
                   onOpenFill: (fill) => {
                     const first = shown.stations[fill.from];
                     if (first !== undefined) onOpenRun({ phaseId: first.id });

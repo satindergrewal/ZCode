@@ -36,7 +36,7 @@ function createBootstrapDocument(theme: "zai-dark" | "zai-light"): JSDOM {
 }
 
 describe("web remote control bootstrap shell", () => {
-  it("内嵌与桌面 App 同源的浏览器标签图标", () => {
+  it("inlines the same favicon source as the desktop app", () => {
     const html = readWebIndexHtml();
     const document = new JSDOM(html).window.document;
     const icon = document.querySelector<HTMLLinkElement>('link[rel="icon"][type="image/png"]');
@@ -51,7 +51,7 @@ describe("web remote control bootstrap shell", () => {
     );
   });
 
-  it("预渲染 loading 容器自身兜底主题背景，避免全局透明 body 露出白底", () => {
+  it("gives the prerendered loading container its own theme background so a transparent body never shows white", () => {
     const html = readWebIndexHtml();
     const loadingRule = readCssRule(html, ".zcode-boot-loading");
 
@@ -63,7 +63,7 @@ describe("web remote control bootstrap shell", () => {
     ["zai-dark", "dark", "#161616"],
     ["zai-light", "light", "#f8f8f8"],
   ] as const)(
-    "在业务 bundle 执行前把 %s 同步到浏览器主题表面",
+    "applies %s to the browser theme surface before any app bundle runs",
     (storedTheme, resolvedTheme, expectedColor) => {
       const dom = createBootstrapDocument(storedTheme);
       const { document } = dom.window;
@@ -82,7 +82,7 @@ describe("web remote control bootstrap shell", () => {
     },
   );
 
-  it("Web 根表面以语义背景覆盖 Electron 透明根背景", () => {
+  it("paints a semantic web root background over Electron's transparent one", () => {
     const html = readWebIndexHtml();
     const browserSurfaceRule = readCssRule(html, "html[data-zcode-browser-theme-surface] #root");
 

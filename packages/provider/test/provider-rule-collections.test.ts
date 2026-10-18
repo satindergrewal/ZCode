@@ -7,8 +7,8 @@ import {
   resolveProviderTemplateName,
 } from "../src/index.js";
 
-describe("Todo104 Provider 规则身份与内容分离", () => {
-  it("模板索引不依赖声明顺序，身份/名称只在规则层序列化", () => {
+describe("Todo104 provider rule identity/content separation", () => {
+  it("keeps the template index declaration-order-free and serializes identity/names in the rule layer only", () => {
     const source = {
       providerRules: [
         {
@@ -40,7 +40,7 @@ describe("Todo104 Provider 规则身份与内容分离", () => {
     );
   });
 
-  it("只改 config 的成员/排序不能丢掉同一规则上的名称和模板关系", () => {
+  it("keeps names and template relations on the same rule when only config membership/order changes", () => {
     const source = {
       providerRules: [
         {
@@ -69,7 +69,7 @@ describe("Todo104 Provider 规则身份与内容分离", () => {
     expect(providers.get("custom:test")?.modelOrder).toBeUndefined();
   });
 
-  it("跨来源正常覆盖，外层 null 清除与缺省继承分开；同来源重复拒绝", () => {
+  it("layers cross-source overrides, separates outer null-clears from absent-inherits, and rejects same-source duplicates", () => {
     const a = parsePersonalProviderConfigMap({
       providerRules: [
         {
@@ -99,7 +99,7 @@ describe("Todo104 Provider 规则身份与内容分离", () => {
         ],
       }),
     ).toThrow();
-    // Account 仍可从内部事实组装纯配置；该快捷构造不在磁盘建立第二种格式。
+    // Account may still assemble plain config from internal facts; this shortcut never creates a second on-disk format.
     const account = new ProviderConfigMap([
       ["p", new ProviderConfig({ builtinModelIds: ["dynamic"] })],
     ]);

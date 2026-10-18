@@ -1,6 +1,6 @@
 // task-output.ts hit the oxlint max-lines cap (400): task projection (projectTask plus the dwf/agent
- branches), output-file tail snapshot reads, and compact size formatting live here;
- the public surface still exports from task-output.ts.
+// branches), output-file tail snapshot reads, and compact size formatting live here;
+// the public surface still exports from task-output.
 import { open } from "node:fs/promises";
 import type { TaskOutputTask } from "@zcode/contracts";
 import type { RuntimeTaskSnapshot } from "../../runtime-task/registry.js";

@@ -92,11 +92,7 @@ function readLegacyImportedClaudeHistory(
   target: ImportedClaudeHistoryRepairTarget,
 ): ImportedClaudeHistoryRepairResult | null {
   const snapshotPath = [
-    getLegacyTaskSessionSnapshotPath(
-      target.workspacePath,
-      target.taskId,
-      target.workspaceIdentity,
-    ),
+    getLegacyTaskSessionSnapshotPath(target.workspacePath, target.taskId, target.workspaceIdentity),
     getLegacyDeletedTaskSessionSnapshotPath(
       target.workspacePath,
       target.taskId,
@@ -169,7 +165,8 @@ export async function resolveImportedClaudeHistoryForRepair(
   const nativeHistory = await readNativeImportedClaudeHistory(target);
   if (
     nativeHistory &&
-    countAssistantMessages(nativeHistory.messages) >= countAssistantMessages(legacyHistory?.messages ?? [])
+    countAssistantMessages(nativeHistory.messages) >=
+      countAssistantMessages(legacyHistory?.messages ?? [])
   ) {
     // Legacy versions may already have corrupted user-only backups.
     // Then legacy is no longer authoritative; rebuild the assistant from the Claude jsonl via taskId.

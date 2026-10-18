@@ -17,7 +17,7 @@ Fork side is 20 commits, 48 files. Survival map by theme (commit → files → w
 2. **Mission mode / goal continuation** (`7cdd2f5f`, `d132d403`, `74c18377`,
    `8e69da3a`, `af9d544b`, `bc83ed77`, `8948fab0`, `6a96edcb`, `0bbeeca6`,
    `d08f991a`, `cd9a7e39`, `a61a2193`, `9d121009`) — `apps/zcode-cli/packages/
-   core/src/runtime/**` (agent-runtime, methods/turn|target|goal*,
+core/src/runtime/**` (agent-runtime, methods/turn|target|goal\*,
    synthetic-notice-metadata), `bootstrap/src/**` (create-app, slash-command-
    surface, protocol handlers goal-compact/queue/session-flow),
    `contracts/src/interfaces/session-store.port.ts`. Fork semantics: goals drive

@@ -1,8 +1,8 @@
 /**
- * plugin-ui 模块清单（architecture-governance managed 模块）。
- * ui 层：插件 UI 内联卡片、侧栏 tab、MCP Apps host 状态机接线、MessagePort 传输。
- * 层序 domain → app → adapters → components：domain 纯函数，app 管理生命周期，adapters 绑定外部能力，components 渲染。
- * 行为边界见本模块 CONTRACT.md。
+ * plugin-ui module manifest (architecture-governance managed module).
+ * ui layer: plugin inline cards, side-pane tabs, MCP Apps host state-machine wiring, MessagePort transport.
+ * Layer order domain -> app -> adapters -> components: domain pure, app lifecycle, adapters bind platform, components render.
+ * Behavior boundaries: this module's CONTRACT.md.
  */
 export const pluginUiModule = {
   id: "plugin-ui",
