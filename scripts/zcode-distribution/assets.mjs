@@ -24,7 +24,7 @@ const runtimePackageNames = [
   "hono",
   "yaml",
   "yazl",
-  // HTTP bundle 将 yauzl 外置；发行包必须携带它，否则脱离仓库就无法启动后端。
+  // The HTTP bundle externalizes yauzl; the distribution must carry it or the backend cannot start outside the repo.
   "yauzl",
   "node-forge",
 ];
@@ -164,7 +164,7 @@ export async function copyRuntimeNodeModules(packageRoot) {
       seen,
     });
   }
-  // CLI 的浏览器运行时同样是外部依赖，不能依赖开发仓库的 hoisted node_modules。
+  // The CLI's browser runtime is an external dependency too; it must not rely on the dev repo's hoisted node_modules.
   await copyRuntimePackageTree({
     packageName: "playwright-core",
     packageRoot: resolve(packageRoot, "agent"),

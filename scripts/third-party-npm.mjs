@@ -20,7 +20,8 @@ export async function readPackageNotices(directory) {
   async function visit(path) {
     for (const entry of await readdir(path, { withFileTypes: true })) {
       if (["node_modules", ".git", "test", "tests", "fixtures"].includes(entry.name)) continue;
-      // Chromium 聚合许可由打包流程经 resources/licenses/electron 单独分发，不进 npm 通知。
+      // The Chromium aggregated license is distributed separately by the packaging flow via
+      // resources/licenses/electron; keep it out of npm notices.
       if (entry.isFile() && entry.name === "LICENSES.chromium.html") continue;
       const full = join(path, entry.name);
       if (entry.isDirectory()) await visit(full);
@@ -82,7 +83,8 @@ export function assertProductionGraphs(lockedProjects, installedProjects) {
 
 export async function readWorkspaceProductionGraph(root) {
   root = await realpath(root);
-  // 修复：pnpm ls 默认读取安装快照，不能把旧图与当前锁文件哈希拼成有效声明。
+  // Fix: pnpm ls reads the install snapshot by default; a stale graph must not be stitched into
+  // a valid notice together with the current lockfile hash.
   const [locked, actual] = await Promise.all(
     [true, false].map(async (lockfileOnly) => {
       const { stdout } = await exec(
@@ -110,7 +112,8 @@ export async function readWorkspaceProductionGraph(root) {
 }
 
 export async function scanInstalledPackages(root, projects) {
-  // pnpm hoisted 布局的 ls.path 仍可能指向不存在的 .pnpm 路径；按真实安装目录和精确版本匹配。
+  // With pnpm's hoisted layout, ls.path can still point at non-existent .pnpm paths; match by
+  // real installation directory and exact version instead.
   const installed = new Map();
   const visited = new Set();
   async function scanNodeModules(directory) {
@@ -161,7 +164,8 @@ export function missingProductionPackages(required, installed) {
 export async function collectNpmNotices(root, overrides) {
   root = await realpath(root);
   const { required, projects } = await readWorkspaceProductionGraph(root);
-  // 修复：标识门禁和声明生成必须扫描同一安装集合，避免嵌套版本只进声明、不进门禁。
+  // Fix: the identity gate and notices generation must scan the same installed set, so nested
+  // versions cannot end up in notices while escaping the gate.
   const installed = await scanInstalledPackages(root, projects);
   const packages = [];
   const missing = [];
@@ -179,7 +183,8 @@ export async function collectNpmNotices(root, overrides) {
       if (hashBytes(bytes) !== override.sha256) throw new Error(`Changed upstream notice: ${key}`);
       notices.push({ member: override.source, bytes });
     }
-    // README 中仅有 MIT 等标签不能冒充完整许可文件；这种包仍需要版本固定的补充材料。
+    // A bare "MIT" tag in the README is not a complete license file; such packages still need
+    // version-pinned supplementary material.
     if (
       !notices.some(({ member }) => !member.endsWith(" (license section)")) &&
       !override?.acceptedMissingNotice

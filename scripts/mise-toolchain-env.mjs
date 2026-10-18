@@ -1,17 +1,17 @@
 import { delimiter, dirname } from "node:path";
 
 /**
- * 让所有子进程使用和启动器相同的 Node runtime。
+ * Make every child process use the same Node runtime as the launcher.
  *
- * `mise run` 通过 shell 执行 TOML task；当另一套 Node 出现在
- * 子 shell 的 PATH 前面时，pnpm 会用错误的 runtime 启动 package script，
- * 即使 task 本身已经由 mise 选中了正确版本。把启动器的 Node 目录置首，
- * 可以在不依赖用户 home 目录布局的前提下固定整条子进程链路。
+ * `mise run` executes TOML tasks through a shell; when another Node ends up in front of the
+ * subshell's PATH, pnpm starts package scripts with the wrong runtime even though the task
+ * itself already selected the right version via mise. Putting the launcher's Node directory
+ * first pins the whole child-process chain without depending on the user's home layout.
  */
 export function withPinnedNodePath(env, nodeExecutablePath) {
   const nodeDirectory = dirname(nodeExecutablePath);
-  // Windows 的 Node 环境对象通常使用 `Path`，只读取大写 `PATH` 会把 pnpm.cmd
-  // 所在目录从子进程环境中丢掉，导致 dev:desktop 的内部 pnpm 调用失败。
+  // On Windows the Node env object usually carries `Path`; reading only uppercase `PATH`
+  // would drop pnpm.cmd's directory from the child env and break dev:desktop's internal pnpm calls.
   const pathKey = typeof env.PATH === "string" ? "PATH" : "Path";
   const existingPath = typeof env[pathKey] === "string" ? env[pathKey] : "";
   const pathEntries = existingPath

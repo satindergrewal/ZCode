@@ -184,7 +184,7 @@ async function stageZCodePackage({ packageRoot, version }) {
     recursive: true,
   });
   await cp(agentBundle, resolve(packageRoot, "agent", "zcode.cjs"));
-  // TUI 入口通过真正的 CLI 路径定位伴随配置；只复制 JS 会在仓库外启动失败。
+  // The TUI entry locates companion config via the real CLI path; copying only the JS fails outside the repo.
   await cp(agentProvider, resolve(packageRoot, "agent/provider"), { recursive: true });
   await cp(
     resolve(root, "apps/zcode-cli/packages/cli/dist/THIRD-PARTY-NOTICES.md"),

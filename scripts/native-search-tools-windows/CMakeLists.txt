@@ -21,7 +21,8 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
 
-# 随机构建目录不能进入最终 PE，否则同版本工具无法跨 CLI 复用同一份 runtime cache。
+# Randomized build paths must not leak into the final PE, otherwise the same tool version cannot
+# share one runtime cache across CLIs.
 if(DEFINED ZCODE_BUILD_PATH)
   add_compile_options("/pathmap:${ZCODE_BUILD_PATH}=zcode-native-search")
 endif()
@@ -148,7 +149,8 @@ else()
   target_compile_definitions(zcode_ugrep_contract INTERFACE HAVE_SSE2)
 endif()
 target_compile_features(zcode_ugrep_contract INTERFACE cxx_std_17)
-# ugrep 固定源码是无 BOM UTF-8；中文 Windows 按 CP936 解析时会触发 C4819/C1070，并改写 UTF-8 字符串字面量。
+# The pinned ugrep sources are UTF-8 without BOM; Chinese Windows parsing them as CP936 triggers
+# C4819/C1070 and rewrites UTF-8 string literals.
 target_compile_options(zcode_ugrep_contract INTERFACE
   /utf-8
   $<$<COMPILE_LANGUAGE:CXX>:/EHsc>

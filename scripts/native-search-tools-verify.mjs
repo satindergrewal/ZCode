@@ -170,7 +170,8 @@ export function verifyMacosDeploymentTarget(
   binaryName,
   { allowLowerDeploymentTarget = false } = {},
 ) {
-  // Microsoft x64 归档使用旧式 LC_VERSION_MIN_MACOSX，且更低的 target 不应被拒绝。
+  // Microsoft's x64 archive uses the legacy LC_VERSION_MIN_MACOSX load command, and a lower
+  // target must not be rejected.
   const deploymentTargets = [
     ...[...buildVersion.matchAll(/^\s*minos\s+(\S+)\s*$/gmu)].map((match) => match[1]),
     ...[
@@ -271,7 +272,7 @@ export function getAllowedLinuxNativeSearchDependencies(toolId, arch) {
     case "ugrep":
       return commonDependencies;
     case "ripgrep":
-      // 两种 Linux rg 都固定为 Microsoft musl 静态包，因此不应携带动态依赖。
+      // Both Linux rg builds are pinned to Microsoft's musl static package, so no dynamic deps.
       return [];
     default:
       fail(`unsupported Linux native search tool ${toolId}`);
@@ -359,7 +360,7 @@ function verifyNativeSearchToolSet({
         verifyWindowsPeBinary(rgPath, normalizedArch);
       }
 
-      // host 与 PE 目标架构相同不代表当前系统能执行 Windows 二进制。
+      // A matching host/PE architecture does not guarantee this system can run Windows binaries.
       if (
         normalizeNativeSearchPlatform(hostPlatform) === "win32" &&
         normalizeNativeSearchArch(hostArch) === normalizedArch

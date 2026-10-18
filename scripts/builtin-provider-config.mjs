@@ -49,9 +49,11 @@ export async function loadBuiltinProviderConfig({ root = repositoryRoot, env = p
   );
   try {
     const content = await readFile(sourcePath, "utf8");
-    // 构建期复用运行时的完整 Release 校验，避免打包成功后才发现 Schema 不兼容。
-    // tsx 仅供构建工具加载仓库 TS，不进入产品 bundle，也不复制一份校验规则。
-    // Windows 绝对路径的盘符会被 ESM 当作协议，转为 file URL 后各平台共用同一加载入口。
+    // Reuse the runtime's full Release validation at build time, so schema incompatibilities
+    // surface before packaging succeeds. tsx exists only for build tooling to load repo TS; it
+    // never enters the product bundle and the validation rules are not duplicated.
+    // ESM treats a Windows absolute path's drive letter as a protocol; a file URL gives every
+    // platform the same loading entry.
     const { decodeZCodeBuiltinRelease } = await tsImport(
       pathToFileURL(resolve(repositoryRoot, "packages/provider-node/src/zcode-builtin-release.ts"))
         .href,
@@ -70,7 +72,7 @@ export async function loadBuiltinProviderConfig({ root = repositoryRoot, env = p
 export async function stageBuiltinProviderConfig({ directory, ...options }) {
   const config = await loadBuiltinProviderConfig(options);
   await mkdir(directory, { recursive: true });
-  // bootstrap 可以复用 JS，但不能连带复用上一环境／上一版本的独立配置资源。
+  // bootstrap may reuse the JS, but must not reuse the previous environment's/version's standalone config assets.
   await writeFile(resolve(directory, "zcode-builtin.json"), config.content, "utf8");
   return config;
 }

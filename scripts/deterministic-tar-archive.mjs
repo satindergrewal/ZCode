@@ -127,8 +127,9 @@ export function packSourceAsDeterministicTarGzip(sourcePath, artifactPath) {
   }
   chunks.push(Buffer.alloc(1024, 0));
 
-  // 归档路径会作为静态 deps 资源长期复用；固定 tar 元数据与 gzip mtime，避免同一二进制
-  // 因 producer 的用户、目录或时间不同而生成不同归档。
+  // Archive paths are reused long-term as static deps assets; pin the tar metadata and gzip
+  // mtime so the same binary never produces different archives due to the producer's user,
+  // directory, or time.
   const archive = gzipSync(Buffer.concat(chunks), {
     filename: "",
     level: zlibConstants.Z_BEST_COMPRESSION,

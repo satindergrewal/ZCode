@@ -28,7 +28,8 @@ export function resolveNativeSearchPackagedArtifactPath({ artifact, artifactsDir
 async function packWindowsZip(directory, binaryName, archivePath) {
   const { ZipFile } = require("yazl");
   const zip = new ZipFile();
-  // yazl 按本地时区编码 DOS 时间；固定本地时间并禁用扩展时间戳才能跨时区复现。
+  // yazl encodes DOS timestamps in the local timezone; pin the time and disable extended
+  // timestamps so archives reproduce across timezones.
   for (const name of (await readdir(directory)).sort()) {
     zip.addFile(join(directory, name), name, {
       mtime: new Date(1980, 0, 1, 0, 0, 0, 0),
@@ -71,7 +72,7 @@ export async function packNativeSearchPrebuiltArtifacts({ prebuiltPlan, artifact
     try {
       const binaryPath = join(staging, artifact.binaryName);
       await copyFile(artifact.binaryPath, binaryPath);
-      // 二进制发布归档必须自带通知，不能只在仓库根目录提供声明。
+      // Binary distribution archives must carry their own notices; a repo-root notice is not enough.
       await stageNativeSearchNotices({ artifacts: [{ ...artifact, binaryPath }] }, repoRoot, {
         builtFromSource: true,
       });

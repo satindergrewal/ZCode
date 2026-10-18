@@ -44,7 +44,7 @@ function resolveSourceFile(project, filePath) {
   const sourceFile = project.getSourceFile(absolute);
   if (!sourceFile) {
     throw new Error(
-      `源文件未加载到 project: ${filePath}\n  - 确认路径是否正确\n  - 如使用了 --scope，检查文件是否在范围内`,
+      `Source file not loaded into project: ${filePath}\n  - verify the path\n  - if --scope was used, check that the file is within the scope`,
     );
   }
   return sourceFile;
@@ -109,7 +109,7 @@ function parseTarget(target) {
   const filePath = target.slice(0, idx);
   const exportName = target.slice(idx + 1);
   if (!filePath || !exportName) {
-    throw new Error(`目标格式错误: ${target}（需 <file>:<exportName>）`);
+    throw new Error(`Invalid target format: ${target} (expected <file>:<exportName>)`);
   }
   return { filePath, exportName };
 }
@@ -147,7 +147,7 @@ function findReferencesForExport(project, filePath, exportName) {
   if (!declarations || declarations.length === 0) {
     const available = [...declarationsMap.keys()].slice(0, 20).join(", ");
     throw new Error(
-      `${filePath} 没有名为 "${exportName}" 的 export\n  可用 export（前 20 个）: ${available || "(无)"}`,
+      `${filePath} has no export named "${exportName}"\n  available exports (first 20): ${available || "(none)"}`,
     );
   }
 
@@ -258,33 +258,33 @@ function printRefs(result) {
 }
 
 function printHelp() {
-  console.log(`查询 TypeScript export 的所有引用位置（symbol 级），用于大型重构时安全删代码。
+  console.log(`Find all references of a TypeScript export (symbol-level), for safe deletion in large refactors.
 
-用法:
-  pnpm dep:refs <file>:<exportName>           查 export 的所有引用
-  pnpm dep:refs --list-exports <file>         列出文件的所有 export
-  pnpm dep:refs <file>:<exportName> --json    JSON 输出
-  pnpm dep:refs --scope <glob> <file>:<sym>   缩小扫描范围加速
+Usage:
+  pnpm dep:refs <file>:<exportName>           list references of an export
+  pnpm dep:refs --list-exports <file>         list all exports of a file
+  pnpm dep:refs <file>:<exportName> --json    JSON output
+  pnpm dep:refs --scope <glob> <file>:<sym>   narrow the scan for speed
 
-选项:
-  --list-exports          切换到 list-exports 模式
-  --json                  以 JSON 输出
-  --scope <glob>          只加载匹配 glob 的源文件（默认加载所有 workspace 源码 + test）
-  -h, --help              查看帮助
+Options:
+  --list-exports          switch to list-exports mode
+  --json                  output JSON
+  --scope <glob>          only load source files matching the glob (default: all workspace src + tests)
+  -h, --help              show this help
 
-示例:
+Examples:
   pnpm dep:refs packages/services/src/oauth/oauthService.ts:createOAuthService
   pnpm dep:refs --list-exports packages/services/src/oauth/oauthService.ts
 
-推荐用法:
-  1. 先跑 pnpm knip 拿到 unused exports 列表（瞬秒）
-  2. 对存疑的 export 用 pnpm dep:refs file:name 看具体引用者
-  3. 决定能删 / 要先改调用方
+Recommended workflow:
+  1. Run pnpm knip to get the unused-exports list (instant)
+  2. For a doubtful export, run pnpm dep:refs file:name to see actual referencers
+  3. Decide: delete, or update callers first
 
-说明:
-  - 仅静态分析，不检测 dynamic import() 和字符串路径引用
-  - 首次启动约 10-30 秒（加载全 workspace）；用 --scope 可显著加速
-  - JSON 管道用 pnpm -s dep:refs ... --json | jq .（pnpm 默认会在 stdout 多打 2 行 banner）
+Notes:
+  - Static analysis only; dynamic import() and string-based path references are not detected
+  - First run takes ~10-30s (loads the whole workspace); --scope speeds this up significantly
+  - For JSON pipes use pnpm -s dep:refs ... --json | jq . (plain pnpm prints 2 extra banner lines on stdout)
 `);
 }
 
@@ -318,7 +318,7 @@ function parseArgs(argv) {
       options.scope = argv[i + 1];
       i += 1;
       if (!options.scope) {
-        throw new Error("--scope 需要一个 glob 参数");
+        throw new Error("--scope requires a glob argument");
       }
       continue;
     }
@@ -328,19 +328,19 @@ function parseArgs(argv) {
     }
 
     if (options.target !== null) {
-      throw new Error(`只能传一个目标参数，已收到 ${options.target}，又收到 ${arg}`);
+      throw new Error(`Only one target argument allowed; got ${options.target} and ${arg}`);
     }
     options.target = arg;
   }
 
   if (options.target === null) {
     throw new Error(
-      "缺少目标参数。用法: pnpm dep:refs <file>:<exportName> 或 pnpm dep:refs --list-exports <file>",
+      "Missing target argument. Usage: pnpm dep:refs <file>:<exportName> or pnpm dep:refs --list-exports <file>",
     );
   }
 
   if (options.mode === "refs" && !options.target.includes(":")) {
-    throw new Error(`refs 模式需要 <file>:<exportName> 格式，收到: ${options.target}`);
+    throw new Error(`refs mode requires <file>:<exportName>, got: ${options.target}`);
   }
 
   return options;
@@ -356,13 +356,13 @@ function main(argv) {
   try {
     options = parseArgs(argv);
   } catch (error) {
-    console.error(`错误: ${error.message}`);
+    console.error(`Error: ${error.message}`);
     process.exit(1);
   }
 
   const { project, addedCount } = loadProject(options.scope);
   if (addedCount === 0) {
-    console.error(`警告: scope 内未加载任何源文件 (scope: ${options.scope})`);
+    console.error(`Warning: no source files loaded for scope (scope: ${options.scope})`);
   }
 
   try {
@@ -387,7 +387,7 @@ function main(argv) {
       process.exit(0);
     }
   } catch (error) {
-    console.error(`错误: ${error.message}`);
+    console.error(`Error: ${error.message}`);
     process.exit(1);
   }
 }
