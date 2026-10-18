@@ -68,8 +68,8 @@ export function parseGitBranchMutationIssues(
   const lines = toNormalizedLines(detail ?? "");
   const normalizedDetail = detail?.toLowerCase() ?? "";
 
-  // 分支切换是否被阻塞，最终以 Git 原生命令的真实报错为准。
-  // 这里集中把常见 stderr 归一成稳定 issue code，避免 UI 直接依赖易变的原始文案。
+  // Whether a branch switch is blocked is decided by git's own stderr, not by guesses.
+  // Normalize common stderr patterns into stable issue codes so the UI never keys on volatile copy.
 
   const trackedOverwritePaths = extractIndentedPaths(
     lines,
@@ -172,8 +172,8 @@ export function ensureGitCommandSucceeded(
   allowedExitCodes: number[] = [0],
 ): GitCommandExecutionResult {
   if (result.timedOut) {
-    // timeout 阈值和进程清理总耗时不是一回事；日志里同时保留两者，
-    // 避免把“15s 触发超时、随后等待清理”的场景误读成真正配置了更长超时。
+    // The timeout threshold and total teardown time are different numbers; logging both keeps
+    // a 15s timeout followed by slow cleanup from reading as a longer configured timeout.
     const timeoutMs = result.timeoutMs ?? result.durationMs;
     const details = [`elapsed=${result.durationMs}ms`];
     if (result.timeoutElapsedMs !== undefined) {
@@ -257,8 +257,8 @@ export function parseStatusPorcelain(stdout: string): {
   let ahead = 0;
   let behind = 0;
 
-  // `git status --porcelain=v2 -z` 的价值在于格式稳定，不受本地语言影响。
-  // 这里集中做一次解析，把 branch/header/rename/unmerged 等低层细节都挡在 repo 层里。
+  // git status --porcelain=v2 -z is valued for its stable, locale-independent format:
+  // parse it once here and keep branch/header/rename/unmerged details inside the repo layer.
   for (let index = 0; index < records.length; index += 1) {
     const record = records[index]!;
     if (record.startsWith("# ")) {
@@ -434,7 +434,7 @@ async function countUntrackedFileLines(absolutePath: string, buffer: Buffer): Pr
     let newlines = 0;
     let lastByte = 10;
     while (totalBytes <= GIT_UNTRACKED_STAT_MAX_BYTES) {
-      // 文件可能在 stat 后增长；实际读取也必须受预算约束，额外一字节只用于识别越界。
+      // Files may grow between stat and read; reads stay budget-bound, one extra byte flags overflow.
       const length = Math.min(buffer.length, GIT_UNTRACKED_STAT_MAX_BYTES + 1 - totalBytes);
       const { bytesRead } = await file.read(buffer, 0, length, null);
       if (bytesRead === 0) return newlines + (lastByte === 10 ? 0 : 1);
@@ -459,8 +459,8 @@ export async function buildUntrackedStats(
   const stats = new Map<string, GitLineStat>();
   const untrackedEntries = entries.filter((entry) => entry.isUntracked);
   let nextIndex = 0;
-  // 并发 readFile 全部未跟踪文件、读取后才识别二进制会让 Host 瞬间分配数 GiB。
-  // 固定 worker 各复用一个小缓冲，逐文件限量读取；大文件仍保留变更条目，只跳过行数统计。
+  // Reading every untracked file up front and detecting binary only afterwards spikes
+  // host memory by GiB. Workers reuse one small buffer with per-file caps; big files keep
   const worker = async () => {
     const buffer = Buffer.allocUnsafe(GIT_UNTRACKED_STAT_CHUNK_BYTES);
     while (nextIndex < untrackedEntries.length) {
@@ -527,10 +527,10 @@ export async function buildUntrackedTextDiffResult(
   try {
     const content = await readFile(absolutePath);
 
-    // 未跟踪文件的 patch 不能依赖 `git diff --no-index` 生成。
-    // 这类 patch 在 Windows 上会带入平台相关头部，而 `@pierre/diffs` 对某些 `diff --git`
-    // 头部格式本身也有兼容问题，最终会在 UI 展开时直接抛异常。
-    // 这里统一退回最稳定的 unified diff 形态，只保留单文件预览真正需要的 `---/+++ / @@` 信息。
+    // Untracked-file patches cannot rely on git diff --no-index: on Windows it emits
+    // platform-specific headers, and @pierre/diffs has compat gaps on some diff --git
+    // headers, throwing when the UI expands the patch.
+    // Fall back to the most stable unified diff form, keeping only ---/+++/@@ for the preview.
     if (content.includes(0)) {
       return {
         path: absolutePath,

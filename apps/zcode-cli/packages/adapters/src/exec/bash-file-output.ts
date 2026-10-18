@@ -10,7 +10,7 @@ const OUTPUT_WATCH_INTERVAL_MS = 5_000;
 const OUTPUT_FILE_MODE = 0o600;
 const PROGRESS_TAIL_MAX_BYTES = 4096;
 
-/** Bash 只持有文件身份和观察器；原始输出由子进程写入，不经过 Node collector。 */
+/** Bash holds only the file identity and watchers; the child writes raw output, never the Node collector. */
 export class BashFileOutput {
   private handle?: FileHandle;
   private created = false;
@@ -35,7 +35,7 @@ export class BashFileOutput {
       if (error.code !== "ENOENT") throw error;
       return undefined;
     });
-    // Windows 的 append-only 句柄被 MSYS 判为只读；Windows 必须用 w。
+    // Windows append-only handles are read-only per MSYS; Windows must use w.
 
     const flags =
       this.platform === "win32"
@@ -49,14 +49,14 @@ export class BashFileOutput {
   async close(): Promise<void> {
     const handle = this.handle;
     this.handle = undefined;
-    // fd 清理失败不能覆盖取消/退出结果，也不能阻止 adapter 释放其它生命周期资源。
+    // fd cleanup failure must not override cancel/exit results or block other lifecycle releases.
     await handle?.close().catch(() => undefined);
   }
 
   async discard(): Promise<void> {
     await this.close();
     if (this.created) {
-      // 清理失败不能覆盖取消/spawn 的真实结果，也不能删除原有文件。
+      // Cleanup failure must not override the real cancel/spawn result nor delete the original file.
       await rm(this.path, { force: true }).catch(() => undefined);
     }
     this.prepared = false;
@@ -71,7 +71,7 @@ export class BashFileOutput {
       void stat(this.path)
         .then(
           (file) => {
-            // stat 可以在 exit 或后台移交之后才返回；旧观察器不能终止新状态。
+            // stat may return after exit or background handoff; a stale watcher must not terminate new state.
             if (this.watchTimer !== timer || file.size <= maxBytes) return;
             this.stopWatching();
             onLimit();
@@ -114,7 +114,7 @@ export class BashFileOutput {
           true,
           this.legacyEncoding,
         );
-        // 共享 interval 仍在服务其他任务；取消/重订阅后必须丢弃本订阅迟到的读取。
+        // The shared interval still serves other tasks; after cancel/resubscribe drop this subscription's late reads.
         if (!isActive()) return;
         const preview = buildBashOutputPreview(
           output.text,

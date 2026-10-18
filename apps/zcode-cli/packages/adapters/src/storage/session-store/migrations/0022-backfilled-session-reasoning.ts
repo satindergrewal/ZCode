@@ -1,5 +1,5 @@
-// 0020 可能以不带档位的 assistant 回填会话选择；只能给迁移后未动过的会话补同模型 user 档位。
-// 本表冻结 0020/0021 的身份规则，不引用实时目录，也不改旧 migration 的内容或 checksum。
+// 0020 may backfill session selection with tier-less assistants; only untouched post-migration sessions get the same-model user tier.
+// This table freezes the 0020/0021 identity rules: no live catalog refs, no edits to old migrations or checksums.
 const officialProviders = [
   "account:zai-start-plan",
   "account:bigmodel-start-plan",

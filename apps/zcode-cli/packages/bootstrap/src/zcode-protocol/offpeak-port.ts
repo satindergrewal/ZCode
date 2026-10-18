@@ -20,16 +20,16 @@ const OFF_PEAK_CREATE_BOUND_SESSION_CHECK_ERROR =
 const OFF_PEAK_TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled"]);
 
 /**
- * Off-Peak 协议端口。与 automation-port 的取舍：
- * - 只防「闲时轮递归创建」（activeOffPeakTaskId）；不查 activeAutomationId——cron 自动轮
- *   放行 OffPeakCreate（定时派生闲时任务）。
- * - 会话内创建绑定当前会话（对齐 CronCreate targetTaskId），派发时 resume 本会话执行。
- *   绑定守卫只拒「本会话已有未终态闲时任务」（两个无人值守 prompt 抢同一会话）；任务终结后可再建，
- *   与 cron 的一会话一任务永久拒绝不同。判定复用 offPeak/list 最小快照（含 sessionId/status），
- *   查询失败 fail-closed。放大防护的权威仍是服务端取号额度（POST /ticket 3103）。
- * - 不注入 runtimeModel/mode/thoughtLevel：缺省在 host 端解析
- *   （yolo / allowed_models 末位 / 最高推理档），会话运行态与闲时白名单无关。
- * - 不冻结会话标题：绑定的是用户的工作会话，标题不该被任务改写。
+  * The Off-Peak protocol port. Trade-offs vs automation-port:
+  * - Guards only "off-peak round recursive creation" (activeOffPeakTaskId); activeAutomationId is not checked -- cron rounds
+  *   let OffPeakCreate through (scheduled derivation of off-peak tasks).
+  * - In-session creation binds the current session (aligned with CronCreate targetTaskId) and resumes it on dispatch.
+  *   The binding guard rejects only "this session already has a non-terminal off-peak task" (two unattended prompts racing one session); once it ends, creation is allowed again,
+  *   unlike cron's permanent one-task-per-session. The check reuses the minimal offPeak/list snapshot (sessionId/status),
+  *   failing closed on query errors. The real scale protection remains the server-side ticket quota (POST /ticket 3103).
+  * - No runtimeModel/mode/thoughtLevel injection: defaults resolve host-side
+  *   (yolo / last of allowed_models / highest tier); session runtime state is unrelated to the off-peak allowlist.
+  * - Never freeze the session title: the bound session is the user's working session; its title is not the task's to rewrite.
  */
 export function createProtocolOffPeakPort(
   context: ZCodeProtocolAgentServerContext,
@@ -41,8 +41,8 @@ export function createProtocolOffPeakPort(
         resolveOwnSession?.() ??
         (createContext?.sessionId ? context.sessions.get(createContext.sessionId) : undefined);
       if (activeSession?.activeOffPeakTaskId?.trim()) {
-        // 本 turn 已由闲时任务派发；闲时轮内再创建闲时任务 = 递归自我派生，直接拒绝。
-        // 该判断是 turn denylist 与 handler offPeakTurn 之外的第三层纵深。
+                // This turn was already dispatched by an off-peak task; creating another inside the round is recursive self-derivation -- reject.
+                // A third defense layer beyond the turn denylist and the handler's offPeakTurn.
         throw new Error(OFF_PEAK_CREATE_FROM_OFF_PEAK_RUN_ERROR);
       }
       const boundSessionId = createContext?.sessionId ?? activeSession?.app.sessionId;
@@ -64,7 +64,7 @@ export function createProtocolOffPeakPort(
             event: "offpeak.create.bound_session_check.failed",
             sessionId: boundSessionId,
           });
-          // 未知不能等同于未绑定：host/数据库短暂故障不得重新开放「同会话双任务」。
+                    // Unknown must not mean unbound: a transient host/database failure must not reopen "two tasks per session".
           throw new Error(OFF_PEAK_CREATE_BOUND_SESSION_CHECK_ERROR);
         }
         if (bound) throw new Error(OFF_PEAK_CREATE_IN_BOUND_SESSION_ERROR);
@@ -77,13 +77,13 @@ export function createProtocolOffPeakPort(
           ...(input.permissionMode ? { permissionMode: input.permissionMode } : {}),
           ...(input.model ? { model: input.model } : {}),
           ...(input.thoughtLevel ? { thoughtLevel: input.thoughtLevel } : {}),
-          // 绑定当前会话；workspace 仍由 host 端从当前 session 注入（对称 automation/create）。
+                    // Bind the current session; workspace is still injected host-side from the current session (mirroring automation/create).
           ...(boundSessionId ? { boundSessionId } : {}),
         },
         zcodeOffPeakCreateResultSchema,
       );
       if (!result.ok) {
-        // 失败分类原样透传给 handler 翻译，禁止在端口层降级为 message 字符串。
+                // Failure classes pass through for the handler to translate; never degrade to a message string at the port layer.
         return {
           ok: false,
           failureStage: result.failureStage,

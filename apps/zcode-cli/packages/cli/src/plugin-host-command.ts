@@ -20,13 +20,13 @@ export function isPluginHostInvocation(argv: readonly string[]): boolean {
   return argv[0] === ZCODE_PLUGIN_HOST_COMMAND;
 }
 
-// __zcode-plugin-host 在 agent 子进程里运行 official plugin 的 MCP server（server.js）。
-// CLI 入口 main.ts 的 applyCliRuntimeEnvSanitization 会先把 broker token 从 process.env 剔除进
-// 进程内 capture；因此这里是恢复 bearer token 的最后一道宿主边界。capture 本身只证明某个
-// Agent 进程曾收到过 Helper 凭据，不能证明当前传入的 server 就是官方 zcode-cua：
-// 只凭存在 capture 就把 token 恢复给任意 server path，第三方/被替换的插件可借此取得 CUA
-// broker 的 TCC 能力。必须同时验证 resolver 权威写入的 plugin id、完整的捕获凭据组，
-// 以及 canonical broker socket；任一字段不匹配都在 import 之前拒绝，避免加载不受信模块后再暴露 token。
+// __zcode-plugin-host runs official plugins' MCP servers (server.js) inside an agent subprocess.
+// main.ts's applyCliRuntimeEnvSanitization first moves the broker token out of process.env into an in-process
+// capture; this is therefore the last host boundary that restores the bearer token. The capture only proves that
+// some Agent process once received Helper credentials -- not that the server passed in now is the official zcode-cua:
+// restoring the token to any server path on capture's mere existence would let third-party/replaced plugins gain the CUA
+// broker's TCC powers. Also verify the plugin id written by the resolver authority, the complete captured credential set,
+// and the canonical broker socket; any mismatch rejects before the import, never exposing the token after loading an untrusted module.
 export async function runPluginHostCommand(ctx: RunContext, argv: string[]): Promise<number> {
   if (argv.length < 1) {
     ctx.stderr.write(`Usage: ${HOST_USAGE}\n`);
@@ -53,8 +53,8 @@ export async function runPluginHostCommand(ctx: RunContext, argv: string[]): Pro
 
     const originalArgv = process.argv;
     const originalBrokerSocket = process.env[ZCODE_CUA_BROKER_SOCKET_ENV_KEY];
-    // shared node_repl 把同一凭据组恢复到环境，由 broker bridge 读取；旧的独立 CUA
-    // MCP 不再拥有执行入口。
+        // shared node_repl restores the same credential set into the environment for the broker bridge; the old standalone CUA
+        // MCP no longer owns an execution entry.
     process.argv = [process.execPath, serverPath, ...serverArgs];
     if (capturedBrokerCredentials.socket && process.env[ZCODE_CUA_NODE_REPL_HOST_ENV_KEY] === "1") {
       process.env[ZCODE_CUA_BROKER_SOCKET_ENV_KEY] = capturedBrokerCredentials.socket;
@@ -85,14 +85,14 @@ function assertCapturedBrokerLaunchIsAuthorized(credentials: CapturedBrokerCrede
   if (!hasCapturedCredentials) return;
 
   const pluginId = process.env[ZCODE_PLUGIN_ID_ENV_KEY]?.trim().toLowerCase();
-  // 凭据组里已经没有 token 了：broker 全平台改为身份模式（Helper 按对端代码签名裁决连接），
-  // shared/runtimeEnv.ts 的 CapturedCuaBrokerCredentials 只有 socket + pluginAuthority
-  // (+ refreshMarker)。这里不能再读 `credentials.token`；token 已从凭据组移除，
-  // 残留读取方只能靠 CLI 自己的 typecheck 发现（根 `pnpm typecheck` 不含 apps/zcode-cli）。
-  // socket + pluginAuthority 必须成对（authority 是 bootstrap 写入 node_repl 配置的 provenance
-  // 随机数，core 据此认官方 server）；捕获侧本就只在成对时落快照，半组会清空并 fail-closed。
-  // 校验也不能要求 token 齐全——身份模式凭据没有 token，强校验会让 node_repl 宿主启动即
-  // 退出（"connection closed during the server/discover probe"），工具面为空。
+    // The credential set no longer carries a token: the broker switched to identity mode on all platforms (the Helper adjudicates connections by peer code signature),
+    // and shared/runtimeEnv.ts's CapturedCuaBrokerCredentials only has socket + pluginAuthority
+    // (+ refreshMarker). Do not read credentials.token here; the token left the set,
+    // and leftover readers surface only via the CLI's own typecheck (the root pnpm typecheck excludes apps/zcode-cli).
+    // socket + pluginAuthority must be paired (the authority is a provenance nonce bootstrap writes into the node_repl config,
+    // by which core recognizes the official server); the capture side only snapshots paired sets and clears half-sets fail-closed.
+    // Validation must not require a token either -- identity-mode credentials have none, and strict checks would make the node_repl host
+    // exit at startup (connection closed during the server/discover probe) with an empty tool surface.
   if (
     credentials.socket === undefined ||
     credentials.pluginAuthority === undefined ||

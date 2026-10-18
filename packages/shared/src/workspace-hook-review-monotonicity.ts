@@ -1,14 +1,14 @@
 /**
- * Review 单调性单一裁决函数。
+ * The single adjudicator of review monotonicity.
  *
- * 背景：`reviewFlowId/generation 只在单个 Runtime controller 内单调` 这条规则若在
- * product projection（事件回放）、prompt-turn observer（live monitor）、renderer
- * review store（binding 展示）三处独立重实现且已机制性分叉，只靠逐字相同的注释脆弱
- * 同步。本模块把"裁决"收敛为纯函数；"应用策略"（drop/defer/接受新 flow）仍归各
- * 消费方。新增镜像消费方必须消费本函数，不得再手写比较。
+ * Background: "reviewFlowId/generation are monotonic within one Runtime controller", if re-implemented in the
+ * product projection (event replay), prompt-turn observer (live monitor), and renderer
+ * review store (binding display), mechanically diverges on comments alone. This module collapses the verdict into a pure function;
+ * application policy (drop/defer/accept-new) stays with each consumer. New mirror consumers must use it, never hand-roll compares.
+ * consumers. New mirror consumers must use it, never hand-roll compares.
  */
 
-/** review 三元组身份：只比较这三个字段，其余 payload 字段不参与单调性。 */
+/** The review triple identity: only these three fields; no other payload field participates. */
 export interface WorkspaceHookReviewIdentity {
   reviewFlowId: string;
   generation: number;
@@ -16,14 +16,14 @@ export interface WorkspaceHookReviewIdentity {
 }
 
 /**
- * - no_current：无当前权威，candidate 接管；
- * - same_flow_advance：同 flow 更高 generation，接受（supersede）；
- * - same_flow_replay：同 flow 同 generation 且同 interactionId，幂等 replay，忽略；
- * - same_flow_conflict：同 flow 同 generation 但 interactionId 不同，违反 controller
- *   单调性，忽略；
- * - same_flow_stale：同 flow 更低 generation，迟到事件，忽略；
- * - cross_flow：不同 flow（Runtime 换代），generation 跨 flow 不可比；由调用方按 own
- *   epoch 证据裁决（projection drop / prompt-turn defer / store 接受新权威）。
+ * - no_current: no authority yet, candidate takes over;
+ * - same_flow_advance: same flow, higher generation, accept (supersede);
+ * - same_flow_replay: same flow/generation/interactionId, idempotent replay, ignore;
+ * - same_flow_conflict: same flow/generation, different interactionId, violates controller
+ *   monotonicity, ignore;
+ * - same_flow_stale: same flow, lower generation, late event, ignore;
+ * - cross_flow: different flow (Runtime generation change), generations incomparable; the caller decides on its own
+ *   epoch evidence (projection drop / prompt-turn defer / store accepts new authority).
  */
 export type WorkspaceHookReviewMonotonicityVerdict =
   | "no_current"

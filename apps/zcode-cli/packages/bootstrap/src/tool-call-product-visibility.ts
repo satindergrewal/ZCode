@@ -1,9 +1,9 @@
 const EMPTY_TOOL_NAME_PLACEHOLDER = "empty_tool_name";
 
 /**
- * 空工具名恢复只服务于模型 continuation，不应物化为用户可见工具行。
- * 固定占位字符串也可能是 registry / MCP / alias 的合法工具名，不能单独作为隐藏依据。
- * live 只识别原始空名；cold/legacy 还要求占位名与持久化原名 metadata 同时存在。
+ * Empty-name recovery only serves model continuation and must not materialize as a user-visible tool row.
+ * Fixed placeholder strings can also be legitimate registry / MCP / alias tool names, so they alone do not justify hiding.
+ * live recognizes only the original empty name; cold/legacy also requires the placeholder plus persisted original-name metadata.
  */
 export function shouldHideInvalidToolCallFromProduct(
   toolName: unknown,

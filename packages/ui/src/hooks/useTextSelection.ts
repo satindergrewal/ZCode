@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 
-/** 统一鼠标、键盘和触控选区的监听；作用域变化后旧选区不能路由到新任务。 */
+/** Unifies mouse, keyboard, and touch selection listeners; after the scope changes, a stale selection must not route to the new task. */
 export function useTextSelection<T>({
   rootRef,
   enabled,

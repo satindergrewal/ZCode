@@ -10,9 +10,9 @@ interface RegisterHostServiceResourceTelemetryOptions {
   services: Pick<ServiceCollection, "getOptional">;
   postMessage(message: unknown): void;
   runtimeSurface: ProcessResourceRuntimeSurface;
-  /** 独立 Server 必须显式声明支持；本地及配套部署的远端默认支持。 */
+  /** Standalone servers must declare support explicitly; local and paired remote deployments support it by default. */
   telemetrySupported?: boolean;
-  /** Host 已哈希的运行环境身份，仅透传给 main 的资源分组，不进入 ARMS。 */
+  /** Host's hashed runtime-environment identity, passed to main for resource grouping only; never sent to ARMS. */
   environmentKey?: string;
   onError?(error: unknown): void;
 }
@@ -24,29 +24,29 @@ function disposeAll(registrations: IDisposable[]): void {
     try {
       registrations.pop()?.dispose();
     } catch {
-      // 单个订阅释放失败不能拦住其余订阅，否则连接关闭时会残留监听器。
+      // One failing unsubscribe must not block the rest, or listeners linger after connection close.
     }
   }
 }
 
 /**
- * 一份 service collection 的资源遥测订阅。转发 CLI 自采资源样本、MCP 进程树资源样本，
- * Bash 慢命令完成事实与 MCP 生命周期遥测。
+ * Resource-telemetry subscription for one service collection. Forwards CLI self-sampled resource data, MCP process-tree samples,
+ * slow-Bash completion facts, and MCP lifecycle telemetry.
  *
- * local host services 与每个远端 workspace 连接各自调用一次，`runtimeSurface` 由调用方给出：
- * 本机 CLI 是 local，远端 zcode-server 上的 CLI 是 remote，样本自报的硬件维度由 main 覆盖全局默认值。
- * 订阅寿命等于该 collection 的寿命，远端连接释放时由 handle 调用 `dispose()`，不留监听器。
- * 同一台远端机器有多条 dedicated 连接时会有多份订阅；main 按环境与实例归并 CLI/MCP
- * 最近读数，Bash 完成事实由 main 按 completionToken 去重，避免多连接或多窗口重复计数。
+ * Invoked once for local host services and once per remote workspace connection, with `runtimeSurface` given by the caller:
+ * local for this machine's CLI, remote for the CLI inside a remote zcode-server; main overrides sample-reported hardware dims onto global defaults.
+ * Subscription lifetime equals the collection's; the handle calls `dispose()` when the remote connection closes, leaving no listeners.
+ * Multiple dedicated connections to one remote machine yield multiple subscriptions; main merges CLI/MCP latest readings by env and instance,
+ * and dedupes Bash completion facts by completionToken so multi-connection/multi-window setups never double count.
  *
- * attachment（桌面 renderer / 手机远控）不是这里的入口：attachment 只复用已就绪的 collection，
- * 这些事件在 Agent connection scope 被限制为 trusted host relay，不进入会话消息面。
+ * Attachments (desktop renderer / phone remote) are not an entry point here: they reuse an already-ready collection,
+ * and these events stay trusted-host-relay within the Agent connection scope, never reaching the session message surface.
  */
 export function registerHostServiceResourceTelemetry(
   options: RegisterHostServiceResourceTelemetryOptions,
 ): IDisposable {
-  // 旧 Server 的未知事件异常发生在对端异步读循环，下面的本地 try/catch 无法保护它；
-  // 因此缺能力时必须在获取服务、发送任何 EventListen 之前退出。
+  // Legacy-Server unknown-event throws happen in the peer's async read loop; the local try/catch below cannot cover them,
+  // so on missing capability we must exit before acquiring services or sending any EventListen.
   if (options.telemetrySupported === false) {
     return NO_TELEMETRY;
   }
@@ -87,7 +87,7 @@ export function registerHostServiceResourceTelemetry(
       }),
     );
   } catch (error) {
-    // 遥测订阅失败不能改变 Host 服务初始化或远程连接结果，也不能留下半条链路。
+    // Telemetry subscription failure must not alter Host service init or remote connection outcomes, nor leave a half-wired chain.
     disposeAll(registrations);
     options.onError?.(error);
     return NO_TELEMETRY;

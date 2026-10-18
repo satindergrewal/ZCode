@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- Electron webview 注入脚本需要在单个函数内自包含运行，避免跨文件依赖在页面上下文里失效。 */
+/* eslint-disable max-lines -- the Electron webview injection script must stay self-contained in one function; cross-file deps break in the page context. */
 import type {
   WebElementContextPayload,
   WebElementRect,
@@ -529,8 +529,8 @@ function webElementPickerScript(options: WebElementPickerScriptOptions) {
       },
     ].sort((a, b) => b.size - a.size);
 
-    // 交互修正：目标元素靠近边缘或几乎铺满视口时，浮窗无法完全放到元素外侧。
-    // 这时选择可用空间最大的方向，并继续夹在视口内，尽量减少对当前选区的遮挡。
+    // Layout correction: near edges or nearly full-viewport targets, the popover cannot sit fully outside the element.
+    // Pick the direction with the most free space and keep clamping inside the viewport to minimize occlusion.
     return availableSpaces[0] ?? { left: padding, top: padding };
   };
 

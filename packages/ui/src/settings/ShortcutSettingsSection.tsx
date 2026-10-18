@@ -30,11 +30,11 @@ import { useShortcutKeySearch } from "./useShortcutKeySearch.js";
 import { useShortcutRecording } from "./useShortcutRecording.js";
 
 /**
- * 快捷键设置分区：命令表只读展示 + 键盘录入 + 冲突处理。
- * 只读写 shortcutBindings 覆盖数据，键位语义（匹配/录制/冲突/抢绑）全部经 shortcuts 内核。
- * 系统保留键直接拒绝；app 内命令占用提示占用者并支持二次确认抢绑。
- * 单行多绑定：一个命令一行，多组键帽在键位列纵向排列；每条可替换/删除，
- * 命令级「+」追加；同命令物理等价重复在录制入口拒绝。
+ * Shortcuts section: read-only command table + keyboard recording + conflict handling.
+ * Reads/writes only shortcutBindings overrides; matching/recording/conflict/takeover semantics live in the shortcuts kernel.
+ * System-reserved keys reject; app-command conflicts name the holder and allow confirmed takeover.
+ * Multi-binding rows: one command per row, chords stacked in the key column; each replaceable/deletable,
+ * command-level + appends; physical-equivalent duplicates rejected at record time.
  */
 export function ShortcutSettingsSection({ isDesktop = false }: { isDesktop?: boolean }) {
   const { intl } = useZCodeIntl();
@@ -55,17 +55,17 @@ export function ShortcutSettingsSection({ isDesktop = false }: { isDesktop?: boo
 
   const visibleCommands = useMemo(() => {
     const keyword = query.trim().toLowerCase();
-    // 取局部变量：some 回调闭包里 TS 无法保持 keySearch.binding 的非空收窄
+    // Local copy: TS cannot keep keySearch.binding's narrowing inside the some closure.
     const keyBinding = keySearch.binding;
     return SHORTCUT_COMMANDS.filter((entry) => {
-      // 这些快捷键保留注册和冲突检测，但不在用户可见列表中展示。
+      // These keep registration and conflict detection but stay out of the visible list.
       if (entry.id === "openOnboarding" || entry.id === "toggleInterfaceMode") return false;
       const matchesText =
         !keyword ||
         entry.id.toLowerCase().includes(keyword) ||
         commandLabel(entry.id).toLowerCase().includes(keyword);
-      // 按键过滤走冲突检测的物理等价口径（win 的 Ctrl+m ≡ CmdOrCtrl+m），
-      // 与「这组键占了谁」的冲突提示看到的是同一张表。
+      // Chord filtering uses conflict detection's physical-equivalence (win Ctrl+m equals CmdOrCtrl+m),
+      // the same table the who-owns-this-chord conflict hint reads.
       const matchesKey =
         keyBinding === null ||
         (effective[entry.id] ?? []).some((binding) => isSamePhysicalBinding(binding, keyBinding));
@@ -82,7 +82,7 @@ export function ShortcutSettingsSection({ isDesktop = false }: { isDesktop?: boo
       try {
         await update({ shortcutBindings: next });
       } catch (error) {
-        logger.error("[shortcuts] 保存快捷键绑定失败", { error: String(error) });
+        logger.error("[shortcuts] failed to save shortcut binding", { error: String(error) });
       } finally {
         savingRef.current = false;
       }
@@ -90,7 +90,7 @@ export function ShortcutSettingsSection({ isDesktop = false }: { isDesktop?: boo
     [update],
   );
 
-  /** 追加一条（占位行录第一条也走这里：生效列表为空时等价于写入第一条）。 */
+  /** Append one (the placeholder row's first record routes here too: with an empty effective list it equals writing the first). */
   const appendBinding = useCallback(
     (commandId: ShortcutCommandId, binding: string) => {
       void persistBindings(buildShortcutOverridesAfterAppend(overrides, commandId, binding));
@@ -98,7 +98,7 @@ export function ShortcutSettingsSection({ isDesktop = false }: { isDesktop?: boo
     [overrides, persistBindings],
   );
 
-  /** 替换生效列表第 bindingIndex 条（覆盖整组替换语义，须写完整生效列表）。 */
+  /** Replace effective-list entry bindingIndex (whole-group replace semantics; the full list must be written). */
   const replaceBindingAt = useCallback(
     (commandId: ShortcutCommandId, bindingIndex: number, binding: string) => {
       void persistBindings(
@@ -109,9 +109,9 @@ export function ShortcutSettingsSection({ isDesktop = false }: { isDesktop?: boo
   );
 
   /**
-   * 二次确认后的抢绑：目标命令按录制时的行级语义写入新键（replace 指定条 / 未分配录
-   * 第一条 → append），并从占用命令移除冲突键。抢绑只改变冲突处理方式，不改变用户
-   * 原本选择的行级操作（多绑定命令抢绑不得静默删除其余绑定）。
+   * Post-confirm takeover: write the new chord per the record-time row semantics (replace the indexed entry / unassigned
+   * records first = append) and remove the conflicting chord from the holder. Takeover changes only conflict
+   * handling, never the user's chosen row action (multi-binding takeovers must not silently drop siblings).
    */
   const stealBinding = useCallback(
     (commandId: ShortcutCommandId, binding: string) => {
@@ -124,8 +124,8 @@ export function ShortcutSettingsSection({ isDesktop = false }: { isDesktop?: boo
     [overrides, persistBindings, recording],
   );
 
-  /** 操作列垃圾桶「清除」= 清空该命令全部绑定 = 未分配：覆盖写显式空数组，不回退默认
-   * （含 menu 通道 accelerator 摘除）。与录制态 Backspace 的「恢复默认」是两个语义。 */
+  /* Trash = clear = unassigned: overwrite an explicit empty array, no default fallback
+   * (including removing the menu-channel accelerator). Distinct from recording Backspace's restore-default. */
   const clearAllBindings = useCallback(
     (commandId: ShortcutCommandId) => {
       void persistBindings({ ...overrides, [commandId]: [] });
@@ -134,9 +134,9 @@ export function ShortcutSettingsSection({ isDesktop = false }: { isDesktop?: boo
   );
 
   /**
-   * 录制态 Backspace「恢复默认」= 删除覆盖条目。默认键被同作用域其他命令占用
-   * （含物理等价，如 win 的 Ctrl+m ≡ CmdOrCtrl+m）时提示冲突且不落盘——恢复默认与录制
-   * 是同一不变量（一键一命令）的两个入口；按用户口径只提示不自动清占用方。
+   * Recording Backspace restore-default deletes the override entry. When the default chord is held by another
+   * same-scope command (physical equivalence included, win Ctrl+m = CmdOrCtrl+m), hint the conflict without writing;
+   * restore and record are two entries of one invariant (chord per command); per user rule, hint only, never auto-clear the holder.
    */
   const clearBinding = useCallback(
     (commandId: ShortcutCommandId) => {
@@ -165,7 +165,7 @@ export function ShortcutSettingsSection({ isDesktop = false }: { isDesktop?: boo
     [overrides, persistBindings, isDesktop, intl, commandLabel],
   );
 
-  // 「全部恢复默认」是破坏性操作（清空全部自定义键位覆盖），复用全局确认弹窗（Promise 式）防一键误触
+  // Restore-all is destructive (clears every override); reuse the global Promise-style confirm against stray clicks.
   const requestConfirmation = useConfirmDialogStore((state) => state.requestConfirmation);
   const resetAll = useCallback(async () => {
     if (!overrides || Object.keys(overrides).length === 0) {
@@ -180,11 +180,11 @@ export function ShortcutSettingsSection({ isDesktop = false }: { isDesktop?: boo
     }
   }, [overrides, persistBindings, requestConfirmation, intl]);
 
-  // 录制态抑制：录制监听注册晚于 useAppKeyboard 的 capture 监听（同阶段先注册先执行），
-  // 不抑制的话录制按下的组合会先触发原命令，改键永远不成功。
-  // renderer 通道靠内核标记短路 useAppKeyboard；menu 通道靠 main 摘除菜单 accelerator
-  // （macOS 系统菜单先于 renderer 吃键，preventDefault 拦不住）。
-  // 按键搜索武装态复用同一套键盘独占（同样是显式意图下捕获组合键，不触发命令）。
+  // Recording suppression: the recording listener registers after useAppKeyboard's capture (same phase, first-registered first),
+  // so unsuppressed, the recorded chord would trigger the old command first and rebinding would never land.
+  // Renderer channel: the kernel flag short-circuits useAppKeyboard; menu channel: main strips the menu accelerator
+  // (macOS's system menu consumes keys before the renderer; preventDefault cannot intercept).
+  // Chord-search armed state reuses the same keyboard exclusivity (explicit-intent capture, no command trigger).
   const keyboardExclusive = recording !== null || keySearch.armed;
   useEffect(() => {
     if (!keyboardExclusive) {
@@ -217,7 +217,7 @@ export function ShortcutSettingsSection({ isDesktop = false }: { isDesktop?: boo
         query={query}
         onQueryChange={setQuery}
         keySearch={keySearch}
-        // 与行内录制互斥：武装前取消进行中的录制，两套 window capture 监听不并存
+        // Exclusive with inline recording: cancel it before arming; the two window capture listeners never coexist.
         onArmKeySearch={() => setRecording(null)}
         actions={
           <Button
@@ -250,7 +250,7 @@ export function ShortcutSettingsSection({ isDesktop = false }: { isDesktop?: boo
             recording={recording}
             menuChannelUnavailable={entry.channel === "menu" && !isDesktop}
             onRecord={(bindingIndex) => {
-              // 行内录制与按键搜索武装态互斥：两套 window capture 监听并存会互相吞键
+              // Inline recording and armed chord-search are exclusive: coexisting window capture listeners would eat each other's keys.
               keySearch.disarm();
               setRecording({
                 commandId: entry.id,

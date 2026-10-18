@@ -70,8 +70,8 @@ import { resumeWorkflowRunToolEntry } from "./resume-workflow-run.js";
 // import { workflowToolEntry } from "./workflow.js";
 import { createToolRuleNameSet } from "../tool-visibility.js";
 
-// direct 分支保留 Glob/Grep 工具实现；embedded search 分支由 registerBuiltInTools
-// 统一隐藏 Glob/Grep，并通过 Bash find/grep 接管搜索。
+// The direct branch keeps the Glob/Grep implementations; on the embedded-search branch registerBuiltInTools
+// hides Glob/Grep uniformly, with Bash find/grep taking over search.
 
 export const builtInTools: ToolEntry[] = [
   readToolEntry,
@@ -97,10 +97,10 @@ export const builtInTools: ToolEntry[] = [
   sendMessageToolEntry,
   respondToCoordinatorToolEntry,
   submitResultToolEntry,
-  // actor 的升级通道。与 submit_result 完全同构：
-  // 端口在场即注册（includeEscalate），`tools:"none"` 下由 workflow_child 的 allowlist
-  // 补回逻辑救回来。不入 actor 的默认 disallow——最可能撞上未预见之墙的 actor 恰是
-  // 作者没标记的那一个。
+  // The actor escalation channel. Structurally identical to submit_result:
+  // registered when the port exists (includeEscalate); under `tools:"none"` the workflow_child allowlist
+  // restore logic brings it back. Not on the actor default denylist — the actor most likely to hit an unseen wall is
+  // exactly the one its author did not flag.
   escalateToolEntry,
   taskOutputToolEntry,
   taskStopToolEntry,
@@ -111,37 +111,37 @@ export const builtInTools: ToolEntry[] = [
   jsToolEntry,
   createWorkflowToolEntry,
   amendWorkflowToolEntry,
-  // 保存的定义：写侧 gate 与 CreateWorkflow 同档（alwaysAsk），读侧无 gate。
+  // Saved definitions: write side gated like CreateWorkflow (alwaysAsk), read side ungated.
   saveWorkflowToolEntry,
-  // workflow 创作的实验通道：同步、只读（v1）、完全瞬态。
+  // The workflow-authoring experiment channel: synchronous, read-only (v1), fully transient.
   evalWorkflowSnippetToolEntry,
-  // run 内省的两个只读工具：always-on、无 gate。它们不进 WORKFLOW_CHILD_DISALLOWED_TOOLS——
-  // 那条禁令的理由是 CreateWorkflow 的 alwaysAsk 在子 runtime 里无窗可弹，只读查询不适用。
+  // The two read-only run-introspection tools: always-on, ungated. Not in WORKFLOW_CHILD_DISALLOWED_TOOLS —
+  // that ban exists because CreateWorkflow alwaysAsk has no dialog in a child runtime; read-only queries do not apply.
   listWorkflowRunsToolEntry,
   getWorkflowRunToolEntry,
-  // run 的恢复入口：与上面两个只读内省工具同族（run_id 键、端口探测失败同款），但它是
-  // 执行语义——alwaysAsk 非 yolo 不可（cancelled 是用户的显式停止决定，复活必须先问），
-  // 因此须进 WORKFLOW_CHILD_DISALLOWED_TOOLS（child yolo 无窗可弹）。插在 GetWorkflowRun 之后：run 工具簇 list/get/resume 相邻。
+  // The run resume entry: kin to the two read-only introspection tools (run_id key, same port-probe failure), but it is
+  // execution semantics — alwaysAsk mandatory outside yolo (cancelled is the user explicit stop; revival must ask first),
+  // so it belongs in WORKFLOW_CHILD_DISALLOWED_TOOLS (child yolo has no dialog). After GetWorkflowRun: the run tools list/get/resume sit together.
   resumeWorkflowRunToolEntry,
-  // 升级问答的主代理侧：与上面三个 run 工具同族——
-  // 同一个 dwf run 端口、同款 typeof 探测失败。与它们的不同点在下游：它进 actor 会话的
-  // 禁用名单（bootstrap 的 workflowActorToolPolicy），子代理不许替主代理作答。
+  // The main-agent side of escalation Q&A: kin to the three run tools above —
+  // same dwf run port, same typeof-probe failure. The difference is downstream: it joins the actor-session
+  // denylist (bootstrap workflowActorToolPolicy); subagents must not answer for the main agent.
   resolveWorkflowQuestionToolEntry,
-  // 定义清单（与上面两个 run 工具是两件事：那是历史，这是可跑的东西）。同为只读、无 gate。
+  // The definition list (distinct from the two run tools: those are history, this is runnable). Also read-only, ungated.
   listSavedWorkflowsToolEntry,
-  // 模型目录：同为只读、无 gate 的发现面，服务于 CreateWorkflow / AmendWorkflow 的
-  // `subagent_model`。不进 WORKFLOW_CHILD_DISALLOWED_TOOLS
-  // ——那条禁令的理由是 alwaysAsk 在 child 里无窗可弹，只读查询不适用。
+  // The model catalog: a likewise read-only, ungated discovery surface for the
+  // `subagent_model` of CreateWorkflow / AmendWorkflow. Not in WORKFLOW_CHILD_DISALLOWED_TOOLS
+  //  — that ban exists because alwaysAsk has no dialog in a child; read-only queries do not apply.
   listModelsToolEntry,
   // workflowToolEntry,
 ];
 
 /**
- * 动态工作流灰度门关闭时不注册的十个工具。
- * 灰度关的语义是「没有任何办法开始一条工作流」，所以创建、修订、保存、快照实验与四个
- * run 面工具一起下架；只读的 run 内省工具也在列，因为关闭态下它们只会指向用户无法再操作的历史。
- * `ListModels` 也在列：它唯一的用途是给一次 run 挑 `subagent_model`，没有 CreateWorkflow 可填时留着它只会把模型引向不存在的工具。
- * 旧的 `Workflow` 工具（`/expert` 脚本通道）是另一个功能，**不在**这份名单里。
+ * The ten tools not registered while the dynamic-workflow gate is off.
+ * Gate-off means no way to start a workflow at all, so create, amend, save, the snippet experiment and the four
+ * run-facing tools come down together; read-only run introspection too — offline it only points at history no longer actionable.
+ * `ListModels` too: its only use is picking a run `subagent_model`; with no CreateWorkflow to fill it just points at a absent tool.
+ * The legacy `Workflow` tool (the `/expert` script channel) is a different feature, **not** on this list.
  */
 const DYNAMIC_WORKFLOW_TOOL_NAMES: ReadonlySet<string> = new Set([
   CREATE_WORKFLOW_TOOL_NAME,
@@ -164,26 +164,26 @@ interface RegisterBuiltInToolsOptions {
   includeRespondToCoordinator?: boolean;
   includeSubmitResult?: boolean;
   /**
-   * 在场时 submit_result 以 typed 声明注册（`{ result: <schema> }`，strict 资格），供 dwf mono
-   * 子代理；缺席即通用声明。只在 includeSubmitResult 为真时有意义。
+   * When present, submit_result registers a typed declaration (`{ result: <schema> }`, strict-eligible) for dwf mono
+   * subagents; absent, the generic declaration. Meaningful only while includeSubmitResult holds.
    */
   submitResultSchema?: JsonSchema;
-  /** actor 的升级通道；门与 includeSubmitResult 同款（注入了 WorkflowEscalatePort 才注册）。 */
+  /** The actor escalation channel; gated like includeSubmitResult (registered only with WorkflowEscalatePort injected). */
   includeEscalate?: boolean;
   includeWorkflow?: boolean;
   includeAutomation?: boolean;
-  /** Off-Peak 会话内创建工具面；由 host 的 offPeakToolEnabled flag（灰度/远程门）驱动。 */
+  /** In-session Off-Peak creation tools; driven by the host offPeakToolEnabled flag (rollout/remote gate). */
   includeOffPeak?: boolean;
   /**
-   * 动态工作流灰度门。**只有显式 false
-   * 才下架** DYNAMIC_WORKFLOW_TOOL_NAMES：缺席代表调用方不参与灰度（TUI、headless、
-   * workflow_child），它们必须保留全部工具面；fail-closed 的缺省值落在协议服务端的
-   * appRuntimePreferences，不在这一层。
+   * The dynamic-workflow gate. **Only an explicit false
+   * takes the tools down** (DYNAMIC_WORKFLOW_TOOL_NAMES): absence means the caller is outside the rollout (TUI, headless,
+   * workflow_child) and keeps every tool; the fail-closed default lives in the protocol server
+   * appRuntimePreferences, not in this layer.
    */
   includeDynamicWorkflow?: boolean;
-  /** node_repl（js）默认关闭，由官方 browser-use 插件启用。 */
+  /** node_repl (js) is off by default; the official browser-use plugin enables it. */
   includeNodeRepl?: boolean;
-  /** browser-use 说明和 agent.browsers 注入由官方 browser-use 插件 + 宿主 browser bridge 共同启用。 */
+  /** browser-use docs and agent.browsers injection are enabled jointly by the official browser-use plugin and the host browser bridge. */
   includeBrowserUse?: boolean;
   embeddedSearchEnabled?: boolean;
   agentProfiles?: readonly AgentProfile[];
@@ -281,9 +281,9 @@ function resolveBuiltInToolEntryForBranch(
   if (entry.metadata.name === SUBMIT_RESULT_TOOL_NAME && options.submitResultSchema !== undefined) {
     return createSubmitResultToolEntry(options.submitResultSchema);
   }
-  // 灰度门同时管工具面和**描述**：Agent / Task 的描述里有一条「工作流请求必须改用
-  // CreateWorkflow」，关闭时那个工具不存在，留着只会把模型指向不存在的工具。用的是与注册过滤同一个
-  // options.includeDynamicWorkflow，所以首次装配与分支刷新产出的描述必然一致。
+  // The gate shapes tool presence and **descriptions** alike: the Agent / Task description sends workflow requests to
+  // `CreateWorkflow`; when off, that tool is absent and the stale line points at a nonexistent tool. Same
+  // `options.includeDynamicWorkflow` as the registration filter, so initial assembly and branch refresh always agree.
   if (entry.metadata.name === "Agent") {
     return createAgentToolEntry({
       embeddedSearchEnabled: options.embeddedSearchEnabled,

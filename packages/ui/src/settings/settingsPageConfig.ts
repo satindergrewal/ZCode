@@ -128,22 +128,22 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     titleId: "settings.browser.title",
     groupId: "basics",
   },
-  // 电脑控制紧跟「浏览器」：两者都是给 Agent 用的本机操控入口，
-  // 放在基础设置里让用户在同一处理解「控制浏览器 / 控制整台电脑」的关系。
+  // Computer Use follows Browser: both are local-control entries for the agent,
+  // grouped in Basics so their relationship (control the browser / the whole machine) reads in one place.
   {
     id: "computerUse",
     icon: Monitor,
     titleId: "settings.computerUse.title",
     groupId: "basics",
   },
-  // 键盘快捷键紧跟「电脑控制」：同属本机操控/效率配置，收纳在基础设置尾部。
+  // Keyboard shortcuts follow Computer Use: same local-control/efficiency cluster, at the end of Basics.
   {
     id: "shortcuts",
     icon: Keyboard,
     titleId: "settings.shortcuts.title",
     groupId: "basics",
   },
-  // 工作区搜索范围（.zcodeignore）：面向所有用户的基础工作区行为配置，收在基础设置末尾。
+  // Workspace search scope (.zcodeignore): baseline behavior for everyone, at the end of Basics.
   {
     id: "workspaceFileSearch",
     icon: FileSearch,
@@ -158,8 +158,8 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
   },
 ];
 
-// 兼容既有只读消费者：默认配置代表不带桌面平台能力的 Web 视图；
-// macOS/Windows/Linux 必须继续通过 createSettingsPageConfig 动态加入 Computer Use。
+// Back-compat for read-only consumers: the default config is the Web view without desktop capabilities;
+// macOS/Windows/Linux must still add Computer Use via createSettingsPageConfig.
 export const SETTINGS_SECTIONS = BASE_SETTINGS_SECTIONS.filter(
   (section) => section.id !== "computerUse" && isSettingsSectionEnabled(section.id),
 );

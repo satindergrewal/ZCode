@@ -26,8 +26,9 @@ function resolveFileManagerOpenPath(target: FileContextActionTarget): string {
     return target.path;
   }
 
-  // 交互语义：审查面板里的“在文件管理器中打开”用于回到文件所在目录，
-  // 不能把文件路径直接交给系统，否则部分平台会打开默认应用而不是文件夹。
+  // Interaction semantic: the review pane's "reveal in file manager" returns to the file's
+  // directory. Never hand a file path to the OS directly, or some platforms open the
+  // default app instead of the folder.
   return getContainingDirectoryPath(target.path) ?? target.path;
 }
 
@@ -51,7 +52,7 @@ export function useFileContextActions(options: FileContextActionOptions = {}) {
 
   const copyPathText = useCallback(async (path: string) => {
     if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) {
-      logger.warn("[FileContextActions] 复制文件路径失败", {
+      logger.warn("[FileContextActions] failed to copy file path", {
         path,
         error: "clipboard-unavailable",
       });
@@ -59,9 +60,9 @@ export function useFileContextActions(options: FileContextActionOptions = {}) {
     }
     try {
       await navigator.clipboard.writeText(path);
-      logger.info("[FileContextActions] 文件路径已复制", { path });
+      logger.info("[FileContextActions] file path copied", { path });
     } catch (error) {
-      logger.warn("[FileContextActions] 复制文件路径失败", {
+      logger.warn("[FileContextActions] failed to copy file path", {
         path,
         error: error instanceof Error ? error.message : String(error),
       });
@@ -84,9 +85,10 @@ export function useFileContextActions(options: FileContextActionOptions = {}) {
       }
 
       const openPath = resolveFileManagerOpenPath(target);
-      // 审查区过去把所有远程工作区统一禁用；如果直接放开，又会把 WSL 的
-      // Linux 路径交给本机文件管理器。只有精确解析到 WSL target 时才走 Explorer，
-      // 并保留该入口“打开文件所在目录”的既有语义，由 main 在平台边界转换为 UNC。
+      // The review pane used to disable every remote workspace; blanket-enabling it would
+      // hand WSL Linux paths to the native file manager. Only an exactly-resolved WSL
+      // target goes through Explorer, keeping this entry's "reveal containing folder"
+      // semantic — main converts to UNC at the platform boundary.
       const result =
         remoteTarget?.kind === "wsl"
           ? await platform.openInEditor("explorer", openPath, {
@@ -98,7 +100,7 @@ export function useFileContextActions(options: FileContextActionOptions = {}) {
       if (result.success) {
         return;
       }
-      logger.warn("[FileContextActions] 在文件管理器中显示条目失败", {
+      logger.warn("[FileContextActions] failed to reveal entry in file manager", {
         path: target.path,
         openPath,
         error: result.error ?? "unknown-error",

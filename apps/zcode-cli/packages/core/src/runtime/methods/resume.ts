@@ -123,7 +123,7 @@ export async function resumeFromStore(
   this.workingDirectory = session.directory;
   this.config.taskType = session.taskType;
   if (this.config.memory) {
-    // Memory root 必须使用会话落盘时的 workspace identity，不能沿用进程启动 workspace。
+    // The Memory root uses the persisted-at-session workspace identity, never the process-start one.
     this.config.memory.workspaceIdentity = session.workspaceID
       ? String(session.workspaceID)
       : undefined;
@@ -132,8 +132,8 @@ export async function resumeFromStore(
   this.contextBuilder = null;
   this.contextInitialized = false;
   this.lastEmittedLocalDate = undefined;
-  // cold resume 的历史 hydration 会先清空 runtime-local read-state；必须在
-  // Context 初始化前完成，确保随后单次加载的 MEMORY.md 状态与 provider 所见内容一致。
+  // Cold-resume hydration clears runtime-local read-state first,
+  // before Context init, so the single MEMORY.md load matches provider-visible state.
   const readFileStateHydration = await hydrateReadFileStateFromSession({
     branchCutAfterMessageId,
     messages,
@@ -168,8 +168,8 @@ export async function resumeFromStore(
     rewindKeptMessageIds,
     rewindTargetMessageId,
   });
-  // compact preserved segment 会把 compact 前消息插回 provider 上下文，
-  // 但它不是 compact 后时间线的 latest anchor，不能用于后续 compact parentID。
+  // A preserved segment re-inserts pre-compact messages into provider context
+  // but is no latest anchor; never a later compact parentID.
   const timelineActiveMessages = activeSessionMessages(messages, {
     branchCutAfterMessageId,
     includeCompactPreservedSegment: false,
@@ -200,12 +200,12 @@ export async function resumeFromStore(
     restoredModeEvents.length > 0 ? this.eventReducer.reduce(restoredModeEvents).mode : undefined;
   const resolvedMode = options?.modeOverride ?? restoredMode ?? session.permission?.mode;
   if (resolvedMode !== undefined) {
-    // cold resume 会先把 checkpoint/rewind 等局部事件恢复到新的内存 eventStore。
-    // 这些事件不携带 mode，若仅按“存在任意事件”reduce，会用默认 build 覆盖 headless yolo。
-    // 只有权威 mode 事件能恢复历史值；本次 invocation 的显式/default mode 仍保持最高优先级。
+    // Cold resume restores checkpoint/rewind-ish events into the fresh memory eventStore first.
+    // They carry no mode; any-event reducing would overwrite headless yolo with the default build.
+    // Only authoritative mode events restore history; this invocation explicit/default wins.
     Object.assign(this.config, resolveExecutionState({ mode: resolvedMode }));
   }
-  // 会话自己的新记录优先于项目偏好；旧记录仅兼容读取，不批量回填。
+  // The session own new record beats project preference; legacy records read-only.
   const executionEntries = await this.sessionStore.sessionEntries?.({
     sessionID: this.sessionId,
     type: SESSION_ENTRY_EXECUTION_STATE,
@@ -317,8 +317,8 @@ export async function resumeFromStore(
   return {
     ...hydration,
     directory: session.directory,
-    // 中断 compact 恢复会写回 timeline part；bootstrap 不能继续把恢复前
-    // messages 交给 V4，否则首帧会短暂复活 started/retrying 状态。
+    // Interrupted-compact recovery writes the timeline part; bootstrap must not feed
+    // pre-recovery messages to V4, or frame one flashes started/retrying.
     persistedMessagesReloadRequired: recoveredCompactTimelineCount > 0,
     readFileStateRestoredCount: readFileStateHydration.restoredCount,
     readFileStateSkippedRangeReadCount: readFileStateHydration.skippedRangeReadCount,
@@ -340,8 +340,8 @@ async function syncPersistedSessionTitleForResume(
   const source = input.session.titleSource ?? "generated";
   if (hasRestoredTitleEvent(input.restoredEvents, title, source)) return;
 
-  // fork child 创建时 title 已写进 sessionStore，但复制历史不会复制父会话的
-  // SessionTitleUpdated 事件。v4 live 投影只消费事件流，缺这条事件就会把列表标题降级成"新任务"。
+  // At fork-child creation the title is in the sessionStore, but history copy skips the parent
+  // SessionTitleUpdated event; the live projection consumes events, else titles degrade to New Task.
   await this.appendEvent(
     this.createEvent(
       SessionEventType.SessionTitleUpdated,

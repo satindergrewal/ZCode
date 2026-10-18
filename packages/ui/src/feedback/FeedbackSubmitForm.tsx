@@ -161,17 +161,18 @@ export function FeedbackSubmitForm({
   useEffect(() => {
     if (submissionJob) return;
     if (!submissionJobId) return;
-    // 后台提交必须由用户点击的 card 通过 jobId 精确绑定。
-    // 新建问题上报不再猜测“最后一个活动 job”，避免旧上传状态锁住新表单。
+    // Background submission must bind to the clicked card via its jobId. New bug reports no
+    // longer guess the "last active job", so a stale upload cannot lock the new form.
     const selectedJob = getFeedbackSubmissionJob(submissionJobId);
     if (!selectedJob) return;
-    logger.debug("[FeedbackSubmitForm] 恢复后台反馈任务", {
+    logger.debug("[FeedbackSubmitForm] Resumed background feedback job", {
       jobId: selectedJob.id,
       hasFormDraft: Boolean(selectedJob.formDraft),
       screenshotCount: selectedJob.formDraft.screenshots?.length ?? 0,
     });
-    // 恢复 job 进度时必须同时恢复该 job 的原始表单，否则问题描述为空。
-    // 表单快照随 job 保存，确保并发提交时点击不同 card 能看到各自的内容。
+    // Restoring a job's progress must also restore that job's original form, or the description
+    // is empty. The snapshot rides on the job so concurrent submissions show their own content per
+    // clicked card.
     applySubmitDraft(selectedJob.formDraft);
     activeSubmissionJobRef.current = selectedJob;
     setSubmissionJob(selectedJob);
@@ -256,7 +257,7 @@ export function FeedbackSubmitForm({
       });
       const job = await startSimplifiedFeedbackSubmission({
         feedbackService,
-        // 后端正文使用 trim 后的内容，但后台卡片恢复时必须保留用户输入原文。
+        // The backend stores trimmed text, but card restore must keep the user's original input.
         description,
         contact,
         screenshots,

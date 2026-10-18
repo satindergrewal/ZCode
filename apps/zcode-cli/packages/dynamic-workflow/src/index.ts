@@ -1,7 +1,7 @@
 export { FACADE_DTS, FACADE_FILE_NAME, SNIPPET_FACADE_DTS } from "./facade/dts.js";
 export { WORLD_READ_CAPS } from "./facade/world-read-caps.js";
 export { REPORT_CAPS } from "./facade/report-caps.js";
-// 用户面产物：上限常量、注册表词汇、编译期清单与诊断。
+// User-facing artifacts: cap constants, registry vocabulary, compile-time inventories and diagnostics.
 export { ARTIFACT_CAPS, ARTIFACT_ID_PATTERN } from "./facade/artifact-caps.js";
 export {
   ARTIFACT_REGISTRY,
@@ -61,9 +61,9 @@ export {
   type Step,
   type StepKind,
 } from "./analysis/causality-graph.js";
-// 贪心不可约传递归约。display
-// 裁剪层复用它对单一种类的边做无类型归约
-// ——全部前向边同 kind、回边作 carry，它就退化成普通的不可约归约，且在有环输入上可靠。
+// Greedy irreducible transitive reduction. The display
+// pruning layer reuses it to reduce a single edge kind untyped:
+// all forward edges of one kind, back edges as carry -- it degenerates to the plain irreducible reduction and stays sound on cyclic input.
 export { reduceOrdering, type ReducibleEdge } from "./analysis/causality-reduce.js";
 export {
   UNPHASED_ID,
@@ -71,7 +71,7 @@ export {
   type StructuralRegionKind,
   type TraceRegionKind,
 } from "./analysis/causality-order.js";
-// 控制流投影：occurrence 级 CFG 与阶段商。
+// Control-flow projection: the occurrence-level CFG and the phase quotient.
 export {
   FLOW_ABORT,
   FLOW_ENTRY,
@@ -94,13 +94,13 @@ export {
   phaseGraphToMermaid,
   siteGraphToMermaid,
 } from "./analysis/mermaid.js";
-// 因果图的规范文本形式（快照面）。
+// The causal graph's canonical text form (the snapshot face).
 export {
   serializeCausalityGraph,
   serializeControlFlow,
   serializeHandoffGraph,
 } from "./analysis/serialize.js";
-// 交接图投影：板面第二层的参与者卡与交接边。
+// Handoff-graph projection: participant cards and handoff edges, the board's second layer.
 export {
   FANOUT_EXPAND_CAP,
   projectHandoffGraph,
@@ -109,8 +109,8 @@ export {
   type HandoffGraph,
   type HandoffParticipant,
 } from "./analysis/handoff-graph.js";
-// 统一分析的核心产物与其规范文本形式：
-// 站点图 / 因果图 / actor 图都是它上面的纯投影。
+// The unified-analysis core product and its canonical text form:
+// site graph / causal graph / actor graph are pure projections over it.
 export {
   serializeCore,
   type AnalysisCore,
@@ -122,8 +122,8 @@ export {
   type CoreSites,
   type CoreTypes,
 } from "./analysis/core.js";
-// core 的 JSON 编解码：样例包把 `AnalysisCore` 冻结成
-// `core.json`，下游浏览器端在冻结产物上现场重算投影；Map 以有序 `[key, value][]` 落盘。
+// core's JSON codecs: sample bundles freeze AnalysisCore into
+// core.json; browser consumers recompute projections over the frozen artifact; Maps persist as ordered key-value pair lists.
 export {
   decodeAnalysisCore,
   encodeAnalysisCore,
@@ -144,7 +144,7 @@ export {
   type SchemaSynthesisResult,
 } from "./schema/synthesize.js";
 export { validate, formatViolation, formatViolations } from "./schema/validate.js";
-// 每个 actor 站点的 submit profile：编译期决定子代理拿 typed / generic / 无 submit_result 工具。
+// Per actor-site submit profile: compile-time decision of typed / generic / no submit_result tool for the subagent.
 export {
   GENERIC_SUBMIT_PROFILE,
   deriveActorSubmitProfiles,

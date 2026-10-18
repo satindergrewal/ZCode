@@ -41,9 +41,9 @@ function restoreMidConversationSystemStringContent(
     return { ...message, content: text };
   });
 
-  // 在最终 messages[] 中保留 string content；
-  // AI SDK 会将同一纯文本扩成单元素 block array。这里只恢复该 wire shape，顶层
-  // system[]、带 cache_control 的 block 和其他 message role 均保持原样。
+  // Keep string content in the final messages[];
+  // the AI SDK expands the same plain text into a single-element block array. Restore exactly that wire shape;
+  // top-level system[], cache_control blocks and other roles stay untouched.
   return changed ? { ...body, messages } : body;
 }
 
@@ -144,9 +144,9 @@ function isUnsignedThinkingBlock(value: unknown): boolean {
     return false;
   }
 
-  // 部分 Anthropic-compatible 服务在非流式 JSON 中返回无签名
-  // thinking block。AI SDK 会按 Anthropic 原生 schema 校验 signature 并拒绝
-  // 整个响应；这里删除不可校验的思考块，保留 text/usage/stop_reason 继续解析。
+  // Some Anthropic-compatible services return unsigned
+  // thinking blocks in non-streaming JSON. The AI SDK validates signature per the native schema and rejects
+  // the whole response; drop unverifiable thinking blocks, keep parsing text/usage/stop_reason.
   return typeof block.signature !== "string" && typeof block.redactedData !== "string";
 }
 
@@ -270,8 +270,8 @@ function decideFrame(
     const signature = state.pendingThinkingSignatures.get(index);
     state.pendingThinkingSignatures.delete(index);
     if (signature) {
-      // 部分 Anthropic-compatible 服务把最终签名直接放在 thinking start，
-      // 但 AI SDK 只从 signature_delta 读取签名；仅在缺少原生 delta 时补成标准事件。
+      // Some Anthropic-compatible services put the final signature in thinking start,
+      // but the AI SDK reads signatures only from signature_delta; synthesize the standard event only when the native delta is missing.
       missingSignatureDelta = { index, signature };
     }
   }

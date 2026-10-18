@@ -15,8 +15,8 @@ function createTaskWorkbenchDragPreview({
   const sourceRect = source.getBoundingClientRect();
   const preview = source.cloneNode(true) as HTMLElement;
   preview.dataset.taskWorkbenchDragPreview = "true";
-  // 默认 drag preview 的透明底会让 Project task 在浮层中缺少边界；
-  // 保留原行内容，只补 Grouped drag overlay 已使用的 surface 样式。
+  // The default drag preview's transparent background leaves the Project task borderless in the overlay;
+  // keep the row content and add the same surface styles the Grouped drag overlay already uses.
   preview.classList.add("border", "border-border", "bg-background", "shadow-lg");
   preview.style.position = "fixed";
   preview.style.left = "-10000px";

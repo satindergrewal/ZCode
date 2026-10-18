@@ -1,20 +1,20 @@
 import type { ZCodePersistedMessage, ZCodePersistedMessagePart } from "./zcode-task-types-core.js";
 
-// ZCode runtime 把同一个 user turn 里**每一轮 LLM 调用**落成独立的 assistant 消息（各带 time.created/completed）。
-// 老 task projection 模型每个 turn 只有一条 assistant，UI 也按这个模型设计（一条 assistant → 一个"已工作 X 秒"块）。
-// 这里把映射后相邻的 assistant 合并回一条，恢复"一个 turn 一条 assistant"的不变式；
-// 旧投影数据本身就是严格交替的，对它来说是 no-op。
+// The ZCode runtime persists **every LLM call** in one user turn as its own assistant message (each with time.created/completed).
+// The legacy task projection assumes one assistant per turn, and so does the UI (one assistant -> one "worked Xs" block).
+// Merge adjacent projected assistants back into one, restoring the invariant; legacy data is strictly alternating, so it is a no-op there.
+// Legacy projected data is strictly alternating already; a no-op there.
 //
-// 顺便把 turnIndex 显式按 user 计数赋值，修掉 `toTaskChatMessages` 的兜底
-// `Math.floor(index / 2)` 在多 assistant 时算错的次要 bug。
+// Also assign turnIndex by user-count explicitly, fixing toTaskChatMessages' Math.floor(index / 2)
+// fallback miscounting once turns have several assistants.
 export function coalesceConsecutiveZCodeAssistants(
   messages: readonly ZCodePersistedMessage[],
 ): ZCodePersistedMessage[] {
   const merged: ZCodePersistedMessage[] = [];
   for (const message of messages) {
     const last = merged[merged.length - 1];
-    // compact/fork/goal verifier 这类 synthetic timeline 虽然 role 是 assistant，
-    // 但它们是消息边界，不是同一轮正文；参与合并会吞掉横线并把维护时间算进上一条回复。
+    // Synthetic timelines (compact/fork/goal verifier) have assistant role but are message boundaries, not body of the round;
+    // merging them would swallow dividers and bill maintenance time to the previous reply.
     if (
       message.role === "assistant" &&
       last?.role === "assistant" &&
@@ -65,7 +65,7 @@ function mergeAssistantPair(
       ? undefined
       : (first.thought ?? "") + (next.thought ?? "");
 
-  // 任一轮还没有 completed time 就视为整 turn 未结束；duration 留空让 UI 显示"工作中"。
+  // Any round without a completed time means the turn is unfinished; leave duration empty so the UI shows "working".
   const durationMs =
     first.durationMs === undefined || next.durationMs === undefined
       ? undefined

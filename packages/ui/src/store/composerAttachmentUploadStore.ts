@@ -13,8 +13,10 @@ export type ComposerAttachmentUploadStatus =
 
 export interface ComposerAttachmentUploadItem extends ChatComposerAttachment {
   /**
-   * composer-owned 仍处于上传/暂存生命周期；session-owned 是从权威 queue 撤回的既有 ref。
-   * 后者已经由 session 接管，runtime restart、cleanup 和 resend 都不能再次处理引用所有权。
+   * composer-owned refs are still in the upload/staging lifecycle; session-owned refs are
+   * existing refs reclaimed from the authoritative queue. The latter are owned by the
+   * session — runtime restarts, cleanup, and resend must not process reference ownership
+   * again.
    */
   referenceOwnership: "composer" | "session";
   uploadStatus: ComposerAttachmentUploadStatus;
@@ -25,8 +27,9 @@ export interface ComposerAttachmentUploadItem extends ChatComposerAttachment {
   operationId: string;
   autoRetryCount: number;
   /**
-   * 因 runtime 换代触发的重传次数，与上传失败重试分开计。
-   * 换代不是「上传失败」，共用计数器会让一次换代就烧掉用户可见的重试配额。
+   * Retransmissions caused by runtime generation changes, counted separately from
+   * upload-failure retries. A generation change is not an upload failure; a shared counter
+   * would burn the user-visible retry quota on one generation swap.
    */
   runtimeRebuildRetryCount: number;
   staged: boolean;
@@ -40,8 +43,9 @@ interface ComposerAttachmentUploadStoreState {
 }
 
 /**
- * renderer 内存态：File/object URL 不落盘，但 task/composer 切换或局部卸载不会丢失。
- * 上传控制器仍由发起该 operation 的 hook 闭包持有，relay/main 不保存业务状态。
+ * Renderer-memory state: File/object URLs never hit disk, and task/composer switches or
+ * partial unmounts do not lose them. Upload controllers stay in the originating hook's
+ * closure; relay/main store no business state.
  */
 export const useComposerAttachmentUploadStore = create<ComposerAttachmentUploadStoreState>()(
   () => ({ scopes: {} }),
@@ -55,7 +59,7 @@ declare global {
 }
 
 if (shouldExposeE2EStoreBridge()) {
-  // E2E 只暴露当前唯一附件 owner，供 scope 切换用例准备状态；不再把附件塞回旧 Session Store。
+  // E2E exposes only the single attachment owner, for scope-switch test setup; attachments are never stuffed back into the legacy Session Store.
   window.__zcodeComposerAttachmentUploadStoreE2E = useComposerAttachmentUploadStore;
 }
 

@@ -19,13 +19,13 @@ export function ensureTaskNavigationWorkspace(params: {
   }
 
   if (workspaceIdentity) {
-    // 远程 workspace 的 identity 只表达隔离身份，不能据此重建 SSH/WSL/Docker
-    // attachment。当前窗口没有匹配 tab 时必须 fail-closed，避免创建无法连接的伪远程 tab。
+    // A remote workspace identity only expresses the isolation identity; SSH/WSL/Docker
+    // attachments cannot be rebuilt from it. With no matching tab in this window, fail closed rather than create an unreachable pseudo-remote tab.
     return { accepted: false, reason: "remote_attachment_missing" };
   }
 
-  // Automations 是跨项目列表，运行历史所属的本地 workspace 可能已经关闭。
-  // 只尝试 activate 的话，失败后仍关闭 Automations，最终留在当前项目的旧会话。
+  // Automations is a cross-project list; the local workspace owning a run history may already be closed.
+  // Merely calling activate would still close Automations on failure, stranding the current project's old session.
   params.addLocalWorkspaceTab(params.workspacePath);
   return { accepted: true, openedLocalTab: true };
 }

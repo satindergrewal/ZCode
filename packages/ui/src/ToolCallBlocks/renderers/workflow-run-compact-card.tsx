@@ -9,20 +9,25 @@ import type { WorkflowRunCardSummary } from "@/ToolCallBlocks/shared.js";
 function isInteractiveDescendant(target: EventTarget | null, card: HTMLElement): boolean {
   if (!(target instanceof Element)) return false;
   const interactive = target.closest("button, a, input, textarea, select, [role='button']");
-  // 卡片自身带 role=button，closest 会让卡片任意位置都命中自己，那样「点击卡片打开详情」
-  // 就永远不执行（plan 卡的原始 bug）。这里只拦截真实子控件。
+  // The card itself carries role=button, so closest matches the card from anywhere inside
+  // it and "click card to open details" never runs (the plan card's original bug). Intercept
+  // real child controls only.
   return interactive !== null && interactive !== card;
 }
 
 /**
- * workflow run 的紧凑可点卡——CreateWorkflow 与 ResumeWorkflowRun 工具卡共享的「run 态第三态」。
+ * Compact clickable card for a workflow run — the "third run state" shared by the
+ * CreateWorkflow and ResumeWorkflowRun tool cards.
  *
- * 整卡就是入口（DESIGN.md 的语义色 + 现有的 run 状态词汇表）：实测的可发现性失败正是
- * 因为入口曾经埋在展开后的卡体里。两个调用方只换 labelText 与 primaryText（create 用
- * 工作流名、resume 用 runId），状态点词与步数都由联接摘要实时驱动。
+ * The whole card is the entry point (DESIGN.md semantic colors plus the existing run-status
+ * vocabulary): the measured discoverability failure came from the entry once being buried in
+ * the expanded card body. The two callers differ only in labelText/primaryText (create: the
+ * workflow name; resume: the runId); the status word and step count are live from the join
+ * summary.
  *
- * `onOpen` 缺席即纯展示态：不加 role/tabIndex/hover——宿主只在确实有可打开的 run 时注入
- * 回调（`ToolCallBlockRenderContext.onOpenWorkflowRun` 的门控语义）。
+ * A missing `onOpen` is presentational only: no role/tabIndex/hover — the host injects the
+ * callback only when a run is actually openable (the gating semantic of
+ * `ToolCallBlockRenderContext.onOpenWorkflowRun`).
  */
 export function WorkflowRunCompactCard({
   ariaLabel,
@@ -47,12 +52,13 @@ export function WorkflowRunCompactCard({
   stepsLabel: string;
   onOpen: (() => void) | undefined;
   showIcon: boolean;
-  /** 卡片下方的附加内容（如 ToolSnapshotFieldNotice），随卡渲染。 */
+  /** Additional content below the card (e.g. ToolSnapshotFieldNotice), rendered with it. */
   children?: ReactNode;
 }) {
-  // 整卡点击 / Enter / Space —— 逐字照 switch-mode.tsx 的 plan 卡习语，包括两条守卫的理由：
-  // 卡片自身带 role=button，所以判定必须排除卡片本身，否则「点卡片打开详情」永不执行；
-  // 而子控件的 keydown 会继续冒泡到整卡，一次键盘操作会打开两次详情页。
+  // Whole-card click / Enter / Space — verbatim the switch-mode.tsx plan-card idiom,
+  // guards included: the card itself carries role=button so the check must exclude the card
+  // itself, or "click card to open details" never runs; and child keydowns bubble to the
+  // card, opening details twice per keypress.
   const handleCardClick = (event: MouseEvent<HTMLElement>) => {
     if (!onOpen) return;
     if (!isInteractiveDescendant(event.target, event.currentTarget)) onOpen();
@@ -87,7 +93,7 @@ export function WorkflowRunCompactCard({
         <span className="shrink-0 text-ui-base font-medium text-foreground-subtle">
           {labelText}
         </span>
-        {/* 工作流名称是界面标题，使用默认字体，避免被当作代码以等宽字体展示。 */}
+        {/* The workflow name is a UI title: default font, so it does not read as monospaced code. */}
         <span
           className="min-w-0 flex-1 truncate text-ui-base text-foreground-subtlest"
           title={primaryTitle ?? primaryText}
@@ -95,7 +101,7 @@ export function WorkflowRunCompactCard({
           {primaryText}
         </span>
         <span className="flex shrink-0 items-center gap-1.5">
-          {/* 状态词永远在圆点旁边：状态绝不只靠颜色或动画表达。 */}
+          {/* The status word always sits beside the dot: status is never color- or animation-only. */}
           <span
             aria-hidden="true"
             className={cn("size-1.5 shrink-0 rounded-full", RUN_STATUS_DOT[workflowRun.status])}
@@ -104,7 +110,7 @@ export function WorkflowRunCompactCard({
             {statusLabel}
           </span>
         </span>
-        {/* 步数是「已排程的里结算了几个」，不是全程百分比——动态工作流没有静态总数。 */}
+        {/* The step count is "settled of scheduled", never a total percentage — dynamic workflows have no static total. */}
         <span className="shrink-0 font-mono text-ui-xs tabular-nums text-foreground-subtlest">
           {stepsLabel}
         </span>

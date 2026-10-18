@@ -84,9 +84,9 @@ export async function buildViewportScreenshotParams(
   if (!view.normalizeScreenshotToCssPixels) return params;
   const cssViewport = resolveScreenshotCssViewport(await readScreenshotLayoutMetrics(view));
   if (!cssViewport) return params;
-  // legacy layout metrics 在 Retina guest 中可以是 CSS viewport 的 2 倍，
-  // 但 capture raster 已经是 CSS 1x。首帧预先套用 0.5 会产生 640×360，并可能让重挂载的
-  // guest compositor 停留在左上角。首帧固定使用 CSS 1x，实际 PNG 异常再由共用执行器校正。
+  // // Legacy layout metrics can read 2x the CSS viewport on Retina guests while capture raster is already CSS 1x;
+  // pre-scaling the first frame by 0.5 yields 640x360 and can leave remounted guest compositors
+  // pinned top-left. First frame stays CSS 1x; the shared executor corrects real PNG anomalies.
   params.clip = { ...cssViewport, scale: 1 };
   return params;
 }
@@ -158,7 +158,7 @@ async function confirmAbortedNavigationCommitted(
         return true;
       }
     } catch {
-      // guest 正在切换 document 时 executeJavaScript 可能短暂失败；在有界窗口内继续复核。
+      // executeJavaScript can fail transiently mid-document-swap; re-check within a bounded window.
     }
     await new Promise<void>((resolve) => setTimeout(resolve, ABORTED_NAVIGATION_POLL_INTERVAL_MS));
   }
@@ -186,9 +186,9 @@ export async function handleNavigate(
     );
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") throw error;
-    // 站点的 www→m 重定向或 SPA 路由接管会让 Electron loadURL 以
-    // ERR_ABORTED reject，但新 document 已经提交。只在 URL 等价且 document ready 时认定成功；
-    // 不能把已成功导航的页面回报成硬失败，诱导模型继续猜 URL/资源 ID。
+    // www-to-m redirects or SPA routing make Electron loadURL reject with ERR_ABORTED
+    // after the new document commits. Success requires URL equivalence plus ready document;
+    // never report a landed navigation as hard failure or the model keeps guessing URLs/resource ids.
     if (
       isElectronNavigationAborted(error) &&
       (await confirmAbortedNavigationCommitted(view, command.url, previousUrl, opts?.signal))
@@ -212,7 +212,7 @@ export async function handleGetState(
   done: BrowserCommandDone,
 ): Promise<BrowserCommandResult> {
   const state = readState(view.webContents);
-  // 补 scrollX/scrollY/viewportWidth/viewportHeight（读取失败不致命，返回基础 state）。
+  // Fill scrollX/scrollY/viewportWidth/viewportHeight; read failures keep the base state.
   try {
     const raw = (await view.webContents.executeJavaScript(VIEWPORT_SCRIPT)) as {
       scrollX?: unknown;
@@ -227,7 +227,7 @@ export async function handleGetState(
       if (typeof raw.innerHeight === "number") state.viewportHeight = raw.innerHeight;
     }
   } catch {
-    /* 读取视口信息失败时保留基础 state。 */
+    /* /* Viewport read failure keeps the base state. */
   }
   return done({ ok: true, state });
 }
@@ -252,7 +252,7 @@ export async function handleScreenshot(
     });
   }
 
-  // 走 CDP Page.captureScreenshot（规避 renderer webContents.capturePage 的 V8 FATAL，且拿全页）。
+  // Use CDP Page.captureScreenshot: avoids capturePage's V8 FATAL and reaches full page.
   const metrics =
     command.fullPage === true || view.normalizeScreenshotToCssPixels
       ? await readScreenshotLayoutMetrics(view)
@@ -261,11 +261,11 @@ export async function handleScreenshot(
     view.normalizeScreenshotToCssPixels && metrics ? resolveScreenshotCssViewport(metrics) : null;
   const params: Record<string, unknown> = {
     format: "png",
-    // 普通 viewport 截图不应走 viewport 外的 compositor surface；clip/fullPage 才显式允许。
+    // Plain viewport shots must not read beyond-viewport compositor surfaces; clip/fullPage opt in explicitly.
     captureBeyondViewport: command.clip !== undefined || command.fullPage === true,
   };
   if (command.clip) {
-    // 区域截图：clip 用视口 CSS px，scale:1 保证与坐标同系。
+    // Region shots: clip in viewport CSS px, scale 1 keeps the same space as coordinates.
     params.clip = {
       x: command.clip.x,
       y: command.clip.y,
@@ -274,7 +274,7 @@ export async function handleScreenshot(
       scale: 1,
     };
   } else if (command.fullPage === true) {
-    // 全页截图：取 contentSize（优先 CSS 尺寸），用 clip 覆盖整页。
+    // Full-page shots: contentSize (CSS preferred) via clip over the whole page.
     const cs = metrics?.cssContentSize ?? metrics?.contentSize;
     if (cs && typeof cs.width === "number" && typeof cs.height === "number") {
       params.clip = {
@@ -308,12 +308,12 @@ export async function handleSnapshot(
   command: Extract<BrowserCommand, { method: "snapshot" }>,
   done: BrowserCommandDone,
 ): Promise<BrowserCommandResult> {
-  // 注入脚本遍历可见 DOM，产出带 ref 的结构化快照（严格对齐 browserSnapshotSchema）。
+  // The injected script walks visible DOM producing a ref'd structured snapshot (strict vs browserSnapshotSchema).
   const raw = await view.webContents.executeJavaScript(
     SNAPSHOT_SCRIPT(command.maxElements, command.includeHidden),
   );
-  // 防御式校验：脚本受控但异形页面可能覆写 getter/返回残缺结构。safeParse 失败时
-  // 转成明确的 execution_error（而非把畸形对象透传到下游让 strict zod 报笼统失败）。
+  // Defensive parse: pages can override getters or return mangled shapes; on safeParse failure raise a precise
+  // execution_error instead of passing malformations downstream for generic zod failures.
   const parsed = browserSnapshotSchema.safeParse(raw);
   if (!parsed.success) {
     return done({
@@ -332,7 +332,7 @@ export async function handleEvaluate(
   command: Extract<BrowserCommand, { method: "evaluate" }>,
   done: BrowserCommandDone,
 ): Promise<BrowserCommandResult> {
-  // 执行页面表达式并 JSON 安全序列化；异常 → execution_error。
+  // Evaluates the page expression with JSON-safe serialization; throws become execution_error.
   const raw = (await view.webContents.executeJavaScript(EVALUATE_SCRIPT(command.expression))) as {
     ok?: boolean;
     kind?: string;
@@ -348,7 +348,7 @@ export async function handleEvaluate(
     try {
       value = JSON.parse(raw.data);
     } catch {
-      // 理论不达（页面侧已 JSON.stringify 成功）；兜底透传原字符串。
+      // Unreachable in theory (page already JSON.stringify'd); pass the raw string through as a fallback.
       value = raw.data;
     }
   } else {

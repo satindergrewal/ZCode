@@ -110,8 +110,8 @@ export function useUsageStats(
     const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
     setState((current) => ({
-      // App Usage 与 Coding Plan 共用同一个 hook 实例。
-      // 切 tab 后如果继续保留旧 snapshot，Coding Plan 请求期间或失败后会显示本地 App Usage 数据。
+      // App Usage and Coding Plan share one hook instance.
+      // Keeping the old snapshot across tabs shows local App Usage data while the Coding Plan request is in flight or failed.
       snapshot: keepPreviousSnapshot ? current.snapshot : null,
       loading: true,
       error: null,
@@ -140,7 +140,7 @@ export function useUsageStats(
         return;
       }
       const message = getErrorMessage(error);
-      logger.warn("[useUsageStats] 读取 usage 统计失败", {
+      logger.warn("[useUsageStats] Failed to read usage stats", {
         dataSource,
         range,
         preferredProviderId,
@@ -168,8 +168,8 @@ export function useUsageStats(
   useEffect(() => {
     if (!enabled) {
       setState({
-        // Coding Plan provider 被移除或禁用后，使用统计查询会被关闭。
-        // 这里清空旧快照，避免设置页继续显示上一家账号的用量数据。
+        // Once the Coding Plan provider is removed or disabled, its usage queries shut down.
+        // Clear the stale snapshot so settings stops showing the previous account usage.
         snapshot: null,
         loading: false,
         error: null,
@@ -220,7 +220,7 @@ export function useAppUsageStats(range: AppUsageRange) {
         return;
       }
       const message = getErrorMessage(error);
-      logger.warn("[useAppUsageStats] 读取本地使用统计失败", {
+      logger.warn("[useAppUsageStats] Failed to read local usage stats", {
         range,
         timeZone,
         error: message,
@@ -323,16 +323,16 @@ export function useCodingPlanUsageStats(
           timeZone,
         });
         serviceCache.set(requestScopeKey, {
-          // requestedAt 只能表示成功快照的生成时间。用请求开始时间预写空快照会
-          // 导致同 scope 的后挂载实例把 pending 当成 fresh，并错过首个请求的成功或失败结果。
+          // requestedAt only timestamps a successful snapshot. Pre-writing an empty snapshot at request start
+          // makes later-mounted instances of the same scope read pending as fresh and miss the first outcome.
           snapshot: cached?.snapshot ?? null,
           requestedAt: cached?.inFlight ? null : (cached?.requestedAt ?? null),
           inFlight: request,
         });
       }
       setState((current) => ({
-        // 切换 Z.AI/BigModel 时不能保留上一家 Coding Plan 的 monitor 快照；
-        // 但同一 provider 切换 today/7d/30d 时保留旧快照，避免 Quota Remaining 和趋势区域闪空。
+        // Switching Z.AI/BigModel must not keep the previous Coding Plan monitor snapshot;
+        // within one provider, today/7d/30d switches keep the old snapshot so Quota Remaining and trends never flash empty.
         snapshot: keepPreviousSnapshot ? current.snapshot : null,
         loading: true,
         error: null,
@@ -355,14 +355,14 @@ export function useCodingPlanUsageStats(
           return;
         }
         const message = getErrorMessage(error);
-        logger.warn("[useCodingPlanUsageStats] 读取 Coding Plan 使用统计失败", {
+        logger.warn("[useCodingPlanUsageStats] Failed to read Coding Plan usage", {
           range,
           preferredProviderId,
           timeZone,
           error: message,
         });
-        // 失败请求不能保留本次 access 预写入的 cache entry。
-        // 否则 TTL 内重新打开同一组织会跳过真实请求，展示旧来源快照或静默空掉错误。
+        // A failed request must not keep the cache entry pre-written under this access,
+        // or reopening the same org within TTL skips the real request, showing stale data or silently empty errors.
         if (serviceCache.get(requestScopeKey)?.inFlight === request) {
           serviceCache.delete(requestScopeKey);
         }

@@ -1,13 +1,16 @@
 import type { IPlatformService } from "@zcode/shared";
 
-// macOS 才具备 TCC 权限、授权引导和 Helper 状态轮询；Windows 本地桌面仅复用
-// zcode-cua 插件总开关，不读取 TCC 或 Helper 状态。Linux、普通 Web 和手机远控不展示电脑控制设置。
-// 因此权限弹窗、预检和 Helper 状态轮询都必须先判定本地是 macOS desktop。
-// 用 navigator.userAgent 判定，并显式排除 iOS（iPhone/iPad 的 UA 含 Macintosh 子串）。
+// Only macOS has TCC permissions, the onboarding flow, and Helper status polling; the
+// Windows desktop merely reuses the zcode-cua plugin master switch and never reads TCC or
+// Helper state. Linux, plain web, and phone remote control show no computer-control
+// settings. The permission dialog, preflight, and Helper polling must therefore first
+// establish that this is a macOS desktop, decided via navigator.userAgent with iOS
+// excluded explicitly (iPhone/iPad UAs contain the Macintosh substring).
 //
-// 由模块级常量改为惰性函数。原常量在模块 import 时求值，导致按 UA 分支的单测
-// 无法在同一进程内覆盖多平台（改 navigator.userAgent 对已求值的常量无效）。运行时行为等价——
-// 真实环境里 UA 不会中途变化。
+// Converted from a module-level constant to a lazy function. The constant was evaluated at
+// import time, so UA-branching unit tests could not cover multiple platforms in one
+// process (mutating navigator.userAgent cannot affect an already-evaluated constant).
+// Runtime behavior is identical: a real UA never changes mid-session.
 function isMacOsDesktopUserAgent(): boolean {
   return (
     typeof navigator !== "undefined" &&
@@ -21,10 +24,11 @@ function isWindowsDesktopUserAgent(): boolean {
 }
 
 /**
- * CUA 权限 UI 的真实平台能力门。
+ * Real platform-capability gate for the CUA permission UI.
  *
- * 仅看 UA 会把 macOS Safari/Web 误判成 desktop，打开一个无法执行任何本机 IPC 的权限弹窗。
- * desktop preload 只在具备该能力时注入 onboarding 方法，因此 UA + capability 必须同时满足。
+ * Relying on the UA alone misclassifies macOS Safari/web as desktop and opens a permission
+ * dialog that cannot perform any native IPC. The desktop preload injects the onboarding
+ * methods only when the capability exists, so UA and capability must both hold.
  */
 export function supportsLocalMacCuaPermissionOnboarding(
   platform: Pick<IPlatformService, "openCuaPermissionOnboarding"> | null | undefined,
@@ -33,10 +37,11 @@ export function supportsLocalMacCuaPermissionOnboarding(
 }
 
 /**
- * Windows 本地桌面的 CUA 能力门（与上面的 mac 门对称）。
+ * CUA capability gate for the Windows desktop (mirror of the mac gate above).
  *
- * Windows 无 TCC，不读 Helper 权限，因此不能用 openCuaPermissionOnboarding 当 capability 判据；
- * 改用 executeDesktopCommand——它只在 desktop preload 注入，能把 Windows 上的普通浏览器排除掉。
+ * Windows has no TCC and no Helper permission reads, so openCuaPermissionOnboarding cannot
+ * serve as the capability check; executeDesktopCommand is used instead -- it is injected
+ * only by the desktop preload, which excludes plain browsers on Windows.
  */
 export function supportsLocalWindowsCuaEntry(
   platform: Pick<IPlatformService, "executeDesktopCommand"> | null | undefined,

@@ -8,7 +8,7 @@ interface PendingCommandRecoveryBannerProps {
   onDismiss: () => void;
 }
 
-/** 明确被 restart 丢弃的 startNow 输入只提供显式用户决策，组件本身不自动重放。 */
+/** A restart-discarded startNow input supplies explicit user intent only; the component never auto-replays. */
 export const PendingCommandRecoveryBanner = memo(function PendingCommandRecoveryBanner({
   entry,
   onResend,
@@ -16,8 +16,9 @@ export const PendingCommandRecoveryBanner = memo(function PendingCommandRecovery
 }: PendingCommandRecoveryBannerProps) {
   const { intl } = useZCodeIntl();
   const hasReplayPayload = entry.replay.kind === "input";
-  // 根因：恢复提示过去用了整块 warning 黄色，和同一 bottom dock 的普通 error
-  // 形成了错误的视觉层级。这里复用 ChatErrorBanner 的默认 surface/border/foreground。
+  // Root cause: the recovery notice used solid warning yellow, inverting the visual hierarchy
+  // against plain errors in the same bottom dock. Reuse the ChatErrorBanner default
+  // surface/border/foreground.
   return (
     <div
       role="status"

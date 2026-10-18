@@ -14,7 +14,7 @@ export function ProviderStatusIndicator({
   provider?: Pick<ProviderSettingsFormProvider, "enabled" | "executable"> | null;
 }) {
   const { intl } = useZCodeIntl();
-  // 只做展示映射，不能在 UI 再检查 Key、权益或模型成员。
+  // Display mapping only; the UI must not re-check keys, entitlements, or model membership.
   const status =
     provider?.enabled === false ? "disabled" : provider?.executable ? "ready" : "unavailable";
   const { label, color } = presentation[status];

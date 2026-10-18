@@ -45,7 +45,7 @@ export function readProjectPermissionMode(
   return isPromiseLike(mode) ? undefined : (mode ?? undefined);
 }
 
-/** 读取 Session 自己最近一次显式选择；恢复时它高于 Environment 默认值。 */
+/** Reads the session's own most recent explicit choice; on restore it outranks the Environment default. */
 export async function readSessionModelSelection(
   store: Pick<SessionStorePort, "sessionEntries">,
   sessionID: SessionId,
@@ -58,8 +58,8 @@ export async function readSessionModelSelection(
   const data = entries.at(-1)?.data;
   const complete = parseModelSelectionValue(data);
   if (complete) return complete;
-  // reasoning 的错误类型不能抹掉可恢复的当前模型身份；这里只读取新字段，
-  // 不借旧 thoughtLevel/消息/default 补值。执行前仍由 Registry 严格校验。
+  // A reasoning model-type error must not erase the recoverable current model identity; read only the new fields,
+  // with no backfill from legacy thoughtLevel/messages/defaults. The Registry still validates strictly before execution.
   if (data && typeof data === "object" && !Array.isArray(data)) {
     const current = data as Record<string, unknown>;
     return parseModelSelectionValue({ providerId: current.providerId, modelId: current.modelId });
@@ -103,7 +103,7 @@ export async function openStartupSessionStore(
 
 export function getSessionDbPath(configResult: ConfigResult, workingDirectory?: string): string {
   const configured = configResult.config.storage.sessionDbPath;
-  // 存储 Worker 不能 chdir；显式传入业务实际 cwd，保持相对路径与普通 Agent 一致。
+  // The storage worker must not chdir; pass the real business cwd so relative paths match the normal Agent.
   if (workingDirectory && !isAbsolute(configured) && !configured.startsWith("~/"))
     return resolve(workingDirectory, configured);
   return resolvePath(configured);

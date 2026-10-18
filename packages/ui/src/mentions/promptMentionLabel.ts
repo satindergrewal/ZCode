@@ -43,8 +43,8 @@ export function normalizePromptMentionDisplayLabel(
     displayLabel = displayLabel.slice(1);
   }
 
-  // 旧草稿快照里可能把完整 markdown 链接写进 mention node 的 text 字段。
-  // 这会让恢复后的 tag 图标还在，但文本显示成 `[$skill](path)` 原文。显示层只取人类可读 label，
-  // markdown 字段继续保留完整原文用于发送。
+  // Old draft snapshots may write a full markdown link into the mention node text field.
+  // The restored tag keeps its icon but renders the raw [skill](path) text; display takes only the human-readable label,
+  // while the markdown field keeps the full original for sending.
   return displayLabel.trim() || value;
 }

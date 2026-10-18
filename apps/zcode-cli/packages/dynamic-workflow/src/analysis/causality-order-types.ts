@@ -4,10 +4,10 @@ import type { TaintOcc } from "./domain.js";
 import type { ApplicationVia } from "./state.js";
 import type { JumpKind, TraceRegionKind } from "./constants.js";
 
-// causality-order.ts 顶到 oxlint max-lines 上限（400 行），把追踪产物的类型
-// （区域、事件、控制事实、OrderTrace）与走查读取的神谕接口拆到本文件；公开面仍从
-// causality-order.ts 导出（那里原样再导出这些类型，既有的 `from "./causality-order.js"`
-// 引用一个不改）。本文件只含类型，不 import `typescript` 的运行时值。
+// causality-order.ts sits at oxlint's max-lines cap (400); the trace product types
+// (regions, events, control facts, OrderTrace) and the walk's oracle interface live here; the public surface still
+// exports from causality-order.ts (re-exported verbatim there, so existing
+// imports stay). Types only; no runtime values imported from typescript.
 
 /**
  * The taint facts this walk reads, narrowed to the two members it actually uses so the

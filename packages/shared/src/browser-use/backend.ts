@@ -2,12 +2,12 @@ import { z } from "zod";
 import { browserClientModeSchema } from "./commands.js";
 
 /**
- * Browser backend family。Playwright 是 Tab 上的能力层，不是 backend。
+ * Browser backend families. Playwright is a capability layer on tabs, not a backend.
  */
 export const browserBackendTypeSchema = z.enum(["iab", "extension", "cdp"]);
 export type BrowserBackendType = z.infer<typeof browserBackendTypeSchema>;
 
-/** 单项 browser/tab capability 的稳定描述。 */
+/** Stable descriptor of one browser/tab capability. */
 export const browserCapabilityDescriptorSchema = z
   .object({
     id: z.string().trim().min(1),
@@ -17,15 +17,15 @@ export const browserCapabilityDescriptorSchema = z
 export type BrowserCapabilityDescriptor = z.infer<typeof browserCapabilityDescriptorSchema>;
 
 /**
- * 可达 browser backend 的运行时描述。
+ * Runtime description of a reachable browser backend.
  *
- * id 是 connection identity，同一 type 可以同时存在多个实例；只有完成握手并真实可用的
- * backend 才能出现在 discovery 结果中。
+ * id is the connection identity; one type may have several instances. Only handshaked, truly usable
+ * backends appear in discovery results.
  */
 export const browserBackendDescriptorSchema = z
   .object({
     id: z.string().trim().min(1),
-    /** 同一 runtime id 的连接代次；旧代次对象不得自动漂移到新连接。 */
+    /// Connection generation of the same runtime id; old-generation objects never drift to new connections.
     generation: z.number().int().nonnegative().default(0),
     type: browserBackendTypeSchema,
     name: z.string().trim().min(1),
@@ -36,18 +36,18 @@ export const browserBackendDescriptorSchema = z
       })
       .strict(),
     apiSupportOverrides: z.record(z.string(), z.boolean()).optional(),
-    /** metadata 只允许非敏感字符串，禁止把 credential 混入 discovery。 */
+    /// metadata takes non-sensitive strings only; never credentials in discovery.
     metadata: z.record(z.string(), z.string()).optional(),
   })
   .strict();
 export type BrowserBackendDescriptor = z.infer<typeof browserBackendDescriptorSchema>;
 
-/** backend request 使用实时 session，或使用已缓存的 session context。 */
+/** Whether a backend request uses the live session or a cached session context. */
 export const browserSessionContextKindSchema = z.enum(["live", "cached"]);
 export type BrowserSessionContextKind = z.infer<typeof browserSessionContextKindSchema>;
 
 /**
- * Discovery 的完整隔离上下文。workspaceKey 用于身份隔离，workspacePath 仅用于路径语义。
+ * Discovery's full isolation context. workspaceKey for identity; workspacePath for path semantics only.
  */
 export const browserDiscoveryContextSchema = z
   .object({
@@ -64,7 +64,7 @@ export const browserDiscoveryContextSchema = z
   .strict();
 export type BrowserDiscoveryContext = z.infer<typeof browserDiscoveryContextSchema>;
 
-/** 执行命令时在 discovery context 上增加精确 runtime browser identity。 */
+/** Attach the exact runtime browser identity to the discovery context when executing. */
 export const browserSessionContextSchema = browserDiscoveryContextSchema
   .extend({
     browserId: z.string().trim().min(1),
@@ -73,7 +73,7 @@ export const browserSessionContextSchema = browserDiscoveryContextSchema
   .strict();
 export type BrowserSessionContext = z.infer<typeof browserSessionContextSchema>;
 
-/** ZCode Protocol 的 discovery result 包装；port 层会解包并直接返回 browsers。 */
+/** The ZCode Protocol's discovery-result wrapper; the port unwraps and returns browsers directly. */
 export const browserBackendListResultSchema = z
   .object({ browsers: z.array(browserBackendDescriptorSchema) })
   .strict();

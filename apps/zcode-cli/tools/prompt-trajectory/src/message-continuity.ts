@@ -19,7 +19,7 @@ function isUserContentAppend(previous: OpenAiMessage, next: OpenAiMessage): bool
   const { content: after, ...nextFields } = next;
   if (!Array.isArray(before) || !Array.isArray(after) || after.length <= before.length)
     return false;
-  // 相邻 user 合并会扩展最后一条消息；仅接受旧 block 原样保留的追加，不能掩盖历史改写。
+  // Merging adjacent user messages extends the last one; only accept appends that keep old blocks intact, never mask history rewrites.
   return (
     isTrajectoryMessageEqual(previousFields, nextFields) &&
     isDeepStrictEqual(removeCacheControl(before), removeCacheControl(after.slice(0, before.length)))
@@ -27,7 +27,7 @@ function isUserContentAppend(previous: OpenAiMessage, next: OpenAiMessage): bool
 }
 
 export function isTrajectoryMessageEqual(previous: OpenAiMessage, next: OpenAiMessage): boolean {
-  // Anthropic 缓存标记会漂移；只在比较时忽略，输出仍保留最新请求的原始值。
+  // Anthropic cache markers drift; ignore them when comparing, but keep the latest request's raw value in output.
   return isDeepStrictEqual(removeCacheControl(previous), removeCacheControl(next));
 }
 

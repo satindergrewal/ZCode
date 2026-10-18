@@ -7,10 +7,11 @@ import {
 import { unpackWorkspaceFileEntries } from "@zcode/shared/workspaceFileEntriesCodec";
 
 /**
- * 工作区文件搜索过滤 Worker：持有全量候选，收 query 在后台线程打分+top-K，
- * 回传映射回的 entry 列表（≤limit 条），避免数十万候选的打分与数据搬运阻塞主线程。
- * 逻辑完全复用主线程纯函数（workspaceFileSearch.ts），行为与降级路径一致；
- * entries 以列式打包字符串传输（见 backend 内注释）。
+ * Workspace file-search filter worker: holds the full candidate set, scores queries and picks
+ * the top-K off the main thread, returning ≤limit mapped entries so scoring and data movement
+ * for hundreds of thousands of candidates never block the UI. Logic reuses the main-thread pure
+ * functions (workspaceFileSearch.ts) so behavior matches the fallback path; entries travel as
+ * column-packed strings (see the backend comment).
  */
 
 let entries: WorkspaceFileEntry[] = [];

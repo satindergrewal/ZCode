@@ -27,7 +27,7 @@ import type { ToolPermissionRulePolicy } from "../tool/types.js";
 // Types
 // -----------------------------------------------
 
-/** 草稿免确认的规则号。 */
+/** Rule id for draft no-confirm. */
 const WORKFLOW_DRAFT_PREAPPROVED_RULE_ID = "tool.workflowDraft.preapproved";
 
 export interface PermissionContext {
@@ -38,8 +38,8 @@ export interface PermissionContext {
   planEnabled?: boolean;
   prePlanMode?: Exclude<CollaborationMode, "plan">;
   /**
-   * 会话工作目录。判定相对路径的落点用（目前只有 workflow 草稿免确认这一条），
-   * 可选：拿不到工作目录的调用方照常按其余规则判定，不会因此少一层确认。
+   * Session working directory, used to resolve relative path targets (currently only the workflow-draft no-confirm rule).
+   * Optional: callers without a working directory are still judged by the remaining rules, no confirm layer is lost.
    */
   workingDirectory?: string;
 }
@@ -70,8 +70,8 @@ export interface PermissionDecisionResult {
   riskLevel: RiskLevel;
   sideEffectScope?: ModelToolSideEffectScope;
   /**
-   * 该 ask 来自工具的 alwaysAsk 声明，不是模式或规则推导出来的。下游（PreToolUse hook 的
-   * allow 覆盖）靠这个结构化标记识别"不可抹掉的确认"，而不是去匹配 ruleId 字符串。
+   * The ask comes from the tool's own alwaysAsk declaration, not derived from a mode or rule. Downstream (the PreToolUse hook's
+   * allow override) uses this structured marker to spot the unerasable confirmation instead of matching ruleId strings.
    */
   alwaysAsk?: boolean;
 }
@@ -82,9 +82,9 @@ export interface PermissionDecisionResult {
 
 export class PermissionService {
   /**
-   * 会话级 allow 规则（「Always allow in this session」）。
-   * 一个实例 = 一个 app = 一个会话，所以"随会话消亡"不需要任何额外机制：重启 / 冷恢复 / `/new`
-   * 都会造一个空的新实例。只服务 alwaysAsk gate（见 checkAlwaysAsk），普通工具的模式语义不认它。
+   * Session-scoped allow rule ("Always allow in this session").
+   * One instance = one app = one session, so per-session expiry needs no extra machinery: restart / cold resume / `/new`
+   * all build a fresh empty instance. Serves only the alwaysAsk gate (see checkAlwaysAsk); normal mode semantics ignore it.
    */
   private sessionRules: PermissionRuleset = { version: 1 };
 
@@ -127,7 +127,7 @@ export class PermissionService {
       );
     }
 
-    // 声明 alwaysAsk 的工具必须经过用户确认，不能被权限模式的放行分支绕过。
+    // Tools declaring alwaysAsk require user confirmation and must not be bypassed by mode-based allow branches.
     if (capability.alwaysAsk) {
       return this.checkAlwaysAsk(context, capability, projectRules, rulePolicy);
     }
@@ -195,10 +195,10 @@ export class PermissionService {
       );
     }
 
-    // workflow 草稿免确认：
-    // 与 WebFetch 预批同一位次——排在 plan 分支之后，因为 plan 模式必须继续拦下一切写入，
-    // 草稿也是写入；也排在项目 deny / ask 之后，项目规则照样压得过它。判定本身见
-    // workflow-draft-path.ts（含"为什么这样放行是安全的"）。
+    // Workflow-draft no-confirm:
+    // Same rank as the WebFetch pre-approval — after the plan branch, because plan mode must keep intercepting all writes
+    // (a draft is a write), and after project deny/ask so project rules still win. The check itself lives in
+    // workflow-draft-path.ts (including why this allowance is safe).
     if (
       isPreapprovedWorkflowDraftWrite({
         input: context.input,
@@ -272,9 +272,9 @@ export class PermissionService {
     capability: ResolvedPermissionCapability,
   ): boolean {
     if (rule.toolName === OFFICIAL_CUA_PERMISSION_RULE_TOOL_NAME) {
-      // 保留 key 只有在当前 tool entry 另行携带宿主验证后的 official_cua
-      // capability 时才匹配。同名第三方 MCP、authority 漂移以及旧普通 tool
-      // 都不能把可解析的 wire/storage 字符串升级成可信能力。
+      // The reserved key matches only when the tool entry itself carries the host-verified official_cua
+      // capability. Same-named third-party MCP servers, authority drift, and legacy plain tools
+      // must not upgrade a parseable wire/storage string into a trusted capability.
       return capability.permissionCapabilityGroup === PermissionCapabilityGroup.OfficialCua;
     }
     return this.matchesRuleToolName(rule.toolName, contextToolName);
@@ -320,15 +320,15 @@ export class PermissionService {
   }
 
   /**
-   * 工具自报 alwaysAsk 时的判定：ask 压过所有"放行"分支（yolo 直通、plan 的 readOnly 直通），
-   * 但**压不过"阻断"**——所以这里先自己走一遍硬阻断判定。
+   * Decision when a tool declares alwaysAsk: ask beats every allow branch (yolo passthrough, plan readOnly passthrough)
+   * but never beats a block — so run the hard-block checks here first.
    *
-   * 为什么不直接返回 ask：disallowedTools 是用户配置的硬禁用，项目 deny 规则符合工具自报的
-   * denyPriority: "beforeAsk"，auto 模式是"该模式未实现"的保护。少了这一步，一个被硬禁用的
-   * 工具会退化成"弹个窗、用户一点就能跑"。
+   * Why not return ask directly: disallowedTools is a hard user-level disable, project deny rules honor the tool-declared
+   * denyPriority: "beforeAsk", and auto mode is a not-implemented guard. Without this step a hard-disabled tool
+   * degrades to "show a dialog, one click runs it".
    *
-   * 这些判定在 checkPermission 里按原有顺序还会各自出现一次；此处刻意只覆盖 alwaysAsk 工具，
-   * 不改动其他工具的既有优先级（尤其 yolo 目前先于 disallowedTools 放行这一点）。
+   * These checks also appear in checkPermission in the original order; this path deliberately covers alwaysAsk tools only,
+   * leaving every other tool's existing precedence untouched (notably yolo currently allowing before disallowedTools).
    */
   private checkAlwaysAsk(
     context: PermissionContext,
@@ -360,8 +360,8 @@ export class PermissionService {
         `Tool ${context.toolName} is denied by project permission rules`,
       );
     }
-    // 会话免确认：阻断分支之后、ask 之前。命中即放行，不发 permission 事件、不弹窗；
-    // 与 gate 本身一样不看模式（yolo / plan / build 一致）。
+    // Session no-confirm: after block branches, before ask. On hit, allow silently — no permission event, no dialog;
+    // like the gate itself, mode-agnostic (same under yolo / plan / build).
     if (this.matchesProjectRules(this.sessionRules, "allow", context, capability, rulePolicy)) {
       return this.allow(
         context,
@@ -370,11 +370,11 @@ export class PermissionService {
         `Tool ${context.toolName} was allowed for this session`,
       );
     }
-    // 修订免确认：AmendWorkflow 的前驱是
-    // **本会话发起**的 run、且不是用户亲手停下的，即放行。与会话规则同位——阻断分支之后、ask 之前，
-    // 不看模式。事实来自 resolveInput 回填的 `predecessor`（journal 的 parent_session_id / stopReason），
-    // 不是内存表：重启、冷恢复后依然成立，也没有可播种、可撤销的东西。别的会话的 run、用户停过的
-    // run 照常 ask：钥匙是 run 的归属，不是字段的在场。
+    // Amend no-confirm: allow when AmendWorkflow's predecessor is a run
+    // started by this session and not stopped by the user. Same rank as session rules — after block branches, before ask,
+    // mode-agnostic. The facts come from the `predecessor` backfilled by resolveInput (journal parent_session_id / stopReason),
+    // not an in-memory table: it survives restart and cold resume, and there is nothing to seed or revoke. Runs from other sessions,
+    // or runs the user stopped, still ask — the key is run ownership, not field presence.
     if (this.isOwnedWorkflowAmend(context)) {
       return this.allow(
         context,
@@ -391,11 +391,11 @@ export class PermissionService {
     );
   }
 
-  /** AmendWorkflow 且回填的 `predecessor` 说「本会话的 run、非用户停下」。 */
+  /** AmendWorkflow whose backfilled `predecessor` says: this session's run, not user-stopped. */
   private isOwnedWorkflowAmend(context: PermissionContext): boolean {
     if (context.toolName !== AMEND_WORKFLOW_TOOL_NAME) return false;
     if (!context.input || typeof context.input !== "object") return false;
-    // 谓词本体住在契约里：就地调并发落回修订时读的必须是同一条规则，不能各写一遍。
+    // The predicate lives in the contract: an in-place call falling back to amend must read the same rule, never a re-written copy.
     return isAmendWorkflowOwnedPredecessor((context.input as Record<string, unknown>).predecessor);
   }
 

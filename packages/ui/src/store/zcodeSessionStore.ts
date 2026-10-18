@@ -1,8 +1,8 @@
 /**
- * ZCode session UI 状态 store
+ * ZCode session UI state store.
  *
- * 一个 tab 对应一个 workspace，所以聊天相关状态也必须按 workspace 分桶保存。
- * 这样切换标签页时，当前任务、输入中的草稿态和初始化状态才不会互相串台。
+ * One tab maps to one workspace, so chat state must be bucketed per workspace as well:
+ * only then do the current task, the in-progress draft and the init state survive tab switches without bleeding into each other.
  */
 import { create } from "zustand";
 import { shouldExposeE2EStoreBridge } from "@/lib/e2eStoreBridge.js";
@@ -31,12 +31,12 @@ declare global {
 }
 
 if (shouldExposeE2EStoreBridge()) {
-  // E2E 诊断入口必须由 WDIO 显式打开，不能复用 ZCODE_ENV=test，避免产品测试环境暴露可变全局 store。
+  // The E2E diagnostics entry must be opened explicitly by WDIO, not via ZCODE_ENV=test, so the product test env keeps no mutable global store.
   window.__zcodeSessionStoreE2E = useZCodeSessionStore;
 }
 
 // ────────────────────────────────────────────
-// Re-exports: 保持外部 `from '@/store/zcodeSessionStore'` 的导入路径继续工作
+// Re-exports: keep the legacy zcodeSessionStore import path working
 // ────────────────────────────────────────────
 export * from "./zcodeSessionStoreTypes.js";
 export * from "./zcodeSessionStoreSelectors.js";
@@ -47,7 +47,7 @@ export type {
   WorkspaceNavEntry,
 } from "@/lib/taskNavigationHistory.js";
 
-// 内存诊断计数器：workspace 桶全仓无删除路径，先落日志。
+// In-memory diagnostic counter: workspace buckets are never deleted anywhere; log it first.
 uiMemoryDiagnosticsRegistry.register("sessionStore", () => ({
   workspaces: Object.keys(useZCodeSessionStore.getState().workspaces).length,
 }));

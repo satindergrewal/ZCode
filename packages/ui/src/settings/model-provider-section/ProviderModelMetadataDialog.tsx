@@ -95,8 +95,8 @@ export function ProviderModelMetadataDialog({
   const editModelLabel = intl.formatMessage({
     id: "settings.modelProvider.editModel",
   });
-  // 新增模型时模型 ID 为空，如果沿用编辑态的上下文窗口自动聚焦，会让用户先落到默认数值字段。
-  // 编辑态仍保留上下文窗口自动聚焦和选中，方便直接修改已有模型配置。
+  // On add, the model ID is empty; keeping edit-mode's context-window autofocus would land the user
+  // on the default number field first. Edit mode keeps context-window focus+select for quick tweaks.
   const shouldFocusModelIdInput = mode === "add";
   const shouldFocusContextWindowInput = mode === "edit";
   const addModelConfigResolutionPending = smart && modelConfigResolutionPending;
@@ -105,8 +105,8 @@ export function ProviderModelMetadataDialog({
     if (event.key !== "Enter") {
       return;
     }
-    // 输入法候选确认也会发出 Enter。某些 Electron/macOS 版本的
-    // nativeEvent.isComposing 会过早恢复 false，因此同时保留本地 composition 状态。
+    // IME candidate confirmation also sends Enter. On some Electron/macOS versions
+    // nativeEvent.isComposing flips back to false too early, so track composition state locally too.
     if (
       isImeComposingKeyEvent({
         compositionActive: compositionActiveRef.current,
@@ -142,7 +142,7 @@ export function ProviderModelMetadataDialog({
         </DialogTrigger>
       ) : null}
       <DialogContent
-        // overflow-hidden 仍允许聚焦触发外层滚动；语言换行后曾滚走标题。仅正文滚动，外框只裁切。
+        // overflow-hidden still lets focus scroll the outer container; the title once scrolled away after locale rewrap. Only the body scrolls; the frame merely clips.
         className="max-h-[min(48rem,calc(100vh-4rem))] max-w-2xl grid-rows-[auto_minmax(0,1fr)_auto_auto] overflow-clip"
         data-no-model-drag="true"
       >
@@ -166,7 +166,7 @@ export function ProviderModelMetadataDialog({
             onChange={(useRecommendedConfigValue) => onDraftChange({ useRecommendedConfigValue })}
           />
         </DialogHeader>
-        {/* 保存期间锁定正文交互，不改变原有滚动容器；页脚单独显示提交状态。 */}
+        {/* Lock body interaction while saving without touching the scroll container; the footer shows commit state on its own. */}
         <div
           inert={saving}
           className="min-h-0 min-w-0 -mr-3 space-y-4 overflow-y-auto pr-4"

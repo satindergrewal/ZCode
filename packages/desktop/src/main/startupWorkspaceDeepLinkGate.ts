@@ -42,8 +42,8 @@ export function createStartupDeepLinkConsumptionGate(
         return;
       }
 
-      // 冷启动 argv deep link 在 startup bootstrap 中无论确认、取消或校验失败，
-      // 都必须形成一次性消费，避免 app.whenReady 再从 process.argv 重放同一个外部 URL。
+      // A cold-start argv deep link must consume exactly once during startup bootstrap,
+      // confirmed, cancelled, or invalid, so app.whenReady never replays it from process.argv.
       startupDeepLinkConsumed = true;
     },
     shouldHandleReadyProtocolUrl: (protocolUrl) => {
@@ -62,14 +62,14 @@ export function resolveExplicitStartupWorkspaceBootstrap(
 ): StartupWindowBootstrap | null {
   if (request.source === "deep-link") {
     if (isNetworkWorkspacePath(request.path)) {
-      // 冷启动 deep link 不能绕过运行中 deep link 的 UNC 早拒绝；
-      // 网络路径必须在任何 statSync 等 filesystem probe 前停止。
-      deps.logger.warn("[deep-link] 网络工作区路径已拒绝", { path: request.path });
+      // Cold-start deep links keep the same early UNC rejection as runtime ones;
+      // network paths stop before any statSync-style probe.
+      // deps.logger.warn("[deep-link] network workspace path rejected", { path: request.path });
       return null;
     }
 
-    // 首窗 bootstrap 发生在 renderer ready 前，不能走后续 IPC gate；
-    // deep link 来源仍必须先让用户确认，取消后回退默认启动。
+    // First-window bootstrap precedes renderer ready and cannot use the later IPC gate;
+    // the source still needs user confirmation, falling back to default startup on cancel.
     if (
       !confirmExternalWorkspaceOpen(
         request.path,

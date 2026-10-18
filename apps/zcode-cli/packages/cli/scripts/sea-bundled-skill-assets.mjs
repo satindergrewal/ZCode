@@ -3,15 +3,15 @@ import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { existsSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 
-// 随 CLI 内置的技能包（apps/zcode-cli/packages/bundled-skills）。它不是官方插件：不进市场目录、
-// 没有版本身份，运行时按内容 hash 解压到 `<cli storage>/bundled-skills/<hash>/`
-// （bootstrap/src/app/bundled-skills.ts）。这里的 manifest 形状与那边的读取逐字对应。
+// Skill pack bundled with the CLI (apps/zcode-cli/packages/bundled-skills). Not an official plugin: no marketplace
+// listing, no version identity; the runtime unpacks it by content hash into `<cli storage>/bundled-skills/<hash>/`
+// (bootstrap/src/app/bundled-skills.ts). The manifest shape here matches that reader verbatim.
 export const seaBundledSkillAssetPrefix = "zcode-bundled-skills/";
 export const seaBundledSkillManifestAssetKey = `${seaBundledSkillAssetPrefix}manifest.json`;
 export const bundledSkillPackRootPath = join("packages", "bundled-skills");
 export const bundledSkillPackSkillsDirectory = "skills";
-// 与 bootstrap 的 BUNDLED_SKILL_PACK_REQUIRED_PATHS 对齐：缺任一项即中止 SEA 构建，
-// 不把一个引用文件残缺的技能包发进正式二进制。
+// Mirrors bootstrap's BUNDLED_SKILL_PACK_REQUIRED_PATHS: abort the SEA build when any is missing instead of
+// shipping a skill pack with broken file references inside the production binary.
 export const bundledSkillPackRequiredPaths = [
   "skills/dynamic-workflows/SKILL.md",
   "skills/dynamic-workflows/patterns.md",

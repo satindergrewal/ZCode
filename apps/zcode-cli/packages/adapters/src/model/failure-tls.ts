@@ -14,8 +14,8 @@ export function normalizeModelTlsFailure(error: unknown): unknown {
     return error;
   }
 
-  // AI SDK adapter 可能只转发外层错误，丢失 Node TLS cause.code；
-  // 在 provider fetch 边界先提升为稳定错误码，后续分类不再依赖运行时英文文案。
+  // The AI SDK adapter may forward only the outer error, losing Node's TLS cause.code;
+  // promote to a stable code at the provider fetch boundary so classification never depends on English copy.
   return new ModelTlsValidationError(error);
 }
 

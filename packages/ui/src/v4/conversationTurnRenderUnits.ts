@@ -36,36 +36,36 @@ export interface ConversationTurnRenderUnit {
   visibleUserInputs: UserInputRow[];
   assistantWorkRows: AssistantWorkRow[];
   /**
-   * 所有 visual work segment 的历史行聚合，仅供复制、预览和旧调用兼容。
-   * 实际折叠边界读取 workSegments，且各段内部必须保持 CLI row 全序。
+   * Aggregate of historical rows across all visual work segments, for copy/preview/legacy-call compat only.
+   * Real collapse bounds read workSegments; within a segment, CLI row order is preserved.
    */
   assistantHistoryRows: AssistantWorkRow[];
-  /** 操作正文锚点之后、真正轮尾 marker 之前的 row；保持 CLI 全序原位渲染。 */
+  /** Rows after the action-body anchor and before the real turn-tail marker; rendered in CLI order, in place. */
   assistantFollowingRows: AssistantWorkRow[];
   assistantTailRows: AssistantWorkRow[];
-  /** Browser 自动轮尾截图：完成态渲染在 file diff 摘要之后、消息操作栏之前。 */
+  /** Browser turn-end screenshots: rendered after the file-diff summary, before message actions, once settled. */
   browserTurnEndRows: AssistantWorkRow[];
-  /** turn-local Hook product rows；不进入 assistant work/折叠，只供轮尾详情 action。 */
+  /** turn-local Hook product rows; never in assistant work/collapse, only for the turn-tail details action. */
   hookInvocations: HookInvocationRow[];
-  /** 整轮全部 assistant text 段，用于复制/预览聚合，不代表渲染位置。 */
+  /** Every assistant text segment of the turn, for copy/preview aggregates; not a render position. */
   assistantTextRows: AssistantTextRow[];
-  /** 轻边界（modelChange）：渲染在 user 输入之前的轮顶分隔。 */
+  /** Light boundary (modelChange): a turn-top divider rendered before the user input. */
   leadingBoundaryRows: TimelineMarkerRow[];
-  /** 完成态轮尾最终正文；fork/retry/action/preview 只挂这一段。 */
+  /** The settled turn-tail final body; fork/retry/action/preview attach only here. */
   latestAssistantTextRow?: AssistantTextRow;
-  /** 同一 product turn 内 user/assistant 的可见交错顺序；相邻工作行保持成组。 */
+  /** Visible user/assistant interleave within the product turn; adjacent work rows stay grouped. */
   flowItems: ConversationTurnFlowItem[];
-  /** 原始输入与每条 accepted guide 分别对应一个独立视觉工作段。 */
+  /** The original input and each accepted guide form one visual work segment apiece. */
   workSegments?: ConversationTurnWorkSegment[];
   renderRows: ConversationRow[];
   isLastTurn: boolean;
   isRunning: boolean;
   assistantHistoryDefaultOpen: boolean;
   timelineOnly: boolean;
-  /** turn 级聚合工作状态，仅供旧调用兼容；新组件消费 workSegments[].workStatus。 */
+  /** Turn-level aggregated work state, legacy-call compat; new components read workSegments[].workStatus. */
   workStatus?: ConversationTurnWorkStatus;
   startedAt?: number;
-  /** 中枢直接启动轮的启动元数据（规则见 `workflowLaunchTurn.ts`）；在场时轮由 run 卡呈现、无用户气泡。 */
+  /** Launch metadata of hub direct-launch turns (rules in `workflowLaunchTurn.ts`); present, the turn is a run card with no user bubble. */
   workflowLaunch?: WorkflowLaunchMeta;
 }
 
@@ -106,13 +106,13 @@ function isHookInvocationRow(row: ConversationRow): row is HookInvocationRow {
 
 function isVisibleAssistantWorkRow(row: AssistantWorkRow): boolean {
   if (row.kind === "reasoning" && row.text.trim().length === 0) {
-    // reasoning_start/reasoning_end 可能形成空的终态 block；只在共享
-    // render-unit 边界裁掉它，避免 completed 状态绕过 streaming renderer 的空行过滤。
+    // reasoning_start/reasoning_end can form an empty settled block; trim it only at the shared
+    // render-unit boundary, so a completed state cannot bypass the streaming-renderer empty-line filter.
     return false;
   }
-  // EnterPlanMode 只是内部模式切换边界，把它当普通工具放进“已工作”，
-  // 会显示一条没有用户价值的“工具调用已执行”。只在 render unit 过滤，不改写协议投影，
-  // 以保留 desktop continuous / web remote replayable 共用的运行态与恢复语义。
+  // EnterPlanMode is an internal mode-switch boundary; treating it as a worked tool
+  // shows a valueless tool-call-executed row. Filter at render units only, never rewrite the protocol projection,
+  // preserving the running/recovery semantics shared by desktop continuous / web remote replayable.
   return row.kind !== "toolCall" || row.toolName !== "EnterPlanMode";
 }
 
@@ -123,21 +123,21 @@ function isVisibleConversationRow(row: ConversationRow): boolean {
   return isVisibleAssistantWorkRow(row);
 }
 
-// 落位语义（lane）由 CLI 投影裁决下发（UI 不得按 marker type 自行推断）。
-// lane 缺省（不应发生）按 assistantWork 兜底——降级进折叠组，不丢行。
+// Lane semantics are dictated by the CLI projection (the UI never infers them from marker type).
+// A missing lane (should not happen) falls back to assistantWork - into the collapsed group, no rows lost.
 function isTurnEndingTimelineMarkerRow(row: AssistantWorkRow): row is TimelineMarkerRow {
   return row.kind === "timelineMarker" && row.lane === "turnTailBoundary";
 }
 
 /**
- * artifact 行是分享投影追加到轮尾的产出物（insertDiscoveredArtifacts 插在该
- * productTurn 最后一行之后），但它同样属于 AssistantWorkRow，会成为 flow 的最后一行。
- * 于是折叠锚点的兜底条件「最后一行是 assistantText」失效——公开投影禁止 actions，
- * 分享页只有这条兜底——最终答复被卷进「已工作」并整轮默认展开。
+ * Artifact rows are turn-tail appendices of the share projection (insertDiscoveredArtifacts lands after the
+ * last productTurn row), yet they are AssistantWorkRows and would become the last flow row.
+ * So the collapse fallback last-row-is-assistantText breaks - public projections forbid actions,
+ * the share page has only this fallback - and the final answer folds into Worked with the whole turn expanded.
  *
- * 它是追加的产出物、不属于对话流，按轮尾处理即可；与 browserTurnEndRows 摘轮尾截图同理。
- * 注意不能改成「取 flow 里最后一条 assistantText」：那会把 CUA 响应中途的正文
- * 提升成最终答复，拆散同一个 assistantResponseId 的分组。
+ * It is an appended artifact, not conversation flow; treat as turn tail, same as the browserTurnEndRows pickup.
+ * Never last assistantText in flow: that would promote mid-CUA body text
+ * to the final answer and split the assistantResponseId grouping.
  */
 function isTurnTrailingArtifactRow(row: AssistantWorkRow): boolean {
   return row.kind === "artifact";
@@ -162,8 +162,8 @@ function splitTurnTailRows(rows: readonly AssistantWorkRow[]): {
 }
 
 function isBrowserTurnEndRow(row: AssistantWorkRow): boolean {
-  // 自动截图以完成态 tool row 持久化在最终正文之后，旧分组只把
-  // timeline boundary 识别为轮尾，导致截图被搬进上方“已工作”折叠区而不可见。
+  // Auto-screenshots persist as settled tool rows after the final body; the legacy grouping recognized
+  // only the timeline boundary as turn tail, pushing screenshots into the Worked collapse above, invisible.
   return (
     row.kind === "toolCall" &&
     row.display?.kind === "node_repl_images" &&
@@ -202,8 +202,8 @@ function resolveTurnRunning(
 ): boolean {
   if (draft.header) {
     if (draft.header.executionKind === "controlOnly") return false;
-    // turnHeader 是 projection 的权威轮次边界；已终态主轮不能被
-    // 同轮仍在运行的 background tool/subagent 行重新推成 running。
+    // turnHeader is the projection-authoritative turn boundary; a settled main turn must not be
+    // pushed back to running by same-turn background tool/subagent rows.
     return draft.header.state === "running";
   }
   if (
@@ -211,11 +211,11 @@ function resolveTurnRunning(
     options.sessionPhase === "completedInterrupted" ||
     options.sessionPhase === "error"
   ) {
-    // cold snapshot 只保留尾窗时可能裁掉 turnHeader；旧 fallback 会把
-    // 孤立的 inputStreaming/running tool row 重新推成 thinking，终态 control 必须优先。
+    // A cold snapshot keeping only the tail window may cut the turnHeader; the legacy fallback
+    // re-promotes isolated inputStreaming/running tool rows to thinking - terminal control must win.
     return false;
   }
-  // 仅兼容缺少 turnHeader 的旧投影；background-only work 不阻塞主轮完成。
+  // Compat for projections missing turnHeader only; background-only work never blocks main-turn completion.
   return draft.assistantWorkRows.some(isCompletionBlockingWorkRowRunning);
 }
 
@@ -236,7 +236,7 @@ function materializeDraftUnit(
   options: BuildConversationTurnRenderUnitsOptions,
 ): ConversationTurnRenderUnit {
   const workflowLaunch = resolveWorkflowLaunchMeta(draft.header, draft.userInputs);
-  // 启动轮的用户行由 run 卡代言，不进可见输入也不进流。
+  // The launch-turn user row is spoken for by the run card: no visible input, not in the flow.
   const renderedRows =
     workflowLaunch === undefined
       ? draft.orderedRows
@@ -249,7 +249,7 @@ function materializeDraftUnit(
     visibleAssistantWorkRows.length > 0 &&
     visibleAssistantWorkRows.every(isTimelineMarkerRow);
 
-  // modelChange 是轮顶轻边界，渲染在 user 输入之前，不进工作流。
+  // modelChange is a turn-top light boundary, rendered before the user input, never in the work flow.
   const leadingBoundaryRows = timelineOnly
     ? []
     : visibleAssistantWorkRows.filter(isLightBoundaryMarkerRow);
@@ -257,8 +257,8 @@ function materializeDraftUnit(
   const bodyRows = timelineOnly
     ? visibleAssistantWorkRows
     : visibleAssistantWorkRows.filter((row) => !isLightBoundaryMarkerRow(row));
-  // Browser 自动截图要越过 file diff 摘要成为最后内容块，因此先单独抽取；
-  // 其余 row 仍按 CLI 全序处理，只有连续的真实轮尾 marker 后缀可从 flow 拆出。
+  // Browser screenshots must jump the file-diff summary to become the last content block, so extract them first;
+  // all other rows keep CLI order; only consecutive real turn-tail markers may leave the flow.
   const browserTurnEndRows: AssistantWorkRow[] = [];
   const nonBrowserRows: AssistantWorkRow[] = [];
   if (!timelineOnly) {
@@ -270,8 +270,8 @@ function materializeDraftUnit(
       }
     }
   }
-  // 不能用 filter 抽取所有 turnTailBoundary，并把 ExitPlanMode 也强行归入 tail，
-  // 会把计划和中间 marker 从原 tool row 搬到轮底。其余 row 必须留在 flow 中。
+  // Never filter out every turnTailBoundary and force ExitPlanMode into the tail too:
+  // plans and mid markers would move from their tool rows to the turn bottom. Other rows stay in flow.
   const { flowRows, tailRows: assistantTailRows } = timelineOnly
     ? { flowRows: [], tailRows: [] }
     : splitTurnTailRows(nonBrowserRows);
@@ -281,12 +281,12 @@ function materializeDraftUnit(
   const isInterrupted = draft.header
     ? draft.header.state === "completedInterrupted"
     : options.sessionPhase === "completedInterrupted";
-  // 旧展开规则只看 running 和最终正文，异常终态一旦保留 partial assistant text
-  // 就会被当作正常完成而收起，隐藏中断/失败上下文。终态必须以 header 为权威；冷恢复
-  // 尾窗缺 header 时才回退 session phase，desktop continuous 与 mobile replayable 共用此边界。
+  // The legacy expansion rule read only running + final body: a terminal turn retaining partial assistant text
+  // counted as completed and collapsed, hiding interrupted/failed context. Terminal state follows the header; only when the cold
+  // tail window lacks the header fall back to the session phase - shared by desktop continuous and mobile replayable.
   const forceOpenHistory = shouldForceOpenAbnormalHistory(draft.header, options.sessionPhase);
 
-  // product turn 的最终正文仍是唯一 action target；视觉工作段只改变折叠边界。
+  // The product-turn final body remains the only action target; visual work segments move collapse bounds only.
   const assistantTextRows = flowRows.filter(isAssistantTextRow);
   const actionAssistantTextRow = assistantTextRows.find(
     (row) => row.actions?.canFork === true || row.actions?.canRetry === true,
@@ -305,8 +305,8 @@ function materializeDraftUnit(
   );
   const browserTurnEndRowIds = new Set(browserTurnEndRows.map((row) => row.rowId));
   const orderedBodyRows = visibleOrderedRows.filter(
-    // main 的 workSegments 会从 orderedRows 重建 flow；如果这里只从
-    // bodyRows 抽取截图，它仍会被塞回正文流并在轮尾再次渲染，造成重复和顺序错乱。
+    // The main workSegments rebuild flow from orderedRows; extracting screenshots from
+    // bodyRows alone would push them back into the body flow and re-render at the tail: duplicates and disorder.
     (row) => !leadingBoundaryRowIds.has(row.rowId) && !browserTurnEndRowIds.has(row.rowId),
   );
   const workSegments = buildConversationTurnWorkSegments({
@@ -333,7 +333,7 @@ function materializeDraftUnit(
     turnId: draft.turnId,
     ...(draft.header ? { header: draft.header } : {}),
     visibleUserInputs,
-    // 轻边界已经由 leadingBoundaryRows 独立承载，不能再算作 assistant work。
+    // Light boundaries already ride leadingBoundaryRows; never count them as assistant work.
     assistantWorkRows: bodyRows,
     assistantHistoryRows: orderedAssistantHistoryRows,
     assistantFollowingRows,
@@ -345,7 +345,7 @@ function materializeDraftUnit(
     ...(latestAssistantTextRow ? { latestAssistantTextRow } : {}),
     flowItems,
     workSegments,
-    // renderRows 是查找/诊断用的平面视图，也必须服从 CLI row 全序。
+    // renderRows is the flat view for search/diagnostics; it must obey CLI row order too.
     renderRows: visibleOrderedRows,
     isLastTurn,
     isRunning,
@@ -359,9 +359,9 @@ function materializeDraftUnit(
 
 function createDraftUnit(turnId: string): DraftTurnRenderUnit {
   return {
-    // cold snapshot 可能从同一 turn 的 assistant/tool 行中间截断，补到
-    // turnHeader 后首个可见 rowId 会变化。虚拟列表 key 必须只依赖协议稳定的 turnId，
-    // 否则补页会把原 turn 当成新节点重挂，丢失测高缓存和视口锚点。
+    // A cold snapshot may cut mid-turn assistant/tool rows; the first visible rowId after the
+    // turnHeader changes on backfill. Virtual keys must depend only on the protocol-stable turnId,
+    // or a backfill remounts the turn as new, losing the height cache and viewport anchor.
     key: turnId,
     turnId,
     userInputs: [],
@@ -372,14 +372,14 @@ function createDraftUnit(turnId: string): DraftTurnRenderUnit {
 }
 
 function shouldKeepRenderUnit(unit: ConversationTurnRenderUnit): boolean {
-  // 隐形行清零后（投影不再产不可渲染 marker），任何工作行都可渲染；
-  // 「哪些 marker 可渲染」不再是 UI 的判断。
+  // With hidden rows at zero (the projection no longer emits non-renderable markers), any work row renders;
+  // which-markers-render is no longer a UI decision.
   return (
     unit.visibleUserInputs.length > 0 ||
     unit.assistantWorkRows.length > 0 ||
     unit.hookInvocations.some((row) => row.executions.some((execution) => execution.didExecute)) ||
     unit.leadingBoundaryRows.length > 0 ||
-    // 直接启动轮：用户行不可见、无助手内容，轮由 run 卡呈现——它当然要留下。
+    // Direct-launch turn: no user row, no assistant content, the run card speaks - of course it stays.
     unit.workflowLaunch !== undefined ||
     unit.isRunning
   );

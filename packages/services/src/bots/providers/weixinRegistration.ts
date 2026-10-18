@@ -156,8 +156,9 @@ export async function pollWeixinRegistration(
     );
   } catch (error) {
     if (error instanceof DOMException && error.name === "TimeoutError") {
-      // Bugfix: 微信扫码状态接口可能长时间挂起等待手机端确认，超时不代表登录失败。
-      // 返回 pending 让 UI 串行继续轮询，避免把正常等待误报成错误。
+      // Bugfix: the WeChat QR status API may hang waiting for phone-side confirmation; a timeout
+      // is not a login failure. Return pending so the UI keeps polling serially instead of
+      // reporting normal waits as errors.
       return { status: "pending", interval: WEIXIN_LOGIN_INTERVAL_SECONDS };
     }
     throw error;

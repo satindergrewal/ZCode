@@ -4,16 +4,16 @@ import type { WorkspaceHookReviewHostPort } from "./workspace-hook-review-types.
 import type { WorkspaceHookReviewTelemetry } from "./workspace-hook-review-telemetry.js";
 
 /**
- * 监管一个 review flow 直到它终结：跟随 supersede 链，并在 timeout 时补齐
- * telemetry 与 ReviewSettled。
+ * Supervises a review flow until it terminates: follows the supersede chain and fills in
+ * telemetry and ReviewSettled on timeout.
  *
- * 这段逻辑是**唯一** await flow.result 的地方：若无人 await，它的 10 分钟 deadline 到期后会在 registry
- * 内静默 settle 成 timed_out，前端收不到 ReviewSettled、面板继续按 pending 渲染，
- * 之后每次点击都被 registry.validate 判为 workspace_hooks_review_superseded
- * （实测连续 9 次点击全部被拒，且不会自动重开）。
+ * This is the ONLY place that awaits flow.result: with no awaiter, the 10-minute deadline silently settles as timed_out inside the
+ * registry, the frontend never sees ReviewSettled, the panel keeps rendering pending,
+ * and every later click is rejected by registry.validate as workspace_hooks_review_superseded
+ * (observed: 9 consecutive clicks all rejected, with no auto-reopen).
  *
- * 抽成独立模块供 requestReview 与 revoke 后的重开路径共用：任何新开 flow 的入口都必须
- * 交给它监管，否则同样会产生无人看管的孤儿 flow。
+ * A standalone module shared by requestReview and the post-revoke reopen path: every entry that starts a flow must
+ * hand it to this supervisor, or an unwatched orphan flow appears just the same.
  */
 export async function superviseWorkspaceHookReviewFlow(input: {
   flow: WorkspaceHookReviewFlow;

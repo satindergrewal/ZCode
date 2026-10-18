@@ -98,7 +98,7 @@ function mergeBackgroundSessionEvents(
     } as ZCodeSessionEvent;
   }
 
-  // 性能优化：后台工具 progress 只用于“还在跑”的可见摘要，保留最新状态即可。
+  // Perf: background tool progress only feeds the still-running summary; latest state is enough.
   return next;
 }
 
@@ -149,8 +149,8 @@ export function createBackgroundSessionEventCoalescer(params: {
   function acceptSessionEvent(event: SessionServiceEvent): void {
     const key = getBackgroundSessionEventCoalesceKey(event.event);
     if (!key) {
-      // 后台降频只能影响可重组的增量。权限、终态、tool result 等结构化事件
-      // 必须先落完已有摘要再立即投递，否则会破坏 task 的交互边界。
+      // Downsampling may only drop reassemblable deltas. Permission/terminal/tool-result events
+      // flush the pending summary first, preserving task interaction boundaries.
       flushPending();
       params.emit(event);
       return;
@@ -191,9 +191,9 @@ export function createBackgroundSessionEventCoalescer(params: {
     },
 
     dispose(): void {
-      // desktop continuous 后台订阅被前台接管时会 dispose。
-      // 待 flush 的 text/reasoning delta 仍是用户可见正文，不能按普通清理丢弃；
-      // 否则切回 session 后运行中消息会从下一段 delta 才开始显示。
+      // When the foreground takes over the background subscription the coalescer is disposed;
+      // pending text/reasoning deltas are user-visible content, not disposable cleanup,
+      // or the resumed message starts mid-way at the next delta.
       flushPending();
       disposed = true;
       clearFlushTimer();

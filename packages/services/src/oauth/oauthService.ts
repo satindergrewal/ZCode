@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- OAuthService 集中维护 OAuth 会话生命周期和 provider 切换边界，当前 review 修复只收窄后台迁移写入条件。 */
+/* eslint-disable max-lines -- OAuthService keeps the OAuth session lifecycle and provider-switch boundaries together; this review fix only narrows background-migration writes. */
 import { randomBytes } from "node:crypto";
 import {
   ApiError,
@@ -34,7 +34,7 @@ import {
   buildZCodeApiUrlFromEnv,
 } from "./providers/configUtils.js";
 
-/** OAuth 超时时间（5 分钟） */
+/** OAuth timeout (5 minutes) */
 const OAUTH_TIMEOUT_MS = 5 * 60 * 1000;
 const COMPLETED_POLLING_STATE_GRACE_MS = 30 * 1000;
 const ZCODE_JWT_TOKEN_KEY = "zcodejwttoken";
@@ -110,9 +110,9 @@ function resolveInactiveOAuthProvider(provider: OAuthProviderId): OAuthProviderI
 }
 
 /**
- * OAuth 认证服务实现
+ * OAuth auth service implementation.
  *
- * 在 host process 中运行，管理 OAuth 流程的完整生命周期。
+ * Runs in the host process, owning the full OAuth flow lifecycle.
  */
 export class OAuthService implements IOAuthService {
   private readonly credentialService: ICredentialService;
@@ -156,8 +156,8 @@ export class OAuthService implements IOAuthService {
     this.repo = new OAuthCredentialRepo(credentialService, {
       providerIds: adapters.map((adapter) => adapter.providerId),
       onCorruptOAuthSessionCleared: async (providers) => {
-        // 本地 OAuth 凭据解密失败后等价于强制 logout。
-        // repo 只能清 OAuth 命名空间，派生的 Start/Coding Plan provider key 必须回到 service 层清理。
+        // Local OAuth credential decryption failure equals forced logout.
+        // The repo clears only the OAuth namespace; derived Start/Coding Plan provider keys clean up at the service layer.
         await this.notifyProvidersLogout(providers);
       },
     });
@@ -199,15 +199,15 @@ export class OAuthService implements IOAuthService {
 
     const profile = await this.repo.loadActiveUserProfile();
     if (!profile) {
-      // zai / bigmodel 这类 OAuth token 生命周期很短，启动时如果强依赖远端 userinfo 校验，
-      // 用户明明刚登录过，也会因为 access_token 过期被误判成未登录。
-      // 这里改为优先读取登录成功时持久化的 user_info，只要用户没有手动退出，就按缓存恢复展示态。
+      // zai/bigmodel OAuth tokens are short-lived; hard-requiring remote userinfo at startup would
+      // misread a just-signed-in user as logged out once the access_token expired.
+      // Prefer the user_info persisted at login; unless the user signed out, restore the cached display state.
       log("restoreCachedSession skipped: missing cached user profile:", activeProvider);
       return { status: "signed-out" };
     }
 
-    // 启动缓存恢复只需要检查共享 zcode JWT；若通过 loadActiveTokenSet 连带读取
-    // provider access token，会把原本后台执行的 BigModel profile 迁移重新阻塞到首屏恢复链路。
+    // Startup cache restore checks only the shared zcode JWT; pulling provider access tokens via
+    // loadActiveTokenSet would block the background BigModel profile migration into the first-screen path.
     const zcodeJwtToken = (await this.credentialService.load(ZCODE_JWT_TOKEN_KEY))?.trim() ?? "";
     if (zcodeJwtToken && resolveJwtExpiration(zcodeJwtToken, this.now()).kind === "expired") {
       serviceLog.info("cached session invalidated because zcode JWT expired", {
@@ -257,8 +257,8 @@ export class OAuthService implements IOAuthService {
 
     if (activeProvider === ZAI_PROVIDER_ID) {
       if (!zcodeJwtToken) {
-        // sidebar 登录入口之前只看缓存 user_info，会把“缺少 zcodejwttoken”的状态误判成已登录。
-        // 这里补充 zcodejwttoken 门槛，确保没有后端 JWT 时统一按未登录处理。
+        // The sidebar entry reading cached user_info alone mistook missing zcodejwttoken as signed in.
+        // Add the zcodejwttoken gate: without the backend JWT, treat as logged out.
         log("restoreCachedSession skipped: missing zcodejwttoken:", activeProvider);
         return { status: "signed-out" };
       }
@@ -285,8 +285,8 @@ export class OAuthService implements IOAuthService {
         !isSameOAuthProfile(currentProfile, expectedProfile) ||
         currentJwt !== expectedJwt
       ) {
-        // 启动恢复读取过期凭据后，新登录或 provider 切换可能已经完成；
-        // 旧恢复任务只能清理仍与其快照完全一致的会话，不能误删刚写入的新认证状态。
+        // After startup restore reads expired credentials, a new login/provider switch may have completed;
+        // the old restore may clean only sessions still exactly matching its snapshot, never newer auth state.
         serviceLog.info("skipped stale expired JWT session invalidation", {
           provider: expectedProvider,
         });
@@ -303,7 +303,7 @@ export class OAuthService implements IOAuthService {
     try {
       await this.notifyProviderLogout(expectedProvider, expectedProfile.id);
     } catch (error) {
-      // JWT 已过期时主认证事实必须先失效；派生 provider 清理失败不能把 UI 留在伪登录态。
+      // Once the JWT expires the primary auth fact dies first; derived-provider cleanup failure must not leave a fake signed-in UI.
       serviceLog.warn("expired JWT derived provider cleanup failed", {
         provider: expectedProvider,
         error,
@@ -329,8 +329,8 @@ export class OAuthService implements IOAuthService {
         !currentProfile ||
         !isSameOAuthProfile(currentProfile, expectedCachedProfile)
       ) {
-        // 迁移请求目标固定是 BigModel，token 也必须固定读取 BigModel 命名空间；
-        // 发请求前先复核持久化快照，避免切换到 ZAI 后把其他 provider token 发给 BigModel。
+        // The migration target is fixed BigModel and the token fixed-read from the BigModel namespace;
+        // re-verify the persisted snapshot before the request, so a ZAI switch never sends other tokens to BigModel.
         log("restoreCachedSession skipped stale BigModel token migration:", activeProvider);
         return null;
       }
@@ -358,8 +358,8 @@ export class OAuthService implements IOAuthService {
 
       const currentProfile = await this.repo.loadUserProfile(BIGMODEL_PROVIDER_ID);
       if (!currentProfile || !isSameOAuthProfile(currentProfile, expectedCachedProfile)) {
-        // BigModel 旧缓存迁移在后台完成，期间用户可能 logout、切到 ZAI，
-        // 或重新登录 BigModel。只有当前缓存仍是启动时那份旧缓存时，旧迁移结果才允许落盘。
+        // The legacy-cache migration runs in background; the user may logout, switch to ZAI,
+        // or re-login BigModel meanwhile. Only when the cache is still startup's old copy may the result persist.
         log("restoreCachedSession skipped outdated BigModel profile migration");
         return;
       }
@@ -369,8 +369,8 @@ export class OAuthService implements IOAuthService {
   }
 
   private runSessionMutation<T>(run: () => Promise<T>): Promise<T> {
-    // 后台 profile 迁移、logout、provider 切换都会改 OAuth 凭据；
-    // 必须串行化，避免旧迁移在退出或切换清理之后重新写回 user_info。
+    // Background profile migration, logout, and provider switches all mutate OAuth credentials;
+    // serialize them, or an old migration rewrites user_info after logout/switch cleanup.
     const next = this.sessionMutationQueue.catch(() => undefined).then(run);
     this.sessionMutationQueue = next.catch(() => undefined);
     return next;
@@ -411,14 +411,14 @@ export class OAuthService implements IOAuthService {
     const assertCurrent = async () => {
       if (isStillCurrent && !isStillCurrent()) {
         await rollback();
-        throw new Error("OAuth flow 已取消");
+        throw new Error("OAuth flow cancelled");
       }
     };
     this.oauthSessionGeneration += 1;
     if (inactiveProvider) {
       await assertCurrent();
-      // ZAI 与 BigModel 是互斥身份域。切换 provider 时必须先清旧 provider，
-      // 再保存当前 token；反序会让 clearProvider 误删共享的 zcodejwttoken。
+      // ZAI and BigModel are exclusive identity domains. On switch, clear the old provider
+      // before saving the new token; reversed, clearProvider deletes the shared zcodejwttoken.
       await this.repo.clearProvider(inactiveProvider);
     }
     await assertCurrent();
@@ -428,10 +428,10 @@ export class OAuthService implements IOAuthService {
     await assertCurrent();
     await this.repo.setActiveProvider(provider);
     if (isStillCurrent && !isStillCurrent()) {
-      // active provider 写入无法被底层 credential IO 取消；失效 flow 不能仅按
-      // provider 清理，否则同 provider 的新 flow 可能被旧 flow 误删。
+      // active-provider writes cannot be cancelled by credential IO; an invalidated flow must not clean by provider alone,
+      // or a same-provider newer flow gets deleted by the older one.
       await rollback();
-      throw new Error("OAuth flow 已取消");
+      throw new Error("OAuth flow cancelled");
     }
   }
 
@@ -441,15 +441,15 @@ export class OAuthService implements IOAuthService {
     preserveAttribution?: () => Promise<void>,
   ): Promise<OAuthCallbackResult | null> {
     const completion = this.runSessionMutation(async () => {
-      // polling 与 deep link 可能同时完成，也可能在等待期间开始新登录。
-      // 只有仍指向同一 pending 对象的路径能落盘，防止迟到结果覆盖更新的登录选择。
+      // Polling and deep link may complete together, or a new login start while waiting.
+      // Only paths still pointing at the same pending object may persist, so late results never override newer choices.
       if (this.pendingState !== pending) {
         if (
           !this.pendingState &&
           this.recentlyCompletedPollingState?.state === pending.state &&
           this.recentlyCompletedPollingState.generation === this.oauthFlowStartGeneration
         ) {
-          // 回调入队时已通过有效性检查，不能因队列等待超过去重窗口而丢失归因。
+          // The callback passed validity at enqueue; never lose attribution to queue-wait past the dedupe window.
           await preserveAttribution?.();
           return { kind: "duplicate" as const, provider: pending.provider };
         }
@@ -458,8 +458,8 @@ export class OAuthService implements IOAuthService {
       await preserveAttribution?.();
       if (this.pendingState !== pending) return null;
       const { tokenSet, profile } = await complete();
-      // exchangeToken 期间用户可能取消或切换到新 flow；旧请求返回后必须再次校验，
-      // 否则已取消的登录仍会把旧凭据写回本地。
+      // During exchangeToken the user may cancel or switch flows; re-validate when the old request returns,
+      // or a cancelled login writes old credentials back.
       if (this.pendingState !== pending) {
         return null;
       }
@@ -484,8 +484,8 @@ export class OAuthService implements IOAuthService {
         userInfo: toUserInfo(profile),
       };
     });
-    // 共享首个兑换 Promise 会让失败传播给另一条已拿到凭据的路径。
-    // 复用会话串行队列，每个候选独立执行；失败只在已排队候选均失败后向 UI 报告。
+    // Sharing the first exchange Promise propagates failure to the path that already has credentials.
+    // Run each candidate serially in the session queue; report failure only after every queued candidate failed.
     pending.completionPromise = completion;
     try {
       return await completion;
@@ -495,7 +495,7 @@ export class OAuthService implements IOAuthService {
         try {
           await fallback;
         } catch {
-          // 两条路径均失败时保留各自的错误，不能让备用路径覆盖首条失败原因。
+          // With both paths failed keep each error; the fallback must not mask the first failure.
           throw error;
         }
         if (
@@ -537,8 +537,8 @@ export class OAuthService implements IOAuthService {
       log("restoreSession fallback: trying provider legacy token set:", activeProvider);
       tokenSet = await adapter.loadLegacyTokenSet((key) => this.credentialService.load(key));
 
-      // 多 provider 改造后，旧版 BigModel 仍可能只保留 legacy token key。
-      // 这里在 provider 兼容读取成功后回填命名空间 key，避免每次启动都重复走 legacy 分支。
+      // After multi-provider, legacy BigModel may still hold only the legacy token key.
+      // Backfill the namespace key after the compat read, so startup stops rerunning the legacy branch.
       if (tokenSet) {
         log("restoreSession fallback hit: migrating legacy token set:", activeProvider);
         await this.repo.saveActiveTokenSet(tokenSet);
@@ -573,8 +573,8 @@ export class OAuthService implements IOAuthService {
     } catch (error) {
       const normalized = adapter.normalizeError(error);
 
-      // 启动恢复只看本地凭据会把“过期 token”误判成已登录。
-      // 当远端明确返回未授权（401/403）时，立即按退出流程清理本地登录态。
+      // Startup restore on local credentials alone misreads expired tokens as signed in.
+      // On explicit remote unauthorized (401/403), run the logout cleanup at once.
       if (this.isUnauthorizedError(normalized)) {
         log("restoreSession unauthorized, logging out:", activeProvider, normalized.message);
         await this.logout();
@@ -598,10 +598,10 @@ export class OAuthService implements IOAuthService {
 
     const adapter = this.getEnabledAdapter(provider);
     if (!this.apiClient) {
-      throw new Error("ApiClient 注入缺失：OAuth polling 必须通过 Providers 传入 apiClient");
+      throw new Error("Missing ApiClient injection: OAuth polling needs apiClient via Providers");
     }
-    // 两个 init 并发时，先发但后返回的旧响应会覆盖较新的 pending flow。
-    // generation 让最后一次用户操作拥有 flow，旧响应只结束自己的调用方。
+    // With two inits, the earlier-sent later-returning response would override the newer pending flow.
+    // A generation gives the last user action the flow; old responses only settle their own caller.
     const startGeneration = ++this.oauthFlowStartGeneration;
     this.oauthFlowStartProvider = provider;
     this.clearPendingState();
@@ -616,7 +616,7 @@ export class OAuthService implements IOAuthService {
       body: JSON.stringify({ provider }),
     });
     if (this.oauthFlowStartGeneration !== startGeneration) {
-      throw new Error("OAuth flow 已被新的登录请求替换");
+      throw new Error("OAuth flow replaced by a newer login request");
     }
     this.oauthFlowStartProvider = null;
     const data = envelope.data;
@@ -628,7 +628,7 @@ export class OAuthService implements IOAuthService {
       !Number.isFinite(data.expires_at) ||
       !Number.isFinite(data.poll_interval_sec)
     ) {
-      throw new Error(readTrimmedString(envelope.msg) || "OAuth flow 初始化响应无效");
+      throw new Error(readTrimmedString(envelope.msg) || "Invalid OAuth flow init response");
     }
 
     const flowId = readTrimmedString(data.flow_id)!;
@@ -639,15 +639,15 @@ export class OAuthService implements IOAuthService {
     try {
       authorizeUrl = new URL(authorizeUrlString);
     } catch {
-      throw new Error("OAuth flow 初始化响应无效");
+      throw new Error("Invalid OAuth flow init response");
     }
     if (provider === BIGMODEL_PROVIDER_ID) {
-      // BigModel CLI callback 的失败页会截断原有 Desktop deep link 回调体验。
-      // flow 仍由 Host 轮询，但浏览器回调恢复到官网中转页，再透传到 zcode://oauth/callback。
+      // BigModel CLI callback's failure page truncated the Desktop deep-link callback experience.
+      // The Host still polls, but the browser callback lands on the official relay page then forwards to zcode://oauth/callback.
       authorizeUrl.searchParams.set("redirect", buildDesktopOAuthRedirectUriFromEnv(this.env));
     } else if (provider === ZAI_PROVIDER_ID) {
-      // Z.AI 后端 init 仍可能返回 provider-specific callback，导致回跳行为与 BigModel 不一致。
-      // Desktop 统一改写为官网中转页，再由官网透传到 zcode://oauth/callback。
+      // Z.AI init may still return a provider-specific callback, diverging from BigModel's redirect behavior.
+      // Desktop rewrites both to the official relay page, forwarded to zcode://oauth/callback.
       authorizeUrl.searchParams.set("redirect_uri", buildDesktopOAuthRedirectUriFromEnv(this.env));
     }
     const state = authorizeUrl.searchParams.get("state")?.trim();
@@ -661,13 +661,13 @@ export class OAuthService implements IOAuthService {
       pollIntervalMs < 1_000 ||
       pollIntervalMs >= remainingLifetimeMs
     ) {
-      throw new Error("OAuth flow 初始化响应无效");
+      throw new Error("Invalid OAuth flow init response");
     }
 
     const timeoutMs = Math.min(OAUTH_TIMEOUT_MS, remainingLifetimeMs);
     const timeout = setTimeout(() => {
       const pending = this.pendingState;
-      // polling flow 超时必须立即收口，不能等待下一次 UI 轮询；同时校验 flowId，避免旧定时器清掉新 flow。
+      // Polling-flow timeout must settle at once, not wait for the next UI poll; check flowId so old timers never kill new flows.
       if (pending?.state === state && pending.polling?.flowId === flowId) {
         this.clearPendingState();
       }
@@ -710,7 +710,7 @@ export class OAuthService implements IOAuthService {
     }
     if (this.now() >= polling.expiresAt) {
       this.clearPendingState();
-      throw new Error("OAuth flow 已过期");
+      throw new Error("OAuth flow expired");
     }
     if (this.now() < polling.nextPollAt) {
       return null;
@@ -741,8 +741,8 @@ export class OAuthService implements IOAuthService {
           throw terminalError;
         }
       }
-      // 轮询是 deep link 丢失时的可靠路径，单次断网或 5xx 不能立即取消 flow。
-      // 保留服务端下发的查询间隔，下一轮继续尝试；高频状态只记 debug，避免生产日志膨胀。
+      // Polling is the reliable path when deep link is lost; one network blip or 5xx must not cancel the flow.
+      // Keep the server's poll interval and retry; log high-frequency state at debug to protect production logs.
       serviceLog.debug("OAuth polling request will retry", {
         error: error instanceof Error ? error.message : String(error),
         provider: pending.provider,
@@ -763,14 +763,14 @@ export class OAuthService implements IOAuthService {
       const result = await this.runPendingSessionCompletion(pending, async () => {
         const pollData = envelope.data;
         if (envelope.code !== 0 || !isUnknownRecord(pollData)) {
-          throw new Error(readTrimmedString(envelope.msg) || "OAuth flow 查询响应无效");
+          throw new Error(readTrimmedString(envelope.msg) || "Invalid OAuth flow status response");
         }
         const status = readTrimmedString(pollData.status);
         if (status === "failed") {
-          throw new Error("OAuth flow 授权失败");
+          throw new Error("OAuth flow authorization failed");
         }
         if (status !== "ready") {
-          throw new Error("OAuth flow 查询响应无效");
+          throw new Error("Invalid OAuth flow status response");
         }
 
         const ready = pollData;
@@ -784,7 +784,7 @@ export class OAuthService implements IOAuthService {
         const zcodeJwtToken = readTrimmedString(ready.token);
         const userId = readTrimmedString(user?.user_id);
         if (!zcodeJwtToken || !providerAccessToken || !userId) {
-          throw new Error("OAuth flow 查询响应无效");
+          throw new Error("Invalid OAuth flow status response");
         }
         const username = readTrimmedString(user?.name) || readTrimmedString(user?.email) || userId;
         const avatarUrl = readTrimmedString(user?.avatar);
@@ -827,8 +827,8 @@ export class OAuthService implements IOAuthService {
   private async startOAuthInternal(provider: OAuthProviderId): Promise<OAuthStartResponse> {
     const adapter = this.getEnabledAdapter(provider);
 
-    // 同窗口快速连续点击不同 provider 时，旧 state 如果不先取消，
-    // 两条并发流程会共享同一回调通道，导致后回调抢占前回调并触发 state 错配。
+    // Rapid same-window clicks on different providers: without cancelling the old state first,
+    // two flows share one callback channel and the later callback steals the earlier, mismatching state.
     await this.runSessionMutation(async () => {
       this.oauthFlowStartGeneration += 1;
       this.oauthFlowStartProvider = null;
@@ -876,7 +876,7 @@ export class OAuthService implements IOAuthService {
       ) {
         const attribution = parseOAuthLoginAttribution(new URL(url).searchParams);
         await this.runSessionMutation(async () => {
-          // 修复原因：轮询先成功时仍需保存浏览器归因，不能把登录去重当作丢弃整条回调。
+          // Fix: when polling wins, still save browser attribution; dedupe must not discard the whole callback.
           if (
             !this.pendingState &&
             this.recentlyCompletedPollingState === completed &&
@@ -888,27 +888,27 @@ export class OAuthService implements IOAuthService {
         });
         return { kind: "duplicate", provider: completed.provider };
       }
-      throw new Error("OAuth state 不匹配或已过期");
+      throw new Error("OAuth state mismatch or expired");
     }
 
     const parsedUrl = new URL(url);
     const state = parsedUrl.searchParams.get("state");
     if (!state || state !== pending.state) {
-      throw new Error("OAuth state 不匹配或已过期");
+      throw new Error("OAuth state mismatch or expired");
     }
     if (pending.polling && this.now() >= pending.polling.expiresAt) {
       this.clearPendingState();
-      throw new Error("OAuth flow 已过期");
+      throw new Error("OAuth flow expired");
     }
 
     const attribution = parseOAuthLoginAttribution(parsedUrl.searchParams);
     if (attribution && !hasOAuthAuthorizationCode(parsedUrl.searchParams)) {
       if (pending.phase === "awaiting-code-after-attribution") {
-        throw new Error("OAuth 归因回调已处理");
+        throw new Error("OAuth attribution callback already handled");
       }
 
-      // 修复原因：纯归因回调是最终授权码前的中转步骤，不能清掉仍需继续登录的 state；
-      // 但若不显式推进 phase，同一 state 可重复写入归因并隐式复用 pending 生命周期。
+      // Fix: a pure attribution callback precedes the final code and must not clear state still needed for login;
+      // but without advancing phase, the same state could re-write attribution and implicitly reuse the pending lifecycle.
       pending.phase = "awaiting-code-after-attribution";
       try {
         await this.repo.saveLoginAttribution(attribution);
@@ -952,7 +952,7 @@ export class OAuthService implements IOAuthService {
               adapter.fetchUserInfo!(tokenSet, context),
             );
           } catch {
-            // 获取用户信息失败不阻塞登录
+            // User-info failure never blocks login.
           }
         }
         return { tokenSet, profile };
@@ -965,24 +965,24 @@ export class OAuthService implements IOAuthService {
     const generation = this.oauthSessionGeneration;
     const targetProvider = await this.resolveProvider(provider);
     if (!targetProvider) {
-      throw new Error("当前没有可用的登录 provider");
+      throw new Error("No login provider available");
     }
 
     const adapter = this.getEnabledAdapter(targetProvider);
     if (!adapter.refreshToken) {
       throw new Error(
-        `${adapter.meta.displayName} OAuth 暂未提供 refresh token 交换接口，请重新登录`,
+        `${adapter.meta.displayName} OAuth does not offer refresh token exchange; sign in again`,
       );
     }
 
     const activeProvider = await this.repo.getActiveProvider();
     if (targetProvider !== activeProvider) {
-      throw new Error("只能刷新当前 App 登录 provider，请重新登录");
+      throw new Error("Only the current app login provider can refresh; sign in again");
     }
 
     const tokenSet = await this.repo.loadActiveTokenSet();
     if (!tokenSet?.refreshToken) {
-      throw new Error("当前账号缺少 refresh_token，请重新登录");
+      throw new Error("This account has no refresh_token; sign in again");
     }
 
     const refreshed = await this.runWithAdapterError(adapter, () =>
@@ -995,7 +995,7 @@ export class OAuthService implements IOAuthService {
     );
 
     await this.runSessionMutation(async () => {
-      // 刷新写回若绕过会话队列，会插入 401 的核对/清理窗口，或在退出后复活凭据。
+      // A refresh writeback bypassing the session queue inserts 401 recheck/cleanup windows or revives credentials post-logout.
       if (
         this.oauthSessionGeneration !== generation ||
         (await this.repo.getActiveProvider()) !== targetProvider ||
@@ -1007,7 +1007,7 @@ export class OAuthService implements IOAuthService {
     });
   }
 
-  /** Host 本地 401 提交入口，不扩展 IOAuthService 的跨端契约。 */
+  /** Host-local 401 report entry; never extends IOAuthService's cross-device contract. */
   logoutIfCurrentCredentialRequest(input: string | URL, headers: Headers): Promise<boolean> {
     return this.logoutActiveSession(() =>
       isCurrentOAuthCredentialRequest({
@@ -1021,10 +1021,10 @@ export class OAuthService implements IOAuthService {
 
   private async logoutActiveSession(isCurrent?: () => Promise<boolean>): Promise<boolean> {
     const result = await this.runSessionMutation(async () => {
-      // 异步分类的 true 不是清理授权；凭据复核与清理必须和登录写入共用队列。
+      // Async true is not a cleanup authorization; credential recheck/cleanup shares the login write queue.
       if (isCurrent && !(await isCurrent())) return null;
       const activeProvider = await this.repo.getActiveProvider();
-      // 合并边界：清理前保留原账号身份，不能退回仅按平台清理或在退出后再猜身份。
+      // Merge boundary: keep the original account identity before cleanup; never platform-only cleanup nor post-logout guessing.
       const accountIdentity = activeProvider
         ? ((await this.repo.loadUserProfile(activeProvider))?.id ?? null)
         : null;
@@ -1039,7 +1039,7 @@ export class OAuthService implements IOAuthService {
         await this.notifyProviderLogout(result.activeProvider, result.accountIdentity);
       } catch (error) {
         if (!isCurrent) throw error;
-        // 凭据已经清理，派生配置失败不能吞掉原有过期提示；手动退出仍保留原错误语义。
+        // Credentials cleaned; derived-config failure must not swallow the expiry notice; manual logout keeps its error semantics.
         serviceLog.warn("Unauthorized session provider cleanup failed", { error });
       }
     }
@@ -1059,8 +1059,8 @@ export class OAuthService implements IOAuthService {
       }
       const accountIdentity = (await this.repo.loadUserProfile(provider))?.id ?? null;
       this.oauthSessionGeneration += 1;
-      // ZAI/BigModel provider 的 Unlink 已收敛为 App logout。
-      // 只有当前 active provider 才代表登录事实，避免旧 unlink 路径误删非当前 provider token。
+      // ZAI/BigModel provider Unlink converged into app logout.
+      // Only the current active provider is login truth; legacy unlink paths must not delete other providers' tokens.
       await this.repo.clearActiveSession();
       return accountIdentity;
     });
@@ -1133,7 +1133,7 @@ export class OAuthService implements IOAuthService {
   private getAdapter(provider: OAuthProviderId): OAuthProviderAdapter {
     const adapter = this.adapters.get(provider);
     if (!adapter) {
-      throw new Error(`不支持的 OAuth provider: ${provider}`);
+      throw new Error(`Unsupported OAuth provider: ${provider}`);
     }
 
     return adapter;
@@ -1142,7 +1142,7 @@ export class OAuthService implements IOAuthService {
   private getEnabledAdapter(provider: OAuthProviderId): OAuthProviderAdapter {
     const adapter = this.getAdapter(provider);
     if (!adapter.meta.enabled) {
-      throw new Error(`OAuth provider 未启用: ${provider}`);
+      throw new Error(`OAuth provider not enabled: ${provider}`);
     }
 
     return adapter;
@@ -1178,7 +1178,7 @@ export class OAuthService implements IOAuthService {
 }
 
 /**
- * 工厂函数：创建 OAuthService 实例
+ * Factory: create an OAuthService instance.
  */
 export function createOAuthService(
   credentialService: ICredentialService,

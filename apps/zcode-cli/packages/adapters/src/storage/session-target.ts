@@ -85,9 +85,9 @@ export function cloneSessionTargetForFork(
 ): SessionGoal {
   const now = Date.now();
   const source = input.source;
-  // fork 是 session state branch，不是新建 goal。必须保留 target_id 和
-  // 原始 created time，让已复制的 goal-continuation / verifier metadata 能继续对齐。
-  // active run 字段属于父 session 当前运行态，child 不能继承，否则会显示幽灵运行中。
+  // A fork is a session state branch, not a new goal: keep target_id and the
+  // original created time so copied goal-continuation/verifier metadata stays aligned.
+  // Active-run fields are the parent's live state; the child must not inherit them or it shows a ghost run.
   db.prepare(
     `
     insert into session_target (
@@ -184,8 +184,8 @@ export function startSessionTargetRun(
   },
 ): SessionGoal | null {
   const startedAt = Math.max(0, input.startedAtMs);
-  // goal live 计时必须跟随 agent 运行边界落库，不能再由 UI 从 assistant
-  // message timestamp 反推；恢复 snapshot 时该 timestamp 可能是旧轮次，导致切回后异常增长。
+  // Goal live timers must persist on agent run boundaries, not be re-derived by the UI from assistant
+  // message timestamps: on resume those may be from an older turn and inflate after switching back.
   const result = db
     .prepare(
       `
@@ -307,8 +307,8 @@ export function recoverInterruptedSessionTargetRun(
     return current;
   }
 
-  // 进程崩溃/退出后，active_run_started_at 只能说明上次没有正常收口。
-  // 恢复时不能用 Date.now() 结算，否则 app 离线时间会被计入 goal 运行时长。
+  // After a crash/exit, active_run_started_at only proves the last run never closed cleanly;
+  // settling with Date.now() on resume would bill offline time to the goal run.
   const endedAt = current.activeRunLastSeenAtMs ?? current.activeRunStartedAtMs;
   const timeDelta = elapsedSecondsBetween(current.activeRunStartedAtMs, endedAt);
   const nextStatus: GoalStatus = current.status === "active" ? "paused" : current.status;
@@ -389,8 +389,8 @@ export function updateSessionTargetSummaryTitle(
   },
 ): SessionGoal | null {
   const now = Date.now();
-  // goal 概要由异步 title sidecar 生成；用户可能在模型返回前 replace/clear goal。
-  // 必须带 target_id 条件写回，避免旧 objective 的概要覆盖新目标。
+  // Goal summaries come from the async title sidecar; the user may replace/clear the goal before it returns.
+  // Write back conditioned on target_id so a stale objective summary never covers the new goal.
   const result = db
     .prepare(
       `

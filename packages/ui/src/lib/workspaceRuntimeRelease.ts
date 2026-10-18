@@ -16,9 +16,9 @@ export function releaseWorkspaceRuntimeAfterProjectRemoval({
       ...(workspaceIdentity ? { workspaceIdentity } : {}),
     })
     .catch((error: unknown) => {
-      // Windows 会把 Agent/终端子进程 cwd 视为目录占用；移除项目必须主动释放 runtime。
-      // 释放失败不能回滚 UI 移除，只记录 workspace key 方便定位残留进程。
-      logger.error("[WorkspaceSidebarItem] 移除 workspace 后释放 runtime 失败", {
+      // Windows treats agent/terminal child-process cwds as directory locks; removing a project must release the runtime.
+      // A failed release never rolls back the UI removal -- log the workspace key to locate leftover processes.
+      logger.error("[WorkspaceSidebarItem] Failed to release runtime after workspace removal", {
         workspaceKey: workspaceIdentity ?? tab.workspacePath,
         error,
       });

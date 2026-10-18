@@ -1,5 +1,5 @@
-/* eslint-disable max-lines -- Off-Peak 凭证解析、支持矩阵与 Request Auth 共用同一组契约，拆散会让双凭证/Team 身份边界更难追踪。 */
-/* Host 派发时按当前票据构造逐请求鉴权材料；Provider/Model 静态事实由 Built-in Config 提供。 */
+/* eslint-disable max-lines -- Off-Peak credential resolution, support matrix, and Request Auth share one contract set; splitting blurs the dual-credential/Team identity boundaries. */
+/* At dispatch, build per-request auth material from the current ticket; Provider/Model static facts come from Built-in Config. */
 import {
   BUILTIN_MODEL_PROVIDER_IDS,
   resolveOffPeakProviderId,
@@ -14,7 +14,7 @@ import type { ServiceLogger } from "../logger/serviceLogger.js";
 import { AccountRequestCredentialUnavailableError } from "../model-provider/accountProviderRequestAuthService.js";
 import type { IAccountRequestAuthService } from "../model-provider/accountRequestAuthService.js";
 
-/** 仅用于确定性配置错误；host 据类型输出 permanent，禁止依赖错误文本分流。 */
+/** Deterministic config errors only; the host maps types to permanent, never branching on error text. */
 export class OffPeakPermanentDispatchError extends Error {
   readonly failureKind = "permanent" as const;
 
@@ -24,7 +24,7 @@ export class OffPeakPermanentDispatchError extends Error {
   }
 }
 
-/** 双凭证解析失败的类型化错误（UI 可据此提示登录/配置 coding plan）。 */
+/** Typed dual-credential resolution failure (UI can prompt sign-in/coding-plan setup). */
 export class OffPeakCredentialsUnavailableError extends OffPeakPermanentDispatchError {
   constructor(readonly missing: "jwt" | "codingPlanApiKey") {
     super(
@@ -36,7 +36,7 @@ export class OffPeakCredentialsUnavailableError extends OffPeakPermanentDispatch
   }
 }
 
-/** 当前 provider family / selected connection 不属于 Off-Peak 支持矩阵。 */
+/** Current provider family / selected connection is outside the Off-Peak support matrix. */
 export class OffPeakCodingPlanUnavailableError extends OffPeakPermanentDispatchError {
   constructor(readonly reason: OffPeakCodingPlanUnsupportedReason) {
     super(`off-peak selected coding plan unavailable: ${reason}`);
@@ -44,7 +44,7 @@ export class OffPeakCodingPlanUnavailableError extends OffPeakPermanentDispatchE
   }
 }
 
-/** 用户常驻模型或 idle plan 模型缺失时停止空耗 ticket 的类型化错误。 */
+/** Typed error stopping ticket burn when the resident/idle-plan model is missing. */
 export class OffPeakModelUnavailableError extends OffPeakPermanentDispatchError {
   constructor(readonly scope: "idlePlan" | "workspaceUser") {
     super(
@@ -65,10 +65,10 @@ export interface OffPeakCredentialSnapshot {
   kind: OffPeakCodingPlanKind;
   providerFamily: "zai" | "bigmodel";
   providerId: string;
-  /** BigModel Team 组织/项目身份；仅两者同时存在时才允许进入请求头。 */
+  /** BigModel Team org/project identity; both must exist before entering request headers. */
   organizationId?: string;
   projectId?: string;
-  /** 仅供进程内 mock 代理真实选中 Coding Plan 上游；不会过 RPC 或持久化。 */
+  /** In-process mock proxying of the really selected Coding Plan upstream; never over RPC nor persisted. */
   providerBaseURL?: string;
 }
 
@@ -124,12 +124,12 @@ function createOffPeakSelectionFingerprint(
 }
 
 /**
- * 解析当前 selected connection 的 Off-Peak 双凭证。
+ * Resolve the Off-Peak dual credentials of the current selected connection.
  *
- * 派发凭据必须与 UI 选中的 Coding Plan 保持一致，避免 ZAI/Team 任务误用个人 BigModel key。
- * 以 settings 的 family + selectedKey 为唯一选择来源，再通过执行入口注入的鉴权来源
- * 解析动态凭据。
- * Team key 继续复用 Account Request Auth 的 org/project resolver，失败时绝不回退个人 key。
+ * Dispatch credentials must match the UI-selected Coding Plan, so ZAI/Team tasks never misuse a personal BigModel key.
+ * settings family + selectedKey is the only selection source; dynamic credentials resolve via
+ * the auth source injected at the execution entry.
+ * Team keys keep the Account Request Auth org/project resolver and never fall back to personal keys.
  */
 export async function resolveOffPeakCredentials(
   deps: OffPeakCredentialResolverDeps,
@@ -140,7 +140,7 @@ export async function resolveOffPeakCredentials(
     if (env["ZCODE_OFFPEAK_MOCK_NO_PLAN"] === "1") {
       throw new OffPeakCodingPlanUnavailableError("connection_unavailable");
     }
-    // mock 网关不校验凭证；使用确定性 metadata 让 UI 和 ticket/runtime 仍共享同一 support 形状。
+    // The mock gateway validates no credentials; deterministic metadata keeps UI/ticket/runtime on one support shape.
     return {
       jwt: "offpeak-mock-jwt",
       codingPlanApiKey: "offpeak-mock-key",
@@ -150,15 +150,15 @@ export async function resolveOffPeakCredentials(
     };
   }
 
-  // settings 可能在账号 Provider 解析期间切换。前后指纹不一致时重读一次，禁止拼接两代凭证。
+  // settings may flip during account-provider resolution. On fingerprint mismatch re-read once; never splice two generations.
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const provider = await deps.resolveAccountProvider();
     const selection = resolveSelectedOffPeakCodingPlan(provider);
     const activeProvider =
       (await deps.credentialService.load(ACTIVE_OAUTH_PROVIDER_KEY))?.trim() ?? "";
     if (activeProvider !== selection.providerFamily) {
-      // zcode JWT 是当前 App 登录身份的全局镜像；只校验 selectedKey 会把
-      // ZAI JWT 与 BigModel key（或反向）拼到同一请求，服务端只能在取号时才拒绝。
+      // The zcode JWT mirrors the current app login globally; checking selectedKey only could splice
+      // a ZAI JWT with a BigModel key (or reverse) into one request, rejected server-side only at ticketing.
       throw new OffPeakCodingPlanUnavailableError("provider_identity_mismatch");
     }
     const jwt = (await deps.credentialService.load(ZCODE_JWT_TOKEN_KEY))?.trim() ?? "";
@@ -216,11 +216,11 @@ export async function resolveOffPeakCredentials(
 }
 
 /**
- * BigModel Team 的组织/项目必须和鉴权凭证来自同一次 selected connection 解析。
+ * BigModel Team org/project and the auth credential must come from one selected-connection resolution.
  *
- * Off-Peak 过去只传 JWT 与 Coding Plan key，服务端没有 BigModel access key，
- * 无法反查 Team Plan 的 organization/project。旧版 connection key 可能只有 projectId，
- * 此时禁止发送半套身份头，避免服务端按错误组织归属校验。
+ * Off-Peak used to send only JWT + Coding Plan key; without the BigModel access key the server
+ * cannot look up the Team Plan organization/project. Legacy connection keys may hold only projectId:
+ * never send half an identity header set, or the server validates against the wrong org.
  */
 export function buildOffPeakPlanIdentityHeaders(
   credentials: OffPeakCredentialSnapshot,
@@ -240,15 +240,15 @@ export function buildOffPeakPlanIdentityHeaders(
 }
 
 /**
- * 构造一次闲时执行的动态鉴权材料。Endpoint、模型能力和 reasoning 等静态事实由
- * Built-in Provider / Model Config 提供，禁止再随单次派发下发。
+ * Build the dynamic auth material of one off-peak run. Endpoint, model capability, and reasoning statics come from
+ * Built-in Provider/Model Config, never pushed per dispatch.
  */
 export function buildOffPeakRequestAuth(params: {
   credentials: OffPeakCredentialSnapshot;
   ticketId: string;
 }): { apiKey: string; headers: Record<string, string> } {
   return {
-    // Anthropic 兼容客户端会发送 x-api-key；服务端仍以 Authorization 与计划 Key 裁决。
+    // Anthropic-compatible clients send x-api-key; the server still rules via Authorization + plan key.
     apiKey: params.credentials.jwt,
     headers: {
       Authorization: `Bearer ${params.credentials.jwt}`,
@@ -259,7 +259,7 @@ export function buildOffPeakRequestAuth(params: {
   };
 }
 
-/** renderer 可见的脱敏支持快照；凭证原文始终留在 host/service 内存。 */
+/** Renderer-visible masked support snapshot; raw credentials stay in host/service memory. */
 export async function resolveOffPeakCodingPlanSupport(
   deps: OffPeakCredentialResolverDeps,
 ): Promise<OffPeakCodingPlanSupport> {
@@ -286,8 +286,8 @@ export async function resolveOffPeakCodingPlanSupport(
 }
 
 /**
- * mock 网关的上游解析：把 admitted 的 messages 代理到用户 coding plan 的 anthropic
- * 兼容端点（真模型、走用户自己的 key，仅开发/演示）。
+ * Mock-gateway upstream resolution: proxy admitted messages to the user coding plan's anthropic
+ * compatible endpoint (real model, user's own key; dev/demo only).
  */
 export async function resolveOffPeakMockUpstream(deps: {
   credentialService: OffPeakCredentialResolverDeps["credentialService"];
@@ -296,7 +296,7 @@ export async function resolveOffPeakMockUpstream(deps: {
   env?: NodeJS.ProcessEnv;
 }): Promise<{ url: string; headers: Record<string, string> }> {
   const credentials = await resolveOffPeakCredentials(deps, {
-    // mock 自己的 placeholder 不能拿去代理上游；这里强制解析真实 selected connection。
+    // The mock's own placeholder must not proxy upstream; force-resolve the real selected connection.
     allowMockCredentials: false,
   });
   if (!credentials.providerBaseURL) {
@@ -312,9 +312,9 @@ export async function resolveOffPeakMockUpstream(deps: {
 }
 
 /**
- * origin 解析器（memoized）：mock 模式懒启动进程内网关（固定端口，多实例经 EADDRINUSE
- * 复用同一份票据状态），真实模式指向 zcode API origin。node 服务装配与 host 派发两侧
- * 各持一个解析器也安全——谁先绑定谁持有网关，另一方外部复用。
+ * origin resolver (memoized): mock mode lazily starts the in-process gateway (fixed port, instances share state via
+ * EADDRINUSE), real mode points at the zcode API origin. One resolver per side (node assembly, host dispatch) is safe -
+ * whoever binds first owns the gateway; the other reuses it externally.
  */
 export function createOffPeakOriginResolver(deps: {
   logger: ServiceLogger;
@@ -338,7 +338,7 @@ export function createOffPeakOriginResolver(deps: {
           if (!gateway.external) closeGateway = gateway.close;
           return gateway.origin;
         })().catch((error) => {
-          originPromise = null; // 失败后允许重试（如端口短暂占用）
+          originPromise = null; // retry allowed after failure (e.g. transient port occupation)
           throw error;
         });
       }

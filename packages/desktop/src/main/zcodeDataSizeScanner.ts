@@ -22,7 +22,7 @@ export interface ZCodeDataSizeScanRequest {
 
 interface ZCodeDataSizeScanOptions extends ZCodeDataSizeScanRequest {
   signal?: AbortSignal;
-  /** 仅用于定向测试时间上限，不进入 Worker 消息。 */
+  /** For targeted-test time caps only; never sent in Worker messages. */
   now?: () => number;
 }
 
@@ -37,8 +37,9 @@ function isMissingPathError(error: unknown): boolean {
 }
 
 /**
- * 异步统计数据根下普通文件的逻辑字节数。调用方必须把它放在 Worker 中执行；这里不跟随
- * 符号链接，避免循环或越出用户选择的数据根。
+ * Asynchronously count the logical bytes of regular files under the data root. Callers must
+ * run this inside a Worker; symlinks are not followed, avoiding loops or escaping the
+ * user-selected data root.
  */
 export async function scanZCodeDataDirectory(
   options: ZCodeDataSizeScanOptions,
@@ -129,8 +130,9 @@ export async function scanZCodeDataDirectory(
             filesScanned += 1;
           }
         } catch {
-          // 目录扫描期间文件可能被 Agent/日志轮转删除；局部错误不能让整次低频
-          // 遥测失败，但必须标记 partial，避免把下界误当完整值。
+          // Files may be deleted by the agent or log rotation during the scan; a partial
+          // error must not fail the whole low-frequency telemetry run, but the result must
+          // be marked partial so the lower bound is not mistaken for a complete value.
           scanErrorCount += 1;
         }
       }

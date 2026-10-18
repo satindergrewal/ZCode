@@ -40,8 +40,8 @@ interface CodingPlanEmbeddedReportContext {
 export type CodingPlanEmbeddedTheme = "zai-light" | "zai-dark";
 
 /**
- * App locale（zh-CN / en-US）→ 官网 URL lang 段（cn / en）。
- * 用于 webview URL 的 ?lang= hint，让官网首屏就有正确语言，避免注入前的英文闪烁。
+ * App locale (zh-CN / en-US) -> official-site URL lang segment (cn / en).
+ * Feeds the webview URL's ?lang= hint so the site's first paint has the right language, avoiding an English flash before injection.
  */
 function codingPlanLocaleToWebsiteLang(
   locale: CodingPlanWebviewLocale | null | undefined,
@@ -100,10 +100,10 @@ export function buildCodingPlanEmbeddedWebviewUrl({
 }: {
   origin: string;
   provider: CodingPlanWebsiteProvider;
-  // 传入 App 当前 locale，作为官网首屏语言 hint（?lang=cn|en），避免注入前的英文闪烁。
+  // The App's current locale, as the site's first-paint language hint (?lang=cn|en), avoiding an English flash before injection.
   locale?: CodingPlanWebviewLocale | null;
-  // 官网 SSR 默认 dark；首次打开 WebView 时 localStorage 还没有主题，
-  // 必须把 App 当前主题同步放进 URL，让官网 head 脚本在首帧 paint 前读到。
+  // The site's SSR default is dark; on first WebView open localStorage has no theme yet,
+  // so the App's current theme must ride along in the URL for the site's head script to read pre-first-paint.
   theme?: CodingPlanEmbeddedTheme | null;
   audience?: CodingPlanPurchaseAudience;
   teamPlanKey?: string | null;
@@ -143,8 +143,9 @@ export function isTrustedCodingPlanEmbeddedWebviewUrl(
     }
     if (!url.pathname.includes("coding-plan")) return false;
     if (url.searchParams.get("embedded") === "app") return true;
-    // PayPal 成功后先回到 /coding-plan/payment/callback，embedded=app
-    // 在 returnTo 里。该页仍需要 App 注入 OAuth token 完成 subscribe，不能被当作外站清理凭据。
+    // After PayPal success the flow returns to /coding-plan/payment/callback with embedded=app
+    // inside returnTo. That page still needs the App-injected OAuth token to subscribe, so it must
+    // not be treated as an external site and get its credentials cleared.
     if (!url.pathname.endsWith("/coding-plan/payment/callback")) return false;
     const returnTo = url.searchParams.get("returnTo");
     if (!returnTo) return false;
@@ -170,8 +171,8 @@ export function createCodingPlanAuthInjectionScript({
   provider: CodingPlanWebsiteProvider;
   credentials: CodingPlanEmbeddedCredentials;
   theme: CodingPlanEmbeddedTheme;
-  // App 当前 locale，写入 window.__zcodeLang__ 供 zcodeBridge.getLang() 读取，
-  // 并附带在 auth-ready 事件 detail 里让官网一次性同步初始语言。
+  // The App's current locale, written to window.__zcodeLang__ for zcodeBridge.getLang(),
+  // and attached to the auth-ready event detail so the site syncs the initial language once.
   locale: CodingPlanWebviewLocale | null;
   reportContext?: CodingPlanEmbeddedReportContext | null;
 }): string {
@@ -184,10 +185,10 @@ export function createCodingPlanAuthInjectionScript({
         }
       : {
           "oauth:zai:access_token": null,
-          // zcodejwttoken 是 zcode-plan 域通用凭证（BigModel OAuth callback 同样落盘），
-          // 官网用它查 billing/balance 判定 Start Plan 是否使用中；BigModel 分支缺失注入
-          // 会导致官网 Start Plan 卡因查不到权益而误显示「已过期」。业务接口仍走
-          // oauth:bigmodel:access_token，互不污染。
+          // zcodejwttoken is the common zcode-plan credential (the BigModel OAuth callback persists it too);
+          // the site queries billing/balance with it to detect an active Start Plan. Missing it in the
+          // BigModel branch makes the site's Start Plan card falsely show "expired" because entitlement
+          // lookup fails. Business APIs keep using oauth:bigmodel:access_token; the two never mix.
           zcodejwttoken: credentials.zcodeJwtToken?.trim() || null,
           "oauth:bigmodel:access_token": credentials.bigmodelAccessToken?.trim() || null,
         };
@@ -209,8 +210,8 @@ export function createCodingPlanAuthInjectionScript({
   document.documentElement.classList.toggle("theme-zai-dark", zcodeTheme === "zai-dark");
   localStorage.setItem("zcode-theme", zcodeTheme);
   localStorage.setItem("zcode:coding-plan:embedded", "app");
-  // 写入当前 App locale，供官网 zcodeBridge.getLang() 读取。
-  // 注意：这是注入 webview 执行的原始 JS，不能用 TS 语法（如 as any）。
+  // Writes the current App locale for the site's zcodeBridge.getLang().
+  // Note: this is raw JS executed in the webview; no TS syntax (e.g. as any) allowed.
   window.__zcodeLang__ = ${JSON.stringify(resolvedLocale)};
   const zcodeReportContext = ${JSON.stringify(normalizedReportContext)};
   window.__zcodeReportContext__ = zcodeReportContext;
@@ -234,7 +235,7 @@ export function buildCodingPlanEmbeddedReportContext({
 }): CodingPlanEmbeddedReportContext {
   return normalizeCodingPlanEmbeddedReportContext({
     purchase_funnel_id: funnelContext?.purchaseFunnelId,
-    // 缺少归属标记会让兼容官网重复上报入口；无漏斗时不能声明 App 已接管。
+    // Without the attribution marker the site keeps its legacy duplicate-reporting entry; with no funnel, never claim the App took over.
     purchase_entry_reporter: funnelContext ? "app" : undefined,
     upgrade_source: funnelContext?.upgradeSource,
     event_region: funnelContext?.eventRegion,
@@ -301,15 +302,15 @@ body::-webkit-scrollbar,
 }
 
 /**
- * 生成「更新 webview 当前 locale」的注入脚本。
- * App locale 运行时变化时对 webview executeJavaScript 此脚本：
- * 重写 window.__zcodeLang__ 并派发 zcode-coding-plan-lang-change 事件，
- * 官网侧（zcodeBridge.onLangChange 或 window 监听）据此无感切换语言。
+ * Builds the "update webview locale" injection script.
+ * When the App locale changes at runtime, executeJavaScript this in the webview:
+ * it rewrites window.__zcodeLang__ and dispatches zcode-coding-plan-lang-change, which the site
+ * (zcodeBridge.onLangChange or a window listener) uses to switch languages seamlessly.
  */
 export function createCodingPlanLangInjectionScript(locale: CodingPlanWebviewLocale): string {
   const resolvedLocale: CodingPlanWebviewLocale = locale === "zh-CN" ? "zh-CN" : "en-US";
   return `(() => {
-  // 注意：注入 webview 执行的原始 JS，不能用 TS 语法（如 as any）。
+  // Note: raw JS executed in the webview; no TS syntax (e.g. as any) allowed.
   window.__zcodeLang__ = ${JSON.stringify(resolvedLocale)};
   window.dispatchEvent(new CustomEvent("zcode-coding-plan-lang-change", {
     detail: ${JSON.stringify({ locale: resolvedLocale })},
@@ -318,8 +319,8 @@ export function createCodingPlanLangInjectionScript(locale: CodingPlanWebviewLoc
 }
 
 export function getCodingPlanCredentialKeys(provider: CodingPlanWebsiteProvider): string[] {
-  // zcodejwttoken 对两个 provider 都加载：它是 zcode-plan 域通用凭证，
-  // BigModel OAuth callback 同样落盘（见 resolveBigModelStartPlanZcodeJwt）。
+  // zcodejwttoken loads for both providers: it is the common zcode-plan credential, also persisted by
+  // the BigModel OAuth callback (see resolveBigModelStartPlanZcodeJwt).
   return provider === "zai"
     ? [`oauth:${ZAI_PROVIDER_ID}:access_token`, "zcodejwttoken"]
     : [`oauth:${BIGMODEL_PROVIDER_ID}:access_token`, "zcodejwttoken"];

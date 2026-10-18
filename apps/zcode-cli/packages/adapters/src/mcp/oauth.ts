@@ -18,7 +18,7 @@ export function createCredentialKeyPrefix(
   serverUrl: string,
   config: McpAuthorizationCodeOAuthConfig,
 ): string {
-  // OAuth token 和动态 client 注册都依赖授权语义，scope/client/redirect 变化时必须重新授权。
+  // OAuth tokens and dynamic client registration depend on grant semantics: any scope/client/redirect change re-grants.
   const hash = createHash("sha256")
     .update(
       [

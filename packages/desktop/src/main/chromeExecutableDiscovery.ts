@@ -17,7 +17,7 @@ const SUPPORTED_PLATFORMS = new Set<NodeJS.Platform>(["darwin", "linux", "win32"
 interface ChromeExecutableDiscoveryOptions extends ChromeInstallationPathOptions {
   installations?: ChromeInstallationCandidate[];
   processCommandLines?: string[];
-  /** 测试可注入已由操作系统注册表/索引解析出的可执行文件，避免依赖宿主环境。 */
+  /** Test-injectable executables resolved via OS registry/index; no host env needed. */
   registeredExecutablePaths?: string[];
 }
 
@@ -73,7 +73,7 @@ export async function readRunningChromeProcessCommandLines(
       .split(/\r?\n/)
       .filter((line) => /(?:chrome|chromium)/i.test(line));
   } catch {
-    // 进程枚举受系统策略限制时，仍应继续使用注册信息和标准目录，不能阻断导入。
+    // If policy blocks process enumeration, keep registry entries and standard dirs; never block the import.
     return [];
   }
 }
@@ -153,12 +153,12 @@ async function readMacRegisteredChromeExecutablePaths(): Promise<string[]> {
           }
         }
       } catch {
-        // Spotlight 索引可能含已移除应用；忽略陈旧记录并继续检查其他候选。
+        // Spotlight indexes removed apps too; skip stale records and keep checking other candidates.
       }
     }
     return uniquePaths(executablePaths);
   } catch {
-    // Spotlight 被禁用或受系统策略限制时，仍会继续使用运行进程和标准目录。
+    // Spotlight disabled/policy-blocked: running processes and standard dirs still apply.
     return [];
   }
 }
@@ -189,11 +189,11 @@ async function readLinuxDesktopChromeExecutablePaths(
             if (command) executablePaths.push(...resolvePathCommand(command, env));
           }
         } catch {
-          // 单个 desktop entry 损坏或无权限不应阻断其他已注册应用发现。
+          // One broken/unreadable desktop entry must not block other registered apps.
         }
       }
     } catch {
-      // 某个 XDG applications 目录不存在是正常状态。
+      // A missing XDG applications dir is a normal state.
     }
   }
   return uniquePaths(executablePaths);

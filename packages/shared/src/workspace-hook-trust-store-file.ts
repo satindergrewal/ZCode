@@ -1,25 +1,25 @@
 import { z } from "zod";
 
 /**
- * Workspace Hook Trust store 文件格式（`workspace-hook-trust-v1.json`）的
- * 单一权威 schema。
+ * The single authoritative schema of the Workspace Hook Trust store file (workspace-hook-trust-v1.json).
+ * single authoritative schema.
  *
- * 完整 schema 不能只存在于 contracts（CLI 侧，zod3）：
- * services 层无法依赖 apps 下的包，只好手写局部字段校验（只看
- * workspaceIdentity 与 digest 形状）。结果同一份"JSON 合法但结构非法"的
- * store 文件，runtime/adapters 判 corrupt（fail-closed 全部阻断），services
- * 却把其中的 digest 当作已信任展示——UI 显示"已信任"、执行层永远拒绝，
- * 且无法通过统一路径诊断。信任存储是权限边界，所有消费者必须对同一
- * 文件得出同一结论，因此 schema 下沉到 shared 作为单源，contracts 侧
- * re-export 本模块保持既有 import 路径兼容。
+ * The full schema cannot live only in contracts (CLI side, zod3):
+ * services cannot depend on apps packages, so it hand-writes partial field checks (shape of
+ * workspaceIdentity and digest only). The result: one "JSON valid, structure invalid"
+ * store file reads corrupt runtime/adapters-side (fail-closed, all blocked) while
+ * services shows its digests as trusted--UI says trusted, execution always refuses,
+ * with no unified diagnostic path. The trust store is a permission boundary: every consumer must reach the same
+ * verdict on the same file, so the schema sinks to shared as the single source; contracts
+ * re-exports this module, keeping import paths stable.
  *
- * 注意：contracts 与本模块分属 zod3 / zod4 两个实例，本 schema 不得被
- * contracts 内部的 zod3 schema 组合引用（当前仅 re-export，无组合）。
+ * Note: contracts and this module live on zod3 / zod4 instances; this schema must never be
+ * composed into contracts' internal zod3 schemas (re-export only today).
  */
 
 export const WORKSPACE_HOOK_TRUST_STORE_SCHEMA_VERSION = 1 as const;
 
-/** 与 contracts 的 workspaceHookEventNameSchema 保持一致（7 个现有事件）。 */
+/** Mirrors contracts' workspaceHookEventNameSchema (the 7 current events). */
 const workspaceHookEventNameSchema = z.enum([
   "SessionStart",
   "UserPromptSubmit",
@@ -80,9 +80,9 @@ export type WorkspaceHookTrustStoreParseResult =
   | { status: "invalid" };
 
 /**
- * 解析 trust store 文件内容。JSON 语法错误与 schema 校验失败统一归为
- * `invalid`——两者在消费语义上等价：文件不可信，必须 fail-closed，
- * 不得返回任何部分结果。
+ * Parse trust-store file content. JSON syntax errors and schema failures unify as
+ * `invalid`--consumer-equivalent: the file is untrusted, fail-closed,
+ * never a partial result.
  */
 export function parseWorkspaceHookTrustStoreContent(
   content: string,

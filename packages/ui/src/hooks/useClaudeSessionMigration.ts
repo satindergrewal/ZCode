@@ -94,8 +94,9 @@ export function useClaudeSessionMigration(params: {
   );
 
   const supportState = useMemo<ClaudeSessionMigrationSupportState>(() => {
-    // 关键业务逻辑：Claude 原生历史迁移读取的是“当前机器上的 ~/.claude/projects”。
-    // 因此这里只拦 web 场景；workspace 现在只是可选筛选条件，不再决定能力是否可用。
+    // Core business rule: native Claude history migration reads ~/.claude/projects on
+    // THIS machine. Only the web case is blocked here; workspace is now an optional filter,
+    // not a capability gate.
     if (!params.isDesktop) {
       return {
         supported: false,
@@ -145,7 +146,7 @@ export function useClaudeSessionMigration(params: {
 
     try {
       logger.info(
-        `[Migration] 开始扫描 Claude 原生历史 workspaceFilter=${effectiveWorkspacePath ?? "all"} range=${range} limit=${scanLimit ?? "unlimited"}`,
+        `[Migration] scan native Claude history start workspaceFilter=${effectiveWorkspacePath ?? "all"} range=${range} limit=${scanLimit ?? "unlimited"}`,
       );
       const nextCandidates = await zcodeTaskService.scanImportableClaudeSessions({
         workspacePath: effectiveWorkspacePath,
@@ -154,19 +155,19 @@ export function useClaudeSessionMigration(params: {
         ...(scanLimit === undefined ? {} : { limit: scanLimit }),
       });
       setCandidates(nextCandidates);
-      // 关键业务逻辑：重扫后只保留仍然可见的勾选项。
-      // 这样用户调筛选条件或刷新结果时，不会把已经不在当前列表里的旧 session 混进导入请求。
+      // Core business rule: after a rescan, keep only selections still visible, so changed
+      // filters or refreshed results never smuggle stale sessions into the import request.
       setSelectedSessionIds((previous) =>
         previous.filter((sessionId) =>
           nextCandidates.some((candidate) => candidate.sessionId === sessionId),
         ),
       );
       logger.info(
-        `[Migration] Claude 原生历史扫描完成 workspaceFilter=${effectiveWorkspacePath ?? "all"} count=${nextCandidates.length}`,
+        `[Migration] native Claude history scan done workspaceFilter=${effectiveWorkspacePath ?? "all"} count=${nextCandidates.length}`,
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      logger.error("[Migration] 扫描 Claude 原生历史失败", error);
+      logger.error("[Migration] failed to scan native Claude history", error);
       setScanError(message);
     } finally {
       setIsScanning(false);
@@ -191,7 +192,7 @@ export function useClaudeSessionMigration(params: {
 
       try {
         logger.info(
-          `[Migration] 开始导入 Claude 原生历史 workspaceFilter=${effectiveWorkspacePath ?? "all"} selected=${sessionIds.length}`,
+          `[Migration] native Claude history import start workspaceFilter=${effectiveWorkspacePath ?? "all"} selected=${sessionIds.length}`,
         );
         const result = await zcodeTaskService.importClaudeSessions({
           workspacePath: effectiveWorkspacePath,
@@ -209,9 +210,10 @@ export function useClaudeSessionMigration(params: {
         );
         if (result.imported.length > 0) {
           const importedWorkspacePaths = new Set(result.imported.map((item) => item.workspacePath));
-          // Claude 导入之前通过 bumpTaskListVersion 让各处任务列表整轮重查，
-          // 但这里真正需要的只是把受影响 workspace 的查询结果失效并重新拉取。
-          // 改成局部失效后，仍然能让新导入任务出现在侧边栏，同时避免把无关 workspace 一起带着刷新。
+          // Claude import used to bumpTaskListVersion, re-querying every task list for a
+          // full round. What is actually needed is invalidating and refetching only the
+          // affected workspaces' queries: new imports still reach the sidebar without
+          // dragging unrelated workspaces into the refresh.
           const importedWorkspaceScopes = result.imported.map((item) => ({
             workspacePath: item.workspacePath,
           }));
@@ -221,12 +223,12 @@ export function useClaudeSessionMigration(params: {
           invalidateTaskQueryCacheByScopes(importedWorkspaceScopes);
         }
         logger.info(
-          `[Migration] Claude 原生历史导入完成 workspaceFilter=${effectiveWorkspacePath ?? "all"} imported=${result.imported.length} skipped=${result.skipped.length} failed=${result.failed.length}`,
+          `[Migration] native Claude history import done workspaceFilter=${effectiveWorkspacePath ?? "all"} imported=${result.imported.length} skipped=${result.skipped.length} failed=${result.failed.length}`,
         );
         return result;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        logger.error("[Migration] 导入 Claude 原生历史失败", error);
+        logger.error("[Migration] failed to import native Claude history", error);
         setImportError(message);
         return null;
       } finally {

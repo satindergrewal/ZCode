@@ -10,23 +10,23 @@ import type { CodeViewerSource } from "@/lib/codeViewer.js";
 import type { CodePreviewSettings } from "@/lib/codePreviewSettings.js";
 import type { Theme } from "@/useTheme.js";
 import { ConversationShareReadonlyTimeline } from "@/v4/ConversationShareReadonlyTimeline.js";
-// 注入边界：只读时间线被匿名公开分享页共用，不能静态依赖 open-with 子树；
-// OpenSplitButton（platform hooks、tab store、文件树模型等 Desktop 能力）只能在本 Desktop
-// 消费侧引入并经 artifactOpenAction 注入，公开页入口图因此不含该子树。
+// Injection boundary: the read-only timeline is shared with the anonymous public share page and must not depend statically on the open-with subtree;
+// OpenSplitButton (platform hooks, tab store, file-tree model, other Desktop capabilities) may only be imported by this Desktop
+// consumer and injected via artifactOpenAction, so the public-page entry carries none of that subtree.
 import { OpenSplitButton } from "@/OpenSplitButton.js";
 
 const EMPTY_ARTIFACT_NAMES: ReadonlyMap<string, string> = new Map();
 const EMPTY_ARTIFACT_WORKSPACE_RELATIVE_PATHS: ReadonlyMap<string, string> = new Map();
 
 /**
- * 导入分享后，会话顶部的只读块 + 分割线。
- * 使用导入图标，避免与 Fork 标记混淆。
+ * Read-only block + divider at the top of the conversation after importing a share.
+ * Uses the import icon, avoiding confusion with the Fork marker.
  *
- * 只读块直接复用分享页的渲染器，因此不需要把公开 rows 反向映射成 Message
- * （那个方向有损且未定义；Fork 之所以简单是因为它克隆真实 Message）。
+ * The read-only block reuses the share-page renderer, so public rows are never mapped back into Message
+ * (lossy and undefined; Fork is simple because it clones real Messages).
  *
- * 本地结果物不走分享页的 artifactUrls/window.open；只有导入端显式传入
- * workspaceRelativePath 与 Desktop 打开回调时，才复用正常预览卡片的打开控件。
+ * Local result artifacts bypass the share-page artifactUrls/window.open; only when the importer explicitly passes
+ * workspaceRelativePath and a Desktop open callback do they reuse the normal preview-card open controls.
  */
 export const ConversationShareImportNotice = memo(function ConversationShareImportNotice({
   rows,

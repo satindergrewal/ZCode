@@ -27,9 +27,9 @@ function scrollGroupedTaskVirtualizerToOffset<TScrollElement extends Element>(
     scrollElement.scrollTop > 0 &&
     instance.scrollOffset === 0;
   if (isStaleInitialZeroSync) {
-    // group 虚拟列表在外层滚动容器中途重新挂载时，react-virtual
-    // 可能已在首个 layout effect 缓存默认 scrollOffset=0，随后 _willUpdate
-    // 会把这个旧值 scrollTo(0) 到共享容器上，导致列表偶发回顶。
+    // When the group virtual list remounts inside the shared scroll container, react-virtual may
+    // have cached the default scrollOffset=0 in its first layout effect; _willUpdate would then
+    // scrollTo(0) that stale value onto the shared container, snapping the list back to the top.
     return;
   }
   if (instance.options.horizontal) {

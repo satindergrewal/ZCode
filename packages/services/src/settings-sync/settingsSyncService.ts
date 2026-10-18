@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- settings-sync 需要集中维护外部 skills/commands/plugins/MCP 扫描、去重和导入状态机，后续按资源类别拆分 */
+/* eslint-disable max-lines -- settings-sync centralizes external skills/commands/plugins/MCP scanning, dedup, and the import state machine; split by resource type later */
 import type {
   McpServerConfig,
   SettingsSyncAgent,
@@ -571,8 +571,8 @@ function getCommandFileSymlinkType(): "file" {
 }
 
 async function createDirectorySymlink(sourcePath: string, targetPath: string): Promise<void> {
-  // Windows 创建目录软链需要 junction；其它平台使用 dir。source 使用绝对路径，避免 junction
-  // 在不同 cwd 下解析目标不一致。
+  // Windows dir symlinks need junction; other platforms use dir. Absolute source path keeps
+  // junction resolution stable across cwds.
   await symlink(resolve(sourcePath), targetPath, getSkillDirectorySymlinkType());
 }
 
@@ -583,20 +583,20 @@ async function importCommandFile(
 ): Promise<void> {
   if (importMode === "symlink") {
     if (process.platform === "win32") {
-      // Windows 创建文件级 symlink 需要管理员权限，改用硬链接。
-      // 硬链接不需要提权，且文件修改能双向同步。
-      // 跨分区（EXDEV）等硬链接失败时回退到复制。
+      // Windows file symlinks need admin; use a hard link instead - no elevation, and edits
+      // propagate both ways.
+      // Fall back to copy on hardlink failure (EXDEV cross-device etc.).
       try {
         await link(resolve(sourcePath), targetPath);
-        log.info(undefined, "[importCommandFile] Windows 硬链接创建成功", {
+        log.info(undefined, "[importCommandFile] Windows hard link created", {
           sourcePath,
           targetPath,
         });
         return;
       } catch (linkError) {
-        // 记录硬链接失败原因（EXDEV 跨分区 / EACCES 权限等），便于排查
+        // Record the hardlink failure reason (EXDEV/EACCES...) for diagnostics
         const linkErrorCode = (linkError as NodeJS.ErrnoException)?.code;
-        log.warn(undefined, "[importCommandFile] Windows 硬链接失败，回退到复制模式", {
+        log.warn(undefined, "[importCommandFile] Windows hard link failed; falling back to copy", {
           sourcePath,
           targetPath,
           linkErrorCode,
@@ -604,7 +604,7 @@ async function importCommandFile(
         });
       }
     } else {
-      // 非 Windows 平台使用 symlink，不需要提权。
+      // Non-Windows platforms symlink without elevation.
       await symlink(resolve(sourcePath), targetPath, getCommandFileSymlinkType());
       return;
     }
@@ -639,7 +639,7 @@ function getExternalSkillRoots(workspacePath?: string): SkillSourceRoot[] {
     scope: "user",
   }));
   if (!workspacePath) {
-    // 全局技能导入不应依赖当前窗口必须打开 workspace。
+    // Global skill import must not require a workspace to be open in the current window.
     return userRoots;
   }
   return [
@@ -737,8 +737,8 @@ async function pathExists(path: string): Promise<boolean> {
 }
 
 async function collectSkillMarkdownPaths(rootPath: string): Promise<string[]> {
-  // 复用共享的有界遍历（排除 node_modules 等内容目录、限制深度、软链去重），
-  // 与桌面端技能扫描保持一致，避免设置同步在巨型目录上卡死。
+  // Reuse the shared bounded walk (skips node_modules et al, depth cap, symlink dedup) matching
+  // the desktop skill scan, so settings sync cannot stall on huge trees.
   const discovered = new Set<string>();
   for await (const skillPath of walkSkillMarkdownPaths(rootPath)) {
     discovered.add(skillPath);
@@ -2393,8 +2393,8 @@ export function createSettingsSyncService(
 
     async markFirstRunPromptHandled(): Promise<void> {
       await dependencies.settingService.update({
-        // 这里记录的是“首启导入提示是否已经被消费”，不是“导入是否成功”。
-        // 如果把“用户点击跳过”遗漏掉，下次启动还会重复弹窗，造成首启流程打扰感。
+        // This records whether the first-run import hint was consumed, not whether import succeeded;
+        // missing the user's skip would re-prompt every launch.
         settingsSyncFirstRunPromptHandled: true,
       });
     },

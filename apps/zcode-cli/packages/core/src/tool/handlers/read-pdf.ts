@@ -46,8 +46,8 @@ const READ_ERROR_CODE_BY_PDF_DOCUMENT_ERROR = {
   timeout: ReadErrorCode.PDF_TIMEOUT,
   unavailable: ReadErrorCode.PDF_CONFIGURATION_ERROR,
 } satisfies Record<PdfDocumentErrorCode, ReadErrorCode | undefined>;
-// 根因：120 秒只属于 Poppler 子进程；executor 若使用同一上限，会提前占用
-// 可用性检查、图片规范化和 finally 清理的时间，因此 pages 分支保留独立外层预算。
+// Root cause: 120s belongs to the Poppler child process; sharing it as the executor cap would eat the
+ availability check, image normalization, and finally-cleanup budget -- the pages branch keeps its own outer budget.
 export const READ_PDF_TOOL_TIMEOUT_MS = READ_PDF_RENDER_TIMEOUT_MS + 30_000;
 
 export function isPdfPath(filePath: string): boolean {
@@ -151,8 +151,8 @@ async function readNativePdf(
       }
     } catch (error) {
       rethrowPdfCancellation(error, context.abortSignal);
-      // 根因：adapter 已用 undefined 表达 pdfinfo 的普通执行或解析失败；继续吞掉
-      // port 抛出的未知异常会掩盖实现故障。这里只转换取消，其余异常保持原因向上冒泡。
+      // Root cause: the adapter already signals normal pdfinfo failure/parse issues via undefined; swallowing
+ unknown port exceptions would mask impl bugs. Convert cancellation only; everything else bubbles.
       throw error;
     }
   }
@@ -274,8 +274,8 @@ async function readPdfPages(
     if (error instanceof PdfDocumentPortError) {
       const errorCode = READ_ERROR_CODE_BY_PDF_DOCUMENT_ERROR[error.code];
       if (errorCode === undefined) throw error;
-      // 根因：adapter 已提供稳定错误类别，统一折叠成 PDF_INVALID 会让 executor、
-      // telemetry 和调用方无法区分环境故障与输入错误；core 只做穷尽映射，不解析文案。
+      // Root cause: the adapter provides stable error classes; folding all into PDF_INVALID would blind the
+      // telemetry and callers cannot tell environment failures from input errors; core maps them exhaustively and never words the messages itself.
       return failure(errorCode, error.message);
     }
     throw error;
@@ -283,9 +283,9 @@ async function readPdfPages(
 }
 
 function rethrowPdfCancellation(error: unknown, signal: AbortSignal): void {
-  // 根因：ExecutionPort 在 runtime shutdown 时可以返回 cancelled，而不改变调用方的
-  // AbortSignal。端口错误若直接冒泡，executor 又会把它归为普通内部失败；在 Core
-  // 边界转换为统一 ToolCancelled，才能同时停止读取并正确收口工具生命周期。
+  // Root cause: ExecutionPort may return cancelled on runtime shutdown without touching the caller's
+  // AbortSignal. If a port error bubbles up as-is the executor classes it as a generic internal failure; converting it at the Core
+  // boundary into a unified ToolCancelled both stops the read and settles the tool lifecycle correctly.
   if (error instanceof PdfDocumentPortError && error.code === "cancelled") {
     throw createCoreError(CoreErrorType.ToolCancelled, error.message, {
       cause: error,

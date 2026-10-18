@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 文件树数据 hook 需要集中维护目录加载、watcher 刷新和 Git 状态竞态。 */
+/* eslint-disable max-lines -- the file tree data hook centralizes directory loads, watcher refreshes, and Git status races. */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
 import { logger } from "@/logger.js";
@@ -127,7 +127,8 @@ export function useWorkspaceFileTreeData({
     (directoryPath: string) => {
       for (const path of directoryRequestVersionRef.current.keys()) {
         if (isWorkspaceFilePathInside(directoryPath, path)) {
-          // 目录被裁剪时不能删除请求序号，否则同路径重建会复用旧序号，让删除前的旧请求重新生效。
+          // Do not delete the request version when a subtree is pruned, or a recreated path
+          // would reuse the old version and let a pre-delete response resurrect stale data.
           invalidateDirectoryRequest(path);
         }
       }
@@ -201,7 +202,8 @@ export function useWorkspaceFileTreeData({
       }
 
       const requestVersion = requestVersionRef.current;
-      // 手动刷新和 watcher 可能并发读取同一目录，目录级序号避免旧快照晚返回后覆盖新文件树。
+      // Manual refreshes and watchers may read the same directory concurrently; the per-directory
+      // version keeps a late old snapshot from overwriting the newer tree.
       const directoryRequestVersion =
         (directoryRequestVersionRef.current.get(directoryPath) ?? 0) + 1;
       directoryRequestVersionRef.current.set(directoryPath, directoryRequestVersion);
@@ -251,7 +253,7 @@ export function useWorkspaceFileTreeData({
             })
             .catch((error) => {
               const nextError = toError(error);
-              logger.warn("[WorkspaceFileTree] 读取 Git ignored 状态失败", {
+              logger.warn("[WorkspaceFileTree] Failed to load Git ignored paths", {
                 workspacePath,
                 path: directoryPath,
                 error: nextError.message,
@@ -276,7 +278,7 @@ export function useWorkspaceFileTreeData({
         setDirectoryLoaded(directoryPath, true);
 
         if (entries.length === 1 && isWorkspaceFileTreeAutoFlattenableDirectory(entries[0])) {
-          // 修复：flatten empty directories 只沿普通单子目录链预加载，避免软链接目录循环递归。
+          // Fix: flatten-empty-directories only preloads plain single-child chains, avoiding symlink loops.
           void loadDirectory(entries[0].path, childDepth + 1, {
             silent: true,
             workspaceGeneration: expectedWorkspaceGeneration,
@@ -288,7 +290,7 @@ export function useWorkspaceFileTreeData({
           return "stale";
         }
         const nextError = toError(error);
-        logger.warn("[WorkspaceFileTree] 读取目录失败", {
+        logger.warn("[WorkspaceFileTree] Failed to read directory", {
           path: directoryPath,
           error: nextError.message,
         });
@@ -348,11 +350,12 @@ export function useWorkspaceFileTreeData({
           return;
         }
         const nextError = toError(error);
-        logger.warn("[WorkspaceFileTree] 读取 Git 状态失败", {
+        logger.warn("[WorkspaceFileTree] Failed to load Git status", {
           workspacePath,
           error: nextError.message,
         });
-        // 修复：Git 状态读取异常时不能保留旧的变更过滤入口，否则用户会在过期状态下继续筛选文件树。
+        // Fix: when Git status fails, drop the change filter entry points too, or users keep
+        // filtering the tree from a stale status.
         setGitStatusAvailable(false);
         setGitStatusByPath(new Map());
       }
@@ -379,7 +382,7 @@ export function useWorkspaceFileTreeData({
       if (workspaceGenerationRef.current !== workspaceGeneration) {
         return;
       }
-      // 被监听目录被删除或重命名时先裁掉旧 subtree，再刷新父目录。
+      // When a watched directory is deleted or renamed, prune the stale subtree before refreshing the parent.
       pruneDirectorySubtree(directoryPath);
       const parentDirectoryPath = getWorkspaceFileParentDirectory(workspacePath, directoryPath);
       if (parentDirectoryPath) {
@@ -401,8 +404,9 @@ export function useWorkspaceFileTreeData({
       if (!isWorkspaceFilePathInside(workspacePath, directoryPath)) {
         return;
       }
-      // 手动刷新里的 readdir 失败通常是远程断连、权限或临时 I/O 错误；
-      // 失败不等价于目录被删除，不能复用 watcher 的 subtree 裁剪逻辑，否则会清空旧树和错误状态。
+      // readdir failures in manual refresh are usually remote disconnects, permissions, or
+      // transient I/O; they do not mean the directory is gone, so do not reuse the watcher's
+      // subtree pruning, which would wipe the old tree and error state.
       try {
         await withWorkspaceFileTreeTimeout(
           loadDirectory(
@@ -419,7 +423,7 @@ export function useWorkspaceFileTreeData({
         }
         invalidateDirectoryRequest(directoryPath);
         const nextError = toError(error);
-        logger.warn("[WorkspaceFileTree] 手动刷新目录超时或失败", {
+        logger.warn("[WorkspaceFileTree] Manual directory refresh timed out or failed", {
           path: directoryPath,
           error: nextError.message,
         });
@@ -474,9 +478,9 @@ export function useWorkspaceFileTreeData({
       expandedPaths,
       loadedDirectoryPaths: loadedDirectoryPathsRef.current,
     });
-    // 手动刷新文件树过去只重读 workspace 根目录，已加载子目录仍沿用旧 children 缓存；
-    // AI 重命名/新增文件发生在这些子目录时，旧路径会继续显示，新文件也不会出现。
-    // 这里刷新所有已加载或已展开目录，不做全仓递归扫描，避免大仓库刷新成本失控。
+    // Manual refreshes used to re-read only the workspace root; loaded subdirectories kept stale
+    // children, so AI renames/additions there never appeared. Refresh every loaded or expanded
+    // directory without a full-repo recursive scan, keeping large-repo refresh costs bounded.
     try {
       await refreshDirectoryPaths(
         directoryPaths,
@@ -484,8 +488,8 @@ export function useWorkspaceFileTreeData({
         refreshBatchVersion,
         refreshDirectoryManually,
       );
-      // 用户可能在手动刷新旧 workspace 期间切换 workspace；
-      // 旧刷新完成后不能再用旧 gitService 覆盖新 workspace 的 Git 状态。
+      // The workspace may be switched while a stale refresh is in flight; once it settles, the
+      // old gitService must not overwrite the new workspace's Git status.
       if (
         workspaceGenerationRef.current === workspaceGeneration &&
         refreshBatchVersionRef.current === refreshBatchVersion
@@ -503,7 +507,7 @@ export function useWorkspaceFileTreeData({
           ) {
             gitStatusRequestVersionRef.current += 1;
             const nextError = toError(error);
-            logger.warn("[WorkspaceFileTree] 手动刷新 Git 状态超时或失败", {
+            logger.warn("[WorkspaceFileTree] Manual Git status refresh timed out or failed", {
               workspacePath,
               error: nextError.message,
             });

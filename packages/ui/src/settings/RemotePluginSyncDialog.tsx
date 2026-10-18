@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 远端 plugin 同步弹窗集中维护加载、选择、风险提示、逐项进度和结果状态，保持与 Skill/MCP 同步弹窗一致。 */
+/* eslint-disable max-lines -- the remote plugin sync dialog keeps loading, selection, risk notes, per-item progress and results in one place, matching the Skill/MCP dialogs. */
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircleIcon,
@@ -1591,8 +1591,8 @@ export function RemotePluginSyncDialog(props: RemotePluginSyncDialogProps) {
 
     return () => {
       cancelled = true;
-      // 远端目标失效会直接卸载 Dialog，绕过“同步中禁止关闭”的交互保护。
-      // 主动终止当前 run，避免旧目标上的后续步骤和结果继续落回已失效的 UI。
+      // A dead remote target unmounts the dialog directly, bypassing the no-close-while-syncing guard.
+      // Abort the current run so later steps/results on the dead target stop landing in a defunct UI.
       syncAbortControllerRef.current?.abort();
       syncAbortControllerRef.current = null;
     };
@@ -1623,8 +1623,8 @@ export function RemotePluginSyncDialog(props: RemotePluginSyncDialogProps) {
   const targetLabel = formatRemoteSkillSyncTarget(remoteTarget, workspacePath);
 
   const handleOpenChange = (nextOpen: boolean) => {
-    // plugin 同步是逐项远端 RPC；同步中关闭弹窗会让下次打开时重置为 loading/0 项，
-    // 但后台 RPC 仍在跑。同步中只拦截关闭请求，避免丢失进度状态。
+    // Plugin sync is per-item remote RPC; closing mid-sync resets to loading/0 on reopen
+    // while background RPCs continue. Intercept closes during sync to keep progress state.
     if (!shouldAllowRemotePluginSyncDialogOpenChange(step, nextOpen)) {
       return;
     }
@@ -1646,8 +1646,8 @@ export function RemotePluginSyncDialog(props: RemotePluginSyncDialogProps) {
   const stopPluginSync = (candidateId: string) => {
     stopRequestedRef.current.add(candidateId);
     stopWaitersRef.current.get(candidateId)?.();
-    // 远端 marketplace install/add 会占用插件存储锁；只在远程同步生成的
-    // operationId 上发送取消，避免误伤本地插件页的常规安装、启停和市场管理操作。
+    // Remote marketplace install/add holds the plugin storage lock; cancel only
+    // operationIds created by remote sync, never the plugin page's normal install/toggle/market actions.
     setSyncProgressById((current) => {
       const next = new Map(current);
       const previous = next.get(candidateId) ?? { logs: [], status: "queued" as const };

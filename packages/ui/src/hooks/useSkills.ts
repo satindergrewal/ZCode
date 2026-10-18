@@ -36,10 +36,10 @@ interface UseSkillsOptions {
 }
 
 /**
- * Composer 的 Skill catalog。
- * 无 prewarm 的 draft 以 workspace 当前扫描为 authority；prewarm/已有 Session 以对应
- * AgentRuntime 冻结快照为 authority。workspace/session/remote attachment/runtime 代次变化时，
- * 旧异步结果一律不得回填。
+ * The Composer's Skill catalog.
+ * Non-prewarmed drafts take the workspace's current scan as authority; prewarmed/live
+ * sessions take the owning AgentRuntime's frozen snapshot. On any workspace/session/remote
+ * attachment/runtime generation change, stale async results must never write back.
  */
 export function useSkills(options: UseSkillsOptions): ConversationSkillCatalogState {
   const resolution = useWorkspaceServicesResolution(
@@ -62,15 +62,17 @@ export function useSkills(options: UseSkillsOptions): ConversationSkillCatalogSt
     if (!options.enabled || !options.sessionId || !rpcReady) return;
     const subscription = services.zcodeAgentService.onAgentRuntimeRestarted((event) => {
       if (event.workspaceKey !== workspaceKey) return;
-      // runtime 重建后 workspace/session key 不变，旧 catalog 会继续命中。
-      // 显式推进代次，使冷恢复后的新 runtime 必须重新提供一次 Session authority。
+      // After a runtime rebuild the workspace/session key is unchanged, so the old catalog
+      // keeps hitting. Bump the generation explicitly so the post-cold-restore runtime must
+      // provide Session authority once more.
       setRuntimeRevision((current) => current + 1);
     });
     return () => subscription.dispose();
   }, [options.enabled, options.sessionId, rpcReady, services, workspaceKey]);
 
-  // 用 scope 身份隔离渲染：key 切换后的 effect 尚未执行时也只返回空态，避免旧 Session
-  // 或旧 remote attachment 的 Skill 在一帧内泄漏到新 Composer。
+  // Scope-identity isolates rendering: until the post-key-switch effect runs, return the
+  // empty state so a previous session's or remote attachment's Skills cannot leak into the
+  // new Composer for a frame.
   const requestScope = useMemo(
     () => ({}),
     [options.enabled, remoteSessionId, requestKey, rpcReady, services],
@@ -107,7 +109,7 @@ export function useSkills(options: UseSkillsOptions): ConversationSkillCatalogSt
       .catch((error: unknown) => {
         if (cancelled || seq !== requestSeqRef.current) return;
         const message = error instanceof Error ? error.message : String(error);
-        logger.warn("[useSkills] 拉取对话 Skill catalog 失败", {
+        logger.warn("[useSkills] failed to load conversation skill catalog", {
           error: message,
           requestKey,
         });

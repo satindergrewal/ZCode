@@ -1,28 +1,28 @@
-// TUI 常驻会话事件中继。
+// The TUI's persistent session-event relay.
 //
-// 单独成模块是为了让「换 app 时重挂」这条性质可被直接单测：若埋在 tui-prompt-handler
-// 的闭包里，只能靠一整套 app 工厂假件才能验，而漏挂的后果很安静——换 session 后 TUI 再也
-// 收不到出回合事件（dwf 进度、通知驱动回合），界面看起来完全正常。
+// A separate module so the reattach-on-app-swap property is directly unit-testable: buried in the tui-prompt-handler
+// closure it would need a full suite of app-factory fakes, and a missed attach fails quietly -- after a session swap the TUI
+// would silently stop receiving out-of-turn events (dwf progress, notice-driven turns) while looking perfectly normal.
 import type { SessionEvent } from "@zcode/contracts";
 
-/** 从 runtime 上读出订阅函数；读不到就返回 undefined（能力不在静态类型面上）。 */
+/** Reads the subscribe function off the runtime; undefined when absent (the capability is not on the static type face). */
 type SessionEventSubscriberReader = (
   runtime: unknown,
 ) => ((sink: { onSessionEvent: (event: SessionEvent) => void }) => () => void) | undefined;
 
 interface TuiSessionEventRelay {
-  /** 注册一个 sink；返回退订。首个 sink 会触发实挂。 */
+    /** Registers a sink; returns the unsubscribe. The first sink triggers the real attach. */
   addSink: (sink: (event: SessionEvent) => void) => () => void;
-  /** 换 app 后重挂：先断旧的，再挂到当前 runtime 上。无 sink 时不挂。 */
+    /** Reattach after an app swap: detach the old, attach to the current runtime. No-op with no sinks. */
   reattach: () => void;
-  /** 拆掉当前订阅（不清空 sink 注册表）。 */
+    /** Tears down the current subscription (does not clear the sink registry). */
   detach: () => void;
-  /** 当前是否挂着（测试与诊断用）。 */
+    /** Whether currently attached (for tests and diagnostics). */
   isAttached: () => boolean;
 }
 
 export function createTuiSessionEventRelay(input: {
-  /** 每次重挂时读当前 app 的 runtime——闭包读取而不是传值，才能跟上 replaceApp。 */
+    /** On each reattach, read the current app's runtime -- a closure read, not a value snapshot, so replaceApp is followed. */
   currentRuntime: () => unknown;
   readSubscriber: SessionEventSubscriberReader;
 }): TuiSessionEventRelay {
@@ -40,8 +40,8 @@ export function createTuiSessionEventRelay(input: {
     const subscribe = input.readSubscriber(input.currentRuntime());
     detachCurrent = subscribe?.({
       onSessionEvent: (event) => {
-        // 直接遍历 Set：JS 的 Set 迭代对「遍历中删除」是安全的（已删未访问的条目会被跳过），
-        // 所以 sink 在回调里退订不会破坏本次扇出，也不该再收到这一条。
+                // Iterate the Set directly: JS Set iteration is safe against removal-during-iteration (removed-unvisited entries are skipped),
+                // so a sink unsubscribing inside the callback neither breaks this fan-out nor receives this event again.
         for (const sink of sinks) sink(event);
       },
     });

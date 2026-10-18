@@ -1,5 +1,5 @@
 /**
- * slashCommandHelpers — 纯函数辅助工具，供 SlashCommandPlugin.tsx 使用
+ * slashCommandHelpers — pure helpers for SlashCommandPlugin.tsx
  */
 import { $getRoot, $getSelection, $isRangeSelection, $isTextNode } from "lexical";
 import type { AgentSummary, Locale, SkillSummary, ZCodeSlashCommand } from "@zcode/shared";
@@ -12,26 +12,27 @@ export interface SlashCommandPluginProps {
   container?: HTMLElement | null;
   workspacePath: string;
   workspaceIdentity?: string;
-  /** 已有 Session 的 id；null/undefined 表示新建草稿，决定 Skill catalog authority。 */
+  /** Existing session id; null/undefined means a new draft. Decides Skill catalog authority. */
   sessionId?: string | null;
   disabled?: boolean;
   excludedCommandNames?: readonly string[];
   /**
-   * App 层本地命令（如 `/side`）。命令目录仍以 CLI catalog 为权威；这里只允许渲染层
-   * 追加"选中即执行 UI 行为"的命令，不参与发送，也不写回 CLI 命令列表。
+   * App-level local commands (e.g. `/side`). The CLI catalog stays authoritative; the renderer
+   * may only append "select to run a UI action" commands — never sent, never written back to
+   * the CLI command list.
    */
   appCommands?: readonly AppSlashCommand[];
 }
 
-/** App 层斜杠命令：选中即执行 UI 行为（不插入 mention、不发送）。 */
+/** App-level slash command: selecting it runs a UI action (no mention inserted, nothing sent). */
 export interface AppSlashCommand {
-  /** 命令值（不含 `/`），如 "side"。 */
+  /** Command value without the `/`, e.g. "side". */
   value: string;
-  /** 本地化描述，直接展示在 `/` 面板。 */
+  /** Localized description, shown verbatim in the `/` panel. */
   description: string;
-  /** 额外搜索关键词；应同时包含中英文别名，保证两种输入习惯都能搜到。 */
+  /** Extra search keywords; should include both English and Chinese aliases so either input matches. */
   keywords?: readonly string[];
-  /** 选中命令后立即执行的 UI 行为。 */
+  /** UI action run as soon as the command is selected. */
   run: () => void;
 }
 
@@ -63,8 +64,8 @@ export function isAppSlashCommandSuggestion(suggestion: PromptInputSuggestionIte
 }
 
 /**
- * `/side` 门禁：草稿态没有父 session 可挂 child，辅助对话自身不允许再开辅助对话，
- * 只读与手机 viewport 与固定入口保持一致地隐藏。
+ * `/side` gating: a draft has no parent session to attach a child to, and a side chat cannot
+ * nest another side chat; read-only and mobile viewport hide it, matching the fixed entry.
  */
 export function shouldOfferSideSlashCommand(options: {
   isDraft: boolean;
@@ -78,17 +79,17 @@ export function shouldOfferSideSlashCommand(options: {
 }
 
 export function normalizeSlashCommandValue(name: string): string {
-  // ZCode Agent 在远端可能直接返回 "/init" 作为命令名。
-  // UI 的 value 需要去掉前导斜杠，否则插入 markdown 时会变成 "//init"，并影响 / 面板匹配。
+  // The remote agent may return "/init" as the command name. Strip the leading slash for the
+  // UI value, otherwise markdown insertion yields "//init" and / panel matching breaks.
   return name.trim().replace(/^\/+/, "");
 }
 
 export function buildSlashSuggestions(commands: ZCodeSlashCommand[]): PromptInputSuggestionItem[] {
   return commands.flatMap((command) => {
     const value = normalizeSlashCommandValue(command.name);
-    // UI 曾同时维护内建白名单、GLM `/goal` fallback 和 v4 追加目录，
-    // CLI catalog 丢失时仍会显示部分命令，掩盖 `/init` 与自定义命令缺失。命令发现
-    // 统一以 CLI protocol catalog 为权威，UI 不再追加命令或维护内建白名单。
+    // The UI used to keep a builtin allowlist, a GLM `/goal` fallback and a v4 append-list, so a
+    // missing CLI catalog still showed partial commands and hid missing `/init`/custom commands.
+    // Discovery now treats the CLI protocol catalog as the single authority; the UI appends nothing.
     if (!value) {
       return [];
     }

@@ -69,9 +69,10 @@ export const useRemotePinnedTaskStore = create<RemotePinnedTaskState>()((set) =>
       }));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      // 远端 pinned 是重连成功后的补充链路，读取失败不能反过来打断 workspace 恢复。
-      // 这里只记录状态和日志，让用户仍可进入 workspace，后续重连/刷新再补齐 pinned 列表。
-      logger.warn("[remotePinnedTaskStore] 读取远端 pinned task 失败", {
+      // Remote pinned tasks are a supplementary channel after successful reconnect; a read
+      // failure must not break workspace restore. Record state and log only, letting the
+      // user enter the workspace; a later reconnect/refresh refills the pinned list.
+      logger.warn("[remotePinnedTaskStore] Failed to load remote pinned tasks", {
         workspacePath,
         workspaceIdentity,
         error: message,
@@ -141,7 +142,7 @@ export async function refreshRemotePinnedTasksForSession({
 }): Promise<void> {
   const session = getRemoteWorkspaceSession(sessionId);
   if (!session) {
-    logger.warn("[remotePinnedTaskStore] 远端 session 尚未注册，跳过 pinned 读取", {
+    logger.warn("[remotePinnedTaskStore] remote session not registered; skipping pinned read", {
       sessionId,
       workspacePath,
       workspaceIdentity,

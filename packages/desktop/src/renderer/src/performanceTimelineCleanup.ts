@@ -7,9 +7,9 @@ export function startPerformanceTimelineCleanup(): void {
     return;
   }
 
-  // React 19.2 的 development build 会把组件渲染写入 Performance timeline。
-  // 这些 PerformanceMeasure 由 window.performance 原生列表强引用，长时间开发会堆到 GB 级；
-  // 这里定时清理只影响 DevTools 性能轨迹，不影响业务逻辑和生产包。
+  // React 19.2 development builds write component renders into the Performance timeline.
+  // window.performance strongly references those PerformanceMeasures; long dev sessions pile up GBs.
+  // This periodic cleanup trims DevTools traces only -- no app logic, nothing in production builds.
   cleanupTimer = window.setInterval(() => {
     window.performance.clearMeasures();
     window.performance.clearMarks();

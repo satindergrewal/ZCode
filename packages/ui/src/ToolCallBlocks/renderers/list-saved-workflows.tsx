@@ -100,10 +100,11 @@ function readResultRecord(value: unknown): ListSavedWorkflowsResult | null {
 }
 
 /**
- * 结果读取顺序：**display 通道优先**——v4 wire 上 output.text
- * 是 formatModelContent 的 XML 风格投影，下面的 JSON 探针对它永不命中（会掉进
- * raw 兜底卡）；legacy JSON 探针保留，兜老会话与非 v4 宿主。一个都读不出来就交回
- * fallback——空列表与「读不懂」必须可分辨，不能把解析失败画成「这个项目里没有工作流」。
+ * Read order: the display channel wins — on the v4 wire, output.text is formatModelContent's
+ * XML-style projection, which the JSON probes below never match (they would fall to the raw
+ * fallback card). The legacy JSON probes stay for old sessions and non-v4 hosts. If nothing
+ * parses, hand back the fallback: an empty list and "unreadable" must stay distinguishable —
+ * a parse failure must not render as "no workflows in this project".
  */
 function readListSavedWorkflowsResult(
   toolCall: ToolCallBlockRenderContext["toolCallNode"]["toolCall"],
@@ -137,15 +138,16 @@ function readListSavedWorkflowsResult(
 }
 
 /**
- * ListSavedWorkflows 的聊天卡。
+ * Chat card for ListSavedWorkflows.
  *
- * 为什么值得一个专用 renderer：这个工具名没登记在 shared 的已知工具表里，通用路径是
- * `FallbackToolCallBlock`，而它的默认 display model 没有 inlinePreview，于是会把
- * `JSON.stringify(toolCall)` 整包摊进聊天区——对这个工具正好是最坏情况，因为那包 JSON
- * 就是全部工作流的 description / whenToUse / args 声明。
+ * Why a dedicated renderer: this tool name is not in shared's known-tool table, so the
+ * generic path is `FallbackToolCallBlock`, whose default display model has no inlinePreview
+ * and dumps `JSON.stringify(toolCall)` into the chat — the worst case for this tool, since
+ * that JSON blob is every workflow's description / whenToUse / args declaration.
  *
- * 卡片只回答「有哪些、干什么用」；脚本本体本来就不在结果里（spec：一次列举不该把 20 段脚本
- * 灌进上下文）。坏文件单独一行——它们是**刻意可见**的，不静默跳过。
+ * The card answers only "which ones, for what"; script bodies are not in the result anyway
+ * (spec: one listing must not flush 20 scripts into context). Broken files get their own
+ * row — deliberately visible, never silently skipped.
  */
 export function ListSavedWorkflowsToolCallBlock(context: ToolCallBlockRenderContext) {
   const { intl } = useZCodeIntl();
@@ -166,7 +168,7 @@ export function ListSavedWorkflowsToolCallBlock(context: ToolCallBlockRenderCont
 
   const workflowCount = result?.workflows.length ?? 0;
   const invalidCount = result?.invalid.length ?? 0;
-  // 轻量 intl 没有 ICU 复数，单复数各用独立 message key（同 workflow.error/errors 的先例）。
+  // The lightweight intl has no ICU plurals; separate keys per cardinality (same precedent as workflow.error/errors).
   const countLabel = intl.formatMessage(
     {
       id:
@@ -186,7 +188,7 @@ export function ListSavedWorkflowsToolCallBlock(context: ToolCallBlockRenderCont
     { count: invalidCount },
   );
 
-  // ToolLayout 是 memo 组件：内联 JSX prop 每次渲染都是新引用，会让记忆化失效。
+  // ToolLayout is memoized: inline JSX props are fresh references per render and would break memoization.
   const primaryText = useMemo(
     () => (
       <span className="truncate text-foreground-subtlest">
@@ -267,7 +269,7 @@ export function ListSavedWorkflowsToolCallBlock(context: ToolCallBlockRenderCont
     );
   }, [emptyLabel, invalidLabel, result, scopeGlobalLabel, scopeProjectLabel]);
 
-  // 读不出结构化结果（老会话、失败、降级路径）就交回通用卡，而不是画一张空列表。
+  // When no structured result parses (old sessions, failures, degraded paths), hand back the generic card instead of drawing an empty list.
   if (!result) {
     return <FallbackToolCallBlock {...context} iconOverride={LIST_SAVED_WORKFLOWS_TOOL_ICON} />;
   }

@@ -29,8 +29,10 @@ function DialogOverlay({
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
       className={cn(
-        // Linux 旧标题栏避让让模态遮罩从 48px 以下开始，窗口顶部仍保持高亮且 tooltip 可见。
-        // renderer 自绘窗控位于同一窗口，模态态应与其它平台一致覆盖完整视口。
+        // Legacy Linux titlebar insets started the modal overlay below 48px, keeping the
+        // window top highlighted with tooltips visible. The renderer draws its own window
+        // controls in the same window, so modal state covers the full viewport like
+        // every other platform.
         "fixed inset-0 isolate z-50 bg-black/60 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
         className,
       )}
@@ -39,7 +41,7 @@ function DialogOverlay({
   );
 }
 
-// 圆角规范迁移：默认外壳统一 2xl，三个截图/附件预览入口显式保留 xl，内容层级独立计算。
+// Radius migration: default shells unify on 2xl; the three screenshot/attachment previews keep xl, with inner radii computed independently.
 function DialogContent({
   className,
   children,
@@ -58,8 +60,9 @@ function DialogContent({
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          // Electron 自绘标题栏下，弹窗可能会落进窗口顶部的 drag 区域。
-          // 如果不把弹窗内容整体标成 no-drag，右上角关闭按钮这类交互会被窗口拖拽命中吞掉。
+          // With Electron's custom titlebar, dialogs can land in the window's top drag
+          // region. Without marking dialog content no-drag, the close button and neighbors
+          // have their clicks swallowed by window dragging.
           "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-2xl border border-popover-border bg-popover p-4 text-ui-base/relaxed text-foreground shadow-md duration-100 outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 [app-region:no-drag]",
           className,
         )}

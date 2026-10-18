@@ -1,13 +1,14 @@
 /**
- * `chart` 预置渲染器的**实现**（recharts 在这个模块里，且只在这里）。
+ * The **implementation** of the `chart` preset renderer (recharts lives in this module, and only here).
  *
- * 不要直接从 index 静态导入它：recharts 在模块初始化阶段会触发 decimal.js-light 的 LN10 校验，
- * 在 Electron Linux 容器里能阻断整个 renderer 启动（同 `AppUsagePanel.tsx` 里记下的那次修复）。
- * 对外的入口是 `ArtifactChart.tsx`，它用 `lazy()` 把这个模块推到首屏之外。
+ * Never import it statically from the index: recharts triggers decimal.js-light's LN10 validation
+ * at module-init time, which can block the whole renderer startup inside the Electron Linux
+ * container (the same fix recorded in `AppUsagePanel.tsx`). The public entry is `ArtifactChart.tsx`,
+ * which uses `lazy()` to push this module off the first paint.
  *
- * 两种形态：
- * - `compact`：run 侧板卡片里的**无轴 sparkline + 最新值**；
- * - 全尺寸：`workflow-artifact` tab 里的带轴图 + 图例 + 参考线 + tooltip。
+ * Two shapes:
+ * - `compact`: axis-free **sparkline + latest value** in the run side-panel card;
+ * - full: axes + legend + reference line + tooltip in the `workflow-artifact` tab.
  */
 
 import { memo, useMemo } from "react";
@@ -49,15 +50,15 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart.js";
 
-/** 点多到这个数以上就不画点了：一条挤满圆点的线比没有点更难读。 */
+/** Above this many points, dots stop rendering: a line crowded with dots reads worse than none. */
 const MAX_VISIBLE_DOTS = 60;
 const FULL_MARGIN = { top: 8, right: 16, bottom: 0, left: 0 } as const;
 const COMPACT_MARGIN = { top: 4, right: 4, bottom: 4, left: 4 } as const;
 
 /**
- * 新点的揭示：React key 用条目的 `sequence`（稳定），所以只有**这一帧新挂载**的点会播动画，
- * 既有的点保持同一个 DOM 节点、不重播。
- * `motion-reduce` 下类名里的 `animate-none` 直接关掉。
+ * New-point reveal: the React key is the entry's `sequence` (stable), so only points **newly
+ * mounted this frame** animate; existing points keep their DOM node and never replay.
+ * Under `motion-reduce` the class's `animate-none` switches it off.
  */
 function renderRevealDot(props: DotItemDotProps) {
   const { cx, cy, payload, stroke, index } = props;
@@ -103,7 +104,7 @@ function seriesMarks(model: ChartModel, showDots: boolean) {
           fill={color}
           isAnimationActive={false}
           key={series.key}
-          // 点形是散点图上的次级编码（颜色之外的第二条身份线索），同折线的线型。
+          // Point shape is a secondary encoding on the scatter (a second identity cue besides color), mirroring the line style.
           shape={artifactSeriesSymbol(series.colorIndex)}
         />
       );
@@ -113,8 +114,9 @@ function seriesMarks(model: ChartModel, showDots: boolean) {
         connectNulls={false}
         dataKey={series.key}
         dot={showDots ? renderRevealDot : false}
-        // recharts 自己的入场动画会在每次数据变化时把**整条线**重画一遍；实时增长的图里
-        // 那就是每来一个点全线闪一次。这里关掉它，揭示动画只由新点的 CSS 负责。
+        // recharts' own entrance animation redraws the **whole line** on every data change; on a
+        // live-growing graph that is a full-line flash per point. Disable it here - reveal animation
+        // belongs to the new point's CSS alone.
         isAnimationActive={false}
         key={series.key}
         stroke={color}
@@ -127,17 +129,20 @@ function seriesMarks(model: ChartModel, showDots: boolean) {
 }
 
 /**
- * 真正的绘图体，`memo` 且带自定义比较：**只在点数 / 定义域 / 序列构成变化时重渲染**。
+ * The actual plot body, `memo`ized with a custom comparator: **re-renders only when point count,
+ * domain or series composition changes**.
  *
- * 理由是 portfolio 修过的第一帧冻结——recharts 会在 effect 里把 props 镜像进内部 store，
- * 父组件每次 render 都换一份 data 引用时，这条镜像链会被放大成成百上千次无意义更新。
- * 条目只追加，所以「点数 + 首尾 sequence + 定义域」足以判定数据是否真的变了。
+ * Rationale is the first-frame freeze fixed in portfolio - recharts mirrors props into its internal
+ * store inside an effect; when the parent hands a fresh data reference on every render, that mirror
+ * chain amplifies into hundreds of pointless updates. Entries are append-only, so
+ * count + first/last sequence + domain suffices to detect a real data change.
  */
 type PlotProps = { model: ChartModel; compact: boolean };
 
 /**
- * `memo` 的比较谓词（`true` = 跳过重渲染）。单独导出是为了能直接测——「什么时候不重画」
- * 是这张图的性能契约本身，把它藏在 memo 的第二实参里就没法钉住了。
+ * The memo comparator (`true` = skip re-render). Exported standalone for direct testing - "when
+ * not to redraw" is this chart's performance contract, and hidden as memo's second argument it
+ * could not be pinned by tests.
  */
 export function chartPlotPropsEqual(previous: PlotProps, next: PlotProps): boolean {
   if (previous.compact !== next.compact) {
@@ -157,7 +162,7 @@ export function chartPlotPropsEqual(previous: PlotProps, next: PlotProps): boole
   if (a.points.length !== b.points.length) {
     return false;
   }
-  // 首尾 sequence：点数没变但整批条目被替换过（冷恢复重取）时也能认出来。
+  // First/last sequence: recognizes a whole-batch replacement (cold-restore refetch) even at equal count.
   if (a.points[0]?.sequence !== b.points[0]?.sequence) {
     return false;
   }
@@ -178,7 +183,7 @@ export function chartPlotPropsEqual(previous: PlotProps, next: PlotProps): boole
 const ArtifactChartPlot = memo(function ArtifactChartPlot({ model, compact }: PlotProps) {
   const config = useMemo(() => buildChartConfig(model), [model]);
   const showDots = model.points.length <= MAX_VISIBLE_DOTS;
-  // 数值 x 才配数值轴；bar 天然是分类比较，一律走分类轴（band scale 才有正确的柱宽）。
+  // Numeric x gets a numeric axis; bar is categorical by nature and always uses the category axis (band scale is what yields correct bar widths).
   const categoricalX = model.type === "bar" || !model.x.numeric;
   const logDomain: [number, number] | undefined =
     model.scale === "log" && model.domain ? [model.domain.yMin, model.domain.yMax] : undefined;
@@ -250,8 +255,9 @@ const ArtifactChartPlot = memo(function ArtifactChartPlot({ model, compact }: Pl
 }, chartPlotPropsEqual);
 
 /**
- * 图例。**永远在场（≥1 条序列）**，且每条除了颜色还带自己的线型与最新值——
- * 身份从不只由颜色承担（见 palette.ts 里关于色槽在色觉障碍下不两两可分的那段）。
+ * Legend. **Always present (>= 1 series)**; each entry carries its line style and latest value
+ * besides color - identity never rests on color alone (see the palette.ts note on color slots not
+ * being pairwise distinguishable under color vision deficiency).
  */
 function ChartLegendRow({ model }: { model: ChartModel }) {
   const latest = model.points.at(-1);
@@ -279,7 +285,7 @@ function ChartLegendRow({ model }: { model: ChartModel }) {
             </svg>
             <span className="truncate text-foreground-subtle">{series.label}</span>
             {typeof value === "number" ? (
-              // 直接标注最新值：图例不只是一块色块 + 名字，它同时是这条序列此刻的读数。
+              // Annotate the latest value inline: the legend is not just a swatch + name, it is also this series' current reading.
               <span className="shrink-0 font-mono text-ui-xs text-foreground tabular-nums">
                 {series.unit ? `${value} ${series.unit}` : String(value)}
               </span>
@@ -291,7 +297,7 @@ function ChartLegendRow({ model }: { model: ChartModel }) {
   );
 }
 
-/** compact 形态右侧的「最新值」——sparkline 自己不带轴，数值得由它来交代。 */
+/** The compact shape's right-hand latest value - the sparkline has no axes, so this states the number. */
 function CompactLatestValue({ model }: { model: ChartModel }) {
   const series = model.series[0];
   const latest = model.points.at(-1);
@@ -332,7 +338,7 @@ export function ArtifactChartView({
 }) {
   const model = useMemo(() => {
     const built = applyArtifactItems("chart", spec, items);
-    // 色槽只有 6 个，多出来的序列不画——循环复用颜色会让两条序列长得一模一样。
+    // Only 6 color slots; extra series are not drawn - reused colors would make two series identical.
     return built.series.length > ARTIFACT_CHART_MAX_SERIES
       ? { ...built, series: built.series.slice(0, ARTIFACT_CHART_MAX_SERIES) }
       : built;

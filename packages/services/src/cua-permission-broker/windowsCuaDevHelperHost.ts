@@ -30,7 +30,7 @@ export type {
   WindowsCuaHelperHostOptions,
 } from "#src/cua-permission-broker/windowsCuaHelperHostSupport.js";
 
-/** authority 铸造兜底：config-provenance 随机数，与 node.ts 懒分支 spawn 同口径。 */
+/** Authority-minting fallback: config-provenance nonce, same basis as node.ts's lazy-branch spawn. */
 const mintRandomAuthority = (): string => randomBytes(16).toString("hex");
 
 const DEFAULT_STARTUP_TIMEOUT_MS = 30_000;
@@ -45,8 +45,8 @@ export type ManagedCuaProductHelperHost = CuaProductHelperHost & {
 };
 
 /**
- * Host 的 lifecycle tail 是唯一线性化边界：任何 fresh fork 都必须排在上一代 exact child
- * exit 之后。kill 仅是请求，不能把未观察到 exit 的进程误判为已经终止。
+ * The Host lifecycle tail is the only serialization boundary: any fresh fork must order after the
+ * previous generation's observed child exit. kill is a request, never proof a process died.
  */
 export class WindowsCuaHelperHost implements ManagedCuaProductHelperHost {
   private readonly childProcess: WindowsCuaChildProcessAdapter;
@@ -58,8 +58,9 @@ export class WindowsCuaHelperHost implements ManagedCuaProductHelperHost {
   private readonly childLifecycle: WindowsCuaChildLifecycle;
   private readonly authority: string;
   private handle: CuaHelperHandle | null = null;
-  // 只要 transport_ready 已经对外 resolve，Agent 就可能已经持有这组凭据；即使 full health
-  // 尚未完成，后续可恢复启动也必须复用它。显式 stop 会清掉该状态，避免 dispose 后复活旧 pipe。
+  // Once transport_ready resolves outward, Agents may already hold those credentials; later
+  // recoverable starts must reuse them even if full health never finished. Explicit stop clears
+  // the state so a disposed pipe never resurrects.
   private lastAgentVisibleTransport: Pick<CuaHelperHandle, "socketPath"> | null = null;
   private current: Generation | null = null;
   private lifecycleTail: Promise<void> = Promise.resolve();
@@ -74,7 +75,7 @@ export class WindowsCuaHelperHost implements ManagedCuaProductHelperHost {
   private transportReadyResolve: ((handle: CuaHelperTransportHandle) => void) | null = null;
   private transportReadyReject: ((error: unknown) => void) | null = null;
   private nextGeneration = 0;
-  // 外部 stop 是 disposal 边界；排队中的旧 start/restart 不得在其后重新 fork。
+  // An external stop is the disposal boundary; queued legacy start/restarts must not fork after it.
   private externalStopEpoch = 0;
 
   constructor(private readonly options: WindowsCuaHelperHostOptions) {
@@ -107,8 +108,8 @@ export class WindowsCuaHelperHost implements ManagedCuaProductHelperHost {
     }
     const pending = this.transportReadyInFlight;
     if (!pending) return Promise.reject(new Error("Windows Computer Use Helper is not starting"));
-    // 调用方通常会再套同一份有界 startup 预算；这里的本地 timer 保护直接调用者，
-    // 避免 transport promise 因 Helper 永久不回消息而悬挂。
+    // Callers usually wrap their own bounded startup budget; this local timer protects the direct
+    // caller so the transport promise cannot hang on a forever-silent Helper.
     return new Promise<CuaHelperTransportHandle>((resolve, reject) => {
       const timer = setTimeout(() => {
         reject(new Error(`Windows Computer Use Helper transport timed out after ${timeoutMs}ms`));
@@ -132,12 +133,13 @@ export class WindowsCuaHelperHost implements ManagedCuaProductHelperHost {
     if (this.startInFlight && this.startInFlightEpoch === stopEpoch) return this.startInFlight;
     this.createTransportReadyPromise();
     const transportReady = this.transportReadyInFlight;
-    // start() 既是 cold-start 入口，也是异常退出后的按需恢复入口。Host 已经暴露过的
-    // Agent-facing tuple 必须优先复用；只有从未暴露过 tuple（或显式 stop 后已清理）才 fresh。
+    // start() is both the cold-start entry and the on-demand recovery after an abnormal exit.
+    // Prefer any already-exposed Agent-facing tuple; go fresh only when none was ever exposed (or
+    // an explicit stop cleaned it).
     const preservedTransport = this.lastAgentVisibleTransport ?? undefined;
     const tracked = this.enqueue(() => this.startNow(stopEpoch, preservedTransport))
       .catch((error) => {
-        // 旧 start 可能在 stop 竞态中晚于新 generation 失败，只有仍持有同一 promise 时才能收口。
+        // A stale start can fail after a newer generation in a stop race; settle it only while it still holds the same promise.
         if (this.transportReadyInFlight === transportReady) {
           this.rejectTransportReady(error);
         }
@@ -151,7 +153,7 @@ export class WindowsCuaHelperHost implements ManagedCuaProductHelperHost {
       });
     this.startInFlight = tracked;
     this.startInFlightEpoch = stopEpoch;
-    // 外部 stop 会在调用方等待 start 之前同步中止它；保留原 Promise 语义，同时避免形成未处理 rejection。
+    // An external stop aborts the start synchronously before the caller awaits; keep the original promise semantics without creating an unhandled rejection.
     void tracked.catch(() => undefined);
     return tracked;
   }
@@ -200,14 +202,14 @@ export class WindowsCuaHelperHost implements ManagedCuaProductHelperHost {
     if (this.restartPreservingTransportInFlight) return this.restartPreservingTransportInFlight;
     const stopEpoch = this.externalStopEpoch;
     const tracked = this.enqueue(async () => {
-      // enqueue 会等待在途 start；在这里读取 handle 才能覆盖“授权回调早于首个 ready”竞态。
+      // enqueue awaits the in-flight start; reading the handle here covers the grant-callback-before-first-ready race.
       const previous = this.handle ?? this.lastAgentVisibleTransport;
       await this.stopNow("preserving-transport-restart");
       if (stopEpoch !== this.externalStopEpoch)
         throw new Error("Windows Computer Use Helper startup stopped");
       if (previous) {
-        // Helper 进程是可替换的 downstream；已有 Agent 绑定的是 host-facing named pipe，
-        // 恢复时复用它们，避免 Windows Helper 重启把 Agent 留在旧 pipe 上。
+        // The Helper process is replaceable downstream; existing Agents bind the host-facing named
+        // pipe. Reuse it on recovery so a Helper restart never strands Agents on the old pipe.
         return {
           handle: await this.startNow(stopEpoch, previous),
           reused: true,
@@ -259,13 +261,14 @@ export class WindowsCuaHelperHost implements ManagedCuaProductHelperHost {
       this.transportReadyResolve = resolve;
       this.transportReadyReject = reject;
     });
-    // start() 负责最终失败收口；直接等待 transport 的调用方也不能留下未处理 rejection。
+    // start() owns final failure settlement; callers awaiting transport directly must not leave unhandled rejections either.
     void this.transportReadyInFlight.catch(() => undefined);
   }
 
   private resolveTransportReady(handle: CuaHelperTransportHandle): void {
-    // transport_ready 已经可能被 spawn env 消费；从此刻起 tuple 就是 Agent-facing identity，
-    // 不能因为后续 full health 失败或子进程异常退出而在下一次 start 时改发新 pipe。
+    // transport_ready may already be consumed by a spawn env; from here the tuple is the
+    // Agent-facing identity and a later full-health failure or child crash must not swap in a new
+    // pipe on the next start.
     this.lastAgentVisibleTransport = {
       socketPath: handle.socketPath,
     };
@@ -280,8 +283,9 @@ export class WindowsCuaHelperHost implements ManagedCuaProductHelperHost {
   }
 
   private invalidateTransportReady(): void {
-    // transport_ready 是 generation 级承诺；Helper 退出后，已 resolve 的 promise
-    // 无法再 reject，但必须从 Host 上摘除，避免下一代 start 复用死 generation 的 tuple。
+    // transport_ready is a generation-level promise; after the Helper exits the resolved promise
+    // cannot reject, but it must be detached from the Host so the next start never reuses a dead
+    // generation's tuple.
     this.transportReadyResolve = null;
     this.transportReadyReject = null;
     this.transportReadyInFlight = null;
@@ -326,7 +330,7 @@ export class WindowsCuaHelperHost implements ManagedCuaProductHelperHost {
       });
     } catch (error) {
       const startupError = asError(error);
-      // fork 同步失败时没有 child/exit 事件可触发 fail()，必须主动终止本代 transport 等待。
+      // A synchronous fork failure emits no child/exit events to drive fail(); terminate this generation's transport wait explicitly.
       this.rejectTransportReady(startupError);
       this.childLifecycle.logFailure(id, undefined, "fork", startupError);
       return Promise.reject(startupError);
@@ -378,12 +382,12 @@ export class WindowsCuaHelperHost implements ManagedCuaProductHelperHost {
             pid: child.pid,
             errorClass: "unexpected-exit",
           });
-          // 这里只通知 Helper 状态失效；下次 CUA demand 复用已发布 tuple 恢复，不回收 Agent。
+          // Only mark the Helper state stale; the next CUA demand recovers via the already-published tuple. Never recycle Agents.
           this.options.onUnexpectedExit?.({ generation: id, pid: child.pid });
         }
       };
       const onMessage = (message: unknown) => {
-        // stop 后、旧进程退出前仍可能收到 ready；先检查代际，避免把已清除的 tuple 重新写回。
+        // ready can still arrive after stop but before the old process exits; check the generation first so a cleared tuple is never written back.
         if (generation.stopped || stopEpoch !== this.externalStopEpoch || this.current?.id !== id)
           return;
         const ready = parseReadyMessage(message);
@@ -421,15 +425,16 @@ export class WindowsCuaHelperHost implements ManagedCuaProductHelperHost {
             if (timer) clearTimeout(timer);
             const handle: CuaHelperHandle = {
               socketPath,
-              // Windows 走 named pipe，不参与 macOS 的冷启动 rendezvous（pipe 不是 fs 节点，
-              // 没有 rename 让渡语义）。Helper 直接 bind 这个 pipe 名，两者恒等。
+              // Windows uses named pipes and no macOS-style cold-start rendezvous (a pipe is not an
+              // fs node; no rename handover). The Helper binds this exact pipe name; the two are
+              // identical by construction.
               launchSocketPath: socketPath,
               pluginAuthority: this.authority,
               helperAppPath: this.options.runtime.entryPath,
               bundleId: health.bundleId,
               pid: health.pid,
             };
-            // 合并时保留 ready handle；transport_ready 已保存可恢复 tuple，不能只存 tuple 而丢掉运行状态。
+            // On merge keep the ready handle: transport_ready already saved the recoverable tuple, but storing only the tuple would drop liveness.
             this.handle = handle;
             this.logger.info(undefined, "Windows Computer Use Helper ready", {
               generation: id,
@@ -496,10 +501,10 @@ export class WindowsCuaHelperHost implements ManagedCuaProductHelperHost {
     this.handle = null;
     generation.stopped = true;
     generation.abort?.(new Error("Windows Computer Use Helper startup stopped"));
-    // settled generation 没有 abort rejecter，仍必须摘除旧 transport tuple，避免后续 start 复用死凭据。
+    // A settled generation has no abort rejecter, yet its transport tuple must still be detached so later starts never reuse dead credentials.
     this.invalidateTransportReady();
     const termination = this.terminateGeneration(generation, "stop");
-    // 外部 stop 在 tail 之前发起终止；预先消费拒绝，避免 deadline 先于 tail 接管时出现未处理 rejection。
+    // An external stop initiates termination before the tail; consume the rejection up front so the deadline beating the tail never yields an unhandled rejection.
     void termination.catch(() => undefined);
     return termination;
   }

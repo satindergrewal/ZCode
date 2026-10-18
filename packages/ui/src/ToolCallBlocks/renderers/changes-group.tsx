@@ -44,8 +44,9 @@ function resolveResponsiveFileChipCount({
   gap: number;
 }) {
   if (chipWidths.length === 0) return 0;
-  // 零可用宽度表示当前一枚 chip 都放不下，不能误解为无需裁剪。
-  // 返回 0 才会保留完整的 +N 提示，避免窄屏只露出被截断的文件名。
+  // Zero available width means not even one chip fits; never read it as "no trimming
+  // needed". Returning 0 keeps the full +N badge instead of a lone truncated filename on
+  // narrow screens.
   if (availableWidth <= 0) return 0;
   const allChipsWidth =
     chipWidths.reduce((total, width) => total + width, 0) +
@@ -57,7 +58,7 @@ function resolveResponsiveFileChipCount({
   for (const chipWidth of chipWidths) {
     const nextCount = visibleCount + 1;
     const nextVisibleWidth = visibleWidth + chipWidth;
-    // 仍有隐藏项时，布局包含 visible chips、+N 和两者之间的所有 gap。
+    // With hidden items pending, layout includes visible chips, the +N badge, and every gap in between.
     const requiredWidth = nextVisibleWidth + gap * nextCount + overflowWidth;
     if (requiredWidth > availableWidth) break;
     visibleWidth = nextVisibleWidth;
@@ -87,8 +88,9 @@ function ResponsiveFileChipList({
     if (!container) return;
     const boundary = container.closest<HTMLElement>("[data-tool-call-id]");
     const updateVisibleCount = () => {
-      // summary 是 shrink-to-content，按自身宽度测量会在隐藏 chip 后继续收缩。
-      // 以整行 ToolCall 的右边界计算，才能稳定得到当前真正可用的空间。
+      // summary is shrink-to-content: measuring its own width keeps shrinking after chips
+      // hide. Measure against the whole ToolCall row's right edge to get the space that is
+      // actually available, stably.
       const containerRect = container.getBoundingClientRect();
       const boundaryRight = boundary?.getBoundingClientRect().right ?? containerRect.right;
       const nextVisibleCount = resolveResponsiveFileChipCount({
@@ -185,8 +187,9 @@ export function ChangesGroupToolCallBlock(context: ToolCallBlockRenderContext) {
   const latestFile = latest?.summaries.at(-1);
   const hasResolvedFiles = files.length > 0;
   const count = hasResolvedFiles ? files.length : childToolCalls.length;
-  // Write/Edit 的流式 JSON 可能先到 content、后到 file_path。
-  // 路径尚不可解析时按已进入分组的 tool 计数，避免悬空分隔符和误导性的 0 files。
+  // Write/Edit streaming JSON may deliver content before file_path. Until the path
+  // resolves, count tools already in the group, avoiding a dangling separator and a
+  // misleading "0 files".
   const countText = intl.formatMessage(
     {
       id: hasResolvedFiles

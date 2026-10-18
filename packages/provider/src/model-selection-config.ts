@@ -29,8 +29,9 @@ export function resolveInitialModelSelection(input: {
   readonly configuredDefault?: ModelSelection;
   readonly registry: ProviderRegistryView;
 }): InitialModelSelectionResolution {
-  // 这里只构造 Host 的初始推荐，不解析已有会话意图。失效默认是可丢弃偏好，
-  // 应继续按 Registry 顺序推荐；不能把历史选择留空的规则误用于新草稿初始化。
+  // Builds only the Host initial recommendation; it does not parse existing session intent.
+  // A stale default is a discardable preference, so keep recommending in Registry order;
+  // the clear-history-selection rule must not leak into new-draft initialization.
   if (input.configuredDefault) {
     if (isSelectable(input.registry, input.configuredDefault)) {
       return {
@@ -40,7 +41,8 @@ export function resolveInitialModelSelection(input: {
     }
   }
 
-  // 仅用于全新草稿的 Host 初始推荐；历史未绑定状态不能进入这个初始化分支。
+  // Host initial recommendation for brand-new drafts only; a history-unbound state must
+  // not enter this branch.
   for (const provider of input.registry.providers) {
     if (provider.config.visibility === "hidden") continue;
     for (const model of provider.models) {
@@ -54,7 +56,7 @@ export function resolveInitialModelSelection(input: {
   return { source: "none" };
 }
 
-/** 仅在用户主动选模型或全新初始化时构造最高档；不能用于恢复/重解析已有选择。 */
+/** Builds the top tier only for explicit user model picks or fresh initialization; never for restoring/re-resolving an existing selection. */
 export function completeNewModelSelection(
   registry: ModelSelectionCompletionView,
   selection: ModelSelection,
@@ -72,9 +74,10 @@ export function completeNewModelSelection(
 }
 
 /**
- * 规范化一份待提交的 Selection。
- * 已有选择缺失或失效时只保留模型身份，等待用户选择档位；主动选模型另走 completion。
- * 任何执行入口都必须在此之后再次确认 Selection 完整，不能静默补档位。
+ * Normalize a Selection about to be committed.
+ * If the existing selection is missing or stale, keep only the model identity and wait for
+ * a tier pick; explicit model picks go through completion instead.
+ * Every execution entry must re-check Selection completeness afterwards; never fill a tier silently.
  */
 export function normalizeModelSelection(
   registry: ModelSelectionCompletionView,

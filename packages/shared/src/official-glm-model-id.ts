@@ -1,4 +1,4 @@
-// 只供官方模型名单、telemetry 模型白名单与单向迁移入口使用；不能用于 Registry 比较或通用请求改写。
+// For the official model roster, the telemetry allowlist, and the one-way migration entry only; never registry comparison or generic request rewriting.
 const canonicalIds = [
   "GLM-5.3",
   "GLM-5.3-Flash",
@@ -25,7 +25,7 @@ const canonicalIds = [
 ];
 const byLowercase = new Map(canonicalIds.map((id) => [id.toLowerCase(), id]));
 
-/** 官方 GLM 模型规范 ID 名单；telemetry 白名单以此为来源，新增官方模型时同步进入白名单。 */
+/** Official GLM model spec-id roster; the telemetry allowlist derives from it--new official models join the allowlist in the same change. */
 export const OFFICIAL_GLM_MODEL_IDS: readonly string[] = canonicalIds;
 
 export function normalizeOfficialGlmModelId(modelId: string): string {

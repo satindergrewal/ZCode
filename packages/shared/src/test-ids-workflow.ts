@@ -1,8 +1,8 @@
-// 动态工作流（dynamic workflow）相关的测试 id。
-// test-ids.ts 已顶到 oxlint max-lines 上限（400 行），工作流这一族整段拆出；
-// 仍从 @zcode/shared 桶文件导出，消费方 import 路径不变。
+// Test ids for dynamic workflows.
+// test-ids.ts sits at oxlint's max-lines cap (400), so this family split out;
+// still exported from the @zcode/shared barrel, import paths unchanged.
 
-// 已保存工作流的 GUI 中枢。
+// The saved-workflow GUI hub.
 export const TID_AUTOMATIONS_PAGE_TAB = "automations-page-tab";
 export const TID_WORKFLOWS_LIST = "workflows-list";
 export const TID_WORKFLOWS_EMPTY = "workflows-empty";
@@ -18,9 +18,9 @@ export const TID_WORKFLOW_LAUNCH_DIALOG = "workflow-launch-dialog";
 export const TID_WORKFLOW_LAUNCH_ARG = "workflow-launch-arg";
 export const TID_WORKFLOW_LAUNCH_TARGET = "workflow-launch-target";
 export const TID_WORKFLOW_LAUNCH_SUBMIT = "workflow-launch-submit";
-// 直接启动：实参窗行内错误区。会话顶部长出的是普通的轮尾 run 卡。
+// Direct launch: the args-pane inline error area. The session-top growth is the ordinary end-of-round run card.
 export const TID_WORKFLOW_LAUNCH_ERROR = "workflow-launch-error";
-// 轮尾 run 卡；后缀 = `${turnKey}-${toolCallId}`。
+// End-of-round run card; suffix = `${turnKey}-${toolCallId}`.
 export const TID_CHAT_WORKFLOW_RUN_DIGEST = "workflow-run-digest";
 export const TID_WORKFLOW_ACTION_MOVE = "workflow-action-move";
 export const TID_WORKFLOW_MOVE_DIALOG = "workflow-move-dialog";
@@ -37,21 +37,21 @@ export const TID_WORKFLOW_META_SAVE = "workflow-meta-save";
 export const TID_WORKFLOW_META_DISCARD = "workflow-meta-discard";
 export const TID_WORKFLOW_RUN_ROW = "workflow-run-row";
 
-// 用户面产物的四个表面。
+// The four surfaces of user-facing artifacts.
 //
-// ⚠ 术语：这里的 artifact 是脚本经 `artifact.*` **发布给用户看**的产出（文件 / markdown /
-// 看板），不是引擎内部 `RunSettlement.artifact` 那个「脚本顶层返回值」的同名词。
+// Terminology: artifact here is what the script published to the user via artifact.* (file/markdown/
+// board), not the engine-internal RunSettlement.artifact's "top-level return" homonym.
 //
-// 只有**入口级**的四样进这里（区、卡、tab 根、chip）：它们是桌面 e2e 的落脚点，两处各写一遍
-// 字面量迟早漂移。区内部的版本步进器、正文各 kind、头部动作仍是组件内的字面量，与 run 详情页
-// 其余分区（`workflow-run-questions` 等）保持同一习惯。
+// Only the **entry-level** four live here (section, card, tab root, chip): desktop e2e's landing spots; duplicated
+// literals would drift. In-section version stepper, per-kind bodies, and header actions remain component literals, matching the run detail
+// page's other sections (workflow-run-questions etc.).
 export const TID_WORKFLOW_ARTIFACTS_SECTION = "workflow-run-artifacts";
 export const TID_WORKFLOW_ARTIFACTS_TOGGLE = "workflow-run-artifacts-toggle";
 export const TID_WORKFLOW_ARTIFACT_CARD = "workflow-run-artifact-card";
-/** `workflow-artifact` 侧板 tab 的根节点。 */
+/** Root of the workflow-artifact side-panel tab. */
 export const TID_WORKFLOW_ARTIFACT_PANE = "workflow-artifact-pane";
-/** 中枢（运行历史行 / 详情页「最近产物」）上的 chip。 */
+/** Chip on the hub (run history row / detail page's recent artifacts). */
 export const TID_WORKFLOW_ARTIFACT_CHIP = "workflow-run-artifact-chip";
-/** 会话里终态通知行折叠头部上的 chip——与中枢那枚**刻意不同 id**：两处的载荷来源不同，
- *  e2e 要能分别指到「通知行上出现了 chips」和「中枢历史行上出现了 chips」。 */
+/** Chip on the collapsed header of the session's terminal notice row--deliberately a different id from the hub's: */
+// the payloads differ, and e2e must target "chips on the notice row" and "chips on the hub history row" separately.
 export const TID_CHAT_WORKFLOW_ARTIFACT_CHIP = "workflow-notification-artifact-chip";

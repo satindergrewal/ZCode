@@ -20,9 +20,9 @@ export type StreamRecoveryAnchorKind =
   | "tool_cancelled";
 
 /**
- * stream recovery 作废半截 assistant 输出时写在 transcript 上的标记。
- * 它只是一段被丢弃的 tail，不是本轮失败：压缩/fork 边界靠 error 字段把半截输出隔离，
- * 冷恢复与子会话终态判定必须把它当非终态跳过，和 live 投影一致。
+ * Marker written to the transcript when stream recovery voids a half-written assistant output.
+ * Just a discarded tail, not a turn failure: compaction/fork boundaries use the error field to isolate the partial
+ * output; cold recovery and child-session terminality must skip it as non-terminal, same as live projection.
  */
 export const STREAM_RECOVERY_DISCARDED_ERROR_NAME = "StreamRecoveryDiscarded";
 export const STREAM_RECOVERY_DISCARDED_FINISH = "stream_recovery_discarded";

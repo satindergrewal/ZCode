@@ -158,9 +158,10 @@ export const ToolOutput = ({ className, output, errorText, ...props }: ToolOutpu
         )}
       >
         {errorText ? (
-          // 工具失败时很多 provider 会把错误同时塞进 output.error 和原始 payload。
-          // 之前这里会一边显示错误，一边继续把 JSON result 整块渲染出来，视觉上像“报错被参数淹没”。
-          // 失败态只保留可读错误文本，避免用户继续读无效结构化数据。
+          // Many providers put the error in both output.error and the raw payload. The old
+          // render showed the error and dumped the whole JSON result, reading like an error
+          // drowned in arguments. The failed state keeps only the readable message, not a
+          // useless structure to parse visually.
           <div className="whitespace-pre-wrap p-3">{errorText}</div>
         ) : null}
         {Output}

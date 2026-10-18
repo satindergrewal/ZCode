@@ -1,7 +1,7 @@
 import type { ExecutionShellSelection } from "@zcode/contracts";
 
-// provider-visible embedded branch 已默认开启；执行层仅在明确支持 POSIX
-// shell function 的 session shell 中注入 find()/grep() alias。
+// The provider-visible embedded branch is on by default; the execution layer injects find()/grep() aliases only into
+// session shells that explicitly support POSIX shell functions.
 const ENABLE_EMBEDDED_SEARCH_BASH_PRELUDE = true;
 
 export function shouldInjectEmbeddedSearchBashPrelude(): boolean {

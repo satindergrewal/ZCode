@@ -29,8 +29,8 @@ function registerPromptClipboard(editor: LexicalEditor): () => void {
     try {
       event.clipboardData.setData("text/plain", $getPromptSelectionMarkdown(atomic));
     } catch {
-      // 根因：返回 false 会继续进入 PlainTextPlugin 的默认 CUT，写入失败仍可能删除选区。
-      // 消费失败事件，保留草稿，让用户可以再次复制/剪切。
+      // Root cause: returning false falls through to the PlainTextPlugin default CUT, which can still delete the selection when the write fails.
+      // Handle the failure event and keep the draft so the user can copy/cut again.
       event.preventDefault();
       return true;
     }

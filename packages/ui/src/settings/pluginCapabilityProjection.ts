@@ -30,8 +30,8 @@ interface PluginSettingsGroups {
 }
 
 /**
- * 设置页只展示已物化的插件；Agent 为保留目标 Host 配置而返回的 missing 投影不能
- * 进入 Installed / Built-in，否则会出现“已安装分组 + 未安装状态”的矛盾行。
+ // The settings page shows materialized plugins only; missing projections the Agent returns to preserve the target Host's config must
+ // not enter Installed/Built-in, else contradiction rows appear (installed group plus not-installed state).
  */
 export function partitionPluginsForSettings(
   plugins: readonly ZCodePluginInfo[],
@@ -75,9 +75,9 @@ export function selectPluginsForScope(
   _installedPlugins: readonly ZCodeInstalledPluginSummary[],
   _scope: ZCodePluginScope,
 ): ZCodePluginInfo[] {
-  // User / Workspace 已经由 plugins/list(configScope) 返回各自的配置投影。
-  // 这里不能再按 enabledSource/rootSource 做“归属”过滤，否则 Workspace 会丢掉继承 User
-  // 的 Host inventory，User 也会被当前 Workspace override 污染后的来源字段误删。
+  // User / Workspace config projections already arrive via plugins/list(configScope).
+  // Do not re-filter by enabledSource/rootSource ownership, or Workspace loses User-inherited
+  // Host inventory and User loses source fields polluted by the Workspace override.
   return [...plugins];
 }
 
@@ -101,7 +101,7 @@ export function selectSkillsForScope(
     const matchingIds = skill.pluginName
       ? scopedPluginIdsByName.get(canonicalPluginName(skill.pluginName))
       : undefined;
-    // 旧协议没有 pluginId 时，仅在名称唯一的兼容场景下回退，避免跨 marketplace 合并。
+    // Without pluginId (legacy), fall back only when the name is unique, avoiding cross-marketplace merges.
     return matchingIds?.length === 1;
   });
 }

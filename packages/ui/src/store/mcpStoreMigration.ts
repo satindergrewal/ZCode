@@ -108,7 +108,7 @@ export async function migrateStoredCommonMcpToZCodeAgent(
     return nativeServers;
   }
 
-  // 旧通用 MCP 保存在 localStorage，不迁移就直接去掉 common 读取会让用户配置从设置页和运行时消失。
+  // Legacy generic MCP servers live in localStorage; dropping the common read without migration would vanish user config from settings and runtime.
   const migration = await importLegacyCommonServersToZCodeAgent(
     platform,
     legacyServers,
@@ -116,7 +116,7 @@ export async function migrateStoredCommonMcpToZCodeAgent(
     "localStorage:zcode-mcp-config",
   );
   if (migration.completed) {
-    // 只有确认写入 zcode agent 目录后才清理旧数据，避免 Web 端没有 desktop bridge 时丢配置。
+    // Clean up old data only after a confirmed write into the zcode agent dir, so web without the desktop bridge keeps its config.
     clearLegacyCommonMcpServers();
   }
   if (!migration.changed) {

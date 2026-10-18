@@ -5,25 +5,25 @@ import {
   PlatformChannels,
 } from "@zcode/shared";
 
-// Coding Plan 官网页 preload：
-// - 在官网页主世界挂 window.zcodeBridge，暴露三个能力：
-//   1) notifyPurchaseComplete：购买完成后通过 sendToHost 通知 host renderer；
-//   2) getLang / onLangChange：读取 App 当前 locale 并订阅运行时切换；
-//   3) getReportContext：读取 App 注入的购买来源上下文；
-//   4) openExternal：用系统默认浏览器打开外链。webview 内 <a target="_blank">
-//      默认会被 setWindowOpenHandler 路由到内部 Browser tab，但官网侧希望
-//      条款/管理等外链直接拉起系统浏览器，由官网脚本拦截后调此方法转发。
-// - getLang 读 main world 的 window.__zcodeLang__（由 App executeJavaScript 注入）；
-//   onLangChange 在 main world 监听 zcode-coding-plan-lang-change CustomEvent
-//   （同样由 App executeJavaScript 在 locale 变化时派发）。
-//   因为整个 bridge 通过 contextBridge.executeInMainWorld 挂在 main world，
-//   与页面脚本共享同一 window，事件能通。
-// - 官网页主世界拿不到 Node / ipcRenderer 原语，只暴露业务函数。
-// 参照 embeddedBrowserJavaScriptDialog.ts 的 contextBridge.executeInMainWorld 模式
-// （sandbox=true + contextIsolation=true 下可用，已有先例）。
+// Coding Plan storefront preload:
+// - mounts window.zcodeBridge in the page main world, exposing:
+//   1) notifyPurchaseComplete: tells the host renderer via sendToHost once purchase completes;
+//   2) getLang / onLangChange: reads the app locale and subscribes to runtime switches;
+//   3) getReportContext: reads the app-injected purchase attribution context;
+//   4) openExternal: opens external links in the system browser. <a target="_blank"> in the webview
+//      is routed into an internal browser tab by setWindowOpenHandler, but the storefront wants
+//      terms/admin links in the real browser; its script intercepts and forwards via this method.
+// - getLang reads window.__zcodeLang__ in the main world (injected via app executeJavaScript);
+//   onLangChange listens for the zcode-coding-plan-lang-change CustomEvent in the main world
+//   (also dispatched via app executeJavaScript on locale change).
+//   The whole bridge mounts via contextBridge.executeInMainWorld, sharing the page window,
+//   so the event is received.
+// - The storefront main world has no Node/ipcRenderer primitives; only business functions are exposed.
+// Pattern copied from embeddedBrowserJavaScriptDialog.ts contextBridge.executeInMainWorld
+// (usable with sandbox=true + contextIsolation=true; precedent exists).
 //
-// 注入时机：Electron webview 在 will-attach-webview 钩子里按 params.src 判断为官网购买页时，
-// 把 webPreferences.preload 切到本文件（见 desktopWindowChrome.ts）。
+// Injection timing: in will-attach-webview, when params.src is the storefront purchase page,
+// switch webPreferences.preload to this file (see desktopWindowChrome.ts).
 
 const PUBLIC_BRIDGE_KEY = "zcodeBridge";
 const NATIVE_BRIDGE_KEY = "__zcodeCodingPlanWebviewNativeBridge__";
@@ -44,8 +44,8 @@ function isTrustedCodingPlanBridgeLocation(): boolean {
     }
     if (!url.pathname.includes("coding-plan")) return false;
     if (url.searchParams.get("embedded") === "app") return true;
-    // PayPal 回跳页本身不带 embedded=app，但 returnTo 指回内嵌购买页；
-    // 该页支付成功后仍需 zcodeBridge.notifyPurchaseComplete 通知 App 刷新模型设置。
+    // The PayPal return page lacks embedded=app but returnTo points back to the embedded purchase page;
+    // after payment it still needs zcodeBridge.notifyPurchaseComplete so the app refreshes model settings.
     if (!url.pathname.endsWith("/coding-plan/payment/callback")) return false;
     const returnTo = url.searchParams.get("returnTo");
     if (!returnTo) return false;
@@ -72,8 +72,8 @@ interface CodingPlanNativeBridge {
   openExternal(url: string): void;
 }
 
-// Coding Plan guest 导航到 PayPal 时仍会复用同一个 preload 配置。
-// bridge 只允许暴露给可信官网购买页，避免第三方授权页继承 App 通信能力。
+// The Coding Plan guest keeps the same preload config when navigating to PayPal.
+// Expose the bridge only to the trusted storefront purchase page; third-party auth pages inherit nothing.
 if (isTrustedCodingPlanBridgeLocation()) {
   contextBridge.exposeInMainWorld(NATIVE_BRIDGE_KEY, {
     notifyPurchaseComplete(payload: NotifyPurchaseCompletePayload) {
@@ -83,8 +83,8 @@ if (isTrustedCodingPlanBridgeLocation()) {
           timestamp: Date.now(),
         } satisfies import("@zcode/shared").CodingPlanPurchaseCompletePayload);
       } catch {
-        // host renderer 尚未 attach 或 webview 被销毁时 sendToHost 会抛；
-        // 官网页自身不依赖此调用成功，静默即可。
+        // sendToHost throws once the host renderer detaches or the webview is destroyed;
+        // the page does not depend on success, so stay silent.
       }
     },
     openExternal(url: string) {
@@ -96,7 +96,7 @@ if (isTrustedCodingPlanBridgeLocation()) {
           url: parsed.toString(),
         });
       } catch {
-        // 非法 URL 忽略，避免官网页通过 bridge 发送任意 IPC payload。
+        // Ignore malformed URLs; keep arbitrary IPC payloads off the bridge.
       }
     },
   } satisfies CodingPlanNativeBridge);
@@ -120,9 +120,9 @@ if (isTrustedCodingPlanBridgeLocation()) {
           }
           nativeBridge.notifyPurchaseComplete(payload);
         },
-        // 返回 App 当前 locale；App 尚未注入时为 null（website 据此判断是否嵌入环境）。
+        // Returns the app locale, null before injection (the site detects embed mode with it).
         getLang() {
-          // 注意：executeInMainWorld 的 func 体不经过 TS 编译，不能用 as 断言等 TS 语法。
+          // executeInMainWorld function bodies skip TS compilation: no as-casts or TS-only syntax.
           const value = (window as unknown as Record<string, unknown>)[langVar];
           return value === "zh-CN" || value === "en-US" ? value : null;
         },
@@ -133,8 +133,8 @@ if (isTrustedCodingPlanBridgeLocation()) {
           }
           return value as CodingPlanReportContext;
         },
-        // 订阅 App locale 运行时变化，返回取消订阅函数。
-        // App locale 变化时用 executeJavaScript 派发 zcode-coding-plan-lang-change 事件。
+        // Subscribe to runtime app-locale changes; returns an unsubscribe function.
+        // Locale changes dispatch zcode-coding-plan-lang-change via executeJavaScript.
         onLangChange(callback: (locale: "zh-CN" | "en-US") => void) {
           const handler = (event: Event) => {
             const detail = (event as CustomEvent<{ locale?: unknown }>).detail;

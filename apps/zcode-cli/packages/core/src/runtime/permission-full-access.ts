@@ -14,7 +14,7 @@ import {
 
 const appliedGrants = new WeakMap<AgentRuntimeInternal, Set<string>>();
 
-/** 完全访问只改当前任务；receipt 固定目标集合，发布失败后不能重新抓取后来队列。 */
+/** Full access affects the current task only; the receipt pins the target set, and later queues are not re-grabbed after a failed publish. */
 export async function grantPermissionFullAccess(
   this: AgentRuntimeInternal,
   interactionId: string,
@@ -85,7 +85,7 @@ export async function grantPermissionFullAccess(
       recover: () => grantPermissionFullAccess.call(this, interactionId),
     });
     const ids = new Set(payload.permissionGrant!.queueItemIds);
-    // 事务已提交：之后即使传输取消也必须完成内存和投影发布，不能制造半个授权。
+    // Commit is done: even a cancelled transport must complete the memory/projection publish — no half-grants.
     const applied = appliedGrants.get(this) ?? new Set<string>();
     if (!applied.has(interactionId)) {
       this.lastPermissionGrantId = interactionId;

@@ -1,8 +1,9 @@
 const PLAYWRIGHT_DEFAULT_TIMEOUT_MS = 3_000;
 
 /**
- * 内置浏览器对常规 Playwright 操作使用短失败预算：默认 3s，且由调用点给出上限。
- * 旧 IAB 直接采用 30s，导致猜错 locator 后长时间无效轮询；统一 normalizer 避免各 adapter 再次漂移。
+ * In-app browser Playwright commands use a short failure budget: 3s by default, capped
+ * by the call site. The old IAB used 30s, causing long useless polling after a wrong
+ * locator guess; this shared normalizer keeps every adapter on the same budget.
  */
 export function normalizePlaywrightTimeout(
   timeoutMs: number | undefined,

@@ -314,7 +314,7 @@ function hasReadStateChanged(
 
   const currentMtimeMs = currentRead.revision?.mtimeMs;
   if (lastRead.mtimeMs !== undefined && currentMtimeMs !== undefined) {
-    // 让已确认内容未变的 Write 被误判为 stale。
+    // so a Write with unchanged confirmed content is misjudged as stale.
     const normalizedCurrentMtimeMs = normalizeReadFileStateMtimeMs(currentMtimeMs);
     const normalizedLastReadMtimeMs = normalizeReadFileStateMtimeMs(lastRead.mtimeMs);
     const mtimeAdvanced =

@@ -17,16 +17,16 @@ export interface TransparentWindowBootstrap {
 }
 
 /**
- * showInactive 后 Viz surface 建立前的有界 presentation grace：同 turn 读回会抛
- * UnknownVizError（并发时曾 SIGSEGV）。所有"刚 showInactive 就要 capture"的路径
- * （activity pump、整幅 capture）都必须遵守同一常量。
+ * * Bounded presentation grace between showInactive and Viz surface creation: same-turn readback throws
+ * UnknownVizError (and once SIGSEGV'd under concurrency). Every capture-right-after-showInactive path
+ * (activity pump, full capture) shares this one constant.
  */
 export const TRANSPARENT_WINDOW_PRESENTATION_GRACE_MS = 100;
 
 /**
- * 为 macOS hide-close 后才创建的 guest 提供一次对用户不可见的窗口级 presentation。
+ * Grants guests created after a macOS hide-close one invisible window-level presentation.
  *
- * 返回 undefined 表示不需要 bootstrap，false 表示当前窗口无法安全 bootstrap。
+ * undefined: bootstrap unnecessary; false: this window cannot bootstrap safely.
  */
 export function startBrowserScreenshotTransparentWindowBootstrap(options: {
   win: BrowserWindowForTransparentBootstrap;
@@ -111,15 +111,15 @@ export function startBrowserScreenshotTransparentWindowBootstrap(options: {
     }
   };
   const handleFocus = () => {
-    // 透明 bootstrap 与用户从 Dock/second-instance 主动恢复窗口可能竞争。
-    // focus 表示窗口所有权已回到用户；这里只恢复透明度，后续 Ready/release 禁止再次 hide。
+    // Transparent bootstrap races user-driven restores from Dock/second-instance.
+    // focus means the user owns the window again: restore opacity only, and later Ready/release must not hide again.
     release(true);
   };
 
   try {
-    // owner hidden 后才 attach 的 guest 从未获得 compositor 首帧；capturer count
-    // 只能维持已有 surface。必须先透明再 showInactive，给 guest 一次不可见的 presentation
-    // opportunity，并在 Ready/release 时恢复原窗口状态。
+    // Guests attached after the owner hid never got a compositor frame; capturer counts
+    // only preserve existing surfaces. Transparentize first, then showInactive, giving one invisible
+    // presentation opportunity, restoring the prior window state on Ready/release.
     if (options.hideTaskbarDuringBootstrap) {
       win.setSkipTaskbar?.(true);
       taskbarHidden = true;

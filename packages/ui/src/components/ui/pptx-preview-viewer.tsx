@@ -148,9 +148,10 @@ function RenderedPage({
     if (!frame) {
       return;
     }
-    // 幻灯片内部 overflow:hidden 容器的滚动条已被全局隐藏，但选区拖拽自动滚动、
-    // 链接焦点 scrollIntoView 等原生行为仍能滚动它们，内容会无声偏移且无法拖回。
-    // scroll 不冒泡，这里用捕获监听把内部任何滚动偏移复位。
+    // Scrollbars of the slide's inner overflow:hidden containers are globally hidden,
+    // yet native behaviors (selection-drag autoscroll, link-focus scrollIntoView) still
+    // scroll them, silently shifting content with no way to drag back. scroll does not
+    // bubble, so a capture listener resets any internal offset.
     const resetScroll = (event: Event) => {
       const target = event.target;
       if (target instanceof HTMLElement && (target.scrollTop !== 0 || target.scrollLeft !== 0)) {
@@ -190,8 +191,9 @@ function RenderedPage({
           }
         },
       });
-      // PPTX renderer 会把 OOXML 外链直接写成 <a href>；必须在页面挂载点
-      // 统一净化并阻断主 renderer 导航，同时覆盖异步追加的链接节点。
+      // The PPTX renderer writes OOXML external links as plain <a href>; sanitize and
+      // intercept navigation at the page mount point, covering asynchronously added
+      // anchors too.
       disposeLinkSafety = installDocumentLinkSafety(mount, onOpenBrowserUrl);
       void handle.ready.catch(reportRenderError);
     } catch (error) {
@@ -199,7 +201,7 @@ function RenderedPage({
     }
 
     return () => {
-      // dispose() 不保证 ready Promise 同步结束；先取消回调，避免已卸载页面的迟到错误写入下一次会话。
+      // dispose() does not guarantee the ready promise settles in sync; cancel callbacks first so late errors from an unmounted page cannot leak into the next session.
       cancelled = true;
       disposeLinkSafety?.();
       handle?.dispose();
@@ -216,9 +218,10 @@ function RenderedPage({
         height: document.pageSize.height * scale,
       }}
     >
-      {/* renderer mount ref 曾同时绑定这一 React 容器和内层节点，cleanup 的
-          replaceChildren() 会误删 selection overlay，随后 React removeChild 因节点已不存在而崩溃。
-          renderer 只能操作下面不包含 React 子节点的独立 leaf mount。 */}
+      {/* The renderer mount ref used to bind both this React container and the inner
+          node; cleanup's replaceChildren() deleted the selection overlay and React's
+          removeChild then crashed on a missing node. The renderer may only touch the
+          dedicated leaf mount below, which holds no React children. */}
       <div
         data-zcode-pptx-render-surface=""
         className="absolute left-0 top-0 origin-top-left"
@@ -252,8 +255,11 @@ function RenderedPage({
             if (isSamePresentationElement(hitElement, selectedElement)) {
               return;
             }
-            // 选中浮层覆盖真实文本，且底层页面禁用了指针命中，浏览器无法创建原生文字 Selection。
-            // 含文本元素高亮后只放行其 bounds；bounds 外仍由稳定元素模型切换选择，避免打开底层超链接。
+            // The selection overlay covers the real text and the page below disables hit
+            // testing, so the browser cannot create a native text selection. Once a
+            // text-bearing element is highlighted, pass through only its bounds; outside,
+            // the stable element model keeps handling selection so underlying links stay
+            // closed.
             event.preventDefault();
             event.stopPropagation();
             if (hitElement) {
@@ -264,7 +270,7 @@ function RenderedPage({
             if (!selectionMode) {
               return;
             }
-            // 文字划选结束后的 click 不得恢复 PPTX 内部跳转；原生 Selection 已在 pointer 序列中完成。
+            // The click ending a text selection must not re-trigger internal links; native selection completed during the pointer sequence.
             event.preventDefault();
             event.stopPropagation();
           }}
@@ -516,12 +522,12 @@ export function PptxPreviewViewer({
         if (cancelled || generation !== generationRef.current) {
           return;
         }
-        logger.error("[PptxPreviewViewer] PPTX 解析失败", error);
+        logger.error("[PptxPreviewViewer] Failed to parse PPTX", error);
         setLoadError(true);
       });
 
     return () => {
-      // open() 的 Promise 不会因 effect cleanup 自动取消；generation 让旧会话的迟到结果只能释放资源，不能污染新会话状态。
+      // open()'s promise is not cancelled by effect cleanup; the generation counter lets late results from an old session only release resources, never mutate the new session.
       cancelled = true;
       if (generation === generationRef.current) {
         generationRef.current += 1;
@@ -553,8 +559,9 @@ export function PptxPreviewViewer({
 
   const handleKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLDivElement>) => {
-      // 评论草稿的 Textarea 经 Popover Portal 渲染，但仍在 React 树内向此处冒泡；
-      // 只豁免 INPUT 会让方向键在评论框里翻页，并连带清空未提交的评论。
+      // The comment draft's textarea renders via a popover portal but still bubbles
+      // here through the React tree; exempting only INPUT would page prev/next while
+      // typing and wipe the unsaved comment.
       const target = event.target as HTMLElement;
       if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) {
         return;
@@ -562,7 +569,7 @@ export function PptxPreviewViewer({
       if (event.key === "Escape" && selectionMode) {
         event.preventDefault();
         if (aiEditDraft) {
-          // 编辑评论时 Esc 只回退到 AI 编辑条，避免误按直接丢弃已输入内容。
+          // While editing a comment, Esc only returns to the AI edit bar so a stray press cannot wipe typed text.
           setAiEditDraft(null);
           return;
         }
@@ -600,7 +607,7 @@ export function PptxPreviewViewer({
     if (generation !== generationRef.current) {
       return;
     }
-    logger.error("[PptxPreviewViewer] PPTX 页面渲染失败", error);
+    logger.error("[PptxPreviewViewer] Failed to render PPTX page", error);
     setLoadError(true);
   }, []);
   const handlePageNavigate = useCallback(
@@ -611,8 +618,10 @@ export function PptxPreviewViewer({
     if (!referenceNavigation) {
       return;
     }
-    // 引用跳转的入口位于 Composer；旧选择浮层若继续存在，会让用户误以为引用页定位同时恢复了元素。
-    // 因此先关闭 generation-local 选择，再等待文件存在性校验和文档解析完成后尝试页码定位。
+    // Reference jumps originate in the composer; a stale selection overlay would suggest
+    // the element selection revived along with the page. Close the generation-local
+    // selection first, then attempt page anchoring once the file check and document parse
+    // settle.
     setSelectionMode(false);
     setSelectedElement(null);
     setAiEditDraft(null);
@@ -688,8 +697,9 @@ export function PptxPreviewViewer({
       const normalizedComment = comment.trim();
       const referenceGeneration = generationRef.current;
       setAddingReference(true);
-      // 部分文字划选曾覆盖完整 element.text，导致 textFingerprint 锁定子串，
-      // 而 OOXML resolver 校验的是整个 shape/cell。完整文本用于冲突校验，子串只作模型上下文。
+      // Partial text selections used to cover the full element.text, locking the
+      // textFingerprint to a substring while the OOXML resolver validates the whole
+      // shape/cell. Full text is for conflict checks; the substring is model context only.
       void createPptxElementReference({
         element: selectedElement,
         ...aiEditDraft,
@@ -706,7 +716,7 @@ export function PptxPreviewViewer({
         })
         .catch((error: unknown) => {
           if (referenceGeneration === generationRef.current) {
-            logger.error("[PptxPreviewViewer] 创建 PPTX 元素引用失败", error);
+            logger.error("[PptxPreviewViewer] Failed to create PPTX element reference", error);
           }
         })
         .finally(() => {
@@ -740,7 +750,7 @@ export function PptxPreviewViewer({
         await import("@/presentation/presentationPdfPrintExport.js");
       printHost = await renderPresentationToPrintHost(document, window.document);
       const printResult = await printPageToPdf();
-      // 拿到 PDF 字节立即释放打印 DOM，避免保存对话框期间占着全量页面的内存
+      // Release the print DOM as soon as the PDF bytes arrive; the save dialog must not pin every page in memory
       printHost.dispose();
       printHost = null;
       if (!printResult.success || !printResult.data) {
@@ -758,7 +768,7 @@ export function PptxPreviewViewer({
       }
       toast(labels.exportPdfSuccess(saveResult.path));
     } catch (error) {
-      logger.error("[PptxPreviewViewer] PPTX 导出 PDF 失败", error);
+      logger.error("[PptxPreviewViewer] Failed to export PPTX to PDF", error);
       toast(labels.exportPdfFailed);
     } finally {
       printHost?.dispose();

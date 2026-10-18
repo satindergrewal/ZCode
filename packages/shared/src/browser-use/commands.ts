@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- BrowserCommand 的 Zod discriminated union 必须保持单一运行时事实源，拆分会让协议方法与 schema 漂移。 */
+/* eslint-disable max-lines -- BrowserCommand's zod discriminated union is the single runtime truth; splitting lets protocol methods and schemas drift. */
 import { z } from "zod";
 import { browserViewportInputSchema } from "./command-metadata.js";
 
@@ -20,7 +20,7 @@ export type {
 export const browserMouseButtonSchema = z.enum(["left", "right", "middle"]);
 export type BrowserMouseButton = z.infer<typeof browserMouseButtonSchema>;
 
-/** 键盘修饰键；CDP dispatchMouse/KeyEvent 的 modifiers 位掩码由 executor 映射。 */
+/** Keyboard modifiers; the executor maps them onto CDP dispatchMouse/KeyEvent modifier bits. */
 export const browserKeyModifierSchema = z.enum([
   "Alt",
   "Control",
@@ -30,14 +30,14 @@ export const browserKeyModifierSchema = z.enum([
 ]);
 export type BrowserKeyModifier = z.infer<typeof browserKeyModifierSchema>;
 
-/** 视口坐标点（cua 坐标路 / elementInfo / drag 用；与 CDP Input 同坐标系）。 */
+/** Viewport coordinate point (cua path / elementInfo / drag; same space as CDP Input). */
 export const browserPointSchema = z.object({ x: z.number(), y: z.number() }).strict();
 export type BrowserPoint = z.infer<typeof browserPointSchema>;
 
 const browserRecordingDurationSchema = z.number().int().nonnegative().max(90_000);
 const browserRecordingSelectorSchema = z.string().trim().min(1).max(2_000);
 
-/** 内置 WebView 录制只接受受限动作 DSL；不能借录制入口执行任意页面脚本。 */
+/** In-app WebView recording accepts a restricted action DSL only; never arbitrary page scripts via recording. */
 export const browserRecordingActionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("wait"), durationMs: browserRecordingDurationSchema }).strict(),
   z
@@ -159,7 +159,7 @@ const browserRecordingOutputPathSchema = z
     message: "recording outputPath must end with .webm",
   });
 
-/** Playwright locator 的可跨进程终结操作。builder 本身只在 agent 内组合 selector。 */
+/** Cross-process terminal ops of a Playwright locator; the builder composes selectors agent-side only. */
 export const browserPlaywrightLocatorOperationSchema = z.enum([
   "allTextContents",
   "click",
@@ -208,8 +208,8 @@ const browserPlaywrightSelectOptionSchema = z
   );
 
 /**
- * Playwright 公共操作使用与 backend 无关的消息结构，以 `name` 和 `operation` 区分动作，
- * 便于 extension/CDP adapter 复用同一契约。
+ * Playwright common ops use a backend-agnostic message shape, discriminated by `name` and `operation`,
+ * so extension/CDP adapters reuse one contract.
  */
 export const browserPlaywrightActionSchema = z.discriminatedUnion("name", [
   z.object({ name: z.literal("domSnapshot") }).strict(),
@@ -299,10 +299,10 @@ export const browserPlaywrightActionSchema = z.discriminatedUnion("name", [
 export type BrowserPlaywrightAction = z.infer<typeof browserPlaywrightActionSchema>;
 
 /**
- * 统一命令面：后端只认这一个判别联合类型。
+ * The unified command surface: backends know this one discriminated union only.
  *
- * tabId（可选）：agent 对象模型用于寻址指定受控 tab（含 human 开的 tab）。缺省表示作用于
- * 该会话默认 view。manager 侧以 `command.tabId ?? key` 解析为受控 view 的 key。
+ * tabId (optional): the agent object model's address for a controlled tab (human-opened too). Absent =
+ * the session's default view. The manager resolves `command.tabId ?? key` to the controlled view key.
  */
 export const browserCommandSchema = z.discriminatedUnion("method", [
   z
@@ -326,7 +326,7 @@ export const browserCommandSchema = z.discriminatedUnion("method", [
   z
     .object({
       method: z.literal("click"),
-      // ref（快照句柄）与坐标 (x,y) 二选一：ref 走 dom_cua 式定位，(x,y) 走 cua 视觉坐标定位。
+      // ref (snapshot handle) XOR coordinates (x,y): ref uses dom_cua-style location, (x,y) cua visual coordinates.
       ref: z.string().min(1).optional(),
       x: z.number().optional(),
       y: z.number().optional(),
@@ -361,7 +361,7 @@ export const browserCommandSchema = z.discriminatedUnion("method", [
       tabId: z.string().optional(),
     })
     .strict(),
-  // CUA 组合键输入：keys 是一个组合键，必须保留逐键 down/up 顺序，不能压成末键 + bitmask。
+  // CUA combo input: keys is one chord; keep per-key down/up order, never collapse to last key + bitmask.
   z
     .object({
       method: z.literal("cuaKeypress"),
@@ -378,7 +378,7 @@ export const browserCommandSchema = z.discriminatedUnion("method", [
       tabId: z.string().optional(),
     })
     .strict(),
-  // CUA 滚动输入：视口锚点与滚动 delta 是两组不同坐标，且可携带 modifier。
+  // CUA scroll: viewport anchor and scroll delta are two coordinate sets; modifier allowed.
   z
     .object({
       method: z.literal("cuaScroll"),
@@ -390,7 +390,7 @@ export const browserCommandSchema = z.discriminatedUnion("method", [
       tabId: z.string().optional(),
     })
     .strict(),
-  // DOM CUA 滚动输入：nodeId 缺省时从视口中心滚动；存在时从该节点中心滚动。
+  // DOM CUA scroll: without nodeId scroll from viewport center; with it, from that element's center.
   z
     .object({
       method: z.literal("domCuaScroll"),
@@ -405,7 +405,7 @@ export const browserCommandSchema = z.discriminatedUnion("method", [
       method: z.literal("screenshot"),
       ref: z.string().min(1).optional(),
       fullPage: z.boolean().optional(),
-      // 区域截图：CDP Page.captureScreenshot 的 clip（视口 CSS px）。与 fullPage 互斥。
+      // Region screenshot: CDP Page.captureScreenshot clip (viewport CSS px). Mutually exclusive with fullPage.
       clip: z
         .object({
           x: z.number(),
@@ -419,7 +419,7 @@ export const browserCommandSchema = z.discriminatedUnion("method", [
     })
     .strict(),
   z.object({ method: z.literal("getState"), tabId: z.string().optional() }).strict(),
-  // hover：移动鼠标到元素(ref)或坐标(x,y)，触发 hover 态（cua move / dom_cua 定位后 move）。
+  // hover: move to element (ref) or point (x,y), triggering hover state (cua move / dom_cua locate-then-move).
   z
     .object({
       method: z.literal("hover"),
@@ -430,7 +430,7 @@ export const browserCommandSchema = z.discriminatedUnion("method", [
       tabId: z.string().optional(),
     })
     .strict(),
-  // select：对 <select> 选择一个或多个 option（按 value 或可见文本匹配）。
+  // select: pick one or more <select> options (by value or visible text).
   z
     .object({
       method: z.literal("select"),
@@ -439,7 +439,7 @@ export const browserCommandSchema = z.discriminatedUnion("method", [
       tabId: z.string().optional(),
     })
     .strict(),
-  // check：设置 checkbox/radio 勾选态（checked 缺省为 true）。
+  // check: set checkbox/radio state (checked defaults true).
   z
     .object({
       method: z.literal("check"),
@@ -448,7 +448,7 @@ export const browserCommandSchema = z.discriminatedUnion("method", [
       tabId: z.string().optional(),
     })
     .strict(),
-  // drag：从 起点(fromRef 或 from{x,y}) 拖到 终点(toRef 或 to{x,y})，走 CDP Input 合成鼠标拖拽。
+  // drag: from (fromRef or from{x,y}) to (toRef or to{x,y}) via CDP Input synthesized drag.
   z
     .object({
       method: z.literal("drag"),
@@ -460,7 +460,7 @@ export const browserCommandSchema = z.discriminatedUnion("method", [
       tabId: z.string().optional(),
     })
     .strict(),
-  // CUA drag 输入：完整 path 是公共合同，backend 必须逐点发送而不是只取首尾。
+  // CUA drag: the full path is the contract; backends must send point-by-point, not just endpoints.
   z
     .object({
       method: z.literal("cuaDrag"),
@@ -469,7 +469,7 @@ export const browserCommandSchema = z.discriminatedUnion("method", [
       tabId: z.string().optional(),
     })
     .strict(),
-  // elementInfo：给视口坐标 (x,y)，反查该点命中元素的信息（role/name/rect/selector），打通视觉↔结构。
+  // elementInfo: given viewport (x,y), return the hit element's info (role/name/rect/selector), bridging vision<->structure.
   z
     .object({
       method: z.literal("elementInfo"),
@@ -478,7 +478,7 @@ export const browserCommandSchema = z.discriminatedUnion("method", [
       tabId: z.string().optional(),
     })
     .strict(),
-  // evaluate：在页面作用域执行 JS 表达式，返回可 JSON 序列化的结果。
+  // evaluate: run a JS expression in page scope, returning a JSON-serializable value.
   z
     .object({
       method: z.literal("evaluate"),
@@ -486,9 +486,9 @@ export const browserCommandSchema = z.discriminatedUnion("method", [
       tabId: z.string().optional(),
     })
     .strict(),
-  // getDialog：读取当前 JS 弹窗（alert/confirm/prompt/beforeunload）信息，无则返回 dialog=null。
+  // getDialog: read the current JS dialog (alert/confirm/prompt/beforeunload); dialog=null when none.
   z.object({ method: z.literal("getDialog"), tabId: z.string().optional() }).strict(),
-  // handleDialog：接受/取消当前 JS 弹窗；prompt 可带 promptText。
+  // handleDialog: accept/dismiss the current JS dialog; prompt may carry promptText.
   z
     .object({
       method: z.literal("handleDialog"),
@@ -507,7 +507,7 @@ export const browserCommandSchema = z.discriminatedUnion("method", [
       tabId: z.string().optional(),
     })
     .strict(),
-  // PlaywrightAPI.waitForTimeout：固定等待只接受非负整数，0 表示让出一次 timer tick。
+  // PlaywrightAPI.waitForTimeout: non-negative integers only; 0 yields one timer tick.
   z
     .object({
       method: z.literal("playwrightWaitForTimeout"),
@@ -554,7 +554,7 @@ export const browserCommandSchema = z.discriminatedUnion("method", [
       tabId: z.string().optional(),
     })
     .strict(),
-  // tabs.get(id) 的 backend 激活步骤：校验并更新该 scope selected tab；renderer 决定前台展示或后台记录。
+  // tabs.get(id)'s backend activation step: validate and set the scope's selected tab; the renderer decides foreground vs background log.
   z.object({ method: z.literal("activateTab"), tabId: z.string().min(1) }).strict(),
   z.object({ method: z.literal("newTab") }).strict(),
   z.object({ method: z.literal("listUserTabs") }).strict(),
@@ -580,9 +580,9 @@ export const browserCommandSchema = z.discriminatedUnion("method", [
   z.object({ method: z.literal("turnEnded"), turnId: z.string().min(1).optional() }).strict(),
   z.object({ method: z.literal("closeSession") }).strict(),
   z.object({ method: z.literal("cancelRequest"), requestId: z.string().min(1) }).strict(),
-  // close：关闭指定受控 tab（tabId 缺省=当前 tab）。manager 层处理：detach + 通知 renderer 卸载 webview。
+  // close: close the given controlled tab (tabId absent = current). Manager-side: detach + tell the renderer to unload the webview.
   z.object({ method: z.literal("close"), tabId: z.string().optional() }).strict(),
-  // list：枚举当前会话窗口下所有受控 tab 摘要。manager 层拦截处理，返回 result.tabs。
+  // list: enumerate controlled-tab summaries in this session's window. Manager-intercepted, returns result.tabs.
   z.object({ method: z.literal("list") }).strict(),
 ]);
 export type BrowserCommand = z.infer<typeof browserCommandSchema>;

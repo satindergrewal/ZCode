@@ -1,21 +1,21 @@
 // ============================================================
-// Dynamic Workflow Run 的 lineage 读面（观察面的一小片）
+// Lineage read surface for Dynamic Workflow Runs (a small slice of the observation surface).
 // ============================================================
-// 修订链两端的指针：`resumedFrom` 指向前驱，
-// `supersededBy` 指向把自己停掉的后继。快照、列表、详情三个截面都要带这两个键，规则只写一遍。
-// 从 dynamic-workflow-run-observation.ts 拆出是因为那份文件已顶到 oxlint 的 400 行上限。
+// Pointers to both ends of the revision chain: `resumedFrom` points at the predecessor,
+// `supersededBy` at the successor that stopped this run. Snapshot, list, and detail views all carry both keys; the rule is written once.
+// Split out of dynamic-workflow-run-observation.ts because that file hit the oxlint 400-line limit.
 
 import type { RunStatus } from "@zcode/dynamic-workflow";
 
-/** 只看得到 lineage 所需两键的终态视图：注册表条目的 `terminal` 与 journal 行都满足它。 */
+/** Terminal-state view exposing only the two keys lineage needs; both the registry entry's `terminal` and journal rows satisfy it. */
 interface SupersedableSettlement {
   status: RunStatus;
   supersededBy?: string;
 }
 
 /**
- * 后继指针：内存终态优先，其次 journal 行；只对 stopped(superseded) 有意义——其余状态上即便
- * 载荷带着这个键（不应发生），也读作缺席，免得一条 completed 的 run 被画成「已被替代」。
+ * Successor pointer: in-memory terminal state first, then journal rows; meaningful only for stopped(superseded) -- on other
+ * states the key reads as absent even if the payload carries it (should not happen), so a completed run is never drawn as "superseded".
  */
 export function supersededByOf(
   entry: { terminal?: SupersedableSettlement } | undefined,
@@ -27,7 +27,7 @@ export function supersededByOf(
   return record?.status === "stopped" ? record.supersededBy : undefined;
 }
 
-/** 两个指针在场才出现（缺席读作「没有这一端」，而 `undefined` 值会让每一行都带噪音键）。 */
+/** Present only when both pointers exist (absent reads as "no such end"; `undefined` values would add noise keys to every row). */
 export function lineageFields(
   resumedFrom: string | undefined,
   supersededBy: string | undefined,

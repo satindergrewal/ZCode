@@ -10,8 +10,8 @@ export function formatCompactTokenNumber(
   const maximumFractionDigits = options.maximumFractionDigits ?? 1;
   const absValue = Math.abs(value);
 
-  // token 数值仍应走本地化 compact；中文展示万/亿，英文展示 K/M/B。
-  // 之前为了修 Start Plan 的英文 long unit 误把所有 locale 都强制成 K/M/B。
+  // Token counts stay locale-aware compact: zh renders CJK myriad-unit scales, en renders K/M/B.
+  // A Start Plan English long-unit fix once forced every locale to K/M/B.
   return new Intl.NumberFormat(locale || undefined, {
     notation: absValue >= 1_000 ? "compact" : "standard",
     maximumFractionDigits,
@@ -20,6 +20,6 @@ export function formatCompactTokenNumber(
 }
 
 export function formatModelContextWindowLabel(contextWindow: number, _locale = "en-US"): string {
-  // 模型列表的容量 badge 是技术规格，不应随中文 locale 变成“万/亿”。
+  // The model list capacity badge is a technical spec; it must not switch to CJK myriad units under zh locale.
   return formatCompactTokenNumber("en-US", contextWindow);
 }

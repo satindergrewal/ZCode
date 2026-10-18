@@ -1,23 +1,25 @@
 // ============================================================
-// 详情页的来龙去脉块
+// Run-detail provenance block.
 // ============================================================
-// 从 WorkflowRunSidePaneSections.tsx 拆出（max-lines 门）。两种 run 有这一块：中枢直接启动的
-// 与「配置」修订出来的。
-// 工具路径发起的 run 没有——它的来历是转写里那一行 CreateWorkflow。只读，无动作。
+// Split out of WorkflowRunSidePaneSections.tsx (max-lines gate). Two run kinds get this block:
+// hub-launched runs and "settings-amended" runs. Runs started via the tool path do not -- their
+// provenance is the CreateWorkflow line in the transcript. Read-only, no actions.
 
 import { Fragment, memo } from "react";
 import type { WorkflowLaunchMeta } from "@zcode/shared/zcode-protocol-v4";
 import { workflowSettingsProvenanceRows } from "@/components/workflow-timeline/workflowSettingsChange.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 
-/** 实参值：字符串原样，其余 `JSON.stringify`（与实参窗 / 通知同一条归一化）。 */
+/** Argument value: strings verbatim, everything else `JSON.stringify` (same normalization as the args popover / notification). */
 function formatArgValue(value: unknown): string {
   return typeof value === "string" ? value : JSON.stringify(value);
 }
 
 /**
- * 中枢启动：「由你从工作流中枢启动 · 时刻」与作用域徽标，其下是说明与实参键值表。
- * 「配置」修订：「由你调整设置 · 时刻」，没有作用域徽标，其下每项改动一行「{from} → {to}」。
+ * Hub launch: "started by you from the workflow hub - time" plus scope badge, description and
+ * argument key-value table below.
+ * Settings amend: "settings changed by you - time", no scope badge, one "{from} -> {to}" row per
+ * change below.
  */
 export const WorkflowRunProvenance = memo(function WorkflowRunProvenance({
   meta,
@@ -25,9 +27,9 @@ export const WorkflowRunProvenance = memo(function WorkflowRunProvenance({
   startedAt,
 }: {
   meta: WorkflowLaunchMeta;
-  /** providerId → provider 名（与摘要行的模型段同一个查找）；缺席退回裸 modelId。 */
+  /** providerId -> provider name (same lookup as the summary row's model segment); falls back to the bare modelId. */
   providerName?: (providerId: string) => string | undefined;
-  /** 启动轮 / 设置轮的 startedAt；缺席即不写时刻。 */
+  /** startedAt of the launch / settings round; omitted means no timestamp. */
   startedAt?: number;
 }) {
   const { intl } = useZCodeIntl();
@@ -69,7 +71,7 @@ export const WorkflowRunProvenance = memo(function WorkflowRunProvenance({
         <span className="min-w-0 truncate">
           {time === undefined ? caption : `${caption} · ${time}`}
         </span>
-        {/* 作用域徽标：复用中枢的小徽标类（rounded-sm border 小字）。设置轮没有保存文件，也就没有作用域。 */}
+        {/* Scope badge: reuses the hub's small badge classes (rounded-sm border, small text). A settings round has no saved file, hence no scope. */}
         {amend !== undefined || meta.scope === undefined ? null : (
           <span
             className="shrink-0 rounded-sm border border-border px-1.5 py-0.5 leading-none text-foreground-subtlest"
@@ -84,8 +86,9 @@ export const WorkflowRunProvenance = memo(function WorkflowRunProvenance({
           {meta.description}
         </p>
       ) : null}
-      {/* 键值表：实参是键 mono、值 mono 单行截断（title 兜全文）；设置改动是人话标签、值照样单行。
-          侧板有的是纵向空间，不折叠。 */}
+      {/* Key-value table: args are mono keys with mono values truncated to one line (title holds the full
+          text); settings changes use human labels with values likewise single-line. The side pane has
+          vertical room to spare; no collapsing. */}
       {rows.length > 0 ? (
         <dl
           className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1"

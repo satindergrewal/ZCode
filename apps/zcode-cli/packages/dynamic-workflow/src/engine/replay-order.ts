@@ -1,15 +1,15 @@
 /**
- * Replay 的**结算次序闸**。
+  * The replay **settlement-order gate**.
  *
- * 站点序号是调用到达时的计数器，所以一条分支在 await **之后**做的每一次 journal 调用，
- * 编号依的是扇出完成的顺序，而不是脚本发起的顺序。那个顺序是墙钟的，节点行里没有任何东西
- * 能复现它：按准入顺序释放缓存结算，重放的 `Promise.all` 会按数组顺序跑续体，join 之后的第一条
- * `report` 于是拿到 journal 给「最先跑完的那条分支」的序号，run 死在自己的防御性校验里
- * （`InputHashMismatch`），即使脚本本身是确定性的，也可能因重放完成顺序不同而失败。
+  * Site ordinals are arrival counters, so every journal call a branch makes after an await is
+  * numbered by fan-out completion order, not script issue order. That order is wall-clock; nothing in the node rows
+  * reproduces it: releasing cache hits in admission order, the replayed Promise.all runs continuations in array order, and the first
+  * report after the join gets the ordinal of whichever branch finished first -- the run dies in its own
+  * defensive check (InputHashMismatch) even though the script is deterministic, purely from replay completion order.
  *
- * 所以 resume 重放的是**调度**，不只是答案：本闸持有首生的结算次序，命中缓存的结算在释放点
- * 挂起，直到它前面的每一条都已释放。次序表之外的实例直接放行——闸门只约束它有证据的那些，
- * 因此对旧 journal（事件早于本规则）退化成原行为，也不可能把一个它一无所知的 run 锁死。
+  * So resume replays the **scheduling**, not just the answers: this gate holds the first-born settlement order; a cache-hit settlement
+  * parks at its release point until every predecessor has released. Instances outside the table pass freely -- the gate binds only what it has
+  * evidence for -- degenerating to prior behavior on older journals, and never deadlocking a run it knows nothing about.
  */
 
 import { isArtifactPresetOp } from "../facade/registry.js";
@@ -17,16 +17,16 @@ import type { InstanceRef, JournalStorePort, NodeRecord, RunEvent } from "./type
 import { refToString } from "./types.js";
 
 export class ReplaySettleOrder {
-  /** 实例键 → 它在首生结算次序里的位置。 */
+    /** Instance key -> position in the first-born settlement order. */
   private readonly position: ReadonlyMap<string, number>;
-  /** 已释放到哪一位（次序表的游标）。 */
+    /** How far released (the table's cursor). */
   private cursor = 0;
-  /** 已到达、正在等自己那一位的释放动作。 */
+    /** Arrived releases waiting for their turn. */
   private readonly parked = new Map<string, () => void>();
-  /** 已轮到、排在微任务里等着投递的释放动作（FIFO，见 {@link enqueue}）。 */
+    /** Due releases parked in a microtask (FIFO; see {@link enqueue}). */
   private queue: Array<() => void> = [];
   private flushing = false;
-  /** run 结算后闸门永久打开（见 {@link open}）。 */
+    /** After run settlement the gate opens forever (see {@link open}). */
   private opened = false;
 
   constructor(private readonly order: readonly string[] = []) {
@@ -39,14 +39,14 @@ export class ReplaySettleOrder {
     return new ReplaySettleOrder([]);
   }
 
-  /** 首生的结算次序（用于诊断）。 */
+    /** The first-born settlement order (for diagnostics). */
   recorded(): readonly string[] {
     return this.order;
   }
 
   /**
-   * 受次序约束地释放一次 replay 命中。表里没有这个实例（全新调用、旧 journal）、闸门已打开、
-   * 或它的位次已被越过时立即执行；否则挂起，等轮到它。
+      * Order-constrained release of one replay hit. Instance not in the table (fresh call, older journal), gate open,
+      * or its turn already passed: run immediately; else park until due.
    */
   hold(instance: InstanceRef, release: () => void): void {
     const key = refToString(instance);
@@ -60,12 +60,12 @@ export class ReplaySettleOrder {
   }
 
   /**
-   * 投递永远晚于**产生这个 promise 的那次调用**：释放动作先进队列，一个微任务之后才执行。
+      * Delivery is always later than the call producing the promise: the release enters the queue, running one microtask later.
    *
-   * 少了这一跳，次序就是反的：`Promise.all` 里每条分支都在同一个同步片里发起自己的调用，
-   * 队首那条的释放会**在它自己的 `ask()` 里**同步发生——那时它的 `await` 还没挂上去，于是
-   * 它的续体排在「早先已挂上、刚被这次 pump 兑现」的那条后面。微任务这一跳让所有 `await`
-   * 先挂稳，投递次序因此就是释放次序。这不是时钟：跳的是确定的一步，队列是 FIFO。
+      * Without the hop the order inverts: in Promise.all every branch issues its call in the same synchronous slice,
+      * and the head's release would run **inside its own ask** -- its await not yet attached, so
+      * its continuation queues behind the one attached earlier and just fulfilled by this pump. The microtask hop lets every
+      * await attach first; delivery order then equals release order. Not clock-based: one deterministic hop, FIFO queue.
    */
   private enqueue(release: () => void): void {
     this.queue.push(release);
@@ -74,7 +74,7 @@ export class ReplaySettleOrder {
     queueMicrotask(() => this.flush());
   }
 
-  /** 把排好的投递按 FIFO 执行完（队列空即空跑，故重复调用安全）。 */
+    /** Run the queued deliveries to completion, FIFO (a no-op when empty; safe to repeat). */
   private flush(): void {
     this.flushing = false;
     const batch = this.queue;
@@ -83,17 +83,17 @@ export class ReplaySettleOrder {
   }
 
   /**
-   * run 结算：闸门永久打开，挂起的按记录次序放完。
+      * Run settlement: the gate opens forever; parked releases drain in recorded order.
    *
-   * 不放的后果是脚本那侧的 promise 永远不兑现——在 harness 里沙箱马上就被关掉，但在同进程
-   * 跑脚本的装配（如 `EvalWorkflowSnippet`）里那就是一次挂死。结算之后释放是安全的：
-   * 引擎已 markSettled，每条 host 路径都以 `isRunSettled()` 开头。
+      * Not draining would leave script-side promises pending forever -- harmless where the harness tears the sandbox down at once, a hang for
+      * in-process runners such as EvalWorkflowSnippet. Post-settlement release is safe:
+      * the engine has markSettled, and every host path starts with isRunSettled().
    */
   open(): void {
     if (this.opened) return;
     this.opened = true;
-    // 已排队的先按次序放完：结算路径在 `run-settled` **之前**调用本方法，同步放完这一批，
-    // 命中事件因此不会落到那条终态事件后面。此刻每个挂起项的 await 早就挂稳了，不需要再跳。
+        // Queued deliveries drain first, in order: the settlement path calls this before run-settled, synchronously,
+        // so hit events never land after the terminal event. Every parked await is attached by now; no hop needed.
     this.flush();
     for (let i = this.cursor; i < this.order.length; i++) {
       const key = this.order[i];
@@ -104,13 +104,13 @@ export class ReplaySettleOrder {
       release();
     }
     this.cursor = this.order.length;
-    // 次序表之外的键从不入 parked，这一轮理论上是空的；兜底清空，绝不留下没人兑现的 promise。
+        // Keys outside the table never park, so this pass is empty in theory; sweep anyway -- never leave an unfulfilled promise.
     const leftovers = [...this.parked.values()];
     this.parked.clear();
     for (const release of leftovers) release();
   }
 
-  /** 游标能往前走多少就走多少：队首已到达即释放，然后看下一位。 */
+    /** Advance the cursor as far as it goes: head arrived -> release, then the next. */
   private pump(): void {
     while (this.cursor < this.order.length) {
       const key = this.order[this.cursor];
@@ -125,23 +125,23 @@ export class ReplaySettleOrder {
 }
 
 /**
- * 从 run 自己的事件日志恢复首生的结算次序。
+  * Recover the first-born settlement order from the run's own event log.
  *
- * 事实来源是事件而不是新列：结算次序**本来就**逐条记在 `dwf_event` 里，而它与 journal 行同一次
- * 写入落库；读回来既不用迁移，也让本规则之前跑出来的 journal 立刻可 resume（本地库里 258 个 run
- * 有 54 个正卡在这个形状上）。同一条路 `recoverImportClosure` 已经走过（零 schema 变更地从事件
- * 次序恢复关门判定）。
+  * The event is the source, not a new column: settlement order is already recorded per event in dwf_event, persisted in the same
+  * stroke as the journal row; reading it back needs no migration and makes pre-rule journals resumable at once (on the local store, 54 of 258
+  * runs sit in exactly this shape). recoverImportClosure already walked the same road (recovering the closed-flag from event
+  * order with zero schema change).
  *
- * 只收**每个实例首次**结算的那一条：重放的一世会按本闸释放的次序再发一遍 cached 事件，取首次
- * 因而跨世稳定，第三世恢复出的仍是同一张表。
+  * Only each instance's **first** settlement is taken: the replayed epoch re-emits cached events in this gate's release order, so first-
+  * wins is stable across epochs; the third epoch recovers the same table.
  *
- * 表里只留「重放时会兑现一个 promise 的终态行」：`report` 是 void、预置产物声明是同步的，两者
- * 永远不会来认领，留在表里就会把游标堵死；仍是 `running` 的行按重新 live 执行处理，也不认领。
+  * The table keeps only terminal rows that would fulfill a promise on replay: report is void and preset artifact declarations synchronous -- neither
+  * ever claims; still-running rows are handled as re-live, also no claim.
  */
 export function recoverSettleOrder(
   journal: JournalStorePort,
   runId: string,
-  /** 已读好的节点行（引擎的 resume 分支本来就要读一次，传进来省掉第二次全表读）。 */
+    /** Node rows read once (the engine's resume branch reads them anyway; passed in to skip a second full scan). */
   nodes: readonly NodeRecord[] = journal.listNodes(runId),
 ): ReplaySettleOrder {
   const claimable = new Set<string>();
@@ -163,7 +163,7 @@ export function recoverSettleOrder(
   return new ReplaySettleOrder(order);
 }
 
-/** 结算事件 → 它结算的实例键；不是结算事件则 undefined。 */
+/** Settlement event -> the instance key it settles; undefined otherwise. */
 function settledInstanceKey(event: RunEvent): string | undefined {
   if (
     event.type === "node-settled" ||
@@ -176,9 +176,9 @@ function settledInstanceKey(event: RunEvent): string | undefined {
 }
 
 /**
- * 这一行在 replay 时会不会兑现一个脚本能等的 promise。
- * ask / world 节点会；`report` 不会（void）；产物行要看成员族——内容成员是效应（async），
- * 预置声明是同步的，只有前者会来认领闸门。失败的产物行只可能来自内容成员（声明没有拒绝通道）。
+  * Would this row fulfill a script-awaitable promise on replay?
+  * ask / world nodes yes; report no (void); artifact rows by member family -- content members are effects (async),
+  * preset declarations synchronous; only the former claims the gate. Failed artifact rows are content-only (declarations have no rejection channel).
  */
 function claimsOnReplay(node: NodeRecord): boolean {
   if (node.kind === "report") return false;
@@ -189,8 +189,8 @@ function claimsOnReplay(node: NodeRecord): boolean {
 }
 
 /**
- * 受次序闸约束地兑现一次 replay 命中：轮到它时才执行 `settle` 并按其结果兑现 / 拒绝。
- * 给的是 promise 路径（world 节点与内容产物）；ask 的释放本就是回调，直接用 {@link ReplaySettleOrder.hold}。
+  * Order-gated fulfillment of one replay hit: run settle only when due, fulfilling/rejecting by its result.
+  * For promise paths (world nodes, content artifacts); ask release is callback-based -- use {@link ReplaySettleOrder.hold} directly.
  */
 export function heldResolution<T>(
   hold: (instance: InstanceRef, release: () => void) => void,

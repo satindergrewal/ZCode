@@ -1,8 +1,8 @@
 /**
- * useTokenRefresh —— Token 刷新 hook（常驻层）
+ * useTokenRefresh — token refresh hook (resident layer).
  *
- * 挂载在 Root 或 App 组件中，确保 401 刷新在任何时候都能工作。
- * 监听全局的 401 事件，调用 oauthService.refreshToken 刷新 token。
+ * Mount in Root or the App component so 401 refresh works at all times. Listens for the
+ * global 401 event and calls oauthService.refreshToken.
  */
 import { useCallback } from "react";
 import { logger } from "../logger.js";
@@ -11,19 +11,19 @@ import { useServices } from "./useServices.js";
 export function useTokenRefresh() {
   const { oauthService } = useServices();
 
-  /** 尝试刷新 token，失败则返回 false */
+  /** Try to refresh the token; returns false on failure. */
   const tryRefresh = useCallback(async (): Promise<boolean> => {
     try {
       await oauthService.refreshToken();
-      logger.info("[useTokenRefresh] token 刷新成功");
+      logger.info("[useTokenRefresh] token refreshed");
       return true;
     } catch (err) {
-      logger.error("[useTokenRefresh] token 刷新失败:", err);
+      logger.error("[useTokenRefresh] token refresh failed:", err);
       return false;
     }
   }, [oauthService]);
 
-  /** 清除所有 provider 凭据 */
+  /** Clear credentials for every provider. */
   const clearCredentials = useCallback(async () => {
     await oauthService.logoutAll();
   }, [oauthService]);

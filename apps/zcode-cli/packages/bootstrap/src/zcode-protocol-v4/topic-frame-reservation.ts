@@ -1,13 +1,13 @@
 import type { TopicFrameDeliveryKind } from "@zcode/shared/zcode-protocol-v4";
 
-/** publisher 水位的两阶段提交句柄。 */
+/** Two-phase commit handle for the publisher watermark. */
 export interface TopicFrameReservation<F> {
-  /** 由 publisher admission 权威赋值，物理分片与 consumer 不得按时序猜测。 */
+  /** Assigned authoritatively by publisher admission; shards and consumers must not guess it from ordering. */
   readonly deliveryKind: TopicFrameDeliveryKind;
   readonly logicalFrameId: string;
-  /** 同一 subscription 内单调递增；用于拒绝 PersistentProtocol 旧帧 replay。 */
+  /** Monotonically increasing within one subscription; used to reject stale PersistentProtocol frame replays. */
   readonly logicalFrameOrdinal: number;
   readonly frame: F;
-  /** 只有当前 subscription generation 仍有效时推进水位。 */
+  /** Advances the watermark only while the current subscription generation is valid. */
   commit(): boolean;
 }

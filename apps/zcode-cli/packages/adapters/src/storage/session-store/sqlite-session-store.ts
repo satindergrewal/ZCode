@@ -59,7 +59,7 @@ import type {
   UpdateScriptWorkflowRunInput,
   UsageStorePort,
 } from "@zcode/contracts";
-// 端口留在领域包 @zcode/dynamic-workflow，这里只做类型引用：adapters 运行时不依赖它。
+// The port lives in @zcode/dynamic-workflow; type-only reference here so the adapters runtime does not depend on it.
 import type { JournalStorePort } from "@zcode/dynamic-workflow";
 import {
   accountSessionTargetUsage,
@@ -125,7 +125,7 @@ function assertForkBundleChildLocal(bundle: ForkCommitBundle): void {
     result?.type === "createSelectionSideSession" ||
     (result?.type === "editUserQuery" && result.disposition === "fork");
   if (!isForkResult || !sessionId || sessionId !== childId) {
-    // 缺失或非 fork 的 command result 会留下无法重放到 child 的幂等事实。
+    // A missing or non-fork command result leaves no idempotent fact to replay into the child.
     throw new Error("Fork bundle command result is missing, invalid, or not child-local");
   }
   const messageIds = new Set(bundle.messages.map((message) => String(message.info.id)));
@@ -243,8 +243,8 @@ export class SqliteSessionStore
     try {
       ensureParentDir(this.dbPath);
       maybeThrowStorageFsFault({ operation: "sqliteOpen", path: this.dbPath });
-      // 多个本地或远程 Agent 会共享同一个 session DB；timeout 必须在执行首条
-      // PRAGMA 前生效，否则并发启动会在 migration prelude 直接抛 database is locked。
+      // Multiple local/remote agents share one session DB; the timeout must be effective before the first
+      // PRAGMA or concurrent startups throw database is locked in the migration prelude.
       this.db = new DatabaseSync(this.dbPath, { timeout: startupLockTimeoutMs });
     } catch (error) {
       throw new SqliteSessionMigrationError(
@@ -263,7 +263,7 @@ export class SqliteSessionStore
       try {
         this.db.close();
       } catch {
-        /* 保留原始迁移失败。 */
+        /* Keep the original migration failure. */
       }
       throw error;
     }
@@ -273,17 +273,17 @@ export class SqliteSessionStore
     options: SqliteSessionStoreOptions = {},
     migrationOptions: AsyncSqliteMigrationOptions = {},
   ): Promise<SqliteSessionStore> {
-    // 未迁移的实例只保留在这个工厂内部；所有 Repo/业务只可能拿到 COMMIT 后的连接。
+    // Un-migrated instances stay inside this factory; repos/business only ever see post-COMMIT connections.
     const store = new SqliteSessionStore(options, deferredStartup);
     try {
       await runSqliteSessionMigrationsAsync(store.db, store.dbPath, migrationOptions);
       return store;
     } catch (error) {
-      // close 也可能因 IO 失败；迁移的原始 cause 才是用户应处理的原因。
+      // close itself can fail on IO; the original migration cause is what the user must handle.
       try {
         store.close();
       } catch {
-        /* 保留原始迁移失败。 */
+        /* Keep the original migration failure. */
       }
       throw error;
     }
@@ -321,8 +321,8 @@ export class SqliteSessionStore
       throw new Error("Fork child metadata parent does not match session parentID");
     }
     const orderedMessageIds = metadata.forkTarget.orderedMessageIds;
-    // compact 覆盖首轮 query 时，input 前稳定前缀合法为空；boundaryMessageId 仍记录
-    // 被编辑 input，供幂等事实定位，但不会被复制进 child。
+    // When compact overrides the first-turn query the stable input prefix may legitimately be empty; boundaryMessageId still
+    // records the edited input for idempotent lookup, but it is not copied into the child.
     const validBoundary =
       metadata.forkTarget.boundaryMessageId.trim().length > 0 &&
       (orderedMessageIds.length === 0 ||
@@ -331,8 +331,8 @@ export class SqliteSessionStore
       throw new Error("Fork child metadata is invalid");
     }
 
-    // command key 是 (parentSessionId, sourceCommandId)；session_entry.id 是全库主键，
-    // 必须把 parent 纳入 id，避免两个 session 恰好复用 commandId 时互相覆盖事实。
+    // The command key is (parentSessionId, sourceCommandId); session_entry.id is the library-wide PK,
+    // so parent must be in the id or two sessions reusing a commandId overwrite each other's facts.
     const entryId = `v4_command_fact:child:${metadata.parentSessionId}:${metadata.sourceCommandId}`;
     this.db.exec("begin immediate");
     try {
@@ -477,10 +477,10 @@ export class SqliteSessionStore
     if (
       String(contextMessage.info.sessionID) !== String(session.id) ||
       String(provenance.sessionID) !== String(session.id) ||
-      // session_entry.id 是全库主键，saveSessionEntry 的 on conflict(id)
-      // 会把 session_id 改绑到后写入者。provenance id 若不含 session 命名空间，同一个
-      // share 导入到第二个会话时会夺走第一个会话的条目（旧会话 transcript 静默丢失）。
-      // 这里在唯一写入口做守卫，覆盖所有调用方，而不是只修某一个构造点。
+      // session_entry.id is the library-wide PK; saveSessionEntry's on conflict(id)
+      // rebinds session_id to the later writer. Without a session namespace in the provenance id,
+      // importing one share into a second session steals the first session's entries (silent transcript loss).
+      // Guard at the single write entry, covering all callers, not just one construction site.
       !provenance.id.includes(String(session.id)) ||
       contextMessage.info.role !== "user" ||
       contextMessage.info.visibility !== "model-only" ||
@@ -659,7 +659,7 @@ export class SqliteSessionStore
     return sessionEntryRepository.sessionEntries(this.db, input);
   }
 
-  // ── session_input 账本──
+  // -- session_input ledger --
 
   async saveSessionInput(input: {
     id: string;
@@ -990,8 +990,8 @@ export class SqliteSessionStore
   }
 
   /**
-   * dynamic-workflow 执行引擎的 durable journal（dwf_* 表）。端口是同步的，所以这里返回
-   * 端口对象本身而不是逐方法转发——引擎持有它、按自己的节奏读写。
+   * Durable journal (dwf_* tables) of the dynamic-workflow engine. The port is synchronous, so return
+   * the port object itself instead of per-method forwarding; the engine holds it and reads/writes at its own pace.
    */
   workflowJournalStore(): JournalStorePort {
     this.dwfJournalStore ??= createDwfJournalStore(this.db);

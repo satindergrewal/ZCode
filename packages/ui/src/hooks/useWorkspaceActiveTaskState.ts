@@ -64,8 +64,10 @@ function areResolvedTaskMetasEqual(left: ZCodeTaskMeta | null, right: ZCodeTaskM
 function useStableResolvedActiveTaskMeta(taskMeta: ZCodeTaskMeta | null) {
   const stableTaskMetaRef = useRef<ZCodeTaskMeta | null>(null);
   const stableTaskMeta = stableTaskMetaRef.current;
-  // stream chunk 只更新消息流时，active task meta 经列表/乐观层重新合成后可能字段相同但引用变了。
-  // Header/Shell 依赖 memo props；这里复用等价 meta 的旧引用，避免连续流式更新拖动标题栏重渲。
+  // When a stream chunk only touches the message stream, the re-synthesized active task meta
+  // (via list/optimistic layers) may keep equal fields under a new reference. Header/Shell
+  // depend on memoized props; reuse the old reference for equivalent metas so continuous
+  // streaming updates do not drag the title bar into re-renders.
   if (!areResolvedTaskMetasEqual(stableTaskMeta, taskMeta)) {
     stableTaskMetaRef.current = taskMeta;
   }
@@ -102,13 +104,15 @@ export function useWorkspaceActiveTaskState({
       return null;
     }
 
-    // App 以前依赖 zcodeTaskMetaMerge 同时拉普通列表和 pinned 列表，只是为了给当前激活 task
-    // 找一份 meta。这样任何列表刷新都会把整棵 App 一起带着重渲。
-    // 这里改成直接从 workspace store 读 taskListCache + optimistic meta 的合并结果；
-    // 普通任务可以同步命中，pinned / archived 再由 snapshot meta 兜底，不再要求 App 常驻订阅旧列表 hook。
-    // 重启恢复后 raw snapshot meta 可能先进入 workspace store，而 sqlite/list
-    // query cache 里保留着 titleOverridden 的手动标题。Header 必须按同一套 title authority
-    // 合并两边，否则当前 task 会看起来被还原成生成标题或首条 query。
+    // The app used to rely on zcodeTaskMetaMerge pulling the normal and pinned lists just to
+    // resolve one meta for the active task, so any list refresh re-rendered the whole app.
+    // Read the merged taskListCache + optimistic-meta result from the workspace store instead:
+    // normal tasks hit synchronously, pinned/archived fall back to snapshot meta, and the app
+    // no longer keeps a standing subscription to the legacy list hooks.
+    // After restart recovery, a raw snapshot meta may land in the workspace store first while
+    // the sqlite/list query cache still holds a titleOverridden manual title. The header must
+    // merge both sides under the same title authority, or the task appears to revert to its
+    // generated title or first query.
     return (
       mergeTaskMetaCandidates(getTaskMeta(workspaceState, activeTaskId), activeTaskQueryMeta) ??
       null
@@ -125,8 +129,9 @@ export function useWorkspaceActiveTaskState({
   const resolvedActiveTaskMeta = useStableResolvedActiveTaskMeta(
     activeTaskMeta ?? activeTaskSnapshotMeta,
   );
-  // store 收尾：taskMessagesByTaskId 已无写入方（旧 ChatView/广播消息回放均退役），
-  // 由消息流派生的实时改动摘要恒为空；摘要展示回落到 task meta.changeSummary（持久化侧）。
+  // Store wind-down: taskMessagesByTaskId has no writers left (legacy ChatView and broadcast
+  // message replay are both retired) and the stream-derived live change summary is always
+  // empty; summary display falls back to task meta.changeSummary (persisted side).
   const activeTaskChangeSummary = null;
   const activeTraceId = resolvedActiveTaskMeta?.traceId ?? null;
   const activeSessionId = resolvedActiveTaskMeta?.taskId ?? null;

@@ -58,15 +58,15 @@ export class InMemoryHookRunner implements HookRunner {
     };
     const hookInvocationId = crypto.randomUUID();
 
-    // skipLifecycle 的 hook 不发事件，不能计入客户端等待完成的 hookCount。
-    // 修复：先解析全部 matchingHooks 的 admission，把 skipLifecycle 的从参与列表
-    // 剔除后再计算 clientVisibleHookCount，保证 hookCount === 实际会发事件的 hook 数。
+    // Hooks with skipLifecycle emit no events and must not count into the client-awaited hookCount.
+    // Fix: resolve admission for all matchingHooks first, drop the skipLifecycle ones from the participating list,
+    // then compute clientVisibleHookCount, so hookCount equals the hooks that will actually emit.
     //
-    // 注意：这里的 admission 结果只用于 skipLifecycle 剔除与 hookCount 计算——
-    // 二者取决于「配置是否启用」这一稳定属性。allowed 授权决定绝不能沿用本阶段的
-    // 缓存：一次事件匹配多个顺序执行的 Hook 时，前序 Hook 运行期间发生的
-    // revoke / policy 收紧 / trust store reload 必须对尚未开始的 Hook 立即生效，
-    // 因此循环内在每个 Hook 实际 dispatch 前重新调用 resolveHookRunAdmission。
+    // Note: admission here is used only for skipLifecycle filtering and the hookCount count —
+    // both hinge on the stable enabled-in-config property. Allowed-grant decisions must never reuse this phase's
+    // cache: when one event matches several sequential hooks, revokes / policy tightenings / trust-store reloads
+    // happening while an earlier hook runs must take effect immediately for hooks not yet started,
+    // so the loop re-calls resolveHookRunAdmission before each hook dispatch.
     const participatingHooks: { hook: HookRegistration }[] = [];
     for (const hook of matchingHooks) {
       const admission = resolveHookRunAdmission(hook, input, this.logger);
@@ -84,9 +84,9 @@ export class InMemoryHookRunner implements HookRunner {
       const hookIndex = descriptor.clientVisible ? clientVisibleHookIndex++ : runtimeIndex;
       const hookRunId = crypto.randomUUID();
       const startedAt = Date.now();
-      // dispatch 前重新解析授权决定。预扫描结果可能已过时——前序 Hook
-      // 执行期间用户 revoke、管理员收紧 policy 或 trust store reload 都会改变
-      // 结论。security revision 的价值就在执行边界重验，授权决定不得缓存。
+      // Re-resolve the grant decision before dispatch. The pre-scan may be stale: user revokes,
+      // admin policy tightenings, or trust-store reloads while an earlier hook runs all change
+      // the outcome. The point of security revisions is re-checking at the execution boundary; never cache grant decisions.
       const admission = resolveHookRunAdmission(hook, input, this.logger);
       if (!admission.allowed) {
         await this.emitHookEvent(
@@ -123,7 +123,7 @@ export class InMemoryHookRunner implements HookRunner {
       );
 
       if (hook.async) {
-        // async command 的生命周期独立于当前 turn；输出不得反向改变已经继续执行的动作。
+        // An async command outlives the current turn; its output must not retroactively alter already-taken actions.
         void this.runBackgroundHook({
           clientVisibleHookCount,
           descriptor,
@@ -169,8 +169,8 @@ export class InMemoryHookRunner implements HookRunner {
           processed.permissionRequestResult?.behavior === "deny" ||
           processed.preventContinuation ||
           processed.blockRequested;
-        // 阻断原因必须随终态事件进入持久化投影；只放在 TurnResult/tooltip 会在
-        // 重放或移动端恢复时丢失，用户无法从 Hooks 明细判断是哪条 Hook 拦截了请求。
+        // Block reasons must ride the terminal event into the persisted projection; kept only in TurnResult/tooltip they are lost
+        // on replay or mobile resume, leaving users unable to tell which hook intercepted the request.
         const blockReason = blocked
           ? sanitizeHookDisplayText(
               processed.stopReason ??

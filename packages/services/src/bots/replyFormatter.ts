@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- Bot bot reply formatter 集中维护第三方消息的文本颗粒度、工具摘要和权限摘要，避免 provider 间文案分叉。 */
+/* eslint-disable max-lines -- the bot reply formatter centralizes text granularity, tool summaries and permission summaries so copy never diverges across providers. */
 import type {
   ZCodePermissionRequest,
   ZCodeStreamEvent,
@@ -110,7 +110,7 @@ function truncateMiddleText(value: string, maxLength = MAX_COMMAND_FIELD_LENGTH)
 }
 
 function formatMarkdownInlineCode(value: string): string {
-  // Telegram Markdown 的 inline code 需要转义反斜杠和反引号，否则路径/命令里的特殊字符会导致文本退回裸显示。
+  // Telegram Markdown inline code needs backslash/backtick escaping, or special characters in paths/commands degrade the text to raw display.
   return `\`${value.replace(/\\/gu, "\\\\").replace(/`/gu, "\\`")}\``;
 }
 
@@ -234,8 +234,9 @@ function formatEditPermissionKindLabel(
   if (/\b(update|updating|updated)\b/u.test(normalizedText)) {
     return t(locale, "editUpdating");
   }
-  // Bugfix: edit 权限标题直接透传 ZCode Agent 的 "Edit <path>" 时，第三方消息无法像 UI kindLabel 一样区分写入/更新/删除。
-  // 这里至少把泛化的 Edit 换成 edit kind label，具体操作能从 raw/fileChange 推断时再细分。
+  // Bugfix: passing ZCode Agent's "Edit <path>" through as the permission title gives third-party
+  // messages no write/update/delete distinction like the UI's kindLabel. At least swap the generic
+  // Edit for the edit kind label; refine when raw/fileChange allows.
   return t(locale, "editEditing");
 }
 
@@ -294,8 +295,9 @@ export function extractBotAssistantResponseMessages(
     return { messages: [], rest: normalizedBuffer };
   }
 
-  // Bugfix: Bot channel 的 provider chunk 常按词或子词到达，非终态时必须继续留在
-  // assistantReplyBuffer 里合并；真正的发送边界由 tool_call / task_complete 等 force flush 决定。
+  // Bugfix: provider chunks arrive per word/subword; non-terminal chunks must keep merging in
+  // assistantReplyBuffer. Real send boundaries come from force flushes such as tool_call/
+  // task_complete.
   return {
     messages: splitLongReplyText(normalizedBuffer),
     rest: "",

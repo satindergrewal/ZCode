@@ -38,7 +38,7 @@ export function createPrimaryWindowCoordinator(deps: PrimaryWindowCoordinatorDep
       }
 
       if (isRendererCrashed(existingWindow)) {
-        // renderer native crash 后 BrowserWindow 仍可能存活；继续复用会让 macOS 激活时只显示白屏空壳。
+        // After a renderer native crash the BrowserWindow can survive; reuse shows a blank shell on activate.
         existingWindow.destroy?.();
         deps.logger.info("[primary-window] discarded crashed renderer window");
         continue;
@@ -59,7 +59,7 @@ export function createPrimaryWindowCoordinator(deps: PrimaryWindowCoordinatorDep
 
   async function ensurePrimaryWindow(reason: string) {
     if (deps.canCreateWindow && !deps.canCreateWindow(reason)) {
-      // 强制升级是进程级 gate，activate/dock/tray/open-url 等入口也必须共享同一阻断边界。
+      // Force-update is a process-level gate; activate/dock/tray/open-url entries share the same block.
       deps.logger.info(`[primary-window] window creation blocked (${reason})`);
       return;
     }
@@ -74,9 +74,9 @@ export function createPrimaryWindowCoordinator(deps: PrimaryWindowCoordinatorDep
       return pendingEnsurePromise;
     }
 
-    // macOS 上应用冷启动时，app.activate 可能和启动阶段异步并发到达。
-    // 如果 ready 和 activate 都各自 resolveStartupWindowBootstrap 后直接 createWindow，
-    // 最新版首次启动就可能并发创建两个主窗口。这里用单飞 promise 收敛成一次创建。
+    // On macOS cold start, app.activate can race the startup path.
+    // If ready and activate each resolved the bootstrap and created windows directly, the first
+    // launch could open two main windows; a single-flight promise collapses to one.
     deps.logger.info(`[primary-window] creating main window (${reason})`);
     pendingEnsurePromise = deps
       .resolveStartupWindowBootstrap()

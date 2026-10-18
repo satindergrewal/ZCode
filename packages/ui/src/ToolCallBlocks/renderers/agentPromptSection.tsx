@@ -32,7 +32,7 @@ export function AgentPromptSection({
           </h4>
         </div>
         <div className="overflow-auto max-h-50" data-markdown-table-sticky-scrollbar="disabled">
-          {/* Agent prompt 里可能包含代码块或长命令，手机窄屏只开纵向滚动会裁掉横向内容。*/}
+          {/* Agent prompts may contain code blocks or long commands; vertical-only scrolling clips them on narrow phone screens. */}
           <MessageResponse
             className="px-3 py-2 min-w-0 break-words text-ui-base [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
             workspacePath={workspacePath}

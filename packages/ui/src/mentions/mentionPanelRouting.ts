@@ -13,8 +13,8 @@ const SESSION_GROUP_ORDER: readonly MentionPanelGroupId[] = ["sessions"];
 const SKILL_GROUP_ORDER: readonly MentionPanelGroupId[] = ["skills"];
 
 /**
- * 输入触发器只负责发现入口，不改变候选选中后的 canonical mention。
- * `#` 与 `$`（含输入层归一后的 `¥` / `￥`）继续保留旧单分组面板。
+ * Input triggers only pick the discovery entry; they never alter the canonical mention a chosen candidate produces.
+ * # and $ (plus input-normalized yen signs) keep the legacy single-group panels.
  */
 export function getMentionPanelGroupOrder(
   trigger: PromptInputTrigger | null | undefined,
@@ -32,8 +32,8 @@ export function getMentionPanelGroupOrder(
 }
 
 /**
- * `@` 与 `#` 虽然复用会话 provider，但产品范围不同。
- * 若在共享 provider 内无条件扩展 workspace，`@` 会被连带扩容；范围必须由触发器路由显式决定。
+ * @ and # reuse conversation providers but differ in product scope.
+ * Extending the workspace unconditionally inside the shared provider would enlarge @ too; scope is decided explicitly by trigger routing.
  */
 export function getSessionMentionWorkspaceScope(
   trigger: PromptInputTrigger | null | undefined,

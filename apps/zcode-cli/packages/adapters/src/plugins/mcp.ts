@@ -181,16 +181,16 @@ function resolveMcpServerConfig(
   if (!isRecord(server)) throw new Error("MCP server config must be an object");
   const type = typeof server.type === "string" ? server.type : inferMcpType(server);
   if (!SUPPORTED_MCP_TYPES.has(type)) throw new Error(`Unsupported MCP transport: ${type}`);
-  // ZCode 官方市场同时包含随应用装载的 Builtin Plugin 与按需安装的 CDN Plugin；后者运行时
-  // source 为 `cache`，因此必须按 marketplace 身份归类，不能只看 loader source。
+  // The official market ships both app-bundled builtin plugins and on-demand CDN plugins; the latter's runtime
+  // source is cache, so classify by marketplace identity, never loader source alone.
   const source: McpServerRuntimeSource = {
     kind: context.loaded.marketplace === ZCODE_OFFICIAL_PLUGIN_MARKETPLACE ? "builtin" : "plugin",
   };
 
-  // zcode_official 允许 http 与 stdio，sse 出现即禁用该 MCP，不静默忽略——静默会让配置作者以为鉴权已生效。
+  // zcode_official allows http and stdio; sse disables the MCP loudly, never silently, or authors believe auth works.
   //
-  // stdio 之所以能放开：请求由插件进程自己发出，身份头随每条出站协议消息的 _meta 下发
-  // （见 adapters/src/mcp/index.ts）。sse 没有对应通道，继续拒绝。
+  // stdio works because the plugin process sends requests itself with identity in each message _meta
+  // (see adapters/src/mcp/index.ts); sse has no such channel and stays rejected.
   const officialAuth = parseZCodeOfficialAuth(server.auth, identity.mcpKey);
   if (officialAuth && type !== "http" && type !== "stdio") {
     throw new Error(
@@ -200,7 +200,7 @@ function resolveMcpServerConfig(
 
   if (type === "stdio") {
     const command = requireString(server.command, "stdio MCP server requires command");
-    // stdio 不走 OAuth 分支，声明 oauth 属无效配置；与 http 一样不做优先级裁决，直接禁用。
+    // stdio never takes the OAuth branch; declaring oauth there is invalid config, disabled like http, no precedence rules.
     if (officialAuth && server.oauth !== undefined) {
       throw new Error(
         `MCP server ${identity.mcpKey}: ${officialAuth.type} auth cannot be combined with oauth`,
@@ -219,9 +219,9 @@ function resolveMcpServerConfig(
       context,
       { allowSensitive: true },
     );
-    // 插件 manifest 可自定义 env，但插件身份必须由 resolver 权威写入（loaded.id 来自本地 plugin
-    // registry，不是可序列化配置），不能让第三方伪造 official zcode-cua 身份后获得只应定向注入给
-    // 内置插件的 broker 凭据。manifest env spread 之后覆写，确保 user/manifest 无法覆盖。
+    // Manifests may set env, but plugin identity is written authoritatively by the resolver (loaded.id comes from the local
+    // plugin registry, not serializable config); otherwise third parties could forge official zcode-cua identity to obtain
+    // broker credentials meant for builtins. Overwrite after the manifest env spread so user/manifest cannot override.
     env[ZCODE_PLUGIN_ID_ENV_KEY] = context.loaded.id;
     return {
       type: "stdio",
@@ -242,7 +242,7 @@ function resolveMcpServerConfig(
       ...(officialAuth
         ? {
             auth: officialAuth,
-            // provenance 由宿主生成；即便 .mcp.json 里写了 official 字段也会被此处覆盖。
+            // Provenance is host-generated; an official field in .mcp.json is overridden here.
             official: buildOfficialProvenance(identity),
           }
         : {}),
@@ -256,14 +256,14 @@ function resolveMcpServerConfig(
   const oauth = resolveMcpOAuthConfig(server.oauth, context);
 
   if (officialAuth) {
-    // 第一阶段不做优先级裁决：两种鉴权同时声明属于配置错误，直接禁用。
+    // No precedence ruling in phase one: declaring both auth kinds is a config error; disable.
     if (oauth) {
       throw new Error(
         `MCP server ${identity.mcpKey}: ${officialAuth.type} auth cannot be combined with oauth`,
       );
     }
-    // 保留头只在官方鉴权路径下拦截。普通/第三方 MCP 静态携带 authorization 是既有合法用法，
-    // 全局拦截会造成回归。
+    // Reserved-header stripping applies only on the official auth path. Plain/third-party MCP with static
+    // authorization is longstanding legal usage; global interception would regress it.
     const reserved = findOfficialMcpReservedHeaders(headers);
     if (reserved.length > 0) {
       throw new Error(
@@ -277,7 +277,7 @@ function resolveMcpServerConfig(
       headers,
       auth: officialAuth,
       source,
-      // provenance 由宿主生成；即便 .mcp.json 里写了 official 字段也会被此处覆盖。
+      // Provenance is host-generated; an official field in .mcp.json is overridden here.
       official: buildOfficialProvenance(identity),
       timeoutMs: typeof server.timeoutMs === "number" ? server.timeoutMs : undefined,
     };
@@ -295,7 +295,7 @@ function resolveMcpServerConfig(
 }
 
 /**
- * 严格解析 `auth` 的实现已移到 mcp-official-auth.ts（mcp.ts 已到 max-lines 上限）。
+ * Strict auth parsing moved to mcp-official-auth.ts (mcp.ts hit the max-lines cap).
  */
 function resolveMcpOAuthConfig(
   value: unknown,
@@ -434,7 +434,7 @@ function resolveTemplate(
     }
     if (options.allowSensitive && ENVIRONMENT_VARIABLE_NAME_PATTERN.test(name)) {
 
-      // token。只在敏感 sink 解析，避免 secret 被展开到 args、URL 或其它可见字段。
+      // token. Resolve only at sensitive sinks so secrets never expand into args, URLs or other visible fields.
       const envValue = context.env[name];
       if (envValue === undefined)
         throw new PluginVariableError(`Missing environment variable: ${name}`);

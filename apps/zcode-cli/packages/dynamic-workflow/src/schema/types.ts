@@ -1,10 +1,10 @@
 /**
- * schema 子系统的共享词汇：我们「发射（emit）」的 JSON Schema 子集类型，以及校验器
- * 产出的违规（violation）模型。这里的 {@link JsonSchema} 不是通用 JSON Schema —— 它
- * 精确对应 {@link synthesizeAskSchemas} 会产出的关键字集合，校验器也只理解这一子集。
+  * The schema subsystem's shared vocabulary: the JSON Schema subset we emit, and the
+  * violation model the validator produces. This {@link JsonSchema} is not general JSON Schema -- it
+  * matches exactly the keyword set {@link synthesizeAskSchemas} produces, and the validator knows only that subset.
  */
 
-/** 任意合法 JSON 值。const/enum/default 里出现的字面量都用它表达。 */
+/** Any legal JSON value. Literals in const/enum/default are expressed with it. */
 export type JsonValue =
   | string
   | number
@@ -13,7 +13,7 @@ export type JsonValue =
   | JsonValue[]
   | { [key: string]: JsonValue };
 
-/** 我们会发射的 JSON Schema 基础类型标签。`integer` 校验器支持但合成侧不会主动产出。 */
+/** The JSON Schema base-type labels we emit. The validator supports integer; the synthesizer never emits it itself. */
 export type JsonSchemaType =
   | "string"
   | "number"
@@ -24,12 +24,12 @@ export type JsonSchemaType =
   | "object";
 
 /**
- * 我们发射的 JSON Schema 子集。字段是可选关键字的并集：一个具体 schema 只会用到其中
- * 与其形状相关的少数几个（例如 object schema 用 properties/required/additionalProperties，
- * 而 union 用 enum 或 anyOf）。校验器只处理这里出现的关键字。
+  * The JSON Schema subset we emit. Fields are the union of optional keywords: a concrete schema uses only
+  * those relevant to its shape (an object schema uses properties/required/additionalProperties;
+  * a union uses enum or anyOf). The validator handles only the keywords here.
  */
 export interface JsonSchema {
-  // 结构
+    // structure
   type?: JsonSchemaType | JsonSchemaType[];
   const?: JsonValue;
   enum?: JsonValue[];
@@ -43,48 +43,48 @@ export interface JsonSchema {
   prefixItems?: JsonSchema[];
   minItems?: number;
   maxItems?: number;
-  // string 约束
+    // string constraints
   minLength?: number;
   maxLength?: number;
   pattern?: string;
   format?: string;
-  // number 约束
+    // number constraints
   minimum?: number;
   maximum?: number;
   exclusiveMinimum?: number;
   exclusiveMaximum?: number;
-  // 注解
+    // annotations
   description?: string;
   default?: JsonValue;
-  // 递归类型：引用与定义表
+    // recursion: the ref and definition table
   $ref?: string;
   $defs?: Record<string, JsonSchema>;
 }
 
 /**
- * 校验器产出的单条违规，设计成可直接进入修复用的 tool_result：一行一条，包含
- * JSON 路径、期望（expected）与实得（got）。
+  * One validator violation, shaped to enter a repair tool_result directly: one line, with
+  * the JSON path, expected, and got.
  */
 export interface Violation {
-  /** 违规所在位置的 JSON 路径，形如 `$`、`$.foo`、`$.items[0]`。 */
+    /** JSON path of the violation, like the root, a property, or an item. */
   path: string;
-  /** 期望的形状/取值的简短描述。 */
+    /** Short description of the expected shape/value. */
   expected: string;
-  /** 实际取到的值的简短描述。 */
+    /** Short description of the got value. */
   got: string;
 }
 
-/** 合成侧诊断码。9001 已被 facade-siting 规则占用（见 analysis/sites.ts）。 */
+/** Synthesizer diagnostic codes. 9001 is taken by the facade-siting rules (see analysis/sites.ts). */
 export const SCHEMA_DIAGNOSTIC_CODE = 9002;
 
 /**
- * union 成员数量上限。超过即视为“病态宽 union”并在 ask 站点报诊断。
+  * Union member cap. Beyond it: a pathologically wide union, diagnosed at the ask site.
  *
- * 取 100：既能容纳合理的枚举（状态码、国家码等常见枚举都远低于此），又能挡住
- * 明显是失控类型的情况。同时作用于字面量 union（→ enum）与一般 union（→ anyOf）的成员数。
+  * 100: roomy for reasonable enums (status and country codes sit far below) while catching
+  * runaway types. Applies to literal unions (to enum) and general unions (to anyOf) alike.
  *
- * 现实中触发它的通常不是手写的巨型 union，而是 checker 展开模板字面量类型（template
- * literal type）后产生的笛卡尔积——例如 `` `${Dir}-${Size}` `` 会被展开成所有组合的
- * 字面量 union，几个维度一交叉就会爆炸。
+  * In practice the trigger is rarely a hand-written giant union but the checker expanding template
+  * literal types into a Cartesian product -- a two-dimensional cross
+  * already explodes into a literal union of every combination.
  */
 export const MAX_UNION_MEMBERS = 100;

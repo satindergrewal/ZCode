@@ -53,8 +53,8 @@ const findDotenv = (startDir: string): string | undefined => {
 
   while (true) {
     const candidate = resolve(current, ".env");
-    // 用户可能把 .env 当作目录使用（如 ~/.env/modelscope）。
-    // existsSync 只检查存在性，不区分文件/目录；必须显式检查 isFile避免 loadDotenv 报错。
+        // The user may use .env as a directory (e.g. ~/.env/modelscope).
+        // existsSync checks existence only, not file vs dir; an explicit isFile check avoids loadDotenv errors.
     if (existsSync(candidate) && statSync(candidate).isFile()) {
       return candidate;
     }
@@ -122,8 +122,8 @@ function resolveCliRuntimeEnv(env: CliEnv, argv: readonly string[]): ZCodeRuntim
     return explicit;
   }
 
-  // CLI 运行时不再读取 NODE_ENV。源码 tsx 入口仍表示本地开发形态，
-  // 但该判定来自入口路径，不来自用户 shell 里的 NODE_ENV。
+    // The CLI runtime no longer reads NODE_ENV. The tsx source entry still means local-dev shape,
+    // but that decision comes from the entry path, not NODE_ENV in the user's shell.
   const entrypoint = (argv[1] ?? "").replace(/\\/g, "/");
   return entrypoint.endsWith(".ts") && entrypoint.includes("packages/cli/src")
     ? "development"

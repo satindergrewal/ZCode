@@ -90,13 +90,13 @@ export function UpdateStatusDialog({
   const contentClassName = cn(
     "max-h-[calc(100vh-2rem)] max-w-[calc(100vw-2rem)] overflow-hidden p-5 sm:max-w-lg",
     edgeToEdge && !isDownloading
-      ? // 普通/下载完成状态没有中间内容，不能继续使用 minmax(0,1fr)。
-        // 否则 footer 会占满剩余窗口高度，按钮被垂直居中后看起来像中间有大块空白。
+      ? // Plain/downloaded states have no middle content; minmax(0,1fr) would let the footer
+        // fill the window and vertically center the buttons over a large blank area.
         "grid-rows-[auto_auto]"
       : "grid-rows-[auto_minmax(0,1fr)_auto]",
     edgeToEdge
-      ? // 独立更新窗口已经由 BrowserWindow 提供窗口边框和阴影。
-        // 这里不能再保留页内 DialogContent 的边框、阴影和视口边距，否则会出现“窗中窗”。
+      ? // The standalone window already gets its frame and shadow from BrowserWindow. Keep none of
+        // the in-page DialogContent border/shadow/margins or it renders as a window within a window.
         "grid h-dvh max-h-none w-dvw max-w-none gap-5 border-0 bg-popover/98 pt-10 text-ui-base/relaxed text-foreground shadow-none sm:max-w-none [app-region:drag]"
       : "gap-5",
   );
@@ -170,8 +170,8 @@ export function UpdateStatusDialog({
           className={cn(
             "p-0 [app-region:no-drag]",
             edgeToEdge
-              ? // 独立更新窗口宽度只有 480px，小于 Tailwind 的 sm 断点。
-                // 继续依赖 sm:flex-row 会退化成移动端竖排，导致底部按钮布局和原桌面弹窗不一致。
+              ? // The standalone window is 480px wide, under Tailwind's sm breakpoint, so relying on
+                // sm:flex-row degrades to the stacked mobile layout and mismatches the desktop dialog.
                 cn(
                   "flex-row items-center gap-3",
                   showSkipVersion ? "justify-between" : "justify-end",
@@ -275,7 +275,8 @@ export function UpdateStatusDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        // 去掉标题下方可见描述后，显式关闭 aria-describedby，避免 Radix 在开发环境提示缺少 Description。
+        // With no visible description under the title, disable aria-describedby so Radix does not
+        // warn about a missing Description in dev.
         aria-describedby={undefined}
         showOverlay={showOverlay}
         showCloseButton={false}

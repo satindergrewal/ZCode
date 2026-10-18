@@ -26,7 +26,7 @@ export function shouldRenderMermaidCodeBlock(language: string, code: string): bo
     return true;
   }
 
-  // 模型经常输出未标注语言的 Mermaid fenced code block。
-  // 只在纯文本/空语言里做窄首行识别，避免把显式 ts/js/sh 等普通代码误渲染成图表。
+  // Models often emit Mermaid fenced blocks with no language tag. Detect via the first line
+  // only for plain-text/empty languages, so explicit ts/js/sh code is never rendered as a diagram.
   return MERMAID_AUTODETECT_LANGUAGES.has(normalizedLanguage) && isLikelyMermaidCode(code);
 }

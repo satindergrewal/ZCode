@@ -27,7 +27,7 @@ import {
   type LocalTtftOutputKind,
 } from "@zcode/shared/zcode-protocol-v4";
 
-/** 无业务裁决权：只跟随 inbox 和 live event，不建立第二份 accepted input queue。 */
+/** No business authority: follows the inbox and live events only, never builds a second accepted-input queue. */
 export class LocalTtftRecorder {
   readonly instanceId = randomUUID();
   private clockWatch?: LocalTtftClockWatch;
@@ -117,7 +117,7 @@ export class LocalTtftRecorder {
     try {
       this.onCheckpoint({ ...record, details: record.details?.map((detail) => ({ ...detail })) });
     } catch {
-      /* 导出不可影响业务。 */
+      /* Export must never affect the business path. */
     }
   }
   admitted(commandId: string): void {
@@ -162,7 +162,7 @@ export class LocalTtftRecorder {
     }
     if (event.type === SessionEventType.ModelStreaming) {
       const payload = event.payload as ModelStreamingPayload;
-      // 空 block/start 没有可展示内容；只接受本轮主模型流中的非空增量。
+      // Empty block/start has nothing to show; accept only non-empty deltas from this turn's main model stream.
       if (streamingParentToolCallId(event.payload as Record<string, unknown>)) return;
       if (payload.kind === "tool_call" && payload.toolName?.trim()) {
         this.output(sessionId, event.turnId ? String(event.turnId) : undefined, "tool");
@@ -340,7 +340,7 @@ export class LocalTtftRecorder {
     }
   }
   private retire(record: LocalTtftFacts): void {
-    // 首正文/terminal 后不再归一逐 token 事件；保留有界末态供实际帧扇出。
+    // After the first body/terminal event, per-token events are no longer normalized; the bounded final state stays for the real frame fan-out.
     this.forget(record.commandId);
     this.records.delete(record.commandId);
     if (!this.records.size) {
@@ -353,7 +353,7 @@ export class LocalTtftRecorder {
       try {
         this.onDrop();
       } catch {
-        /* 丢弃诊断不能影响用户任务。 */
+        /* Dropping diagnostics must never affect the user's task. */
       }
     }
   }

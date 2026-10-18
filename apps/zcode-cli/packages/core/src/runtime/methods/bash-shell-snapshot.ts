@@ -45,8 +45,8 @@ export async function persistBashShellSelectionSnapshot(options: {
         created: timestamp,
         updated: timestamp,
       },
-      // Bash shell 设置变更只影响新 session；必须把创建时快照落库，
-      // 冷恢复时才能继续使用同一个 shell 执行，而不是重新读取最新 settings。
+      // Bash shell setting changes affect new sessions only; the at-creation snapshot must persist,
+      // so cold resume keeps the same shell instead of re-reading latest settings.
       data: serializeBashShellSelection(options.selection),
     });
   } catch (error) {

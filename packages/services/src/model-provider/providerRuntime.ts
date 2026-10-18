@@ -44,8 +44,8 @@ interface RefreshableProviderSource<TSnapshot> extends ProviderSource<TSnapshot>
 }
 
 /**
- * 普通 API Provider 可以在账号能力尚未装配时独立运行。
- * Account Provider 由当前 Built-in revision 对齐的 access.entitled=false Overlay 显式 fail-closed。
+ * Plain API providers run independently before account capabilities are wired.
+ * Account providers fail closed explicitly via the access.entitled=false Overlay aligned to the current Built-in revision.
  */
 export class EmptyAccountProviderConfigSource implements ProviderSource<AccountProviderConfigSnapshot> {
   constructor(readonly configSource: ProviderSource<ProviderConfigSnapshot>) {}
@@ -59,7 +59,7 @@ export class EmptyAccountProviderConfigSource implements ProviderSource<AccountP
   }
 }
 
-/** 组装一个进程内共享的 Provider Config、Registry 与 Facade。 */
+/** Assemble one in-process shared Provider Config, Registry, and Facade. */
 export class ProviderRuntime {
   readonly configService: ProviderConfigRuntime["configService"];
   readonly registryService: ProviderRegistryService;
@@ -115,7 +115,7 @@ export class ProviderRuntime {
   }
 
   start(): Promise<void> {
-    if (this.#disposed) throw new Error("ProviderRuntime 已 dispose");
+    if (this.#disposed) throw new Error("ProviderRuntime disposed");
     if (this.#startPromise) return this.#startPromise;
     const startPromise = this.#configRuntime.start().then(() => this.registryService.start());
     this.#startPromise = startPromise;
@@ -151,7 +151,7 @@ function createSettingsMutationTarget(
     reorderPersonalProviders: (providerIds) => configService.reorderPersonalProviders(providerIds),
     reorderPersonalModels: (providerId, modelIds, membership) =>
       configService.reorderPersonalModels(providerId, modelIds, membership),
-    // 手工四参数转发曾丢掉新增的配置模式；直接绑定完整签名，避免装配层截断写入意图。
+    // Hand-rolled four-arg forwarding dropped newer config modes; bind the full signature so assembly never truncates writes.
     addPersonalModel: configService.addPersonalModel.bind(configService),
     renamePersonalModel: (providerId, currentModelId, nextModelId, membership) =>
       configService.renamePersonalModel(providerId, currentModelId, nextModelId, membership),

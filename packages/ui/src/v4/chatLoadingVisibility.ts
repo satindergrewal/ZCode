@@ -5,9 +5,9 @@ import type {
 } from "@zcode/shared/zcode-protocol-v4";
 
 /**
- * 等待用户操作时，弹窗/问答卡已经是唯一进度反馈，不能再显示 loading。
- * 这里只识别权限确认与 AskUserQuestion；ExitPlanMode 等其它 userInput 语义保持独立。
- * 软门禁后 workspaceHookReview 不再阻塞聊天。
+ * While awaiting user action, the dialog/Q&A card is the only progress feedback; no loading on top.
+ * Only permission confirms and AskUserQuestion count; other userInput semantics (ExitPlanMode etc.) stay independent.
+ * After the soft gate, workspaceHookReview never blocks the chat.
  */
 export function hasChatLoadingBlockingInteraction(
   interactions: readonly PendingInteraction[],
@@ -52,9 +52,9 @@ export function shouldShowTurnChatLoading({
     return false;
   }
 
-  // pendingInteractions / activeWorks 是权威事实源，但恢复或乱序窗口
-  // 可能先只有行状态；行级 fallback 避免权限、compact、goal verifier 已出现时
-  // 底部 loading 短暂闪回。
+  // pendingInteractions / activeWorks are authoritative, but restore/out-of-order windows
+  // may expose row states first; the row-level fallback keeps the bottom loading
+  // from flashing back while permission/compact/goal verifier already show.
   return (
     !rows.some((row) => row.kind === "toolCall" && row.status === "pendingApproval") &&
     !hasChatLoadingBlockingMaintenanceRow(rows)

@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 
-// 桌面打包态的 agent 运行时资产：把 agent 的 JS bundle（zcode.cjs）放进 bundled-agents/<platform>/glm，
-// 由 app 内置的 Electron Node runtime（ELECTRON_RUN_AS_NODE）执行，替代以前随包内置的独立 Node 二进制。
+// Desktop-packaged agent runtime asset: place the agent JS bundle (zcode.cjs) under bundled-agents/<platform>/glm,
+// executed by the app's own Electron Node runtime (ELECTRON_RUN_AS_NODE), replacing the previously bundled standalone Node binary.
 //
-// 为什么这么做：
-// - agent 没有任何原生 NAPI 插件（ripgrep 是 WASM，其余纯 JS），可直接跑在 Electron 的 Node 上；
-// - Electron 41 内置 Node 24.x，与 zcode-cli 的目标运行时一致；
-// - 单平台体积从 ~180MB 降到 ~16MB，且同一份 JS 跨平台通用；
-// - app-server 命令路径不会加载 @zcode/tui，所以这里天然不打包 TUI。
+// Why:
+// - the agent has no native NAPI addons (ripgrep is WASM, the rest pure JS) and runs directly on Electron's Node;
+// - Electron 41 embeds Node 24.x, matching zcode-cli's target runtime;
+// - per-platform size drops from ~180MB to ~16MB, and one JS build serves all platforms;
+// - the app-server command path never loads @zcode/tui, so the TUI is naturally not packaged here.
 //
-// 远端（SSH/WSL/Docker）没有 Electron，仍走 prepare:remote-assets 的原生二进制，互不影响。
+// Remote targets (SSH/WSL/Docker) have no Electron and keep using prepare:remote-assets native binaries; the two paths are independent.
 
 import { cpSync, existsSync, mkdirSync } from "node:fs";
 import { access, cp, mkdir } from "node:fs/promises";
@@ -26,14 +26,14 @@ const cliBundlePath = resolve(repoRoot, "apps/zcode-cli/packages/cli/dist/zcode.
 const adaptersRoot = resolve(repoRoot, "apps/zcode-cli/packages/adapters");
 const pnpmRunEnv = {
   ...process.env,
-  // pnpm 11 会在 apps/zcode-cli 子 workspace 执行 run 前触发 install；
-  // 子 workspace 不能解析根 workspace 的 @zcode/shared，Docker/web app 打包会因此卡在插件 runtime 构建。
+  // pnpm 11 triggers an install before runs in the apps/zcode-cli sub-workspace;
+  // that workspace cannot resolve the root workspace's @zcode/shared, stalling Docker/web app packaging at plugin runtime build.
   PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN: "false",
 };
 const BROWSER_USE_PLUGIN_PACKAGE_NAME = "@zcode/browser-use-plugin";
 
-// 平台目录命名：darwin/win32/linux + x64/arm64，
-// 支持 ZCODE_TARGET_OS / ZCODE_TARGET_ARCH 覆盖（交叉打包时由 CI 注入）。
+// Platform dir naming: darwin/win32/linux + x64/arm64;
+// ZCODE_TARGET_OS / ZCODE_TARGET_ARCH overrides supported (injected by CI for cross-packaging).
 function normalizePlatform(raw) {
   switch (raw) {
     case "mac":
@@ -71,19 +71,19 @@ const arch = normalizeArch(process.env.ZCODE_TARGET_ARCH || "") || process.arch;
 const platformKey = `${platform}-${arch}`;
 
 const glmDir = resolve(desktopRoot, "bundled-agents", platformKey, "glm");
-// zcode.cjs / .node-bundle-meta.json 的落点由 stage-agent-bundle.mjs 自己解析（同源）。
-// node_repl 宿主抽成独立包
-// @zcode/node-repl-host 之后，browser-use 不再产出 dist/mcp/server.js，CUA 资产
-// （docs/computer-use.md、scripts/computer-use-client.mjs）也已归 @zcode/zcode-cua-plugin。
-// 这份清单当时漏改，打包准备阶段照旧去 browser-use 要那三个文件，直接 missing runtime 挂掉。
-// dev 链路走的是 scripts/build-desktop-agent-cli.mjs 的 requiredDevPluginRuntimeBuilds（那份改对了），
-// 两份平行清单各自维护，所以 dev 测不出来 —— 权威归属见 bootstrap/official-plugin-definitions.ts。
+// zcode.cjs / .node-bundle-meta.json destinations are resolved by stage-agent-bundle.mjs itself (same source of truth).
+// After the node_repl host moved to the standalone @zcode/node-repl-host package, browser-use no
+// longer emits dist/mcp/server.js, and the CUA assets (docs/computer-use.md, scripts/computer-use-client.mjs)
+// moved to @zcode/zcode-cua-plugin.
+// This manifest missed that change, so packaging kept requesting those three files from browser-use and died with missing runtime.
+// The dev path uses scripts/build-desktop-agent-cli.mjs's requiredDevPluginRuntimeBuilds (updated correctly);
+// the two parallel lists are maintained separately, which is why dev never caught it. Authoritative ownership: bootstrap/official-plugin-definitions.ts.
 const browserUseRequiredRuntimePaths = [
   "scripts/browser-client.mjs",
   "docs/api.json",
   "docs/documents.json",
   "docs/overview.md",
-  // documents.json 已暴露 recording lookup，桌面安装包不能复用缺少正文的 runtime。
+  // documents.json now exposes the recording lookup; the desktop package must not reuse a runtime lacking bodies.
   "docs/recording.md",
   "docs/workflow.md",
   "skills/control-browser/SKILL.md",
@@ -91,8 +91,8 @@ const browserUseRequiredRuntimePaths = [
 ];
 const officialPluginPackages = [
   {
-    // browser-use 只携带自己的 client script 与 skill/docs；node_repl MCP runtime 归
-    // @zcode/node-repl-host（见上方常量注释）。
+    // browser-use carries only its own client script and skill/docs; the node_repl MCP runtime belongs to
+    // @zcode/node-repl-host (see the constant comment above).
     packageName: "@zcode/browser-use-plugin",
     relativePath: "apps/zcode-cli/packages/browser-use-plugin",
     requiresRuntime: true,
@@ -102,9 +102,9 @@ const officialPluginPackages = [
   },
 
   {
-    // node_repl 宿主：Browser Use 与 Computer Use 共用的 MCP runtime，本轮抽成独立包。
-    // 它没有 listing（不进插件市场展示面），但生产包首启 seed 必须拿到它的 dist runtime，
-    // 否则 bua/cua 任一开启时都会连不上 node_repl。
+    // node_repl host: the MCP runtime shared by Browser Use and Computer Use, split into its own package this round.
+    // It has no listing (not shown in the plugin market), but first-launch seeding in production needs its dist runtime,
+    // or bua/cua cannot reach node_repl when either is enabled.
     packageName: "@zcode/node-repl-host",
     relativePath: "apps/zcode-cli/packages/node-repl-host",
     requiresRuntime: true,
@@ -113,9 +113,9 @@ const officialPluginPackages = [
     stagedPath: "packages/node-repl-host",
   },
 ];
-// 随 CLI 内置的技能包（不是插件）：bootstrap 的 resolveBundledSkillRoots 沿官方插件同款候选目录
-// 在 zcode.cjs 旁找 packages/bundled-skills 并原地读取。漏 stage 它，桌面包的 /workflow 会展开成
-// 「先加载 dynamic-workflows 技能」而技能文件不存在，因此必须随 Agent 一起打包。
+// CLI-bundled skill packs (not plugins): bootstrap's resolveBundledSkillRoots looks beside zcode.cjs for
+// packages/bundled-skills in the same candidate dirs as official plugins and reads in place. Without staging it,
+// the desktop /workflow prompt expands to load the dynamic-workflows skill whose files do not exist, so it must ship with the agent.
 const bundledSkillPack = {
   relativePath: "apps/zcode-cli/packages/bundled-skills",
   requiredPaths: [
@@ -130,7 +130,7 @@ const includedOfficialPluginTopLevelPaths = new Set([
   ".mcp.json",
   ".zcode-plugin",
   "README.md",
-  // Electron 生产资源复制有独立白名单，遗漏 agents 会让首启 filesystem seed 永久缺少子代理。
+  // Electron production resource copying has its own allowlist; missing agents permanently drops subagents from first-launch filesystem seed.
   "agents",
   "commands",
   "dist",
@@ -157,7 +157,7 @@ const isBootstrapWithRemote = process.env.ZCODE_BOOTSTRAP_WITH_REMOTE === "1";
 
 function buildCliBundle() {
   console.log("[prepare:agent-bundle] building zcode-cli app-server bundle ...");
-  // 复用仓库根脚本（turbo build:desktop-agent --filter=@zcode/cli），命中缓存时几乎瞬时。
+  // Reuse the repo-root script (turbo build:desktop-agent --filter=@zcode/cli); near-instant on cache hit.
   runCommand(process.execPath, [resolve(repoRoot, "scripts/build-desktop-agent-cli.mjs")], {
     cwd: repoRoot,
     env: pnpmRunEnv,
@@ -203,11 +203,11 @@ function buildOfficialPluginRuntimeForBootstrap(plugin) {
     return;
   }
 
-  // bootstrap:with-remote 会连续构建 remote assets 和桌面 agent bundle。
-  // 通过 pnpm/filter 进入插件 build 时，tsc shim 在本地低内存环境中容易被 SIGKILL；
-  // 这里仅在 bootstrap 开关下用当前 Node 直接执行等价 tsc + build-mcp，不改变插件自身 build 脚本。
-  // browser-use 的 server 与 browser-client 是同一发布对；即使旧 server.js 存在也必须重建，
-  // 否则会把旧 server 与当前 client（或缺失 client）一起 stage 到桌面安装包。
+  // bootstrap:with-remote builds remote assets and the desktop agent bundle back to back.
+  // Via pnpm/filter the plugin build's tsc shim easily gets SIGKILLed in low-memory local environments;
+  // only under the bootstrap flag, run the equivalent tsc + build-mcp with the current Node, leaving the plugin's own build script untouched.
+  // browser-use server and browser-client are one release pair; rebuild even when an old server.js exists,
+  // or the staged desktop package pairs a stale server with the current (or missing) client.
   runCommand(process.execPath, ["../../node_modules/typescript/bin/tsc"], {
     cwd: pluginRoot,
     env: process.env,
@@ -229,8 +229,8 @@ function assertOfficialPluginRuntime(plugin) {
 }
 
 function stageBundle() {
-  // 实现已抽到 stage-agent-bundle.mjs：dev 链（scripts/build-desktop-agent-cli.mjs）
-  // 必须用同一份，否则 dev 会继续跑上一次打包留下的陈旧 agent。
+  // Implementation lives in stage-agent-bundle.mjs; the dev path (scripts/build-desktop-agent-cli.mjs)
+  // must share it, or dev keeps running the stale agent left by the previous package run.
   stageAgentBundle({ repoRoot, platformKey });
 }
 
@@ -282,12 +282,12 @@ async function stageBundledSkillPack() {
   console.log(`[prepare:agent-bundle] staged bundled skill pack ${bundledSkillPack.stagedPath}`);
 }
 
-// Electron 生产包只带 resources/glm/zcode.cjs 时，app-server 进程的
-// __dirname 附近没有官方插件目录，启动时 seed 找不到 source，用户侧不会自动得到内置插件。
-// 这里把官方插件按 bootstrap 的 rootCandidates 期望放到 glm/packages/*-plugin，
-// 让 Electron Node 运行 zcode.cjs 时复用同一套 filesystem seed 逻辑。
-// browser-use runtime 的声明生成依赖 @zcode/core/dist。CI 干净检出没有该产物，
-// 必须先构建 CLI 依赖，再构建官方插件；开发机残留的 dist 曾掩盖这个顺序问题。
+// When the Electron production package carries only resources/glm/zcode.cjs, nothing near the app-server
+// process __dirname looks like official plugin dirs, so startup seed finds no source and users never get built-in plugins.
+// Place official plugins at glm/packages/*-plugin per bootstrap's rootCandidates so running zcode.cjs under Electron Node
+// reuses the same filesystem seed logic.
+// browser-use runtime declaration generation depends on @zcode/core/dist. A clean CI checkout lacks that artifact,
+// so CLI deps must build before official plugins; stale dev-machine dist once masked this ordering bug.
 buildCliBundle();
 buildOfficialPluginRuntimes();
 stageBundle();

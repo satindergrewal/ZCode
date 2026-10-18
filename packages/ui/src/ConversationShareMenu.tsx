@@ -29,15 +29,16 @@ export function ConversationShareMenu({
     const currentState = useConversationShareSelectionStore.getState();
     const currentlyActive = currentState.drafts[taskId]?.scope === "partial";
     if (currentState.dockStates[taskId]?.publishing) return;
-    logger.debug("[conversation-share] 顶栏入口切换分享", {
+    logger.debug("[conversation-share] Header entry toggled sharing", {
       taskId,
       alreadyActive: currentlyActive,
     });
     if (currentlyActive) {
-      // 再次点击不能只切换面板：无法退出分享；复用取消操作清理当前会话的草稿和 dock。
+      // A second click must not merely toggle the panel — there would be no way out of sharing.
+      // Reuse the cancel path to clear this session's draft and dock.
       finishSelection(taskId);
     } else {
-      // 首次进入默认全选；面板收起到 timeline，用户可通过左侧 reopen 入口调整范围。
+      // First entry selects everything; the panel collapses into the timeline and the left reopen entry adjusts the scope.
       setScope(taskId, "partial");
       showTimeline(taskId);
     }
@@ -47,7 +48,7 @@ export function ConversationShareMenu({
     <Button
       type="button"
       variant="ghost"
-      // 分享曾使用更大的热区和独立 mask 缩放；复用相邻工具栏按钮的尺寸与图标规范。
+      // Sharing once used a larger hit area with its own mask scaling; now it matches the neighboring toolbar buttons' size and icon rules.
       size="icon-md"
       className={cn(
         "text-foreground hover:bg-hover hover:text-foreground [app-region:no-drag]",

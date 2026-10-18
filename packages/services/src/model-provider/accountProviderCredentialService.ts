@@ -26,9 +26,9 @@ interface AccountProviderCredentialService {
 }
 
 /**
- * 管理 Personal Coding Plan 的账号级请求凭据。
+ * Manages Personal Coding Plan's account-level request credentials.
  *
- * 账号身份只在这里生成 Credential Store 私有 key；远端解析、缓存和并发合并都留在服务内。
+ // Account identity mints Credential Store private keys only here; remote resolution, caching, and concurrency merges stay internal.
  */
 export function createAccountProviderCredentialService(
   options: AccountProviderCredentialServiceOptions,

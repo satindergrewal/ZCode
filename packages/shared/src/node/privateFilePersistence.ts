@@ -53,8 +53,8 @@ export async function withFileLock<T>(
   operation: () => Promise<T>,
   options: SharedFileLockOptions = {},
 ): Promise<T> {
-  // 同一进程几十个 caller 同时轮询目录锁会形成惊群，后排请求可能在
-  // 很短的实际写入之后仍撞上 8 秒超时。先做进程内 FIFO，每个进程只让队首竞争 OS 锁。
+  // Dozens of same-process callers polling a dir lock thundering-herd; back-of-queue requests can
+  // hit the 8s timeout shortly after a real write. In-process FIFO first: only each process's head competes for the OS lock.
   const previousTail = processFileLockTails.get(filePath) ?? Promise.resolve();
   let releaseProcessQueue!: () => void;
   const currentTail = new Promise<void>((resolve) => {
@@ -110,8 +110,8 @@ export async function backupCorruptFile(filePath: string): Promise<string> {
   const contentId = createHash("sha256").update(content).digest("hex").slice(0, 24);
   const backupPath = `${filePath}.corrupt-${contentId}.bak`;
   try {
-    // 同一损坏凭据会被 Desktop、CLI 和重试循环反复读取。按内容确定备份名并
-    // 排他创建，让失败路径稳定收敛到一份证据，同时避免 copyFile 继承历史宽松权限。
+    // The same broken credential is read by desktop, CLI, and retry loops. Content-derived backup names plus
+    // exclusive creation converge failures onto one evidence file, and avoid copyFile inheriting loose legacy modes.
     await writeFile(backupPath, content, { flag: "wx", mode: 0o600 });
   } catch (error) {
     if (getErrorCode(error) !== "EEXIST") throw error;

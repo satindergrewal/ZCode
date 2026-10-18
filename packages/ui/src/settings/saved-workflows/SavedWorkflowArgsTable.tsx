@@ -19,7 +19,7 @@ import type {
 
 const ARG_TYPES: readonly ZCodeSavedWorkflowArgType[] = ["string", "number", "boolean", "json"];
 
-/** 详情页「参数」声明表：可增删行，默认值按类型出控件。 */
+/** /** Detail args declaration table: rows add/remove; value editors per type. */
 export function SavedWorkflowArgsTable({
   rows,
   errors,

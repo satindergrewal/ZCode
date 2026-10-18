@@ -12,29 +12,34 @@ import {
 } from "./types.js";
 
 /**
- * 参与者层的纯选择器。
+ * Pure selectors over the participant layer.
  *
- * 载荷的 `participants` 已经是分析器排好的**交接序**（第一张是开局者），`handoffs` 已经
- * 归约过；这里只做分桶、状态折叠、计数，以及两件 UI 自己的事：
- *   - 无标记脚本合成一个隐式阶段（`withImplicitPhase`），让板面只有一种画法；
- *   - 运行中把 `many` 卡按真实实例拆开、成员卡按 ordinal 收窄、单卡绑定它唯一的实例或在
- *     多实例时同样拆开（`liveParticipantView`）。
+ * The payload's `participants` already arrive in the analyzer's **hand-off order** (the
+ * first card is the opener) and `handoffs` is already reduced; this layer only buckets,
+ * collapses statuses, counts, plus two UI-owned concerns:
+ *   - unstamped scripts get one implicit phase (`withImplicitPhase`) so the board has a
+ *     single rendering;
+ *   - while running, `many` cards split per real instance, member cards narrow by
+ *     ordinal, and single-instance cards bind their instance or split the same way
+ *     (`liveParticipantView`).
  *
- * 无 React、无 DOM：投影层与组件都消费它，测试直接调。
+ * No React, no DOM: consumed by the projection layer and components, called directly by tests.
  */
 
 export { IMPLICIT_PHASE_ID };
 
-/** 视图切换的唯一判定曾经是它；现在它只回答「这张图要不要合成隐式阶段」。 */
+/** Used to be the sole view switch; now it only answers whether this graph needs an implicit phase. */
 export function hasPhaseVocabulary(graph: WorkflowCausalityGraphData): boolean {
   return graph.phases !== undefined && graph.phases.length > 0;
 }
 
 /**
- * 无 `phase()` 标记的脚本 → 一个隐式模块：阶段表只有 `workflow`（无 name，UI 本地化为
- * 「Workflow」），没有阶段边，控制流到达正常完成当且仅当脚本有返回物；每个 step 与每张卡
- * 归入它（分析器给它们的 `unphased` 只是「没有阶段」的占位，卡 id 不变）。
- * 有词汇表的图原样返回（引用相等，memo 友好）。
+ * A script without `phase()` stamps becomes one implicit module: the phase table holds
+ * only `workflow` (no name; the UI localizes it to "Workflow"), no phase edges, and the
+ * control flow reaches normal completion iff the script yields a result; every step and
+ * every card belongs to it (the analyzer's `unphased` is just a "no phase" placeholder;
+ * card ids are unchanged).
+ * Graphs with a vocabulary are returned as-is (reference equality, memo-friendly).
  */
 export function withImplicitPhase(graph: WorkflowCausalityGraphData): WorkflowCausalityGraphData {
   if (hasPhaseVocabulary(graph)) return graph;
@@ -51,7 +56,7 @@ export function withImplicitPhase(graph: WorkflowCausalityGraphData): WorkflowCa
   };
 }
 
-/** 一个阶段的参与者，保持载荷顺序（= 交接序）。 */
+/** A phase's participants, in payload order (= hand-off order). */
 export function participantsOfPhase(
   graph: WorkflowCausalityGraphData,
   phaseId: string,
@@ -66,7 +71,7 @@ export function participantById(
   return graph.participants.find((participant) => participant.id === id);
 }
 
-/** 两端都在给定集合里的交接边（阶段内部的边）。 */
+/** Hand-off edges with both ends in the given set (intra-phase edges). */
 export function handoffsWithin(
   graph: WorkflowCausalityGraphData,
   ids: ReadonlySet<string>,
@@ -84,7 +89,7 @@ export function handoffsAround(
   };
 }
 
-/** 卡片次行的计数素材：ask 数与工作区读取数（一张卡只会有其中一种非零）。 */
+/** Card sub-row counters: ask count and workspace-read count (at most one is nonzero per card). */
 export interface ParticipantCounts {
   asks: number;
   reads: number;
@@ -104,7 +109,7 @@ export function participantCounts(
   return { asks, reads };
 }
 
-/** 任一 step 带 `repeat` ⇒ 卡片显示重复图元（自环在参与者粒度上消失，这是它留下的线索）。 */
+/** Any step with `repeat` => the card shows the repeat glyph (self-loops vanish at participant granularity; this is their trace). */
 export function participantRepeats(
   graph: WorkflowCausalityGraphData,
   participant: WorkflowParticipantData,
@@ -116,9 +121,11 @@ export function participantRepeats(
 }
 
 /**
- * 多个 step 状态的折叠：收集名下**存在条目**的 step 的状态，交给 `aggregateRunStatuses`
- * （唯一的折叠，格见那里）。没有条目的 step 不参与——它是控制流没走的站点，不是排队中的
- * 节点；一个条目都没有（或静态渲染）返回 undefined。卡、站、检视器标题灯三处共用。
+ * Collapsing several step statuses: collect the statuses of owned steps that **have an
+ * entry** and hand them to `aggregateRunStatuses` (the only collapse; see the lattice
+ * there). Steps without an entry do not participate — they are sites the control flow
+ * never reached, not queued nodes; with no entries at all (or a static render) return
+ * undefined. Shared by card, station, and inspector header light.
  */
 export function collapseStatuses(
   stepIds: readonly string[],
@@ -134,8 +141,8 @@ export function collapseStatuses(
 }
 
 /**
- * 一张卡的状态：实时视图给出的按实例收窄的覆盖值优先（成员卡 / 拆分出的实例卡），
- * 否则由它的 step 折叠。
+ * One card's status: the per-instance narrowed override from the live view wins
+ * (member cards / split instance cards); otherwise collapse over its steps.
  */
 export function participantStatus(
   participant: WorkflowParticipantData,
@@ -145,7 +152,7 @@ export function participantStatus(
   return participantStatuses?.[participant.id] ?? collapseStatuses(participant.steps, statuses);
 }
 
-/** 同一条车道还出现在哪些其他阶段（检视器「also in」一行）。 */
+/** Which other phases the same lane appears in (the inspector's "also in" row). */
 export function participantAlsoIn(
   graph: WorkflowCausalityGraphData,
   participant: WorkflowParticipantData,
@@ -158,56 +165,65 @@ export function participantAlsoIn(
   return (graph.phases ?? []).filter((phase) => phases.has(phase.id));
 }
 
-/** 拆分出的实例卡 id：`${participant.id}@${ordinal}`。 */
+/** Split instance-card id: `${participant.id}@${ordinal}`. */
 export function instanceCardId(participantId: string, ordinal: number): string {
   return `${participantId}@${ordinal}`;
 }
 
 /**
- * 一张卡名下的实例：
- * 拆分出的实例卡（`many` 卡、多实例的单卡）各自的那一个，或者原卡**绑定**的那一个
- * （恰有一个实例的单卡、成员卡的第 i 个）。名字就是引擎发出的有效名，卡面优先念它。
+ * The instances under one card:
+ * each split instance card (`many` cards, multi-instance single cards) owns exactly its
+ * one, or the instance the original card **binds** (single cards with exactly one
+ * instance, a member card's i-th). The name is the effective name emitted by the engine;
+ * the card face prefers it.
  */
 export interface ParticipantInstance {
-  /** 拆分前的参与者 id（绑定时就是这张卡自己的 id）。 */
+  /** Participant id before the split (when bound, this card's own id). */
   participant: string;
   ordinal: number;
   name?: string;
   /**
-   * 原卡绑定而非拆分：卡 id 没变，标签规则也不变（成员卡仍 `#i`，单卡无标签）——
-   * 运行时名不做视觉标记。缺席 = 拆分出的实例卡，标签念 `#ordinal`。
+   * The original card binds instead of splitting: card id unchanged, label rules
+   * unchanged (member cards keep `#i`, single cards unlabeled) — the runtime name gets
+   * no visual marker. Absent = a split instance card, labeled `#ordinal`.
    */
   bound?: true;
 }
 
 export interface LiveParticipantView {
-  /** 参与者与交接已按实例拆分的图；无 run 时就是输入图（引用相等）。 */
+  /** Graph with participants and handoffs split per instance; without a run it is the input graph (reference-equal). */
   graph: WorkflowCausalityGraphData;
-  /** 按实例收窄后的卡片状态（成员卡、实例卡）；其余卡由 step 折叠。 */
+  /** Per-instance narrowed card statuses (member cards, instance cards); other cards collapse over steps. */
   participantStatuses: Record<string, StepRunStatus>;
-  /** 实例卡 id → 身份。 */
+  /** Instance-card id -> identity. */
   instances: Record<string, ParticipantInstance>;
 }
 
 /**
- * 实时视图
+ * Live view.
  *
- *  - `many` 卡：该车道上每个已出现的 actor 实例各出一张卡，交接边按原卡复制到每张实例卡；
- *    实例尚未出现时保留原来那一张（状态由 step 折叠）。
- *  - 单卡：车道上恰有一个实例 → 原卡绑定它（id 不变、状态仍由 step 折叠，只是名字有了）；
- *    两个以上 → 与 `many` 同一条拆分路径——运行时基数胜过静态基数。
- *  - 成员卡（字面量基数展开）：第 i 个成员对应该车道上按 ordinal 排序的第 i 个实例，绑定它，
- *    状态只看那个实例的节点；实例未出现 → pending、不绑定。多出 `of` 的实例不出卡。
- *  - 工作区等合成车道上没有实例，卡不动。
+ *  - `many` cards: one card per actor instance that has appeared on the lane, hand-off
+ *    edges copied from the original card to every instance card; while an instance has
+ *    not appeared, keep the original card (status collapsed over steps).
+ *  - Single card: exactly one instance on the lane -> the original card binds it (id
+ *    unchanged, status still collapsed over steps, it just gains a name); more than one
+ *    -> the same split path as `many` — runtime cardinality beats static cardinality.
+ *  - Member cards (literal cardinality expansion): member i binds the i-th instance by
+ *    ordinal order on the lane and its status reads only that instance's nodes; instance
+ *    not yet present -> pending, unbound. Instances beyond `of` render no card.
+ *  - Synthetic lanes such as workspace have no instances; cards stay untouched.
  *
- * 节点按 `(siteId ∈ 卡的站点, actorSiteId === lane, actorOrdinal === ordinal, 卡的阶段 ∈
- * phasesOf(节点))` 收窄；站点取 `step.source ?? step.id`（may-set 拷贝报的是站点 id，与
- * run-status.ts 的关联键同源）。实例在场而它的站点上一个节点都没有 → pending：实例是观察到
- * 的事实，只是还没在这一站动（折叠自己对空集只说 undefined，解缺席是这里的事）。
+ * Nodes narrow by `(siteId in the card's sites, actorSiteId === lane,
+ * actorOrdinal === ordinal, the card's phase in phasesOf(node))`; the site is
+ * `step.source ?? step.id` (may-set copies report the site id, the same correlation key
+ * as run-status.ts). An instance whose sites have no nodes yet -> pending: the instance
+ * is an observed fact that merely has not acted at this station (the collapse itself
+ * only says undefined for the empty set; resolving absence is this layer's job).
  *
- * 「实例绑定」：一张卡认领的实例不再是**整条车道**上的实例——同一个站点被 k
- * 个阶段再入时，k 张卡共享一条车道，按车道认领就是一次广播（每站都列全部 100 个）。见
- * {@link instancesOfCard}。
+ * "Instance binding": the instances a card claims are no longer every instance on the
+ * **whole lane** — when k phases re-enter one site, k cards share a lane, and claiming
+ * by lane would be a broadcast (every station listing all 100). See
+ * {@link instancesOfCard}.
  */
 export function liveParticipantView(
   graph: WorkflowCausalityGraphData,
@@ -220,13 +236,15 @@ export function liveParticipantView(
     new Set(participant.steps.map((id) => siteOf.get(id) ?? id));
   const index = runIndex(run);
   /**
-   * 这张卡名下的实例：车道上在**这张卡的站点**留下过节点、且该节点的戳落在这张卡的阶段的
-   * actor；在这些站点上还一个节点都没有的 actor（建了还没被 ask，或还没走到这一站）则按它
-   * **自己的出生戳**归位。无戳的 run 里 `phasesOf` 恒是全部阶段，两条合起来正是今天的
-   * 「按车道」——旧 run 逐字节不变。
+   * Instances under this card: actors on the lane that left a node at **this card's
+   * sites** whose stamp lands in this card's phase; actors with no node at those sites
+   * yet (created but not asked, or not reached) are placed by their **own birth stamp**.
+   * In stamp-less runs `phasesOf` is always every phase, so together these two rules are
+   * exactly the old "by lane" — byte-identical for old runs.
    *
-   * 走车道索引而不是每张卡重扫一遍 `run.nodes`：见 {@link runIndex}。整条车道只排一次序，
-   * 与原来「先筛后排」同序——排序稳定，筛选保序。
+   * Uses the lane index instead of rescanning `run.nodes` per card: see {@link runIndex}.
+   * Each lane sorts once, the same order as the old filter-then-sort — stable sort, and
+   * filtering preserves order.
    */
   const instancesOfCard = (participant: WorkflowParticipantData, sites: ReadonlySet<string>) => {
     const claimed: WorkflowRunState["actors"][number][] = [];
@@ -315,27 +333,29 @@ export function liveParticipantView(
 }
 
 /**
- * 键用 `\0` 连接，与 shared 的 `workflow-runs-actor-status.ts` 同一条理由：siteId 是引擎给的
- * 任意字符串，用 `-` 之类可打印分隔符会让 ("a-1", 2) 与 ("a", "1-2") 撞车。
+ * Keys join with `\0`, same reasoning as shared's `workflow-runs-actor-status.ts`: siteId
+ * is an arbitrary engine string, and printable separators like `-` collide
+ * ("a-1", 2) with ("a", "1-2").
  */
 function actorKey(siteId: string, ordinal: number): string {
   return `${siteId}\0${ordinal}`;
 }
 
 interface RunIndex {
-  /** `actorKey` → 该实例名下的节点，保持 `run.nodes` 的顺序。 */
+  /** `actorKey` -> the instance's nodes, in `run.nodes` order. */
   nodesByActor: ReadonlyMap<string, WorkflowRunState["nodes"][number][]>;
-  /** 车道 → 该车道上的 actor，已按 ordinal 升序（认领顺序）。 */
+  /** Lane -> that lane's actors, sorted ascending by ordinal (claim order). */
   actorsBySite: ReadonlyMap<string, WorkflowRunState["actors"][number][]>;
 }
 
 /**
- * 一次视图建一遍的两张索引。没有它们，每张实例卡都要重扫一遍 `run.nodes` 才能收自己的状态——表界是 1024
- * 个实例 × 1024 个节点，也就是每帧一百万次比较。
- * 索引之后建模按 actors + nodes 线性。
+ * Two indexes built once per view. Without them every instance card would rescan
+ * `run.nodes` to collect its status — the table bounds are 1024 instances x 1024 nodes,
+ * i.e. a million comparisons per frame. With indexes, modeling is linear in actors + nodes.
  *
- * 没有 actor 的节点（world-read）与不带 ordinal 的旧载荷不进索引：原来的筛选条件
- * `node.actorSiteId === lane && node.actorOrdinal === ordinal` 对它们恒假，丢掉等价。
+ * Nodes without an actor (world-read) and old payloads without ordinals are not indexed:
+ * the original filter `node.actorSiteId === lane && node.actorOrdinal === ordinal` is
+ * always false for them, so dropping them is equivalent.
  */
 function runIndex(run: WorkflowRunState): RunIndex {
   const nodesByActor = new Map<string, WorkflowRunState["nodes"][number][]>();

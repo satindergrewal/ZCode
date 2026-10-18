@@ -24,13 +24,13 @@ type DesktopBrowserPlatformBridge = Pick<
   | "printPageToPdf"
 >;
 
-// Rebase 集成：browser bridge 若继续内联在 renderer 入口，会让入口越过 max-lines 门禁。
-// 独立对象只做 preload 委托与旧 bridge 兼容兜底，不持有 Browser 业务状态。
+// Rebase: an inline browser bridge would push the renderer entry past max-lines.
+// This object only delegates to preload and back-compat shims the old bridge; no Browser state lives here.
 export const desktopBrowserPlatformBridge = {
   getPathForFile: (file) => window.zcode.getPathForFile?.(file) ?? null,
   saveFile: (payload) =>
     window.zcode.saveFile?.(payload) ?? Promise.resolve({ success: false, error: "not_supported" }),
-  // 条件定义而非兜底返回失败：UI 靠方法是否存在做能力检测，旧 preload 下必须保持 undefined
+  // Conditionally defined, not a failure-returning fallback: UI feature-detects by presence; stays undefined on old preloads.
   printPageToPdf: window.zcode.printPageToPdf ? () => window.zcode.printPageToPdf!() : undefined,
   onBrowserViewReady: (handler) => window.zcode.onBrowserViewReady?.(handler) ?? (() => {}),
   onBrowserViewOperation: (handler) => window.zcode.onBrowserViewOperation?.(handler) ?? (() => {}),

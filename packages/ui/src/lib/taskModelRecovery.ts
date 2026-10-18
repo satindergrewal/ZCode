@@ -183,14 +183,14 @@ function mergeRecoveredTaskModelConfigOptions({
   });
 
   if (!hasModelOption) {
-    // 历史 task 恢复时，resume/config_option_update 可能晚于首帧渲染。
-    // 只清空上一条 task 的配置会让工具栏短暂退回“选择模型”；这里用 task.meta.model
-    // 合成最小模型项，先稳定展示持久化模型，真实 configOptions 回来后再覆盖。
+    // On historical-task restore, resume/config_option_update may lag the first frame.
+    // Clearing the previous task config alone flashes the toolbar back to select-model; synthesize a minimal model
+    // item from task.meta.model to hold the persisted choice, overwritten once real configOptions land.
     return [createRecoveredModelOption(recoveredModelValue), ...nextConfigOptions];
   }
 
-  // 旧会话恢复时 task.meta.model 可能已经被写回 task 配置。
-  // 如果这里在无变化时仍返回新数组，调用方会反复 setTaskConfigOptions，和工具栏恢复 effect 互相触发。
+  // On legacy-session restore the task config may already carry task.meta.model.
+  // Returning a fresh array with no change would ping-pong setTaskConfigOptions against the toolbar restore effect.
   return changed ? nextConfigOptions : null;
 }
 
@@ -223,8 +223,8 @@ export function resolveTaskRestorePreloadConfigOptions({
       return ensureSelectOptionCurrentValue(option, mode);
     });
     if (!hasModeOption) {
-      // 定时任务触发出的 task 在真实 settings 回来前，composer 只能拿到 task meta。
-      // 这里从 meta 合成最小 mode option，避免权限入口短暂显示 workspace 默认值。
+      // Until real settings arrive, a cron-triggered task exposes only task meta in the composer:
+      // synthesize the minimal mode option from meta so the permission entry never flashes the workspace default.
       cachedOptions = [createRecoveredModeOption(mode), ...cachedOptions];
     }
   }
@@ -240,15 +240,15 @@ export function resolveTaskRestorePreloadConfigOptions({
       return ensureSelectOptionCurrentValue(option, thoughtLevel);
     });
     if (!hasThoughtOption) {
-      // 和 mode 一样，automation task-local thoughtLevel 需要先从 task meta 回显；
-      // 后续 session settings 会补齐该模型支持的完整 thought options。
+      // As with mode, an automation task-local thoughtLevel must echo from task meta first;
+      // session settings later fill the full thought options the model supports.
       cachedOptions = [...cachedOptions, createRecoveredThoughtLevelOption(thoughtLevel)];
     }
   }
 
-  // 历史 task 已经打开过时，taskConfigOptionsByTaskId 里有完整的
-  // model/mode/thought_level。恢复期如果只因为 task.meta.model 缺失就清空，
-  // 工具栏会先隐藏 mode/thought，等新快照回来后再出现；这里保留 task 级缓存，
-  // 真正的新 settings 缺项时再由 setTaskConfigOptions 覆盖并隐藏。
+  // Once a historical task has been opened, taskConfigOptionsByTaskId holds the full
+  // model/mode/thought_level. Clearing on a missing task.meta.model alone would hide mode/thought
+  // until the new snapshot lands; keep the task-level cache and let
+  // setTaskConfigOptions override and hide on real missing fields.
   return cachedOptions;
 }

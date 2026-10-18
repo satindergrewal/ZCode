@@ -63,9 +63,9 @@ export function initializeSessionShellEnvironmentIfNeeded(
     return false;
   }
 
-  // Bash shell 是 session-start 快照。所有入口都只表达“当前候选值”，
-  // runtime 统一负责首次真实用户执行前初始化一次。candidate 可以是 lazy resolver，
-  // 这样已有 snapshot 的 session 不会在外层重复探测 shell。
+  // The Bash shell is a session-start snapshot; entrances express a candidate only,
+  // initialized once by the runtime before the first real execution. A candidate may lazy-resolve,
+  // so snapshotted sessions never re-probe upstream.
   applySessionShellEnvironment(runtime, resolveSessionShellCandidate(candidate), {
     refreshPreConversationContext: true,
   });
@@ -175,10 +175,10 @@ export function announceSessionShellEnvironmentNoticeAfterResume(
     return;
   }
 
-  // 旧 Windows 会话没有可用 shell snapshot 时，升级后可能由 auto Git Bash
-  // 接管 Bash 执行。历史上下文仍可能让模型继续沿用旧 shell 习惯，因此必须在
-  // resume 后补一个 provider-visible shell 提醒；可用 snapshot 恢复时不插，避免
-  // 破坏“shell 设置变更只对新 session 生效”的契约。
+  // Legacy Windows sessions without a usable snapshot may fall under auto Git Bash
+  // after upgrade; history can still pull the model to old shell habits, so a
+  // provider-visible shell reminder follows resume; with a usable snapshot, none, keeping
+  // the shell-changes-apply-to-new-sessions-only contract.
   runtime.messageHistory.addAttachment("shell_environment_change", notice);
 }
 
@@ -214,9 +214,9 @@ function refreshPreConversationShellContext(
     return;
   }
 
-  // deferred draft 是隐藏预热态，首发前刷新 shell 时还没有真实
-  // conversation message。此时应把 session-start # Environment 一并刷新，
-  // 避免模型看到的 Shell 和 Bash 实际执行 shell 不一致。
+  // A deferred draft is hidden warmup: at first-send refresh there is no real
+  // conversation message; refresh the session-start # Environment block too,
+  // or the model Shell and the Bash-executing shell diverge.
   runtime.config.envInfo = applySessionShellToEnvInfo(runtime.config.envInfo, selection);
   runtime.contextSourceSnapshot = {
     ...runtime.contextSourceSnapshot,

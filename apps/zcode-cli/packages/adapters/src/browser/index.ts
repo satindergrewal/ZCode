@@ -133,7 +133,7 @@ class ManagedCdpBrowserControlPort implements BrowserControlPort {
     if (creating) {
       const settled = await waitForPromise(creating, this.#closeTimeoutMs);
       if (!settled) {
-        // late launch/context 创建完成后仍需再次回收；closingSessionIds 防止它重新登记 session。
+        // One more sweep is needed after late launch/context creation; closingSessionIds prevents re-registering.
         void creating.then(
           async () => {
             if (this.#sessions.size === 0) await this.closeBrowser();
@@ -169,7 +169,7 @@ class ManagedCdpBrowserControlPort implements BrowserControlPort {
     );
     this.#sessions.clear();
     await this.closeBrowser();
-    // Playwright launch 可能仍在异步创建子进程；只关闭当前 #browser 会漏掉迟到进程。
+    // Playwright launch may still be spawning the child; closing only #browser misses late processes.
     if (launchPromise) {
       await waitForPromise(
         launchPromise.then(async (browser) => this.closeBrowserInstance(browser)),
@@ -205,7 +205,7 @@ class ManagedCdpBrowserControlPort implements BrowserControlPort {
           args: ["--no-first-run", "--no-default-browser-check"],
         });
       } catch (error) {
-        // 底层 Playwright 错误可能包含临时 profile/CDP endpoint；对外只保留可操作分类，cause 供调试。
+        // Raw Playwright errors may carry temp profile/CDP endpoints; keep only the actionable category, cause is for debugging.
         throw new Error(
           "Managed headless Chromium is unavailable: launch failed. " +
             "Verify the browser executable and OS sandbox/runtime dependencies.",
@@ -398,8 +398,8 @@ class ManagedCdpBrowserControlPort implements BrowserControlPort {
 
   private async closeBrowserInstance(browser: Browser): Promise<void> {
     if (!browser.isConnected()) return;
-    // WebSocket/SSE 页面可能让 Playwright 的 context/browser close 永不 settle。
-    // adapter 只能有限等待；外层 session cleanup 和 CLI watchdog 会继续回收其它资源。
+    // WebSocket/SSE pages can keep Playwright context/browser close from ever settling.
+    // The adapter only waits briefly; outer session cleanup and the CLI watchdog reclaim the rest.
     await waitForPromise(browser.close(), this.#closeTimeoutMs);
   }
 }

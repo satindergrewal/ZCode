@@ -1,18 +1,18 @@
 // ============================================================
-// workflow run 的 run 中通知与 provider 停下文案表
+// Mid-run notifications and the provider-stop copy table for workflow runs.
 // ============================================================
-// 从 notification.ts 拆出（eslint max-lines 400 行门）：那个文件承载四种任务的终态通知骨架，
-// 这里是 dwf 专属的三段文案——升级问答、run 级停滞与
-// provider 停下；后者由终态通知与 GetWorkflowRun 共用。
+// Split out of notification.ts (eslint max-lines 400 gate): that file carries the terminal-notification skeleton for four task kinds;
+// these are the dwf-specific passages — escalation Q&A, run-level stalls, and
+// provider stops; the last is shared by the terminal notification and GetWorkflowRun.
 
 import type { DynamicWorkflowRunError } from "@zcode/contracts";
 import { escapeXml, truncateTaskNotification } from "./notification.js";
 
 /**
- * `stopped(provider)` 的 `<error>` 块：
- * 按 `providerStop.kind` 选两句（什么错了 / 做什么），后接固定的事实行与 provider 原文行。
- * 文案里的每个占位都有兜底（provider 显示名缺席用 providerId，再缺席用 "the provider"）——
- * 一条通知绝不因为少一个字段就退化成空句。GetWorkflowRun 的 `<error>` 块共用同一函数。
+ * The `<error>` block for `stopped(provider)`:
+ * two sentences picked by `providerStop.kind` (what broke / what to do), then the fixed fact line and verbatim provider line.
+ * Every placeholder has a fallback (provider display name, else providerId, else "the provider") —
+ * a notification never degrades into an empty sentence over one missing field. GetWorkflowRun's `<error>` block shares this function.
  */
 export function formatWorkflowProviderStopError(
   failure: DynamicWorkflowRunError,
@@ -85,10 +85,10 @@ export function formatWorkflowProviderStopError(
 }
 
 /**
- * run 级停滞的 run 中通知。与升级问答同族：
- * 播报的不是终态而是一个正在发生的事实——run 还在跑、只是 20 分钟没有一次模型请求成功。
- * 文案必须把两件事说死：它**不需要**模型做任何事（尤其不要取消 / 重建），以及用户若在等
- * 就该被告知。每个 stall 段恰好一条，不催办。
+ * Mid-run notification for a run-level stall. Same family as the escalation Q&A:
+ * it reports not a terminal state but a fact in progress — the run is alive, just 20 minutes without one successful model request.
+ * The copy must nail two things: the model need do **nothing** (especially not cancel/rebuild), and a waiting user
+ * deserves to know. Exactly one per stall, no nagging.
  */
 export interface WorkflowStallNotificationInput {
   runLabel: string;
@@ -129,22 +129,22 @@ export function formatWorkflowStallNotification(input: WorkflowStallNotification
 }
 
 /**
- * 一个 actor 从**正在跑的** run 里升级上来的阻塞问题。
+ * A blocking question escalated by an actor from a **running** run.
  *
- * 与上面几个 formatter 的关键差别：它们播报的是**终态**（活干完了，读一下结果），这条播报的
- * 是**一个还没被满足的义务**——有一个 actor 此刻正停在那儿等回答，而且没有超时会替它兜底。
- * 所以文案必须把三件事说死：问题是什么、逐字的下一步（带 qid 的工具调用）、以及 run 并没有
- * 因此停下（否则模型会误以为整条工作流在等它，从而放下手上一切事）。
+ * Key difference from the formatters above: those report **terminal states** (work done, read the result); this reports
+ * an **unsatisfied obligation** — an actor is parked waiting for an answer, with no timeout backstop.
+ * So the copy must nail three things: the question, the verbatim next step (the tool call with its qid), and that the run has
+ * not stopped for it (or the model would think the whole workflow awaits and drop everything).
  *
- * 结构化那半用 XML-ish 节（与 `<task-notification>` 同族，字段可被人和模型稳定定位），
- * 散文那半给下一步与边界条件。**不重发、不催办**：丢弃兜底是快照查询，不是重试。
+ * The structured half uses XML-ish sections (same family as `<task-notification>`, fields locatable by human and model);
+ * the prose half carries the next step and boundaries. **No re-sends, no nagging**: the dropped-question fallback is a snapshot query, not a retry.
  */
 export interface WorkflowEscalationNotificationInput {
-  /** run 的展示名（registry 里的 description；缺席时调用方已回落到 runId）。 */
+  /** The run's display name (registry description; the caller has fallen back to runId when absent). */
   runLabel: string;
   runId: string;
   qid: string;
-  /** actor 的人类可读名；匿名 actor 缺席，调用方给结构化 ref 作兜底。 */
+  /** The actor's human-readable name; absent for anonymous actors, where the caller provides a structured ref. */
   actor: string;
   question: string;
   context?: string;

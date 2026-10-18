@@ -1,13 +1,13 @@
 // ============================================================
-// 「配置」弹层
+// The Configure popover
 // ============================================================
-// run 卡的 Configure 钮、详情页的 Configure 钮与详情页摘要行的模型段打开同一个弹层：两个字段、
-// 一句后果、Apply。Apply 就是一次 GUI 修订——`amendWorkflowRunSettings` 命令，不经模型轮、不开
-// 确认窗；那一下点击就是
-// 同意，与中枢的「运行」同一条规则。
+// The run card's Configure, the detail page's Configure, and the detail summary's model
+// segment all open one popover: two fields, one consequence line, Apply. Apply is a GUI
+// amendment — the `amendWorkflowRunSettings` command, no model round, no confirm dialog;
+// the click itself is consent, the hub's Run rule again.
 //
-// 一个弹层、多个触发点：锚点是**打开它的那个元素**（虚拟锚），所以详情页上两个入口各自对齐。
-// 表单只在打开时挂载——模型清单的订阅也随之只活在打开期间。
+// One popover, many triggers: the anchor is whichever element opened it (virtual), so the detail page's two entries each align to their own.
+// The form mounts only while open — the model-list subscription lives exactly that long.
 
 import { useCallback, useMemo, useRef, useState, type RefObject } from "react";
 import { completeNewModelSelection } from "@zcode/provider";
@@ -43,27 +43,27 @@ import {
   type WorkflowRunSettingsRejection,
 } from "./workflowRunSettings.js";
 
-/** 菜单里「会话模型」那一项的值：落在 encodeCustomModelValue 的值域之外，不会与真实模型相撞。 */
+/** Value of the menu's Session-model item: outside encodeCustomModelValue's domain, cannot collide with a real model. */
 const SESSION_MODEL_VALUE = "workflow-settings:session-model";
 
-/** 宿主给弹层的一切：模型清单的作用域、会话模型、以及发命令的那一下。 */
+/** Everything the host hands the popover: the model list's scope, the session model, and the command sender. */
 export interface WorkflowRunSettingsHost {
   workspacePath: string;
   workspaceIdentity?: string;
   remoteSessionId?: string;
-  /** 会话当前模型（首项与触发器用它的名字）；缺席时首项只写「会话模型」。 */
+  /** The session's current model (first item and trigger use its name); absent, the item reads just "Session model". */
   sessionModel?: { providerId: string; modelId: string };
-  /** 发 `amendWorkflowRunSettings`（宿主补 workId 与会话），回 ACK。 */
+  /** Sends `amendWorkflowRunSettings` (host fills workId/session); resolves the ACK. */
   apply: (change: WorkflowRunSettingsChange) => Promise<CommandAck>;
 }
 
-/** 被接受后新 run 的两把钥匙（ACK.result）。 */
+/** The new run's two keys after acceptance (ACK.result). */
 export interface WorkflowRunSettingsAccepted {
   runId: string;
   toolCallId: string;
 }
 
-/** 触发点的开关与锚点：点同一个触发点再点一次是关，点另一个是移过去重开。 */
+/** Per-trigger toggle and anchor: clicking the same trigger again closes; another trigger moves and reopens. */
 export function useWorkflowRunSettingsPopoverState() {
   const anchorRef = useRef<HTMLElement | null>(null);
   const [open, setOpen] = useState(false);
@@ -103,13 +103,14 @@ export function WorkflowRunSettingsPopover({
         align="end"
         className="gap-2.5"
         data-testid="workflow-run-settings-popover"
-        // 弹层 portal 在外，但 React 事件仍沿组件树冒泡：不拦的话，点弹层空白处会让 run 卡以为
-        // 点了卡身而收起（卡身整张是折叠开关），数字框里的回车也会被卡当成 Enter 切换。
+        // The popover portals out, but React events still bubble up the component tree:
+        // unhandled, a click on popover blank space reads as a card-body click and collapses
+        // it (the whole card is the toggle), and Enter in the number box toggles too.
         onClick={(event) => event.stopPropagation()}
         onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") event.stopPropagation();
         }}
-        // 点打开它的那个触发点本身不算「点在外面」：否则先被关掉、再被那一下点击重新打开。
+        // The trigger that opened it does not count as an outside click: otherwise it closes, then that same click reopens.
         onInteractOutside={(event) => {
           const target = event.target;
           if (target instanceof Node && anchorRef.current?.contains(target)) event.preventDefault();
@@ -171,7 +172,7 @@ function WorkflowRunSettingsForm({
     [view],
   );
 
-  // 起点在打开那一刻定下：run 状态在弹层开着时变了，也不该把用户正在改的表单拽回去。
+  // The starting point freezes at open: run-state changes while open must not drag the form back.
   const [initial] = useState(() => initialWorkflowRunSettingsDraft(run));
   const [draft, setDraft] = useState<WorkflowRunSettingsDraft>(initial);
   const [pending, setPending] = useState(false);
@@ -192,7 +193,7 @@ function WorkflowRunSettingsForm({
           host.sessionModel.modelId,
         );
   const sessionBadge = format("chat.toolCall.workflow.run.settings.model.session");
-  // 两个字段都是字符串，所以这一项只在文案真变了时换引用；下游的模型选择器是 memo 组件。
+  // Both fields are strings, so this object changes identity only when copy changes; the model selector downstream is memoized.
   const sessionModelItem = useMemo(
     () => ({
       key: "workflow-settings:session-model",
@@ -208,8 +209,9 @@ function WorkflowRunSettingsForm({
       ? SESSION_MODEL_VALUE
       : encodeCustomModelValue(draftModel.providerId, draftModel.modelId);
   const listed = groups.some((group) => group.items.some((item) => item.value === modelValue));
-  // 清单读好了、却找不到这个模型：它已被删或停用。Apply 等用户换一个——沿用它只会让 agent 回
-  // model_unavailable（同工具「沿用的模型已不可用」那条失败，在点下去之前就说出来）。
+  // The list loaded but this model is gone: deleted or disabled. Apply waits for a new
+  // pick — carrying it forward only buys a model_unavailable rejection (the same tool
+  // failure, surfaced before the click).
   const unavailable = draftModel.kind === "model" && view !== null && groups.length > 0 && !listed;
   const canonical = workflowRunSettingsModelCanonical(draftModel);
   const triggerLabel =
@@ -239,7 +241,7 @@ function WorkflowRunSettingsForm({
       draftModel.kind === "model" &&
       draftModel.providerId === picked.providerId &&
       draftModel.modelId === picked.modelId;
-    // 换模型即取它在注册表里的默认思考档（与设置页子代理那一格同一条规则）；同一个模型保留当前档。
+    // Switching models adopts the registry's default level for it (the settings-page subagent rule); the same model keeps the current level.
     const level = same
       ? draftModel.level
       : view === null
@@ -264,7 +266,7 @@ function WorkflowRunSettingsForm({
       (ack) => {
         const next = describeWorkflowRunSettingsRejection(ack);
         if (next !== undefined) {
-          logger.warn("[workflow-run] 调整设置被拒绝", {
+          logger.warn("[workflow-run] Settings amendment rejected", {
             reasonCode: ack.reasonCode,
             runId: run.runId,
             status: ack.status,
@@ -280,7 +282,7 @@ function WorkflowRunSettingsForm({
         onClose();
       },
       (error: unknown) => {
-        logger.warn("[workflow-run] 调整设置命令失败", { runId: run.runId, error: String(error) });
+        logger.warn("[workflow-run] Settings amendment failed", { runId: run.runId, error: String(error) });
         setRejection({
           reason: "generic",
           code: error instanceof Error ? error.message : String(error),

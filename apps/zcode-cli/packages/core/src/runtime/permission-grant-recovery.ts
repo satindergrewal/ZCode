@@ -1,6 +1,6 @@
 import type { AgentRuntimeInternal } from "./internal.js";
 
-// 不保存第二份权限/队列，只记录事务已提交但事件尚未发布的恢复动作。
+// No second copy of permissions/queues; record only recovery for commits whose events are not yet published.
 export const unpublishedPermissionGrants = new WeakMap<
   AgentRuntimeInternal,
   {

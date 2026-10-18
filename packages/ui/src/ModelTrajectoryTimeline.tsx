@@ -35,8 +35,9 @@ export function ModelTrajectoryTimeline({
     estimateSize: () => 240,
     overscan: 3,
   });
-  // 搜索切换会同时收起旧命中并展开新命中；此时禁止 virtualizer 根据每次测高回调连续
-  // 修正滚动锚点，由下方文本级定位在布局稳定后一次完成滚动。
+  // Switching searches collapses old hits and expands new ones; during that, stop the
+  // virtualizer from re-anchoring on every measured height. The text-level alignment below
+  // scrolls once once layout settles.
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = () => !searchQuery;
   const roleWidthLabels = ["system", "user", "assistant", "tool"].map((role) =>
     intl.formatMessage({ id: `modelTrajectory.role.${role}` }),
@@ -46,7 +47,8 @@ export function ModelTrajectoryTimeline({
   const lastVirtualItem = virtualItems.at(-1);
   const topSpacerHeight = firstVirtualItem?.start ?? 0;
   const bottomSpacerHeight = lastVirtualItem ? virtualizer.getTotalSize() - lastVirtualItem.end : 0;
-  // 只跟踪挂载集合。把 start 放进依赖会让每次动态测高都重新安排一次精确滚动。
+  // Track the mounted set only. Adding `start` to deps would reschedule a precise scroll on
+  // every dynamic height measurement.
   const mountedRowsKey = virtualItems.map((item) => item.key).join("|");
 
   useEffect(() => () => clearTrajectorySearchHighlights(), []);
@@ -60,7 +62,8 @@ export function ModelTrajectoryTimeline({
     ) {
       return;
     }
-    // 目标已经挂载时跳过 Call 级预滚动，否则随后文本级定位会造成连续两次跳动。
+    // Skip the call-level pre-scroll when the target is mounted, or the following text-level
+    // alignment jumps twice in a row.
     virtualizer.scrollToIndex(activeSearchMatch.callIndex, { align: "center" });
   }, [activeSearchMatch, scrollContainerRef, virtualizer]);
 
@@ -179,8 +182,10 @@ export function resolveTrajectoryInputMessages({
     : messages;
 
   return {
-    // 首条展示完整起始上下文；后续主会话只展示非 assistant 的新增（assistant 由上一条 Output 呈现）。
-    // sidecar/compact 等辅助请求有独立 prompt，不能套用主会话的消息数 delta，否则会隐藏标题生成 prompt。
+    // The first entry shows the full starting context; later main-thread entries show only
+    // non-assistant additions (assistant output is the previous entry). Sidecar/compact helper
+    // requests have their own prompts — the main-thread message delta does not apply, or the
+    // title-generation prompt would be hidden.
     inputMessages: usesConversationDelta
       ? index === 0
         ? deltaMessages

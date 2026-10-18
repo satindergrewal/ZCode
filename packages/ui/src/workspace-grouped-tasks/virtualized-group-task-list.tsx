@@ -22,8 +22,9 @@ function findNearestScrollableAncestor(element: HTMLElement): HTMLElement | null
   while (current) {
     const style = window.getComputedStyle(current);
     if (isPotentialVerticalScrollContainer(style.overflowY)) {
-      // group 展开动画刚开始时，祖先容器可能还没被内容撑到 scrollHeight > clientHeight。
-      // 如果因此返回 null，react-virtual 会短暂没有 scrollElement，表现成内容区有高度但行不渲染。
+      // While a group expand animation starts, the ancestor may not yet be stretched to
+      // scrollHeight > clientHeight. Returning null for that would leave react-virtual without a
+      // scrollElement for a moment; content height renders but rows do not.
       return current;
     }
     current = current.parentElement;
@@ -139,10 +140,10 @@ export function VirtualizedGroupedTaskList({
     overscan: GROUPED_TASK_VIRTUALIZATION_OVERSCAN,
     scrollMargin,
     scrollToFn: scrollGroupedTaskVirtualizerToOffset,
-    // group 内虚拟列表会和顶层列表共用左侧滚动容器。
-    // 当 group 行在中段滚动时重新挂载，react-virtual 默认 initialOffset=0
-    // 会在 _willUpdate 里 scrollTo(0)。这里从 DOM 现场反查真实 scrollTop，
-    // 避免首个 layout effect 里 scrollElement state 尚未写回时提前缓存 0。
+    // The in-group virtual list shares the left scroll container with the top-level list.
+    // When a group row remounts mid-scroll, react-virtual's default initialOffset=0 would
+    // scrollTo(0) in _willUpdate. Read the real scrollTop from the DOM here so the first
+    // layout effect cannot cache 0 before the scrollElement state is written back.
     initialOffset: resolveInitialScrollOffset,
   });
   const virtualRows = rowVirtualizer.getVirtualItems();
@@ -204,8 +205,9 @@ export function VirtualizedGroupedTaskList({
         return (
           <div
             key={virtualRow.key}
-            // 行高不再恒定：挂着工作流运行行的会话是 48px 而不是 28px。估算值只作初值，
-            // 真实高度由 measureElement 量回，否则相邻行会叠在一起。
+            // Row heights are no longer constant: sessions with workflow run rows are 48px, not 28px.
+            // The estimate is only the initial value; measureElement reports the real height, or
+            // adjacent rows overlap.
             ref={measureElement}
             data-index={virtualRow.index}
             className="absolute left-0 top-0 w-full"
@@ -233,11 +235,13 @@ export function VirtualizedGroupedTaskList({
         overflowAnchor: "none",
       }}
     >
-      {/* 大 group 以前一次渲染所有 task 行，2000 条会制造数万 DOM 节点并拖高
-          JS/布局 CPU。这里只挂载滚动窗口内的行，保持点击和菜单操作可用。 */}
-      {/* group 内虚拟行会在滚动时不断挂载/卸载，浏览器滚动锚点可能误把
-          这些绝对定位行当成稳定锚点，测量回写时就可能把 scrollTop 拉回顶部。
-          禁用虚拟列表子树的锚点选择，避免和 react-virtual 的定位计算打架。 */}
+      {/* Large groups used to render every task row at once; 2000 rows meant tens of thousands
+          of DOM nodes and heavy JS/layout CPU. Only rows inside the scroll window mount, keeping
+          clicks and menus responsive. */}
+      {/* Virtual rows mount/unload while scrolling, and scroll anchoring can treat these
+          absolutely positioned rows as anchors; measurement write-back could then drag scrollTop
+          back to the top. Disable anchoring in the virtualized subtree so it cannot fight
+          react-virtual's positioning. */}
       {renderedVirtualTasks}
     </div>
   );

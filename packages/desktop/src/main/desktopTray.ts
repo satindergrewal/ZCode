@@ -72,7 +72,8 @@ export function createWindowsDesktopTray(options: {
           click: () => executeTrayCommand(DesktopCommandIds.OpenWorkspace),
         },
         { type: "separator" },
-        // 更新入口跟随产品身份：Preview（含生产后端的 Preview）禁用更新器，托盘也不能露出入口。
+        // The update entry follows the product identity: Preview (including Preview against
+        // the production backend) disables the updater, so the tray must not show the entry either.
         ...(ZCODE_PRODUCT_FLAVOR === "production"
           ? [
               {

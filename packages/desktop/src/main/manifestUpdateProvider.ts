@@ -124,8 +124,8 @@ function resolveManifestUrl(pathname: string, baseUrl: URL): URL {
 }
 
 function getLinuxUpdateExtensions(updater: AppUpdater): readonly string[] | null {
-  // Linux 的实际更新器由安装包类型决定，不能把 deb/rpm/pacman 统一当作
-  // 不支持更新的产物删除；复用已有 updater 实例，避免再次读取安装类型产生分歧。
+  // The Linux updater depends on the package type; never treat deb/rpm/pacman as one
+  // no-update artifact and delete it; reuse the existing updater so install-type reads cannot diverge.
   if (updater instanceof AppImageUpdater) return [".appimage"];
   if (updater instanceof DebUpdater) return [".deb"];
   if (updater instanceof RpmUpdater) return [".rpm"];
@@ -142,8 +142,8 @@ function resolveManifestFiles(
     const pathname = resolveManifestUrl(file.url, baseUrl).pathname.toLowerCase();
     return !linuxExtensions || linuxExtensions.some((extension) => pathname.endsWith(extension));
   });
-  // 缺少当前格式时，上游 findFile 会回退其他包或返回 undefined，
-  // 随后报非法缓存路径/TypeError；在解析边界失败，禁止跨安装格式更新。
+  // Without the current format, upstream findFile falls back to other artifacts or undefined,
+  // then fails on cache paths/TypeError. Fail at the resolution boundary; never update across formats.
   if (updateFiles.length === 0) {
     throw new Error(`Manifest contains no update file for ${linuxExtensions?.join(" / ")}`);
   }
@@ -153,8 +153,8 @@ function resolveManifestFiles(
     }
 
     const url = resolveManifestUrl(fileInfo.url, baseUrl);
-    // PacmanUpdater 仍用 .pacman 后缀识别缓存名，.pkg.tar.zst 会退回
-    // info.url；只给缓存提供文件名，避免完整 URL 被拼进 pending/temp-https:/...。
+    // PacmanUpdater matches cache names by .pacman; .pkg.tar.zst falls back to info.url,
+    // so hand the cache a bare filename, never a full URL baked into pending/temp-https:/....
     const info = linuxExtensions?.includes(".pkg.tar.zst")
       ? { ...fileInfo, url: posix.basename(decodeURIComponent(url.pathname)) }
       : fileInfo;
@@ -232,9 +232,9 @@ export class ManifestUpdateProvider extends Provider<UpdateInfo> {
 
     return {
       ...(parsed as UpdateInfo),
-      // preview/stable 切换时旧 manifest 请求可能晚于新请求返回。
-      // electron-updater 的 update-available 事件默认不带请求通道，main 进程无法识别过期结果；
-      // 这里把本次请求通道随 UpdateInfo 带回去，避免旧通道覆盖更新弹窗内容。
+      // After a preview/stable flip the old manifest response can land after the new one.
+      // update-available carries no channel, so main cannot tell stale results;
+      // attach the request channel to UpdateInfo so old channels never overwrite the dialog.
       zcodeReleaseChannel: releaseChannel,
     } as UpdateInfo;
   }

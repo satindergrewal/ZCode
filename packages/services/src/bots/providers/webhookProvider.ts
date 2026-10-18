@@ -274,8 +274,8 @@ export function createWebhookBotProvider(
             chatType: payload.chatType === "group" ? "group" : "private",
             chatId:
               typeof payload.chatId === "string" ? payload.chatId : undefined,
-            // Bugfix: webhook 回调也需要携带消息 id 进入通用幂等层。
-            // 否则上游重试同一条消息时，Bot 会重复创建/发送任务。
+            // Bugfix: webhook callbacks must carry the message id into the shared idempotency layer,
+            // or an upstream retry of one message re-creates/resends tasks.
             providerMessageId:
               typeof payload.messageId === "string"
                 ? payload.messageId

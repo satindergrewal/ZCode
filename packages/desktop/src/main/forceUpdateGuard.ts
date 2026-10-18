@@ -65,7 +65,7 @@ function getForceUpdateMinimalVersionFromClientConfig(config: unknown): string |
     };
   };
   if (typeof envelope.code === "number" && envelope.code !== 0) {
-    // /client/configs 与服务层一样只有 code=0 才可信，避免错误 envelope 携带旧 data 时误触发启动强更。
+    // Like the service layer, /client/configs is trustable only on code=0; a stale-data error envelope must not gate.
     throw new Error(`ZCode client config failed: ${envelope.code}`);
   }
   return getForceUpdateMinimalVersionFromConfig(envelope.data?.configs);
@@ -115,7 +115,7 @@ async function fetchRemoteForceUpdateConfig(
     request.on("response", (response) => {
       const statusCode = response.statusCode ?? 0;
       if (statusCode < 200 || statusCode >= 300) {
-        // 启动前强更 gate 不能把 4xx/5xx/HTML 错页当正常配置解析，统一走离线降级路径。
+        // Never parse 4xx/5xx/HTML error pages as config; take the offline-degraded path.
         fail(new Error(`force update config request failed with status ${statusCode}`));
         return;
       }
@@ -123,7 +123,7 @@ async function fetchRemoteForceUpdateConfig(
       response.on("data", (chunk) => {
         receivedBytes += Buffer.byteLength(chunk);
         if (receivedBytes > FORCE_UPDATE_CONFIG_MAX_RESPONSE_BYTES) {
-          // 远端配置在主窗口创建前读取，必须限制响应体，避免异常响应撑爆 main 进程内存。
+          // Read before any window exists; cap the body so a runaway response cannot balloon main memory.
           fail(new Error("force update config response too large"));
           return;
         }
@@ -173,8 +173,11 @@ async function resolveDesktopForceUpdateRequirement(options: {
       return remoteRequirement;
     }
   } catch (error) {
-    // 预留离线跳过接口：完全离线时先不拉闸，后续可在这里接入显式 offline bypass 策略。
-    options.logger.warn("[force-update] 读取远端强制升级配置失败，跳过强制升级校验", { error });
+    // Offline-skip hook: keep the gate open when fully offline; wire an explicit bypass here later.
+    options.logger.warn(
+      "[force-update] failed to read remote force-update config, skipping the check",
+      { error },
+    );
     return null;
   }
 
@@ -225,7 +228,10 @@ export async function maybeBlockStartupForForceUpdate(
     return { blocked: false };
   }
 
-  options.logger.warn("[force-update] 远端配置要求强制升级，阻止创建主窗口", requirement);
+  options.logger.warn(
+    "[force-update] remote config requires forced update, blocking main window creation",
+    requirement,
+  );
   options.onBlocked?.(requirement);
   const { app, shell } = await import("electron");
   const action = await showForceUpdatePrompt(
@@ -244,11 +250,11 @@ export async function maybeBlockStartupForForceUpdate(
 
   if (action === "manual") {
     const url = resolveForceUpdateDownloadUrl(options.locale, options.endpointOrigin);
-    options.logger.info(`[force-update] 用户选择手动升级：${url}`);
+    options.logger.info(`[force-update] user chose manual update: ${url}`);
     await shell.openExternal(url);
   }
 
-  // 强制升级命中后不能进入主界面；非自动升级路径处理完弹窗后退出，避免露出旧客户端功能。
+  // Once gated, never show the old UI; non-auto-update paths exit after the dialog closes.
   app.quit();
   return { blocked: true, requirement };
 }

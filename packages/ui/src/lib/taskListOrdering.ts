@@ -34,12 +34,14 @@ function compareTaskListItemsByTime(
 }
 
 /**
- * 两层任务排序：运行任务整体置顶并按创建时间稳定排序，非运行任务再服从用户的时间偏好。
+ * Two-tier task ordering: running tasks sort to the top, stably by creation time; non-running
+ * tasks follow the user's time preference.
  *
- * 并发运行的原 task 与 fork child 会交替刷新 updatedAt。若 running 层仍读取
- * updatedAt（包括次级排序），每个流式/工具事件都会让两行互换位置。
- * 运行层的成员既包括回合在跑的 task，也包括挂着后台工作（如动态工作流 run）的 task：
- * 后者回合已收口但活动时间仍被后台事件推进，不进运行层就会重演同一类换位。
+ * A running original and its fork child refresh updatedAt alternately. If the running tier read
+ * updatedAt (even as a secondary key), every stream/tool event would swap the two rows.
+ * The running tier includes tasks with live turns and tasks with background work (e.g. a dynamic
+ * workflow run): the latter's turn is closed but activity time still advances, and leaving them
+ * out would reproduce the same row swapping.
  */
 function compareTaskListItemsWithRunningFirst<T extends TaskListSortableItem>(
   left: T,
@@ -56,7 +58,7 @@ function compareTaskListItemsWithRunningFirst<T extends TaskListSortableItem>(
     if (right.createdAt !== left.createdAt) {
       return right.createdAt - left.createdAt;
     }
-    // running 层禁止以 updatedAt 决胜；taskId 是不会随事件变化的稳定 tie-break。
+    // The running tier never tie-breaks on updatedAt; taskId is a stable, event-independent tie-break.
     return right.taskId.localeCompare(left.taskId);
   }
   return compareTaskListItemsByTime(left, right, sortBy);

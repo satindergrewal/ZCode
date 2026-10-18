@@ -9,9 +9,10 @@ import {
 import type { PdfViewerLabels, PdfViewerSource } from "@/components/ui/pdf-viewer.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 
-// react-pdf/pdfjs 在模块导入阶段依赖浏览器 DOMMatrix；对话列表也会加载本组件，
-// 导致 Node 测试和非 PDF 对话在真正打开预览前就触发浏览器专属依赖。仅在渲染 PDF 时懒加载，
-// 保持图片/视频分支的加载行为不变，同时避免对话模块产生无条件的 PDF.js 副作用。
+// react-pdf/pdfjs touch browser-only DOMMatrix at import time, and the conversation list loads
+// this module too — Node tests and non-PDF threads would pull browser deps before any preview
+// opens. Lazy-load only when rendering PDF: image/video paths are unchanged and the conversation
+// module gains no unconditional PDF.js side effects.
 const LazyPdfViewer = lazy(async () => {
   const module = await import("@/components/ui/pdf-viewer.js");
   return { default: module.PdfViewer };
@@ -117,8 +118,8 @@ export function ChatMediaAttachmentPreviewDialog({
                       {loadingLabel}
                     </p>
                   ) : null}
-                  {/* MIME 可发送不代表当前 Chromium 能解码容器或 codec；
-                  media error 只收口预览状态，不能反向修改附件或发送事实。 */}
+                  {/* A sendable MIME type does not mean this Chromium can decode the container/codec;
+                  media errors only reset preview state and never alter the attachment or the sent record. */}
                   <video
                     controls
                     playsInline

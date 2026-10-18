@@ -91,8 +91,8 @@ function normalizePrivateKeyPath(value: string | undefined): string {
         segments.pop();
         continue;
       }
-      // 盘符、UNC share 和 POSIX root 不是普通路径段，`..` 不能把根弹掉；
-      // 相对路径与 `~` 无法在浏览器侧安全求值，保留未消解的 parent segment 以避免错误复用。
+      // Drive letters, UNC shares, and POSIX roots are not plain segments; `..` must not pop the root;
+      // relative paths and `~` cannot be safely evaluated browser-side, so keep unresolved parents rather than misreuse.
       if (root.blocksParentTraversal) {
         continue;
       }
@@ -119,8 +119,8 @@ function resolveSshAuthKind(target: SshRemoteHostKeyTarget): "agent" | "password
 }
 
 /**
- * 构造窗口内 SSH Remote Host 的共享身份。
- * 密码和私钥口令只用于建连，禁止进入共享键或日志。
+ * Builds the in-window SSH remote host's shared identity.
+ * Passwords and key passphrases serve connection only; never enter the shared key or logs.
  */
 export function buildSshRemoteHostKey(target: SshRemoteHostKeyTarget): string {
   return JSON.stringify([

@@ -3,8 +3,8 @@ import { access, readFile } from "node:fs/promises";
 import { dirname, posix, resolve } from "node:path";
 
 export function placeRuntimePackage({ packageName, packageDirectory, fromAssetPath, placements }) {
-  // 原收集器仅按包名去重，把 contracts 的 Zod 3 和 shared 的 Zod 4 压成同一个包。
-  // 按消费者的 Node 查找顺序复用同一物理包；冲突版本放入消费者自己的 node_modules。
+  // The old collector deduped by package name, collapsing contracts' Zod 3 and shared's Zod 4 into one entry.
+  // Reuse one physical package per the consumer's Node resolution order; conflicting versions live in the consumer's own node_modules.
   let directory = fromAssetPath;
   while (true) {
     const candidate = posix.join(directory, "node_modules", packageName);

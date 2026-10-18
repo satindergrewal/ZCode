@@ -9,31 +9,31 @@ import {
 } from "@zcode/shared";
 
 /**
- * 资源管理器 Host 侧采样。
+ * Host-side sampler for the resource manager.
  *
- * 设计边界：
- * - 只在 Window Host（utility 进程）内运行，并且只在资源管理器窗口发起请求时才读一次进程表；
- *   main 进程禁止起任何外部进程（历史上同步 ps / PowerShell 曾卡死整个 App）。
- * - 读取整机进程表后按 Host 后代做归属；插件归属来自 CLI 的 `process/childProcesses`。
- * - CPU 统一为整机归一化百分比（100% = 所有逻辑核心占满），由两次采样的 cputime 差分得到。
+ * Boundaries:
+ * - runs only in the window host (utility process), one table read per resource-window request;
+ *   main may not spawn external processes (sync ps/PowerShell once froze the whole app).
+ * - attribute host descendants from the machine-wide table; plugin attribution via CLI process/childProcesses.
+ * - CPU is machine-normalized percent (100 = all logical cores), differenced from two cputime samples.
  */
 
 const POSIX_TABLE_TIMEOUT_MS = 3_000;
 const WINDOWS_TABLE_TIMEOUT_MS = 5_000;
 const TABLE_MAX_BUFFER_BYTES = 16 * 1024 * 1024;
-/** Linux /proc 的 utime/stime 固定按 USER_HZ=100 输出，与内核 HZ 无关。 */
+/** Linux /proc utime/stime are always USER_HZ=100, independent of kernel HZ. */
 const LINUX_CLOCK_TICKS_PER_SECOND = 100;
 const WINDOWS_100NS_PER_MS = 10_000;
-/** 上一轮 cputime 基线在这么久没被再次看到后丢弃（pid 复用防护） */
+/** Drop a stale cputime baseline after this long unseen (PID-reuse guard) */
 const CPU_BASELINE_TTL_MS = 60_000;
 
 interface ProcessResourceRow {
   pid: number;
   ppid: number;
   rssKb: number;
-  /** 进程累计 CPU 时间（user + system），毫秒 */
+  /** Cumulative CPU time (user+system), ms */
   cpuTimeMs: number;
-  /** 命令名或可执行路径（平台原样） */
+  /** Command name or executable path (platform verbatim) */
   command: string;
 }
 
@@ -70,8 +70,8 @@ function parseNonNegativeInteger(text: string | undefined): number | undefined {
 }
 
 /**
- * 解析 ps 的 cputime 文本：macOS `[[dd-]hh:]mm:ss.cc`、Linux `[dd-]hh:mm:ss`。
- * 返回毫秒；无法解析返回 undefined。
+ * Parses ps cputime: macOS [[dd-]hh:]mm:ss.cc, Linux [dd-]hh:mm:ss.
+ * Returns ms, or undefined when unparseable.
  */
 function parseCpuTimeText(text: string): number | undefined {
   const trimmed = text.trim();
@@ -95,7 +95,7 @@ function parseCpuTimeText(text: string): number | undefined {
   return Math.round((((days * 24 + hours) * 60 + minutes) * 60 + seconds) * 1000);
 }
 
-/** `ps -axo pid=,ppid=,rss=,cputime=,comm=` 的输出；comm 可能含空格，取前 4 列后剩余全部为 comm */
+/** ps -axo pid=,ppid=,rss=,cputime=,comm= row; comm may contain spaces - first 4 fields then the rest */
 function parseDarwinProcessTable(stdout: string): ProcessResourceRow[] {
   const rows: ProcessResourceRow[] = [];
   for (const line of stdout.split(/\r?\n/)) {
@@ -112,7 +112,7 @@ function parseDarwinProcessTable(stdout: string): ProcessResourceRow[] {
   return rows;
 }
 
-/** 解析 `/proc/<pid>/stat`：comm 用括号包裹且可含空格/括号，按最后一个 `)` 切分 */
+/** Parses /proc/<pid>/stat: comm is parenthesized with spaces/parens; split at the last ) */
 function parseLinuxProcStat(
   content: string,
 ): { pid: number; ppid: number; command: string; cpuTimeMs: number } | undefined {
@@ -125,7 +125,7 @@ function parseLinuxProcStat(
     .slice(close + 1)
     .trim()
     .split(/\s+/);
-  // rest[0]=state, rest[1]=ppid, ... rest[11]=utime, rest[12]=stime（原始字段号 14/15）
+  // rest[0]=state, rest[1]=ppid, ... rest[11]=utime, rest[12]=stime (raw fields 14/15)
   const ppid = parseNonNegativeInteger(rest[1]);
   const utime = parseNonNegativeInteger(rest[11]);
   const stime = parseNonNegativeInteger(rest[12]);
@@ -146,13 +146,13 @@ function parseLinuxProcStat(
   };
 }
 
-/** 解析 `/proc/<pid>/status` 里的 `VmRSS:\t 1234 kB` */
+/** Parses VmRSS:\t 1234 kB from /proc/<pid>/status */
 export function parseLinuxVmRssKb(content: string): number {
   const match = /^VmRSS:\s*(\d+)\s*kB/m.exec(content);
   return match ? Number(match[1]) : 0;
 }
 
-/** PowerShell 输出：`pid ppid workingSetBytes cpu100ns name...` */
+/** PowerShell row: pid ppid workingSetBytes cpu100ns name... */
 function parseWindowsProcessTable(stdout: string): ProcessResourceRow[] {
   const rows: ProcessResourceRow[] = [];
   for (const line of stdout.split(/\r?\n/)) {
@@ -183,7 +183,7 @@ interface CreateProcessResourceTableReaderOptions {
   readFile?: (path: string) => Promise<string>;
 }
 
-/** 按平台读取整机进程表；任何失败都返回 undefined（本轮跳过），不抛错 */
+/** Per-platform machine table; any failure returns undefined (skip this round), never throws */
 export function createProcessResourceTableReader(
   options: CreateProcessResourceTableReaderOptions = {},
 ): ProcessResourceTableReader {
@@ -239,7 +239,7 @@ export function createProcessResourceTableReader(
               if (!parsed) return undefined;
               return { ...parsed, rssKb: parseLinuxVmRssKb(status) };
             } catch {
-              // 进程在读取期间退出属正常现象，跳过即可。
+              // Processes exiting mid-read are normal; skip.
               return undefined;
             }
           }),
@@ -263,7 +263,7 @@ export interface ProcessResourceSample {
   pid: number;
   ppid: number;
   rssKb: number;
-  /** 整机归一化 CPU 百分比；首个样本无差分基线记 0 */
+  /** Machine-normalized CPU percent; 0 for the first sample (no baseline) */
   cpuPercent: number;
   command: string;
 }
@@ -288,7 +288,7 @@ export function createProcessResourceSampler(
   return {
     async sample(signal) {
       const rows = await options.readTable(signal);
-      // 关窗后的迟到 IO 不能改变下一次打开窗口的采样基线。
+      // Late IO after window close must not seed the next open's baseline.
       signal?.throwIfAborted();
       if (!rows) return undefined;
       const at = now();
@@ -296,7 +296,7 @@ export function createProcessResourceSampler(
       for (const row of rows) {
         const baseline = baselines.get(row.pid);
         let cpuPercent = 0;
-        // pid 复用防护：command 变了或 cputime 倒退都视为新进程，重新建立基线。
+        // PID-reuse guard: changed command or regresset cputime means a new process baseline.
         const reusable =
           baseline &&
           baseline.command === row.command &&
@@ -333,7 +333,7 @@ export interface HostResourceUsageAgent {
   pid: number;
   provider: string;
   workspacePath: string;
-  /** CLI `process/childProcesses` 的回报；请求失败时为空数组，其后代全部归入 cli */
+  /** CLI process/childProcesses report; empty on failure, all descendants -> cli */
   children: readonly ZCodeProcessChildProcess[];
 }
 
@@ -341,7 +341,7 @@ interface AttributeHostProcessTreeOptions {
   samples: ReadonlyMap<number, ProcessResourceSample>;
   hostPid: number;
   agents: readonly HostResourceUsageAgent[];
-  /** Host 直接管理的内置插件进程（如 Windows CUA Helper）：pid → 插件名 */
+  /** Host-managed builtin plugin processes (e.g. Windows CUA helper): pid -> plugin name */
   builtinPluginPids?: ReadonlyMap<number, string>;
 }
 
@@ -402,7 +402,7 @@ function ownerToRow(
   return {
     pid: sample.pid,
     name: isOwnerRoot ? child.serverName : commandDisplayName(sample.command),
-    // 用户裁决：官方市场插件是内置插件，其余（第三方市场 + 自定义 MCP）全部算社区插件。
+    // User ruling: official-marketplace plugins are builtin; third-party marketplaces and custom MCP are community.
     category: child.mcpSource === "builtin" ? "builtin-plugin" : "community-plugin",
     groupKey: `${child.mcpSource}:${groupLabel}`,
     groupLabel,
@@ -412,9 +412,9 @@ function ownerToRow(
 }
 
 /**
- * 把 Host 的全部后代按“最近的已知祖先”归属：
- * MCP 根 pid → 对应插件；Agent pid → 基础服务 cli；无归属 → 基础服务 host 子进程。
- * Host 自身不在结果里（它的指标由 main 的 app.getAppMetrics 提供）。
+ * Attributes every host descendant to its nearest known ancestor:
+ * MCP root pid -> that plugin; agent pid -> base service cli; unattributed -> base service host child.
+ * The host itself is absent (main covers it via app.getAppMetrics).
  */
 export function attributeHostProcessTree(
   options: AttributeHostProcessTreeOptions,
@@ -453,7 +453,7 @@ export function attributeHostProcessTree(
   };
   visit(options.hostPid, undefined);
 
-  // Agent 注册表里已知但不在 Host 子树下的进程（极端情况：ppid 被重排为 1）也补进来，避免拓扑丢行。
+  // Include registry-known processes outside the host subtree (extreme: ppid reparented to 1) so the topology keeps no holes.
   for (const [pid, owner] of ownerRoots) {
     if (visited.has(pid)) continue;
     const sample = options.samples.get(pid);

@@ -148,7 +148,7 @@ function lookupDnsAddresses(
   if (!signal) return lookup;
   throwIfAborted(signal);
 
-  // public egress 的 DNS 预检在真正建连前执行，也必须继承同一个请求超时/取消边界。
+  // The public-egress DNS precheck runs before connect and inherits the same request timeout/cancel boundary.
   return new Promise((resolve, reject) => {
     const onAbort = () => reject(abortReason(signal));
     signal.addEventListener("abort", onAbort, { once: true });

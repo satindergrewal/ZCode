@@ -37,7 +37,7 @@ import type { V4ComposerToolbarProps } from "@/v4/composer/V4ComposerToolbar.js"
 
 function noop(): void {}
 
-/** Plan 是独立勾选项，三种权限仍为单选；只编辑草稿，不向 Runtime 发切换命令。 */
+/** Plan is a separate checkbox; the three permissions stay single-select. Edits the draft only, never commands the Runtime. */
 function V4ComposerModeSwitchImpl({
   provider,
   draftConfig,
@@ -66,7 +66,7 @@ function V4ComposerModeSwitchImpl({
     getModeOptionDisplayLabel(intl, displayProvider, { value: mode.id, name: mode.name });
   const plan = modes.find((mode) => mode.id === "plan")!;
   const planLabel = label(plan);
-  // Plan 拆成独立勾选项后仍需保留原菜单说明，复用相同的国际化映射。
+  // Even as a separate checkbox, Plan keeps the original menu description via the same i18n mapping.
   const planDescriptionId = getModeOptionDescriptionMessageId(displayProvider, { value: plan.id });
   const modeOption = useMemo<ZCodeConfigOption>(
     () => ({

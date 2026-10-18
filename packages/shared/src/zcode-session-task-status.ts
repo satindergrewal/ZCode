@@ -1,6 +1,6 @@
-// ── 旧协议兼容面（过渡期）──────────────────────────────
-// 剩余 1 个导出：deriveZCodeTaskStatusFromSessionSnapshot。
-// 消费者：zcodeTaskServiceAdapter/zcodeTaskIndexSyncer/zcodeSessionProjection（旧投影栈）。
+// -- Legacy protocol compat surface (transition) ------------------------------
+// Remaining 1 export: deriveZCodeTaskStatusFromSessionSnapshot.
+// Consumers: zcodeTaskServiceAdapter / zcodeTaskIndexSyncer / zcodeSessionProjection (legacy projection stack).
 import type { ZCodeSessionStateSnapshot } from "./zcode-protocol/index.js";
 import { getZCodeUserVisibleMessages } from "./zcode-session-visible-content.js";
 import type { ZCodeTaskMeta } from "./zcode-task-types-core.js";
@@ -21,8 +21,8 @@ function hasBlockingActiveSnapshotRuntime(snapshot: ZCodeSessionStateSnapshot): 
   if (snapshot.runtime.activeTurnId || snapshot.runtime.activeTurnKind) {
     return true;
   }
-  // projection.currentTurnId 是最后一次投影的 turn 边界，完成后会保留；
-  // 只有 runtime active 字段、权限或工具调用才能证明当前仍有真实阻塞运行态。
+  // projection.currentTurnId is the last projected turn boundary and survives completion;
+  // only runtime active fields, permissions, or tool calls prove a real blocked-running state now.
   if ((snapshot.projection.pendingPermissions ?? []).length > 0) {
     return true;
   }
@@ -66,9 +66,9 @@ export function deriveZCodeTaskStatusFromSessionSnapshot(
     return status;
   }
   if (hasCompletedVisibleAssistantTurn(snapshot) && !hasBlockingActiveSnapshotRuntime(snapshot)) {
-    // desktop continuous 的 session/read 依赖 runtime projection。
-    // 旧投影有可能只 replay 到 model_streaming finish，漏掉 turn_complete，导致 currentTurnId
-    // 短暂或长期残留。此时持久化 assistant 已有 completed 时间，比 stale currentTurnId 更权威。
+    // The desktop continuous session/read leans on the runtime projection.
+    // Legacy projections may replay only to model_streaming finish, missing turn_complete, leaving currentTurnId
+    // stale briefly or forever. The persisted assistant's completed time is more authoritative then.
     return "completed";
   }
   if (hasActiveSnapshotRuntime(snapshot)) {

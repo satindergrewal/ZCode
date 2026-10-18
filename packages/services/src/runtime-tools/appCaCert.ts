@@ -4,9 +4,10 @@ import { join } from "node:path";
 import forge from "node-forge";
 import { getAppConfigDir } from "../paths.js";
 
-// app 场景的自签 CA（区别于 debug 抓包代理那套，仅 debug 环境用）。
-// 程序首次启动时生成一份自签根 CA，公钥证书供 agent 子进程经 NODE_EXTRA_CA_CERTS 信任，
-// 私钥供出口代理做 TLS 重签。已存在则原样复用，保证证书指纹稳定、被信任后不漂移。
+// Self-signed CA for the app runtime (distinct from the debug packet-capture proxy CA, which is
+// debug-only). Generated on first app start: agent subprocesses trust the public cert via
+// NODE_EXTRA_CA_CERTS and the egress proxy uses the key for TLS re-signing. Existing files are
+// reused as-is so the cert fingerprint stays stable and trusted.
 
 const APP_CA_CERT_FILE = "zcode-network-ca.pem";
 const APP_CA_KEY_FILE = "zcode-network-ca.key";
@@ -27,8 +28,8 @@ function getAppCaCertPaths(): AppCaCertPaths {
 }
 
 /**
- * 确保 app 自签 CA 存在；缺失时生成一份。返回证书（公钥）路径。
- * 幂等：证书与私钥都已存在时直接返回，不重新生成。
+ * Ensure the app self-signed CA exists, generating it when missing. Returns the cert (public key) path.
+ * Idempotent: returns immediately when both cert and key exist, without regenerating.
  */
 export function ensureAppCaCert(): string {
   const { certPath, keyPath } = getAppCaCertPaths();
@@ -38,7 +39,7 @@ export function ensureAppCaCert(): string {
 
   const { certPem, keyPem } = generateSelfSignedCa();
   mkdirSync(join(getAppConfigDir(), "certs"), { recursive: true });
-  // 私钥含敏感材料，权限收紧到 0600；公钥证书可读。
+  // The key holds secret material: tighten permissions to 0600; the public cert stays readable.
   writeFileSync(certPath, certPem, { mode: 0o644 });
   writeFileSync(keyPath, keyPem, { mode: 0o600 });
   return certPath;
@@ -48,7 +49,7 @@ function generateSelfSignedCa(): { certPem: string; keyPem: string } {
   const keys = forge.pki.rsa.generateKeyPair(CA_KEY_BITS);
   const cert = forge.pki.createCertificate();
   cert.publicKey = keys.publicKey;
-  // 用密码学随机数做序列号，首字节清零避免被解析成负数。
+  // Cryptographic random serial number; clear the top bit so it never parses as negative.
   const serial = randomBytes(16);
   serial[0] = serial[0]! & 0x7f;
   cert.serialNumber = serial.toString("hex");
@@ -64,7 +65,7 @@ function generateSelfSignedCa(): { certPem: string; keyPem: string } {
     { name: "organizationName", value: "ZCode" },
   ];
   cert.setSubject(attrs);
-  cert.setIssuer(attrs); // 自签：issuer == subject
+  cert.setIssuer(attrs); // self-signed: issuer == subject
   cert.setExtensions([
     { name: "basicConstraints", cA: true, critical: true },
     { name: "keyUsage", critical: true, keyCertSign: true, cRLSign: true, digitalSignature: true },

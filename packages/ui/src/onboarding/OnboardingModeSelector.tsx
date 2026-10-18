@@ -11,7 +11,7 @@ interface ModeSelectorProps {
   formatLabel: (key: string) => string;
 }
 
-/** 引导第二步的 UI 模式选择；从 OccupationOnboarding 抽出以控制文件行数。 */
+/** UI-mode step of onboarding; extracted from OccupationOnboarding to bound the file length. */
 export function OnboardingModeSelector({
   mode,
   saving,

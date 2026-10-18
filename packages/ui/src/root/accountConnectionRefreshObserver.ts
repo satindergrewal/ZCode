@@ -5,11 +5,11 @@ import { logger } from "@/logger.js";
 export interface AccountConnectionLoss {
   readonly providerId: string;
   readonly connectionKey: string;
-  /** 新账号/新连接/恢复可用会立即废弃旧建议，包括其在途查询。 */
+  /** A new account/connection or recovered availability invalidates the old suggestion at once, in-flight query included. */
   readonly isCurrent: () => boolean;
 }
 
-/** 只比较同一连接的确定状态；手动选未开通套餐不能触发自动回退。 */
+/** Compares only confirmed states of the same connection; manually picking an unenabled plan never auto-falls-back. */
 export function createAccountConnectionRefreshObserver(
   notify: (event: AccountConnectionLoss) => void | Promise<void>,
 ) {
@@ -35,7 +35,7 @@ export function createAccountConnectionRefreshObserver(
         previous = undefined;
         generation++;
       }
-      // 旧 Host 无身份事实时不猜测；unknown 不抹除已有确定基线。
+      // With no identity facts from the old host, guess nothing; unknown never erases a confirmed baseline.
       if (!key || !current || !next || next === "unknown") return;
       const lost = (previous === "available" || previous === "pending") && next === "unavailable";
       if (next !== previous) generation++;
@@ -50,8 +50,8 @@ export function createAccountConnectionRefreshObserver(
             !disposed && generation === eventGeneration && previous === "unavailable",
         });
       } catch (error) {
-        // 提示查询失败不等于新的失效事件；不能由重复 View 发起无限通知/重试。
-        logger.lifecycle.warn("[AccountConnection] 生成套餐失效提示失败，保留当前选择", { error });
+        // A failed notice query is not a new invalidation; repeated Views must not spawn endless notify/retry.
+        logger.lifecycle.warn("[AccountConnection] Failed to build the plan-invalidation notice; keeping the current selection", { error });
       }
     },
     invalidate() {

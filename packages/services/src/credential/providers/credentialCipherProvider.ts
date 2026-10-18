@@ -31,7 +31,7 @@ function defaultCredentialSecret(env: NodeJS.ProcessEnv): string {
   try {
     username = userInfo().username;
   } catch {
-    // 部分运行环境可能拿不到系统用户，失败时退回默认占位值。
+    // Some environments have no system user; fall back to a default placeholder on failure.
   }
 
   return `zcode-credential-fallback:${platform()}:${homedir()}:${username}`;
@@ -86,7 +86,7 @@ export function createCredentialCipherProvider(
       const [ivRaw, authTagRaw, cipherRaw] = parts;
 
       if (!ivRaw || !authTagRaw || !cipherRaw || parts.length !== 3) {
-        throw createCredentialDecryptError("密文格式非法");
+        throw createCredentialDecryptError("Invalid ciphertext format");
       }
 
       const iv = base64urlToBuffer(ivRaw);
@@ -94,11 +94,11 @@ export function createCredentialCipherProvider(
       const cipherText = base64urlToBuffer(cipherRaw);
 
       if (iv.length !== CREDENTIAL_CIPHER_IV_BYTES) {
-        throw createCredentialDecryptError("IV 长度非法");
+        throw createCredentialDecryptError("Invalid IV length");
       }
 
       if (authTag.length !== CREDENTIAL_CIPHER_AUTH_TAG_BYTES) {
-        throw createCredentialDecryptError("AuthTag 长度非法");
+        throw createCredentialDecryptError("Invalid auth tag length");
       }
 
       const decipher = createDecipheriv(CREDENTIAL_CIPHER_ALGORITHM, key, iv);
@@ -108,7 +108,7 @@ export function createCredentialCipherProvider(
         const plainText = Buffer.concat([decipher.update(cipherText), decipher.final()]);
         return plainText.toString("utf-8");
       } catch {
-        throw createCredentialDecryptError("密钥不匹配或密文已损坏");
+        throw createCredentialDecryptError("Key mismatch or corrupt ciphertext");
       }
     },
   };

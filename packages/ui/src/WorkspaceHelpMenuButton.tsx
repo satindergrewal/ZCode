@@ -36,8 +36,8 @@ export function WorkspaceHelpMenuButton({
 }: {
   className?: string;
   /**
-   * 是否桌面端。由挂载处注入而不是在组件内嗅探：Web 的 IPlatformService 桩同样实现了
-   * executeDesktopCommand（no-op），拿它判定会让 Web 端出现一个点了没反应的「资源管理器」。
+   * Desktop-or-not, injected by the mount point instead of sniffing: the web IPlatformService
+   * stub also implements executeDesktopCommand (no-op), which would render a dead Explorer entry on web.
    */
   isDesktop?: boolean;
 }) {
@@ -71,8 +71,9 @@ export function WorkspaceHelpMenuButton({
             type="button"
             variant="ghost"
             size="icon-md"
-            // Settings 页会把帮助按钮绝对定位在 Electron 顶部拖拽区上方。
-            // 只依赖外层容器 no-drag 时，真实 trigger 仍可能被标题栏 drag 区吞掉点击。
+            // Settings absolutely positions the help button over Electron's top drag region.
+            // Relying on the outer container's no-drag still lets the titlebar drag area eat
+            // clicks aimed at the real trigger.
             className={cn(
               "text-foreground hover:bg-hover hover:text-foreground [app-region:no-drag]",
               className,
@@ -104,8 +105,8 @@ export function WorkspaceHelpMenuButton({
           <LightbulbIcon className="size-4" />
           {intl.formatMessage({ id: "workspaceHeader.help.productRequest" })}
         </DropdownMenuItem>
-        {/* Windows/Linux 没有原生菜单栏，自绘标题栏箭头菜单也已下线，
-            资源管理器只能从这里进；Web 端没有该窗口，不渲染。 */}
+        {/* Windows/Linux have no native menu bar and the custom titlebar arrow menu is gone,
+            so the Explorer is reachable only here; web has no such window and renders nothing. */}
         {isDesktop ? (
           <>
             <DropdownMenuSeparator />

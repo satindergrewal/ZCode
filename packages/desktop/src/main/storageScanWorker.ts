@@ -1,7 +1,7 @@
 /**
- * 存储扫描 Worker 入口（main 进程内的 worker_threads）。
- * 只负责把 services 的 runStorageScan 跑在独立线程里，并按节流把聚合快照发回主线程；
- * 遍历、分类、聚合逻辑全部来自 @zcode/services（单一扫描路径）。
+ * * Storage-scan worker entry (worker_threads inside the main process).
+ * Runs services runStorageScan off-thread and posts throttled aggregate snapshots to the parent;
+ * all walking/classifying/aggregating lives in @zcode-services (one scan path).
  */
 import { isMainThread, parentPort, workerData } from "node:worker_threads";
 import type { StorageRootSpec } from "@zcode/services";

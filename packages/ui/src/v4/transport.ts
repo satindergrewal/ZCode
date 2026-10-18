@@ -1,6 +1,6 @@
-// V4 会话数据层的传输接缝（依赖注入）。
-// desktop 走 preload/MessagePort，web 走 ws relay——数据层对两者零感知，
-// 这是「依赖注入解决 desktop/web 兼容」原则在 v4 数据层的落点。
+// Transport seam of the V4 session data layer (dependency injection).
+// desktop goes through preload/MessagePort, web through the ws relay - the data layer knows neither;
+// this is where dependency-injection-solves-desktop/web-compat lands in the v4 data layer.
 import type {
   CommandAck,
   CommandEnvelope,
@@ -41,77 +41,77 @@ import type {
 import type { AttachmentUploadOptions } from "@/v4/attachmentUploadTransaction.js";
 
 /**
- * 一条 host 连接上的 v4 conversation 传输面。
- * 跨 workspace 分屏 = UI shell 持 Map<workspaceKey, ConversationTransport>，
- * 每条连接各配一个 SessionDataLayer。
+ * The v4 conversation transport surface over one host connection.
+ * Cross-workspace splits = the UI shell holds Map<workspaceKey, ConversationTransport>,
+ * each connection with its own SessionDataLayer.
  */
 export interface ConversationTransport {
-  /** v4/conversation/subscribe。connectionId 由传输实现补齐，不进 UI 层。 */
+  /** v4/conversation/subscribe. connectionId is filled in by the transport impl, never by the UI layer. */
   subscribe(params: SubscribeParams): Promise<V4ConversationSubscribeResult>;
-  /** store 写入 ACK subscriptionId 后激活，并按原序释放 ACK 前 notification。 */
+  /** Activate once the store ACKs the subscriptionId, releasing pre-ACK notifications in order. */
   activate(subscriptionId: string): void;
-  /** 活跃订阅 same-sub recovery；topic/connection/profile 由 host owned registry 反查。 */
+  /** Live-subscription same-sub recovery; topic/connection/profile resolved via the host-owned registry. */
   resync(params: ConversationResyncParams): Promise<V4ConversationResyncResult>;
   /** v4/conversation/unsubscribe。 */
   unsubscribe(subscriptionId: string): Promise<void>;
   /** v4/command。 */
   sendCommand(envelope: CommandEnvelope): Promise<CommandAck>;
-  /** v4/commands/query：重连后按 commandId 与 CLI 权威事实对账。 */
+  /** v4/commands/query: reconcile against CLI-authoritative facts by commandId after reconnect. */
   queryCommands(params: CommandsQueryParams): Promise<CommandsQueryResult>;
-  /** v4/conversation/rowsRange（loadOlder）：按游标向上取一窗历史行。 */
+  /** v4/conversation/rowsRange (loadOlder): fetch one window of history upward by cursor. */
   rowsRange(params: V4ConversationRowsRangeParams): Promise<V4ConversationRowsRangeResult>;
-  /** v4/conversation/plans：当前有效分支里的全部终态计划。 */
+  /** v4/conversation/plans: every terminal plan in the current live branch. */
   plans(params: V4ConversationPlansParams): Promise<V4ConversationPlansResult>;
-  /** v4/conversation/workflowRunEvents：workflow run 的事件日志分页（cursor = journal sequence）。 */
+  /** v4/conversation/workflowRunEvents: workflow run event-log pagination (cursor = journal sequence). */
   workflowRunEvents(
     params: V4ConversationWorkflowRunEventsParams,
   ): Promise<V4ConversationWorkflowRunEventsResult>;
-  /** v4/conversation/workflowRuns：workflow run 枚举（journal-backed 的重启后发现面）。 */
+  /** v4/conversation/workflowRuns: workflow run enumeration (journal-backed rediscovery after restart). */
   workflowRuns(params: V4ConversationWorkflowRunsParams): Promise<V4ConversationWorkflowRunsResult>;
   /**
-   * v4/conversation/workflowRunArtifacts：workflow run 的**用户面产物**清单（冷恢复的 durable 读法）。
+   * v4/conversation/workflowRunArtifacts: the user-facing artifact list of a workflow run (durable read for cold recovery).
    *
-   * ⚠ 术语：artifact = 脚本经 `artifact.*` 发布给用户看的产出（文件 / markdown / 预置看板），
-   * 不是 run 的顶层返回值。
+   * Terminology: an artifact is output published to the user by the script via `artifact.*` (file / markdown / preset dashboard),
+   * not the run top-level return value.
    */
   workflowRunArtifacts(
     params: V4ConversationWorkflowRunArtifactsParams,
   ): Promise<V4ConversationWorkflowRunArtifactsResult>;
-  /** v4/conversation/workflowRunArtifactData：预置看板的条目分页（cursor = journal sequence）。 */
+  /** v4/conversation/workflowRunArtifactData: preset dashboard entry pagination (cursor = journal sequence). */
   workflowRunArtifactData(
     params: V4ConversationWorkflowRunArtifactDataParams,
   ): Promise<V4ConversationWorkflowRunArtifactDataResult>;
-  /** v4/conversation/workflowRunArtifactRead：内容产物的字节，一次一块（≤ 512 KiB）。 */
+  /** v4/conversation/workflowRunArtifactRead: content artifact bytes, one chunk at a time (<= 512 KiB). */
   workflowRunArtifactRead(
     params: V4ConversationWorkflowRunArtifactReadParams,
   ): Promise<V4ConversationWorkflowRunArtifactReadResult>;
   /**
-   * v4/conversation/workflowRunWorkspace：workflow run 的脚本 transcript 清单
-   * （files.* / git.* / world.run 的 journal 行，不带正文）。
+   * v4/conversation/workflowRunWorkspace: the script transcript listing of a workflow run
+   * (files.* / git.* / world.run journal lines, no bodies).
    */
   workflowRunWorkspace(
     params: V4ConversationWorkflowRunWorkspaceParams,
   ): Promise<V4ConversationWorkflowRunWorkspaceResult>;
-  /** v4/conversation/workflowRunNodeResult：一个工作区节点的有界正文（展开时才取）。 */
+  /** v4/conversation/workflowRunNodeResult: bounded body of one workspace node (fetched on expand). */
   workflowRunNodeResult(
     params: V4ConversationWorkflowRunNodeResultParams,
   ): Promise<V4ConversationWorkflowRunNodeResultResult>;
-  /** v4/conversation/fileChanges：按 turn row 展开文件摘要详情与只读 diff。 */
+  /** v4/conversation/fileChanges: per-turn-row file summary details and read-only diffs. */
   fileChanges(params: V4ConversationFileChangesParams): Promise<V4ConversationFileChangesResult>;
-  /** v4/conversation/fileRewindPreview：按 turn row 预览 workspace-only 文件撤销。 */
+  /** v4/conversation/fileRewindPreview: per-turn-row preview of workspace-only file reverts. */
   fileRewindPreview(
     params: V4ConversationFileRewindPreviewParams,
   ): Promise<V4ConversationFileRewindPreviewResult>;
-  /** UI 高层附件上传；production wire 为 begin/chunk/commit/abort。 */
+  /** High-level UI attachment upload; the production wire is begin/chunk/commit/abort. */
   attachmentPut(
     params: V4AttachmentPutParams,
     options?: AttachmentUploadOptions,
   ): Promise<V4AttachmentPutResult>;
-  /** 已发送 image/video 高层读取；Desktop 本地视频可返回已授权 URL，其余循环小块。 */
+  /** High-level read for sent image/video; Desktop-local video may return an authorized URL, the rest loops small chunks. */
   attachmentRead(
     params: ConversationAttachmentReadParams,
   ): Promise<{ bytes: Uint8Array; mediaType: string } | { url: string; mediaType: string }>;
-  /** 已发送 PDF 的授权 range 读取；不会把完整文件先读入 renderer。 */
+  /** Authorized range reads for sent PDFs; never loads the whole file into the renderer. */
   attachmentReadRange(
     params: ConversationAttachmentReadParams & { offset: number; limit: number },
   ): Promise<{
@@ -120,14 +120,14 @@ export interface ConversationTransport {
     totalBytes: number;
     nextOffset: number | null;
   }>;
-  /** 注册下行帧监听（v4/conversation/frame），返回解除函数。 */
+  /** Registers the downstream frame listener (v4/conversation/frame); returns the unsubscribe function. */
   onFrame(
     listener: (
       frame: ConversationTopicFrame,
       context?: { deliveryKind: TopicFrameDeliveryKind },
     ) => void,
   ): () => void;
-  /** physical assembly 原子失败；projection 保持不变，由 store 发起 single-flight resync。 */
+  /** Atomic failure of physical assembly; projection untouched, the store starts a single-flight resync. */
   onAssemblyFault(
     listener: (fault: {
       topic: string;
@@ -136,18 +136,18 @@ export interface ConversationTransport {
       deliveryKind?: TopicFrameDeliveryKind;
     }) => void,
   ): () => void;
-  /** CLI runtime 或承载 proxy 换代；transport 已先清 ownership/barrier/assembler。 */
+  /** CLI runtime or carrying-proxy generation change; the transport has already cleared ownership/barrier/assembler. */
   onRuntimeRestart(listener: (reason?: "runtimeRestart" | "transportReplaced") => void): () => void;
   /**
-   * CLI runtime 存活态。unavailable 在 workspace-dispose 当场到达（此时新 runtime 尚不存在，
-   * 不可重订阅）；available 在新进程 spawn 时到达，与 onRuntimeRestart 同刻同义。
+   * CLI runtime liveness. unavailable arrives during workspace dispose (no new runtime exists yet,
+   * cannot re-subscribe); available arrives when the new process spawns, same instant and meaning as onRuntimeRestart.
    *
-   * onRuntimeRestart 只在新进程 spawn 时才发，而 agent 是懒启动——CUA Helper 就绪
-   * 触发 dispose 后没人拉起 agent，换代通知因此永不到达，草稿预热会话不重建、附件卡在
-   * waitingSession，直到用户手动点一次发送才被踹活。dispose 当场可观测的只有本事件。
+   * onRuntimeRestart fires only on new-process spawn, and the agent starts lazily - once CUA Helper readiness
+   * triggers dispose nobody starts the agent, so the generation notice never arrives: the draft-prewarm session is not
+   * rebuilt and attachments stick in waitingSession until the user sends once manually. This event is the only dispose-time signal.
    *
-   * 消费方按 sessionsIndexStore 的既定模式二选一订阅（有本方法就不订阅 onRuntimeRestart），
-   * 避免同一次换代被两条通道各处理一次。承载方未暴露 runtime lifecycle 时本方法不存在。
+   * Consumers subscribe to one of the two per the established sessionsIndexStore pattern (with this method, skip onRuntimeRestart),
+   * so one generation change is handled once, not twice per channel. Absent when the carrier exposes no runtime lifecycle.
    */
   onRuntimeLifecycle?(listener: (state: "available" | "unavailable") => void): () => void;
 }
@@ -155,14 +155,14 @@ export interface ConversationTransport {
 export interface ConversationAttachmentReadParams {
   sessionId: string;
   ref: string;
-  /** 仅用于决定是否查询 Desktop local video source；最终 MIME 仍由 CLI 权威返回。 */
+  /** Only decides whether to query the Desktop local video source; final MIME stays CLI-authoritative. */
   mediaType?: string;
-  /** 新 row 有稳定 identity；旧 snapshot 缺失时保持 ref-only 兼容。 */
+  /** New rows carry a stable identity; keep ref-only compat when old snapshots lack it. */
   target?: ConversationRowTarget;
   attachmentIndex?: number;
-  /** Dialog 关闭、切换或卸载时停止后续分块请求。 */
+  /** Stops further chunked requests on dialog close, switch, or unmount. */
   signal?: AbortSignal;
 }
 
-/** conversation topic key（与 CLI 侧 parseConversationTopic 对偶），从协议包再导出。 */
+/** Conversation topic key (dual of the CLI parseConversationTopic), re-exported from the protocol package. */
 export { conversationTopic } from "@zcode/shared/zcode-protocol-v4";

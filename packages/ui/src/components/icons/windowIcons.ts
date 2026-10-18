@@ -1,6 +1,7 @@
 import { createLucideIcon } from "lucide-react";
 
-// 用户提供的窗口图形使用 Lucide 渲染，去掉白底并继承主题前景色及全局线宽。
+// User-provided window glyphs render through Lucide: no white fill, inheriting the theme
+// foreground color and the global stroke width.
 export const WindowMaximizeIcon = createLucideIcon("WindowMaximize", [
   [
     "path",

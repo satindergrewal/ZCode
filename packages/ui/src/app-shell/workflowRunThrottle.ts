@@ -1,13 +1,15 @@
 /**
- * dwf run 详情页的自适应并发观察面：
- * run 头的并发/冷却读数，以及事件日志里 `node-waiting` / `node-executing` / `concurrency-changed` /
- * `run-caps-changed` 四条事件的行。子代理徽标**不在**这里：它只有三态一个词，直接由协议
- * actor 状态渲染。
+ * Adaptive-concurrency observation surface for the dwf run detail page: the run header's
+ * concurrency/cooldown readouts, plus event-log rows for `node-waiting` / `node-executing` /
+ * `concurrency-changed` / `run-caps-changed`. The subagent badge is NOT here: it is a single
+ * three-state word rendered directly from the protocol actor state.
  *
- * 展示规则与 workflowRunPanel.ts 共用事件类型，另在本地记录状态的**首次收到时刻**。
- * 协议只带相对量（`cooldownMs`——引擎无时钟），deadline 只能由 UI 按
- * "第一次见到这份状态的时刻"推。登记按对象身份（WeakMap）：归约对未变的 `concurrency` 保留同一对象
- * 引用，一被新事件替换就是新对象、重新登记。不放进协议，是因为它是本地观察，不是引擎事实。
+ * Display rules share event types with workflowRunPanel.ts but additionally record each state's
+ * **first-received time** locally. The protocol carries only relative quantities (`cooldownMs` --
+ * the engine has no clock), so the deadline can only be projected by the UI from "when this state
+ * was first seen". Registration is by object identity (WeakMap): the reducer keeps the same object
+ * reference while `concurrency` is unchanged; any replacement by a new event is a new object and
+ * re-registers. It stays out of the protocol because it is a local observation, not an engine fact.
  */
 import type { WorkflowRunConcurrency } from "@zcode/shared/zcode-protocol-v4";
 import type { WorkflowRunEventItem, WorkflowRunEventLine } from "./workflowRunPanel.js";
@@ -19,8 +21,9 @@ const EVENT_KEY_PREFIX = `${I18N_PREFIX}event.`;
 type FormatMessage = (descriptor: { id: string }, values?: Record<string, string>) => string;
 
 /**
- * 限流原因 → 短标签的 i18n 键（reason 是开放字符串，这里只映射已知的几类，其余
- * 归入「瞬态错误」；完全陌生的值原样显示——不认识不等于不显示）。
+ * Throttle reason -> short-label i18n key (reason is an open string; only the known ones map
+ * here, the rest fall into "transient error"). Completely unknown values render verbatim --
+ * unrecognized never means hidden.
  */
 const REASON_LABEL_KEY: Readonly<Record<string, string>> = {
   rate_limited: "throttle.reason.rateLimited",
@@ -39,7 +42,7 @@ export function throttleReasonLabel(reason: string, formatMessage: FormatMessage
   return key === undefined ? reason : formatMessage({ id: `${I18N_PREFIX}${key}` });
 }
 
-// ── 收到时刻登记 ──
+// -- received-at registry --
 
 const concurrencyReceivedAt = new WeakMap<WorkflowRunConcurrency, number>();
 
@@ -50,22 +53,24 @@ function stamp<T extends object>(registry: WeakMap<T, number>, subject: T, now: 
   return now;
 }
 
-// ── run 头 ──
+// -- run header --
 
 interface WorkflowRunConcurrencyView {
   /**
-   * 芯片上那个数：**实际**并发 `min(cap, limit)`——共享桶的 cap 与本 run 自己的 limit 取小。用户看到的是这次 run
-   * 此刻真能有几个子代理在飞，两条界里哪一条在起作用不是读数要回答的问题。
+   * The chip's number: **effective** concurrency `min(cap, limit)` -- the shared bucket's cap
+   * against this run's own limit, whichever is smaller. It answers how many subagents this run
+   * can truly have in flight right now; which bound is binding is not the readout's question.
    */
   cap: number;
   ceiling: number;
-  /** 冷却 deadline（epoch ms）；无冷却或已过期时缺席。 */
+  /** Cooldown deadline (epoch ms); absent when no cooldown or already expired. */
   cooldownUntil?: number;
 }
 
 /**
- * run 头的并发读数。只在**实际并发 < ceiling** 时在场：跑在天花板上的 run 没有可说的。
- * 冷却按收到时刻 + `cooldownMs` 推 deadline，过期即缺席——UI 不显示一个已经过去的时间。
+ * The run header's concurrency readout. Present only while **effective concurrency < ceiling**:
+ * a run riding the ceiling has nothing to say. Cooldown projects the deadline from received-at
+ * plus `cooldownMs` and drops out once expired -- the UI never shows a time already past.
  */
 export function workflowRunConcurrencyView(
   concurrency: WorkflowRunConcurrency | undefined,
@@ -82,7 +87,7 @@ export function workflowRunConcurrencyView(
   return view;
 }
 
-// ── 事件日志 ──
+// -- event log --
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -95,17 +100,19 @@ function refText(value: unknown): string | undefined {
   return typeof ordinal === "number" ? `${siteId}@${ordinal}` : siteId;
 }
 
-/** 引擎 caps（`{ maxConcurrency }`）的读数；读不动写「?」，与 previous/next 同一条兜底。 */
+/** Readout of the engine caps (`{ maxConcurrency }`); "?" when unreadable, same fallback as previous/next. */
 function capsMaxConcurrency(value: unknown): string {
   if (!isRecord(value)) return "?";
   return typeof value.maxConcurrency === "number" ? String(value.maxConcurrency) : "?";
 }
 
 /**
- * 四条并发事件（node-waiting / node-executing / concurrency-changed / run-caps-changed）→ 事件日志行；
- * 其余种类返回 undefined（交回主表的 default 兜底）。与 workflowRunEventLines 的其余分支同一条纪律：
- * 载荷防御性读取，一条读不动的事件绝不打挂整页。全部 tone default：等待不是失败，cap 变化也不是——
- * 前三条是运行时在自我调节，最后一条是用户在调它。
+ * The four concurrency events (node-waiting / node-executing / concurrency-changed /
+ * run-caps-changed) -> event-log rows; other kinds return undefined (the main table's default
+ * fallback handles them). Same discipline as the rest of workflowRunEventLines: read the payload
+ * defensively; one unreadable event never takes down the page. All tones default: waiting is not
+ * a failure, nor is a cap change -- the first three are the runtime self-regulating, the last is
+ * the user tuning it.
  */
 export function workflowRunConcurrencyEventLine(
   event: WorkflowRunEventItem,
@@ -124,8 +131,9 @@ export function workflowRunConcurrencyEventLine(
     ...(detail === undefined ? {} : { detail }),
   });
   switch (event.type) {
-    // node-waiting：cause=slot 是在闸门前排队，没有别的可说；cause=backoff 带 runner 的
-    // 退避原因与时长——徽标不显示这些细节，事件日志是它们唯一的落点。
+    // node-waiting: cause=slot is queueing at the gate, nothing more to say; cause=backoff
+    // carries the runner's backoff reason and duration -- the badge omits these details, the
+    // event log is their only home.
     case "node-waiting": {
       if (payload.cause !== "backoff") {
         return withDetail(
@@ -161,9 +169,10 @@ export function workflowRunConcurrencyEventLine(
         key,
       );
     }
-    // run-caps-changed：用户在 run 在飞时改了这次 run **自己**的那条界（就地生效，不另起一次 run）。
-    // 与上面那条分两行说：`concurrency-changed` 是治理器在压共享桶（provider key 的事），这一条是
-    // 用户的决定。没有 detail——它不属于任何 provider key，也不属于任何实例。
+    // run-caps-changed: the user changed this run's **own** bound while it is in flight
+    // (effective in place, no new run). Kept as a separate row from the one above:
+    // `concurrency-changed` is the governor squeezing the shared bucket (a provider-key matter);
+    // this one is the user's decision. No detail -- it belongs to no provider key and no instance.
     case "run-caps-changed":
       return withDetail(
         formatMessage(

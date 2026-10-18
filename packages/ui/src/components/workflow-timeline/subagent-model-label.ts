@@ -3,15 +3,15 @@ import { parseModelPickerValue } from "@/lib/zcodeSessionProjection.js";
 import { formatProviderModelLabel } from "@/v4/composer/modelTriggerDisplay.js";
 
 /**
- * 子代理模型的**词**：run 上存的是规范串
- * `providerId/modelId[$reasoningLevel]`——那是给机器回填用的，不是给人读的。团队套餐的
- * providerId 是一个 UUID，原样贴到屏幕上，用户第一眼看到的就是一串十六进制。
+ * The subagent model's **words**: what the run stores is the canonical string
+ * `providerId/modelId[$reasoningLevel]` — meant for machine backfill, not human eyes. Team-plan provider ids are
+ * UUIDs; pasted onto the screen, the first thing a user sees is hex.
  *
- * 所以三个面（确认窗、运行卡、详情侧板）共用这一个纯函数：拼名规则直接复用模型菜单那一条
- * （`formatProviderModelLabel`：内置家族只显示模型名，自定义 provider 才显示「名字/模型」），
- * 思考强度复用思考控件的词表。规范串本身只住在 tooltip 里。
+ * So the three surfaces (approval dialog, run card, detail side panel) share one pure function: the naming rule reuses the model menu's
+ * (`formatProviderModelLabel`: built-in families show the model name only, custom providers show "name/model"),
+ * and reasoning levels reuse the reasoning control's vocabulary. The canonical string itself lives only in the tooltip.
  *
- * 纯函数 + 注入的 formatMessage / providerName：与 timeline-summary 同一条纪律，本文件不碰 store。
+ * Pure function + injected formatMessage / providerName: the same discipline as timeline-summary; this file never touches stores.
  */
 type FormatMessage = (
   descriptor: { id: string },
@@ -19,24 +19,24 @@ type FormatMessage = (
 ) => string;
 
 export interface WorkflowSubagentModelLabel {
-  /** 屏幕上的模型名；**永远不含 providerId**。 */
+  /** The on-screen model name; **never contains the providerId**. */
   name: string;
-  /** 本地化的思考强度词；规范串没有 `$level` 时缺席。 */
+  /** Localized reasoning-level word; absent when the canonical string has no `$level`. */
   level?: string;
-  /** 规范串原文（trim 过），只进 tooltip。 */
+  /** Canonical string verbatim (trimmed), tooltip only. */
   canonical: string;
 }
 
 export interface WorkflowSubagentModelDeps {
   formatMessage: FormatMessage;
   /**
-   * providerId → 会话模型清单里的 provider 名。缺席（或查不到）时退回裸 modelId——
-   * 这是**刻意**的兜底：解析不到名字也绝不把 providerId 摆出来。
+   * providerId -> provider name from the session's model list. Falls back to the bare modelId when absent (or unresolved) —
+   * a **deliberate** fallback: never surface the providerId, even when the name cannot be resolved.
    */
   providerName?: (providerId: string) => string | undefined;
 }
 
-/** 解析不出结构时的兜底取名：砍掉 `providerId/` 前缀与 `$level` 后缀，剩下的就是人能读的那截。 */
+/** Fallback naming when parsing fails: strip the `providerId/` prefix and the `$level` suffix; whatever remains is the human-readable part. */
 function fallbackName(canonical: string): string {
   const separatorIndex = canonical.indexOf("/");
   const rest = separatorIndex > 0 ? canonical.slice(separatorIndex + 1) : canonical;
@@ -46,8 +46,8 @@ function fallbackName(canonical: string): string {
 }
 
 /**
- * 规范串 → 屏幕上的词。解析失败（串缺 provider 段、或形状不合 schema）不抛：UI 不是第二个
- * 解析器，拿不准就退回裸 modelId。
+ * Canonical string -> on-screen words. Parse failures (missing provider segment, shape off the schema) do not throw: the UI is not a
+ * second parser; when in doubt, fall back to the bare modelId.
  */
 export function describeWorkflowSubagentModel(
   canonical: string,
@@ -64,8 +64,8 @@ export function describeWorkflowSubagentModel(
     return { canonical: trimmed, name: fallbackName(trimmed) };
   }
 
-  // 会话清单里 providerName 查不到时会退回 providerId 本身（见 zcodeSessionSettingsToConfigOptions）；
-  // 那种「名字」正是我们要挡的东西，当作没查到。
+  // When the session list has no providerName it falls back to the providerId itself (see zcodeSessionSettingsToConfigOptions);
+  // exactly the thing screened out here — treat as not found.
   const resolvedName = deps.providerName?.(parsed.providerId)?.trim();
   const providerName =
     resolvedName === undefined || resolvedName === parsed.providerId ? undefined : resolvedName;
@@ -75,7 +75,7 @@ export function describeWorkflowSubagentModel(
   if (rawLevel === undefined) {
     return { canonical: trimmed, name };
   }
-  // 档位词与思考控件同一张表；表里没有的值原样显示（provider 自定义的档位名）。
+  // Level words share the reasoning control's table; unknown values render verbatim (provider-defined level names).
   const labelId = thoughtLevelLabelId(rawLevel);
   return {
     canonical: trimmed,
@@ -84,7 +84,7 @@ export function describeWorkflowSubagentModel(
   };
 }
 
-/** 一句话说清模型与强度：没有档位时就是模型名本身（确认窗与 tooltip 共用）。 */
+/** The model and level in one sentence: without a level it is just the model name (shared by approval dialog and tooltip). */
 export function workflowSubagentModelText(
   formatMessage: FormatMessage,
   label: WorkflowSubagentModelLabel,
@@ -98,8 +98,8 @@ export function workflowSubagentModelText(
 }
 
 /**
- * 三个面共用的 tooltip：一句解释（子代理跑在哪儿、主代理没变）+ 换行 + 规范串。
- * 规范串是给机器回填用的，它只该在这里出现。
+ * The three surfaces' tooltip: one explanation (where the subagent runs, main agent unchanged) + newline + canonical string.
+ * The canonical string exists for machine backfill; this is the only place it should appear.
  */
 export function workflowSubagentModelTooltip(
   formatMessage: FormatMessage,
@@ -113,8 +113,8 @@ export function workflowSubagentModelTooltip(
 }
 
 /**
- * 卡与侧板要的两样东西：屏幕上的名字（只有名字，档位留给 tooltip）与 tooltip。
- * run 没指定过模型时缺席——跟随会话模型是常态，没有可说的。
+ * The two things card and side panel need: the on-screen name (name only; the level lives in the tooltip) and the tooltip.
+ * Absent when the run never pinned a model — following the session model is the norm, nothing to say.
  */
 export function workflowSubagentModelCardLabel(
   canonical: string | undefined,

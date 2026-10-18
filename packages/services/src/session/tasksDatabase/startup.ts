@@ -2,7 +2,7 @@ import type { DatabaseMigrationFacts } from "@zcode/shared";
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import { createRequire } from "node:module";
-// 与既有 Repo 一致：避免构建器把 node:sqlite 改写成不存在的 npm sqlite 包。
+// As in the existing repos: keep builders from rewriting node:sqlite into a nonexistent npm sqlite package.
 const { DatabaseSync } = createRequire(import.meta.url)(
   "node:sqlite",
 ) as typeof import("node:sqlite");
@@ -27,12 +27,12 @@ type TasksStoragePhase =
   | "ready";
 const LOCK_WAIT_MS = 60 * 60_000;
 
-/** 由 Host Worker 调用，SQL 和迁移后修复与旧 Repo 共用，只有获取写锁异步等待。 */
+/** Invoked by the Host Worker; SQL and post-migration repair shared with the legacy repo, only write-lock waiting is async. */
 export async function prepareTasksIndexStorage(
   path: string,
   onProgress: (phase: TasksStoragePhase, migration?: DatabaseMigrationFacts) => void,
 ): Promise<void> {
-  // 回调拿到的是当时事实，不共享后续执行会继续递增的内部对象。
+  // The callback receives point-in-time facts, not the internal objects that keep counting later.
   const report = (phase: TasksStoragePhase, migration?: DatabaseMigrationFacts) =>
     onProgress(phase, migration ? { ...migration } : undefined);
   report("checking");
@@ -45,7 +45,7 @@ export async function prepareTasksIndexStorage(
     db.exec("PRAGMA foreign_keys = ON");
     const deadline = Date.now() + LOCK_WAIT_MS;
     const acquire = async (operation: string | (() => void)) => {
-      // 预检前后可分别遇锁；确认迁移后的等待需要重新发布可见状态。
+      // Locks can hit before and after the precheck; the post-migration wait must re-publish visible state.
       let waiting = false;
       for (;;) {
         try {
@@ -75,16 +75,16 @@ export async function prepareTasksIndexStorage(
     report("checking", migration);
     await acquire("BEGIN IMMEDIATE");
     runTasksDatabaseMigrations(db, { transactionOpen: true, migration, onProgress: report });
-    // COMMIT 已成功，先发布事实；后续 close 失败不能把已提交误报为未提交。
+    // COMMIT succeeded: publish first; a later close failure must not misreport committed as uncommitted.
     report("maintaining", migration);
   } catch (error) {
     failure = error;
-    // 失败事实随原异常交给 Worker，不倒退发布 checking/migrating，也不覆盖首因。
+    // Failure facts ride the original error to the Worker; never regress to checking/migrating nor mask the first cause.
     if (migration && error && typeof error === "object") {
       try {
         Object.assign(error, { startupMigration: { ...migration } });
       } catch {
-        /* 不可扩展异常仍保留原错误。 */
+        /* Non-extendable exceptions keep the original error. */
       }
     }
     throw error;
@@ -103,7 +103,7 @@ export async function prepareTasksIndexStorage(
   ];
   let preparationFailure: unknown;
   try {
-    // 这些是原本就在初始化时执行的修复，不创建新的迁移或改变已有事务边界。
+    // These repairs always ran at init; no new migration, no changed transaction boundaries.
     for (const repo of repos) await repo.ensureReady();
   } catch (error) {
     preparationFailure = error;

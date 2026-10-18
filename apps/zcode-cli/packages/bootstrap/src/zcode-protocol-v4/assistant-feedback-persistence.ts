@@ -21,7 +21,7 @@ interface PersistAssistantFeedbackInput {
   onLiveProjectionError?(error: unknown): void;
 }
 
-/** transcript 是反馈持久权威；event 只负责把同一写入推进 live/cold projection。 */
+/** The transcript is the persistence authority for feedback; events only push the same write into live/cold projection. */
 export async function persistAssistantFeedback(
   input: PersistAssistantFeedbackInput,
 ): Promise<void> {
@@ -60,8 +60,8 @@ export async function persistAssistantFeedback(
   try {
     persisted = await input.eventStore.append(event);
   } catch (error) {
-    // transcript 先成功、event append 后失败时，renderer 会按失败 ACK 回滚，
-    // 但重开又从半提交 metadata 恢复反馈。append 失败必须补偿回原始 message info。
+    // If the transcript write succeeds and the event append fails, the renderer rolls back on the failed ACK,
+    // yet reopening restores feedback from the half-committed metadata. A failed append must compensate back to the original message info.
     try {
       await input.sessionStore.saveMessage(assistant.info);
     } catch (rollbackError) {
@@ -76,8 +76,8 @@ export async function persistAssistantFeedback(
   try {
     input.onPersistedEvent(persisted);
   } catch (error) {
-    // event 已 durable 后不能再给 renderer 失败 ACK，否则 UI 回滚会与持久事实相反；
-    // live projection 失败留给 resync/hydration 收敛，并只走诊断回调。
+    // Once the event is durable, a failure ACK must not be returned: UI rollback would contradict the persisted fact;
+    // live projection failures are left to resync/hydration and reported only via the diagnostic callback.
     input.onLiveProjectionError?.(error);
   }
 }

@@ -91,8 +91,8 @@ const webSearchHandler: ToolHandler<WebSearchInput, WebSearchOutput> = async (in
       },
     ],
     tools: [createProviderNativeWebSearchContract(input)],
-    // BigModel 的 Anthropic 兼容端点会拒绝 named forced web_search tool_choice（1210）。
-    // 这里保持自动选择，依靠单工具请求和 prompt 触发 provider-native 搜索。
+    // BigModel's Anthropic-compat endpoint rejects named forced web_search tool_choice (1210).
+    // Keep auto choice; single-tool requests plus prompt trigger the provider-native search.
     options: {
       ...auxiliaryModelOptions(model),
       maxOutputTokens: Math.min(4096, model.optionSpecs.maxOutputTokens.max),
@@ -100,9 +100,9 @@ const webSearchHandler: ToolHandler<WebSearchInput, WebSearchOutput> = async (in
     abortSignal: context.abortSignal,
   };
 
-  // BigModel Anthropic 兼容端点的非流式 JSON 会把 provider 内部
-  // web_search 结果返回为 assistant-side 裸 tool_result，AI SDK 会在 schema
-  // 校验阶段抛 Invalid JSON response。走流式可复用现有 SSE compat。
+  // BigModel's Anthropic-compat non-streaming JSON returns provider-internal web_search results as a
+ // bare assistant-side tool_result; AI SDK throws Invalid JSON response at schema validation.
+ // Streaming reuses the existing SSE compat.
   const result = await collectWebSearchStreamResult({
     events: runWithModelInvocationContext(
       {
@@ -116,7 +116,7 @@ const webSearchHandler: ToolHandler<WebSearchInput, WebSearchOutput> = async (in
         },
         modelRequestSessionType: "other",
         modelCall: { operation: "web_search" },
-        // statusSink 不在这里设：执行器交出的 context.model 已带默认会话事件出口。
+        // No statusSink here: the executor-wrapped context.model already carries the default session-event sink.
         traceContext: webSearchTraceFromContext(context),
       },
       () => model.streamText(request),
@@ -131,8 +131,8 @@ export const webSearchToolEntry: ToolEntry = {
   providerNative: undefined,
   metadata: {
     name: WEBSEARCH_TOOL_NAME,
-    // 写死月份会导致模型可见的 WebSearch 描述过期。
-    // 每次读取时重新生成，避免长驻进程跨月后继续投递旧月份。
+    // Hardcoding the month would let the model-visible WebSearch description go stale;
+ // regenerate per read so long-lived processes never serve last month's date.
     get description() {
       return buildWebSearchProviderDescription();
     },

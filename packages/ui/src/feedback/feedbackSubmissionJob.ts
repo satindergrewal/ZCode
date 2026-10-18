@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 反馈后台提交状态机集中维护创建、截图、日志上传、取消和降级逻辑；本次修 413/fetch 回归，不拆文件避免扩大行为面。 */
+/* eslint-disable max-lines -- the background submission state machine owns create/screenshots/log upload/cancel/fallback in one place; this pass fixes the 413/fetch regression without widening the surface. */
 import type { CreateFeedbackTicketInput, FeedbackAttachmentKind } from "@zcode/shared";
 import type { FeedbackUploadProgress, IFeedbackService } from "@zcode/services";
 import type { FeedbackSubmitDraft } from "@/feedback/feedbackStore.js";
@@ -58,7 +58,7 @@ export interface FeedbackSubmissionJobState {
 
 export interface FeedbackSubmissionJob {
   readonly id: string;
-  /** 提交瞬间的用户表单快照，用于按 jobId 重新打开对应反馈。 */
+  /** User form snapshot taken at submit time, used to reopen the matching feedback by jobId. */
   readonly formDraft: FeedbackSubmitDraft;
   readonly done: Promise<{ ticketId: string }>;
   getState: () => FeedbackSubmissionJobState;
@@ -87,28 +87,29 @@ interface StartFeedbackSubmissionJobOptions {
 type LogUploadAction = "continue";
 
 const DEFAULT_SUBMISSION_COPY: FeedbackSubmissionCopy = {
-  connectingLabel: "正在连接反馈服务",
-  connectingDetail: "创建成功后会继续上传截图和日志",
-  cancelingCreateLabel: "正在取消提交",
-  cancelingCreateDetail: "已收到取消请求，正在停止创建反馈。",
-  canceledLabel: "反馈提交已取消",
-  canceledDetail: "反馈提交已取消",
-  uploadingScreenshotLabel: "正在上传截图",
-  submittedLabel: "反馈已提交",
-  submittedDetail: "我们会尽快处理。",
-  failedLabel: "反馈提交失败",
-  networkErrorDetail: "无法连接反馈服务，请检查网络、VPN 或代理设置后重试。",
+  connectingLabel: "Connecting to the feedback service",
+  connectingDetail: "Screenshots and logs upload after the ticket is created",
+  cancelingCreateLabel: "Cancelling submission",
+  cancelingCreateDetail: "Cancel received; stopping the ticket creation.",
+  canceledLabel: "Feedback submission cancelled",
+  canceledDetail: "Feedback submission cancelled",
+  uploadingScreenshotLabel: "Uploading screenshot",
+  submittedLabel: "Feedback submitted",
+  submittedDetail: "We will get to it soon.",
+  failedLabel: "Feedback submission failed",
+  networkErrorDetail:
+    "Cannot reach the feedback service. Check network, VPN, or proxy settings and retry.",
   postCreateNetworkErrorDetail:
-    "反馈已创建，但后续材料上传失败。请打开已创建的反馈补充材料，不要重复提交。",
-  pausingLogLabel: "正在暂停日志上传",
-  pausingLogDetail: "已收到取消请求，稍等一下。",
-  exportingLogLabel: "正在导出完整日志",
-  exportingLogDetail: "会根据本机日志大小耗时数秒",
-  uploadingLogLabel: "正在上传完整日志",
-  logUploadSuccessLabel: "日志上传成功",
-  logUploadPausedLabel: "已暂停日志上传",
-  logUploadPausedDetail: "日志是定位问题的必需材料，请继续上传。",
-  preparingUploadDetail: "准备上传",
+    "Feedback created, but follow-up uploads failed. Open the created ticket to attach materials; do not submit again.",
+  pausingLogLabel: "Pausing log upload",
+  pausingLogDetail: "Cancel received; one moment.",
+  exportingLogLabel: "Exporting full logs",
+  exportingLogDetail: "May take seconds depending on local log size",
+  uploadingLogLabel: "Uploading full logs",
+  logUploadSuccessLabel: "Logs uploaded",
+  logUploadPausedLabel: "Log upload paused",
+  logUploadPausedDetail: "Logs are required to diagnose the issue; please continue the upload.",
+  preparingUploadDetail: "Preparing upload",
 };
 
 let nextJobSeq = 0;
@@ -147,8 +148,8 @@ export function subscribeFeedbackSubmissionJobs(
 
 export function dismissFeedbackSubmissionJob(jobId: string): void {
   const job = submissionJobs.get(jobId);
-  // paused-log 正在等待用户继续上传。此时如果把 job 从全局队列删除，
-  // waitForLogUploadAction 会永久悬挂，日志压缩包清理和最终状态都不会再推进。
+  // paused-log waits for the user to continue the upload. Dropping the job from the global map
+  // here would hang waitForLogUploadAction forever: archive cleanup and final state never advance.
   if (job?.getState().status === "paused-log") {
     return;
   }
@@ -175,9 +176,9 @@ export async function cancelFeedbackCreateSubmissionJob(
     return true;
   } catch (error) {
     const message = getErrorMessage(error);
-    // cancelCreate 是跨 RPC 的 host 命令，host 断开或调用失败时不能把
-    // fire-and-forget rejection 漏到全局，也不能按成功取消把后台 job 隐藏掉。
-    logger.warn("[FeedbackSubmissionJob] 取消反馈创建命令失败", {
+    // cancelCreate is a cross-RPC host command. On host disconnect or call failure, neither leak
+    // the fire-and-forget rejection globally nor hide the background job as if cancel succeeded.
+    logger.warn("[FeedbackSubmissionJob] Failed to cancel feedback creation command", {
       jobId: job.id,
       error: message,
     });
@@ -194,8 +195,9 @@ export function startFeedbackSubmissionJob(
   const now = Date.now();
   const jobId = `feedback-submit-${now}-${jobSeq}`;
   const createOperationId = `feedback-create-${now}-${jobSeq}`;
-  // 后端工单描述已经混入诊断信息，无法用于恢复用户原始输入。
-  // 每个后台 job 必须在启动时复制自己的表单快照，避免多个并发反馈互相覆盖。
+  // The backend ticket description already mixes in diagnostics and cannot restore the user's
+  // original input. Each background job must copy its own form snapshot at start, or concurrent
+  // feedback submissions overwrite each other.
   const formDraft = createFeedbackSubmitDraftSnapshot(options.formDraft);
   const listeners = new Set<(state: FeedbackSubmissionJobState) => void>();
   let state: FeedbackSubmissionJobState = {
@@ -243,17 +245,18 @@ export function startFeedbackSubmissionJob(
 
   async function run(): Promise<{ ticketId: string }> {
     try {
-      logger.info("[FeedbackSubmissionJob] 开始后台提交反馈", { jobId });
+      logger.info("[FeedbackSubmissionJob] Background feedback submission started", { jobId });
       const ticket = await options.feedbackService.create(options.ticketInput, {
         operationId: createOperationId,
       });
       if (cancelRequested) {
-        // 取消创建以用户点击为准；即使后端稍后返回 ticket，
-        // 也不恢复旧提交 job 或继续上传附件，避免用户认为取消后还在后台运行。
+        // User clicks win cancellation. Even if the backend returns a ticket later, do not revive
+        // the old submission job or keep uploading attachments, or cancel would look ignored.
         throw new FeedbackSubmissionCanceledError(copy.canceledDetail);
       }
       setState({ status: "running", ticketId: ticket.id, error: undefined });
-      // 工单创建成功后前台弹窗可以收起；截图和日志继续由后台 job 负责上传。
+      // Once the ticket is created the foreground dialog can collapse; screenshots and logs keep
+      // uploading via the background job.
       options.onTicketCreated?.(ticket.id);
 
       const failedScreenshots: string[] = [];
@@ -277,7 +280,7 @@ export function startFeedbackSubmissionJob(
 
       if (failedScreenshots.length > 0) {
         await options.feedbackService
-          .comment(ticket.id, `系统提示：部分截图上传失败：${failedScreenshots.join("；")}`)
+          .comment(ticket.id, `System note: some screenshots failed to upload: ${failedScreenshots.join("; ")}`)
           .catch(() => undefined);
       }
 
@@ -307,7 +310,7 @@ export function startFeedbackSubmissionJob(
         },
       });
       options.onCompleted?.(ticket.id);
-      logger.info("[FeedbackSubmissionJob] 后台反馈提交完成", {
+      logger.info("[FeedbackSubmissionJob] Background feedback submission finished", {
         jobId,
         ticketId: ticket.id,
       });
@@ -318,12 +321,12 @@ export function startFeedbackSubmissionJob(
         (cancelRequested || error instanceof FeedbackSubmissionCanceledError)
       ) {
         markCreateCanceled();
-        logger.info("[FeedbackSubmissionJob] 反馈提交已取消", { jobId });
+        logger.info("[FeedbackSubmissionJob] Feedback submission cancelled", { jobId });
         throw new FeedbackSubmissionCanceledError(copy.canceledDetail);
       }
       const rawMessage = getErrorMessage(error);
-      // RPC 只把 Node fetch 的顶层消息带到 UI，底层建连错误会退化成 fetch failed。
-      // 用户需要可执行的网络排查提示，原始错误仍保留在日志中供定位。
+      // RPC surfaces only Node fetch's top-level message; connection errors degrade to
+      // "fetch failed". Users need actionable network hints; the raw error stays in logs.
       const message = getFeedbackSubmissionErrorMessage(rawMessage, copy, {
         ticketCreated: Boolean(state.ticketId),
       });
@@ -338,7 +341,7 @@ export function startFeedbackSubmissionJob(
         },
       });
       options.onError?.(message);
-      logger.warn("[FeedbackSubmissionJob] 后台反馈提交失败", {
+      logger.warn("[FeedbackSubmissionJob] Background feedback submission failed", {
         jobId,
         error: rawMessage,
         displayError: message,
@@ -351,8 +354,9 @@ export function startFeedbackSubmissionJob(
   }
 
   const done = run();
-  // 反馈日志上传是 host service 里的长耗时任务，不能被提交弹窗卸载牵着走。
-  // job 保存在模块闭包里继续执行，前台组件只订阅状态；右上角关闭弹窗只会移除订阅者，不会取消后台上传。
+  // Feedback log upload is a long-running host-service task; it must not die with the submit
+  // dialog. The job lives in a module closure and keeps running; the foreground component only
+  // subscribes to state. Closing the corner dialog removes a subscriber, never cancels the upload.
   const job: FeedbackSubmissionJob = {
     id: jobId,
     formDraft,
@@ -416,8 +420,8 @@ function createFeedbackSubmitDraftSnapshot(draft: FeedbackSubmitDraft): Feedback
   const screenshots = draft.screenshots
     ? Object.freeze(draft.screenshots.map((screenshot) => Object.freeze({ ...screenshot })))
     : undefined;
-  // job 暴露给全局卡片和弹窗共同读取，必须冻结复制后的快照，
-  // 防止任一订阅者改写描述或附件后污染同一后台任务的恢复内容。
+  // The job is read by both the global card and the dialog; freeze the copied snapshot so no
+  // subscriber's edits to description/attachments pollute the same background task's restore data.
   return Object.freeze({
     ...draft,
     ...(screenshots ? { screenshots } : {}),
@@ -460,7 +464,7 @@ async function uploadLogsUntilComplete(
 ): Promise<void> {
   let archive: { path: string; size: number } | null = null;
   const progressId = `feedback-log-${ticketId}-${Date.now()}`;
-  // 完整日志需要先在本机压缩成 zip，只显示不确定进度会让用户误以为导出已经瞬间完成。
+  // Full logs zip locally first; an indeterminate progress bar would read as an instant export.
   const progressSubscription = feedbackService.onDynamicUploadProgress(progressId)((progress) => {
     callbacks.setProgress(formatUploadProgress(progress, copy));
   });
@@ -505,8 +509,9 @@ async function uploadLogsUntilComplete(
         });
       } catch (logUploadError) {
         if (!isUploadCanceledError(logUploadError)) {
-          // 完整日志是排障必需附件，413/断网等自动上传失败不能降级成 compact 日志并继续成功。
-          // 否则研发侧会误以为拿到了完整现场，实际关键日志已经被客户端跳过。
+          // Full logs are the required diagnostic attachment; a 413/offline auto-upload failure
+          // must not downgrade to the compact log and report success, or the team believes it has
+          // the full scene while key logs were skipped client-side.
           throw logUploadError;
         }
         callbacks.setActiveProgressId(null);
@@ -533,11 +538,11 @@ async function uploadLogsUntilComplete(
     await feedbackService
       .comment(
         ticketId,
-        `系统提示：完整日志自动上传失败，请必要时让用户手动导出日志。错误：${message}`,
+        `System note: full-log auto upload failed; ask the user to export logs manually if needed. Error: ${message}`,
       )
       .catch(() => undefined);
-    // 日志上传是提交链路的一部分，非用户主动跳过时不能吞掉异常继续显示“提交成功”。
-    // 否则用户会以为完整日志已经交付，但研发侧实际只收到缺日志的工单。
+    // Log upload is part of the submission flow; a non-user-skipped failure must not be swallowed
+    // into "submitted", or users think full logs were delivered while the ticket lacks them.
     throw logError;
   } finally {
     if (archive) {

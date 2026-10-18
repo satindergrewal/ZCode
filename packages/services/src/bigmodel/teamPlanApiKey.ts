@@ -124,8 +124,8 @@ export async function ensureBigModelTeamPlanProjectApiKeyWithStatus(params: {
     return { apiKey: existingApiKey, diagnostics: { list: listDiagnostics }, status: "existing" };
   }
 
-  // 一个账号可能有多个 Team Plan 项目，每个项目都需要自己的 keyType=2
-  // 项目级 API Key；只给当前选中团队创建会导致切换到其他团队后 runtime 无法投影。
+  // One account may hold several Team Plan projects, each needing its own keyType=2 project key;
+  // keys for the current team only would break runtime projection after a team switch.
   const createPayload = await readApiJson<BigModelBizEnvelope<BigModelTeamPlanApiKeySummary>>(
     params.apiClient,
     listUrl,

@@ -17,8 +17,8 @@ import { desktopRuntimeEnv, runtimeApplicationName } from "./desktopRuntimeEnv.j
 import { summarizeLongTaskAttribution } from "./longTaskAttributionSummary.js";
 import { logger } from "./logger.js";
 
-// LoAF 长任务事件的 snapshots(SDK 已采集的 top-5 attribution)默认不落 SLS，此处补写进
-// event.properties，使归因摘要(top 耗时/占比/invokerType)可查询。不上报原始脚本名/URL。
+// LoAF long-task snapshots (SDK top-5 attribution) do not reach SLS by default; write them into
+// event.properties so attribution summaries (top durations/shares/invokerType) are queryable. No raw script names/URLs.
 function enrichLongTaskAttribution(events: Array<Record<string, unknown>>): void {
   for (const event of events) {
     if (event.event_type !== "longTask") {
@@ -56,8 +56,8 @@ function hasProductExecutable(
   applicationName: string,
   runtimeExecutableName?: string,
 ): boolean {
-  // 修复原因：app name 不等于所有运行形态的真实二进制名；开发态使用 Electron，
-  // Linux Preview 使用 zcode-preview。两者都必须精确匹配，不能放宽成前缀以免混入 helper dump。
+  // Fix: the app name is not the real binary name in every shape -- dev runs Electron,
+  // Linux Preview runs zcode-preview. Exact match required; a prefix would swallow helper dumps.
   const expectedNames = new Set(
     [applicationName, runtimeExecutableName].map(normalizeExecutableName).filter(Boolean),
   );
@@ -91,9 +91,9 @@ function readNativeDumpProcessRole(event: Record<string, unknown>): NativeDumpPr
     event.meta && typeof event.meta === "object"
       ? (event.meta as Record<string, unknown>)
       : undefined;
-  // 修复原因：通用 process_role 可能由事件属性或中间件注入，并不证明来自 Crashpad dump。
-  // 只信任依赖补丁从结构化 annotation RVA 提取并写入的 meta.process_type，避免 helper
-  // dump 被非结构化 main 标记提升为 app_native_process，污染 Native Crash / Crash-Free。
+  // Fix: a generic process_role can come from event props or middleware and does not prove a Crashpad dump.
+  // Trust only meta.process_type extracted from structured annotation RVAs by the dependency patch, so helper
+  // dumps are not promoted to app_native_process by unstructured main tags, polluting Native Crash/Crash-Free.
   const processType = metadata?.process_type;
   if (typeof processType === "string") {
     return nativeDumpProcessRoleAliases[processType.trim().toLowerCase()] ?? "unknown";
@@ -118,14 +118,14 @@ export function filterAndEnrichNativeCrashEvents(
         ? (event.properties as Record<string, unknown>)
         : {};
     const nativeDumpProcessRole = readNativeDumpProcessRole(event);
-    // 根因：binary_images 只能证明 dump 来自产品二进制，不能区分 Linux/Windows 上
-    // 共用同一 executable 的主进程、renderer、utility 或 host。未知角色继续保留原始
-    // crashReporter 事件，但不得进入 app_native_process，否则会把 helper crash loop
-    // 当成应用 native crash 并拉低 Crash-Free。只有明确标记为 main 的 dump 才进入产品 KPI。
+    // Root cause: binary_images only proves a product binary; on Linux/Windows main/renderer/utility/host
+    // share one executable. Unknown roles keep the raw crashReporter event but never enter
+    // app_native_process, or helper crash loops count as app native crashes and sink Crash-Free.
+    // Only dumps explicitly marked main enter product KPIs.
     event.properties = {
       ...existingProperties,
       telemetry_schema_version: "2",
-      // Bugfix: SDK 重试可能让同一事件再次经过 beforeReport，必须保留事故 ID 才能去重。
+      // Bugfix: SDK retries push the same event through beforeReport again; keep the incident ID for dedup.
       crash_id:
         typeof existingProperties.crash_id === "string"
           ? existingProperties.crash_id
@@ -140,22 +140,22 @@ export function filterAndEnrichNativeCrashEvents(
   });
 }
 
-// Bugfix: 产品后端可使用 production，但源码启动的 Desktop 仍是本地开发运行态；
-// ARMS 环境必须优先按运行形态标记为 local，避免开发数据污染 prod。
+// Bugfix: the product backend may be production while source-run Desktop is still local dev;
+// the ARMS env must be marked local by runtime shape first, keeping dev data out of prod.
 const armsRumEnv = mapZCodeEnvToArmsRumEnv(desktopRuntimeEnv);
 
-// ARMS user.id 字段被 SDK 强制改写为内部随机值（config.user.id 在事件合并时被显式跳过，
-// 无法注入），而 user.name 不受屏蔽。这里把 device_mid 写入 user.name，使 RUM 日志可按
-// 设备维度关联。device_mid 复用 telemetry-state.json 同一持久化 UUID（与数仓 / preload 注入同源，
-// ensureDesktopDeviceMidSync 幂等且不重复写盘）。
-// 注意：渲染进程事件经 ArmsEventBridge 转发到主进程后，由主进程 client 用「主进程 config」
-// 重新打包上报，故只需在主进程 init 设置一次，即可覆盖主进程 + 渲染进程的全部上报。
+// ARMS user.id is force-rewritten by the SDK (config.user.id is skipped on event merge, not injectable);
+// user.name is not. Write device_mid into user.name so RUM logs correlate per device. device_mid
+// reuses the telemetry-state.json UUID (same source as the warehouse/preload injection;
+// ensureDesktopDeviceMidSync stays idempotent, no duplicate writes).
+// Note: renderer events forwarded via ArmsEventBridge are re-packed by the main client under the
+// main process config, so one init on main covers main+renderer reporting.
 const armsDeviceMid = ensureDesktopDeviceMidSync();
 
-// 原因：armsRum.init() 返回 Promise；若不 await，web-contents-created / 渲染进程注入可能晚于首窗 dom-ready，导致零上报。
-// 须在 app.whenReady() 创建 BrowserWindow 之前 await armsInitPromise（见 index.ts）。
-// SDK 的 sendCustom 只表示入队，原 request 不检查 HTTP status。
-// 在 init 通过公开 useReporter 安装时包装传输，保留原 SDK 的过滤和序列化链路。
+// armsRum.init() returns a Promise; without await, web-contents-created/renderer injection can land
+// after the first dom-ready and report nothing. Await armsInitPromise before BrowserWindow creation (see index.ts).
+// SDK sendCustom only enqueues; the raw request never checks HTTP status.
+// Wrap the transport when installed via the public useReporter at init, keeping SDK filtering/serialization.
 const useReporter = armsRum.client.useReporter.bind(armsRum.client);
 armsRum.client.useReporter = (reporter) => {
   const request = reporter.request.bind(reporter);
@@ -172,7 +172,7 @@ function startArmsRum(): Promise<void> {
       version: ZCODE_VERSION,
       endpoint: ZCODE_ARMS_RUM_ENDPOINT,
       env: armsRumEnv,
-      // Browser SDK 由 SDK 在 dom-ready 经 executeJavaScript 注入；勿再在 preload/renderer 手动 init，避免重复采集
+      // The browser SDK is injected at dom-ready via executeJavaScript; never init again in preload/renderer (double capture).
       autoInject: true,
       browserCollectors: { ...ARMS_BROWSER_COLLECTORS },
       app: {
@@ -185,11 +185,11 @@ function startArmsRum(): Promise<void> {
       user: {
         name: armsDeviceMid,
       },
-      // 会话采样：必须为 1，否则 ARMS 默认 PV/perf/webvitals 等整会话事件会被丢弃（开发 0.1 时约 90% 看不到页面性能）
+      // Session sampling must be 1, else ARMS drops whole-session PV/perf/webvitals (0.1 in dev hides ~90% of page perf).
       sessionConfig: {
         sampleRate: 1,
       },
-      // Electron 桌面为单页 file:// / dev-server 整页加载，无 History 路由；false 才能走 SDK 默认「完整页面加载」perf 采集
+      // Electron desktop is a single-page file:///dev-server load, no History routing; false keeps full-page-load perf.
       spaMode: false,
       parseViewName: parseArmsViewName,
       collectors: {
@@ -200,19 +200,19 @@ function startArmsRum(): Promise<void> {
         api: true,
         rpc: true,
       },
-      // 主进程 collectors：Electron 侧；renderer 侧见 browserCollectors + autoInject
-      // SDK tracing.sample 取值 0–100（百分比）；0.1 表示 0.1% 采样，几乎不会命中
+      // Main-process collectors: Electron side; the renderer side is browserCollectors + autoInject.
+      // SDK tracing.sample is 0-100 (percent); 0.1 means 0.1% -- almost never hits.
       tracing: {
         enable: true,
         sample: armsRumEnv === "prod" ? 0.1 : 1,
       },
-      // HTTP 全链路耗时来自 ARMS api 批次；生产/本地运行均 ingest，本地运行额外打印批次摘要
+      // HTTP full-link timings come from the ARMS api batch; ingest in prod and local, local also logs a batch summary.
       beforeReport: (payload: { events?: Array<Record<string, unknown>> }) => {
-        // Bugfix: crash collector 会扫描共享 dump 目录，外部后代进程的 dump 也可能混入。
-        // 只保留包含当前产品可执行文件的原生 crash；过滤仅遍历现有批次元数据，不新增 IO。
+        // Bugfix: the crash collector scans the shared dump dir, so descendant-process dumps appear too.
+        // Keep only native crashes containing this product executable; filtering reads batch metadata, no new IO.
         const events = filterAndEnrichNativeCrashEvents(
-          // 已有结构化生命周期上报的本地 error 日志不再作为 console JS 异常重复采集。
-          // 只按显式标记过滤包装事件，保留真正的 uncaughtException 和其他 console.error。
+          // Local errors with structured lifecycle reports must not be re-captured as console JS exceptions:
+          // filter wrapper events by explicit marker, keep real uncaughtException and other console.error.
           (payload?.events ?? []).filter(
             (event) =>
               !(
@@ -229,8 +229,8 @@ function startArmsRum(): Promise<void> {
         payload.events = events;
         ingestArmsApiEventsFromBatch(events);
         enrichLongTaskAttribution(events);
-        // 隐私收口必须排在 ingest 与归因摘要之后：网络聚合沿用自己的 interface 归一规则，
-        // longTask 摘要需要原始 snapshots；只有最终离开本机的副本才做脱敏。
+        // Privacy scrubbing runs after ingest/attribution: network aggregation normalizes interfaces its own way and
+        // longTask summaries need raw snapshots; only the final leaving-the-machine copy is redacted.
         redactArmsEventBatch(events);
         if (desktopRuntimeEnv === "development") {
           const perfEvents = events.filter(
@@ -263,6 +263,6 @@ function startArmsRum(): Promise<void> {
     });
 }
 
-// 总开关关闭或端点未配置时不初始化 SDK。
+// With the master switch off or no endpoint configured, skip SDK init.
 export const armsInitPromise: Promise<void> =
   ZCODE_TELEMETRY_ENABLED && ZCODE_ARMS_RUM_ENDPOINT ? startArmsRum() : Promise.resolve();

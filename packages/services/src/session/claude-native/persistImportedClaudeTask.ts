@@ -45,7 +45,7 @@ async function writeSessionFileAtomic(
 export async function persistImportedClaudeTask(params: {
   taskIndexRepo: TaskIndexRepo;
   sessionFile: LegacyTaskSessionFile;
-  /** 仅当导入目标 workspace 与筛选 workspace 一致时才写入，避免把当前 tab 的 identity 套到其它路径。 */
+  /** Write only when the import target workspace equals the filter workspace, never stamping this tab's identity elsewhere. */
   workspaceIdentity?: string;
 }): Promise<ZCodeTaskMeta> {
   const parsed = parseLegacyTaskSessionFile(params.sessionFile);
@@ -55,15 +55,15 @@ export async function persistImportedClaudeTask(params: {
   };
   const indexMeta: ZCodeTaskMeta = {
     ...meta,
-    // SQLite task index 的 mode 列仍是 NOT NULL；导入 snapshot 本身保持过滤后的缺省。
+    // The sqlite task index mode column is NOT NULL; the imported snapshot keeps its filtered default.
     mode: meta.mode ?? "build",
   };
 
   await writeImportedClaudeTaskSnapshot({ sessionFile: { ...parsed, meta } });
   return params.taskIndexRepo.syncTaskMeta({
     meta: indexMeta,
-    // 用户删除/归档已导入会话后再次导入，旧 index 行会保留 archived/deleted。
-    // 重导入语义是恢复这条会话到列表中，因此这里显式取消隐藏状态。
+    // After the user deletes/archives an imported session, the old index row keeps archived/deleted.
+    // Re-import means restoring it to the lists, so explicitly clear the hidden state.
     archived: false,
     deleted: false,
     searchableText: buildSearchableTextFromMessages(parsed.messages),
@@ -80,8 +80,8 @@ export async function writeImportedClaudeTaskSnapshot(params: {
     parsed.meta.workspaceIdentity,
   );
 
-  // legacy ACP 下线后 importClaudeSessions 变成空桩，导入虽复制了 jsonl 却没有写
-  // ~/.zcode/v2/sessions/{hash}/{taskId}.json。现在真实 ZCode session 承担续聊，legacy snapshot
-  // 只保存过滤后的迁移备份，避免 Claude 来源运行态污染当前模型选择。
+  // After legacy ACP sunset importClaudeSessions became a stub: the jsonl is copied but no
+  // ~/.zcode/v2/sessions/{hash}/{taskId}.json is written. Real ZCode sessions own continues; the legacy snapshot
+  // keeps only the filtered migration backup, so Claude-side runtime state never pollutes model selection.
   await writeSessionFileAtomic(filePath, parsed);
 }

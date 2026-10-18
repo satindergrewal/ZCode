@@ -10,14 +10,14 @@ import {
 
 export function UsageStatsErrorNotice({ error }: { error: string }) {
   const { intl } = useZCodeIntl();
-  // 团队套餐业务错误（如"您当前暂无有效的团队套餐授权记录…"）含"授权"字样，
-  // 直接 isUsageCredentialError 会误判成凭据问题（显示检查 API Key 按钮），业务错误优先。
+  // Team-plan business errors (e.g. no active team entitlement) contain the word entitlement;
+  // isUsageCredentialError would misread them as credential issues (showing the check-API-key button). Business errors win.
   const usageErrorIsTeamPlanBusiness = isUsageTeamPlanBusinessError(error);
   const usageErrorIsCredential = !usageErrorIsTeamPlanBusiness && isUsageCredentialError(error);
 
   return (
-    // 参考 Plan Card teamUnavailable 的内联展示（InfoIcon + warning 文字），
-    // 不加边框/背景容器，避免把业务状态提示渲染成独立错误条。
+    // Mirror Plan Card teamUnavailable's inline rendering (InfoIcon + warning text),
+    // no bordered box, so a business notice never renders as an error bar.
     <div className="flex w-fit min-w-0 items-center gap-1.5 text-ui-base">
       {usageErrorIsTeamPlanBusiness ? (
         <InfoIcon className="size-3 shrink-0 text-warning" aria-hidden="true" />

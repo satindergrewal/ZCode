@@ -113,7 +113,7 @@ export async function extractPluginSyncArchive(
       await mkdir(dirname(targetPath), { recursive: true });
       await writeFile(targetPath, data, { mode: fileMode });
       if (process.platform !== "win32") {
-        // writeFile 新建文件会受远端 umask 影响；plugin 脚本的可执行位必须按归档 header 恢复。
+        // New files via writeFile inherit the remote umask; restore the executable bit from archive headers.
         await chmod(targetPath, fileMode);
       }
     } else {

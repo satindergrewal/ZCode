@@ -42,8 +42,8 @@ const defaultApplicationPathDependencies: ApplicationPathDependencies = {
 let defaultApplicationPathIndex: Promise<Map<string, string>> | undefined;
 
 function isSafeWindowsExecutablePath(value: string): boolean {
-  // win32.isAbsolute 同时接受 UNC 与设备路径，把不可信 locator 交给
-  // app.getFileIcon 会触发主进程网络文件访问。图标读取只允许本机固定盘符路径。
+  // win32.isAbsolute accepts UNC/device paths; handing untrusted locators to
+  // app.getFileIcon triggers main-process network file access. Fixed local drive letters only.
   return SAFE_WINDOWS_FIXED_DRIVE_PATH.test(value) && win32.isAbsolute(value);
 }
 
@@ -65,7 +65,7 @@ async function buildApplicationPathIndex(
         ...entries.filter((entry) => entry.endsWith(".app")).map((entry) => join(root, entry)),
       );
     } catch {
-      // 标准目录可能不存在或不可读，继续扫描其余目录。
+      // Standard dirs may be missing/unreadable; keep scanning the rest.
     }
   }
 
@@ -84,14 +84,14 @@ async function buildApplicationPathIndex(
             Math.min(PLIST_READ_TIMEOUT_MS, remainingMs),
           )
         ).trim();
-        // 索引按小写 bundle id 建键：CUA producer 的 appKey 是 `darwin:<bundleId.toLowerCase()>`，
-        // 而 Info.plist 里是原始大小写（com.apple.Notes）。Spotlight 主路径用的是
-        // 大小写不敏感查询（`"..."c`），兜底索引若保持精确匹配，就会只在 Spotlight 不可用的
-        // 机器上取不到图标 —— 两条路径必须同一套大小写语义。
+        // Index keyed by lowercase bundle id: the CUA producer appKey is darwin:<id.toLowerCase()> while
+        // Info.plist keeps original case (com.apple.Notes). Spotlight queries case-insensitively ("..."c);
+        // a case-sensitive fallback index would miss icons only on Spotlight-less machines --
+        // both paths must share case semantics.
         const key = bundleId.toLowerCase();
         if (SAFE_BUNDLE_ID.test(bundleId) && !index.has(key)) index.set(key, appPath);
       } catch {
-        // 单个损坏或超时的 plist 不能中断整个索引。
+        // One broken/timed-out plist must not kill the whole index.
       }
     }
   };
@@ -105,7 +105,7 @@ function readFallbackApplicationPath(
   bundleId: string,
   dependencies: ApplicationPathDependencies,
 ): Promise<string | null> {
-  // 逐 bundle id 同步扫描会冻结 Electron main；默认链路共享一次异步索引构建。
+  // Per-id synchronous scans freeze Electron main; the default path shares one async index build.
   const indexPromise =
     dependencies === defaultApplicationPathDependencies
       ? (defaultApplicationPathIndex ??= buildApplicationPathIndex(dependencies))
@@ -126,7 +126,7 @@ async function resolveDarwinApplicationPath(
       .find((entry) => entry.endsWith(".app"));
     if (spotlightPath) return spotlightPath;
   } catch (error) {
-    logger.warn("[application-icons] 查询应用路径失败", {
+    logger.warn("[application-icons] failed to resolve application path", {
       bundleId,
       error: error instanceof Error ? error.message : String(error),
     });
@@ -183,8 +183,8 @@ function normalizedRequest(
   if (platform === "darwin" && SAFE_BUNDLE_ID.test(value)) {
     return { locators: [{ kind: "darwin-bundle-id", value }] };
   }
-  // Legacy string 仅兼容历史 macOS bundle id。Windows exe 必须来自 official CUA
-  // authority 的结构化 locator，不能把模型 input 当作本地文件路径。
+  // Legacy strings cover historical macOS bundle ids only. Windows exes must come from the official
+  // CUA authority's structured locator, never model input treated as a local path.
   return null;
 }
 
@@ -241,7 +241,7 @@ function createApplicationIconLoader(dependencies: ApplicationIconLoaderDependen
           if (icon) return icon;
         }
       } catch (error) {
-        logger.warn("[application-icons] 读取应用图标失败", {
+        logger.warn("[application-icons] failed to load application icon", {
           locatorKind: locator.kind,
           error: error instanceof Error ? error.message : String(error),
         });

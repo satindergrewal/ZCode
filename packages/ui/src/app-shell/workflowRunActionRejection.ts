@@ -1,9 +1,11 @@
 // ============================================================
-// 详情页 Cancel / Resume 被拒时的结构化解释
+// Structured explanation when a run-detail Cancel / Resume is rejected.
 // ============================================================
-// 老 run 被误留在 running 时，Cancel 点下去 CLI 查无此任务、
-// Resume 撞上不再编译的老脚本——两条命令都只在控制台记一行 warn，用户面前是「点了没反应」。
-// 现在 ACK 上的 reasonCode 按两张词表反查成一句话，挂在状态头下面；词表之外一律通用文案带 code。
+// When a stale run is wrongly left running, Cancel hits a CLI that no longer knows the task and
+// Resume collides with a script that no longer compiles -- both commands only log one warn line to
+// the console, leaving the user with "clicked, nothing happened". The ACK's reasonCode is now
+// looked up against two vocabularies and turned into one sentence under the status header;
+// anything outside the vocabularies gets the generic copy plus the code.
 
 import {
   BACKGROUND_WORK_CANCEL_REJECTED_FAULT_PREFIX,
@@ -13,16 +15,16 @@ import {
 
 export type WorkflowRunAction = "cancel" | "resume";
 
-/** 与 useSavedWorkflowLauncher 同一个能力缺席 fault（网关对 V4CapabilityUnsupportedError 的 reasonCode）。 */
+/** Same capability-missing fault as useSavedWorkflowLauncher (the gateway's reasonCode for V4CapabilityUnsupportedError). */
 const CAPABILITY_UNSUPPORTED_FAULT = "fault.command.capabilityUnsupported";
 
-/** core stopBackgroundTask 的 reason 去掉 `background_task_` 前缀后的闭集（bootstrap handler 铸造）。 */
+/** Closed set of core stopBackgroundTask reasons minus the `background_task_` prefix (minted by the bootstrap handler). */
 const CANCEL_REASONS: ReadonlySet<string> = new Set([
   "not_found",
   "not_running",
   "cancel_not_supported",
 ]);
-/** 端口 DynamicWorkflowRunResumeErrorReason 的闭集。 */
+/** Closed set mirroring DynamicWorkflowRunResumeErrorReason. */
 const RESUME_REASONS: ReadonlySet<string> = new Set([
   "not_found",
   "not_resumable",
@@ -35,15 +37,15 @@ const RESUME_REASONS: ReadonlySet<string> = new Set([
 
 export interface WorkflowRunActionRejection {
   action: WorkflowRunAction;
-  /** 词表内的 reason，或 `unsupported`（能力缺席）/ `generic`（词表外，文案带 code）。 */
+  /** In-vocabulary reason, or `unsupported` (capability missing) / `generic` (outside the vocabulary; copy carries the code). */
   reason: string;
-  /** 原始 reasonCode（缺席时是 ack.status），通用文案里展示，日志里也是它。 */
+  /** Raw reasonCode (ack.status when absent); shown in the generic copy and used in logs. */
   code: string;
-  /** ACK 携带的人可读细节（compile_failed 的有界诊断）。 */
+  /** Human-readable detail carried by the ACK (bounded diagnostics for compile_failed). */
   message?: string;
 }
 
-/** accepted / noop 不是拒绝 → undefined；其余按词表归一。 */
+/** accepted / noop are not rejections -> undefined; everything else normalizes via the vocabularies. */
 export function describeWorkflowRunActionRejection(
   action: WorkflowRunAction,
   ack: Pick<CommandAck, "status" | "reasonCode" | "message">,
@@ -64,7 +66,7 @@ export function describeWorkflowRunActionRejection(
   return { action, reason, code, ...(ack.message ? { message: ack.message } : {}) };
 }
 
-/** 文案 key：`chat.toolCall.workflow.run.rejection.<action>.<reason>`，两张词表 + unsupported + generic 全在 locale 里。 */
+/** Copy key: `chat.toolCall.workflow.run.rejection.<action>.<reason>`; both vocabularies plus unsupported and generic live in locale. */
 export function workflowRunActionRejectionMessageId(rejection: WorkflowRunActionRejection): string {
   return `chat.toolCall.workflow.run.rejection.${rejection.action}.${rejection.reason}`;
 }

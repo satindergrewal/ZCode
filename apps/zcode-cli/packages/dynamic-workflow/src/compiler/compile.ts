@@ -72,10 +72,10 @@ export interface WorkflowProgram {
 }
 
 /**
- * {@link createWorkflowProgram} 的选项。`facadeDts` 允许注入一份**替代的 facade 文本**
- * （snippet eval 的 scratch facade）；它永远以
- * {@link FACADE_FILE_NAME} 为文件名进虚拟 host——facade 身份在 registry / sites /
- * facade-misuse / lowering 五处按声明文件名判定，换名字会让站点收集静默变空。
+  * Options of {@link createWorkflowProgram}. facadeDts injectes a **replacement facade text**
+  * (the snippet-eval scratch facade); it always enters the virtual host under the
+  * {@link FACADE_FILE_NAME} name -- facade identity is decided by declaration filename in registry / sites /
+  * facade-misuse / lowering; a different name silently empties site collection.
  */
 export interface CreateWorkflowProgramOptions {
   facadeDts?: string;

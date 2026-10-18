@@ -45,7 +45,7 @@ interface RefreshControl {
   readonly failureCount: number;
 }
 
-/** Environment 共享控制文件合并多进程刷新；网络期间不持有文件锁。 */
+/** A per-environment shared control file coalesces multi-process refreshes; no file lock is held across network IO. */
 export class ZCodeBuiltinRemoteSynchronizer {
   readonly #options: ZCodeBuiltinRemoteSynchronizerOptions;
   readonly #now: () => number;
@@ -81,7 +81,7 @@ export class ZCodeBuiltinRemoteSynchronizer {
   async #refresh(force: boolean, signal: AbortSignal): Promise<ZCodeBuiltinRefreshResult> {
     const endpointKey = (await this.#options.resolveEndpointKey()).trim();
     if (this.#disposed) return "disposed";
-    if (!endpointKey) throw new Error("ZCode Built-in 远端 Endpoint 不能为空");
+    if (!endpointKey) throw new Error("ZCode Built-in remote endpoint must not be empty");
     const leaseId = randomUUID();
     const acquired = await withFileLock(this.#options.controlFilePath, async () => {
       const now = this.#now();
@@ -134,7 +134,7 @@ export class ZCodeBuiltinRemoteSynchronizer {
     try {
       this.#options.onRefreshResult?.(event);
     } catch {
-      /* 日志不能把成功应用改成下载失败。 */
+      /* Logs must not turn a successful apply into a download failure. */
     }
   }
 
@@ -180,7 +180,8 @@ async function readControl(filePath: string): Promise<RefreshControl> {
     const input = JSON.parse(raw) as unknown;
     return isRefreshControl(input) ? input : emptyControl();
   } catch {
-    // 控制文件不是业务事实；进程崩溃留下的损坏内容在锁内重建，不能永久阻断刷新。
+    // The control file is not business truth; corrupt content left by a crash is rebuilt under
+    // the lock and must never block refreshes permanently.
     return emptyControl();
   }
 }

@@ -1,4 +1,4 @@
-/* oxlint-disable eslint(max-lines) -- summary 与同源 detail 投影暂集中维护，本次 review fix 不扩大重构范围。 */
+/* oxlint-disable eslint(max-lines) -- summary and its same-origin detail projection are kept together; this review fix does not widen the refactor. */
 import { type ReactNode, useCallback, useMemo } from "react";
 import type { ApplicationIconRequest } from "@zcode/shared";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
@@ -51,12 +51,12 @@ function normalizeCuaToolName(value: string | null | undefined): string {
 
 function readCuaToolName(value: string | null | undefined): string | null {
   const normalized = normalizeCuaToolName(value);
-  // cua server key 段为 computer_use（feat）或 plugin namespace 里的 computer_use（main v3.5.3）。
+  // The cua server key segment is computer_use (feat) or computer_use in the plugin namespace (main v3.5.3).
   if (!normalized.includes("computer_use")) return null;
-  // action = 最后一个 "__" 之后的段。兼容两种命名：
+  // action = the segment after the last "__". Two naming schemes are supported:
   //   feat:        mcp__computer_use__<action>
   //   main namesp: mcp__plugin_zcode_cua_computer_use__<action>
-  // 都取尾部 <action>（get_app_state / left_click / type ...）。
+  // Take the trailing <action> (get_app_state / left_click / type ...).
   const lastSep = normalized.lastIndexOf("__");
   const shortName = lastSep >= 0 ? normalized.slice(lastSep + 2) : normalized;
   return /^[a-z0-9_]+$/u.test(shortName) ? shortName : null;
@@ -106,8 +106,9 @@ function readCuaApplicationIconRequest(
       ? { locators: display.targetApp.iconLocators }
       : null;
   }
-  // 历史记录没有 authority metadata 时继续兼容旧 bundle_id；新记录即使 locator
-  // 为空也不回退模型 input，避免身份冲突后重新显示未经 Helper 校验的图标。
+  // Historical entries without authority metadata keep legacy bundle_id support; new
+  // entries never fall back to model input even with an empty locator, so an unverified
+  // icon is never reshown after an identity conflict.
   return readBundleId(toolCall.input) ?? readCuaResultBundleId(toolCall);
 }
 
@@ -262,14 +263,14 @@ function buildCuaDetailsModel(
     });
   }
 
-  // MCP transport completed 不代表 CUA 动作成功；新 session 优先采用 display 状态。
+  // MCP transport completed does not mean the CUA action succeeded; new sessions prefer the display status.
   const errorCode = cuaDisplay?.errorCode ?? error?.code;
   const success =
     cuaDisplay?.status !== "failed" &&
     toolCall.status !== "failed" &&
     !error &&
     (access?.ready ?? true);
-  // 失败截图也创建详情模型时会渲染无效截图占位；失败原因区已足够。
+  // Building a detail model for failed screenshots would render an invalid-screenshot placeholder; the failure-reason section suffices.
   const screenshot = success ? screenshotCandidate : undefined;
   const resultValues: Record<string, string> | undefined = list
     ? { count: String(list.items.length) }
@@ -379,8 +380,9 @@ export function buildCuaSummaryPresentation(
     toolName === "left_click" || toolName === "right_click" || toolName === "type"
       ? readCuaActionTargetName(toolCall)
       : null;
-  // CUA 无法解析元素可读名称时会返回纯数字 index；直接把 `57` 放进 tag
-  // 看起来像无上下文的值，因此明确标注为本地化的元素编号。
+  // When CUA cannot resolve a human-readable element name it returns a bare numeric index;
+  // a bare `57` in the tag reads as context-free, so label it explicitly as a localized
+  // element number.
   const actionTarget =
     rawActionTarget && /^\d+$/u.test(rawActionTarget)
       ? intl.formatMessage({ id: "chat.toolCall.cua.elementTarget" }, { index: rawActionTarget })

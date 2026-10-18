@@ -10,7 +10,7 @@ export async function getEnterprisePricingProducts(
   services: IServiceAccessor,
   domain: ProviderFamilyDomain,
 ): Promise<EnterprisePricingProductsResult> {
-  // 两个账号域均须按自身 Family 查询；失败与明确空列表分开，不能据此自动改掉已有连接。
+  // Both account domains must query their own Family; keep failure distinct from an explicit empty list, and never auto-rewrite existing connections.
   try {
     const pricing = await services.codingPlanSubscriptionService.getEnterprisePricing({
       authenticated: true,
@@ -18,7 +18,7 @@ export async function getEnterprisePricingProducts(
     });
     return { status: "success", productList: pricing.productList };
   } catch (error) {
-    logger.warn("[Root] 刷新登录后团队套餐失败", { domain, error });
+    logger.warn("[Root] Failed to refresh team plans after sign-in", { domain, error });
     return { status: "error" };
   }
 }

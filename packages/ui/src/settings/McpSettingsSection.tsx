@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- MCP 设置页集中维护列表、插件分组、表单入口和标题行模式切换，拆分会增加跨状态传递复杂度。 */
+/* eslint-disable max-lines -- the MCP page keeps list, plugin groups, form entry and header mode switch together; splitting adds cross-state complexity. */
 /**
  * MCP Settings Section
  *
@@ -123,7 +123,7 @@ async function refreshMcpServerStatusList({
   requestedWorkspaceKey: string;
   workspaceIdentity?: string;
   workspacePath: string;
-  // mcp/list 收敛到 IMcpSyncService——UI 不直接触达 zcodeAgentService。
+  // mcp/list converges into IMcpSyncService; the UI never touches zcodeAgentService directly.
   mcpSyncService: Pick<IMcpSyncService, "listWorkspaceMcpServerStatuses">;
 }): Promise<McpServerStatusListRefreshOutcome> {
   if (!requestedWorkspaceKey || getCurrentWorkspaceKey() !== requestedWorkspaceKey) {
@@ -170,8 +170,8 @@ function transitionMcpAutoStatusListRefreshKey(
   nextKey: string,
 ): { lastRefreshKey: string; shouldRefresh: boolean } {
   if (!nextKey) {
-    // workspace 切换会先清空 server/status；若空状态仍保留 A 的去重 key，
-    // 回到相同配置的 A 时会被误判为已刷新，列表和 OAuth 轮询永久停在 unknown。
+    // Workspace switches clear server/status first; if the empty state keeps A's dedupe key,
+    // returning to an identically-configured A reads as already refreshed, leaving the list and OAuth poll on unknown forever.
     return { lastRefreshKey: "", shouldRefresh: false };
   }
   return {
@@ -218,8 +218,8 @@ function transitionMcpOAuthAuthorizationPendingRefresh({
     };
   }
   if (existingFollowup?.workspaceKey === activeWorkspaceKey) {
-    // follow-up 自己的 status merge 会改变 servers/snapshot 并重跑 transition；
-    // 同 workspace 的有界重试窗口必须保持同一对象，不能在首包后把自己 cleanup。
+    // The follow-up's own status merge changes servers/snapshot and re-runs the transition;
+    // the same-workspace bounded-retry window must stay one object, or it cleans itself up after the first packet.
     return { followup: existingFollowup, pending: null };
   }
   if (!previous || previous.workspaceKey !== activeWorkspaceKey) {
@@ -239,7 +239,7 @@ interface McpStatusListRefreshQueue {
   request: (runLatest: () => Promise<void>) => Promise<void>;
 }
 
-/** 刷新来源：manual 是用户点了刷新按钮，auto 是列表/配置变化驱动的自动刷新。 */
+/** Refresh provenance: manual = the user clicked refresh; auto = driven by list/config changes. */
 type McpStatusListRefreshTrigger = "auto" | "manual";
 
 interface McpStatusListRefreshInput {
@@ -272,8 +272,8 @@ function resolveMcpStatusListRefreshSkipReason({
   }
   if (!input.isConfigLoaded) return "config-not-loaded";
   if (!input.activeWorkspacePath) return "no-workspace-path";
-  // 只有宿主/插件内置 MCP、没有任何用户 MCP 时 serverStatusListKey 会是空串。
-  // 自动刷新据此去重没问题，但用户点了刷新就必须真的发一次请求，否则按钮看起来完全没反应。
+  // Only host/plugin-builtin MCP with no user MCP leaves serverStatusListKey an empty string.
+  // Auto-refresh dedupe on that is fine, but a manual click must really fire once, or the button looks dead.
   if (!input.serverStatusListKey && trigger !== "manual") {
     return "empty-status-list-key";
   }
@@ -349,7 +349,7 @@ function buildMcpOAuthAuthorizationStatusRefreshOptions(mcpServers: ZCodeAgentMc
   mcpServers: ZCodeAgentMcpServer[];
 } {
   return {
-    // OAuth pending/follow-up/focus 刷新只读运行态，不能让 pending 子集进入 connect replace 路径。
+    // OAuth pending/follow-up/focus refreshes read runtime state only; never let the pending subset into the connect-replace path.
     mode: "status",
     mcpServers,
   };
@@ -594,8 +594,8 @@ export function McpSettingsSection({
   const activeWorkspaceIdentity = workspaceIdentity ?? storeActiveWorkspaceIdentity;
   const activeWorkspaceKey = activeWorkspaceIdentity?.trim() || activeWorkspacePath || "";
   const currentMcpStoreWorkspaceKey = currentWorkspaceIdentity?.trim() || currentProjectPath;
-  // active tab 会先于异步 MCP 目录加载切换；过渡帧不能把 A 的配置和
-  // snapshot 投影到 B，更不能让后续 effect 把这些敏感配置发送给 B 的 Agent。
+  // The active tab switches before the async MCP catalog loads; the transition frame must not project A's config
+  // and snapshot onto B, nor let later effects send those sensitive configs to B's agent.
   const mcpStoreMatchesActiveWorkspace =
     Boolean(activeWorkspaceKey) && currentMcpStoreWorkspaceKey === activeWorkspaceKey;
   const servers = mcpStoreMatchesActiveWorkspace ? storedServers : [];
@@ -703,8 +703,8 @@ export function McpSettingsSection({
       activeWorkspaceKey && pendingMcpOAuthAuthorizationRefreshKey
         ? createMcpOAuthAuthorizationStatusRefreshDeadline()
         : 0,
-    // status snapshot merge 会重建 pending server 数组并重启轮询 effect；
-    // deadline 只能随 workspace/pending 授权窗口变化，否则慢请求会不断续期 5 分钟窗口。
+    // A status snapshot merge rebuilds the pending-server array and restarts the poll effect;
+    // the deadline may move only with the workspace/pending grant window, else slow requests extend the 5-minute window forever.
     [activeWorkspaceKey, pendingMcpOAuthAuthorizationRefreshKey],
   );
   const lastPendingMcpOAuthAuthorizationRefreshRef =
@@ -719,8 +719,8 @@ export function McpSettingsSection({
       const trigger = options?.trigger ?? "auto";
       const requestedWorkspaceKey = activeWorkspaceKey;
       const requestedInput = latestStatusListRefreshInputRef.current;
-      // 队列 runner 和 in-flight response 都可能跨 workspace 生命周期；
-      // active/store/readiness 三个 key 必须仍一致，才能发送请求或合并结果。
+      // Queue runner and in-flight responses can outlive a workspace;
+      // all three keys (active/store/readiness) must still agree before sending or merging.
       const getCurrentRefreshWorkspaceKey = () => {
         const latest = latestStatusListRefreshInputRef.current;
         return latest.activeWorkspaceKey === latest.storeWorkspaceKey &&
@@ -735,8 +735,8 @@ export function McpSettingsSection({
         trigger,
       });
       if (skipReason) {
-        // 这些 guard 过去全是静默 return，用户点刷新后既没有请求也没有任何痕迹，
-        // 复现时无法从日志判断"没发请求"还是"发了但读到旧状态"。
+        // These guards used to return silently: after a refresh click, neither a request nor a trace
+        // made it into logs for later diagnosis (not-sent vs sent-but-stale).
         if (trigger === "manual") {
           logger.warn("[mcp] manual status refresh skipped", {
             reason: skipReason,
@@ -749,7 +749,7 @@ export function McpSettingsSection({
         return;
       }
       const requestedWorkspacePath = requestedInput.activeWorkspacePath;
-      // skipReason 已经覆盖了这个分支，这里只为类型收窄。
+      // skipReason already covers this branch; this is type narrowing only.
       if (!requestedWorkspacePath) return;
       const requestedMcpServers =
         options?.mcpServers ?? useMcpStore.getState().getEnabledMcpServersForZCode("zcode");
@@ -766,8 +766,8 @@ export function McpSettingsSection({
           getCurrentWorkspaceKey: getCurrentRefreshWorkspaceKey,
           markServerStatusListRefreshFailed,
           mergeServerStatusSnapshots,
-          // 设置页列表可能来自 `.agents/mcp.json` fallback；agent 侧 mcp/list 自己
-          // createConfig 读不到这批 UI-resolved MCP，必须和真实 session 一样显式下发。
+          // The settings list may come from the .agents/mcp.json fallback; the agent-side mcp/list's own
+          // createConfig cannot see these UI-resolved servers, so they must be pushed explicitly like a real session.
           mcpServers: requestedMcpServers,
           mode: options?.mode,
           requestedWorkspaceKey,
@@ -780,7 +780,7 @@ export function McpSettingsSection({
             workspacePath: requestedWorkspacePath,
           });
           if (trigger === "manual") {
-            // 手动刷新失败过去只进日志，用户看到的仍是旧状态且毫无提示。
+            // Manual-refresh failures used to be log-only: the user saw the old state with no hint.
             const message = error instanceof Error ? error.message : String(error);
             toast(intl.formatMessage({ id: "settings.mcp.refreshFailed" }, { error: message }), {
               durationMs: 8_000,
@@ -792,8 +792,8 @@ export function McpSettingsSection({
           return;
         }
         if (outcome === "status-mode-unsupported") {
-          // 旧 Agent 会稳定拒绝 mode=status；继续 pending 定时器和焦点监听
-          // 只会每秒制造同一条协议错误，且不可能推进 OAuth 状态。
+          // Legacy agents steadily reject mode=status; keeping the pending timer and focus listener
+          // would emit the same protocol error every second without ever advancing OAuth.
           mcpStatusOnlyUnsupportedRef.current = true;
           lastPendingMcpOAuthAuthorizationRefreshRef.current = null;
           setMcpOAuthAuthorizationFollowupRefresh(null);
@@ -821,8 +821,8 @@ export function McpSettingsSection({
   );
 
   const [refreshingStatusList, setRefreshingStatusList] = useState(false);
-  // 刷新按钮过去点了没有任何可见反馈——请求可能被 guard 静默丢弃，也可能在飞行中。
-  // 这里统一：先确保配置已加载，再以 manual 触发发一次请求，期间按钮进入 loading 态。
+  // The refresh button used to give no visible feedback; requests could be guard-dropped or in flight.
+  // Now: ensure config is loaded, fire once as manual, and show button loading meanwhile.
   const handleManualRefresh = useCallback(async () => {
     if (refreshingStatusList) return;
     setRefreshingStatusList(true);
@@ -839,8 +839,8 @@ export function McpSettingsSection({
           state.currentWorkspaceIdentity?.trim() || state.currentProjectPath;
         if (loaded && loadedWorkspaceKey === activeWorkspaceKey) {
           setMcpConfigReadyWorkspaceKey(activeWorkspaceKey);
-          // ref 只在 render 时同步；这里补写一次，否则同一 tick 内紧接着的请求仍会
-          // 因为 config-not-ready 被跳过，用户就得再点一次刷新。
+          // The ref syncs only during render; write it once more here, or the request in the same tick still
+          // skips on config-not-ready and the user must click refresh again.
           latestStatusListRefreshInputRef.current = {
             ...latestStatusListRefreshInputRef.current,
             configReadyWorkspaceKey: activeWorkspaceKey,
@@ -955,8 +955,8 @@ export function McpSettingsSection({
       previous: lastPendingMcpOAuthAuthorizationRefreshRef.current,
     });
     lastPendingMcpOAuthAuthorizationRefreshRef.current = transition.pending;
-    // OAuth 回调完成到 MCP 重新连通之间会短暂清掉 authorizationUrl；
-    // follow-up 必须携带原 workspaceKey，切换 workspace 时不能复用旧配置。
+    // Between OAuth callback and MCP reconnect the authorizationUrl clears briefly;
+    // the follow-up must carry the original workspaceKey, never reuse config across a switch.
     setMcpOAuthAuthorizationFollowupRefresh(transition.followup);
   }, [
     activeWorkspaceKey,
@@ -996,9 +996,9 @@ export function McpSettingsSection({
           pendingKey: pendingMcpOAuthAuthorizationRefreshKey,
           workspacePath: activeWorkspacePath,
         });
-        // mcp/list 为了尽快返回 authorizationUrl 会让 agent 在后台等待 OAuth
-        // 回调并重连；如果当前设置页不继续拉取 snapshot，UI 会停留在 connecting，直到切 tab 重挂载。
-        // OAuth 轮询是高频请求，只能走 status-only，避免 pending 子集触发 replace 语义断开无关 MCP。
+        // To return authorizationUrl fast, mcp/list lets the agent await the OAuth
+        // callback and reconnect in the background; without continued snapshot pulls the UI sticks on connecting until a tab remount.
+        // The OAuth poll is high-frequency and status-only, so the pending subset cannot trigger replace semantics and drop unrelated MCPs.
         void requestMcpServerStatusList(
           buildMcpOAuthAuthorizationStatusRefreshOptions(
             pendingMcpOAuthAuthorizationRefreshServers,
@@ -1152,8 +1152,8 @@ export function McpSettingsSection({
   const isRemoteSyncContext = Boolean(connectedRemoteSyncTarget);
   const pluginMcpServers = useMemo(() => {
     if (!shouldShowPluginMcpServersInMcpSettings(isRemoteSyncContext)) {
-      // 插件 MCP 列表来自本机插件管理 store，不是当前远端目标。
-      // 远端 MCP 设置页必须和 Skills 一样只展示远端工作区可读写的资源。
+      // The plugin MCP list comes from the local plugin-management store, not the current remote target.
+      // The remote MCP page, like Skills, shows only resources the remote workspace can read/write.
       return [];
     }
     const pluginStoreMatchesTarget =
@@ -1219,23 +1219,23 @@ export function McpSettingsSection({
     await toggleServer(id, enabled);
 
     if (!enabled) {
-      // 禁用后的 unknown 只是本地展示态；toggleServer 已经作废旧请求，
-      // 这里不能再推进 epoch，否则刚返回的 mcp/list 会被丢弃并造成反复转圈。
+      // Unknown after disable is a local display state; toggleServer already voided old requests,
+      // so do not advance the epoch here, or the fresh mcp/list is dropped and the spinner loops.
       updateServerStatus(id, "unknown", undefined, {
         invalidateStatusListRequests: false,
       });
       return;
     }
 
-    // renderer 侧浅检查无法真实启动 stdio MCP，曾把不存在的 command 误判为 connected。
-    // 打开后只展示连接中，最终绿/红状态统一等待 agent 侧 mcp/list 真实 connect/listTools 回写。
+    // A renderer-side shallow check cannot really start a stdio server and once mistook a missing command for connected.
+    // After adding, show connecting only; the final green/red waits for the agent-side mcp/list connect/listTools writeback.
     if (!activeWorkspacePath) {
       updateServerStatus(id, "unknown", undefined, {
         invalidateStatusListRequests: false,
       });
       return;
     }
-    // connecting 只是等待真实 mcp/list 的临时展示态，不能作废随后发出的批量请求。
+    // Connecting is a transient display state awaiting the real mcp/list; it must not void the batch request issued after it.
     updateServerStatus(id, "connecting", undefined, {
       invalidateStatusListRequests: false,
     });
@@ -1258,8 +1258,8 @@ export function McpSettingsSection({
       ...formToConfig(form),
       ...(prev?.enabled === false ? { enable: false } : {}),
     };
-    // 表单 Scope 可以独立于父页面切换，不能继续读取可能仍属于旧目标的
-    // currentProjectPath；保存目标必须使用表单已解析并完成加载的 workspace props。
+    // The form's scope can switch independently of the page; never keep reading a currentProjectPath
+    // that may belong to the old target; saving uses the form's resolved, loaded workspace props.
     const projectPath = formScopeKey === "user" ? undefined : activeWorkspacePath;
 
     if (prev) {
@@ -1555,8 +1555,8 @@ export function McpSettingsSection({
         ))}
       </div>
       <McpServersImportDialog
-        // 对话框携带的是 mcpStore 的 currentProjectPath，只有它与当前 target
-        // 一致时才和 services 的 host 同源；不一致的过渡帧不能让导入按 A 的 host 落盘 B 的路径。
+        // The dialog carries mcpStore's currentProjectPath; only when it matches the current target is it same-origin with the services host.
+        // On a mismatched transition frame, an import must not write B's path through A's host.
         open={importDialogOpen && mcpStoreMatchesActiveWorkspace}
         workspacePath={currentProjectPath}
         workspaceIdentity={activeWorkspaceIdentity}

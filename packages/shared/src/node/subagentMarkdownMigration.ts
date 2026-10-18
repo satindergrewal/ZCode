@@ -10,7 +10,7 @@ interface SubagentMarkdownMigrationResult {
   failures: Array<{ path: string; error: unknown }>;
 }
 
-/** 共享原子导入边界：JSON 的旧字段只在这里解释，完成落盘后 reader 只读当前字段。 */
+/** Shared atomic-import boundary: legacy JSON fields are interpreted only here; after the write, readers see current fields only. */
 export async function migrateSubagentStateFile(path: string): Promise<void> {
   try {
     await migrateFile(path, (original) => {
@@ -22,7 +22,7 @@ export async function migrateSubagentStateFile(path: string): Promise<void> {
         : JSON.stringify(next, null, 2);
     });
   } catch (error) {
-    // 损坏文件维持既有空覆盖语义，不覆盖原文；IO 错误不冒充迁移成功。
+    // Broken files keep the existing empty-override semantics, never overwriting the original; IO errors never pose as migration success.
     if (error instanceof SyntaxError || (error as NodeJS.ErrnoException).code === "ENOENT") return;
     throw error;
   }
@@ -46,7 +46,7 @@ async function migrateFile(
     try {
       await writeFile(temp, next, { flag: "wx", mode: before.mode & 0o777 });
       await chmod(temp, before.mode & 0o777);
-      // 外部编辑器不持有应用锁：写前比较原文和文件身份，不能覆盖并发修改。
+      // External editors hold no app lock: compare content and file identity before writing; never clobber concurrent edits.
       const current = await lstat(path);
       if (
         !current.isFile() ||
@@ -65,14 +65,14 @@ async function migrateFile(
   });
 }
 
-/** 调用方只传所属环境的用户 agents 根目录；项目/插件不得进入自动写入入口。 */
+/** Callers pass only their environment's user agents root; project/plugin dirs never enter the auto-write path. */
 export async function migrateUserSubagentMarkdown(
   userRoot: string,
 ): Promise<SubagentMarkdownMigrationResult> {
   const result: SubagentMarkdownMigrationResult = { migrated: [], failures: [] };
   async function visit(directory: string): Promise<void> {
     try {
-      // 不能沿用户目录内的链接写到项目/插件或其他目录。
+      // Never follow links inside the user dir into project/plugin or other directories.
       const rootStat = await lstat(directory);
       if (!rootStat.isDirectory()) return;
       for (const entry of await readdir(directory, { withFileTypes: true })) {

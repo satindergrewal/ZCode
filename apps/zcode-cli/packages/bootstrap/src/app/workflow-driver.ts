@@ -1,49 +1,51 @@
 // ============================================================
 // AgentRuntime-backed WorkflowDriver（Boundary B）
 // ============================================================
-// 把 dynamic-workflow 引擎核心的向下副作用端口 WorkflowDriver 落到真实 ZCode AgentRuntime 上：
-// 每个 actor 一个**持久** child runtime（重复 executeTurn 累积 messageHistory），每次 ask 一次
-// executeTurn，typed ask 的结果经会话级 WorkflowSubmitPort 桥接回引擎裁决。
+// Lands the dynamic-workflow engine core's downward side-effect port WorkflowDriver onto the real ZCode AgentRuntime:
+// one **persistent** child runtime per actor (repeated executeTurn accumulates messageHistory), one executeTurn per
+// ask, with a typed ask's result bridged back to the engine verdict via the session-level WorkflowSubmitPort.
 //
-// Boundary B 的另外两半——`executeWorldRead` 与 `executeArtifactPublish`——分别住在
-// workflow-world-read.ts 与 workflow-artifact-publish.ts，本文件只做转发。两者与这里没有
-// 共同状态（不碰会话、turn、submit 桥接），所以分开之后本文件只剩「会话与 turn 的编排」
-// 这一件事。
+// The other two halves of Boundary B - `executeWorldRead` and `executeArtifactPublish` - live in
+// workflow-world-read.ts and workflow-artifact-publish.ts; this file only forwards. Neither shares
+// state with this file (no session, turn, or submit-bridge touching), so after the split this file does one thing:
+// session and turn orchestration.
 //
-// 三条时序（本文件的核心不变式）：
-//   1. accept：模型调用 submit_result → handler 阻塞在 port.respond → 本 driver 上报
-//      askSubmitAttempted → 引擎校验通过 → respondToSubmit(accept) → 解开 deferred 为 {accept:true}
-//      → handler 返回成功（挂 turnControl 停 turn）→ executeTurn resolve → 只上报 askStats（不再上报
-//      askTurnEnded，因为该 ask 已被引擎结算）。
-//   2. reject（同 turn 内修复）：respondToSubmit(reject, violations) → 解开 deferred 为
-//      {accept:false, violations} → handler 抛错 → error tool_result（无 turnControl）→ 同一 turn 继续
-//      → 模型重试 → 又一次 respond → 又一次 deferred。repair 预算耗尽时引擎改调 cancelAsk。
-//   3. nudge（turn 结束未提交）：executeTurn resolve 且未 accept → 上报 askTurnEnded → 引擎决定 nudge
-//      → respondToSubmit(nudge)（此时**无** parked deferred，turn 已结束）→ 在同一持久 runtime 上发起
-//      一次**全新** executeTurn（nudge 提示）。
-//
-// 三值→二值裁决映射（引擎 SubmitVerdict 三值；contracts WorkflowSubmitPort 二值）：
-//   accept → {accept:true}；reject → {accept:false, violations}（Violation 1:1 映射）；nudge → 无 deferred，
-//   起新 turn。见 respondToSubmit。
-//
-// 第四条时序（升级问答）与上面三条**同层**：
-//   4. escalate：模型调用 escalate → handler 阻塞在 escalatePort → driver 铸 qid、停驻 deferred、
-//      把问题登记进升级注册表，并双轨发出 escalation-raised（journal + emit）→ 主代理经 run
-//      service 的 resolveQuestion 查表 → driver.respondToEscalation 解开 deferred 并发出
-//      escalation-resolved → 工具结果 = 答案文本 → actor 的轮次就地继续，ask 照常 settle。
-//      引擎核心对此**零感知**：升级发生在 driver 执行 ask 的边界内（与 repair/nudge 轮次同层），
-//      不写 dwf_node 行。逃生舱是 cancelAsk——它连同停驻的升级 deferred 一起拒绝。
-//
-// amend-resume 给本文件加了两件 driver 私有的事，两件都只
-// 关乎会话转录，所以机制住在 workflow-actor-transcript.ts，这里只做编排（编排的三个实现体在
+// Three sequences (this file's core invariants):
+//   1. accept: the model calls submit_result -> the handler blocks on port.respond -> this driver reports
+//      askSubmitAttempted -> the engine validates -> respondToSubmit(accept) -> resolves the deferred to {accept:true}
+//      -> the handler returns success (hanging turnControl stops the turn) -> executeTurn resolves -> only askStats is
+//      reported (no askTurnEnded: the engine already settled the ask).
+//   2. reject (repair within the turn): respondToSubmit(reject, violations) -> resolves the deferred to
+//      {accept:false, violations} -> the handler throws -> error tool_result (no turnControl) -> the same turn
+//      continues -> the model retries -> another respond -> another deferred. On repair-budget exhaustion the engine
+//      calls cancelAsk instead.
+//   3. nudge (turn ended without submission): executeTurn resolves unaccepted -> report askTurnEnded -> the engine
+//      decides to nudge -> respondToSubmit(nudge) (no parked deferred at this point; the turn ended) -> a brand-new
+//      executeTurn starts on the same persistent runtime (the nudge prompt).
+// Three-value to two-value verdict mapping (the engine SubmitVerdict is ternary; contracts WorkflowSubmitPort binary):
+//   accept -> {accept:true}; reject -> {accept:false, violations} (Violation mapped 1:1); nudge -> no deferred,
+//   start a new turn. See respondToSubmit.
+// The fourth sequence (escalation Q&A) sits at the **same layer** as the three above:
+//   4. escalate: the model calls escalate -> the handler blocks on escalatePort -> the driver mints a qid, parks a
+//      deferred, registers the question in the escalation registry, and dual-writes escalation-raised (journal + emit)
+//      -> the main agent looks the answer up via the run service's resolveQuestion -> driver.respondToEscalation
+//      resolves the deferred and emits escalation-resolved -> the tool result is the answer text -> the actor's turn
+//      continues in place and the ask settles normally.
+//      The engine core is **unaware**: escalation happens inside the driver's ask boundary (same layer as
+//      repair/nudge rounds) and writes no dwf_node row. The escape hatch is cancelAsk - it rejects along with the
+//      parked escalation deferred.
 // workflow-driver-transcript.ts）：
-//   - **ask 边界记账**：一次交换（含 repair / nudge 轮与 submit 之后的收尾消息）结束后，把该 actor
-//     会话已落库的消息条数写进这个 ask 的 journal 行。每个 ask 都写——任何 run 都是未来修订的
-//     潜在前驱。
-//   - **转录截断**：`createActorSession` 带种子时，把源会话的前 N 条消息复制进新铸的会话再重水化。
-// 本轮又多了第三件，同样只关乎转录、同样住在自己的模块（workflow-driver-quiescence.ts）：
-//   - **会话静默登记**：dispose 时记下每个会话是否还有在写的 turn。修订一个在飞前驱时，amend
-//     要据它判断「此刻数出来的消息条数可不可信」，才谈得上接续那条未完的 ask。
+// amend-resume adds two driver-private duties, both
+// transcript-only, so the machinery lives in workflow-actor-transcript.ts and this file orchestrates (the three
+//   - **ask boundary accounting**: once an exchange ends (repair / nudge rounds and post-submit tail messages
+//     included), write the actor session's persisted message count into that ask's journal row. Every ask writes -
+//     any run is a potential predecessor of a future amendment.
+//   - **transcript truncation**: when `createActorSession` carries a seed, copy the source session's first N messages
+//     into the freshly minted session and rehydrate.
+// This round adds a third, also transcript-only, also in its own module (workflow-driver-quiescence.ts):
+//   - **session quiescence registry**: at dispose, record per session whether a turn is still writing. When
+//     amending an in-flight predecessor, amend needs it to decide whether the message count taken now is trustworthy
+//     - the precondition for continuing the unfinished ask.
 
 import type { SessionId, WorkflowEscalatePort } from "@zcode/contracts";
 import type { TurnResult } from "@zcode/core";
@@ -107,7 +109,7 @@ import {
 import type { AgentRuntimeWorkflowDriverDeps, SessionState } from "./workflow-driver-types.js";
 
 /**
- * WorkflowDriver 的真实实现。构造经 {@link createAgentRuntimeWorkflowDriver}（绑定 deps，回填 sink）。
+ * The real WorkflowDriver. Constructed via {@link createAgentRuntimeWorkflowDriver} (binds deps, backfills the sink).
  */
 class AgentRuntimeWorkflowDriver implements WorkflowDriver {
   readonly journal: JournalStorePort;
@@ -116,46 +118,46 @@ class AgentRuntimeWorkflowDriver implements WorkflowDriver {
   private readonly sink: WorkflowReportSink;
   private readonly deps: AgentRuntimeWorkflowDriverDeps;
   private readonly sessions = new Map<string, SessionState>();
-  /** refToString(instance) → 其所属会话，供 respondToSubmit / cancelAsk 反查。 */
+  /// refToString(instance) -> owning session, for respondToSubmit / cancelAsk reverse lookup.
   private readonly instanceToSession = new Map<string, SessionState>();
-  /** qid → 停驻它的会话，供 respondToEscalation 反查（与 instanceToSession 同族）。 */
+  /// qid -> parking session, for respondToEscalation lookup (same family as instanceToSession).
   private readonly qidToSession = new Map<string, SessionState>();
-  /** per-run 单调的升级序号；qid 的第二段。与 runId 一起构成无碰撞的 id。 */
+  /// Per-run monotonic escalation counter; the second segment of a qid. With runId it forms a collision-free id.
   private escalationSeq = 0;
-  /** dispose 幂等门（引擎契约是恰好一次，但门在这里更便宜也更稳）。 */
+  /// dispose idempotence gate (the engine contract is exactly-once, but the gate is cheaper and sturdier here).
   private disposed = false;
-  /** 本 run 对治理器 cap 变化的订阅（run 级一次，dispose 时退订）。 */
+  /// This run's subscription to governor cap changes (once per run; unsubscribed at dispose).
   private readonly concurrencyUnsubscribe?: () => void;
   /**
-   * 交给升级桥接（workflow-driver-escalation.ts）的宿主面：两张表按引用共享，序号与 record
-   * 经闭包回到本类——私有状态不外露，桥接函数也不需要知道类的形状。
+   * Host face for the escalation bridge (workflow-driver-escalation.ts): both tables shared by reference, counter and
+   * record reach this class via closure - no private state leaks, and the bridge functions need not know the class shape.
    */
   private readonly escalationHost: EscalationHost;
-  /** 交给模型侧失败收容（workflow-driver-model-failure.ts）的宿主面：同一套按引用共享的思路。 */
+  /// Host face for model-side failure containment (workflow-driver-model-failure.ts): the same share-by-reference pattern.
   private readonly modelFailureHost: ModelFailureHost;
-  /** 交给 submit 桥接（workflow-driver-submit-bridge.ts）的宿主面：同上，两样都按引用共享。 */
+  /// Host face for the submit bridge (workflow-driver-submit-bridge.ts): ditto, both by reference.
   private readonly submitHost: SubmitBridgeHost;
-  /** run 级 stall 时钟：所有 actor 的成功 / 重试节拍汇到这一只表。 */
+  /// Run-level stall clock: every actor's success / retry cadence feeds this one ledger.
   private readonly stallClock: RunStallClock;
   /**
-   * 会话静默账（workflow-driver-quiescence.ts）：dispose 那一刻每个会话还有没有在写的 turn。
-   * 唯一的读者是 amend——接续前驱的在飞 ask 之前它要确认那个会话已经写完了。
-   */
+   * Session quiescence ledger (workflow-driver-quiescence.ts): at dispose, per session, whether a turn was still
+   * writing. Sole reader: amend - before continuing a predecessor's in-flight ask it must confirm the session went
+   * quiet.
   private readonly quiescence: ActorSessionQuiescenceLedger;
 
   constructor(deps: AgentRuntimeWorkflowDriverDeps, sink: WorkflowReportSink) {
     this.deps = deps;
     this.sink = sink;
     this.journal = deps.journal;
-    // 引擎的 record() 对**每一条**事件都紧接着调 driver.emit（engine.ts），所以这里是 driver
-    // 看得见 ask 终点的唯一一处：`node-settled` 是三条结算路（settleOk / settleFailed /
-    // abortInFlight）共同的出口，也就是座位闸门等的那条「这一位不工作了」。
+    // The engine's record() calls driver.emit immediately for **every** event (engine.ts), so this is the only place
+    // the driver sees an ask endpoint: `node-settled` is the common exit of the three settle paths (settleOk /
+    // settleFailed / abortInFlight) - exactly the this-one-stopped-working signal the seat gate awaits.
     //
-    // 为什么不用 driver 自己的状态判：`state.currentInstance` 从不清空，untyped ask 经
-    // askTurnEnded 在引擎侧结算之后 `live()` 仍然为真——照它腾座位就永远腾不掉，FIFO 会死等。
-    //
-    // 递下去的**必须是同一个对象引用**：launch 侧的 sequence 截取按引用相等核对序号
-    // （dynamic-workflow-run-launch.ts 的 createJournalSequenceCapture）。
+    // Why not judge from driver state: `state.currentInstance` is never cleared, and after an untyped ask settles via
+    // askTurnEnded on the engine side `live()` stays true - vacating by it would never vacate, and FIFO would wait
+    // forever.
+    // What is handed down **must be the same object reference**: the launch side's sequence capture checks sequence
+    // by reference equality (createJournalSequenceCapture in dynamic-workflow-run-launch.ts).
     this.emit =
       deps.seatGate === undefined
         ? deps.emit
@@ -188,11 +190,11 @@ class AgentRuntimeWorkflowDriver implements WorkflowDriver {
       ...(deps.clock === undefined ? {} : { clock: deps.clock }),
       ...(deps.clock?.quiesceMs === undefined ? {} : { quiesceMs: deps.clock.quiesceMs }),
     });
-    // 探针在**构造时**就交出去：run service 要在条目上挂住它，而 amend 可能在这个 run 生命的
-    // 任意一刻到来。dispose 之后才交就晚了——那时 service 已经在数会话了。
+    // The probe is handed over at **construction**: the run service must hang it on the entry, and amend may arrive at
+    // any moment of this run's life. After dispose is too late - the service is already counting sessions.
     deps.onQuiescenceProbe?.(this.quiescence);
     if (deps.concurrency !== undefined) {
-      // 扇出只到在该 key 上有在飞/排队请求的 run，所以订阅本身可以在构造时一次做完。
+    // Fan-out reaches only runs with in-flight/queued requests on the key, so subscribing once at construction is fine.
       this.concurrencyUnsubscribe = deps.concurrency.subscribe(deps.runId ?? "run", (change) => {
         this.stallClock.noteCap(change.next);
         this.sink.concurrencyChanged(change);
@@ -206,11 +208,11 @@ class AgentRuntimeWorkflowDriver implements WorkflowDriver {
     seed?: ActorSessionSeed,
   ): Promise<SessionRef> {
     const sessionId = mintActorSessionId(this.deps.runId ?? "run", actor);
-    // resume 会话身份互证：journal 的 dwf_actor.session_id 是**记录**，铸造函数才是权威
-    // （按 (runId, actorRef) 纯确定，重挂时必然铸出同一个 id）。两者不一致只可能是铸造规则
-    // 漂移（改名/第二处实现）——后果是重水化读错会话、详情页打开不存在的会话，离成因很远，
-    // 所以在重挂的第一步就大声失败，携结构化 mismatch（与两个哈希不匹配错误同形）。
-    const journaled = this.journal.getActor(
+    // Resume session-identity cross-check: the journal's dwf_actor.session_id is the **record**; the minting function
+    // is the authority (pure over (runId, actorRef); a re-attach necessarily mints the same id). A mismatch means the
+    // minting rules drifted (renamed/second implementation) - the consequences (rehydration reading the wrong session,
+    // details page opening a nonexistent one) are far from the cause, so fail loudly at the first re-attach step with
+    // a structured mismatch (same shape as the two hash-mismatch errors).
       this.deps.runId ?? "run",
       actor.siteId,
       actor.ordinal,
@@ -224,17 +226,17 @@ class AgentRuntimeWorkflowDriver implements WorkflowDriver {
       );
     }
     const ref: SessionRef = { id: sessionId };
-    // 会话级 submit 端口（实现体在 workflow-driver-submit-bridge.ts，与紧随其后的升级端口
-    // 逐条对称）：closure 绑定本会话，模型无法覆盖路由身份（instance 取自 currentInstance）。
-    const submitPort = makeSessionSubmitPort(this.submitHost, sessionId);
-    // 升级端口同构：同样按会话 closure 绑定，同样恒注入（见 ActorRuntimeFactory 的字段注释）。
-    // persona 一并入 closure：有效名是**冻结**的（引擎在 createActor 时定下，此后不变），
-    // 所以在这里算一次比每次 escalate 现查便宜，也不会中途换名。
-    const escalatePort = this.makeEscalatePort(sessionId, actor, persona);
-    // 模型活动面：准入端口随 runtime deps 下传（runner 每次尝试先过闸门），
-    // waiting / executing 观察只在有在飞 ask、且它还没被引擎结算/取消时上报——迟到的观察对一个
-    // 已完结的 ask 没有意义，引擎侧也会再挡一次。state 在下面才建，所以经 closure 晚绑定。
-    let state: SessionState | undefined;
+    // Session-level submit port (implementation in workflow-driver-submit-bridge.ts, clause-for-clause symmetric with
+    // the escalation port below): the closure binds this session, so the model cannot override routing identity
+    // (instance taken from currentInstance).
+    // The escalation port is isomorphic: also closure-bound per session, also always injected (see the
+// ActorRuntimeFactory field notes). The persona joins the closure too: the effective name is **frozen** (the engine
+// fixes it at createActor and never changes), so computing it once here is cheaper than per-escalate lookups and
+// cannot rename mid-flight.
+    // Model-activity surface: the admission port rides down via runtime deps (every runner attempt gates first);
+    // waiting / executing observations report only while an ask is in flight and not yet settled/cancelled by the
+    // engine - late observations are meaningless for a settled ask, and the engine side re-gates anyway. `state` is
+    // built below, hence late-bound via closure.
     const live = (): InstanceRef | undefined =>
       state === undefined ||
       state.currentInstance === undefined ||
@@ -246,14 +248,14 @@ class AgentRuntimeWorkflowDriver implements WorkflowDriver {
       port: this.deps.concurrency,
       runId: this.deps.runId ?? "run",
       live,
-      // 座位闸门按 **actor** 键入（不是 ask 实例）：per-actor FIFO 保证一个 actor 至多一个在飞
-      // ask，所以「工作中的子代理」与「在飞的 ask」是同一个计数，而准入端口本就是按 actor 会话
-      // 造的。
+      // The seat gate keys by **actor**, not ask instance: per-actor FIFO means at most one in-flight ask per actor,
+      // so working-subagent and in-flight-ask are the same count - and the admission port was built per actor session
+      // anyway.
       ...(this.deps.seatGate === undefined
         ? {}
         : { seat: { gate: this.deps.seatGate, key: refToString(actor) } }),
       handlers: {
-        // 子代理的第一笔工作区写入 ⇒ 引擎关导入缓存。
+        // The subagent's first workspace write => the engine closes the import cache.
         onMutating: (instance) => this.sink.askMutating(instance),
         onWaiting: (info) => {
           const instance = live();
@@ -263,18 +265,18 @@ class AgentRuntimeWorkflowDriver implements WorkflowDriver {
           const instance = live();
           if (instance !== undefined) this.sink.askExecuting(instance);
         },
-        // run 级 stall 时钟的两个节拍：任一 actor 的成功归零、任一重试上膛。
+        // The run-level stall clock's two cadences: any actor's success resets, any retry arms.
         onRequestCompleted: () => this.stallClock.noteSuccess(),
         onRetryScheduled: (reason) => this.stallClock.noteRetryScheduled(reason),
       },
     });
-    // submit profile：按 actor **站点**查——同一站点
-    // 的每个 ordinal（fan-out 的每条 lane）跑的是同一组 ask 站点，profile 自然相同。缺席 = generic。
+    // Submit profile looked up by actor **site**: every ordinal of a site (each fan-out lane) runs the same ask set,
+    // hence the same profile. Absent = generic.
     const submitProfile =
       this.deps.actorSubmitProfiles?.get(actor.siteId) ?? GENERIC_SUBMIT_PROFILE;
-    // await：生产工厂在返回前把会话落库并建 task link（FK 要求 session 行先存在）。
-    // 引擎的 ensureSession 会 await 本方法，所以第一次 ask 派发前持久化已完成。
-    const runtime = await this.deps.runtimeFactory({
+    // await: the production factory persists the session and creates the task link before returning (the FK needs the
+    // session row first). The engine's ensureSession awaits this, so persistence completes before the first ask
+    // dispatch.
       sessionId,
       actor,
       persona,
@@ -318,41 +320,41 @@ class AgentRuntimeWorkflowDriver implements WorkflowDriver {
   startAsk(session: SessionRef, instance: InstanceRef, message: AskMessage): void {
     const state = this.sessions.get(session.id);
     if (state === undefined) {
-      // 理论不会发生（引擎先建会话再 ask）；归一成 DriverError 上报而非静默。
-      this.sink.askFailed(
+    // Cannot theoretically happen (the engine creates the session before asking); normalize to DriverError and report
+    // instead of staying silent.
         instance,
         new WorkflowError("DriverError", `Unknown subagent session: ${session.id}`),
       );
       return;
     }
-    // 上一个 ask 若在异常路径上留下了停驻项（turn 被 abort 之外的方式打断），在这里一并撤下：
-    // 新的 ask 一旦开跑，那些问题就再也不会有人读答案了，留在注册表里只会让快照说谎。
-    this.withdrawEscalations(state);
+    // If the previous ask left parked items on an abnormal path (interrupted other than by turn abort), withdraw them
+    // here: once the new ask runs, nobody will ever read those answers, and leftover registry entries make snapshots
+    // lie.
     state.currentInstance = instance;
     state.currentTyped = message.typed;
     state.accepted = false;
     state.cancelled = false;
     state.pendingSubmit = undefined;
-    // per-ask 预算归零（nudge 走的是 runTurn，不经这里——nudge 仍在同一个 ask 里）。
+    // Per-ask budget reset (nudge goes through runTurn, not here - a nudge is still the same ask).
     state.escalationsUsed = 0;
     state.abortController = new AbortController();
-    // 上一个 ask 的 waiting / executing 相位、工具计数都不能带到这个 ask 上；瞬态重驱计数同理。
-    state.modelActivity.reset();
-    // ask 的起点喂给座位闸门（终点在 emit 里认 `node-settled`）：从这一刻起这个子代理算"在工作"，
-    // 它的下一个 turn step 因此要过座位。同一个 actor 连着接到下一个 ask 时这是幂等的加入——
-    // 它本来就一直在工作，中途没有空过。
+    // The previous ask's waiting / executing phases and tool counts must not leak into this ask; same for the
+    // transient redrive counter.
+    // The ask start feeds the seat gate (the end is recognized via `node-settled` in emit): from this moment the
+    // subagent counts as working, so its next turn step passes the seat. Re-joining for the same actor's next ask is an
+    // idempotent join - it never stopped working in between.
     this.deps.seatGate?.askStarted(refToString(state.actor), instance);
     state.transientAttempts = 0;
     state.cancelRedrive?.();
     state.cancelRedrive = undefined;
     this.instanceToSession.set(refToString(instance), state);
 
-    // 质量尾注对 typed / untyped 一视同仁；schema 尾注只有 typed 有。两段都在 scheduler 算完
-    // inputHash 之后追加，所以不进缓存身份。
-    // typed ask 的 schema 尾注按 submit profile 分叉：mono 子代理的 schema 已在工具声明里，尾注只剩
-    // 一句；generic 子代理照旧把整份 schema 写进尾注。守卫先跑：静态 profile 与这次 ask 不符时它会
-    // 把会话降成 generic（或让 ask 失败），下面读到的就是修正后的形态。
-    if (message.typed && !ensureSubmitProfileFits(this.deps, this.sink, state, instance, message)) {
+    // The quality epilogue applies to typed and untyped alike; the schema epilogue only to typed. Both append after the
+    // scheduler computed inputHash, so neither enters the cache identity.
+    // The typed-ask schema epilogue branches on the submit profile: a mono subagent's schema lives in the tool
+    // declaration, leaving a one-liner; generic keeps embedding the full schema. The guard runs first: on a static-
+    // profile mismatch it downgrades the session to generic (or fails the ask), and what is read below is the
+    // corrected shape.
       return;
     }
     const input = message.typed
@@ -360,10 +362,10 @@ class AgentRuntimeWorkflowDriver implements WorkflowDriver {
           state.submitProfile.kind === "mono" ? TYPED_TOOL_EPILOGUE : schemaEpilogue(message.schema)
         }`
       : `${message.instructions}${qualityEpilogue(undefined)}`;
-    // 尾注边界：GUI 据此把尾注折进披露。指令正文
-    // 之后全是引擎文本，边界就是正文长度；模型收到的仍是全文，持久 text part 也是。
-    // fire-and-forget：绝不在 startAsk 内 await turn 完成（Boundary B 契约）。
-    this.runTurn(state, instance, input, message.instructions.length);
+    // Epilogue boundary: the GUI folds the epilogue into a disclosure. Everything after the instruction body is engine
+    // text, so the boundary is the body length; the model still receives the full text, and so does the persisted
+    // text part.
+    // Fire-and-forget: never await turn completion inside startAsk (the Boundary B contract).
   }
 
   respondToSubmit(instance: InstanceRef, verdict: EngineSubmitVerdict): void {
@@ -371,7 +373,7 @@ class AgentRuntimeWorkflowDriver implements WorkflowDriver {
     if (state === undefined) return;
     switch (verdict.kind) {
       case "accept": {
-        // 标记 accept：该 ask 的 turn resolve 时不再上报 askTurnEnded（引擎已 settleOk）。
+        // Mark accepted: the ask's turn resolve no longer reports askTurnEnded (the engine settleOk'd).
         state.accepted = true;
         const deferred = state.pendingSubmit;
         state.pendingSubmit = undefined;
@@ -379,15 +381,15 @@ class AgentRuntimeWorkflowDriver implements WorkflowDriver {
         return;
       }
       case "reject": {
-        // 同 turn 内修复：handler 收到 {accept:false} 会抛错 → error tool_result → 模型重试。
+        // Repair within the turn: the handler throws on {accept:false} -> error tool_result -> the model retries.
         const deferred = state.pendingSubmit;
         state.pendingSubmit = undefined;
         deferred?.resolve({ accept: false, violations: mapViolations(verdict.violations) });
         return;
       }
       case "nudge": {
-        // turn 已结束、无 parked deferred：在同一持久 runtime 上发起一次全新 turn 促其提交。
-        // nudge 整条都是引擎文本：边界 0。
+        // Turn ended, no parked deferred: start a brand-new turn on the same persistent runtime to prompt submission.
+        // A nudge is engine text end to end: boundary 0.
         this.runTurn(state, instance, NUDGE_PROMPT, 0);
         return;
       }
@@ -397,36 +399,36 @@ class AgentRuntimeWorkflowDriver implements WorkflowDriver {
   cancelAsk(instance: InstanceRef): void {
     const state = this.instanceToSession.get(refToString(instance));
     if (state === undefined) return;
-    // 引擎主动取消（repair/nudge 预算耗尽、run 取消/失败）：中止在飞 turn，并解开可能挂起的 submit
-    // deferred，避免 handler 永久阻塞；标记 cancelled 使 turn reject 不再上报 askFailed。
-    state.cancelled = true;
+    // Engine-initiated cancellation (repair/nudge budgets gone, run cancelled/failed): abort the in-flight turn and
+    // resolve any parked submit deferred so handlers never block forever; mark cancelled so the turn rejection stops
+    // reporting askFailed.
     const deferred = state.pendingSubmit;
     state.pendingSubmit = undefined;
     deferred?.reject(new WorkflowError("Cancelled", "The ask was cancelled by the engine."));
-    // 停驻中的升级问答与 submit deferred **同待遇**：一并拒绝，否则 `escalate` handler 会在一个
-    // 已被取消的 ask 里永久阻塞。这条正是「无答案 = 无限期阻塞」的逃生舱（按设计不设超时）：
-    // run cancel 与 CLI 进程亡故的行为因此与今天逐字节一致——ask 拒 Cancelled、run 转
-    // Interrupted，resume 后该 ask 重跑、actor 重新提问并得到新 qid。
-    this.withdrawEscalations(state);
-    // 退避等待中的重驱一并撤下：ask 已被引擎结算，再起一轮只会对着一个没人听的节点烧 token。
-    state.cancelRedrive?.();
+    // Parked escalation Q&As get the **same treatment** as the submit deferred: reject them too, else the `escalate`
+    // handler blocks forever inside an already-cancelled ask. This is the no-answer-equals-forever-block escape hatch
+    // (no timeout, by design): run cancel and CLI process death therefore behave byte-identically to today - the ask
+    // rejects Cancelled, the run turns Interrupted, and after resume the ask reruns, the actor asks anew and gets a
+    // fresh qid.
+    // Also withdraw redrive alarms mid-backoff: the ask is settled; another round would only burn tokens against a
+    // node nobody listens to.
     state.cancelRedrive = undefined;
     state.abortController?.abort(new Error("workflow ask cancelled"));
   }
 
   /**
-   * run 结算后的资源释放（引擎在 run-settled 之后恰好调一次，见 WorkflowDriver.dispose）。
+   * Resource release after the run settles (the engine calls exactly once after run-settled; see WorkflowDriver.dispose).
    *
-   * 对每个 actor runtime 跑 app 关会话的**同一条**链——`closeBrowserSession` 内部依次
-   * beginShutdown、node_repl 会话释放、浏览器会话关闭；不另造一套子代理关闭链，那会漂移。
-   * 不关 execution / MCP / session store：子代理不拥有它们。有在飞 turn 的会话等它落地再关
-   * （见 SessionState.turn）；关闭失败只 warn，结算不因它抛。三张表随之清空。
-   *
-   * 本方法**同步**，而且刻意不等在飞 turn——引擎的契约是结算之后立刻释放资源。代价是
-   * 「结算 promise 已解决」不蕴含「被中止的 turn 已经把尾巴写完」，所以释放的同时把每个会话
-   * 此刻的在飞 turn 记进静默账：amend 随后据它判断哪个会话的消息条数可信。两件事的编排在
-   * {@link releaseActorSessions}（workflow-driver-quiescence.ts 的文件头写了完整论证）。
-   */
+   * Runs the app's close-session chain **verbatim** for every actor runtime - `closeBrowserSession` internally
+   * beginShutdown, node_repl session release, browser session close, in order. A separate subagent close chain would
+   * drift. Execution / MCP / the session store are not closed: subagents do not own them. Sessions with in-flight
+   * turns wait for them to land before closing (see SessionState.turn); close failures only warn - settlement never
+   * throws because of one. All three tables clear afterwards.
+   * This method is **synchronous** and deliberately does not wait for in-flight turns - the engine contract is
+   * release-immediately-after-settlement. The price: settled-promise-resolved does not imply the aborted turn finished
+   * writing its tail, so while releasing, each session's current in-flight turn is recorded into the quiescence
+   * ledger for amend to judge count trustworthiness. The orchestration of the two lives in
+   * {@link releaseActorSessions} (full argument in the workflow-driver-quiescence.ts header).
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
@@ -439,43 +441,43 @@ class AgentRuntimeWorkflowDriver implements WorkflowDriver {
   }
 
   /**
-   * 结算一个停驻中的升级问答（run service 经注册表调进来）。实现体在
-   * workflow-driver-escalation.ts（{@link respondToParkedEscalation}），这里只做委托。
+   * Settle one parked escalation Q&A (the run service calls in via the registry). Implementation in
+   * workflow-driver-escalation.ts ({@link respondToParkedEscalation}); pure delegation here.
    */
   respondToEscalation(qid: string, answer: string): boolean {
     return respondToParkedEscalation(this.escalationHost, qid, answer);
   }
 
-  /** 撤下某会话上所有停驻中的升级问答；实现体见 {@link withdrawSessionEscalations}。 */
+  /// Withdraw every parked escalation Q&A of one session; implementation at {@link withdrawSessionEscalations}.
   private withdrawEscalations(state: SessionState): void {
     withdrawSessionEscalations(this.escalationHost, state);
   }
 
   /**
-   * 世界读取：整段委托给 {@link executeWorldRead}（workflow-world-read.ts）。
+   * World-read: fully delegated to {@link executeWorldRead} (workflow-world-read.ts).
    *
-   * 这里只做转发，是因为世界读取与本文件的其余部分**没有共同状态**：它不碰 actor 会话、
-   * 不碰 turn、不碰 submit 桥接，只需要三样东西（两个端口加一个 cwd）。分出去之后本文件
-   * 只剩"会话与 turn 的编排"这一件事，而 op 元数、上限执行、git 的固定 argv 集中在一处。
+   * Pure forwarding, because world-read shares **no state** with the rest of this file: it touches no actor session,
+   * no turn, no submit bridge, and needs three things (two ports and a cwd). Split out, this file keeps only
+   * session-and-turn orchestration while op arities, cap enforcement, and git's fixed argv live in one place.
    */
   async executeWorldRead(op: WorldReadOp, args: unknown[]): Promise<unknown> {
     return await executeWorldRead(this.deps, op, args);
   }
 
   /**
-   * 用户面产物的发布：整段委托给 {@link executeArtifactPublish}（workflow-artifact-publish.ts），
-   * 理由与上面的世界读取逐字相同——它与本文件没有共同状态，只需要两个端口、一个 cwd 与
-   * 一个会话 id。
+   * User-facing artifact publishing: fully delegated to {@link executeArtifactPublish}
+   * (workflow-artifact-publish.ts), for verbatim the same reason as world-read - no shared state with this file;
+   * it needs two ports, a cwd, and a session id.
    *
-   * 方法在 Boundary B 上是**可选**的（`executeArtifactPublish?`），而本 driver 恒实现它：
-   * 「有没有存储」是装配事实，由 deps 里的 `artifactStore` 表达并在那一侧大声失败，不该由
-   * 「方法在不在」这条第二条通道再表达一次（两条通道会给同一件事两种失败形态）。
+   * The method is **optional** on Boundary B (`executeArtifactPublish?`), yet this driver always implements it:
+   * has-storage is an assembly fact expressed by deps' `artifactStore` and failed loudly there; re-expressing it via
+   * method-presence would give one fact two failure shapes.
    */
   async executeArtifactPublish(request: ArtifactPublishRequest): Promise<ArtifactVersionRecord> {
     return await executeArtifactPublish(this.deps, request);
   }
 
-  // ——————————————————————————————— 内部：turn 编排 ———————————————————————————————
+  // ------------------------------- internal: turn orchestration -------------------------------
 
   private runTurn(
     state: SessionState,
@@ -497,29 +499,29 @@ class AgentRuntimeWorkflowDriver implements WorkflowDriver {
   }
 
   private onTurnResolved(state: SessionState, instance: InstanceRef, result: TurnResult): void {
-    // 一次 turn 解析的两条回报（进度先于用量），顺序与载荷都在 reportTurnObservations 里。
+    // The two reports of one resolved turn (progress before usage); order and payload live in reportTurnObservations.
     reportTurnObservations(this.sink, state, instance, result);
     if (this.deps.actorTranscriptStore === undefined) {
-      // 无转录存取面：原样的同步路径，一个 await 都不多欠（边界记账整体缺席，见 deps 字段注释）。
-      this.reportTurnOutcome(state, instance, result);
+      /// No transcript surface: the plain synchronous path, not one extra await (boundary accounting absent wholesale;
+      /// see the deps field notes).
       return;
     }
     void this.settleExchange(state, instance, result);
   }
 
   /**
-   * 报告一个 turn 的终局，并回答「这次 ask 的交换到此为止了吗」。
+   * Report a turn's outcome and answer: is this ask's exchange over?
    *
-   * accept 之外只有一条路：把最终文本交给引擎（typed → nudge 或耗尽失败；untyped → 据此结算）。
-   * nudge 时引擎会在**本调用栈内**经 respondToSubmit 起一轮全新 turn，于是 turnGeneration 变了——
-   * 那正是"交换尚未结束"的判据（repair 轮不在此列：它们在同一个 turn 里，本方法根本不会被调用）。
-   */
+   * Besides accept there is exactly one path: hand the final text to the engine (typed -> nudge or exhausted failure;
+   * untyped -> settle accordingly). On nudge the engine starts a brand-new turn via respondToSubmit **within this
+   * call stack**, so turnGeneration changed - precisely the exchange-not-over test (repair rounds do not apply: they
+   * live inside one turn and never reach this method).
   private reportTurnOutcome(
     state: SessionState,
     instance: InstanceRef,
     result: TurnResult,
   ): boolean {
-    // 已提交并被引擎 accept：ask 已结算，turn 结束只是确认，不再上报 askTurnEnded。
+    // Submitted and engine-accepted: the ask settled; the turn end is a formality, no askTurnEnded.
     if (state.accepted) return true;
     const generation = state.turnGeneration;
     this.sink.askTurnEnded(instance, result.response);
@@ -527,12 +529,12 @@ class AgentRuntimeWorkflowDriver implements WorkflowDriver {
   }
 
   /**
-   * 一次交换的收尾：数消息 → 报终局 → 交换真的结束了就把边界写进 ask 的 journal 行。
-   *
-   * **先数后报**，顺序是载荷性的：报出去之后引擎可能立刻在同一个会话上派发这个 actor 的下一个
-   * ask（per-actor FIFO 只保证串行，不保证之间有空隙），那一轮的消息会落进同一个会话，把本次
-   * 计数撑大。先数下来，读到的就是这次交换结束那一刻的长度。
-   */
+   * An exchange's closing: count messages -> report outcome -> if the exchange truly ended, write the boundary into
+   * the ask's journal row.
+   * **Count before reporting**, the order is load-bearing: once reported, the engine may immediately dispatch this
+   * actor's next ask on the same session (per-actor FIFO guarantees seriality, not a gap), and that round's messages
+   * land in the same session, inflating this count. Counting first captures the length at the moment this exchange
+   * ended.
   private async settleExchange(
     state: SessionState,
     instance: InstanceRef,
@@ -545,24 +547,24 @@ class AgentRuntimeWorkflowDriver implements WorkflowDriver {
   }
 
   private onTurnRejected(state: SessionState, instance: InstanceRef, error: unknown): void {
-    // turn 死了就没有人再读工具结果了：停驻中的升级问答必须一并撤下，否则它们会永远留在
-    // 快照的 pendingQuestions 里，请主代理去回答一个没有听众的问题。
+    // A dead turn has no reader for tool results: parked escalation Q&As must be withdrawn too, else they stay in the
+    // snapshot's pendingQuestions forever, asking the main agent to answer a question with no audience.
     this.withdrawEscalations(state);
     if (state.cancelled || isTurnCancelled(error)) {
-      // 引擎发起的取消（abort）：引擎已结算该 ask，driver 不重复上报。
+    // Engine-initiated cancellation (abort): the engine settled the ask; the driver does not double-report.
       return;
     }
-    // 模型侧错误的收容住在 workflow-driver-model-failure.ts（策略表判 stop / context_exceeded /
-    // 瞬态重驱）；不是模型层错误才是 driver 侧失败。
+    // Model-side error containment lives in workflow-driver-model-failure.ts (the policy table decides stop /
+    // context_exceeded / transient redrive); anything not model-layer is a driver-side failure.
     if (handleModelTurnFailure(this.modelFailureHost, state, instance, error)) return;
     this.sink.askFailed(instance, toWorkflowError(error));
   }
 
-  // ——————————————————————————————— 内部：升级问答桥接 ———————————————————————————————
+// ------------------------------- internal: escalation Q&A bridge -------------------------------
 
   /**
-   * 造一个会话级升级端口；实现体在 workflow-driver-escalation.ts（{@link makeSessionEscalatePort}），
-   * 与 {@link makeSessionSubmitPort} 逐条对称的论证也写在那边。
+   * Build a session-level escalation port; implementation in workflow-driver-escalation.ts
+   * ({@link makeSessionEscalatePort}), alongside the clause-for-clause symmetry argument with {@link makeSessionSubmitPort}.
    */
   private makeEscalatePort(
     sessionId: SessionId,
@@ -573,11 +575,11 @@ class AgentRuntimeWorkflowDriver implements WorkflowDriver {
   }
 
   /**
-   * 一条 driver 侧事件的双轨落地：durable 进 `dwf_event`，实时经 emit 扇出。
+   /// Dual-write for one driver-side event: durable into `dwf_event`, real-time via emit fan-out.
    *
-   * 与引擎的 `record()`（engine.ts）逐字节同形，且顺序不可换：launch 侧的 sequence 截取靠
-   * 「appendEvent 之后同步紧接着 emit、同一个事件对象引用」这个前提把刚分配到的 sequence 交给
-   * emit（dynamic-workflow-run-launch.ts 的 createJournalSequenceCapture）。
+   /// Byte-shaped like the engine's record() (engine.ts), and the order is not negotiable: the launch side's sequence
+   /// capture relies on appendEvent-then-synchronously-emit of the same event object to hand the freshly assigned
+   /// sequence to emit (createJournalSequenceCapture in dynamic-workflow-run-launch.ts).
    */
   private record(event: RunEvent): void {
     this.journal.appendEvent(this.deps.runId ?? "run", event);
@@ -586,8 +588,8 @@ class AgentRuntimeWorkflowDriver implements WorkflowDriver {
 }
 
 /**
- * 造一个绑定了 deps 的 driver 工厂，直接充当 harness 的 makeDriver。journal 与 emit 由 deps 提供，
- * 调用方（测试/生产）持有其引用以做断言与 Boundary C 扇出。
+ * Build a driver factory with deps bound, serving directly as the harness makeDriver. journal and emit come from deps;
+ * the caller (tests/production) keeps the references for assertions and Boundary C fan-out.
  */
 export function createAgentRuntimeWorkflowDriver(
   deps: AgentRuntimeWorkflowDriverDeps,

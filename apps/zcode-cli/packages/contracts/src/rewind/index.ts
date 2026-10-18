@@ -172,7 +172,7 @@ export interface ActiveConversationBranchOptions {
   rewindTargetMessageId?: MessageId;
 }
 
-/** runtime resume、cold projection 与 stable fork 共用的 conversation active-branch 裁剪。 */
+/** Conversation active-branch pruning shared by runtime resume, cold projection, and stable fork. */
 export function selectActiveConversationBranch<T extends { info: { id: MessageId } }>(
   messages: readonly T[],
   options: ActiveConversationBranchOptions = {},
@@ -194,8 +194,8 @@ export function selectActiveConversationBranch<T extends { info: { id: MessageId
     const cutIndex = messages.findIndex(
       (message) => message.info.id === options.branchCutAfterMessageId,
     );
-    // rewind 不再写 model-visible reminder。cut 游标直接指向提交前 transcript
-    // 尾部，之后追加的任意 canonical message 自动属于新分支；旧分支仍留在 append-only store。
+    // Rewrite no longer writes a model-visible reminder. The cut cursor points at the pre-submit transcript
+    // tail; any canonical message appended afterwards belongs to the new branch; the old branch stays in the append-only store.
     return cutIndex >= 0 ? [...kept, ...messages.slice(cutIndex + 1)] : kept;
   }
 
@@ -313,8 +313,8 @@ export function evaluateRewindTarget<T extends { id: string }>(
       targetStatus: RewindTargetStatus.CoveredByCompact,
     };
   }
-  // message/part 是 append-only，compact 只是 active provider history 的派生边界。
-  // conversation rewind 可以先 branch cut 再重建 compact scope，不应再强制创建 child。
+  // message/part are append-only; compact is only a derived boundary of the active provider history.
+  // Conversation rewind can branch-cut first and rebuild the compact scope after; no forced child creation anymore.
   return {
     allowedScopes,
     compactBoundary,

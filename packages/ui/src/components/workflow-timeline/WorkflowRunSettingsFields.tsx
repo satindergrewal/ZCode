@@ -1,8 +1,10 @@
 // ============================================================
-// 「配置」弹层的两个字段
+// The Configure popover's two fields
 // ============================================================
-// 从 WorkflowRunSettingsPopover.tsx 拆出：那边管表单状态、命令与后果句，这里只画两个受控字段——
-// 子代理模型（composer 的模型菜单 + 思考档）与「同时运行上限」步进器。props 全是烹熟的值。
+// Split out of WorkflowRunSettingsPopover.tsx: that side owns form state, the command, and
+// the consequence line; this only draws two controlled fields — the subagent model
+// (composer's model menu + reasoning level) and the max-concurrent-runs stepper. Props
+// arrive fully resolved.
 
 import { useMemo, useRef, useState } from "react";
 import { MinusIcon, PlusIcon } from "lucide-react";
@@ -26,14 +28,16 @@ import { clampWorkflowRunSettingsBound } from "./workflowRunSettings.js";
 
 const MODEL_ITEM_NEVER_LOCKED = () => false;
 
-/** 字段标签：12px、次要色，控件上方 4px。 */
+/** Field label: 12px, secondary color, 4px above its control. */
 function FieldLabel({ children }: { children: string }) {
   return <div className="text-ui-sm text-foreground-subtle">{children}</div>;
 }
 
 /**
- * 子代理模型：composer 的同一份模型菜单，「会话模型」排第一；所选模型有思考档时，触发器旁边是
- * 设置页子代理那一格用的同一个思考档控件。清单为空时整格换成一句话（上限仍可调）。
+ * Subagent model: the composer's exact model menu with Session model first; when the
+ * chosen model has reasoning levels, the trigger gets the same level control the settings
+ * page's subagent row uses. An empty list collapses the field to one sentence (the cap
+ * stays adjustable).
  */
 export function WorkflowRunSettingsModelField({
   badge,
@@ -47,16 +51,16 @@ export function WorkflowRunSettingsModelField({
   triggerLabel,
   value,
 }: {
-  /** 触发器里的徽标：「会话模型」或「不可用」；缺席即无。 */
+  /** Badge in the trigger: "Session model" or "Unavailable"; absent means none. */
   badge?: { text: string; tone: "subtle" | "warning" };
   disabled: boolean;
   groups: readonly ModelSelectGroup[];
   leadingItem: ModelSelectGroupItem;
-  /** 当前 agent 没有可选模型：整格退成一句话。 */
+  /** The agent has no selectable models: the field degrades to one sentence. */
   noCatalog: boolean;
   onLevelChange: (level: string) => void;
   onValueChange: (value: string) => void;
-  /** 所选模型的思考档；缺席即不画思考档控件。 */
+  /** The chosen model's reasoning level; absent hides the level control. */
   thoughtOption: ZCodeConfigOption | null;
   triggerLabel: string;
   value: string;
@@ -65,7 +69,7 @@ export function WorkflowRunSettingsModelField({
   const levelTriggerRef = useRef<HTMLSpanElement | null>(null);
   const [levelOpen, setLevelOpen] = useState(false);
   const label = intl.formatMessage({ id: "chat.toolCall.workflow.run.settings.model" });
-  // ModelConfigSelect 是 memo 组件：内联数组每次渲染都是新引用，会让它的 memo 形同虚设。
+  // ModelConfigSelect is memoized: a fresh inline array each render would defeat the memo.
   const leadingItems = useMemo(() => [leadingItem], [leadingItem]);
   if (noCatalog) {
     return (
@@ -139,8 +143,9 @@ export function WorkflowRunSettingsModelField({
 }
 
 /**
- * 「同时运行上限」步进器：减、等宽数字、加，从 1 到本机天花板。天花板本身即「本 run 没有自己的界」，
- * 提示改写成「= 本机上限」。天花板未知（老 CLI）时没有上限、没有提示，数字可以直接敲。
+ * Max-concurrent-runs stepper: minus, tabular number, plus, from 1 to the machine
+ * ceiling. The ceiling itself means "no bound of its own" — copy becomes "= machine
+ * limit". Unknown ceiling (old CLI): no cap, no hint, the number is freely typable.
  */
 export function WorkflowRunSettingsBoundField({
   bound,

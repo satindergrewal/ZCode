@@ -220,7 +220,7 @@ export interface BashOutput {
    */
   staleReadFileStateHint?: string;
   /**
-   * gh 命令触发 GitHub API rate limit 时，追加给模型的 system-reminder。
+   * System-reminder appended for the model when a gh command hits the GitHub API rate limit.
    */
   ghRateLimitHint?: string;
 }

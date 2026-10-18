@@ -38,9 +38,10 @@ export async function createControlServer(
     });
   });
   await chmod(endpoint, 0o600).catch(() => undefined);
-  // server.close() 只会停止新连接，仍然会等待已有连接自然结束。
-  // 控制 socket 属于生命周期收口的一部分，必须主动收集并销毁，避免同 UID 的挂起客户端
-  // 永久占住 close 回调，进而让 Supervisor 的 lock 和 lifecycle operation 一直不释放。
+  // server.close() only stops new connections and still waits for existing ones to finish.
+  // The control socket is part of lifecycle teardown: track and destroy connections so a hung
+  // same-UID client cannot hold the close callback forever and pin the Supervisor's lock and
+  // lifecycle operation.
   let closePromise: Promise<void> | undefined;
   return {
     server,
@@ -51,9 +52,9 @@ export async function createControlServer(
           server.close(() => resolve());
         });
         for (const socket of sockets) socket.destroy();
-        // 只等待 server.close() 的自然回调会让半帧或失联客户端把
-        // stop/restart/uninstall 永久 pending。销毁活动连接后仍保留有界兜底，保证 endpoint
-        // 和上层 data-root lock 最终可以收口。
+        // Waiting only for the natural server.close() callback lets half-frame or gone clients
+        // pend stop/restart/uninstall forever. After destroying live connections keep a bounded
+        // fallback so the endpoint and the data-root lock above always settle.
         await Promise.race([
           serverClosed,
           new Promise<void>((resolve) => {
@@ -70,9 +71,10 @@ export async function createControlServer(
 
 function handleSocket(socket: Socket, handler: ControlHandler): void {
   const decoder = new JsonLineDecoder();
-  // 客户端超时会主动 destroy socket，迟到的 response write 可能异步发出
-  // EPIPE/ECONNRESET。socket 的 error 若无人消费会升级成未处理事件并退出 Supervisor；
-  // 控制客户端断开属于正常的 best-effort 回写失败，不能影响 Supervisor 生命周期。
+  // Client timeouts destroy the socket, so a late response write can raise EPIPE/ECONNRESET
+  // asynchronously. An unconsumed socket error escalates to an unhandled event and kills the
+  // Supervisor; a control client hangup is a normal best-effort write failure and must not
+  // affect the Supervisor lifecycle.
   socket.on("error", () => {
     socket.destroy();
   });

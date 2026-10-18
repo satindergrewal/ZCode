@@ -62,7 +62,7 @@ function readMacOsPlistFile(filePath: string): Record<string, unknown> | null {
       return parsed as Record<string, unknown>;
     }
   } catch {
-    // macOS 终端来源只是 best-effort 插件，plist 缺失、二进制格式异常或 plutil 失败都应静默跳过。
+    // The macOS terminal source is best-effort: missing plist, odd binary, or plutil failure
     return null;
   }
 

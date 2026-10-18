@@ -24,7 +24,7 @@ interface EnterpriseCodingPlanProductsSnapshot {
   productList: EnterpriseCodingPlanProductDisplay[];
   raw: EnterpriseCodingPlanPricingResponse;
   authenticated: boolean;
-  /** 静态目录控制购买横幅，不能用实时 pricing 补造目录中缺失的商品。 */
+  /** The static catalog gates the purchase banner; live pricing must not fabricate products missing from it. */
   staticProductIds?: string[];
 }
 
@@ -64,10 +64,10 @@ function resolveEnterprisePricingFailureSnapshot({
 }
 
 /**
- * 给企业套餐展示列表打上 family 标记（zai / bigmodel）。
- * 下游可见性函数（appendSubscribedTeamPlanItems 等）需要按 family
- * 找到对应 codingPlanItem 和 team key 前缀；原列表无 family 字段，只能按
- * bigmodelCodingPlan 派生，导致 zai team plan 无法渲染。
+ * Tag the enterprise plan display list with its family (zai / bigmodel).
+ * Downstream visibility functions (appendSubscribedTeamPlanItems etc.) locate the family's
+ * codingPlanItem and team key prefix via family; the old list had no family field and could only
+ * derive from bigmodelCodingPlan, so zai team plans never rendered.
  */
 function tagEnterpriseProductsFamily(
   products: EnterpriseCodingPlanProductDisplay[],
@@ -77,12 +77,12 @@ function tagEnterpriseProductsFamily(
 }
 
 /**
- * 原 hook 只服务 bigmodel family，getStaticTeamProducts 硬编码
- * 读 bigmodelCodingPlan bucket、getEnterprisePricing 不传 family。
- * zai family 对称化后，hook 接受 family 参数：
- *   - 按 family 读 static bucket（zaiCodingPlan / bigmodelCodingPlan）
- *   - 传 family 给 service.getEnterprisePricing，service 据此路由到对应 provider
- * 缺省 family 时保持 bigmodel，向后兼容既有调用点。
+ * The hook used to serve only the bigmodel family: getStaticTeamProducts hardcoded the
+ * bigmodelCodingPlan bucket and getEnterprisePricing passed no family.
+ * After zai-family symmetry, the hook takes a family parameter:
+ *   - reads the family's static bucket (zaiCodingPlan / bigmodelCodingPlan)
+ *   - passes family to service.getEnterprisePricing, which routes to the matching provider
+ * A missing family keeps bigmodel, preserving existing call sites.
  */
 export function useEnterpriseCodingPlanProducts({
   enabled,
@@ -91,7 +91,7 @@ export function useEnterpriseCodingPlanProducts({
   staticOnly = false,
 }: {
   enabled: boolean;
-  /** 未登录购买横幅只读取公开静态目录，不请求实时 pricing。 */
+  /** The signed-out purchase banner reads only the public static catalog, never live pricing. */
   staticOnly?: boolean;
   authenticated: boolean;
   family?: ProviderFamilyDomain;
@@ -125,10 +125,11 @@ export function useEnterpriseCodingPlanProducts({
       }
 
       setState((current) => ({
-        // 企业/个人切换和登录态刷新时不应把套餐区域替换成整块 loading；
-        // 保留上一轮企业套餐数据，让刷新状态只体现在刷新按钮和卡片局部状态上。
-        // 但公开 pricing 与登录态 pricing 的字段语义不同，切换鉴权来源时必须丢弃旧数据，
-        // 否则升级 Coding Plan 列表页会继续展示未鉴权的套餐结果。
+        // Enterprise/individual switches and auth refreshes must not replace the plan area with a
+        // full-block loading; keep the previous enterprise data so refresh state shows only in the
+        // refresh button and per-card status.
+        // Public and authenticated pricing differ in field semantics, so switching the auth source
+        // must drop stale data, or the upgrade list keeps showing unauthenticated plan results.
         snapshot: shouldRetainEnterprisePricingSnapshotForRefresh(current.snapshot, authenticated)
           ? current.snapshot
           : null,
@@ -137,8 +138,9 @@ export function useEnterpriseCodingPlanProducts({
       }));
 
       try {
-        // 静态目录是展示配置，pricing 是订阅身份与实时价格的权威来源。
-        // 两者必须独立请求，避免灰度环境缺少新配置字段时阻断已购 Team Plan 的恢复。
+        // The static catalog is display configuration; pricing is the authority for subscription
+        // identity and live prices. Request them independently so a grayscale environment missing new
+        // config fields cannot block purchased-Team Plan recovery.
         const [staticResult, pricingResult] = await Promise.allSettled([
           service.getStaticTeamProducts(),
           staticOnly
@@ -157,8 +159,9 @@ export function useEnterpriseCodingPlanProducts({
         if (pricingError) {
           const message = normalizeErrorMessage(pricingError);
           setState((current) => ({
-            // pricing 刷新失败代表实时状态未知，不能用静态目录或空列表覆盖
-            // 同鉴权态下上一轮有效的订阅身份与价格；首次失败时才展示静态禁用卡片。
+            // A pricing refresh failure means live state is unknown; never overwrite the last valid
+            // same-auth subscription identity and prices with the static catalog or an empty list.
+            // Static disabled cards appear only on first failure.
             snapshot: resolveEnterprisePricingFailureSnapshot({
               currentSnapshot: current.snapshot,
               authenticated,
@@ -169,7 +172,7 @@ export function useEnterpriseCodingPlanProducts({
             error: message,
           }));
           if (!isRemoteWorkspaceDisconnectedError(pricingError)) {
-            logger.warn("[useEnterpriseCodingPlanProducts] 读取企业实时定价失败", {
+            logger.warn("[useEnterpriseCodingPlanProducts] Failed to load enterprise live pricing", {
               authenticated,
               error: message,
             });
@@ -193,25 +196,26 @@ export function useEnterpriseCodingPlanProducts({
           staticResult.status === "rejected" &&
           !isRemoteWorkspaceDisconnectedError(staticResult.reason)
         ) {
-          logger.warn("[useEnterpriseCodingPlanProducts] 读取团队静态配置失败，回退实时 pricing", {
+          logger.warn("[useEnterpriseCodingPlanProducts] Team static config failed; falling back to live pricing", {
             authenticated,
             error: normalizeErrorMessage(staticResult.reason),
           });
         }
       } catch (error) {
         const message = normalizeErrorMessage(error);
-        // 远端 workspace 壳层会早于 attachment 绑定短暂渲染；此时断连代理报错是
-        // 可预期的初始化等待态，不应伪装成 pricing 故障。真实 RPC 错误仍保留 warn。
+        // The remote workspace shell can render briefly before attachment binding; a disconnected-proxy
+        // error is then an expected initialization wait, not a pricing failure. Real RPC errors keep warn.
         if (!isRemoteWorkspaceDisconnectedError(error)) {
-          logger.warn("[useEnterpriseCodingPlanProducts] 读取企业 Coding Plan 套餐失败", {
+          logger.warn("[useEnterpriseCodingPlanProducts] Failed to load enterprise Coding Plan products", {
             authenticated,
             error: message,
           });
         }
         setState((current) => ({
-          // 企业定价接口失败时如果直接清空 snapshot，
-          // 切换到团队套餐页会只剩“暂无可购买的编程套餐”，用户无法分辨是接口失败还是确实无商品。
-          // 保留上一轮可见套餐并把错误显式抛给 UI，避免把可恢复的刷新失败伪装成空列表。
+          // Clearing the snapshot on pricing failure would leave the team plan page with only
+          // "no purchasable plans", hiding whether the API failed or the catalog is truly empty.
+          // Keep the last visible plans and surface the error to the UI instead of disguising a
+          // recoverable refresh failure as an empty list.
           snapshot: shouldRetainEnterprisePricingSnapshotForRefresh(current.snapshot, authenticated)
             ? current.snapshot
             : null,

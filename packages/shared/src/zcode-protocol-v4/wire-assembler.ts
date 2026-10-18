@@ -1,6 +1,6 @@
-/* eslint-disable max-lines -- physical assembly 的 ordinal、预算、校验与释放必须保持单一原子状态机。 */
-// V4 incremental physical assembler：ownership 过滤后逐片接纳，只在
-// checksum/UTF-8/JSON/schema 全部通过后产出一个 logical frame。
+/* eslint-disable max-lines -- physical assembly's ordinals, budgets, validation, and release must stay one atomic state machine. */
+// V4 incremental physical assembler: admits fragment by fragment after ownership filtering, and yields one logical frame
+// only once checksum/UTF-8/JSON/schema all pass.
 import { z } from "zod";
 import { PROTOCOL_V4_LIMITS } from "./core.js";
 import { crc32WireBytes, decodeWireBase64 } from "./wire-binary.js";
@@ -9,7 +9,7 @@ import type { TopicFrameDeliveryKind, TopicWireFrameCandidate } from "./wire.js"
 import { WIRE_FAULT_INVALID_PAYLOAD } from "./wire-fault.js";
 
 export interface TopicWireAssemblyFault {
-  /** 缺失/伪值本身也必须成为 owned typed fault，此时不能伪造用途。 */
+  /** A missing/forged value must itself become an owned typed fault; the purpose must not be fabricated. */
   deliveryKind?: TopicFrameDeliveryKind;
   reasonCode: string;
   logicalFrameId: string;
@@ -143,7 +143,7 @@ function hardBound(value: number | undefined, maximum: number, name: string): nu
 
 export class TopicWireFrameAssembler<F> {
   private readonly assemblies = new Map<string, FragmentAssembly>();
-  /** 每 route 的单调 ordinal tombstone；不会像 bounded id LRU 一样淘汰后复活旧帧。 */
+  /** Per-route monotonic ordinal tombstone; unlike a bounded id LRU, evicted frames never revive. */
   private readonly settledByRoute = new Map<string, SettledLogicalFrame>();
   private stagedDecodedBytes = 0;
   private readonly maxAssemblyBytes: number;
@@ -197,7 +197,7 @@ export class TopicWireFrameAssembler<F> {
       return events;
     }
 
-    // ordinal 淘汰检查必须早于 envelope/base64：迟到旧坏片不得释放正在组装的新帧。
+    // The ordinal-eviction check precedes envelope/base64: a late stale bad fragment must not release the frame being assembled.
     const settled = this.settledByRoute.get(key);
     if (settled) {
       if (wire.logicalFrameOrdinal < settled.logicalFrameOrdinal) return events;
@@ -211,10 +211,10 @@ export class TopicWireFrameAssembler<F> {
 
     const deliveryKind = parseDeliveryKind(wire.deliveryKind);
     if (deliveryKind === "recovery") {
-      // accept() 先 expire 再接当前 wire。若旧 online 恰在 recovery 首片到达的
-      // 同次调用超时，向 consumer 上报旧 fault 会关掉 route 并丢失已接 recovery
-      // fragment。更高 ordinal 的权威 recovery 已取代旧 assembly，过滤该旧 fault；
-      // recovery 自身若坏，后续仍会产生带 recovery kind 的 typed fault。
+      // accept() expires before admitting the current wire. Should the old online assembly time out in the same
+      // call the recovery's first fragment arrives, reporting the old fault to the consumer would close the route and drop the admitted recovery
+      // fragments. A higher-ordinal authoritative recovery has replaced the old assembly; filter that stale fault;
+      // should the recovery itself be bad, a later typed fault with recovery kind still fires.
       for (let index = events.length - 1; index >= 0; index -= 1) {
         const event = events[index];
         if (
@@ -240,9 +240,9 @@ export class TopicWireFrameAssembler<F> {
       } else {
         this.release(key, current);
         this.settle(key, current);
-        // same-sub recovery 本来就是权威替换残缺旧帧；若仍把旧 online
-        // assembly 作为同批 fault 上报，decoder 会 fail-close 并丢掉紧随其后的完整
-        // recovery，flight 永远无法收口。只有权威 recovery 可无 fault supersede。
+        // same-sub recovery is by definition the authoritative replacement of a broken old frame; reporting the old online
+        // assembly as a same-batch fault would make the decoder fail-close and drop the complete recovery right behind it,
+        // and the flight could never close. Only an authoritative recovery may supersede without a fault.
         if (deliveryKind !== "recovery") {
           events.push(this.fault(current, "proto.frameAssemblySuperseded"));
         }
@@ -487,7 +487,7 @@ export class TopicWireFrameAssembler<F> {
     this.settledByRoute.delete(key);
   }
 
-  /** fault 后释放该 route 的 active bytes，但保留 ordinal tombstone 防旧 replay 复活。 */
+  /** After a fault, release the route's active bytes but keep the ordinal tombstone so old replays cannot revive. */
   abort(topic: string, subscriptionId: string): void {
     const key = routeKey(topic, subscriptionId);
     const assembly = this.assemblies.get(key);

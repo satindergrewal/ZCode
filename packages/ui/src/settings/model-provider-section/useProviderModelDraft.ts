@@ -14,7 +14,7 @@ import {
 } from "@/settings/model-provider-section/ProviderModelDraftState.js";
 import { useModelConfigResolution } from "@/settings/model-provider-section/useModelConfigResolution.js";
 
-/** 添加和编辑共享推荐生命周期；业务入口仅保留初始化、权限与各自的保存事务。 */
+/** Add and edit share one recommended-config lifecycle; business entries keep only initialization, gating, and their own save transactions. */
 export function useProviderModelDraft({
   model,
   open,
@@ -30,7 +30,7 @@ export function useProviderModelDraft({
   const [draftScope, setDraftScope] = useState(scopeKey);
   const editGeneration = useRef(0);
   if (draftScope !== scopeKey) {
-    // 切换供应商必须同时丢弃旧草稿和旧请求，不能把上一供应商的用户意图带到新目标。
+    // Switching providers must drop both the old draft and in-flight request; never carry one provider's user intent to the next.
     setDraftScope(scopeKey);
     setRawDraft(createProviderModelDraftValues(model));
   }
@@ -38,8 +38,9 @@ export function useProviderModelDraft({
   resolveRef.current = resolve;
   const resolveRecommended = useCallback(
     (id: string) => {
-      if (!resolveRef.current) throw new Error("Model Config Resolution 未配置");
-      // 公共草稿持有个人意图；只向 Host 取推荐基线，不用半有效表单拼装第二份 Overlay。
+      if (!resolveRef.current) throw new Error("Model Config Resolution is not configured");
+      // The shared draft holds user intent; fetch only the recommended baseline from the Host instead
+      // of assembling a second overlay from a half-valid form.
       return resolveRef.current(id, {});
     },
     [scopeKey],
@@ -99,7 +100,7 @@ export function useProviderModelDraft({
     const resolution = requiresResolution
       ? (config.resolution ?? (await config.flush()))
       : config.resolution;
-    if (requiresResolution && !resolution) throw new Error("Model Config Resolution 尚未就绪");
+    if (requiresResolution && !resolution) throw new Error("Model Config Resolution is not ready");
     const resolvedModel = modelWithResolution(resolution);
     return resolveProviderModelDraftCommit({
       currentModel: resolvedModel,

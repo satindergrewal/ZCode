@@ -1,15 +1,15 @@
 /**
- * 带与轨道。
+ * Bands and tracks.
  *
- * 分析器报的 `alongside` 是**节点事实**：进入这一阶段时，还没 join 的其他阶段的 strand 仍在跑。
- * 这里把它折成画面上的**带**——声明序上连续的一段阶段，内部拆成若干**轨道**，轨道 0 是主线
- * （最下面那一行），分支轨道叠在它上面。带之前分叉、之后汇合；弧把整条带当**一个节点**。
+ * The analyzer's `alongside` is a **node fact**: when this phase started, the other phases' not-yet-joined strands were still running.
+ * This folds it into the on-screen **band** — a contiguous run of phases in declaration order, split internally into **tracks**, track 0 the main line
+ * (the bottom row), branch tracks stacked above. The band forks before and merges after; arcs treat the whole band as **one node**.
  *
- * 只有下标，没有 id、没有墨迹、没有像素：时间线模型与侧栏的迷你运行线共用同一套折叠，后者只有
- * `phaseNames` 的下标空间，没有 display 图。
+ * Indices only: no ids, no ink, no pixels. The timeline model and the sidebar's mini run-line share this folding; the latter only has
+ * the index space of `phaseNames`, no display graph.
  */
 
-/** 一条带：闭区间 `[from, to]` 上的所有站；`tracks[0]` 是主线。 */
+/** A band: every station in the closed interval `[from, to]`; `tracks[0]` is the main line. */
 export interface PhaseBand {
   from: number;
   to: number;
@@ -17,14 +17,14 @@ export interface PhaseBand {
 }
 
 /**
- * 折带。`alongside[i]` = 与第 i 站并行的站的下标（越界、自指与未列出的都当没说）。
+ * Band folding. `alongside[i]` = indices of the stations parallel to station i (out-of-range, self, and unlisted entries count as unsaid).
  *
- * 1. 对称化：`alongside` 只有后来者才报得出（进入 B 时 A 还在跑，A 的载荷里没有 B），画面上
- *    两站是对等的。
- * 2. `~` 的连通分量里成员 ≥ 2 的给出区间 `[min, max]`；相交的区间并起来；区间内的空档也算成员
- *    （鲁棒起见——没有循环时不会出现）。
- * 3. 轨道是区间图的贪心着色，按**声明序**：每个成员落到「道上没有与它并行的成员」的最低一道，
- *    否则另开一道。第一个成员因此总在轨道 0 上。
+ * 1. Symmetrize: only the later arrival can report `alongside` (when B starts, A is still running and A's payload has no B); on screen
+ *    the two are peers.
+ * 2. Connected components of `~` with >= 2 members yield the interval `[min, max]`; overlapping intervals union; gaps inside an interval count as members too
+ *    (defensive — cannot happen without loops).
+ * 3. Tracks are a greedy coloring of the interval graph in **declaration order**: each member takes the lowest track with no parallel member on it,
+ *    else opens a new one. The first member thus always lands on track 0.
  */
 export function foldPhaseBands(
   count: number,
@@ -79,18 +79,18 @@ export function foldPhaseBands(
   });
 }
 
-/** 第 i 站所在的带；带外 undefined。 */
+/** The band containing station i; undefined outside bands. */
 export function bandOf<T extends PhaseBand>(bands: readonly T[], i: number): T | undefined {
   return bands.find((band) => band.from <= i && i <= band.to);
 }
 
-/** 第 i 站所在的轨道；带外一律 0（主线）。 */
+/** The track of station i; outside bands always 0 (the main line). */
 export function trackOf(bands: readonly PhaseBand[], i: number): number {
   const track = bandOf(bands, i)?.tracks.findIndex((members) => members.includes(i));
   return track === undefined || track < 0 ? 0 : track;
 }
 
-/** 轨道段的种类；缺席 = 一条轨道上的普通段。 */
+/** Rail segment kind; absent = an ordinary segment on one track. */
 export type TimelineRailKind = "fork" | "merge" | "twin";
 
 export interface RailSpec {
@@ -102,11 +102,11 @@ export interface RailSpec {
 export interface ArcSpec {
   from: number;
   to: number;
-  /** 画在哪条轨道的空中：带内同轨道的弧用那条轨道的空，其余一律用最上面那条的空。 */
+  /** Which track's air the arc draws in: same-track arcs use that track's air, everything else the topmost air. */
   air: number;
 }
 
-/** 带 + 它在画面上的两个端点：分叉所在的前驱站与汇合所在的后继站。 */
+/** A band plus its two on-screen endpoints: the predecessor hosting the fork and the successor hosting the merge. */
 export interface BoundBand extends PhaseBand {
   pred?: number;
   join?: number;
@@ -118,7 +118,7 @@ export interface PhaseEdgeFold {
   arcs: ArcSpec[];
 }
 
-/** 带的前驱 / 汇合：紧邻的那一站**在带外**且与带里任一成员有边。相邻两带之间不认，那里是一段平轨。 */
+/** Band predecessor / merge: the adjacent station **outside** the band with an edge to any member. None is recognized between adjacent bands; there it is plain rail. */
 function bindBands(
   count: number,
   bands: readonly PhaseBand[],
@@ -142,7 +142,7 @@ function bindBands(
   });
 }
 
-/** 带内自己长出来的轨道段：同轨道的相邻成员（**无条件**，一条轨道就是一条 strand）、分叉、汇合、双线段。 */
+/** Rail segments growing inside the band: adjacent same-track members (unconditional — a track is one strand), forks, merges, twin segments. */
 function bandRails(bands: readonly BoundBand[]): RailSpec[] {
   const rails: RailSpec[] = [];
   for (const band of bands) {
@@ -165,7 +165,7 @@ function bandRails(bands: readonly BoundBand[]): RailSpec[] {
         });
       }
     });
-    // 双线段：带内声明序相邻、却不在同一轨道的两站。只有台架与侧栏读它，永不行进。
+    // Twin segment: declaration-adjacent stations in the band on different tracks. Only the bench and side panel read it; it never travels.
     for (let i = band.from; i < band.to; i += 1) {
       if (trackOf(bands, i) !== trackOf(bands, i + 1))
         rails.push({ from: i, kind: "twin", to: i + 1 });
@@ -175,8 +175,8 @@ function bandRails(bands: readonly BoundBand[]): RailSpec[] {
 }
 
 /**
- * 边 → 轨道段与弧。带把边吃掉一部分：分叉与汇合已经把
- * 「控制经过了这里」说清楚了，剩下的才成弧，且弧的端点被**重挂**到带的两端——带是一个节点。
+ * Edges -> rail segments and arcs. The band absorbs some edges: fork and merge already say
+ * "control passed through here"; the remainder become arcs, their endpoints **re-attached** to the band's two ends — the band is one node.
  */
 export function foldPhaseEdges(
   count: number,
@@ -198,18 +198,18 @@ export function foldPhaseEdges(
     if (source !== undefined && source === target) {
       const track = trackOf(bands, edge.from);
       if (track !== trackOf(bands, edge.to)) {
-        // 跨轨道：向前的边分叉已经说过了；向后的是整条带的自环。
+        // Across tracks: the forward edge is already covered by the fork; the backward one is the band's self-loop.
         if (edge.to < edge.from) arcs.push({ air: top, from: source.to, to: source.from });
         continue;
       }
       const members = source.tracks[track]!;
-      // 同轨道且紧挨着：strand 本来就在那儿，不必再画一遍。
+      // Same track and adjacent: the strand is already there; no need to draw it twice.
       if (members[members.indexOf(edge.from) + 1] !== edge.to) {
         arcs.push({ air: track, from: edge.from, to: edge.to });
       }
       continue;
     }
-    // 出带 / 入带：紧邻的那一条已经被汇合 / 分叉吸收，其余重挂到带的两端。
+    // Leaving / entering the band: the adjacent one is already absorbed by merge / fork; the rest re-attach to the band's two ends.
     if (source !== undefined && target === undefined && edge.to === source.to + 1) continue;
     if (source === undefined && target !== undefined && edge.from === target.from - 1) continue;
     const from = source === undefined ? edge.from : source.to;
@@ -236,26 +236,26 @@ function dedupe<T extends { from: number; to: number }>(items: T[], key: (item: 
   });
 }
 
-/** 轨道段按左端、再按右端排；没有带时与从前逐站推出来的顺序逐条相同。 */
+/** Rail segments ordered by left end, then right end; without bands, identical item by item to the old per-station order. */
 function order(rails: RailSpec[]): RailSpec[] {
   return dedupe(rails, (rail) => `${rail.from}>${rail.to}:${rail.kind ?? ""}`).sort(
     (left, right) => left.from - right.from || left.to - right.to,
   );
 }
 
-/** 弧道的数量（最高的车道 + 1）；渲染层据它给弧留高度。 */
+/** Number of arc lanes (highest lane + 1); the render layer reserves arc height by it. */
 export function arcLaneCount(arcs: readonly { lane: number }[]): number {
   return arcs.reduce((max, arc) => Math.max(max, arc.lane + 1), 0);
 }
 
 /**
- * 弧的分道：区间图的贪心着色。弧按跨度从短到长（同跨度保持载荷序）依次落到**最低的空道**上——
- * 「空」= 该道上已有的弧与它在站的索引上**不相交**（闭区间：连共用一个端点的也算相交，因为两条弧
- * 在同一站的竖段会连成一线）。于是：互不相干的弧同一高度；嵌套的弧里面矮外面高（短的先落，长的
- * 只能往上）；只有真正交叉的弧才被推上去。
+ * Arc lane assignment: greedy coloring of the interval graph. Arcs go from shortest span to longest (ties keep payload order), each into the **lowest free lane** —
+ * free = no arc already on that lane **intersects** it in station indices (closed intervals: even sharing one endpoint counts, because two arcs'
+ * verticals at the same station would join into one line). Hence: unrelated arcs share a height; nested arcs sit low inside, high outside (short ones place first, long
+ * ones are pushed up); only truly crossing arcs get lifted.
  *
- * 之前的写法是「第 k 条弧就是第 k 道」：两条各在一头、彼此无关的回边也一高一矮，读者会去找那个
- * 并不存在的理由。
+ * The old rule was "k-th arc, k-th lane": two unrelated back edges at opposite ends also came out one high one low, sending readers hunting for a
+ * reason that does not exist.
  */
 export function assignArcLanes(
   pairs: readonly { from: number; to: number }[],
@@ -277,8 +277,8 @@ export function assignArcLanes(
 }
 
 /**
- * 按 `air` 分别着色：一条轨道的空里只有那条轨道的弧，跨轨道的弧一律在最上面那层空里，
- * 两层空里的弧在 x 上相交也互不相让。返回与入参一一对应的车道号。
+ * Color per `air`: one track's air holds only that track's arcs; cross-track arcs always in the topmost air —
+ * arcs in the two airs may intersect in x without yielding. Returns lane numbers aligned with the input.
  */
 export function assignAirLanes(arcs: readonly ArcSpec[]): number[] {
   const lanes = Array.from({ length: arcs.length }, () => 0);

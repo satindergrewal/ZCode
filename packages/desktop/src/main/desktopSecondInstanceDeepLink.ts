@@ -35,8 +35,9 @@ interface SecondInstanceWorkspaceDeps {
 
 export function handleSecondInstanceWorkspaceRequest(deps: SecondInstanceWorkspaceDeps): boolean {
   const url =
-    // Linux 的 second-instance argv 可能被桌面环境重排或追加参数。
-    // Electron 官方建议精确参数走 additionalData，这里优先读取第二实例预解析出的 deep link。
+    // On Linux the second-instance argv may be reordered or extended by the desktop environment.
+    // Electron recommends passing exact parameters via additionalData, so prefer the deep link
+    // pre-parsed by the second instance.
     extractDeepLinkUrlFromSingleInstanceData(deps.additionalData) ??
     extractDeepLinkUrlFromArgs(deps.argv);
   if (
@@ -47,7 +48,7 @@ export function handleSecondInstanceWorkspaceRequest(deps: SecondInstanceWorkspa
       resolveApplicationWindow: deps.resolveApplicationWindow,
       onWorkspaceOpenBlocked: () => {
         deps.logger.warn(
-          "[force-update] 已忽略强制升级期间的 second-instance workspace deep link 请求",
+          "[force-update] ignored second-instance workspace deep link request during forced update",
         );
         deps.focusForceUpdateGateWindow();
       },
@@ -60,7 +61,9 @@ export function handleSecondInstanceWorkspaceRequest(deps: SecondInstanceWorkspa
     extractOpenWorkspacePathFromSingleInstanceData(deps.additionalData) ??
     extractOpenWorkspacePathFromArgs(deps.argv);
   if (openWorkspacePath && deps.forceUpdateBlocked) {
-    deps.logger.warn("[force-update] 已忽略强制升级期间的 second-instance workspace 请求");
+    deps.logger.warn(
+      "[force-update] ignored second-instance workspace request during forced update",
+    );
     deps.focusForceUpdateGateWindow();
     return true;
   }

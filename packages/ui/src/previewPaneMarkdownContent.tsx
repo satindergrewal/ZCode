@@ -12,9 +12,9 @@ interface MarkdownPreviewContentProps {
   sourcePath?: string;
   selectionTarget?: MarkdownSelectionTarget;
   workspacePath?: string;
-  /** 应用主题（store 耦合剥离）：透传给 markdown 渲染，缺省按 "system" 兜底。 */
+  /** Applied theme (store-decoupled): passed to the markdown renderer; defaults to "system". */
   theme?: Theme;
-  /** 代码预览设置（store 耦合剥离）：透传给 markdown 渲染，需保持引用稳定。 */
+  /** Code preview settings (store-decoupled): passed through; keep the reference stable. */
   codePreviewSettings?: CodePreviewSettings;
   onOpenBrowserUrl?: (url: string) => void;
 }

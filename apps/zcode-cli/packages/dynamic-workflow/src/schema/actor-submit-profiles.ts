@@ -8,38 +8,38 @@ import { canonicalJson } from "../engine/hash.js";
 import type { JsonSchema } from "./types.js";
 
 /**
- * 每个 actor 站点的 **submit profile**：决定该 actor 的子代理会话拿到哪一种 `submit_result` 工具。
+  * Per actor-site **submit profile**: which kind of submit_result tool the actor's subagent session gets.
  *
- * - `untyped`：能落到这个 actor 的 ask 全是 untyped（或它根本没有 ask）→ 不注册 submit_result。
- * - `mono`：能落到这个 actor 的 typed ask 的 schema **全部相同**（规范 JSON 相等；untyped ask 可以
- *   混在其中）→ 工具声明就是 `{ result: schema }`，对该 actor 冻结、跨 ask 不变，因此缓存中性。
- * - `generic`：typed ask 的 schema 不止一种 → 今天的通用工具 + 每个 ask 的 schema 尾注。
+  * - untyped: every ask that can reach this actor is untyped (or there are none) -> no submit_result registered.
+  * - mono: every typed ask reaching this actor has the **same** schema (canonical-JSON equal; untyped asks may
+  *   mix in) -> the tool declaration is result-with-that-schema, frozen for the actor across asks, hence cache-neutral.
+  * - generic: more than one schema among the typed asks -> today's generic tool plus a per-ask schema footnote.
  *
- * 为什么是编译期而不是运行期：工具块渲染在 prompt 最前面，一旦按 ask 换 schema 就打掉该 actor
- * 的整个缓存前缀。只有「整个 actor 生命周期里 schema 不变」这件事
- * 在编译期可判定时，typed 工具才是免费的；判定不了就退回 generic，行为逐字节保持等价。
+  * Why compile time: the tool block renders at the very front of the prompt; swapping schemas per ask would
+  * destroy that actor's whole cached prefix. Only when schema-constancy-over-the-actor-lifetime is
+  * decidable at compile time is the typed tool free; otherwise fall back to generic, byte-equivalent behavior.
  */
 export type ActorSubmitProfile =
   | { kind: "untyped" }
   | { kind: "mono"; schema: JsonSchema }
   | { kind: "generic" };
 
-/** 缺席 / 无法判定时的 profile：今天的行为。 */
+/** The profile when absent/undecidable: today's behavior. */
 export const GENERIC_SUBMIT_PROFILE: ActorSubmitProfile = { kind: "generic" };
 
 /**
- * 由站点图与 ask 规格推导每个 actor 站点的 submit profile。纯函数。
+  * Derive each actor site's submit profile from the site graph and ask specs. Pure.
  *
- * **可靠性规则**：ask→actor 的绑定取站点图上的 may-set（`SiteNode.actors`）。只要有**任何一个**
- * ask 站点的 actor 集为空（receiver 没解析出来），分析就说不出那个 ask 会落到谁头上——于是
- * **所有** actor 都记 `generic`。这是有意的保守：一个 typed ask 若落到一个 `untyped` 子代理上，
- * 它没有工具可提交，只能耗尽 nudge 失败；宁可少省一点缓存，也不能凭一个不完整的图把工具拿掉。
- * 同理，一个 ask 的 actor 集有多个成员（条件分支上的 receiver）时，它的 schema 计入每一个成员。
+  * **Soundness rule**: the ask-to-actor binding is the site graph's may-set (SiteNode.actors). If **any**
+  * ask site has an empty actor set (receiver unresolved), analysis cannot say whom that ask reaches -- so
+  * **every** actor is marked generic. Deliberately conservative: a typed ask landing on an untyped subagent
+  * would have no tool to submit with and fail after exhausting nudges; better to save less cache than to remove tools on an incomplete graph.
+  * Likewise, an ask whose actor set has several members (a conditional receiver) counts its schema into each.
  *
- * askSpecs 缺少某个 ask 站点时同样整体退回 generic：站点表与规格出自同一次编译，缺席只可能是
- * 接线错误，此处不猜（引擎侧对此以 MissingAskSpec 硬失败，这里只需不放大它）。
+  * A missing ask-site entry also falls back to generic wholesale: site table and specs come from one compilation, so absence means only
+  * a wiring bug; do not guess here (the engine hard-fails with MissingAskSpec; here, just do not amplify it).
  *
- * 返回表覆盖 `graph.actors` 里的每一个 actor 站点。
+  * The returned table covers every actor site in graph.actors.
  */
 export function deriveActorSubmitProfiles(
   graph: SiteGraph,
@@ -48,8 +48,8 @@ export function deriveActorSubmitProfiles(
   const profiles = new Map<string, ActorSubmitProfile>();
   const actorIds = graph.actors.map((actor) => actor.id);
 
-  // 每个 actor 收集到的 typed schema，按规范 JSON 去重（同一份 schema 对象在不同 ask 站点上各合成
-  // 一次，引用不同但内容相同，必须按内容比较）。
+    // Per-actor typed schemas, deduped by canonical JSON (the same schema is synthesized
+    // once per ask site -- different references, equal content; compare by content).
   const schemasByActor = new Map<string, Map<string, JsonSchema>>();
   for (const id of actorIds) schemasByActor.set(id, new Map());
 
@@ -65,7 +65,7 @@ export function deriveActorSubmitProfiles(
     const schema = spec.schema as JsonSchema;
     const key = canonicalJson(schema);
     for (const actorId of actors) {
-      // 站点图里的 actor id 必然在 graph.actors 内；防御性地补一个桶，而不是静默跳过。
+            // An actor id from the site graph is necessarily in graph.actors; add a bucket defensively instead of skipping silently.
       let bucket = schemasByActor.get(actorId);
       if (bucket === undefined) {
         bucket = new Map();
@@ -85,9 +85,9 @@ export function deriveActorSubmitProfiles(
 }
 
 /**
- * 「编译一次」的便捷入口：在构建站点表与合成 schema 的**同一个** {@link WorkflowProgram} 上做解释
- * 与站点图投影（analyzeWorkflowScript 跑的正是这两步），然后推导 profile。供 run 提交路径调用，
- * 不必自己拼装 interpret + projectSiteGraph（两者不在包的公开面上）。
+  * The one-shot compile entry: interpret and project the site graph on the **same** {@link WorkflowProgram} used for the site table and schema
+  * synthesis (exactly the two steps analyzeWorkflowScript runs), then derive profiles. For the run-submit path,
+  * sparing callers from assembling interpret + projectSiteGraph (neither is on the package's public face).
  */
 export function deriveActorSubmitProfilesFor(
   workflow: WorkflowProgram,

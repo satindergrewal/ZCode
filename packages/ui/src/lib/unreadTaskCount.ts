@@ -16,8 +16,8 @@ export function countAllUnreadTasks(workspaces: Record<string, WorkspaceUnreadSt
       continue;
     }
     visitedWorkspaceStates.add(workspace);
-    // 未读状态现在统一以 task meta.unreadAt 为准。
-    // Dock badge 必须和任务列表蓝点读取同一份元数据，不能再单独依赖旧的临时 map。
+    // Unread state now keys off task meta.unreadAt alone.
+    // The Dock badge must read the same metadata as the list dot, never the legacy temp map.
     const visibleTasks = getVisibleTaskMetas(workspace);
     for (const task of visibleTasks) {
       if (!task.unreadAt) {
@@ -32,8 +32,8 @@ export function countAllUnreadTasks(workspaces: Record<string, WorkspaceUnreadSt
       continue;
     }
 
-    // remote workspace 会同时保留 path key 和 workspaceIdentity key 的兼容状态。
-    // 这里按 workspaceKey + taskId 去重，并跳过相同对象引用，避免窗口未读角标把同一个远端 task 算两次。
+    // A remote workspace keeps compat state under both path key and workspaceIdentity key.
+    // Dedupe by workspaceKey + taskId, skipping identical references, so the window badge never counts one remote task twice.
     for (const taskId of Object.keys(workspace.taskUnreadByTaskId ?? {})) {
       countedTaskKeys.add(`${workspaceKey}::${taskId}`);
     }

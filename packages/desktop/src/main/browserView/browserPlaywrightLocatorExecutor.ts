@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- Playwright isolated-world selector、frame target 与 CDP trusted input 必须共享同一会话状态。 */
+/* eslint-disable max-lines -- Playwright isolated-world selectors, frame targeting, and CDP trusted input share one session state. */
 import type { BrowserPlaywrightAction, BrowserPlaywrightModifier } from "@zcode/shared";
 import { logger } from "../logger.js";
 import { dispatchClickAt, dispatchKey, modifiersBitmask } from "./browserCommandInput.js";
@@ -16,8 +16,8 @@ type LocatorAction = Extract<BrowserPlaywrightAction, { name: "locator" }>;
 const PLAYWRIGHT_WORLD_NAME = "zcode-playwright-locator";
 const PLAYWRIGHT_GLOBAL = "__zcodePlaywrightInjected";
 const POLL_INTERVAL_MS = 50;
-// 响应式页面可能同时保留 desktop/mobile 两份 DOM。若仅因匹配数大于 1 就在 host
-// 侧抛通用错误，会错过唯一可见元素，也会丢失 Playwright 提供的候选详情。
+// Responsive pages keep desktop and mobile DOM simultaneously. Failing on match count > 1 in the host
+// loses the single visible element and Playwright's candidate details.
 const STRICT_VISIBLE_SELECTOR_HELPER = `
 function querySelectorStrictWithVisibleFallback(injected, parsedSelector, root) {
   const matches = injected.querySelectorAll(parsedSelector, root);
@@ -307,13 +307,13 @@ class IabPlaywrightLocatorSession {
         probeExecution = await this.actionProbe(
           target,
           {
-            // fill 始终检查 visible/enabled/editable，不接受 click 的 force 放宽。
+            // // fill always checks visible/enabled/editable; no force relaxation from click.
             force: action.operation === "fill" ? false : action.force === true,
             needsEditable,
             needsEnabled,
-            // fill/type 不等待 stable，也不做 click 的 hit-target 检查。
-            // z.ai 输入框的持续动画会让 stable 永不成立，等待 stable 会卡到 MCP hard timeout。
-            // force pointer action 仍等待稳定并滚动，但跳过 hit-target 校验。
+            // fill/type skip stable waiting and click's hit-target checks.
+            // Perpetually-animating inputs never stabilize; waiting would burn the whole MCP hard timeout.
+            // Forced pointer actions still wait/stabilize but skip hit-target validation.
             needsHitTarget: needsPointer && action.force !== true,
             needsStable: needsPointer,
             scrollAlignment:
@@ -460,9 +460,9 @@ class IabPlaywrightLocatorSession {
       case "selectOption":
         return this.selectOption(target, action);
       case "downloadMedia": {
-        // IAB 的 locator.downloadMedia 不是普通 click：它在 Playwright isolated world 中
-        // 提取 media/link URL，再用临时 download anchor 触发浏览器下载。直接点元素会在
-        // 普通链接上导航，并把“未下载”伪装成成功。
+        // locator.downloadMedia (IAB) is not a plain click: it extracts the media/link URL in the isolated world
+        // and triggers the download via a temp anchor. Clicking the element navigates on plain links and
+        // disguises not-downloaded as success.
         await this.querySingleValue(
           target,
           `(() => {
@@ -595,8 +595,8 @@ class IabPlaywrightLocatorSession {
         let stableFrames = 0;
         for (let index = 0; index < 10 && stableFrames < 2; index += 1) {
           await waitForAnimationFrame();
-          // el-table 等页面会在 rAF 间用同 locator、同几何的新 DOM node 替换旧 node。
-          // locator 描述当前匹配目标，不绑定首次 node identity；detach 后应重解析再比较几何。
+          // el-table-style pages swap nodes between rAFs with the same locator and geometry.
+          // A locator describes the current match, not the first node; re-resolve after detach before comparing geometry.
           const currentElement = element.isConnected ? element : resolveCurrentElement();
           if (!currentElement) return { count: 0, actionable: false };
           const next = currentElement.getBoundingClientRect();
@@ -647,8 +647,8 @@ class IabPlaywrightLocatorSession {
       Number((value as { count?: unknown }).count) > 1 ||
       typeof (value as { actionable?: unknown }).actionable !== "boolean"
     ) {
-      // 直接读取异步 Runtime.evaluate 返回值的 count 会在 CDP 空 payload 时泄漏
-      // “Cannot read properties of undefined”。这里保留 backend 故障语义，禁止伪装成零匹配。
+      // Reading count straight from async Runtime.evaluate leaks undefined-property errors on empty CDP payloads.
+      // Keep the backend-failure semantic; never disguise it as zero matches.
       logger.debug("[browser-use] invalid pointer probe payload", {
         selector,
         valueKeys: value && typeof value === "object" ? Object.keys(value) : [],
@@ -720,7 +720,7 @@ class IabPlaywrightLocatorSession {
         const name = node?.localName || node?.nodeName?.toLowerCase() || "another element";
         return `<${name}>`;
       } catch {
-        // frame boundary 的辅助遮挡探测失败不覆盖主 selector/actionability 结果。
+        // Auxiliary occlusion probes at frame boundaries never override the main selector/actionability result.
       }
     }
     return undefined;
@@ -746,8 +746,8 @@ class IabPlaywrightLocatorSession {
           .send("Runtime.terminateExecution", undefined, target.sessionId)
           .catch(() => undefined);
       };
-      // Runtime.evaluate.timeout 在 injected checkElementStates 等待 rAF 时不足以保证
-      // host 侧截止。用剩余 locator 预算竞速，避免 3s routine timeout 外溢成 30s MCP AbortError。
+      // Runtime.evaluate timeouts cannot bound the host-side wait while injected checkElementStates awaits rAF.
+      // Race the remaining locator budget so a 3s routine timeout cannot spill into a 30s MCP AbortError.
       const timer = setTimeout(
         () => {
           terminate();
@@ -1101,8 +1101,8 @@ class IabPlaywrightLocatorSession {
 }
 
 /**
- * 使用与 domSnapshot 相同固定版本的 Playwright injected selector runtime；动作由 CDP Input
- * 下发，避免页面主 world 手写 selector 与 synthetic event 造成“快照可见但无法操作”。
+ * Uses domSnapshot's pinned Playwright injected-selector runtime; actions go through CDP Input
+ * so snapshot-visible-but-unoperable mismatches from hand-written main-world selectors never occur.
  */
 export async function executeIabPlaywrightLocator(
   view: ControlledView,

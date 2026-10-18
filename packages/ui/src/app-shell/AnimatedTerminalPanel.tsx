@@ -49,8 +49,8 @@ export function AnimatedTerminalPanel({
         return;
       }
 
-      // 终端面板拖拽时会产生连续 ResizeObserver 回调。
-      // 显式标记拖拽窗口，让 TerminalSession 在拖拽中低频 resize，松手后再 flush 最终尺寸。
+      // Dragging the terminal panel floods ResizeObserver with callbacks.
+      // Mark the drag window so TerminalSession throttles resizes during the drag and flushes the final size on release.
       setIsTerminalPanelResizing(true);
     },
     [isVisible],
@@ -58,9 +58,9 @@ export function AnimatedTerminalPanel({
 
   useEffect(() => {
     if (isVisible) {
-      // Terminal 首次展开前不应该提前创建会话，否则即使用户从未打开终端，
-      // 也会白白创建 xterm 和后端 terminal 进程。这里改成首次展开后再渲染，
-      // 后续收起只隐藏不卸载，这样既保留会话，又避免重复初始化。
+      // Do not create the terminal session before first expand, or xterm and the backend
+      // terminal process get spawned even if the user never opens the terminal. Render only after first expand;
+      // collapsing hides instead of unmounting, preserving the session and avoiding a redundant init.
       setHasRenderedTerminal(true);
     }
   }, [isVisible]);
@@ -108,11 +108,11 @@ export function AnimatedTerminalPanel({
         minSize="140px"
         maxSize="50%"
         collapsedSize="0px"
-        // 终端面板之前拖到最小高度就会直接进入 collapsed，和手动关闭共用了同一触发条件。
-        // 这里只在显式关闭终端时允许折叠，保留原有开关动画，同时去掉“拖到最小自动收起”。
+        // Dragging the panel to minimum height used to collapse it, sharing a trigger with manual close.
+        // Now only an explicit close collapses; the toggle animation stays and drag-to-min no longer auto-collapses.
         collapsible={isDragCollapsible}
-        // 收起后虽然不渲染 ResizableHandle，库仍会把 collapsed panel 边缘当成可拖拽热区。
-        // 禁用隐藏终端面板的 resize target，避免用户从边缘把 terminal 拖出来。
+        // Even with ResizableHandle unmounted, the library treats the collapsed panel edge as a drag hotspot.
+        // Disable the hidden panel's resize target so the terminal cannot be dragged out from the edge.
         disabled={isResizeDisabled}
         className={cn(
           "transition-opacity duration-200 ease-out",
@@ -125,8 +125,8 @@ export function AnimatedTerminalPanel({
         >
           {hasRenderedTerminal ? (
             <div aria-hidden={!isVisible} className="h-full">
-              {/* terminal 首次展开前不渲染，避免无意义初始化；
-                  首次展开后保持挂载，收起时只隐藏不卸载，这样下一次展开就能直接复用现有会话。 */}
+              {/* Do not render the terminal before its first expand to skip needless init;
+                  keep it mounted afterwards and only hide (not unmount) when collapsed, so the next expand reuses the session. */}
               <ScopedErrorBoundary
                 scope="workspace-terminal"
                 resetKeys={[workspaceKey]}

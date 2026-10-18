@@ -55,7 +55,7 @@ export async function serializeOutput(
   const modelContent = stringifyOutputForModel(output, entry);
   const content = stringifyModelContentForSerialization(modelContent);
   if (isEmptyModelContent(modelContent)) {
-    // Bash 空输出也需要通用占位，避免模型把静默成功误读成缺失工具结果。
+    // Empty Bash output needs the generic placeholder too, or the model reads a silent success as a missing result.
     const emptyContent = `(${entry.metadata.name} completed with no output)`;
     return {
       content: emptyContent,
@@ -71,8 +71,8 @@ export async function serializeOutput(
     entry.resultArtifactContentType ??
     (typeof output === "string" ? "text/plain" : "application/json");
   const originalBytes = Buffer.byteLength(content, "utf8");
-  // 部分 provider contract 按 JS 字符计数；保留现有工具的 UTF-8
-  // byte budget，只让显式声明字符阈值的工具增加该持久化判据。
+  // Some provider contracts count JS chars; keep the existing UTF-8 byte budget and let only tools that
+  // declare a char threshold add that persistence criterion.
   const exceedsCharacterBudget =
     entry.maxModelChars !== undefined && content.length > entry.maxModelChars;
   const maxModelBytes = Math.max(
@@ -111,8 +111,8 @@ export async function serializeOutput(
       );
     } catch (error) {
       if (!(error instanceof OfficialCuaFrameContractError)) throw error;
-      // 原因：非 canonical frame 必须继续 fail closed，但低层布局 invariant 不能作为
-      // tool result 暴露给模型；这里只记录稳定诊断，再交给 executor 生成可恢复错误结果。
+      // Non-canonical frames must keep failing closed, but a low-level layout invariant is not a tool result
+      // for the model; log a stable diagnostic here and let the executor build a recoverable error result.
       deps.logger?.warn("Official CUA frame contract rejected during result serialization", {
         ...traceContextToLogContext(traceContext),
         code: error.code,
@@ -135,17 +135,17 @@ export async function serializeOutput(
       const projectedModelContent = protectedProjection.content;
       const projectedContent = stringifyModelContentForSerialization(projectedModelContent);
       const projectedBytes = Buffer.byteLength(projectedContent, "utf8");
-      // 序列化文本里 image 块只是短占位符；真实 base64 栅格（bridge 上限 200 KiB）
-      // 会原样进入模型请求。returnedBytes 语义是"发给模型的字节"，必须计入
-      // 图片载荷，否则 setOutputBytes / turn-tool-usage / usage-observability
-      // 每次 CUA 帧系统性少计一张栅格。只保留 aggregate，避免文本/媒体分量
-      // 与 returnedBytes 形成需要同步维护的第二份状态。
+      // In serialized text an image block is a short placeholder; the real base64 raster (bridge cap 200 KiB)
+      // goes into the model request verbatim. returnedBytes means "bytes sent to the model", so the image
+      // payload must count -- else setOutputBytes / turn-tool-usage / usage-observability undercount one
+      // raster per CUA frame, systematically. Aggregate only: no second text/media state to keep in sync
+      // with returnedBytes.
       const structuredPayloadBytes = structuredMediaBytes(projectedModelContent);
 
-      // 官方 CUA 的 image/image_ref 原子对始终原样保留；图片字节由 bridge 的独立
-      // 上限保护，普通文本仍走 resultBudget，不能借一张合法 raster 绕过上下文预算。
-      // 早返回与 official CUA protection authority 强制成对；配对验证失败
-      //（protectedProjection 为 undefined）时不得绕过通用预算。
+      // The official-CUA image/image_ref atomic pair always survives verbatim; image bytes are guarded by the
+      // bridge's own cap while plain text still goes through resultBudget -- one legal raster must not become
+      // a context-budget bypass. Early return and official-CUA protection authority are paired; when pairing
+      // validation fails (protectedProjection undefined) the generic budget must not be bypassed.
       return {
         content: projectedContent,
         modelContent: projectedModelContent,
@@ -160,8 +160,8 @@ export async function serializeOutput(
 
   if (
     (originalBytes <= maxModelBytes && !exceedsCharacterBudget) ||
-    // 带字符阈值的 provider 文本在持久化失败时必须保留原文；
-    // 不能再落入通用 resultBudget 截断并注入另一套提示。
+    // Provider text with a char threshold must keep its original on persistence failure;
+    // no fall into the generic resultBudget truncation injecting another prompt style.
     (exceedsCharacterBudget && shouldPersistArtifact && artifact === undefined)
   ) {
     return {
@@ -274,12 +274,12 @@ function hasImageBlock(content: ModelMessageContent): content is ModelMessageCon
   return Array.isArray(content) && content.some((block) => block.type === "image");
 }
 
-/** 结构化内容里所有 image/file 块的真实载荷字节（dataUrl 原样计入）。 */
+/** Real payload bytes of every image/file block in structured content (dataUrl counted as-is). */
 function structuredMediaBytes(content: ModelMessageContent): number {
   if (!Array.isArray(content)) return 0;
   return content.reduce((total, block) => {
     if (block.type === "image") return total + Buffer.byteLength(block.dataUrl, "utf8");
-    // file-with-text 的模型可见内容是 text（dataUrl 不进请求），不计入媒体字节。
+    // file-with-text model-visible content is text (dataUrl never reaches the request): no media bytes.
     if (block.type === "file" && block.dataUrl !== undefined && block.text === undefined)
       return total + Buffer.byteLength(block.dataUrl, "utf8");
     return total;
@@ -320,8 +320,8 @@ async function tryWriteToolArtifact(
       { signal },
     );
   } catch {
-    // 与主模型交互时，artifact 写入失败不应让一次成功的工具调用变成失败。
-    // 这里回退到统一的 resultBudget 截断路径，保持工具结果可见并避免原始大输出进模型。
+    // On artifact-write failure during a main-model interaction, do not fail an otherwise-successful tool call:
+    // fall back to the uniform resultBudget truncation, keep the result visible, keep raw bulk out of the model.
     return undefined;
   }
 }

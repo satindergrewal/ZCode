@@ -6,8 +6,8 @@ export type LegacyTaskSessionFile = Omit<ZCodeSessionFile, "meta"> & {
 };
 
 const legacyTaskSessionFileSchema = zcodeSessionFileSchema.extend({
-  // Claude 原生迁移会按清洗路径删除 meta.mode。
-  // legacy snapshot 读取/写入仍要校验其它必需字段，但不能再强制把被过滤字段补回文件。
+  // Claude native migration deletes meta.mode along the cleanup path.
+  // Legacy snapshot read/write still validate the other required fields, but never force filtered fields back into the file.
   meta: zcodeTaskMetaSchema.extend({
     mode: zcodeTaskModeSchema.optional(),
   }),

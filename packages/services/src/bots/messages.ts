@@ -30,7 +30,7 @@ const messages = {
     helpThoughtLevel: "**/思考** — 切换思考级别",
     helpReply: "**/回复** — 切换回复详细程度",
     webhookSecretInvalid: "Webhook secret 校验失败。",
-    // Bugfix: 这条错误由通用 provider callback 处理路径触发，微信/飞书失败时不能误显示 Telegram。
+    // Bugfix: generic provider callback handling triggers this error; a WeChat/Feishu failure must not mislabel it as Telegram.
     callbackFailed: "处理机器人回调失败：{message}",
     sessionExpiredNewTaskHint:
       "当前任务会话已失效，可能是任务已被清理或机器人消息已过期。请发送 **/new task** 创建新任务后再继续。",

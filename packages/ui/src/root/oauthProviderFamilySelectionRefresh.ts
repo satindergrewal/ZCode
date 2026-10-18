@@ -41,7 +41,7 @@ async function getUsageEntitlementSnapshotOrNull(params: {
       allowEnvApiKey: false,
     });
   } catch (error) {
-    logger.warn("[Root] 刷新登录后权益快照失败", {
+    logger.warn("[Root] Failed to refresh the entitlements snapshot after sign-in", {
       providerId: params.providerId,
       error,
     });
@@ -68,8 +68,8 @@ async function refreshAccountProviderAccesses(params: {
         const resolved = resolveAccountProviderInspectionAccess(view, providerId);
         if (!resolved) return [];
         const access = resolved.access;
-        // 登录/启动检查属于套餐只读查询。静态 mode 会经执行期 current 解析，
-        // 把未选中或 pending 的 Start 当作当前 Coding 查询；此处必须明确查询套餐自身。
+        // Sign-in/startup checks are read-only plan queries. A static mode resolves via the runtime current,
+        // treating an unselected or pending Start as the current Coding plan; query the plan itself explicitly here.
         const query: ZCodeProviderAccountAccess | ZCodeAccountAccess =
           access.mode === "start-plan" || access.mode === "individual-coding-plan"
             ? { type: "zhipu-account", family: access.accountType, planKind: access.mode }
@@ -87,7 +87,7 @@ async function refreshAccountProviderAccesses(params: {
       ),
     };
   } catch (error) {
-    logger.warn("[Root] 刷新 Account Provider 访问身份失败", {
+    logger.warn("[Root] Failed to refresh the account provider access identity", {
       providerIds: params.providerIds,
       error,
     });
@@ -106,7 +106,7 @@ export async function refreshLatestModelProviderFamilySelectionAfterLogin(params
 
   const familySpec = resolveModelProviderFamilySpecFromOAuth(params.provider);
   if (!familySpec) return null;
-  // 登录查询也有网络等待，条件写入必须基于查询前的意图，而非回包后的选择。
+  // Sign-in queries also wait on the network; the conditional write must key on the pre-query intent, not the post-response choice.
   const currentSettings = await params.services.settingService.get();
   const expectedAccountSettings = {
     providerFamilyDomain: currentSettings.providerFamilyDomain,
@@ -125,7 +125,7 @@ export async function refreshLatestModelProviderFamilySelectionAfterLogin(params
     reason: "oauth-login-entitlement",
   });
   if (!refreshed) return null;
-  // 登录后的刷新也可能仍在等待旧 Team 补组织；未知不是可按排序重选的首次连接。
+  // The post-login refresh may still be waiting on an old Team org attach; unknown is not a first connection to re-pick by ordering.
   if (
     !currentSettings.providerFamilyConnectionSelections?.[domain] &&
     codingPlanProviderIds.every((id) => states.get(id)?.availability === "unknown")
@@ -145,7 +145,7 @@ export async function refreshLatestModelProviderFamilySelectionAfterLogin(params
     }),
     getEnterprisePricingProductsOrEmpty(params.services, domain),
   ]);
-  // 旧 Start 连接只保留读取，不以权益失效为由删除或自动替换成付费连接。
+  // Legacy Start connections stay read-only; never deleted nor auto-replaced by a paid connection over entitlement expiry.
   const savedSelection = currentSettings.providerFamilyConnectionSelections?.[domain];
   if (savedSelection?.kind === "start-plan") return savedSelection;
   const selection = resolveAutomaticModelProviderFamilyConnectionSelection({
@@ -188,17 +188,17 @@ export async function refreshRestoredOAuthProviderFamilyAfterStartup(params: {
   if (settings.providerFamilyDomain && settings.providerFamilyDomain !== domain) return null;
   const saved = settings.providerFamilyConnectionSelections?.[domain];
   if (saved) {
-    // 原因：启动时的不可用不是本次运行中发生的失效，不能替用户更换已保存连接。
-    // 刷新账号事实仍照常执行；只有后续真实失效提示的点击动作允许选择替代套餐。
+    // The startup unavailability is not a mid-session invalidation; never swap a saved connection on the user behalf.
+    // The account refresh still runs; only the click action on a real invalidation notice may pick an alternate plan.
     try {
       await params.services.providerSettingsService.refresh("oauth-restore-entitlement");
     } catch (error) {
-      logger.warn("[Root] 启动账号刷新失败，保留原连接", { error });
+      logger.warn("[Root] Startup account refresh failed; keeping the original connection", { error });
     }
     return saved;
   }
   try {
-    // 仅真正没有选择才沿用首次初始化；该入口保留旧连接待迁移的 unknown 保护及条件写入。
+    // Only a truly missing selection falls back to first-run initialization; this entry keeps unknown protection for pending-migration connections plus the conditional write.
     const selection = await refreshLatestModelProviderFamilySelectionAfterLogin({
       provider: params.activeProvider,
       services: params.services,
@@ -206,7 +206,7 @@ export async function refreshRestoredOAuthProviderFamilyAfterStartup(params: {
     if (selection) await params.refreshAppSettings?.();
     return selection;
   } catch (error) {
-    logger.warn("[Root] 启动初始化连接失败", { error });
+    logger.warn("[Root] Startup connection initialization failed", { error });
     return null;
   }
 }

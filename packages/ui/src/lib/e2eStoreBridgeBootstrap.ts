@@ -18,8 +18,9 @@ export function registerE2EStoreBridges() {
     return;
   }
 
-  // 部分 E2E 从设置页、错误页或特殊路由启动时，不一定自然 import
-  // 对应 store 模块。renderer bootstrap 显式注册，保证 preflight 和测试注入稳定。
+  // E2E flows starting from the settings page, error page, or special routes do not
+  // necessarily import the store modules naturally. The renderer bootstrap registers them
+  // explicitly so preflight and test injection stay reliable.
   window.__zcodeSessionStoreE2E = useZCodeSessionStore;
   window.__skillStoreE2E = useSkillStore;
   window.__subagentsStoreE2E = useSubagentsStore;

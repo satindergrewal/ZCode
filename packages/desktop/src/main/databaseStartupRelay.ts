@@ -14,7 +14,7 @@ export function configureDatabaseStartupQuit(handler: () => void): void {
   quit = handler;
 }
 const readyListeners = new Set<() => void>();
-/** Main 只按 Host ready 调度既有 scheduler，不拥有迁移状态或账本。 */
+/** Main only schedules the existing scheduler on Host ready; it owns no migration state or ledger. */
 export function onLocalDatabaseStartupReady(listener: () => void): void {
   if (localStorageReady) listener();
   else readyListeners.add(listener);
@@ -34,7 +34,8 @@ export function bindDatabaseStartupRelay(
   child: UtilityProcess,
   startupId = randomUUID(),
 ) {
-  // 同窗口重建 Host 时，旧监听不能继续重放 ready 或接收用户控制命令。
+  // When the Host is rebuilt on the same window, stale listeners must not keep replaying
+  // ready or receiving user control commands.
   windowBindings.get(win)?.();
   hostStartupIds.set(child, startupId);
   let disposed = false;
@@ -51,7 +52,7 @@ export function bindDatabaseStartupRelay(
     try {
       reportDatabaseStartupState(state);
     } catch {
-      /* 遥测故障不阻断启动。 */
+      /* Telemetry failures must not block startup. */
     }
     if (state.phase === "ready" && !localStorageReady) {
       localStorageReady = true;
@@ -91,7 +92,8 @@ export function bindDatabaseStartupRelay(
         disk: [],
       };
     }
-    // 即使旧代曾 ready，退出后的 reload 也只能读到失败，不能用旧证明放行新端口。
+    // Even if a previous generation reached ready, a reload after exit must read failure;
+    // never let the old proof admit a new port.
     if (latest.phase !== "failed")
       applyState({
         ...latest,

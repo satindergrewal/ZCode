@@ -1,11 +1,11 @@
 /**
- * 审核是否刚刚终结（「有 review → 无 review」的跃变）。
+ * Whether a review just ended (the had-review to no-review transition).
  *
- * Runtime 的 Trust mutation 可能来自另一个 capable attachment；审核 settled 时
- * store 会 clear binding，故该跃变可用于补一次静态 Trust 快照刷新。
+ * A runtime Trust mutation may come from another capable attachment; when a review settles the store
+ * clears the binding, so this transition is the cue for one extra static Trust snapshot refresh.
  *
- * 不能只判断「当前无 review」：初次挂载时它同样为真，会紧随 initialize 触发一次
- * 多余加载并与之竞争。
+ * Do not test merely no-current-review: that is also true on first mount and would fire
+ * a redundant load racing initialize.
  */
 export function didWorkspaceHookReviewSettle(input: {
   previousInteractionId: string | undefined;
@@ -15,12 +15,12 @@ export function didWorkspaceHookReviewSettle(input: {
 }
 
 /**
- * reasonCode → i18n key 映射。
+ * reasonCode to i18n key map.
  *
- * 命令被拒绝时行内 Trust/revoke 直接把原始 reasonCode
- * （如 workspace_hooks_review_superseded）渲染给用户——中英文用户都不可读。
- * 缺 key 会把原始 id 渲染到界面。这里集中映射，未知码回退到
- * 通用「操作被拒绝」而非原始 id，避免泄露内部枚举字面量。
+ * On rejection, inline trust/revoke once rendered the raw reasonCode
+ * (e.g. workspace_hooks_review_superseded), unreadable in any language;
+ * a missing key renders the raw id. Central map here; unknown codes fall back to the
+ * generic action-rejected copy, never leaking internal enum literals.
  */
 const WORKSPACE_HOOK_REASON_CODE_MESSAGE_IDS: Record<string, string> = {
   workspace_hooks_review_superseded: "settings.hooks.review.reason.review_superseded",
@@ -46,21 +46,21 @@ export function resolveWorkspaceHookReasonCodeMessageId(reasonCode: string | und
 }
 
 /**
- * 判定一次 rejected 命令是否应静默收敛（不向用户展示错误）。
+ * Decide whether one rejected command should settle silently (no user-facing error).
  *
- * 双击行内 Trust 按钮时，每次点击产生新的 commandId。
- * 第一次点击成功、审核 flow 终结（store clear binding）；第二次点击的 commandId
- * 被验证为已终结的 flow，返回 workspace_hooks_review_superseded。面板不能将其当作
- * 真正的错误展示给用户——而用户意图已成功，错误文案令人困惑，且训练了我们对
- * 真正的 superseded 报错的不信任。
+ * Double-clicking inline Trust mints a commandId per click.
+ * First click succeeds and the review flow ends (store clears the binding); the second click's commandId
+ * resolves against the ended flow and returns workspace_hooks_review_superseded. The panel must not show that
+ * as an error: the intent succeeded, the copy would confuse, and it trains distrust of
+ * genuine superseded failures.
  *
- * 判定规则：只有当 rejection 是 superseded 类 **且** 本地已无 live pending binding
- * （即审核已终结、binding 已被 clear/advance）时才静默。真正的 superseded（审核期间
- * bundle 变更、binding 仍 pending、用户需要重新审核）必须展示——hasLivePendingBinding
- * 为 true 时不静默。
+ * Rule: stay silent only when the rejection is superseded-class AND no live pending binding remains
+ * (review ended, binding cleared/advanced). A true superseded (bundle changed mid-review, binding
+ * still pending, re-review needed) must show: never silent while
+ * hasLivePendingBinding is true.
  *
- * 此函数为纯函数，不读取 store——hasLivePendingBinding 由调用方在 await 完成后从
- * store 当前快照中提取（见 useWorkspaceHookInlineTrust）。
+ * Pure function, no store reads: hasLivePendingBinding is extracted by the caller from the current
+ * store snapshot after its await (see useWorkspaceHookInlineTrust).
  */
 export function shouldSilenceStaleRejection(input: {
   reasonCode: string | undefined;

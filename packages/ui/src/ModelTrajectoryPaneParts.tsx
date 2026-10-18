@@ -122,7 +122,8 @@ function SourceTitle({ record, intl }: { record: ZCodeModelTrajectoryRecord; int
   return (
     <span
       data-trajectory-source-title=""
-      // E2E 曾把英文展示文案当成功能合同，切换到中文后误报轨迹投影失败；稳定属性保留原始语义，文案继续独立国际化。
+      // E2E once treated English copy as the contract and false-failed after the locale switch;
+      // stable attributes carry the semantics while copy stays independently localized.
       data-trajectory-source-kind={callSource.kind}
       data-trajectory-query-source={callSource.querySource}
       className="min-w-0 shrink truncate text-ui-sm font-medium text-foreground"
@@ -180,7 +181,7 @@ function MessageBlock({
   expansionKey?: string;
   intl: IntlShape;
 }) {
-  // 只有已知角色才有 i18n key，未知角色直接展示原始 role，避免触发缺失 key。
+  // Only known roles have i18n keys; unknown roles render the raw role string to avoid missing-key warnings.
   const knownRole = ["system", "user", "assistant", "tool"].includes(message.role);
   const roleLabel = knownRole
     ? intl.formatMessage({ id: `modelTrajectory.role.${message.role}` })

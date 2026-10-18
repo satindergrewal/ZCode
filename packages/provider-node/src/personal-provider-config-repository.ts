@@ -40,14 +40,14 @@ export class NodePersonalProviderConfigRepository implements PersonalProviderCon
   #disposed = false;
 
   constructor(options: NodePersonalProviderConfigRepositoryOptions) {
-    if (!options.filePath.trim()) throw new Error("Personal Provider Config filePath 不能为空");
+    if (!options.filePath.trim()) throw new Error("Personal provider config filePath must not be empty");
     this.#filePath = options.filePath;
     this.#importLegacy = options.importLegacy;
     this.#onRecovery = options.onRecovery;
     this.#onPollingError = options.onPollingError;
     this.#pollingIntervalMs = options.pollingIntervalMs ?? 1_000;
     if (this.#pollingIntervalMs !== false && this.#pollingIntervalMs <= 0) {
-      throw new Error("Personal Provider Config pollingIntervalMs 必须大于 0");
+      throw new Error("Personal provider config pollingIntervalMs must be > 0");
     }
   }
 
@@ -82,8 +82,8 @@ export class NodePersonalProviderConfigRepository implements PersonalProviderCon
         });
         const committed = await this.#writeLocked(update);
         const snapshot = snapshotFromUpdate(committed);
-        // 原子写可能产生多次文件系统事件。写入完成后先记录内容版本，
-        // polling 随后读取到同一版本时不会再次发布失效通知。
+        // Atomic writes emit several fs events. Record the content version once the write
+        // completes so a later poll of the same version does not re-publish invalidation.
         this.#observedRevision = snapshot.revision;
         return snapshot;
       });
@@ -109,8 +109,9 @@ export class NodePersonalProviderConfigRepository implements PersonalProviderCon
   }
 
   async #readCurrent(): Promise<ProviderConfigLayerSnapshot> {
-    // 多个进程纯读取也争排他锁，慢 IO 会把轮询放大成锁超时。
-    // 正式文件通过同目录临时文件原子替换，纯读可以直接观察已提交的完整文档。
+    // Even read-only multi-process access contended on the exclusive lock, and slow IO turned
+    // polling into lock timeouts. The real file is atomically replaced via a temp file in the
+    // same dir, so plain reads observe the committed document directly.
     const file = await readJsonFileIfExists(this.#filePath);
     if (file === null && !this.#importLegacy) return snapshotFromUpdate(emptyUpdate());
     if (file !== null) {
@@ -119,7 +120,8 @@ export class NodePersonalProviderConfigRepository implements PersonalProviderCon
         return snapshotFromUpdate(update);
       }
     }
-    // 导入和规范化仍会写盘。拿锁后必须重读，不能用加锁前的旧内容覆盖其他 writer。
+    // Import/normalize still write. Re-read after taking the lock; never overwrite other
+    // writers with the pre-lock snapshot.
     return withFileLock(this.#filePath, () => this.#readLocked());
   }
 
@@ -141,8 +143,10 @@ export class NodePersonalProviderConfigRepository implements PersonalProviderCon
   }
 
   async #writeLocked(update: ProviderConfigLayerUpdate): Promise<ProviderConfigLayerUpdate> {
-    // 同一入口写入规则与默认选择；先严格验证整份结果，不能落盘后才发现来源越权/坏值。
-    // 使用与读取相同的规范形态再计算版本，避免外层规则键顺序使“写成功”的版本读回就变化。
+    // Rules and default selection are written through one entry; validate the whole result
+    // first so provenance violations or bad values never reach disk.
+    // Hash the same canonical form the reader uses, or key order in outer rules would make a
+    // successfully written version read back as changed.
     const canonical = decodeProviderConfigFile(encodeProviderConfigFile(update));
     const encoded = encodeProviderConfigFile(canonical);
     await atomicWritePrivateTextFile(this.#filePath, JSON.stringify(encoded, null, 2));
@@ -157,8 +161,9 @@ export class NodePersonalProviderConfigRepository implements PersonalProviderCon
   }
 
   #recoverInvalidFile(error: unknown): ProviderConfigLayerSnapshot {
-    // 正式文件无效时必须原样保留，不能备份后覆盖成空配置；本进程仅以内存空
-    // Overlay 降级，等待用户修复原文件。
+    // An invalid real file is preserved as-is -- never backed up and overwritten with an empty
+    // config. This process degrades to an in-memory empty overlay and waits for the user to
+    // repair the file.
     this.#reportRecovery({ error });
     return snapshotFromUpdate(emptyUpdate());
   }
@@ -167,12 +172,13 @@ export class NodePersonalProviderConfigRepository implements PersonalProviderCon
     try {
       this.#onRecovery?.(Object.freeze(event));
     } catch {
-      // 观测回调不是配置事实，不能反向阻断恢复。
+      // Observer callbacks are not config facts; they must never block recovery.
     }
   }
 
   #ensurePolling(): void {
-    // 轮询在飞时 timer 已清空；显式 read/update 的 finally 不能再排入第二轮。
+    // The timer is cleared while a poll is in flight; read/update finally blocks must not
+    // schedule another round.
     if (
       this.#pollingIntervalMs === false ||
       this.#pollingTimer ||
@@ -192,21 +198,23 @@ export class NodePersonalProviderConfigRepository implements PersonalProviderCon
     const writeGeneration = this.#writeGeneration;
     try {
       const snapshot = await this.#readPollingSnapshot();
-      // 去掉读锁后，旧轮询可能晚于本进程保存返回；丢弃它，避免版本倒退及重复通知。
+      // Without the read lock, a stale poll may return after this process saved; drop it to
+      // avoid version regressions and duplicate notifications.
       if (writeGeneration !== this.#writeGeneration) return;
       this.#pollingErrorActive = false;
       if (this.#disposed || snapshot.revision === this.#observedRevision) return;
       this.#observedRevision = snapshot.revision;
       this.#emit("poll-changed");
     } catch (error) {
-      // 成功保存也使旧轮询的失败失效，不能在新版本之后再发布旧读操作的故障。
+      // A successful save also invalidates older poll failures; never publish an old read's
+      // error after a newer version exists.
       if (this.#disposed || writeGeneration !== this.#writeGeneration) return;
       if (!this.#pollingErrorActive) {
         this.#pollingErrorActive = true;
         try {
           this.#onPollingError?.(error);
         } catch {
-          // 观测回调不能反向阻断下一轮自愈。
+          // Observer callbacks must not block the next self-heal round.
         }
         this.#emit("poll-error");
       }
@@ -222,7 +230,7 @@ export class NodePersonalProviderConfigRepository implements PersonalProviderCon
   }
 
   #assertNotDisposed(): void {
-    if (this.#disposed) throw new Error("NodePersonalProviderConfigRepository 已 dispose");
+    if (this.#disposed) throw new Error("NodePersonalProviderConfigRepository disposed");
   }
 }
 
@@ -265,7 +273,8 @@ function snapshotFromUpdate(update: ProviderConfigLayerUpdate): ProviderConfigLa
     revision: createHash("sha256").update(content).digest("hex"),
     providers: update.providers,
     models: update.models,
-    // 快照必须与 revision 对应的磁盘内容一致；补空数组会让未声明排序的文件在 CAS 时误报变化。
+    // The snapshot must match the disk content of its revision; padding empty arrays would
+    // make files without declared ordering report spurious CAS changes.
     providerOrder: update.providerOrder,
     defaultModelSelection: update.defaultModelSelection,
   });

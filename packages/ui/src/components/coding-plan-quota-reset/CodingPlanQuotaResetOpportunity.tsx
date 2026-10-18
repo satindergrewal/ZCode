@@ -39,8 +39,8 @@ export function CodingPlanQuotaResetOpportunity({
   const [uncontrolledDialogOpen, setUncontrolledDialogOpen] = useState(false);
   const resolvedDialogOpen = dialogOpen ?? uncontrolledDialogOpen;
   const setDialogOpen = onDialogOpenChange ?? setUncontrolledDialogOpen;
-  // 弹框在 dialog 分支内常驻挂载，机会数从多降到单/零都不会提前卸载成功动画中的 Dialog；
-  // 这里只决定文案与倒计时形态：多机会显示「获得 N 次」，单机会保留原文案 + 倒计时。
+  // The dialog stays mounted inside its dialog branch, so the success animation never unmounts early however the opportunity count falls;
+  // only copy and countdown shape are decided here: several credits show "earned N", a single one keeps the original copy + countdown.
   const hasMultipleOpportunities = count > 1;
 
   useEffect(() => {
@@ -62,11 +62,11 @@ export function CodingPlanQuotaResetOpportunity({
     { id: "codingPlan.quotaReset.expiresIn" },
     { time: formatCodingPlanQuotaResetCountdown(remainingSeconds, intl.formatMessage) },
   );
-  // 多机会入口复用了不带参数的固定文案，用户无法直接确认当前可用次数。
-  // 这里让可见文案与 aria-label 共用同一个动态结果，避免视觉和无障碍名称再次不一致。
+  // The multi-credit entry reused parameterless fixed copy, so users could not confirm the available count.
+  // Here the visible copy and the aria-label share one dynamic result, keeping visual and accessible names in sync.
   const openDialogLabel = intl.formatMessage({ id: "codingPlan.quotaReset.openDialog" }, { count });
   const label = hasMultipleOpportunities ? openDialogLabel : opportunityLabel;
-  // 弹框存活期间徽标不收起：单机会在弹框打开后过期时，入口不能从按钮位置塌缩。
+  // The badge never collapses while the dialog lives: if the single credit expires dialog-open, the entry must not cave in at the button's spot.
   const effectiveVisible =
     visible && (hasMultipleOpportunities || resolvedDialogOpen || remainingSeconds > 0);
   const commonClassName = [
@@ -89,7 +89,7 @@ export function CodingPlanQuotaResetOpportunity({
   );
 
   if (dialog) {
-    // 单机会同样可以点开重置弹框；文案与倒计时保持单机会形态，仅交互升级为按钮。
+    // A single credit opens the same reset dialog; copy and countdown keep the single form, only the interaction upgrades to a button.
     const button = (
       <button
         type="button"

@@ -22,7 +22,7 @@ export async function handleClick(
   command: Extract<BrowserCommand, { method: "click" }>,
   done: BrowserCommandDone,
 ): Promise<BrowserCommandResult> {
-  // ref 与坐标 (x,y) 二选一：ref 走 resolveRefCenter（脚本内已 scrollIntoView），(x,y) 直接用作视口坐标。
+  // ref or (x,y), never both: ref resolves via resolveRefCenter (scrollIntoView included); (x,y) is the viewport point.
   const center = await resolveCommandPoint(view, command, "click");
   if (center.kind === "error") return done(center.error);
   await dispatchClickAt(
@@ -40,8 +40,8 @@ export async function handleType(
   command: Extract<BrowserCommand, { method: "type" }>,
   done: BrowserCommandDone,
 ): Promise<BrowserCommandResult> {
-  // 带 ref 先点击聚焦；输入阶段重新在指定 guest 内解析 focused frame，避免 Electron
-  // embedder 的 composer autofocus 在 click/type 间隙抢回 app focus 后接收到网页文本。
+  // With ref, click to focus first; re-resolve the focused guest at input time so the embedder composer's
+  // autofocus cannot steal focus between click/type and swallow the text.
   if (command.ref) {
     const center = await resolveRefCenter(view, command.ref);
     if (!center) return done(refNotFound(command.ref));
@@ -56,7 +56,7 @@ export async function handlePress(
   command: Extract<BrowserCommand, { method: "press" }>,
   done: BrowserCommandDone,
 ): Promise<BrowserCommandResult> {
-  // 带 ref 先点击聚焦；再按 KEY_MAP 发 keyDown+keyUp（modifiers 位掩码透传）。
+  // With ref, focus by click first, then keyDown/keyUp per KEY_MAP (modifier mask passed through).
   if (command.ref) {
     const center = await resolveRefCenter(view, command.ref);
     if (!center) return done(refNotFound(command.ref));
@@ -80,8 +80,8 @@ export async function handleScroll(
   command: Extract<BrowserCommand, { method: "scroll" }>,
   done: BrowserCommandDone,
 ): Promise<BrowserCommandResult> {
-  // 带 ref：复用 resolveRefCenter（脚本内已 scrollIntoView(block:'center')）；
-  // 否则用 x/y 作为滚轮增量，position 固定 (0,0)，deltaX/deltaY 生效。
+  // With ref, reuse resolveRefCenter (scrollIntoView block:center included);
+  // otherwise x/y are wheel deltas at position 0,0 with deltaX/deltaY applied.
   if (command.ref) {
     const center = await resolveRefCenter(view, command.ref);
     if (!center) return done(refNotFound(command.ref));
@@ -141,7 +141,7 @@ export async function handleHover(
   command: Extract<BrowserCommand, { method: "hover" }>,
   done: BrowserCommandDone,
 ): Promise<BrowserCommandResult> {
-  // ref(经 resolveRefCenter) 或 (x,y) → CDP mouseMoved 触发 hover 态。
+  // ref (via resolveRefCenter) or (x,y) feeds CDP mouseMoved to trigger hover.
   const center = await resolveCommandPoint(view, command, "hover");
   if (center.kind === "error") return done(center.error);
   await view.cdp.send("Input.dispatchMouseEvent", {
@@ -160,7 +160,7 @@ export async function handleSelect(
   command: Extract<BrowserCommand, { method: "select" }>,
   done: BrowserCommandDone,
 ): Promise<BrowserCommandResult> {
-  // 在页面里对该 <select> 按 values 设选中态（先 value 精确匹配、再可见文本匹配）并派发 input+change。
+  // In-page: set the select from values (exact value, then visible text) and dispatch input+change.
   const raw = (await view.webContents.executeJavaScript(
     SELECT_SCRIPT(command.ref, command.values),
   )) as { ok?: boolean; error?: string } | null;
@@ -182,7 +182,7 @@ export async function handleCheck(
   command: Extract<BrowserCommand, { method: "check" }>,
   done: BrowserCommandDone,
 ): Promise<BrowserCommandResult> {
-  // 设置 ref 指向的 checkbox/radio 勾选态到 checked(缺省 true)；状态需变时原生 click 派发事件。
+  // Set the ref'd checkbox/radio to checked (default true); click natively only when the state changes.
   const raw = (await view.webContents.executeJavaScript(
     CHECK_SCRIPT(command.ref, command.checked ?? true),
   )) as { ok?: boolean; error?: string } | null;
@@ -200,7 +200,7 @@ export async function handleDrag(
   command: Extract<BrowserCommand, { method: "drag" }>,
   done: BrowserCommandDone,
 ): Promise<BrowserCommandResult> {
-  // 起点=fromRef 或 from{x,y}，终点=toRef 或 to{x,y} → CDP 合成鼠标拖拽序列。
+  // from ref/{x,y} to ref/{x,y} drives a synthesized CDP mouse-drag sequence.
   const from = await resolveDragPoint(view, command.fromRef, command.from, "from");
   if (from.kind === "error") return done(from.error);
   const to = await resolveDragPoint(view, command.toRef, command.to, "to");
@@ -223,12 +223,12 @@ export async function handleElementInfo(
   command: Extract<BrowserCommand, { method: "elementInfo" }>,
   done: BrowserCommandDone,
 ): Promise<BrowserCommandResult> {
-  // 视口坐标 (x,y) → document.elementFromPoint → 复用快照元素结构（现分配 ref 存入 __zcodeRefs）。
+  // Viewport (x,y) via elementFromPoint returns snapshot-shape data (fresh ref stored into __zcodeRefs).
   const raw = await view.webContents.executeJavaScript(
     ELEMENT_AT_POINT_SCRIPT(command.x, command.y),
   );
   if (raw == null) {
-    // 命中不到元素：ok:true 但省略 element。
+    // No element hit: ok:true without element.
     return done({ ok: true });
   }
   const parsed = browserSnapshotElementSchema.safeParse(raw);

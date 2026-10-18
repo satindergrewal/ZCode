@@ -90,7 +90,7 @@ export function DeleteAllArchivedTasksButton({
       );
       await onRefresh?.();
     } catch (error) {
-      logger.error("[ArchivedTaskDeletion] 批量删除或刷新失败", error);
+      logger.error("[ArchivedTaskDeletion] Bulk delete or refresh failed", error);
       setResultMessage((current) =>
         [current, intl.formatMessage({ id: "taskList.deleteAllArchivedError" })]
           .filter(Boolean)
@@ -151,7 +151,7 @@ export function DeleteAllArchivedTasksButton({
 
   return (
     <>
-      {/* 只移动控件的渲染位置，查询/确认/删除仍随归档列表存活，菜单关闭不会卸载这些状态。 */}
+      {/* Only the control's mount point moves; query/confirm/delete state lives with the archived list and survives closing the menu. */}
       {actionsContainer === undefined
         ? menu
         : actionsContainer

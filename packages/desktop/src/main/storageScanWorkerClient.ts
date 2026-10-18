@@ -1,6 +1,7 @@
 /**
- * ScanRunnerPort 的 Worker 实现：每次扫描起一个 worker_threads，主线程只接收节流后的快��。
- * 取消时先发 abort 让 Worker 收敛，随后无论如何 terminate，保证 main 不会残留遍历线程。
+ * Worker implementation of ScanRunnerPort: each scan spawns a worker_threads worker; the
+ * main thread only receives throttled snapshots. Cancel sends abort to let the worker
+ * settle, then terminates regardless, leaving no stray walkers.
  */
 import { Worker } from "node:worker_threads";
 import type { StorageScanProgress, StorageScanRunnerPort } from "@zcode/services/node";

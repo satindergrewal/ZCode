@@ -1,6 +1,6 @@
 /**
- * 单次扫描 job：持有 AbortController，把 runner 的进度节流成 ≥ throttleMs 一次的快照事件，
- * 终态（complete / cancelled / failed）必发。状态只能 scanning → 终态。
+ * One scan job: owns an AbortController, throttles runner progress to at most one snapshot
+ * per throttleMs, and always emits a terminal state (complete/cancelled/failed). scanning -> terminal only.
  */
 import type { StorageRootSpec, StorageUsageSnapshot } from "@zcode/shared";
 import type { ScanRunnerPort, StorageScanProgress } from "./ports.js";

@@ -43,7 +43,7 @@ export {
   createRemoteWorkspaceDisconnectedError,
 } from "./lib/remoteWorkspaceServiceError.js";
 
-// Hooks —— 统一的服务和平台操作访问层
+// Hooks — unified service and platform-access layer
 export {
   ServiceProvider,
   useServices,

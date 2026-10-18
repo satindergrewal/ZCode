@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- Hook 表单集中维护 runner 类型、Scope 与高级兼容字段。 */
+/* eslint-disable max-lines -- the hook form keeps runner type, scope and advanced compat fields together. */
 import { useCallback, useState, type ReactNode } from "react";
 import { ChevronRight, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button.js";

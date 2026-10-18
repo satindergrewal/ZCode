@@ -1,5 +1,5 @@
-// Composer Skill 只读 catalog。
-// 与 Skills Settings 管理接口分离：这里的 sessionId 决定 authority，不提供启停/删除能力。
+// Read-only catalog for Composer skills.
+// Separate from the Skills Settings management API: sessionId decides authority here; no enable/disable/delete.
 import {
   zcodeSkillsReferenceCatalogParamsSchema,
   type ZCodeSkillReferenceCatalogEntry,
@@ -24,9 +24,9 @@ export async function getSkillReferenceCatalog(
     return toResult("session", outcome);
   }
 
-  // 旧 UI cache 只在 workspace 首次挂载时扫描，用户从文件系统手动新增
-  // Skill 后，新建对话仍停在旧快照。草稿请求在 Agent 侧复用 CLI 正式发现配置，
-  // 每次新打开引用面板都读取当前 workspace catalog。
+  // The legacy UI cache scans only on first workspace mount, so skills added manually from the filesystem
+  // leave new conversations on a stale snapshot. Draft requests reuse the CLI's real discovery config agent-side,
+  // and every reference-panel open reads the current workspace catalog.
   const outcome = await listZCodeSkills({
     env: context.deps.env,
     logger: context.logger,
@@ -41,8 +41,8 @@ function toResult(
 ): ZCodeSkillsReferenceCatalogResult {
   return {
     authority,
-    // 内置技能包（bundled-skills.ts）不进引用面板：它由内置命令（`/workflow`）加载，不是用户
-    // 管理或引用的对象；协议的 scope 是封闭枚举，旧客户端严格校验，这里不为它扩枚举。
+    // The bundled skill pack (bundled-skills.ts) stays out of the reference panel: the builtin command (`/workflow`) loads it, so it is not
+    // something users manage or reference; the protocol scope is a closed enum that old clients validate strictly -- no new enum value here.
     skills: outcome.skills
       .filter((skill) => skill.source !== "bundled")
       .map(toReferenceCatalogEntry),
@@ -53,7 +53,7 @@ function toReferenceCatalogEntry(skill: SkillMetadata): ZCodeSkillReferenceCatal
   const scope =
     skill.source === "plugin" ? "plugin" : skill.scope === "project" ? "workspace" : "user";
   return {
-    // `glm:` 是现有 UI provider 过滤契约；路径使同名不同来源仍有稳定行身份。
+    // `glm:` is the existing UI provider-filter contract; the path keeps same-name different-source rows stably identifiable.
     id: `glm:${scope}:${skill.path}`,
     name: skill.name,
     description: skill.description,

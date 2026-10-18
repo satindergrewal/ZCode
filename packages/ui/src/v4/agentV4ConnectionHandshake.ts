@@ -1,5 +1,5 @@
-// 每个 RPC service proxy 对应一个 attachment；hello/clientHello 只做一次，所有
-// conversation/sessions-index transport 共享该 Promise，避免并发首订阅重复握手。
+// One attachment per RPC service proxy; hello/clientHello runs once and every
+// conversation/sessions-index transport shares that Promise, avoiding duplicate handshakes from concurrent first subscriptions.
 import type { IZCodeAgentService } from "@zcode/services";
 import {
   V4_WIRE_PROTOCOL_VERSION,
@@ -25,9 +25,9 @@ export function ensureAgentV4ConnectionHandshake(
 
   const handshake = (async () => {
     const hello = helloMessageSchema.parse(await service.helloConversationV4());
-    // `workflowRunDeltas` 的声明是**单向**的：只有 Host 先在 hello 里宣告，客户端才能回声明。
-    // clientHello 的 capabilities 是 `.strict()` 的，向老 Host 发一个它不认识的键会让整条
-    // clientHello 解析失败、连接握不上手——这不是降级，是整个会话面板打不开。
+    // The `workflowRunDeltas` declaration is one-way: only if the Host declared it in hello may the client declare back.
+    // clientHello capabilities are `.strict()`; sending an older Host an unknown key fails the whole
+    // clientHello parse and the handshake - not a downgrade, the whole session pane never opens.
     const capabilities: NonNullable<ClientHello["capabilities"]> = {
       workspaceHookReviewUi: true,
       ...(hostSupportsWorkflowRunDeltas(hello.capabilities) ? { workflowRunDeltas: true } : {}),
@@ -35,8 +35,8 @@ export function ensureAgentV4ConnectionHandshake(
     await service.initializeConversationV4({
       kind: "clientHello",
       protocolVersion: V4_WIRE_PROTOCOL_VERSION,
-      // handshake 与 commandFactory 曾各生成一套页面 clientId，facade
-      // 无法验证 command envelope 是否属于已绑定客户端。统一复用持久化 V4 clientId。
+      // handshake and commandFactory used to mint separate page clientIds, so the facade
+      // could not verify command envelopes against the bound client. Reuse the persisted V4 clientId.
       clientId: getV4ClientId(),
       clientKind: hello.clientMode === "desktop-continuous" ? "desktop" : "web",
       appVersion: "unknown",

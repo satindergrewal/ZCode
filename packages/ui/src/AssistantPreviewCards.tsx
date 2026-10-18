@@ -60,8 +60,8 @@ function buildAssistantPreviewPptxAutoOpenRequest(
   if (pptxCards.length === 0) return null;
 
   return {
-    // stat 结果对应的最终卡片签名必须进入一次性 key；同一 turn 的候选若晚到，
-    // 不会把旧的校验投影误当成已经消费的新结果。
+    // The one-shot key must include the final card signature for the stat, so late candidates in
+    // the same turn are never confused with an already-consumed validation projection.
     key: JSON.stringify([baseKey, getAssistantPreviewCardsValidationSignature(pptxCards)]),
     sources: pptxCards.map((card) => buildAssistantPreviewCardFileSource(card, scope)),
   };
@@ -75,7 +75,7 @@ interface AssistantPreviewCardsProps {
   onOpenBrowserUrl?: (url: string) => void;
   onOpenFileLink?: (target: MessageFileLinkTarget) => void;
   onOpenCodeViewer?: (source: CodeViewerSource) => void;
-  /** Desktop 完成态生成产物：批量打开本轮已通过校验的 PPTX。 */
+  /** Desktop completion artifact: batch-open this turn's validated PPTX files. */
   autoOpenPptxKey?: string;
   onAutoOpenPptx?: (request: AssistantPreviewCardsAutoOpenRequest) => void;
 }
@@ -111,8 +111,9 @@ function useAssistantPreviewCardValidation(
   );
   const cardsSignature = useMemo(() => getAssistantPreviewCardsValidationSignature(cards), [cards]);
   const validationCardsRef = useRef({ cards, signature: cardsSignature });
-  // timeline 重建时会传入内容相同但引用不同的 cards 数组，effect 若依赖数组引用会重复发起 RPC。
-  // 只在语义签名变化时替换校验快照；workspace fileService 变化仍会使用同一快照重新校验。
+  // Timeline rebuilds pass content-equal cards with new references; keying the effect on the
+  // array would re-run RPCs. Swap the validation snapshot only on signature change; a workspace
+  // fileService change revalidates against the same snapshot.
   if (validationCardsRef.current.signature !== cardsSignature) {
     validationCardsRef.current = { cards, signature: cardsSignature };
   }
@@ -138,8 +139,9 @@ function useAssistantPreviewCardValidation(
 
     let disposed = false;
 
-    // 历史消息切换时，上一条消息的已通过 stat 结果会在 effect 清理前短暂复用。
-    // 这里按当前候选签名批量二次校验，全部算完后一次发布，避免文件卡先闪一批再被替换。
+    // On history switches the previous message's passed stats briefly survive effect cleanup.
+    // Revalidate the current candidates in a batch and publish once, so file cards never flash
+    // one set and swap.
     void resolveValidatedAssistantPreviewCards(validationCards, fileService).then(
       (visibleCards) => {
         if (disposed) return;
@@ -208,8 +210,8 @@ export function AssistantPreviewCards({
     });
     if (!request) return;
 
-    // 自动打开只能消费最终可见卡片；这样与 15 个候选、10 张上限和 Host stat
-    // 完全同源，不会打开卡片中并不存在的文件。
+    // Auto-open consumes only final visible cards — the same source as the 15-candidate/10-card
+    // caps and Host stats — so it never opens a file absent from the cards.
     onAutoOpenPptx(request);
   }, [
     autoOpenPptxKey,
@@ -312,9 +314,9 @@ function AssistantPreviewCardRow({
             ? {
                 type: "website",
                 url: card.url,
-                // website 卡有两个来源——html 引用卡（file://）与 localhost
-                // 预览卡（http(s) 活服务）。localPath 直开只对前者生效；localhost 卡
-                // 必须继续把 URL 交给浏览器，否则丢路由/动态内容。
+                // Website cards come from two sources: html reference cards (file://) and localhost
+                // preview cards (live http(s) server). localPath direct-open applies only to the
+                // former; localhost cards must hand the URL to the browser or lose routes/dynamic content.
                 localPath: card.url.startsWith("file:") ? card.filePath : undefined,
               }
             : {
@@ -322,8 +324,8 @@ function AssistantPreviewCardRow({
                 path: filePath!,
                 title: card.title,
                 label: card.title,
-                // Preview Card 以前没有 CodeViewer scope，远程 Linux path
-                // 会被 OpenSplitButton 当成本地路径交给宿主编辑器。
+                // Preview cards used to lack a CodeViewer scope, so remote Linux paths were handed to
+                // the host editor as local paths by OpenSplitButton.
                 previewSource:
                   card.type === "website"
                     ? fileSource!

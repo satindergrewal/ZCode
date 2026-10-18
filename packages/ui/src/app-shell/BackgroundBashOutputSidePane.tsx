@@ -97,7 +97,7 @@ export const BackgroundBashOutputSidePane = memo(function BackgroundBashOutputSi
                 following: false,
               });
             } else if (!following && atBottom) {
-              // 手动滚到底部也要恢复查询跟随，否则已到底时悬浮箭头仍会常驻。
+              // Scrolling back to the bottom manually must resume query following, or the floating arrow persists at the bottom.
               preview.resume();
               logger.debug("Background Bash output following changed", {
                 workId: tab.workId,

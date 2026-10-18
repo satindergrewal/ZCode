@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- workspace 的 task、自动化与插件市场共享浏览器式历史，集中处理才能保证前进/后退目标一致。 */
+/* eslint-disable max-lines -- Workspace tasks, automations, and the plugin store share browser-style history; centralizing keeps forward/back targets consistent. */
 import { useCallback } from "react";
 import { useBaseWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
 import {
@@ -50,9 +50,10 @@ export function useWorkspaceTaskNavigation({
   onNavigateToAutomations?: (target: AutomationsNavigationTarget) => void;
   onNavigateToPluginStore?: (target: Omit<AutomationsNavigationTarget, "automationId">) => void;
 }) {
-  // 跨 workspace 选择会先同步切换 tab，但本次 React render 捕获的 ambient
-  // services 仍可能属于旧 remote attachment。local 目标必须固定从 window base attachment
-  // 发起，再由 Host Controller 路由，不能把本地路径送进旧 remote scope。
+  // Cross-workspace selection switches the tab first, but the ambient services captured in this
+  // React render may still belong to the old remote attachment. Local targets must always originate
+  // from the window base attachment and be routed by the Host Controller -- never feed a local path
+  // into the stale remote scope.
   const baseServices = useBaseWorkspaceServices();
   const tabStoreApi = useTabStoreApi();
   const setActiveTaskId = useZCodeSessionStore((s) => s.setActiveTaskId);
@@ -79,20 +80,22 @@ export function useWorkspaceTaskNavigation({
           targetWorkspaceState.modelSwitchStage,
         )
       ) {
-        // 模型供应商切换触发 runtime 重建时，当前 provider-workspace 的 task handle 会被短暂回收。
-        // 若此时切到其他 task，会并发触发 resumeTask 与重建流程，容易把切换失败误判成任务恢复失败。
-        // 这里在 task 切换入口统一拦截，等重建完成后再允许切换，避免 UI 进入 notReady/error 的假失败态。
+        // A provider switch triggering runtime rebuild briefly recalls the current
+        // provider-workspace's task handles. Switching tasks then would fire resumeTask
+        // concurrently with the rebuild and misread switch failure as task-restore failure.
+        // Intercept at the task-switch entry and allow switching only after the rebuild, avoiding
+        // a false notReady/error UI state.
         logger.info(
-          `[App] 模型运行时重建中，忽略 task 切换 workspace=${targetWorkspacePath} taskId=${taskId} stage=${targetWorkspaceState.modelSwitchStage}`,
+          `[App] model runtime rebuilding; ignoring task switch workspace=${targetWorkspacePath} taskId=${taskId} stage=${targetWorkspaceState.modelSwitchStage}`,
         );
         toast(intl.formatMessage({ id: "taskList.switchBlockedByModelRestart" }));
         return;
       }
 
-      // 远程 workspace 的未读清理不能再只靠 workspacePath 反查 session。
-      // 当同一窗口里存在相同路径的多个 remote tab 时，路径映射会命中旧 session，
-      // 导致“点开这个任务”却把已读状态写到另一条远端连接上。
-      // 这里先激活目标 tab，再从当前激活 tab 上读取更精确的 remoteSessionId。
+      // Remote-workspace unread clearing can no longer rely on looking the session up by
+      // workspacePath alone: with multiple same-path remote tabs in one window the path map hits a
+      // stale session and "open this task" writes read state to another remote connection.
+      // Activate the target tab first, then read the more precise remoteSessionId off the now-active tab.
       activateTabByPath(
         targetWorkspacePath,
         targetWorkspaceIdentityHint
@@ -128,10 +131,11 @@ export function useWorkspaceTaskNavigation({
       const taskEntityKey = buildTaskEntityKey(targetTask);
       const cachedTaskMeta = useTaskQueryCacheStore.getState().taskMetaByEntityKey[taskEntityKey];
       const previousUnreadAt = cachedTaskMeta?.unreadAt;
-      // 「任务」时间线由 Window Controller 直接提供行数据，不会像项目列表一样
-      // 把后台创建的 task 写入 query cache。点击事务若只查 cache，会把已显示蓝点的行误判为已读。
-      // 被点击行是本次用户实际看到的快照，优先用它的 unreadAt 做 compare-and-clear；
-      // 未传行快照的旧入口继续回退 query cache，保持兼容。
+      // The "tasks" timeline gets its rows directly from the Window Controller, which -- unlike
+      // the project list -- never writes background-created tasks into the query cache. A click
+      // transaction checking only the cache would misjudge a blue-dotted row as read. The clicked
+      // row is the snapshot the user actually saw; prefer its unreadAt for compare-and-clear. Legacy
+      // entries without a row snapshot keep falling back to the query cache for compatibility.
       const expectedUnreadAt =
         typeof selectedRowUnreadAt === "number" ? selectedRowUnreadAt : previousUnreadAt;
       const shouldClearUnread = typeof expectedUnreadAt === "number";
@@ -144,13 +148,13 @@ export function useWorkspaceTaskNavigation({
       );
 
       if (shouldClearUnread) {
-        // unread 之前只在 useTaskRestore 的 resumeTask 后持久化清除。
-        // 当用户再次点击当前 task 时，不会重新走 restore，磁盘里的 unreadAt 就会残留，
-        // 表现成“已经点开看过了，但重启 app 后又回到未读”。
-        // 这里把显式选择 task 也视为已读入口，保证同一条 task 重复进入时也能清掉持久化未读状态。
-        // v4 任务行已由 query cache 渲染，只更新旧 Zustand unread map
-        // 不会让蓝点重渲染。先对精确 entity key 加字段级 overlay，服务端回包
-        // 后再 reconcile；期间的旧 membership 刷新也不能把蓝点写回来。
+        // Unread used to be persisted-clear only after resumeTask in useTaskRestore. Re-clicking
+        // the current task skips restore, leaving stale unreadAt on disk -- "already read, but
+        // unread again after app restart". Treat explicit selection as a read entry too so
+        // repeated entries clear the persisted unread. v4 task rows render from the query cache;
+        // updating only the legacy Zustand unread map does not re-render the dot. Field-level
+        // overlay on the exact entity key first, reconcile on server response; interim membership
+        // refreshes must not write the dot back.
         setTaskQueryCacheUnreadOverlay(targetTask, undefined);
         const targetServices = resolvedRemoteSessionId
           ? (getRemoteWorkspaceSession(resolvedRemoteSessionId)?.services ?? null)
@@ -158,12 +162,13 @@ export function useWorkspaceTaskNavigation({
             ? null
             : baseServices;
         if (!targetServices) {
-          // 远程 workspace 断开时不能按相同 workspacePath 回退到
-          // 其他 remote session 或本地 base services，否则会把另一个工作区的未读状态清掉。
+          // With the remote workspace disconnected, do not fall back by the same workspacePath to
+          // another remote session or local base services -- that would clear another workspace's
+          // unread state.
           rollbackTaskQueryCacheUnread(targetTask, previousUnreadAt);
-          logger.warn(
-            `[App] 选择 task 时跳过未读持久化，远程 workspace 未连接 workspace=${targetWorkspacePath} taskId=${taskId}`,
-          );
+              logger.warn(
+                `[App] skipped unread persist on task select; remote workspace disconnected workspace=${targetWorkspacePath} taskId=${taskId}`,
+              );
         } else {
           void targetServices.zcodeTaskService
             .setTaskUnread({
@@ -180,17 +185,17 @@ export function useWorkspaceTaskNavigation({
               markTaskQueryCacheScopesStale([targetTask]);
               bumpTaskListMembershipVersion();
               logger.warn(
-                `[App] 选择 task 时清除未读状态失败 workspace=${targetWorkspacePath} taskId=${taskId}:`,
+                `[App] failed to clear unread on task select workspace=${targetWorkspacePath} taskId=${taskId}:`,
                 error instanceof Error ? error.message : String(error),
               );
             });
         }
       }
 
-      // slashCommands 是 workspace identity 级目录，不是 task projection。
-      // 选择已有 task 时先清空的话，随后却只有 conversation projection 恢复，
-      // composer 读取的 workspace 目录永远得不到回填。这里保留同一 identity 桶；
-      // 冷恢复确实为空时由 workspace catalog 水合独立补齐。
+      // slashCommands is a workspace-identity-level catalog, not a task projection. Clearing it on
+      // selecting an existing task would leave only the conversation projection to restore, and the
+      // composer's workspace catalog would never backfill. Keep the same identity bucket; cold
+      // recovery that is genuinely empty is rehydrated independently by the workspace catalog.
       setActiveTaskId(targetWorkspacePath, taskId, targetWorkspaceIdentity);
       onNavigateToTask?.();
     },
@@ -200,9 +205,10 @@ export function useWorkspaceTaskNavigation({
   const handleOpenAutomations = useCallback(
     (automationId?: string, automationTab?: AutomationsNavigationTab) => {
       const normalizedAutomationId = automationId?.trim() || undefined;
-      // Automations 过去只切换 WorkspaceShellLayout 的本地视图，完全绕过
-      // 浏览器式导航历史，导致顶部前进/后退无法返回或恢复该页面。这里把它作为
-      // workspace 身份隔离的正式导航目标入栈；历史回放只消费条目，不会再次入栈。
+      // Automations used to flip only a WorkspaceShellLayout local view, bypassing browser-style
+      // history entirely, so the header's forward/back could not leave or restore the page. Push it
+      // as a first-class workspace-identity-scoped navigation target; history replay only consumes
+      // entries and never pushes again.
       taskNavPushAutomations(
         workspaceAbsPath,
         workspaceIdentity,
@@ -235,7 +241,7 @@ export function useWorkspaceTaskNavigation({
       )
     ) {
       logger.info(
-        "[App] 模型运行时重建中，忽略任务后退导航 workspace=" +
+        "[App] model runtime rebuilding; ignoring task back navigation workspace=" +
           workspaceAbsPath +
           " stage=" +
           currentWorkspaceState.modelSwitchStage,
@@ -245,8 +251,9 @@ export function useWorkspaceTaskNavigation({
     }
 
     let entry = taskNavGoBack();
-    // 性能修复：task meta 恢复/流式同步会高频刷新 query cache。
-    // 历史导航只在命令执行时需要存在性快照，避免 hook 订阅整张 meta 表导致 shell 重渲染。
+    // Perf: task meta restore/stream sync refreshes the query cache at high frequency, while
+    // history navigation needs an existence snapshot only at command time -- avoid subscribing the
+    // whole meta table and re-rendering the shell.
     const taskMetaByEntityKey = useTaskQueryCacheStore.getState().taskMetaByEntityKey;
     while (entry) {
       const currentEntry = entry;
@@ -294,7 +301,7 @@ export function useWorkspaceTaskNavigation({
         return;
       }
 
-      // 目标 task 已被删除，从历史中清理并继续尝试
+      // Target task deleted; prune it from history and keep trying.
       removeTaskFromNavHistory(currentEntry.taskId);
       entry = taskNavGoBack();
     }
@@ -322,7 +329,7 @@ export function useWorkspaceTaskNavigation({
       )
     ) {
       logger.info(
-        "[App] 模型运行时重建中，忽略任务前进导航 workspace=" +
+        "[App] model runtime rebuilding; ignoring task forward navigation workspace=" +
           workspaceAbsPath +
           " stage=" +
           currentWorkspaceState.modelSwitchStage,
@@ -332,7 +339,8 @@ export function useWorkspaceTaskNavigation({
     }
 
     let entry = taskNavGoForward();
-    // 性能修复：只在前进命令触发时读取最新 query cache，避免 task meta 小更新订阅整棵导航 hook。
+    // Perf: read the latest query cache only when forward is invoked, keeping small task-meta
+    // updates from subscribing this navigation hook wholesale.
     const taskMetaByEntityKey = useTaskQueryCacheStore.getState().taskMetaByEntityKey;
     while (entry) {
       const currentEntry = entry;

@@ -1,4 +1,4 @@
-// 纯工具函数和常量，从 fileDisplay.tsx 提取以控制文件行数
+// Pure helpers and constants, extracted from fileDisplay.tsx to keep that file's size in check.
 
 export const DEFAULT_FILE_ICON_NAME = "document";
 
@@ -69,16 +69,18 @@ const FILE_NAME_ICON_ALIASES: Record<string, string> = {
   yarn: "yarn",
 };
 
-// material-icons 里的图标名和文件扩展名并不总是一一对应，
-// 比如 tsx 实际素材叫 react_ts 而不是 react_tsx。这里集中做 alias，避免 mention panel 和输入框 token 出现扩展名对不上图标的问题。
+// material-icons names do not always match file extensions one to one -- the tsx asset is
+// actually react_ts, not react_tsx. Centralize the aliases so mention-panel and input-token
+// icons always match their extension.
 const EXTENSION_ICON_ALIASES: Record<string, string> = {
   backup: "document",
   bash: "console",
   cjs: "javascript",
   cts: "typescript",
   css: "css",
-  // Office 扩展名与 Material Icons 素材名不一致，直接用扩展名拼路径会选错图标；
-  // 这里显式收敛到同一套产品语义，旧版与新版 Word 文件也共用 word 图标。
+  // Office extensions do not match the Material Icons asset names; building the path from
+  // the extension picks the wrong icon. Converge on the shared product semantics, with
+  // legacy and modern Word files alike using the word icon.
   doc: "word",
   docx: "word",
   go: "go",
@@ -145,9 +147,10 @@ export function resolveIconName(filePath: string): string {
 
   const fileNameAliasCandidates = new Set<string>([normalizedLeaf, fileNameWithoutExtension]);
 
-  // 之前只会匹配完整文件名和"去掉最后一个扩展名"的结果，
-  // 像 vitest.config.ts / tsconfig.base.json / .env.local 这类多段文件名会提前退回扩展名图标，
-  // 导致配置文件语义丢失。这里逐段回退 stem，让常见配置文件能稳定命中更准确的图标。
+  // Matching used to cover only the full name and the "strip last extension" result, so
+  // multi-dot names like vitest.config.ts / tsconfig.base.json / .env.local fell back to
+  // the plain extension icon and lost their config-file semantics. Walk the stems so common
+  // config files reliably hit their more specific icon.
   let stemCandidate = fileNameWithoutExtension;
   while (stemCandidate.includes(".")) {
     stemCandidate = stemCandidate.slice(0, stemCandidate.lastIndexOf("."));

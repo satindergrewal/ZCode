@@ -62,7 +62,7 @@ async function requestPermission(
   options?: PermissionBrokerRequestOptions,
 ): Promise<PermissionBrokerResult> {
   const permissionOptions = buildProtocolPermissionOptions(request);
-  // v3 反向 RPC 的选项列表：会话免确认只在 v4 投放（旧桌面回传 response 原文，认不出会话语义）。
+    // The v3 reverse-RPC option list: session no-confirm ships in v4 only (legacy desktops return the response verbatim and cannot parse session semantics).
   const legacyPermissionOptions = buildProtocolPermissionOptions({
     ...request,
     optionsPolicy: toLegacyPermissionOptionsPolicy(request.optionsPolicy),
@@ -89,8 +89,8 @@ async function requestPermission(
         zcodePermissionResponseSchema,
         withInteractionRequestRecovery(options, signal),
       ),
-    // v4 answer → ZCodePermissionResponse：optionId 语义来自 v4 reducer 合成的
-    // allowOnce/allowAlways/deny（见 product-projection onPermissionRequested）。
+        // v4 answer -> ZCodePermissionResponse: optionId semantics come from the v4 reducer's synthesized
+        // allowOnce/allowAlways/deny (see product-projection onPermissionRequested).
     (answer) => {
       const response = v4AnswerToPermissionResponse(answer, permissionOptions, request.toolName);
       return response.decision === "deny" && answer.freeText?.trim()
@@ -124,8 +124,8 @@ async function requestPermission(
   );
   return {
     ...response,
-    // 兼容原因：legacy 客户端允许省略 reason；普通用户拒绝仍需向模型明确工具未执行，
-    // 否则 core 会回退为通用的 `Permission denied for <tool>`，无法阻止绕过式尝试。
+        // Legacy compat: legacy clients may omit reason; a plain user rejection must still tell the model the tool did not run,
+        // or core falls back to the generic `Permission denied for <tool>` and bypass attempts go unblocked.
     ...(response.decision === "deny" && !response.reason?.trim()
       ? { reason: PERMISSION_DENIED_BY_USER_CONTENT }
       : {}),
@@ -134,15 +134,15 @@ async function requestPermission(
 }
 
 /**
- * v4 permission 应答映射：优先按 optionId 精确匹配 buildProtocolPermissionOptions
- * 合成的选项（allow_project 携带 permissionUpdates 持久化规则，不能丢）；投影侧
- * 合成的 allowAlways 语义等价 allow_project。未知 optionId 按 deny 兜底——权限
- * 语义下宁可拒绝也不放行未知应答。
+  * The v4 permission-answer map: prefer exact-matching, via optionId, the options built by buildProtocolPermissionOptions
+  * (allow_project carries permissionUpdate rules -- never drop); the projection-side
+  * allowAlways is semantically equal to allow_project. Unknown optionIds fall back to deny -- in permission
+  * semantics, reject rather than admit an unknown answer.
  *
- * workflow Refine：该选项只在 v4 投影
- * 合成、不进 legacy 选项列表，所以在精确匹配之前特判。freeText 为空、或非
- * CreateWorkflow 工具伪造该 optionId，都落到既有 deny 兜底且不带 reasonSource——
- * 反馈升级为 user message 的通道必须只对真实用户输入开放。
+  * Workflow Refine: that option is synthesized only in the v4
+  * projection, never in the legacy list, so special-case it before exact matching. Empty freeText, or a
+  * non-CreateWorkflow tool faking the optionId, falls to the deny fallback without reasonSource --
+  * the feedback-as-user-message channel opens only to real user input.
  */
 function v4AnswerToPermissionResponse(
   answer: V4InteractionAnswer,
@@ -169,8 +169,8 @@ function v4AnswerToPermissionResponse(
     if (exact.kind === "deny") {
       return { decision: "deny", reason: buildPermissionDeniedContent(answer.freeText) };
     }
-    // 会话免确认：会话语义在这里合成，而不是放进
-    // option.response——wire 上 zcodePermissionUpdateSchema 是 strict，旧桌面多一个字段就丢事件。
+        // Session no-confirm: session semantics are synthesized here, not put into
+        // option.response -- the wire's zcodePermissionUpdateSchema is strict; one extra field and legacy desktops drop the event.
     if (exact.kind === SESSION_ALLOW_PERMISSION_OPTION_KIND) {
       return {
         ...exact.response,
@@ -188,7 +188,7 @@ function v4AnswerToPermissionResponse(
   if (answer.optionId === "allowOnce") {
     return { decision: "allow", reason: "Approved once" };
   }
-  // deny/rejectOnce/rejectAlways、未知 optionId、无 optionId 全部落 deny。
+    // deny/rejectOnce/rejectAlways, unknown optionId, no optionId: all land on deny.
   return { decision: "deny", reason: buildPermissionDeniedContent(answer.freeText) };
 }
 
@@ -232,9 +232,9 @@ async function requestUserInput(
         zcodeUserInputResponseSchema,
         withInteractionRequestRecovery(options, signal),
       ),
-    // v4 答 AskUserQuestion：freeText/optionId 落到单题 answer 槽位
-    // （normalizeAskUserQuestionResponseContent 的 content.answer 兼容路径）；
-    // deny 落 decline。多题场景等 v4 投影建模 userInput kind 后再精确映射。
+        // v4 answering AskUserQuestion: freeText/optionId land in the single-question answer slot
+        // (normalizeAskUserQuestionResponseContent's content.answer compat path);
+        // deny becomes decline. Multi-question mapping waits for the v4 projection to model the userInput kind.
     (answer) => v4AnswerToUserInputResponse(answer),
     createInteractionRegistrationOptions(
       request,
@@ -248,9 +248,9 @@ async function requestUserInput(
 }
 
 function v4AnswerToUserInputResponse(answer: V4InteractionAnswer): ZCodeUserInputResponse {
-  // answer.action 存在（host adapter respondElicitation 收敛路径）
-  // 时按旧 respondUserInput 语义精确直传——content 携带多题 answers/annotations，
-  // normalizeAskUserQuestionResponseContent 继续负责 schema 收敛。
+    // With answer.action present (the host adapter's respondElicitation convergence path),
+    // pass through per legacy respondUserInput semantics -- content carries multi-question answers/annotations,
+    // and normalizeAskUserQuestionResponseContent keeps handling schema convergence.
   if (answer.action) {
     return answer.action === "accept"
       ? { action: "accept", content: answer.content ?? {} }
@@ -293,8 +293,8 @@ async function requestExitPlanModeApproval(
         zcodeUserInputResponseSchema,
         withInteractionRequestRecovery(options, signal),
       ),
-    // v4 答 plan approval：allow 类 optionId = 批准；freeText = 计划反馈
-    // （planApprovalResponseToBrokerResult 走 plan_approval_feedback deny）；否则 decline。
+        // v4 answering plan approval: allow-ish optionIds = approve; freeText = plan feedback
+        // (planApprovalResponseToBrokerResult takes the plan_approval_feedback deny); else decline.
     (answer) => v4AnswerToPlanApprovalResponse(answer),
     createInteractionRegistrationOptions(request, "other"),
   );
@@ -303,8 +303,8 @@ async function requestExitPlanModeApproval(
 }
 
 function v4AnswerToPlanApprovalResponse(answer: V4InteractionAnswer): ZCodeUserInputResponse {
-  // 同 v4AnswerToUserInputResponse——host adapter 收敛路径直传
-  // action/content，planApprovalResponseToBrokerResult 继续做 approve/feedback 归一。
+    // As in v4AnswerToUserInputResponse -- the host adapter convergence path passes
+    // action/content through; planApprovalResponseToBrokerResult keeps normalizing approve/feedback.
   if (answer.action) {
     return answer.action === "accept"
       ? { action: "accept", content: answer.content ?? {} }
@@ -343,12 +343,12 @@ function withInteractionRequestRecovery(
 ): PermissionBrokerRequestOptions & { reannounceIntervalMs: number } {
   return {
     ...options,
-    // v4 竞速：内部 signal 已级联外层 options.signal（见 raceClientRequestWithV4Interaction），
-    // v4 应答命中时经它取消悬空的反向 RPC。
+        // The v4 race: the internal signal already cascades from options.signal (see raceClientRequestWithV4Interaction),
+        // and a v4 hit uses it to cancel the dangling reverse RPC.
     signal,
-    // 桌面/恢复链路里 UI 可能只从 snapshot 恢复出 pending 交互，
-    // 但 host 里原 protocol id 对应的内存登记已丢失。等待用户响应期间按同一业务
-    // requestId 重发现有协议请求，让 host 重新登记可响应的 protocolRequestId。
+        // In desktop/restore flows the UI may restore pending interactions from a snapshot only,
+        // while the host's in-memory entry for the original protocol id is gone. During the wait, re-issue the protocol request under the same business
+        // requestId so the host re-registers an answerable protocolRequestId.
     reannounceIntervalMs: INTERACTION_REQUEST_REANNOUNCE_INTERVAL_MS,
   };
 }
@@ -464,9 +464,9 @@ function normalizeAskUserQuestionResponseContent(
     normalized.annotations = annotations;
   }
 
-  // UI 为兼容旧单题路径会同时提交 answer_0 / answer。
-  // AskUserQuestionInputSchema 是 strict，直接把这些旧字段合并回 tool input 会触发
-  // Tool input failed inputSchema validation，所以这里只保留 schema 明确允许的字段。
+    // For legacy single-question compat the UI submits answer_0 and answer together.
+    // AskUserQuestionInputSchema is strict: merging those legacy fields into the tool input triggers
+    // Tool input failed inputSchema validation, so keep only the schema-sanctioned fields.
   return normalized;
 }
 
@@ -492,8 +492,8 @@ function normalizeAskUserQuestionAnswers(
     }
   });
 
-  // action=accept + content.answers={} 是 runtime 自动继续的显式成功语义；
-  // 必须保留空对象，和 content 完全缺失（旧客户端批准但未提供答案）区分。
+    // action=accept + content.answers={} is the runtime's explicit auto-continue success;
+    // keep the empty object, distinct from content fully absent (a legacy approve without answers).
   if (isRecord(content.answers) && Object.keys(content.answers).length === 0) {
     return {};
   }
@@ -616,8 +616,8 @@ function readAskUserQuestionTexts(input: Record<string, unknown>): string[] {
 
 function normalizeAnswerValue(value: unknown): string | undefined {
   if (typeof value === "string") {
-    // 旧客户端曾用空字符串表示跳过；统一丢弃 blank，避免其进入
-    // answers 后被 core 当作用户偏好。非空答案同时在协议边界去除外围空白。
+        // Legacy clients used an empty string to skip; drop blanks uniformly so they never enter
+        // answers and read as user preference. Non-empty answers are trimmed at the protocol boundary too.
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : undefined;
   }

@@ -48,7 +48,7 @@ interface ProvisioningStateFile {
   readonly records: readonly ProvisioningStateRecord[];
 }
 
-/** 运行在目标 Environment 内的 Provisioning target；负责写正式 Store 并在失败时回滚。 */
+/** The provisioning target running inside the target Environment; writes the formal Store and rolls back on failure. */
 export function createProviderProvisioningTarget(
   options: ProviderProvisioningTargetOptions,
 ): IProviderProvisioningTargetService {
@@ -80,7 +80,7 @@ export function createProviderProvisioningTarget(
         };
 
         try {
-          // 先登记再写入：底层原子写即使在替换完成后才抛错，也必须进入回滚集合。
+          // Register before writing: even if the underlying atomic write throws after replacement, it must join the rollback set.
           applied.settings = true;
           await options.settingService.update({
             providerFamilyDomain: envelope.accountSettings.providerFamilyDomain ?? undefined,
@@ -100,9 +100,9 @@ export function createProviderProvisioningTarget(
 
           applied.personalConfig = true;
           await options.personalRepository.update((current) => {
-            // 其他域写入期间 Personal 可能已被编辑；检查与替换必须在同一个文件锁内。
+            // Personal may be edited while other domains write; check-and-replace share one file lock.
             if (!samePersonalConfig(current, before.personal)) {
-              throw new Error("Personal Provider Config 在同步期间被其它操作修改");
+              throw new Error("Personal Provider Config modified by another operation during sync");
             }
             return personalUpdate;
           });
@@ -116,7 +116,7 @@ export function createProviderProvisioningTarget(
               personalUpdate.defaultModelSelection,
             ).ok
           ) {
-            throw new Error("同步后的远端 Registry 不支持本地默认模型");
+            throw new Error("Remote Registry after sync does not support the local default model");
           }
 
           const result = {
@@ -130,8 +130,8 @@ export function createProviderProvisioningTarget(
           await writeStateFile(options.stateFilePath, appendStateRecord(previousState, result));
           return result;
         } catch (error) {
-          // 回滚前对每个 domain 做 CAS 式校验；若期间已有其它写入，宁可报告
-          // rollback_failed，也不能用过期快照覆盖或删除用户的新配置。
+          // CAS-verify each domain before rollback; with intervening writes, report
+          // rollback_failed rather than overwrite/delete user's newer config from a stale snapshot.
           const rollbackError = await rollback(before, applied, options);
           if (rollbackError) {
             return {
@@ -139,7 +139,7 @@ export function createProviderProvisioningTarget(
               status: "rollback_failed",
               personalProviderCount: before.personal.providers.keys().length,
               credentialCount: envelope.credentials.length,
-              errorMessage: `${formatError(error)}；回滚失败：${formatError(rollbackError)}`,
+              errorMessage: `${formatError(error)}; rollback failed: ${formatError(rollbackError)}`,
               rolledBack: false,
             } satisfies ProviderProvisioningResult;
           }
@@ -172,7 +172,7 @@ interface AppliedProvisioningState {
 }
 
 function parsePersonalConfig(envelope: ProviderProvisioningEnvelope): ProviderConfigLayerUpdate {
-  // 信封与本地保存复用正式 Personal codec，不在接收端另建字段清单或模式判断。
+  // Envelope and local save reuse the formal Personal codec; no field lists or shape guesses at the receiver.
   return decodeProviderConfigFile({ schemaVersion: 1, config: envelope.personalConfig });
 }
 
@@ -214,9 +214,11 @@ async function rollback(
       await options.personalRepository.update((current) => {
         if (samePersonalConfig(current, before.personal)) return current;
         if (!samePersonalConfig(current, applied.personalConfigExpected)) {
-          throw new Error("Personal Provider Config 在同步期间被其它操作修改，跳过回滚");
+          throw new Error(
+            "Personal Provider Config modified by another operation during sync; skipping rollback",
+          );
         }
-        // 默认选择与 Provider/Model 共用一份 CAS；不能分别回滚制造混合状态或覆盖新选择。
+        // Default selection shares one CAS with Provider/Model; never roll back separately into mixed states or over newer choices.
         return before.personal;
       });
     } catch (error) {
@@ -231,7 +233,11 @@ async function rollback(
         continue;
       }
       if (current !== value) {
-        errors.push(new Error(`Credential ${key} 在同步期间被其它操作修改，跳过回滚`));
+        errors.push(
+          new Error(
+            `Credential ${key} modified by another operation during sync; skipping rollback`,
+          ),
+        );
         continue;
       }
       if (previous === null) {
@@ -248,9 +254,13 @@ async function rollback(
       const current = await options.settingService.get();
       const previousSettings = toProvisioningAccountSettings(before.settings);
       if (sameAccountSettings(current, previousSettings)) {
-        // 写入失败发生在落盘前，目标已经处于回滚前的状态。
+        // The write failed before persisting; the target is already in its pre-rollback state.
       } else if (!sameAccountSettings(current, applied.settingsExpected)) {
-        errors.push(new Error("Account Settings 在同步期间被其它操作修改，跳过回滚"));
+        errors.push(
+          new Error(
+            "Account Settings modified by another operation during sync; skipping rollback",
+          ),
+        );
       } else {
         await options.settingService.update({
           providerFamilyDomain: before.settings.providerFamilyDomain,
@@ -302,12 +312,12 @@ function sameAccountSettings(
 function validateCredentialEntries(envelope: ProviderProvisioningEnvelope): void {
   const seen = new Set<string>();
   for (const entry of envelope.credentials) {
-    if (seen.has(entry.key)) throw new Error(`重复 Provisioning Credential key: ${entry.key}`);
+    if (seen.has(entry.key)) throw new Error(`Duplicate provisioning credential key: ${entry.key}`);
     seen.add(entry.key);
     const allowed =
       (entry.scope === "oauth-session" && OAUTH_CREDENTIAL_KEYS.has(entry.key)) ||
       (entry.scope === "account-provider" && isProviderProvisioningAccountCredentialKey(entry.key));
-    if (!allowed) throw new Error(`不允许同步的 Credential key: ${entry.key}`);
+    if (!allowed) throw new Error(`Credential key not allowed for sync: ${entry.key}`);
   }
 }
 

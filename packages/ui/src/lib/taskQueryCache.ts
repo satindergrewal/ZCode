@@ -21,14 +21,14 @@ export interface TaskListCacheDescriptor {
 
 export interface CachedTaskListResult {
   taskKeys: TaskEntityKey[];
-  /** workspace 分页前的完整未读成员；其它列表查询可省略。 */
+  /** Full unread membership before workspace paging; other list queries may omit it. */
   unreadTaskKeys?: TaskEntityKey[];
   searchSnippetsByTaskKey?: Record<TaskEntityKey, string>;
   searchSnippetListsByTaskKey?: Record<TaskEntityKey, string[]>;
   total: number;
   hasMore: boolean;
   fetchedAt: number;
-  /** 每次 query scope 失效都递增；旧异步结果只能提交到它启动时观察到的代次。 */
+  /** Incremented on every query-scope invalidation; stale async results commit only to the generation they observed at start. */
   invalidationVersion: number;
   stale: boolean;
   partial: boolean;
@@ -101,8 +101,8 @@ export function buildTaskListCacheKeyFromDescriptor(
     descriptor.kind,
     descriptor.sortBy,
     descriptor.expanded ? "expanded" : "collapsed",
-    // timeline/show more 会通过 visibleLimit 从 20 提升到 40/60。
-    // 如果缓存 key 不包含 limit，展开后的查询会命中旧首屏缓存并跳过刷新，导致“显示更多”不补数据。
+    // timeline/show-more raises visibleLimit from 20 to 40/60. Without limit in the cache key the
+    // expanded query would hit the old first-screen cache and skip refreshing, so show-more never backfills.
     `limit=${descriptor.visibleLimit ?? "all"}`,
     `search=${descriptor.search}`,
     `workspaces=${workspaceSegment}`,

@@ -105,8 +105,9 @@ async function postRegistration<T>(
 export async function beginFeishuAppRegistration(
   domain: FeishuAppRegistrationDomain = "feishu",
 ): Promise<FeishuAppRegistrationBeginResult> {
-  // Bugfix: 对齐 @larksuiteoapi/node-sdk registerApp：一键创建应用总是先从 Feishu accounts issuer
-  // 获取二维码，Lark 租户在 poll 阶段根据 tenant_brand 再切到 accounts.larksuite.com。
+  // Bugfix: mirror @larksuiteoapi/node-sdk registerApp: one-click app creation always fetches the
+  // QR from the Feishu accounts issuer; Lark tenants switch to accounts.larksuite.com during the
+  // poll phase based on tenant_brand.
   const pollDomain: FeishuAppRegistrationDomain = "feishu";
   const initResponse = await postRegistration<FeishuAppRegistrationInitResponse>(pollDomain, {
     action: "init",
@@ -125,7 +126,7 @@ export async function beginFeishuAppRegistration(
     throw new Error("Feishu app registration did not return a device code.");
   }
   const qrUrl = new URL(beginResponse.verification_uri_complete);
-  // SDK registerApp 使用 from=sdk/source=node-sdk[/source]/tp=sdk；这里保留 zcode 来源方便排查。
+  // SDK registerApp uses from=sdk/source=node-sdk[/source]/tp=sdk; keep the zcode source here for troubleshooting.
   qrUrl.searchParams.set("from", "sdk");
   qrUrl.searchParams.set("source", FEISHU_APP_REGISTRATION_SOURCE);
   qrUrl.searchParams.set("tp", "sdk");

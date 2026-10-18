@@ -4,7 +4,7 @@ import { logger } from "@/logger.js";
 
 const WATCH_DEBOUNCE_MS = 300;
 
-/** workspacePath 可能是 Windows 路径；沿用它自己的分隔符拼子目录，别把 `/` 混进 `\\` 路径。 */
+/** workspacePath may be a Windows path; join the subdirectory with its own separator, never mixing "/" into "\\" paths. */
 function savedWorkflowsDirectoryPath(workspacePath: string): string {
   const separator = workspacePath.includes("\\") && !workspacePath.includes("/") ? "\\" : "/";
   const trimmed = workspacePath.replace(/[\\/]+$/u, "");
@@ -12,13 +12,15 @@ function savedWorkflowsDirectoryPath(workspacePath: string): string {
 }
 
 /**
- * 目录监听：对话里 SaveWorkflow 落盘后中枢自动更新。
- * 目录不存在时 watch 会失败——那是常态（大多数项目没保存过工作流），静默跳过，靠切标签 / 手动
- * 刷新补上。非递归：只看这一层（Linux 上递归 fs.watch 有既知问题）。服务实例变化（远程重连）时
- * effect 依赖变化会拆掉旧 watcher 重建，旧 host 的 id 不会泄漏。
+ * Directory watch: the hub refreshes automatically once SaveWorkflow persists during a conversation.
+ * A missing directory makes watch fail — that is normal (most projects never saved a workflow);
+ * skip silently and rely on tab switches / manual refresh. Non-recursive: this level only
+ * (recursive fs.watch has known issues on Linux). When the service instance changes (remote
+ * reconnect), effect deps tear down the old watcher and rebuild; no stale host id leaks.
  *
- * 项目组传 `workspacePath`（拼出 `<ws>/.zcode/workflows`）；全局组传 `directory`（协议 list 回的
- * 绝对目录，即 `~/.zcode/workflows`），二者择一——`directory` 优先。
+ * Project groups pass `workspacePath` (joined into `<ws>/.zcode/workflows`); the global group passes
+ * `directory` (the absolute dir from the protocol list, i.e. `~/.zcode/workflows`). Mutually
+ * exclusive — `directory` wins.
  */
 export function useSavedWorkflowsDirectoryWatch({
   fileWatcherService,
@@ -59,7 +61,7 @@ export function useSavedWorkflowsDirectoryWatch({
         });
       })
       .catch((error: unknown) => {
-        logger.debug("[SavedWorkflows] 监听 .zcode/workflows 失败（目录可能尚不存在）", {
+        logger.debug("[SavedWorkflows] Failed to watch .zcode/workflows (directory may not exist yet)", {
           path: directoryPath,
           error: error instanceof Error ? error.message : String(error),
         });

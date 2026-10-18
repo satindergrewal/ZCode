@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- turn group 需要在同一处维护普通 assistant 与后台结果的严格行序，拆分会重复 actions/preview/tail 协议。 */
+/* eslint-disable max-lines - the turn group keeps strict row order across ordinary assistant and background results in one place; splitting would duplicate the actions/preview/tail protocol. */
 import { useIsOfficeMode } from "@/hooks/useInterfaceMode.js";
 import { Fragment, memo, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { ChevronRightIcon } from "lucide-react";
@@ -90,7 +90,7 @@ import { toolCallRowToLegacyNode } from "@/v4/toolCallRowAdapter.js";
 
 interface ConversationTurnGroupProps {
   unit: ConversationTurnRenderUnit;
-  /** 仅由 Timeline 注入给当前 live turn；历史 turn 永远不携带运行时 retry。 */
+  /** Injected by the Timeline for the live turn only; historical turns never carry a runtime retry. */
   apiRetry?: ApiRetryState | null;
   context: ConversationRowRenderContext;
   onFork?: (target: ConversationRowTarget) => void;
@@ -102,7 +102,7 @@ interface ConversationTurnGroupProps {
     attachments?: readonly AttachmentRef[],
     workspaceMode?: "preserve" | "rewind",
   ) => Promise<CommandAck | boolean | void> | CommandAck | boolean | void;
-  /** 分享选择阶段在正文左侧显示本轮勾选入口。 */
+  /** During share selection, shows the this-turn checkbox entry left of the body. */
   shareSelection?: {
     eligibleRowIds: ReadonlySet<number>;
     selectedRowIds: ReadonlySet<number>;
@@ -126,8 +126,8 @@ const MIN_VISIBLE_API_RETRY_ATTEMPT = 3;
 
 function toRetryStatus(apiRetry: ApiRetryState): ZCodeApiRetryStatus {
   const attempt = Math.max(1, Math.floor(apiRetry.attempt));
-  // v4 maxAttempts 包含首次请求，而展示口径是重试次数；直接展示会把
-  // 默认 10 次重试写成 1/11。
+  // v4 maxAttempts includes the first request while the display counts retries; raw display
+  // would render the default 10 retries as 1/11.
   const maxRetries = Math.max(Math.floor(apiRetry.maxAttempts) - 1, attempt);
   return {
     kind: "api_retry",
@@ -148,9 +148,9 @@ function TurnChatLoadingSlot({
 }) {
   const { intl, locale } = useZCodeIntl();
   const retryStatus = useMemo(() => (apiRetry ? toRetryStatus(apiRetry) : null), [apiRetry]);
-  // 前两次短暂恢复对用户等价于普通加载；保留 apiRetry 运行态，但只在
-  // 第三次重试开始后显示计数。必须在 retry/loading 分支前收敛，否则会留下空 slot，
-  // 而不是回退到 ChatLoading。
+  // The first two brief recoveries equal ordinary loading; keep the apiRetry running state but show
+  // the counter from the third retry on. Converge before the retry/loading branches, or an empty slot
+  // remains instead of falling back to ChatLoading.
   const visibleRetryStatus =
     retryStatus && retryStatus.attempt >= MIN_VISIBLE_API_RETRY_ATTEMPT ? retryStatus : null;
   if (!visibleRetryStatus && !eligible) return null;
@@ -159,8 +159,8 @@ function TurnChatLoadingSlot({
       {visibleRetryStatus ? (
         <ChatApiRetryStatus apiRetry={visibleRetryStatus} intl={intl} locale={locale} />
       ) : (
-        // running 是 ChatLoading 的权威事实；额外静默计时会让 projection
-        // 更新反复重启可见性，并使 UI 晚于真实状态。
+        // running is the authoritative ChatLoading fact; extra silent timing lets projection
+        // updates restart visibility repeatedly, lagging the real state.
         <ChatLoading loading data-testid={TID_CHAT_LOADING} size="sm" />
       )}
     </div>
@@ -174,8 +174,8 @@ function ConversationExploreGroupRow({
   item: Extract<ConversationAssistantWorkRenderItem, { kind: "exploreGroup" }>;
   context: ConversationRowRenderContext;
 }) {
-  // explore 分组行已经处在 turn 容器的统一边距内，单独再加 px-4
-  // 会让同一串工具调用有的内缩、有的不内缩。
+  // Explore group rows already sit in the turn-container uniform margin; another px-4
+  // would indent some calls of the same run and not others.
   return (
     <div
       data-row-id={item.rowId}
@@ -251,8 +251,8 @@ function ConversationToolGroupRow({
         onOpenFileLink={context.onOpenFileLink}
         onOpenBrowserUrl={context.onOpenBrowserUrl}
         onOpenAutomationsMain={context.onOpenAutomationsMain}
-        // history/background 兼容路径只传虚拟父节点时，已被分组投影消费的
-        // Assistant message / reasoning 没有交给 renderer，展开后会永久丢失。
+        // The history/background compat path passing only the virtual parent drops already
+        // group-consumed Assistant message/reasoning from the renderer, lost on expand.
         cuaGroupEvents={visibleCuaEvents}
         renderCuaAssistantMessage={item.kind === "cuaGroup" ? renderAssistantMessage : undefined}
         renderCuaReasoning={item.kind === "cuaGroup" ? renderReasoning : undefined}
@@ -327,7 +327,7 @@ function ConversationAssistantWorkItems({
   rows: readonly AssistantWorkRow[];
   context: ConversationRowRenderContext;
   stageTailIsRunning?: boolean;
-  /** running turn 的正文可能暂时落在 history renderer，仍需隐藏特化协议原文。 */
+  /** A running-turn body may transiently live in the history renderer; still hide specialized protocol verbatim. */
   assistantCodeCommentProjectionEnabled?: boolean;
   historyContainer?: {
     chunkKey: string;
@@ -368,15 +368,15 @@ function ConversationAssistantWorkItems({
     ],
   );
 
-  // history 外壳不能在这层投影前创建：当 CUA 消费原 message
-  // 或运行中 shell 被延迟分类时，会留下 pt-5 和空的 gap-4 容器。只有确认
-  // 内层存在可渲染项后才创建 CollapsibleContent，让外壳与内容一起消失。
+  // The history shell must not project before this layer: when CUA consumes the raw message
+  // or a running shell classifies late, a pt-5 + empty gap-4 container remains. Create CollapsibleContent
+  // only once inner renderables exist, so shell and content vanish together.
   if (items.length === 0) {
     return null;
   }
 
-  // 连续工作项（工具/explore/reasoning）统一 gap-4 组容器（对齐旧版 tool-call-group），
-  // 取代继承父级 gap-5/gap-2 + 每行 py-2 的双重且不一致的间距。
+  // Consecutive work items (tools/explore/reasoning) share one gap-4 group container (legacy tool-call-group parity),
+  // replacing the inherited gap-5/gap-2 + per-row py-2 double inconsistent spacing.
   const content = (
     <div className="flex flex-col gap-4">
       {items.map((item) =>
@@ -427,8 +427,8 @@ function resolveCronAutomationTurnCards(
     if (normalizedToolName === "crondelete") {
       const deletedAutomationId = readCronDeleteAutomationId(row);
       if (deletedAutomationId) {
-        // 只累计本轮成功的 Create/Update 会忽略后续 CronDelete，导致已经
-        // 撤销的中间结果仍被提升成轮尾成功卡片。
+        // Counting only this-turn successful Create/Update ignores later CronDelete, promoting already
+        // withdrawn intermediate results into the turn-tail success card.
         cards = cards.filter((card) => card.automation.automationId !== deletedAutomationId);
       }
       continue;
@@ -457,8 +457,8 @@ function resolveCronAutomationTurnCards(
   return cards;
 }
 
-// 只收本轮 status==="success" 的 OffPeakCreate；同 id 重复输出保留最新一次。
-// 刻意不复用 resolveCronAutomationTurnCards——那套带 CronDelete 撤销过滤语义，闲时无对应工具。
+// Only this-turn status=success OffPeakCreate; same-id duplicates keep the newest.
+// Deliberately not resolveCronAutomationTurnCards - that one carries CronDelete withdraw semantics; idle has no such tool.
 function resolveOffPeakTurnCards(rows: readonly AssistantWorkRow[]): OffPeakTurnCard[] {
   let cards: OffPeakTurnCard[] = [];
 
@@ -658,9 +658,9 @@ function ConversationWorkSegmentFlow({
     <Collapsible
       open={open}
       onOpenChange={segment.assistantHistoryDefaultOpen ? undefined : setHistoryOpen}
-      // 外层 flex gap 不属于 Radix 测量的 content 高度，收起到 0 后会在
-      // display:none 的最后一帧再少 20px。普通兄弟用外边距保持原盒模型，history
-      // 的间距则放进动画层。
+      // The outer flex gap is not Radix-measured content height; collapsing to 0 loses
+      // another 20px on the last display:none frame. Siblings keep the box model via margins;
+      // history spacing moves into the animation layer.
       className="history-message flex flex-col [&>*+*:not([data-slot='collapsible-content'])]:mt-5"
     >
       {segment.flowItems.map((item, index) => {
@@ -795,8 +795,8 @@ function ConversationTurnFlow({
   shareSelectionToggle?: ReactNode;
   shareSelectionRowId?: number;
 }) {
-  // 产品语义：可见正文或工具不代表主轮已经结束；ChatLoading 跟随最后一轮
-  // running 生命周期，但等待用户回答/授权时由交互 UI 独占进度反馈。
+  // Product semantics: visible body/tools do not end the main turn; ChatLoading follows the last
+  // running lifecycle, but awaiting user answer/consent hands progress to the interaction UI.
   const showLoading = shouldShowTurnChatLoading({
     blockedByActiveWork: context.chatLoadingBlockedByActiveWork === true,
     blockedByInteraction: context.chatLoadingBlockedByInteraction === true,
@@ -838,7 +838,7 @@ function ConversationTurnFlow({
         ? [
             {
               ...projectedWorkSegments[0]!,
-              // 兼容仍直接构造/覆写旧 render unit 的调用方；真实 guide 多段不走这个分支。
+              // Compat for callers still building/overwriting the legacy render unit; real multi-guide never takes this branch.
               assistantHistoryDefaultOpen: unit.assistantHistoryDefaultOpen,
             },
           ]
@@ -867,8 +867,8 @@ function ConversationTurnFlow({
   const canRetryLatestAssistant = latestAssistantTextRow?.actions?.canRetry === true;
   const canForkLatestAssistant = latestAssistantTextRow?.actions?.canFork === true;
 
-  // 即使恢复了 guide 的 row 全序，也不能让所有 history chunk 共享同一个
-  // Collapsible。accepted guide 现在由 CLI workSegments 定界，每段组件自行维护折叠状态。
+  // Even with guide row order restored, history chunks must not share one
+  // Collapsible: accepted guides are CLI workSegments-bounded; each segment owns its collapse state.
   return (
     <div className="flex flex-col gap-5">
       {workSegments.map((segment) => (
@@ -897,17 +897,17 @@ function ConversationTurnFlow({
 }
 
 /**
- * 能撑起「后台结果头」这套渲染的来源白名单。
+ * The source allowlist that may render the background-result header.
  *
- * 这里刻意仍是白名单而不是直接信任 schema：`originMeta` 在 userInputRow 上是 optional，
- * 跨版本仍可能出现第四个取值，而没见过的来源拿不到合适的标题语义，退回普通 assistant
- * 分支比谎报一个标题好。
+ * Deliberately an allowlist, not schema trust: originMeta is optional on userInputRow; a fourth
+ * value may appear across versions, and an unknown source has no title semantics - the plain assistant
+ * branch beats a lying title.
  *
- * workflow run 的 `backgroundSource` 是 `"workflow"`（CLI 侧
- * `background-tasks.ts` 在 CreateWorkflow 终态上报，title 由 `workflowTaskSubject` 铸造），
- * 原本落在白名单外，于是一条 run 跑完之后那一轮**既没有标题、也退化成按工时折叠的普通
- * assistant 段落**——后台结果分组整个消失。标题不需要本地化：它由 CLI 权威给出，
- * bash / subagent 同样直接透传。
+ * A workflow run backgroundSource is workflow (CLI background-tasks.ts reports at CreateWorkflow
+ * terminal, title minted by workflowTaskSubject) - outside the allowlist: after a run finished the turn
+ * had neither title nor the time-collapsed plain assistant treatment; the whole background-result group vanished.
+ * The title needs no localization: CLI-authoritative, passed through like bash/subagent.
+ * bash/subagent pass through untouched as well.
  */
 const BACKGROUND_RESULT_TITLE_SOURCES: ReadonlySet<string> = new Set([
   "bash",
@@ -926,11 +926,11 @@ function resolveBackgroundResultTitle(unit: ConversationTurnRenderUnit): string 
 }
 
 /**
- * 该轮是否以 workflow 通知卡（ToolLayout 行）开头。
+ * Whether the turn opens with a workflow notification card (ToolLayout row).
  *
- * 用于两处：`ConversationBackgroundResultWork` 决定渲染通知行还是裸标题行；轮容器决定是否
- * 去掉轮顶 `pt-14`。后台结果轮没有可见的 user 行，通知卡就是轮内第一个节点——若照常保留
- * 轮顶 padding，卡片上方会叠出 56px + 上一轮 pb-5 共约 76px 的空白，用户判为多余。
+ * Two uses: ConversationBackgroundResultWork picks notification vs bare title row; the turn container drops
+ * the top pt-14. A background-result turn has no visible user row - the card is the first node; keeping
+ * the padding stacks about 56px + previous pb-5 (76px) of blank, read as superfluous.
  */
 function resolveWorkflowNotification(
   unit: ConversationTurnRenderUnit,
@@ -986,15 +986,15 @@ function ConversationBackgroundResultWork({
     fetchFileChanges: context.fetchFileChanges,
   });
 
-  // 后台结果已经由独立唤醒轮总结过；复用普通 assistant 的工时折叠
-  // 会显示不准确的分段耗时，并让一段短总结产生没有意义的收起状态。
+  // Background results were summarized by their own wake turn; the plain assistant time-collapse
+  // would show wrong segment durations and give a short summary a meaningless collapsed state.
   //
-  // workflow run 的 workflow 通知带结构化载荷时改渲染既有工具卡语法的通知行（替换裸标题行）；
-  // 载荷缺席（批量轮、旧 transcript、bash/subagent）→ 原样退回标题行。
+  // With a structured payload, the workflow notification renders the existing tool-card notification row (replacing the bare title);
+  // payload absent (batch turns, old transcripts, bash/subagent) -> fall back to the title row.
   const workflowNotification = resolveWorkflowNotification(unit);
   const workflowRunId = unit.header?.originMeta?.workId;
-  // 打开 run 详情：宿主注入 onOpenWorkflowRun + 联查到 toolCallId 才可点；冷恢复查不到时
-  // 展开体内不渲染链接。toolCallId 走投影/journal 联查表，与 CreateWorkflow 工具卡同一条打开路径。
+  // Open run details: clickable only with host-injected onOpenWorkflowRun + joined toolCallId; when cold recovery
+  // finds none, no link renders. toolCallId via the projection/journal join, the CreateWorkflow-card open path.
   const workflowRunSummary =
     workflowNotification && workflowRunId
       ? context.workflowRunByRunId?.get(workflowRunId)
@@ -1017,15 +1017,15 @@ function ConversationBackgroundResultWork({
     workflowNotification && workflowRunId
       ? context.workflowRunPendingQuestionsByRunId?.get(workflowRunId)
       : undefined;
-  // 产物 chip → 全尺寸查看 tab。门比 `openWorkflowRun` 松一格：产物 tab 只需要
-  // (parentSessionId, runId, artifactId)，**不需要** toolCallId——它不画因果图，也就不必
-  // 回到那条 CreateWorkflow 工具行。冷恢复后联查不到 toolCallId 的通知行因此仍能开产物。
+  // Artifact chip -> full-size viewer tab. One gate looser than openWorkflowRun: the artifact tab needs
+  // only (parentSessionId, runId, artifactId), never toolCallId - no causality graph, so no
+  // return to the CreateWorkflow row. Post-cold-recovery notifications without a join still open artifacts.
   const openWorkflowArtifact =
     workflowNotification && workflowRunId && context.onOpenWorkflowArtifact && context.sessionId
       ? (artifactId: string) => {
-          // 载荷里那一枚的 `contentType`（终态通知才有产物清单）：宿主据它决定 html 产物
-          // 直接开浏览器 tab 还是开产物 tab，所以这里带得到就带上。载荷刻意不带 `sourcePath`
-          // （状态帧体积），宿主缺席时自己查 journal 补。
+          // The payload entry contentType (terminal notifications only): the host decides html artifacts
+          // open as browser tab or artifact tab, so carry it when present. The payload omits sourcePath
+          // (state-frame size) on purpose; the host journal-fills when absent.
           const contentType =
             workflowNotification.kind === "terminal"
               ? workflowNotification.artifacts?.find((candidate) => candidate.id === artifactId)
@@ -1149,8 +1149,8 @@ function ConversationTurnGroupImpl({
     () =>
       codeCommentCardsEnabled &&
       assistantRawCopyText !== undefined &&
-      // 卡片与 zcode-file-citation 的预览卡片保持一致：流式期间只投影正文，
-      // 只有终态 row 才生成卡片，避免运行中卡片先出现又因模型续写而回滚。
+      // Card parity with zcode-file-citation previews: stream body only while running;
+      // terminal rows mint cards, so a running card never appears then rolls back on continuation.
       (latestAssistantTextRow?.state === "complete" ||
         latestAssistantTextRow?.state === "interrupted")
         ? buildAssistantCodeCommentCards(assistantRawCopyText, context.workspacePath, 50, {
@@ -1169,9 +1169,9 @@ function ConversationTurnGroupImpl({
     () => (unit.isRunning ? [] : resolveCronAutomationTurnCards(unit.assistantWorkRows)),
     [unit.assistantWorkRows, unit.isRunning],
   );
-  // 上方已是工具摘要；下方运行卡在联接到 run 后立即显示，不能再等主代理回复结束。
-  // 依赖联接表保持实时更新，并由解析器按 runId 去重。直接启动轮
-  // 的 run 卡也从这里出：那一轮没有用户气泡、没有助手内容，run 卡就是它的全部呈现。
+  // Tool summary above; the running card shows as soon as it joins the run, not after the reply ends.
+  // The join table stays live and the resolver dedupes by runId. Direct-launch turns
+  // emit here too: no user bubble, no assistant content - the run card is the whole presentation.
   const workflowRunByToolCallId = context.workflowRunByToolCallId;
   const workflowRunByRunId = context.workflowRunByRunId;
   const workflowGraphByToolCallId = context.workflowGraphByToolCallId;
@@ -1184,8 +1184,8 @@ function ConversationTurnGroupImpl({
       }),
     [unit, workflowGraphByToolCallId, workflowRunByRunId, workflowRunByToolCallId],
   );
-  // 完成卡：主代理消化 completed 通知的那一轮，轮尾落卡。
-  // 同一条门（轮结束）；联接只认 byRunId——通知轮里没有 CreateWorkflow 行可按 toolCallId 联。
+  // Completion card: the turn digesting the completed notification, at the turn tail.
+  // Same gate (turn ended); the join is byRunId only - no CreateWorkflow row to join by toolCallId.
   const workflowTurnCompletion = useMemo(
     () =>
       unit.isRunning
@@ -1202,10 +1202,10 @@ function ConversationTurnGroupImpl({
     latestAssistantTextRow?.state === "complete" &&
     assistantCopyText !== undefined;
   const hasHookActions =
-    // Hook action 与 copy/feedback/fork 共用 turn eligibility；
-    // timelineOnly 维护 turn（compact/modelChange marker 轮）即使带历史遗留的
-    // didExecute=true Hook row 也不得露出图标，否则 /compact 轮会凭 SessionStart
-    // Hook 误挂出一个不可解释的操作栏。
+    // Hook actions share turn eligibility with copy/feedback/fork;
+    // timelineOnly-maintained turns (compact/modelChange markers) even with legacy
+    // didExecute=true Hook rows must not show icons, or a /compact turn hangs an unexplainable
+    // action bar off a SessionStart Hook.
     !unit.timelineOnly &&
     !unit.isRunning &&
     unit.hookInvocations.some((row) => row.executions.some((execution) => execution.didExecute));
@@ -1234,7 +1234,7 @@ function ConversationTurnGroupImpl({
     return { enabled: true, reason: "available" };
   }, [unit.header?.actions?.canRewindFiles, unit.header?.fileChanges, unit.isRunning]);
 
-  // workflow 通知卡开头的轮去掉轮顶 padding：卡片只贴上一轮 pb-5 的常规流内间距。
+  // Turns opening with a workflow notification card drop the top padding: the card sits in the previous pb-5 flow gap.
   const startsWithWorkflowNotificationCard =
     backgroundResultTitle !== undefined && resolveWorkflowNotification(unit) !== undefined;
 
@@ -1243,9 +1243,9 @@ function ConversationTurnGroupImpl({
         (row) => row.origin === "realUser" && shareSelection.eligibleRowIds.has(row.rowId),
       )
     : [];
-  // 一个 turn 可以有多条 realUser 输入（steer/排队消息），而这里只渲染一个
-  // turn 级 checkbox。用 every() 折叠成布尔值会让部分选中显示为"未选中"，
-  // 用户看到未选中却点一下让计数跳 2。半选必须显式呈现为 indeterminate。
+  // A turn holds several realUser inputs (steer/queued); this renders one
+  // turn-level checkbox. every() folding shows partial selection as unchecked,
+  // and one click then jumps the count by 2. Partial must render indeterminate.
   const shareSelectionSelectedCount = shareSelection
     ? shareSelectionRows.filter((row) => shareSelection.selectedRowIds.has(row.rowId)).length
     : 0;
@@ -1279,7 +1279,7 @@ function ConversationTurnGroupImpl({
             }
             onCheckedChange={(checked) => {
               if (!shareSelection) return;
-              // Radix 从 indeterminate 点击后给出 true，半选状态因此会补齐整个 turn。
+              // Radix yields true after an indeterminate click, completing the whole turn from half-selected.
               if (checked === true) {
                 for (const row of shareSelectionRows) {
                   if (!shareSelection.selectedRowIds.has(row.rowId))
@@ -1316,9 +1316,9 @@ function ConversationTurnGroupImpl({
         />
       ))}
       {hasAssistantTurnContent ? (
-        // deferAssistantActions 后工具栏被移到文件 summary 之后，
-        // 之前 hover group 只包住工具栏自己，导致必须悬停到不可见按钮位置才出现。
-        // 这里把 assistant work、summary 和工具栏放进同一轮 hover 容器，对齐旧版。
+        // After deferAssistantActions the toolbar moves below the file summary; the hover group
+        // wrapped only the toolbar, so hover had to find invisible buttons. Assistant work, summary, and toolbar
+        // now share one turn hover container, legacy parity.
         <div className="group/assistant-turn flex w-full flex-col gap-5">
           {backgroundResultTitle ? (
             <>
@@ -1381,7 +1381,7 @@ function ConversationTurnGroupImpl({
               }
             />
           )}
-          {/* 完成卡：这一轮消化的那条 run 做了什么、花了多少，紧跟最后一段正文。 */}
+          {/* Completion card: what the run digested this turn, and its cost, right after the final body. */}
           {workflowTurnCompletion === undefined ? null : (
             <ConversationWorkflowCompletion
               completion={workflowTurnCompletion}
@@ -1389,22 +1389,22 @@ function ConversationTurnGroupImpl({
               turnKey={unit.key}
             />
           )}
-          {/* 轮尾摘要：这一轮留下在跑的 run，排在完成卡之后、其余轮尾块之前。 */}
+          {/* Turn-tail digest: runs still running from this turn, after the completion card, before other tail blocks. */}
           <ConversationWorkflowDigests
             context={context}
             digests={workflowTurnDigests}
             turnKey={unit.key}
           />
-          {/* CronCreate/CronUpdate 工具本身仍按普通工具行展示；成功卡片属于整轮
-              完成后的结果摘要，必须等回复结束再跟随最终 assistant 正文收尾。 */}
+          {/* CronCreate/CronUpdate tools render as plain tool rows; the success card is the whole-turn
+              result summary and follows the final assistant body once the reply ends. */}
           <CronAutomationTurnCards cards={cronAutomationTurnCards} context={context} />
           <OffPeakTurnCards cards={offPeakTurnCards} context={context} />
           {!isOfficeMode && unit.header?.fileChanges ? (
             <ConversationFileSummaryPanel header={unit.header} context={context} />
           ) : null}
           {unit.browserTurnEndRows.length > 0 ? (
-            // 自动截图表达轮次结束时页面最终状态；放在 assistant work 内会
-            // 穿插到 Website 预览和 file diff 摘要之间。它应是操作栏之前的最后一个内容块。
+            // The auto screenshot states the page at turn end; inside assistant work it would interleave
+            // between Website previews and the file-diff summary. Last content block before the action bar.
             <ConversationAssistantWorkItems
               rows={unit.browserTurnEndRows}
               context={assistantRowContext}
@@ -1412,8 +1412,8 @@ function ConversationTurnGroupImpl({
             />
           ) : null}
           {canRenderAssistantActions && latestAssistantTextRow ? (
-            // 文件 summary 是整轮完成后的聚合结果；轮尾工具栏如果跟着
-            // assistant text 内联渲染，会插到 summary 前面，读起来像 summary 不是本轮收尾。
+            // The file summary is the whole-turn aggregate; an inline turn-tail toolbar would render
+            // before it, reading as if the summary were not the turn close.
             <ConversationAssistantTextActions
               rowId={latestAssistantTextRow.rowId}
               entityId={latestAssistantTextRow.entityId}
@@ -1434,9 +1434,9 @@ function ConversationTurnGroupImpl({
             </MessageActions>
           ) : null}
           {unit.assistantTailRows.length > 0 ? (
-            // turnTailBoundary 之前虽然从工作历史中拆出，却仍在 flow 内渲染，
-            // 使 CronCreate、文件 summary 与操作栏看起来落在 fork 分割线之后。boundary
-            // 必须统一收在全部 turn-local 附属 UI 之后，才是真正的 logical turn 结尾。
+            // turnTailBoundary is extracted from work history yet still renders in flow, so CronCreate,
+            // file summary, and the action bar look post-fork-divider. The boundary must close after all
+            // turn-local adjunct UI - the real logical turn end.
             <ConversationAssistantWorkItems
               rows={unit.assistantTailRows}
               context={assistantRowContext}

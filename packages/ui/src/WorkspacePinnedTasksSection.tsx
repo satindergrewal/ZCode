@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- pinned 列表现在同时承载本地查询、远端主动注入结果和任务操作分发，先集中保持交互一致。 */
+/* eslint-disable max-lines -- the pinned list now handles local queries, push-injected remote results and task action dispatch together to keep behavior uniform. */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import type { ZCodeTaskMeta } from "@zcode/shared";
@@ -268,8 +268,8 @@ export function WorkspacePinnedTasksSection({
         return;
       }
       const { item, services } = current;
-      // unpin 以前等 RPC 返回后才把任务移出 pinned 区，重查期间会出现列表闪烁。
-      // 这里先乐观移动，RPC 失败再把任务恢复为 pinned。
+      // Unpin used to wait for the RPC before removing the row, flickering during refetch.
+      // Move optimistically and restore to pinned only if the RPC fails.
       if (item.workspaceIdentity) {
         useRemotePinnedTaskStore
           .getState()
@@ -372,8 +372,8 @@ export function WorkspacePinnedTasksSection({
     [getCurrentPinnedItemContext],
   );
   const openPinnedItemContextMenu = useCallback((itemKey: string) => {
-    // pinned row handler 按 itemKey 缓存；打开菜单时从 ref 读取最新确认态，
-    // 避免 pendingArchiveItemKey 变化时重建所有 TaskListItem callback。
+    // Pinned-row handlers are cached per itemKey; the menu reads the latest confirmation state
+    // from a ref so pendingArchiveItemKey changes never rebuild every TaskListItem callback.
     if (pendingArchiveItemKeyRef.current === itemKey) {
       setPendingArchiveItemKey(null);
     }
@@ -383,8 +383,8 @@ export function WorkspacePinnedTasksSection({
     (itemKey: string) => {
       let handlers = taskItemHandlersByKeyRef.current.get(itemKey);
       if (!handlers) {
-        // trace 显示 pinned row 的 action props 仍因 map 内联闭包变化。
-        // 每个 itemKey 只创建一次 handler，实际执行时再通过 ref 读取最新 item/services/state。
+        // Traces showed pinned-row action props still changing via inline map closures. Create one
+        // handler per itemKey and read the current item/services/state through refs at call time.
         handlers = {
           onSelectTask: () => {
             selectPinnedItem(itemKey);
@@ -462,9 +462,9 @@ export function WorkspacePinnedTasksSection({
     : null;
 
   if (items.length === 0) {
-    // 切换/加入工作区时 pinned 查询会先进入 loading，但此时没有可展示的数据。
-    // 不能仍渲染“已置顶 + 正在获取任务”，否则侧栏每次切换都出现一次无实际帮助的 loading。
-    // 有缓存数据时继续走下面的正常渲染路径，保持 stale-while-revalidate 的展示体验。
+    // On workspace switch/join the pinned query starts loading with nothing to show yet.
+    // Rendering "pinned + fetching tasks" would flash a useless loader on every switch; with
+    // cached data, fall through to the normal path and keep the stale-while-revalidate feel.
     return null;
   }
 
@@ -556,7 +556,7 @@ export function WorkspacePinnedTasksSection({
                   task={item}
                   isPinned
                   isActive={
-                    // 同路径远端 workspace 可能包含相同 taskId，选中态必须按 workspaceIdentity 隔离。
+                    // Remote workspaces sharing a path can contain the same taskId; selection state must be keyed by workspaceIdentity.
                     buildTaskWorkspaceKey(item.workspacePath, item.workspaceIdentity) ===
                       activeWorkspaceKey && item.taskId === activeTaskId
                   }

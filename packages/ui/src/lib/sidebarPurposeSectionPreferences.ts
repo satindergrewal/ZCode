@@ -123,6 +123,6 @@ export function persistSidebarPurposeSectionPreferences(
       }),
     );
   } catch {
-    // 受限 WebView 或隐私模式可能禁止写 localStorage；偏好写入失败不能阻断侧栏交互。
+    // Restricted WebViews or private mode may block localStorage; a failed preference write never blocks the sidebar.
   }
 }

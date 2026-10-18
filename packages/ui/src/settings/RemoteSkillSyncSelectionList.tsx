@@ -135,8 +135,8 @@ export function RemoteSkillSyncSelectionList({
               </span>
               {row.candidate.description ? (
                 <span className="mt-1 block min-w-0">
-                  {/* Tailwind v4 下 block 会覆盖 line-clamp 所需的 display:-webkit-box；
-                      折叠态不能同时带 block，否则描述仍会按普通文本换行展示。 */}
+                  {/* In Tailwind v4 block overrides line-clamp's display:-webkit-box;
+                      collapsed state must not also carry block, or the description wraps as plain text. */}
                   <span
                     className={`text-ui-base text-foreground-subtle ${
                       descriptionExpanded ? "block whitespace-pre-wrap" : "line-clamp-1"

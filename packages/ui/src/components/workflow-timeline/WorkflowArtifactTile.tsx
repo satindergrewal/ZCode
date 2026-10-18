@@ -10,41 +10,45 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import type { ArtifactPillData } from "./WorkflowArtifactPill.js";
 
 /**
- * 产物瓦片：一件产物 = 预览区 + 说明行。
- * 说明行是产物药丸的语法原样（方形 kind 瓦片、标题、等宽细节、版本尾槽、悬停 ↗ 顶替）；预览区是
- * 产物**本身**的缩略——文档开头的缩放渲染、CSV 的前几行、看板自己——由调用方按 kind 交进来，
- * 交不出来（PDF / 二进制 / 字节没到）就画一张安静的纸页字形。
+ * Artifact tile: one artifact = preview area + caption row.
+ * The caption keeps the artifact-pill grammar (square kind tile, title, mono meta,
+ * version tail slot, hover-to-↗ swap); the preview is the artifact **itself**, miniature —
+ * a scaled doc rendering, the CSV's first rows, the board itself — handed in by the caller
+ * per kind, or a quiet page glyph when it cannot (PDF/binary/bytes not yet here).
  *
- * 药丸是产物在一行里的样子，瓦片是它有地方时的样子。今天只剩一处画它：run 侧板**没有交付物**时的
- * 画廊（130–180px 一列，读得清）。有交付物时其余产物走索引行（`WorkflowArtifactIndex`）——预览
- * 要么读得清，要么不画；曾经的「迷你瓦片」（六列的小框）就是因为读不清才撤的。
+ * The pill is the artifact in a row; the tile is the artifact with room. One remaining
+ * caller: the run side panel's gallery when there is **no deliverable** (130-180px
+ * column, legible). With a deliverable, everything else goes to index rows
+ * (`WorkflowArtifactIndex`) — a preview renders only if legible; the old "mini tiles"
+ * (six-across thumbnails) died for illegibility.
  *
- * ⚠ 术语：artifact = 脚本经 `artifact.*` 发布给用户看的产出。
+ * Terminology: artifact = an output the script published to the user via `artifact.*`.
  *
- * 整张瓦片永远是一颗 `<button>`：宿主没给回调时是**禁用**的按钮（「交付了什么」是事实，「能不能
- * 打开」是能力），与药丸同一条门。
+ * The whole tile is always one `<button>`: without a callback it is a **disabled** one
+ * (what was delivered is fact; openability is capability) — the pill's same gate.
  *
- * 预览框曾是按钮的子节点，而 markdown 缩略里可能有自己的控件（表格的
- * 「复制 Markdown」、文件链接），于是 `<button>` 嵌进了 `<button>`——React 报 DOM 嵌套错误。现在预览
- * 框是按钮的**兄弟**节点并标 `inert`（它是缩略图，不可交互也不进无障碍树），按钮只包说明行，用一个
- * 铺满整张瓦片的 `::after`（`.wf-tile-hit`）接住整块的点击、悬停与焦点；悬停时框的抬起由
- * `.wf-tile:has(.wf-tile-hit:hover)` 驱动。
+ * The preview used to be a child of the button, but markdown thumbnails carry their own
+ * controls (a table's Copy Markdown, file links) nesting button in button — a React DOM
+ * nesting error. Now the preview is a **sibling** marked `inert` (a thumbnail: no
+ * interaction, no a11y tree); the button wraps only the caption, and a tile-filling
+ * `::after` (`.wf-tile-hit`) takes the click/hover/focus. The hover lift is driven by
+ * `.wf-tile:has(.wf-tile-hit:hover)`.
  */
 export interface WorkflowCompletionArtifact extends ArtifactPillData {
   contentType?: string;
   bytes?: number;
   sourcePath?: string;
-  /** 预置看板喂进来的条数；通知载荷上没有，只有活投影 / journal 补过之后才有。 */
+  /** Item count the hydrated board fed in; absent from the notification payload until the live projection/journal backfills. */
   itemCount?: number;
-  /** 预置看板的 spec（只有 journal 带得回来）；预览区据它画图。 */
+  /** The hydrated board's spec (only the journal carries it); the preview renders from it. */
   spec?: unknown;
-  /** 作者写的一两句说明；只有交付物行念它（瓦片放不下）。 */
+  /** The author's one-liner; only the deliverable row speaks it (no room on the tile). */
   description?: string;
-  /** run 的交付物。 */
+  /** The run's deliverable. */
   primary?: true;
 }
 
-/** 内容拿不到时的纸页字形：一张小纸 + 右下角的扩展名徽字。诚实，不装饰。 */
+/** Page glyph for unavailable content: a small sheet + corner extension badge. Honest, not decorative. */
 export function ArtifactSheetGlyph({ badge }: { badge?: string }) {
   return (
     <div className="absolute inset-0 grid place-items-center" data-testid="workflow-artifact-sheet">
@@ -76,14 +80,14 @@ export function WorkflowArtifactTile({
   title: tooltip,
 }: {
   artifact: WorkflowCompletionArtifact;
-  /** 预览区的内容；缺席即纸页字形。 */
+  /** Preview content; absent means the page glyph. */
   preview?: ReactNode;
-  /** 名字之后、尾槽之前的等宽附属信息（`CSV · 6 KB` / `4 items`）。 */
+  /** Mono meta between name and tail slot (`CSV - 6 KB` / `4 items`). */
   detail?: ReactNode;
   onOpen?: (artifactId: string) => void;
   enterDelayMs?: number;
   testId?: string;
-  /** tooltip 覆盖（侧板把工作区出处放进来）；缺席时是「种类词 · 标题」。 */
+  /** Tooltip override (the side panel adds workspace provenance); default is "kind - title". */
   title?: string;
 }) {
   const { intl } = useZCodeIntl();
@@ -99,7 +103,7 @@ export function WorkflowArtifactTile({
 
   return (
     <div className="wf-tile relative flex min-w-0 flex-col gap-1.5" data-variant="tile">
-      {/* 预览框：底部渐隐由预览内容自己决定（文档缩略要「还有」的暗示，看板与图片不要）。 */}
+      {/* Preview frame: the bottom fade is the content's call (doc thumbnails hint more-below; boards and images do not). */}
       <div
         aria-hidden
         className="wf-tile-frame wf-arrive relative aspect-[16/10] w-full overflow-hidden rounded-lg border border-border bg-panel"
@@ -144,7 +148,7 @@ export function WorkflowArtifactTile({
         {showVersion || openable ? (
           <span className="grid size-3 shrink-0 place-items-center [&>*]:col-start-1 [&>*]:row-start-1">
             {showVersion ? (
-              // 按版本重挂：同 id 再发布时尾槽弹入一次（wf-mark 的进场），悬停时让位给 ↗。
+              // Remount by version: a re-publish under the same id plays the tail-slot pop once (wf-mark enter), ceding to the arrow on hover.
               <span
                 className="wf-mark font-mono text-ui-xs leading-none tabular-nums text-foreground-subtlest"
                 data-testid="workflow-artifact-tile-version"

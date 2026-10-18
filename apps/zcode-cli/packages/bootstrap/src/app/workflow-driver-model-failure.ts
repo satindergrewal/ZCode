@@ -1,11 +1,11 @@
 // ============================================================
-// AgentRuntime-backed WorkflowDriver：模型侧失败的收容
+// AgentRuntime-backed WorkflowDriver: containment for model-side failures
 // ============================================================
-// workflow-driver.ts 顶到 oxlint max-lines 上限（400 行），把 turn 被拒时对模型侧错误的
-// 收容（策略表判 stop → 整个 run
-// stopped(provider)；context_exceeded → 节点 ContextLimit 失败；retry / cancelled → 退避重驱）
-// 拆到本文件。自由函数经 {@link ModelFailureHost} 读 driver 的依赖与 sink、回调 runTurn；私有状态
-// 不外露。常量与纯辅助（退避曲线、Retry-After 读取、称呼）住在 workflow-driver-helpers.ts。
+// workflow-driver.ts hit the oxlint max-lines cap (400), so the model-side containment for rejected turns
+// (policy table decides stop -> the whole run
+// stopped(provider); context_exceeded -> the node fails ContextLimit; retry / cancelled -> backoff and re-drive)
+// moves here. Free functions read driver deps/sink and re-call runTurn via {@link ModelFailureHost}; no private
+// state leaks. Constants and pure helpers (backoff curve, Retry-After parsing, salutation) live in workflow-driver-helpers.ts.
 
 import {
   inspectWorkflowModelFailure,
@@ -28,7 +28,7 @@ import {
 } from "./workflow-driver-helpers.js";
 import type { AgentRuntimeWorkflowDriverDeps, SessionState } from "./workflow-driver-types.js";
 
-/** driver 交给收容逻辑的宿主面：依赖、sink、是否已 dispose、以及在同一会话上再起一轮 turn。 */
+/** The host surface handed to the containment logic: deps, sink, disposed flag, and starting another turn on the same session. */
 export interface ModelFailureHost {
   readonly deps: Pick<AgentRuntimeWorkflowDriverDeps, "clock" | "logger" | "runId">;
   readonly sink: WorkflowReportSink;
@@ -37,8 +37,8 @@ export interface ModelFailureHost {
 }
 
 /**
- * turn 被拒时的模型侧收容：driver 与 runner 读同一张策略表。返回 `false` 表示这不是模型层错误
- * （inspect 返回 undefined），调用方按 driver 侧失败处理；返回 `true` 表示已按策略处置。
+  * Model-side containment for rejected turns: driver and runner share one policy table. false = not a model-layer error
+  * (inspect returned undefined), handled by the caller as a driver-side failure; true = handled per policy.
  */
 export function handleModelTurnFailure(
   host: ModelFailureHost,
@@ -50,11 +50,11 @@ export function handleModelTurnFailure(
   if (inspected === undefined) return false;
   switch (inspected.policy.decision) {
     case "stop":
-      // 确定性的模型侧错误：整个 run 停下（stopped(provider)，可恢复），不结算节点。
+            // A deterministic model-side error: stop the whole run (stopped(provider), recoverable) without settling the node.
       host.sink.stopRun(providerStopError(state, inspected, error));
       return true;
     case "context_exceeded":
-      // core 已压缩失败：ask 本身太大，是脚本之错——节点以 ContextLimit 失败，脚本可 catch。
+            // Core compaction failed: the ask itself is too large -- the script's fault. The node fails ContextLimit, catchable by the script.
       host.sink.askFailed(
         instance,
         new WorkflowError(
@@ -66,17 +66,17 @@ export function handleModelTurnFailure(
       );
       return true;
     default:
-      // retry / cancelled：runner 放过来的瞬态失败（流恢复耗尽等）——
-      // 与 runner 的退避同一条曲线，等完再起一轮续跑，只有 cancel 能结束它。
+            // retry / cancelled: transient failures passed through by the runner (stream-recovery exhausted, ...) --
+            // share the runner's backoff curve, wait it out, then start a continuation turn; only cancel ends it.
       scheduleTransientRedrive(host, state, instance, inspected, error);
       return true;
   }
 }
 
 /**
- * 瞬态失败的 driver 侧重驱：per-ask 计数、2s→60s 抖动退避（Retry-After 优先）、先报一条
- * `askWaiting(backoff)` 再等、等待期间尊重取消、然后在同一持久 runtime 上发一轮续跑 turn
- * （与 nudge 同一机制）。无上限——run 级 stall 时钟负责让人知道它在等。
+  * Driver-side re-drive for transient failures: per-ask count, 2s->60s jittered backoff (Retry-After first), announce via
+  * `askWaiting(backoff)` before waiting, honor cancellation while waiting, then send one continuation turn on the same persistent runtime
+  * (the nudge mechanism). Unbounded -- the run-level stall clock is what makes the waiting visible.
  */
 function scheduleTransientRedrive(
   host: ModelFailureHost,
@@ -109,7 +109,7 @@ function scheduleTransientRedrive(
   state.cancelRedrive?.();
   state.cancelRedrive = schedule(() => {
     state.cancelRedrive = undefined;
-    // 等待期间 ask 被取消 / 结算 / 换人：这轮续跑没有听众了。
+        // The ask was cancelled / settled / reassigned while waiting: this continuation has no listener.
     if (
       host.isDisposed() ||
       state.cancelled ||
@@ -124,7 +124,7 @@ function scheduleTransientRedrive(
   }, delayMs);
 }
 
-/** `ProviderStop` 错误：策略表判 stop 的模型侧错误 + 通知文案要的结构化明细。 */
+/** A `ProviderStop` error: a model-side error the policy table stops on, plus the structured detail the notice copy needs. */
 function providerStopError(
   state: SessionState,
   inspected: WorkflowModelFailureInspection,

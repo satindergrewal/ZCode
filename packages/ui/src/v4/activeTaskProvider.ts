@@ -15,12 +15,12 @@ function resolveChatViewActiveTaskProvider(
     return workspaceState.selectedProvider;
   }
 
-  // 输入框里的 $/ 技能列表和 / 面板之前只看 workspace 当前选中的 provider。
-  // 用户一旦切到历史 task、fork task，或 task provider 与 workspace 默认值短暂不一致时，
-  // 面板就会混入别的 agent 技能，连发送前注入的 available_skills 也会跟着跑偏。
-  // 这里统一优先读取当前 task 自己的 provider，让“当前正在看的 task”成为唯一真值。
-  // 另外切换 Agent 成功后，taskListCache 里的旧 provider 可能会晚一拍才刷新；
-  // optimistic meta 才是当前前端刚确认过的最新结果，所以必须先吃 optimistic，图标才会立即切换。
+  // The composer $/ skill list and / panel used to read only the workspace-selected provider.
+  // Switching to a history task, forking, or a transient mismatch between the task provider and the workspace default
+  // mixed in other agents' skills, and even the pre-send available_skills injection went wrong.
+  // Read the current task own provider first, making the task on screen the single truth.
+  // Also, after a successful agent switch the old provider in taskListCache may refresh a beat late;
+  // the optimistic meta is the freshest confirmed result, so consume it first and the icon switches instantly.
   return (
     workspaceState.optimisticTaskListByTaskId[taskId]?.provider ??
     workspaceState.taskListCache?.find((task) => task.taskId === taskId)?.provider ??

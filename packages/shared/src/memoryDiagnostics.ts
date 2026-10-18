@@ -1,8 +1,8 @@
 /**
- * 进程内存本地诊断日志的共用纯逻辑。
+ * Shared pure logic of per-process local memory diagnostics logs.
  *
- * main / renderer / host / agent CLI 四类进程各自采样，但写盘门控、行格式和计数器注册表
- * 只有这一份实现，避免四处各写一套阈值。本文件不依赖 Node / DOM API。
+ * main / renderer / host / agent CLI each sample, but the write gate, line format, and counter registry
+ * have exactly one implementation, so thresholds never diverge. No Node/DOM APIs in this file.
  */
 
 export type MemorySampleRole = "main" | "renderer" | "utility_host" | "agent_node";
@@ -19,26 +19,26 @@ export interface MemorySampleFields {
 
 export interface MemorySample extends MemorySampleFields {
   role: MemorySampleRole;
-  /** `<provider>.<key>` → 数值；只允许纯读取得到的计数。 */
+  /// `<provider>.<key>` -> number; read-only counters only.
   counters: Record<string, number>;
 }
 
 export interface MemorySampleWriteGateOptions {
-  /** heapUsedKb 相对上一次写盘值的变化比例阈值，默认 5%。 */
+  /// Relative-change threshold of heapUsedKb vs the last write, default 5%.
   heapDeltaRatio?: number;
   /**
-   * rssKb / externalKb 相对上一次写盘值的变化比例阈值，默认 10%。
-   * 真机上 host 进程 RSS 从 240MB 冲到 1.5GB、externalKb 冲到 1.3GB，而 heapUsed 几乎不动，
-   * 只看 heap 的门控把这一分钟判成 heartbeat 静默丢掉；native / external 内存必须单独参与判定。
+   * rssKb / externalKb relative-change thresholds vs last write, default 10%.
+   * In the field host RSS jumped 240MB->1.5GB and externalKb->1.3GB with heapUsed flat;
+   * a heap-only gate read that minute as a silent heartbeat. native/external memory must gate too.
    */
   nativeDeltaRatio?: number;
-  /** 无变化时的心跳间隔，默认 5 分钟。 */
+  /// Heartbeat interval when nothing changes, default 5 minutes.
   heartbeatMs?: number;
 }
 
 export interface MemorySampleWriteGate {
   /**
-   * 判定本次样本是否写盘。返回非 null 时表示应写盘，并把该样本记为“上一次写盘值”。
+   * Should this sample persist? Non-null = yes, and the sample becomes the last-written values.
    */
   evaluate(sample: MemorySample, nowMs: number): MemorySampleWriteReason | null;
 }
@@ -116,7 +116,7 @@ export function bytesToKb(bytes: number): number {
   return Math.round(bytes / 1024);
 }
 
-/** 把 Node `process.memoryUsage()` 的结果换算成 KB 字段；字段缺失时省略。 */
+/** Convert process.memoryUsage() into KB fields; absent fields omitted. */
 export function memoryUsageToSampleFields(usage: {
   rss?: number;
   heapUsed?: number;
@@ -136,8 +136,8 @@ export function memoryUsageToSampleFields(usage: {
 }
 
 /**
- * 单行 `key=value` 格式：固定内存字段在前，计数器按字典序在后，全部取整。
- * 例：`[memory] role=main reason=first rssKb=1 heapUsedKb=2 app.windows=1`
+ * One-line key=value: fixed memory fields first, counters alphabetical, all integral.
+ * e.g. `[memory] role=main reason=first rssKb=1 heapUsedKb=2 app.windows=1`
  */
 export function formatMemorySampleLine(
   sample: MemorySample,
@@ -162,9 +162,9 @@ export function formatMemorySampleLine(
 export type MemoryDiagnosticsProvider = () => Record<string, number>;
 
 export interface MemoryDiagnosticsRegistry {
-  /** 同名重复注册时后者覆盖前者；返回的 dispose 只在仍是自己时才移除。 */
+  /// Later registrations replace earlier; the returned disposer removes only while it is still the current one.
   register(name: string, provider: MemoryDiagnosticsProvider): { dispose(): void };
-  /** 逐个调用 provider，键以 `<name>.` 为前缀；单个 provider 抛错只跳过它自己。 */
+  /// Invoke providers in order, keys prefixed `<name>.`; one provider's throw skips only itself.
   collect(): Record<string, number>;
 }
 
@@ -191,7 +191,7 @@ export function createMemoryDiagnosticsRegistry(): MemoryDiagnosticsRegistry {
             }
           }
         } catch {
-          // 诊断 provider 只做纯读取；任一 provider 异常不能影响其他计数器或业务。
+          // Diagnostic providers are pure reads; one failure never affects other counters or the business.
         }
       }
       return result;

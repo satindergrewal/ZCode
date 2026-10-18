@@ -1,5 +1,5 @@
-// 默认进入 provider-visible embedded search branch。Bash 的 find/grep prelude
-// 注入由执行层单独控制，不能因为当前 shell 不支持 function 注入就改变模型看到的
+// Enter the provider-visible embedded search branch by default. Bash find/grep prelude
+// injection is controlled separately by the execution layer; a shell without function support must not change the model-visible
 // tool/prompt surface。
 const ENABLE_EMBEDDED_SEARCH_BRANCH = true;
 

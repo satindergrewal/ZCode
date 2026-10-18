@@ -9,13 +9,13 @@ function pinyinKeys(name: string): readonly string[] {
   const keys = [syllables.join(""), syllables.map((part) => part[0] ?? "").join("")].map((key) =>
     key.toLowerCase().replace(/\s+/g, ""),
   );
-  // 名称来自可刷新市场，限制缓存避免长期运行时保留已移除条目。
+  // Names come from refreshable marketplaces; cap the cache so long runs drop removed entries.
   if (namePinyin.size >= 1000) namePinyin.clear();
   namePinyin.set(name, keys);
   return keys;
 }
 
-/** 中文品牌名可能只存在于 listing 翻译中；两个页面均按同一条目的名称生成拼音。 */
+/** A zh brand name may exist only in the listing translation; both pages derive pinyin from the same entry's name. */
 export function pluginSearchMatches(
   query: string,
   text: readonly (string | undefined)[],

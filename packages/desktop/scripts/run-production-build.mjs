@@ -6,8 +6,8 @@ import { fileURLToPath } from "node:url";
 import { resolveSpawnRuntimeOptions } from "../../../scripts/spawn-command.mjs";
 
 export function resolveDesktopBuildCwd() {
-  // tsup / vite 配置里的入口路径都是相对 desktop 包根目录声明的。
-  // 之前默认 cwd 落在 scripts 子目录，Windows CI 上会把 src/main/index.ts 解析成 scripts/src/... 直接报找不到入口。
+  // Entry paths in the tsup/vite configs are declared relative to the desktop package root.
+  // The default cwd used to land in scripts/, so Windows CI resolved src/main/index.ts to scripts/src/... and failed to find the entry.
   return resolve(dirname(fileURLToPath(import.meta.url)), "..");
 }
 
@@ -28,8 +28,8 @@ export async function cleanDesktopProductionOutput({ cwd }) {
     console.log("[build] ZCODE_E2E_KEEP_BUILD_CACHE=1, skipping clean");
     return;
   }
-  // 生产构建之前如果已有开发态/旧生产态 out，tsup 不会主动删除过期 chunk。
-  // 这些旧文件会继续被 electron-builder 的 out/**/* 打进 app.asar，重新暴露未压缩 JS 和 sourcemap 尾注。
+  // tsup does not prune stale chunks when a dev/previous-production out dir already exists.
+  // Those old files get packed into app.asar via electron-builder's out/**/*, re-exposing uncompressed JS and sourcemap footers.
   await Promise.all(
     resolveDesktopProductionCleanPaths(cwd).map((targetPath) =>
       rm(targetPath, { force: true, recursive: true }),
@@ -90,8 +90,8 @@ export async function runDesktopProductionBuild({ cwd = resolveDesktopBuildCwd()
   await cleanDesktopProductionOutput({ cwd });
   for (const step of createDesktopProductionBuildPlan({ cwd })) {
     if (step.parallel) {
-      // 之前串行跑 tsup 和 vite，但两者分别写 main/preload/host 与 renderer 目录。
-      // 这里并行执行平台无关构建，缩短 CI 关键路径，同时保持各自 cwd/env 一致以兼容 macOS/Windows/Linux runner。
+      // tsup and vite used to run serially though they write disjoint main/preload/host vs renderer dirs.
+      // Run the platform-independent builds in parallel to shorten the CI critical path, keeping per-process cwd/env identical across macOS/Windows/Linux runners.
       await Promise.all(step.parallel.map(runCommandAsync));
       continue;
     }

@@ -34,7 +34,7 @@ interface LoadPluginAgentProfilesInput {
   logger?: Logger;
   plugins: readonly PluginMetadata[];
   reservedProfileNames?: Iterable<string>;
-  /** 来自已完成存储迁移的启动快照；不在插件 loader 另读磁盘或查询账号。 */
+  /** Startup snapshot from a completed storage migration; the plugin loader must not read disk or query accounts again. */
   modelSelectionOverrides?: PluginSubagentModelSelectionOverrides;
 }
 
@@ -117,8 +117,8 @@ function sanitizeProjectAgentProfile(profile: AgentProfile): AgentProfile {
     return profile;
   }
 
-  // 项目级 .zcode/agents/*.md 是仓库内容，不能通过 frontmatter
-  // 把 child runtime 切到 bypass/yolo；用户级与受信插件 profile 不受影响。
+  // Project-level .zcode/agents/*.md is repository content; its frontmatter must not
+  // switch the child runtime to bypass/yolo. User-level and trusted-plugin profiles are unaffected.
   const { permissionMode: _permissionMode, ...safeProfile } = profile;
   return safeProfile;
 }
@@ -149,7 +149,7 @@ export function loadPluginAgentProfiles(
   for (const parsed of parsedProfiles) {
     const override =
       input.modelSelectionOverrides?.[createPluginAgentStateId(parsed.plugin.id, parsed.bareName)];
-    // 先替换完整选择再展开别名，避免同一插件的两个调用入口使用不同模型/档位。
+    // Replace the full selection before expanding aliases so both call entries of one plugin use the same model/tier.
     const canonical = {
       ...namespacePluginAgentProfile(parsed),
       ...(override ? { modelSelection: override } : {}),

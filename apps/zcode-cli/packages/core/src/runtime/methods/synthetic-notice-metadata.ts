@@ -50,9 +50,9 @@ export function buildSyntheticUserNoticeSemantics(
     source,
     uiVisibility: providerVisible ? "hidden" : "visible",
     providerVisibility: providerVisible ? "visible" : "hidden",
-    // provider-visible 的 user-role runtime context 不是用户 transcript。
-    // fork/goal/background 等 synthetic notice 如果标成 transcript visible，
-    // v4 hydration 会把它们误当作真实用户 turn。
+    // A provider-visible user-role runtime context is not the user transcript.
+    // If synthetic notices (fork/goal/background) were transcript-visible,
+    // v4 hydration would call them real user turns.
     transcriptVisibility: providerVisible ? "hidden" : "visible",
   };
 }
@@ -63,8 +63,8 @@ function syntheticUserNoticeKind(source: SyntheticUserMessageSource): MessageSem
       return "background_notification";
     case "fork":
       return "fork_notice";
-    // goal_state_change 是 trajectory 分支新增的 runtime 注入源（target.ts 目标变更通知），
-    // 与 goal-continuation 同属 system reminder 语义。
+    // goal_state_change is a trajectory-branch runtime injection (the target.ts change notice),
+    // system-reminder semantics like goal-continuation.
     case "goal_state_change":
       return "system_reminder";
     case "goal-continuation":
@@ -80,13 +80,13 @@ function syntheticUserNoticeKind(source: SyntheticUserMessageSource): MessageSem
     case "subagent":
       return "subagent_notification";
     case "subagent_message":
-      // child -> parent 的 model-only runtime carrier，
-      // 若这里未同步穷举，持久消息会产生 kind=undefined，冷恢复后无法保持语义等价。
+      // The child->parent model-only carrier;
+      // an unhandled case persists kind=undefined and breaks cold-resume parity.
       return "subagent_notification";
     case "todo_reminder":
       return "todo_reminder";
-    // 直接启动的启动轮不走这条 synthetic-notice 铸造路（它要 origin=real_user、kind=user_prompt，
-    // 由 message-persistence 的专用落盘直接给出）。这里只为穷举完备而登记同一个 kind。
+    // Hub-launch turns skip this minting path (they need origin=real_user, kind=user_prompt,
+    // via the dedicated message-persistence write); this entry is exhaustiveness only.
     case "workflow_launch":
       return "user_prompt";
     case "shared_context":

@@ -17,7 +17,7 @@ interface CronBotDeliveryService {
 }
 
 /**
- * 在 prompt 派发前完成 Bot 终态订阅，避免快速任务先完成、后注册 listener 而漏回推。
+ * Subscribe to the Bot terminal state before dispatching the prompt, or a fast task finishes before the listener registers and the push is lost.
  */
 export async function watchCronRunBotDelivery(params: {
   automationId: string;
@@ -28,18 +28,13 @@ export async function watchCronRunBotDelivery(params: {
   repo: CronBotDeliveryRepo;
   botsService: CronBotDeliveryService;
 }): Promise<boolean> {
-  const target = await params.repo.getBotDeliveryTarget(
-    params.automationId,
-    params.workspaceKey,
-  );
+  const target = await params.repo.getBotDeliveryTarget(params.automationId, params.workspaceKey);
   if (!target) return false;
   await params.botsService.watchAutomationRun({
     target,
     taskId: params.taskId,
     workspacePath: params.workspacePath,
-    ...(params.workspaceIdentity
-      ? { workspaceIdentity: params.workspaceIdentity }
-      : {}),
+    ...(params.workspaceIdentity ? { workspaceIdentity: params.workspaceIdentity } : {}),
   });
   return true;
 }

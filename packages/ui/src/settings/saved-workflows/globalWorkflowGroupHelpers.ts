@@ -1,15 +1,15 @@
-// 全局工作流组的纯逻辑。与组件分文件以守住 max-lines 400，
-// 也便于单测这些无 React 的判定。
+// Pure logic for the global workflow group. Split from the component to honor max-lines 400 and keep
+// these React-free decisions unit-testable.
 import { resolveWorkspaceKey, type ZCodeSavedWorkflowRun } from "@zcode/shared";
 import type { ZCodeAgentSavedWorkflowTarget } from "@zcode/services";
 import type { AutomationWorkspaceOption } from "@/settings/automationWorkspaceOptions.js";
 import type { SavedWorkflowProjectTarget } from "@/settings/saved-workflows/savedWorkflowContract.js";
 import type { SavedWorkflowRunProject } from "@/settings/saved-workflows/SavedWorkflowRunHistoryPanel.js";
 
-/** 全局档的 RPC 载体常量：不带 workspace，services 层自选本机运行时。 */
+/** RPC target constant for the global scope: no workspace; the services layer picks the local runtime. */
 export const GLOBAL_SAVED_WORKFLOW_TARGET: ZCodeAgentSavedWorkflowTarget = { scope: "global" };
 
-/** 取路径末段（跨 `/` 与 `\\`），给未打开项目的运行行做兜底 label。 */
+/** Final path segment (across `/` and `\\`); fallback label for run rows of not-open projects. */
 function basenameOfPath(path: string): string {
   return (
     path
@@ -20,7 +20,7 @@ function basenameOfPath(path: string): string {
   );
 }
 
-/** 「修订」/「通过对话创建」的落点：活动本地项目，不在候选里则第一个本地项目；都没有则 null。 */
+/** Target for "revise"/"create via conversation": the active local project, else the first local project; null with neither. */
 export function resolveGlobalActionTarget(
   localProjects: readonly AutomationWorkspaceOption[],
   activeProjectKey: string | null,
@@ -34,7 +34,7 @@ export function resolveGlobalActionTarget(
   };
 }
 
-/** 运行行的 cwd 命中哪个已打开本地项目（用绝对路径逐字比较）。 */
+/** Which open local project a run row's cwd hits (literal absolute-path comparison). */
 export function findProjectByCwd(
   localProjects: readonly AutomationWorkspaceOption[],
   cwd: string | undefined,
@@ -44,8 +44,9 @@ export function findProjectByCwd(
 }
 
 /**
- * 详情页运行历史每行的项目列（全局档跨 cwd）：cwd 命中已打开项目 → 该项目 label 且可「查看实例」；
- * 否则以 `basename(cwd)` 兜底、完整路径挂 title、不可「查看实例」；没有 cwd 的老行不画项目列。
+ * Per-row project column of the detail page's run history (global scope spans cwds): a cwd matching an
+ * open project shows that label and enables "open instance"; otherwise fall back to `basename(cwd)`,
+ * full path in the title, no "open instance"; rows without cwd render no project column.
  */
 export function buildGlobalRunProjectResolver(
   localProjects: readonly AutomationWorkspaceOption[],

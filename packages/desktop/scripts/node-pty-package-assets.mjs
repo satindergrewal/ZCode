@@ -18,7 +18,9 @@ export function restoreTargetNodePtyPrebuild({ desktopPackageRoot, targetPlatfor
     sourceBinaryPath = resolveSourceNodePtyPrebuildPath({ sourcePackageName, platformKey });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`缺少 ${sourcePackageName}，无法为 ${platformKey} 打包 node-pty: ${message}`);
+    throw new Error(
+      `Missing ${sourcePackageName}; cannot package node-pty for ${platformKey}: ${message}`,
+    );
   }
 
   const nodePtyPackageRoot = dirname(
@@ -27,15 +29,15 @@ export function restoreTargetNodePtyPrebuild({ desktopPackageRoot, targetPlatfor
   const targetPrebuildDir = resolve(nodePtyPackageRoot, "prebuilds", platformKey);
   const targetBinaryPath = resolve(targetPrebuildDir, "pty.node");
 
-  // Linux 包中 node-pty 本体只会查自己的 prebuilds/linux-*/pty.node，
-  // 但 Linux 预编译文件实际来自 @lydell/node-pty-linux-* 平台包；若排除该平台包，
-  // 而 node-pty 自身目录没有 linux prebuild，最终安装包里会缺 pty.node，终端启动失败。
-  // 这里在 beforePack 阶段恢复依赖资产，让后续 asarUnpack 按标准链路处理 native addon。
+  // The node-pty package probes only its own prebuilds/linux-*/pty.node,
+  // but Linux prebuilts ship in the @lydell/node-pty-linux-* platform packages; excluding those while
+  // node-pty has no local linux prebuild omits pty.node from the installer and breaks terminal startup.
+  // Restore dependency assets during beforePack so asarUnpack handles the native addon via the standard path.
   mkdirSync(targetPrebuildDir, { recursive: true });
   cpSync(sourceBinaryPath, targetBinaryPath);
 
   if (!existsSync(targetBinaryPath))
-    throw new Error(`node-pty 预编译产物恢复失败: ${targetBinaryPath}`);
+    throw new Error(`node-pty prebuild restore failed: ${targetBinaryPath}`);
 
   console.log(`[beforePack] node-pty prebuild restored: ${targetBinaryPath}`);
 }
@@ -51,10 +53,10 @@ export function resolveSourceNodePtyPrebuildPath({ sourcePackageName, platformKe
     currentDir = dirname(currentDir);
   }
 
-  // @lydell/node-pty-linux-* 通过 package exports 只暴露 lib/index.js，
-  // 不能再解析 package.json。这里从公开入口向上寻找 prebuilds，兼容 exports 限制。
+  // @lydell/node-pty-linux-* exposes only lib/index.js via package exports, hiding package.json from resolution.
+  // Walk up from the public entry to locate prebuilds, tolerating the exports restriction.
   throw new Error(
-    `缺少 node-pty 预编译产物: ${sourcePackageName}/prebuilds/${platformKey}/pty.node`,
+    `Missing node-pty prebuild: ${sourcePackageName}/prebuilds/${platformKey}/pty.node`,
   );
 }
 

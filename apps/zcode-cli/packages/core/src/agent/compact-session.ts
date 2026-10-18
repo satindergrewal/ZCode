@@ -67,13 +67,13 @@ function compactBoundaryFromMessage(message: MessageWithParts): CompactBoundaryP
 }
 
 export function isCompactPreservableSessionMessage(message: MessageWithParts): boolean {
-  // UI timeline 也使用 assistant role，但不属于模型轮，不能让保留组的起点错位。
+  // The UI timeline also uses the assistant role but is not a model turn; the kept-group start must not be misaligned.
   if (message.info.semantics?.providerVisibility === "hidden") return false;
   if (message.parts.some((part) => part.type === "compaction")) {
     return false;
   }
-  // synthetic/model-only 只描述输入身份和 UI 可见性；已选中的回信、任务结果和
-  // attachment 没有进入 summary，冷恢复不能据此再次丢弃它们。
+  // synthetic/model-only only describes input identity and UI visibility; the selected reply, task results and
+  // attachments never made it into the summary, so cold resume must not drop them again based on it.
   if (message.info.role === "assistant" && message.info.error) {
     return false;
   }

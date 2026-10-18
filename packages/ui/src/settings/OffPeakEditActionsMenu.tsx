@@ -1,6 +1,6 @@
-/* 闲时任务编辑页顶栏动作菜单：Save 右侧「⋯」→ 按状态给 暂停/继续 + 删除。
-   与列表卡片菜单同义，供编辑页内直接操作；queued→暂停、paused→继续，终态只留删除。
-   样式与定时任务编辑页顶栏菜单同源。 */
+/* Idle-task editor header actions: right of Save, an ellipsis menu offering pause/resume + delete by state.
+      Same semantics as the list card menu, for in-page control; queued->pause, paused->resume, terminal keeps delete only.
+      Styling matches the scheduled editor's header menu. */
 import { TID_OFFPEAK_CARD_MENU, type ZCodeOffPeakTask } from "@zcode/shared";
 import {
   DropdownMenu,

@@ -1,6 +1,6 @@
 let fallbackSequence = 0;
 
-/** Renderer-local id：main 会再按 webContents 分区，取消时不会误伤其它窗口的 participant。 */
+/** Renderer-local id: main partitions it further by webContents so a cancel never hits participants of other windows. */
 export function createCuaPermissionOnboardingOperationId(): string {
   const randomId = globalThis.crypto?.randomUUID?.();
   if (randomId) {

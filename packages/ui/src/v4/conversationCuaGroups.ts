@@ -54,8 +54,9 @@ function buildCuaGroup(
   const virtualToolId = assistantResponseId ? identity : `cua:${firstRow?.toolCallId ?? "unknown"}`;
   return {
     kind: "cuaGroup",
-    // 以首个 ToolCall 为身份无法在正文流式阶段表达 response，也会让工具到达时
-    // Group 被重建。新投影以持久 assistant message id 锚定 response，旧快照才退回 tool row。
+    // Keying by first ToolCall cannot express the response during body streaming and rebuilds
+    // the group when tools arrive. The new projection anchors the response on the persistent
+    // assistant message id; only legacy snapshots fall back to the tool row.
     key: identity,
     rowId: firstRow?.rowId ?? 0,
     rows,
@@ -191,8 +192,9 @@ export function prepareCuaGroupFlowItems(
       return;
     }
     if (responseId && !classification && row.state === "streaming") {
-      // 把活动 Group 后尚未分类的 streaming response 提前收纳会让正文
-      // 在滚动摘要出现后还可能被移回外部。没有 tool 事实前只原位显示，且不关闭旧 Group。
+      // Collecting a yet-unclassified streaming response into the active group early would let
+      // the body move back outside once the rolling summary appears. Until tool facts exist,
+      // render in place and never close the old group.
       appendOutside();
       return;
     }
@@ -211,9 +213,10 @@ export function prepareCuaGroupFlowItems(
       return;
     }
     if (!responseId || !classification) {
-      // reasoning 往往先于正文和工具完成；仅凭当前没有 tool 就关闭活动 Group，
-      // 会把随后确认的纯 CUA response 错切成新组。未分类阶段和旧无 ID 数据都只原位展示；
-      // 后者保持“不构成工具边界”的兼容语义，且不猜相邻 response。
+      // Reasoning often settles before body/tools; closing the active group on no-tool-alone
+      // would split the later-confirmed pure CUA response into a new group. The unclassified
+      // phase and legacy no-id data render in place; the latter keeps its not-a-tool-boundary
+      // compat semantic and never guesses at neighbor responses.
       appendOutside();
       return;
     }
@@ -248,7 +251,7 @@ export function prepareCuaGroupFlowItems(
       } else if (row.kind === "reasoning") {
         handleReasoning(row, item.kind, () => appendFlowRow(prepared, item.kind, row));
       } else {
-        // marker、todo/status 只在 Group 外展示，不构成 response 工具边界。
+        // marker/todo/status render outside the group only; never a response tool boundary.
         appendFlowRow(prepared, item.kind, row);
       }
     }
@@ -258,7 +261,7 @@ export function prepareCuaGroupFlowItems(
   return prepared;
 }
 
-/** 仅供 timeline-only/旧工作项路径兼容；正常 product turn 在 flow 层完成混合聚合。 */
+/** Legacy compat for timeline-only/old work-item paths; normal product turns aggregate mixed in the flow layer. */
 export function prepareCuaGroups(
   rows: readonly AssistantWorkRow[],
   enabled: boolean,

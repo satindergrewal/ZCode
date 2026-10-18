@@ -266,8 +266,8 @@ export function CodingPlanUsageBarChart({
     [granularity, locale, visibleSeries, xTime],
   );
   const maxValue = useMemo(
-    // tooltip 的总量是当天所有模型合计，但柱子是按模型并排展示。
-    // Y 轴如果用合计值做 domain，会把每根并排柱压矮，导致图表上方空白过多。
+    // The tooltip totals all models that day, while bars sit side by side per model.
+    // A total-valued y domain would squash every bar, leaving dead space above.
     () => calculateCodingPlanBarChartMaxValue(visibleSeries, xTime.length),
     [visibleSeries, xTime.length],
   );
@@ -383,8 +383,8 @@ export function CodingPlanUsageBarChart({
               key={item.key}
               dataKey={item.key}
               fill={`var(--color-${item.key})`}
-              // Recharts 默认把 dataKey 当 tooltip name，导致堆叠段展示
-              // series0_cachedInput 这类内部字段。这里显式传产品文案给 tooltip formatter。
+              // Recharts uses dataKey as the tooltip name, exposing internals like series0_cachedInput.
+              // Pass product copy to the tooltip formatter explicitly.
               name={item.label}
               maxBarSize={CODING_PLAN_BAR_CHART_MAX_BAR_SIZE}
               radius={item.radius}

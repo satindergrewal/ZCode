@@ -23,10 +23,10 @@ const sharedContextImportV2StateSchema = z
     status: z.enum(["pending", "reserved", "attached", "discarded"]),
   })
   .strict();
-// shareUrl 硬绑 /cn/share/<code>。将来换域名、或改用英文站 /share/<code> 作为
-// canonical 时，存量会话的持久化 provenance 会校验失败（本地持久化，不是 wire，所以不在
-// 「响应宽容」那条纪律的覆盖范围内）。真要改 canonical URL 形状时，这里要先加一个接受旧形状
-// 的 legacy 分支——照 legacySharedContextImportStateSchema 的做法。
+// shareUrl is hard-bound to /cn/share/<code>. A future domain change, or taking the English /share/<code> as
+// canonical, would fail persisted provenance validation of existing sessions (local persistence, not wire, hence outside
+// the "responses are lenient" discipline). Whenever the canonical URL shape changes, add a legacy branch accepting the old
+// shape first--per legacySharedContextImportStateSchema's precedent.
 
 const legacySharedContextImportStateSchema = z.object({ title: z.string().trim().min(1) }).strict();
 

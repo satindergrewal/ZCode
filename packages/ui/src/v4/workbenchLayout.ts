@@ -1,16 +1,16 @@
-// 分屏布局计算（纯函数）：分割树 → 每个叶子/分隔条的绝对定位表达式。
-// 叶子扁平渲染为容器直接子元素（key = paneId 稳定）——拆分/关闭只是换 rect，
-// React 不重挂任何存活 pane（virtualizer 测高、滚动位置、composer 草稿全保留）；
-// 若按树递归嵌套渲染，叶子被替换成分割容器时会整棵重挂。
-// rect 表达式引用分割占比 CSS 变量：拖动中改一个变量，受影响的 pane/分隔条全部
-// 由 CSS 重排，零 React 渲染（「容器 CSS 变量」方案按分割节点泛化）。
+// Split layout math (pure functions): split tree -> absolute positioning expressions per leaf/divider.
+// Leaves render flattened as direct container children (stable key = paneId) - split/close only swaps rects,
+// React remounts no living pane (virtualizer heights, scroll positions, composer drafts all survive);
+// recursive tree nesting would remount the whole subtree when a leaf becomes a split container.
+// Rect expressions reference split-ratio CSS variables: dragging updates one variable and CSS relayouts
+// all affected panes/dividers with zero React renders (the container-CSS-variable scheme, generalized per split node).
 import type { CSSProperties } from "react";
 import type { PaneLayoutNode, SplitDirection } from "@/v4/paneLayoutTree.js";
 
-/** 分割占比 CSS 变量前缀（每个分割节点一个 `--v4-split-<nodeId>`）。 */
+/** CSS variable prefix for split ratios (one `--v4-split-<nodeId>` per split node). */
 export const SPLIT_VAR_PREFIX = "--v4-split-";
 
-/** 绝对定位表达式（不含 calc() 包裹；style 侧统一 `calc(${expr})`）。 */
+/** Absolute position expression (unwrapped; the style side always applies `calc(${expr})`). */
 export interface RectExpr {
   left: string;
   top: string;
@@ -26,13 +26,13 @@ interface LeafLayout {
 interface DividerLayout {
   splitId: string;
   direction: SplitDirection;
-  /** store 当前占比（拖拽起点 + 容器 CSS 变量初值）。 */
+  /** Store-held current ratio (drag origin + container CSS variable initial value). */
   ratio: number;
-  /** 该分割节点区域占容器主轴的数值比例（拖拽像素→占比换算；祖先占比取 store 数值）。 */
+  /** Ratio of this split node area along the container main axis (drag px -> ratio; ancestor ratios from store numbers). */
   regionFraction: number;
-  /** 分割线（主轴位置）表达式。 */
+  /** Divider (main-axis position) expression. */
   boundary: string;
-  /** 交叉轴起点/长度表达式。 */
+  /** Cross-axis start/length expressions. */
   crossStart: string;
   crossLength: string;
 }

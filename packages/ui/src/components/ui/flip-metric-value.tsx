@@ -64,8 +64,9 @@ function MetricCharacter({
 }) {
   const widthClass = getCharacterWidthClass(character);
 
-  // 数字槽以前用 baseline + 负偏移，冒号和 K/M 单位走静态 inline，
-  // 混排时视觉中线不一致；所有字符统一固定高度并居中，翻页只发生在槽内。
+  // Digit slots used baseline + negative offset with static inline colons and K/M
+  // units, misaligning the optical midline in mixed runs; every glyph now shares one
+  // fixed height, centered, with flipping confined to the slots.
   if (!isDigitCharacter(character) || reducedMotion) {
     return (
       <span

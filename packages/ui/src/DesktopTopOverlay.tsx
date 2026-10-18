@@ -104,7 +104,7 @@ export function DesktopTopOverlay({
       style={topOverlayWidthStyle}
       className={cn(
         "@container/topoverlayer pointer-events-none absolute h-14 flex left-0 top-0 z-20 w-fit",
-        // Windows/Linux 主面板新增 4px 留白及 1px 边框，左侧工具组需同步偏移才能对齐 Header 中心线。
+        // Windows/Linux add 4px padding plus a 1px border around the main panel; shift the tool group to match the Header centerline.
         usesCustomCaptionArea && "top-1 mt-px",
       )}
     >
@@ -117,7 +117,7 @@ export function DesktopTopOverlay({
           "flex items-center",
           isMacDesktop && "h-14",
           usesCustomCaptionArea && "h-12",
-          // Windows/Linux 工具组计入 4px 外沿留白和 1px 边框，较 8px 左边距右移 5px。
+          // Windows/Linux tool groups include 4px outer padding and a 1px border: 5px right of the 8px margin.
           usesCustomCaptionArea && "pl-3 ml-px",
           isMacDesktop &&
             (isMacFullscreen ? (!isSidebarVisible ? "pl-5 pt-1" : "pl-3 pt-1") : "pt-1"),
@@ -125,9 +125,9 @@ export function DesktopTopOverlay({
       >
         <div
           className={cn(
-            // 顶部浮层按钮虽然单个按钮打了 no-drag，但外层容器本身仍悬在窗口标题区上方。
-            // Electron 在这类覆盖层上会优先按父级命中拖拽区域，导致点击被窗口拖动吞掉。
-            // 这里把整块交互容器一起标成 no-drag，确保展开/收起和新建 task 都能稳定点击。
+            // Each overlay button sets no-drag, but the container itself still floats over the
+            // titlebar area and Electron hits the parent drag region first, swallowing clicks.
+            // Mark the whole interactive container no-drag so expand/collapse and new-task clicks land.
             "pointer-events-auto flex items-center gap-1 shrink-0 [app-region:no-drag]",
           )}
         >
@@ -160,7 +160,7 @@ export function DesktopTopOverlay({
             </DesktopTopOverlayActionButton>
           )}
 
-          {/* 远程控制移动端左上角空间有限，任务前进/后退在这里会与主操作拥挤重叠。*/}
+          {/* Mobile remote control has little top-left space; task back/forward would crowd the primary actions. */}
           {hideTaskNavigationButtons ? null : (
             <>
               <DesktopTopOverlayActionButton
@@ -204,10 +204,10 @@ export function DesktopTopOverlay({
           </div>
 
           {/* <div className="flex items-center [app-region:no-drag]"> */}
-          {/* 侧栏收起后，更新按钮之前会跟着“展开态的容器宽度阈值”一起被隐藏。
-                  但收起态本身已经改成把操作集中到顶部浮层里，如果这里还继续依赖侧栏宽度判断，
-                  用户就会在最需要全局入口的时候反而看不到更新按钮。
-                  所以展开态继续走容器查询，收起态则强制显示。 */}
+          {/* When the sidebar collapses, the update button used to hide with the expanded-width
+                  container threshold. Collapsed mode now concentrates actions in the top overlay,
+                  so keying off sidebar width hides the update button exactly when the global entry
+                  matters most. Expanded keeps the container query; collapsed forces it visible. */}
           <UpdateStatusButton
             platform={platform}
             version={updateReadyVersion}

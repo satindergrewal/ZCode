@@ -193,8 +193,8 @@ export function McpServerForm({
       : '{\n  "Authorization": "Bearer your-token"\n}';
   const updateEnvValue = (value: string) =>
     update(form.type === "stdio" ? { env: value } : { headers: value });
-  // Radix Select 不接受空串 value；用 "auto" 作为哨兵值：表单里空串 = 未设置 = auto
-  // （配置文件不落多余字段），用户显式选 auto 时同样写回空串。
+  // Radix Select rejects empty-string values; "auto" is the sentinel: empty = unset = auto
+  // (no extra field persisted); an explicit auto choice writes the empty string back.
   const updateProtocolVersion = (value: string) =>
     update({ protocolVersion: value === "auto" ? "" : value });
   const scopeSelect = (
@@ -279,7 +279,7 @@ export function McpServerForm({
                 </SelectItem>
                 <SelectItem value="http">HTTP</SelectItem>
                 {/*
-                  Streamable HTTP 传输类型未启用。
+                  // Streamable HTTP transport type not yet enabled.
                   <SelectItem value="streamableHttp">Streamable HTTP</SelectItem>
                 */}
                 <SelectItem value="sse">
@@ -305,8 +305,8 @@ export function McpServerForm({
           </div>
 
           {/*
-            sse 形态不渲染该字段：deprecated SSE transport 固定走 legacy 协商，
-            该配置对其无效。
+            // The SSE form skips this field: deprecated SSE transport always uses legacy negotiation,
+            // the setting does not apply there.
           */}
           {form.type !== "sse" && (
             <div className="w-full space-y-1.5 md:w-48">
@@ -324,7 +324,7 @@ export function McpServerForm({
                   <SelectItem value="legacy">
                     {intl.formatMessage({ id: "settings.mcp.form.protocolVersion.legacy" })}
                   </SelectItem>
-                  {/* 显示名用「v2」，但 value 必须保持协议正式版本号 " "（config/wire 值，不可随文案变）*/}
+                  {/* Displayed as "v2", but value keeps the protocol's official " " (config/wire value; copy must not change it)*/}
                   <SelectItem value="2026-07-28">
                     {intl.formatMessage({ id: "settings.mcp.form.protocolVersion.modern" })}
                   </SelectItem>

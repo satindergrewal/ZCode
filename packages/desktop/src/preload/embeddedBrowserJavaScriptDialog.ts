@@ -30,7 +30,7 @@ contextBridge.exposeInMainWorld(BRIDGE_KEY, {
         ...(typeof candidate.value === "boolean" ? { value: candidate.value } : {}),
       };
     } catch {
-      // Main 不可用时退回 Chromium 原生 API，不能吞掉网页 Dialog。
+      // Fall back to Chromium's native dialog API when main is unavailable; never swallow the page dialog.
       return { handled: false };
     }
   },
@@ -65,7 +65,7 @@ contextBridge.executeInMainWorld({
         target.confirm = wrappedConfirm;
         installedConfirmByWindow.set(target, wrappedConfirm);
       } catch {
-        // 跨源 frame 不允许宿主读取 Window；它在真实导航时会自行加载同一 preload。
+        // Cross-origin frames disallow host Window access; they load this same preload on real navigation.
       }
     };
 
@@ -86,7 +86,7 @@ contextBridge.executeInMainWorld({
           if (frame.contentWindow) installFrameTree(frame.contentWindow);
         }
       } catch {
-        // 跨源文档的 frame tree 由对应 frame 自己的 preload 处理。
+        // The cross-origin document's frame tree is handled by that frame's own preload.
       }
     };
 
@@ -95,8 +95,8 @@ contextBridge.executeInMainWorld({
       installFrameTree(window);
       const root = window.document?.documentElement;
       if (!root) return;
-      // 无 src 的继承型 about:blank iframe 不发生文档级导航，Electron 不会
-      // 为它单独执行 preload；监听页面插入后，从同源父 frame 安装相同包装。
+      // A src-less inherited about:blank iframe never navigates documents, so Electron
+      // never runs a dedicated preload; after page insert, install the same wrapper from the same-origin parent.
       new window.MutationObserver(() => installFrameTree(window)).observe(root, {
         childList: true,
         subtree: true,

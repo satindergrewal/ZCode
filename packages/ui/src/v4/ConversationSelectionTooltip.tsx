@@ -73,9 +73,9 @@ export function ConversationSelectionTooltip({
         : range.startContainer.parentElement;
     const endElement =
       range.endContainer instanceof Element ? range.endContainer : range.endContainer.parentElement;
-    // 普通 Markdown 跨选到表格单元格时，Range.cloneContents() 会把 DOM 顺序中夹着的
-    // select-none 表格工具栏按钮一并克隆，若据此判断会把合法正文误判为控件选区。控件门禁只看
-    // Selection 两个端点；跨 row / selectable region 仍由下面的独立 guard 拒绝。
+    // A plain Markdown selection crossing table cells makes Range.cloneContents() clone the
+    // interleaved select-none table toolbar buttons; gating on it misreads body text as controls. The control gate reads
+    // only the two Selection endpoints; cross-row/region rejects stay in the guards below.
     const excluded = hasExcludedConversationSelectionEndpoint(startElement, endElement);
     const startContent = startElement?.closest(SELECTABLE_SELECTOR);
     const endContent = endElement?.closest(SELECTABLE_SELECTOR);

@@ -9,8 +9,8 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { isImeComposingKeyEvent } from "@/lib/imeComposition.js";
 
 /**
- * 顶栏 New 直接打开添加市场源对话框：收编原 AddMarketplacePopover 的
- * github/git/URL/本地路径（含拖放与目录选择）能力，零后端新增。
+ // Header New opens the add-marketplace dialog directly, folding in the old AddMarketplacePopover's
+ // github/git/URL/local-path (drag-drop and picker) support with zero new backend.
  */
 export function AddMarketplaceSourceDialog({
   open,
@@ -27,15 +27,15 @@ export function AddMarketplaceSourceDialog({
 }) {
   const { intl } = useZCodeIntl();
   const platform = useOptionalPlatform();
-  // 仅桌面端能把拖拽 File / 目录选择框解析成 agent 可访问的本地绝对路径；Web 端隐藏这些入口。
+  // Only desktop can resolve dropped files / pickers into agent-accessible absolute paths; hide those entries on web.
   const canPickPath = platform?.canSelectFilePath ?? false;
   const [source, setSource] = useState("");
   const [dragActive, setDragActive] = useState(false);
   const trimmedSource = source.trim();
   const adding = operationId === `marketplace:add:${trimmedSource}`;
-  // 本地输入法 composition 态：部分平台 isComposing 会提前翻 false，靠 ref 兜底，避免候选确认误触发添加。
+  // IME composition: some platforms flip isComposing false early; the ref backs it up so confirming a candidate cannot misfire submit.
   const compositionActiveRef = useRef(false);
-  // 防重复提交：Enter 与点击共用，避免 store 回写前的窗口里重复发起同一来源的添加。
+  // Guard double submit: Enter and click share one path across the store-writeback window.
   const pendingRef = useRef(false);
 
   const handleAdd = async () => {
@@ -43,7 +43,7 @@ export function AddMarketplaceSourceDialog({
     pendingRef.current = true;
     try {
       const added = await onAddMarketplace(trimmedSource);
-      // 失败时保留输入与弹层，让用户结合上方错误提示修正来源后重试。
+      // On failure keep input and dialog; the user corrects the source per the error above and retries.
       if (added) {
         setSource("");
         onOpenChange(false);
@@ -59,7 +59,7 @@ export function AddMarketplaceSourceDialog({
       const dir = await platform.selectDirectory();
       if (dir) setSource(dir);
     } catch {
-      // 取消或对话框异常时静默：保留当前输入，不打断添加流程。
+      // Stay silent on cancel/dialog error: keep the input, do not break the flow.
     }
   };
 

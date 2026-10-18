@@ -1,11 +1,11 @@
 // ============================================================
-// driver 侧的自适应并发半身：per-actor 准入 + 模型状态观察 + 失败归因
+// Driver-side adaptive concurrency half: per-actor admission + model-status observation + failure attribution
 // ============================================================
-// 从 workflow-driver.ts
-// 拆出：那个文件只管「会话与 turn 的编排」，而这里三件事都不碰 turn 编排——它们只把治理器端口包成
-// 一个 actor 的 `ModelRequestAdmission`、只读 actor runtime 的会话事件流、只看 run 级的成功/重试节拍
-// （stall 时钟）。模型失败归因（原 modelFailureReasonOf）
-// 已移到 adapters 的策略表（`inspectWorkflowModelFailure`）：runner 与 driver 读同一份。
+// Split from workflow-driver.ts
+// which owns session-and-turn orchestration; none of these three touch turn orchestration - they only wrap the governor port into
+// one actor's `ModelRequestAdmission`, read the actor runtime's session event stream, and watch run-level success/retry cadence
+// (the stall clock). Model failure attribution (the old modelFailureReasonOf)
+// moved to the adapters policy table (`inspectWorkflowModelFailure`): runner and driver read the same one.
 
 import {
   SessionEventType,
@@ -29,106 +29,108 @@ import {
 } from "./workflow-concurrency-governor.js";
 import type { WorkflowRunSeatGate } from "./workflow-seat-gate.js";
 
-/** 与治理器同一条纪律：这两种 retry 不是 provider 失败，不值一个徽标。 */
+/** Same discipline as the governor: these two retries are not provider failures, no badge deserved. */
 const NON_FAILURE_RETRY_REASONS: ReadonlySet<string> = new Set([
   "reasoning_signature_repair",
   "auth_refresh",
 ]);
 
 interface ActorModelActivityHandlers {
-  /** 该 ask 的下一个模型请求在等：等槽位（`cause: "slot"`）或退避中（`cause: "backoff"`）。 */
+  /** The ask's next model request is waiting: for a slot (`cause: "slot"`) or in backoff (`cause: "backoff"`). */
   onWaiting(info: AskWaitInfo): void;
-  /** 该 ask 的模型请求真的发出去了（首个请求、或一段等待之后的那次）。 */
+  /** The ask's model request actually went out (first attempt, or the one after a wait). */
   onExecuting(): void;
-  /** 本 actor 的任一模型请求（turn 或工具侧）成功完成——run 级 stall 时钟的归零信号。 */
+  /** Any model request of this actor (turn or tool side) completed - the run-level stall clock's reset signal. */
   onRequestCompleted?(): void;
-  /** runner 排定了一次重试（签名修复 / 鉴权刷新除外）——run 级 stall 时钟的上膛信号。 */
+  /** The runner scheduled a retry (signature repair / auth refresh excepted) - the run-level stall clock's arm signal. */
   onRetryScheduled?(reason: string): void;
   /**
-   * 在飞 ask 的子代理即将执行一个会改写工作区的工具（每个 ask 至多一次；实例由本模块按 `live` 解析，
-   * 不在飞就不报）。引擎据此关闭 amend-resume 的导入缓存。
+   * A subagent of an in-flight ask is about to run a workspace-mutating tool (at most once per ask; instance resolved
+   * by this module from `live`; not in flight, not reported). The engine closes the amend-resume import cache on it.
    */
   onMutating?(instance: InstanceRef): void;
 }
 
 /**
- * 一个 actor 的**观察面**：它 runtime 的 `ModelRequestAdmission`（准入）、它会话事件流里的模型状态
- * （executing / waiting 徽标的来源），以及同一条流里的工具调用（第一笔工作区写入 → 关导入缓存，
- * 加上这个 ask 的工具计数，见 workflow-driver-tool-activity.ts）。三者共用 per-ask 生命周期，所以
- * driver 只持有一个对象、只 observe / reset / unsubscribe 一次；「等槽位」之后的那次
- * `model_request_started` 也因此能被认出是恢复。
+ * One actor's **observation surface**: its runtime `ModelRequestAdmission` (admission), the model status in its session
+ * event stream (source of the executing / waiting badges), and the tool calls on the same stream (first workspace write ->
+ * close the import cache, plus this ask's tool counts, see workflow-driver-tool-activity.ts). All three share the per-ask
+ * lifecycle, so the driver holds one object and observes / resets / unsubscribes once; the
+ * `model_request_started` after a slot wait is thus recognized as the resume.
  */
 export interface ActorModelActivity {
-  /** 交给 runtime deps 的准入端口；治理器端口缺席时为 undefined（不受闸门约束）。 */
+  /** Admission port handed to runtime deps; undefined when the governor port is absent (ungated). */
   readonly admission: ModelRequestAdmission | undefined;
-  /** 换 ask 时归零：上一个 ask 的 waiting / executing 相位与工具计数都不能带到下一个 ask。 */
+  /** Zeroed on ask change: the previous ask's waiting / executing phases and tool counts never leak into the next. */
   reset(): void;
-  /** 本 ask 至今观察到的工具调用计数（喂给 AskStats）。 */
+  /** Tool-call counts observed for this ask so far (fed to AskStats). */
   toolCounts(): ActorToolCounts;
-  /** 本 ask 至今最近一次开跑的工具调用（喂给 `node-progress` 的 lastTool）。 */
+  /** Most recent tool call started for this ask (the `node-progress` lastTool). */
   lastTool(): AskLastTool | undefined;
   /**
-   * 记下「又一轮 turn 解析完了」，并给出这一刻的 ask 进度（`turn` 从 1 起）。
-   * 计数住在这里而不是 SessionState 上，因为它与工具计数是同一条 per-ask 生命周期：
-   * 同一个 reset 归零，同一个 ask 内累加，nudge 起的新一轮算第二个 turn。
+   * Records yet another resolved turn and returns the ask progress at this moment (`turn` starts at 1).
+   * The counter lives here, not on SessionState, because it shares the per-ask lifecycle with tool counts:
+   * same reset to zero, accumulated within one ask, a nudge-started round counts as the second turn.
    */
   noteTurnResolved(): AskProgress;
-  /** 订阅 runtime 的会话事件（模型状态 + 工具调用）；最小 stub runtime 没有 subscribeEvents 时空操作。 */
+  /** Subscribes to the runtime session events (model status + tool calls); no-op on minimal stub runtimes without subscribeEvents. */
   observe(runtime: AgentRuntime, sessionId: SessionId): void;
   unsubscribe(): void;
 }
 
 /**
- * 一条请求链的相位。链 = 「一个逻辑请求及其全部重试」：按 (querySource, queryId, toolCallId) 键入——
- * turn step 有 queryId 无 toolCallId，并行的两次 WebSearch 各有自己的 toolCallId，压缩 / 标题 sidecar
- * 各有 querySource——重试换 requestId 但键不变，所以退避中的链与它的下一次尝试是同一条。
+ * Phase of one request chain. A chain = one logical request plus all its retries, keyed by
+ * (querySource, queryId, toolCallId): a turn step has queryId but no toolCallId, two parallel WebSearches have their own
+ * toolCallIds, compaction / title sidecars have their own querySource - retries change requestId but not the key, so a
+ * backing-off chain and its next attempt are the same chain.
  */
 type ChainPhase = "queued" | "executing" | "backoff";
 
 interface Chain {
   phase: ChainPhase;
-  /** 最近一条等待信息（queued / backoff）；链结束后若只剩等待者，用最新的那条报 waiting。 */
+  /** Most recent waiting detail (queued / backoff); if only waiters remain at chain end, report waiting with the latest. */
   wait?: AskWaitInfo;
   waitSeq: number;
 }
 
 /**
- * 聚合规则（取代单相位）：driver 为每个 actor 维护在飞请求链的集合——
- *   - `model_request_queued`（`tryAcquire` 未命中）→ 链 queued；
- *   - `model_request_admitted` / `model_request_started` → 链 executing；
- *   - `model_retry_scheduled`（`reasoning_signature_repair` / `auth_refresh` 除外）→ 链 backoff；
- *   - `model_request_completed` / 不可重试的 `model_request_failed` → 链结束（出集合）。
- * 子代理相位：任一链 executing → executing；否则有链在等 → waiting（带最近一条等待信息）；集合为空 →
- * 保持上一相位、不发事件（同一 ask 内工具执行期间，工具自己不排队时子代理仍显示 executing）。
- * 一个子代理可以同时持多张票（并行工具调用），所以不能再用单相位。
+ * Aggregation (replacing the single phase): the driver keeps the set of in-flight request chains per actor -
+ *   - `model_request_queued` (a missed `tryAcquire`) -> chain queued;
+ *   - `model_request_admitted` / `model_request_started` -> chain executing;
+ *   - `model_retry_scheduled` (except reasoning_signature_repair / auth_refresh) -> chain backoff;
+ *   - `model_request_completed` / non-retryable `model_request_failed` -> chain ends (leaves the set).
+ * Subagent phase: any chain executing -> executing; else any chain waiting -> waiting (with the latest waiting detail);
+ * empty set -> keep the previous phase, no event (while tools run inside an ask without queueing, the subagent still
+ * shows executing). One subagent can hold several tickets (parallel tool calls), so a single phase no longer works.
  *
- * 这是一条 driver **内部**的观察订阅，不是 transcript 的直播通道：v4 网关只排水连续 seq，所以
- * transcript 直播必须走 child runtime 的构造期 eventSink（run service 测试钉着这条）；这里只读
- * 模型网络状态，漏掉 seq 1 无关紧要。
+ * This is a driver-**internal** observation subscription, not a transcript live channel: the v4 gateway only drains
+ * consecutive seqs, so transcript live must go through the child runtime's construction-time eventSink (pinned by run
+ * service tests); here only model network status is read, and a missed seq 1 does not matter.
  */
 export function createActorModelActivity(input: {
   port: WorkflowConcurrencyPort | undefined;
   runId: string;
-  /** 当前在飞 ask 的实例（结算 / 取消后为 undefined）；只有工具活动的上报需要它。 */
+  /** Instance of the in-flight ask (undefined once settled/cancelled); only tool-activity reporting needs it. */
   live?: () => InstanceRef | undefined;
   handlers: ActorModelActivityHandlers;
   /**
-   * 本 run 的座位闸门与这个子代理在闸门里的键。在场时准入端口再包一层：先等座位、再过治理器。缺席即这个 run
-   * 的上界从不中途变动（snippet 执行、不带闸门的装配），准入端口与从前逐字相同。
+   * This run's seat gate and this subagent's key in it. When present, the admission port gets one more wrapper:
+   * seat first, then governor. Absent means this run's cap never changes mid-flight (snippet runs, gate-less
+   * assemblies) and the admission port stays verbatim.
    */
   seat?: { gate: WorkflowRunSeatGate; key: string };
 }): ActorModelActivity {
   const chains = new Map<string, Chain>();
   let executing = false;
-  /** 上一条已报出的等待信息；executing 一报即清。同一段等待里内容相同的等待只报一次。 */
+  /** Last reported waiting detail; cleared as soon as executing is reported. Identical waits within one stint report once. */
   let reportedWait: AskWaitInfo | undefined;
-  /** 本 ask 内已解析的 turn 数（`node-progress` 的 `turn`）；换 ask 归零。 */
+  /** Turns resolved within this ask (the `node-progress` turn); reset on ask change. */
   let turnsResolved = 0;
   let waitSeq = 0;
   let unsubscribeEvents: (() => void) | undefined;
   const { handlers, live, port, runId, seat } = input;
-  // 同一条会话事件流的第二个读者：工具调用。实现单独成文件（判定与计数都在那里），这里只把它
-  // 编进同一个生命周期，好让 driver 侧仍然只有一个观察对象。
+  // Second reader of the same session event stream: tool calls. Implemented in its own file (detection and counting
+  // live there); here it is only wired into the same lifecycle, so the driver side keeps a single observation object.
   const toolActivity = createActorToolActivity({
     onMutating: () => {
       const instance = live?.();
@@ -141,10 +143,11 @@ export function createActorModelActivity(input: {
     return false;
   };
   /**
-   * 聚合后仍在等：报一次 waiting（每一段等待恰好一条）。
-   * 一个子代理并行发 4 个 WebSearch、四条链在同一毫秒排队，四条 queued 事件各报一次
-   * `waiting(slot)`——实测 80 条等待记录有 26 条是这种同秒同文的重复。子代理相位没有变，
-   * 事件就不该再发：与上一条已报出的等待信息逐字段相同时吞掉；换 executing 后再等才重新报。
+   * Still waiting after aggregation: report waiting once (exactly one per stint).
+   * A subagent firing 4 parallel WebSearches queues 4 chains in the same millisecond; the four queued events each
+   * report `waiting(slot)` - measured logs show 26 of 80 waiting records were such same-second duplicates. The
+   * subagent phase did not change, so no new event: swallow when field-identical to the last reported waiting detail;
+   * report again only after executing and waiting anew.
    */
   const reportWaiting = (info: AskWaitInfo): void => {
     if (anyExecuting()) return;
@@ -164,7 +167,7 @@ export function createActorModelActivity(input: {
     chains.set(key, { phase, wait, waitSeq });
     reportWaiting(wait);
   };
-  /** 一条链结束：若没有链在执行、却还有链在等，子代理此刻才真正进入等待——用最新的等待信息报。 */
+  /** A chain ended: with no chain executing but some waiting, only now is the subagent truly waiting - report the latest detail. */
   const endChain = (key: string): void => {
     if (!chains.delete(key) || anyExecuting()) return;
     let latest: Chain | undefined;
@@ -175,27 +178,27 @@ export function createActorModelActivity(input: {
     if (latest?.wait !== undefined) reportWaiting(latest.wait);
   };
 
-  // 准入端口就是治理器端口的窄包装：快路径 = tryAdmit，排队 = admit（waiting(slot)
-  // 由 runner 的 queued 事件报，这里不再自己发）。acquire 仍先试快路径，兼容没有走 tryAcquire 的调用方。
-  const governed: ModelRequestAdmission | undefined =
-    port === undefined
-      ? undefined
-      : {
-          tryAcquire: ({ model }) => port.tryAdmit(runId, workflowConcurrencyKey(model)),
-          acquire: async ({ model, signal }) => {
-            const key = workflowConcurrencyKey(model);
-            return (
-              port.tryAdmit(runId, key) ??
-              (await port.admit(runId, key, signal ?? new AbortController().signal))
-            );
-          },
-        };
-  // 本 run 自己的上界在**共享 cap 之上**再包一层。闸门要的那条子代理事实——
-  // 此刻有没有工具在跑——就取自同一个对象里的工具观察面，所以两个读者共用一份账。
-  const admission =
-    seat === undefined
-      ? governed
-      : seat.gate.wrap(seat.key, { toolsInFlight: () => toolActivity.inFlight() }, governed);
+  // The admission port is a narrow wrapper over the governor port: fast path = tryAdmit, queue = admit (waiting(slot)
+  // is reported by the runner's queued event; no duplicate here). acquire still tries the fast path first, for callers
+  // that never call tryAcquire.
+  port === undefined
+    ? undefined
+    : {
+        tryAcquire: ({ model }) => port.tryAdmit(runId, workflowConcurrencyKey(model)),
+        acquire: async ({ model, signal }) => {
+          const key = workflowConcurrencyKey(model);
+          return (
+            port.tryAdmit(runId, key) ??
+            (await port.admit(runId, key, signal ?? new AbortController().signal))
+          );
+        },
+      };
+  // This run's own cap wraps on top of the shared cap. The subagent fact the seat gate wants -
+  // whether a tool is running right now - comes from the tool-observation surface of the same object, so both readers
+  // share one ledger.
+  seat === undefined
+    ? governed
+    : seat.gate.wrap(seat.key, { toolsInFlight: () => toolActivity.inFlight() }, governed);
 
   return {
     admission,
@@ -252,7 +255,7 @@ export function createActorModelActivity(input: {
               endChain(key);
               return;
             case "model_request_failed":
-              // retryable:true 的 failed 紧随一条 retry_scheduled——那条才改相位。
+              // A retryable:true failed is followed by a retry_scheduled - that one flips the phase.
               if (!status.retryable) endChain(key);
               return;
             default:
@@ -286,33 +289,34 @@ function chainKey(status: ModelNetworkStatusEvent): string {
   return parts.some((part) => part.length > 0) ? parts.join("|") : status.requestId;
 }
 
-// ————————————————————————————— run 级 stall 时钟—————————————————————————————
+// --------------------------------------- run-level stall clock ---------------------------------------
 
-/** 连续多久没有一次成功的模型请求就通知主代理一次。 */
+/** How long without a single successful model request before notifying the main agent once. */
 const WORKFLOW_STALL_NOTIFY_AFTER_MS = 20 * 60_000;
 
-/** 时钟与定时器（可注入，测试用假时间）。 */
+/** Clock and timers (injectable; fake time for tests). */
 export interface WorkflowClock {
   now?: () => number;
-  /** 返回取消函数。 */
+  /** Returns a cancel function. */
   schedule?: (callback: () => void, delayMs: number) => () => void;
 }
 
 interface RunStallClockOptions extends WorkflowClock {
-  /** 缺省 {@link WORKFLOW_STALL_NOTIFY_AFTER_MS}。 */
+  /** Defaults to {@link WORKFLOW_STALL_NOTIFY_AFTER_MS}. */
   afterMs?: number;
   onStalled: (info: RunStallInfo) => void;
 }
 
 /**
- * 一个 run 的停滞观察：所有 actor（turn 与工具侧请求一体）共用一只表。
- *   - `noteSuccess`：任一 `model_request_completed` → 归零、撤闹钟、清 reason 计数，本段结束；
- *   - `noteRetryScheduled`：一次 `model_retry_scheduled` → 计 reason；本段还没上膛就定闹钟到
- *     「上次成功 + afterMs」；
- *   - 闹钟响：距上次成功 ≥ afterMs 且本段至少排定过一次重试 → `onStalled` 恰好一次（每个 stall
- *     段一条），直到下一次成功才重新上膛；
- *   - `noteCap`：治理器扇出的 cap 变化——通知里顺带报此刻的 cap（最近一次扇出的值；没见过就缺席）。
- * 纯观察，不做任何决策；run 结算后 `dispose` 撤闹钟。
+ * One run's stall watcher: all actors (turn and tool requests as one) share a single ledger.
+ *   - noteSuccess: any `model_request_completed` -> reset, cancel alarm, clear reason counts, stint over;
+ *   - noteRetryScheduled: one `model_retry_scheduled` -> count the reason; if the stint is not yet armed, arm the alarm
+ *     at last-success + afterMs;
+ *   - alarm fires: >= afterMs since last success and at least one retry scheduled this stint -> `onStalled` exactly once
+ *     (one per stall stint), re-armed only by the next success;
+ *   - noteCap: a governor-fanned cap change - the notification also reports the current cap (last fanned value; absent
+ *     if never seen).
+ * Pure observation, no decisions; `dispose` cancels the alarm once the run settles.
  */
 export interface RunStallClock {
   noteSuccess(): void;
@@ -348,7 +352,7 @@ export function createRunStallClock(options: RunStallClockOptions): RunStallCloc
     if (disposed || notified) return;
     const sinceMs = now() - lastSuccessAt;
     if (sinceMs < afterMs) {
-      // 时钟漂移 / 注入时钟不单调：按剩余量再等一次，而不是漏掉这一段。
+      // Clock drift / non-monotonic injected clock: wait again by the remainder instead of missing the stint.
       cancelTimer = schedule(fire, afterMs - sinceMs);
       return;
     }
@@ -390,7 +394,7 @@ export function createRunStallClock(options: RunStallClockOptions): RunStallCloc
 
 const defaultSchedule = (callback: () => void, delayMs: number): (() => void) => {
   const timer = setTimeout(callback, delayMs);
-  // 不让一个等停滞的定时器把进程钉住：run 结束、进程要退出时它不该有投票权。
+  // Do not let a stall timer pin the process: once runs are done and the process wants to exit, it should get no vote.
   if (typeof timer === "object" && timer !== null && "unref" in timer) timer.unref();
   return () => clearTimeout(timer);
 };

@@ -121,7 +121,7 @@ export function AppView(props: {
       ]
     : props.messages;
 
-  // 旧的测试入口和嵌入式调用不会传 queuedInputs；默认空队列，避免队列面板在无数据时打断焦点交互。
+  // Legacy test entries and embedded callers pass no queuedInputs; default to an empty queue so the queue strip never steals focus when empty.
   const queuedInputs = props.queuedInputs ?? [];
   const composerSelection = props.selection?.placement === "composer" ? props.selection : undefined;
   const actionSelection = props.selection && !composerSelection ? props.selection : undefined;

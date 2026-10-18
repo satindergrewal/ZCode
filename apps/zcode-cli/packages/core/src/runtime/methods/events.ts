@@ -39,8 +39,8 @@ const SUMMARY_SESSION_EVENT_TYPES = new Set<SessionEventType>([
   SessionEventType.ToolCallProgress,
 ]);
 
-// 生产环境只记录会改变 Turn/Session 生命周期的低频事件；stream/progress 仍由
-// 现有 debug 聚合日志覆盖，避免诊断日志和消息流同频刷盘。
+// Production logs only low-frequency Turn/Session lifecycle events; stream/progress stay under
+// existing debug aggregates, off the message-flow cadence.
 const LIFECYCLE_SESSION_EVENT_TYPES = new Set<SessionEventType>([
   SessionEventType.SessionTitleUpdated,
   SessionEventType.TurnStarted,
@@ -83,9 +83,9 @@ export async function appendEvent(
   event: SessionEvent,
   traceContext: TraceContext,
 ): Promise<void> {
-  // live sink 以前拿到的是 createSessionEvent 默认的 sequenceNumber=0，
-  // 而 replay/read 路径拿到的是 eventStore 补号后的事件，导致同一 session 有两套顺序事实。
-  // 这里只发布已落库事件，让 live、replay、snapshot 的 eventSeq 全部来自同一个 event store。
+  // Live sinks once got the createSessionEvent default sequenceNumber=0
+  // while replay/read got store-numbered events — two orderings per session.
+  // Publish persisted events only; live/replay/snapshot eventSeq share one store.
   const shouldLogLifecycle = LIFECYCLE_SESSION_EVENT_TYPES.has(event.type);
   const startedAt = Date.now();
   if (shouldLogLifecycle) {
@@ -213,8 +213,8 @@ function flushSessionEventAppendAggregate(
 ): void {
   const aggregateMap = sessionEventAppendAggregates.get(this);
   aggregateMap?.delete(aggregateKey);
-  // 日志治理原因：model streaming / progress 类事件与 token 流同频，
-  // 逐条写默认日志会把 eventStore 索引复制成巨量 daily log；这里保留 seq 范围和 kind 分布用于定位。
+  // Log hygiene: streaming/progress events match token-flow cadence;
+  // per-event logs would clone the index into giant daily logs; keep seq range and kind histogram.
   this.logger?.debug("Session event append summary", {
     ...traceContextToLogContext(traceContext),
     event: "event_store.appended.summary",
@@ -299,8 +299,8 @@ async function persistDurableSessionEvent(
         },
       });
     } catch (error) {
-      // 原因：自动结束绝对时间若只在内存 eventStore，CLI 重启会错误重开五分钟窗口。
-      // session entry 使用 interactionId 稳定覆写最新阶段，恢复时只读取最终状态。
+      // In-memory-only auto-close times would restart the five-minute window on CLI restart.
+      // The session entry overwrites the latest phase by interactionId; recovery reads final state.
       this.logger?.warn("Failed to persist user input auto-resolution state", {
         ...traceContextToLogContext(traceContext),
         errorMessage: error instanceof Error ? error.message : String(error),
@@ -313,10 +313,10 @@ async function persistDurableSessionEvent(
     return;
   }
 
-  // ── session_input 账本：queue/steer 生命周期集中记账 ──
-  // 在事件汇处理（而非各发射点）：TurnSteerQueued/Discarded 有 5+ 个发射点
-  // （steer/编辑重发/单删/清空/resume 清扫），单点接线保证不漏。promotion 在
-  // drain 持久化处原子完成（persistUserPrompt sessionInputId 路径），不经此处。
+  // ── session_input ledger: centralized queue/steer lifecycle accounting ──
+  // Handled at the sink, not each emitter: TurnSteerQueued/Discarded have 5+ emitters
+  // (steer/edit-resend/single-remove/clear/resume sweep); one wiring misses none. Promotion
+  // happens atomically at drain persist (persistUserPrompt sessionInputId), not here.
   if (event.type === SessionEventType.TurnSteerQueued) {
     const payload = event.payload as {
       pendingInputId: string;
@@ -388,12 +388,12 @@ async function persistDurableSessionEvent(
       pendingInputIds: string[];
       reason?: string;
     };
-    // sendQueuedNow 只是在执行权已保留后把项从 queue 投影摘除；此时若把 ledger
-    // 标成 cancelled，会制造 remove→后台 user message promotion 之间的崩溃丢失窗口。
-    // 保持 admitted，随后由 persistUserPrompt 原子置 promoted；若进程先退出，恢复清扫
-    // 会把它明确置 discarded/session_resumed。
+    // sendQueuedNow only drops the item from the queue projection post-reservation; marking the ledger
+    // cancelled there opens a crash-loss window before background promotion.
+    // Stay admitted; persistUserPrompt promotes atomically, and on early exit the sweep
+    // sets discarded/session_resumed explicitly.
     if (payload.reason === "promoted") return;
-    // session_resumed=重启不保留队列（裁决，留痕不静默）；其余用户动作归 cancelled。
+    // session_resumed = restart keeps no queue (ruled, on the record); other user actions are cancelled.
     const status = payload.reason === "session_resumed" ? "discarded" : "cancelled";
     for (const pendingInputId of payload.pendingInputIds) {
       try {
@@ -440,8 +440,8 @@ async function persistDurableSessionEvent(
           created: timestamp,
           updated: timestamp,
         },
-        // goal verifier 生命周期是恢复 UI 轮次和分割线的业务事实；
-        // 只写内存 eventStore 会导致冷启动后 goal iteration/todo 分组丢失。
+        // The goal verifier lifecycle is business fact for UI rounds and dividers;
+        // memory-only stores lose goal iteration/todo grouping on cold start.
         data: {
           eventId: event.id,
           payload: event.payload,
@@ -547,9 +547,9 @@ export async function notifyEventSinks(
 }
 
 /**
- * 会话是否已进入持久化 store（首条输入 / 外部活动 / 直接启动的启动轮 / 冷恢复任一路径落过行）。
- * 协议层的 session record 以它为 draft 判定的事实源（bootstrap `onSessionEvent` 每条事件对齐一次），
- * 不再靠各命令 handler 各自翻 `record.persistence`。
+ * Whether the session reached persistent store (first input / external activity / hub launch / cold restore, any).
+ * The protocol session record takes it as draft-truth (bootstrap `onSessionEvent` aligns per event),
+ * not per-handler peeks at `record.persistence`.
  */
 export function isSessionPersisted(this: AgentRuntimeInternal): boolean {
   return this.sessionPersisted;
@@ -574,17 +574,17 @@ export async function ensureSessionPersisted(
 
   try {
     const directory = this.workingDirectory;
-    // bootstrap 会用 path.resolve 规范化执行 cwd；过去又把同一个值写入
-    // session.path/directory，导致本地 workspacePath 的末尾 `/` 丢失。冷恢复随后按精确
-    // workspaceKey 查 provider registry 时就会落到另一个身份。持久化必须保留协议入口路径。
+    // bootstrap normalizes the cwd via path.resolve and once wrote it into
+    // session.path/directory, dropping a trailing slash; cold restore then matched the provider registry
+    // by exact workspaceKey and landed elsewhere. Persist the protocol-entry path.
     const persistedWorkspacePath = this.config.workspacePath ?? directory;
     const title = titleFromInput(input);
     const workspaceIdentity = this.config.memory?.workspaceIdentity?.trim();
     await this.sessionStore.createSession({
       id: this.sessionId,
       projectID: projectIdFromDirectory(directory),
-      // Memory workspaceIdentity 是上游提供的不透明隔离键。这里只做类型品牌化，
-      // 不能调用会改写字符串的 ID 生成器，否则恢复后的 Memory root 会发生漂移。
+      // The Memory workspaceIdentity is an upstream opaque key; brand the type only,
+      // never an ID generator that rewrites it, or the restored Memory root drifts.
       workspaceID: this.config.workspaceIdentity ?? (workspaceIdentity as WorkspaceId | undefined),
       parentID: this.config.parentSessionId,
       traceID: traceContext.traceId,
@@ -599,10 +599,10 @@ export async function ensureSessionPersisted(
         mode: this.config.mode ?? "build",
       },
     });
-    // 初始模型过去只写进首条 user message，没有写稳定的 session selection。
-    // 冷恢复从末尾 assistant 反推时只能得到 provider/model，必选 reasoning 会丢失，
-    // Subagent 因此在 hydration 前就无法重新创建 Model。会话创建时同步固定完整选型，
-    // 后续显式切模仍复用同一个稳定 entry 覆盖。
+    // The initial model once lived only in the first user message, no stable selection.
+    // Inferring from the last assistant yields provider/model at best; required reasoning vanishes
+    // and subagents cannot rebuild the Model pre-hydration. Pin the full selection at creation;
+    // later switches reuse the same stable entry.
     phase = "session_model_selection";
     const initialSelection = this.getSessionModelSelection();
     if (initialSelection) await persistRuntimeModelSelection(this, initialSelection);
@@ -619,10 +619,10 @@ export async function ensureSessionPersisted(
       module: "core.runtime",
       status: "completed",
     });
-    // 之前只把 first_input title 写进 sessionStore 但不 appendEvent，
-    // 导致下游 (z-code services 层的 task index sqlite syncer) 等不到 session.titleUpdated，
-    // 侧边栏一直显示 "New session" 直到后台 LLM 生成 title。这里补一条 source="first_input"
-    // 事件，让 desktop/web/mobile 三端的 syncer 走同一条收敛路径。
+    // The first_input title once only hit the sessionStore, no appendEvent,
+    // so downstream (the services task-index sqlite syncer) never saw session.titleUpdated
+    // and sidebars stuck on New session. Emit a source="first_input" event
+    // so desktop/web/mobile syncers converge on one path.
     phase = "session_title_event";
     await this.appendEvent(
       this.createEvent(

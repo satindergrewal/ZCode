@@ -19,8 +19,8 @@ function createRendererZCodeEndpointEnv(
 ): RuntimeZCodeEndpointEnv {
   return {
     ZCODE_ENV,
-    // UI 侧的 zcode-plan 占位 provider 以前只看 ZCODE_ENV，
-    // 没有消费 Vite 注入的 base url，导致自定义测试域名时 renderer 和 host/service 可能不一致。
+    // The UI-side zcode-plan placeholder provider used to read only ZCODE_ENV and ignored the
+    // Vite-injected base URL, letting renderer and host/service disagree on custom test domains.
     ZCODE_BASE_URL: env.VITE_ZCODE_BASE_URL,
     ZCODE_ENDPOINT_ORIGIN: env.VITE_ZCODE_ENDPOINT_ORIGIN,
   };

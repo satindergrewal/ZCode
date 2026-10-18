@@ -6,8 +6,9 @@
     "lib": ["ES2022"]
   },
   "include": ["src"],
-  // server 同时直接 import 了 shared / services / client / rpc。
-  // 之前 references 不完整，构建时会退回到沿着包入口抓源码，造成 rpc 报错被重复放大。
+  // server directly imports shared / services / client / rpc.
+  // The references used to be incomplete, so builds fell back to pulling
+  // sources through package entries and amplified rpc errors repeatedly.
   "references": [
     { "path": "../shared" },
     { "path": "../services" },

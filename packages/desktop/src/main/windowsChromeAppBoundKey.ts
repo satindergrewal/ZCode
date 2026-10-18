@@ -1,5 +1,5 @@
 /* eslint-disable max-lines */
-// 安全说明：签名锁定、进程启动与协议解析必须保留在同一审计边界，避免拆分后重新引入校验/执行间隙。
+// Security note: signature pinning, process spawn, and protocol parsing share one audit boundary;
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lstat, readFile, realpath, stat } from "node:fs/promises";
@@ -53,8 +53,8 @@ export class WindowsChromeAppBoundImportError extends Error {
 }
 
 function throwAppBoundDecryptionFailure(logger: BrowserDataLogger, reason: string): never {
-  // helper 原本返回了稳定子错误码，但通用映射会丢失根因；这里只记录白名单值，禁止记录可能含密钥或路径的原始响应。
-  logger.warn("[browser-data] Windows Chrome App-Bound helper 返回失败", {
+  // The helper used to return stable sub-error codes; generic mappings lose the root cause. Log allowlisted
+  logger.warn("[browser-data] Windows Chrome App-Bound helper returned failure", {
     reason: APP_BOUND_HELPER_FAILURE_REASONS.has(reason) ? reason : "invalid_response",
   });
   throw new WindowsChromeAppBoundImportError("chrome_cookie_app_bound_decryption_failed");
@@ -154,8 +154,8 @@ function createSanitizedHelperEnvironment(
     "USERPROFILE",
     "WINDIR",
   ];
-  // Windows PowerShell 即使按完整路径调用 .exe 也依赖 PATHEXT；省略时 helper 版本握手会静默返回空输出。
-  // 固定只允许 .EXE，既满足受信 helper 启动，又不继承外部可注入的脚本扩展。
+  // Windows PowerShell needs PATHEXT even for full-path .exe invocation; without it the version handshake returns empty.
+  // Allow .EXE only: trusted helper launch, no inheritance of injectable script extensions.
   const env: NodeJS.ProcessEnv = { PATHEXT: ".EXE" };
   for (const name of allowed) {
     const value = sourceEnv[name];
@@ -244,8 +244,8 @@ async function verifyAuthenticodePair(
   helperPath: string,
   appExecutablePath: string,
 ): Promise<string | false> {
-  // SYSTEMROOT/WINDIR 都能被启动方覆盖，不能作为发布态签名校验器的信任根。
-  // GLOBALROOT\\SystemRoot 由 Windows 内核解析到真实系统目录，再转成 CreateProcess 可执行的 DOS 路径。
+  // SYSTEMROOT/WINDIR are launcher-overridable; not trust roots for release-signature verification.
+  // GLOBALROOT\\SystemRoot is kernel-resolved to the real system dir, then to a CreateProcess DOS path.
   const powershellPath = await realpath(TRUSTED_WINDOWS_POWERSHELL_ALIAS);
   const script = [
     "$stream=[IO.File]::Open($zcodeArg0,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read);",
@@ -261,9 +261,9 @@ async function verifyAuthenticodePair(
     "finally{$sha.Dispose()}",
     "}finally{$stream.Dispose()}",
   ].join("");
-  // Windows PowerShell 5.1 的 `-Command` 会拼接尾随 argv 而不会填充 `$args`，
-  // 直接传路径会让签名校验拿到空路径并固定 fail closed。统一编码脚本和值，并从当前
-  // powershell.exe 的 PSHOME 显式加载 Security 模块，兼容带空格路径和被污染的 PSModulePath。
+  // Windows PowerShell 5.1 -Command concatenates trailing argv and never fills $args;
+  // a bare path argument would hand the signature check an empty path and fail closed. Encode script+args
+  // and load Security from the invoking powershell.exe PSHOME, tolerating spaced paths and dirty PSModulePath.
   const result = await runHelperProcess(
     powershellPath,
     createWindowsPowerShellSecurityArgs(script, [helperPath, appExecutablePath]),
@@ -301,8 +301,8 @@ async function runLockedPackagedHelper(options: {
     "if($null -ne $response){[Console]::Out.WriteLine(($response -join [Environment]::NewLine))}",
     "}finally{$stream.Dispose()}",
   ].join("");
-  // 可信 PowerShell 在 helper 整个生命周期持有禁止写入/删除的句柄；版本握手和 broker
-  // 都只能执行同一已验证文件实例，不存在“恶意镜像先 spawn，再靠路径哈希补验”的窗口。
+  // The trusted PowerShell holds no-write/no-delete handles for the helper lifetime; version handshake
+  // and broker only ever run that one verified file -- no spawn-then-verify window.
   return options.runHelper(
     powershellPath,
     createEncodedPowerShellArgs(script, [
@@ -379,7 +379,7 @@ async function verifyHelper(helperPath: string, options: ReadAppBoundKeyOptions)
     return verifiedHash;
   } catch (error) {
     options.logger.warn(
-      "[browser-data] Windows Chrome App-Bound helper 校验失败",
+      "[browser-data] Windows Chrome App-Bound helper verification failed",
       toSafeProcessError(error),
     );
     throw new WindowsChromeAppBoundImportError("chrome_cookie_helper_verification_failed");
@@ -469,12 +469,12 @@ export async function readWindowsChromeAppBoundKey(
   } catch (error) {
     if (error instanceof WindowsChromeAppBoundImportError) throw error;
     options.logger.warn(
-      "[browser-data] Windows Chrome App-Bound helper 运行失败",
+      "[browser-data] Windows Chrome App-Bound helper run failed",
       toSafeProcessError(error),
     );
     throw new WindowsChromeAppBoundImportError("chrome_cookie_app_bound_decryption_failed");
   } finally {
-    // APPB 密文虽不是明文密钥，也不应在导入结束后继续挂在 main 的可复用 Buffer 中。
+    // APPB ciphertext is not a plaintext key, but it should not linger in a reusable main-process buffer.
     appBoundKey.fill(0);
   }
 }

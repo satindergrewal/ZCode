@@ -1,4 +1,4 @@
-/* oxlint-disable eslint(max-lines) -- WSL backend 同时承载探测、路径解析、兼容 UNC 与可取消流式上传。 */
+/* oxlint-disable eslint(max-lines) -- the WSL backend carries detection, path resolution, UNC compat, and cancelable streaming upload together. */
 import { spawn, execFile } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import { access, copyFile, mkdir, readFile, stat } from "node:fs/promises";
@@ -96,7 +96,7 @@ async function accessAnyPath(paths: string[]): Promise<string | null> {
       await access(path);
       return path;
     } catch {
-      // 继续尝试下一个候选路径。
+      // Try the next candidate path.
     }
   }
 
@@ -110,7 +110,7 @@ async function copyFileToAnyPath(sourcePath: string, targetPaths: string[]): Pro
       await copyFile(sourcePath, targetPath);
       return true;
     } catch {
-      // WSL 1 / 某些 Windows 版本可能不支持当前 UNC 前缀，继续回退。
+      // WSL 1 / some Windows builds may not support this UNC prefix; keep falling back.
     }
   }
 
@@ -137,7 +137,7 @@ export class WSLBackend implements IRemoteBackend {
     await this.ensureAvailable();
     const resolvedInfo = await this.resolveInfo();
     if (!resolvedInfo.distroName || !resolvedInfo.userName) {
-      throw new Error("无法解析 WSL 实际 distro/user 身份");
+      throw new Error("Could not resolve the actual WSL distro/user identity");
     }
     return {
       distro: resolvedInfo.distroName,
@@ -167,14 +167,15 @@ export class WSLBackend implements IRemoteBackend {
     }
     const parsedProxyUrl = new URL(normalizedProxyUrl);
     if (!isLoopbackProxyHostname(parsedProxyUrl.hostname)) {
-      // 非 loopback 代理本来就是远端可解析地址；保留用户输入，避免无意义的 URL 规范化。
+      // Non-loopback proxies are already remote-resolvable; keep the user input and skip pointless URL normalization.
       return proxyUrl;
     }
 
     await this.ensureAvailable();
     const localProbe = await this.probeProxyPort(normalizedProxyUrl);
     if (localProbe === true) {
-      // mirrored networking 或代理已监听 WSL loopback，不能替换成另一个地址。
+      // With mirrored networking, or a proxy already listening on the WSL
+      // loopback, the address must not be swapped for another.
       return normalizedProxyUrl;
     }
 
@@ -189,7 +190,7 @@ export class WSLBackend implements IRemoteBackend {
       const gatewayProbe = await this.probeProxyPort(gatewayProxyUrl);
       return gatewayProbe === true ? gatewayProxyUrl : normalizedProxyUrl;
     } catch {
-      // 代理解析只是运行时增强；失败时保留用户原值，让 Agent 自己返回可诊断的网络错误。
+      // Proxy resolution is a runtime enhancement; on failure keep the user's original value and let the Agent surface a diagnosable network error.
       return normalizedProxyUrl;
     }
   }
@@ -218,9 +219,9 @@ export class WSLBackend implements IRemoteBackend {
       }
     }
 
-    // WSL 1 或默认 distro 名称解析失败时，UNC 路径可能不可用。
-    // 如果这里直接报错，remote deploy 会彻底失效；回退到 `cat > file` 的流式写入，
-    // 至少能保证 server/node/pty 仍可上传，只是速度慢一些。
+    // With WSL 1 or an unresolved default distro name, UNC paths may be unusable.
+    // Hard-failing here kills remote deploy entirely; the `cat > file` streaming
+    // fallback at least still uploads server/node/pty, just slower.
     const parentDir = posix.dirname(resolvedRemotePath);
     const command = `mkdir -p ${quotePosixShellArg(parentDir)} && cat > ${quotePosixShellArg(resolvedRemotePath)}`;
     const stream = await this.exec(command);
@@ -325,8 +326,9 @@ export class WSLBackend implements IRemoteBackend {
     this.assertNotDisposed();
     await this.ensureAvailable();
     const resolvedInfo = await this.resolveInfo();
-    // 入口门禁之后的 discovery/identity await 允许 dispose barrier 插入并完成；
-    // resolved info 命中缓存时，旧 continuation 会在 barrier 后继续 spawn。最终创建 child 前必须再校验。
+    // After the entry gate, discovery/identity awaits allow a dispose barrier to
+    // slip in and complete; a cached resolved-info hit lets the old continuation
+    // spawn after the barrier. Re-validate before finally creating the child.
     this.assertNotDisposed();
 
     return new Promise((resolve, reject) => {
@@ -431,8 +433,10 @@ export class WSLBackend implements IRemoteBackend {
     const graceTimeoutMs = Math.max(options?.graceTimeoutMs ?? 300, 0);
     const killWaitTimeoutMs = Math.max(options?.killWaitTimeoutMs ?? 250, 0);
     const children = Array.from(this.ownedChildren.entries());
-    // WSL 过去不记录自己 spawn 的 wsl.exe，Host 被强杀时只能寄希望于管道 EOF。
-    // 先同步关闭本 backend 子进程 stdin；宽限期后也只 kill 这些已证明归属的 child，绝不 terminate distro。
+    // WSL never recorded the wsl.exe processes it spawned, so a hard-killed Host
+    // relied on pipe EOF. Close this backend's child stdin synchronously first;
+    // after the grace period kill only these proven-owned children -- never
+    // terminate the distro.
     for (const [child] of children) {
       this.endOwnedChildInput(child);
     }
@@ -471,7 +475,7 @@ export class WSLBackend implements IRemoteBackend {
 
   private assertNotDisposed(): void {
     if (this.disposed) {
-      throw new Error("WSL backend 已释放，无法启动新命令");
+      throw new Error("WSL backend disposed; cannot start new commands");
     }
   }
 
@@ -482,7 +486,7 @@ export class WSLBackend implements IRemoteBackend {
     try {
       child.stdin.end();
     } catch {
-      // stdin 已异常关闭时继续进入本 child 的 kill fallback。
+      // stdin already closed abnormally; still run this child's kill fallback.
     }
   }
 
@@ -502,12 +506,12 @@ export class WSLBackend implements IRemoteBackend {
 
   private async ensureAvailable(): Promise<void> {
     if (process.platform !== "win32") {
-      throw new Error("WSL 连接仅支持在 Windows 上使用");
+      throw new Error("WSL connections are supported on Windows only");
     }
 
     const available = await isWSLAvailable((args) => this.execWslForBuffer(args));
     if (!available) {
-      throw new Error("当前系统未检测到可用的 WSL 环境");
+      throw new Error("No usable WSL environment detected on this system");
     }
   }
 
@@ -534,7 +538,7 @@ export class WSLBackend implements IRemoteBackend {
       const userName = actualUserName.trim() || requestedUserName;
       const homeDir = homeLines.join("\n").trim();
       if (!homeDir) {
-        throw new Error("无法解析 WSL 用户 HOME");
+        throw new Error("Could not resolve the WSL user HOME");
       }
 
       return {
@@ -568,7 +572,7 @@ export class WSLBackend implements IRemoteBackend {
           distro.name.localeCompare(requestedDistro, undefined, { sensitivity: "base" }) === 0,
       );
       if (!matched) {
-        throw new Error(`未找到名为 ${this.options.distro} 的 WSL distro`);
+        throw new Error(`No WSL distro named ${this.options.distro} found`);
       }
 
       return matched;

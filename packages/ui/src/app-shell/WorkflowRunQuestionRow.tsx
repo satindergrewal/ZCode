@@ -5,11 +5,12 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { workflowRunQuestionWaitedLabel } from "@/app-shell/workflowRunQuestions.js";
 
 /**
- * 一条升级问题：挂在提问者那一行下面。
+ * One escalation question, hung under the asker's row.
  *
- * **只读，v1 没有应答框**：应答者是主代理，不是用户——它拿不准时本就可经 AskUserQuestion
- * 转询用户。qid 是主代理作答时要用的那个 token；用户自己答不了，但把它显示出来，就能指着
- * 某一个问题让主代理去答——这是只读面里唯一可被转达的抓手。
+ * READ-ONLY, v1 has no answer box: the answerer is the primary agent, not the user — when
+ * unsure it can already relay via AskUserQuestion. The qid is the token the primary agent
+ * answers with; the user cannot answer it, but showing it lets them point at one specific
+ * question for the agent to address — the only relayable handle in this read-only surface.
  */
 export function WorkflowRunQuestionRow({
   className,
@@ -17,12 +18,12 @@ export function WorkflowRunQuestionRow({
   question,
   showAsker = false,
 }: {
-  /** 落位由调用方给（脊线里挂在提问者下面再退 26px；末尾的孤儿块自己有内缩）。 */
+  /** Placement is the caller's job (in the spine: under the asker, indented 26px more; orphan blocks at the end indent themselves). */
   className?: string;
-  /** 由清单的定时器喂进来的"现在"，好让等待时长在没有事件流的时候也照走。 */
+  /** "Now", fed by the list's timer, so wait time advances even without an event stream. */
   now: number;
   question: WorkflowRunPendingQuestion;
-  /** 匹配不上提问者的问题（挂在阶段末尾）要自己报名字；挂在行下的不必重复。 */
+  /** Questions that match no asker (hung at phase end) must name themselves; row-hung ones need not repeat it. */
   showAsker?: boolean;
 }) {
   const { intl } = useZCodeIntl();
@@ -49,7 +50,7 @@ export function WorkflowRunQuestionRow({
                 : `${question.actorSiteId}@${question.actorOrdinal}`)}
           </span>
         ) : null}
-        {/* 问题正文是人话，不是技术值，所以按正文排版；pre-wrap 保住模型可能带的换行。 */}
+        {/* Question text is prose, not a technical value: body typography; pre-wrap keeps the model's newlines. */}
         <span className="whitespace-pre-wrap break-words">{question.question}</span>
         {question.context === undefined ? null : (
           <p
@@ -61,8 +62,8 @@ export function WorkflowRunQuestionRow({
         )}
       </div>
       <span className="flex shrink-0 items-baseline gap-2 font-mono text-ui-xs">
-        {/* 等了多久。刻意**不**用 warning 着色：长等待是设计内的正常状态，不是告警。askedAt
-            缺席（老 journal 重放）时整段不渲染，绝不编一个"刚刚"出来。 */}
+        {/* Wait time. Deliberately NOT warning-colored: a long wait is normal by design, not an alarm. When askedAt
+            is absent (old journal replay) the whole span is skipped — never fabricate "just now". */}
         {waited === undefined ? null : (
           <span data-testid="workflow-run-question-waited">{waited}</span>
         )}

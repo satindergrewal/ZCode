@@ -14,9 +14,9 @@ interface VerificationEntryPayload {
 }
 
 /**
- * 在 TurnComplete 对订阅者可见前，把 fork 所需的历史事实固定到最终 assistant。
- * productTurnId 属于 bootstrap 投影域，这里只固定 core 权威的 raw message segment；
- * resolver 会用 projection candidate 补 productTurnId，禁止 core 复制 `~qN` 算法。
+ * Before TurnComplete reaches subscribers, pin fork-relevant history onto the final assistant.
+ * productTurnId is bootstrap domain; here only the core-authoritative raw segment pins;
+ * the resolver fills it from the projection candidate; core must not copy the ~qN scheme.
  */
 export async function persistStableForkCompletionBoundary(
   runtime: AgentRuntimeInternal,
@@ -50,9 +50,9 @@ export async function persistStableForkCompletionBoundary(
     boundary.info.error ||
     boundary.info.time.completed === undefined
   ) {
-    // 兼容只实现部分 SessionStorePort 的旧 adapter/test double，以及 turn 收口前被
-    // edit/rewind 改写的 transcript。没有 exact segment 就不写伪 anchor，resolver
-    // 仍按 legacy 无歧义规则裁决。
+    // Tolerates partial-SessionStorePort adapters/test doubles and transcripts rewritten
+    // by edit/rewind pre-close; no exact segment, no fake anchor — the resolver
+    // still decides by the legacy unambiguous rule.
     return;
   }
 
@@ -92,8 +92,8 @@ export async function persistStableForkCompletionBoundary(
 }
 
 function stableGoalSnapshot(target: SessionGoal): SessionGoal {
-  // active run 字段属于 parent 的瞬时执行权，不是 child 可继承状态。生产 adapter 的
-  // cloneTargetForFork 也会清空；anchor 同样先清空，避免查询/诊断误读为历史运行中。
+  // Active-run fields are parent-transient, not child state; the production adapter
+  // clears them in cloneTargetForFork; clear the anchor too, or queries read history as running.
   return {
     ...target,
     activeInputId: null,
@@ -110,8 +110,8 @@ async function verificationEntryIdsAtBoundary(
 ): Promise<string[]> {
   const store = runtime.sessionStore;
   if (!store?.sessionEntries) {
-    // 有 goal 却无法读取 verifier ledger 时不能伪造空边界，否则 child 可能静默丢失
-    // fork 点前 verifier。显式失败会阻止 TurnComplete/canFork 先于权威 anchor 发布。
+    // A goal with an unreadable verifier ledger gets no fake empty boundary — the child could silently lose
+    // pre-fork verifiers. Fail loudly; TurnComplete/canFork waits for the anchor.
     return [];
   }
   const entries = await store.sessionEntries({

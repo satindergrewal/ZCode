@@ -1,17 +1,17 @@
 /**
- * 隐藏子命令 `__zcode-dwf-child <entry path>`：dynamic workflow 的沙箱子进程入口。
+  * Hidden subcommand __zcode-dwf-child <entry path>: the dynamic-workflow sandbox child entry.
  *
- * 存在理由：SEA 单文件二进制**不解释 Node CLI 旗标**——harness 缺省的
- * `node --max-old-space-size=… <entry>` 里的旗标会原样落进 CLI 的严格 parseArgs，子进程立刻报错
- * 退出，于是 SEA 下每一个 workflow run 必然失败。修法与 official plugin host 同款
- * （`plugin-host-command.ts`）：SEA 下 bootstrap 让 harness 自 re-exec 本二进制并带上本子命令，
- * `run.ts` 在 parseArgs **之前**分派到这里。
+  * Reason to exist: a SEA single-file binary **does not interpret Node CLI flags** -- the flags in the harness's default
+  * node --max-old-space-size=... <entry> would land verbatim in the CLI's strict parseArgs, and the child would
+  * error out at once, failing every workflow run under SEA. The fix mirrors the official plugin host
+  * (plugin-host-command.ts): under SEA bootstrap has the harness re-exec this binary with this subcommand,
+  * and run.ts dispatches here before parseArgs.
  *
- * payload 不再走 argv（Windows 命令行上限
- * 32,767 字符），harness 写一份自包含的入口文件 `<cwd>/.zcode/workflow-runs/<runId>.mjs`，argv
- * 末位只是它的路径。入口文件自带 childMain 与 payload，这里只 `import()` 它并把 CLI 进程的
- * vm/readline/stdio 注入它导出的 `start`——本模块因此**不再依赖 `@zcode/dynamic-workflow-runtime`**。
- * 堆上限的 best-effort `v8.setFlagsFromString` 也随 payload 挪进了入口文件。
+  * The payload no longer travels on argv (the Windows command-line
+  * limit is 32,767 chars): the harness writes a self-contained entry file <cwd>/.zcode/workflow-runs/<runId>.mjs and the last argv
+  * item is just its path. The entry file carries childMain and the payload; this module only import()s it and injects the CLI process's
+  * vm/readline/stdio into its exported start -- hence this module **no longer depends on @zcode/dynamic-workflow-runtime**.
+  * The best-effort v8.setFlagsFromString heap cap moved into the entry file with the payload.
  */
 
 import { resolve } from "node:path";
@@ -25,7 +25,7 @@ export function isDwfChildInvocation(argv: readonly string[]): boolean {
   return argv[0] === ZCODE_DWF_CHILD_COMMAND;
 }
 
-/** 入口文件导出面（child-source.ts 的 `renderChildEntry` 生成）。 */
+/** Entry-file export surface (produced by child-source.ts's renderChildEntry). */
 interface ChildEntryModule {
   start?: (deps: {
     vm: { createContext: typeof createContext; runInContext: typeof runInContext };
@@ -36,10 +36,10 @@ interface ChildEntryModule {
 }
 
 /**
- * 跑沙箱子进程直到脚本终结。`argv` 是去掉子命令名后的剩余参数，**末位**是入口文件路径。
+  * Runs the sandbox child until the script terminates. argv is the remainder after the subcommand name, with the **last** item the entry file path.
  *
- * 必须 await 到终结才返回：CLI 入口在 `run()` 返回后会挂 1s 退出 watchdog
- * （shutdown.ts 的 `scheduleCliExitWatchdog`），提前返回等于让 watchdog 在 run 刚起步时强退子进程。
+  * Must await termination before returning: after run() returns, the CLI entry arms a 1s exit watchdog
+  * (shutdown.ts's scheduleCliExitWatchdog); returning early lets the watchdog force-exit the child as the run barely starts.
  */
 export async function runDwfChildCommand(ctx: RunContext, argv: string[]): Promise<number> {
   const entryPath = argv[argv.length - 1];
@@ -49,8 +49,8 @@ export async function runDwfChildCommand(ctx: RunContext, argv: string[]): Promi
   }
 
   try {
-    // 动态 import 一份磁盘上的 ESM（与 plugin-host-command.ts 加载插件入口同款）。入口文件
-    // 自己判定「不是进程入口」（argv[1] 是子命令名，不是它），不会自启，由这里调 start。
+        // Dynamic import of an on-disk ESM (same pattern as plugin-host-command.ts loading plugin entries). The entry file
+        // decides itself that it is not the process entry (argv[1] is the subcommand, not it), does not self-start, and is started via start here.
     const entry = (await import(pathToFileURL(resolve(entryPath)).href)) as ChildEntryModule;
     if (typeof entry.start !== "function") {
       throw new Error(`workflow entry file exports no start(): ${entryPath}`);
@@ -63,8 +63,8 @@ export async function runDwfChildCommand(ctx: RunContext, argv: string[]): Promi
     });
     return 0;
   } catch (error) {
-    // stdout 是父进程的 NDJSON 通道，诊断只能走 stderr——harness 正是以子进程 stderr 归因
-    // 「退出而未完成」的失败（harness.ts 的 child.on("close")）。
+        // stdout is the parent's NDJSON channel; diagnostics go to stderr only -- the harness attributes
+        // exited-without-finishing failures precisely via the child's stderr (child.on close in harness.ts).
     const message = error instanceof Error ? error.message : String(error);
     ctx.stderr.write(`Workflow child failed: ${message}\n`);
     return 1;

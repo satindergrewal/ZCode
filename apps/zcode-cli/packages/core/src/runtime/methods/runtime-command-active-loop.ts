@@ -30,10 +30,10 @@ export async function drainPendingRuntimeCommandsForActiveLoop(
   const runtimeEntries: RuntimeMessageEntry[] = [];
 
   for (const command of commands) {
-    // 排队的 controlOnly 轮（GUI「配置」的设置轮）不进活动 turn，而且它之后入队的通知也不能被
-    // 这里先吸收：那些通知说的是它刚记下的新 run，模型必须先读到「设置已调整、新 run 是谁」，
-    // 再读到新 run 的进展。在它这里停下，
-    // 后面的留给外层队列按序跑。
+    // A queued controlOnly turn (the GUI settings turn) never enters the active turn, and later-enqueued notices must not be
+    // absorbed first: they describe the run it just recorded; the model reads settings-changed-plus-which-run,
+    // before that run progress. Stop here;
+    // the outer queue takes the rest in order.
     if (command.mode === "control-only-turn") break;
     if (command.mode !== "task-notification" && command.mode !== "subagent-message") {
       continue;
@@ -55,7 +55,7 @@ export async function drainPendingRuntimeCommandsForActiveLoop(
     }
 
     consumedCommandIds.push(removed.id);
-    // active-loop 不会创建新的 TurnStarted；这里把已消费事实带到当前 turn 的终态，且只认结构化 subagent 来源，避免 Bash 混入。
+    // No new TurnStarted here; carry consumed facts to this turn terminal, structured subagent sources only, no Bash.
     if (
       removed.mode === "task-notification" &&
       removed.originMeta?.backgroundSource === "subagent"

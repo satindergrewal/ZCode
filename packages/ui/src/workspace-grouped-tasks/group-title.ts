@@ -1,6 +1,6 @@
 import { CRON_DEFAULT_GROUP_ID, OFF_PEAK_DEFAULT_GROUP_ID } from "@zcode/shared";
 
-/** 系统分组标题按语言环境本地化展示，忽略 DB 里存的固定占位标题（'cron' / 'off-peak'）。 */
+/** Localizes system group titles per locale, ignoring the fixed placeholder titles stored in the DB ('cron' / 'off-peak'). */
 function getTaskGroupDisplayTitle(
   group: { id: string; title: string },
   localizedSystemTitles: { cron: string; offPeak: string },

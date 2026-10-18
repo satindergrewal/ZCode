@@ -1,18 +1,18 @@
 import { create } from "zustand";
 
 /**
- * 打开“模型调用轨迹”侧边栏的请求桥接 store。
+ * Request-bridge store for opening the model-call-trajectory side pane.
  *
- * 背景：触发入口在任务右键菜单 / Header 菜单里，挂载位置很深；而侧边栏 tab 状态由
- * 每个 workspace 的 useAppPanels 持有。为避免把一个新回调贯穿整棵任务列表树，
- * 这里用一个轻量单例 store 作为桥：菜单写入 pending 请求，目标 workspace 的
- * useAppPanels 订阅并消费（按 workspaceKey 匹配，避免多 workspace 实例串开）。
+ * Context: the entries live in the task context menu / header menu, mounted deep in the tree, while the side-pane tab state
+ * is held by each workspace useAppPanels. To avoid threading a new callback through the whole task-list tree,
+ * a lightweight singleton store acts as the bridge: the menu writes a pending request, and the target workspace
+ * useAppPanels subscribes and consumes it (matched by workspaceKey so multi-workspace instances stay apart).
  */
 interface ModelTrajectoryOpenRequest {
-  /** 唯一请求 id，保证同一 task 连续点击也能触发消费。 */
+  /** Unique request id so repeated clicks on the same task still trigger consumption. */
   requestId: string;
   taskId: string;
-  /** workspaceIdentity?.trim() || workspacePath，用于定位目标 workspace 侧边栏。 */
+  /** workspaceIdentity?.trim() || workspacePath; locates the target workspace side pane. */
   workspaceKey: string;
   title?: string | null;
 }
@@ -46,9 +46,9 @@ export const useModelTrajectoryStore = create<ModelTrajectoryStoreState>((set) =
   },
 }));
 
-// E2E 需要在双 workspace 壳中直接验证 request bridge → 目标 workspace side pane 的完整链路。
-// Header 菜单只绑定当前 header 的 activeTaskId，不能作为分屏壳（split pane）的稳定测试入口；
-// 与 __zcodeSessionStoreE2E 保持同一模式，暴露 store 本身而不是另造测试专用业务实现。
+// E2E must verify the full request-bridge -> target-workspace side-pane chain inside the dual-workspace shell.
+// The header menu binds only that header activeTaskId and is not a stable test entry for split-pane shells;
+// like __zcodeSessionStoreE2E, expose the store itself instead of a separate test-only business implementation.
 if (typeof window !== "undefined") {
   window.__zcodeModelTrajectoryStoreE2E = useModelTrajectoryStore;
 }

@@ -1,8 +1,8 @@
 /**
- * 只同步创建页自动填入的默认标题。
+ * Syncs only the create page's auto-filled default title.
  *
- * 默认标题曾只在表单初始化时读取 locale，切换语言后其它文案已更新，输入框却保留旧语言。
- * 用户输入、模板草稿和已保存任务标题都是业务数据，不能因切换界面语言而被覆盖。
+ * The default title once read locale only at form init; after a language switch every other string updated but the input kept the old one.
+ * User input, template drafts and saved titles are data; a UI language switch must never overwrite them.
  */
 export function resolveLocalizedAutomationCreateTitle({
   currentTitle,

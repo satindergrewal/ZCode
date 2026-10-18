@@ -22,8 +22,9 @@ export interface EndpointScopedZCodeBuiltinSourceOptions {
 }
 
 /**
- * 让 Environment 的 ZCode 控制面 Endpoint 同时决定 Active/LKG 与刷新控制路径。
- * Endpoint 切换只替换当前 Source，不读取上一 Endpoint 的缓存。
+ * The environment ZCode control-plane endpoint also determines the Active/LKG and refresh
+ * control paths. Switching endpoints swaps the whole source; caches of the previous endpoint
+ * are never read.
  */
 export class EndpointScopedZCodeBuiltinSource implements ProviderSource<ProviderConfigLayerSnapshot> {
   readonly #options: EndpointScopedZCodeBuiltinSourceOptions;
@@ -50,7 +51,7 @@ export class EndpointScopedZCodeBuiltinSource implements ProviderSource<Provider
     return (await this.#ensureCurrent()).synchronizer.refresh(options);
   }
 
-  /** 返回当前 Environment Endpoint 对应、已完成物化的 Active Config 路径。 */
+  /** Materialized Active config path for the current environment endpoint. */
   async resolveActiveFilePath(): Promise<string> {
     return (await this.#ensureCurrent()).activeFilePath;
   }
@@ -128,7 +129,7 @@ export class EndpointScopedZCodeBuiltinSource implements ProviderSource<Provider
   }
 
   #assertNotDisposed(): void {
-    if (this.#disposed) throw new Error("EndpointScopedZCodeBuiltinSource 已 dispose");
+    if (this.#disposed) throw new Error("EndpointScopedZCodeBuiltinSource disposed");
   }
 }
 

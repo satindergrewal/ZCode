@@ -33,8 +33,9 @@ function isStalePending(pending: ReleaseManifest, current: ReleaseManifest): boo
     pending.archiveSha256 === current.archiveSha256
   )
     return true;
-  // 只清理不可能比 current 更新的遗留候选；未来版本的 pending 仍保留，供用户在
-  // catalog 暂时回滚或离线时显式应用。
+  // Only clean up leftover candidates that cannot be newer than current; keep pending from newer
+  // versions so the user can apply them explicitly if the catalog temporarily rolls back or goes
+  // offline.
   return pending.version.localeCompare(current.version, undefined, { numeric: true }) <= 0;
 }
 
@@ -51,9 +52,9 @@ function createPreparedReleaseDiscarder(input: {
     discarded = true;
     const releaseManager = new ReleaseManager(input.layout);
     const pending = await releaseManager.readPending();
-    // 准备期间任务可能启动，apply-update 随后拒绝切换；若直接返回错误，
-    // 本次 CLI 生成的 pending/release 会遗留并被下一次更新误认为可直接应用。只回滚仍
-    // 指向本次 candidate 的 pending，避免覆盖并发更新已经写入的更新意图。
+    // Tasks may start during preparation and apply-update then refuses to switch; returning an
+    // error directly would leave this CLI's pending/release behind for the next update to misapply.
+    // Roll back only pending still pointing at this candidate, never a concurrent update's intent.
     if (!sameRelease(pending, input.prepared)) return;
     if (input.previousPending) await releaseManager.writePending(input.previousPending);
     else await releaseManager.removePending();
@@ -86,8 +87,9 @@ export async function prepareOnlineUpdate(layout: ServerLayout): Promise<UpdateP
   if (current?.target === target && current.archiveSha256 === release.archiveSha256) {
     const pending = await releaseManager.readPending();
     if (pending && isStalePending(pending, current)) {
-      // 在线检查确认 current 已是 catalog 最新版本时，不能直接返回
-      // up-to-date，却留下旧 pending.json；下一次无网络更新会误应用该指针并降级。
+      // When the online check confirms current is the newest catalog version, do not return
+      // up-to-date while leaving a stale pending.json; the next offline update would apply that
+      // pointer and downgrade.
       await releaseManager.removePending();
     }
     return { status: "up-to-date", version: current.version };
@@ -162,8 +164,9 @@ async function prepareComponentUpdate(input: {
   prepared: ReleaseManifest;
   releaseDirExisted: boolean;
 } | null> {
-  // 组件增量更新的 manifest 请求原来没有应用层 AbortSignal，服务端无响应时
-  // 会等到 undici 默认边界（约数分钟）。复用带超时的 JSON 下载器，和 catalog 行为一致。
+  // The component-delta manifest request had no application-level AbortSignal, so an unresponsive
+  // server waited for undici's default horizon (minutes). Reuse the timeout-aware JSON downloader,
+  // matching catalog behavior.
   const remoteManifest = await fetchReleaseJson(
     input.manifestUrl,
     serverRuntimeManifestSchema,

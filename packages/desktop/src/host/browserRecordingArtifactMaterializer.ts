@@ -18,8 +18,8 @@ function resolveWorkspaceRecordingPath(workspacePath: string, outputPath: string
 }
 
 /**
- * main 只返回短期 WebM；Host 按当前 workspace authority 落盘。本地使用同目录 rename，远端
- * 复用已有 backend.upload，避免让远端 Agent 依赖 Desktop 临时路径。
+ * main returns only the short-lived WebM; the Host persists it per the current workspace authority. Local uses same-dir rename; remote
+ * reuses the existing backend.upload so the remote Agent never depends on Desktop temp paths.
  */
 export async function materializeBrowserRecordingArtifact(input: {
   artifact: BrowserRecordingArtifact;
@@ -57,7 +57,7 @@ export async function materializeBrowserRecordingArtifact(input: {
   const stagingPath = `${targetPath}.zcode-recording-${randomUUID()}.tmp`;
   try {
     await copyFile(input.localPath, stagingPath);
-    // Windows 不能用 rename 原子覆盖已有文件；先移除明确的目标 WebM，再提交 staging 文件。
+    // Windows cannot atomically rename over an existing file; remove the target WebM explicitly, then commit the staging file.
     await rm(targetPath, { force: true });
     await rename(stagingPath, targetPath);
   } finally {

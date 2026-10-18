@@ -17,7 +17,7 @@ export function taskNavigationTargetExists(params: {
     return false;
   }
 
-  // 任务列表迁到 task query cache 后，旧 taskListCache 可能为空。
-  // 后退/前进不能只看旧 visibleTasks，否则会把真实存在的历史目标误删，表现成按钮点了没反应。
+  // After the task list moved to the task query cache, the legacy taskListCache may be empty.
+  // Back/forward must not trust visibleTasks alone, or real history targets drop and the button looks dead.
   return cachedTask.taskId === params.entry.taskId;
 }

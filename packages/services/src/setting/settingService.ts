@@ -35,7 +35,7 @@ const SETTINGS_PARSE_RETRY_COUNT = 3;
 const log = (...args: unknown[]) =>
   console.log(formatLogPrefix("settingService", process.pid), ...args);
 const debugLog = (...args: unknown[]) => {
-  // NODE_ENV 来自用户 shell 时会误导服务层 debug 开关；统一使用 ZCODE_RUNTIME_ENV。
+  // A shell-provided NODE_ENV misleads the service-level debug switch; use ZCODE_RUNTIME_ENV only.
   if (!isEffectiveDevelopmentNodeEnv()) {
     return;
   }
@@ -43,8 +43,8 @@ const debugLog = (...args: unknown[]) => {
 };
 
 function resolveUserHomeDir() {
-  // 独立桌面 Dev 实例已设置自己的 home，设置服务却仍写真实 HOME，
-  // 导致启动迁移和外观操作污染其他实例。与 Electron 的显式 home 覆盖保持一致。
+  // A second desktop dev instance sets its own home while this service still wrote the real HOME,
+  // letting startup migration and appearance ops pollute the other instance. Match Electron's explicit override.
   const envHome =
     process.env.ZCODE_DESKTOP_HOME_DIR?.trim() ||
     process.env.HOME?.trim() ||
@@ -72,8 +72,8 @@ function buildCorruptSettingsBackupPath(settingsFile: string): string {
 async function quarantineCorruptSettingsFile(settingsFile: string, error: unknown): Promise<void> {
   const backupPath = buildCorruptSettingsBackupPath(settingsFile);
   try {
-    // 用户手动编辑或远端磁盘异常可能把 setting.json 写成非 JSON（例如 ":wq"）。
-    // 如果只返回默认值不隔离坏文件，每次启动都会重复解析失败；这里保留备份后让后续 update 重建合法配置。
+    // Hand edits or remote disk faults can leave setting.json non-JSON (e.g. ":wq").
+    // Returning defaults without quarantining re-fails every startup: back up, then let update rebuild.
     maybeThrowInjectedFsFault({ operation: "rename", path: settingsFile });
     await rename(settingsFile, backupPath);
     log("invalid settings json backed up:", backupPath, "error:", error);
@@ -84,8 +84,8 @@ async function quarantineCorruptSettingsFile(settingsFile: string, error: unknow
       "code" in renameError &&
       (renameError as { code?: string }).code === "ENOENT"
     ) {
-      // 启动时多个服务可能同时读取同一个坏 setting.json。
-      // 第一个读取已经完成隔离后，后续读取再 rename 会遇到 ENOENT；这是并发下的预期结果，不应当按备份失败刷错误日志。
+      // Several services may read the same bad setting.json at startup;
+      // after the first quarantine, later renames hit ENOENT - expected concurrency, not an error.
       log("invalid settings json already quarantined by another reader, returning defaults");
       return;
     }
@@ -116,8 +116,8 @@ interface ReadSettingsResult {
 async function readSettingsWithMeta(): Promise<ReadSettingsResult> {
   const settingsFile = getSettingsFile();
   try {
-    // settingService.get() 会被 UI 和远程会话高频调用。
-    // 之前每次读取都把完整配置写入生产日志，导致日志暴涨且暴露路径/配置细节；普通读取只保留开发态 debug。
+    // settingService.get() is high-frequency from UI and remote sessions;
+    // logging the full config per read spiked logs and leaked paths - debug in dev only.
     debugLog("reading settings from:", settingsFile);
     const raw = await readFile(settingsFile, "utf-8");
     let rawValue: unknown;
@@ -125,8 +125,8 @@ async function readSettingsWithMeta(): Promise<ReadSettingsResult> {
       rawValue = JSON.parse(raw);
     } catch (parseError) {
       let lastParseError: unknown = parseError;
-      // setting.json 可能正被另一次 update 覆盖写入，读者会短暂读到半截 JSON。
-      // 先做短重试，只有连续失败才按坏文件隔离，避免把正常会话配置误清成默认值。
+      // setting.json may be mid-overwrite by another update; readers see partial JSON briefly.
+      // Retry briefly; only sustained failure quarantines, never resetting live config to defaults.
       for (let retryAttempt = 1; retryAttempt <= SETTINGS_PARSE_RETRY_COUNT; retryAttempt += 1) {
         await delay(SETTINGS_PARSE_RETRY_DELAY_MS);
         try {
@@ -174,7 +174,7 @@ async function readSettingsWithMeta(): Promise<ReadSettingsResult> {
       };
     }
 
-    // 文件解析失败等异常兜底返回默认值
+    // Parse or IO failure falls back to defaults
     log("read failed, returning defaults. error:", err);
     return {
       settings: defaultSettings(),
@@ -196,8 +196,8 @@ async function writeSettings(
 ): Promise<void> {
   const settingsDir = getSettingsDir();
   const settingsFile = getSettingsFile();
-  // Windows 下测试只改了 HOME，模块顶层常量如果在导入时就把 homedir() 固化，
-  // 后续读写仍会串到真实用户目录。这里改成每次按当前环境解析配置路径，保证本地和测试都稳定。
+  // Windows tests change only HOME; module-top constants would pin homedir() at import and keep
+  // hitting the real user dir. Resolve config paths per call for local and test stability.
   log("writing settings to:", settingsFile, JSON.stringify(settings));
   maybeThrowInjectedFsFault({ operation: "mkdir", path: settingsDir });
   await mkdir(settingsDir, { recursive: true });
@@ -206,15 +206,15 @@ async function writeSettings(
   const raw = await readLegacyAccountConnectionSettingsFile(settingsFile);
   const rollbackFields = retainLegacyAccountConnectionFields(raw);
   const persisted = { ...rollbackFields, ...settings };
-  // 旧 Team 尚待 OAuth 补组织时，schema 的默认 {} 不是用户的新选择。
-  // 普通偏好保存必须保留新字段缺席；只有迁移提交或用户显式选连接才结束旧导入。
+  // A legacy Team awaiting OAuth org data: the schema default {} is not a user choice.
+  // Keep new-field absence on normal saves; only a migration commit or explicit connection ends the import.
   if (!commitAccountSelection && readIncompleteLegacyTeamConnections(raw).length > 0) {
     delete persisted.providerFamilyConnectionSelections;
   }
   await atomicWriteText(settingsFile, JSON.stringify(persisted, null, 2), {
     beforeRename: () => {
       if (!shouldCommit()) {
-        // 提交前超时的旧写只能清理临时文件，不能晚到 rename 覆盖新语言偏好。
+        // A pre-commit timeout may only clean its temp file; a late rename must not overwrite newer prefs.
         throw new Error("stale settings write skipped before atomic rename");
       }
       enterCommitPhase();
@@ -232,7 +232,7 @@ export function createSettingService(): ISettingService {
   return createSettingServiceWithMigrations().service;
 }
 
-/** Host 私有迁移入口，不加入 Setting RPC；普通 get/update 从不等待 OAuth 查询。 */
+/** Host-private migration entry, not in the Setting RPC; normal get/update never await OAuth. */
 export function createSettingServiceWithMigrations(): {
   service: ISettingService;
   prepareLegacyAccountConnections: (
@@ -274,8 +274,8 @@ export function createSettingServiceWithMigrations(): {
 
   const service: ISettingService = {
     async get(): Promise<AppSettings> {
-      // 设置切换后可能立即创建或冷恢复 Session；读取若越过已入队写入，
-      // runtime 会固定旧开关值。先等待现有写队列，保证启动偏好读取到已提交的选择。
+      // Sessions may be created/cold-restored right after a switch; a read passing the queued write
+      // pins stale toggles in the runtime. Await the write queue so startup reads committed choices.
       await updateQueue;
       const result = await readSettingsWithMeta();
       if (!result.needsMigrationPersist) {
@@ -288,8 +288,8 @@ export function createSettingServiceWithMigrations(): {
           return;
         }
 
-        // 初始化原因：旧版设置可能已把无法区分来源的默认值落盘；升级后按 schema 统一迁移一次。
-        // 迁移写盘必须进入 updateQueue，并在队列内重读最新文件，避免覆盖并发保存的其他设置。
+        // Legacy settings may have persisted ambiguous defaults; migrate once against the schema.
+        // Migration writes enter updateQueue and re-read inside it, never clobbering concurrent saves.
         await writeSettings(latest.settings, shouldCommit, runSettingsCommit, enterCommitPhase);
       });
 
@@ -301,7 +301,8 @@ export function createSettingServiceWithMigrations(): {
         const validatedPatch = appSettingsPatchSchema.parse(normalizeSettingsPatch(patch));
         const current = await readSettings();
         if (expectedAccountSettings) {
-          // 账号查询期间用户可能已手动切换。必须在同一写队列内校验，不能靠调用方先读再写。
+          // The user may have switched during the account query; validate inside the same write
+          // queue instead of read-then-write.
           const expected = appSettingsPatchSchema.parse(expectedAccountSettings);
           if (
             current.providerFamilyDomain !== expected.providerFamilyDomain ||
@@ -316,10 +317,10 @@ export function createSettingServiceWithMigrations(): {
           ...validatedPatch,
         });
 
-        // 打开工作区后会几乎同时写 recentProjects 和 lastWorkspaceSession。
-        // 之前两个 update 都是基于各自读到的旧 settings 直接覆盖写回，
-        // 后写入的补丁会把前一个字段整块抹掉，导致下次启动恢复不到会话。
-        // 这里把写入串行化，让每个补丁都基于上一次真正落盘后的最新状态继续合并。
+        // Opening a workspace writes recentProjects and lastWorkspaceSession back to back;
+        // both updates used to overwrite from their own stale reads, the later patch erasing the
+        // earlier field and losing session restore. Serialize writes so each patch merges on top
+        // of the latest persisted state.
         if (merged.recentProjects) {
           merged.recentProjects = [...new Set(merged.recentProjects)].slice(0, MAX_RECENT_PROJECTS);
         }
@@ -341,8 +342,8 @@ export function createSettingServiceWithMigrations(): {
       const targetBaseDir = newDir?.trim() || homedir();
       const validation = validateDataBaseDirTarget(targetBaseDir);
       if (!validation.ok) {
-        // Windows 安装目录由安装器/自动更新管理，把 .zcode/v2 放进去可能在升级时被覆盖。
-        // 迁移前在 service 层拦截，避免 UI 入口变化或 RPC 调用绕过前端判断。
+        // The Windows install dir is updater-managed; .zcode/v2 there would be wiped on upgrade,
+        // so intercept in the service layer before UI/RPC paths bypass the frontend check.
         const error = new Error(`${validation.code}: ${validation.forbiddenDir}`);
         (error as Error & { code: string }).code = validation.code;
         throw error;
@@ -381,7 +382,7 @@ export function createSettingServiceWithMigrations(): {
   return {
     service,
     prepareLegacyAccountConnections(resolveOrganization) {
-      // 已完成导入后不让每次请求鉴权重复读迁移文件。恢复旧备份需要重启 Host。
+      // After import completes, do not re-read the migration file per request auth; restore needs a host restart.
       if (migrationComplete) return Promise.resolve([]);
       if (inFlight) return inFlight;
       const run = async (): Promise<readonly ProviderFamilyDomain[]> => {
@@ -389,7 +390,7 @@ export function createSettingServiceWithMigrations(): {
         const original = await readLegacyAccountConnectionSettingsFile(getSettingsFile());
         const incomplete = readIncompleteLegacyTeamConnections(original);
         if (incomplete.length === 0) return [];
-        // 网络在写队列外：代理设置读取及用户操作均可继续，不形成 get -> HTTP -> get 循环。
+        // Network stays outside the write queue: proxy reads and user ops proceed, no get->HTTP->get loop.
         const resolved = await Promise.all(
           incomplete.map(async (connection) => ({
             ...connection,
@@ -398,7 +399,8 @@ export function createSettingServiceWithMigrations(): {
         );
         await enqueueSettingsWrite(async (shouldCommit, enterCommitPhase) => {
           const latest = await readLegacyAccountConnectionSettingsFile(getSettingsFile());
-          // 只核对迁移输入，不因普通语言/窗口设置变化丢失合法结果，也不覆盖用户新账号意图。
+          // Verify migration inputs only; keep valid results across unrelated pref changes and never
+          // override a newer user account choice.
           if (
             Object.hasOwn(latest, "providerFamilyConnectionSelections") ||
             latest.providerFamilyDomain !== original.providerFamilyDomain ||

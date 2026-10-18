@@ -1,5 +1,5 @@
 /**
- * MCP 用户目录模块 - Legacy 迁移
+ * MCP user directory module - legacy migration
  */
 
 import { readdir, readFile } from "node:fs/promises";
@@ -201,7 +201,7 @@ function buildLegacyCommonMcpStorageCandidates(request?: MigrateLegacyCommonMcpR
   const localAppData = process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local");
   const appData = process.env.APPDATA ?? join(homedir(), "AppData", "Roaming");
 
-  // 优先从老的 store.json 读取 common MCP 配置
+  // Prefer the legacy store.json for common MCP config
   candidates.push(join(appData, "ai.z.zcode", "store.json"));
 
   candidates.push(
@@ -219,14 +219,14 @@ export async function migrateLegacyCommonMcp(
   request?: MigrateLegacyCommonMcpRequest,
 ): Promise<MigrateLegacyCommonMcpResult> {
   for (const candidate of buildLegacyCommonMcpStorageCandidates(request)) {
-    // 优先尝试从 store.json 读取
+    // Try store.json first
     if (candidate.endsWith("store.json")) {
       const result = await readLegacyCommonMcpFromStoreJson(candidate);
       if (result) {
         return result;
       }
     } else {
-      // 然后尝试从 leveldb 读取
+      // Then fall back to leveldb
       const result = await readLegacyCommonMcpFromLevelDbDir(candidate);
       if (result) {
         return result;

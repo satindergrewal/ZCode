@@ -23,7 +23,7 @@ const APP_USAGE_MODEL_PIE_CHART_MARGIN = {
 export function AppUsageModelUsagePieChart({ snapshot }: { snapshot: AppUsageSnapshot }) {
   const { intl, locale } = useZCodeIntl();
   const { chartConfig, chartData, totalModelTokens } = useMemo(
-    // Recharts 会镜像 data/config props 到内部 store；稳定饼图数据可避免设置页刷新时重复派发。
+    // Recharts mirrors data/config props into its internal store; stable pie data avoids duplicate dispatches on settings refresh.
     () => buildAppUsageModelPieChartViewModel({ intl, snapshot }),
     [intl, snapshot],
   );

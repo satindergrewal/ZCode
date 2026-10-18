@@ -110,13 +110,13 @@ function formatReadImageOutput(output: ReadImageOutput): ModelMessageContent {
       sizeBytes: output.originalSize,
     },
   };
-  // 尺寸提示拼进 tool result 会让 provider-visible content 随是否缩放而改变；
-  // 图片结果只保留媒体 block，dimensions 继续留在结构化 output 供 UI 和调试使用。
+  // A size hint in the tool result would make provider-visible content depend on whether scaling happened;
+ // image results keep only the media block; dimensions stay in structured output for UI and debugging.
   return [imageBlock];
 }
 
-// 与图片同构：tool result 只保留媒体 block；OpenAI 系 provider 由
-// tool-result-media-projection 拆成后置 user part（AI SDK tool result 无 video part 变体）。
+ // Mirrors images: tool result keeps only the media block; OpenAI-family providers get it split into a
+// tool-result-media-projection emits it as a trailing user part (the AI SDK tool result has no video-part variant).
 function formatReadVideoOutput(output: ReadVideoOutput): ModelMessageContent {
   const videoBlock = {
     type: "video" as const,
@@ -259,8 +259,8 @@ function parseReadInput(input: unknown): ReadInput {
     throw parsed.error;
   }
 
-  // Read 输入预检失败应以 <tool_use_error> 文本进入 provider；
-  // 直接透出 ZodError JSON 会让 binary/device preflight 与 capture 偏离。
+  // Read input-preflight failures must reach the provider as <tool_use_error> text;
+ // a raw ZodError JSON would diverge from binary/device preflight and capture.
   throw createCoreError(
     CoreErrorType.ToolExecutionFailed,
     `<tool_use_error>${toolUseErrorMessage}</tool_use_error>`,
@@ -284,8 +284,8 @@ function validateReadInput(input: unknown): ToolInputValidationResult {
     return { result: true };
   }
 
-  // PDF pages 的语义约束只存在于 runtime schema 时，JSON Schema 会接受任意
-  // string，导致错误调用穿过 Hook 和权限后才在 handler 抛出裸 ZodError。
+  // When pages constraints live only in the runtime schema, JSON Schema accepts any string, letting bad
+  // string, so a mistyped call passes hooks and permissions and only throws a bare ZodError in the handler.
   const failure = getReadPdfPagesValidationFailure(candidate.file_path, candidate.pages);
   return failure ? { result: false, ...failure } : { result: true };
 }
@@ -337,7 +337,7 @@ function isCachedReadFresh(entry: ReadFileStateEntry, stat: FileSystemStatResult
 
   const mtimeMs = stat.revision?.mtimeMs ?? stat.mtimeMs;
   if (entry.mtimeMs !== undefined && mtimeMs !== undefined) {
-    // 和写前 freshness 校验保持同一套策略，mtime 只比较整数毫秒。
+    // Same policy as the pre-write freshness check: compare integer milliseconds only.
     return (
       normalizeReadFileStateMtimeMs(entry.mtimeMs) === normalizeReadFileStateMtimeMs(mtimeMs) &&
       entry.sizeBytes === stat.sizeBytes
@@ -368,8 +368,8 @@ function updateReadFileState(
     content: input.output.content,
     offset: input.offset,
     limit: input.limit,
-    // offset/limit 是 range view，不等价于 partial view。
-    // partial view 只表示模型看到的内容被工具截断，Write/Edit 必须拒绝这种不完整视图。
+    // offset/limit is a range view, not a partial view: partial means the tool truncated what the model
+    // partial view only means the tool truncated what the model sees; Write/Edit must reject such an incomplete view.
     isPartialView: input.output.truncatedByTokenCap === true,
     readAt: new Date(),
     sourceTool: "Read",

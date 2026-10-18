@@ -136,9 +136,9 @@ export type ModelProviderNavItem =
   | {
       key: string;
       type: "preset";
-      /** 品牌入口图标独立于其历史 Start 导航身份。 */
+      /** Brand entry icon is independent of the item's legacy Start navigation identity. */
       logo?: ProviderSettingsFormProvider["config"]["logo"];
-      /** 账号组圆点只展示当前具体连接的公共执行结果。 */
+      /** The account-group dot reflects only the current concrete connection's public execution result. */
       statusProvider?: ProviderSettingsFormProvider | null;
       presetId: BuiltinModelProviderId;
       label: string;
@@ -154,7 +154,7 @@ export type ModelProviderNavItem =
       label: string;
       providerName: string;
       provider: ProviderSettingsFormProvider | null;
-      /** Account Overlay 是否已启用该 Provider。 */
+      /** Whether the Account Overlay has enabled this provider. */
       accountEntitled?: boolean;
       status: CodingPlanStatus;
       planLevel?: string | null;
@@ -164,10 +164,10 @@ export type ModelProviderNavItem =
       subscriptionExpireTime?: string | null;
       subscriptionDetails?: UsageEntitlementSubscriptionDetail[];
       quotaLimits?: UsageQuotaLimit[];
-      /** 官方 Server MCP 额度（服务端下发的总额度）。不在 quota.limits[] 里，单独透传给额度卡片。 */
+      /** Official Server MCP quota (server-delivered total). Not in quota.limits[]; passed to the quota card separately. */
       mcpQuotaLimit?: UsageQuotaLimit | null;
       purchaseUrl?: string;
-      /** 权益查询明确要求重新登录；文案不参与操作分支判定。 */
+      /** The entitlement query explicitly demands re-login; the copy never drives action branching. */
       accountLoginRequired?: boolean;
       statusLabelId?: string;
       statusMessage?: string | null;
@@ -185,7 +185,7 @@ export type ModelProviderNavItem =
       organizationId?: string | null;
       projectId?: string | null;
       provider: ProviderSettingsFormProvider | null;
-      /** Account Overlay 是否已启用该 Provider。 */
+      /** Whether the Account Overlay has enabled this provider. */
       accountEntitled?: boolean;
       status: CodingPlanStatus;
       planLevel?: string | null;
@@ -195,12 +195,12 @@ export type ModelProviderNavItem =
       subscriptionExpireTime?: string | null;
       subscriptionDetails?: UsageEntitlementSubscriptionDetail[];
       quotaLimits?: UsageQuotaLimit[];
-      /** 官方 Server MCP 额度（服务端下发的总额度）。不在 quota.limits[] 里，单独透传给额度卡片。 */
+      /** Official Server MCP quota (server-delivered total). Not in quota.limits[]; passed to the quota card separately. */
       mcpQuotaLimit?: UsageQuotaLimit | null;
       purchaseUrl?: string;
       statusLabelId?: string;
       statusMessage?: string | null;
-      /** Team 状态的业务原因。交互不得再从 i18n 文案反推。 */
+      /** Business reason for the team status; interaction must no longer infer it from i18n copy. */
       availabilityReason?: TeamPlanAvailabilityReason;
       inactivePlanTitle?: string | null;
       statusActive: boolean;

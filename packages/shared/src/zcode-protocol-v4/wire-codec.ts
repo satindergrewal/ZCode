@@ -1,5 +1,5 @@
-// V4 physical wire encoder：按调用方真实 JSON/RPC envelope 计量，logical frame
-// 超过物理上限时只在 UTF-8 bytes 层分片，不改变 seq/apply 语义。
+// V4 physical wire encoder: metered against the caller's real JSON/RPC envelope; an over-cap logical frame
+// fragments at the UTF-8 bytes layer only, never changing seq/apply semantics.
 import { PROTOCOL_V4_LIMITS, V4_WIRE_PROTOCOL_VERSION } from "./core.js";
 import { crc32WireBytes, encodeWireBytesBase64 } from "./wire-binary.js";
 import type {
@@ -19,8 +19,8 @@ function vqlByteLength(value: number): number {
 }
 
 /**
- * 按当前生产三层真实承载计量 topic notification。mobile relay
- * 会把 Channel binary 再 base64，不能只测 CLI 的 logical JSON。
+ * Metered against the three real production bearers of a topic notification. The mobile relay
+ * base64s the Channel binary, so measuring only the CLI's logical JSON falls short.
  */
 export function measureTopicNotificationEnvelopeBytes(wire: TopicWireFrameCandidate): {
   cliNdjsonBytes: number;
@@ -35,9 +35,9 @@ export function measureTopicNotificationEnvelopeBytes(wire: TopicWireFrameCandid
     }) + 1;
 
   const wireJsonBytes = utf8JsonByteLength(wire);
-  // @zcode/rpc serialization：Array tag+length+[EventFire,id]，再加 Object tag+length+JSON。
-  // ChannelClient 的 id 无 31-bit wrap；超过 signed int 后 serialize 会走 Object JSON
-  // fallback。因此按 Number.MAX_SAFE_INTEGER 的 16-byte JSON 形态计算最坏 header。
+  // @zcode/rpc serialization: Array tag+length+[EventFire,id], plus Object tag+length+JSON.
+  // ChannelClient ids do not 31-bit wrap; past signed-int range serialize falls back to Object JSON,
+  // so the worst-case header is sized as Number.MAX_SAFE_INTEGER's 16-byte JSON form.
   const maxEventIdJsonBytes = String(Number.MAX_SAFE_INTEGER).length;
   const maxEventIdSerializedBytes = 1 + vqlByteLength(maxEventIdJsonBytes) + maxEventIdJsonBytes;
   const channelHeaderBytes =
@@ -47,11 +47,11 @@ export function measureTopicNotificationEnvelopeBytes(wire: TopicWireFrameCandid
     vqlByteLength(CHANNEL_EVENT_RESPONSE_TYPE) +
     maxEventIdSerializedBytes;
   const channelPayloadBytes = channelHeaderBytes + 1 + vqlByteLength(wireJsonBytes) + wireJsonBytes;
-  // SocketProtocol/PersistentProtocol 在 Channel payload 外再加固定 13-byte frame header。
+  // SocketProtocol/PersistentProtocol add a fixed 13-byte frame header outside the Channel payload.
   const channelSocketBytes = channelPayloadBytes + SOCKET_PROTOCOL_HEADER_BYTES;
-  // topic encoder 继续用 legacy 单片 outer 作为保守 logical budget；production 已不发送该形态，
-  // Channel payload 会再经 acknowledged raw adapter 独立分片并按最终 JSON 精确计量。
-  // 两层预算分别约束 topic logical frame 与 relay physical frame，不能互相替代。
+  // The topic encoder keeps the legacy single-chunk outer as a conservative logical budget; production no longer sends that shape--
+  // the Channel payload fragments again via the acknowledged raw adapter, metered by the final JSON.
+  // The two budgets bound the topic logical frame and the relay physical frame; neither substitutes for the other.
   const dataBase64Bytes = 4 * Math.ceil(channelPayloadBytes / 3);
   const transportId = "x".repeat(PROTOCOL_V4_LIMITS.transportEnvelopeIdMaxChars);
   const mobileRelayFixedBytes = utf8JsonByteLength({
@@ -143,7 +143,7 @@ function findFragmentByteBudget<F>(params: {
   let low = 1;
   let high = Math.min(params.logicalBytes, params.maxPhysicalFrameBytes);
   let best = 0;
-  // 使用最坏索引位数测量，实际 fragment 的 envelope 只会更小。
+  // Measured with worst-case index digits; a real fragment's envelope is only smaller.
   const worstCount = params.logicalBytes;
   while (low <= high) {
     const candidate = Math.floor((low + high) / 2);
@@ -230,8 +230,8 @@ export function encodeTopicWireFrames<F>(
       dataBase64: encodeWireBytesBase64(logical.subarray(start, end)),
     });
     if (options.measurePhysicalFrameBytes(wire) > maxPhysicalFrameBytes) {
-      // physical 上限包含调用方真实 envelope；任何估算漂移都必须
-      // fail closed，不能把超限 frame 交给下游再静默截断。
+      // The physical cap includes the caller's real envelope; any estimation drift must
+      // fail closed--never hand an over-cap frame downstream for silent truncation.
       throw new TopicWireFrameEncodingError("proto.frameEnvelopeTooLarge");
     }
     frames.push(wire);

@@ -15,13 +15,13 @@ export function createErrorResult(
     isCoreError(error) && isToolHandlerFailure(error.context?.toolHandlerFailure)
       ? error.context.toolHandlerFailure
       : undefined;
-  // 根因：通用错误层按 tool name 拼接 provider 文案会反向依赖具体工具。
-  // handler 只返回自己的 code/message；这里统一组装 envelope，并保留裸 message 给 UI 和日志。
+  // Root cause: stitching provider copy by tool name in the generic error layer would back-depend on concrete tools.
+  // Handlers return only their code/message; the envelope is assembled here, keeping the raw message for UI and logs.
   const modelContent =
     getInitialInputValidationModelContent(error) ??
     (handlerFailure ? `<tool_use_error>${handlerFailure.message}</tool_use_error>` : undefined);
-  // subagent/turn/model 错误常把真实 provider 原因包在 cause 链里；
-  // tool result 是父模型和 UI hover 的共同来源，必须在这里统一投影成可读摘要。
+  // subagent/turn/model errors often wrap the real provider cause in a cause chain;
+  // the tool result is shared by the parent model and UI hover, so project it into a readable summary here.
   const projectedError = projectExecutionErrorPayload(error);
   const reasonSource =
     isCoreError(error) &&
@@ -29,9 +29,9 @@ export function createErrorResult(
       error.context?.reasonSource === "workflow_refine_feedback")
       ? error.context.reasonSource
       : undefined;
-  // ExitPlanMode / workflow Refine 的用户反馈会暂存在 PermissionDenied.message，
-  // 后续还要原样转成 steer 输入；这里不能被展示摘要器截断，否则超长反馈不会触发 input_too_large。
-  // 普通拒绝附带的自由文本反馈（preserveReasonFormatting）同理原样保留。
+  // ExitPlanMode/workflow Refine user feedback is staged in PermissionDenied.message and later forwarded
+  // verbatim as steer input; the display summarizer must not truncate it or oversized feedback misses input_too_large.
+  // Free-text rejection feedback (preserveReasonFormatting) is likewise preserved verbatim.
   const message =
     reasonSource !== undefined || options?.preserveReasonFormatting === true
       ? error.message

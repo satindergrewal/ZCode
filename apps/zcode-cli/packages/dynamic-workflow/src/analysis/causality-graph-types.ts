@@ -2,10 +2,10 @@ import type { RegionKind } from "./constants.js";
 import type { OrderKind } from "./causality-reduce.js";
 import type { SiteLoc, NamePattern } from "./types.js";
 
-// causality-graph.ts 顶到 oxlint max-lines 上限（400 行），把因果图的公开类型
-// （Step / Region / OrderEdge / Lane / Phase / CausalityGraph 与三个 lane 常量）和内部的
-// Fact 拆到本文件；公开面仍从 causality-graph.ts 导出（那里原样再导出）。本文件不 import
-// `typescript`，浏览器端的 `./projections` 桶可安全到达。
+// causality-graph.ts sat at oxlint's max-lines cap (400); the causal graph's public types
+// (Step / Region / OrderEdge / Lane / Phase / CausalityGraph and the three lane constants) and the internal
+// Fact moved here; the public surface still exports from causality-graph.ts (re-exported verbatim there). No
+// typescript import, so the browser-side projections barrel reaches it safely.
 
 export type StepKind = "ask" | "world-read";
 export type Certainty = "always" | "maybe";
@@ -22,7 +22,7 @@ export interface Step {
   id: string;
   kind: StepKind;
   label: string;
-  /** `label` 只拿到兜底串时，内联 `agent()` receiver 的模板形状。 */
+    /** When label only gets the fallback string: the inline agent() receiver's template shape. */
   labelPattern?: NamePattern;
   loc: SiteLoc;
   /** Actor site id, or `workspace` / `unknown`. For an unexpanded may-set, `lanes[0]`. */
@@ -87,7 +87,7 @@ export interface Lane {
   /** The author's verbatim word, when `agent()` was given a literal. Never a reconstruction. */
   name?: string;
   /**
-   * `name` 缺席而 `agent()` 首参是带洞的模板串时，那个名字的静态形状。省略号在渲染时才加。
+      * Static shape of the name when name is absent and agent()'s first arg is a holey template. The ellipsis is render-time.
    */
   namePattern?: NamePattern;
   loc?: SiteLoc;
@@ -128,36 +128,36 @@ export interface CausalityGraph {
   phaseEdges?: OrderEdge[];
 }
 
-/** 投影内部的有序事实（去重、回边定型、归约的输入）；不在包的公开面上。 */
+/** Ordered facts inside the projection (inputs to dedupe, back-edge typing, reduction); not on the package's public face. */
 export interface Fact {
   from: string;
   to: string;
   kind: OrderKind;
   certainty: Certainty;
   exact?: boolean;
-  /** carry 边的底层 kind（改型前的前向 kind）；carry 最小化按它判见证强度。 */
+    /** The carry edge's underlying kind (the forward kind before retyping); carry minimization judges witness strength by it. */
   carryOf?: Exclude<OrderKind, "carry">;
   /**
-   * 见证这条事实的 issue 事件所在的阶段集（**只有 await 屏障产生的 seq 事实**带它）。
-   * 阶段拷贝按它收窄边的头端：屏障事实是在某一次具体 issue 上被见证的，而当前「一站点一步」
-   * 的设计把同一站点在不同调用点的多次 issue 合成了一个 step，丢掉这个来源就会
-   * 把「gate 的 bench 发出前 cargo test 已 settle」当成 preflight 的 bench 也成立——
-   * 一条方向错误的时间断言（多序是被许可的，错序不是）。
+      * Phase set of the issue events witnessing this fact (carried only by **seq facts born of await barriers**).
+      * Phase copies narrow an edge's head with it: a barrier fact is witnessed on one concrete issue, while the current
+      * one-site-one-step design merges a site's issues across call sites into one step; losing the provenance would
+      * let the gate's bench-before-cargo-test claim also hold for the preflight bench --
+      * a backwards time claim (extra order is allowed; wrong order is not).
    *
-   * 缺席 = 无来源信息 = 头端全展开（data/control/fifo 与区域重复事实按契约全展开）。
+      * Absent = no provenance = the head fully expanded (data/control/fifo and region-dup facts expand per contract).
    *
-   * 尾端没有对称的来源信息（settle 事件不带阶段），但**尾侧不再是缺口**：阶段拷贝的时间
-   * 可行性判定（phase-graph.ts 的 `admits`）按位置对**两端**一视同仁地拦截，所以「拷贝排
-   * 在产出它自己实参的那个 step 之前」这类伪边由那条规则消掉，不靠这里的来源信息。
+      * The tail has no symmetric provenance (settle events carry no phase), but **the tail side is no longer a gap**: the phase copy's temporal
+      * feasibility check (admits in phase-graph.ts) intercepts by position on **both ends** alike, so pseudo-edges like a copy placed
+      * before the step producing its own argument are removed by that rule, not by provenance here.
    */
   toPhases?: Set<string>;
   /**
-   * 这条 `seq` 事实只能靠**下一轮**成立：`from` 在一个以 `continue` 结束的分支臂里发出，
-   * `to` 在同一个循环体里更靠后的位置。线性的时间走查按 may 语义会继续走完循环体，于是
-   * 把「fixer@k 先于 juries@k+1」记成了同一轮的前向顺序；控制流投影对同一处给的是
-   * `loop via=continue`。带此标记的事实在回边定型时按 carry 处理（配对里全部事实都带才算，
-   * 见 `dedupeFacts`，causality-graph-lanes.ts）。以 `break` 结束的臂更强：其中的 step 根本
-   * 不可能先于同一循环里后面的 step，那样的事实直接不发。
+      * This seq fact can only hold via the **next round**: from is emitted in an arm ending in continue,
+      * to later in the same loop body. A linear time walk under may-semantics would keep walking the body, recording
+      * fixer-round-k before juries-round-k-plus-one as same-round forward order; the control-flow projection says loop-via-continue for the same spot.
+      * Facts with this mark are treated as carry at back-edge typing (only when every fact in the pair carries it --
+      * see dedupeFacts in causality-graph-lanes.ts). Arms ending in break are stronger: their steps cannot
+      * precede later steps of the same loop at all, so such facts are not emitted.
    */
   viaJump?: true;
 }

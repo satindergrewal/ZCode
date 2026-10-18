@@ -130,8 +130,8 @@ async function detectRequiredGitSemantics(
   repositoryRoot: string,
   selectedRoot: string,
 ): Promise<string | null> {
-  // Archive 不会物化 submodule 或 Git LFS 对象；若仍把指针文件当插件安装，
-  // 会得到表面成功但运行时缺文件的损坏缓存，因此这两类仓库必须回到完整 Git 语义。
+  // Archives do not materialize submodules or Git LFS objects; installing pointer files as plugins
+  // yields a success-looking cache missing files at runtime, so such repos must take the full Git path.
   if (fileExists(join(repositoryRoot, ".gitmodules"))) {
     return "repository declares Git submodules";
   }
@@ -139,9 +139,9 @@ async function detectRequiredGitSemantics(
     return "repository declares Git LFS filters";
   }
   if (selectedRoot !== repositoryRoot) {
-    // Git attributes 从仓库根到目标文件逐级继承。只检查仓库根和插件目录
-    // 会漏掉 packages/.gitattributes -> packages/plugin/** 这类父目录 LFS 规则，
-    // 进而把 Archive 内的 LFS pointer 当成真实插件资源写入缓存。
+    // .gitattributes inherits from repo root downward. Checking only root and plugin dir
+    // misses packages/.gitattributes -> packages/plugin/** style parent LFS rules,
+    // writing LFS pointers into the cache as if they were real assets.
     if (await ancestorDirectoriesDeclareGitLfs(repositoryRoot, selectedRoot)) {
       return "selected plugin path inherits Git LFS filters";
     }

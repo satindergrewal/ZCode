@@ -74,8 +74,8 @@ export function formatReadTextOutput(output: ReadTextOutput): string {
     return `${partialViewPrefix}${warning}`;
   }
 
-  // 成功文本结果的模型可见契约只包含条件提醒与带行号正文；
-  // 历史安全提醒不属于当前 tool result 路径。
+  // The successful-text model contract carries only conditional reminders and numbered body;
+ // legacy safety notices are not part of this tool result path.
   return `${partialViewPrefix}${addReadLineNumbers({
     content: output.content,
     startLine: output.startLine,

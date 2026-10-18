@@ -17,15 +17,15 @@ export type SiteKind = "ask" | "world-read" | "join" | "fan-out" | "source" | "s
 export type SiteLoc = ScriptLoc;
 
 /**
- * 名字只在运行时才成形（`` agent(`研究员${i + 1}`) ``）时，静态能拿到的那部分形状：
- * 第一个洞之前的字面量（`head`）与最后一个洞之后的字面量（`tail`）。
+  * When the name only materializes at runtime (a template receiver), the statically knowable shape:
+  * the literal before the first hole (head) and after the last hole (tail).
  *
- * 为什么只能拿到形状：把模板折成 8 个具体名字要求把 `map` 展开，而 `×N` 与
- * `maybe stack` 存在的意义正是拒绝展开。所以这里给出的是形状，不是名字。
+  * Why only the shape: folding the template into 8 concrete names would require expanding the map, and xN /
+  * maybe stack exist precisely to refuse expansion. So this is a shape, never names.
  *
- * 不变量：`head`/`tail` 至少有一个在场（拿不到就返回 undefined，不返回空 pattern），
- * 两者都已 trim，且各自至少含一个字母或数字——`` `${x}-` `` 渲染成 `…-` 比「未命名智能体」
- * 更差，所以那种 affix 直接丢弃。省略号在**渲染时**才加，这里只搬数据。
+  * Invariants: at least one of head/tail present (else undefined, never an empty pattern), both trimmed,
+  * each with at least one letter or digit -- a trailing-dash-only affix renders worse than unnamed-actor, so it is dropped.
+  * The ellipsis is added at **render time**; this only carries data.
  */
 export interface NamePattern {
   head?: string;
@@ -52,8 +52,8 @@ export interface SiteNode {
   loc?: SiteLoc;
   label: string;
   /**
-   * `label` 只拿到兜底串（内联的 `` agent(`研究员${i}`).ask(…) ``——receiver 是调用式，
-   * 既非字面量也非标识符，于是落到 `"ask"`）时，模板的静态形状。仅 `ask` 节点可能有。
+      * When label only gets the fallback string (an inline agent(...).ask(...) whose receiver is a call expression,
+      * neither literal nor identifier, hence ask): the template's static shape. Only ask nodes carry it.
    */
   labelPattern?: NamePattern;
   actors?: string[];
@@ -72,9 +72,9 @@ export interface ActorSite {
   loc: SiteLoc;
   name?: string;
   /**
-   * `name` 缺席（`agent()` 的首参不是字面量）而首参是模板字符串时的静态形状。与 `name`
-   * 实际互斥：字面量给名字，模板给形状。**刻意不写进 `name`**——`name` 的契约是「作者原样
-   * 写下的那个词」，把重建物混进去，下游就再也分不清看到的是字面量还是推断。
+      * When name is absent (agent()'s first arg not a literal) but that arg is a template: the static shape. In practice
+      * exclusive with name: literals give names, templates shapes. **Deliberately not written into name** --
+      * name's contract is the author's verbatim word; mixing in reconstructions would blur literal-vs-inferred forever.
    */
   namePattern?: NamePattern;
   within?: string;

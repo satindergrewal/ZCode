@@ -13,7 +13,7 @@ function faultReasonCode(value: unknown): string | undefined {
   return typeof candidate.reasonCode === "string" ? candidate.reasonCode : undefined;
 }
 
-/** row command/query 的权威 projection 已跨 revision/epoch/entity 时，统一走 same-sub recovery。 */
+/** When the authoritative projection of a row command/query crosses revision/epoch/entity, route through same-sub recovery. */
 export function shouldResyncForStaleAuthority(value: unknown): boolean {
   return STALE_AUTHORITY_REASON_CODES.has(faultReasonCode(value) ?? "");
 }

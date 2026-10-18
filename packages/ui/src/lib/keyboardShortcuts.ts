@@ -89,8 +89,9 @@ function matchesPrimaryModifier(
   platformInfo?: KeyboardShortcutPlatformInfo,
 ): boolean {
   const isApple = isAppleKeyboardPlatform(platformInfo);
-  // 主快捷键要按平台隔离。macOS 的 Ctrl 保留给系统 Emacs 风格文本编辑，
-  // Windows/Linux 才使用 Ctrl；同时按下 Ctrl 和 Command 不视作主快捷键，避免误触发。
+  // Primary shortcuts are platform-isolated. macOS reserves Ctrl for the system's Emacs-style
+  // text editing; Windows/Linux use Ctrl. Ctrl+Command together does not count as a primary
+  // shortcut, avoiding accidental triggers.
   return isApple ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
 }
 
@@ -113,8 +114,9 @@ function matchesShortcutKey(
     return true;
   }
 
-  // 修复说明：macOS 上按下 Option 参与组合键时，event.key 可能会被当前键盘布局改写成其他字符，
-  // 直接按 key 比较会把 ⌥⌘B 这类快捷键误判成未命中。这里补一层 code 匹配，避免受输入法/布局影响。
+  // Fix: with Option held on macOS, event.key can be rewritten by the active keyboard layout,
+  // so key comparison misses combos like Opt+Cmd+B. Add a code-based match to stay immune to
+  // input method / layout changes.
   const expectedCode = getExpectedShortcutCode(normalizedKey);
   return expectedCode != null && event.code === expectedCode;
 }

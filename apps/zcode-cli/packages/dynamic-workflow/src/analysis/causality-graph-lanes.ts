@@ -9,9 +9,9 @@ import {
   type Step,
 } from "./causality-graph-types.js";
 
-// causality-graph.ts 顶到 oxlint max-lines 上限（400 行），把成品图上的机械改写与
-// 事实层的小工具（may-set 车道展开 expandMaySetLanes 及其两个常量、dedupeFacts、weakest）拆到
-// 本文件；公开面仍从 causality-graph.ts 导出。本文件不 import `typescript`。
+// causality-graph.ts sits at oxlint's max-lines cap (400); the mechanical rewrites on the finished graph and
+// fact-level helpers (the may-set lane expansion expandMaySetLanes with its two constants, dedupeFacts, weakest) live
+// here; the public surface still exports from causality-graph.ts. No typescript import in this file.
 
 /**
  * Upper bound on an expandable may-set. Past it the step keeps its single card: a capped
@@ -142,7 +142,7 @@ export function dedupeFacts(facts: readonly Fact[]): Fact[] {
     if (fact.exact !== undefined && existing.exact === undefined) existing.exact = fact.exact;
     else if (fact.exact === true) existing.exact = true;
     if (fact.certainty === "maybe") existing.certainty = "maybe";
-    // 一条不经跳转就成立的事实让这一对回到普通前向边：全部贡献都只能靠下一轮，才算回边。
+        // A fact holding without any jump returns the pair to a plain forward edge: only when every contribution needs the next round is it a back edge.
     if (fact.viaJump !== true) delete existing.viaJump;
     // ABSENT DOMINATES: one contributing fact with no provenance means the merged fact has
     // none, so it fans out fully. A `data` fact (never provenanced, and fanning out by

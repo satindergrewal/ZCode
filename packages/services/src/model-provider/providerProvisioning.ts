@@ -2,7 +2,7 @@ import type { ProviderProvisioningEnvelope, ProviderProvisioningResult } from "@
 import { ServiceChannels } from "@zcode/shared";
 import { createServiceDescriptor } from "../descriptors.js";
 
-/** 仅供 Window Host 调用的远端 Environment target，不加入 IServiceAccessor。 */
+/** Remote Environment target for the Window Host only; not part of IServiceAccessor. */
 export interface IProviderProvisioningTargetService {
   apply(envelope: ProviderProvisioningEnvelope): Promise<ProviderProvisioningResult>;
 }

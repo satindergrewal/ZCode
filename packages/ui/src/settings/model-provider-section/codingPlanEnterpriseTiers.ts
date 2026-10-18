@@ -1,8 +1,8 @@
 import type { EnterpriseCodingPlanProductDisplay } from "@/settings/model-provider-section/enterpriseCodingPlanProducts.js";
 
-// 2026-09: 原生购买面板（CodingPlanPurchasePanel）整体下线，购买流程切换为内嵌官网
-// webview。本文件迁出该面板中仍被设置页（Detail.tsx）与登录恢复逻辑使用的
-// 企业套餐分组/档位展示 helper，避免活代码依赖 6200 行死面板文件。
+// 2026-09: the native purchase panel (CodingPlanPurchasePanel) was retired; purchase moved into the embedded
+// store webview. This file carries over the enterprise tier/group helpers still used by the settings page (Detail.tsx)
+// and login recovery, so live code does not depend on the 6200-line dead panel.
 
 export type PurchaseAudience = "personal" | "team";
 

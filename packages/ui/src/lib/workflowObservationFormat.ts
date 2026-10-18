@@ -1,6 +1,6 @@
 /**
- * 观察类工作流工具卡的数值/时间格式化（GetWorkflowRun 与 ListWorkflowRuns 共用）。
- * 纯函数、无 i18n 依赖：数字与时间走 Intl 默认 locale，文案才走 message 表。
+ * Number/time formatting for the observation workflow tool cards (shared by GetWorkflowRun and ListWorkflowRuns).
+ * Pure functions, no i18n dependency: numbers and times use the Intl default locale; only copy comes from message tables.
  */
 
 export function formatWorkflowTokenCount(value: number): string {
@@ -23,7 +23,7 @@ const SHORT_TIMESTAMP_FORMAT = new Intl.DateTimeFormat(undefined, {
   minute: "2-digit",
 });
 
-/** 列表行的短时间戳：密排行里只保留月日 + 时分。 */
+/** Short timestamp for list rows: dense rows keep only month-day + hour:minute. */
 export function formatWorkflowTimestamp(epochMs: number): string {
   if (!Number.isFinite(epochMs)) return String(epochMs);
   return SHORT_TIMESTAMP_FORMAT.format(new Date(epochMs));
@@ -41,11 +41,11 @@ function padTwo(value: number): string {
 }
 
 /**
- * `40s` / `5m 10s` / `2h 15m` / `3d 2h`：情势截面里每一段时长与年龄的写法。
+ * `40s` / `5m 10s` / `2h 15m` / `3d 2h`: the wording for every duration and age in the situation view.
  *
- * 刻意与 GetWorkflowRun 模型面的 `formatWorkflowRunDuration`
- * （apps/zcode-cli/packages/core/src/tool/handlers/workflow-run-introspection.ts）逐字同款：
- * 同一份快照的同一个数，模型读到的和卡上画的不能长得不一样。
+ * Deliberately character-identical to the GetWorkflowRun model-facing `formatWorkflowRunDuration`
+ * (apps/zcode-cli/packages/core/src/tool/handlers/workflow-run-introspection.ts): for the same
+ * number in the same snapshot, what the model reads and what the card draws must not diverge.
  */
 export function formatWorkflowDuration(ms: number): string {
   const total = Number.isFinite(ms) && ms > 0 ? ms : 0;
@@ -63,11 +63,12 @@ export function formatWorkflowDuration(ms: number): string {
 }
 
 /**
- * 「多久以前」的裸时长（文案里的「前」由 message 表拼）。
+ * Bare "how long ago" duration (the "ago" suffix is assembled from the message table).
  *
- * 基准是快照时刻 `generatedAt`，**不是** `Date.now()`：一条三天前的 transcript 重新打开时，
- * 卡上的年龄仍该是当时那个年龄，否则同一张卡每次重渲染都在漂。没有基准或没有那个时刻就回
- * `undefined`——读侧据此整段省略这个年龄，绝不用 0 或「未知」顶替一件不知道的事。
+ * The baseline is the snapshot's `generatedAt`, **not** `Date.now()`: reopening a three-day-old
+ * transcript must still show the age at that time, or the same card drifts on every re-render.
+ * Return `undefined` when either timestamp is missing -- readers omit the age entirely rather than
+ * paper over an unknown with 0 or "unknown".
  */
 export function formatWorkflowAge(
   generatedAt: number | undefined,

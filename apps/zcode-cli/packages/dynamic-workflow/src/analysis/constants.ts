@@ -1,10 +1,10 @@
 /**
- * 追踪词汇：区域种类、跳转种类与兜底阶段 id。它们原本住在 causality-order.ts，但那个文件
- * 在运行时 import `typescript`（走 AST 的 walk 本身），而只读 core 的纯投影（causality-graph /
- * flow-phase / phase-graph）只需要这几个值。把它们放进一个零依赖的小文件，投影模块就不再
- * 把 `typescript` 拖进运行时闭包——这是作品集浏览器包（
- * `@zcode/dynamic-workflow/projections`）能成立的前提。causality-order.ts 原样再导出，
- * 所有既有引用位置与行为不变。
+  * Trace vocabulary: region kinds, jump kinds, fallback phase id. These lived in causality-order.ts, but that file
+  * imports typescript at runtime (the AST walk itself), while the read-only core projections (causality-graph /
+  * flow-phase / phase-graph) need only these values. A zero-dependency file keeps the projection modules from
+  * dragging typescript into their runtime closure -- the premise that makes the portfolio browser bundle
+  * (@zcode/dynamic-workflow/projections) viable. causality-order.ts re-exports verbatim,
+  * leaving every existing import site and behavior untouched.
  */
 
 /**

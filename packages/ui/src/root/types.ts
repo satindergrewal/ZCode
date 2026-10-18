@@ -6,37 +6,37 @@ import type { CreateTaskRequest } from "@/app-shell/types.js";
 export interface RootProps {
   services: IServiceAccessor;
   platform: IPlatformService;
-  /** 如果从 main 进程传入则跳过项目选择页 */
+  /** When passed from the main process, skip the project picker. */
   initialWorkspaceAbsPath?: string;
-  /** app-owned workspace 展示分类；缺省为真实项目。 */
+  /** App-owned workspace display kind; defaults to a real project. */
   initialWorkspacePurpose?: import("@zcode/shared").WorkspacePurpose;
-  /** 桌面启动时精确 active 的本地 workspace 不可用；仅用于本次 renderer 生命周期。 */
+  /** The workspace precisely activated at desktop start is unavailable; this renderer lifetime only. */
   unavailableWorkspacePath?: string;
-  /** 初始 workspace 的身份隔离键，远程工作区需要透传 */
+  /** Identity key of the initial workspace; remote workspaces must pass it through. */
   initialWorkspaceIdentity?: string;
-  /** 初始要打开的 task，从全局 task 列表进入时透传 */
+  /** Initial task to open, passed through when entering from the global task list. */
   initialTaskId?: string;
-  /** Electron renderer 传 true，用于启用自绘标题栏 */
+  /** True from the Electron renderer; enables the custom title bar. */
   isDesktop?: boolean;
-  /** macOS 桌面端需要给红绿灯按钮预留安全区 */
+  /** macOS needs the safe area for the traffic-light buttons. */
   isMacDesktop?: boolean;
-  /** Windows 桌面端需要展示更准确的资源管理器文案 */
+  /** Windows needs the more accurate Explorer copy. */
   isWindowsDesktop?: boolean;
-  /** 是否恢复上次关闭时的标签页，首个窗口 true，新窗口 false */
+  /** Whether to restore the tabs closed last time; true for the first window, false for new ones. */
   restoreSession?: boolean;
-  /** 是否允许访问本地设置服务，远程窗口 false */
+  /** Whether the local settings service is reachable; false on remote windows. */
   supportsSettings?: boolean;
-  /** 是否允许在当前壳层里切换/新开工作区 */
+  /** Whether this shell may switch or open workspaces. */
   allowOpenWorkspace?: boolean;
-  /** 是否优先使用服务端目录浏览器，Web 普通模式不能依赖系统目录选择框 */
+  /** Prefer the server-side directory browser; plain web cannot rely on the OS picker. */
   preferDirectoryBrowser?: boolean;
-  /** 是否支持 Electron 内嵌浏览器 side pane，默认仅桌面端支持 */
+  /** Whether the embedded-browser side pane is supported; desktop only by default. */
   supportsEmbeddedBrowser?: boolean;
-  /** 是否启用远程工作区能力，Web 普通模式先只支持本地 server 工作区 */
+  /** Whether remote workspaces are enabled; plain web starts with local-server workspaces only. */
   allowRemoteWorkspace?: boolean;
-  /** 非桌面入口初始 workspace 注入前继续展示的 loading，桌面端不使用 */
+  /** Loading kept up until the initial workspace is injected on non-desktop entries; unused on desktop. */
   initialWorkspaceLoadingFallback?: ReactNode;
-  /** Assistant code-comment 卡片灰度；默认关闭，关闭时保留原始 directive。 */
+  /** Assistant code-comment card rollout; off by default, keeping the raw directive while off. */
   assistantCodeCommentCardsEnabled?: boolean;
 }
 

@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 子智能体管理页集中维护作用域列表、表单和启用状态，避免状态分散 */
+/* eslint-disable max-lines -- the subagent manager keeps scope list, forms and enable state together. */
 import { useStartPlanRecommendation } from "@/hooks/useStartPlanRecommendation.js";
 import { hasExplicitModelChanged } from "@/lib/startPlanRecommendation.js";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
@@ -105,8 +105,8 @@ interface AgentGroups {
 }
 
 function projectSettingsSubagents(result: AgentsListResult): AgentSummary[] {
-  // result.agents 是运行时调用投影，插件 agent 可能同时有规范名称与裸名称别名；
-  // 设置页按已安装资源展示，插件部分必须改用一文件一条的 pluginAgents 投影。
+  // result.agents is the runtime invocation projection; plugin agents carry both canonical and bare-name aliases,
+  // while this page shows installed resources: the plugin part must use the one-entry-per-file pluginAgents projection.
   return [...result.agents.filter((agent) => agent.source !== "plugin"), ...result.pluginAgents];
 }
 
@@ -137,10 +137,10 @@ function isEditableUserAgent(agent: AgentSummary): boolean {
   );
 }
 
-// runtime 只对 user scope 应用 disabledAgentIds（CLI 侧 isDisabledUserProfile 对
-// source !== "user" 直接返回 false，workspace profile 的 source 是 "project"），服务端
-// attachEnabledState 也据此对非 user scope 恒返回 enabled: true。因此 workspace agent 不能
-// 展示启用开关——点了会静默回弹，还会往 user 级 agents-state.json 写入永不生效的记录。
+// Runtime applies disabledAgentIds to user scope only (CLI isDisabledUserProfile returns false for
+// source !== user; a workspace profile's source is project), and attachEnabledState likewise always
+// returns enabled for non-user scopes. So workspace agents get no enable toggle:
+// clicks would bounce silently and write never-effective entries into the user-level agents-state.json.
 function supportsEnabledToggle(agent: AgentSummary): boolean {
   return isEditableUserAgent(agent) && agent.scope === "user";
 }
@@ -150,8 +150,8 @@ function isBuiltInAgent(agent: AgentSummary): boolean {
 }
 
 /**
- * 内置 general-purpose / Explore 与插件 agent 都是只读 profile，配置入口统一为行内
- * model / effort 覆盖控件；插件 md 属于插件安装目录，升级会覆写，所以不能像 user agent 那样改文件。
+ // Built-in general-purpose/Explore and plugin agents are read-only profiles; config is the inline
+ // model/effort overrides. Plugin md lives in the plugin dir and upgrades overwrite it, so unlike user agents its file is not edited.
  */
 function supportsModelOverride(agent: AgentSummary): boolean {
   return getBuiltInSubagentName(agent) !== null || agent.source === "plugin";
@@ -183,7 +183,7 @@ function mergeTools(
 }
 
 function allowsAllTools(tools: readonly string[] | undefined): boolean {
-  // 通配符 * 表示全部工具，不能按数组长度显示成 1 个工具。
+  // The wildcard * means all tools; never display it as 1 tool by array length.
   return !tools || tools.length === 0 || tools.some((tool) => tool.trim() === "*");
 }
 
@@ -229,8 +229,8 @@ function resolveSubagentThoughtOptionState(params: {
   const modelSelection = parseModelPickerValue(persistedModel);
   const explicitThoughtLevel = params.thoughtLevel?.trim();
 
-  // Settings 只管理 Local Environment，模型能力与候选统一来自 Local Host View。
-  // Workspace presentation 的 configOptions 不是第二份模型目录，也不参与 reasoning 判断。
+  // Settings manages the Local Environment only; model capabilities and candidates come from the Local Host View.
+  // Workspace presentation's configOptions is not a second model catalog and takes no part in reasoning checks.
   const metadataOption = params.modelSelectionView
     ? resolveModelThoughtOption({
         modelSelectionView: params.modelSelectionView,
@@ -334,8 +334,8 @@ function resolveSubagentModelLabel(params: {
   if (!trimmedModel || trimmedModel === INHERIT_MODEL_VALUE) {
     return params.inheritLabel;
   }
-  // Registry 只包含当前可选模型，但历史 Subagent 配置仍需展示原模型身份，
-  // 方便用户理解并修复失效配置。候选列表与保存校验继续以 Registry 为准。
+  // The Registry holds only currently selectable models, but historical subagent configs must still show the original
+  // identity so users can understand and repair dead configs. Candidates and save validation stay Registry-based.
   return resolveModelDisplayName(params.modelGroups, trimmedModel) ?? trimmedModel;
 }
 
@@ -386,7 +386,7 @@ function groupAgentsByScope(agents: readonly AgentSummary[]): AgentGroups {
   return groups;
 }
 
-/** 按完整插件 ID 分组，避免同名 marketplace 的子智能体互相合并。 */
+/** Group by full plugin id so same-named marketplaces' subagents never merge. */
 function groupPluginAgentsById(agents: readonly AgentSummary[]): Array<[string, AgentSummary[]]> {
   const groups = new Map<string, AgentSummary[]>();
   for (const agent of agents) {
@@ -475,7 +475,7 @@ function AgentListRow({
   const showEnabledToggle = supportsEnabledToggle(agent);
   const rowEditable = editable && !isOperating;
   const hasModelOverrideControl = supportsModelOverride(agent);
-  // 有覆盖控件的行由控件本身表达模型，不再重复显示模型徽标。
+  // Rows with override controls express the model via the control; no duplicate model badge.
   const showModelBadge = !hasModelOverrideControl;
   const inheritModelLabel = intl.formatMessage({
     id: "settings.subagents.model.inherit",
@@ -519,7 +519,7 @@ function AgentListRow({
           </div>
         )}
         {agent.color ? (
-          // 右下角颜色点之前溢出头像容器，会让列表行视觉高度变高。
+          // The corner dot used to overflow the avatar, inflating the row's visual height.
           <span className="absolute -bottom-1 -right-1 inline-flex size-3.5 items-center justify-center rounded-full border border-card bg-card p-px leading-none">
             <AgentColorDot color={agent.color} />
           </span>
@@ -585,7 +585,7 @@ function AgentListRow({
   );
 }
 
-/** 内置与插件 subagent 共用的行内 model / effort 覆盖控件，即改即存。 */
+/** Inline model/effort override shared by built-in and plugin subagents; saves on change. */
 function SubagentModelOverrideControl({
   agent,
   disabled,
@@ -636,8 +636,8 @@ function SubagentModelOverrideControl({
     modelAvailable &&
     !isSubagentThoughtLevelAvailable(thoughtLevelState, config.thoughtLevel),
   );
-  // Coding Plan 连接切换后，Builtin 的旧模型可能不再属于当前候选；仅隐藏 reasoning
-  // 会让用户误以为模型仍有效，因此触发器改用“选择模型”提示，候选列表仍只展示当前连接。
+  // After a Coding Plan switch a builtin's old model may leave the candidate set; hiding reasoning only
+  // reads as still-valid, so the trigger says Select a model while candidates show the current connection only.
   const triggerLabel =
     value === INHERIT_MODEL_VALUE
       ? defaultLabel
@@ -711,8 +711,8 @@ function SubagentModelOverrideControl({
                 ?.options?.reasoningLevel
             : undefined,
       });
-      // 控件会展示 Registry 的正常默认档位，持久化必须保存同一个值，
-      // 不能让界面有值而执行 Selection 缺少 reasoningLevel。
+      // The control shows the Registry's normal default level; persistence must save that same value,
+      // never a UI value while the executed Selection lacks reasoningLevel.
       void persistConfig({
         model: nextModel,
         thoughtLevel: resolvedSubagentThoughtLevel(nextThoughtState),
@@ -854,8 +854,8 @@ function SubagentForm({
   );
   const persistedModel = toPersistedModel(model);
   const modelAvailable = isSubagentModelAvailable(modelSelectGroups, model, modelSelectionLoading);
-  // 候选已明确失效时仍展示原型号会误导用户；只改触发器文案，不清空草稿或补回候选。
-  // 非 ready 阶段由可用性函数保留原意图，不能把读取失败当成模型被删除。
+  // Showing the original model once candidates are known-dead misleads; change the trigger copy only, keeping draft and candidates.
+  // Pre-ready phases keep the intent via the availability check; a read failure is not a deleted model.
   const modelTriggerLabel = modelAvailable
     ? resolveSubagentModelLabel({
         inheritLabel: inheritModelLabel,
@@ -906,8 +906,8 @@ function SubagentForm({
     previousInitialFormStateKeyRef.current = initialFormStateKey;
     const nextInitialState = createSubagentFormInitialState(initial);
 
-    // 保存/刷新后表单组件可能复用旧实例；必须按最新 agent 快照回灌字段，
-    // 否则已写入 Markdown 的 model 会继续停留在本地 inherit 状态。
+    // After save/refresh the form component may be a reused instance; reseed fields from the latest agent snapshot,
+    // else a model already written into Markdown sticks in local inherit state.
     setName(nextInitialState.name);
     setDescription(nextInitialState.description);
     setColor(nextInitialState.color);
@@ -964,7 +964,7 @@ function SubagentForm({
     } else {
       setPromptError(null);
     }
-    // 不可用模型会展示为“选择模型”，保存时也必须阻止历史值被静默写回。
+    // Unavailable models render as Select a model; saves must not silently write the historical value back.
     if (!isSubagentModelAvailable(modelSelectGroups, model, modelSelectionLoading)) {
       setModelError(
         intl.formatMessage({
@@ -1108,8 +1108,8 @@ function SubagentForm({
                 id: "chat.toolbar.model.manageModels",
               })}
               onManageModels={onManageModels}
-              // 聊天工具栏的模型菜单默认向上弹；Subagents add/edit 表单位于设置页正文，
-              // 菜单项应贴着按钮下方展开，避免覆盖上面的表单字段。
+              // The chat toolbar's model menu opens upward by default; the subagent add/edit form sits in the page body,
+              // so items should drop below the button, not cover the fields above.
               contentSide="bottom"
               focusSelectorOnClose={null}
               labelVisibilityClassName="inline-flex min-w-0"
@@ -1273,7 +1273,7 @@ export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
   const modelSelectionRead = useModelSelectionServiceView(localHostServices.modelSelectionService);
   const modelSelectionView =
     modelSelectionRead.state.status === "ready" ? modelSelectionRead.state.view : null;
-  // 非 Ready 生命周期均保留表单中的模型意图；error/unavailable 不能被误判成模型已失效。
+  // Every non-Ready lifecycle keeps the form's model intent; error/unavailable is not a dead model.
   const modelSelectionLoading = modelSelectionRead.state.status !== "ready";
   const tabs = useTabStore((state) => state.tabs);
   const workspaceTabs = useMemo(() => {
@@ -1282,7 +1282,7 @@ export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
       tabs
         .filter(isWorkspaceTab)
         .filter(isPluginScopeWorkspaceConnected)
-        // Subagent Settings 只管理 Local Environment；远程配置浏览/编辑是独立产品能力。
+        // Subagent settings manages the Local Environment; remote config browse/edit is a separate product capability.
         .filter((tab) => !tab.remoteTarget && !tab.remoteSessionId && !tab.workspaceIdentity)
         .filter((tab) => {
           const key = getPluginWorkspaceKey(tab);
@@ -1343,7 +1343,7 @@ export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
         if (requestId !== latestRequestIdRef.current) {
           return;
         }
-        // 插件 agent 是运行时 profile 的只读投影；设置页展示它们，但仍不展示工作区级编辑入口。
+        // Plugin agents are read-only projections of runtime profiles; shown here, but still no workspace-level editor.
         setAgents(projectSettingsSubagents(result));
         setCapability(result.capability);
         setLoading(false);
@@ -1367,8 +1367,8 @@ export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
   useEffect(() => {
     if (!pluginInventoryWorkspacePath) return;
     let active = true;
-    // 冷启动 seed 晚于文件首读，旧用户页又跳过 inventory 初始化，导致插件直到重进才出现。
-    // 复用已有初始化完成事件刷新只读资源，不阻塞用户列表、不轮询，也不把项目配置带入用户页。
+    // Cold-start seed lands after the first file read, and the legacy page skips inventory init, so plugins appeared only after re-entry.
+    // Refresh read-only resources on the existing init-done event: no blocking, no polling, no project config in the user page.
     void (async () => {
       try {
         await initializePlugins({
@@ -1380,7 +1380,10 @@ export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
         if (active) await loadAgents(false);
       } catch (initializationError) {
         if (active)
-          logger.warn("[subagents] 插件资源初始化失败，保留当前列表", initializationError);
+          logger.warn(
+            "[subagents] plugin resource init failed; keeping current list",
+            initializationError,
+          );
       }
     })();
     return () => {
@@ -1517,7 +1520,7 @@ export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
         if (agentName) {
           await subagentsService.setBuiltInModelOverride({ agentName, modelSelection });
         } else {
-          // 稳定 ID 不含插件版本；升级换目录后继续读取同一份用户 Selection 覆盖。
+          // Stable ids exclude the plugin version; after an upgrade moves the dir, the same user Selection override still applies.
           await subagentsService.setPluginAgentModelOverride({ agentId: agent.id, modelSelection });
         }
       } catch (changeError) {
@@ -1528,7 +1531,7 @@ export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
       try {
         await Promise.all([refresh(), refreshMentionStore()]);
       } catch (refreshError) {
-        // 持久化成功即为提交点；后续投影刷新失败只能提示，不能让控件回滚磁盘状态。
+        // A successful persist is the commit point; later projection-refresh failures may notify but never roll the control back from disk.
         toast(refreshError instanceof Error ? refreshError.message : String(refreshError));
       } finally {
         setOperatingAgentId(null);

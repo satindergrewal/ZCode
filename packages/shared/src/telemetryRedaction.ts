@@ -1,12 +1,12 @@
 /**
- * 遥测文本与模型身份的脱敏收口。
+ * The redaction choke point for telemetry text and model identity.
  *
- * ARMS 自动采集的 exception / api / click 事件，以及自定义事件里带自由文本的字段，都可能包含
- * 本机路径、邮箱、完整 URL 和凭据。这里提供纯函数实现，供 desktop main 的 `beforeReport` 与
- * renderer 侧埋点共用，避免每个埋点各写一份模式。
+ * ARMS auto-collected exception/api/click events and free-text fields of custom events may carry
+ * local paths, emails, full URLs, and credentials. Pure functions here, shared by desktop main's beforeReport
+ * and renderer-side analytics, so every hook does not reimplement the patterns.
  *
- * 模式与 CLI 的 `apps/zcode-cli/packages/telemetry/src/error-sanitizer.ts` 保持一致；两者位于不同
- * workspace 且不允许互相依赖，扩展任一侧时必须同步另一侧。
+ * Patterns mirror the CLI's apps/zcode-cli/packages/telemetry/src/error-sanitizer.ts; the two workspaces
+ * must not depend on each other, so any extension lands on both sides.
  */
 
 import { decodeCustomModelValue } from "./custom-model-value.js";
@@ -14,24 +14,24 @@ import { migrateLegacyModelProviderId } from "./legacy-model-provider-identity.j
 import { isBuiltinModelProviderId } from "./model-provider-types.js";
 import { OFFICIAL_GLM_MODEL_IDS } from "./official-glm-model-id.js";
 
-/** 单字段默认上限；ARMS 单字段过长会被截断或拒绝，主动截断保证关键头部一定上得去。 */
+/** Per-field default cap; ARMS truncates or rejects overlong fields, so pre-truncation guarantees the key head ships. */
 export const TELEMETRY_TEXT_MAX_LENGTH = 2_048;
 
-/** 脱敏前的输入上限：错误可能携带整段响应正文，先有界截断再正则清洗，避免无界 CPU 成本。 */
+/** Input cap before redaction: errors may embed whole response bodies; bound then regex-scrub, keeping CPU bounded. */
 const TELEMETRY_TEXT_SCAN_LIMIT = 4_096;
 
-/** 路由段保留原文的最大长度；更长的段一律视为不可信内容。 */
+/** Max length of a route segment kept verbatim; longer segments are untrusted content. */
 const TELEMETRY_ROUTE_SEGMENT_MAX_LENGTH = 128;
 
 export interface RedactTelemetryTextOptions {
-  /** 输出上限，默认 {@link TELEMETRY_TEXT_MAX_LENGTH}。 */
+  /// Output cap, default {@link TELEMETRY_TEXT_MAX_LENGTH}.
   maxLength?: number;
 }
 
 /**
- * 把自由文本清洗成可上报形态：URL 去 query、路径/邮箱/凭据归一为占位符，并有界截断。
+ * Scrub free text into reportable form: URLs without query, paths/emails/credentials as placeholders, bounded truncation.
  *
- * 只作用于上报副本；错误展示、本地日志、崩溃归档和分类逻辑必须继续使用原值。
+ * Acts on the reporting copy only; error display, local logs, crash archives, and classification keep the original.
  */
 export function redactTelemetryText(
   value: string | undefined | null,
@@ -63,7 +63,7 @@ export function redactTelemetryText(
     .replace(/\bAKIA[A-Z0-9]{16}\b/gu, "{secret}")
     .replace(/\bAIza[0-9A-Za-z_-]{30,}\b/gu, "{secret}")
     .replace(/\b[^/@\s]+@[^/@\s]+\.[^/@\s]+\b/gu, "{email}")
-    // 修复原因：崩溃/异常消息里的绝对路径会带上本机用户名与工作区目录名，必须在离开本机前归一。
+    // Fix rationale: absolute paths in crash/exception messages carry the local username and workspace dir; normalize before leaving the machine.
     .replace(/\/(?:private\/)?(?:var\/folders|tmp)\/[^\s:;,)\]}]+/gu, "{path}")
     .replace(
       /\/(?:Users|home|root|workspace|workspaces|Volumes)\/[^/\s]+(?:\/[^\s:;,)\]}]+)*/gu,
@@ -78,10 +78,10 @@ export function redactTelemetryText(
 }
 
 /**
- * 把 URL 清洗成 `protocol//host` 加归一化路由；丢弃 query 与 fragment。
+ * Scrub a URL to protocol//host plus a normalized route; query and fragment dropped.
  *
- * `file://`、本地绝对路径归一为 `local_file`，`blob:` / `data:` 只保留协议标记，
- * 无法解析时返回 `unknown`，不回退到原值。
+ * file:// and local absolute paths become local_file; blob:/data: keep only the scheme;
+ * unparseable returns unknown, never the original.
  */
 export function redactTelemetryUrl(value: string | undefined | null): string {
   const raw = typeof value === "string" ? value.trim() : "";
@@ -94,14 +94,14 @@ export function redactTelemetryUrl(value: string | undefined | null): string {
   if (/^data:/iu.test(raw)) {
     return "data";
   }
-  // Bug 根因：枚举常见根目录会漏掉 /opt、/root、/mnt 等合法 POSIX 绝对路径。
+  // Bug root cause: enumerating common roots missed legal POSIX absolutes like /opt, /root, /mnt.
   if (/^file:/iu.test(raw) || /^[a-zA-Z]:[\\/]/u.test(raw) || raw.startsWith("/")) {
     return "local_file";
   }
 
   try {
-    // Bug 根因：无条件补 `https://` 会让 `!!!` 之类的普通文本被 URL 解析成 host 后原样回显。
-    // 只有本身带 scheme，或看起来确实是 host[:port][/path] 的输入才进入解析。
+    // Bug root cause: blanket https:// made plain text like !!! parse its host and echo back.
+    // Only inputs with a scheme, or that look like host[:port][/path], enter parsing.
     const candidate = raw.includes("://")
       ? raw
       : /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:\d{1,5})?(?:[/?#]|$)/iu.test(raw)
@@ -129,7 +129,7 @@ function redactTelemetryRouteSegment(segment: string): string {
     return segment;
   }
   if (
-    // 邮箱、长数字 ID、hash 和 UUID 都是高基数身份，不能原样留在路由里。
+    // Emails, long numeric ids, hashes, UUIDs are high-cardinality identity; never verbatim in routes.
     /@/u.test(segment) ||
     /^\d{7,}$/u.test(segment) ||
     /^[0-9a-f]{16,}$/iu.test(segment) ||
@@ -140,15 +140,15 @@ function redactTelemetryRouteSegment(segment: string): string {
   return segment.slice(0, TELEMETRY_ROUTE_SEGMENT_MAX_LENGTH);
 }
 
-/** 官方 GLM 名单之外的历史内置模型；仍是 ZCode 自己发布的稳定 ID，不是用户命名。 */
+/** Legacy built-in models outside the official GLM roster; still ZCode's own stable ids, not user-named. */
 const TELEMETRY_LEGACY_BUILTIN_MODEL_IDS: readonly string[] = ["charglm-4", "codegeex-4", "emohaa"];
 
 /**
- * telemetry 模型白名单：只有这里的内置稳定模型 ID 允许原样进入遥测。
+ * The telemetry model allowlist: only these built-in stable model ids may enter telemetry verbatim.
  *
- * 白名单独立于账号返回的运行时 catalog，但以人工维护的官方 GLM 名单为来源：
- * 修复原因：此前手抄一份列表漏掉了 GLM-5.3 / GLM-5.3-Flash / GLM-5V-Turbo，导致旗舰模型在
- * plan_* / perf_ui_* 里整体写成 `custom`。派生自官方名单后，两处不会再各自漂移。
+ * Independent of the account's runtime catalog, sourced from the hand-maintained official GLM roster:
+ * fix rationale: a hand-copied list once missed GLM-5.3 / GLM-5.3-Flash / GLM-5V-Turbo, flagging flagship models
+ * as custom across plan_* / perf_ui_*. Derived from the official roster, the two cannot drift.
  */
 export const TELEMETRY_SAFE_BUILTIN_MODEL_IDS: ReadonlySet<string> = new Set([
   ...OFFICIAL_GLM_MODEL_IDS.map((id) => id.toLowerCase()),
@@ -163,19 +163,19 @@ export interface TelemetryProviderIdentity {
 }
 
 /**
- * 旧报表身份（`builtin:zai` / `builtin:zai-start-plan` 等）是 ZCode 自己的固定 ID。
+ * Legacy report identities (builtin:zai / builtin:zai-start-plan...) are ZCode's own fixed ids.
  *
- * 修复原因：V4 supervisor 投影 /report detail 时会用 legacyTelemetryProviderId 把运行时
- * `account:*` 映射成这些旧身份，plan_ttft / perf_ui_* 复用同一份 detail。只认 `account:*`
- * 会让全部内置用户被当成自定义 provider 归一为 `custom`。复用 shared 的单向迁移表判定，
- * 未知的 `builtin:` 前缀仍按自定义处理，不能借前缀混入。
+ * Fix rationale: the V4 supervisor's /report detail uses legacyTelemetryProviderId to map runtime account:* onto
+ * these legacy ids, and plan_ttft / perf_ui_* share that detail. Accepting only account:* would normalize every
+ * built-in user to custom. Reuse shared's one-way migration table; unknown builtin: prefixes stay custom, never smuggled in.
+ * unknown builtin: prefixes stay custom; never smuggled in by prefix.
  */
 function isLegacyBuiltinTelemetryProviderId(providerId: string): boolean {
   const migrated = migrateLegacyModelProviderId(providerId);
   return migrated !== undefined && migrated !== providerId;
 }
 
-/** 内置 provider 保留稳定 ID；自定义 provider 由用户命名，原样上报会泄露私有名称并制造高基数。 */
+/** Built-in providers keep stable ids; custom providers are user-named, and verbatim reporting leaks private names and explodes cardinality. */
 export function resolveTelemetryProviderScope(
   providerId: string | undefined | null,
 ): TelemetryProviderIdentity {
@@ -190,8 +190,8 @@ export function resolveTelemetryProviderScope(
 }
 
 /**
- * 从 `custom:<providerId>:<modelName>` 编码值或 `<providerId>/<modelId>` 复合值里剥出裸模型 ID。
- * 裸 ID 只用于查白名单，无论 provider 部分是什么都不会原样进入遥测。
+ * Strip the bare model id from a custom:<providerId>:<modelName> encoding or a <providerId>/<modelId> composite.
+ * The bare id only feeds the allowlist check; whatever the provider part, it never enters telemetry verbatim.
  */
 function extractBareModelId(value: string): string {
   const decoded = decodeCustomModelValue(value);
@@ -203,10 +203,10 @@ function extractBareModelId(value: string): string {
 }
 
 /**
- * 只保留白名单内的内置模型 ID。
+ * Keep only allowlisted built-in model ids.
  *
- * 自定义 provider 的模型、内置 provider 下未命中白名单的模型统一写 `custom`；
- * provider scope 未知或模型缺失时写空串，与既有留空口径一致。
+ * Custom-provider models and non-allowlisted built-in-provider models write custom;
+ * unknown provider scope or missing model writes the empty string, matching the existing blank convention.
  */
 export function resolveTelemetryModelId(
   providerScope: TelemetryProviderScope,
@@ -219,18 +219,18 @@ export function resolveTelemetryModelId(
   if (providerScope === "custom") {
     return "custom";
   }
-  // 修复原因：supervisor 投影出的 detail.model_name 是 `<providerId>/<modelId>` 复合值或
-  // `custom:` 编码值，直接整串查白名单必然落空；先剥出裸模型 ID 再判定。
+  // Fix rationale: the supervisor-projected detail.model_name is a <providerId>/<modelId> composite or
+  // custom: encoding; whole-string allowlist checks always miss. Strip the bare id first, then judge.
   const bareModelId = extractBareModelId(normalized).toLowerCase();
   return TELEMETRY_SAFE_BUILTIN_MODEL_IDS.has(bareModelId) ? bareModelId : "custom";
 }
 
 /**
- * 归一化「只拿到一个模型值、没有独立 provider 字段」的场景。
+ * Normalize the "one model value, no separate provider field" case.
  *
- * 支持三种形态：`custom:<providerId>[:<modelName>]` 编码值、`<providerId>/<modelId>` 复合值和
- * 裸模型 ID。裸 ID 直接按白名单判定，未命中一律降级为 `custom`——这正是「新增内置模型未进入
- * 白名单时必须默认降级」的要求，因此不需要调用方额外传 provider。
+ * Three shapes: custom:<providerId>[:<modelName>], <providerId>/<modelId>, and a bare model id.
+ * Bare ids judge directly against the allowlist, missing degrades to custom--exactly the "new built-in models
+ * must default-degrade until allowlisted" rule, so callers need not pass a provider.
  */
 export function sanitizeTelemetryModelValue(value: string | undefined | null): string {
   const normalized = value?.trim();
@@ -238,7 +238,7 @@ export function sanitizeTelemetryModelValue(value: string | undefined | null): s
     return "";
   }
 
-  // `custom:` 前缀本身就表示非内置 provider，无需解码出用户命名即可判定。
+  // The custom: prefix already means non-builtin; judgable without decoding user names.
   const decoded = decodeCustomModelValue(normalized);
   if (decoded) {
     return resolveTelemetryModelId(

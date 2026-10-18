@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-// 原因随 Account State 发送，必须与严格协议共用枚举，避免整份快照被拒绝。
-// credential-failed 表示凭据获取/校验失败，不能据此断言 OAuth 已失效。
+// Reasons ride Account State and must share the strict protocol's enum, or the whole snapshot is rejected.
+// credential-failed means credential fetch/validate failed; never assert OAuth expiry from it.
 export const accountProviderUnavailableReasonSchema = z.enum([
   "not-authenticated",
   "not-connected",

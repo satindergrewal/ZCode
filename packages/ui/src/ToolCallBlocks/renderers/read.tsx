@@ -104,9 +104,11 @@ function readReadMetadataFromRaw(raw: unknown): {
   }
 
   if (directPath) {
-    // 有些模型只在 rawInput 里给 filePath，但会在 rawOutput/content 里补充目录类型。
-    // 之前这里一旦先读到 rawInput.filePath 就会提前返回成 file，导致目录卡片图标错误。
-    // 现在改成“类型优先看显式输出，路径再回退 rawInput”，只在确实没有输出标签时才用 input 兜底。
+    // Some models put only filePath in rawInput but add the entry type in
+    // rawOutput/content. Returning on the first rawInput.filePath read used to mislabel
+    // directories as files (wrong card icon). Rule now: type from explicit output first,
+    // path falls back to rawInput — input is the last resort only when no output label
+    // exists.
     return {
       path: directPath,
       entryType: normalizeReadEntryType(directType),
@@ -182,9 +184,9 @@ export function buildReadSummary(
           ? `${cwd}/${relativePath}`
           : (relativePath ?? fileName ?? "read");
 
-      // read 卡片之前只兼容 parsed_cmd 结构。
-      // 其他模型常把路径放在 rawInput/filePath 或 rawOutput 的 <path> 标签里，
-      // 导致 UI 只能退回 kind/title。这里保留结构化优先，再补原始输出兜底。
+      // read cards used to understand only the parsed_cmd shape; other models often put
+      // the path in rawInput/filePath or a rawOutput <path> tag, forcing the UI back to
+      // kind/title. Structured data stays primary with raw-output fallback.
       return createReadSummary(absolutePath, {
         fileName,
         entryType: "file",
@@ -194,9 +196,9 @@ export function buildReadSummary(
 
   const directInputMetadata = readReadMetadataFromValue(input);
   if (directInputMetadata.path) {
-    // 一些 provider 的 read/update 事件直接把文件路径放在 input.file_path，
-    // 不会补 parsed_cmd，也不一定把相同字段镜像到 raw.rawInput.filePath。
-    // 之前 summary 构建会直接漏掉这类 read 卡片，导致 primary/secondary 都退回标题。
+    // Some providers' read/update events put the path straight in input.file_path, with no
+    // parsed_cmd and no mirror into raw.rawInput.filePath. Summary building used to skip
+    // such read cards entirely, degrading primary/secondary to the title.
     return createReadSummary(directInputMetadata.path, {
       entryType: directInputMetadata.entryType,
     });

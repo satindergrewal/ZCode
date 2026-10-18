@@ -1,4 +1,4 @@
-/* oxlint-disable eslint(max-lines) -- 附件采集、分 scope 上传调度和生命周期必须在同一 hook 中原子收口。 */
+/* oxlint-disable eslint(max-lines) -- attachment capture, per-scope upload scheduling, and lifecycle must be atomic inside one hook. */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "@/components/ui/toast.js";
 import { nanoid } from "nanoid";
@@ -48,8 +48,9 @@ const COMPOSER_ATTACHMENT_UPLOAD_CONCURRENCY = 2;
 const COMPOSER_ATTACHMENT_AUTO_RETRY_DELAY_MS = 500;
 const COMPOSER_ATTACHMENT_COMPLETE_VISIBLE_MS = 300;
 /**
- * 换代重传的兜底上限。dev 实测同一 workspace 可达 runtimeGeneration=4（3 次换代），
- * 取 5 留余量；它只防 Helper 反复崩溃时的无限重传，正常使用不该触达。
+ * Backstop cap for generation-change re-uploads. Dev observed runtimeGeneration=4 on one
+ * workspace (3 changes); 5 leaves headroom. It only prevents infinite re-uploads when the
+ * Helper crash-loops; normal use never reaches it.
  */
 const COMPOSER_ATTACHMENT_REBUILD_RETRY_LIMIT = 5;
 const EMPTY_COMPOSER_ATTACHMENTS: ComposerAttachmentUploadItem[] = [];
@@ -90,13 +91,13 @@ interface ComposerAttachmentsApi {
   handleWhiteboardMentionSelected: (boardId: string) => Promise<void>;
   removeAttachment: (id: string) => void;
   retryAttachment: (id: string) => void;
-  /** 发送成功只清冻结的附件 id；不传表示用户主动清空整个附件区。 */
+  /** On send success only the frozen attachment ids clear; omitting means the user cleared the whole attachment area. */
   clearAttachments: (attachmentIds?: readonly string[]) => void;
-  /** 把已由 session 接管的 queue refs 原样恢复为 ready chips；不触发 upload/adopt。 */
+  /** Restores queue refs already adopted by the session as ready chips; no upload/adopt. */
   restoreSessionOwnedAttachments: (attachments: readonly AttachmentRef[]) => boolean;
-  /** 只返回已 ready ref；任一附件未就绪时返回 null 作 submit 二次门禁。 */
+  /** Returns ready refs only; null when any attachment is not ready (the submit second gate). */
   prepareForSend: () => Promise<AttachmentRef[] | null>;
-  /** sendText accepted 后才移交远端暂存内容，发送失败时仍由草稿持有。 */
+  /** Remote-staged content is handed over only after sendText is accepted; on failure the draft keeps it. */
   adoptSentAttachments: (attachmentIds: readonly string[]) => Promise<void>;
   setAttachmentError: (message: string | null) => void;
 }
@@ -110,17 +111,19 @@ interface UseComposerAttachmentsOptions {
   attachmentPut: AttachmentPutFn;
   onRuntimeRestart?: (listener: () => void) => () => void;
   /**
-   * 承载 transport 暴露 runtime 存活态时优先用它，替代 onRuntimeRestart。
-   * unavailable 在 workspace-dispose 当场到达，把作废与唤醒拆到两个真实时点。
+   // When the transport exposes runtime liveness, prefer this over onRuntimeRestart.
+   // unavailable arrives at workspace-dispose time, splitting invalidation and wake-up across
+   // two real moments.
    */
   onRuntimeLifecycle?: (listener: (state: "available" | "unavailable") => void) => () => void;
   disabled?: boolean;
   /**
-   * 是否消费全局 add-to-chat 事件（whiteboard 引用）。
-   * 语义与 useWebElementContexts 等一致：由调用方传 `listenAddToChatEvents && !disabled`
-   * （SessionPane 以 focused 区分聚焦 composer）。SidePane forceMount 常驻多个同
-   * workspace 的 SessionPane，若不门控，一次白板引用会被所有 composer 同时
-   * preventDefault 并各自注入附件，用户看不见的后台草稿被静默塞入画板内容。
+   // Whether to consume global add-to-chat events (whiteboard references).
+   // Same contract as useWebElementContexts etc.: callers pass
+   // `listenAddToChatEvents && !disabled` (SessionPane distinguishes via focused). SidePane
+   // forceMount keeps several same-workspace SessionPanes alive; ungated, one whiteboard
+   // reference would be preventDefault-ed by every composer, each injecting the attachment -
+   // silently stuffing canvas content into invisible background drafts.
    */
   listenAddToChatEvents?: boolean;
 }
@@ -164,9 +167,10 @@ function isTransientAttachmentUploadError(error: unknown): boolean {
     return false;
   }
   const message = error instanceof Error ? error.message : String(error);
-  // video 超限错误必须在黑名单里，否则会触发一次无意义重试；按错误类型精确拦截，
-  // 避免扩大 message 正则后改变 image 超限的既有判定。
-  return !/(?:payloadTooLarge|invalidBase64|invalidServerProgress|frameTooLarge|permission|EACCES|ENOENT|not found|unsupported|附件缺少|缺少可读取内容|远端附件未完成物化)/iu.test(
+  // Video oversize errors must be on the blocklist or one pointless retry fires. Match by
+  // error type precisely; widening the message regex would change the existing image-oversize
+  // verdict.
+  return !/(?:payloadTooLarge|invalidBase64|invalidServerProgress|frameTooLarge|permission|EACCES|ENOENT|not found|unsupported|attachment lacks|missing readable content|remote attachment not materialized)/iu.test(
     message,
   );
 }
@@ -179,9 +183,11 @@ function progressPercent(uploadedBytes: number, totalBytes: number): number {
 function isRemoteAttachmentTarget(
   target: Pick<UploadTarget, "remoteSessionId" | "workspaceIdentity">,
 ) {
-  // 这里曾要求 workspaceIdentity 能被当前解析器识别。远端 identity 新增格式或
-  // 暂时非规范时，在 remoteSessionId 注入前会被误判为本地 workspace，使 host localPath
-  // 直接走零复制交给远端 Agent。identity 只承担隔离语义；任意非空值都必须按远端 fail closed。
+  // This once required workspaceIdentity the local resolver understood. With a new remote
+  // identity format (or a transient non-canonical one) the path was misread as local before
+  // remoteSessionId injection, handing host localPath straight to the remote Agent as
+  // zero-copy. Identity carries isolation semantics only; any non-empty value must fail closed
+  // as remote.
   return Boolean(target.remoteSessionId?.trim() || target.workspaceIdentity?.trim());
 }
 
@@ -218,8 +224,9 @@ export function useComposerAttachments(
   );
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   /**
-   * runtime 换代计数。换代后 attachmentSessionId 可能原地不变（正式会话由 cold-resume 恢复），
-   * 只靠它做依赖会漏掉唤醒，附件将永久停在 waitingSession。
+   // Runtime-generation counter. After a change, attachmentSessionId can stay the same in
+   // place (real sessions come back via cold-resume); keying on it alone misses the wake-up
+   // and attachments stick in waitingSession forever.
    */
   const [restartEpoch, setRestartEpoch] = useState(0);
   const [composerDragKind, setComposerDragKind] = useState<"attachment" | "workspace" | null>(null);
@@ -345,8 +352,9 @@ export function useComposerAttachments(
             sizeBytes: item.sizeBytes,
           });
           if (controllersRef.current.get(controllerKey) !== controller) return;
-          // 远端 ServiceAccessor 曾错误注入本地 transfer service，并返回
-          // staged:false + host localPath。远端 Agent 无法读取该路径，因此必须阻止发送。
+          // The remote ServiceAccessor once injected the local transfer service and returned
+          // staged:false + host localPath, unreadable by the remote Agent - block sending.
+
           if (!result.staged) {
             throw new RemoteAttachmentNotStagedError(
               intl.formatMessage({
@@ -388,7 +396,7 @@ export function useComposerAttachments(
             },
           },
         );
-        if (!ref) throw new Error("附件缺少可读取内容");
+        if (!ref) throw new Error("Attachment is missing readable content");
         if (controllersRef.current.get(controllerKey) !== controller) return;
         finishWithReady(targetScopeKey, attachmentId, ref, false);
       } catch (error) {
@@ -399,7 +407,7 @@ export function useComposerAttachments(
           (candidate) => candidate.id === attachmentId,
         );
         if (!current) return;
-        // 结构化超限错误在 UI 层按 locale 格式化（与 chatAttachments 序列化边界约定一致）。
+        // Structured oversize errors are locale-formatted in the UI (the chatAttachments serialization-boundary contract).
         const message =
           error instanceof OversizedInlineVideoAttachmentError
             ? intl.formatMessage(
@@ -451,7 +459,7 @@ export function useComposerAttachments(
             uploadError: message,
             uploadErrorKind: transient ? "transient" : "permanent",
           }));
-          logger.warn("[v4-composer-attachments] 附件上传失败", {
+          logger.warn("[v4-composer-attachments] attachment upload failed", {
             attachmentId,
             error: message,
             scopeKey: targetScopeKey,
@@ -525,9 +533,10 @@ export function useComposerAttachments(
   ]);
 
   /**
-   * 换代作废：撤掉 in-flight 上传与远端暂存，把附件降回 waitingSession 等新会话。
-   * silent=true 时不写错误文案——那是一次全自动恢复（作废 → 预热重建 → 重传，1-2s 内完成），
-   * 报错只会让用户以为出了问题；waitingSession 本身已渲染成「正在等待会话」。
+   // Generation-change invalidation: retract in-flight uploads and remote staging, demote
+   // attachments to waitingSession pending the new session. silent=true writes no error copy -
+   // this is a fully automatic recovery (invalidate -> prewarm rebuild -> re-upload, ~1-2s);
+   // an error would just worry the user, and waitingSession already renders as waiting-for-session.
    */
   const invalidateAttachmentsForRuntimeChange = useCallback(
     ({ silent }: { silent: boolean }) => {
@@ -549,7 +558,7 @@ export function useComposerAttachments(
           controllersRef.current.delete(key);
           if (item.staged) void target?.transferService.cleanup(item.operationId).catch(() => {});
           if (item.runtimeRebuildRetryCount >= COMPOSER_ATTACHMENT_REBUILD_RETRY_LIMIT) {
-            // 重传配额用尽是真失败，无论静默与否都必须让用户看见。
+            // An exhausted re-upload quota is a real failure; surface it even in silent mode.
             updateItem(targetScopeKey, item.id, (current) => ({
               ...current,
               uploadStatus: "failed",
@@ -565,9 +574,10 @@ export function useComposerAttachments(
             }));
             continue;
           }
-          // 换代后 targetsRef 里的 sessionId 必然陈旧（它在渲染期写入，而换代事件先于
-          // 下一次渲染到达），拿它入队会直撞 sessionNotFound。一律降到 waitingSession，
-          // 由 restartEpoch / 新 attachmentSessionId 驱动的唤醒 effect 在会话可用后统一入队。
+          // After a generation change the sessionId in targetsRef is necessarily stale (written at
+          // render; the change event lands first) and enqueueing with it hits sessionNotFound.
+          // Always demote to waitingSession; the wake-up effect keyed on restartEpoch / the new
+          // attachmentSessionId enqueues once the session is usable.
           updateItem(targetScopeKey, item.id, (current) => ({
             ...current,
             uploadStatus: "waitingSession",
@@ -593,29 +603,31 @@ export function useComposerAttachments(
   );
 
   useEffect(() => {
-    // 二选一订阅：两条通道都订会让同一次换代作废两次，白烧一次重传配额。
+    // Subscribe to one channel, not both: dual subscriptions would invalidate one generation change twice, burning a re-upload quota.
     if (onRuntimeLifecycle) {
       return onRuntimeLifecycle((state) => {
         if (state === "unavailable") {
-          // 作废与唤醒到此才真正解耦：此刻旧 CLI 已死、新的还没起来，递增 restartEpoch 会让
-          // 唤醒 effect 立即入队并直撞死进程（正式会话态 sessionId 原地不变时尤其明显）。
+          // This is where invalidation and wake-up truly decouple: the old CLI is dead and the
+          // new one not yet up, so bumping restartEpoch now would make the wake-up effect
+          // enqueue straight into the dead process (glaring when a real session keeps its
+          // sessionId in place).
           invalidateAttachmentsForRuntimeChange({ silent: true });
           return;
         }
-        // 草稿态实际由重建后的新 attachmentSessionId 唤醒；这一路是正式会话态的兜底。
+        // Draft state wakes via the rebuilt attachmentSessionId; this path is the real-session fallback.
         setRestartEpoch((current) => current + 1);
       });
     }
     if (!onRuntimeRestart) return;
     return onRuntimeRestart(() => {
       invalidateAttachmentsForRuntimeChange({ silent: false });
-      // 作废与唤醒解耦：这里只负责作废，入队交给依赖 restartEpoch 的唤醒 effect。
+      // Invalidation and wake-up are decoupled: this only invalidates; the restartEpoch-keyed wake-up effect enqueues.
       setRestartEpoch((current) => current + 1);
     });
   }, [invalidateAttachmentsForRuntimeChange, onRuntimeLifecycle, onRuntimeRestart]);
 
   const showAttachmentLimitWarning = useCallback(() => {
-    // 只更新输入框底部文字时，重复超限缺少明显反馈；每次添加都弹提示，同一输入框不堆叠。
+    // A footer-text-only update gives no clear feedback on repeated oversize; toast on every add, never stacking per input.
     toast(
       intl.formatMessage(
         { id: "chat.attachments.maxFiles" },
@@ -639,7 +651,7 @@ export function useComposerAttachments(
       selectedAttachments.slice(remainingSlots).forEach(revokeChatComposerAttachment);
       const target = targetsRef.current.get(scopeKey);
       const items: ComposerAttachmentUploadItem[] = accepted.map((attachment) => {
-        // 远端 identity 往往早于 remoteSessionId 注入；这段窗口不能退化为本地路径直读。
+        // A remote identity often lands before remoteSessionId; in that window never degrade to reading local paths directly.
         const localZeroCopy = Boolean(
           attachment.localPath && target && !isRemoteAttachmentTarget(target),
         );
@@ -686,8 +698,8 @@ export function useComposerAttachments(
             const resolvedPath = platform.getPathForFile?.(file);
             localPath = resolvedPath?.trim() ? resolvedPath : undefined;
           } catch (error) {
-            // Electron 32+ 的 File 需要经 preload webUtils 解析；失败时仍可走 Web bytes。
-            logger.warn("[v4-composer-attachments] 解析附件本地路径失败", error);
+            // Electron 32+ Files must resolve via preload webUtils; on failure Web bytes remain available.
+            logger.warn("[v4-composer-attachments] failed to resolve attachment local path", error);
           }
           return createChatComposerAttachment(file, localPath);
         }),
@@ -715,7 +727,7 @@ export function useComposerAttachments(
     void selectAttachmentLocalPaths(platform)
       .then((paths) => addAttachmentLocalPaths(paths))
       .catch((error) => {
-        logger.warn("[v4-composer-attachments] 选择附件路径失败", error);
+        logger.warn("[v4-composer-attachments] failed to pick attachment path", error);
         setAttachmentError(
           intl.formatMessage(
             { id: "chat.attachments.readFailed" },
@@ -743,7 +755,7 @@ export function useComposerAttachments(
       const prefersSpreadsheetText =
         files.length > 0 && shouldPreferSpreadsheetClipboardText(text, html);
       if (files.length > 0) {
-        logger.debug("[v4-composer-attachments] 识别剪贴板多表示 payload", {
+        logger.debug("[v4-composer-attachments] multi-representation clipboard payload detected", {
           clipboardTypes: Array.from(event.clipboardData.types),
           fileTypes: files.map((file) => file.type),
           prefersSpreadsheetText,
@@ -765,10 +777,14 @@ export function useComposerAttachments(
             text,
             filename: createClipboardTextAttachmentFilenameForDate(),
           });
-          if (!attachment) throw new Error("当前平台不支持临时文本附件");
+          if (!attachment)
+            throw new Error("Temporary text attachments are unsupported on this platform");
           addPreparedAttachments([createClipboardTextPathComposerAttachment(text, attachment)]);
         } catch (error) {
-          logger.warn("[v4-composer-attachments] 创建粘贴文本临时附件失败", error);
+          logger.warn(
+            "[v4-composer-attachments] failed to create pasted-text temporary attachment",
+            error,
+          );
           setAttachmentError(
             intl.formatMessage(
               { id: "chat.attachments.readFailed" },
@@ -884,9 +900,9 @@ export function useComposerAttachments(
     [addWhiteboardToChat],
   );
   useEffect(() => {
-    // 与 useWebElementContexts 等同款早退。SidePane forceMount 使非聚焦
-    // 会话的 SessionPane 常驻，只有聚焦 composer（listenAddToChatEvents）才允许消费
-    // add-to-chat 事件，否则同 workspace 的多个 composer 会同时注入附件。
+    // Early return, same as useWebElementContexts etc. SidePane forceMount keeps unfocused
+    // SessionPanes alive; only the focused composer (listenAddToChatEvents) may consume
+    // add-to-chat, or every same-workspace composer injects the attachment at once.
     if (!listenAddToChatEvents || typeof window === "undefined") return;
     const handle = (event: Event) => {
       if (!isWhiteboardAddToChatEvent(event)) return;
@@ -924,7 +940,7 @@ export function useComposerAttachments(
       const target = targetsRef.current.get(scopeKey);
       if (item.staged || item.uploadStatus === "uploading" || item.uploadStatus === "committing") {
         void target?.transferService.cancel(item.operationId).catch((error) => {
-          logger.warn("[v4-composer-attachments] 取消远程附件失败", error);
+          logger.warn("[v4-composer-attachments] failed to cancel remote attachment", error);
         });
       }
       commitScope(scopeKey, (items) => items.filter((candidate) => candidate.id !== id));
@@ -982,11 +998,11 @@ export function useComposerAttachments(
           (item.staged || item.uploadStatus === "uploading" || item.uploadStatus === "committing")
         ) {
           void target?.transferService.cleanup(item.operationId).catch((error) => {
-            logger.warn("[v4-composer-attachments] 清理未发送附件失败", error);
+            logger.warn("[v4-composer-attachments] failed to clean up unsent attachments", error);
           });
         }
       }
-      // ACK 到达后清空整个 scope，会顺手删除等待期间新加入的附件。
+      // Clearing the whole scope once the ACK lands also deletes attachments added while waiting.
       uploadQueueRef.current = uploadQueueRef.current.filter(
         (entry) => entry.scopeKey !== scopeKey || (ids !== null && !ids.has(entry.attachmentId)),
       );
@@ -1020,8 +1036,9 @@ export function useComposerAttachments(
           localZeroCopy: false,
         };
       });
-      // queue 中的 AttachmentRef 已在首次发送时由 session 接管；若按普通
-      // composer 文件重建，会在撤回后重复 upload/adopt，并在 runtime restart 时误清引用。
+      // AttachmentRefs in the queue were adopted by the session at first send; rebuilding them as
+      // plain composer files would re-upload/re-adopt after a withdraw and wrongly clear refs on
+      // runtime restart.
       commitScope(scopeKey, () => restored);
       setAttachmentError(null);
       return true;
@@ -1040,7 +1057,7 @@ export function useComposerAttachments(
   const adoptSentAttachments = useCallback(
     async (attachmentIds: readonly string[]): Promise<void> => {
       const ids = new Set(attachmentIds);
-      // 移交边界必须与本次 Submission 一致，不把下一条消息的附件提前交给 Session。
+      // The handover bound must match this Submission; never hand the next message's attachments to the Session early.
       const current = readComposerAttachmentScope(scopeKey).filter((item) => ids.has(item.id));
       const target = targetsRef.current.get(scopeKey);
       for (const item of current) {
@@ -1048,8 +1065,8 @@ export function useComposerAttachments(
           try {
             await target?.transferService.adopt(item.operationId);
           } catch (error) {
-            // sendText 已成功，不能因 adopt 回执失败把同一条消息重新留在 composer。
-            logger.warn("[v4-composer-attachments] 附件发送后 adopt 失败", error);
+            // sendText already succeeded; an adopt receipt failure must not leave the message in the composer again.
+            logger.warn("[v4-composer-attachments] post-send adopt failed", error);
           }
           updateItem(scopeKey, item.id, (candidate) => ({
             ...candidate,

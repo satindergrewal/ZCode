@@ -68,8 +68,9 @@ export function createFeishuChannelRuntime(deps: FeishuChannelRuntimeDeps) {
         if (signal.aborted) {
           return;
         }
-        // Bugfix: runtime 停止或锁目录异常时，锁文件创建可能在进入连接 try 块前失败。
-        // 必须把 acquire 纳入可恢复循环，否则多窗口关闭会留下未处理 rejection。
+        // Bugfix: when the runtime stops or the lock dir misbehaves, lock creation can fail before
+        // the connection try block; acquire must join the recoverable loop or a multi-window close
+        // leaves an unhandled rejection.
         deps.logger.warn(
           undefined,
           `acquire Feishu WebSocket lock failed bot=${bot.id}: ${error instanceof Error ? `${error.message}${"code" in error && typeof error.code === "string" ? ` code=${error.code}` : ""}` : String(error)}`,
@@ -146,12 +147,14 @@ export function createFeishuChannelRuntime(deps: FeishuChannelRuntimeDeps) {
           botId: bot.id,
           provider: bot.provider,
           status: "connected",
-          // 修复：运行状态会直接展示到 UI。补充 messageId，让前端按当前语言渲染，message 仅作为旧版本兜底。
+          // Fix: run state renders directly in the UI; add messageId so the frontend renders per
+          // locale, with message kept only as a legacy fallback.
           message: "Feishu WebSocket is running.",
           messageId: "bots.runtime.feishuWebSocketRunning",
         });
-        // Bugfix：首次 ready 不是长连接生命周期终点。SDK 重连耗尽必须进入 catch，
-        // 才能更新错误状态、关闭 client、释放跨窗口锁并进入外层恢复循环。
+        // Bugfix: first ready is not the end of the long-connection lifecycle; exhausted SDK
+        // reconnects must reach the catch to update error state, close the client, release the
+        // cross-window lock and re-enter the outer recovery loop.
         await Promise.race([
           waitForAbort(signal),
           client.terminated,
@@ -186,7 +189,7 @@ export function createFeishuChannelRuntime(deps: FeishuChannelRuntimeDeps) {
           );
         });
       }
-      // 修复原因：重试退避不能占着旧 client 和跨窗口锁等待，必须先完整清理资源。
+      // Fix: retry backoff must not hold the old client and cross-window lock while waiting; fully release resources first.
       if (retryAfterError) {
         await waitFor(5_000, signal);
       }
@@ -289,8 +292,9 @@ export function createFeishuChannelRuntime(deps: FeishuChannelRuntimeDeps) {
         }
         const runtime = runtimes.get(bot.id);
         if (runtime && runtime.fingerprint !== fingerprint) {
-          // Bugfix: 飞书/Lark 的 provider、App ID 或凭据变化后，旧 WebSocket 仍持有旧配置。
-          // 必须等待旧 client 和跨窗口锁释放后再启动新连接，保证同一 Bot 只有一个配置版本在线。
+          // Bugfix: after a Feishu/Lark provider/app-id/credential change the old WebSocket still
+          // holds the old config. Await old-client and cross-window-lock release before the new
+          // connection so only one config generation per bot is live.
           await stopWebSocket(bot.id);
           if (!isLatest()) {
             return;
@@ -315,8 +319,9 @@ export function createFeishuChannelRuntime(deps: FeishuChannelRuntimeDeps) {
 
   function scheduleRefresh(config?: BotsConfigFile): void {
     if (deps.runBackgroundTasks === false) {
-      // 修复原因：remote workspace host / desktop-attached 远端只暴露控制面服务；
-      // bot runtime 后台连接必须留在本地桌面 host，避免配置变更后重新抢跑。
+      // Fix: remote workspace hosts / desktop-attached remotes expose control-plane services only;
+      // the bot runtime background connection stays on the local desktop host so a config change
+      // cannot race ahead again.
       return;
     }
     void refresh(config).catch((error: unknown) => {
@@ -333,7 +338,7 @@ export function createFeishuChannelRuntime(deps: FeishuChannelRuntimeDeps) {
     for (const runtime of activeRuntimes) {
       runtime.controller.abort();
     }
-    // Bugfix：abort 只是发出取消信号；销毁终态必须等 WebSocket 关闭和 finally 释放跨进程锁。
+    // Bugfix: abort only signals cancellation; destroyed state must await WebSocket close and the finally-released cross-process lock.
     await Promise.allSettled(activeRuntimes.map((runtime) => runtime.done));
     for (const [botId, runtime] of runtimes) {
       if (activeRuntimes.includes(runtime)) {

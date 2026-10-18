@@ -3,15 +3,15 @@ import { TID_AUTOMATIONS_PAGE_TAB, testId } from "@zcode/shared";
 import { cn } from "@/components/lib/utils.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 
-/** 自动化页的两个顶级标签。 */
+/** The automations page's two top-level tabs. */
 export type AutomationsPageTab = "automation" | "workflow";
 
 const AUTOMATIONS_PAGE_TABS: readonly AutomationsPageTab[] = ["automation", "workflow"];
 
 /**
- * 自动化页的标题。动态工作流灰度未命中时
- * 页面只有「自动化」一件事，标题就退回引入「工作流」标签之前的那个平铺 h1——不留一个只有
- * 一项的 tablist，也不把方向键切换留在原地。
+ * The automations page title. Without the dynamic-workflows flag the page has only "Automations", so
+ * the title regresses to the flat h1 from before the "Workflows" tab — no single-item tablist, no
+ * orphaned arrow-key handling.
  */
 export function AutomationsPageTitle({
   workflowTabEnabled,
@@ -24,7 +24,7 @@ export function AutomationsPageTitle({
 }) {
   const { intl } = useZCodeIntl();
   if (!workflowTabEnabled) {
-    // 字号与切换态同源：30/34 页面标题层级，切换在不在场不该改变标题的视觉层级。
+    // Same type scale as the switch state: the 30/34 page-title level; presence of the switch must not change the title's visual hierarchy.
     return (
       <h1 className="text-[30px] font-medium leading-[34px] tracking-[0.114px] text-foreground">
         {intl.formatMessage({ id: "settings.automations.title" })}
@@ -35,9 +35,9 @@ export function AutomationsPageTitle({
 }
 
 /**
- * 页标题本身就是切换：「自动化 / 工作流」两个 30px 标题词并排，未选中的用次级色。
- * 不在标题下再长一排标签——定时任务 / 闲时任务的胶囊行留在「自动化」内部，两级各用一种视觉。
- * 字号沿用 AutomationsSection 原 h1 的标题层级。
+ * The page title is the switch itself: the two 30px title words "Automations / Workflows" side by side,
+ * unselected in the secondary color. No extra tab row below the title — the scheduled/idle-task pills
+ * stay inside "Automations", one visual per level. Type scale matches AutomationsSection's original h1.
  */
 export function AutomationsPageTitleSwitch({
   value,

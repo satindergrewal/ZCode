@@ -10,7 +10,7 @@ const EXECUTE_GROUP_ICON = (
   <SquareTerminalIcon className="size-4 shrink-0 text-foreground-subtle" />
 );
 
-// V4 row 进入共享 renderer 前会把 inputStreaming/pendingApproval 统一适配为 pending。
+// Before a V4 row reaches the shared renderer, inputStreaming/pendingApproval are both normalized to pending.
 const ACTIVE_STATUSES = new Set(["pending", "in_progress"]);
 
 function formatCompletedSummary(
@@ -66,8 +66,8 @@ export function ExecuteGroupToolCallBlock(context: ToolCallBlockRenderContext) {
   const runningSecondaryText = useMemo(
     () =>
       latestCommand ? (
-        // Tailwind v4 preflight 会给 code 默认 mono 字体，
-        // 不显式指定时运行态命令会和 execute/explore 收起态的 sans 约定不一致。
+        // Tailwind v4 preflight gives code a default mono font; without this, the running
+        // command breaks execute/explore's collapsed-state sans convention.
         <code className="min-w-0 truncate font-sans">{latestCommand}</code>
       ) : undefined,
     [latestCommand],
@@ -105,7 +105,8 @@ export function ExecuteGroupToolCallBlock(context: ToolCallBlockRenderContext) {
     ],
   );
 
-  // 只在 Execute 阶段运行时滚动新增 command；阶段结束必须立即清空旧队列并显示最终统计。
+  // Scroll in new commands only while the Execute phase runs; when the phase ends, clear
+  // the old queue immediately and show final stats.
   return (
     <ToolLayout
       toolId={toolCall.toolId}
@@ -120,8 +121,9 @@ export function ExecuteGroupToolCallBlock(context: ToolCallBlockRenderContext) {
       secondaryText={isRunning ? runningSecondaryText : undefined}
       summaryContentSeparator="·"
       expandedPrimaryText={completedSummary}
-      // ToolLayout 默认会在展开态沿用 secondaryText，导致命令数量后残留当前命令。
-      // 父组展开后由子 tool summary 表达当前命令，因此这里必须显式清空。
+      // ToolLayout keeps secondaryText in the expanded state, leaving the current command
+      // dangling after the count. Once the parent group is expanded, child tool summaries
+      // carry the running command, so clear it here.
       expandedSecondaryText={null}
       animateSummaryContent={isRunning}
       disableSummaryContentAnimation={context.disableSummaryContentAnimation}

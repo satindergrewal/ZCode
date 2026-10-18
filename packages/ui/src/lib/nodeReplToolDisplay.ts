@@ -17,7 +17,7 @@ export interface NodeReplPersistedResult {
   sizeLabel: string;
 }
 
-/** 本次 cell 操作的目标应用（Computer Use）；由 CLI 的 node_repl display 携带。 */
+/** Target app of this cell operation (Computer Use); carried by the CLI's node_repl display. */
 export interface NodeReplCuaApp {
   appKey: string;
   displayName?: string;
@@ -89,8 +89,8 @@ function readRawOutput(raw: unknown): unknown {
 
 function resolveOperation(toolCall: ChatToolCall): NodeReplOperation {
   const toolName = (toolCall.toolName?.trim() || toolCall.kind).toLowerCase();
-  // 真实 MCP 工具会带 mcp__node_repl__ 前缀；仅匹配旧 built-in 名称
-  // 会把 reset/configure 错误展示成执行 JavaScript。
+  // Real MCP tools carry the mcp__node_repl__ prefix; matching only the legacy built-in
+  // names would render reset/configure errors as JavaScript executions.
   if (toolName === "js_reset" || toolName === "mcp__node_repl__js_reset") {
     return "reset";
   }
@@ -135,7 +135,8 @@ function readUserTitle(
   toolCall: ChatToolCall,
   inputs: readonly Record<string, unknown>[],
 ): string | undefined {
-  // 完成态快照可能只在 raw input 或顶层 title 保留用户标题，不能因主 input 只有 code 就丢失。
+  // Terminal snapshots may keep the user title only in a raw input or the top-level title;
+  // do not lose it just because the primary input holds only code.
   for (const candidate of [...inputs.map((input) => input.title), toolCall.title]) {
     const title = readNonEmptyString(candidate)?.trim();
     if (title && !IMPLEMENTATION_TITLE_PATTERN.test(title)) {
@@ -212,7 +213,7 @@ function removeProjectedCompletionMarkers(text: string | undefined): string | un
     return text;
   }
 
-  // 结果投影会用“=> ”区分完成值与日志，但这是内部协议标记，不应展示给用户。
+  // The result projection marks completion values with "=> "; internal protocol marker, not user-facing.
   return text.replace(PROJECTED_COMPLETION_MARKER_PATTERN, "$1");
 }
 
@@ -222,8 +223,9 @@ function removeProjectedImagePlaceholders(
 ): string | undefined {
   if (!text || !hasImages) return text;
 
-  // Agent/Provider 需要图片的文本占位，但工具卡片已持有真实 display 图片；
-  // 若继续渲染投影文本，用户会同时看到图片和“Attached MCP image”内部协议描述。
+  // Agent/Provider need a textual placeholder for images, but the tool card already holds the
+  // real display image; rendering the projected text too would show the image plus the
+  // internal "Attached MCP image" protocol note.
   const visibleLines = text
     .split("\n")
     .filter((line) => !PROJECTED_IMAGE_PLACEHOLDER_PATTERN.test(line.trim()));
@@ -238,7 +240,7 @@ function removeLeadingBlankLines(code: string | undefined): string | undefined {
     return code;
   }
 
-  // 模型生成的执行内容经常在首个有效行前带换行；只移除空白行，避免破坏代码缩进。
+  // Model-generated code often starts with blank lines; strip blank lines only, preserving code indentation.
   return code.replace(LEADING_BLANK_LINES_PATTERN, "");
 }
 
@@ -285,8 +287,8 @@ function extractImages(values: unknown[]): NodeReplDisplayImage[] {
   const seen = new Set<string>();
   const visited = new Set<object>();
   const addImage = (value: Record<string, unknown>) => {
-    // 旧 built-in result 使用 {images:[{base64,mimeType}]}，真实 MCP
-    // 使用 content 里的 {type:"image",data,mimeType}。专用 renderer 必须兼容两种历史形态。
+    // Legacy built-in results use {images:[{base64,mimeType}]}; real MCP uses
+    // {type:"image",data,mimeType} inside content. This renderer must support both shapes.
     const base64 = readNonEmptyString(value.base64) ?? readNonEmptyString(value.data);
     const mimeType = readNonEmptyString(value.mimeType)?.trim();
     if (!base64 || !mimeType || !IMAGE_MIME_TYPE_PATTERN.test(mimeType)) {
@@ -319,11 +321,11 @@ function extractImages(values: unknown[]): NodeReplDisplayImage[] {
 }
 
 /**
- * 从 raw 里找 node_repl display 携带的 App 身份。
+ * Find the App identity carried by the node_repl display in raw.
  *
- * 与 `extractImages` / `hasBrowserTurnEndDisplay` 同款递归：实时 tool.updated 把 display 放在
- * raw.result 内，终态 snapshot 则把 completed part 的 metadata 直接当作 raw，只扫一个固定位置
- * 会让对话结束后图标消失。
+ * Same recursion as `extractImages` / `hasBrowserTurnEndDisplay`: live tool.updated events put
+ * display inside raw.result, while terminal snapshots hand the completed part's metadata over
+ * as raw itself; scanning a single fixed location would lose the icon once the turn ends.
  */
 function findCuaApp(value: unknown, visited = new Set<object>()): NodeReplCuaApp | undefined {
   if (!value || typeof value !== "object" || visited.has(value)) return undefined;
@@ -396,8 +398,8 @@ export function buildNodeReplDisplayModel(toolCall: ChatToolCall): NodeReplDispl
   const projectedText = outputCandidates
     .map((candidate) => extractText(candidate))
     .find((candidate) => candidate !== undefined);
-  // 实时 tool.updated 把 display 放在 raw.result 内，终态 snapshot 则把
-  // completed part 的 metadata 直接作为 raw。只扫描 raw.result 会让对话结束后的图片消失。
+  // Live tool.updated events put display inside raw.result, while terminal snapshots hand the
+  // completed part's metadata over as raw. Scanning only raw.result loses images once the turn ends.
   const images = extractImages([...outputCandidates, toolCall.raw]);
   const app = findCuaApp(toolCall.raw);
   const persisted = parsePersistedResult(

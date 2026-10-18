@@ -1,16 +1,16 @@
 // ============================================================
-// run 终态的结构化明细
+// Structured detail for run terminal states.
 // ============================================================
-// 从 types.ts 拆出（那份文件抵 400 行 lint 门）：`ProviderStop` 错误码的明细与 run 级停滞观察
-// 事件的载荷。词汇（RunStatus / RunStopReason / WorkflowErrorCode）仍在 types.ts，这里只有
-// 「明细」——它们不参与联合类型，拆走不影响穷举消费者。
+// Split from types.ts (that file sits at the 400-line lint gate): the ProviderStop error-code detail and the payload of the run-level stall
+// observation event. The vocabulary (RunStatus / RunStopReason / WorkflowErrorCode) stays in types.ts; only the
+// detail lives here -- outside the unions, so exhaustive consumers are unaffected.
 
 /**
- * `ProviderStop` 的结构化明细：通知与
- * GetWorkflowRun 据此选文案，绝不从 message 反向解析。`reason` 是 contracts 的
- * `ModelFailureReason` 值（`auth_failed` / `invalid_request` / `rate_limited` …），纯包不 import
- * contracts 故为 string；`kind` 是策略表的判定键（认证 / 未配置 / 模型不可用 / 请求无效 /
- * 配额 / 兜底），读文案表时用它而不是 reason。
+  * Structured detail of ProviderStop: the notice and
+  * GetWorkflowRun pick wording from it, never back-parsing the message. reason is a contracts
+  * ModelFailureReason value (auth_failed / invalid_request / rate_limited ...); the pure package does not import
+  * contracts, hence string. kind is the policy table's key (auth / not-configured / model-unavailable / invalid-request /
+  * quota / fallback) -- read the wording table by it, never by reason.
  */
 export interface ProviderStopDetails {
   kind: "auth" | "not_configured" | "model_unavailable" | "invalid_request" | "quota" | "other";
@@ -19,21 +19,21 @@ export interface ProviderStopDetails {
   providerLabel?: string;
   modelId?: string;
   providerCode?: string;
-  /** 触发停止的子代理（`refToString(instance)`）与它的名字 / 出生阶段（有则带）。 */
+    /** The subagent that triggered the stop (refToString(instance)) plus its name / birth phase when known. */
   subagent?: string;
   subagentName?: string;
   phase?: string;
-  /** provider 的原文，逐字（有界，由 driver 截断）。 */
+    /** The provider's verbatim text (bounded; truncated by the driver). */
   rawMessage?: string;
-  /** 配额类：provider 给出的重置时刻（epoch ms），能解析出来才在场。 */
+    /** Quota kind: the provider's reset instant (epoch ms), present only when parseable. */
   resetAt?: number;
 }
 
 /**
- * run 级停滞：driver 观察到本 run 连续
- * `sinceMs` 毫秒没有任何一次成功的模型请求、期间至少排定过一次重试。纯观察事件，引擎只
- * `record()`；core 据它发一条 run 中通知。`reason` 是期间占多数的重试原因（`ModelRetryReason`
- * 值，开放字符串），`cap` 是此刻该 provider 桶的 cap。
+  * Run-level stall: the driver observed no successful model request for
+  * sinceMs ms straight, with at least one retry scheduled in between. A pure observation event -- the engine only
+  * records it, and core sends one mid-run notice from it. reason is the window's modal retry cause (a ModelRetryReason
+  * value, open string); cap is that provider bucket's cap at that moment.
  */
 export interface RunStallInfo {
   sinceMs: number;

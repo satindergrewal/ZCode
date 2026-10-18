@@ -1,4 +1,4 @@
-/* oxlint-disable eslint(max-lines) -- 公开 Row 的 allow-list 构建与闭包校验必须同处一个策略边界，拆分会让 builder/validator 规则漂移。 */
+/* oxlint-disable eslint(max-lines) -- public-Row allow-list construction and closure validation share one policy boundary; splitting lets builder/validator rules drift. */
 import type { ConversationShareArtifactDescriptor } from "@zcode/shared";
 import type { ArtifactRow, ConversationRow } from "@zcode/shared/zcode-protocol-v4";
 
@@ -136,13 +136,15 @@ function assertTerminalAndSafe(rows: ConversationRow[]): void {
         );
       }
     }
-    // artifact.ref 是 Host 内部授权的读取引用，公开投影会替换；它不能参与通用 URL 泄漏检查。
+    // artifact.ref is a Host-authorized internal read reference replaced by the public projection;
+    // it must not join the generic URL-leak check.
     if (row.kind === "artifact") {
       const { ref: _localRef, ...safeFields } = row;
       visitStrings(safeFields, assertSafeString);
     } else if (row.kind === "toolCall" && row.output?.truncated) {
-      // truncated.ref 只用于本地按需读取大工具输出，公开投影本来就只保留 output.text；
-      // 对不会出现在请求里的内部 ref 做安全校验会误阻断同一轮正式结果物上传。
+      // truncated.ref only serves local on-demand reads of large tool output; the public projection
+      // keeps output.text anyway. Validating internal refs that never reach the request would
+      // wrongly block the same turn's legitimate artifact upload.
       visitStrings({ ...row, output: { text: row.output.text } }, assertSafeString);
     } else if (row.kind === "userInput") {
       const { attachments: _attachments, ...safeFields } = row;
@@ -253,11 +255,12 @@ function projectTimelineMarker(
 }
 
 /**
- * 每类 Row 用 allow-list 新建对象。
+ * Build each Row type from an allow-list.
  *
- * 这个 switch 故意穷尽且**不带 default**：返回类型非可选，所以 conversationRowSchema 新增
- * 一种 kind 时这里会编译失败。那是有意的闸门——公开投影是跨版本数据交换格式，往里加一种
- * 老客户端读不了的 kind 必须是个显式决定，不能靠 default 悄悄放过去。
+ // The switch is exhaustively **default-less** on purpose: the return type is non-optional, so a
+ // new conversationRowSchema kind fails to compile here. That gate is intentional - the public
+ // projection is a cross-version data format, and adding a kind legacy clients cannot read must
+ // be an explicit decision, never a silent default.
  */
 function projectRow(row: ConversationRow, index: number, ids: PublicIdMaps): ConversationRow {
   const base = projectBase(row, index, ids);
@@ -467,7 +470,8 @@ function assertConversationSharePublicProjection(input: {
           "Conversation public entity identity is invalid",
         );
       }
-      // entityId 是持久实体身份，同一实体可以对应多个 Row；这里只收集引用闭包，不校验 Row 间唯一性。
+      // entityId is the persisted entity id; one entity may back many Rows. Collect the reference
+      // closure only - no cross-Row uniqueness checks here.
       entityIds.add(row.entityId);
     }
     if (row.actions !== undefined) {
@@ -613,8 +617,8 @@ export function buildConversationSharePublicProjection(input: {
     );
   }
 
-  // 本地运行投影包含 subagent 详情和写入态标识，不能直接作为公开载荷；
-  // 必须先过滤非 V1 Row，再基于剩余内容生成一套闭合的公开 ID。
+  // The local run projection carries subagent details and write-state ids; it cannot ship as-is.
+  // Filter non-V1 Rows first, then derive a closed set of public ids from what remains.
   const retainedRows = input.rows.filter(
     (row) => row.kind !== "subagent" && row.kind !== "hookInvocation",
   );

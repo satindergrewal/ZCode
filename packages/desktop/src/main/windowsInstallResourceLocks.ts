@@ -6,8 +6,8 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 const WINDOWS_PROCESS_QUERY_TIMEOUT_MS = 3_000;
 const WINDOWS_PACKAGED_RESOURCE_DIRS = ["glm", "tools"];
-// taskkill 返回不代表 Windows 已完成文件句柄释放；沿用已验证的 750ms
-// 交接窗口。
+// // taskkill returning does not mean Windows released the handles; keep the proven 750ms
+// handover window.
 export const WINDOWS_UPDATE_LOCK_RELEASE_GRACE_MS = 750;
 
 interface WindowsInstallResourceLockProcess {
@@ -43,14 +43,14 @@ export async function runWindowsUpdateProcessCleanup<TTerminationResult>(
   let initialLockProcesses: WindowsInstallResourceLockProcess[] = [];
   try {
     const scannedProcesses = await options.scan(options.resourceLockMarkers);
-    // PID 会在退出屏障与专项清理之间被 Windows 复用，历史 Host/Agent PID
-    // 不能作为进程身份。即使扫描实现异常返回了额外行，也只保留清理时刻仍引用随包
-    // 资源的进程，避免 taskkill /T /F 终止无关进程树。
+    // Windows reuses PIDs between the shutdown barrier and targeted cleanup; stale Host/Agent PIDs
+    // are not identity. Even if the scanner misbehaves, keep only processes still referencing bundled
+    // resources at cleanup time, so taskkill /T /F never hits unrelated trees.
     initialLockProcesses = scannedProcesses.filter((processInfo) =>
       isWindowsProcessReferencingResourceMarkers(processInfo, options.resourceLockMarkers),
     );
   } catch (error) {
-    // 辅助扫描不可用不能阻断升级，错误返回给 main 记录后继续 NSIS 交接。
+    // A broken helper scan must not block the update; report to main and continue the NSIS handover.
     errors.push(stringifyCleanupError("initial-scan", error));
   }
 
@@ -142,7 +142,7 @@ function removeResourceProbeSentinel(path: string) {
   try {
     rmSync(path, { force: true });
   } catch {
-    // sentinel 只是安装前诊断探针，清理失败不应覆盖原始可写性错误。
+    // The sentinel is a pre-install probe; its cleanup failure must not mask the original writability error.
   }
 }
 

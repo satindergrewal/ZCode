@@ -57,11 +57,11 @@ function draftFromMeta(meta: ZCodeSavedWorkflowMeta): MetaDraft {
 let rowKeySeq = 0;
 
 interface SavedWorkflowDetailViewProps {
-  /** 项目档传 workspace target；全局档传 `{ scope: "global" }`（get/updateMeta 直接透传）。 */
+  /** Project workflows pass a workspace target; global ones pass { scope: global } (passed straight through by get/updateMeta). */
   target: ZCodeAgentSavedWorkflowTarget;
   agentService: IZCodeAgentService;
   name: string;
-  /** 面包屑「自动化 › <项目名> › <工作流名>」里的项目一级。 */
+  /** The project crumb in Automations > <project> > <workflow>. */
   projectLabel: string;
   entry: ZCodeSavedWorkflowEntry | undefined;
   runs: readonly ZCodeSavedWorkflowRun[];
@@ -72,22 +72,22 @@ interface SavedWorkflowDetailViewProps {
   onRun: () => void;
   onRevise: () => void;
   onCopyPath: () => void;
-  /** 作用域动作：项目档「提升为全局」（AI 概括）/ 全局档「移到项目…」；仅在传入时出现。 */
+  /** Scope actions: promote-to-global for project workflows (AI generalization) / move-to-project for global ones; present only when passed. */
   onMove?: () => void;
   onDelete: () => void;
   onOpenRun: (run: ZCodeSavedWorkflowRun) => void;
-  /** 产物 chip → `workflow-artifact` tab；缺席即 chips 只读。 */
+  /** Artifact chip -> the workflow-artifact tab; absent means read-only chips. */
   onOpenArtifact?: (run: ZCodeSavedWorkflowRun, artifactId: string) => void;
   onMetaSaved: () => void;
-  /** 传入即在运行历史每行渲染项目列（全局工作流跨项目历史）。 */
+  /** When passed, every run-history row renders a project column (global workflows span projects). */
   resolveRunProject?: (run: ZCodeSavedWorkflowRun) => SavedWorkflowRunProject | null;
-  /** 实参窗由列表层持有（同一份状态），详情页只负责挂到树上。 */
+  /** The args dialog is owned by the list layer (shared state); the detail page only mounts it into the tree. */
   launchDialog: ReactNode;
 }
 
 /**
- * 工作流详情页：与定时任务编辑页同构——
- * 面包屑、标题、右上动作、分段标签。「定义」= 元数据行内编辑 + 只读脚本；「运行历史」= journal 行。
+ * Workflow detail page, isomorphic with the schedule editor: breadcrumbs, title, top-right actions,
+ * segment tabs. Definition = inline metadata editing + read-only script; Runs = journal rows.
  */
 export function SavedWorkflowDetailView({
   target,
@@ -139,7 +139,7 @@ export function SavedWorkflowDetailView({
       .catch((error: unknown) => {
         if (cancelled) return;
         const message = error instanceof Error ? error.message : String(error);
-        logger.warn("[SavedWorkflows] 读取工作流详情失败", { name, error: message });
+        logger.warn("[SavedWorkflows] failed to load workflow detail", { name, error: message });
         setLoadState({ status: "failed", reason: message });
       });
     return () => {
@@ -251,9 +251,9 @@ export function SavedWorkflowDetailView({
     void navigator.clipboard?.writeText(detail.script).catch(() => undefined);
   }, [detail]);
 
-  // 「最近产物」条：**最近一次 completed run** 的
-  // 产物。刻意不取「最近一次 run」——一次刚失败的运行往往什么都没交付，用它会让这条已经存在的
-  // 交付物凭空消失一阵子。runs 已按 updatedAt 倒序（服务端 time_updated desc），取首个即可。
+  // The recent-artifacts strip shows the **latest completed run's** artifacts. Deliberately not
+  // latest run: a just-failed run often delivered nothing, which would make this existing
+  // deliverable vanish for a while. runs arrive updatedAt-desc (server time_updated desc); take the first.
   const latestArtifactRun = useMemo(
     () => runs.find((run) => run.status === "completed" && (run.artifacts?.length ?? 0) > 0),
     [runs],
@@ -284,7 +284,7 @@ export function SavedWorkflowDetailView({
         onDelete={onDelete}
       />
 
-      {/* ⚠ 术语：这里的「产物」是脚本经 `artifact.*` 交付给用户的产出，不是脚本的顶层返回值。 */}
+      {/* Terminology: artifacts here are what the script delivered to the user via artifact.*, not the script's top-level return value. */}
       {latestArtifactRun?.artifacts === undefined ? null : (
         <div className="flex flex-wrap items-center gap-2" data-testid="workflow-detail-artifacts">
           <span className="text-ui-sm text-foreground-subtle">

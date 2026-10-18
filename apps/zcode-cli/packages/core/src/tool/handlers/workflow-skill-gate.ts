@@ -1,30 +1,30 @@
-// 工作流创作工具的技能加载检查。
-// CreateWorkflow、AmendWorkflow、SaveWorkflow 和 EvalWorkflowSnippet 的工具描述保持简短，
-// facade 与写作规则由 `dynamic-workflows` 技能提供。提交脚本前必须加载技能：会话历史里没有
-// 成功的 `Skill(dynamic-workflows)` 调用时，resolveInput 直接拒绝，避免进入 hook 或显示无效确认窗。
+// Skill-load gate for the workflow authoring tools.
+// CreateWorkflow/AmendWorkflow/SaveWorkflow/EvalWorkflowSnippet keep short descriptions; facade and
+// writing rules come from the `dynamic-workflows` skill. The skill must load before submit: without a
+// successful Skill(dynamic-workflows) in history, resolveInput rejects up front -- no hooks, no invalid dialog.
 //
-// 判据来自模型当前可见的 messageHistory。compaction 移除技能正文及对应调用后，需要重新加载；
-// resume/rewind 则随历史一起恢复该判据，不维护第二份会话状态。
-// 探针缺席表示当前装配未提供技能加载检查，此时不设置无法满足的前提。
+// The test reads the model's current visible messageHistory. Compaction removes the skill body and its
+// call -> reload required; resume/rewind restore the test with history, no second session-state copy.
+// Absent probe = this assembly has no skill gate; never set an unsatisfiable precondition.
 
 import { DYNAMIC_WORKFLOW_SKILL_NAME } from "@zcode/contracts";
 import type { ToolHandlerFailure, ToolInputResolutionContext } from "../types.js";
 
 /**
- * 「技能未加载」的稳定错误码。与四个工具的入参级 400 分开：调用方要能不靠文本区分「参数给错了」
- * 与「先去读技能」——前者改参数，后者多一次 Skill 调用。
+ * Stable error code for "skill not loaded". Separate from the four tools' arg-level 400s: callers must
+ distinguish "fix the args" from "load the skill first" without parsing text -- one edits args, one adds a Skill call.
  */
 export const WORKFLOW_SKILL_NOT_LOADED_CODE = 428;
 
-/** 门在场时的判据；单独导出供探针实现复用。 */
+/** The test when the gate is present; exported for the probe impl. */
 export function isDynamicWorkflowSkillLoaded(context: ToolInputResolutionContext): boolean {
   return context.hasLoadedSkill?.(DYNAMIC_WORKFLOW_SKILL_NAME) ?? true;
 }
 
 /**
- * 没读过技能就拒绝。返回 `undefined` 表示放行：技能已加载，或本会话没有探针（见文件头）。
+ * Reject when the skill was never loaded. Undefined = proceed: loaded, or no probe in this session (see header).
  *
- * @param toolName 拒绝文案里点名的工具，让模型知道重试哪一个。
+ * @param toolName Tool named in the rejection so the model knows what to retry.
  */
 export function requireDynamicWorkflowSkill(
   context: ToolInputResolutionContext,
@@ -38,7 +38,7 @@ export function requireDynamicWorkflowSkill(
   };
 }
 
-/** CreateWorkflow 的例外：按名字跑一个保存的工作流不是写脚本，不需要技能。 */
+/** CreateWorkflow exception: running a saved workflow by name writes no script -- no skill needed. */
 export function createWorkflowNeedsSkill(input: unknown): boolean {
   const fields = asRecord(input);
   if (fields === undefined) return true;
@@ -47,7 +47,7 @@ export function createWorkflowNeedsSkill(input: unknown): boolean {
   return !runsSavedOnly;
 }
 
-/** AmendWorkflow 的例外：只改设定（`path` 与 `script` 都不带）沿用前驱的脚本，不是写脚本。 */
+/** AmendWorkflow exception: settings-only (no path/script) inherits the predecessor script -- not writing. */
 export function amendWorkflowNeedsSkill(input: unknown): boolean {
   const fields = asRecord(input);
   if (fields === undefined) return true;

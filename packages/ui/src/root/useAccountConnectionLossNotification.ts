@@ -9,7 +9,7 @@ import {
 import { prepareAccountConnectionSwitch } from "@/root/accountConnectionLossSuggestion.js";
 import { logger } from "@/logger.js";
 
-/** 根层只观察一次；页面/文案变化不重新建立账号基线。 */
+/** The root layer observes once; page/copy changes never re-baseline the account. */
 export function useAccountConnectionLossNotification(
   services: IServiceAccessor,
   intentKey: string,
@@ -23,7 +23,7 @@ export function useAccountConnectionLossNotification(
   );
   const noticeRef = useRef<{ id: number; event: AccountConnectionLoss } | null>(null);
   useEffect(() => {
-    // 设置/登录意图先于 Account 查询回包变化；即使切走又切回，旧按钮也不能重新有效。
+    // Settings/login intent precedes the account query response; even after switching away and back, the stale button must not become valid again.
     observerRef.current?.invalidate();
     if (noticeRef.current) dismissToast(noticeRef.current.id);
     noticeRef.current = null;
@@ -34,7 +34,7 @@ export function useAccountConnectionLossNotification(
       try {
         suggestion = await prepareAccountConnectionSwitch(services, event);
       } catch (error) {
-        logger.lifecycle.warn("[AccountConnection] 无法确认替代套餐，仅提示状态", { error });
+        logger.lifecycle.warn("[AccountConnection] Could not confirm the alternate plan; surfacing status only", { error });
       }
       if (!event.isCurrent()) return;
       const { intl: copy } = latest.current;
@@ -67,16 +67,16 @@ export function useAccountConnectionLossNotification(
               );
               return;
             }
-            // 条件写入已成功；这里只刷新显示，不把刷新失败说成保存失败。
+            // The conditional write succeeded; this only refreshes the display, and a refresh failure is not a save failure.
             try {
               await latest.current.refreshAppSettings?.();
             } catch (error) {
-              logger.lifecycle.warn("[AccountConnection] 连接已保存，设置快照刷新失败", { error });
+              logger.lifecycle.warn("[AccountConnection] Connection saved; settings snapshot refresh failed", { error });
             }
           } catch (error) {
-            logger.lifecycle.warn("[AccountConnection] 手动切换套餐失败", { error });
+            logger.lifecycle.warn("[AccountConnection] Manual plan switch failed", { error });
             if (!event.isCurrent()) return;
-            // Toast 点击会自动关闭。失败时给同一建议的显式重试，不能后台选新目标。
+            // Toast clicks auto-dismiss. On failure, offer an explicit retry of the same suggestion; never pick a new target in the background.
             id = toast(
               latest.current.intl.formatMessage({
                 id: "settings.modelProvider.connectionSwitchFailed",
@@ -121,7 +121,7 @@ export function useAccountConnectionLossNotification(
       .getView()
       .then(accept)
       .catch((error) => {
-        logger.lifecycle.warn("[AccountConnection] 初次读取失败，等待正常刷新", { error });
+        logger.lifecycle.warn("[AccountConnection] Initial read failed; waiting for the regular refresh", { error });
       });
     return () => {
       observer.dispose();

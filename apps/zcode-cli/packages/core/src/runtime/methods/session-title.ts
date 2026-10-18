@@ -61,8 +61,8 @@ export function maybeStartSessionTitleGenerationFromExternalInput(
   input: string,
   options?: { goalSummaryTargetID?: string; traceContext?: TraceContext },
 ): void {
-  // /goal 这类协议命令不走普通 executeTurn，但 objective 仍是用户可见的首条意图。
-  // 这里复用 title seed，不额外持久化 user message，避免为了标题生成污染聊天 transcript。
+  // Protocol commands like /goal skip executeTurn, yet the objective is the first user-visible intent.
+  // Reuse the title seed, no extra user message, no transcript pollution.
   maybeStartSessionTitleGenerationFromSeed.call(this, input, {
     bypassShortInputGuard: true,
     goalSummaryTargetID: options?.goalSummaryTargetID,
@@ -92,13 +92,13 @@ function maybeStartSessionTitleGenerationFromSeed(
     options.deferIfProviderRuntimeHeadersRefresh &&
     shouldDeferSessionTitleForRuntimeHeaders(this)
   ) {
-    // 首条消息的 title generation 和主消息会共享同一个 runtimeModel。
-    // 需要刷新 runtime headers 的 provider 先让主 turn 发出去，再异步补标题。
+    // First-message title generation shares the runtimeModel with the main message.
+    // Headers-needing providers send the main turn first, title asynchronously after.
     return false;
   }
   this.sessionTitleGenerationAttempted = true;
-  // 标题任务会越过当前 Turn 的生命周期。入队时冻结 causation，避免后续 await、
-  // 调度器或实现重构使后台 Trace 静默丢失指向触发 Span 的 Link。
+  // Title tasks outlive the Turn; freeze causation at enqueue so later awaits,
+  // scheduler changes or refactors never drop the Link to the triggering Span.
   const causation = this.agentTelemetry.captureCausation();
 
   const generation = generateAndPersistSessionTitle
@@ -149,8 +149,8 @@ function shouldAttemptSessionTitleGeneration(
   if (runtime.turnNumber !== 0) return false;
   const normalizedInput = normalizeTitleInput(input);
   if (normalizedInput.length === 0) return false;
-  // 短首发输入本身已经是可读标题，继续走 generated title sidecar
-  // 会把 "hi" 这类标题稳定覆盖成泛化的 "New Coding Session"。
+  // A short first input already reads as a title; the generated-title sidecar
+  // would reliably overwrite hi-ish titles with generic New Coding Session.
   return (
     options.bypassShortInputGuard ||
     Array.from(normalizedInput).length >= MIN_GENERATED_TITLE_INPUT_CHARS
@@ -226,8 +226,8 @@ async function generateAndPersistSessionTitle(
   });
   if (!generated) {
     if (options.goalSummaryTargetID) {
-      // 首次 /goal 会把 session title sidecar 同时当作 summaryTitle 来源；
-      // 这个 sidecar 空响应时必须给目标摘要写兜底，否则第一轮迭代没有语义标题。
+      // The first /goal doubles the title sidecar as summaryTitle source;
+      // on empty response write the objective fallback, or iteration one has no semantic title.
       await persistFallbackGoalSummaryTitle.call(this, {
         objective: input,
         reason: "session_title_empty",
@@ -257,9 +257,9 @@ async function generateAndPersistSessionTitle(
 }
 
 /**
- * renameSession：用户显式重命名会话（titleSource=custom）。custom 之后自动标题
- * 生成会被跳过（见 persistGeneratedSessionTitle 的 custom_title 短路），持久化 + 发
- * SessionTitleUpdated(source:custom) 供 v4 投影 meta 更新。
+ * renameSession: an explicit user rename (titleSource=custom). After custom, auto-titling
+ * is skipped (the custom_title short-circuit in persistGeneratedSessionTitle); persist plus emit
+ * SessionTitleUpdated(source:custom) for the v4 projection meta.
  */
 export async function setCustomSessionTitle(
   this: AgentRuntimeInternal,
@@ -295,8 +295,8 @@ async function persistGeneratedSessionTitle(
     traceContext: TraceContext;
   },
 ): Promise<void> {
-  // 标题 sidecar 现在会在首条 query 落库后并发启动，用户可能在 LLM 返回前编辑首条 query。
-  // 写回前重新读取 session，避免旧 query 的 generated title 覆盖编辑后的首屏标题语义。
+  // The title sidecar starts concurrently post-first-persist; the user may edit before the LLM returns.
+  // Re-read before writing back; the stale title never covers the edited first screen.
   const session = await getSessionForGeneratedTitle.call(this, input.messageID, input.traceContext);
   if (!session) return;
   if (session.titleSource === "custom") {
@@ -331,7 +331,7 @@ async function persistGeneratedSessionTitle(
     this.createEvent(
       SessionEventType.SessionTitleUpdated,
       {
-        // 旧持久化事件 DTO 尚未迁移；不把该投影重新暴露为标题生成配置。
+        // Legacy event DTO, unmigrated; never re-expose this projection as title config.
         ...(input.messageID ? { messageID: input.messageID } : {}),
         previousTitle,
         source: "generated",
@@ -379,8 +379,8 @@ async function isSuppressedByFirstQueryEdit(
   session: SessionInfo,
   messageID: MessageId | undefined,
 ): Promise<boolean> {
-  // 编辑首条 query 会通过 conversation_rewind 把 target 指向旧用户消息。
-  // 旧 query 的标题请求即使已经发出，也只能记录用量，不能再写回会话标题。
+  // Editing the first query points target at the old user message via conversation_rewind.
+  // An in-flight title for the old query records usage; it never rewrites the title.
   if (messageID && session.revert?.targetMessageID === messageID) return true;
   return hasEditedFirstVisibleUserQuery.call(this, session);
 }

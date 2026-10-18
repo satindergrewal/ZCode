@@ -9,8 +9,8 @@ import {
   AlertDialogCancel,
   AlertDialogAction,
 } from "@/components/ui/alert-dialog.js";
-/* New task 草稿页推荐提示词入口。
-   推荐配置来自 Client Scenes 的 draft-suggestion scene。 */
+/* Recommended-prompt entry for the new-task draft page.
+   Recommendation configs come from the Client Scenes draft-suggestion scene. */
 import type { CSSProperties } from "react";
 import { X, Check, Info, LoaderCircle, SquareCode, TriangleAlert } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
@@ -47,9 +47,9 @@ function DraftSuggestedPromptIcon({ name }: { name?: string }) {
 interface ConversationDraftSuggestedPromptsProps {
   className?: string;
   layout?: "chips" | "list";
-  /** 推荐项列表；由上层从 Client Scenes 映射后下发。 */
+  /** Recommendation items, mapped from Client Scenes upstream. */
   items?: DraftSuggestedPromptItem[];
-  /** 点击回调；完整配置交给上层解析 prompt 与 Plugin catalog。 */
+  /** Click callback; the full config goes upstream for prompt/plugin-catalog resolution. */
   onSelect?: (item: DraftSuggestedPromptItem) => void;
   disabled?: boolean;
   onRefresh?: () => void;
@@ -116,12 +116,12 @@ function DraftSuggestedPluginActionPopoverContent({
       data-draft-suggested-plugin-popover-offset="9"
       data-anchor-item-id={state.anchorItemId}
       className={cn(
-        // 固定 80px 确认态只容得下一行标题，较长的本地化 Plugin 名称换行后会把按钮挤出并被裁切。
+        // The fixed 80px confirm state fits one title line; longer localized plugin names wrap and push the button out, clipping it.
         "h-auto w-60 max-w-[calc(100vw-2rem)] border-popover-border bg-popover p-3 shadow-md",
         isConfirmation ? "gap-3" : "gap-0",
       )}
     >
-      {/* Plugin 名称、状态和按钮不压进同一横排、不从锚点上方展开：遵循设计稿的确认/结果两种结构。 */}
+      {/* Plugin name, status, and button never share one row, nor expand above the anchor: the design's confirm/result structures. */}
       <div
         role={state.phase === "error" ? "alert" : "status"}
         aria-live={state.phase === "error" ? "assertive" : "polite"}
@@ -138,8 +138,10 @@ function DraftSuggestedPluginActionPopoverContent({
             {statusContent}
           </div>
         ) : (
-          // 旧 CSS rotateX 只让成功内容自身翻入，无法像模型标签一样表达“进度被成功替换”。
-          // steady key 覆盖确认、进度、失败和重试，仅在进入成功态时触发一出一入的纵向滚动。
+          // The old CSS rotateX flipped only the success content in; it could not express
+          // progress-replaced-by-success the way the model label does. The steady key spans
+          // confirm/progress/failure/retry and triggers one out-and-in vertical roll on entering
+          // success only.
           <AnimatePresence initial={false} mode="popLayout">
             <motion.div
               key={state.phase === "success" ? "success" : "steady"}
@@ -264,7 +266,7 @@ export function ConversationDraftSuggestedPrompts({
                         draggable={false}
                         className={cn(
                           "shrink-0 rounded-sm object-contain",
-                          // GitHub 素材自带白色方形底，再缩小一圈以露出与其他图标一致的外层留白。
+                          // The GitHub asset ships with a white square plate; shrink one step further so the outer padding matches the other icons.
                           item.iconUrl?.includes("/github/icon.png") ? "size-4.5" : "size-full",
                         )}
                       />
@@ -302,8 +304,9 @@ export function ConversationDraftSuggestedPrompts({
           const isPopoverAnchor = pluginActionPopover?.anchorItemId === item.id;
           return (
             <Popover key={item.id} open={isPopoverAnchor} modal={false}>
-              {/* 只在 Popover 打开时才包 Root/Anchor 会重挂按钮并重播 waterfall，
-                  Radix 因而连续测量到带 translateY 的锚点。所有推荐项从首次渲染起保持同一结构。 */}
+              {/* Wrapping Root/Anchor only while the Popover is open remounts the button and
+                  replays the waterfall, so Radix keeps measuring a translated anchor. Every
+                  recommendation keeps one structure from first render. */}
               <PopoverAnchor
                 asChild
                 data-slot="button"

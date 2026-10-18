@@ -41,7 +41,7 @@ export async function drainRuntimeCommandQueue(this: AgentRuntimeInternal): Prom
   this.runtimeCommandDrainActive = true;
   try {
     let commands: readonly RuntimeCommand[];
-    // 将同批后台通知合并到一个模型轮，避免每条通知都单独发起请求。
+    // Same-batch background notifications share one model round; no request per notice.
     while ((commands = dequeueNextRunnableBatch.call(this)).length > 0) {
       const firstCommand = commands[0];
       if (!firstCommand) continue;
@@ -81,8 +81,8 @@ function dequeueNextRunnableBatch(this: AgentRuntimeInternal): readonly RuntimeC
   const removedPromotedCommand = this.runtimeCommandQueue.removeById(promotedCommand.id);
   if (!removedPromotedCommand) return Object.freeze([]);
 
-  // sendQueuedNow 过去在 Stop A 与 promoted command 入队之间没有 Core
-  // 调度所有权，notification B 会抢先出队。匹配 command 出队与 lease 消费必须同一同步步。
+  // sendQueuedNow once held no Core scheduling ownership between Stop A and the promoted enqueue;
+  // notification B could jump the queue. Dequeue and lease consume share one synchronous step.
   this.foregroundPromotionLease = undefined;
   return Object.freeze([removedPromotedCommand]);
 }
@@ -146,7 +146,7 @@ export function releaseForegroundPromotionLease(
 ): boolean {
   if (this.foregroundPromotionLease?.leaseId !== leaseId) return false;
   this.foregroundPromotionLease = undefined;
-  // 启动前失败时 B 可能已在 lease 后等待；释放必须主动恢复 drain，不能等下一条 enqueue。
+  // On pre-start failure B may wait behind the lease; release resumes drain actively, no waiting for the next enqueue.
   void this.drainRuntimeCommandQueue();
   return true;
 }
@@ -355,15 +355,15 @@ async function runTaskNotificationBatch(
       module: "core.runtime",
     });
     await this.executeTurnCommand(persisted.text, undefined, {
-      // wake 缺 inputId，telemetry 借用了持久化 msg_*，与普通 main turn 分叉。
-      // 每个独立 batch 使用同一 UUID v7 规则；持久化消息仍使用 recordedInputMessageId。
+      // Wakes lack inputId; telemetry borrows the persisted msg_*, off the main-turn path.
+      // Each batch: one UUID v7; persisted messages keep recordedInputMessageId.
       inputId: uuidv7(),
       abortSignal: foregroundExecution.controller.signal,
-      // 批次展示 metadata 只保留代表任务，composition 必须检查整批，不能被首个 Bash 任务遮蔽。
+      // Batch display metadata keeps the representative; composition checks the whole batch, not the first Bash.
       backgroundSubagentResultConsumed: eligibleCommands.some(
         (command) => command.originMeta?.backgroundSource === "subagent",
       ),
-      // 同一规则的 workflow 维度：run 的完成 / 提问通知在批里。
+      // Same rule, workflow flavor: run completion/question notices in-batch.
       workflowResultConsumed: eligibleCommands.some(
         (command) => command.originMeta?.backgroundSource === "workflow",
       ),
@@ -432,9 +432,9 @@ function beginForegroundExecution(
     preserveQueueAutoDrainOnCancel: false,
     suppressGoalPauseOnCancel: false,
   };
-  // 旧 Stop 只持有 bootstrap 外层 controller，而 goal verifier/continuation
-  // 已经越过普通 turn 生命周期。取消域必须覆盖整条 runtime command，才能在两个阶段
-  // 的交界处仍命中同一次前台执行。
+  // The old Stop held only the bootstrap outer controller, while goal verifier/continuation
+  // outlives plain turns. Cancel scope must cover the whole runtime command to hit the same
+  // foreground execution across both phases.
   this.activeForegroundExecution = state;
   return state;
 }
@@ -477,9 +477,9 @@ export function stopActiveForegroundExecution(
       activeForegroundExecutionId: active.foregroundExecutionId,
     };
   }
-  // sendQueuedNow 的内部抢占过去与用户手动 Stop 共用同一种 cancelled，
-  // turn catch 因而把 queueAutoDrain 关闭。把调用意图固定在当前 foreground
-  // execution 上，保证超时后迟到的 TurnComplete 仍能保留原队列授权。
+  // sendQueuedNow preemption shared cancelled with user Stops,
+  // so the catch closed queueAutoDrain. Pin caller intent to the current foreground
+  // execution; a late post-timeout TurnComplete keeps the queue grant.
   active.preserveQueueAutoDrainOnCancel = options.preserveQueueAutoDrainOnCancel === true;
   active.suppressGoalPauseOnCancel = options.suppressGoalPauseOnCancel === true;
   active.controller.abort(new Error(options.reason ?? "foreground execution stopped"));

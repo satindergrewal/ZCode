@@ -57,10 +57,10 @@ function shouldIncludeUntrackedChange(
   entry: GitStatusEntry,
   stat: { added: number; removed: number },
 ): boolean {
-  // 构建目录里常见大量未跟踪的空文件、失效链接或不可读产物。
-  // 这类条目没有可审查的文本增删，之前会以 +0/-0 挤进 Review 面板，既污染列表又拖慢打开。
-  // 但详细 status 超限后，Git 会用末尾 `/` 的目录记录表达整棵未跟踪目录；它本身不可读，
-  // 行数必然为 0，却仍必须作为可 stage/discard 的降级入口保留。
+  // Build trees are full of untracked empty files, dead links, and unreadable artifacts:
+  // none have reviewable text changes, yet they used to flood the review panel as +0/-0 rows.
+  // Once the detailed status overflows, git reports whole untracked dirs with a trailing slash:
+  // unreadable, always 0 lines, but kept as stage/discard entry points.
   return entry.path.endsWith("/") || stat.added > 0 || stat.removed > 0;
 }
 
@@ -214,8 +214,8 @@ export function createGitService(options?: {
     async getChanges(params) {
       const status = await repo.getStatus(params.workspacePath);
 
-      // workspace 可以是 monorepo 子目录，所以这里统一在 service 层按作用域裁剪。
-      // 这样 repo 继续只负责“把 Git 原始状态解析出来”，上层则始终拿到符合当前 workspace 边界的数据。
+      // A workspace can be a monorepo subdirectory, so scope-trim here in the service layer:
+      // the repo layer stays a raw-state parser and callers always get workspace-bounded data.
       return getChangesForSource(status, params.sourceId);
     },
 
@@ -342,9 +342,9 @@ export function createGitService(options?: {
           }
         : null;
 
-      // UI 的自动刷新原本会并发调用 summary、unstaged、staged 三个 RPC，
-      // 每个 RPC 都重新执行一次 git status。agent 批量写文件时这会把 renderer 卡在
-      // 重复的 Git I/O 和 RPC 日志上。refresh 在一次 status 快照里切出三份数据。
+      // Auto-refresh used to fire summary/unstaged/staged in parallel, each re-running git status
+      // and stalling the renderer in repeated Git I/O while agents write files in bursts;
+      // refresh now slices all three views from one status snapshot.
       return {
         summary: status.summary,
         identity,

@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 终端 resize 调度需要和 xterm/PTY 生命周期放在同一组件内，避免拖拽状态、fit、后端 resize 队列拆散后出现竞态。*/
+/* eslint-disable max-lines -- terminal resize scheduling must stay in one component with the xterm/PTY lifecycles; splitting drag state, fit, and the backend resize queue apart invites races. */
 import { ClipboardAddon } from "@xterm/addon-clipboard";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal as XTerm } from "@xterm/xterm";
@@ -107,17 +107,19 @@ export function TerminalSession({
   onExit?: (sessionId: string, exitCode: number) => void;
   onOpenBrowserUrl: (url: string) => void;
   /**
-   * 跨组件生命周期的会话复用 key（仅 side pane terminal 用）。
-   * 传入后 xterm 实例 + PTY 所有权上移到 sidePaneTerminalSessionRegistry 模块级单例，
-   * 组件卸载只 detach DOM、不 dispose；重挂按 key 复用，scrollback 历史跨 workspace 保活。
-   * 不传（下侧 terminal）走原 effect 路径，字节级不变。
+   * Session-reuse key surviving component lifecycles (side pane terminal only).
+   * When set, xterm instance + PTY ownership moves up into the sidePaneTerminalSessionRegistry
+   * module singleton; unmount only detaches the DOM without disposing, remount reuses by key,
+   * and scrollback history survives workspace switches.
+   * When omitted (bottom terminal pane) the original effect path runs, byte-identical.
    */
   persistentKey?: string;
   /**
-   * workspace 身份隔离 key（= workspaceIdentity?.trim() || workspacePath）。
-   * 仅 persistentKey 路径用：写入 registry entry.workspaceKey，
-   * 供 workspace tab 真正关闭时按 workspaceKey 批量回收 PTY（对称下侧 openWorkspaceKeys 回收）。
-   * 不传时 fallback 到 cwd。下侧 terminal 不传 persistentKey，此值不生效。
+   * Workspace identity isolation key (= workspaceIdentity?.trim() || workspacePath).
+   * persistentKey path only: written to registry entry.workspaceKey so PTYs are bulk-reclaimed
+   * by workspaceKey when a workspace tab is actually closed (mirroring the bottom pane's
+   * openWorkspaceKeys reclamation). Falls back to cwd when absent; the bottom pane passes no
+   * persistentKey, so the value has no effect there.
    */
   workspaceKey?: string;
 }) {
@@ -278,8 +280,9 @@ export function TerminalSession({
         return;
       }
 
-      // 拖动终端高度时 ResizeObserver 会按布局帧连续触发。
-      // xterm fit + PTY resize 是同步布局和跨进程请求组合，拖拽中只按常量低频预览，松手后再 flush 最终尺寸。
+      // While the terminal height is dragged, ResizeObserver fires on every layout frame.
+      // xterm fit + PTY resize mix synchronous layout with a cross-process request, so during
+      // the drag only preview at a constant low rate; flush the final size on release.
       resizeThrottleTimerRef.current = window.setTimeout(() => {
         resizeThrottleTimerRef.current = null;
         requestFitAndResize("drag");
@@ -300,8 +303,9 @@ export function TerminalSession({
         return;
       }
 
-      // 打开/新建/切换终端时 React 只更新了可见 tab，焦点仍停在按钮或输入框。
-      // xterm 的 textarea 会在 open 后创建，所以要等下一帧确认当前 session 仍可见再聚焦。
+      // On open/create/switch React only updates the visible tab; focus still sits on a button
+      // or input. xterm's textarea appears after open, so wait a frame and re-check visibility
+      // before focusing.
       term.focus();
       logger.debug("[Terminal] focused visible terminal", {
         terminalId: terminalIdRef.current,
@@ -330,23 +334,25 @@ export function TerminalSession({
     const el = containerRef.current;
     if (!el) return;
 
-    // ===== persistentKey 路径：side pane terminal 跨 workspace 会话保活 =====
-    // xterm 实例 + PTY 所有权上移到 sidePaneTerminalSessionRegistry 模块级单例，
-    // 组件卸载只 detach DOM、不 dispose；重挂按 persistentKey 复用，scrollback 跨 workspace 保活。
-    // 原路径（下侧 terminal，不传 persistentKey）字节级不变。
+    // ===== persistentKey path: side pane terminal session keep-alive across workspaces =====
+    // xterm instance + PTY ownership moves up into the sidePaneTerminalSessionRegistry module
+    // singleton; unmount only detaches the DOM without disposing, remount reuses by
+    // persistentKey, and scrollback survives workspace switches.
+    // The original path (bottom pane, no persistentKey) stays byte-identical.
     if (persistentKey) {
       terminalProfileThemeRef.current = undefined;
       const existingEntry = sidePaneTerminalSessionRegistry.get(persistentKey);
 
-      // --- 复用快路径：切回 workspace / 重挂，entry 已在 registry ---
+      // --- Fast reuse path: workspace switch back / remount, entry already in registry ---
       if (existingEntry) {
         termRef.current = existingEntry.term;
         fitAddonRef.current = existingEntry.fitAddon;
         terminalIdRef.current = existingEntry.terminalId || undefined;
         el.appendChild(existingEntry.hostEl);
         const reuseThemeObserver = new MutationObserver(() => {
-          // 从 entry.profileTheme 读：重挂后组件局部 ref 已重置为 undefined，
-          // profile theme 只存在于 registry entry，必须从 entry 取（否则丢用户配置的终端颜色）。
+          // Read from entry.profileTheme: after remount the component-local ref reset to
+          // undefined, and the profile theme only lives on the registry entry -- reading
+          // anywhere else loses the user's terminal colors.
           existingEntry.term.options.theme = mergeTerminalTheme(existingEntry.profileTheme);
         });
         reuseThemeObserver.observe(document.documentElement, {
@@ -378,13 +384,13 @@ export function TerminalSession({
           reuseResizeObserver.disconnect();
           if (reuseResizeRAF) cancelAnimationFrame(reuseResizeRAF);
           sidePaneTerminalSessionRegistry.detachDom(persistentKey);
-          // 不 dispose：term/PTY/订阅都留在 registry 供下次复用
+          // No dispose: term/PTY/subscriptions stay in the registry for reuse.
           termRef.current = null;
           fitAddonRef.current = null;
         };
       }
 
-      // --- 首次创建：常驻 hostEl，term open 到 hostEl，资源进 registry ---
+      // --- First creation: persistent hostEl, term.open into hostEl, resources into the registry ---
       const hostEl = document.createElement("div");
       hostEl.className = "terminal-xterm-shell h-full min-h-0 w-full overflow-hidden";
       el.appendChild(hostEl);
@@ -435,7 +441,7 @@ export function TerminalSession({
         requestFocus();
       }
 
-      // 组件局部：customKeyEventHandler（依赖组件 inputFallback ref）
+      // Component-local: customKeyEventHandler (depends on the component inputFallback ref)
       term.attachCustomKeyEventHandler((e) => {
         if (e.type !== "keydown") return true;
         inputFallbackKeydownCandidateRef.current =
@@ -455,12 +461,14 @@ export function TerminalSession({
           return false;
         }
         if (key === "v") {
-          // attachCustomKeyEventHandler 返回 false 只阻止 xterm 处理 Ctrl+V，
-          // 不会取消浏览器随后派发的原生 paste 事件；这里手动 paste 一次后，
-          // 原生 paste 又会被 xterm 的内置监听写入一次，导致快捷键粘贴重复。
-          // 因此必须先取消默认事件，再保留手动读取剪贴板的单次写入。
-          // 与原路径（下侧 terminal）字节对齐：两份拷贝曾在此漂移（persistentKey 漏了 debug 日志），
-          // 待后续重构收敛为单一 wireTerminalProcessing 后此注释删除。
+          // Returning false from attachCustomKeyEventHandler only stops xterm handling Ctrl+V;
+          // it does not cancel the native paste event the browser dispatches afterwards. A
+          // manual paste here plus the native paste being written again by xterm's built-in
+          // listener would duplicate the shortcut paste. So the default event must be cancelled
+          // while keeping the single manual clipboard read/write.
+          // Byte-aligned with the original path (bottom pane): the two copies drifted here once
+          // (persistentKey missed a debug log); delete this comment once a future refactor
+          // converges them into a single wireTerminalProcessing.
           e.preventDefault();
           e.stopPropagation();
           navigator.clipboard
@@ -475,10 +483,11 @@ export function TerminalSession({
         return true;
       });
 
-      // 组件局部：主题 observer
+      // Component-local: theme observer
       const themeObserver = new MutationObserver(() => {
-        // 从 entry.profileTheme 读：profile theme 所有权在 registry entry，跨重挂常驻；
-        // 组件局部 terminalProfileThemeRef 在重挂后会丢失 profile theme，不能作为 observer 数据源。
+        // Read from entry.profileTheme: profile theme ownership lives on the registry entry and
+        // survives remounts; the component-local terminalProfileThemeRef loses it on remount and
+        // must not be the observer's data source.
         term.options.theme = mergeTerminalTheme(entry.profileTheme);
       });
       themeObserver.observe(document.documentElement, {
@@ -487,7 +496,7 @@ export function TerminalSession({
       });
       localDisposers.push({ dispose: () => themeObserver.disconnect() } as IDisposable);
 
-      // 进 registry：linkProvider（detached 时保留无害）
+      // Into the registry: linkProvider (harmless to keep while detached)
       registryDisposers.push(
         term.registerLinkProvider({
           provideLinks(bufferLineNumber, callback) {
@@ -510,17 +519,18 @@ export function TerminalSession({
         }),
       );
 
-      // entry 先占位存入 registry（terminalId 异步填），重挂/回收据此判断
+      // Placeholder-register the entry (terminalId filled in async); remount/reclaim checks rely on it.
       const entry: SidePaneTerminalSessionEntry = {
         key: persistentKey,
         term,
         fitAddon,
         terminalId: "",
         cwd: cwd ?? "",
-        // workspaceKey 用于 workspace tab 真正关闭时按 workspace 批量回收（对称下侧 openWorkspaceKeys）。
+        // workspaceKey bulk-reclaims by workspace when the workspace tab is actually closed
+        // (mirrors the bottom pane's openWorkspaceKeys).
         workspaceKey: workspaceKey ?? cwd ?? "",
         hostEl,
-        dispose: () => {}, // 紧接着补全
+        dispose: () => {}, // completed right below
       };
       entry.dispose = () => {
         ptyCancelled = true;
@@ -542,20 +552,22 @@ export function TerminalSession({
       };
       sidePaneTerminalSessionRegistry.register(persistentKey, entry);
 
-      // 创建 PTY（异步）
+      // Create the PTY (async).
       const initialCreateSize = initialTerminalSize ?? { cols: term.cols, rows: term.rows };
       void services.terminalService
         .create({ cols: initialCreateSize.cols, rows: initialCreateSize.rows, cwd })
         .then(({ id, shell, fontFamily, fontSize, theme, fontFamilySource, windowsPty }) => {
           if (ptyCancelled) {
-            // cleanup 已发生：杀掉这个孤儿 PTY，不进 entry
+            // Cleanup already ran: kill this orphan PTY, never enters the entry.
             void services.terminalService.dispose({ id });
             return;
           }
           entry.terminalId = id;
           terminalIdRef.current = id;
-          // 与原路径对称：id ready 后立即 flush 创建期间排队的 resize（pendingTerminalSizeRef）。
-          // 否则 scheduleFitAndResize("init") 会因 pendingSize 去重跳过，PTY 停在错误 cols/rows。
+          // Mirrors the original path: flush resizes queued during creation
+          // (pendingTerminalSizeRef) as soon as the id is ready. Otherwise
+          // scheduleFitAndResize("init") dedupes via pendingSize and the PTY stays on the
+          // wrong cols/rows.
           flushTerminalServiceResize();
           term.options.windowsPty = normalizeWindowsPtyOption(windowsPty);
           term.options.fontFamily = fontFamily || DEFAULT_TERMINAL_FONT_FAMILY;
@@ -564,8 +576,9 @@ export function TerminalSession({
             term.options.fontSize = nextFontSize;
           }
           terminalProfileThemeRef.current = theme as ITheme | undefined;
-          // profile theme 所有权上移到 registry entry，
-          // 跨组件生命周期复用不丢（原仅写组件局部 ref，重挂后新组件 ref=undefined → 复用 observer 用 undefined 合并 → 丢失）。
+          // Profile theme ownership moves up to the registry entry so reuse across component
+          // lifecycles keeps it (writing only the component-local ref meant a remounted
+          // component's ref was undefined -> reuse observer merged undefined -> theme lost).
           entry.profileTheme = theme as ITheme | undefined;
           term.options.theme = mergeTerminalTheme(entry.profileTheme);
           const nextShellLabel = formatShellLabel(shell);
@@ -583,13 +596,15 @@ export function TerminalSession({
             requestFocus();
           }
 
-          // data 订阅 → term.write（进 registry，detached 时仍累积 scrollback）
+          // data subscription -> term.write (into the registry; scrollback keeps accumulating
+          // while detached)
           registryDisposers.push(
             services.terminalService.onDynamicData(id)((data) => {
               term.write(normalizePowerShellReadlineRedraw(data, shell));
             }),
           );
-          // exit 订阅（进 registry，与原路径对称：有 onExit 则回调，否则写退出提示）
+          // exit subscription (into the registry, mirroring the original path: call onExit when
+          // provided, otherwise write the exited notice)
           registryDisposers.push(
             services.terminalService.onDynamicExit(id)((exitCode) => {
               const exitHandler = exitHandlerRef.current;
@@ -603,21 +618,24 @@ export function TerminalSession({
                 exitHandler(sessionId, exitCode);
                 return;
               }
-              // side pane Terminal 不传 onExit，保留退出提示。
+              // The side pane Terminal passes no onExit; keep the exited notice.
               term.write(`\r\n${exitedMessageRef.current}\r\n`);
             }),
           );
 
-          // onData（进 registry，随 term 常驻）：
-          // 不能放 localDisposers：cleanup(detach) 时会被取消，而复用路径不重绑，
-          // 导致切回 workspace 后 scrollback 在但无法输入交互。
-          // 输入订阅生命周期必须 = entry 生命周期（随 term 常驻），detach 不取消。
+          // onData (into the registry, lives with term):
+          // Must not go into localDisposers: cleanup(detach) would cancel it while the reuse
+          // path never re-binds, leaving scrollback visible but input dead after switching
+          // workspace back. The input subscription's lifetime must equal the entry's lifetime
+          // (lives with term); detach does not cancel it.
           //
-          // 与原路径（下侧 terminal）的 onData 完全一致：维护 keydown candidate 去重历史，
-          // 供 Windows 输入法 textarea 兜底消费（IME composition committed text 的三段去重闭环）。
-          // 注：本段只处理「已提交 composition 文本」的去重，与 Shift 切换输入法动作无关——
-          // Shift 切换是输入法系统级行为（customKeyEventHandler 对 Shift 直接 return true 放行）；
-          // 「Shift 切英文后字符丢失」的真根因是 isWindowsDesktop 未透传（已在 WorkspaceShellLayout 修复）。
+          // Identical to the bottom pane's onData: maintains the keydown-candidate dedupe
+          // history consumed by the Windows IME textarea fallback (the three-stage dedupe loop
+          // for committed composition text).
+          // Note: this block only dedupes committed composition text and has nothing to do with
+          // Shift-based IME switching -- that is an IME-system behavior (customKeyEventHandler
+          // returns true for Shift). The real root cause of "chars lost after Shift to English"
+          // was isWindowsDesktop not being threaded through (fixed in WorkspaceShellLayout).
           registryDisposers.push(
             term.onData((data) => {
               const now = performance.now();
@@ -645,8 +663,9 @@ export function TerminalSession({
             }),
           );
 
-          // Windows 输入法兜底（进 registry，随 term 常驻，与 onData 同生命周期）。
-          // textarea 元素随 term 实例常驻，监听绑一次即可；detach 不取消，重挂后中文输入法兜底仍生效。
+          // Windows IME fallback (into the registry, lives with term, same lifetime as onData).
+          // The textarea element lives with the term instance, so binding once is enough; detach
+          // does not cancel and the CJK-IME fallback keeps working after remount.
           const textarea =
             isWindowsDesktop &&
             (term as unknown as { _core: { textarea: HTMLTextAreaElement } })._core?.textarea;
@@ -669,9 +688,11 @@ export function TerminalSession({
                 pendingInputFallbacksRef.current = pendingInputFallbacksRef.current.filter(
                   (item) => item !== pendingFallback,
                 );
-                // 不检查 ptyCancelled：订阅已随 entry 常驻（registryDisposers），
-                // ptyCancelled 是单次 effect 闭包变量，detach 后会变 true 导致 fallback 永久失效。
-                // release 时 entry.dispose 会移除本监听；PTY disposed 后 write 为 no-op，安全。
+                // Do not check ptyCancelled: the subscription lives with the entry
+                // (registryDisposers), while ptyCancelled is a single-effect closure variable
+                // that turns true on detach and would kill the fallback forever. release runs
+                // entry.dispose which removes this listener; after PTY disposal write is a
+                // no-op, so this is safe.
                 const fallbackAction = resolveTerminalInputFallbackAction({
                   pending: pendingFallback,
                   textareaValue: textarea.value,
@@ -700,23 +721,27 @@ export function TerminalSession({
           const message = error instanceof Error ? error.message : String(error);
           logger.error("[Terminal] persistent create failed:", error);
           term.write(`\r\n[Terminal failed to start]\r\n${message}\r\n`);
-          // PTY 创建失败必须释放 registry 中本次占位的 entry。
-          // entry 在上方以 terminalId="" 占位先 register（line 541），再异步 terminalService.create()。
-          // 若失败不释放，terminalId="" 的僵尸 entry 会留在 registry，重挂/切 workspace 时命中
-          // 复用快路径（见上方 existingEntry 分支），直接复用已启动失败的 xterm，且永不重新
-          // terminalService.create()，该终端永久无法连接 PTY。
+          // A failed PTY create must release the placeholder entry left in the registry.
+          // The entry is registered up front with terminalId="" (see above) before the async
+          // terminalService.create(). Without release, a zombie entry with terminalId="" stays
+          // in the registry; remount/workspace-switch hits the fast reuse path (existingEntry
+          // branch above), reuses the half-started xterm, and never calls
+          // terminalService.create() again -- that terminal could never reach a PTY.
           //
-          // ownership 校验（稳妥方案）：只有 registry 当前 entry 仍是本次创建的 entry 时才释放。
-          // 极端时序：create reject 触发前，组件可能已卸载（cleanup 已 release 半成品，见下方 !entry.terminalId
-          // 分支）并重挂、registry 已被新一次创建的 entry 覆盖。此时无脑 release 会误删新 entry。
-          // 闭包 entry 引用比较 registry 当前值：每次创建都是新 entry 对象，引用比较天然区分代际。
+          // Ownership check (the safe variant): release only if the registry's current entry is
+          // still the one created here. Edge sequencing: before the create rejection fires, the
+          // component may already have unmounted (cleanup released the half-built entry, see the
+          // !entry.terminalId branch below), remounted, and the registry now holds a newer
+          // entry; a blind release would delete the new one. Comparing the closure `entry`
+          // against the registry's current value distinguishes generations for free, since every
+          // creation makes a new entry object.
           const currentEntry = sidePaneTerminalSessionRegistry.get(persistentKey);
           if (currentEntry === entry) {
             sidePaneTerminalSessionRegistry.release(persistentKey);
           }
         });
 
-      // 组件局部：resize observer
+      // Component-local: resize observer
       let resizeRAF = 0;
       const resizeObserver = new ResizeObserver(() => {
         if (!isVisibleRef.current) return;
@@ -742,7 +767,8 @@ export function TerminalSession({
             logger.warn("[Terminal] persistent cleanup local disposer failed:", error);
           }
         }
-        // PTY 未就绪即被卸载（极少见）：回收半成品 entry，避免重挂复用到空 PTY
+        // Unmounted before the PTY was ready (rare): reclaim the half-built entry so a remount
+        // cannot reuse an empty PTY.
         if (!entry.terminalId) {
           sidePaneTerminalSessionRegistry.release(persistentKey);
         } else {
@@ -752,7 +778,7 @@ export function TerminalSession({
         fitAddonRef.current = null;
       };
     }
-    // ===== persistentKey 路径结束 =====
+    // ===== persistentKey path end =====
 
     let disposed = false;
     terminalProfileThemeRef.current = undefined;
@@ -778,15 +804,17 @@ export function TerminalSession({
     const fitAddon = new FitAddon();
     fitAddonRef.current = fitAddon;
     term.loadAddon(fitAddon);
-    // 接入 ClipboardAddon 以支持 OSC 52，并让 xterm 的 copy 事件把选区写入系统剪贴板。
+    // ClipboardAddon for OSC 52 support, and so xterm's copy event writes the selection to the
+    // system clipboard.
     term.loadAddon(new ClipboardAddon());
     term.open(el);
     let initialTerminalSize: TerminalSize | null = null;
     if (isVisibleRef.current && el.clientWidth > 0 && el.clientHeight > 0) {
       try {
-        // side pane 终端挂载时如果先用 xterm 默认列数创建 PTY，
-        // 启动输出会在随后 fit/resize 时按错误宽度重排，zsh 可能显示反白的 PROMPT_EOL_MARK。
-        // 首次可见时先同步 fit，再用真实 cols/rows 启动 PTY，避免启动输出和尺寸校正竞态。
+        // Creating the PTY with xterm's default cols and fitting afterwards makes startup
+        // output reflow at the wrong width once fit/resize lands; zsh can show an inverted
+        // PROMPT_EOL_MARK. On first visibility, fit synchronously and only then start the PTY
+        // with the real cols/rows, avoiding the startup-output vs size-correction race.
         resizeRequestStatsRef.current.fit += 1;
         fitAddon.fit();
         initialTerminalSize = { cols: term.cols, rows: term.rows };
@@ -804,9 +832,9 @@ export function TerminalSession({
       requestFocus();
     }
 
-    // 拦截 Ctrl/Cmd+C、Ctrl/Cmd+V：
-    // - Ctrl+C 在 Win/Linux 默认会被当作 SIGINT 传给 PTY，必须在有选区时改走复制；
-    // - Ctrl+V 不拦截会被当作 `^V` 字符输入。
+    // Intercept Ctrl/Cmd+C and Ctrl/Cmd+V:
+    // - On Win/Linux Ctrl+C defaults to SIGINT for the PTY; with a selection it must copy instead.
+    // - Unintercepted Ctrl+V would be typed as a literal `^V`.
     term.attachCustomKeyEventHandler((e) => {
       if (e.type !== "keydown") return true;
       inputFallbackKeydownCandidateRef.current =
@@ -826,10 +854,11 @@ export function TerminalSession({
         return false;
       }
       if (key === "v") {
-        // attachCustomKeyEventHandler 返回 false 只阻止 xterm 处理 Ctrl+V，
-        // 不会取消浏览器随后派发的原生 paste 事件；这里手动 paste 一次后，
-        // 原生 paste 又会被 xterm 的内置监听写入一次，导致快捷键粘贴重复。
-        // 因此必须先取消默认事件，再保留手动读取剪贴板的单次写入。
+        // Returning false from attachCustomKeyEventHandler only stops xterm handling Ctrl+V;
+        // it does not cancel the native paste event the browser dispatches afterwards. A manual
+        // paste here plus the native paste being written again by xterm's built-in listener
+        // would duplicate the shortcut paste. So the default event must be cancelled while
+        // keeping the single manual clipboard read/write.
         e.preventDefault();
         e.stopPropagation();
         navigator.clipboard
@@ -844,7 +873,7 @@ export function TerminalSession({
       return true;
     });
 
-    // 监听主题切换，实时更新 terminal 配色
+    // Track theme switches and retint the terminal live.
     const observer = new MutationObserver(() => {
       term.options.theme = mergeTerminalTheme(terminalProfileThemeRef.current);
     });
@@ -856,8 +885,9 @@ export function TerminalSession({
     const disposables: IDisposable[] = [];
     const { terminalService } = services;
     disposables.push(
-      // 交互说明：plain URL 不属于 React DOM，必须通过 xterm link provider 从 buffer
-      // 计算可点击区域，再统一交给右侧 browser pane，避免在终端层直接碰平台 API。
+      // Plain URLs live outside the React DOM; the xterm link provider computes clickable
+      // ranges from the buffer and hands them to the browser pane, keeping platform APIs
+      // out of the terminal layer.
       term.registerLinkProvider({
         provideLinks(bufferLineNumber, callback) {
           const links = getHttpLinksForTerminalBufferLine(
@@ -880,7 +910,7 @@ export function TerminalSession({
       }),
     );
 
-    // 优先使用 workspace 路径作为 terminal 工作目录，未设置时后端回退到 HOME
+    // Prefer the workspace path as the terminal cwd; the backend falls back to HOME when unset.
     const initialCreateSize = initialTerminalSize ?? { cols: term.cols, rows: term.rows };
     terminalService
       .create({ cols: initialCreateSize.cols, rows: initialCreateSize.rows, cwd })
@@ -891,11 +921,13 @@ export function TerminalSession({
         }
 
         terminalIdRef.current = id;
-        // 首次 fit 或 ResizeObserver 可能早于 terminal id ready，先把 resize
-        // 暂存在 pendingTerminalSizeRef；id ready 后必须主动 flush，否则相同尺寸会被去重逻辑跳过。
+        // The first fit or ResizeObserver tick may run before the terminal id is ready; park
+        // resizes in pendingTerminalSizeRef. A manual flush is required once the id exists, or
+        // the dedupe logic skips same-size resizes.
         flushTerminalServiceResize();
-        // Windows ConPTY 在 resize 增高时不会像传统 Unix PTY 一样把 scrollback 拉回 viewport，
-        // 不开启 xterm 的 windowsPty 兼容会让 PSReadLine 后续按旧坐标重绘输入，覆盖到上一条命令输出行。
+        // Windows ConPTY does not pull scrollback into the viewport on grow-resizes like Unix PTYs;
+        // without xterm's windowsPty compat, PSReadLine repaints input at stale coordinates over
+        // the previous command's output.
         term.options.windowsPty = normalizeWindowsPtyOption(windowsPty);
         term.options.fontFamily = fontFamily || DEFAULT_TERMINAL_FONT_FAMILY;
         const nextFontSize = normalizeTerminalFontSize(fontSize);
@@ -939,7 +971,7 @@ export function TerminalSession({
               return;
             }
 
-            // side pane Terminal 不属于底部 tab registry，未传 onExit 时继续保留退出提示。
+            // Side-pane terminals are not in the bottom tab registry; without onExit, keep the exited notice.
             term.write(`\r\n${exitedMessageRef.current}\r\n`);
           }),
         );
@@ -971,23 +1003,23 @@ export function TerminalSession({
           }),
         );
 
-        // Windows desktop 下某些输入法会把 composed text 留在 textarea 里，
-        // xterm 可能只处理到一半；这里保留兜底。但 Linux Wayland 已确认会和 xterm 的
-        // onData 路径重复写入，所以必须显式收窄到 Windows，避免把正常链路误伤。
+        // On Windows desktop some IMEs leave composed text half-processed in the textarea; keep
+        // this fallback. Linux Wayland double-writes alongside xterm's onData path, so the hook
+        // stays Windows-only to avoid breaking the normal path.
         const textarea =
           isWindowsDesktop &&
           (term as unknown as { _core: { textarea: HTMLTextAreaElement } })._core?.textarea;
         if (textarea) {
           const handleInput = (e: InputEvent) => {
-            // 只处理组合文本的 insertText
+            // Handle only composed-text insertions.
             if (e.inputType !== "insertText" || !e.data || !e.composed) return;
             const insertedText = e.data;
             const now = performance.now();
             const pendingFallback = createPendingTerminalInputFallback(insertedText);
             pendingInputFallbacksRef.current.push(pendingFallback);
-            // 普通空格会先经 keydown 被 xterm onData 写入 PTY，随后浏览器才派发 composed input。
-            // 搜狗输入法也会在没有稳定 keydown candidate 的情况下先触发 xterm onData、后触发 composed input。
-            // 这里消费同一次输入附近的未消费 onData，避免把同一段组合文本再兜底写入一次。
+            // Plain spaces reach the PTY via keydown/onData before the browser dispatches composed
+            // input; Sogou IME can also fire onData without a stable keydown candidate first.
+            // Consume nearby unclaimed onData from the same input so the fallback never double-writes.
             consumeTerminalInputFallbackHandledData({
               history: recentInputFallbackHandledDataRef.current,
               inputEventTimeStamp: e.timeStamp,
@@ -997,7 +1029,7 @@ export function TerminalSession({
               pending: pendingFallback,
             });
 
-            // 延迟检查：等 xterm 的 onData 先认领 pending，再判断是否需要兜底写入。
+            // Delayed check: let xterm's onData claim the pending input first, then decide on the fallback.
             setTimeout(() => {
               pendingInputFallbacksRef.current = pendingInputFallbacksRef.current.filter(
                 (item) => item !== pendingFallback,
@@ -1010,8 +1042,9 @@ export function TerminalSession({
                 textareaValue: textarea.value,
               });
               if (fallbackAction.shouldWrite) {
-                // 普通空格也会触发 composed input，且 xterm 已经通过 onData 写入 PTY。
-                // 只看 textarea.value 会把空格再手动写一次；这里必须确认 onData 没处理过才兜底。
+                // Plain spaces also fire composed input, and onData already wrote the PTY.
+                // Trusting textarea.value alone would write the space twice; only fall back
+                // once onData is confirmed not to have handled it.
                 logger.debug("[Terminal] flush composed input fallback", {
                   length: insertedText.length,
                   terminalId: id,
@@ -1032,8 +1065,8 @@ export function TerminalSession({
         }
       })
       .catch((error) => {
-        // 之前没有接住 create() 的拒绝态，终端启动失败会直接变成 Uncaught Promise。
-        // 这里显式记录错误，并在终端区域提示用户，方便定位到底是 shell 还是 cwd 出了问题。
+        // create() rejections used to escape as Uncaught Promise errors. Log explicitly and
+        // surface the message in the terminal pane to pin down shell vs cwd failures.
         if (disposed) return;
         const message = error instanceof Error ? error.message : String(error);
         logger.error("[Terminal] failed to create terminal:", error);

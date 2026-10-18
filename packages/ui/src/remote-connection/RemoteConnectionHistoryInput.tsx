@@ -121,15 +121,17 @@ export function RemoteConnectionHistoryInput({
                   targetNode instanceof Node && containerRef.current?.contains(targetNode) === true,
               })
             ) {
-              // 首次鼠标点击输入框时会先触发 focus 打开建议列表，
-              // 随后的同一次 click 又会被 Popover 视为“内容外点击”而立刻关闭。
-              // 这里把来自当前输入框容器的交互排除掉，避免出现第一次 focus 连续闪两次。
+              // The first click focuses the input, which opens the suggestions; the same click then
+              // reads as an outside click to the Popover and instantly closes it. Exclude
+              // interactions originating in this input container to avoid the double-flash on
+              // first focus.
               event.preventDefault();
             }
           }}
           onOpenAutoFocus={(event) => {
-            // Popover 默认会把焦点抢到弹层内，输入框一旦失焦，用户就没法边看历史边继续输入过滤。
-            // 这里在“由输入框触发打开”时拦截自动聚焦，把焦点留在输入框里，保证 focus 展示和连续输入都成立。
+            // Popover steals focus into the layer by default; once the input blurs, users cannot
+            // keep typing the filter while reading history. When opened from the input, suppress
+            // the autofocus and keep focus in the input so both browsing and typing work.
             if (!keepInputFocusOnOpenRef.current) {
               return;
             }
@@ -157,8 +159,8 @@ export function RemoteConnectionHistoryInput({
                     onSelect={(selected) => {
                       onChange(selected);
                       setFilterWithCurrentValue(false);
-                      // 选中历史项后，input 的 click/focus 会立刻重放，弹层会出现“刚关就重开”。
-                      // 这里用一个很短的抑制窗口屏蔽这次连带事件，避免交互抖动。
+                      // After selecting a history item, the input's click/focus replays and the
+                      // layer reopens instantly. A short suppression window masks that echo.
                       suppressOpenUntilRef.current = Date.now() + 120;
                       setOpen(false);
                     }}

@@ -14,11 +14,11 @@ interface ResolvedToolApproval {
 }
 
 /**
- * 在权限服务已判定 ask 之后调用工具自报的 `prepareApproval`，并把它的答复与工具声明的
- * 选项策略折叠成"这次 ask 该携带什么"。
+ * Runs the tool-declared `prepareApproval` after the permission service has decided ask, folding its
+ * answer with the tool-declared option policy into "what this ask should carry".
  *
- * 方向是单向收窄：钩子只能把 ask 放行成 proceed 或给它补上预览，永远不能把 allow 变成 ask。
- * 没有声明钩子的工具一律照旧弹窗。
+ * Narrowing is one-way: a hook may only wave an ask through or attach a preview; it can never turn allow into ask.
+ * Tools without a declared hook keep the plain prompt.
  */
 function resolveOptionsPolicy(
   allowAlways: false | "session" | undefined,
@@ -40,8 +40,8 @@ export function resolveToolApproval(
   executionInput: unknown,
   traceContext: TraceContext,
 ): ResolvedToolApproval {
-  // `permission` 类型上是必填，但 executor 也会被只声明了一部分字段的 entry 驱动
-  // （测试桩、动态注册的工具）。周边代码靠 spread 而不是读字段来容忍这一点，gate 同理。
+  // `permission` is typed required, but the executor is also driven by entries declaring only part of it
+  // (test stubs, dynamically registered tools). Surrounding code tolerates that via spreads; so does this gate.
   const optionsPolicy = resolveOptionsPolicy(entry.permission?.askOptions?.allowAlways);
 
   if (!entry.prepareApproval) {
@@ -49,8 +49,8 @@ export function resolveToolApproval(
   }
 
   try {
-    // 工作目录与 handler 拿到的是同一个来源（deps 的 getWorkingDirectory 在 impl.ts 里已把
-    // 静态 workingDirectory 兜进去），否则预览会去看一个目录、执行会去写另一个。
+    // This workdir and the handler's come from the same source (deps.getWorkingDirectory already folds in
+    // static workingDirectory in impl.ts); else the preview reads one dir while the run writes another.
     const gate = entry.prepareApproval(executionInput);
     if (gate.gate === "proceed") return { gate: "proceed" };
     return {
@@ -59,8 +59,8 @@ export function resolveToolApproval(
       ...(optionsPolicy ? { optionsPolicy } : {}),
     };
   } catch (error) {
-    // Bug 预防：负责生成预览的钩子绝不能决定"用户是否被询问"。向执行侧 fail-open 等于
-    // 静默运行了一个未获批准的工具，所以这里 ask 照旧成立，只让预览降级。
+    // Bug guard: the hook producing a preview must never decide "was the user asked". Failing open to the
+    // run side silently runs an unapproved tool, so the ask stands and only the preview degrades.
     deps.logger?.warn("Tool approval preview failed; asking without a preview", {
       ...traceContextToLogContext(traceContext),
       error: error instanceof Error ? error.message : String(error),

@@ -31,8 +31,8 @@ export function commandHash(command: string): string {
 }
 
 export function classifyCommand(command: string): string {
-  // Bugfix: Bash command 可能包含超大 heredoc/inline script，遥测分类只看有界前缀，
-  // 避免为了埋点复制并扫描完整命令，也避免正文里的 "npm test" 误导命令分类。
+  // Bugfix: a Bash command may embed a huge heredoc/inline script; telemetry classifies on a bounded prefix,
+ // never copying/scanning the whole command, and keeps body strings like "npm test" from skewing the class.
   const normalized = command.slice(0, COMMAND_CLASSIFY_PREFIX_CHARS).trimStart().toLowerCase();
   if (!normalized) return "empty";
   if (/\b(?:npm|pnpm|yarn|bun)\s+(?:test|run\s+test|vitest|jest)\b/u.test(normalized)) {
@@ -53,8 +53,8 @@ export function classifyCommand(command: string): string {
 export function classifySafeCommandIdentity(
   command: string,
 ): Pick<CommandExecutionTelemetry, "count" | "name"> {
-  // 类别和 hash 已经有界，但安全命令名仍会把完整 heredoc/inline script
-  // 交给 parser。遥测不能为超大命令额外制造 O(n) CPU/内存；此时宁可少一个 count。
+  // Class and hash are bounded, but the safe-command name would still hand a full heredoc/inline script to
+ // the parser; telemetry must not add O(n) CPU/memory per huge command -- skip the count instead.
   if (command.length > MAX_COMMAND_IDENTITY_PARSE_CHARS) {
     return { name: "other" };
   }
@@ -73,8 +73,8 @@ export function classifySafeCommandIdentity(
   const executable = basename(analysis.commands[0]?.name ?? "").toLowerCase();
   return {
     count: commandCount,
-    // 隐私边界：只允许公开命令表中的静态可执行文件名进入远端 Trace；
-    // 自定义脚本名和无法判定的动态表达式统一降级，绝不上传原始 token。
+    // Privacy boundary: only static executable names from the public command table reach remote traces;
+ // custom script names and undecidable dynamic expressions degrade; never upload raw tokens.
     name: Object.hasOwn(BASH_COMMAND_REGISTRY, executable) ? executable : "other",
   };
 }

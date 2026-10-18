@@ -46,9 +46,10 @@ function resolveMaterialIconBasePath(): string {
       ? import.meta.env.BASE_URL
       : "/";
 
-  // web 端 public 资源挂在根路径下，desktop 端则使用 file:// + base="./"。
-  // 之前把图标路径写死成 /material-icons，Electron 会把它解析到磁盘根目录，导致 file icon 全部 404。
-  // 这里统一基于运行时 base URL 生成资源路径，让 desktop/web 都命中各自的 public/material-icons。
+  // Web serves public assets from the root path; desktop uses file:// with base="./".
+  // Hardcoding /material-icons made Electron resolve it to the filesystem root, 404ing
+  // every file icon. Derive the asset path from the runtime base URL so desktop/web each
+  // hit their own public/material-icons.
   return `${baseUrl.replace(/\/?$/, "/")}material-icons`;
 }
 
@@ -70,9 +71,9 @@ function resolveFallbackFileIconSrc(currentSrc: string): string | null {
   }
 
   if (currentSrc === defaultIconSrc || currentSrc.endsWith("/document.svg")) {
-    // 之前图标缺失最多只会回退到 document.svg。
-    // 如果默认素材本身也不存在，界面上仍会出现破图。这里补第二层兜底，
-    // 退回内置 data URL 图标，保证不同运行环境都至少有稳定占位。
+    // A missing icon used to fall back to document.svg at best. If the default asset is
+    // missing too, the UI shows a broken image; this second-tier fallback returns the
+    // built-in data-URL icon so every environment keeps a stable placeholder.
     return INLINE_FALLBACK_FILE_ICON_SRC;
   }
 
@@ -194,9 +195,10 @@ export function FileDisplayInline({
   const [fileIconSrc, setFileIconSrc] = useState(descriptor.fileIconSrc);
 
   useEffect(() => {
-    // mention panel 会复用同一批列表项组件，之前这里只在首次渲染时初始化图标 src，
-    // 过滤条件或可视区变化后 path 变了但 state 没重置，就会把上一行的图标串到下一行。
-    // 这里在解析结果变化时同步重置，确保图标始终跟当前文件扩展名对应。
+    // The mention panel reuses the same list-item components. Initializing the icon src
+    // only on first mount let a changed path keep the previous row's icon once filters or
+    // scrolling changed the visible set. Reset it whenever the resolution changes so the
+    // icon always matches the current file extension.
     setFileIconSrc(descriptor.fileIconSrc);
   }, [descriptor.fileIconSrc]);
 
@@ -249,8 +251,8 @@ export function FileDisplayIcon({
   const [fileIconSrc, setFileIconSrc] = useState(src);
 
   useEffect(() => {
-    // toolcall 列表项会复用同一套文件图标节点。
-    // 如果这里只在首次渲染时保留旧 src，切到下一条文件记录后会把上一条 fallback 状态串过来。
+    // Tool-call list items reuse the same file-icon node. Keeping the old src from the
+    // first render would carry the previous record's fallback state into the next file.
     setFileIconSrc(src);
   }, [src]);
 

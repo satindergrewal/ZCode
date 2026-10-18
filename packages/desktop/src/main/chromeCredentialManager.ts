@@ -4,9 +4,9 @@ import { join } from "node:path";
 import { createEncodedPowerShellArgs } from "../../scripts/powershell-command.mjs";
 
 const SYSTEM_CREDENTIAL_TIMEOUT_MS = 15_000;
-// macOS `security` 会把 OSStatus 压缩为 8 位进程退出码：
+// macOS security folds OSStatus into an 8-bit process exit code:
 // errSecInteractionNotAllowed(-25308) -> 36、errSecAuthFailed(-25293) -> 51、
-// errSecUserCanceled(-128) -> 128。三者都表示本次用户授权未完成。
+// errSecUserCanceled(-128) -> 128. All three mean this user grant never completed.
 const MAC_KEYCHAIN_ACCESS_DENIED_EXIT_CODES = new Set([36, 51, 128]);
 
 export type MacChromeSafeStorageSecretReader = () => Promise<string>;
@@ -28,7 +28,7 @@ function execFileText(command: string, args: string[]): Promise<string> {
       {
         encoding: "utf8",
         maxBuffer: 1024 * 1024,
-        // 系统凭据授权窗口可能被遮挡或无人处理，不能永久阻塞导入流程。
+        // The system credential dialog can be buried or ignored; never block the import forever.
         timeout: SYSTEM_CREDENTIAL_TIMEOUT_MS,
       },
       (error, stdout) => {
@@ -53,11 +53,11 @@ export async function readMacChromeSafeStorageSecret(
     execFileText("security", ["find-generic-password", "-w", "-s", "Chrome Safe Storage"]),
 ): Promise<string> {
   try {
-    // secret 只在 main 内存中消费，不得进入日志或 IPC。
+    // Secrets are consumed in main memory only; keep them out of logs and IPC payloads.
     return await secretReader();
   } catch (error) {
-    // 用户拒绝/取消钥匙串授权是整个导入的终止信号，不能被当成普通单条
-    // Cookie 解密失败吞掉，否则上层会继续写入 LocalStorage，违背用户的明确选择。
+    // A denied/cancelled keychain grant terminates the whole import -- not a per-cookie
+    // failure to swallow, or the upper layer keeps writing LocalStorage against the user's choice.
     if (isMacKeychainAccessDenied(error)) throw new ChromeCookieAccessDeniedError();
     throw error;
   }
@@ -76,8 +76,8 @@ export async function readWindowsChromeMasterKey(userDataDir: string): Promise<B
     "$plain=[Security.Cryptography.ProtectedData]::Unprotect($data,$null,[Security.Cryptography.DataProtectionScope]::CurrentUser);",
     "[Convert]::ToBase64String($plain)",
   ].join("");
-  // 普通 `-Command` 不会把尾随 encryptedKey 注入 `$args`，Windows 导入会拿到空参数。
-  // 使用统一 EncodedCommand 传值，避免命令行二次解析并保留 DPAPI 密文边界。
+  // A plain -Command does not inject the trailing encryptedKey into $args; the Windows import gets empty params.
+  // Pass values via EncodedCommand: no second shell parse, DPAPI ciphertext boundaries intact.
   const output = await execFileText(
     "powershell.exe",
     createEncodedPowerShellArgs(script, [encryptedKey]),

@@ -9,7 +9,7 @@ import { legacyReasoningLevelRenames as renames } from "./legacy-reasoning-level
 
 const oldRulesCache = new WeakMap<ModelConfigRules, ModelConfigRules>();
 
-/** 只为历史 Selection 恢复已知 Built-in 旧值域；不迁移 Personal 配置或在执行层放宽校验。 */
+/** Restores known legacy Built-in value domains for historical selections only; no Personal migration, no looser execution validation. */
 export function resolveLegacyReasoningLevel(
   snapshot: ProviderRegistryServiceSnapshot,
   selection: ModelSelection,
@@ -34,7 +34,8 @@ export function resolveLegacyReasoningLevel(
   if (!oldRules) {
     oldRules = new ModelConfigRules(
       builtin.rules().map((rule) => {
-        // 必须是已裁决的原始无站点/无 API 限制规则；新增同名站点规则不能误继承旧别名。
+        // Only the adjudicated original no-site/no-API restriction qualifies; a new same-name
+        // site rule must not inherit the legacy alias.
         const rename =
           rule.type === "model"
             ? renames.find((entry) => entry.modelMatch === rule.modelMatch)
@@ -60,7 +61,8 @@ export function resolveLegacyReasoningLevel(
     );
     oldRulesCache.set(builtin, oldRules);
   }
-  // 用原规则引擎处理大小写、前后缀、API/站点与后续覆盖，不复制第二套匹配逻辑。
+  // Case, affixes, API/site scoping, and later overrides stay in the original rule engine --
+  // no second matcher.
   const values = oldRules.resolve({
     providerId: selection.providerId,
     modelId: selection.modelId,

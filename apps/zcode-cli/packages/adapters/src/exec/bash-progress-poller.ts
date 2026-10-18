@@ -7,7 +7,7 @@ type PollingGroup = {
   timer: NodeJS.Timeout;
 };
 
-// 按周期共享：产品默认只有一个 1 秒轮询器，内部自定义周期不改变其他任务的频率。
+// Shared interval by design: the product runs a single 1s poller; custom periods do not change others' cadence.
 const pollingGroups = new Map<number, PollingGroup>();
 
 export function subscribeBashOutputProgress(
@@ -26,7 +26,7 @@ export function subscribeBashOutputProgress(
           .then(() => {
             if (isActive()) return subscriber.poll(isActive);
           })
-          // 预览是尽力读取；单个文件或回调失败不能停止其他 Bash 的共享进度。
+          // Preview is best-effort; one file or callback failure must not stop other Bash progress.
           .catch(() => undefined)
           .finally(() => {
             subscriber.reading = false;
@@ -41,7 +41,7 @@ export function subscribeBashOutputProgress(
   const { subscribers, timer } = group;
   subscribers.add(subscriber);
   return () => {
-    // 旧订阅重复清理时不能删除同周期的新轮询器。
+    // Re-cleanup of an old subscription must not remove a newer poller at the same period.
     if (!subscribers.delete(subscriber) || subscribers.size > 0) return;
     clearInterval(timer);
     pollingGroups.delete(intervalMs);

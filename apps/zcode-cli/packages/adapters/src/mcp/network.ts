@@ -75,9 +75,9 @@ function prependRunningNodeDirectory(
     return env;
   }
 
-  // remote Agent 由 ~/.zcode/server/node 启动，但登录环境 PATH 不含该目录，
-  // Plugin manifest 中标准的 command: "node" 因此无法启动 MCP。复用当前 Agent 的 Node
-  // 目录可保持插件配置跨本地/SSH/WSL/Docker 可移植，同时不覆盖插件显式注入的环境。
+  // A remote agent starts from ~/.zcode/server/node, but login PATHs lack that dir, so the standard
+  // plugin command node cannot spawn MCP. Reusing the current agent's Node
+  // dir keeps plugin configs portable across local/SSH/WSL/Docker without overriding explicit plugin env.
   return {
     ...env,
     [pathKey]: currentPath ? `${nodeDirectory}${pathDelimiter}${currentPath}` : nodeDirectory,

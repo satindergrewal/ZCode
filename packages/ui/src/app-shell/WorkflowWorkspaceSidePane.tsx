@@ -1,13 +1,15 @@
 // ============================================================
-// 脚本 transcript 面板。
+// Script transcript pane.
 // ============================================================
-// 一个 run 的 `files.*` / `git.*` / `world.run` 调用，按执行顺序回放成一本日志簿：阶段是章
-// （章头 = 名字 · ⟳n · 横线 · 步数与时长），每一步是两行的条目 + 时间标尺，命令露出输出的尾巴。
-// 与 actor transcript 面板同一逻辑层级：run 详情页保留它唯一的那条时间线，这里**不是第二条
-// 时间线**——没有轨道、没有灯。
+// A run's `files.*` / `git.*` / `world.run` calls, replayed in execution order as a logbook:
+// phases are chapters (chapter header = name - count - rule - step count and duration), each step
+// is a two-line entry plus a time ruler, commands revealing the tail of their output. Same logical
+// tier as the actor transcript pane: the run detail page keeps its single timeline there; this is
+// **not a second timeline** -- no rails, no lamps.
 //
-// 数据两条路：清单（轻行，`lastEventSequence` 抬升即重查）+ 正文（滚进视口 / 展开时才取，
-// 按 tab 缓存）。状态以 journal 为准，活投影只叠 `cached`。
+// Two data paths: the listing (light rows, re-queried when `lastEventSequence` rises) and the
+// bodies (fetched on scroll-into-view / expand, cached per tab). Status follows the journal; the
+// live projection only overlays `cached`.
 
 import { Fragment, memo, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { HourglassIcon, Repeat2Icon, TerminalIcon, TriangleAlertIcon } from "lucide-react";
@@ -35,7 +37,7 @@ import type { PaneWorkspaceScope } from "@/v4/paneLayoutStore.js";
 import { useConversationProjection } from "@/v4/useConversationProjection.js";
 import { useV4Conversation, V4PaneConversationProvider } from "@/v4/V4ConversationContext.js";
 
-/** 条目到场的错位：每个 24 ms，封顶 360 ms——第 16 个之后一起落地，长清单不该等半秒。 */
+/** Entry stagger: 24 ms per card, capped at 360 ms -- from the 16th on they land together; long lists must not wait half a second. */
 const CARD_STAGGER_MS = 24;
 const CARD_STAGGER_CAP_MS = 360;
 
@@ -45,7 +47,7 @@ interface WorkflowWorkspaceSidePaneProps {
   onOpenCodeViewer?: (source: CodeViewerSource) => void;
 }
 
-/** 整个 run 还没碰过工作区：占位（与 actor 的「尚未启动」同一形态，措辞换成工作区的）。 */
+/** The run never touched the workspace: placeholder (same shape as the actor's "not started", reworded for the workspace). */
 function WorkspaceNotStarted() {
   const { intl } = useZCodeIntl();
   return (
@@ -78,7 +80,7 @@ function WorkspaceNotice({ text, testId }: { text: string; testId: string }) {
   );
 }
 
-/** `1 step` / `3 steps`——词典没有复数语法，单数另配一条。 */
+/** `1 step` / `3 steps` -- the dictionary has no plural grammar, so singular gets its own entry. */
 function countLabel(
   format: ReturnType<typeof useZCodeIntl>["intl"]["formatMessage"],
   noun: "steps" | "phases",
@@ -89,7 +91,7 @@ function countLabel(
     : format({ id: `chat.toolCall.workflow.script.summary.${noun}` }, { count: String(count) });
 }
 
-/** 章头：阶段名 · ⟳n · 横线 · `3 steps · 2m 06s`。没有阶段的章不画头。 */
+/** Chapter header: phase name - count - rule - `3 steps · 2m 06s`. Chapters without a phase draw no header. */
 function ChapterHeader({ chapter }: { chapter: WorkspaceChapter }) {
   const { intl } = useZCodeIntl();
   const format = intl.formatMessage.bind(intl);
@@ -128,7 +130,8 @@ const WorkflowWorkspaceContent = memo(function WorkflowWorkspaceContent({
   const format = intl.formatMessage.bind(intl);
   const { layer } = useV4Conversation();
 
-  // 父会话租约走渲染期同步建连（同 actor 面板）：首帧就要有投影，落点与状态叠加都读它。
+  // The parent-session lease connects synchronously during render (like the actor pane): the
+  // first frame needs the projection, and both landing and status overlay read it.
   const lease = useMemo(() => layer.acquire(tab.parentSessionId), [layer, tab.parentSessionId]);
   useEffect(() => () => lease.release(), [lease]);
   const snapshot = useConversationProjection(lease).snapshot;
@@ -153,13 +156,15 @@ const WorkflowWorkspaceContent = memo(function WorkflowWorkspaceContent({
   );
   const chapters = useMemo(() => buildWorkspaceChapters(cards), [cards]);
   const origin = useMemo(() => transcriptOrigin(cards), [cards]);
-  // 跑着的条目「开始于多久前」与表头的总时长每秒推进；没有在跑的就不走钟。
+  // Running entries' "started ago" and the header's total duration tick every second; with
+  // nothing running the clock does not run.
   const runningCount = cards.filter((card) => card.node.status === "running").length;
   const now = useRunningBackgroundTaskElapsedClock(runningCount);
   const summary = useMemo(() => transcriptSummary(cards, now), [cards, now]);
 
-  // 落点（每次打开都重落：`openedAt` 随打开刷新）：那一站的第一张卡；还没到的站落到末尾。
-  // 等清单到齐再滚，否则滚的是一个空容器。
+  // Landing (re-landed on every open: `openedAt` refreshes per open): the phase's first card, or
+  // the end of the list for phases not yet reached. Wait for the listing before scrolling, or the
+  // scroll targets an empty container.
   const listRef = useRef<HTMLDivElement>(null);
   const landingKey =
     tab.focusPhaseId === undefined ? undefined : `${tab.focusPhaseId}@${tab.openedAt}`;
@@ -191,7 +196,8 @@ const WorkflowWorkspaceContent = memo(function WorkflowWorkspaceContent({
     }
   }, [landedKey, landingKey, workspace.loaded]);
 
-  // 首批到场按下标错位；之后追加的卡各自立刻到场（wf-arrive 无延迟）。
+  // The first batch staggers in by index; cards appended later each arrive immediately
+  // (wf-arrive, no delay).
   const initialCountRef = useRef<number | null>(null);
   if (initialCountRef.current === null && workspace.loaded) initialCountRef.current = cards.length;
   const initialCount = initialCountRef.current ?? 0;
@@ -269,7 +275,7 @@ const WorkflowWorkspaceContent = memo(function WorkflowWorkspaceContent({
     );
   }
 
-  // 表头第二行：`3 phases · 9 steps · 4m 12s`——清单到齐且非空才说。
+  // Header second row: `3 phases · 9 steps · 4m 12s` -- spoken only once the listing is loaded and non-empty.
   const summaryParts: string[] = [];
   if (workspace.loaded && cards.length > 0) {
     if (summary.phases > 0) summaryParts.push(countLabel(format, "phases", summary.phases));
@@ -283,7 +289,7 @@ const WorkflowWorkspaceContent = memo(function WorkflowWorkspaceContent({
       data-testid="workflow-workspace-pane"
       data-workflow-run-id={tab.runId}
     >
-      {/* 表头：终端瓦片 · WORKSPACE 眉题 + run 名 · run 灯与词；第二行是整本日志簿的三个数。 */}
+      {/* Header: terminal tile - WORKSPACE eyebrow + run name - run lamp and word; the second row is the logbook's three numbers. */}
       <div className="wf-motion flex shrink-0 flex-col gap-3 border-b border-border px-5 pb-3.5 pt-4">
         <div className="flex items-center gap-3">
           <span
@@ -337,8 +343,9 @@ const WorkflowWorkspaceContent = memo(function WorkflowWorkspaceContent({
 });
 
 /**
- * 一个 workflow run 的脚本 transcript tab。组合方式照 `WorkflowActorSessionSidePane`：pane scope
- * + 内容；内容自己取数（两条 journal 查询），不嵌 SessionPane——工作区没有会话。
+ * Script transcript tab for one workflow run. Composition mirrors `WorkflowActorSessionSidePane`:
+ * pane scope + content; the content fetches its own data (two journal queries) and does not nest
+ * SessionPane -- the workspace has no session.
  */
 export const WorkflowWorkspaceSidePane = memo(function WorkflowWorkspaceSidePane({
   tab,

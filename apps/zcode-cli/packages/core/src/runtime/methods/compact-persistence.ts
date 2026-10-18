@@ -281,8 +281,8 @@ export async function recoverInterruptedCompactTimelines(
 function isRecoverableRunningCompactTimelineStatus(
   status: CompactTimelineStatus | undefined,
 ): boolean {
-  // 自动 compact retry 会把同一个 timeline 持久化成 retrying；
-  // 进程在 retry 间隔退出时，resume 必须把它和 started 一样收敛为 interrupted/completed。
+  // An auto compact retry persists the same timeline as retrying;
+  // a process exit between retries must settle it like started, into interrupted/completed.
   return status === CompactTimelineStatus.Started || status === CompactTimelineStatus.Retrying;
 }
 
@@ -303,7 +303,7 @@ export async function persistCompactSummary(
 
   const created = Date.now();
   const persistedModel = resolvePersistedModel(this, options?.model);
-  // compact summary 和后续 reminder 是同一次历史替换；任一步失败都要一起回滚。
+  // Summary and following reminder are one history replacement; either failing rolls back both.
   const persistedMessageIds: MessageId[] = [messageID];
   try {
     await this.persistMessage(

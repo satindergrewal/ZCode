@@ -16,7 +16,7 @@ export function normalizeApiKeyForHeader(value: string): string {
     return "";
   }
 
-  // 用户复制 API key 时可能把中文备注一并粘进输入框。
-  // fetch header value 必须是 ByteString，发送链路统一截取 ASCII key，避免非 ASCII 字符在构造 Authorization 时直接抛错。
+  // Pasted API keys often carry trailing prose;
+  // header values must be ByteString: send the ASCII key run only, keeping Authorization safe.
   return asciiPrefix.trim();
 }

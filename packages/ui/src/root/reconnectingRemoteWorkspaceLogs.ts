@@ -57,9 +57,9 @@ export function resolveRemoteWorkspaceReconnectLogWorkspaceKeys({
   const matchedEntries = reconnectingEntries.filter((entry) =>
     runtimeLabel.startsWith(buildRemoteWorkspaceReconnectLogLabelPrefix(entry.target)),
   );
-  // 旧版本日志没有 requestId，只能靠 target label 前缀兜底。
-  // 同一 target 并发重连时前缀会相同，继续复制到所有 workspace 会把诊断信息串到错误 tooltip。
-  // 因此只有唯一命中时才按前缀归属，多命中则放弃猜测，等待带 requestId 的日志精确路由。
+  // Legacy logs carry no requestId; the target label prefix is the only fallback.
+  // Concurrent reconnects to one target share the prefix, so copying to every workspace threads diagnostics into the wrong tooltip.
+  // Attribute by prefix only on a unique hit; with multiple hits, wait for requestId-routed logs instead of guessing.
   if (matchedEntries.length !== 1) {
     return [];
   }

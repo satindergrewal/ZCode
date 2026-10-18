@@ -1,12 +1,12 @@
-// Plugin 对话引用的严格 canonical 解析。
-// 契约：
-// - 只接受 Markdown 链接 destination 形如 `plugin://stable-id`，协议名大小写敏感（仅小写）。
-// - stable-id 必须是 `name@marketplace`，两段均匹配 [A-Za-z0-9][A-Za-z0-9._-]*，总长 ≤ 256。
-// - 拒绝 query、fragment、credentials、空白、控制字符和 `%`（不做隐式 percent-decoding）。
-// - 身份只来自 destination；label 永不参与解析。
+// Strict canonical resolution for plugin chat references.
+// Contract:
+// - Accepts only Markdown link destinations of the form `plugin://stable-id`; the scheme is case-sensitive (lowercase only).
+// - stable-id must be `name@marketplace`, both segments matching [A-Za-z0-9][A-Za-z0-9._-]*, total length <= 256.
+// - Reject query, fragment, credentials, whitespace, control chars, and `%` (no implicit percent-decoding).
+// - Identity comes from the destination only; the label never participates in parsing.
 
 const PLUGIN_REFERENCE_SCHEME = "plugin://";
-// 与 mentionMarkdown 的链接语法保持一致：label 支持 \ 转义，destination 支持 <...> 或裸形式。
+// Keeps the link syntax of mentionMarkdown: labels allow \ escapes, destinations allow <...> or the bare form.
 const MARKDOWN_LINK_PATTERN =
   /\[(?:\\.|[^\\\]])*\]\((?:<((?:\\.|[^>])*?)>|((?:\\.|[^)\s])*))\)/g;
 const PLUGIN_ID_SEGMENT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
@@ -15,8 +15,8 @@ export const MAX_PLUGIN_REFERENCES_PER_TURN = 8;
 const MAX_PLUGIN_STABLE_ID_LENGTH = 256;
 
 /**
- * 校验一个候选字符串是否为严格合法的 Plugin stable ID（`name@marketplace`）。
- * 该校验同时用于 parser 和 reminder 输出侧的防御（fail closed）。
+ * Validates whether a candidate is a strictly valid plugin stable ID (`name@marketplace`).
+ * Used defensively on both the parser and reminder output sides (fail closed).
  */
 export function isValidPluginStableId(candidate: string): boolean {
   if (candidate.length === 0 || candidate.length > MAX_PLUGIN_STABLE_ID_LENGTH) {
@@ -28,13 +28,13 @@ export function isValidPluginStableId(candidate: string): boolean {
   }
   const name = candidate.slice(0, separatorIndex);
   const marketplace = candidate.slice(separatorIndex + 1);
-  // 段级字符集校验即完整安全边界：query/fragment/credentials/空白/控制字符/% 都不在
-  // [A-Za-z0-9._-] 集合内，一律拒绝，不做任何隐式 percent-decoding 或宽容匹配。
+  // Per-segment charset checks are the entire security boundary: query/fragment/credentials/whitespace/control chars/% all fall
+  // outside [A-Za-z0-9._-] and are rejected; no implicit percent-decoding, no lenient matching.
   return PLUGIN_ID_SEGMENT_PATTERN.test(name) && PLUGIN_ID_SEGMENT_PATTERN.test(marketplace);
 }
 
 function parsePluginDestination(destination: string): string | null {
-  // 协议名大小写敏感：`Plugin://`、`PLUGIN://` 都不接受。
+  // The scheme is case-sensitive: `Plugin://` and `PLUGIN://` are not accepted.
   if (!destination.startsWith(PLUGIN_REFERENCE_SCHEME)) {
     return null;
   }
@@ -46,23 +46,23 @@ function parsePluginDestination(destination: string): string | null {
 }
 
 function isPluginSchemeDestination(destination: string): boolean {
-  // 只把"意图上是 plugin 协议"的 destination 计入 invalid 统计；
-  // 大小写变体（Plugin:// 等）也算意图命中但解析失败，防 label 欺骗绕过统计。
+  // Count only destinations that intend the plugin scheme as invalid;
+  // case variants (Plugin:// etc.) count as intended-but-unparsed so label spoofing cannot dodge the stats.
   return /^plugin:\/\//i.test(destination);
 }
 
 export interface ExtractPluginReferencesResult {
-  /** 按正文首次出现顺序、按 stable ID 去重后的引用。 */
+  /** References deduped by stable ID, in first-occurrence order. */
   references: string[];
-  /** 超过单轮上限被丢弃的引用次数（fail closed，调用侧记 debug truncated）。 */
+  /** References dropped for exceeding the per-turn cap (fail closed; callers log debug truncated). */
   truncatedCount: number;
-  /** 命中 plugin 协议意图但解析失败的 destination 数量（unknown 之前的格式级拒绝）。 */
+  /** Destinations resembling the plugin scheme that failed to parse (format-level rejections before unknown). */
   invalidCount: number;
 }
 
 /**
- * 从 canonical 用户文本中提取 Plugin 引用（stable ID）。
- * 身份只来自链接 destination；Markdown label 完全不参与。
+ * Extract plugin references (stable IDs) from canonical user text.
+ * Identity comes from the link destination only; the Markdown label never participates.
  */
 export function extractPluginReferences(input: string): ExtractPluginReferencesResult {
   const references: string[] = [];

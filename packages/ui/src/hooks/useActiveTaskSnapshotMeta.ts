@@ -12,20 +12,20 @@ function resolveImmediateActiveTaskSnapshotMeta(
     return null;
   }
 
-  // pin / archive task 切换时，如果目标任务一开始不在列表数据源里，
-  // 新 snapshot 还没返回前不能继续沿用上一条任务的 snapshot meta。
-  // 否则 Header 会先显示旧标题，再被异步结果改正，体感上就像“名称慢半拍”。
-  // 这里只允许复用“同一个 taskId”的旧 snapshot，跨任务切换时立刻清空。
+  // When switching to a pin/archive task that is missing from the list data sources, the
+  // previous task's snapshot meta must not carry over until the new snapshot returns;
+  // otherwise the Header shows the old title first and corrects it async, which reads as a
+  // laggy rename. Only reuse a snapshot for the exact same taskId; clear it across tasks.
   return previousSnapshotMeta?.taskId === taskId ? previousSnapshotMeta : null;
 }
 
 /**
- * 为当前激活 task 提供一层 snapshot meta 兜底。
+ * Snapshot-meta fallback for the currently active task.
  *
- * archived task 不在普通 taskListCache / pinnedTasks 数据源里，
- * 直接打开时 App 只靠列表元数据会拿不到标题、provider、traceId 等字段。
- * 这里在列表里找不到当前任务时，额外读取一次 snapshot.meta 作为展示兜底，
- * 只服务当前激活任务，不把 archived task 混回普通列表。
+ * Archived tasks are absent from the normal taskListCache / pinnedTasks sources, so opening
+ * one directly leaves the app without title, provider, traceId, etc. from list metadata alone.
+ * When the task is not found in the lists, read snapshot.meta once as a display fallback.
+ * This serves the active task only; archived tasks are not mixed back into the normal list.
  */
 export function useActiveTaskSnapshotMeta(
   workspacePath: string,
@@ -61,8 +61,9 @@ export function useActiveTaskSnapshotMeta(
     }
 
     void zcodeSessionService
-      // active header 只需要 session meta/标题兜底，走 ZCode Protocol 的轻量读取，
-      // 避免继续经 legacy snapshot 把大任务消息整包拉回 UI。
+      // The active header only needs a session meta/title fallback; use the lightweight
+      // ZCode Protocol read instead of pulling the full task message payload via legacy
+      // snapshot into the UI.
       .readSession({
         workspacePath,
         workspaceIdentity,

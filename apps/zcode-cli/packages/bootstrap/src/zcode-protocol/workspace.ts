@@ -13,21 +13,21 @@ export function buildWorkspaceRef(input: {
 }
 
 /**
- * 将 V4 workspaceId 的本地路径/远程 identity 双形态统一还原为 workspace ref。
+ * Normalizes both shapes of a V4 workspaceId (local path / remote identity) back into a workspace ref.
  */
 export function resolveWorkspaceRefFromId(workspaceId: string): ZCodeWorkspaceRef {
   const parsedRemote = parseRemoteWorkspaceIdentity(workspaceId);
   if (!parsedRemote) {
-    // 非法 remote identity 若继续按本地路径处理，会再次把 identity 写入
-    // directory/path。remote 命名空间必须 fail-closed，本地路径仍保留原 fallback。
+    // If a malformed remote identity is handled as a local path again, the identity gets written into
+    // directory/path once more. The remote namespace must fail closed; local paths keep the original fallback.
     if (workspaceId.startsWith("remote:")) {
       throw new Error(`Invalid remote workspace identity: ${workspaceId}`);
     }
     return buildWorkspaceRef({ workspacePath: workspaceId });
   }
 
-  // 带显式 user 的 WSL identity 以前解析失败后会落入本地路径分支，
-  // 使完整 identity 被当成 workingDirectory。这里统一通过 shared parser 拆分身份与路径。
+  // WSL identities with an explicit user used to fall into the local-path branch after a failed parse,
+  // making the full identity the workingDirectory. The shared parser now splits identity and path.
   return buildWorkspaceRef({
     workspaceIdentity: workspaceId,
     workspacePath: parsedRemote.workspacePath,

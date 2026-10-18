@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 远端 workspace 历史集中维护持久化、凭据和 MCP 路径映射元数据，拆分会扩大恢复链路回归面。 */
+/* eslint-disable max-lines - remote-workspace history centralizes persistence, credentials, and MCP path mapping; splitting widens the recovery-regression surface. */
 import type {
   AppSettings,
   PersistedWorkspaceSessionEntry,
@@ -108,8 +108,8 @@ export function formatRemoteWorkspaceDisplayLabel(
 }
 
 function normalizeWorkspacePathForIdentity(path: string): string {
-  // 远程目录可能出现符号链接别名（例如 /dev 与 /home/dev）。
-  // 身份计算前统一做分隔符归一化与收尾斜杠清理，避免同一路径文本噪声导致身份漂移。
+  // Remote directories can expose symlink aliases (e.g. /dev vs /home/dev).
+  // Normalize separators and trailing slashes before identity math, so path-text noise never drifts the identity.
   const normalized = path.replace(/\\/g, "/").replace(/\/+$/, "");
   return normalized.length > 0 ? normalized : "/";
 }
@@ -123,8 +123,8 @@ function getRemoteWorkspaceAuthorityKey(target: RemoteTarget | RemoteTargetSnaps
       return ["ssh", normalizedHost, normalizedPort, normalizedUsername].join(":");
     }
     case "wsl": {
-      // WSL 默认用户与 root/其他显式用户的文件权限边界不同，
-      // workspace identity 必须区分显式 user，避免 session、缓存和队列串用。
+      // WSL default-user and root/explicit-user file-permission boundaries differ;
+      // workspace identity must distinguish explicit users, or sessions/caches/queues cross-contaminate.
       const user = getWslRemoteTargetUser(target);
       const base = ["wsl", target.distro ?? "default"];
       return user ? [...base, user].join(":") : base.join(":");
@@ -325,8 +325,8 @@ export function buildRemoteWorkspaceSessionMutation(params: {
   const nextEntry: RemoteWorkspaceSessionEntry = {
     kind: "remote",
     workspacePath: params.workspacePath,
-    // filesystem MCP 同步需要用“本机 workspace -> 远端 workspace”映射。
-    // 远端历史之前只保存远端路径，已连接后的 Settings/Header 入口无法再恢复本机基准路径。
+    // The filesystem MCP sync needs the local-workspace -> remote-workspace mapping.
+    // Remote history used to store remote paths only, leaving Settings/Header unable to restore the local base path.
     ...(localWorkspacePath ? { localWorkspacePath } : {}),
     workspaceIdentity: resolvedWorkspaceIdentity,
     target: nextSnapshot,
@@ -410,9 +410,9 @@ export function buildPersistedWorkspaceSessionEntries(
       const workspaceKey = buildWorkspaceSessionKey(tab);
       const remoteEntry = remoteSessionsByWorkspaceKey.get(workspaceKey);
 
-      // lastWorkspaceSession 现在是远端 workspace 的唯一持久化来源。
-      // 如果这里因为 tab 断连就把 remote 项漏掉，下次启动会直接丢失“手动重连”的入口。
-      // 因此只要当前 tab 具有远端身份，就必须写回完整 remote 条目。
+      // lastWorkspaceSession is now the only persisted remote-workspace record.
+      // Dropping the remote entry on tab disconnect would lose the manual-reconnect entry on next start.
+      // So as long as the tab carries remote identity, write the full remote entry back.
       if (!remoteEntry) {
         return entries;
       }

@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- Root 当前集中编排启动和 workspace shell wiring，先保持入口收口避免跨层状态拆散。 */
+/* eslint-disable max-lines -- Root concentrates startup and workspace shell wiring; keep the entry consolidated so cross-layer state is not shredded. */
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LucideProvider, RefreshCw } from "lucide-react";
 import {
@@ -98,23 +98,25 @@ type WelcomeScreenOpenReason =
   | "session-expired";
 
 /**
- * Root —— 应用根组件
+ * Root — application root component.
  *
- * 外层挂载 StoreProvider（连接广播服务）+ TabStoreProvider，内层处理认证和路由。
+ * Outer layer mounts StoreProvider (broadcast connection service) + TabStoreProvider; the inner
+ * layer handles auth and routing.
  */
 export function Root(props: RootProps) {
   return (
     <LucideProvider strokeWidth={DEFAULT_LUCIDE_STROKE_WIDTH}>
       {/*
-       * 之前通过 lucide.tsx 包装每个图标，把默认 strokeWidth 固定成 1.5。
-       * 现在移除包装文件后，如果不在根层统一注入，按钮、列表和工具栏里的 Lucide 图标会回退到 2，
-       * 导致同一套 size class 下视觉显得更粗、更挤。这里改用官方 LucideProvider 保持默认值，
-       * 同时保留个别图标显式传入 strokeWidth 时的覆盖能力。
+       * Icons used to be wrapped per-icon in lucide.tsx pinning strokeWidth to 1.5. With the
+       * wrapper gone, Lucide icons in buttons/lists/toolbars fall back to 2 without a root-level
+       * default, looking bolder/cramped at the same size classes. Use the official
+       * LucideProvider for the default while keeping per-icon strokeWidth overrides working.
        */}
       <TooltipProvider>
         {/*
-         * 大会话消息动作里会出现大量 tooltip。Provider 如果跟随每个 tooltip 实例创建，
-         * React 点击切换任务时会同步构造数量级相同的 Radix 上下文树；根层共享一次即可保留零延迟配置。
+         * Conversation UI spawns many tooltips. A Provider per tooltip instance would build an
+         * equally large Radix context tree synchronously on task click-switch; one root-level
+         * shared provider keeps the zero-latency config.
          */}
         <ServiceProvider services={props.services}>
           <PlatformProvider platform={props.platform}>
@@ -162,10 +164,11 @@ function RootInner({
 }: RootProps) {
   useEffect(() => {
     setMcpStorePlatform(platform);
-    // 对话 UI perf 只属于 desktop-continuous；Web/mobile 即使能看到权威状态也不装 reporter。
+    // Conversation UI perf instrumentation is desktop-continuous only; web/mobile never install the reporter even when they can see authoritative state.
     setUiPerfArmsReporter(isDesktop ? platform : null);
     setSessionOpenArmsReporter(isDesktop ? platform : null);
-    // 发送漏斗同理：只在 Electron 桌面端上报，Web/mobile 的 reportArmsCustomEvent 是空实现。
+    // Same for the send funnel: report only from Electron desktop; reportArmsCustomEvent is a
+    // no-op on web/mobile.
     setSendFunnelArmsReporter(isDesktop ? platform : null);
     return () => {
       setMcpStorePlatform(null);
@@ -182,9 +185,10 @@ function RootInner({
     [],
   );
 
-  // 动态工作流灰度快照的唯一取数点：
-  // 放在 app 级 ServiceProvider 这一层取一次，自动化页与 run 面板只读。消费方可能位于
-  // 工作区级 ServiceProvider 内（远程 Host 的 accessor），由它们取数会拿到另一台 Host 的答案。
+  // Single fetch point for the dynamic-workflow rollout snapshot:
+  // read once at the app-level ServiceProvider; the automations page and run panel only read.
+  // Consumers may live inside a workspace-level ServiceProvider (remote host accessor); fetching
+  // there would return another host's answer.
   useDynamicWorkflowAvailabilityLoader(services.codingPlanSubscriptionService);
 
   const { intl, locale } = useZCodeIntl();
@@ -259,17 +263,17 @@ function RootInner({
           message.payload,
         );
         if (!parsed.success) {
-          logger.warn("[settings] 丢弃无效的运行时偏好广播", {
+          logger.warn("[settings] Discarding invalid runtime preference broadcast", {
             issues: parsed.error.issues,
           });
           return;
         }
         void refreshAppSettings();
         void services.zcodeAgentService.syncAppRuntimePreferences(parsed.data).catch((error) => {
-          logger.warn("[settings] 同步跨窗口运行时偏好失败", error);
+          logger.warn("[settings] Failed to sync cross-window runtime preferences", error);
         });
         void services.botsService.syncAppRuntimePreferences(parsed.data).catch((error) => {
-          logger.warn("[settings] 同步跨窗口 Bot 运行时偏好失败", error);
+          logger.warn("[settings] Failed to sync cross-window bot runtime preferences", error);
         });
         return;
       }
@@ -293,8 +297,9 @@ function RootInner({
         return;
       }
 
-      // 关闭文件 tab 后 PreviewPane 会卸载，不能再依赖 PreviewPane 自己监听跨窗口清理事件。
-      // 这里在 Root 生命周期内同步清理 renderer 级 preview store，避免发送后重新打开文件又恢复旧 comment。
+      // Closing a file tab unmounts PreviewPane, so it can no longer listen for cross-window
+      // cleanup itself. Clean the renderer-level preview store within the Root lifecycle, or
+      // reopening the file after send restores stale comments.
       markCodeCommentRemoved(message.payload);
       useCodeCommentPreviewStore.getState().removeCommentBySource(message.payload);
     });
@@ -320,7 +325,7 @@ function RootInner({
         modelIoFullRetentionEnabled: appSettings.modelIoFullRetentionEnabled === true,
       })
       .catch((error) => {
-        logger.warn("[settings] 初始化运行时偏好失败", error);
+        logger.warn("[settings] Failed to initialize runtime preferences", error);
       });
     void services.botsService
       .syncAppRuntimePreferences({
@@ -329,7 +334,7 @@ function RootInner({
         modelIoFullRetentionEnabled: appSettings.modelIoFullRetentionEnabled === true,
       })
       .catch((error) => {
-        logger.warn("[settings] 初始化 Bot 运行时偏好失败", error);
+        logger.warn("[settings] Failed to initialize bot runtime preferences", error);
       });
   }, [
     appSettings?.askUserQuestionAutoResolutionEnabled,
@@ -354,7 +359,7 @@ function RootInner({
     activeWorkspaceTab,
     activeWorkspacePath,
     activeWorkspaceIdentity,
-    // Settings 覆盖时仍使用被覆盖 tab 的完整远程身份，避免通知与侧栏建立重复订阅。
+    // While a Settings tab overrides the workspace, keep the overridden tab's full remote identity so notifications and the sidebar do not double-subscribe.
     workspaceTabs: windowWorkspaceTabs,
   });
   const workspaceScopedServices = useWorkspaceServices(
@@ -394,7 +399,7 @@ function RootInner({
       try {
         await ensureProviderFamilyDomainMigration(services);
       } catch (error) {
-        logger.warn("[Root] provider family domain 迁移失败，继续启动", {
+        logger.warn("[Root] provider family domain migration failed; continuing startup", {
           error,
         });
       } finally {
@@ -404,7 +409,7 @@ function RootInner({
             await refreshAppSettings();
             await refreshProviderState();
           } catch (refreshError) {
-            logger.warn("[Root] provider family domain 迁移后刷新状态失败", {
+            logger.warn("[Root] Failed to refresh state after provider family domain migration", {
               error: refreshError,
             });
           }
@@ -448,9 +453,10 @@ function RootInner({
           if (open) {
             return "startup-provider-required";
           }
-          // JWT 过期提示确认后会先写入 session-expired，随后 provider
-          // 启动门禁以 open=false 收尾。这里若无条件清空，会覆盖重新登录页并回到工作区。
-          // 门禁只能关闭自己拥有的启动登录态，不能清理其它交互来源的 reason。
+          // After a JWT-expiry notice is confirmed, session-expired is written and the provider
+          // startup gate closes with open=false. Clearing unconditionally here would overwrite
+          // the re-login page and bounce back to the workspace. A gate may only close the
+          // startup-login state it owns, not reasons from other interactions.
           return currentReason === "startup-provider-required" ? null : currentReason;
         });
       },
@@ -460,17 +466,19 @@ function RootInner({
     providerAvailabilityStartupCheckCompleted,
   });
   const isStartupProviderLoginEntryOpen = welcomeScreenOpenReason === "startup-provider-required";
-  // 首次安装时 provider 登录入口判定晚于 workspace 注入，ChatView 会先 mount 并触发草稿预热。
-  // 这里把 provider 启动检查纳入 workspace 恢复门禁，避免未连接账号前启动 ZCode session。
+  // On fresh installs the provider-login gate resolves after workspace injection, so ChatView
+  // mounts first and triggers draft prewarm. Include the provider startup check in the workspace
+  // restore gate to avoid starting a ZCode session before an account is connected.
   const canRestoreWorkspaceSession =
     !isResolvingStartupAuthState &&
     !isResolvingProviderStartupState &&
     !isStartupProviderLoginEntryOpen;
 
   useEffect(() => {
-    // 跨 workspace 任务列表需要一个稳定的“本地/root services”入口。
-    // 桌面端 renderer 启动时会注册一次，但 Web 和测试入口也会直接挂 Root；
-    // 这里再以 Root props 兜底注册，避免当前激活远端 workspace 时本地列表误用远端 host。
+    // Cross-workspace task lists need a stable "local/root services" entry. Desktop renderer
+    // registers once at startup, but web and test entries also mount Root directly; re-register
+    // from Root props as a fallback so the local list never uses a remote host while a remote
+    // workspace is active.
     registerBaseWorkspaceServices(services);
   }, [services]);
 
@@ -554,8 +562,9 @@ function RootInner({
     platform,
     supportsSettings,
     allowRemoteWorkspace,
-    // conversation backing workspace 只属于本地桌面主恢复链路；远程窗口和手机
-    // shared-host attachment 不能因此创建独立本地 runtime 或改变 replayable 边界。
+    // The conversation backing workspace belongs to the local desktop primary restore path only;
+    // remote windows and phone shared-host attachment must not spawn a separate local runtime or
+    // alter the replayable boundary because of it.
     ensureConversationWorkspaceOnRestore: isDesktop && restoreSession && !initialWorkspaceIdentity,
     deferInactiveWorkspaceRestore: isDesktop && restoreSession && !initialWorkspaceIdentity,
     unavailableWorkspacePath,
@@ -566,9 +575,10 @@ function RootInner({
   });
 
   useEffect(() => {
-    // fileDisplay 默认不传 basePath 时需要落到“当前激活 workspace”。
-    // 之前纯工具层拿不到窗口内的 workspace 上下文，只能退回绝对路径，导致 mention / 文件展示在输入框里不够简洁。
-    // 这里由 Root 在 workspace 切换时同步一份当前上下文，既保留工具层复用性，也不把 Zustand 依赖硬塞进工具函数。
+    // Without a basePath, fileDisplay must fall back to the active workspace. The pure util used
+    // to have no window-level workspace context and degraded to absolute paths, making
+    // mention/file previews verbose in the input. Root mirrors the current context on workspace
+    // switch: keeps the util reusable without hardcoding a Zustand dependency into it.
     setDefaultFileDisplayBasePath(activeWorkspacePath);
   }, [activeWorkspacePath]);
 
@@ -582,8 +592,9 @@ function RootInner({
 
   const { isRestoring, hasCompletedInitialRestore, hasCompletedFullRestore } = useTabPersistence({
     settingService: supportsSettings ? services.settingService : undefined,
-    // 首次安装未连接账号时，provider 登录入口判定会晚于 workspace 恢复。
-    // 如果这里先恢复 workspace，ChatView mount 会触发草稿 session 预热并在登录页背后报错。
+    // With no account connected, the provider-login gate resolves after workspace restore; if the
+    // workspace restores first, ChatView mount prewarms a draft session and errors behind the
+    // login page.
     restoreSession: restoreSession && canRestoreWorkspaceSession,
     persistSession: restoreSession && canRestoreWorkspaceSession,
     restorePersistedSession,
@@ -592,8 +603,9 @@ function RootInner({
 
   useEffect(() => {
     if (!isDesktop || !hasCompletedFullRestore) return;
-    // Bug 原因：active-first 的单 workspace 只是 Renderer 首屏投影，若立刻对外同步，
-    // 会短暂撤销其他 workspace 的 telemetry scope。完整补齐后才能发布全量集合。
+    // Bug: the active-first single workspace is only the renderer's first-paint projection; if
+    // synced externally immediately, it briefly revokes other workspaces' telemetry scope. Publish
+    // the full set only once it is complete.
     reconcileConversationTelemetryWorkspaceScopes(
       windowWorkspaceTabs.map((tab) => ({
         workspacePath: tab.workspacePath,
@@ -606,8 +618,9 @@ function RootInner({
   const { tryRefresh, clearCredentials } = useTokenRefresh();
   void tryRefresh;
   void clearCredentials;
-  // 启动阻塞是桌面窗口保护期，手机 Web 远控在进入 Root 前已有配对/加载页。
-  // Web 端继续使用该 gate 会在 workspace tab 注入前渲染空 RootShell，露出浏览器白底。
+  // The startup block is a desktop-window protection period; phone web remote control already
+  // has pairing/loading pages before Root. Keeping the gate on web would render an empty
+  // RootShell before workspace tabs are injected, exposing the browser's white background.
   const isStartupRenderBlocked = shouldShowRootStartupLoading({
     isDesktop,
     welcomeScreenOpen: Boolean(welcomeScreenOpenReason),
@@ -631,7 +644,7 @@ function RootInner({
     launchReportedRef.current = true;
     const timings = readRendererLaunchTimings();
     if (!timings || !timings.marks) {
-      return; // 锚点缺失(非桌面/未注入 marks),整批跳过
+      return; // anchor missing (non-desktop / marks not injected): skip the whole batch
     }
     reportUiLaunchToInput({
       marks: timings.marks,
@@ -647,9 +660,9 @@ function RootInner({
     initialWorkspaceIdentity,
     initialWorkspacePurpose,
     initialTaskId,
-    // 系统右键/Service 冷启动传入 initialWorkspacePath 时，必须先恢复历史 tabs，
-    // 再把目标 workspace 合并并激活。否则先 addTab 会被 restoreTabs 整体替换掉；
-    // 直接禁用 restoreSession 又会让其他 workspace 全部消失。
+    // When a system right-click/Service cold-start passes initialWorkspacePath, restore historical
+    // tabs first, then merge and activate the target workspace. addTab-first would be wholly
+    // replaced by restoreTabs; disabling restoreSession instead would drop every other workspace.
     canBootstrapInitialWorkspace: canRestoreWorkspaceSession && hasCompletedInitialRestore,
     addTab,
     setIsBootstrappingInitialWorkspace,
@@ -688,8 +701,9 @@ function RootInner({
         return;
       }
 
-      // 关闭请求先广播给 workspace 层判断 side pane active tab。
-      // 没有可见 workspace 或没有可关闭的 side pane tab 时，才回落到关窗口语义。
+      // Broadcast the close request to the workspace layer first to close a side pane's active
+      // tab; only when no visible workspace or closable side pane tab exists fall back to
+      // closing the window.
       void platform.executeDesktopCommand(DesktopCommandIds.CloseWindow);
     });
   }, [platform]);
@@ -716,7 +730,7 @@ function RootInner({
   useEffect(
     () =>
       platform.onPostUpdateReleaseNotes((payload) => {
-        logger.info("[Root] 收到更新说明，改为静默确认", {
+        logger.info("[Root] Release notes received; switching to silent ack", {
           version: payload.version,
           title: payload.title,
         });
@@ -724,20 +738,21 @@ function RootInner({
           return;
         }
 
-        // 自动更新每次命中待展示 release notes 都会走到这里，
-        // 之前 Root 会立刻把 payload 送进对话框状态，导致用户每次更新都被强制弹窗打断。
-        // 这次需求只移除弹窗本身，因此这里改成收到后直接静默 ack，
-        // 既不影响“更新已下载”按钮/菜单/安装链路，也避免 pending 状态残留到下次启动后再次触发。
+        // Every auto-update hit with pending release notes lands here. Root used to feed the
+        // payload straight into dialog state, force-interrupting users on each update. This
+        // change only removes the dialog: ack silently on receipt, leaving the "update ready"
+        // button/menu/install path intact and avoiding pending state surviving into the next
+        // launch and retriggering.
         acknowledgingReleaseNotesVersionRef.current = payload.version;
         void platform
           .acknowledgePostUpdateReleaseNotes(payload.version)
           .then(() => {
-            logger.info("[Root] 更新说明已静默确认", {
+            logger.info("[Root] Release notes silently acknowledged", {
               version: payload.version,
             });
           })
           .catch((error) => {
-            logger.error("[Root] 更新说明静默确认失败", {
+            logger.error("[Root] Failed to ack release notes silently", {
               version: payload.version,
               error,
             });
@@ -762,8 +777,9 @@ function RootInner({
       return;
     }
 
-    // macOS nativeTheme 会影响窗口 vibrancy。这里等 RootStartupLoading
-    // 真正退出并进入主界面/设置页后一轮再允许同步，避免启动壳背景被应用主题提前改写。
+    // macOS nativeTheme affects window vibrancy. Allow syncing only one round after
+    // RootStartupLoading actually exits into the main UI/settings, so the startup shell background
+    // is not repainted by the app theme too early.
     setHasEnteredNativeThemeSyncSurface(true);
   }, [canEnterNativeThemeSyncSurface]);
 
@@ -800,17 +816,18 @@ function RootInner({
 
     didRequestFallbackWorkspaceRef.current = true;
     setIsCreatingFallbackWorkspace(true);
-    // 以前 tab store 的默认空态会把 Root 带到打开工作区中间页。
-    // 删除整页流程后，启动恢复为空或入口没有传 initialWorkspacePath 时必须在 Root
-    // 兜底落到默认 workspace，避免用户先看到一张“打开工作区”中间页或空白页。
-    // 这里不能用当前 effect 的 cleanup 作为异步取消标记：setIsCreatingFallbackWorkspace
-    // 或 addTab 后的 workspaceShellPath 变化都会让 React 先跑 cleanup，若因此跳过 finally，
-    // 启动 loading gate 会永远保持 true。
+    // The tab store's default empty state used to route Root into the open-workspace interstitial.
+    // After the full-page flow was removed, startup must fall back to the default workspace in
+    // Root when restore is empty or no initialWorkspacePath was passed, so users never see the
+    // interstitial or a blank page. Do not use this effect's cleanup as the async cancel flag:
+    // setIsCreatingFallbackWorkspace or a post-addTab workspaceShellPath change runs cleanup
+    // first, and skipping finally on that basis would leave the startup loading gate true forever.
     services.fileService
       .ensureConversationWorkspace()
       .then((result) => {
-        // 启动兜底创建目录可能早于会话恢复发起、晚于恢复完成返回。
-        // 返回后必须按 tab store 最新 active workspace 再判一次，避免迟到的默认项目抢走上次恢复的 tab。
+        // Fallback directory creation may start before session restore and finish after it
+        // returns. Re-check the tab store's latest active workspace on return so a late default
+        // project cannot steal the restored tabs.
         if (
           !shouldOpenFallbackWorkspaceAfterCreate({
             isMounted: rootInnerMountedRef.current,
@@ -825,7 +842,7 @@ function RootInner({
         if (!rootInnerMountedRef.current) {
           return;
         }
-        logger.error("[Root] 启动兜底创建默认 workspace 失败", { error });
+        logger.error("[Root] Failed to create fallback default workspace", { error });
         setWorkspaceActionError(error instanceof Error ? error.message : String(error));
       })
       .finally(() => {
@@ -862,8 +879,9 @@ function RootInner({
     if (!loginEntryRequest) {
       return;
     }
-    // 登录入口已从模态弹窗收敛为 WelcomeScreen。
-    // provider 连接请求仍要先退出首次启动引导语义，避免连接完成后误创建默认 workspace。
+    // The login entry collapsed from a modal into WelcomeScreen. Provider connection requests
+    // must still exit the first-run onboarding state, or a default workspace gets created after
+    // connecting.
     setWelcomeScreenOpenReason("provider-request");
   }, [loginEntryRequest]);
 
@@ -885,7 +903,7 @@ function RootInner({
       try {
         await handleEnsureConversationWorkspace();
       } catch (error) {
-        logger.error("[Root] 登录后创建默认 workspace 失败", {
+        logger.error("[Root] Failed to create default workspace after login", {
           error,
           reason,
         });
@@ -971,9 +989,10 @@ function RootInner({
         {rootModelSelectionErrorNode}
         {remoteConnectionDialog}
         {directoryBrowserDialog}
-        {/* HTML 启动壳已经展示 ZCode SVG，但 React 接管 root 后旧壳会被整棵替换。
-            之前阻塞恢复 tab / 初始 workspace 注入时重新渲染纯文字“加载中...”，所以启动被拆成两套 loading。
-            这里复用同一套 SVG 启动画面，只把文案保留到 aria-label，保证视觉始终连续且不牺牲可访问性。 */}
+        {/* The HTML boot shell already shows the ZCode SVG, but React replacing the root swaps the
+            old shell wholesale; blocked tab restore/initial workspace injection used to re-render
+            plain "loading" text, hence two loading systems. Reuse the same SVG splash and keep the
+            copy only in aria-label: visually continuous without losing accessibility. */}
         <RootStartupLoading label={loadingLabel} />
       </RootShell>
     );
@@ -1004,8 +1023,9 @@ function RootInner({
     initialWorkspaceAbsPath &&
     initialWorkspaceLoadingFallback
   ) {
-    // 非桌面入口的 workspace tab 由 effect 注入，首帧不能返回 null。
-    // 这里延续入口 loading，等任务列表有 workspaceShellPath 后再切换，避免露出浏览器白底。
+    // Non-desktop entries get their workspace tab via effect; the first frame must not return null.
+    // Keep the entry loading until the task list has a workspaceShellPath, avoiding the browser's
+    // white background.
     return (
       <RootShell>
         {rootModelSelectionErrorNode}
@@ -1026,7 +1046,7 @@ function RootInner({
         isMacDesktop={isMacDesktop}
         isWindowsDesktop={isWindowsDesktop}
       >
-        {/* 新引导属于应用级偏好；无项目时也要挂载，才能响应设置页的手动打开请求。 */}
+        {/* The new onboarding is an app-level preference; mount it even with no project so it can respond to manual opens from settings. */}
         {!workspaceShellPath ? (
           isSettingsTabActive ? (
             <ScopedErrorBoundary

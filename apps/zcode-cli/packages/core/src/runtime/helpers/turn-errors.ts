@@ -29,7 +29,7 @@ interface ExternalTurnFaultError extends Error {
   zcodeTurnFault: typeof EXTERNAL_TURN_FAULT_MARKER;
 }
 
-/** 宿主用此窄入口中止 turn，同时要求 core 持久化 TurnError 而不是用户取消。 */
+/** Narrow host entry to abort a turn while making core persist a TurnError, not a user cancellation. */
 export function createExternalTurnFaultError(code: string, message = code): Error {
   return Object.assign(new Error(message), {
     code,
@@ -119,8 +119,8 @@ export function createTurnFailureError(
 
   return createCoreError(CoreErrorType.UnknownError, fallbackMessage, {
     cause: error instanceof Error ? error : undefined,
-    // turn 级 UnknownError 只是统一生命周期包装；UI/error payload
-    // 需要展示下层 provider/tool 给出的用户可读根因，不能让泛化文案抢占摘要。
+    // A turn-level UnknownError is only a lifecycle wrapper; the UI/error payload
+    // must show the user-readable root cause from the underlying provider/tool, not let generic copy take the summary.
     context: withErrorPayloadRole(undefined, ErrorPayloadRole.Wrapper),
   });
 }
@@ -136,10 +136,10 @@ export function createTurnCancelledError(error: unknown) {
   });
 }
 
-// 用户主动中断（TurnCancelled）属于正常结束，不应记为错误。turn/compact/rewind 三处 catch
-// 之前都无条件 emit TurnError，会被 reducer/UI/桌面统一映射成 turn.failed（status:error、追加错误消息）。
-// 这里统一收口：取消时改发 TurnComplete(resultType:"cancelled") 让状态干净回到 idle，真实错误才发 TurnError。
-// 调用方仍负责向上 throw coreError 与记录 usage。
+// A user-interrupted turn (TurnCancelled) is a normal end, not an error. The three catch sites (turn/compact/rewind)
+// used to emit TurnError unconditionally, which reducer/UI/desktop map to turn.failed (status:error plus an error message).
+// Single funnel: cancellations emit TurnComplete(resultType:"cancelled") so state returns to idle cleanly; real errors emit TurnError.
+// Callers still rethrow coreError and record usage.
 export async function appendTurnOutcomeEvent(
   runtime: AgentRuntimeInternal,
   params: {
@@ -189,8 +189,8 @@ export async function appendTurnOutcomeEvent(
         {
           error: {
             type: externalFault?.code ?? coreError.type,
-            // coreError.message 常是泛化文案，真实 provider/network 原因藏在 cause 链里；
-            // 写入可读 payload fields 让桌面端和恢复链路都能展示根因。
+            // coreError.message is often generic; the real provider/network cause hides in the cause chain,
+            // so write readable payload fields, letting desktop and recovery paths show the root cause.
             ...projectExecutionErrorPayload(coreError, params.fallbackMessage),
             stack: coreError.stack,
           },

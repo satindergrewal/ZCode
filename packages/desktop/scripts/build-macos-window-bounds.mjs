@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// 编译 macOS 窗口 bounds 辅助程序（CUA 权限浮窗的吸附数据源）。
+// Compile the macOS window-bounds helper (snap data source for the CUA permission panel).
 //
-// 非 darwin 直接跳过：这个二进制只服务 macOS 的 TCC 授权引导，其他平台没有对应流程。
-// 缺少 swiftc（未装 Xcode CLT）时也只警告不失败 —— 吸附是观感增强，拿不到 bounds 时浮窗
-// 会 fail-open 到屏幕底部照样可用，不该因此让整个 desktop 构建挂掉。
+// Skip on non-darwin: the binary only serves macOS TCC onboarding; other platforms have no equivalent flow.
+// A missing swiftc (no Xcode CLT) warns without failing; snapping is cosmetic and without bounds the panel
+// fail-opens to the screen bottom and stays usable, so this must never fail the desktop build.
 
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
@@ -16,12 +16,12 @@ const outputDir = join(packageRoot, "resources", "macos-window-bounds");
 const outputPath = join(outputDir, "zcode-window-bounds");
 
 if (process.platform !== "darwin") {
-  console.log("[window-bounds] 跳过：仅 macOS 需要");
+  console.log("[window-bounds] skipped: macOS only");
   process.exit(0);
 }
 
 if (!existsSync(sourcePath)) {
-  console.error(`[window-bounds] 源文件缺失：${sourcePath}`);
+  console.error(`[window-bounds] source file missing: ${sourcePath}`);
   process.exit(1);
 }
 
@@ -35,15 +35,19 @@ function hasSwiftc() {
 }
 
 if (!hasSwiftc()) {
-  console.warn("[window-bounds] 未找到 swiftc（需 Xcode Command Line Tools）；跳过构建。");
-  console.warn("[window-bounds] 权限浮窗仍可用，但不会吸附到系统设置窗口。");
+  console.warn(
+    "[window-bounds] swiftc not found (Xcode Command Line Tools required); skipping build.",
+  );
+  console.warn(
+    "[window-bounds] permission panel still works but will not snap to System Settings.",
+  );
   process.exit(0);
 }
 
 mkdirSync(outputDir, { recursive: true });
 
 try {
-  // 同时产出 arm64 与 x86_64 的 universal 二进制，避免发布包在另一架构上无法执行。
+  // Produce a universal arm64 + x86_64 binary so release packages run on either architecture.
   execFileSync(
     "xcrun",
     ["swiftc", "-O", "-target", "arm64-apple-macos11", sourcePath, "-o", `${outputPath}-arm64`],
@@ -60,10 +64,10 @@ try {
     { stdio: "inherit" },
   );
   execFileSync("rm", ["-f", `${outputPath}-arm64`, `${outputPath}-x86_64`]);
-  console.log(`[window-bounds] 已构建 universal 二进制：${outputPath}`);
+  console.log(`[window-bounds] built universal binary: ${outputPath}`);
 } catch (error) {
   console.warn(
-    "[window-bounds] 构建失败；权限浮窗仍可用但不会吸附：",
+    "[window-bounds] build failed; permission panel still works without snapping:",
     error instanceof Error ? error.message : String(error),
   );
   process.exit(0);

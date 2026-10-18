@@ -21,53 +21,53 @@ import { maybeStartGoalSummaryTitleGeneration } from "./goal-summary-title.js";
 import { maybeStartSessionTitleGeneration } from "./session-title.js";
 
 /**
- * controlOnly 用户轮的公共边界（`/goal` 外部 query 与中枢直接启动工作流共用）。
+ * The controlOnly user-turn boundary, shared by `/goal` external queries and hub-launched workflows.
  *
- * 两条入口都不走普通 `executeTurn`，却都要落一条**用户可见、role=user** 的持久消息、把它喂进
- * runtime history（模型下一回合看得到）、再补一组无模型输出的完整 turn 边界
- * （`TurnStarted{executionKind:"controlOnly"}` + `TurnComplete{response:""}`）——否则 live
- * ProductProjection 收不到 TurnStarted，query 要等冷恢复才现身，且 0ms 控制轮会被 modelChange
- * marker 误显示成「已工作 1 秒」。唯一实质差异是这条消息**怎么落**（真实 user prompt vs 带
- * `workflowLaunch` 元数据的 synthetic user 消息）与标题/后续副作用，各由 `persistMessage` 回调
- * 与 `afterTurnBoundary` 回调注入。
+ * Neither entry runs plain `executeTurn`, yet both persist a user-visible role=user message, feed it into
+ * runtime history (model-visible next round) and add a full no-model-output turn boundary
+ * (`TurnStarted{executionKind:"controlOnly"}` + `TurnComplete{response:""}`) — else live
+ * ProductProjection misses TurnStarted, the query waits for cold restore, and a 0ms control turn reads as
+ * worked-1-second at the marker. The only real difference is how the message lands (real user prompt vs
+ * a synthetic user message with `workflowLaunch` metadata) plus title/side effects, via the `persistMessage`
+ * and `afterTurnBoundary` callbacks.
  */
 export async function emitControlOnlyUserTurn(
   this: AgentRuntimeInternal,
   options: {
     messageId: MessageId;
-    /** `ensureSessionPersisted` 的首输入标题种子（/goal 用规范化 objective，启动用工作流名）。 */
+    /** The `ensureSessionPersisted` first-input title seed (normalized objective / workflow name). */
     titleInput: string;
-    /** 进 runtime history 的可见文本（模型下一回合读它）。 */
+    /** Visible text entering runtime history (model-readable next round). */
     historyText: string;
-    /** `TurnStarted.input`（旧客户端 / TUI 的降级呈现）。 */
+    /** `TurnStarted.input` (degraded view for old clients / TUI). */
     turnInput: string;
     traceContext: TraceContext;
     inputId?: string;
     inputSource?: SyntheticUserMessageSource;
     workflowLaunch?: WorkflowLaunchMeta;
     intent?: TurnInputIntentMetadata;
-    /** 落这条 user message（真实或 synthetic）——两条路径的唯一实质差异。 */
+    /** Persist this user message (real or synthetic) — the paths only real difference. */
     persistMessage: () => Promise<void>;
-    /** 会话首次落库后、turnNumber 推进前的可选副作用（标题 sidecar 等）。 */
+    /** Optional post-first-persist, pre-turnNumber side effects (title sidecar etc). */
     afterTurnBoundary?: () => void;
   },
 ): Promise<void> {
   const { messageId, traceContext } = options;
-  // /goal 入口可能早于首次 turn 写入 runtime history；如果先 addUser，
-  // 后续 lazy context init 会重建 messageHistory 并冲掉这条真实用户 query。
+  // A /goal entry can precede the first history write; addUser-first would
+  // let lazy context init rebuild history and wash out the real user query.
   await this.ensureContextInitialized(traceContext);
   await this.ensureSessionPersisted(options.titleInput, traceContext);
-  // 这类入口本身不走普通 submitPrompt，但它承载的是用户真实意图。这里同时写入
-  // runtime history 和 session store，让模型上下文、桌面 continuous、手机 replayable snapshot
-  // 使用同一条可见用户意图。
+  // Such entries skip plain submitPrompt yet carry real user intent; write both
+  // runtime history and session store, so model context, desktop continuous and phone replay
+  // share one visible user intent.
   this.messageHistory.addUser(
     buildUserContentFromTurn(options.historyText, []),
     realUserRuntimeMetadata(),
   );
   await options.persistMessage();
-  // 不进入 executeTurn 的入口过去只有 transcript 落库，live ProductProjection 收不到
-  // TurnStarted，导致 query 必须等冷恢复才出现。这里为这条真实用户输入补一组无模型输出的完整
-  // turn 边界；后续（goal continuation / 通知驱动回合）仍会另开 turn，不会生成第二个用户气泡。
+  // Non-executeTurn entries only persisted the transcript; live ProductProjection missed
+  // TurnStarted and queries waited for cold restore. This adds the full no-model-output
+  // turn boundary; later goal/notice rounds open own turns, no second bubble.
   const turnId = createTurnId();
   const turnTraceContext = createChildTraceContext(traceContext, {
     turnId,
@@ -81,8 +81,8 @@ export async function emitControlOnlyUserTurn(
         input: options.turnInput,
         messageId,
         ...(options.inputId ? { inputId: options.inputId } : {}),
-        // 可见 query 需要独立 turn 才能实时展示，但它本身不执行 Agent。缺少该状态
-        // 时 modelChange marker 会让 UI 把 0ms 控制轮误显示成「已工作 1 秒」并短暂覆盖
+        // A visible query needs its own turn to show live, without running the Agent; missing it,
+        // the modelChange marker shows 0ms control turns as worked-1-second, briefly covering
         // session running/activeWorks。
         executionKind: "controlOnly",
         ...(options.inputSource ? { inputSource: options.inputSource } : {}),
@@ -114,13 +114,13 @@ export async function emitControlOnlyUserTurn(
 }
 
 /**
- * 落中枢直接启动工作流的启动轮 user 消息。
+ * Persist the hub-launch turn user message.
  *
- * 它是一条 **synthetic 但语义上属于用户真实动作** 的消息：`synthetic: true` + 新
- * `source: "workflow_launch"`，却带 `origin: "real_user"` / `kind: "user_prompt"` 与
- * ui/provider/transcript 三面全可见——用户在中枢里点了「运行」，这就是他的真实意图，只是 GUI
- * 用 `metadata.workflowLaunch` 画轮尾 run 卡而非显示这段文本。元数据同时进 message metadata（冷恢复
- * 来源）与 TurnStarted payload（活投影来源，由调用方写），两处同一份。
+ * It is **synthetic yet a real user action**: `synthetic: true` + the new
+ * `source: "workflow_launch"`, with `origin: "real_user"` / `kind: "user_prompt"` and
+ * ui/provider/transcript all visible — the user clicked Run in the hub; the GUI just
+ * draws the end-of-turn run card from `metadata.workflowLaunch`. The metadata enters message metadata (cold-restore
+ * source) and the TurnStarted payload (live, caller-written), the same copy both places.
  */
 export async function persistWorkflowLaunchUserMessage(
   this: AgentRuntimeInternal,
@@ -142,12 +142,12 @@ export async function persistWorkflowLaunchUserMessage(
       role: "user",
       time: { created },
       agent: this.config.agentName ?? "zcode-agent",
-      // 冷恢复来源：transcript-hydration 据 source === "workflow_launch" + metadata.workflowLaunch
-      // 重建启动卡行。
+      // Cold restore: transcript-hydration reads source === "workflow_launch" + metadata.workflowLaunch
+      // to rebuild the launch-card row.
       metadata: { workflowLaunch: options.meta },
       modelSelection: this.getSessionModelSelection(),
       semantics: {
-        // 用户真实动作：不是 agent_runtime 的 system 提醒，模型下一回合以真实 user prompt 读它。
+        // A real user action, not an agent_runtime notice; the model reads it as a plain user prompt.
         origin: "real_user",
         kind: "user_prompt",
         source: "workflow_launch",
@@ -180,8 +180,8 @@ export async function persistWorkflowLaunchUserMessage(
 }
 
 /**
- * 跑一条排队的 controlOnly 轮（{@link ControlOnlyTurnRuntimeCommand}）：与中枢启动轮同一条落法——
- * synthetic `workflow_launch` user 消息 + 元数据 + 完整 turn 边界，只是时机由队列决定。
+ * Run a queued controlOnly turn ({@link ControlOnlyTurnRuntimeCommand}): same shape as the hub launch —
+ * synthetic `workflow_launch` user message + metadata + full turn boundary, timed by the queue.
  */
 export async function runControlOnlyTurnCommand(
   this: AgentRuntimeInternal,
@@ -227,8 +227,8 @@ export async function recordExternalUserPrompt(
     traceContext,
     inputId: options?.intent?.sourceCommandId,
     intent: options?.intent,
-    // /goal 命令本身不走普通 submitPrompt，但首次设置 goal 的 objective 是用户真实
-    // query；自动续跑 reminder 仍由 runtime 标成 model-only。
+    // /goal skips plain submitPrompt, but a first-set objective is real user
+    // query; auto-continuation reminders stay runtime-marked model-only.
     persistMessage: () =>
       this.persistUserPrompt(messageId, input, undefined, traceContext, {
         intent: options?.intent,
@@ -236,8 +236,8 @@ export async function recordExternalUserPrompt(
         executionKind: "controlOnly",
       }),
     afterTurnBoundary: () => {
-      // 首条 query 必须在 turnNumber 仍为 0 时启动标题 sidecar，否则首轮 gate 会把
-      // 它误判为后续 turn，只生成 goal summaryTitle 而保留 first_input session title。
+      // Start the title sidecar while turnNumber is 0, or the first-round gate
+      // misreads it as later: only a goal summaryTitle, first_input session title kept.
       const titleGenerationStarted = maybeStartSessionTitleGeneration.call(
         this,
         canonicalInput,

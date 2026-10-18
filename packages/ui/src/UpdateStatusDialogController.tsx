@@ -78,9 +78,9 @@ export function UpdateStatusDialogController({
       return;
     }
 
-    // 点击“下载更新”后，真实下载进度依赖 main 侧异步广播。
-    // 中间若短暂收到 checking/idle 等不带版本的过渡状态，不能让入口 return null
-    // 连带卸载已打开的弹窗；命令进行中复用上一帧可见模型，等进度态收口。
+    // Real download progress arrives via async broadcasts from main. Transitional version-less
+    // checking/idle states must not return null and unmount the open dialog; while a command is
+    // in flight reuse the last visible model until a progress state lands.
     lastVisibleUpdateStatusViewModelSelection.current = updateStatusViewModel;
   }, [updateStatusViewModel]);
 
@@ -117,9 +117,9 @@ export function UpdateStatusDialogController({
       return;
     }
 
-    // 下载中会隐藏更新日志，但 electron-updater 的 update-downloaded
-    // 事件在部分平台只稳定带 version。缓存当前版本的说明，下载完成后即使 ready
-    // 状态缺少 releaseNotes，也能把刚才隐藏的内容恢复显示。
+    // Downloading hides the release notes, but electron-updater's update-downloaded event only
+    // reliably carries the version on some platforms. Cache the current notes so they can be
+    // shown again after the download even if ready lacks releaseNotes.
     releaseNotesCacheRef.current.set(releaseNotesCacheKey, {
       releaseDateLabel: formattedReleaseDate,
       releaseNotes: localizedUpdateReleaseNotes,
@@ -149,9 +149,9 @@ export function UpdateStatusDialogController({
       return;
     }
 
-    // 如果 electron-updater 命中本地已下载缓存，main 侧会直接广播
-    // update-downloaded。renderer 不能在 IPC ACK 前后乐观切到“下载中”，否则会闪过
-    // 一帧无意义的 0%/下载态；这里只锁按钮，真实阶段完全跟随 main 的状态广播。
+    // When electron-updater hits the local cache, main broadcasts update-downloaded directly.
+    // The renderer must not optimistically flip to downloading around the IPC ACK — that flashes
+    // a meaningless 0%. Lock the button only; the phase follows main's broadcasts.
     setUpdateActionInFlight("download");
     try {
       await platform.downloadUpdate();
@@ -165,8 +165,8 @@ export function UpdateStatusDialogController({
       setAutoDownloadAndInstallUpdates(enabled);
       await platform.setAutoDownloadAndInstallUpdates?.(enabled);
       if (enabled && updateState?.kind === "update-available") {
-        // 功能原因：用户在“已发现更新”弹窗里勾选自动下载时，期望当前版本也进入自动流程。
-        // 这里只触发同一个下载入口；真正是否下载、缓存命中和状态广播仍由 main 进程裁决。
+        // Checking auto-download in the update-available dialog means this version too. Trigger
+        // the same download entry; the real download, cache hits and broadcasts stay main's call.
         await handleDownloadUpdate();
       }
     },
@@ -224,8 +224,9 @@ export function UpdateStatusDialogController({
       }
     }
 
-    // 重启安装之前是 fire-and-forget，renderer 发完 IPC 就关闭弹窗。
-    // dev/mock 下 updater 若没有接管安装，用户只会看到弹窗消失，误以为按钮没有响应。
+    // Restart-and-install used to be fire-and-forget: the renderer closed the dialog right
+    // after the IPC. In dev/mock, when the updater never takes over, the dialog vanishing reads
+    // as a dead button.
     setUpdateActionInFlight("restart");
     try {
       await platform.quitAndInstallUpdate();
@@ -251,20 +252,22 @@ export function UpdateStatusDialogController({
       return;
     }
 
-    // 退出准备和 Windows 安装器交接可能超过 5 秒；旧的统一 ACK 定时器会在
-    // 应用真正退出前恢复“重启以更新”，让用户误判失败并重复点击。restart 成功路径保持
-    // pending 直到应用退出，只有 IPC 明确失败时才由调用处 catch 恢复按钮。
+    // Quit preparation and the Windows installer handoff can exceed 5s; the old shared ACK
+    // timer re-enabled restart-to-update before the app exited, reading as failure and inviting
+    // repeat clicks. Success stays pending until exit; only a rejected IPC restores the button
+    // via the caller's catch.
     if (updateActionInFlight === "restart") {
       if (updateState !== null && updateState.kind !== "update-downloaded") {
-        // main 会在退出准备失败时广播 error/idle。即使 IPC reject 因窗口
-        // 生命周期丢失，状态已经离开 ready 也必须释放按钮，不能保留上一帧永久 pending。
+        // Main broadcasts error/idl if quit prep fails. Even if the IPC rejection is lost to
+        // window teardown, once state leaves ready the button must release — never eternal pending.
         setUpdateActionInFlight(null);
       }
       return;
     }
 
-    // 下载/取消 IPC 在 main 进程会立即 ACK，真实状态靠后续广播收口。
-    // 连点时需要先锁住按钮；若广播丢失或 main 侧 no-op，也要短超时释放，避免 UI 自己卡住。
+    // Download/cancel IPC ACKs immediately; truth arrives via later broadcasts. Lock the button
+    // against double clicks, with a short-timeout fallback so a lost broadcast or main no-op
+    // never wedges the UI.
     const timeout = globalThis.setTimeout(() => {
       setUpdateActionInFlight(null);
     }, 1500);

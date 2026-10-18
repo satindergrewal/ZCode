@@ -40,7 +40,7 @@ export const ExitPlanModeAllowedPromptSchema = z
   .strict();
 export type ExitPlanModeAllowedPrompt = z.infer<typeof ExitPlanModeAllowedPromptSchema>;
 
-// plan file 需要保存最终批准的原始字符串；空白校验只看 trim 后内容，不在 schema transform 阶段改写 plan。
+// The plan file keeps the verbatim approved string; whitespace validation looks at trimmed content only and never rewrites the plan in schema transforms.
 const ExitPlanModePlanSchema = z
   .string()
   .min(1)

@@ -86,12 +86,12 @@ export async function hydrateMessageHistoryFromSession(input: {
         sharedContextStatus !== undefined &&
         sharedContextStatus !== "attached"
       ) {
-        // Share handover 的 pending/reserved context 只是本地候选，不能在用户首次
-        // 发送前偷偷进入 provider history；attach 后由 runtime 显式注入一次。
+        // Pending/reserved context from a share handover is only a local candidate; it must not sneak into provider history before the user's
+        // first message; after attach the runtime injects it explicitly, once.
         continue;
       }
-      // session 持久化的是 raw synthetic notice，hydrate 阶段若提前包成
-      // user <system-reminder>，后续 mid-conversation system projection 会失去 attachment source。
+      // The session persists the raw synthetic notice; if hydration wraps it into a user <system-reminder> too early,
+      // the later mid-conversation system projection loses the attachment source.
       const syntheticAttachment = syntheticSystemReminderAttachmentFromParts(parts);
       if (syntheticAttachment) {
         input.history.addAttachment(syntheticAttachment.source, syntheticAttachment.content);
@@ -118,8 +118,8 @@ export async function hydrateMessageHistoryFromSession(input: {
     const text = assistantTextFromParts(parts);
     const reasoning = assistantReasoningFromParts(parts);
     const toolParts = selectToolPartsForHistory(parts.filter(isToolPart));
-    // live history 会保留带合法 provider usage 的空 assistant 作为估算锚点，
-    // 旧 hydration 却无条件丢弃它，导致重启前后的 context estimate 不一致。
+    // Live history keeps empty assistant parts with valid provider usage as estimation anchors,
+    // but legacy hydration dropped them unconditionally, diverging context estimates across restarts.
     if (
       text.trim().length === 0 &&
       reasoning.length === 0 &&
@@ -149,8 +149,8 @@ export async function hydrateMessageHistoryFromSession(input: {
     for (const part of toolParts) {
       const providerToolName = providerToolNameFromPart(part);
       if (part.state.status === "completed") {
-        // live tool result 使用结构化媒体，但旧恢复只读取 output 摘要，
-        // 导致模型切换或冷恢复后丢失 Read/MCP 产生的真实媒体。
+        // Live tool results carry structured media, while legacy recovery only reads the output summary,
+        // losing real media produced by Read/MCP after a model switch or cold resume.
         const attachmentBlocks = part.state.attachments
           ? await Promise.all(
               part.state.attachments.map((attachment) =>
@@ -158,8 +158,8 @@ export async function hydrateMessageHistoryFromSession(input: {
               ),
             )
           : [];
-        // 旧 completed part 也可能有 attachments；只有完整有效的 layout 才能证明
-        // 它们属于新的 provider-visible 媒体内容，缺失或损坏时必须保留 legacy output。
+        // Legacy completed parts can carry attachments too; only a fully valid layout proves
+        // they belong to the new provider-visible media; keep legacy output when it is missing or corrupt.
         const projectedMediaContent =
           attachmentBlocks.length > 0
             ? projectPersistedToolMediaContent(
@@ -174,8 +174,8 @@ export async function hydrateMessageHistoryFromSession(input: {
 
       if (part.state.status === "error") {
         const persistedModelContent = part.state.metadata?.modelContent;
-        // 实时链路使用 ToolExecutionResult.modelContent，但旧恢复逻辑只重放
-        // 面向 UI / 日志的 state.error；优先使用持久化字符串并兼容旧 session。
+        // The live path uses ToolExecutionResult.modelContent, but legacy recovery only replays
+        // the UI/log-facing state.error; prefer the persisted string while staying compatible with old sessions.
         input.history.addToolResult(
           part.callID,
           providerToolName,
@@ -209,8 +209,8 @@ export function activeSessionMessages(
   } = {},
 ): MessageWithParts[] {
   if (!options.branchCutAfterMessageId) {
-    // 旧数据没有 branch cut，继续使用 compact-first/createdMessageID 兼容语义；不能把
-    // 历史上非法的 compact 前 kept IDs 解释成新式 branch，从而改变既有冷恢复结果。
+    // Legacy data has no branch cut: keep the compact-first/createdMessageID compatibility semantics. Do not
+    // reinterpret historically illegal pre-compact kept IDs as new-style branches and change cold-resume results.
     let legacyCompactIndex = -1;
     for (let index = messages.length - 1; index >= 0; index--) {
       if (messages[index]!.parts.some(isActiveCompactionBoundaryPart)) {
@@ -237,7 +237,7 @@ export function activeSessionMessages(
     return selectActiveConversationBranch(compactActiveMessages, options);
   }
 
-  // 最后一个 compact boundary。顺序相反会让 compact 前 kept prefix 永远无法恢复。
+  // The last compact boundary. A reversed order would make the pre-compact kept prefix unrestorable.
   const branchActiveMessages = selectActiveConversationBranch(messages, options);
   let lastCompactionIndex = -1;
   for (let index = branchActiveMessages.length - 1; index >= 0; index--) {
@@ -268,7 +268,7 @@ async function userEntriesFromParts(
   artifactStore: ToolArtifactStorePort | undefined,
 ): Promise<RuntimeMessageEntry[]> {
   const attachmentBlocks: ModelMessageContentBlock[] = [];
-  // 媒体数据块（image/video）统一后置组，恢复顺序对齐 live 主路径 [text, media]。
+  // Media blocks (image/video) form a single trailing group; restore order matches the live main path [text, media].
   const inlineMediaBlocks: ModelMessageContentBlock[] = [];
   const promptBlocks: ModelMessageContentBlock[] = [];
   const syntheticAttachmentEntries: RuntimeMessageEntry[] = [];
@@ -289,7 +289,7 @@ async function userEntriesFromParts(
 
     if (part.type === "file") {
       const block = await filePartToContentBlock(part, artifactStore);
-      // local_ref 是附件恢复历史时的唯一路径句柄，不能因为 metadata_only 过滤。
+      // local_ref is the only path handle when restoring attachment history; never drop it via the metadata_only filter.
       if (block.type === "text") {
         const promptAttachmentInput = promptAttachmentReminderInputForFilePart(part, block);
         if (promptAttachmentInput) {
@@ -322,9 +322,9 @@ async function userEntriesFromParts(
   );
   const hasUserContent = modelMessageContentToText(content).trim().length > 0;
   const userMetadata = metadataFromUserParts(parts);
-  // 文本附件从原始 file part 恢复为 prompt_attachment 后，空正文的
-  // real_user envelope 曾被 trim 判空丢弃，导致 live 与 resume 的 provider history 不一致。
-  // 这里只恢复 Agent 内存锚点；bare-empty 和纯 synthetic/meta user 仍不生成空消息。
+  // Once a text attachment is restored from a raw file part into prompt_attachment, empty-body
+  // real_user envelopes were dropped by a trim-empty check, diverging live vs resumed provider history.
+  // Only Agent memory anchors are restored here; bare-empty and purely synthetic/meta users still emit no empty message.
   const shouldRestoreRealUserEnvelope =
     hasUserContent || (userMetadata.source === "real_user" && promptAttachmentEntries.length > 0);
   if (
@@ -412,7 +412,7 @@ function textPartToProviderText(part: Extract<MessagePart, { type: "text" }>): s
     runtimeMetadata?.source === "queued_system_notification" ||
     part.metadata?.source === "subagent"
   ) {
-    // subagent notification 同样只在 provider history 恢复时包外层，避免改动 session/UI raw transcript。
+    // Subagent notifications are likewise wrapped only during provider-history restore, leaving session/UI raw transcripts untouched.
     return wrapSystemReminderForSource("queued_system_notification", part.text);
   }
   return part.text;
@@ -489,8 +489,8 @@ function metadataFromSyntheticTextPart(
 ): RuntimeMessageMetadata {
   const source = part.metadata?.source;
   if (source === "background_task" || source === "subagent_message") {
-    // runtime command carrier 对齐直接 user-like 注入；即使旧持久化里带过
-    // system reminder metadata，恢复时也不能把后台完成或 child 回复重新包成 reminder。
+    // Runtime command carriers align with direct user-like injection; even when legacy persistence carried
+    // system reminder metadata, recovery must not re-wrap background completions or child replies as reminders.
     return legacySyntheticRuntimeMetadata();
   }
 
@@ -581,8 +581,8 @@ function isToolPart(part: MessagePart): part is ToolPart {
 
 function providerToolNameFromPart(part: ToolPart): string {
   const providerToolName = part.metadata?.providerToolName;
-  // 空字符串在 cold hydration 中曾只能依赖 non-empty ToolPart.tool；
-  // 必须按字段存在性恢复原值，不能用 truthy 判断把空名重新覆盖成占位值。
+  // Empty strings were once recoverable in cold hydration only via a non-empty ToolPart.tool;
+  // restore by field presence, not truthiness, or empty names get overwritten with placeholders.
   return providerToolName !== undefined && typeof providerToolName === "string"
     ? providerToolName
     : part.tool;

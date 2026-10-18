@@ -18,8 +18,8 @@ export function appendPromptHistoryEntry(
     return [...entries];
   }
 
-  // 之前每次提交都会直接追加，连续发送相同 prompt 会让上键重复命中同一条。
-  // 这里只比较 trim 后的最后一条，避免误删 A、B、A 这类非连续重复历史。
+  // Appending on every submit made up-arrow hit the same entry repeatedly for identical prompts.
+  // Compare only the trimmed last entry, so non-consecutive duplicates (A, B, A) survive.
   if (entries.at(-1)?.trim() === trimmed) {
     return [...entries];
   }

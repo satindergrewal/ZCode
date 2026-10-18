@@ -16,12 +16,12 @@ import { StationMeta } from "./WorkflowStationMeta.js";
 import { stationLampClass } from "./WorkflowTimelineLedge.js";
 
 /**
- * 站头：名字 + 元数据，一枚没有背景的
- * 药丸。没有带时它排在轨道行上、灯的右边；有带时它搬到站台行，
- * 灯留在自己那条轨道上——两处的标记完全一样，所以从 `WorkflowTimeline.tsx` 拆出来共用一份。
+ * Station header: name + metadata, a background-less
+ * pill. Without bands it sits on the track row, right of the lamp; with bands it moves to the platform row
+ * while the lamp stays on its own track — the marker is identical in both places, hence split out of `WorkflowTimeline.tsx` as one shared copy.
  *
- * 不可点的站头是 `span` 而不是禁用的 `button`：浏览器对禁用控件不派发
- * click，整块开关就收不到；span 没有语义，点击照常冒泡。
+ * A non-clickable header is a `span`, not a disabled `button`: browsers dispatch no click
+ * on disabled controls, so block toggles would never receive it; a span has no semantics and clicks bubble as usual.
  */
 export function StationHead({
   caret,
@@ -33,11 +33,11 @@ export function StationHead({
 }: {
   station: TimelineStation;
   name: string;
-  /** 草稿里跟着笔走的光标；其余时候 null。 */
+  /** The cursor following the pen in a draft; null otherwise. */
   caret: ReactNode;
   foldClass: string;
   title: string;
-  /** 缺席即站头不是控件——点击冒泡给宿主（轮尾摘要的整块开关）。 */
+  /** Absent = the header is not a control — clicks bubble to the host (the run-tail summary's block toggle). */
   onSelect?: () => void;
 }) {
   const pending = station.status === undefined || station.status === "pending";
@@ -83,7 +83,7 @@ export function StationHead({
 
 interface RowProps {
   stations: readonly TimelineStation[];
-  /** 站的全名，按下标；草稿里笔只写出前几个字。 */
+  /** The station's full name, by index; in a draft the pen has written only the first characters. */
   fullNames: readonly string[];
   folded: ReadonlySet<number>;
   titleOf: (station: TimelineStation) => string;
@@ -91,8 +91,8 @@ interface RowProps {
 }
 
 /**
- * 轨道行（没有带时）：站头（灯 + 名字 + 元数据）与到下一站的轨道段，一站一格。折到檐上的站只留
- * 轨道段；药丸列不折（用户修订：两侧对称）——它们只随滚动走，在视口真正的边界处渐隐。
+ * The track row (no bands): station headers (lamp + name + meta) and the rail segment to the next station, one cell per station. A station folded to the ledge keeps only
+ * its rail segment; the pill column does not fold (user revision: symmetric sides) — pills only fade at the viewport's true boundary.
  */
 export function WorkflowStationRow({
   draft,
@@ -106,7 +106,7 @@ export function WorkflowStationRow({
   top,
   width,
 }: RowProps & {
-  /** 相邻两站之间的轨道段，按 `railKey` 查。 */
+  /** Rail segment between adjacent stations, keyed by `railKey`. */
   rails: ReadonlyMap<string, TimelineRail>;
   draft: boolean;
   pen: TypewriterState;
@@ -144,7 +144,7 @@ export function WorkflowStationRow({
             <StationHead
               caret={
                 penHere ? (
-                  // 光标跟着笔：写字时稳住，追上流时闪烁。
+                  // Cursor follows the pen: steady while writing, blinking once caught up.
                   <span
                     aria-hidden
                     className={cn(
@@ -171,7 +171,7 @@ export function WorkflowStationRow({
                   "wf-ink relative h-0 min-w-3 flex-1 rounded-full border-t border-foreground-subtlest",
                   draft && "wf-rail-grow",
                   rail === undefined && "invisible",
-                  // 行进的段照常画底线，再叠一道不动的光（`.wf-rail-march::after`）：朝着灯渐亮。
+                  // Traveling segments draw the underline as usual, plus a motionless light (`.wf-rail-march::after`): brightening toward the lamp.
                   rail?.ink === "march" && "wf-rail-march",
                 )}
                 data-rail-from={i}
@@ -189,9 +189,9 @@ export function WorkflowStationRow({
 }
 
 /**
- * 站台行：有带时站头一律搬到轨道下面
- * 这一行，灯留在自己的轨道上，分支轨道的站由一条点状引线接回名字——主线的站不需要，它的灯就在
- * 名字正上方。草稿永远没有带，所以这里不必管笔。
+ * The platform row: with bands, headers move below the rail
+ * to this row, lamps stay on their tracks, and branch-track stations are tied back to their name by a dotted leader — main-line stations need none, their lamp
+ * sits right above the name. Drafts never have bands, so the pen is not a concern here.
  */
 export function WorkflowStationPlatform({
   folded,

@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- Edit 工具块同时维护单文件、多文件子块和 diff 预览引用稳定性；当前变更先保持同文件收口，避免为行数拆分引入展示回归。 */
+/* eslint-disable max-lines -- The Edit tool block maintains single-file, multi-file sub-blocks, and diff-preview reference stability together; this change keeps them in one file to avoid display regressions from a line-count split. */
 import { PencilIcon } from "lucide-react";
 import { useCallback, useMemo } from "react";
 import { ToolCallBody } from "@/ToolCallBlocks/ToolCallBody.js";
@@ -54,8 +54,9 @@ export function buildEditCodeViewerSource(
   return {
     type: "patch",
     title: summary.fileName,
-    // summary.filePath 是 fileDisplay 生成的目录展示路径，不是可打开的文件路径。
-    // 传给 side pane 后会按目录解析图标，导致 .ts/.tsx diff tab 退回通用文件图标。
+    // summary.filePath is fileDisplay's directory-flavored display path, not an openable
+    // file path; the side pane would resolve an icon from the directory and downgrade
+    // .ts/.tsx diff tabs to the generic file icon.
     path: summary.path,
     patch: summary.patch,
   };
@@ -68,9 +69,10 @@ function buildEditInlinePreview(
     return undefined;
   }
 
-  // edit 摘要层已经能从 rawFileSummaries 拿到单文件 patch，
-  // 但展开区之前只认 displayModel.inlinePreview，导致卡片自动展开后看不到 diff preview。
-  // 这里把当前文件的 patch 直接转成 content 里的 diff 块，避免 ToolCallBody 再次抢走这份预览。
+  // The edit summary layer can already get the single-file patch from rawFileSummaries,
+  // but the expanded area only honored displayModel.inlinePreview, so an auto-expanded card
+  // showed no diff preview. Convert the current file's patch into a content diff block so
+  // ToolCallBody cannot capture this preview again.
   const source = buildEditCodeViewerSource(summary);
   if (source.type !== "patch") {
     return undefined;
@@ -214,8 +216,9 @@ export function EditToolCallBlock(context: ToolCallBlockRenderContext) {
         <>
           {hasMultipleFiles ? (
             <div className="ml-2 space-y-2 border-border border-l pl-3.5 border-border">
-              {/* 多文件 edit 的主体只展示一份总览，下面把每个文件拆成独立块，
-              这样既能保留总 diff 预览，也能满足“每个文件一个 edit block”的展示。 */}
+              {/* A multi-file edit's body shows one overview; each file becomes its own
+              block below, keeping the total diff preview while honoring "one edit block per
+              file". */}
               {rawFileSummaries.map((summary, index) => (
                 <EditFileSummaryBlock
                   key={`${summary.path}:${index}`}
@@ -251,8 +254,9 @@ export function EditToolCallBlock(context: ToolCallBlockRenderContext) {
           ) : (
             <div className="space-y-3">
               {singleFileInlinePreview?.type === "patch" ? (
-                // edit 的 diff 预览需要直接挂在 content 里，避免 ToolCallBody 再次接管 inlinePreview
-                // 后把单文件 patch 吃掉，导致展开后只剩输入/输出而看不到真正的变更内容。
+                // The edit diff preview must hang directly in content, or ToolCallBody
+                // retakes inlinePreview, swallows the single-file patch, and the expansion
+                // shows only input/output with no actual changes.
                 <EditInlineDiffContent
                   preview={singleFileInlinePreview.source}
                   theme={context.theme}
@@ -313,8 +317,8 @@ export function EditToolCallBlock(context: ToolCallBlockRenderContext) {
         toolId={toolCall.toolId}
         icon={EDIT_TOOL_ICON}
         showIcon={context.showIcon !== false}
-        // edit 的 diff 预览挂在 content 里；单文件和子文件如果不可展开，
-        // 用户只能看到摘要行，无法在消息流里直接查看变更。
+        // The edit diff preview lives in content; if the single-file/sub-file blocks are not
+        // expandable, only the summary row shows and the change is unreadable in the stream.
         {...layoutConfig}
         canToggle={!context.isOfficeMode && layoutConfig.canToggle}
         forceOpen={!context.isOfficeMode && layoutConfig.forceOpen}
@@ -460,7 +464,7 @@ function EditFileSummaryBlock({
         toolId={toolId}
         icon={EDIT_TOOL_ICON}
         showIcon={showIcon !== false}
-        // 多文件 edit 的每个子文件都有自己的 diff content，必须允许单独展开查看。
+        // Each sub-file of a multi-file edit has its own diff content and must be expandable on its own.
         {...EDIT_CHILD_LAYOUT}
         kindLabel={kindLabel}
         sourceLabel={sourceLabel}

@@ -2,18 +2,20 @@ import { IMPLICIT_PHASE_ID, UNPHASED_PHASE_ID } from "./types.js";
 import type { LaneNameFormatter } from "./lane-name.js";
 
 /**
- * 阶段显示名的唯一策略点，与 lane-name.ts 逐条同构（同一件事只有一套规则）：
- * 作者原词 > 本地化兜底。
+ * The single policy point for phase display names, isomorphic line-by-line with
+ * lane-name.ts (one thing, one set of rules): author's own wording > localized fallback.
  *
- * 兜底必须发生在渲染时：投影是被 memo 住的纯函数、与语言无关，把文案烘进去，用户中途切
- * 语言那串字就过期了。`unphased` 是唯一拿不到 `name` 的阶段——它不是作者写下的词，而是
- * 「首个标记之前的那些 step」，所以它的名字永远本地化。
+ * The fallback must happen at render time: projections are memoized pure functions,
+ * language-agnostic — baking copy in would go stale the moment the user switches
+ * language mid-session. `unphased` is the only phase without a `name` — it is not an
+ * author-written word but "the steps before the first stamp", so its name is always
+ * localized.
  */
 
-/** 做一个阶段显示名所需的全部输入——不含 id 之外的身份信息。 */
+/** Everything needed to produce a phase display name — no identity beyond the id. */
 export interface PhaseNaming {
   id: string;
-  /** 脚本里 `phase("preflight")` 给出的名字；`unphased` 没有。 */
+  /** The name given by `phase("preflight")` in the script; `unphased` has none. */
   name?: string;
 }
 
@@ -22,29 +24,34 @@ export function phaseDisplayName(phase: PhaseNaming, formatMessage: LaneNameForm
   if (phase.id === UNPHASED_PHASE_ID) {
     return formatMessage({ id: "chat.toolCall.workflow.graph.phase.unphased" });
   }
-  // 无标记脚本的隐式唯一模块（participant-model.ts）：整个脚本就是一个阶段。
+  // The implicit single module of an unstamped script (participant-model.ts): the whole
+  // script is one phase.
   if (phase.id === IMPLICIT_PHASE_ID) {
     return formatMessage({ id: "chat.toolCall.workflow.graph.phase.workflow" });
   }
-  // 到不了这里：`unphased` 之外的阶段都带作者原词。真出现时报 id（身份）而不是「未分组」——
-  // 把一个有名字的阶段说成兜底阶段是撒谎，露出 id 至少是可排查的。
+  // Unreachable: every phase but `unphased` carries the author's wording. If it ever
+  // happens, report the id (identity) rather than "ungrouped" — calling a named phase a
+  // fallback is a lie; a bare id is at least diagnosable.
   return phase.id;
 }
 
 /**
- * display 的阶段名经 `boundGraphText` 截到这么多字符（contracts 的
- * `CREATE_WORKFLOW_GRAPH_MAX_NAME_CHARS`），运行时的名字（进入记录、实例的出生戳）则带完整
- * 名字（reducer 自己截到同一上界）。
+ * Display phase names are truncated to this many characters by `boundGraphText`
+ * (contracts' `CREATE_WORKFLOW_GRAPH_MAX_NAME_CHARS`); runtime names (entries, instance
+ * birth stamps) carry the full name (the reducer truncates to the same bound).
  */
 export const DISPLAY_PHASE_NAME_BOUND = 128;
 
 /**
- * display 阶段名 ↔ 运行时阶段名的唯一关联规则是精确匹配，
- * display 名**恰好顶到上界**时才按前缀兜底——前缀只在截断真的发生过时才开，否则「计划」会
- * 误认「计划修复」。时间线的进入记录、`currentPhase` 与实例绑定三处共用它。
+ * The only correlation rule between display and runtime phase names is exact match; the
+ * prefix fallback applies only when the display name sits **exactly at the bound** — the
+ * prefix path opens only when truncation really happened, otherwise "plan" would
+ * mis-match "plan-repair". Shared by the timeline's entries, `currentPhase`, and
+ * instance binding.
  *
- * 任一侧缺席 → false：关联需要两个名字，「无名」不是一个可匹配的名字。无名 display 阶段
- * （`unphased` / 隐式 `workflow`）与无戳实例的配对是另一条规则，由 `phasesOf` 显式处理。
+ * Either side absent -> false: matching needs two names; "no name" is not a matchable
+ * name. Pairing nameless display phases (`unphased` / implicit `workflow`) with
+ * stamp-less instances is a separate rule handled explicitly by `phasesOf`.
  */
 export function phaseNameMatches(
   displayName: string | undefined,

@@ -3,7 +3,7 @@ import type { ZCodeAccountAccess, ZCodeProviderAccountAccess } from "@zcode/shar
 
 type StableAccountAccess = ZCodeProviderAccountAccess | ZCodeAccountAccess;
 
-/** Schema 解析会为同一份 Account Access 生成新对象；hook 依赖必须按配置值稳定。 */
+/** Schema parsing rebuilds the same Account Access as a new object; hook deps must be stable per configuration value. */
 export function useStableAccountAccess(
   accountAccess: StableAccountAccess | null | undefined,
 ): StableAccountAccess | undefined {

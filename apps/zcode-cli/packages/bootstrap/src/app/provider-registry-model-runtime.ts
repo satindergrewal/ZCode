@@ -28,7 +28,7 @@ interface ApiProviderModelRuntimeOptions {
 }
 
 /**
- * 从业务 Registry 精确查找一次完整事实，并直接创建冻结静态配置的 Model。
+ * Look up the complete facts exactly once from the business Registry and create a Model with frozen static config.
  */
 export class ApiProviderModelRuntime {
   readonly #registry: ProviderRegistryModelSource;
@@ -41,15 +41,15 @@ export class ApiProviderModelRuntime {
   }
 
   readonly modelFactory: RuntimeModelFactory = (target): Model => {
-    if (!this.#started) throw new Error("ApiProviderModelRuntime 必须先 start() 再创建 Model");
+    if (!this.#started) throw new Error("ApiProviderModelRuntime must start() before creating a Model");
     const validation = this.#registry.validateSelection(target.selection);
     if (!validation.ok) throw createRegistrySelectionProtocolError(validation);
     const providerId = target.selection.providerId;
     const modelId = target.selection.modelId;
     const provider = this.#registry.getProvider(providerId);
-    if (!provider) throw new Error("Registry Selection 校验与 Provider 索引结果不一致");
+    if (!provider) throw new Error("Registry selection validation disagrees with the provider index");
     const registryModel = this.#registry.getModel(providerId, modelId);
-    if (!registryModel) throw new Error("Registry Selection 校验与 Model 索引结果不一致");
+    if (!registryModel) throw new Error("Registry selection validation disagrees with the model index");
     return this.#createRegistryModel(provider, registryModel, target);
   };
 
@@ -68,8 +68,8 @@ export class ApiProviderModelRuntime {
     target: Parameters<RuntimeModelFactory>[0],
   ): Model {
     const config = registryModel.config;
-    // 输出预算属于单次请求，由 Agent 执行链显式决定，不能在 ModelFactory 中静默绑定。
-    // Selection 已在上面的 Registry 边界完成校验，Factory 不再承担任何缺省修复。
+    // The output budget belongs to a single request, decided explicitly by the Agent execution chain; never bind it silently in the ModelFactory.
+    // Selection was already validated at the Registry boundary above; the Factory performs no default repair.
     const normalReasoningLevel = target.selection.options!.reasoningLevel!;
     return this.#modelAdapter.createModel({
       providerId: provider.providerId,

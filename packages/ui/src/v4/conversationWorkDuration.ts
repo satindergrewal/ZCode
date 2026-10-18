@@ -8,11 +8,11 @@ function formatDurationUnit(
   locale: Locale,
 ): string {
   const unit = intl.formatMessage({ id: messageId });
-  // 中文时长单位需要空格；英文单位本身已带缩写，不额外插入空格。
+  // The zh duration units need a space; English abbreviations are compact already, no extra space.
   return `${value}${locale === "zh-CN" ? " " : ""}${unit}`;
 }
 
-/** Desktop 与 Share 共用的工作时长文案，避免同一轮在两个 surface 显示不同单位。 */
+/** Work-duration copy shared by Desktop and Share, so one turn never shows different units across the two surfaces. */
 export function formatConversationWorkDuration(
   durationMs: number | undefined,
   intl: IntlInstance,

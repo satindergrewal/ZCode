@@ -1,22 +1,22 @@
 // ============================================================
-// 一次 ask 的**任务与进度读数**：node-queued 的 instructionsHead + node-progress 的三个计数
+// One ask's **task and progress readings**: node-queued's instructionsHead plus node-progress' three counters
 // ============================================================
-// 住在 reducer 主文件之外，与 workflow-runs-phases.ts 同一个理由：主文件的 max-lines 门。
+// Outside the main reducer for the same reason as workflow-runs-phases.ts: the main file's max-lines gate.
 //
-// 这几个键回答的是相位回答不了的问题：一个 ask 可以在 `executing` 上待十分钟，光看相位分不出
-// 「在干一件长活」与「已经死了」。`turn` / `toolCalls` / `lastTool` 是那条分界线，
-// `instructionsHead` 则回答「这个子代理被派去干什么」。
+// These keys answer what phases cannot: an ask can sit on `executing` for ten minutes, and the phase alone cannot tell
+// "long job in progress" from "already dead". `turn` / `toolCalls` / `lastTool` are that line,
+// and `instructionsHead` answers "what was this subagent sent to do".
 //
-// 两条容易踩的结构性事实：
-//   1. 归约在每条 `node-*` 事件上**整个重建**节点对象（只有 kind / actor ref / phaseName 靠
-//      previousNode 向前携带）。所以这四个键必须显式携带——否则 `node-progress` 的下一条
-//      生命周期事件就把刚落下的读数擦干净了。
-//   2. 一次 ask 的**出生**事件有两条：`node-queued`，以及 replay 命中时直接发的
-//      `node-settled { cached: true }`（那条节点没有 queued，它就是出生事件——与主文件里
-//      phaseName 的先例逐字同一条）。同一个站点实例在 resume 里被重新 queue 时是一次全新的
-//      ask，轮次从 1 重新数；缓存命中的结算则根本没有跑过。所以**出生事件清掉**上一世的三个
-//      计数，而不是把它们继承下来——继承会让一个这一世一步没走的节点显示「第 9 轮、40 次工具
-//      调用」，那正是这几个读数要用来排除的假象。
+// Two structural facts easy to trip on:
+//   1. The reduction **rebuilds** the node object whole on every `node-*` event (only kind / actor ref / phaseName ride
+//      forward via previousNode). These four keys must therefore be carried explicitly--or the next
+//      node-progress lifecycle event wipes the readings just landed.
+//   2. An ask has **two** birth events: `node-queued`, and the `node-settled { cached: true }` emitted directly on replay
+//      hits (that node has no queued; it is the birth event--verbatim the same precedent as phaseName in the main file).
+//      The same site instance re-queued during a resume is a brand-new ask, rounds restarting at 1; a cache-hit settle never ran at all.
+//      So **birth events clear** the previous life's three counters rather than inherit them--inheritance would show a node that
+//      took no step this life as "round 9, 40 tool calls", exactly the artifact these readings exist to rule out.
+//      calls"--exactly the artifact these readings exist to rule out.
 
 import {
   WORKFLOW_RUNS_LIMITS,
@@ -25,22 +25,22 @@ import {
   type WorkflowRunState,
 } from "./workflow-runs.js";
 
-/** 一次 ask 的任务与进度读数，即本模块负责的那四个键。 */
+/** One ask's task/progress readings--the four keys this module owns. */
 type NodeProgressFields = Pick<
   WorkflowRunNode,
   "instructionsHead" | "turn" | "toolCalls" | "lastTool"
 >;
 
 /**
- * 生命周期事件（`node-queued` … `node-settled`）上这四个键的取值。
+ * The four keys' values across lifecycle events (`node-queued` ... `node-settled`).
  *
- * 三个计数只向前携带（由 {@link reduceNodeProgress} 写入），**两条出生事件上清空**——见文件头
- * 第 2 条。`instructionsHead` 只在 `node-queued` 的载荷上到达（那一刻的 instructions 是作者原文，
- * 引擎的尾注由 driver 稍后追加），其余事件向前携带。
+ * The three counters only carry forward (written by {@link reduceNodeProgress}) and are **cleared on both birth events**--see header
+ * fact 2. `instructionsHead` arrives only on the `node-queued` payload (the instructions then are the author's original text;
+ * the engine footer is appended by the driver later); other events carry it forward.
  *
- * 任务摘要与三个计数在缓存命中的结算上**刻意不同步**：完结缓存按输入哈希命中，所以那条 ask 的
- * 指令与上一世逐字相同，继承摘要说的是同一件事；而计数描述的是一次**这一世没有发生**的执行。
- * 重新 queue 则连摘要也只认新载荷：那是一条可能被修订过的新指令。
+ * Task summary and the three counters are **deliberately out of sync** on cache-hit settles: the completion cache hits by input hash, so that
+ * ask's instructions are verbatim the previous life's and inheriting the summary says the same thing; the counters instead describe an execution
+ * that **did not happen this life**. A re-queue trusts only the new payload for the summary too: possibly a revised instruction.
  */
 export function carryNodeProgress(
   eventType: string,
@@ -64,14 +64,14 @@ export function carryNodeProgress(
 }
 
 /**
- * `node-progress` 的归约：一个已解析轮次的读数落到**已在表里**的那个节点上。
+ * The `node-progress` reduction: one resolved round's readings land on the **already-tabled** node.
  *
- * **只动这三个键**——不改相位、不计步、不动 actor 状态：一个轮次解析完不是生命周期跃迁，
- * 相位仍由 `node-executing` / `node-waiting` 那几条事件说了算。表里没有的实例（触界被拒，
- * 或进度早于它的 `node-queued`）整条忽略、不建条目，与其他节点事件对未知实例同族。
+ * **Touches only these three keys**--no phase, no step count, no actor state: a round resolving is not a lifecycle transition;
+ * the phase stays governed by the `node-executing` / `node-waiting` events. Instances not in the table (cap-rejected,
+ * or progress preceding their `node-queued`) are ignored whole, no entry created--the same family as other node events' unknown instances.
  *
- * 读不出的单个字段**保持已知值**而不是擦掉：一条只报 toolCalls 的事件不该让轮次数消失。
- * 写入是**后来者覆盖**而不是取 max（与 `phases[].rounds` 相反），理由见文件头第 2 条。
+ * An unreadable single field **keeps the known value** instead of wiping: an event carrying only toolCalls must not erase the round count.
+ * Writes are last-wins, not max (the opposite of `phases[].rounds`); rationale in header fact 2.
  */
 export function reduceNodeProgress(
   run: WorkflowRunState,
@@ -96,17 +96,17 @@ export function reduceNodeProgress(
   return { ...run, nodes };
 }
 
-/** 轮次是 1 起的正整数：没有「第 0 轮」这回事，0 / 小数 / NaN 一律按读不出处理。 */
+/** Rounds are 1-based positive integers: there is no "round 0"; 0 / fractions / NaN all count as unreadable. */
 function readPositiveInt(value: unknown): number | undefined {
   return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined;
 }
 
-/** 工具调用数可以是 0——「一个工具都没调过」是事实，不是缺席。 */
+/** Tool-call count may be 0--"called no tool" is a fact, not an absence. */
 function readNonNegativeInt(value: unknown): number | undefined {
   return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : undefined;
 }
 
-/** 工具名是这条记录存在的理由，读不出即整条不落（只有 target 的 lastTool 说不出任何事）。 */
+/** The tool name is the record's reason to exist; unreadable drops the whole entry (only target's lastTool can say nothing). */
 function readLastTool(value: unknown): WorkflowRunNodeLastTool | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
   const record = value as Record<string, unknown>;
@@ -117,12 +117,12 @@ function readLastTool(value: unknown): WorkflowRunNodeLastTool | undefined {
 }
 
 /**
- * 按线上界裁剪，空串按缺席处理。
+ * Clip to the wire caps; empty string counts as absent.
  *
- * 生产侧已经切过一遍（引擎的 `INSTRUCTIONS_HEAD_MAX_CHARS` / `LAST_TOOL_TARGET_MAX_CHARS`），
- * 这里是第二道闸，与 `boundedActorName` / `boundedPhaseName` 同族同理由：超界字符串会让父会话
- * 之后的每一帧被渲染端拒收。**直接截断、不加省略号**——
- * 摘要本来就是个头，续写标记是渲染侧的事，协议这条只保证合法。
+ * The producer side already clipped (the engine's `INSTRUCTIONS_HEAD_MAX_CHARS` / `LAST_TOOL_TARGET_MAX_CHARS`);
+ * this is the second gate, kin of `boundedActorName` / `boundedPhaseName` for the same reason: an over-cap string would make the renderer
+ * reject every later frame of the parent session. **Hard truncate, no ellipsis**--
+ * the summary is a head; continuation markers are renderer business; this layer guarantees validity only.
  */
 function boundedText(value: unknown, limit: number): string | undefined {
   if (typeof value !== "string") return undefined;

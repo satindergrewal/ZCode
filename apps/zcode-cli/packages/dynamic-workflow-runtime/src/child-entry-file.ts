@@ -1,38 +1,39 @@
 /**
- * 沙箱入口文件的落盘。
+ * Persisting the sandbox entry file.
  *
- * 为什么有这个文件：Windows 的命令行上限是 32,767 字符，payload 不能再过 argv。harness 把
- * {@link import("./child-source.js").renderChildEntry} 渲染出的 ESM 写到
- * `<cwd>/.zcode/workflow-runs/<runId>.mjs`，spawn 时命令行只剩这条路径。
+ * Why this file exists: Windows caps a command line at 32,767 chars, so the payload cannot ride argv. The harness
+ * writes the ESM produced by {@link import("./child-source.js").renderChildEntry} to
+ * `<cwd>/.zcode/workflow-runs/<runId>.mjs`, leaving only that path on the spawn command line.
  *
- * 裁决：
- *   - 位置 `.zcode/workflow-runs/`，与项目级 saved workflow 的 `.zcode/workflows/` 同级不混放；
- *   - 文件**保留**不删（同一 runId 原位覆写），目录兼作每次 run 实际执行体的存档；
- *   - 目录里由本模块写一份 `.gitignore`（`*`），只在缺席时写一次，绝不碰项目自己的 `.gitignore`；
- *   - 项目目录写不进（只读 checkout、cwd 不存在、`.zcode` 是个普通文件…）→ 回落到
- *     `os.tmpdir()/zcode-workflow-runs/` 并经 `onWarning` 报一声，run 照常启动。回落也失败就抛，
- *     由 harness 归一成 failed 结算。
+ * Rulings:
+ *   - Location `.zcode/workflow-runs/`, a sibling of -- never mixed with -- the project saved-workflow `.zcode/workflows/`;
+ *   - Entry files are **kept**, not deleted (same runId overwrites in place); the directory doubles as an archive
+ *     of each run's actually-executed body;
+ *   - This module writes a `.gitignore` (`*`) there, only when absent, and never touches the project's own;
+ *   - Unwritable project dir (read-only checkout, missing cwd, `.zcode` a plain file...) falls back to
+ *     `os.tmpdir()/zcode-workflow-runs/` with a one-time `onWarning`; the run still starts. A failed fallback
+ *     throws and the harness settles the run as failed.
  */
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-/** harness 向调用方报告的非致命状况；bootstrap 落成 warn 日志。 */
+/** Non-fatal conditions the harness reports to the caller; bootstrap logs them at warn. */
 export interface HarnessWarning {
   kind: "entry_file_fallback";
-  /** 本想写入的项目目录（`<cwd>/.zcode/workflow-runs`）。 */
+  /** The project dir we meant to write (`<cwd>/.zcode/workflow-runs`). */
   projectDir: string;
-  /** 实际回落到的目录。 */
+  /** The fallback directory actually used. */
   fallbackDir: string;
-  /** 项目目录写入失败的错误文本。 */
+  /** Error text from the failed project-dir write. */
   error: string;
 }
 
 export interface WriteChildEntryFileInput {
   cwd: string;
   runId: string;
-  /** 渲染好的入口文件源码。 */
+  /** Rendered entry-file source. */
   source: string;
   onWarning?: (warning: HarnessWarning) => void;
 }
@@ -42,17 +43,17 @@ export interface ChildEntryFile {
   location: "project" | "tmpdir";
 }
 
-/** 项目内的入口文件目录。 */
+/** Entry-file directory inside the project. */
 export function workflowRunsDir(cwd: string): string {
   return join(cwd, ".zcode", "workflow-runs");
 }
 
-/** 回落目录（OS 临时目录下，跨项目共用）。 */
+/** Fallback directory (under the OS temp dir, shared across projects). */
 export function fallbackWorkflowRunsDir(): string {
   return join(tmpdir(), "zcode-workflow-runs");
 }
 
-/** runId 安全字符集之外一律换成 `_`，杜绝路径分隔符之类混进文件名。 */
+/** Anything outside the runId-safe charset becomes `_`; no path separators or dots in file names. */
 export function childEntryFileName(runId: string): string {
   return `${runId.replace(/[^A-Za-z0-9._-]/g, "_")}.mjs`;
 }
@@ -77,7 +78,7 @@ export function writeChildEntryFile(input: WriteChildEntryFileInput): ChildEntry
 function writeInto(dir: string, fileName: string, source: string): string {
   mkdirSync(dir, { recursive: true });
   try {
-    // `wx`：只在缺席时创建，用户若改过这份 .gitignore 就不再动它。
+    // `wx`: create only when absent; if the user edited this .gitignore, leave it untouched.
     writeFileSync(join(dir, ".gitignore"), "*\n", { encoding: "utf8", flag: "wx" });
   } catch (error) {
     if ((error as { code?: string }).code !== "EEXIST") throw error;

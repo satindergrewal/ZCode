@@ -20,7 +20,7 @@ export function formatBashModelContent(output: unknown): ModelMessageContent {
     return result.structuredContent as ModelMessageContent;
   }
 
-  // Bash 失败以结果对象返回；模型可见的错误结果应保持为纯文本。
+  // Bash failures return as result objects; the model-visible error result stays plain text.
   if (isBashOutputProviderError(result)) {
     return formatProviderErrorContent(result);
   }
@@ -38,8 +38,8 @@ export function formatPersistedBashModelContent(input: {
   originalBytes: number;
 }): ModelMessageContent | undefined {
   if (!BashOutputSchema.safeParse(input.output).success) return undefined;
-  // serializer 已经把完整 Bash provider-visible content 写入 artifact；
-  // 这里必须只预览该 content，不能重进普通 formatter 后把 stderr/provider-error 文本完整追加回模型上下文。
+  // The serializer already wrote the full Bash provider-visible content to the artifact;
+  // preview it here only -- re-entering the normal formatter would append full stderr/provider-error text back into model context.
   return formatBashPersistedOutputContent({
     content: input.content,
     originalBytes: input.originalBytes,
@@ -132,8 +132,8 @@ function formatBackgroundInfoForModel(result: BashOutput): string {
 }
 
 function formatBackgroundOutputPaths(result: BashOutput): string {
-  // Bash 的 stdout/stderr 已直接写入单一输出文件，继续追加 stdout/stderr legacy path
-  // 会让模型看到与单一输出文件不一致的双路径信息。
+  // Bash stdout/stderr already went to the single output file; appending via the legacy path
+  // would show the model two divergent sources.
   const outputPath =
     result.rawOutputPath ??
     result.persistedOutputPath ??

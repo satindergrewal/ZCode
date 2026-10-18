@@ -7,7 +7,8 @@
     "types": ["node"]
   },
   "include": ["src"],
-  // 之前没声明对 rpc 的工程引用，tsc 会把 rpc 当普通源码依赖重复检查，导致错误在多个消费者里反复出现。
-  // 这里补上 references，让 services 直接消费 rpc 的声明产物。
+  // Without a project reference to rpc, tsc re-checked rpc as plain sources and the same errors
+  // reappeared in every consumer.
+  // The references let services consume rpc's declaration output directly.
   "references": [{ "path": "../shared" }, { "path": "../rpc" }]
 }

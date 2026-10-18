@@ -21,7 +21,7 @@ const patternSchema = z
     } catch {
       return false;
     }
-  }, "无效匹配正则");
+  }, "Invalid match regex");
 
 export const modelMatchConfigRuleSchema = z
   .object({
@@ -68,7 +68,8 @@ export const personalModelConfigRulesSchema = z
   })
   .strict()
   .superRefine((rules, context) => {
-    // 不能通过最后一次覆盖掩盖矛盾模式；身份用元组编码，避免模型 ID 自带分隔符碰撞。
+    // A later override must not mask contradictory patterns; identity is tuple-encoded so
+    // separators inside model IDs cannot collide.
     const smartIds = new Set(
       rules.providerModelRules.map((rule) => JSON.stringify([rule.providerId, rule.modelId])),
     );
@@ -77,13 +78,14 @@ export const personalModelConfigRulesSchema = z
         context.addIssue({
           code: "custom",
           path: ["manualProviderModelRules", index],
-          message: "同一 Provider/Model 不能同时声明智能和手动配置",
+          message: "A provider/model cannot declare both smart and manual configs",
         });
       }
     });
   });
 
-// 身份、模板引用和实例名属于规则，不再成为可向执行配置叠加的叶子。
+// Identity, template refs, and instance names belong to the rule; they are no longer
+// leaves stacked onto execution config.
 export const providerConfigRuleSchema = z
   .object({
     providerId: idSchema,
@@ -117,7 +119,7 @@ const personalProviderConfigRuleSchema = providerConfigRuleSchema
       context.addIssue({
         code: "custom",
         path: ["config", "access"],
-        message: "固定 Account Provider 的 Access 只能由 ZCode Built-in Config 声明",
+        message: "Pinned-account access is declared by the ZCode Built-in config only",
       });
     }
   });
@@ -167,7 +169,7 @@ function checkUniqueIds(
       context.addIssue({
         code: "custom",
         path: [group, index, key],
-        message: `重复 ${key}: ${id}`,
+        message: `Duplicate ${key}: ${id}`,
       });
     seen.add(id);
   });

@@ -33,8 +33,10 @@ export function createStdioServices(options: CreateStdioServicesOptions) {
   const env = options.env ?? process.env;
   const authorityModeParseResult = parseServiceAuthorityMode(env);
   const remoteAgentNetwork = resolveRemoteAgentNetworkFromEnv(env);
-  // 远程 Desktop 的呈现能力必须从 stdio 入口收到的 authority mode 进入 Services 推导链。
-  // 测试注入 resolver 只用于在 spawn 前观察最终命令，不改变生产默认 resolver。
+  // The remote desktop's presentation capability must enter the Services
+  // derivation chain via the authority mode received on the stdio entry.
+  // The test-injected resolver only observes the final command before spawn;
+  // it never replaces the production default resolver.
   const services = createLocalServices({
     zcodeBuiltinProviderConfigFilePath: options.zcodeBuiltinProviderConfigFilePath,
     serviceAuthorityMode: authorityModeParseResult.mode,

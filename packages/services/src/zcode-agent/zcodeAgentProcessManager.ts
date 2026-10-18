@@ -1,6 +1,6 @@
 import { resolveZCodeAgentSpawnCwd } from "#src/zcode-agent/zcodeAgentSpawnCwd.js";
 import type { ZCodeAgentStorageStartupSnapshot } from "#src/zcode-agent/zcodeAgent.js";
-/* eslint-disable max-lines -- zcodeAgentProcessManager 集中维护 agent 子进程启动、复用、超时回收和 runtime identity，拆分会扩大进程生命周期状态同步面 */
+/* eslint-disable max-lines -- zcodeAgentProcessManager centralizes agent child spawn, reuse, timeout recycle, and runtime identity; splitting widens the lifecycle-state sync surface */
 import { spawn } from "node:child_process";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -37,9 +37,9 @@ import type { RuntimeProcessLifecycleReporter } from "../process/runtimeProcessL
 import { buildAgentWorkspaceIdentityEnv } from "../runtime-tools/agentProxyEnv.js";
 
 export interface ZCodeAgentCommand {
-  /** 本地配套 CLI bundle 的存储专用 Worker 入口；远端/自定义命令不推断能力。 */
+  /** Storage-worker entry for the local bundled CLI; remote/custom commands infer no capabilities. */
   storagePreparationEntry?: string;
-  /** 本次部署的 Agent 支持迁移前的启动通知；旧自定义命令保持原协议。 */
+  /** This deployment's Agent supports pre-migration startup notifications; older custom commands keep the legacy protocol. */
   supportsStorageStartup?: boolean;
   command: string;
   args?: string[];
@@ -64,29 +64,29 @@ export interface ZCodeAgentProcessManagerOptions {
   requestTimeoutMs?: number;
   processLifecycleReporter?: RuntimeProcessLifecycleReporter;
   /**
-   * 进程泳道标识。同一 workspace 的不同泳道各走独立 manager 实例；lane 会写入
-   * runtimeIdentity 与 spawn/exit 日志，便于排障区分。
-   * 缺省为 chat 主泳道，不追加任何标记。
+   * Process lane tag. Lanes of the same workspace use separate manager instances; the lane lands in
+   * runtimeIdentity and spawn/exit logs for triage.
+   * Defaults to the chat main lane with no marker.
    */
   lane?: string;
   /**
-   * 空闲回收阈值：连接上没有请求在飞持续超过该时长，就主动回收整棵进程树，
-   * 下次 getClient 透明重新拉起。只给 mcp-status 这类“按需探测、进程内挂着 MCP 子进程”
-   * 的控制面 lane 使用；chat / plugin 缺省不回收。
+   * Idle-recycle threshold: with no in-flight request for this long, recycle the whole process tree;
+   * the next getClient respawns transparently. Only for control-plane lanes like mcp-status
+   * (on-demand probes with MCP subprocesses attached); chat/plugin default to no recycle.
    */
   idleTimeoutMs?: number;
   /**
-   * 仅当默认进程 cwd 等于目标 workspace 且该目录不可用时使用。
-   * 业务 workspacePath/workspaceKey 不随 cwd 兜底改变。
+   * Used only when the default process cwd equals the target workspace and that dir is unusable.
+   // Business workspacePath/workspaceKey never follow the cwd fallback.
    */
   spawnFallbackCwd?: string;
   /**
-   * 每次 spawn agent 子进程前解析的额外环境变量（在 process.env 之后、workspace 变量之前合入）。
-   * 用于把设置页的代理等配置注入子进程；按 spawn 时读取，天然「下次启动生效」。
+   * Extra env resolved before each agent spawn (merged after process.env, before workspace vars).
+   * Carries Settings-page proxy etc. into the child; read at spawn time, so it applies on next start by nature.
    *
-   * context 携带本次 spawn 的 workspace 标识三元组（workspacePath/workspaceIdentity/workspaceKey），
-   * 让 CUA broker 凭据注入能按 workspace 记录 Helper admission（见 services/node.ts 的
-   * cuaProductHelperWorkspaceRegistry）。Helper lifecycle 不再回收或重启已有 Agent。
+   * context carries this spawn's workspace identity triple (workspacePath/workspaceIdentity/workspaceKey)
+   * so the CUA broker can record Helper admission per workspace (see cuaProductHelperWorkspaceRegistry in
+   * services/node.ts). Helper lifecycle no longer recycles or restarts existing Agents.
    */
   resolveSpawnEnv?: (context: {
     workspacePath: string;
@@ -94,8 +94,8 @@ export interface ZCodeAgentProcessManagerOptions {
     workspaceKey: string;
   }) => Promise<Record<string, string>> | Record<string, string>;
   /**
-   * 可选的外部 spawn admission hook。CUA 默认装配不再注入 Helper recovery gate，
-   * 避免 Helper lifecycle 阻塞或间接重启 Agent；保留该通用 hook 供其他产品策略使用。
+   * Optional external spawn admission hook. The default CUA assembly no longer injectes a Helper recovery gate
+   * (Helper lifecycle must not block/indirectly restart the Agent); the generic hook stays for other product policies.
    */
   waitForSpawnAdmission?: (context: {
     workspacePath: string;
@@ -189,8 +189,8 @@ function buildE2EAgentCoverageEnv(env: NodeJS.ProcessEnv = process.env): Record<
   const directory = resolve(artifactDir, "coverage", "raw", "cli");
   mkdirSync(directory, { recursive: true });
   const preloadPath = resolve(directory, "zcode-e2e-coverage-preload.cjs");
-  // CLI bundle 未压缩时解析耗时可能超过 E2E 的早退窗口，普通 shutdown
-  // handler 尚未注册就收到 SIGTERM。用 NODE_OPTIONS preload 在解析 bundle 前接管落盘。
+  // An uncompressed CLI bundle can outlast the E2E early-exit window: SIGTERM may arrive before the
+  // plain shutdown handler registers. A NODE_OPTIONS preload takes over persistence before parsing the bundle.
   writeFileSync(preloadPath, E2E_COVERAGE_PRELOAD_SOURCE, "utf8");
   const requireOption = `--require=${JSON.stringify(preloadPath)}`;
   return {
@@ -200,9 +200,9 @@ function buildE2EAgentCoverageEnv(env: NodeJS.ProcessEnv = process.env): Record<
 }
 
 /**
- * （CLI 重连重订边界）：同一 workspace 的 agent 进程被重建（超时回收/崩溃后
- * 首个 getClient 重新拉起）。v4 订阅（sessions-index/workspace-config/conversation）
- * 都活在 CLI 进程内存里，进程换代即失效——订阅方收到本事件后必须重发 subscribe。
+ * (CLI reconnect/resubscribe boundary): the workspace's agent process was rebuilt (timeout recycle
+ * post-crash first getClient). v4 subscriptions (sessions-index/workspace-config/conversation)
+ * live in CLI process memory and die with the generation - subscribers must re-send subscribe on this event.
  */
 interface ZCodeAgentRuntimeRestartedEvent {
   workspaceKey: string;
@@ -222,7 +222,7 @@ interface ZCodeAgentRuntimeIdentity {
   identity: string;
   processId?: number;
   workspaceKey: string;
-  /** 进程泳道标识；chat 主泳道缺省为空。 */
+  /** Process lane tag; empty for the chat main lane. */
   lane?: string;
 }
 
@@ -255,7 +255,7 @@ function redactAgentDiagnostic(value: string): string {
     value
       .replace(AGENT_STDERR_SENSITIVE_ASSIGNMENT_PATTERN, "$1<redacted>")
       .replace(AGENT_STDERR_AUTH_SCHEME_PATTERN, "$1 <redacted>")
-      // 裸 key 也必须在跨进程诊断和生产日志之前遮盖。
+      // Bare keys must also be masked before cross-process diagnostics and production logs.
       .replace(AGENT_STDERR_API_KEY_PATTERN, "$1<redacted>")
   );
 }
@@ -343,8 +343,8 @@ async function buildZCodeAgentSpawnPreflight(
         ? "workspace"
         : "command",
     commandPathKind,
-    // Node spawn 的 ENOENT 既可能来自 command 缺失，也可能来自 cwd 缺失。
-    // 生产日志在 spawn 前同时记录两者可见性，避免把工作区路径丢失误判成自动更新丢 binary。
+    // Node spawn ENOENT may come from a missing command or a missing cwd.
+    // Log visibility of both before spawn, so a mistyped workspace path is not misread as a lost autoupdate binary.
     commandExists: commandPathKind === "absolute" ? existsSync(command.command) : null,
     cwdExists,
   };
@@ -360,18 +360,20 @@ function resolveBundledWorkspaceZCodeAgentCommand(
     const entrypoint = useBytecode
       ? join(dirname(distEntrypoint), "zcode.bytecode.cjs")
       : distEntrypoint;
-    // 此同步 command resolver 沿用既有 existsSync 契约；显式试验不能静默回退成 JS。
+    // This sync command resolver keeps the existing existsSync contract; explicit trials never silently fall back to JS.
     if (useBytecode && !existsSync(entrypoint)) {
-      throw new Error("桌面 Agent 字节码入口缺失，请运行 pnpm build:desktop-agent:bytecode");
+      throw new Error(
+        "Desktop Agent bytecode entry missing; run pnpm build:desktop-agent:bytecode",
+      );
     }
     return {
       command: process.execPath,
       args: [entrypoint, "app-server", "--stdio"],
-      // Worker 与 Electron Node 子进程的 V8 snapshot 可不同；临时存储准备继续用 JS。
+      // Worker and Electron Node child V8 snapshots may differ; temp-storage prep stays in JS.
       storagePreparationEntry: distEntrypoint,
       cwd: context.workspacePath,
-      // 桌面端 host 运行在 Electron utility process 中，process.execPath 指向 Electron Helper。
-      // 这里显式启用 Node 运行模式，避免内置 zcode-agent 被当成 Electron/Chromium 子进程启动并卡在 GPU 初始化。
+      // The desktop host runs in an Electron utility process where process.execPath is the Electron Helper.
+      // Enable Node runtime mode explicitly, or the built-in zcode-agent starts as an Electron/Chromium child stuck in GPU init.
       env: { ELECTRON_RUN_AS_NODE: "1" },
     };
   }
@@ -391,13 +393,13 @@ function resolveBundledWorkspaceZCodeAgentCommand(
 function resolveDeployedZCodeAgentBinaryCommand(
   context: ZCodeAgentCommandResolverContext,
 ): ZCodeAgentCommand | null {
-  // 旧 resolver 只识别 ZCODE_AGENT_SERVER_COMMAND env 和 monorepo 源码树。
-  // SSH 远端把 zcode-server.cjs 单文件部署到 ~/.zcode/server/，宿主进程的 cwd 不在仓库内、
-  // env 也不会被 ssh exec 继承，即使 zcode-agent 已经部署到 ~/.zcode/server/agents/glm/，
-  // resolver 也找不到，第一次 getClient 就抛 "ZCode agent server command is not configured"。
-  // 这里复用 findZCodeAgentRuntimeBinary 的候选链（含 GLM_BINARY_PATH env、
-  // packagedResourcesPath、~/.zcode/server/agents/glm、bundled-agents 等），
-  // 把已部署的原生 binary 当成最终兜底，远端/桌面打包形态都能命中。
+  // The legacy resolver knew only ZCODE_AGENT_SERVER_COMMAND env and the monorepo source tree.
+  // SSH remotes deploy zcode-server.cjs as a single file under ~/.zcode/server/; the host process cwd is outside the repo and
+  // ssh exec inherits no env, so even with zcode-agent deployed under ~/.zcode/server/agents/glm/,
+  // the resolver finds nothing and the first getClient throws "ZCode agent server command is not configured".
+  // Reuse findZCodeAgentRuntimeBinary's candidate chain (GLM_BINARY_PATH env,
+  // packagedResourcesPath, ~/.zcode/server/agents/glm, bundled-agents, etc.),
+  // treating the deployed native binary as the final fallback so remote/desktop packaged shapes both hit.
   const binaryPath = findZCodeAgentRuntimeBinary();
   if (!binaryPath) {
     return null;
@@ -412,12 +414,12 @@ function resolveDeployedZCodeAgentBinaryCommand(
 function resolveElectronRuntimeZCodeAgentCommand(
   context: ZCodeAgentCommandResolverContext,
 ): ZCodeAgentCommand | null {
-  // 桌面打包态：host 跑在 Electron utility process 里，process.execPath 指向 Electron Helper，
-  // 它内置的 Node runtime 与 zcode-cli 目标版本一致（Electron 41 = Node 24.x）。
-  // 这里直接用 app 自带的 Electron Node 执行打进 resources/glm 的 zcode.cjs，
-  // 不再随包内置一份独立 Node 二进制（体积从 ~180MB 降到 ~16MB，且跨平台同一份 JS）。
-  // 用 process.versions.electron 作为闸门：远端 SSH/WSL host 由系统 Node 运行、没有 electron，
-  // 会跳过这里继续走原生二进制兜底，桌面/远端两条链路互不影响。
+  // Desktop packaged shape: the host lives in an Electron utility process; process.execPath is the Electron Helper,
+  // whose bundled Node matches the zcode-cli target (Electron 41 = Node 24.x).
+  // Run resources/glm zcode.cjs with that Electron Node directly
+  // instead of shipping a separate Node binary (size ~180MB -> ~16MB, one JS for all platforms).
+  // Gate on process.versions.electron: remote SSH/WSL hosts run system Node without electron and
+  // skip to the native-binary fallback; the desktop/remote paths never interfere.
   if (!process.versions.electron) {
     return null;
   }
@@ -430,7 +432,7 @@ function resolveElectronRuntimeZCodeAgentCommand(
     args: [bundlePath, ...ZCODE_AGENT_RUNTIME.spawnArgs],
     storagePreparationEntry: bundlePath,
     cwd: context.workspacePath,
-    // 关键：必须以纯 Node 模式启动，否则子进程会被当成 Electron/Chromium 子进程卡在 GPU 初始化。
+    // Critical: pure Node mode, or the child is treated as an Electron/Chromium child stuck in GPU init.
     env: { ELECTRON_RUN_AS_NODE: "1" },
   };
 }
@@ -458,8 +460,8 @@ export function resolveDefaultZCodeAgentCommand(
     );
   }
 
-  // 顺序：env 显式覆盖 → monorepo dev 源码/dist（dev 改源码立刻生效，不会被远端历史装的 native binary
-  // 抢先匹配）→ 桌面打包态 Electron Node runtime 跑 zcode.cjs → 已部署 native binary（远端 SSH 兜底）。
+  // Order: env override -> monorepo dev source/dist (dev edits apply at once, not shadowed by a historically
+  // installed remote native binary) -> desktop packaged Electron Node running zcode.cjs -> deployed native binary (remote SSH fallback).
   const bundled =
     resolveBundledWorkspaceZCodeAgentCommand(context) ??
     resolveElectronRuntimeZCodeAgentCommand(context);
@@ -485,9 +487,9 @@ function applyPresentationSurfaceToCommand(
     const arg = commandArgs[index]!;
     if (arg === "--surface") {
       const nextArg = commandArgs[index + 1];
-      // Bug 原因：旧逻辑无条件消费下一个 token，孤立的 --surface 会把后续
-      // --stdio 等 option 一并吞掉，导致自定义 Agent 命令失去协议启动参数。
-      // 只有明确的非 option value 才属于 --surface；其他 option 继续走原参数链路。
+      // Bug: the old logic consumed the next token unconditionally; a lone --surface also swallowed
+      // following options like --stdio, stripping the custom Agent's protocol startup args.
+      // Only a clear non-option value belongs to --surface; other options keep the original chain.
       if (nextArg !== undefined && !nextArg.startsWith("-")) {
         index += 1;
       }
@@ -520,8 +522,8 @@ function wrapZCodeAgentCommandWithStdioTapDevProxy(
     return command;
   }
 
-  // 开发态 raw stdio 帧数据量和消息流同级，不能打进普通 info 日志。
-  // 这里只在显式开关打开时用旁路 proxy 写盘，生产构建和默认开发路径都不受影响。
+  // Dev-mode raw stdio frames are message-flow volume; never into plain info logs.
+  // Only an explicit flag writes them via a sidecar proxy; production and default dev paths are untouched.
   return {
     supportsStorageStartup: command.supportsStorageStartup,
     command: process.execPath,
@@ -587,9 +589,9 @@ export class ZCodeAgentProcessManager {
   private disposeAllInFlight: Promise<void> | undefined;
   private disposed = false;
 
-  /** 进程换代通知（generation>1 时触发）；v4 订阅方据此重订，见 ZCodeAgentRuntimeRestartedEvent。 */
+  /** Generation change (generation>1); v4 subscribers resubscribe on it, see ZCodeAgentRuntimeRestartedEvent. */
   readonly onRuntimeRestarted = this.runtimeRestartedEmitter.event;
-  /** 进程真实 spawn 后 available，当前 protocol client 关闭后 unavailable。 */
+  /** available after the process actually spawns; unavailable once the current protocol client closes. */
   readonly onRuntimeLifecycle = this.runtimeLifecycleEmitter.event;
 
   constructor(options?: ZCodeAgentProcessManagerOptions) {
@@ -616,7 +618,7 @@ export class ZCodeAgentProcessManager {
     try {
       callback(reporter);
     } catch (error) {
-      // 进程生命周期上报是旁路观测，临时失败不得阻断 agent 启动或回收。
+      // Lifecycle reporting is sideband observation; transient failure never blocks agent start/recycle.
       warnLog("ZCode agent process lifecycle reporter failed", error);
     }
   }
@@ -629,9 +631,9 @@ export class ZCodeAgentProcessManager {
   }
 
   /**
-   * 空闲回收：每次在飞请求归零就重置计时；到点时若仍无请求在飞且该进程仍是当前活跃实例，
-   * 主动回收整棵进程树（含挂在其下的 MCP 子进程）。归因为 expected/idle-timeout，
-   * 不会被监控当作崩溃。到点时有新请求在飞则什么都不做，等下一次归零重新计时。
+   * Idle recycle: reset the timer whenever in-flight returns to zero; at expiry with still no in-flight and this
+   * process still the active instance, recycle the whole tree (MCP children included). Attributed expected/idle-timeout,
+   * not a crash to monitoring. A new in-flight at expiry is a no-op; the timer restarts at next zero.
    */
   private scheduleIdleReclaim(workspaceKey: string, managed: ManagedZCodeAgentProcess): void {
     if (!this.idleTimeoutMs || this.disposed || managed.exited) {
@@ -646,7 +648,7 @@ export class ZCodeAgentProcessManager {
       if (this.processesByWorkspaceKey.get(workspaceKey) !== managed) {
         return;
       }
-      // 自定义 Agent 的旧启动请求可能先结清，再继续数据库准备；无在飞 RPC 不代表迁移空闲。
+      // A custom Agent's old start request may settle first, then DB prep continues; no in-flight RPC is not idle proof.
       if (
         managed.client.pendingOperationRequestCount > 0 ||
         managed.client.storageStartup.isWaiting
@@ -668,7 +670,7 @@ export class ZCodeAgentProcessManager {
         "idle timeout",
       ).catch(() => undefined);
     }, this.idleTimeoutMs);
-    // 空闲计时器不能把 host 进程钉在事件循环里。
+    // The idle timer must not pin the host process onto the event loop.
     timer.unref?.();
     managed.idleTimer = timer;
   }
@@ -684,9 +686,9 @@ export class ZCodeAgentProcessManager {
     if (reason === "protocol-close") {
       return;
     }
-    // protocol close 可能是 Agent 崩溃的结果，只有 Host 主动发起的回收
-    // 才能建立退出意图。首次 cleanup 原因是根因事实，后续 app quit 等幂等回收不能
-    // 把已经发生的异常 protocol close 改写成 expected。
+    // A protocol close may result from an Agent crash; only a Host-initiated recycle
+    // establishes exit intent. The first cleanup reason is the root-cause fact; later idempotent recycles (app quit)
+    // must not rewrite an already-observed abnormal protocol close into expected.
     managed.terminationIntent = {
       kind: reason === "request-timeout" ? "watchdog_recycle" : "expected",
       reason,
@@ -750,9 +752,9 @@ export class ZCodeAgentProcessManager {
       return managed.cleanupPromise;
     }
 
-    // protocol close 只会使 client 不再可复用，不代表它对应的
-    // OS 进程已退出。将回收 Promise 绑在 managed process 上，timeout、restart 和
-    // app quit 可以共用同一次幂等回收，Host 也不会丢失已退休进程的所有权。
+    // A protocol close only ends client reusability, not the OS process. Binding the recycle Promise to the
+    // managed process lets timeout/restart/app-quit share one idempotent recycle without losing ownership
+    // of the retired process.
     let cleanupCompleted = false;
     const cleanupPromise = managed.client
       .disposeAndWait()
@@ -804,13 +806,13 @@ export class ZCodeAgentProcessManager {
     retryScope: string,
   ): Promise<void> {
     try {
-      // 首次 cleanup 的进程树/exit 观察可能只是中间态；在 retry 成功时，
-      // 首次 rejection 不应提前升级为生产 error 告警。最终失败仍由本方法统一上报一次。
+      // The first cleanup's tree/exit observation may be intermediate; on retry success the
+      // first rejection must not escalate to a production error. Final failure reports once, here.
       await this.cleanupManagedProcess(managed, reason, { reportError: false });
     } catch (firstError) {
-      // Windows 进程表查询/exit 事件可能短暂落后，首次 cleanup 会误报 root
-      // 残留。restart/app quit 都不能把这种中间态暴露给调用方，需重试一次并复用
-      // transport 内部快照；真实残留会在第二次 cleanup 继续抛出。
+      // Windows process tables/exit events can lag; the first cleanup false-positives root
+      // leftovers. Neither restart nor app quit may surface that intermediate state; retry once reusing
+      // the transport's internal snapshot; a real leftover throws again on the second cleanup.
       const cleanupError = firstError as NodeJS.ErrnoException;
       warnLog(`ZCode agent process cleanup retrying during ${retryScope}`, {
         workspaceKey: managed.runtimeIdentity.workspaceKey,
@@ -864,8 +866,8 @@ export class ZCodeAgentProcessManager {
       return client;
     }
 
-    // agent 启动前置后，host warmup 和 UI 首次 readWorkspacePresentation/sendPrompt
-    // 可能同时进入 getClient。这里按 workspaceKey 收敛启动中的 promise，避免同一工作区重复 spawn。
+    // With the agent startup precondition, host warmup and the UI's first readWorkspacePresentation/sendPrompt
+    // can enter getClient together. Converge per workspaceKey on the starting promise; never double-spawn.
     const startGeneration = this.restartGenerationByWorkspaceKey.get(workspaceKey) ?? 0;
     const admissionAbortController = new AbortController();
     let controllers = this.startAdmissionAbortControllersByWorkspaceKey.get(workspaceKey);
@@ -895,7 +897,7 @@ export class ZCodeAgentProcessManager {
   }
 
   /**
-   * 只读取已经登记的 runtime client；被动 observer 使用本入口避免 getClient 的隐式 spawn。
+   * Reads only registered runtime clients; passive observers use this to avoid getClient's implicit spawn.
    */
   getExistingClient(params: {
     workspacePath: string;
@@ -905,7 +907,7 @@ export class ZCodeAgentProcessManager {
     return managed && !managed.child.killed ? managed.client : undefined;
   }
 
-  /** 资源管理器：当前仍存活的受管 runtime（pid + workspace + client） */
+  /** Resource explorer: currently live managed runtimes (pid + workspace + client) */
   listManagedProcesses(): Array<{
     pid: number;
     workspacePath: string;
@@ -935,7 +937,7 @@ export class ZCodeAgentProcessManager {
     return result;
   }
 
-  /** Agent service 首次通过 provider/model 门禁后调用；同一 runtime 只上报一次。 */
+  /** Called after the Agent service first passes the provider/model gate; reported once per runtime. */
   markReady(
     params: { workspacePath: string; workspaceIdentity?: string },
     client: ZCodeProtocolClient,
@@ -945,8 +947,8 @@ export class ZCodeAgentProcessManager {
       return;
     }
     managed.readyAt = Date.now();
-    // getClient 可能早于 ChildProcess 的异步 spawn 事件返回，也可能在 await 期间
-    // 被新 runtime 替换。只给返回该 entry 的进程标 ready，并由 spawn 回调保证 start → ready 顺序。
+    // getClient may return before ChildProcess's async spawn event, and may be replaced by a newer
+    // runtime during await. Mark ready only the process of the returned entry; the spawn callback keeps start -> ready order.
     this.reportRuntimeReady(managed);
   }
 
@@ -983,32 +985,32 @@ export class ZCodeAgentProcessManager {
       resolveCommandDurationMs,
     });
 
-    // Helper recovery 可能在 command resolve 期间开始；先等待一次，确保 env 解析使用
-    // recovery 后的 broker 凭据，而不是把旧状态带到 spawn 边界。
+    // Helper recovery may start during command resolve; wait once so env resolution uses
+    // post-recovery broker credentials, not pre-recovery state at the spawn boundary.
     await this.waitForSpawnAdmission?.({ ...params, workspaceKey, signal: admissionSignal });
 
-    // 设置页代理等运行时 env 在 process.env 之后合入（覆盖继承的同名 shell 变量），
-    // 但仍让 command.env（部署特定）保持最高优先级。
+    // Settings-page runtime env merges after process.env (overriding inherited shell variables),
+    // while command.env (deployment-specific) keeps top priority.
     const spawnEnv = (await this.resolveSpawnEnv?.({ ...params, workspaceKey })) ?? {};
     if (this.disposed) {
-      // app 正在关闭时，启动中的 warmup 可能刚完成 command/env resolve。
-      // 这时继续 spawn 会绕过 disposeAllAndWait 的快照，重新制造一个无人托管的 agent 进程。
+      // While the app is closing, a starting warmup may just have finished command/env resolve.
+      // Spawning now would bypass the disposeAllAndWait snapshot and orphan another agent process.
       throw new Error("ZCode agent process manager is disposed.");
     }
     if ((this.restartGenerationByWorkspaceKey.get(workspaceKey) ?? 0) !== startGeneration) {
-      // 切模型会重启单个 workspace。旧启动请求如果在重启后才恢复，
-      // 不能继续 spawn 并写回进程池，否则新配置会被旧 agent 覆盖。
+      // A model switch restarts the single workspace. An old start request resuming after the restart
+      // must not spawn into the pool, or the old agent overwrites the new config.
       throw new Error("ZCode agent process start was cancelled.");
     }
-    // cwd 探测也让出事件循环，必须放在最终 admission 与销毁/代际检查之前。
+    // The cwd probe also yields the event loop; keep it before final admission and the destroy/generation check.
     const spawnPreflight = await buildZCodeAgentSpawnPreflight(
       effectiveCommand,
       params.workspacePath,
       this.spawnFallbackCwd,
     );
     admissionSignal.throwIfAborted();
-    // env resolve 本身是异步的，恢复屏障可能在这段时间重新关闭；必须在 spawn 前
-    // 再等待并复查代际，不能只依赖第一次 admission。
+    // env resolve is async; the recovery barrier may close again during it. Re-wait and re-check the generation
+    // before spawn, never trusting the first admission alone.
     await this.waitForSpawnAdmission?.({ ...params, workspaceKey, signal: admissionSignal });
     if (this.disposed) {
       throw new Error("ZCode agent process manager is disposed.");
@@ -1016,8 +1018,8 @@ export class ZCodeAgentProcessManager {
     if ((this.restartGenerationByWorkspaceKey.get(workspaceKey) ?? 0) !== startGeneration) {
       throw new Error("ZCode agent process start was cancelled.");
     }
-    // app 以本地开发方式启动时，让 agent 子进程也带上 ZCODE_RUNTIME_ENV=development；
-    // 不再传 NODE_ENV，避免用户 shell/runtime 变量影响 ZCode 运行模式或泄漏到 Bash 工具。
+    // In local dev, also give the agent child ZCODE_RUNTIME_ENV=development;
+    // drop NODE_ENV so user shell/runtime vars cannot steer ZCode runtime mode or leak into Bash.
     const runtimeEnv = resolveZCodeRuntimeEnv(process.env);
     log("ZCode agent spawn preflight", {
       workspaceKey,
@@ -1026,15 +1028,15 @@ export class ZCodeAgentProcessManager {
     const spawnRequestedAt = Date.now();
     const child = spawn(effectiveCommand.command, spawnPreflight.args, {
       cwd: spawnPreflight.cwd,
-      // agent 可能再派生实际 runtime/MCP 子进程。POSIX 下让 wrapper 进入独立进程组，
-      // 关闭时才能按进程树整体回收；Windows 保持非 detached，交给 taskkill /T 处理。
+      // The agent may spawn further runtime/MCP children. On POSIX put the wrapper in its own process group
+      // so shutdown reclaims the whole tree; on Windows stay non-detached for taskkill /T.
       detached: shouldSpawnInDetachedProcessGroup(),
       env: {
         ...sanitizeZCodeRuntimeEnv(process.env),
         [ZCODE_RUNTIME_ENV_KEY]: runtimeEnv,
         ...spawnEnv,
         ...effectiveCommand.env,
-        // 身份/隔离语义使用 workspaceIdentity；cwd 继续使用 workspacePath。
+        // Identity/isolation semantics use workspaceIdentity; cwd keeps using workspacePath.
         ...buildAgentWorkspaceIdentityEnv(params.workspaceIdentity),
         ...buildE2EAgentCoverageEnv(),
       },
@@ -1046,8 +1048,8 @@ export class ZCodeAgentProcessManager {
       onStderrLine: (line) => {
         const diagnostic = parseZCodeProcessDiagnostic(line);
         if (diagnostic && typeof child.pid === "number") {
-          // 根因：只保存 exit tail 会漏掉存活 runtime 的异常；此旁路不依赖 debug 开关。
-          // 身份绑定创建时的 child，不能查当前 workspace，避免重启后的迟到事件串进程。
+          // Root cause: exit-tail-only capture misses live-runtime failures; this sideband ignores the debug flag.
+          // Bind to the child present at identity creation, never the current workspace, or post-restart late events cross wires.
           this.reportProcessLifecycle((reporter) =>
             reporter.onException?.({
               pid: child.pid!,
@@ -1058,7 +1060,7 @@ export class ZCodeAgentProcessManager {
               runtimeInstanceId,
               diagnostic: {
                 ...diagnostic,
-                // 脱敏占位符可能比原文长，必须再次限长，避免 IPC schema 拒绝合法异常。
+                // Masked placeholders can be longer than the original; re-cap the length or IPC schema rejects valid errors.
                 name: redactAgentDiagnostic(diagnostic.name).slice(
                   0,
                   ZCODE_PROCESS_DIAGNOSTIC_NAME_MAX_CHARS,
@@ -1084,19 +1086,19 @@ export class ZCodeAgentProcessManager {
         debugLog(line);
       },
       ownedProcessStartedAtMs: spawnRequestedAt,
-      // POSIX 下 child 由本 manager 以 detached=true 启动，pid 同时就是 Host
-      // 拥有的独立 PGID；异常 root exit 后 cleanup 仍可按组回收同组后代。
+      // On POSIX this manager spawns the child detached=true, so the pid is also the
+      // Host-owned PGID; after an abnormal root exit, cleanup still reclaims the group descendants.
       ...(process.platform !== "win32" && child.pid ? { ownedProcessGroupId: child.pid } : {}),
     });
     const client = new ZCodeProtocolClient(transport, {
       requireStorageStartup: effectiveCommand.supportsStorageStartup,
       requestTimeoutMs: this.requestTimeoutMs,
     });
-    // Agent 进程重启后，Host 仍需要 runtime identity 区分新旧订阅和运行命令。
-    // Provider Registry 由新 Worker 从所属 Environment 的 Config 重建，不再由 UI 重新下发。
+    // After an Agent restart the Host still needs runtime identity to tell old from new subscriptions/commands.
+    // The new Worker rebuilds the Provider Registry from its Environment Config; the UI never re-pushes it.
     const runtimeGeneration = (this.runtimeGenerationByWorkspaceKey.get(workspaceKey) ?? 0) + 1;
     this.runtimeGenerationByWorkspaceKey.set(workspaceKey, runtimeGeneration);
-    // 生命周期事件关联只需要本次 runtime 的不透明身份，不能复用包含 workspaceKey 的协议 identity。
+    // Lifecycle correlation needs only this runtime's opaque identity, never the workspaceKey-bearing protocol identity.
     const runtimeInstanceId = `agent-${randomUUID()}`;
     const runtimeIdentity: ZCodeAgentRuntimeIdentity = {
       generation: runtimeGeneration,
@@ -1144,10 +1146,10 @@ export class ZCodeAgentProcessManager {
     }
     child.once("spawn", () => {
       managed.spawned = true;
-      // Node spawn() 会先返回 ChildProcess，再异步报告 cwd/command ENOENT。
-      // 旧代码在确认 spawn 成功前就发布 runtimeRestarted，订阅方随即重连并再次触发
-      // 启动，最终形成失败启动 -> 假重启 -> 重连的自激风暴。只有 spawn 事件才表示
-      // 新 CLI 运行时真实存在，可以安全通知 v4 订阅方重订。
+      // Node spawn() returns ChildProcess first and reports cwd/command ENOENT asynchronously.
+      // Publishing runtimeRestarted before spawn is confirmed made subscribers reconnect and re-trigger
+      // start, a failed-start -> fake-restart -> reconnect feedback storm. Only the spawn event proves
+      // the new CLI runtime exists and it is safe to tell v4 subscribers to re-subscribe.
       if (runtimeGeneration > 1 && this.processesByWorkspaceKey.get(workspaceKey) === managed) {
         this.runtimeRestartedEmitter.fire({ workspaceKey, runtimeIdentity });
       }
@@ -1225,11 +1227,11 @@ export class ZCodeAgentProcessManager {
       this.clearIdleTimer(managed);
       const endedAt = Date.now();
       const terminationKind = managed.terminationIntent?.kind ?? "unexpected";
-      // 协议解析/stream 故障会先触发 protocol-close，再由 Host 用 SIGTERM
-      // 回收仍存活的进程。若只透传主动 termination intent，desktop 只能看到最终信号，
-      // 无法区分协议故障与受控退出；保留首次 cleanup 原因作为结构化根因。
+      // Protocol parse/stream faults fire protocol-close first, then the Host SIGTERMs
+      // the surviving process. Passing only the active termination intent would leave desktop seeing just the final
+      // signal, unable to tell protocol failure from controlled exit; keep the first cleanup reason as structured root cause.
       const terminationReason = managed.terminationIntent?.reason ?? managed.firstCleanupReason;
-      // 协议已立即失效，但 exit 先于 stderr EOF；保留旧 runtime 闭包身份收齐最后诊断。
+      // The protocol is dead but exit precedes stderr EOF; keep the old runtime closure identity to collect final diagnostics.
       await transport.waitForStderrDrain();
       const stderr = stderrTail.snapshot();
       const exitContext = {
@@ -1241,14 +1243,14 @@ export class ZCodeAgentProcessManager {
         terminationKind,
         terminationReason,
       };
-      // 之前日志只有新的 "process started"，缺少旧 pid 的退出轨迹。
-      // agent native crash 后 UI 只会看到 protocol close/Session is not active，无法判断是崩溃还是主动重启。
+      // Logs used to show only the new "process started", with no exit trail for the old pid.
+      // After a native crash the UI saw only protocol close/Session is not active, unable to tell crash from restart.
       log("ZCode agent process exited", exitContext);
       if (terminationKind === "unexpected") {
-        // Agent 顶层异常只写 stderr 并以非零 code 退出；stderr 过去仅走开发态
-        // debug，生产日志只剩 code=1，无法还原异常。不能只按非零 code 判断：signal crash
-        // 和长期运行的 Agent 自行 exit 0 同样是非预期退出。
-        // 已有独立生命周期事件，显式标记包装日志，避免 Electron 将其再计为 JS 异常。
+        // Agent top-level exceptions go to stderr with a nonzero code; stderr was dev-debug only,
+        // leaving production logs at code=1, unreconstructable. Nonzero code alone is not proof: signal crashes
+        // and a long-lived Agent's own exit 0 are both unexpected.
+        // A dedicated lifecycle event exists; mark this wrapper log so Electron does not count it as a JS exception.
         errorLog(
           `ZCode agent process exited unexpectedly${this.processLifecycleReporter ? ` ${ZCODE_AGENT_LIFECYCLE_LOG_MARKER}` : ""}`,
           {
@@ -1307,9 +1309,9 @@ export class ZCodeAgentProcessManager {
       });
       this.processesByWorkspaceKey.delete(workspaceKey);
       this.reportRuntimeUnavailable(managed);
-      // timeout 说明协议请求/响应链路已经不可信。旧实现只 reject 当前请求，
-      // 但 child 仍未 exit，后续同 workspace 会继续复用坏 client 并反复超时。
-      // 这里主动回收进程树，让下一次 getClient 重新拉起干净的 app-server。
+      // A timeout means the request/response pipeline is untrustworthy. The old code rejected only the current
+      // request while the child lived on, so the workspace kept reusing the bad client and timing out forever.
+      // Recycle the tree here; the next getClient starts a clean app-server.
       void this.cleanupManagedProcessWithRetry(
         managed,
         "request-timeout",
@@ -1330,8 +1332,8 @@ export class ZCodeAgentProcessManager {
       }
       this.reportRuntimeUnavailable(managed);
       if (this.ownedProcesses.has(managed)) {
-        // 根 child 的 exit 不等于同组 MCP 后代已退出。即使 protocol close
-        // 来自根进程退出，也必须按原进程组完成幂等回收后才能释放 Host 所有权。
+        // The root child's exit is not the group's MCP descendants exiting. Even when protocol close
+        // stems from the root, finish the idempotent group recycle before releasing Host ownership.
         void this.cleanupManagedProcessWithRetry(
           managed,
           "protocol-close",
@@ -1349,8 +1351,8 @@ export class ZCodeAgentProcessManager {
   }): Promise<ZCodeAgentRuntimeIdentity> {
     const workspaceKey = resolveWorkspaceKey(params);
     const managed = this.processesByWorkspaceKey.get(workspaceKey);
-    // runtime identity 是查询接口，旧实现却复用了启动型 getClient，
-    // 导致 provider 保存等被动探测按 workspace 数量隐式 spawn Agent CLI。
+    // Runtime identity is a query API, yet the old code reused the startup getClient, making passive
+    // probes like provider save implicitly spawn one Agent CLI per workspace.
     if (!managed || managed.exited || managed.child.killed) {
       throw new Error("ZCode agent runtime identity is unavailable.");
     }
@@ -1396,13 +1398,13 @@ export class ZCodeAgentProcessManager {
     this.abortPendingStarts(workspaceKey);
     const managed = this.processesByWorkspaceKey.get(workspaceKey);
     this.processesByWorkspaceKey.delete(workspaceKey);
-    // dispose 不能把尚未完成的 start promise 从追踪表中删掉。删除会让
-    // recovery/UI 的下一次 getClient 再开一条 spawn，旧 promise 随后又可能越过异步
-    // resolve 回写进程池，形成同一 workspace 的 spawn/dispose 风暴。代际检查会让旧
-    // promise 在真正 spawn 前失败，finally 再按 promise identity 清理 map。
+    // dispose must not drop an unfinished start promise from the tracker. Dropping lets
+    // recovery/UI's next getClient spawn again, and the old promise may later resolve into the pool,
+    // a spawn/dispose storm per workspace. Generation checks fail old promises before real spawn;
+    // finally cleans the map by promise identity.
     if (managed) {
-      // restartWorkspaceProcess 只应回收当前 workspace 的 agent。
-      // 不能复用 disposeAll，否则会把整个 manager 标记为已关闭，后续首发/预热无法重新拉起。
+      // restartWorkspaceProcess recycles only this workspace's agent.
+      // Never reuse disposeAll: it marks the whole manager closed and later first-send/prewarm cannot respawn.
       this.reportRuntimeUnavailable(managed);
       await this.cleanupManagedProcessWithRetry(
         managed,
@@ -1462,9 +1464,9 @@ export class ZCodeAgentProcessManager {
     this.processesByWorkspaceKey.clear();
     this.startingByWorkspaceKey.clear();
 
-    // app/host 退出时旧逻辑只同步 dispose client，底层进程树的 SIGKILL 兜底
-    // 依赖 unref timer，host 自己退出后 timer 不会再执行，zcode-cli 会残留为孤儿进程。
-    // 这里让 host 可以等待每个 workspace 的 agent 进程树完成 graceful + force 清理。
+    // On app/host exit the old path only disposed clients; the SIGKILL fallback relied on an unref timer,
+    // which never fires after host exit, orphaning zcode-cli.
+    // Let the host await each workspace's graceful+force tree cleanup.
     this.disposeAllInFlight = Promise.all(
       managedProcesses.map((managed) => this.cleanupManagedProcessForShutdown(managed)),
     ).then(() => undefined);

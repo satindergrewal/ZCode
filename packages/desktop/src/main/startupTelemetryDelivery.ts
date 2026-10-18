@@ -1,7 +1,7 @@
 type DeliveryStatus = "http_received" | "unconfirmed";
 const REQUEST_TIMEOUT_MS = 15_000;
 
-/** 装饰 SDK 的公开 reporter.request：仍使用原过滤/采样/序列化，不另发裸 HTTP。 */
+/** Decorate the SDK's public reporter.request: keep its filtering/sampling/serialization, no separate raw HTTP. */
 export function wrapStartupReporterRequest<C, B extends { events?: unknown[] }>(
   request: (context: C, bundle: B) => unknown,
   options: {
@@ -21,7 +21,7 @@ export function wrapStartupReporterRequest<C, B extends { events?: unknown[] }>(
       try {
         options.acknowledged(ids, status);
       } catch {
-        /* 诊断出口故障不递归报告。 */
+        /* A failing diagnostics sink must not be reported recursively. */
       }
     };
     for (let attempt = 0; attempt < 3; attempt++) {
@@ -42,11 +42,12 @@ export function wrapStartupReporterRequest<C, B extends { events?: unknown[] }>(
           return response;
         }
       } catch {
-        /* 仅遥测网络重试；绝不调用启动协调器或数据库。 */
+        /* Retry telemetry network errors only; never call the startup coordinator or database. */
       } finally {
         if (timer) clearTimeout(timer);
       }
-      // SDK 未暴露 AbortSignal。未结束的请求不再复制，避免超时叠加连接；只记未确认。
+      // The SDK exposes no AbortSignal. In-flight requests are not duplicated, avoiding
+      // timeouts stacking up connections; they are only recorded as unconfirmed.
       if (timedOut) break;
       if (attempt < 2) await delay(500 * 3 ** attempt);
     }

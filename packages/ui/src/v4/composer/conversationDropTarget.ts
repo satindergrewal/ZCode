@@ -1,10 +1,10 @@
 import type { DragEventHandler } from "react";
 
 /**
- * ConversationComposer 暴露给外层对话表面的文件 drop 接口。
+ * The file-drop surface ConversationComposer exposes to the outer conversation shell.
  *
- * controller 只在 renderer 内路由到既有 composer；不创建第二个上传状态机，
- * 也不改变 desktop continuous / web-remote-replayable 的传输边界。
+ * The controller only routes into the existing composer, in-renderer: no second upload state
+ * machine, and the desktop-continuous / web-remote-replayable transport bounds stay put.
  */
 export interface ConversationDropTargetController {
   active: boolean;

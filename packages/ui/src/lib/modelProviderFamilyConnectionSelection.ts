@@ -9,7 +9,7 @@ import { hasActiveUsageEntitlementSnapshot } from "@/lib/codingPlanProvider.js";
 
 export type ModelProviderFamilyConnectionSelection = ProviderFamilyConnectionSelection;
 
-/** 把当前 Family 连接意图映射为对应的 Built-in Account Provider 身份。 */
+/** Map the current family connection intent to the corresponding built-in account provider identity. */
 export function resolveModelProviderFamilyConnectionProviderId(params: {
   providerFamilyDomain: ProviderFamilyDomain;
   selection: ProviderFamilyConnectionSelection;
@@ -61,9 +61,9 @@ export function resolveAutomaticModelProviderFamilyConnectionSelection(params: {
   codingPlanEntitlement: UsageEntitlementSnapshot | null;
   startPlanEntitlement: UsageEntitlementSnapshot | null;
   teamProducts?: readonly EnterpriseCodingPlanPricingProduct[];
-  /** 首次登录可落到购买入口；修复已有连接时只能选确认可用的套餐。 */
+  /** First login may land on the purchase entry; repairing an existing connection only picks confirmed-available plans. */
   allowPurchaseEntry?: boolean;
-  /** 当前 Account View 的统一判定优先于旧余额快照，尤其区分待生效与可用。 */
+  /** The Account View's canonical verdict takes precedence over legacy balance snapshots, especially pending-vs-available. */
   codingPlanAvailable?: boolean;
   startPlanAvailable?: boolean;
 }): ModelProviderFamilyConnectionSelection | null {
@@ -81,17 +81,17 @@ export function resolveAutomaticModelProviderFamilyConnectionSelection(params: {
     };
   }
 
-  // 原守卫 familySpec.id === "bigmodel" 使 zai 即使有订阅团队也无法识别。
-  // 去掉守卫后，两类 Provider Family 统一读取结构化团队选择。
+  // The old familySpec.id === "bigmodel" guard left zai unrecognized even with a subscribed
+  // team. With the guard gone, both provider families read the structured team selection.
   const teamSelection = resolveFirstSubscribedTeamPlanConnectionWithContext({
     teamProducts: params.teamProducts ?? [],
   });
   if (teamSelection) return teamSelection;
 
   if (params.allowPurchaseEntry === false) return null;
-  // OAuth 登录后的输入框连接方式必须始终保持 OAuth 语义。
-  // 即使当前账号没有 Start、个人 Coding 或团队 Coding，也应落到个人 Coding 入口，
-  // 由后续购买/不可用态承接，而不是自动切到 API Key。
+  // The post-OAuth-login composer connection must keep OAuth semantics. Even without Start,
+  // personal Coding, or team Coding on the current account, land on the personal Coding entry
+  // and let the purchase/unavailable states take over, instead of silently switching to API key.
   return {
     kind: "individual-coding-plan",
   };

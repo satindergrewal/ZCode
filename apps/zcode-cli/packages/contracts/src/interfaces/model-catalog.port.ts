@@ -1,39 +1,39 @@
 // ============================================================
-// Model Catalog Port - 宿主已配置模型的只读快照边界
+// Model Catalog Port - read-only snapshot boundary over the host's configured models
 // ============================================================
-// 存在的理由只有一个：
-// 工具层要把用户说的模型名（"GLM-5.3-Flash"）解析成一次 workflow run 的子代理选型，而 core
-// 看不见 provider 注册表。端口把「有哪些模型」这件宿主事实递进来，解析本身留在 core
-// （纯函数，无 I/O）。
+// It exists for exactly one reason:
+// the tool layer must resolve a user-named model ("GLM-5.3-Flash") into a workflow run's subagent choice, and core
+// cannot see the provider registry. The port hands in the host fact "which models exist"; resolution stays in core
+// (pure function, no I/O).
 //
-// 刻意**同步、无 I/O**：调用点在 `resolveInput` 与 `ListModels` 的 handler 里，两处都不该
-// 为了列一张表去等网络；宿主侧本来就只是读一份内存里的注册表视图。
+// Deliberately **synchronous, no I/O**: the call sites are `resolveInput` and the `ListModels` handler; neither should
+// wait on the network to list a table; the host side is just an in-memory registry view.
 
-/** 目录里的一个模型条目（一条 provider × model 的组合）。 */
+/** One model entry in the catalog (one provider x model pair). */
 export interface ModelCatalogEntry {
   providerId: string;
   modelId: string;
-  /** provider 的人类可读名；注册表没给就缺席（读侧退回 `providerId`）。 */
+  /** Human-readable provider name; absent when the registry gives none (read side falls back to `providerId`). */
   providerLabel?: string;
-  /** 该模型支持的推理档位（`$level` 的合法取值）。没有档位的模型是**空数组**，不是缺席。 */
+  /** Reasoning levels this model supports (legal `$level` values). No levels = **empty array**, not absent. */
   reasoningLevels: string[];
-  /** 注册表的默认档位；`reasoningLevels` 为空时缺席。 */
+  /** Registry default level; absent when `reasoningLevels` is empty. */
   defaultReasoningLevel?: string;
   contextWindow?: number;
-  /** 本条目是否就是会话当前的选择（provider + model 同一）。整张表至多一条为真。 */
+  /** Whether this entry is the session's current selection (provider + model equal). At most one true per table. */
   current: boolean;
-  /** 不可选用的理由（未配置密钥、被策略禁用等）；可选用即缺席。 */
+  /** Why it is unusable (missing key, policy-disabled, ...); absent when usable. */
   disabledReason?: string;
 }
 
 export interface ModelCatalogPort {
   /**
-   * 列出此刻可选的模型。
+   * List the models selectable right now.
    *
-   * **每次调用都必须现读注册表的活视图**，绝不返回构造期冻结的拷贝：provider 可以在会话
-   * 中途被增删改（stale provider registry 的教训就是子代理抱着父会话构造时的
-   * 那一份适配器不放）。一份过期的目录会让解析挑中一个已经不存在的模型，而失败要到子代理
-   * 第一次开口时才炸——离用户按下确认已经很远了。
+   * **Every call must read the live registry view**, never a copy frozen at construction: providers can be
+   * added/removed/changed mid-session (the stale-registry lesson: subagents clinging to the adapter
+   * captured at parent-session construction). A stale catalog has resolution pick a model that no longer exists, and the failure
+   * only explodes at the subagent's first turn - far from the user's confirm click.
    */
   listModels(): ModelCatalogEntry[];
 }

@@ -9,8 +9,8 @@ import { createStreamRecoveryAnchorId, createStreamingToolAttemptId } from "../h
 import type { AgentRuntimeInternal } from "../internal.js";
 import { recordModelHistoryRound, type RegularTurnLoopState } from "./turn-loop-state.js";
 
-// 越过 adapter 重试边界后，SSE stall 只能靠 core recovery 从安全锚点重开流；
-// 只恢复 1 次会让连续短暂抖动直接失败，和模型默认 10 次 retry 的用户预期差距过大。
+// Past adapter retries, an SSE stall restarts only via core recovery from a safe anchor;
+// one recovery dies on back-to-back blips, far under the 10-retry norm.
 const STREAM_RECOVERY_MAX_RETRIES = 10;
 const PREVIOUS_MESSAGE_ANCHOR_SUFFIX = "previous-message-anchor";
 const START_PLAN_BUSY_PROVIDER_CODES = new Set(["3008", "3009", "3010"]);
@@ -192,9 +192,9 @@ export async function emitStreamRecoveryRetryEvents(
     await runtime.appendEvent(event, options.traceContext);
     state.events.push(event);
   }
-  // SSE 已经吐出部分事件后，下一次请求是 core recovery 重新发起的
-  // 新模型请求，不会表现为 adapter attempt=2；必须把来源 requestId 显式挂到
-  // 下一次 model_request_started 上，用户才能确认旧请求 A 超时后确实发出了恢复请求 B。
+  // After partial SSE output the next request is a core-recovery re-issue,
+  // not adapter attempt=2; attach the source requestId explicitly to
+  // the next model_request_started, proving recovery B followed timeout A.
   state.pendingStreamRecoveryRequest = {
     attemptId: createStreamingToolAttemptId(options.assistantMessageId),
     anchorId,
@@ -227,9 +227,9 @@ export async function recoverPartialAssistantOutputFailure(input: {
     return false;
   }
 
-  // reasoning_delta 为了实时展示会越过 adapter 重试边界，但旧 Core 只统计正文，
-  // 导致正文前的 thinking 断流直接失败。无工具时正文和思考都属于未提交 assistant tail，
-  // 必须统一从前一个 provider-safe anchor 重开，不能把新输出接到失败消息上。
+  // reasoning_delta crosses adapter retries for live display, but old Core counted body only,
+  // so pre-body thinking loss failed hard. Toolless, body and thinking are one uncommitted tail;
+  // restart both from the last provider-safe anchor, never onto the failed message.
   input.abortController.abort();
   const recoveryAttempt = beginStreamRecoveryAttempt(input.state);
   await emitStreamRecoveryStarted(

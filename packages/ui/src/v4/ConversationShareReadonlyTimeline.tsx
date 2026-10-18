@@ -1,7 +1,7 @@
-/* oxlint-disable eslint(max-lines) -- Share 与 Desktop 共用的只读 Row/turn presentation 需要保持在同一安全边界。
- * 安全边界约束：本文件被匿名公开分享页（packages/web/src/share）直接引用，新增依赖必须考虑
- * 公开页 bundle 体积与无 Desktop 宿主（window.zcode / PlatformProvider / tab store）的运行环境；
- * Desktop 专属能力（如 open-with 子树）一律由消费方经组件注入，不得静态 import。 */
+/* oxlint-disable eslint(max-lines) - the read-only Row/turn presentation shared by Share and Desktop must stay inside one security boundary.
+ * Boundary: this file is imported directly by the anonymous public share page (packages/web/src/share); any new dependency must weigh
+ * public-page bundle size and the no-Desktop-host runtime (window.zcode / PlatformProvider / tab store);
+ * Desktop-only capabilities (e.g. the open-with subtree) are always injected by the consumer, never statically imported. */
 import {
   createContext,
   Fragment,
@@ -75,9 +75,9 @@ import { FileDisplayIcon, resolveFileDisplayDescriptor } from "@/lib/fileDisplay
 import { formatAttachmentSize } from "@/lib/chatAttachmentMetadata.js";
 import type { CodeViewerSource } from "@/lib/codeViewer.js";
 import { isAbsoluteFilePath, joinFilePath } from "@/lib/path.js";
-// 仅类型引用，构建期擦除：静态 import OpenSplitButton 会把其整棵 open-with 子树
-// （platform hooks、tab store、workspace-file-tree/model、editorPreference）打进匿名
-// 公开页 bundle，因此打开动作组件改由 Desktop 消费方经 artifactOpenAction 注入。
+// Type-only reference, erased at build time: statically importing OpenSplitButton would pull its whole open-with subtree
+// (platform hooks, tab store, workspace-file-tree/model, editorPreference) into the anonymous
+// public-page bundle, so the open-action component is injected by the Desktop consumer via artifactOpenAction.
 import type { OpenSplitButtonTarget } from "@/OpenSplitButton.js";
 
 export interface ConversationShareReadonlyTimelineProps {
@@ -94,20 +94,20 @@ export interface ConversationShareReadonlyTimelineProps {
   onOpenFileLink?: (target: MessageFileLinkTarget) => void;
   onOpenCodeViewer?: (source: CodeViewerSource) => void;
   /**
-   * Desktop 侧注入的 artifact 打开动作组件（实现即 OpenSplitButton）。
-   * 公开分享页不传：一是公开页没有本地打开能力，二是避免 open-with 子树进公开页 bundle。
+   * The artifact open-action component injected by Desktop (the implementation is OpenSplitButton).
+   * The public share page passes none: it has no local-open capability, and the open-with subtree must stay out of the public bundle.
    */
   artifactOpenAction?: ConversationShareArtifactOpenAction;
   /**
-   * 本 build 认不出、已被跳过的行数（见 decodeConversationShareRows）。
+   * Rows this build did not recognize and skipped (see decodeConversationShareRows).
    *
-   * >0 时在时间线顶部出一条中性提示。必须提示：分享内容是跨版本流动的，老客户端/老落地页
-   * 镜像遇到新 row kind 时会静默少几行，用户没法自己发现——他会以为分享者就发了这些。
+   * When > 0, one neutral notice renders at the top of the timeline. It must: share content travels across versions, and older
+   * clients/landing pages silently drop unknown row kinds - the user would assume the sender sent only these.
    */
   unsupportedRowCount?: number;
 }
 
-/** 注入契约：Desktop 侧提供的「带本地打开动作」组件，与 OpenSplitButton 的关键 props 对齐。 */
+/** Injection contract: the Desktop-provided component carrying local open actions, aligned with the key OpenSplitButton props. */
 export type ConversationShareArtifactOpenAction = ComponentType<{
   target: OpenSplitButtonTarget;
   onOpenFileLink?: (target: MessageFileLinkTarget) => void;
@@ -127,12 +127,12 @@ interface ReadonlyLabels {
 }
 
 /**
- * 只读时间线里 marker 的文案。
+ * Copy for markers in the read-only timeline.
  *
- * 这里刻意不复刻实时时间线的全部状态细分（compact 的 started/failed/interrupted、
- * modelChange 的 from→to、goalVerify 的迭代序号）：发布会拦掉运行中的 marker，
- * 而 from→to 需要 model-provider store 才能解析显示名，只读历史里价值很低。
- * 识别不了的类型返回 null，由调用方整行不渲染 —— 绝不回退成打印枚举名。
+ * Deliberately not every live-timeline state variant (compact started/failed/interrupted,
+ * modelChange from-to, goalVerify iteration index): publishing filters out running markers, and
+ * from-to needs the model-provider store for display names - little value in read-only history.
+ * Unknown types return null and the caller drops the whole row - never fall back to printing enum names.
  */
 function resolveReadonlyMarkerLabel(
   marker: TimelineMarkerRow["marker"],
@@ -169,12 +169,12 @@ function resolveImportedArtifactPath(
   workspacePath: string,
   workspaceRelativePath: string | undefined,
 ): string | null {
-  // 取舍：这里只校验形状（.zcode-share/<dir>/shared-artifacts/<file> 四段），刻意不把
-  // 段 2 与导入记录的 shareId 交叉比对。元数据由本端导入服务自写（conversationShareService
-  // 落盘时用 sanitizeFileSegment(share_id) 作目录名），自洽；若在 UI 侧比对，就得复制
-  // service 层的 sanitize 规则，两边漂移会让合法导入静默丢打开按钮，而收益仅是防住
-  // 「指向另一 share 目录」这种一致性噪声——路径仍被限制在 workspace 的
-  // .zcode-share/*/shared-artifacts/ 内，无越权读放大。
+  // Tradeoff: validate the shape only (the four segments .zcode-share/<dir>/shared-artifacts/<file>) and deliberately skip
+  // cross-checking segment 2 against the imported shareId. Metadata is written by the local import service itself
+  // (conversationShareService persists with sanitizeFileSegment(share_id) as the dir name), self-consistent; a UI-side check
+  // would duplicate the service sanitize rules, and drift would silently drop the open button on legal imports, while the only gain
+  // is guarding against pointing at another share dir - consistency noise. Paths stay inside the workspace
+  // .zcode-share/*/shared-artifacts/, no privilege-read amplification.
   const normalizedPath = workspaceRelativePath?.trim();
   if (!normalizedPath || isAbsoluteFilePath(normalizedPath)) {
     return null;
@@ -417,7 +417,7 @@ const ToolCallPresentation = memo(function ToolCallPresentation({
   );
 });
 
-/** 与正文的 AssistantPreviewCards 对齐：同一套 chat.previewCards.* 副标题词汇。 */
+/** Aligned with the body AssistantPreviewCards: the same chat.previewCards.* subtitle vocabulary. */
 const ARTIFACT_SUBTITLE_MESSAGE_IDS: Readonly<Record<string, string>> = {
   pdf: "chat.previewCards.pdf",
   docx: "chat.previewCards.docx",
@@ -440,7 +440,7 @@ const ArtifactPresentation = memo(function ArtifactPresentation({
   const { intl } = useZCodeIntl();
   const artifactOpenContext = useContext(ArtifactOpenContext);
   const OpenAction = artifactOpenContext?.openAction;
-  // 与 AssistantPreviewCards 保持同一视觉：44px 图标底板 + 真实文件类型图标 + 中粗标题 + 类型副标题。
+  // Same visuals as AssistantPreviewCards: 44px icon plate + real file-type icon + medium-weight title + type subtitle.
   const descriptor = resolveFileDisplayDescriptor(row.displayName);
   const subtitleMessageId = ARTIFACT_SUBTITLE_MESSAGE_IDS[row.artifactType];
   const typeLabel = subtitleMessageId
@@ -469,7 +469,7 @@ const ArtifactPresentation = memo(function ArtifactPresentation({
         }
       : null;
   return (
-    // ReadonlyTurn 已提供与正文一致的水平 inset，这里再加 px-4 会让资源卡片两侧各多缩进 16px。
+    // ReadonlyTurn already provides the body-matching horizontal inset; adding px-4 here would indent resource cards by 16px per side.
     <div data-conversation-share-row-kind="artifact" className="py-1">
       <div className="flex w-full items-center gap-3 rounded-xl border border-card-border bg-card p-3 pr-4 text-foreground">
         <div className="flex size-11 shrink-0 items-center justify-center rounded-md bg-background text-foreground-subtle">
@@ -486,9 +486,9 @@ const ArtifactPresentation = memo(function ArtifactPresentation({
           </p>
         </div>
         {url ? (
-          // 与正文卡片右侧的 OpenSplitButton 同一视觉（h-7 圆角描边 + input 底色）；
-          // 资源 URL 实际触发下载，原「预览文件」文案会误导用户；分享页只保留「下载文件」动作。
-          // data-share-preview-button 是测试断言用的结构性标记：语义锁定不依赖 Tailwind 类字符串。
+          // Same visuals as the body-card OpenSplitButton (h-7 rounded border + input background);
+          // the resource URL triggers a download, so the old preview-file copy misleads; the share page keeps only the download action.
+          // data-share-preview-button is a structural marker for test assertions: semantics pinned, no reliance on Tailwind class strings.
           <div
             data-share-preview-button="true"
             className="flex h-7 shrink-0 items-center overflow-hidden rounded-lg border border-border bg-input transition-all hover:border-border-hover"
@@ -565,9 +565,9 @@ function renderReadonlyRow(
         />
       );
     case "timelineMarker": {
-      // 这里原本直接把 row.marker.type 当文案渲染，于是分享页会出现一条写着
-      // 字面量 compact / modelChange / goalVerify 的分割线（发布只剥掉 fork/checkpoint 类）。
-      // 改为取本地化文案；识别不了的类型不渲染，不再泄漏枚举名。
+      // This used to render row.marker.type directly as copy, so the share page showed a divider
+      // with literal compact / modelChange / goalVerify text (publishing strips only fork/checkpoint kinds).
+      // Now it uses localized copy; unknown types render nothing, no enum-name leaks.
       const markerLabel = resolveReadonlyMarkerLabel(row.marker, labels);
       if (!markerLabel) return null;
       return (
@@ -1091,7 +1091,7 @@ export function ConversationShareReadonlyTimeline({
       if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return;
       window.open(parsed.toString(), "_blank", "noopener,noreferrer");
     } catch {
-      // 外链来自不可信 Markdown；解析失败时保持不可操作，不交给浏览器未知协议。
+      // External links come from untrusted Markdown; on parse failure stay inert, never hand unknown protocols to the browser.
     }
   }, []);
   const labels: ReadonlyLabels =
@@ -1153,7 +1153,7 @@ export function ConversationShareReadonlyTimeline({
           <ArtifactOpenContext.Provider value={artifactOpenContext}>
             <div className="@container/conversation flex flex-col" data-conversation-share-timeline>
               {unsupportedRowCount > 0 ? (
-                // 中性信息语义，不用黄色 warning：分享本身没出错，只是这个 build 认不出其中几行。
+                // Neutral-information semantics, not a yellow warning: the share itself is fine; this build just does not know a few rows.
                 <div
                   data-conversation-share-unsupported-notice="true"
                   className="mx-4 mb-2 flex items-center gap-2 rounded-md border border-border/60 px-3 py-2 text-ui-xs text-foreground-subtle"

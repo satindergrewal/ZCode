@@ -14,10 +14,10 @@ const CREDENTIAL_ERROR_PATTERNS = [
   /认证|鉴权|授权|密钥|无效|过期/i,
 ];
 
-// 团队套餐业务错误（如"仅企业主账号可查询企业汇总数据"、
-// "您当前暂无有效的团队套餐授权记录，无法创建API Key"）是远端明确的业务拒绝原因，
-// 必须原文展示。其中"授权记录"含"授权"字样，若先走 credential 判断会被
-// 误判成凭据问题（走翻译文案 + 检查 API Key 按钮），因此业务错误优先匹配。
+// Team-plan business errors (enterprise-admin-only notices, missing team-plan authorization when
+// creating API keys, etc.) are explicit remote rejections and must be shown verbatim. The
+// authorization-record wording contains the credential keyword, so running the credential check
+// first would misroute it to translated copy + a check-key button; business errors match first.
 const TEAM_PLAN_BUSINESS_ERROR_PATTERNS = [
   /企业主账号/,
   /团队套餐/,
@@ -46,16 +46,15 @@ export function formatUsageErrorMessage(
   surface: UsageErrorSurface,
   error: string | null | undefined,
 ): string {
-  // 团队套餐业务错误是远端明确的业务拒绝原因，generic 文案会掩盖真实失败原因
-  // （如"仅企业主账号可查询企业汇总数据"），用户无法判断是权限问题还是网络问题。
-  // 必须先于 credential 判断："您当前暂无有效的团队套餐授权记录…"含"授权"字样，
-  // 若后判断会被误认为凭据错误而走翻译文案。
+  // Team-plan business errors are explicit remote rejections; generic copy would hide the real
+  // cause and leave users guessing permission vs network. This must run before the credential
+  // check: the team-plan authorization message contains the credential keyword and would be misrouted.
   if (isUsageTeamPlanBusinessError(error) && error?.trim()) {
     return error.trim();
   }
 
-  // 供应商接口会返回英文鉴权错误，直接展示会让用户不知道下一步怎么排查。
-  // 这里统一把可恢复的 key/OAuth 问题翻译成用户可执行的检查项，原始错误仍由调用方写入日志。
+  // Provider APIs return auth errors that give users no next step. Translate recoverable
+  // key/OAuth problems into actionable checks here; callers still log the original error.
   if (isUsageCredentialError(error)) {
     return intl.formatMessage({ id: `usage.error.${surface}.credential` });
   }

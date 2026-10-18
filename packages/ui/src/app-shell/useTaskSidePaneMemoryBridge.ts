@@ -44,9 +44,9 @@ export function useTaskSidePaneMemoryBridge({
       return;
     }
 
-    // Git pane 的 source 和 Browser URL 都属于 workspace 级 side pane UI 状态。
-    // 切换 workspace 前先写回旧 key，再恢复新 key，避免 Review/Browser tab 回来后重置。
-    // 同一 workspace 内切换 task 时，这里会继续复用同一个 key，不再把内容误判成另一份状态。
+    // The Git pane source and the Browser URL are workspace-level side-pane UI state.
+    // Write the old key back before a workspace switch and restore the new one after, so Review/Browser tabs survive.
+    // Within one workspace, task switches keep the same key and no longer read as separate state.
     saveTaskSidePaneMemoryState(previousKey, {
       activeGitSourceId: latestGitSourceRef.current,
     });

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-/** 来源和实际消费形态的单一标记；缺失的旧历史不追溯转换。 */
+/** Single marker of source and actual consumption shape; absent on old history, never retroconverted. */
 export const RuntimeInputPresentationSchema = z.enum([
   "user_steer",
   "coordinator_steer",

@@ -1,24 +1,24 @@
 import type { BrowserViewCloseTabNotification } from "@zcode/shared";
 import type { BrowserGuestExecutionContext } from "./browserGuestManager.js";
 
-/** 构造 main→renderer 关闭通知所需的 owner scope 子集；完整 execution context 的其余字段与 renderer 无关。 */
+/* /** Builds the owner-scope subset for main-to-renderer close notifications; the rest of the execution context never concerns the renderer. */
 type BrowserCloseTabNotificationOwner = Pick<
   BrowserGuestExecutionContext,
   "workspaceKey" | "sessionId" | "remoteSessionId"
 >;
 
 /**
- * 把 main 侧 tab owner 折算成 renderer 能路由的关闭通知。
+ * * Folds the main-side tab owner into a renderer-routable close notice.
  *
- * 旧 payload 只有 tabId，renderer 只能在“当前活跃 workspace”的 side pane 状态里查找；
- * 用户已切到别的 workspace 时通知被静默丢弃，原 workspace 的持久化状态里留下关不掉的幽灵 tab。
- * 带上 owner scope 后 renderer 能直接定位到对应 workspace 的 side pane 内存删除该 tab。
+ * The old payload carried tabId only, so the renderer searched just the active workspace's side pane;
+ * # a workspace switch silently dropped the notice, leaving an unclosable ghost tab in the original workspace.
+ * With owner scope the renderer targets the right workspace's side pane and deletes the tab.
  *
- * 抽成纯函数是为了让字段映射可被单测覆盖：内联在 `index.ts` 的 manager 构造回调里时，
- * Electron 入口不进单测、`closeTabFromRenderer` 又走 `notifyRenderer=false` 不经过这里，
- * 整条 Agent close 通知链路的字段拼装就没有任何测试防护。
+ * A pure function so tests cover the field mapping; inlined in index.ts's manager callback, Electron entry points
+ * escape unit tests and closeTabFromRenderer bypasses it via notifyRenderer=false,
+ * leaving the whole Agent close-notice chain untested.
  *
- * owner 允许缺省：recovery-orphan 等内部路径只有 tabId，renderer 此时退回“仅当前 workspace”语义。
+ * owner is optional: recovery-orphan paths carry tabId only, and the renderer falls back to active-workspace semantics.
  */
 export function buildBrowserViewCloseTabNotification(
   tabId: string,
@@ -29,8 +29,8 @@ export function buildBrowserViewCloseTabNotification(
     tabId,
     workspaceKey: owner.workspaceKey,
     sessionId: owner.sessionId,
-    // remote workspace 才有 remoteSessionId；本地 workspace 必须让该字段缺席而不是显式 undefined，
-    // renderer 侧按 `payload.remoteSessionId` 是否存在区分作用域。
+    // Only remote workspaces have remoteSessionId; local ones must omit it, not set explicit undefined,
+    // since the renderer branches scope on presence of payload.remoteSessionId.
     ...(owner.remoteSessionId ? { remoteSessionId: owner.remoteSessionId } : {}),
   };
 }

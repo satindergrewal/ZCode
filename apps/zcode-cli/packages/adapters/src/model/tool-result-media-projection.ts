@@ -29,9 +29,9 @@ export function shouldTextifyStructuredToolResults(
   if (options.apiFormat !== undefined) {
     return options.apiFormat === "openai-chat-completions";
   }
-  // 根因：openai kind 使用 Responses API；按宽泛的 OpenAI-like 家族判断会把它
-  // 误投影成 Chat Completions 的 tool text + synthetic user。缺少显式格式时只对
-  // 确实使用 Chat 风格结果的 provider 回退，显式 apiFormat 仍拥有最高优先级。
+  // Root cause: the openai kind uses the Responses API; family-wide OpenAI-like detection would
+  // misproject it into Chat Completions tool text + synthetic user. Without an explicit format, fall back only for
+  // providers actually using Chat-style results; an explicit apiFormat always wins.
   return (
     options.providerKind !== undefined &&
     CHAT_STYLE_TOOL_RESULT_PROVIDER_KINDS.has(options.providerKind)
@@ -39,9 +39,9 @@ export function shouldTextifyStructuredToolResults(
 }
 
 /**
- * tool result 是否含 video 媒体。AI SDK tool result part 没有 video 变体（image-data 之外
- * 只支持 file-data/pdf），所以含 video 的 tool result 在所有 provider kind（含 anthropic）
- * 都必须走 textify + 后置 user part 投影，否则视频内容会在 wire 边界丢失。
+ * Whether the tool result carries video media. The AI SDK tool result part has no video variant (beyond
+ * image-data only file-data/pdf), so video-bearing tool results on every provider kind (anthropic included)
+ * must go through textify + trailing user part projection, or video content is lost at the wire boundary.
  */
 export function toolResultHasVideoMedia(content: ModelMessageContent): boolean {
   if (typeof content === "string") return false;
@@ -49,15 +49,15 @@ export function toolResultHasVideoMedia(content: ModelMessageContent): boolean {
 }
 
 /**
- * 配对规则（producer 谓词驱动）：紧邻 media 块之后、且内容是受保护媒体
- * 凭证（producer 签发的 image_ref 等）的 text 块，视为该 media 的配对文本。
- * provider 投影把 media 延后为独立 user 消息时（openai-like textify），配对
- * 文本必须一起延后且保持顺序——留在 tool 文本里会让模型看到"引用文本"与
- * "被引用媒体"分属两条消息，多帧场景极易配错。
- * 普通文本（说明、总结）不是凭证，不参与配对——通用工具的媒体语义保持
- * 不变；凭证判定是 producer 帧契约的一部分，宿主经 frame-contract 引用。
- * Producer canonical order is image-first（raster 在前、image_ref 紧随其后）。
- * 配对查找从 image 向后读取其 authority，不依赖 provider 特殊截断行为。
+ * Pairing rule (producer predicate driven): a text block right after a media block whose content is producer-issued
+ * media credentials (image_ref etc.) is that media's paired text.
+ * When provider projection defers media into a separate user message (openai-like textify), the paired
+ * text must be deferred in the same order: leaving it in tool text would split reference and
+ * referenced media across two messages, easily mispaired with multiple frames.
+ * Plain prose (explanations, summaries) is not a credential and never pairs; generic tool media semantics
+ * stay untouched; credential detection is part of the producer frame contract, referenced via frame-contract.
+ * Producer canonical order is image-first (raster first, image_ref right behind).
+ * Pairing looks backward from the image to its authority, relying on no provider-specific truncation.
  */
 type PairedTextOptions = Pick<ToolResultMediaProjectionOptions, "stripMedia" | "inputFormat">;
 
@@ -68,11 +68,11 @@ function isPairedTextBlock(
 ): boolean {
   const block = content[index];
   if (block?.type !== "text" || block.text.trim().length === 0) return false;
-  // 只有 producer 签发的媒体凭证才配对；任意相邻文本配对会改变所有工具的
-  // 通用媒体语义（普通截图/文件预览的相邻说明不属于媒体）。
+  // Only producer-issued media credentials pair; pairing arbitrary neighbors would change every tool's
+  // generic media semantics (an adjacent caption on a screenshot is not media).
   if (!containsOfficialCuaImageRefCredentialText(block.text)) return false;
-  // 跳过空白 text 寻找更早图片会破坏 producer 规定的 image -> image_ref
-  // 直接邻接关系，并可能把已被插入块拆开的 frame_ref 重新授权。
+  // Skipping blank text to find an earlier image breaks the producer-mandated image -> image_ref
+  // adjacency and could re-authorize a frame_ref split by an inserted block.
   const candidate = content[index - 1];
   return (
     candidate !== undefined &&
@@ -87,8 +87,8 @@ function pairedTextIndexes(
   content: ModelMessageContentBlock[],
   options: PairedTextOptions,
 ): Set<number> {
-  // stripMedia 时 media 不会延后（toToolResultMediaUserParts 直接返回空），
-  // 配对省略不得先行——否则文本从 tool 输出消失又不出现在任何消息里。
+  // Under stripMedia media is never deferred (toToolResultMediaUserParts returns empty),
+  // so omitting the pairing must not run first or the text vanishes from every message.
   if (options.stripMedia === true) return new Set();
   const paired = new Set<number>();
   for (let index = 0; index < content.length; index += 1) {
@@ -105,8 +105,8 @@ export function toStructuredToolResultText(
   const paired = pairedTextIndexes(content, options);
   return modelMessageContentToText(
     content.map((block, index) => {
-      // 配对文本随 media 一起延后（见 toToolResultMediaUserParts），这里省略
-      // 以免模型在同一次请求里看到两份引用文本。
+      // Paired text is deferred together with its media (see toToolResultMediaUserParts); omit it here
+      // so the model never sees duplicate reference text in one request.
       if (paired.has(index)) return { type: "text", text: "" };
       const unsupportedText = unsupportedInputMediaText(block, options.inputFormat);
       return unsupportedText ? { type: "text", text: unsupportedText } : block;
@@ -128,14 +128,14 @@ export function toToolResultMediaUserParts(
       text: `${TOOL_RESULT_MEDIA_INTRO_PREFIX} ${options.toolName}:`,
     },
   ];
-  // 分隔符只用于隔开"连续两段配对文本"。原判据是 parts.length > 1，隐含假设配对
-  // 文本总是第一个入队（旧的 text-first 布局）；producer 改成 image-first 后 raster
-  // 先入队，该判据会在 image 与它的 image_ref 之间插入一个多余的空文本块。
+  // The separator only divides two consecutive paired texts. The old parts.length > 1 check assumed
+  // paired text always enqueued first (legacy text-first layout); with producer image-first the raster
+  // enqueues first and that check would insert a stray empty text block between image and image_ref.
   let lastPushedWasPairedText = false;
   for (let index = 0; index < blocks.length; index += 1) {
     const block = blocks[index]!;
     if (block.type === "text" && paired.has(index)) {
-      // 配对文本与相邻 media 一起进入延后消息，保持原顺序。
+      // Paired text enters the deferred message with its adjacent media, order preserved.
       if (lastPushedWasPairedText) parts.push({ type: "text", text: "\n\n" });
       parts.push({ type: "text", text: block.text });
       lastPushedWasPairedText = true;
@@ -169,7 +169,7 @@ function contentBlockToUserMediaParts(
       }
       const data = dataUrlToDataContent(block.dataUrl);
       if (!data) return [];
-      // 与 user 消息侧一致：video/* file part 交给 patch 后的 provider 包转 video_url / video block。
+      // Same as the user-message side: video/* file parts become video_url / video blocks via the patched provider package.
       return [{ type: "file", data: data.data, mediaType: block.mediaType }];
     }
 
@@ -198,19 +198,19 @@ function contentBlockToUserMediaParts(
 }
 
 /**
- * 通用 fail-closed 守卫（坐标帧引用不得以"引用在、栅格不在"到达模型）：
- * 结构化 tool result 携带帧引用文本（如 CUA image_ref 的精确 JSON），而其媒体
- * 因模型不支持（或 stripMedia）无法投递时，该结果必须整体错误化——占位符替换
- * 会留下 actionable 引用，诱导模型对未见过画面的坐标产生动作。规则只依赖
- * "引用文本 + 不可投递媒体"的结构组合，不感知具体工具。
+ * Generic fail-closed guard (frame references must never reach the model as reference-present/raster-missing):
+ * a structured tool result carries frame-reference text (e.g. CUA image_ref JSON) whose media cannot be
+ * delivered (unsupported by the model, or stripMedia): the whole result must hard-error. Placeholder
+ * substitution would leave actionable references and induce actions against unseen frames. The rule depends
+ * only on the reference-text + undeliverable-media shape, agnostic to the specific tool.
  */
 export function undeliverableFrameReferenceText(
   content: ModelMessageContent,
   options: Pick<ToolResultMediaProjectionOptions, "stripMedia" | "inputFormat">,
 ): string | undefined {
   if (!Array.isArray(content)) return undefined;
-  // 与 MCP 归一化/hook 同一个内嵌扫描 detector——把 image_ref 包进说明文字
-  // 不能绕过 fail-closed（安全边界不依赖 payload 形状）。
+  // Same inline scan detector as MCP normalization/hooks: wrapping image_ref in prose
+  // must not bypass fail-closed (the boundary never trusts payload shape).
   const frameReferenceIndexes = content.flatMap((block, index) =>
     block.type === "text" && containsOfficialCuaImageRefCredentialText(block.text) ? [index] : [],
   );
@@ -220,8 +220,8 @@ export function undeliverableFrameReferenceText(
     "No image_ref or raster was exposed; do not use frame-bound coordinates. " +
     "Switch to an image-capable model and capture a new raster first.";
   if (options.stripMedia === true) return unavailable;
-  // 每个凭证都必须由它直接前面的 raster 独立满足可投递性；结果中其他无关图片
-  // 不能替 orphan ref 背书。
+  // Every credential must be satisfied by the raster directly before it; unrelated images
+  // in the result cannot vouch for an orphan ref.
   return frameReferenceIndexes.every((index) => isPairedTextBlock(content, index, options))
     ? undefined
     : unavailable;

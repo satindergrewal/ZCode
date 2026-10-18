@@ -12,7 +12,7 @@ interface EmbeddedSearchPreludeOptions {
   shellDialect?: EmbeddedSearchPreludeShellDialect;
 }
 
-// ugrep 的 -z/-Z 与 GNU grep 的 null-data 语义不同；这些参数必须绕回系统 grep。
+// ugrep's -z/-Z differ from GNU grep null-data mode; these flags must fall back to system grep.
 const GREP_BYPASS_CASE_PATTERN =
   "-*-filter*|-*-pager*|-*-view*|-*-format-open*|-*-config*|---*|-@*|-*-save-config*|-[Zz]*|-[!-]*[Zz]*|--null|--null-data";
 
@@ -39,7 +39,7 @@ export function buildEmbeddedSearchPreludeContent(
   if (!supportsPosixShellFunctionPrelude(options.shellDialect)) return undefined;
 
   const backend = normalizeBackendForShell(prelude.backend, options.shellDialect);
-  // Windows 不分发 bfs；Git Bash 必须保留系统 find，不能只因存在 fallback 就覆盖用户定义。
+  // Windows ships no bfs; Git Bash keeps system find, and a fallback alone must not shadow user definitions.
   const shouldWrapFind = options.shellDialect !== "git-bash";
   const content =
     prelude.findAndGrepEnabled === false
@@ -145,15 +145,15 @@ function createRipgrepFallback(backend: EmbeddedSearchBackend): string | undefin
 
   switch (backend.kind) {
     case "internal-cli":
-      // 兼容 backend 没有原生 rg；不能恢复无法保留 stdin 的 Node/WASM 转发路径。
+      // Compat: the backend has no native rg; Node/WASM forwarding that cannot preserve stdin is unrestorable.
       return undefined;
     case "argv0-dispatch":
       backendCommand = backend.command;
       invocation = `ARGV0=rg ${createCommandInvocation(backend)} "$@"`;
       break;
     case "native-binaries":
-      // 同名 rg 不是独立 fallback：外层检查已经证明 shell 里没有可执行 rg。
-      // 此时再定义 rg function 会让 command -v 误报可用，但调用仍只能失败。
+      // A same-name rg here is not an independent fallback: outer checks proved no executable rg on PATH.
+      // Defining an rg function would make command -v report success while every call still fails.
       if (backend.rgCommand === "rg") return undefined;
       backendCommand = backend.rgCommand;
       invocation = `command ${shellQuote(backend.rgCommand)} "$@"`;

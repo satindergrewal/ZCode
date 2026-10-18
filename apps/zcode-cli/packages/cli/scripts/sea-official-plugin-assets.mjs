@@ -10,7 +10,7 @@ const browserUseRequiredRuntimePaths = [
   "docs/api.json",
   "docs/documents.json",
   "docs/overview.md",
-  // recording lookup 是录屏 API 的模型入口，SEA 不得接受缺失正文的插件资产。
+  // recording lookup is the screen-recording API's model entrypoint; SEA must not accept plugin assets with missing bodies.
   "docs/recording.md",
   "docs/workflow.md",
   "skills/control-browser/SKILL.md",
@@ -19,8 +19,8 @@ const browserUseRequiredRuntimePaths = [
 
 export const officialSeaPlugins = [
   {
-    // node_repl 宿主：Browser Use 与 Computer Use 共用的运行时产物，自己不是面向用户的插件
-    // （无 skill、无市场 listing）。它必须始终随发布物嵌入，否则任一能力启用时都没有宿主可跑。
+    // node_repl host: runtime shared by Browser Use and Computer Use; not a user-facing plugin itself
+    // (no skill, no marketplace listing). It must always ship embedded, or neither capability has a host to run in.
     marketplace: "zcode-plugins-official",
     name: "node-repl-host",
     packageName: "@zcode/node-repl-host",
@@ -30,17 +30,16 @@ export const officialSeaPlugins = [
     version: "0.6.0",
   },
   {
-
     marketplace: "zcode-plugins-official",
     name: "browser-use",
     packageName: "@zcode/browser-use-plugin",
     requiresRuntime: true,
-    // Browser Use 的 runtime、client、API 文档和 skills 是同一发布单元；
-    // SEA 构建必须在嵌入前拒绝任一缺失项，不能把损坏产物留到用户启动时才发现。
+    // Browser Use's runtime, client, API docs, and skills are one release unit;
+    // the SEA build must reject any missing piece before embedding, not leave a broken bundle to fail at user startup.
     requiredRuntimePaths: browserUseRequiredRuntimePaths,
     rootPath: join("packages", "browser-use-plugin"),
-    // SEA 清单仍指向旧版时，runtime 会与官方 definition 精确匹配失败，
-    // 导致发布产物不 seed browser-use，进而无法装配宿主 node_repl MCP。
+    // If the SEA manifest still points at the old version, the runtime fails the exact match against the official
+    // definition, the release fails to seed browser-use, and the host node_repl MCP cannot be assembled.
     version: "0.5.1",
   },
 ];
@@ -63,8 +62,8 @@ export const collectSeaOfficialPluginAssets = async ({
     const pluginRoot = resolve(root, plugin.rootPath);
     assertPluginRoot(pluginRoot, plugin);
     assertPluginRequiredSeedAssets(pluginRoot, plugin);
-    // 只提供 skills 的内容型插件没有 MCP server，用 requiresRuntime:false 跳过校验；
-    // 其余运行时插件仍要在此校验，避免发布缺失可执行入口的产物。
+    // Content-only plugins that ship skills have no MCP server; skip via requiresRuntime:false.
+    // Every other runtime plugin is still checked here so releases never ship a missing executable entry.
     if (requireRuntime && plugin.requiresRuntime !== false) assertPluginRuntime(pluginRoot, plugin);
 
     const pluginFiles = [];
@@ -187,7 +186,7 @@ const includedTopLevelPaths = new Set([
   ".mcp.json",
   ".zcode-plugin",
   "README.md",
-  // SEA 资源采集曾只允许 skills/commands，导致 document-skills 的 judge 子代理未进入可执行文件。
+  // SEA asset collection used to allow only skills/commands, so document-skills' judge subagent never made it into the binary.
   "agents",
   "commands",
   "dist",

@@ -33,9 +33,9 @@ export function resolvedPlaceholderAttachment(
     },
     mime,
     source: options.source,
-    // 无效 media data URL 虽已降级为占位文本，过去仍会通过 file part 的 url
-    // 把 base64 正文落入 session。PDF 不得把 data URL 写入 part.data；可恢复的 artifact
-    // URI 仍保留，便于后续诊断和按既定授权路径重试。
+    // Invalid media data URLs degrade to placeholder text, but the file part's url field used to leak
+    // the base64 body into the session. A PDF must not write a data URL into part.data; a recoverable artifact
+    // URI stays for later diagnosis and retry via the sanctioned grant path.
     url:
       attachment.type === "video" || attachment.type === "pdf"
         ? attachment.content?.startsWith("zcode-artifact://")

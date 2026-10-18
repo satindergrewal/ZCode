@@ -57,7 +57,7 @@ export const ConfigKey = {
   SkillsMetadataBudget: "skills.metadataBudget",
   SkillsRoots: "skills.roots",
 
-  // Skill / Command 可用性覆盖（按 SKILL.md / 命令 .md 的绝对路径过滤）
+  // Skill / Command availability overrides (filtered by absolute SKILL.md / command .md path)
   SkillOverrides: "skill",
   CommandOverrides: "command",
 
@@ -186,11 +186,10 @@ export interface ConfigSource {
 }
 
 // ============================================================
-// Skill / Command 可用性覆盖
-// ============================================================
-
-// 按绝对路径覆盖单个 skill / 命令是否可用。未列出的条目默认可用，
-// 只有显式 enable:false 才会在发现阶段被过滤掉。
+// Skill / Command availability overrides
+//
+// Override single skill/command availability by absolute path. Unlisted entries default to enabled;
+// only an explicit enable:false filters them out during discovery.
 export interface SkillCommandOverride {
   enable?: boolean;
 }
@@ -240,9 +239,9 @@ export interface RuntimeConfig {
     roots: string[];
     [skillPath: string]: boolean | number | string[] | { enable?: boolean };
   };
-  // key 为 SKILL.md 绝对路径，value.enable=false 表示禁用该 skill
+  // key: absolute SKILL.md path; value.enable=false disables that skill
   skillOverrides: Record<string, SkillCommandOverride>;
-  // key 为命令 .md 绝对路径，value.enable=false 表示禁用该命令
+  // key: absolute command .md path; value.enable=false disables that command
   commandOverrides: Record<string, SkillCommandOverride>;
   logging: {
     level: "debug" | "info" | "warn" | "error";

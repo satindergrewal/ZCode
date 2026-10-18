@@ -35,8 +35,8 @@ async function readRequestBody(
   init: RequestInit | undefined,
 ): Promise<string | undefined> {
   if (typeof init?.body === "string") return init.body;
-  // Option Map 是 reasoning/max-output 的唯一请求字段权威。若 SDK 改成非文本 Body 却静默
-  // 跳过 Patch，请求仍会发出但丢失两个 Option；因此有 Body 时必须 fail-closed。
+  // The Option Map is the single authority for reasoning/max-output request fields. If the SDK ever switches to a
+  // non-text body and silently skips the patch, the request sends but loses both options: fail closed when a body exists.
   if (init?.body !== undefined && init.body !== null) {
     throw new Error("Model option maps require a JSON text request body.");
   }

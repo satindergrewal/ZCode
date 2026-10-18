@@ -23,46 +23,46 @@ export {
   type ProcessProbeSample,
 } from "./process-probe-shared.js";
 
-/** 进程树采样的实际口径：Windows 的 tasklist 没有 ppid，只能拿到直连进程。 */
+/** What tree sampling really covers: Windows tasklist has no ppid, only direct children. */
 export type ProcessTreeScope = "direct_process" | "process_tree";
 
 /**
- * 通用进程探针：给一批 pid 或一个进程组 id，回每个进程的 RSS 与累计 CPU 时间。
- * MCP 5 分钟采样、Bash 慢命令采样共用本模块。
+ * Generic process probe: given pids or a process-group id, return per-process RSS and cumulative CPU time.
+ * Shared by the MCP 5-minute sample and Bash slow-command sample.
  *
- * 性能红线约束本模块：
- * - 外部进程白名单只有 macOS 的 `ps` 与 Windows 的 `tasklist`，每次采样最多一次调用；
- * - Linux 一律读 `/proc`，不启动任何进程；
- * - 每次采样 1 秒超时，超时或失败一律视为「本次无样本」，不重试、不排队；
- * - 连续 3 次失败后本实例停用，直到调用方在下一个上报窗口显式 `reset()`。
+ * Performance red lines for this module:
+ * - external process allowlist is macOS `ps` and Windows `tasklist`, at most one call per sample;
+ * - Linux reads /proc only, never spawning processes;
+ * - 1s timeout per sample; timeout or failure means no-sample, no retry, no queueing;
+ * - after 3 consecutive failures the instance disables itself until the caller resets() next window.
  *
- * 失败预算属于探针实例：一个 CLI 进程里每个采样场景（MCP、Bash 命令）各持有一个长生命周期实例，
- * 场景之间互不影响，窗口切换时由调用方 `reset()`。
+ * The failure budget belongs to the probe instance: each sampling scenario in a CLI process (MCP, Bash)
+ * holds its own long-lived instance; scenarios never affect each other; callers reset() on window switch.
  */
 export interface ProcessProbe {
   /**
-   * 按根 pid 采整棵进程树（含根自身），返回 root pid → 树内各进程样本。
-   * 采样时已不存在的根不会出现在结果里；返回 `undefined` 表示本次无样本。
+   * Sample a whole process tree by root pid (root included), mapping root pid to per-process samples.
+   * Roots already gone at sampling time are absent; undefined means no sample this round.
    */
   sampleProcessTrees(
     rootPids: readonly number[],
   ): Promise<ReadonlyMap<number, readonly ProcessProbeSample[]> | undefined>;
-  /** 按进程组 id 采样；Windows 无进程组语义，恒为无样本且不启动进程。 */
+  /** Sample by process-group id; Windows has no group semantics: always no-sample, never spawns. */
   sampleProcessGroup(processGroupId: number): Promise<readonly ProcessProbeSample[] | undefined>;
-  /** 上报窗口切换时清零连续失败计数，让被停用的探针在新窗口重新可用。 */
+  /** Clear consecutive-failure counts on window switch so a disabled probe becomes usable again. */
   reset(): void;
-  /** 本平台 `sampleProcessTrees` 的口径，调用方据此标注样本范围，不用自己判平台。 */
+  /** This platform's sampleProcessTrees coverage; callers label sample scope without testing the platform. */
   readonly treeScope: ProcessTreeScope;
 }
 
 interface CreateProcessProbeOptions {
   execFile?: ProcessProbeExecFile;
-  /** 列出 `/proc` 下的条目，仅 Linux 使用 */
+  /** List /proc entries, Linux only. */
   listProcDirectory?: () => Promise<readonly string[]>;
-  /** 每次采样失败（含超时）的原因；调用方接到自己的 debug 日志，探针本身不做 I/O */
+  /** Why the last sample failed (timeout included); goes to the caller's debug log, the probe does no I/O. */
   onSampleFailed?: (reason: string) => void;
   platform?: NodeJS.Platform;
-  /** 读取 `/proc/<pid>/stat` 与 `/proc/<pid>/status`，仅 Linux 使用 */
+  /** Read /proc/<pid>/stat and /proc/<pid>/status, Linux only. */
   readProcFile?: (path: string) => Promise<string>;
 }
 
@@ -82,12 +82,12 @@ export function createProcessProbe(options: CreateProcessProbeOptions = {}): Pro
     try {
       options.onSampleFailed?.(reason);
     } catch {
-      // 观测回调抛错不能反过来影响采样与业务。
+      // Observer callbacks must never break sampling or the caller.
     }
     return undefined;
   };
 
-  /** 一次采样的统一收口：超时、异常、命令失败都只表现为「无样本」，并累计失败预算。 */
+  /// Single funnel per sample: timeout, throw or command failure all mean no-sample and burn failure budget. */
   const sampleWithinBudget = async <T>(
     collect: (readers: LinuxProcReaders) => Promise<T>,
   ): Promise<T | undefined> => {
@@ -106,7 +106,7 @@ export function createProcessProbe(options: CreateProcessProbeOptions = {}): Pro
       return reportFailure(error instanceof Error ? error.message : String(error));
     }
     if (outcome === PROBE_TIMED_OUT) {
-      return reportFailure(`采样超过 ${PROCESS_PROBE_SAMPLE_TIMEOUT_MS} 毫秒`);
+      return reportFailure(`Sampling exceeded ${PROCESS_PROBE_SAMPLE_TIMEOUT_MS}ms`);
     }
     consecutiveFailures = 0;
     return outcome;
@@ -120,7 +120,7 @@ export function createProcessProbe(options: CreateProcessProbeOptions = {}): Pro
       if (platform === "win32") {
         const samples = await sampleWithinBudget(() => readWindowsProcessMemory(execFile, roots));
         if (!samples) return undefined;
-        // tasklist 没有 ppid，Windows 的「进程树」只能退化为根进程自身，见 treeScope。
+        // tasklist has no ppid: the Windows tree degenerates to the root itself, see treeScope.
         return new Map(samples.map((sample) => [sample.pid, [sample]]));
       }
       return await sampleWithinBudget(async (readers) =>
@@ -131,7 +131,7 @@ export function createProcessProbe(options: CreateProcessProbeOptions = {}): Pro
     },
     async sampleProcessGroup(processGroupId) {
       if (!isSamplablePid(processGroupId)) return undefined;
-      // Windows 没有进程组语义，也没有零成本的进程树数据源，直接放弃本次采样。
+      // Windows has neither group semantics nor a free tree source; give up on this sample.
       if (platform === "win32") return undefined;
       return await sampleWithinBudget(async (readers) =>
         platform === "linux"
@@ -146,8 +146,8 @@ export function createProcessProbe(options: CreateProcessProbeOptions = {}): Pro
 }
 
 /**
- * 1 秒硬超时：`ps` / `tasklist` 由 execFile 的 timeout 真杀进程；
- * `/proc` 读取无法取消，由 readers.isExpired 在批次边界中止，这里只负责判负返回。
+ * 1s hard timeout: execFile's timeout kills ps/tasklist;
+ // /proc reads cannot be cancelled, readers.isExpired abort at batch bounds; this side just declares defeat.
  */
 async function raceProbeTimeout<T>(work: Promise<T>): Promise<T | typeof PROBE_TIMED_OUT> {
   let timer: ReturnType<typeof setTimeout> | undefined;

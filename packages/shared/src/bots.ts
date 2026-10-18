@@ -1,4 +1,4 @@
-/* oxlint-disable eslint(max-lines) -- Bot 共享合约集中维护 provider、状态和 schema，保持类型与校验就近。 */
+/* oxlint-disable eslint(max-lines) -- the Bot shared contract keeps provider, states, and schemas together, types next to validation. */
 import { z } from "zod";
 import { modelSelectionSchema, type ModelSelection } from "./model-selection.js";
 import { ZCODE_AGENT_PROVIDER, ZCODE_AGENT_PROVIDER_LABEL } from "./zcode-agent-policy.js";
@@ -35,8 +35,8 @@ export type BotProvider = (typeof botProviders)[number];
 export type FeishuBotProvider = Extract<BotProvider, "feishu" | "lark">;
 
 /**
- * 定时任务完成后的 Bot 回推目标。只保留未来仍稳定的会话地址；当前消息 id/context token
- * 属于一次入站交互，不能持久化后复用。该字段由 Host 注入，模型工具参数不直接暴露。
+ * Bot callback target after a scheduled task completes. Only ever-stable session addresses persist; the message
+ * id/context token belong to one inbound interaction and must not be persisted for reuse. Host-injected; never a bare tool param.
  */
 export const zcodeAutomationBotDeliveryTargetSchema = z
   .object({
@@ -198,7 +198,7 @@ export interface BotsStateFile {
 }
 
 export interface BotRuntimeInfo {
-  /** 最近一次消息投递错误；独立于长连接状态，成功投递后清除。 */
+  /// Last message-delivery error; independent of connection state, cleared on success.
   deliveryError?: string;
   botId: string;
   provider: BotProvider;
@@ -387,7 +387,7 @@ export const botAllowedCommandsSchema = z
     thoughtLevel: z.boolean(),
     sandboxMode: z.boolean().optional(),
     approvalPolicy: z.boolean().optional(),
-    // 兼容旧 bot-config.json；/cli 命令已移除，新配置不会再写入这个字段。
+    // Legacy bot-config.json compat; the /cli command is gone, new configs never write it.
     cli: z.boolean().optional(),
     reply: z.boolean(),
   })
@@ -401,7 +401,7 @@ export const botCurrentOptionsSchema = z
     mode: z.string().min(1).optional(),
     sandboxMode: z.string().min(1).optional(),
     approvalPolicy: z.string().min(1).optional(),
-    // 兼容旧 bot-config.json；CLI provider 现在统一由 ZCode Protocol 侧配置决定。
+    // Legacy bot-config.json compat; the CLI provider is now decided solely by the ZCode Protocol side.
     cli: z.literal(ZCODE_AGENT_PROVIDER).optional(),
   })
   .strict();
@@ -538,7 +538,7 @@ export function getSupportedBotReplyGranularities(
   return isFeishuBotProvider(provider)
     ? (["streaming_card"] as const)
     : BOT_REPLY_GRANULARITIES.filter(
-        // Bugfix: streaming card 依赖 Feishu/Lark Card JSON 2.0，其他 channel 无法渲染或更新该消息形态。
+        // Bugfix: the streaming card needs Feishu/Lark Card JSON 2.0; other channels cannot render or update that shape.
         (granularity) => granularity !== "streaming_card",
       );
 }

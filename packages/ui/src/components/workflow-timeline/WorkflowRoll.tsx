@@ -7,15 +7,17 @@ import type { RollGroup } from "./roster-model.js";
 import type { TimelinePill } from "./timeline-model.js";
 
 /**
- * 门后的名单：侧板名册站里没被钉住
- * 的人，每人一次，按状态分组、组序即注意力序（failed → running → pending → done），组内参与者序。
- * 组头是计数行的那一项——图标、人数、状态词、语义色，右边一条细线拉到边——所以门开着时计数行不必
- * 再出现一次。行由调用方渲染（各面自己的接线），这里只排两列、发入场延迟。
+ * The list behind the door: the roster station's unpinned people, once each, grouped by
+ * status in attention order (failed -> running -> pending -> done), participant order
+ * within a group. Each group header is the count row's entry — icon, count, status word,
+ * semantic color, hairline to the edge — so with the door open the count row need not
+ * repeat itself. Rows render by the caller (each surface wires its own handlers); this
+ * only lays out two columns and hands out entrance delays.
  *
- * 表外的那些（`unlisted`）没有行可落：门与计数行算了它们，名单只能在末尾用一行淡字交代这个差额，
- * 而不是假装那些行在（追记「表外的那些」）。
+ * Unlisted agents have no row to land on: the door and count row count them, so the list
+ * owns up to the difference in one muted closing line instead of pretending rows exist.
  */
-/** 行依次落地：每行 8 ms、封顶 400 ms（沿用格子的节奏；30 ms 的药丸节奏对一卷名单太慢）。 */
+/** Rows land in sequence: 8ms each, capped at 400ms (the tile's cadence; the pill's 30ms is too slow for a roll). */
 export const ROW_STAGGER_MS = 8;
 export const ROW_STAGGER_CAP_MS = 400;
 
@@ -43,9 +45,9 @@ export function WorkflowRoll({
   unlisted = 0,
 }: {
   groups: readonly RollGroup[];
-  /** 渲染一行；`enterDelayMs` 是这一行在整卷名单里的落地延迟。 */
+  /** Renders one row; `enterDelayMs` is its landing delay within the roll. */
   renderRow: (pill: TimelinePill, enterDelayMs: number) => ReactNode;
-  /** 这一站列不出行的子代理数（跑完的、还没跑的都算）；零即那一行淡字缺席。 */
+  /** Subagents this station cannot list (finished or not yet run); zero hides the muted line. */
   unlisted?: number;
 }) {
   const { intl } = useZCodeIntl();
@@ -57,7 +59,7 @@ export function WorkflowRoll({
           { id: `chat.toolCall.workflow.timeline.roster.${group.status}` },
           { count: group.pills.length },
         );
-        // 两种语言的词条都以人数开头（`{count} done` / `{count} 个已完成`）：人数加粗、其余照常。
+        // Both locales lead with the count (`{count} done`): bold the number, plain the rest.
         const split = /^(\d+)(.*)$/.exec(label);
         return (
           <Fragment key={group.status}>

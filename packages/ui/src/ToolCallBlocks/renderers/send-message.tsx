@@ -108,7 +108,7 @@ export function SendMessageToolCallBlock(context: ToolCallBlockRenderContext) {
   const summary = readStringField(input, ["summary"]);
   const target = readStringField(input, ["to"]);
   const message = readStringField(input, ["message"]);
-  // streaming input 首帧可能还没有字段，不能为一个空详情面板提供展开入口。
+  // The first streaming-input frame may lack these fields; never offer an expander for an empty detail pane.
   const hasDetails = Boolean(target || summary || message);
   const outputMessage = readStringField(output, ["message"]);
   const outputError = readStringField(output, ["error"]);

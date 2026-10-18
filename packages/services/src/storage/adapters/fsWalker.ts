@@ -1,7 +1,7 @@
 /**
- * 数据根遍历器：异步、有界并发、可取消、不跟随符号链接。
- * 产出 (relativePath, bytes, mtimeMs)，分类与聚合由 domain 在调用方完成。
- * 每处理 yieldEvery 个条目让出一次事件循环，避免在 Worker/host 内长时间独占。
+ * Data-root walker: async, bounded concurrency, cancellable, no symlink following.
+ * Yields (relativePath, bytes, mtimeMs); classification/aggregation happen in domain at the caller.
+ * Yields the event loop every yieldEvery entries, never monopolizing Worker/host.
  */
 import { lstat, opendir } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
@@ -13,16 +13,16 @@ interface WalkStorageRootOptions {
   onEntry: (entry: StorageScanEntry) => void;
   onError?: (error: StoragePathError) => void;
   signal?: AbortSignal;
-  /** 同时打开的目录数，默认 4。 */
+  /** Concurrently open dirs, default 4. */
   concurrency?: number;
-  /** 每处理多少条目让出一次事件循环，默认 256。 */
+  /** Event-loop yield interval in entries, default 256. */
   yieldEvery?: number;
 }
 
 interface WalkStorageRootResult {
   directoriesScanned: number;
   filesScanned: number;
-  /** 根目录本身不存在时为 true（视为空根，不算错误）。 */
+  /** true when the root itself is missing (empty root, not an error). */
   missingRoot: boolean;
 }
 
@@ -101,7 +101,7 @@ export async function walkStorageRoot(
             mtimeMs: stats.mtimeMs,
           });
         } catch (error) {
-          // 扫描期间文件可能被日志轮转或 Agent 删除；ENOENT 属于正常竞态，不计为错误。
+          // Files may vanish to rotation/agent during scan; ENOENT is a normal race, not an error.
           if (errorCode(error) !== "ENOENT") {
             onError?.({ path: toRelative(rootPath, entryPath), code: errorCode(error) });
           }
@@ -113,7 +113,7 @@ export async function walkStorageRoot(
     }
   };
 
-  // 有界并发：最多 concurrency 个目录同时打开；队列为空且无活动任务时结束。
+  // Bounded concurrency: at most concurrency open dirs; done when the queue empties and nothing is in flight.
   await new Promise<void>((resolve, reject) => {
     let failed = false;
     const pump = () => {

@@ -26,7 +26,7 @@ export async function recordModelUsage(db: DatabaseSync, input: ModelUsageRecord
       input.cacheReadInputTokens,
     ) + integer(input.outputTokens);
 
-  // 数据库沿用 0010 创建的历史列名；领域层使用更准确的 reasoningLevel。
+  // Column names follow the legacy 0010 schema; the domain calls it reasoningLevel.
   db.prepare(
     `
       insert into model_usage (
@@ -381,8 +381,8 @@ function toolUsageValues(input: ToolUsageRecord): SQLInputValue[] {
   ];
 }
 
-// 说明：按本地日归桶用固定偏移 tzOffsetMs，dayIndex = floor((started_at + off)/DAY)。
-// DST 跨日边界存在最多 1 小时误差，对用量统计可接受。
+// Daily buckets use a fixed offset tzOffsetMs: dayIndex = floor((started_at + off)/DAY).
+// DST day boundaries err by up to 1h, acceptable for usage stats.
 export async function queryAppUsage(
   db: DatabaseSync,
   input: AppUsageQueryInput,
@@ -498,7 +498,7 @@ export async function queryAppUsage(
     )
     .all(tzOffsetMs, DAY_MS, since, until) as Array<{ dayIndex: number; toolCallCount: number }>;
 
-  // 合并三类按日统计到同一 dayIndex
+  // Merge the three daily aggregates onto one dayIndex
   const dayMap = new Map<number, AppUsageDayRow>();
   for (const row of days) {
     dayMap.set(row.dayIndex, {
@@ -638,8 +638,8 @@ export async function queryTaskUsage(
         ? inputSideTokens
         : Math.max(0, inputSideTokens - (inputBaselineBySource[source] ?? 0));
     if (source !== undefined) {
-      // 压缩会让后续 context input 变小；累计消耗不能因此回扣历史，
-      // 但 baseline 必须降到压缩后的值，后续新增轮次才能继续按增量计算。
+      // Compaction shrinks later context inputs; cumulative spend never claws back history,
+      // but the baseline must drop to the post-compaction value so later turns accrue incrementally.
       inputBaselineBySource[source] = inputSideTokens;
     }
 
@@ -712,8 +712,8 @@ function inputSideTokensFromStoredUsage(row: {
     }
   }
 
-  // AI SDK v6 写入的 inputTokens 已经是 total input；历史表里 cache 字段只是 breakdown。
-  // task usage 和 compact 基线不能再把 cache read/write 叠到 inputTokens 上。
+  // AI SDK v6 inputTokens is already total input; legacy cache fields are breakdowns only.
+  // Task usage and compact baselines must not add cache read/write on top of inputTokens.
   return input;
 }
 
@@ -729,7 +729,7 @@ function taskUsageInputBaselineSource(querySource: string): string | undefined {
 }
 
 function integer(value: number | null | undefined): number {
-  // providerTotalTokens 这类旧记录字段可能是 null；adapters 独立 tsc 需要先完成类型收窄。
+  // Legacy fields like providerTotalTokens may be null; adapters standalone tsc needs the narrow first.
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return 0;
   }

@@ -42,11 +42,11 @@ export const EditInlineDiffContent = memo(function EditInlineDiffContent({
 }: {
   preview: PatchCodeViewerSource;
   /**
-   * 应用主题（store 耦合剥离）：决定 diff 高亮取 light/dark 主题。
-   * 由调用方（tool call 渲染上下文）传入；默认 "system" 跟随操作系统兜底。
+   * Applied theme (store-decoupled): picks light/dark for diff highlights.
+   * Passed by the caller (tool call render context); "system" follows the OS.
    */
   theme?: Theme;
-  /** 代码预览设置（store 耦合剥离）：由调用方传入，需保持引用稳定。 */
+  /** Code preview settings (store-decoupled): caller-provided, must be reference-stable. */
   codePreviewSettings?: CodePreviewSettings;
 }) {
   const previewLines = useMemo(() => getPlainTextPatchPreviewLines(preview.patch), [preview.patch]);
@@ -65,9 +65,11 @@ export const EditInlineDiffContent = memo(function EditInlineDiffContent({
         className="mb-2 max-h-60 overflow-auto rounded-xl border border-border bg-card"
         data-inline-diff-preview
       >
-        {/* 聊天内联 diff 展开时直接挂载 @pierre/diffs 会把高亮和 Shadow DOM 汇总渲染压到主线程，
-        导致点击展开后长时间掉帧。这里首帧只渲染轻量 hunk 文本，再在 effect 里异步补 Shiki token；
-        之前只保留纯文本会让 session 里的 diff 永久失去语法高亮。 */}
+        {/* Mounting @pierre/diffs directly on chat-inline-diff expand pushes highlight plus
+        Shadow DOM aggregate rendering onto the main thread and drops frames for a long
+        while. The first frame renders only lightweight hunk text; Shiki tokens are added
+        asynchronously in an effect. Pure text alone would leave session diffs without
+        syntax highlighting forever. */}
         <HighlightedLightweightDiffPreview
           className="h-full bg-card"
           codePreviewSettings={codePreviewSettings}

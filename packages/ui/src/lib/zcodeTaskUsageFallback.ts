@@ -65,9 +65,9 @@ export function buildTaskContextUsageFromUsageUpdate(
     (!Number.isFinite(incomingUsage.used) || incomingUsage.used <= 0) &&
     !isContextCompressionPrompt(latestUserPrompt)
   ) {
-    // Bugfix: Agent 在普通工具调用期间会短暂发出 used=0 的 usage_update，
-    // 这不是 context 真的被清空，而是上游 replay/子调用 usage 缺失造成的瞬时假值。
-    // 非压缩轮次保留上一个正数，避免输入栏上下文占用闪一下后消失。
+    // Bugfix: during plain tool calls the agent briefly emits used=0 usage_update. Context is not
+    // actually cleared -- it is a transient bogus value from missing upstream replay/subcall usage.
+    // Keep the previous positive value in non-compression turns so the composer context meter does not blink.
     return currentUsage;
   }
 
@@ -93,8 +93,9 @@ export function buildPromptCompletionUsageFallback(
     return null;
   }
 
-  // Bugfix: task_complete.usage 是本轮 prompt 的 token 统计，不是上下文窗口快照。
-  // 只有从未收到过正数 usage_update 的 provider 才把它当弱 fallback，避免覆盖 zcode-cli/GLM 的真实 context used。
+  // Bugfix: task_complete.usage counts this prompt's tokens, it is not a context-window snapshot.
+  // Only providers that never sent a positive usage_update treat it as a weak fallback, so the real
+  // zcode-cli/GLM context used is never overwritten.
   return {
     ...currentUsage,
     size: contextWindow,

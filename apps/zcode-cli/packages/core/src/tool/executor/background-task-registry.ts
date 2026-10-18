@@ -24,17 +24,17 @@ type BackgroundTaskSnapshot =
   | NonNullable<Awaited<ReturnType<NonNullable<ExecutionPort["getBackgroundTask"]>>>>
   | SubagentTaskSnapshot
   | WorkflowTaskSnapshot
-  // workflow run 的快照沿用 WorkflowTaskSnapshot 的形状但把 output 放宽成 unknown（产物由脚本
-  // 的顶层返回值决定），所以它不是 WorkflowTaskSnapshot 的子类型，必须单列一支。
+  // A workflow run snapshot keeps the WorkflowTaskSnapshot shape but widens output to unknown (the payload is
+  // whatever the script returns at top level), so it is not a WorkflowTaskSnapshot subtype and needs its own branch.
   | DynamicWorkflowRunSnapshot;
 
 /**
- * dwf run 的名字分派谓词：CreateWorkflow = 新启动 / ResumeWorkflowRun = 恢复，同一 run
- * 生命周期的两个入口，快照/等待/取消/通知/registry 全部同构。
+ * Name-dispatch predicate for dwf runs: CreateWorkflow = fresh start / ResumeWorkflowRun = resume -- the two
+ * entries of one run lifecycle; snapshot/wait/cancel/notify/registry all behave identically.
  *
- * 注意：CreateWorkflow 确认窗的 Refine 特判（product-projection.ts / turn-control.ts）
- * 刻意**不**换用本谓词——ResumeWorkflowRun 的确认窗没有 causalityGraph、没有图精炼，走
- * 默认 ask；把名字加进那些特判会让确认窗长出一个无图的 Refine 选项。
+ * Note: CreateWorkflow's confirmation-window Refine special case (product-projection.ts / turn-control.ts)
+ * deliberately does **not** use this predicate -- ResumeWorkflowRun's confirm window has no causalityGraph and
+ * no graph refine and falls back to plain ask; adding its name there would grow a graph-less Refine option.
  */
 export function isDynamicWorkflowRunDispatchToolName(name: string): boolean {
   return (
@@ -56,31 +56,31 @@ export function registerRuntimeBackgroundTask(
   const existing = deps.runtimeTaskRegistry.get(taskId);
   const description = runtimeTaskDescription(toolCall, output) ?? defaultRuntimeTaskDescription(taskType);
   const outputFile = backgroundTaskOutputMetadata(output).outputFile;
-  // 同进程 cancel 终态 → 未重启即 resume（dwf 的 resume 重臂，
-  // v4 命令路径与工具路径在 trackBackgroundTask 汇合同病）时，既有条目携带上一轮 claim 的
-  // notified:true，重建若原样保留，claimRuntimeBackgroundTaskNotification 会据此拒收——
-  // 恢复 run 的终态模型通知被吞。同族 error/completedAt/resultText 残留还会让 running 期
-  // 条目经 updateRuntimeBackgroundTask 的 `?? current.*` 链挂着旧失败/旧完成时间/旧产物。
-  // 因此重臂时整体复位**结算面**（notified/completedAt/error/exitCode/resultText/pid）；
-  // **身份面**维持 existing??new 不动（agentId/agentType/parentToolCallId/turnId/description/
-  // startedAt）——parentToolCallId 是「工具卡 → 详情页链路跨 resume 保持」的锚，换成本次
-  // 重臂的描述子 id 会把 join 打断。
+  // Same-process cancel terminal -> resume without restart (dwf re-arm; the v4 command path and the tool path
+  // converge in trackBackgroundTask): the surviving entry still carries the previous round's claimed
+  // notified:true; keeping it through the rebuild would make claimRuntimeBackgroundTaskNotification reject --
+  // swallowing the resumed run's terminal model notification. Leftover error/completedAt/resultText would also
+  // keep stale failure/completion/payload values alive via updateRuntimeBackgroundTask's `?? current.*` chain.
+  // So a re-arm resets the whole **settlement face** (notified/completedAt/error/exitCode/resultText/pid);
+  // the **identity face** stays existing??new untouched (agentId/agentType/parentToolCallId/turnId/description/
+  // startedAt) -- parentToolCallId is the anchor keeping the tool-card -> detail link across resume; swapping in
+  // the re-arm descriptor id would break that join.
   //
-  // 复位必须以**重臂为界**：只有 dwf 分派名会跨 resume 复用同一
-  // runId 在终态条目上再启动新生命周期（重臂），此时上一轮的 notified 属于旧生命周期、
-  // 必须作废。Bash/Agent 等单生命周期任务的 task id 一轮即弃，但 tracker 晚挂载时
-  // register 同样会撞上已认领（notified:true）的终态条目——那是**同一**生命周期的认领
-  // 令牌，无差别复位会让同一终态的模型通知被二次入队。「缺陷名字无关」指可达路径
-  // （v4 命令路径同样经 CreateWorkflow 名重臂），而非任何 register 都该复位。
+  // The reset must be bounded by re-arm: only dwf dispatch names reuse one runId to start a new lifecycle on a
+  // terminal entry (re-arm), so the previous round's notified belongs to the old lifecycle and must be voided.
+  // Single-lifecycle tasks (Bash/Agent) discard their task id after one round, but a late-attaching tracker's
+  // register can also land on a claimed (notified:true) terminal entry -- that claim token belongs to the
+  // **same** lifecycle, so a blanket reset would re-enqueue one terminal notification. "Defect names
+  // irrelevant" means the reachable path (the v4 command path re-arms under the CreateWorkflow name too).
   //
-  // outputFile 有意**不**随结算面复位：workflow run 从不写 outputFile，existing 兜底仅为产物
-  // 外部化预留的透传；外部化落地时应随其语义重新裁决（勿顺手清空、也勿顺手扩大语义）。
+  // outputFile is intentionally **not** reset with the settlement face: workflow runs never write outputFile and
+  // existing is passthrough reserved for payload externalization; re-decide it with that feature's semantics.
   const rearm = isDynamicWorkflowRunDispatchToolName(toolCall.name);
-  // 新生命 = 在**终态**条目上重臂。它必须走 register() 而非 update()：register 会用当前
-  // activeBranchGeneration 重盖 branchGeneration，而 update 的 {...existing} 会把上一段生命
-  // 周期的分支代带进新生命——cancel → rewind（分支代 +1）→ resume 时，新生命的任务事件会被
-  // runtime-command-generation 的 stale-branch fencing 当旧分支残留整体丢弃（终态通知再次失踪）。
-  // 仍在 running 的既有条目不是新生命，维持 update 的合并语义与它自己的分支代。
+  // New life = re-arm on a **terminal** entry. It must go through register(), not update(): register restamps
+  // branchGeneration from activeBranchGeneration, while update's {...existing} would carry the previous
+  // life's branch generation into the new one -- after cancel -> rewind (generation +1) -> resume, the new
+  // life's task events would be dropped wholesale by runtime-command-generation stale-branch fencing
+  // (terminal notification lost again). A still-running entry is no new life: keep update's merge and its generation.
   const newLife = rearm && existing !== undefined && isTerminalRuntimeTask(existing);
   const next: RuntimeTaskSnapshot = {
     ...existing,
@@ -96,21 +96,21 @@ export function registerRuntimeBackgroundTask(
     taskType,
     type: taskType,
     turnId: existing?.turnId ?? turnId,
-    // —— 结算面复位（仅重臂 = 新的一轮生命周期；非重臂的重挂载保留既有结算面）——
+    // -- settlement reset (re-arm only = new lifecycle; non-re-arm re-mounts keep the existing settlement) --
     notified: rearm ? false : (existing?.notified ?? false),
     completedAt: rearm ? undefined : existing?.completedAt,
     error: rearm ? undefined : existing?.error,
     exitCode: rearm ? undefined : existing?.exitCode,
     resultText: rearm ? undefined : existing?.resultText,
     pid: rearm ? undefined : existing?.pid,
-    // 上一轮是谁停的，与新生命无关。
+    // Who stopped the previous round is irrelevant to the new life.
     stopInitiator: rearm ? undefined : existing?.stopInitiator,
   };
   if (existing && !newLife) {
     deps.runtimeTaskRegistry.update(taskId, () => next);
     return;
   }
-  // 首次登记或新生命：剥掉继承来的 branchGeneration，交给 register 按当前 active 分支盖章。
+  // First registration or new life: strip the inherited branchGeneration; register stamps the active one.
   const { branchGeneration: _previousLife, ...fresh } = next;
   deps.runtimeTaskRegistry.register(fresh);
 }
@@ -137,8 +137,8 @@ export function updateRuntimeBackgroundTask(
           isBackgrounded: true,
           outputFile: backgroundTaskOutputMetadata(snapshot).outputFile ?? current.outputFile,
           pid: runtimeTaskPid(snapshot) ?? current.pid,
-          // `?? current.resultText`：undefined 绝不清掉已存下的产物（中途的 running 快照
-          // 与产物缺席的终态都会走到这里）。
+          // `?? current.resultText`: undefined must never clear a stored payload (mid-run snapshots
+          // and terminals without payload both reach here).
           resultText: runtimeTaskResultText(toolCall, status, snapshot) ?? current.resultText,
           status: normalizeRuntimeTaskStatus(status),
           taskType,
@@ -148,11 +148,11 @@ export function updateRuntimeBackgroundTask(
 }
 
 /**
- * workflow run 的产物文本。只在 dwf 分派名（CreateWorkflow / ResumeWorkflowRun）的**终态**
- * 快照上取：TaskOutput 的投影只读得到 registry 条目（dwf 从不写 outputFile），产物不存在
- * 条目上就在重启后彻底不可达。
+ * Payload text of a workflow run. Taken only from **terminal** snapshots of the dwf dispatch names
+ * (CreateWorkflow/ResumeWorkflowRun): the TaskOutput projection sees only the registry entry (dwf never
+ * writes outputFile), so a payload missing there is unreachable after restart.
  *
- * legacy `Workflow` 刻意不参与——它的结果经 `output.response` 走既有通知路径，契约不变。
+ * legacy `Workflow` deliberately stays out -- its result flows through `output.response` on the existing path, contract unchanged.
  */
 function runtimeTaskResultText(
   toolCall: ExecutableToolCall,
@@ -207,8 +207,8 @@ function runtimeTaskTypeForToolCall(toolCall: ExecutableToolCall): RuntimeTaskTy
     case "Workflow":
       return "local_workflow";
     default:
-      // dwf 的两个入口（CreateWorkflow / ResumeWorkflowRun）共用一个 taskType：缺席则
-      // registerRuntimeBackgroundTask 直接 return——会话回收护栏与 TaskOutput 可见性全失。
+      // Both dwf entries (CreateWorkflow/ResumeWorkflowRun) share one taskType: without it
+      // registerRuntimeBackgroundTask returns early -- losing the recycling guard and TaskOutput visibility.
       return isDynamicWorkflowRunDispatchToolName(toolCall.name)
         ? "local_dynamic_workflow"
         : undefined;

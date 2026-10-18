@@ -46,7 +46,7 @@ export async function attachProcessToWindowsJobObject(
       try {
         api.close(job);
       } catch {
-        // 原生句柄关闭失败也不能阻断既有 taskkill 回退。
+        // Native handle-close failure must not block the existing taskkill fallback.
       }
     }
     return undefined;
@@ -196,7 +196,7 @@ async function createWindowsJobObjectApi(): Promise<WindowsJobObjectApi | undefi
       },
     } satisfies WindowsJobObjectApi;
   } catch {
-    // 原生模块或 Windows API 不可用时保持既有 taskkill 回退，不影响其他平台。
+    // Without the native module or Windows APIs, keep the taskkill fallback; other platforms unaffected.
     return undefined;
   }
 }

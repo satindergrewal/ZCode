@@ -43,8 +43,9 @@ function syncBrowserThemeSurface(resolved: ResolvedTheme) {
     return;
   }
 
-  // Electron 为 vibrancy 保持透明根背景，但普通浏览器需要从文档根和标准 meta
-  // 获得页面主题。只切换 React 的 dark class 会让浏览器工具栏、原生控件和 overscroll 留在旧主题。
+  // Electron keeps a transparent root background for vibrancy, but plain browsers derive the
+  // page theme from the document root and standard meta tags. Toggling only React's dark class
+  // would leave browser toolbars, native controls and overscroll in the old theme.
   root.setAttribute(BROWSER_THEME_SURFACE_ATTRIBUTE, resolved);
   root.style.colorScheme = resolved;
   setThemeMetaContent("color-scheme", resolved);
@@ -82,7 +83,7 @@ function isTheme(value: string | null): value is Theme {
 export function useTheme() {
   const [theme, setThemeState] = useState<Theme>(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
-    // 默认主题统一收敛到 Zai dark，避免旧 hook 兜底值和 Zustand store 默认值分叉。
+    // Default theme converges on Zai dark so the legacy hook fallback never forks from the store default.
     return isTheme(saved) ? normalizeThemePreference(saved) : "zai-dark";
   });
 
@@ -93,7 +94,7 @@ export function useTheme() {
     applyTheme(normalizedTheme);
   }, []);
 
-  // 初始化 + system 模式下监听系统偏好变化
+  // Initial paint plus system-preference tracking in system mode
   useEffect(() => {
     applyTheme(theme);
 

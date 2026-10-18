@@ -123,10 +123,10 @@ const MAX_CLIENT_REQUEST_REANNOUNCE_INTERVAL_MS = 10_000;
 type ZCodeProtocolOutboundMessage = ZCodeProtocolNotification | ZCodeProtocolRequest;
 
 /**
- * Trust store 落盘后各 session 的 coordinator
- * 内存镜像（仅创建时 load）不会自动更新，已信任 Hook 继续被拒、banner pendingCount
- * 停留旧值。pretrust 授权成功后按 workspaceKey 通知所有匹配的活跃 session 重载。
- * 独立导出为纯调度函数（不触网、不发事件），便于回归测试直接构造 sessions Map。
+  * After the trust store persists, each session coordinator's
+  * in-memory mirror (loaded at creation only) never refreshes: trusted hooks keep being rejected and the banner pendingCount
+  * goes stale. After a successful pretrust grant, notify every matching live session by workspaceKey to reload.
+  * Exported standalone as pure dispatch (no network, no events) so regression tests can construct the sessions Map directly.
  */
 async function notifyWorkspaceHookTrustGrantSessions(input: {
   grantedWorkspaceKey?: string;
@@ -205,9 +205,9 @@ export class ZCodeProtocolAgentServer {
   private shutdownPromise?: Promise<void>;
   readonly browserControlPort: BrowserControlPort;
   /**
-   * 官方 MCP 身份头端口所需的最小上下文。
-   * MCP 连接池的构造早于 server，需要在 server 就绪后回填闭包持有的引用——
-   * 与 v4Gateway 同样的构造顺序收口方式。只暴露 requestClient，不外泄整个 context。
+      * The minimal context the official-MCP identity-header port needs.
+      * The MCP pool is constructed before the server; backfill the closure-held reference once the server is ready --
+      * the same construction-order closing as v4Gateway. Expose only requestClient, never the whole context.
    */
   get officialMcpAuthRequestContext(): Pick<ZCodeProtocolAgentServerContext, "requestClient"> {
     return this.context;
@@ -221,8 +221,8 @@ export class ZCodeProtocolAgentServer {
   private readonly pluginOperationControllers = new Map<string, AbortController>();
   private readonly workspaceGenerateTextControllers = new Map<string, AbortController>();
   /**
-   * subscribe initial frame 按 JSON-RPC request id 隔离。connection 必须先 take，
-   * 再写 response line，最后按数组顺序写 notification，不能靠 microtask 猜时序。
+      * The subscribe initial frame isolates by JSON-RPC request id. Take the connection first,
+      * then the response line, then notifications in array order -- never trust microtask ordering.
    */
   private readonly postResponseOutbox = new Map<
     ZCodeProtocolRequestId,
@@ -235,7 +235,7 @@ export class ZCodeProtocolAgentServer {
     const resolvedDeps = {
       ...deps,
       createZCodeApp: this.runtimeResources.create,
-      // 默认 turn 窗口保留策略。
+            // The default turn retention policy.
       createSessionEventStore:
         deps.createSessionEventStore ?? (() => createInMemorySessionEventStore()),
       workspaceHookPolicyProvider:
@@ -250,20 +250,20 @@ export class ZCodeProtocolAgentServer {
         askUserQuestionAutoResolutionEnabled: true,
         modelIoFullRetentionEnabled: false,
         offPeakToolEnabled: false,
-        // 动态工作流灰度门 fail-closed：Host 必须显式 workspace/updateDynamicWorkflowPolicy
-        // 才开启。
+                // The dynamic-workflow rollout gate fails closed: only an explicit workspace/updateDynamicWorkflowPolicy
+                // from the Host turns it on.
         dynamicWorkflowEnabled: false,
       },
       notify: (notification) => this.messageSink?.(notification),
       requestClient: (method, params, resultSchema, options) =>
         this.requestClient(method, params, resultSchema, options),
       sessions: new Map<string, ZCodeProtocolSessionRecord>(),
-      // 交互应答登记表（broker 反向请求 × v4 resolveInteraction 命令的汇合点）。
+            // The interaction-answer registry (where broker reverse requests meet the v4 resolveInteraction command).
       v4Interactions: new V4InteractionRegistry(
         resolveV4InteractionRegistryOptionsFromEnv(deps.env ?? process.env),
       ),
     };
-    // v4 通道：gateway 闭包持有 context 做帧出口与命令副作用，构造完立即挂回。
+        // The v4 channel: the gateway closure holds context as frame exit and command side-effect face, hung back right after construction.
     this.context.v4Gateway = createConversationV4Gateway(this.context);
     this.browserControlPort = createProtocolBrowserControlBroker(this.context);
     const sessionResidentTargetCount =
@@ -273,27 +273,27 @@ export class ZCodeProtocolAgentServer {
       (sessionResidentTargetCount === undefined
         ? undefined
         : Math.max(DEFAULT_SESSION_RESIDENT_HIGH_WATER_COUNT, sessionResidentTargetCount));
-    // 单 CLI resident session 池：协议 request release 主动收敛，资源 sampler 只作兜底。
+        // The single-CLI resident session pool: protocol request releases converge actively; the resource sampler is backup only.
     this.context.sessionResidentPool = new SessionResidentPool(
       createSessionResidentPoolHost(this.context),
       {
         ...deps.sessionResidentPoolOptions,
-        // legacy target 曾同时覆盖 high/low，导致迟滞窗口塌为 0；只覆盖 low。
-        // 仅配置 target 且超过默认 high 时抬升隐式 high，显式非法组合仍由 pool 拒绝。
+                // The legacy target covered high/low at once, collapsing the hysteresis window to 0; cover low only.
+                // A configured target above the default high raises the implicit high; invalid explicit combos stay pool-rejected.
         highWaterCount: sessionResidentHighWaterCount,
         targetCount: sessionResidentTargetCount,
       },
     );
   }
 
-  /** 低频 sampler 兜底入口；正常收敛由每个协议 request 的 operation lease 释放触发。 */
+    /** The low-frequency sampler backstop entry; normal convergence triggers on each protocol request's operation-lease release. */
   rebalanceResidentSessions(): void {
     this.context.sessionResidentPool?.rebalance();
   }
 
   /**
-   * 借同一 60s 节拍做 event store 的时间兜底淘汰：
-   * subagent 子 session 只有一个 turn，等不到下一个 turn_started，只能按时间清。返回淘汰条数。
+      * The same 60s tick doubles as the event store's time-based expiry fallback:
+      * subagent child sessions have a single turn and may never see the next turn_started, so clear by time. Returns the evicted count.
    */
   pruneSessionEventStores(nowMs: number = Date.now()): number {
     let evicted = 0;
@@ -303,14 +303,14 @@ export class ZCodeProtocolAgentServer {
     return evicted;
   }
 
-  /** 同一 60s 节拍：释放已终态、无订阅者、无 record 的 detached subagent child publisher。 */
+    /** The same 60s tick: releases detached subagent child publishers that are terminal, subscriber-less, and record-less. */
   pruneDetachedChildPublishers(nowMs: number = Date.now()): number {
     return this.context.v4Gateway?.pruneDetachedChildPublishers(nowMs) ?? 0;
   }
 
   /**
-   * 内存诊断计数器，随 60s 资源采样写本地日志。
-   * 只读 Map.size / 数组长度，不触碰 session 状态；持久化 event store 不提供 getStats 时计 0。
+      * In-memory diagnostics counters, written to the local log with the 60s resource sample.
+      * Reads Map.size / array lengths only, never session state; counts 0 when the persistent event store offers no getStats.
    */
   collectMemoryDiagnostics(): Record<string, number> {
     let eventRows = 0;
@@ -345,8 +345,8 @@ export class ZCodeProtocolAgentServer {
 
   disconnectClient(error: Error): void {
     this.clientDisconnectError = error;
-    // 连接关闭后反向请求已不可能收到响应，必须先结束 pending，
-    // 否则正在物化 Session 的 handler 会阻塞 connection 的关闭流程。
+        // Once the connection closes, reverse requests can no longer be answered: end pending first,
+        // or a handler materializing a session blocks the connection's close path.
     const pendingRequests = new Set(this.pendingClientRequests.values());
     for (const pending of pendingRequests) {
       this.cleanupClientRequest(pending);
@@ -354,7 +354,7 @@ export class ZCodeProtocolAgentServer {
     }
   }
 
-  /** 进程资源关闭，不使用会删除产品会话/发布 session.removed 的 session/close。 */
+    /** Process-resource shutdown; not session/close, which deletes product sessions and emits session.removed. */
   shutdown(): Promise<void> {
     if (this.shutdownPromise) return this.shutdownPromise;
     this.shutdownPromise = this.runtimeResources.close();
@@ -378,27 +378,27 @@ export class ZCodeProtocolAgentServer {
     return this.shutdownPromise;
   }
 
-  /** app drain 有界结束后释放投影；即使某个 app.close 挂起也必须执行。 */
+    /** Releases projections once the app drain ends bounded; must run even if some app.close hangs. */
   disposeProjections(): void {
     this.context.v4Gateway?.dispose();
     this.context.sessions.clear();
   }
 
-  /** 一次性取走某 request 的 post-response messages；重复 take 返回空数组。 */
+    /** Takes a request's post-response messages once; a repeated take returns empty. */
   takePostResponseMessages(requestId: ZCodeProtocolRequestId): ZCodeProtocolOutboundMessage[] {
     const batch = this.takePostResponseBatch(requestId);
     batch?.commit();
     return [...(batch?.messages ?? [])];
   }
 
-  /** production NDJSON 取完整 batch；只有全部 write 成功后才调 commit。 */
+    /** Production NDJSON takes the full batch; commit only after every write succeeded. */
   takePostResponseBatch(requestId: ZCodeProtocolRequestId): ZCodeProtocolPostResponseBatch | null {
     const batch = this.postResponseOutbox.get(requestId) ?? null;
     this.postResponseOutbox.delete(requestId);
     return batch;
   }
 
-  /** connection close / server dispose 时释放尚未写出的 initial frame 引用。 */
+    /** On connection close / server dispose, releases the not-yet-written initial frame reference. */
   clearPostResponseMessages(): void {
     this.postResponseOutbox.clear();
   }
@@ -434,13 +434,13 @@ export class ZCodeProtocolAgentServer {
   private async handleRequest(
     request: ZCodeProtocolRequest,
   ): Promise<ZCodeProtocolError | ZCodeProtocolResponse> {
-    // request id 可在前一请求完成后复用；新请求不能继承未消费的旧 outbox。
+        // A request id may be reused after the previous request completes; a new request must not inherit an unconsumed old outbox.
     this.postResponseOutbox.delete(request.id);
     let releaseResidencyOperation: (() => void) | undefined;
     try {
-      // subscribe hydration、workspace 配置与 resume 都可能跨 await。若只看
-      // session 当前状态，sampler 会在 handler 持有旧 record 时把它关闭。进程级 lease
-      // 覆盖整个 request；能识别的 sessionIds 额外用于冷恢复闸门与 LRU touch。
+            // Subscribe hydration, workspace config, and resume all cross awaits. Keying on the session's
+            // current state alone, the sampler would close it while a handler holds the stale record. The process-level lease
+            // spans the whole request; recognizable sessionIds also feed the cold-restore gate and the LRU touch.
       releaseResidencyOperation = await this.context.sessionResidentPool?.acquireOperation(
         collectResidencySessionIds(request.params),
       );
@@ -457,14 +457,14 @@ export class ZCodeProtocolAgentServer {
 
   private async dispatchRequest(request: ZCodeProtocolRequest) {
     switch (request.method) {
-      // ── v4 conversation 通道（竖切，与旧 session/* 并存）──
+            // -- the v4 conversation channel (a vertical slice, coexisting with legacy session/*) --
       case V4_METHODS.connectionFlow: {
         this.requireV4Gateway().setConnectionFlowState(request.params);
         return {};
       }
       case V4_METHODS.conversationSubscribe: {
-        // 同一 subscribe 方法按 topic 前缀分派：
-        // sessions-index/* → 列表订阅；workspace-config/* → 配置目录订阅；否则 conversation。
+                // One subscribe method, dispatched by topic prefix:
+                // sessions-index/* -> list subscription; workspace-config/* -> config catalog; else conversation.
         const gateway = this.requireV4Gateway();
         const topic = (request.params as { topic?: unknown } | null)?.topic;
         let dispatch;
@@ -487,8 +487,8 @@ export class ZCodeProtocolAgentServer {
         return { ack: dispatch.ack };
       }
       case V4_METHODS.conversationResync: {
-        // same-sub recovery 与 subscribe 共用确定性 post-response outbox；公共
-        // response 仍 strict ACK-only，physical recovery 只能在 ACK line 后发送。
+                // same-sub recovery shares subscribe's deterministic post-response outbox; the common
+                // response is still strict ACK-only, so physical recovery can only follow the ACK line.
         const dispatch = this.requireV4Gateway().resyncReserved(request.params);
         if (dispatch.initialWires.length > 0) {
           this.postResponseOutbox.set(request.id, {
@@ -502,12 +502,12 @@ export class ZCodeProtocolAgentServer {
         return { ack: dispatch.ack };
       }
       case V4_METHODS.conversationUnsubscribe: {
-        // topic + subscriptionId + connectionId 精确命中唯一 publisher；禁止按裸
-        // subId 对 conversation/sessions-index/workspace-config 广撒网。
+                // topic + subscriptionId + connectionId pins exactly one publisher; never blanket-match
+                // by bare subId across conversation/sessions-index/workspace-config.
         this.requireV4Gateway().unsubscribe(request.params);
         return {};
       }
-      // ── 行分页 query（独立分支，便于与帧分派改动合并）──
+            // -- row-paging query (separate branch, easy to merge with frame-dispatch changes) --
       case V4_METHODS.conversationRowsRange:
         return await this.requireV4Gateway().rowsRange(request.params);
       case V4_METHODS.conversationPlans:
@@ -518,26 +518,26 @@ export class ZCodeProtocolAgentServer {
         return await this.requireV4Gateway().fileChanges(request.params);
       case V4_METHODS.conversationFileRewindPreview:
         return await this.requireV4Gateway().fileRewindPreview(request.params);
-      // workflow run 事件日志分页（只读、无状态、超时重发安全；新方法天然偏斜安全）。
+            // Workflow run event-log paging (read-only, stateless, resend-safe on timeout; new methods are skew-safe by construction).
       case V4_METHODS.conversationWorkflowRunEvents:
         return await this.requireV4Gateway().workflowRunEvents(request.params);
-      // dwf run 枚举（重启后的发现查询）。
+            // dwf run enumeration (the post-restart discovery query).
       case V4_METHODS.conversationWorkflowRuns:
         return await this.requireV4Gateway().workflowRuns(request.params);
-      // dwf 用户面产物的三个读面。同族：只读、无状态、
-      // 超时重发安全；ArtifactRead 的授权在宿主端口侧，网关只校参数与分块。
+            // The three read faces of dwf user-facing artifacts. Same family: read-only, stateless,
+            // resend-safe on timeout; ArtifactRead authorization lives in the host port, the gateway validates params and chunking only.
       case V4_METHODS.conversationWorkflowRunArtifacts:
         return await this.requireV4Gateway().workflowRunArtifacts(request.params);
       case V4_METHODS.conversationWorkflowRunArtifactData:
         return await this.requireV4Gateway().workflowRunArtifactData(request.params);
       case V4_METHODS.conversationWorkflowRunArtifactRead:
         return await this.requireV4Gateway().workflowRunArtifactRead(request.params);
-      // dwf 工作区 transcript 的两个读面。同族。
+            // The two read faces of the dwf workspace transcript. Same family.
       case V4_METHODS.conversationWorkflowRunWorkspace:
         return await this.requireV4Gateway().workflowRunWorkspace(request.params);
       case V4_METHODS.conversationWorkflowRunNodeResult:
         return await this.requireV4Gateway().workflowRunNodeResult(request.params);
-      // 附件只能走小 RPC transaction，禁止 full-data attachment/put 单行。
+            // Attachments only via small RPC transactions; never a full-data attachment/put single line.
       case V4_METHODS.attachmentBegin:
         return await this.requireV4Gateway().attachmentBegin(request.params);
       case V4_METHODS.attachmentChunk:
@@ -555,9 +555,9 @@ export class ZCodeProtocolAgentServer {
         return await this.requireV4Gateway().conversationAttachmentStat(request.params);
       case V4_METHODS.attachmentPreviewSource:
         return await this.requireV4Gateway().attachmentPreviewSource(request.params);
-      // ── usage query（additive）：与旧 usage/stats、session/usage 同一数据访问
-      // 层（usage store 聚合），仅换 v4 名字空间——不经 v4Gateway（无会话投影依赖），
-      // 也不经旧 op 分派（无桥）。旧 case 保留到旧词删除（老 host 版本兼容）。──
+            // -- usage query (additive): the same data-access layer as legacy usage/stats and session/usage
+            // (the usage-store aggregation), only the v4 namespace -- not via v4Gateway (no session-projection deps)
+            // nor legacy op dispatch (no bridge). The legacy case stays until the legacy name is deleted (old-host compat). --
       case V4_METHODS.usageStats:
         return await getUsageStats(this.context, request.params);
       case V4_METHODS.conversationUsage:
@@ -611,8 +611,8 @@ export class ZCodeProtocolAgentServer {
         });
         if (grantResult.accepted) {
           await notifyWorkspaceHookTrustGrantSessions({
-            // dispatch 层的 params 是弱类型；grant 内部已用同一 schema parse 过，这里
-            // safeParse 只为取出 workspaceKey 做匹配，失败即跳过通知（防御，正常必成功）。
+                        // Dispatch-layer params are weakly typed; grant already parsed with the same schema, so this
+                        // safeParse only extracts workspaceKey for matching -- on failure skip the notification (defensive; normally succeeds).
             grantedWorkspaceKey: zcodeWorkspaceHookTrustGrantParamsSchema.safeParse(request.params)
               .success
               ? zcodeWorkspaceHookTrustGrantParamsSchema.parse(request.params).workspace
@@ -747,7 +747,7 @@ export class ZCodeProtocolAgentServer {
     const params = parseParams(zcodePluginsCancelOperationParamsSchema, rawParams);
     const controller = this.pluginOperationControllers.get(params.operationId);
     if (!controller) return { operationId: params.operationId, cancelled: false };
-    // 插件同步的可取消能力必须保留在 V4 server；仅按 operationId 中止对应链路。
+        // Cancellable plugin-sync capabilities stay on the V4 server; abort only the chain matching the operationId.
     controller.abort();
     this.pluginOperationControllers.delete(params.operationId);
     return { operationId: params.operationId, cancelled: true };
@@ -761,8 +761,8 @@ export class ZCodeProtocolAgentServer {
     if (!operationId) return await run();
 
     if (this.workspaceGenerateTextControllers.has(operationId)) {
-      // 重复 operationId 会覆盖首个请求的 AbortController，导致首个请求失去取消能力。
-      // 活跃 operationId 必须保持唯一；请求结束后 finally 会释放，之后才允许复用。
+            // A duplicate operationId would overwrite the first request's AbortController, dropping its cancellation.
+            // Active operationIds stay unique; the finally releases after the request ends; only then reusable.
       throw new ProtocolRequestError(
         -32600,
         `Workspace generate operation is already active: ${operationId}`,

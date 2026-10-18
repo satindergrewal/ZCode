@@ -36,8 +36,8 @@ function normalizePersistedSessionMode(
   }
 
   switch (trimmedModeId) {
-    // Bugfix: provider 原生 modeId 和本地持久化的 session mode 不是一套枚举。
-    // 下发前需要把本地语义映射回 provider options 中真实存在的值。
+    // Bugfix: provider-native modeIds and the locally persisted session mode are different enums.
+    // Map local semantics back onto values that really exist in the provider options before sending.
     case "read-only":
     case "read_only":
       return "plan";
@@ -66,18 +66,14 @@ export function resolveProviderModeIdFromConfigOptions(params: {
     return exactMatch.value;
   }
 
-  const requestedPersistedMode = normalizePersistedSessionMode(
-    requestedMode,
-    params.provider,
-  );
+  const requestedPersistedMode = normalizePersistedSessionMode(requestedMode, params.provider);
   if (!requestedPersistedMode) {
     return undefined;
   }
 
   const semanticMatch = candidates.find(
     (candidate) =>
-      normalizePersistedSessionMode(candidate.value, params.provider) ===
-      requestedPersistedMode,
+      normalizePersistedSessionMode(candidate.value, params.provider) === requestedPersistedMode,
   );
 
   return semanticMatch?.value;

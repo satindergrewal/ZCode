@@ -1,2 +1,2 @@
-// 产品文档入口统一收口，避免不同菜单跳到不一致的文档站。
+// Single source of truth for product doc links, so every menu lands on the same docs site.
 export const ZCODE_PRODUCT_DOCS_URL = "https://zcode.z.ai/docs";

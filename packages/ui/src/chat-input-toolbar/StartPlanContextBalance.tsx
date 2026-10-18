@@ -9,10 +9,10 @@ import { formatQuotaModelDisplayName } from "@/settings/model-provider-section/q
 
 export interface ChatStartPlanBalanceConfig {
   loading: boolean;
-  /** hover 打开 context 面板时发起的静默 access 刷新（与 Coding Plan 段 onAccess 语义一致）。 */
+  /** Silent access refresh triggered on hover-open of the context panel (same semantics as the Coding Plan section's onAccess). */
   onAccess?: () => Promise<void> | void;
   onUpgradeClick?: () => void;
-  /** hover 触发的本次刷新 promise 进行中；静默刷新不置 entitlement.loading，spinner 需要跟随它。 */
+  /** In-flight promise of the hover-triggered refresh; silent refreshes do not set entitlement.loading, so the spinner follows this. */
   refreshing?: boolean;
   snapshot: UsageEntitlementSnapshot | null;
 }
@@ -70,9 +70,11 @@ export function hasChatStartPlanBalance(config: ChatStartPlanBalanceConfig | und
   return (
     config.loading ||
     getVisibleStartPlanLimits(config.snapshot).length > 0 ||
-    // Start Plan 与 Coding Plan 连接方式互斥，hover 刷新入口不能只挂在 Coding Plan
-    // 配置上；首次无缓存快照时本段（含触发器）不渲染，用户没有 hover 入口发起第一次余额请求。
-    // onAccess 存在即视为可按需刷新，保留触发器（对齐 hasChatCodingPlanUsageRemaining 的兜底）。
+    // Start Plan and Coding Plan connection types are mutually exclusive, so the hover-refresh
+    // entry cannot hang only off the Coding Plan config. With no cached snapshot this section
+    // (trigger included) does not render and users lose the hover entry for the first balance
+    // request. Treat a present onAccess as refreshable and keep the trigger (mirroring
+    // hasChatCodingPlanUsageRemaining's fallback).
     Boolean(config.onAccess)
   );
 }
@@ -81,8 +83,9 @@ function ChatStartPlanBalanceMeter({ limit, locale }: { limit: UsageQuotaLimit; 
   const total = resolveLimitTotal(limit);
   const remaining = resolveLimitRemaining(limit);
   const remainingRatio = total > 0 ? Math.max(0, Math.min(1, remaining / total)) : 0;
-  // 桶刷新时间只来自本桶 expires_at（nextResetTime）；不再用套餐级 renewTime
-  // 或全局聚合时间兜底，否则多套餐下会把同一时间复制进每个桶。
+  // Bucket refresh time comes only from that bucket's expires_at (nextResetTime); no plan-level
+  // renewTime or global-aggregate fallback, or multi-plan setups would copy one time into every
+  // bucket.
   const renewTime = formatStartPlanBucketResetTime(locale, limit.nextResetTime);
 
   return (
@@ -97,8 +100,9 @@ function ChatStartPlanBalanceMeter({ limit, locale }: { limit: UsageQuotaLimit; 
         </div>
       </div>
       <div className="h-1.5 overflow-hidden rounded-full bg-surface-hover">
-        {/* 与 Coding Plan 额度条对齐，hover 静默刷新返回后宽度平滑过渡到新值，
-            瞬间跳变会让"已刷新"完全无感；同时保留 motion-reduce 无障碍降级。 */}
+        {/* Aligned with the Coding Plan usage bar: after the hover silent refresh returns, width
+            eases to the new value — an instant jump makes "refreshed" invisible; keep the
+            motion-reduce a11y fallback. */}
         <div
           className="h-full rounded-full bg-success transition-[width] duration-500 ease-out motion-reduce:transition-none"
           style={{ width: `${remainingRatio * 100}%` }}
@@ -133,8 +137,9 @@ export function ChatStartPlanBalancePanel({
             {intl.formatMessage({ id: "settings.modelProvider.startPlan.balance.title" })}
           </span>
           {config.loading || config.refreshing === true ? (
-            // 静默 access 刷新有缓存快照时不会把 entitlement.loading 置 true，
-            // spinner 还要跟随 hover 触发的本次 promise（refreshing），与 Coding Plan 段语义一致。
+            // A silent access refresh with a cached snapshot never sets entitlement.loading; the
+            // spinner follows the hover-triggered promise (refreshing), matching the Coding Plan
+            // section.
             <Loader2Icon className="size-3.5 shrink-0 animate-spin text-foreground-subtle" />
           ) : null}
         </div>

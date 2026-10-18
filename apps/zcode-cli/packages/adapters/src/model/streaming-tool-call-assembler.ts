@@ -83,8 +83,8 @@ export class StreamingToolCallAssembler {
       this.streamingInputIds.has(toolCall.id) &&
       !this.completedStreamingInputIds.has(toolCall.id)
     ) {
-      // 已经进入流式 input 生命周期时，final call 不能替代缺失的
-      // tool-input-end；只移除“首次 JSON 可解析”合成，不改变既有 end gate。
+      // Once streaming input lifecycle started, a final call cannot substitute a missing
+      // tool-input-end; drop only the first-JSON-parsable synthesis, keep the end gate.
       return [];
     }
 
@@ -104,8 +104,8 @@ export class StreamingToolCallAssembler {
         toolName,
       }),
       name: toolName,
-      // 流式 start 可能携带 final call 省略的 provider 执行标记。
-      // 这里只补回原有元数据，不改变工具提交、重试或执行语义。
+      // A streaming start may carry provider execution flags the final call omits;
+      // restore metadata only, leaving commit/retry/execution semantics untouched.
       providerExecuted,
     };
     this.completedStreamingInputIds.delete(toolCall.id);

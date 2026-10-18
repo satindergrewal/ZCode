@@ -12,7 +12,7 @@ const ZAI_START_PLAN_BALANCE_URL = buildRuntimeZCodeEndpointUrls(
 ).zcodePlanBillingBalanceUrl;
 
 export interface ZaiStartPlanPlan {
-  // user_plan_id 标识用户套餐实例；额度提醒用它关联同一实例的 entitlement 周期类型。
+  // user_plan_id identifies the user's plan instance; entitlement alerts link period types via it.
   user_plan_id?: string;
   plan_id?: string;
   name?: string;
@@ -62,8 +62,8 @@ const inflightBalanceRequests = new WeakMap<
 
 export function buildZaiStartPlanBalanceUrl(): string {
   const url = new URL(ZAI_START_PLAN_BALANCE_URL);
-  // Start Plan balance 接口按真实 app_version 判定能力；
-  // 开发环境也不能固定 3.0.0，否则本地验证会绕过当前 App 版本的后端策略。
+  // The Start Plan balance endpoint gates capabilities on the real app_version;
+  // even dev must not pin 3.0.0, or local verification bypasses current app-version backend policy.
   url.searchParams.set("app_version", ZCODE_VERSION);
   return url.toString();
 }
@@ -110,8 +110,8 @@ export async function fetchZaiStartPlanBalanceEnvelope(
   })
     .then((payload) => normalizeStartPlanExpiry(payload, responseTime))
     .finally(() => {
-      // 账号校验先完成，用量查询随后到达：保留同一响应至发起后 1 秒。
-      // 失败同样保留，避免 429 之后立刻重复请求；旧请求不得删除失效后创建的新记录。
+      // Account validation lands first, usage later: keep the response for 1s after issue.
+      // Keep failures too, avoiding instant re-request after 429; old requests never delete newer records.
       const evict = () => {
         if (requests?.get(requestKey) !== request) return;
         requests.delete(requestKey);
@@ -154,7 +154,7 @@ export function resolveZaiStartPlanBalanceModelIds(payload: ZaiStartPlanBalanceE
   return modelIds;
 }
 
-/** HTTP Date 与本次响应配对，避免旧 JSON 时间让过期 active 记录继续提供权益。 */
+/** Pair the HTTP Date with this response, so stale JSON cannot keep expired actives entitled. */
 function normalizeStartPlanExpiry(
   payload: ZaiStartPlanBalanceEnvelope,
   responseTime?: number,
@@ -181,7 +181,7 @@ function normalizeStartPlanExpiry(
         ? plan.user_plan_id === balance.user_plan_id
         : plan.plan_id === balance.plan_id,
     );
-    // 无归属桶继续由既有诊断处理，不能误删同商品另一个有效实例的余额。
+    // Orphan buckets keep the existing diagnostics; never drop the other valid instance's balance of the same product.
     return !owners.length || owners.some((plan) => plan.status?.trim().toLowerCase() !== "expired");
   });
   return { ...payload, data: { ...payload.data, plans, balances } };

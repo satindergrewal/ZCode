@@ -49,7 +49,7 @@ interface PoolEntry {
   connecting: Promise<McpServerStatus>;
   key: string;
   refs: Set<string>;
-  /** 同一 entry 的并发存活校验共享一次探测，避免重复 ping / 重复重连。 */
+  /** Concurrent liveness checks of one entry share a single probe: no duplicate pings or reconnects. */
   revalidating?: Promise<void>;
   serverName: string;
 }
@@ -102,12 +102,12 @@ export function createMcpConnectionPool(options: McpConnectionPoolOptions): McpC
     entry.closeTimer.unref?.();
   };
 
-  // 设置页的 mcpPort 是进程级的 `protocol-settings` lease，connectionKey 只由
-  // serverName + leaseId + config 组成，配置没变时每次 mcp/list 都命中同一个 entry 并直接返回
-  // 首次连接那个早已 resolve 的 promise——不重连、不探测、不打日志。HTTP/SSE MCP 被停掉又不会
-  // 派发 onclose，于是设置页永远显示"已连接并可用"，点多少次刷新都不变。
-  // 这里在显式要求 revalidate 时先确认连接仍然存活，已死则在同一个 entry 上原地重连
-  // （保持 entry 身份，其他共享该连接的 lease 不会被打断成 "not leased"）。
+  // The settings mcpPort is a process-level protocol-settings lease; the connectionKey is just
+  // serverName + leaseId + config, so unchanged config hits the same entry on every mcp/list and returns
+  // the first resolved connect promise: no reconnect, no probe, no logs. HTTP/SSE servers that are stopped never
+  // dispatch onclose, so the page would forever show connected no matter how often it refreshes.
+  // On explicit revalidate, check liveness first and reconnect in place on the same entry when dead
+  // (entry identity kept, so other leases sharing the connection are not flipped to not leased).
   const revalidateEntry = async (
     entry: PoolEntry,
     config: McpServerConfig,
@@ -125,8 +125,8 @@ export function createMcpConnectionPool(options: McpConnectionPoolOptions): McpC
       const state = connected
         ? (await entry.adapter.status())[entry.serverName]?.status
         : undefined;
-      // 进行中的握手（含 OAuth 待授权）和显式停用/待信任状态不打扰：
-      // 重连会作废浏览器里已打开的授权 URL 和 PKCE/state。
+      // Leave pending handshakes (OAuth waiting) and explicit disable/pending-trust alone:
+      // reconnecting voids authorization URLs and PKCE/state already open in the browser.
       if (state === "connecting" || state === "disabled" || state === "untrusted") {
         return;
       }
@@ -150,7 +150,7 @@ export function createMcpConnectionPool(options: McpConnectionPoolOptions): McpC
         status: "started",
       });
       entry.connecting = entry.adapter.connectServer(entry.serverName, config, connectOptions);
-      // 失败由 status()/调用方 await entry.connecting 表达，这里不重复冒泡。
+      // Failure surfaces via status()/awaiting entry.connecting; do not bubble twice here.
       await entry.connecting.catch(() => undefined);
     })();
     entry.revalidating = run.finally(() => {
@@ -221,8 +221,8 @@ export function createMcpConnectionPool(options: McpConnectionPoolOptions): McpC
           await revalidateEntry(entry, config, connectOptions);
         }
       } else {
-        // 过去 pool、adapter 和 stdio PID 的日志彼此没有稳定关联键，无法从一个
-        // session 追到实际 MCP 子进程。连接上下文在 entry 创建时固定，后续 lease 共用同一 ID。
+        // pool, adapter and stdio PID logs used to lack a stable join key, making session-to-child tracing impossible.
+        // The connect context is fixed at entry creation; later leases reuse the same id.
         const connectionContext = createConnectionContext({
           config,
           connectOptions,
@@ -286,8 +286,8 @@ export function createMcpConnectionPool(options: McpConnectionPoolOptions): McpC
         });
       }
       if (previousKey !== key) {
-        // workspace 隔离连接会被多个 session 共享，不能把首个 session 记成唯一 owner；
-        // 单独记录 lease 生命周期才能准确表达多对一关系。
+        // Workspace-shared connections serve many sessions; never record the first session as sole owner.
+        // Lease lifecycle is logged separately to express the many-to-one relation.
         logger?.info("MCP connection lease acquired", {
           ...entry.connectionContext,
           event: "mcp.pool.lease.acquired",
@@ -444,7 +444,7 @@ function connectionKey(input: {
   leaseId: string;
   serverName: string;
 }): string {
-  // 默认 session isolation；只有明确声明 workspace 的无状态 server 才允许跨 session 复用。
+  // Session isolation by default; only stateless servers that declare workspace may be shared across sessions.
   const scope =
     input.config.isolation === "workspace"
       ? (resolveWorkspaceKey(input.connectOptions) ?? "")

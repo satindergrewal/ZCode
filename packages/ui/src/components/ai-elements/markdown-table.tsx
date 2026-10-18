@@ -79,8 +79,8 @@ function escapeMarkdownTableCell(value: string): string {
 }
 
 function escapeCsvCell(value: string): string {
-  // assistant markdown 属于不可信输入，CSV 被 Excel/Numbers/LibreOffice
-  // 打开时会解释公式前缀。下载前统一把公式型单元格降级成纯文本。
+  // Assistant markdown is untrusted input; Excel/Numbers/LibreOffice interpret formula
+  // prefixes when opening CSV. Demote formula-like cells to plain text before download.
   const safeValue = /^[\t\r\n]/u.test(value) || /^[\s]*[=+\-@]/u.test(value) ? `'${value}` : value;
 
   if (!/[",\r\n]/u.test(safeValue)) {
@@ -108,8 +108,9 @@ export function buildMarkdownTableText(rows: MarkdownTableRows): string {
 
 export function buildCsvTableText(rows: MarkdownTableRows): string {
   const csv = rows.map((row) => row.map((cell) => escapeCsvCell(cell)).join(",")).join("\r\n");
-  // Blob 的 charset 不会写入文件字节，Excel 会把无 BOM 的 UTF-8 CSV
-  // 按本地代码页解析，导致中文乱码；显式添加 UTF-8 BOM 让表格软件可靠识别编码。
+  // A Blob's charset never reaches the file bytes: Excel reads BOM-less UTF-8 CSV in the
+  // local code page and CJK turns to mojibake. Add a UTF-8 BOM so spreadsheet apps
+  // reliably detect the encoding.
   return `\uFEFF${csv}`;
 }
 
@@ -131,8 +132,9 @@ function resolveMarkdownTableRoot(
   frame: HTMLElement | null,
   fallbackRoot: HTMLElement | null,
 ): HTMLElement | null {
-  // V4 删除旧 ChatView 后不再渲染 data-testid="chat-view"，表格会退回自身宽度，
-  // 因而误判增强横向滚动没有收益。优先使用跨版本的显式布局边界，旧选择器只保留兼容。
+  // V4 dropped the old ChatView and its data-testid="chat-view", so tables fall back to
+  // intrinsic width and enhanced horizontal scrolling looks pointless. Prefer the
+  // cross-version explicit layout bounds; keep the old selector for compat only.
   return frame?.closest<HTMLElement>(MARKDOWN_TABLE_ROOT_SELECTOR) ?? fallbackRoot;
 }
 
@@ -141,8 +143,9 @@ function getMarkdownTableContentInlineInsetPx() {
     return MARKDOWN_TABLE_CONTENT_PADDING_DEFAULT_PX;
   }
 
-  // 表格宽度借用 ChatView root 右侧空间时，需要扣掉消息列本身的响应式右 padding。
-  // 对应 ChatConversationContent 的 px-8 max-lg:px-4 max-md:px-2。
+  // When the table borrows space to the right of the chat root, subtract the message
+  // column's own responsive right padding — ChatConversationContent's
+  // px-8 max-lg:px-4 max-md:px-2.
   if (window.innerWidth < 768) {
     return MARKDOWN_TABLE_CONTENT_PADDING_MD_PX;
   }
@@ -206,8 +209,9 @@ function readMarkdownTableDockHeight(root: HTMLElement | null) {
   const legacyDockHeight = readCssPixelValue(root, "--chat-bottom-dock-height");
   if (legacyDockHeight > 0) return legacyDockHeight;
 
-  // V4 composer dock 位于 timeline 滚动视口内部，但不再设置旧 ChatView 的
-  // CSS 变量。直接读取真实 dock 高度，避免吸底滚动条被输入区覆盖。
+  // The V4 composer dock lives inside the timeline scroll viewport and no longer sets
+  // the old ChatView CSS variables. Measure the real dock height so the sticky scrollbar
+  // is not covered by the input area.
   return (
     root
       ?.querySelector<HTMLElement>(MARKDOWN_TABLE_V4_COMPOSER_DOCK_SELECTOR)
@@ -234,8 +238,9 @@ function resolveMarkdownTableVerticalViewport(
   while (currentElement) {
     const style = window.getComputedStyle(currentElement);
     const canScrollY = /auto|scroll|overlay/u.test(style.overflowY);
-    // 横向滚动 viewport 因 overflow-x-auto 可能让浏览器把 overflow-y 计算成 auto；
-    // 如果不确认真的存在纵向滚动空间，短表格会把自身高度误当成可视区域高度，导致 80% 判定永远成立。
+    // An overflow-x-auto viewport can make the browser compute overflow-y as auto; without
+    // confirming real vertical scroll room, short tables mistake their own height for the
+    // viewport and the 80% test always passes.
     const hasVerticalScrollRange = currentElement.scrollHeight > currentElement.clientHeight + 1;
     if (canScrollY && currentElement.clientHeight > 0 && hasVerticalScrollRange) {
       return currentElement;
@@ -302,8 +307,9 @@ function shouldUseMarkdownTableStickyScrollbar({
   const dockHeight = readMarkdownTableDockHeight(root);
   const tableHeight = table.getBoundingClientRect().height;
 
-  // subagent prompt/output 会继承会话 dock 高度；如果也启用 sticky，虚拟滚动条会在
-  // 嵌套容器内错误上抬到表格中段。显式 opt-out 不依赖容器当前是否已经产生纵向 overflow。
+  // Subagent prompt/output inherit the session dock height; sticky there would lift the
+  // virtual scrollbar mid-table inside the nested container. Opt out explicitly,
+  // regardless of whether the container currently overflows vertically.
   return resolveMarkdownTableStickyScrollbarMode({
     stickyScrollbarDisabled: table.closest(MARKDOWN_TABLE_STICKY_DISABLED_SELECTOR) !== null,
     viewportHeight,
@@ -533,10 +539,12 @@ export function MarkdownTable({ className, children, node: _node, ...props }: Ma
   );
   const resolveVirtualScrollMax = useCallback(
     (viewport: HTMLDivElement) => {
-      // 虚拟滚动的总距离只应由 table 标签本身宽度减去滚动条槽宽决定；
-      // 之前混入 viewportLeftOffset 后，向左借位会改变最大值，导致 thumb 和内容滚动进度不一致。
-      // 条件挂载后的 DOM track 会使用 CSS 宽度；若它与未挂载时保存的浮点布局宽度精度不同，
-      // 可见性会在同一阈值两侧往返。是否 overflow 必须始终读取同一轮稳定的布局槽宽。
+      // Virtual scroll range comes only from the table's own width minus the track width.
+      // Mixing in viewportLeftOffset let left-borrowing change the max and desync thumb
+      // from content progress. Once conditionally mounted, the DOM track uses its CSS
+      // width; if that differs in precision from the saved unmounted layout width, visibility
+      // flip-flops around the same threshold. The overflow test must always read one
+      // stable layout track width.
       return resolveMarkdownTableVirtualScrollMax({
         tableWidth: resolveTableWidth(viewport),
         trackWidth: resolveVirtualScrollLayoutWidth(viewport),
@@ -583,20 +591,21 @@ export function MarkdownTable({ className, children, node: _node, ...props }: Ma
     }
 
     const virtualScrollMax = resolveVirtualScrollMax(viewport);
-    // 虚拟滚动条只在表格宽度超过可视槽时有意义；小表格如果也渲染 pill，
-    // 会误导用户以为还有横向内容可滚。
+    // The virtual scrollbar means something only when the table exceeds the visible track;
+    // on small tables a pill suggests scrollable content that is not there.
     commitVirtualScrollbarVisible(virtualScrollMax > 1);
     const nextVirtualScrollLeft = viewportLeftOffsetRef.current + viewport.scrollLeft;
     const clampedVirtualScrollLeft = Math.min(Math.max(0, nextVirtualScrollLeft), virtualScrollMax);
     if (clampedVirtualScrollLeft !== nextVirtualScrollLeft) {
-      // 状态面板收起/展开或窗口 resize 会改变槽宽，旧的虚拟滚动位置可能越过新边界。
-      // 这里立即回写统一入口，避免 thumb 到边界而内容还停在旧的 DOM scrollLeft。
+      // Panel collapse/expand and window resize change the track width; a stale virtual
+      // position can exceed the new bound. Write back through the single entry immediately
+      // so the thumb never sits at the edge while content rests at an old DOM scrollLeft.
       commitVirtualScrollLeft(clampedVirtualScrollLeft);
       return;
     }
 
     virtualScrollLeftRef.current = clampedVirtualScrollLeft;
-    // 已渲染 track 的实际宽度只用于 thumb 比例和位置，不能反向决定 track 是否挂载。
+    // The mounted track's measured width only feeds thumb ratio/position; it must not decide mounting.
     const virtualScrollViewportWidth = resolveRenderedVirtualScrollTrackWidth(viewport);
     const metrics = resolveMarkdownTableVirtualScrollbarMetrics({
       scrollLeft: clampedVirtualScrollLeft,
@@ -641,8 +650,9 @@ export function MarkdownTable({ className, children, node: _node, ...props }: Ma
 
     if (root) {
       const rootRect = root.getBoundingClientRect();
-      // V4 的扩展边界是完整 timeline 视口而非居中的消息内容列；显式根节点
-      // 通过 CSS 变量提供响应式安全边距，旧根节点继续保留原兼容规则。
+      // V4's expansion bounds are the full timeline viewport, not the centered message
+      // column; the explicit root exposes responsive safe margins via CSS variables, while
+      // the legacy root keeps its compat rule.
       const { leftInset, rightInset } = getMarkdownTableRootInlineInsets(root);
       const measuredDistances = resolveMarkdownTableFrameDistances({
         frameWidth: frameRect.width,
@@ -667,8 +677,9 @@ export function MarkdownTable({ className, children, node: _node, ...props }: Ma
     const hasFrameHorizontalOverflow = tableWidth > frameRect.width + 1;
     const hasExpandedScrollBenefit =
       expandedScrollbarWidth > frameRect.width + 1 || expandedMaxLeftOffset > 1;
-    // 开关只在普通 frame 宽度下确实横向溢出，并且增强模式能提供额外可视宽度或左借位时才有意义；
-    // 已开启时仍保留按钮，让用户可以收回到普通滚动范围。
+    // The toggle matters only when the plain frame truly overflows horizontally AND
+    // enhanced mode adds visible width or left-borrow. Keep it rendered while on so the
+    // user can return to plain scrolling.
     commitCanToggleExpandedScroll(
       expandedScrollEnabledRef.current || (hasFrameHorizontalOverflow && hasExpandedScrollBenefit),
     );
@@ -676,8 +687,9 @@ export function MarkdownTable({ className, children, node: _node, ...props }: Ma
     maxViewportLeftOffsetRef.current = maxLeftOffset;
     virtualScrollTrackWidthRef.current = measuredScrollbarWidth;
     commitViewportMaxWidth(`${Math.ceil(maxViewportWidth)}px`);
-    // 向上取整会让已挂载 track 比用于 overflow 判断的槽宽最多多 1px，
-    // 子像素 overflow 恰好靠近 1px 阈值时会导致 track 每帧挂载/卸载并扰动 timeline 高度。
+    // Rounding up can leave the mounted track up to 1px wider than the track used for the
+    // overflow test; near-threshold subpixel overflow then mount/unmounts the track every
+    // frame and perturbs timeline height.
     commitScrollbarWidth(`${measuredScrollbarWidth}px`);
     commitVirtualScrollbarSticky(
       shouldUseMarkdownTableStickyScrollbar({
@@ -717,8 +729,9 @@ export function MarkdownTable({ className, children, node: _node, ...props }: Ma
     }
 
     const currentVirtualScrollLeft = viewportLeftOffsetRef.current + viewport.scrollLeft;
-    // 向左借位只是把表格区域扩到左侧，不代表表格内容已经在滚动容器左边被遮住；
-    // 左侧阴影只应该在真实内部 scrollLeft 产生后出现，右侧阴影继续按虚拟总进度判断。
+    // Left-borrowing widens the table area leftward; it does not mean content is already
+    // clipped at the scroll container's left. The left shadow appears only once real
+    // internal scrollLeft exists; the right shadow still follows virtual progress.
     const hasHiddenLeft = viewport.scrollLeft > 1;
     const hasHiddenRight = currentVirtualScrollLeft < maxScrollLeft - 1;
     setNextEdgeShadowState(
@@ -748,8 +761,9 @@ export function MarkdownTable({ className, children, node: _node, ...props }: Ma
       return;
     }
 
-    // 表格 viewport 需要先按内容自然宽度排布，再最多扩展到当前 frame 宽度
-    // 加上右侧可借用空间；直接 w-full 会丢失小表格按内容收缩的布局语义。
+    // Lay the viewport out at natural content width first, then allow growth up to the
+    // frame width plus borrowable right space; a plain w-full loses the shrink-to-fit
+    // semantics small tables rely on.
     let rafId: number | null = null;
     let rectWatchRafId: number | null = null;
     let rectWatchUntil = 0;
@@ -774,8 +788,9 @@ export function MarkdownTable({ className, children, node: _node, ...props }: Ma
         !isMarkdownTableObservedRectEqual(latestFrameRect, nextFrameRect);
 
       if (rectChanged) {
-        // status panel 收起/展开可能只改变 chat root 的 left/right 位置，
-        // ResizeObserver 不一定会触发；轮询 rect 签名能让左右借位和滚动槽宽跟随布局动画更新。
+        // Panel collapse can move only the chat root's left/right; ResizeObserver may not
+        // fire. Polling a rect signature keeps side-borrow and track width following the
+        // layout animation.
         latestRootRect = nextRootRect;
         latestFrameRect = nextFrameRect;
         scheduleMeasure();
@@ -858,14 +873,16 @@ export function MarkdownTable({ className, children, node: _node, ...props }: Ma
       }
 
       event.preventDefault();
-      // 向左借位和表格内容滚动原来各自维护位置，边界处会互相覆盖导致无法回滚；
-      // 现在统一用虚拟 scrollLeft 映射：先消耗 leftOffset，再把剩余量交给真实 viewport.scrollLeft。
+      // Borrow position and content scroll used to be maintained separately and overwrite
+      // each other at the boundary. Map a single virtual scrollLeft: consume leftOffset
+      // first, hand the remainder to the real viewport.scrollLeft.
       commitVirtualScrollLeft(virtualScrollLeftRef.current + horizontalDelta);
       updateViewportLayout();
     };
 
-    // 性能修复：p12 trace 显示流式表格 children 变化会重建 observer 并同步读布局。
-    // observer 生命周期只跟 DOM 节点绑定，内容变化交给 ResizeObserver 合并到下一帧测量。
+    // Perf: p12 traces showed streaming children rebuilding the observer with synchronous
+    // layout reads. Bind the observer lifecycle to the DOM node only; content changes go
+    // through ResizeObserver, coalesced into the next frame's measurement.
     let rafId: number | null = null;
     const debouncedUpdate = () => {
       if (rafId !== null) return;
@@ -933,8 +950,9 @@ export function MarkdownTable({ className, children, node: _node, ...props }: Ma
       const frameRect = frame.getBoundingClientRect();
       const viewportRect = verticalViewport.getBoundingClientRect();
       const dockHeight = readMarkdownTableDockHeight(root);
-      // 离底时“回到底部”按钮位于 composer dock 上方；只扣 dock 会让长表
-      // sticky 滚动条与按钮占用同一条水平带，导致按钮被宽滚动槽遮挡。
+      // When scrolled up, the jump-to-bottom button sits above the composer dock; subtracting
+      // only the dock puts the sticky bar and the button in the same band, letting the wide
+      // track cover the button.
       const backToBottomClearance = readMarkdownTableBackToBottomClearance(root);
       const offset = resolveMarkdownTableStickyScrollbarOffset({
         frameTop: frameRect.top,
@@ -954,8 +972,8 @@ export function MarkdownTable({ className, children, node: _node, ...props }: Ma
     const syncDockObservation = () => {
       const nextDock =
         root?.querySelector<HTMLElement>(MARKDOWN_TABLE_V4_COMPOSER_DOCK_SELECTOR) ?? null;
-      // MutationObserver 也负责感知 dock 内回到底部按钮的挂载/卸载；即使 dock
-      // 节点本身未变化也必须安排一次几何更新。
+      // The MutationObserver also tracks the jump-to-bottom button inside the dock; even
+      // when the dock node itself is unchanged, schedule a geometry pass.
       if (nextDock === observedDock) {
         scheduleStickyOffset();
         return;
@@ -966,16 +984,18 @@ export function MarkdownTable({ className, children, node: _node, ...props }: Ma
       scheduleStickyOffset();
     };
 
-    // V4 virtual row 使用 transform 定位，原生 sticky 会被 transformed ancestor
-    // 限制在自然位置。改为跟随 timeline scroll 计算纵向补偿，且仍受当前表格上下边界约束。
+    // V4 virtual rows position via transform, and native sticky is clamped by transformed
+    // ancestors. Compute the vertical offset from timeline scroll instead, still clamped
+    // to the table's own top/bottom.
     updateStickyOffset();
     verticalViewport.addEventListener("scroll", scheduleStickyOffset, { passive: true });
     window.addEventListener("resize", scheduleStickyOffset);
     resizeObserver?.observe(frame);
     resizeObserver?.observe(verticalViewport);
     syncDockObservation();
-    // draft/空态切换会条件挂载或替换 V4 composer dock；只观察初始节点会让
-    // 新 dock 的输入增高不再触发吸底重算，因此同时跟踪根节点的子树变化并重新绑定。
+      // Draft/empty-state switches conditionally mount or replace the V4 composer dock;
+      // watching only the initial node misses the new dock's height growth. Also observe
+      // subtree mutations at the root and rebind.
     const dockMutationObserver =
       typeof MutationObserver === "undefined" || !root
         ? null
@@ -1060,8 +1080,9 @@ export function MarkdownTable({ className, children, node: _node, ...props }: Ma
 
       const trackRect = track.getBoundingClientRect();
       isVirtualScrollbarDraggingRef.current = true;
-      // thumb 是 track 的子元素，按住 thumb 时不能冒泡到 track 的点击跳转逻辑；
-      // 记录指针在 thumb 内的位置，拖动时保持这个相对偏移，避免 thumb 突然居中跳动。
+      // The thumb is a child of the track; presses on it must not bubble to the track's
+      // click-to-jump. Remember the pointer's offset within the thumb and keep it through
+      // the drag so the thumb never snaps to center.
       virtualScrollbarDragOffsetRef.current = Math.max(
         0,
         event.clientX - trackRect.left - virtualScrollThumbLeftRef.current,
@@ -1155,8 +1176,9 @@ export function MarkdownTable({ className, children, node: _node, ...props }: Ma
       commitViewportLeftOffset(0);
       const viewport = scrollViewportRef.current;
       if (viewport) {
-        // 从增强模式收回普通模式时，既有的虚拟滚动位置可能被左借位消耗；
-        // 先清掉 leftOffset 再把同一个虚拟 scrollLeft 映射回真实 scrollLeft，避免表格内容跳回开头。
+        // Leaving enhanced mode can leave virtual position consumed by left-borrow. Clear
+        // leftOffset first, then map the same virtual scrollLeft back to the real one so
+        // content does not jump to the start.
         viewport.scrollLeft = virtualScrollLeftRef.current;
       }
     }
@@ -1179,8 +1201,9 @@ export function MarkdownTable({ className, children, node: _node, ...props }: Ma
   const previewDescription = intl.formatMessage({
     id: "markdownTable.previewDescription",
   });
-  // viewportMaxWidth 是虚拟滚动槽宽，用来计算 virtualScrollMax 和 thumb；
-  // 内容层本身会 translateX 向左借位，所以需要把借出去的宽度补回右侧，避免视觉右边界跟着左移。
+  // viewportMaxWidth is the virtual track width behind virtualScrollMax and the thumb.
+  // The content layer translateX-borrows leftward, so add the borrowed width back on the
+  // right or the visual right edge follows the shift.
   const contentViewportMaxWidth =
     viewportLeftOffset > 0
       ? `calc(${viewportMaxWidth} + ${Math.ceil(viewportLeftOffset)}px)`
@@ -1231,8 +1254,9 @@ export function MarkdownTable({ className, children, node: _node, ...props }: Ma
           }}
         >
           <div
-            // 表格已有边缘阴影提示横向溢出，显示系统滚动条会在消息块底部产生额外视觉噪音；
-            // 外层宽度容器按 frame 宽度 + rightDistance 计算最大宽度，滚动 viewport 只占满该容器。
+            // Edge shadows already signal horizontal overflow; a native scrollbar adds noise
+            // at the message block's bottom. The outer width container caps at
+            // frame width + rightDistance; the scroll viewport fills exactly that.
             className="relative w-full overflow-hidden rounded-xl border border-border"
           >
             <div
@@ -1258,13 +1282,16 @@ export function MarkdownTable({ className, children, node: _node, ...props }: Ma
         <div
           ref={virtualScrollbarWrapperRef}
           aria-hidden={!virtualScrollbarVisible}
-          // V4 transformed virtual row 下 sticky 由 relative + translateY 模拟，
-          // computed position 不能表达产品语义；显式状态供跨实现的 E2E 与可访问性诊断读取。
+          // Under V4's transformed rows, sticky is emulated via relative + translateY;
+          // computed position cannot express the product state. Expose it explicitly for
+          // cross-implementation E2E and a11y diagnostics.
           data-markdown-table-virtual-scroll-sticky={virtualScrollbarSticky ? "true" : "false"}
           data-markdown-table-virtual-scroll-visible={virtualScrollbarVisible ? "true" : "false"}
-          // 滚动条槽宽必须等于 frameRect.width + rightDistance 再扣掉消息列响应式右 padding；
-          // 长表格需要在纵向阅读时也能横向滚动，sticky 底部要避让 composer 和底部面板。
-          // overflow 测量变化时只切换可见性，保留节点和纵向占位，避免扰动 timeline 高度。
+          // Track width equals frameRect.width + rightDistance minus the message column's
+          // responsive right padding. Long tables must scroll horizontally while reading
+          // vertically; the sticky bottom avoids the composer and bottom panels. On overflow
+          // changes toggle visibility only — keep the node and its vertical slot so the
+          // timeline height never jumps.
           style={{ width: scrollbarWidth }}
           className={cn(
             "pointer-events-none py-1 opacity-0 transition-[width,opacity] duration-200 ease-out motion-reduce:transition-none",

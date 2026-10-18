@@ -40,10 +40,11 @@ export function decodeZCodeBuiltinRelease(input: unknown): ZCodeBuiltinRelease {
   const { providers, providerTemplates } = parseZCodeBuiltinProviderConfigRules(
     parsed.config.providerConfigRules,
   );
-  // ZAPI 已退出产品，旧 Remote Release 或 LKG 不能在 Renderer 静态入口删除后
-  // 又通过目标 Host Registry 将它重新发布。拒绝整份不兼容 Release，让 Source 回落到兼容候选。
+  // ZAPI left the product: after the renderer static entry dropped it, a legacy Remote Release
+  // or LKG must not republish it through the target host registry. Reject the whole
+  // incompatible release and let the source fall back to a compatible candidate.
   if (providers.has(RETIRED_ZAPI_PROVIDER_ID)) {
-    throw new Error(`ZCode Built-in Release 包含已退出的 Provider: ${RETIRED_ZAPI_PROVIDER_ID}`);
+    throw new Error(`ZCode Built-in release contains a retired provider: ${RETIRED_ZAPI_PROVIDER_ID}`);
   }
   return Object.freeze({
     schemaVersion: ZCODE_BUILTIN_RELEASE_SCHEMA_VERSION,

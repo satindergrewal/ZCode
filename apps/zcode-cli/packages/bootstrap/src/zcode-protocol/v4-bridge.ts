@@ -1,14 +1,14 @@
 import { readBackgroundBashOutputFromOwner } from "./background-work-owner.js";
-// v4 网关 binder。
-// 定位：ConversationV4Gateway 是域无关的通道运行时，本文件把它绑到协议服务器上下文：
-// - 帧出口 = context.notify（stdio NDJSON notification，与旧 session/event 同一条管道并存）；
-// - 命令执行 = V4CommandExecutor（zcode-protocol-v4/commands/，原生直驱 core）；
-//   20 命令全部原生，supports() 未命中（未知命令）→ notImplemented。
-// - 过渡钩子（ensureModelReady / afterLegacyStateMutation / closeSession /
-//   createSessionRecord / child record registration / resumePersistedSession）在此注入旧协议实现，随旧协议一同删除。
-//
-// 不做桥接：依赖方向只允许 旧目录 → v4 目录。
-// 本文件在旧目录，import v4 executor 合法；v4 目录禁止反向 import 本目录任何模块。
+// v4 gateway binder.
+// Role: ConversationV4Gateway is a domain-agnostic channel runtime; this file binds it to the protocol server context:
+// - frame egress = context.notify (stdio NDJSON notification, coexisting with the legacy session/event pipe);
+// - command execution = V4CommandExecutor (zcode-protocol-v4/commands/, native, straight into core);
+//   all 20 commands native; a supports() miss (unknown command) -> notImplemented.
+// - transition hooks (ensureModelReady / afterLegacyStateMutation / closeSession /
+//   createSessionRecord / child record registration / resumePersistedSession) inject the legacy implementations here, to be
+//   deleted along with the legacy protocol.
+// No reverse bridging: dependency direction allows legacy-dir -> v4-dir only.
+// This file lives in the legacy dir, so importing the v4 executor is legal; the v4 dir must not import this dir.
 import {
   isConversationRealUserTurnStarter,
   parseRemoteWorkspaceIdentity,
@@ -142,7 +142,7 @@ function modelSelectionWithOptionFallback(
   fallback: ModelSelection | undefined,
 ): ModelSelection | undefined {
   if (!selection) return fallback && cloneModelSelection(fallback);
-  // 兼容旧 fork 消息可能缺少 reasoning；输出预算属于单次请求，不属于 Selection。
+  // Legacy forks may lack reasoning; the output budget is per-request, not part of the Selection.
   const reasoningLevel = selection.options?.reasoningLevel ?? fallback?.options?.reasoningLevel;
   return {
     providerId: selection.providerId,
@@ -185,16 +185,16 @@ async function readConversationFileChanges(
 }
 
 /**
- * 冷物化时把本会话的 workflow run 从 journal 回放成 `DynamicWorkflowRunProgress` 会话事件。
- *
- *   - 只对**直接命中** record 的父会话补种：经 parentID 回落到父 record 的子会话（actor
- *     transcript）不补——journal 按父会话建键，子会话的投影不该长出父会话的 run；
- *   - 内存事件里已出现过的 runId 交给 CLI 排除（本进程跑过的 run 事件全在内存 store 里，
- *     进度事件不带 turnId、不受 turn-window 淘汰），暖物化因此零重复；
- *   - 回放失败只记日志、回空：观察面绝不让冷开失败。
- *
- * 事件 id / traceId 照 transcript hydration 的合成事件；sequenceNumber 由 cold merge 统一重排。
- */
+ * Cold materialization: replay this session's workflow runs from the journal into DynamicWorkflowRunProgress
+ * session events.
+ *   - Backfill only parents whose record is a **direct hit**: children falling back to the parent record via
+ *     parentID (actor transcripts) are not seeded - the journal keys by parent session; a child's projection must
+ *     not grow the parent's runs;
+ *   - runIds already seen in memory events are excluded by the CLI (this process's run events all live in the
+ *     memory store; progress events carry no turnId and survive turn-window eviction), so warm materialization
+ *     duplicates nothing;
+ *   - replay failure logs and returns empty: the observation side never fails a cold open.
+ * Event id / traceId follow transcript hydration's synthesized events; sequenceNumber is re-ranked by cold merge.
 async function replayDynamicWorkflowRunEvents(
   context: ZCodeProtocolAgentServerContext,
   sessionId: string,
@@ -240,10 +240,10 @@ async function resolveConversationBackingRecord(
   const direct = context.sessions.get(sessionId);
   if (direct) return direct;
 
-  // 运行中 subagent 有独立 child event log，但没有独立 bootstrap record。
-  // 文件摘要只需要共享 event/artifact store，因此通过持久化 parentID 找到父 record 作为
-  // artifact reader，读取事件时仍显式使用 childSessionId；不能为了只读查询 cold resume
-  // 第二个 child runtime。
+  // A running subagent has its own child event log but no bootstrap record of its own.
+  // File summaries only need the shared event/artifact store, so resolve the parent record via the persisted
+  // parentID as artifact reader, while event reads still use childSessionId explicitly; never cold-resume a
+  // second child runtime for a read-only query.
   const stored = await context.deps.sessionStore?.getSession(sessionId as SessionId);
   const parentSessionId = stored?.parentID ? String(stored.parentID) : null;
   return parentSessionId ? context.sessions.get(parentSessionId) : undefined;
@@ -300,8 +300,8 @@ function admissionAttachmentRefs(
 }
 
 /**
- * admission 只持久化真正会产生输入的命令。edit/retry 不能从 payload 猜 intent；
- * 必须复用 projection 的 canonical target，并把旧来源折叠进 provenance。
+ * Admission persists only commands that will really produce input. edit/retry cannot guess intent from payload;
+ * reuse the projection's canonical target and fold legacy origins into provenance.
  */
 function resolveInputCommandForAdmission(
   envelope: CommandEnvelope,
@@ -363,7 +363,7 @@ function resolveInputCommandForAdmission(
   if (!resolution?.ok || !resolution.editTarget) return null;
   const canonical = resolution.editTarget;
 
-  // 会先提交 append-only branch cut，不再为 edit 创建 hidden child。
+  // Will commit an append-only branch cut first; edit no longer creates a hidden child.
   const originalSourceCommandId =
     canonical.intent.provenance?.sourceCommandId ?? canonical.intent.sourceCommandId;
   return {
@@ -473,7 +473,7 @@ async function recordForkStartFailureBestEffort(
         stage,
       });
     } catch {
-      // 日志 sink 失败也属于 post-commit；durable child/fact 不得因此反转。
+      // Logger-sink failures are post-commit too; durable child/fact must not be reversed because of one.
     }
   };
 
@@ -534,8 +534,9 @@ async function recordForkStartFailureBestEffort(
 }
 
 /**
- * Fork bundle commit 是命令 PONR；后续 catalog/model/resume/snapshot 仅恢复 runtime 可达性。
- * 该阶段失败必须留下可重试事实与 warning，但不能把 durable accepted child 反转成 failed。
+ * Fork bundle commit is the command's point of no return; later catalog/model/resume/snapshot only restore
+ * runtime reachability. Failures here must leave retryable facts and a warning, never reverse a durable
+ * accepted child into failed.
  */
 async function registerCommittedForkBestEffort(
   context: ZCodeProtocolAgentServerContext,
@@ -563,7 +564,7 @@ async function registerCommittedForkBestEffort(
         retryable: true,
       });
     } catch {
-      // logger 自身异常过去会越过 PONR 冒泡，让 gateway 错误 settle 为 failed。
+      // logger exceptions used to escape past the PONR, settling the gateway error as failed.
     }
   }
 }
@@ -599,7 +600,7 @@ export function createConversationV4Gateway(
   const autoDrainV4QueueIfReady = async (record: ZCodeProtocolSessionRecord): Promise<void> => {
     const head = context.v4Gateway?.getQueueHead(record.app.sessionId);
     if (!head) {
-      // 外层恢复 FIFO 已消费到空；guide 仍只由 core tool-batch 边界行内消费。
+      // The outer FIFO already consumed to empty; guide is still consumed inline at core tool-batch boundaries only.
       record.app.completeExternalQueueDrain();
       return;
     }
@@ -609,9 +610,9 @@ export function createConversationV4Gateway(
       head.dispatchState === "queued" &&
       (record.activeAbortController !== undefined || coreForegroundBusy)
     ) {
-      // Bootstrap controller 不覆盖 model-only notification；旧 auto-drain
-      // 只看外层锁，因而把“空闲后消费”错误执行成抢占。busy 时不碰 reservation。
-      scheduleAutoDrainRetry(record);
+      // The bootstrap controller must not override model-only notifications; legacy auto-drain
+      // looked only at the outer lock and mis-executed consume-when-idle as preemption. Hands off reservations
+      // while busy.
       return;
     }
     let targetStatus: GoalStatus | null = null;
@@ -619,8 +620,8 @@ export function createConversationV4Gateway(
       try {
         targetStatus = (await record.app.readTarget())?.status ?? null;
       } catch (error) {
-        // target 读取失败时按“未知且未完成”处理；直接提升会让
-        // goal verification 的持久终态尚未可证时普通 queue 偷跑。
+        // On target read failure treat as unknown-and-unfinished; promoting directly would let plain queue jump
+        // ahead while the goal verification's durable terminal is not yet provable.
         context.logger?.warn("v4 auto-drain held because target state could not be read", {
           error: error instanceof Error ? error.message : String(error),
           queueItemId: head.queueItemId,
@@ -639,8 +640,9 @@ export function createConversationV4Gateway(
     ) {
       return;
     }
-    // 暂停队列恢复后，旧项只存在于投影而不在新 activeTurn 内存中；普通文本也必须
-    // 和 typed /goal、/compact 一样走完整投影的队首，避免新输入越过旧暂停项。
+    // After paused-queue restore, old items exist only in the projection, not the new activeTurn memory; plain
+    // text must also route through the full projection's queue head, like typed /goal and /compact, so new input
+    // cannot jump stale paused items.
     try {
       await nativeExecutor.execute(
         {
@@ -657,11 +659,11 @@ export function createConversationV4Gateway(
       );
     } catch (error) {
       if (error instanceof V4QueuePromotionLeaseUnavailableError) {
-        // precheck 与 handler 之间可能新入队 notification；idle-only 是最终原子判据。
+        // A notification may enqueue between precheck and handler; idle-only is the final atomic test.
         scheduleAutoDrainRetry(record);
         return;
       }
-      // 自动提升失败不能继续越过该 FIFO barrier；重新暂停并保留原项，交用户重试。
+      // A failed auto-promote must not pass the FIFO barrier; re-park with the original item for user retry.
       await record.app.setQueueAutoDrain(false);
       context.logger?.warn("v4 auto-drain failed and queue was paused", {
         error: error instanceof Error ? error.message : String(error),
@@ -687,18 +689,18 @@ export function createConversationV4Gateway(
     autoDrainRetryTimers.set(sessionId, timer);
   };
   const coreHost: V4CommandCoreHost = {
-    // 同一注册表对象引用：view 是旧 record 的结构化窄视图，字段变更双向可见。
-    getRecord: (sessionId) => context.sessions.get(sessionId),
-    // 同一登记表实例：broker（旧目录）注册反向请求 deferred，
-    // v4 resolveInteraction handler 经此投递应答（v4 原生基础设施，非过渡钩子）。
+    // Same registry object reference: view is a structured narrow view of the legacy record; field changes are
+    // visible both ways.
+    // Same registry instance: the broker (legacy dir) registers reverse-request deferreds, and the v4
+    // resolveInteraction handler delivers answers through it (native v4 infrastructure, not a transition hook).
     interactions: context.v4Interactions,
     logger: {
       info: (message, fields) => context.logger?.info(message, fields),
       warn: (message, fields) => context.logger?.warn(message, fields),
     },
-    // v4 原生能力（非过渡钩子）：sendQueuedNow 必须读取 v4 投影里的完整 intent。
-    // 命令执行时 context.v4Gateway 已由 server 注入（createConversationV4Gateway
-    // 返回值回填），这里惰性取用避免构造期自引用。
+    // Native v4 capability (not a transition hook): sendQueuedNow must read the full intent from the v4
+    // projection. By command time context.v4Gateway is injected by the server (the createConversationV4Gateway
+    // return value is backfilled); lazy access here avoids construction-time self-reference.
     getQueueItem: (sessionId, queueItemId) =>
       context.v4Gateway?.getQueueItem(sessionId, queueItemId) ?? null,
     hasQueueItemKind: (sessionId, kind) =>
@@ -725,17 +727,19 @@ export function createConversationV4Gateway(
       const kind = input.kind;
       const record = context.sessions.get(sessionId);
       if (record?.persistence === "deferred") {
-        // session_input 有 session 外键；draft 要到 startPromptTurn 后台阶段才持久化，
-        // 如果先写 ledger 会直接 FK 失败，accepted 前仍没有权威记录。因此 admission
-        // 先走 runtime 的统一首发持久化边界，再落 ledger，随后 handler 只负责执行。
+        // session_input has an FK to session; the draft persists only in startPromptTurn's background phase, so
+        // writing the ledger first would FK-fail and leave no authoritative record before accepted. Admission
+        // therefore goes through the runtime's unified first-input persistence boundary, then the ledger; the
+        // handler only executes.
         await record.app.runtime.ensureSessionPersistedForExternalActivity(input.text ?? "", {
           traceContext: record.traceContext,
         });
         record.persistence = "immediate";
       }
       const routingMode = context.v4Gateway?.getInputRoutingMode(sessionId) ?? null;
-      // 这是执行前账本的“预计投递边界”；TurnSteerQueued 会用实际 delivery/回退原因
-      // 幂等更新同一记录。startNow 不能伪装成 queue，否则重启 discarded 的诊断事实失真。
+      // This is the ledger's pre-execution intended-delivery boundary; TurnSteerQueued idempotently updates the
+      // same record with the actual delivery/fallback reason. startNow must not masquerade as queue, else
+      // restarted-discarded diagnostics lie.
       const requestedDelivery =
         input.requestedDelivery ??
         (kind === "compact" && routingMode !== null && routingMode !== "startNow"
@@ -966,10 +970,10 @@ export function createConversationV4Gateway(
         ack,
       );
     },
-    // held choice 裁决（heldQueueInputRequiresChoice）：读投影 inputRouting.mode。
+    // Held choice verdict (heldQueueInputRequiresChoice): read projection inputRouting.mode.
     getInputRoutingMode: (sessionId) => context.v4Gateway?.getInputRoutingMode(sessionId) ?? null,
-    // rowId→messageId 翻译面（fork/edit/retry 的定位决策，数据源 = v4 投影）：
-    // 惰性走 gateway 的投影查表。
+    // rowId->messageId translation (fork/edit/retry targeting; source = the v4 projection):
+    // lazily consult the gateway's projection table.
     getMessageIdForRow: (sessionId, rowId) =>
       context.v4Gateway?.getMessageIdForRow(sessionId, rowId) ?? null,
     resolveRowActionTarget: (sessionId, target, action) =>
@@ -997,7 +1001,7 @@ export function createConversationV4Gateway(
       context.v4Gateway?.isLatestEditableUserRow(sessionId, rowId) ?? null,
     getTurnIdForRow: (sessionId, rowId) =>
       context.v4Gateway?.getTurnIdForRow(sessionId, rowId) ?? null,
-    // restoreWarning 时序自愈探针：App 的模型视图直接来自进程 Registry。
+    // restoreWarning self-heal probe: the App's model view comes straight from the process Registry.
     hasUsableRuntimeModelTarget: (record) => record.app.listModels().length > 0,
     getTurnRewindAnchor: (sessionId, rowId) =>
       context.v4Gateway?.getTurnRewindAnchor(sessionId, rowId) ?? null,
@@ -1018,9 +1022,9 @@ export function createConversationV4Gateway(
         .at(-1);
       return user ? String(user.info.id) : null;
     },
-    // retryTurn 原 prompt 解析：assistant messageId → parentID（user 消息）→ 文本。
-    // 数据源 = core sessionStore（transcript 权威）；实现放 binder 只因 deps 注入点
-    // 在宿主（随 host 原生持有）。找不到返回 null → handler 只截断不重发。
+    // retryTurn original-prompt resolution: assistant messageId -> parentID (user message) -> text.
+    // Source = core sessionStore (transcript authority); it lives in the binder only because the deps injection
+    // point is host-native. Not found returns null -> handler truncates without resending.
     resolveTurnUserPrompt: async (sessionId, assistantMessageId) => {
       const sessionStore = context.deps.sessionStore;
       if (!sessionStore) return null;
@@ -1046,8 +1050,9 @@ export function createConversationV4Gateway(
       const record = context.sessions.get(sessionId);
       const sessionStore = context.deps.sessionStore;
       if (!record || !sessionStore) throw new Error("proto.sessionNotFound");
-      // 原因：反馈必须先落 transcript，CLI 重启后才能从 cold hydration 恢复；
-      // eventStore/投影随后推进，失败重试仍可从同一持久事实幂等补齐。
+      // Reason: the notice must land in the transcript first, so a CLI restart can restore it via cold hydration;
+      // eventStore/projection advance afterwards and a failed retry can still idempotently backfill from the
+      // same persisted fact.
       await persistAssistantFeedback({
         sessionStore,
         eventStore: record.eventStore,
@@ -1064,11 +1069,11 @@ export function createConversationV4Gateway(
           }),
       });
     },
-    // ── 过渡钩子──────────────────────────────
+    // ---------------------------- transition hooks ----------------------------
     ensureModelReady: (record) =>
       ensureSessionModelAvailableForNextTurn(context, record as ZCodeProtocolSessionRecord),
-    // 切模型前确认目标 Provider 已存在于当前 Environment Registry。普通模型命令只提交
-    // Selection；Provider 事实始终由 Worker 自己的 Registry 解释。
+    // Before switching models, confirm the target Provider exists in the current Environment Registry. Plain
+    // model commands commit only the Selection; Provider facts are always interpreted by the Worker's own Registry.
     ensureProviderAvailable: async (sessionId, providerId) => {
       const record = context.sessions.get(sessionId);
       if (!record) return { available: false, reason: "session_not_found" };
@@ -1081,54 +1086,54 @@ export function createConversationV4Gateway(
       await afterStateMutation(context, record as ZCodeProtocolSessionRecord, reason);
       await autoDrainV4QueueIfReady(record as ZCodeProtocolSessionRecord);
     },
-    // deleteSession 的执行面：内联旧 closeSession op 的 4 步（不 import 旧 op——
-    // 语义与 server-operations.ts closeSession 对齐，随会话注册表归 v4 后收编）。
+    // deleteSession execution: inlines the 4 steps of the legacy closeSession op (no import of the legacy op -
+    // semantics aligned with server-operations.ts closeSession; to be absorbed once the session registry moves to v4).
     closeSession: async (sessionId) => {
       const record = context.sessions.get(sessionId);
       if (!record) {
-        // handler 已校验存在性；此处只兜并发竞态（重复删除幂等成功）。
+        // The handler checked existence; this only absorbs concurrency races (duplicate delete is idempotent success).
         return;
       }
       record.unsubscribe?.();
       await record.app.close?.();
-      // v4 通道：会话关闭同时清 publisher / 订阅调度；重开会话走 snapshot 冷启动。
-      // disposeSession 必须在注册表删除之前调用——
-      // gateway 靠 getSessionWorkspaceId（读 context.sessions）定位 workspace 才能把
-      // session.removed 推给 sessions-index 订阅者；先 delete 再 dispose 时 workspaceId
-      // 恒为 null，删除会话后侧栏列表项永不消失（e2e conversation-session-v4-sidebar 抓出）。
+      // v4 channel: closing a session also clears the publisher/subscription scheduling; reopening cold-starts a
+      // snapshot. disposeSession must run before the registry delete -
+      // the gateway locates the workspace via getSessionWorkspaceId (reading context.sessions) to push
+      // session.removed to sessions-index subscribers; delete-then-dispose leaves workspaceId
+      // null and the sidebar entry never disappears (caught by e2e conversation-session-v4-sidebar).
       context.v4Gateway?.disposeSession(sessionId);
       context.sessions.delete(sessionId);
     },
-    // createSession 的执行面：record 建立/事件接线/catalog 同步/失败自清理全在旧
-    // createSession op 内（半初始化 record 的回收顺序修过 bug，不重复实现）。
-    // 语义决策（draft persistence / firstInput 走原生 prompt turn）在原生 handler。
+    // createSession execution: record creation/event wiring/catalog sync/failure cleanup all live in the legacy
+    // createSession op (the half-initialized-record reclaim order fixed real bugs; do not reimplement).
+    // Semantic decisions (draft persistence / firstInput via native prompt turn) stay in the native handler.
     createSessionRecord: async ({
       workspaceId,
       mcpServers,
       offPeakToolEnabled,
       dynamicWorkflowEnabled,
     }) => {
-      // workspaceId 双形态（Workspace Identity 约束）：
-      // - 本地工作区 = workspacePath（identity 缺省时的 fallback）；
-      // - 远程 pane（跨 workspace 分屏）= 远程 identity
-      //   （remote:ssh/wsl/docker:...:<path>，UI buildRemoteWorkspaceIdentity 构造）。
-      //   经统一解析工具还原真实 workspacePath 作 workingDirectory——CLI 本就跑在
-      //   远端机器上，path 即本机路径；identity 原样保留进 workspace ref
-      //   （workspaceKey = identity，sessions-index topic / 隔离语义不变）。
-      // shared parser 统一兼容 WSL legacy 与显式 user identity；非远程格式继续按
-      // 本地 workspacePath 处理。
+      // workspaceId dual form (Workspace Identity constraints):
+      // - local workspace = workspacePath (the fallback when identity is absent);
+      // - remote pane (cross-workspace split) = the remote identity
+      //   (remote:ssh/wsl/docker:...:<path>, built by the UI's buildRemoteWorkspaceIdentity).
+      //   Resolve the real workspacePath via the shared parser as workingDirectory - the CLI already runs on
+      //   the remote machine, so the path is a local path; the identity passes verbatim into the workspace ref
+      //   (workspaceKey = identity; sessions-index topic and isolation semantics unchanged).
+      //   The shared parser compat-covers WSL legacy and explicit user identities; non-remote formats keep
+      //   the local-workspacePath handling.
       const created = await createSessionRecordForV4(context, {
         workspace: resolveWorkspaceRefFromId(workspaceId),
-        // 一律 deferred（draft 不进 sqlite）；提升时机归原生 prompt-turn。
+        // Always deferred (draft stays out of sqlite); promotion timing belongs to the native prompt-turn.
         persistence: "deferred",
-        // MCP 是 runtime 创建期配置；v4 createSession 必须与 legacy
-        // session/create 等价透传，否则创建的 session 永远不会启动这些工具。
+        // MCP is runtime-creation configuration; v4 createSession must pass it through equivalently to legacy
+        // session/create, else sessions created without those tools never start them.
         mcpServers,
-        // Off-Peak 工具面 flag 同为 runtime 创建期配置，必须随 create 进入 record。
+        // The Off-Peak tooling flag is likewise runtime-creation configuration and must enter the record with create.
         ...(offPeakToolEnabled === true ? { offPeakToolEnabled: true } : {}),
-        // 动态工作流灰度门同为 runtime 创建期配置：
-        // v4 createSession 必须与 legacy session/create 等价透传，否则无界面创建的会话
-        // 会绕过 Host 的灰度判定，只剩进程级缺省。
+        // The dynamic-workflow gate is likewise runtime-creation configuration:
+        // v4 createSession must pass it through like legacy session/create, else UI-less creation would bypass the
+        // Host's gate decision, leaving only the process default.
         ...(dynamicWorkflowEnabled === true ? { dynamicWorkflowEnabled: true } : {}),
       });
       return { sessionId: created.sessionId };
@@ -1159,8 +1164,8 @@ export function createConversationV4Gateway(
       });
       return { sessionId: String(fork.forkedSessionId) };
     },
-    // running stable fork：只走 core transcript copy，再注册 child record。父 runtime、queue、
-    // background/continuation inbox 与 shared workspace 均不读取、不停止、不复制。
+    // Running stable fork: core transcript copy only, then register the child record. Parent runtime, queue,
+    // background/continuation inbox, and shared workspace are none read, stopped, or copied.
     forkStableConversation: async (sessionId, options) => {
       const { goalBoundary, revisionAtDecision, sourceCommandId, target } = options;
       const record = context.sessions.get(sessionId);
@@ -1203,8 +1208,8 @@ export function createConversationV4Gateway(
             ? { thoughtLevel: modelSelection.options.reasoningLevel }
             : {}),
         },
-        // core 已按 copied message/verifier 边界复制 goal；禁止再用 parent 当前 target 覆盖。
-        inheritLatestTarget: false,
+        // Core already copied goals at copied-message/verifier boundaries; never overwrite with the parent's
+        // current target.
       });
       return { forkedSessionId: String(fork.forkedSessionId) };
     },
@@ -1324,8 +1329,8 @@ export function createConversationV4Gateway(
             editTarget,
           },
         },
-        // 严格取 TurnStarted 之前的 TargetChanged 或上一稳定 assistant anchor；禁止
-        // 把 parent 当前（可能正由被编辑 goal 写入）的 target 冒充 input 前状态。
+        // Strictly the TargetChanged before TurnStarted or the last stable assistant anchor; never present the
+        // parent's current target (possibly being written by the edited goal) as the pre-input state.
         goalBoundary,
         traceContext: record.traceContext,
       });
@@ -1353,16 +1358,16 @@ export function createConversationV4Gateway(
     workspaceId: string,
     legacyTaskIds?: readonly string[],
   ) => {
-    // 未加载会话的轻量摘要：store 元信息 → SessionSummary（phase 取空闲完成态默认、
-    // sessionEnded=true 对齐 「成功轮收口即 true」口径；加载后的准确
-    // phase/preview/backgroundWork 由 gateway 用 live 投影覆盖）。
-    // workspaceKey 的本地 fallback = workspacePath，故用它作 listSessions 的 directory 过滤。
+    // Lightweight summary of an unloaded session: store meta -> SessionSummary (phase defaults to idle-done;
+    // sessionEnded=true matches ended-on-successful-turn; after load the gateway overrides
+    // phase/preview/backgroundWork from the live projection).
+    // workspaceKey's local fallback is workspacePath, hence the listSessions directory filter.
     if (!context.deps.sessionStore) return [];
     try {
-      // 远端 sessions-index 的 workspaceId 是隔离 identity，而 session store 的
-      // directory 是实际文件路径。查询必须同时带路径和 identity；否则同一路径下其他
-      // authority 的会话会被误标成当前 workspace。legacy 空 identity 不能只凭路径
-      // claim，只允许使用 host task-index 给出的精确 taskId 归属证明。
+      // The remote sessions-index workspaceId is the isolation identity, while the session store's directory is
+      // the real file path. Queries must carry both; else other authorities' sessions at the same path get
+      // mislabeled as this workspace. A legacy-empty identity must not claim by path alone - only the host
+      // task-index's exact taskId attribution counts.
       const parsedRemote = parseRemoteWorkspaceIdentity(workspaceId);
       const persistedWorkspacePath = parsedRemote?.workspacePath ?? workspaceId;
       if (
@@ -1386,8 +1391,8 @@ export function createConversationV4Gateway(
             });
           }
         } catch (error) {
-          // claim 只是旧数据兼容步骤；失败后仍要读取已有完整 identity 的会话。
-          // 后续携带 allowlist 的订阅会再次进入这里，不能用失败结果封死迁移。
+          // The claim is a legacy-data step; on failure still read sessions with complete identities.
+          // Later subscriptions carrying the allowlist re-enter here; never seal migration with a failure.
           context.logger?.warn("legacy remote sessions claim failed; continuing strict load", {
             error: error instanceof Error ? error.message : String(error),
             event: "zcode_protocol.v4.sessions_index_legacy_remote_claim_failed",
@@ -1400,9 +1405,9 @@ export function createConversationV4Gateway(
         directory: persistedWorkspacePath,
         includeArchived: false,
         limit: 200,
-        // parentID 只表达会话层级，不能作为左侧任务 membership。
-        // 显式 fork 必然带 parentID，但重启后仍应由 taskType 投影进 sessions-index。
-        taskTypes: [...TASK_LIST_SESSION_TYPES],
+        // parentID expresses session hierarchy only, never left-panel task membership.
+        // Explicit forks always carry parentID, yet after restart the taskType projection must place them in
+        // sessions-index.
         workspaceID: parsedRemote ? (workspaceId as WorkspaceId) : null,
       });
       return stored.map((session) => ({
@@ -1433,9 +1438,9 @@ export function createConversationV4Gateway(
     onTargetCompleted: (sessionId) => {
       const record = context.sessions.get(sessionId);
       if (!record) return;
-      // background task-notification 的 goal verifier 不经过 v4 prompt 的
-      // finally/afterLegacyStateMutation；TargetChanged(complete) 虽已提交，future queue
-      // 因而没有下一次 mutation 来重评。这里只 detached 触发既有 gate，不能阻塞投影。
+      // The background task-notification goal verifier bypasses v4 prompt's
+      // finally/afterLegacyStateMutation; TargetChanged(complete) committed, so the future queue has no next
+      // mutation to re-evaluate with. Fire the existing gate detached; never block the projection.
       void Promise.resolve()
         .then(() => autoDrainV4QueueIfReady(record))
         .catch((error: unknown) => {
@@ -1445,7 +1450,7 @@ export function createConversationV4Gateway(
           });
         });
     },
-    // Gateway 的单一 READY promise 负责并发与水位；binder 只恢复 runtime。
+    // The gateway's single READY promise owns concurrency and watermark; the binder only revives the runtime.
     resumePersistedSession: async (
       sessionId,
       resumeThoughtLevel,
@@ -1465,8 +1470,8 @@ export function createConversationV4Gateway(
         context,
         {
           sessionId,
-          // session.path 可能是规范化后的执行 cwd，不能覆盖当前 attachment
-          // 已知的 workspace 身份。旧 session 没有 attachment 上下文时仍走原有持久化回退。
+          // session.path may be a normalized exec cwd; it must not override the workspace identity already known
+          // from attachment. Legacy sessions without attachment context keep the old persistence fallback.
           ...(workspace ? { workspace } : {}),
           ...(resumeThoughtLevel ? { thoughtLevel: resumeThoughtLevel } : {}),
         },
@@ -1494,10 +1499,10 @@ export function createConversationV4Gateway(
         method: V4_NOTIFICATIONS.cuaPermissionObservation,
         params: observation,
       }),
-    // ── config 种子：投影初值 = runtime 真值 ─────────────
-    // 覆盖三个种子来源：启动缺省（Workspace 模型偏好 + 项目持久化 mode）、
-    // createSession.config（handler 先应用到 runtime 再种）、历史会话 resume
-    // （App 恢复结果可以只有模型身份，不能为了投影而绑定半成品执行模型）。
+    // ---------------- config seeds: projection initial values = runtime truth ----------------
+    // Three seed sources: startup defaults (workspace model preference + persisted project mode),
+    // createSession.config (the handler applies to runtime, then seeds), historical resume (the App restore
+    // result may carry model identity only; never bind a half-built execution model just for the projection).
     getSessionMemoryEnabled: (sessionId) => context.sessions.get(sessionId)?.memoryEnabled,
     getSessionConfigSeed: (sessionId) => {
       const record = context.sessions.get(sessionId);
@@ -1530,14 +1535,14 @@ export function createConversationV4Gateway(
       const record = context.sessions.get(sessionId);
       if (!record) return null;
       const contextUsage = await readSessionContextUsage(context, sessionId, persistedMessages);
-      // usage seed 会在 hydration 后再次覆盖首帧分母；必须与合成事件
-      // 使用同一份当前模型 registry 真值，不能把旧 runtime projection 的窗口写回来。
+      // The usage seed overwrites the first frame's denominator after hydration; it must use the same current
+      // model-registry truth as the synthesized event, never write the stale runtime projection's window back.
       return sessionUsageSeedFromRuntimeContextUsage(
         contextUsage,
         resolveSessionModelContextWindow(context, record),
       );
     },
-    // ── sessions-index hooks（workspace 分桶 + 冷启动 store 种子）──────────
+    // ---------------- sessions-index hooks (workspace bucketing + cold-start store seeds) ----------------
     getSessionWorkspaceId: (sessionId) => {
       const record = context.sessions.get(sessionId);
       return !record || !isTaskListSessionType(record.taskType)
@@ -1560,25 +1565,26 @@ export function createConversationV4Gateway(
             isTaskListSessionType(record.taskType) && record.workspace.workspaceKey === workspaceId,
         )
         .map((record) => record.app.sessionId),
-    // draft 判定：deferred = 未发首条输入（prompt-turn 首发提升为 immediate）。
-    // 旧 workspace prepare 预建的 deferred 会话不得以「新任务」漏进侧栏列表。
+    // Draft test: deferred = no first input sent yet (prompt-turn first input promotes to immediate).
+    // Deferred sessions pre-created by legacy workspace prepare must not leak into the sidebar as new tasks.
     isDraftSession: (sessionId) => context.sessions.get(sessionId)?.persistence === "deferred",
-    // ── workspace-config hook（配置目录订阅种子；live session 快路径，避免临时 app）──
+    // ---------------- workspace-config hook (config dir subscription seed; live-session fast path, no temp app) ----------------
     getWorkspaceConfig: (workspaceId) => buildLiveWorkspaceConfigStateV4(context, workspaceId),
     getStoredSessionSummaries: loadStoredSessionSummaries,
     refreshLegacySessionSummaries: (workspaceId, legacyTaskIds) =>
       parseRemoteWorkspaceIdentity(workspaceId)
         ? loadStoredSessionSummaries(workspaceId, legacyTaskIds)
         : null,
-    // 回落面已清零（20 命令全部原生）：supports 未命中（未知命令类型）→
+    // Fallback surface is zero (all 20 commands native): a supports() miss (unknown command type) ->
     // notImplemented → ACK failed fault.command.notImplemented。
     executeCommand: (envelope, admission) =>
       nativeExecutor.supports(envelope.type)
         ? nativeExecutor.execute(envelope, admission)
         : Promise.reject(new V4CommandNotImplementedError(envelope.type)),
     admitCommandInput: async (envelope, admission) => {
-      // 仅隐藏 composer 不能阻止旧 child 标签页续聊。类型准入必须早于
-      // ledger/输入历史写入；detached child 没有 record 时只查元数据，不激活第二个 runtime。
+      // Hiding the composer cannot stop legacy child tabs from continuing. Type admission must precede
+      // ledger/input-history writes; a detached child without a record consult metadata only, never activate a
+      // second runtime.
       if (
         envelope.sessionId &&
         (isConversationInputAdmissionCommand(envelope.type) ||
@@ -1608,13 +1614,13 @@ export function createConversationV4Gateway(
       const record = context.sessions.get(sessionId);
       const controller = record?.activeAbortController;
       if (!controller || controller.signal.aborted) return;
-      // 投影越过 16MiB 后继续生成只会让所有后续 snapshot 都无法编码。
-      // gateway 先原子拒绝越界事件并登记 protocol fault，再单次调用这里中止模型 turn；
-      // abort 的正常终态负责释放 active lock，不能在 gateway 里越层伪造 TurnError。
-      controller.abort(createExternalTurnFaultError(reasonCode));
+      // Past 16MiB, further projection growth only makes every later snapshot unencodable.
+      // The gateway atomically rejects the oversize event and records a protocol fault, then calls here once to
+      // abort the model turn; abort's normal terminal releases the active lock - never fake a TurnError across
+      // layers in the gateway.
     },
-    // commands/query 持久化 fallback：同 session 首次查询惰性建索引，后续四个来源
-    // 共用该索引；anchor/marker/child/discarded 写入走 record 增量更新。
+    // commands/query persistence fallback: lazily build the index on a session's first query; the four sources
+    // share it; anchor/marker/child/discarded writes go through record increments.
     lookupTranscriptCommand: (key) =>
       key.sessionId === null
         ? lookupGlobalCreateSessionCommand(context.deps.sessionStore, key.commandId)
@@ -1623,7 +1629,7 @@ export function createConversationV4Gateway(
     lookupChildCommand: (key) => persistentCommands.lookup("child", key),
     lookupDiscardedCommand: (key) => persistentCommands.lookup("discarded", key),
     invalidatePersistentCommandFacts: (sessionId) => persistentCommands.invalidate(sessionId),
-    // gateway 已完成逐片总量/checksum 校验，只把完整 bytes 原子写 artifact。
+    // The gateway already verified per-chunk totals/checksums; write complete bytes to the artifact atomically.
     putSessionAttachment: async (sessionId, input) => {
       const record = context.sessions.get(sessionId);
       if (!record) {
@@ -1664,8 +1670,9 @@ export function createConversationV4Gateway(
       }
       return readConversationFileChanges(record, sessionId, messageIds, targetTurnId);
     },
-    // dwf 事件日志：能力在 app 上（run service 构造成功才有），缺席时不在这里兜底成空页——
-    // gateway 会回结构化的能力不支持错误，让 renderer 能区分"没有事件"与"没有这个能力"。
+    // dwf event log: the capability lives on the app (present only if the run service built); when absent do not
+    // fake an empty page here - the gateway answers structured unsupported-capability, letting the renderer
+    // distinguish no-events from no-capability.
     listDynamicWorkflowRunEvents: async (sessionId, input) => {
       const record = context.sessions.get(sessionId);
       if (!record) {
@@ -1674,10 +1681,10 @@ export function createConversationV4Gateway(
       if (!record.app.listDynamicWorkflowRunEvents) {
         throw new V4CapabilityUnsupportedError("listDynamicWorkflowRunEvents", sessionId);
       }
-      // 经 app 调用（不可解构：实现可能依赖 this 绑定）。
+      // Call via app (do not destructure: the implementation may rely on this binding).
       return record.app.listDynamicWorkflowRunEvents(input);
     },
-    // workflow run 枚举：能力条件同上（run service 构造成功才有）。
+    // Workflow run enumeration: same capability condition as above (present only if the run service built).
     listDynamicWorkflowRuns: async (sessionId, input) => {
       const record = context.sessions.get(sessionId);
       if (!record) {
@@ -1686,11 +1693,11 @@ export function createConversationV4Gateway(
       if (!record.app.listDynamicWorkflowRuns) {
         throw new V4CapabilityUnsupportedError("listDynamicWorkflowRuns", sessionId);
       }
-      // 经 app 调用（不可解构：实现可能依赖 this 绑定）。
+      // Call via app (do not destructure: the implementation may rely on this binding).
       return record.app.listDynamicWorkflowRuns(input);
     },
-    // dwf 用户面产物的三个读面：能力条件同上。
-    // ⚠ 术语：artifact = 脚本经 `artifact.*` 发布给用户看的产出，不是 run 的顶层返回值。
+    // The three user-facing artifact read sides: same capability condition as above.
+    // Terminology: artifact = what the script published via artifact.*, not the run's top-level return value.
     listDynamicWorkflowRunArtifacts: async (sessionId, input) => {
       const record = context.sessions.get(sessionId);
       if (!record) {
@@ -1721,7 +1728,7 @@ export function createConversationV4Gateway(
       }
       return record.app.readDynamicWorkflowRunArtifact(input);
     },
-    // dwf 工作区 transcript 的两个读面：能力条件同上。
+    // The two workspace-transcript read sides: same capability condition as above.
     listDynamicWorkflowRunWorkspaceNodes: async (sessionId, input) => {
       const record = context.sessions.get(sessionId);
       if (!record) {
@@ -1749,28 +1756,27 @@ export function createConversationV4Gateway(
       }
       return previewConversationFileRewind(record, messageIds, targetTurnId);
     },
-    // 冷订阅不再在 eventStore / transcript 之间 XOR。message/part
-    // 是已完成正文权威，session_entry 只补 legacy goal，内存事件只补
-    // 未持久 in-flight 和 queue/permission/control 等 ephemeral 状态。
+    // Cold subscription no longer XORs eventStore vs transcript. message/part is the
+    // completed-body authority; session_entry only backfills legacy goals; memory events only backfill
+    // unpersisted in-flight plus queue/permission/control ephemerals.
     loadPersistedEvents: async (sessionId, persistedMessages) => {
-      // dwf workflow actor / subagent 这类 detached live child 没有自己的
-      // bootstrap record（事件经 ingestDetachedLiveSession 走父 record 的 sink 路由）。
-      // context.sessions.get 取不到 record 时不能直接返回 synthesized:false——
-      // 否则首次订阅的 performHydration 会走"保留健康 live publisher"早退分支，
-      // durable transcript 三源合并从不执行——只由 live 事件喂养的投影会丢掉所有
-      // 不以 live 事件形式出现的持久正文。amend-resume 把前驱 transcript 前缀直接
-      // 复制进 session store 来播种 actor 会话，
-      // 这段前缀正属于此类，于是侧栏 actor transcript 只剩本次 live 增量；
-      // 普通崩溃恢复后 warm 窗口同样看不到 crash 前的 actor 消息。
-      // 改用 resolveConversationBackingRecord：child 自身没有 record 时按持久
-      // parentID 落到父 record，只借它的共享 event/artifact store，事件读取仍显式用
-      // child 自己的 sessionId（script workflow child runtime 共享父 event store，
-      // 事件按 child sessionId 归档），因此 sourceEventSeq 仍是 child 的真实水位。
-      // 代价：contextWindow 分母会按父 record 的当前模型解析而不是 actor 模型，纯展示层偏差。
+      // Detached live children (dwf workflow actors / subagents) have no bootstrap record of their own (events
+      // route through the parent record's sink via ingestDetachedLiveSession).
+      // When context.sessions.get misses, never return synthesized:false -
+      // else first-subscription performHydration takes the keep-healthy-live-publisher early return and the
+      // three-way durable merge never runs, so a projection fed only by live events loses every persisted body
+      // that does not arrive as a live event. amend-resume copies the predecessor transcript prefix into the
+      // session store to seed the actor - exactly this class - leaving the sidebar actor transcript with only the
+      // live delta; after a plain crash the warm window likewise misses pre-crash actor messages.
+      // Use resolveConversationBackingRecord: with no child record, fall to the parent via persisted parentID,
+      // borrowing only its shared event/artifact store while event reads keep the child's own sessionId (the
+      // script workflow child runtime shares the parent event store; events archive under the child sessionId),
+      // so sourceEventSeq stays the child's true watermark.
+      // Cost: the contextWindow denominator resolves per the parent's current model, not the actor's - display-only.
       const record = await resolveConversationBackingRecord(context, sessionId);
       if (!record) {
-        // 诊断：hydrate 预期在 runtime 已由 cold-resume 激活后执行；连父 record 兜底
-        // 都落空时，返回空事件会把真实的生命周期竞态伪装成“历史为空”，必须留下明确现场。
+        // Diagnostics: hydrate expects the runtime already cold-resume-activated; when even the parent fallback
+        // misses, empty events would disguise a real lifecycle race as empty-history - leave an explicit trace.
         context.logger?.warn("ZCode Protocol v4 hydrate has no active runtime", {
           activeSessionCount: context.sessions.size,
           event: "zcode_protocol.v4.hydrate_runtime_missing",
@@ -1780,19 +1786,19 @@ export function createConversationV4Gateway(
         });
         return { events: [], synthesized: false, sourceEventSeq: 0 };
       }
-      // message/part 与 session_entry 的异步读取期间 live sink 仍可收到新事件。
-      // gateway 必须知道 memory eventStore 取快照时的 raw cursor，才能只补 await 窗口内
-      // 的尾部，并把 transcript 合成的 1..N 序列稳定映射回后续 runtime raw seq。
-      // 内存 event store 会淘汰已完成 turn 的瞬态事件，max(events.seq) 会小于真实
-      // 游标，让已淘汰的 delta 被当成 await 窗口尾部重放。两次调用之间没有 await，拿到的是
-      // 同一时刻的一致快照。
+      // During the async message/part and session_entry reads the live sink may still receive events.
+      // The gateway must know the raw cursor of the memory eventStore snapshot to backfill only the await-window
+      // tail and stably map transcript-synthesized 1..N onto subsequent runtime raw seqs.
+      // The memory store evicts completed turns' transient events, so max(events.seq) can undershoot the true
+      // cursor and replay evicted deltas as the await tail. No await between the two calls: one consistent
+      // snapshot.
       const [liveEvents, sourceEventSeq] = await Promise.all([
         record.eventStore.getEvents(sessionId as SessionId),
         record.eventStore.getLatestSequenceNumber(sessionId as SessionId),
       ]);
-      // workflow run 的冷回放：journal 回放出的进度
-      // 事件前置到内存事件之前——cold merge 已把该类型归为 memory-only 权威（保序进 supplements），
-      // 投影经同一个 reducer 归约，`workflowRuns` 因此在重启前后一致。
+      // Workflow-run cold replay: journal-replayed progress events prepend memory events - cold merge already
+      // classifies the type as memory-only authority (order kept in supplements), the projection reduces through
+      // the same reducer, so workflowRuns matches across restarts.
       const replayed = await replayDynamicWorkflowRunEvents(context, sessionId, record, liveEvents);
       const events = replayed.length === 0 ? liveEvents : [...replayed, ...liveEvents];
       const store = context.deps.sessionStore;
@@ -1823,10 +1829,10 @@ export function createConversationV4Gateway(
             }
           : {}),
       });
-      // live ModelComplete.fileChanges 只存在于内存事件；cold merge 以持久
-      // transcript 为正文权威时会压掉该事件，而 transcript 本身没有文件摘要字段。
-      // workspace checkpoint + artifact 才是跨进程持久事实，这里按 user messageId
-      // 重建摘要，再交给 transcript hydration 合成同构 ModelComplete。
+      // live ModelComplete.fileChanges exists only in memory events; with the persisted transcript as body
+      // authority, cold merge suppresses it, and the transcript has no file-summary field.
+      // workspace checkpoint + artifact are the cross-process durable facts: rebuild the summary by user
+      // messageId here, then let transcript hydration synthesize the isomorphic ModelComplete.
       const fileChangeSummariesByMessageId = await buildColdFileChangeSummaries({
         events: source.memoryEvents,
         messageIds: source.messages.map((message) => String(message.info.id)),
@@ -1841,8 +1847,8 @@ export function createConversationV4Gateway(
             sessionId,
           }),
       });
-      // 冷恢复 transcript 不保存模型能力，旧 hydration 自行填 20 万；
-      // provider registry 已在 resume 前同步完成，应按恢复/退避后的当前模型精确取值。
+      // Cold-resume transcripts store no model capability; legacy hydration filled 200k.
+      // The provider registry settled before resume; read the precise value for the restored/backoff current model.
       const contextWindow = resolveSessionModelContextWindow(context, record);
       const usageSeed = sessionUsageSeedFromRuntimeContextUsage(
         await readSessionContextUsage(context, sessionId, source.messages),
@@ -1876,9 +1882,9 @@ export function createConversationV4Gateway(
           log?.debug("v4 hydrate merged duplicate cold facts", fields);
         }
       }
-      // transcript 可恢复 Agent row，却不能证明 child session 已经落库。
-      // 这里在 gateway 的 raw-event buffer 补回前生成校验种子，既排除旧幽灵引用，
-      // 又避免异步查询覆盖 seed 之后新到达的 live spawn/stop。
+      // The transcript may restore the Agent row without proving the child session persisted.
+      // Generate the validation seed before the gateway's raw-event buffer backfill: excludes stale ghost refs
+      // and keeps async queries from overriding the seed after later live spawn/stop.
       const subagents = await listSessionSubagents(
         context,
         { sessionId, endedLimit: 1 },
@@ -1886,10 +1892,10 @@ export function createConversationV4Gateway(
       );
       return {
         events: merged.events,
-        // 与合成事件共用本次查询结果；不在后续回填阶段重新读取另一份容量。
-        usageSeed,
-        // gateway 旧字段名仍叫 synthesized；这里表示投影已由 durable
-        // transcript 重物化，需替换 ingest 抢先建的 cold publisher。
+        // Shares this query's result with the synthesized events; never re-read another capacity in the later
+        // backfill phase.
+        // The gateway's legacy field is still named synthesized; here it means the projection was re-materialized
+        // from the durable transcript and the ingest-created cold publisher must be replaced.
         synthesized: merged.usedDurableTranscript,
         subagentsSeed: {
           revision: subagents.revision,

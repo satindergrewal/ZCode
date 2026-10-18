@@ -55,8 +55,8 @@ function stripTopLevelMarkdownHtmlComments(content: string): string {
       const trimmedToken = token.raw.trimStart();
       if (trimmedToken.startsWith("<!--") && trimmedToken.includes("-->")) {
         const withoutComments = token.raw.replace(HTML_COMMENT_PATTERN, "");
-        // 只删除 Markdown lexer 识别到的顶层 HTML comment token；
-        // list、blockquote、paragraph 和 code token 内的 comment 必须保持 provider-visible。
+        // Remove only top-level HTML comment tokens recognized by the Markdown lexer;
+        // comments inside list/blockquote/paragraph/code tokens stay provider-visible.
         if (withoutComments.trim().length > 0) result += withoutComments;
         continue;
       }

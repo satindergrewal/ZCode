@@ -49,7 +49,7 @@ interface SelectionSideSlashCommand {
 
 interface SelectionSideSlashCommandParseOptions {
   contextAttachmentCount?: number;
-  /** CLI catalog 中已经注册的同名命令；同名 CLI 命令优先，不由 App 消费。 */
+  /** The same-named command already registered in the CLI catalog; the CLI one wins and the App never consumes it. */
   enabledCommandNames?: readonly string[];
 }
 
@@ -105,10 +105,11 @@ export function parseV4VisibleSlashCommand(
 }
 
 /**
- * 解析带首条输入的选择副屏命令。
+ * Parses the selection-side command with its first input.
  *
- * 这是 App 层的完整输入消费门：只接受整条文本，且只在没有附件/结构化上下文时
- * 命中。参数只去除首尾空白，保留正文内部的空格和换行，避免改写用户原文。
+ * The app-level whole-input consumption gate: accepts the entire text and matches only when
+ * no attachments/structured context exist. Arguments trim ends only, preserving inner
+ * whitespace/newlines so user text is never rewritten.
  */
 export function parseSelectionSideSlashCommand(
   content: string,

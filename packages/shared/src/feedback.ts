@@ -30,8 +30,8 @@ export type FeedbackTicketModule =
 export type FeedbackTicketFramework = "zcode-agent";
 
 /**
- * UI 层 Select 不允许空字符串作为可选项 value（Radix 会抛错），
- * 这里给『未指定』提供一个 sentinel；提交工单前会被转换成 undefined。
+ * The UI Select forbids empty-string option values (Radix throws),
+ * so this sentinel stands for "unspecified"; converted to undefined before ticket submission.
  */
 export const FEEDBACK_FRAMEWORK_NONE = "none" as const;
 export type FeedbackTicketFrameworkSelectValue =
@@ -57,17 +57,17 @@ export interface FeedbackDeviceInfo {
   osRelease?: string;
   osVersion?: string;
   osArch?: string;
-  /** 提交反馈时的当前 Agent。单 ZCode Agent 模式下固定为 ZCode Agent。 */
+  /// The agent at submission time; pinned to ZCode Agent in single-agent mode.
   agentProvider?: string;
-  /** 提交反馈时归一到反馈平台的框架标识，当前固定为 zcode-agent。 */
+  /// Framework id normalized for the feedback platform at submission; currently fixed to zcode-agent.
   agentFramework?: FeedbackTicketFramework;
-  /** 提交反馈时当前模型配置里的原始选中值。 */
+  /// Raw selected value in the model config at submission.
   agentModel?: string;
-  /** 提交反馈时从模型列表匹配到的展示名；没有时回退到 agentModel。 */
+  /// Display name matched from the model list at submission; falls back to agentModel when absent.
   agentModelDisplay?: string;
-  /** 提交反馈时当前模型列表的可选项数量。 */
+  /// Option count of the model list at submission.
   agentModelOptionCount?: number;
-  /** 提交反馈时当前模型列表的展示名预览，用于排查配置上下文。 */
+  /// Display-name preview of the model list at submission, for debugging config context.
   agentModelOptionsPreview?: string[];
   hostname?: string;
   deviceMid?: string;
@@ -83,9 +83,9 @@ export interface CreateFeedbackTicketInput {
   source?: string;
   reporter?: FeedbackReporter;
   device?: FeedbackDeviceInfo;
-  /** 用户选填的联系方式（邮箱或其他社交账号），后端不强制要求。 */
+  /// Optional user contact (email or other social handle); not required by the backend.
   contact?: string;
-  /** 当前界面语言，仅用于请求头透传，不写入后端工单正文。 */
+  /// Current UI locale, header passthrough only, never written into the ticket body.
   locale?: "zh-CN" | "en-US";
 }
 
@@ -97,13 +97,13 @@ export interface FeedbackTicketSummary {
   module?: FeedbackTicketModule;
   status: FeedbackTicketStatus;
   assignee_id?: string | null;
-  /** 当前处理人的展示名（由后端填充）；未指派为 null */
+  /// Assignee display name (backend-filled); null when unassigned
   assignee_display?: string | null;
-  /** 后端返回的报告人展示名 */
+  /// Reporter display name returned by the backend
   reporter_display?: string | null;
-  /** 自上次查看以来是否有新动作 */
+  /// Any new activity since last viewed
   unread?: boolean;
-  /** 最近一次用户动作时间 */
+  /// Time of the user's latest activity
   last_user_activity_at?: string | null;
   created_at: string;
   updated_at: string;
@@ -149,7 +149,7 @@ export interface FeedbackCommentAttachment {
 
 export interface FeedbackComment {
   id: number;
-  /** 后端 message_id，用于补充消息创建后继续把附件绑定到该 message。 */
+  /// Backend message_id, letting attachments bind to that message after creation.
   message_id?: string;
   author_user_id?: string | null;
   author_display_name?: string | null;
@@ -199,10 +199,10 @@ export const FEEDBACK_TICKET_MODULES: FeedbackTicketModule[] = [
 ];
 
 export const FEEDBACK_TICKET_TYPES: { value: FeedbackTicketType; label: string }[] = [
-  { value: "bug", label: "Bug 反馈" },
-  { value: "usage", label: "使用问题" },
-  { value: "feature", label: "功能建议" },
-  { value: "performance", label: "性能问题" },
+  { value: "bug", label: "Bug report" },
+  { value: "usage", label: "Usage issue" },
+  { value: "feature", label: "Feature request" },
+  { value: "performance", label: "Performance issue" },
 ];
 
 export const FEEDBACK_TICKET_SEVERITIES: FeedbackTicketSeverity[] = ["P1-高", "P2-中", "P3-低"];
@@ -214,8 +214,8 @@ export const FEEDBACK_TICKET_FRAMEWORK_OPTIONS: {
   label: string;
 }[] = [{ value: "zcode-agent", label: "ZCode Agent" }];
 
-/** 含「未指定」的完整列表，供管理端等场景使用。 */
+/** Full list including "Unspecified", for admin surfaces and the like. */
 export const FEEDBACK_TICKET_FRAMEWORKS: {
   value: FeedbackTicketFrameworkSelectValue;
   label: string;
-}[] = [{ value: FEEDBACK_FRAMEWORK_NONE, label: "未指定" }, ...FEEDBACK_TICKET_FRAMEWORK_OPTIONS];
+}[] = [{ value: FEEDBACK_FRAMEWORK_NONE, label: "Unspecified" }, ...FEEDBACK_TICKET_FRAMEWORK_OPTIONS];

@@ -11,11 +11,11 @@ interface OccupationGridProps {
   saving: boolean;
   onSelect: (value: OccupationValue) => void;
   label: string;
-  /** 职业显示文案（i18n 已格式化）。 */
+  /** Occupation display label (already localized). */
   formatLabel: (value: OccupationValue) => string;
 }
 
-/** 引导第一步的职业选择网格；从 OccupationOnboarding 抽出以控制文件行数。 */
+/** Occupation grid, step one of onboarding; extracted from OccupationOnboarding to bound the file length. */
 export function OnboardingOccupationGrid({
   occupation,
   saving,

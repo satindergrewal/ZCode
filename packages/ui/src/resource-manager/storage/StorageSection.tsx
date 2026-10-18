@@ -1,7 +1,8 @@
 /**
- * 资源管理器「存储」tab。
- * 数据来自 useStorageUsage（main 进程 StorageService 经 preload 桥的投影）；本组件只持有 UI 选择态：
- * 选中的磁盘、打开的类别明细、待确认的清理目标。
+ * Resource-manager "storage" tab.
+ * Data comes from useStorageUsage (the main-process StorageService projected through the preload
+ * bridge); this component only holds UI selection state: the selected disk, opened category
+ * details, and pending clean targets.
  */
 import { Loader2, RefreshCw } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
@@ -36,9 +37,9 @@ export function StorageSection({
   bridge,
   active,
 }: {
-  /** preload 暴露的 window.resourceManager.storage；缺省表示桥接不可用 */
+  /** window.resourceManager.storage exposed by preload; absent means the bridge is unavailable. */
   bridge: StorageManagementBridge | undefined;
-  /** tab 是否处于激活态：激活才扫描，切走即取消 */
+  /** Whether the tab is active: scanning runs only while active and is cancelled on switch. */
   active: boolean;
 }) {
   const { intl } = useZCodeIntl();
@@ -49,7 +50,9 @@ export function StorageSection({
   const [cleaningCategory, setCleaningCategory] = useState<StorageCategoryId | null>(null);
 
   const groups = useMemo(() => groupStorageRootsByVolume(snapshot?.roots ?? []), [snapshot]);
-  // 选中卷在渲染期派生：用户点过的 key 失效（重扫后卷变化）时自动回落到第一张卡片，不用 effect 回写 state。
+  // The selected volume is derived during render: when a previously clicked key goes stale
+  // (volumes changed after a rescan) selection falls back to the first card, with no effect
+  // needed to write state back.
   const selectedGroup = groups.find((group) => group.key === selectedGroupKey) ?? groups[0] ?? null;
   const categories = useMemo(
     () => (selectedGroup ? sumCategoriesAcrossRoots(selectedGroup.roots) : []),
@@ -63,7 +66,7 @@ export function StorageSection({
       if (!selectedGroup) return;
       setCleaningCategory(categoryId);
       try {
-        // 同一卷上可能有两个根（home 与自定义数据路径）：逐根清理同一类别。
+        // A volume can hold two roots (home and a custom data path): clean the same category root by root.
         const rootIds: StorageRootId[] = selectedGroup.roots.map((root) => root.id);
         let merged: StorageCleanResult = {
           freedBytes: 0,
@@ -207,7 +210,7 @@ export function StorageSection({
               }}
             />
           ))}
-          {/* 估算说明紧跟磁盘卡片，和它解释的数字放在一起，而不是沉到页面底部 */}
+          {/* Keep the estimate note on the disk card it explains, next to the number, instead of sinking to the page bottom. */}
           <div className="px-1 text-ui-caption text-foreground-subtlest">
             {intl.formatMessage({ id: "resourceManager.storage.estimate" })}
           </div>

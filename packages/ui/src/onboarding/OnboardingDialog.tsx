@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- onboarding 弹窗集中编排欢迎页、会话迁移、外部导入和最终执行状态，拆开会增加跨步骤状态传递复杂度 */
+/* eslint-disable max-lines -- the onboarding dialog orchestrates welcome, session migration, external import and the final execution; splitting would raise cross-step state plumbing */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog.js";
 import { useClaudeSessionMigration } from "@/hooks/useClaudeSessionMigration.js";
@@ -39,7 +39,7 @@ const ONBOARDING_STEP_ORDER: OnboardingWizardStep[] = [
   "session",
   "skills-import",
   "mcp-import",
-  // 插件导入步骤未启用。
+  // Plugin import step is disabled.
   // "plugins-import",
   "commands-import",
   "agents-file",
@@ -70,7 +70,7 @@ export function OnboardingDialog(props: {
   const initializedWorkspaceSelectionRef = useRef(false);
   const autoScannedSessionStepRef = useRef(false);
 
-  // 引导阶段没有 Scope 选择，target 恒为当前上下文 workspace，直接注入其 service。
+  // Onboarding has no scope choice; the target is always the current-context workspace, so its service is injected directly.
   const { settingsSyncService } = useServices();
 
   const skillsImportState = useExternalAgentImportCategoryState({
@@ -88,7 +88,7 @@ export function OnboardingDialog(props: {
     workspaceIdentity: props.workspaceIdentity,
   });
   /*
-   * 插件导入步骤未启用。
+   * Plugin import step is disabled.
    * const pluginsImportState = useExternalAgentImportCategoryState({
    *   category: "plugins",
    *   enabled: view === "wizard" && wizardStep === "plugins-import",
@@ -150,7 +150,7 @@ export function OnboardingDialog(props: {
     sessionMigration,
     agentsFileMigration,
     settingsSync,
-    // 代理设置步骤未启用，不导入其默认选择。
+    // The proxy step is disabled; do not import its defaults.
     { includeSettingsSelections: false },
   );
 
@@ -237,7 +237,7 @@ export function OnboardingDialog(props: {
   }, [sessionMigration.candidates]);
 
   const selectedWorkspaceCount = selectedWorkspacePaths.length;
-  /** 既无会话也无外部导入项时，禁止进入迁移步骤。 */
+  /** Migration step stays blocked without a session or an external-import item. */
   const beginMigrationDisabled =
     selectedWorkspaceCount === 0 &&
     totalExternalImportSelectedCount === 0 &&
@@ -416,7 +416,7 @@ export function OnboardingDialog(props: {
           />
         );
       /*
-       * 插件导入步骤未启用。
+       * Plugin import step is disabled.
        * case "plugins-import":
        *   return (
        *     <OnboardingExternalAgentImportStep
@@ -460,8 +460,8 @@ export function OnboardingDialog(props: {
       open={settingsSync.state.open}
       onOpenChange={(nextOpen) => {
         if (!nextOpen) {
-          // onboarding 迁移执行中即使隐藏了右上角关闭按钮，Radix 仍会响应遮罩点击和 Esc。
-          // 之前这里直接 close 会把长时间迁移任务瞬间关掉，用户也拿不到二次确认；统一收口到确认逻辑后才不会误关。
+          // During a running migration Radix still reacts to overlay clicks and Esc even with the corner close button hidden.
+          // Closing directly used to kill a long migration instantly with no confirmation; funneling through the confirm flow prevents accidental closes.
           void handleCloseRequest();
         }
       }}

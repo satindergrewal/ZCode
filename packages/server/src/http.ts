@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- HTTP、WebSocket 与静态资源路由集中注册，保持同一鉴权顺序。 */
+/* eslint-disable max-lines -- HTTP, WebSocket, and static asset routes are registered together to keep one auth order. */
 import { randomUUID } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { basename, extname, relative, resolve, sep } from "node:path";
@@ -91,7 +91,7 @@ function setupChannelServer(
   const socket = wrapWebSocket(ws);
   const protocol = new SocketProtocol(socket);
   const rawServer = new ChannelServer(protocol, "server");
-  // 用日志中间件包装，统一记录所有 RPC 调用
+  // Wrap with the logging middleware to record every RPC call uniformly
   const server = new LoggingChannelServer(rawServer, log);
   const agentService = services.getOptional(IZCodeAgentService);
   const connectionScope = agentService
@@ -105,15 +105,16 @@ function setupChannelServer(
   if (connectionScope) {
     overrides.set(IZCodeAgentService.channelName, connectionScope.service);
   }
-  // Provisioning 携带跨 Environment 凭据，只允许 Desktop trusted host 使用；普通 Web
-  // remote/replayable 客户端即使知道频道名，也不能获得 target 写入接口。
+  // Provisioning carries cross-environment credentials and is for the Desktop
+  // trusted host only; ordinary web remote/replayable clients must not reach the
+  // target-mutation API even if they know the channel name.
   if (
     clientMode !== "desktop-continuous" &&
     services.getOptional(IProviderProvisioningTargetService)
   ) {
     overrides.set(IProviderProvisioningTargetService.channelName, {
       apply: async () => {
-        throw new Error("Provider Provisioning 仅支持受信 Desktop Host");
+        throw new Error("Provider Provisioning requires a trusted Desktop Host");
       },
     });
   }
@@ -124,7 +125,7 @@ function setupChannelServer(
   });
 }
 
-/** 存储 web 模式下的远程连接，key 为随机 ID */
+/** Remote connections created in web mode, keyed by random ID. */
 const remoteConnections = new Map<string, RemoteConnection>();
 
 function generateId(): string {
@@ -276,7 +277,8 @@ async function resolveStaticFile(
       return candidate;
     }
   } catch {
-    // 静态资源未命中时再进入 SPA fallback，保留真实文件错误的 404 语义。
+    // Fall back to the SPA route only after the static asset misses, keeping
+    // the 404 semantics for real missing files.
   }
 
   if (!spaFallback || !isStaticFallbackAllowed(pathname)) {
@@ -320,8 +322,8 @@ export function createHttpServer(
   app.get("/api/server-info", (c) => c.json(createServerInfo(options)));
   app.post("/api/rpc-host-capability", (c) => c.json(hostCapabilities.issue()));
 
-  // 普通 `/ws` 永远是 terminal-client；浏览器/任意客户端设置旧 mode header
-  // 都不能再把自己提升为 trusted host。
+  // Plain `/ws` is always terminal-client; browsers or any client setting the
+  // legacy mode header can no longer elevate themselves to trusted host.
   app.get(
     "/ws",
     upgradeWebSocket(() => ({
@@ -345,7 +347,7 @@ export function createHttpServer(
   });
   app.get("/ws/host", upgradeTrustedHostWebSocket);
 
-  // Web 模式下发起远程连接
+  // Initiate a remote connection in web mode
   app.post("/api/connect-remote", async (c) => {
     const rawBody = await c.req.json();
     const parsedBody = remoteTargetSchema.safeParse(rawBody);
@@ -404,8 +406,9 @@ export function createHttpServer(
       return c.json(responseBody, 401);
     }
     if (result.status === 503) {
-      // Bugfix：Bot 业务失败必须把可重试状态透传给 HTTP provider；返回 200 会让
-      // webhook/网关误以为消息已消费，效果与提前提交 Telegram offset 相同。
+      // Bugfix: bot business failures must propagate the retryable status to the
+      // HTTP provider; a 200 would make the webhook/gateway believe the message
+      // was consumed, the same effect as committing the Telegram offset early.
       return c.json(responseBody, 503);
     }
     return c.json(responseBody, 200);
@@ -414,7 +417,7 @@ export function createHttpServer(
   app.post("/api/bots/:provider", handleBotCallback);
   app.post("/api/bots/:provider/:botId", handleBotCallback);
 
-  // 远程连接的 WebSocket 端点，将远程 services 桥接给浏览器
+  // WebSocket endpoint for remote connections; bridges remote services to the browser
   app.get(
     "/ws/remote/:id",
     upgradeWebSocket((c) => {
@@ -430,10 +433,11 @@ export function createHttpServer(
             ws.close(4004, "Remote connection not found");
             return;
           }
-          // 一个连接只给一个 WS 客户端使用，取出后从 Map 移除
+          // A connection serves a single WS client; remove it from the map on take
           remoteConnections.delete(id);
 
-          // 将远程 services 包装为 ServiceCollection，复用 exposeOnChannelServer 统一注册
+          // Wrap the remote services in a ServiceCollection and reuse the unified
+          // exposeOnChannelServer registration.
           const remoteServices = new ServiceCollection()
             .register(IFileService, connection.services.fileService)
             .register(IGitService, connection.services.gitService)

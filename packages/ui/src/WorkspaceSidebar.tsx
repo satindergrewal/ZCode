@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 归档视图开关沿用现有 sidebar 结构，先保持同文件收口。 */
+/* eslint-disable max-lines -- the archive view toggle reuses the existing sidebar structure; keep it in this file for now. */
 import {
   memo,
   useCallback,
@@ -144,7 +144,7 @@ function WorkspaceNewTaskTooltip({
   children: ReactNode;
   disabledReason?: string;
 }) {
-  // 正常状态下按钮已带“新建任务”文案和快捷键，再挂 tooltip 只是重复；仅禁用时才解释原因。
+  // The button already carries the "new task" label and shortcut, so a tooltip would repeat it; explain only when disabled.
   if (!disabledReason) return children;
   return (
     <ControlHintTooltip title={disabledReason}>
@@ -169,11 +169,12 @@ interface SidebarFileTreeTarget {
   temporaryExternalDirectory?: boolean;
 }
 
-// 流式 task 事件会让 sidebar 父级频繁刷新；缺任务分组时如果传新的 []
-// 会让 memo 的 workspace 行误判 taskItems 变化，穿透到 TaskList/TaskListItem 重渲染。
+// Streaming task events refresh the sidebar parent often; passing a fresh [] when task groups are
+// missing would make the memoized workspace rows see a taskItems change and cascade into
+// TaskList/TaskListItem rerenders.
 const EMPTY_WORKSPACE_TASK_ITEMS: ZCodeTaskMeta[] = [];
-// WorkspaceSidebar 是 memo 组件，默认参数里的 {} 每次调用都会创建新引用；
-// 缺省远程重连日志时必须复用同一个对象，避免浅比较被默认值打穿。
+// WorkspaceSidebar is memoized; a {} default argument allocates a new reference per call. The
+// missing-remote-reconnect-logs default must be one shared object or shallow comparison loses.
 const EMPTY_RECONNECTING_REMOTE_WORKSPACE_LOGS_BY_WORKSPACE_KEY: Record<
   string,
   RemoteConnectionLogEntry[]
@@ -187,8 +188,9 @@ function WorkspaceDragOverlay({ tab, width }: { tab: WorkspaceTabState; width: n
       className="pointer-events-none flex cursor-grabbing items-center rounded-lg border border-border bg-background text-ui-base text-foreground shadow-lg h-8 px-2.5 gap-2 [&_svg]:pointer-events-none [&_svg]:size-3.5 [&_svg]:shrink-0"
       style={width ? { width } : undefined}
     >
-      {/* 项目列表图标位于 Button 内，运行态会被按钮 SVG 规则收敛为 14px；
-          overlay 脱离 Button 后不再继承该规则，因此显式使用相同尺寸，避免 preview 图标放大。 */}
+      {/* Inside the Button, the project icon is normalized to 14px by the button SVG rules;
+          the overlay escapes the Button so it must set the same size explicitly to avoid a giant
+          preview icon. */}
       {isRemote ? (
         <Cloud className="size-3.5 shrink-0 text-foreground-subtle" />
       ) : (
@@ -323,8 +325,9 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
       targetWorkspaceIdentity?: string,
       expectedUnreadAt?: number,
     ) => {
-      // Shell 第四个参数是远程 session 路由，任务行的 unreadAt 不能复用该位置。
-      // Sidebar 行选择显式留空 remoteSessionId，再把用户看到的未读版本传给已读事务。
+      // The shell's fourth parameter is remote-session routing; the row's unreadAt must not reuse
+      // that position. Row selection passes an explicit empty remoteSessionId and forwards the
+      // user-visible unread version to the read transaction.
       onSelectTask(
         targetWorkspacePath,
         taskId,
@@ -479,8 +482,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
         if (nextGroupIds === currentGroupIds) {
           return currentGroupIds;
         }
-        // grouped 展开态是本端用户偏好，不能只保存在 React 内存里。
-        // 单组点击、批量按钮、拖拽临时收起后的恢复都必须同步到 localStorage。
+        // Grouped expansion is a local user preference, not React memory. Single-group clicks,
+        // bulk buttons, and restore after drag-collapse must all sync to localStorage.
         persistGroupedTaskCollapsedGroupIds(nextGroupIds);
         return nextGroupIds;
       });
@@ -495,10 +498,10 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
         groupedTaskGroupSnapshotHasGroups !== false &&
         (lastNonEmptyGroupedTaskGroupIds.length > 0 || collapsedGroupedTaskGroupIds.size > 0)
       ) {
-        // 从 Project 切回 Group 或重启后首进 Group 时，
-        // 子列表首帧还没加载 sqlite view，会先回传空 groupIds。
-        // 这个瞬时空快照不能当成“所有 group 已删除”，否则会把用户收起偏好
-        // prune 成空并写回 localStorage。
+        // Switching Project->Group, or first entry into Group after restart, can return empty
+        // groupIds before the child list loads the sqlite view. That transient empty snapshot is
+        // not "all groups deleted"; treating it as such would prune the user's collapse
+        // preferences to empty and write them back.
         return;
       }
 
@@ -524,8 +527,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
         ) {
           return currentGroupIds;
         }
-        // 刷新或重启后需要从 localStorage 恢复 grouped 展开态；
-        // view 刷新时也要清掉已删除 group 的旧收起记录，避免新 group 被旧状态误命中。
+        // After refresh/restart, grouped expansion restores from localStorage; on view refresh
+        // also drop collapse records of deleted groups so new groups are not hit by stale state.
         persistGroupedTaskCollapsedGroupIds(nextCollapsedGroupIds);
         return nextCollapsedGroupIds;
       });
@@ -583,9 +586,9 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
     ],
   );
   useEffect(() => {
-    // 交互规则：分页进度只属于当前可见且已展开的 workspace。
-    // 单组/项目区/全部收起、切换视图或移除 workspace 都通过同一可见集合清理，
-    // 避免不同收起入口各自维护重置逻辑而出现遗漏。
+    // Paging progress belongs only to the visible, expanded workspace. Single-group collapse,
+    // project-section/all collapse, view switches, and workspace removal clear through one visible
+    // set so no reset path is missed.
     setWorkspaceTaskVisibleLimitByKey((current) =>
       retainWorkspaceTaskVisibleLimits(current, visibleWorkspaceTaskKeys),
     );
@@ -608,8 +611,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
     setCreateGroupedTaskDraftAction(() => action);
   }, []);
   const shouldShowPinnedTasks =
-    // grouped 主体会主动过滤 pinned task；如果同页不渲染全局置顶区，
-    // 从 Header 置顶当前任务后整条 row 会无处展示，看起来像 session 被删除。
+    // The grouped body filters pinned tasks itself; without the global pinned section on the same
+    // page, pinning from the header would leave the row nowhere and read as a deleted session.
     taskViewMode === "workspace" ||
     taskViewMode === "timeline" ||
     taskViewMode === "archived" ||
@@ -666,8 +669,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
 
     return {
       ...baseStyle,
-      // 这里直接对滚动容器应用 CSS mask，而不是盖一层 overlay。
-      // 这样顶部和底部的渐隐都会作用在真实内容上，并且滚到边界时能立刻消失。
+      // Apply the CSS mask to the scroll container itself, not an overlay layer: top/bottom fades
+      // then act on real content and vanish instantly at the edges.
       WebkitMaskImage: `linear-gradient(to bottom, ${topStop}, ${bottomStop})`,
       maskImage: `linear-gradient(to bottom, ${topStop}, ${bottomStop})`,
       WebkitMaskRepeat: "no-repeat",
@@ -699,8 +702,9 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
         return;
       }
 
-      // 项目拖拽只展示 project 子序列，但 tabStore 保存的是全量 workspace 顺序。
-      // 直接混用两个索引会在 conversation workspace 存在时把项目落到错误位置。
+      // Project drag shows only the project subsequence, while tabStore persists full workspace
+      // order. Mixing the two index spaces drops projects in wrong spots once conversation
+      // workspaces exist.
       const indices = resolveWorkspaceDragGlobalIndices({
         activeId: String(active.id),
         overId: String(over.id),
@@ -769,9 +773,9 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   );
   const activeTaskId = useZCodeSessionStore(
     (state) =>
-      // Web 远程控制从全局 task 入口进入远端 workspace 时，会先按
-      // workspaceIdentity 写入 activeTaskId；如果侧栏仍然只读 path-only 桶，
-      // 当前任务高亮会丢失，也会把后续选择误判成未激活。
+      // When web remote control enters a remote workspace via the global task entry it writes
+      // activeTaskId by workspaceIdentity; a path-only bucket would lose the active highlight and
+      // misread later selections as inactive.
       selectWorkspaceZCodeState(state, workspacePath, workspaceIdentity).activeTaskId,
   );
 
@@ -804,9 +808,9 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
       });
     };
 
-    // workspace 列表的滚动条只在内容溢出后才出现。
-    // 如果只监听 scroll，像"展开 workspace 后首次产生滚动条"这类场景不会立刻出现顶部/底部渐隐；
-    // 这里同时监听容器与内容尺寸变化，让 mask 能跟随内容增减和滚动位置一起更新。
+    // The workspace list scrollbar appears only on overflow. scroll-only listeners miss cases like
+    // "first scrollbar after expanding a workspace", so top/bottom fades would not appear in time;
+    // observe container and content sizes so the mask tracks growth and scroll position.
     updateWorkspaceScrollMask();
 
     const resizeObserver = new ResizeObserver(() => {
@@ -877,7 +881,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   const showTaskSortOptions = activePrimaryTaskMode === "workspace" || showArchivedTasks;
   const handlePrimaryTaskModeChange = useCallback(
     (value: string) => {
-      logger.debug("[WorkspaceSidebar] 切换任务一级视图", {
+      logger.debug("[WorkspaceSidebar] Toggled task primary view", {
         from: taskOrganizeBy,
         to: value,
         groupedHydrated: groupedTaskGroupIdsHydrated,
@@ -943,9 +947,10 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
     workspacePaths,
   ]);
   useEffect(() => {
-    // Group 视图会在切换后的下一轮子组件渲染里回传 group ids。
-    // 如果切换帧直接使用未 hydrate 的模型，按钮会短暂变成 disabled/expand 图标，造成闪动。
-    // 因此在待 hydrate 期间复用上一帧展示模型；真实点击能力仍由 handleToggleAllTaskGroups 的当前状态 guard。
+    // Group view returns group ids on the child render after switching. Using the unhydrated
+    // model on the switch frame flashes disabled/expand icons; reuse the previous frame's display
+    // model while hydrating. Actual click ability stays guarded by handleToggleAllTaskGroups'
+    // current state.
     if (!toggleAllTaskGroupsTransitionPending) {
       lastStableTaskGroupTogglePresentationRef.current = toggleAllTaskGroupsPresentation;
     }
@@ -1009,12 +1014,13 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   }, [activePrimaryTaskMode]);
 
   const archivedTasksActionLabel = intl.formatMessage({
-    // 归档视图打开后按钮图标会切换为 X，之前 tooltip 仍固定显示“归档”，
-    // 图标语义与文案不一致。打开态统一改成 Close，同时同步 aria-label。
+    // With the archive view open the button icon becomes X, but the tooltip stayed "archive" —
+    // icon/copy mismatch. Use Close in the open state and sync aria-label.
     id: showArchivedTasks ? "common.close" : "workspaceSidebar.toggleArchivedTasks",
   });
-  // 性能修复：workspaceTaskToolbar 会随 chat streaming 被重复创建并传给远控任务索引。
-  // 这里把 render prop 稳定在真正影响工具栏展示的状态上，避免消息流更新污染侧栏任务区。
+  // Perf: workspaceTaskToolbar used to be recreated on every chat streaming tick and handed to the
+  // remote-control task index. Pin the render prop to only the state that affects the toolbar so
+  // message-stream updates cannot pollute the sidebar task area.
   const workspaceTaskToolbar = useCallback(
     () => (
       <div className="pl-2.5 pr-3">
@@ -1028,7 +1034,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                 id: "workspaceSidebar.organize",
               })}
             >
-              {/* TabsList 默认横向态是 h-8；这里同步覆盖 variant，避免实际 Radix 横向态把外壳撑高。 */}
+              {/* TabsList's horizontal variant is h-8; override the variant too so the actual Radix horizontal mode cannot inflate the shell. */}
               <TabsList
                 ref={primaryTaskTabsListRef}
                 className="relative h-7 w-fit overflow-hidden rounded-full bg-surface p-0.5 group-data-horizontal/tabs:h-7"
@@ -1251,7 +1257,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   return (
     <aside
       data-testid={TID_SIDEBAR}
-      // 这里用设计系统的结构面 token 固定侧栏层级，避免不同合成器把左侧容器混成异常灰块。
+      // Pin the sidebar layering with design-surface tokens so compositor differences
+      // cannot render the left container as an odd gray block.
       className="flex h-full flex-col overflow-hidden"
     >
       <div className="h-12 [app-region:drag]"></div>
@@ -1298,7 +1305,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                 {commandCenterShortcutLabel}
               </span>
             </Button>
-            {/* 远程入口展示策略统一走 useRemoteConnectionEntryVisibility，避免与其他入口出现分叉。*/}
+            {/* Remote entry visibility is decided solely by useRemoteConnectionEntryVisibility;
+                keep it in one place to avoid divergence across entry points. */}
             {/* {showRemoteConnectionEntry ? (
               <SSHDialog
                 onConnect={onConnectRemote}
@@ -1353,15 +1361,16 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
             <div
               ref={workspaceScrollRef}
               className={
-                // grouped task 拖拽预览会改变列表高度，禁用 scroll anchoring 避免浏览器自动锚定把 dnd-kit 测量放大成抖动。
+                // Grouped-task drag previews change the list height; disable scroll anchoring so
+                // the browser's automatic anchoring does not amplify dnd-kit measurements into jitter.
                 "flex flex-1 min-h-0 flex-col gap-3 overflow-y-auto"
               }
               style={workspaceScrollMaskStyle}
             >
               {workspaceTaskToolbar()}
               {shouldShowPinnedTasks ? (
-                // 归档切换主任务区时不应隐藏 pinned。
-                // pinned 是全局置顶区，归档态保持置顶区可见。
+                // Keep pinned tasks visible when the archive view takes over the main task area;
+                // pinned is a global top section and stays visible in archive mode too.
                 <WorkspacePinnedTasksSection
                   workspaceTabs={workspaceTabs}
                   activeWorkspacePath={workspacePath}
@@ -1624,7 +1633,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                                 activeTaskId={activeTaskId}
                                 taskSortBy={taskSortBy}
                                 groupByDate={false}
-                                // conversation backing workspace 只是内部执行路径；用户文案改成“任务”不改变 purpose 语义。
+                                // Conversation-backed workspace is an internal execution path; the
+                                // "tasks" label is user-facing copy and does not change the purpose semantics.
                                 taskRowVariant="default"
                                 emptyMessage={intl.formatMessage({
                                   id: "workspaceSidebar.noConversations",
@@ -1681,9 +1691,10 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
               onClose={() => setIsFileTreeOpen(false)}
               onOpenBrowserUrl={isDesktop ? onOpenBrowserUrl : undefined}
               onOpenPreview={(source) => {
-                // 文件树可以查看非当前 workspace 的文件。
-                // 预览 source 携带 workspace 作用域，PreviewPane 才能用正确 host 读取远程文件；
-                // 同时不切换当前 workspace，避免"Add to chat"丢给错误的 composer。
+                // The file tree can browse files outside the current workspace. The preview source
+                // must carry the workspace scope so PreviewPane reads remote files via the right
+                // host, and the current workspace stays unchanged so "Add to chat" does not hit
+                // the wrong composer.
                 onOpenCodeViewer?.({
                   ...source,
                   workspacePath: fileTreeTarget.workspacePath,

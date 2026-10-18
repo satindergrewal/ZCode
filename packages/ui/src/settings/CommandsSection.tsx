@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 命令管理面板集中维护列表、表单和外部导入入口，拆分会增加跨状态跳转成本 */
+/* eslint-disable max-lines -- the command manager keeps list, form and external import together; splitting raises cross-state jump costs. */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
@@ -68,9 +68,9 @@ export function CommandsSection({
   const currentWorkspaceTab = workspaceTabs.find(
     (tab) => getPluginWorkspaceKey(tab) === currentWorkspaceKey,
   );
-  // 列表按 Scope target 收到 workspacePath，但命令与插件服务仍取自当前
-  // ServiceProvider，会把 B 的路径发往 A 的 remote host。两者统一走 target 解析结果，
-  // 并在连接就绪前暂停 RPC，不回退到当前激活 workspace 的 service。
+  // The list receives workspacePath per scope target, but command/plugin services still come from the
+  // active ServiceProvider, sending B's paths to A's remote host. Both resolve via the target,
+  // pausing RPC until connected, never falling back to the active workspace's service.
   const listServiceResolution = useWorkspaceServicesResolution(
     currentWorkspaceTab?.workspacePath ?? workspacePath,
     currentWorkspaceTab?.remoteSessionId,
@@ -121,7 +121,7 @@ export function CommandsSection({
       workspaceTabs,
     });
     if (recovery === "keep") return;
-    // 目标 Workspace 关闭后不能继续向失效路径写入；新建回退 User，编辑直接退出。
+    // Never write to a closed workspace's path; create falls back to User, edit exits.
     if (recovery === "close-editor") {
       setEditingCommand(null);
       setShowForm(false);
@@ -301,10 +301,10 @@ export function CommandsSection({
     [onFormScopeKeyChange],
   );
 
-  // pluginManagementStore 是全局单例，Plugins tab 的 PluginList 与本页在
-  // effectiveCommandScopeKey ≠ selectedScopeKey 时会用不同 target 交替初始化它。
-  // PluginList 已用 storeKey!==targetKey 自保护，这里复用同一模式，避免插件贡献的
-  // 命令分组短暂取自别的 target 的插件投影。
+  // pluginManagementStore is a global singleton; the Plugins tab's PluginList and this page
+  // initialize it alternately with different targets when effectiveCommandScopeKey differs from selectedScopeKey.
+  // PluginList guards via storeKey!==targetKey; reuse the same pattern so plugin-contributed
+  // command groups never briefly take another target's plugin projection.
   const pluginStoreMatchesTarget =
     (pluginStoreWorkspaceIdentity?.trim() || pluginStoreWorkspacePath || "") ===
       currentWorkspaceKey && pluginConfigScope === scopeFilter;

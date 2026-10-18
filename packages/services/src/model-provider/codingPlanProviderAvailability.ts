@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- Coding Plan 登录、订阅与 Start/Coding 互斥校验需要集中维护，拆散会让系统禁用原因更难追踪。 */
+/* eslint-disable max-lines -- Coding Plan sign-in, subscriptions, and Start/Coding exclusivity checks stay together; splitting blurs system-disable reasons. */
 import {
   ApiError,
   BIGMODEL_PROVIDER_ID,
@@ -43,8 +43,8 @@ export type CodingPlanUnavailableReason =
   | "coding_plan_not_entitled";
 
 function buildZaiSubscriptionListUrl(): string {
-  // ZAI 测试环境业务 token 只能请求配置的 ZAI Business origin。
-  // availability 校验必须和 OAuth business login 共用同一套 ZCODE_ENV 域名分流，只允许 origin 不同。
+  // ZAI test-env business tokens may only call the configured ZAI Business origin.
+  // Availability checks share the OAuth business login's ZCODE_ENV host split; only the origin may differ.
   return buildRuntimeZaiBusinessUrl(process.env, "/api/biz/subscription/list");
 }
 
@@ -187,15 +187,15 @@ async function validateFamilyAccountProviders(params: {
   }
 
   const selection = params.context.providerFamilyConnectionSelections?.[params.family];
-  // Start Plan 是独立权益：即使当前连接仍是个人/Team Coding Plan，也必须单独查询，
-  // 否则领取后待生效或已拥有的 Start Plan 会被错误地当成“未连接”，设置页无法展示。
+  // Start Plan is a separate entitlement: query it even when the connection is personal/Team Coding Plan,
+  // else pending/owned Start Plans read as disconnected and the settings page cannot show them.
   if (params.startProvider) {
     result[params.startProvider.providerId] = await validateStartPlanAvailability(
       params.startProvider,
       params.context,
     );
   }
-  // 个人订阅和 Start 独立查询，不以当前选中状态代替权益。Team 必须有具体项目身份。
+  // Personal subscription and Start query independently; current selection never stands in for entitlement. Team needs a concrete project identity.
   if (params.individualProvider) {
     result[params.individualProvider.providerId] = await validateCodingPlanProviderAvailability(
       params.individualProvider,
@@ -213,10 +213,10 @@ async function validateFamilyAccountProviders(params: {
   return result;
 }
 
-// zai/bigmodel Team Plan 对称化。原硬编码 bigmodel host/token/header，
-// zai team plan 永远不校验 customerInfo（被移出团队也不禁用）。
-// 泛化为 family-aware：按 family 选 host（zai 用配置的 ZAI Business origin）、token（oauth:zai:）、header（Bearer）。
-// 已验证 zai 域名 getCustomerInfo 返回结构与 bigmodel 同构（organizations/projects）。
+// zai/bigmodel Team Plan symmetry. The original hardcoded bigmodel host/token/header,
+// never validated zai customerInfo (leaving a team never disabled),
+// generalized family-aware: host per family (zai: configured Business origin), token (oauth:zai:), header (Bearer).
+// Verified: zai getCustomerInfo returns the same shape as bigmodel (organizations/projects).
 async function validateSelectedTeamPlanAvailability(
   family: ProviderFamilyDomain,
   context: CodingPlanAvailabilityContext,
@@ -240,15 +240,15 @@ async function validateSelectedTeamPlanAvailability(
     return { kind: "unavailable", reason: "coding_plan_not_connected" };
   }
   const zcodeJwtToken = (await context.credentialService?.load(ZCODE_JWT_TOKEN_KEY))?.trim();
-  // BigModel 旧版本可能把 zcodejwttoken 误写进 oauth access token；
-  // 但 Z.ai 的 business JWT 本身就是合法 Bearer token，不能套用这个 stale-token 防御。
+  // Legacy BigModel could mis-write zcodejwttoken into the oauth access token;
+  // but Z.ai's business JWT is a valid Bearer token, so that stale-token defense does not apply.
   if (family === "bigmodel" && zcodeJwtToken && token === zcodeJwtToken) {
     return { kind: "unavailable", reason: "coding_plan_not_connected" };
   }
 
   try {
-    // zai 走 buildRuntimeZaiBusinessUrl（测试环境配置的 ZAI Business origin），
-    // bigmodel 走 resolveBigModelApiOrigin。路径 /api/biz/customer/getCustomerInfo 两边同构。
+    // zai uses buildRuntimeZaiBusinessUrl (test-env configured origin),
+    // bigmodel resolveBigModelApiOrigin. /api/biz/customer/getCustomerInfo is isomorphic on both.
     const host =
       family === "zai"
         ? buildRuntimeZaiBusinessUrl(process.env, "")
@@ -270,7 +270,7 @@ async function validateSelectedTeamPlanAvailability(
       payload.data,
       selectedTeamContext,
     );
-    log.info(undefined, "Team Plan 入口项目校验完成", {
+    log.info(undefined, "Team Plan entry project validation done", {
       family,
       projectId,
       organizationId: selectedTeamContext.organizationId,
@@ -288,7 +288,7 @@ async function validateSelectedTeamPlanAvailability(
       teamContext: resolvedTeamContext,
     });
   } catch (error) {
-    log.warn(undefined, "Team Plan 入口项目校验失败", {
+    log.warn(undefined, "Team Plan entry project validation failed", {
       family,
       error: error instanceof Error ? error.message : String(error),
       projectId,
@@ -320,9 +320,9 @@ async function validateTeamPlanSubscriptionAvailability(params: {
   }
 }
 
-// zai/bigmodel Team Plan 对称化。原仅解析 bigmodel selectedKey，
-// zai team key 永远返回 null（availability 不校验 zai team project）。
-// 泛化为 family-aware，按 family 读对应 selectedKey bucket + family-aware parse。
+// zai/bigmodel Team Plan symmetry. Originally only bigmodel selectedKey parsed;
+// zai team keys always returned null (availability skips zai team project).
+// Generalized family-aware: read the family's selectedKey bucket with family-aware parsing.
 function resolveSelectedTeamContext(
   family: ProviderFamilyDomain,
   selections: ProviderFamilyConnectionSelectionSettings | null | undefined,
@@ -372,7 +372,7 @@ async function validateSubscriptionListAvailability(
   url: string,
 ): Promise<CodingPlanAvailabilityResult> {
   const authorization = normalizeApiKeyForHeader(provider.apiKey ?? "");
-  // Key 尚未准备好只能表示权益未知；不能用调用凭据的缺失证明未订阅。
+  // A not-ready key means unknown entitlement only; missing call credentials never prove no subscription.
   if (!authorization) return { kind: "unknown" };
   try {
     const result = await fetchPersonalCodingPlanEntitlement({
@@ -408,11 +408,11 @@ async function validateStartPlanAvailability(
 
   try {
     const startedAt = Date.now();
-    // billing/current 已废弃，balance 的 data.plans 是 Start Plan 可用性权威来源。
-    // availability 只请求一次 balance，避免冷启动在入口校验阶段重复打旧 current 接口。
+    // billing/current is deprecated; balance data.plans is the Start Plan availability authority.
+    // Request balance once, so cold start never re-hits the legacy current endpoint during entry checks.
     const payload = await fetchZaiStartPlanBalanceEnvelope(context.apiClient!, authorization.value);
     const activeStartPlan = hasActiveStartPlan(payload.data?.plans);
-    log.info(undefined, "billing/balance 请求完成", {
+    log.info(undefined, "billing/balance request completed", {
       durationMs: Date.now() - startedAt,
       hasActiveStartPlan: activeStartPlan,
       msg: payload.msg ?? null,
@@ -426,7 +426,7 @@ async function validateStartPlanAvailability(
     });
     return resolveStartPlanBalanceAvailability(payload);
   } catch (error) {
-    log.warn(undefined, "billing/balance 请求失败", {
+    log.warn(undefined, "billing/balance request failed", {
       error: error instanceof Error ? error.message : String(error),
       providerId: provider.providerId,
       responseHeaders: error instanceof ApiError ? (error.responseHeaders ?? null) : null,
@@ -485,7 +485,7 @@ function resolveStartPlanBalanceAvailability(
     .map((value) =>
       value === null || value === undefined || value === "" ? undefined : Number(value),
     );
-  // 只有明确所有权益都在未来才标 pending；缺失时间不伪造日期，模型仍由余额白名单决定。
+  // Mark pending only when every entitlement is future; never invent dates for missing times, models stay balance-whitelist-driven.
   if (
     models.length === 0 &&
     effectiveTimes.length > 0 &&
@@ -530,9 +530,9 @@ function hasActiveStartPlan(plans: ZaiStartPlanPlan[] | undefined): boolean {
       const status = plan.status?.trim().toLowerCase();
       const planId = plan.plan_id?.trim().toLowerCase();
       const name = plan.name?.trim().toLowerCase();
-      // billing/balance 的 plans 真实返回的是 `plan_id=zcode-v3-start-plan`
-      // 和 `name=ZCode V3 Start Plan`；只认 `name === "start plan"` 的话，
-      // 已激活的 Start Plan 会被误写成 coding_plan_not_entitled。
+      // billing/balance plans really return \`plan_id=zcode-v3-start-plan\`
+      // and \`name=ZCode V3 Start Plan\`; matching only \`name === "start plan"\`
+      // miswrites activated Start Plans as coding_plan_not_entitled.
       const identityMatches =
         !planId && !name ? true : isZaiStartPlanIdentity(planId) || isZaiStartPlanIdentity(name);
       return status === "active" && identityMatches;

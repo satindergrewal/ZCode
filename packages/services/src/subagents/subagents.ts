@@ -24,19 +24,19 @@ export interface ISubagentsService {
 
   setBuiltInModelOverride(params: BuiltInSubagentModelOverrideParams): Promise<void>;
 
-  /** 只写用户 state 的完整覆盖，不改插件 Markdown。 */
+  /** Full-replace write of the user state only; never touches plugin Markdown. */
   setPluginAgentModelOverride(params: PluginSubagentModelOverrideParams): Promise<void>;
 
-  /** 当前筛选来源对应的用户级 agent 根目录（与内置扫描顺序一致，取 buildUserRoots 的首项）。 */
+  /** User-level agents root for the active filter source (first buildUserRoots entry, same scan order). */
   getPrimaryUserAgentsDirectory(params: { provider: ZCodeProvider }): Promise<{ path: string }>;
 
-  /** 创建新的 agent 文件 */
+  /** Creates a new agent file */
   createAgent(params: AgentCreateParams): Promise<{ agent: AgentSummary }>;
 
-  /** 更新现有 agent 文件 */
+  /** Updates an existing agent file */
   updateAgent(params: AgentUpdateParams): Promise<{ agent: AgentSummary }>;
 
-  /** 删除 agent 文件 */
+  /** Deletes the agent file */
   deleteAgent(params: AgentDeleteParams): Promise<void>;
 }
 

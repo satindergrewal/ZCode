@@ -1,25 +1,25 @@
 // ============================================================
-// Dynamic Workflow 灰度：服务端 feature key 的取值域与客户端快照
+// Dynamic Workflow rollout: the server feature key's value domain and the client snapshot
 // ============================================================
-// 服务端 `/api/v1/client/configs` 下发 `data.configs.dynamicWorkflow.mode`。
+// The server's /api/v1/client/configs sends data.configs.dynamicWorkflow.mode.
 
-// 这里只放三端（Host services、Desktop main、UI）共用的取值域、归一化与快照形状；
-// 读取远端、覆盖与下发都在各自的 owner 里，不在 shared 层发请求。
+// Only the shared value domain, normalization, and snapshot shape live here (host services, desktop main, UI);
+// remote reads, overrides, and delivery stay in each owner--shared never issues requests.
 
 export const DYNAMIC_WORKFLOW_MODES = ["disabled", "onDemand", "alwaysOn"] as const;
 export type DynamicWorkflowMode = (typeof DYNAMIC_WORKFLOW_MODES)[number];
 
 /**
- * 本地覆盖用的环境变量。语义按构建档位分三层，由 Desktop main 在 fork Host 前**改写或删除**
- * （desktopRuntimeEnv.ts 的 buildHostProcessEnv），Host 只消费不再分辨来源：
- *   - 未打包 dev：透传开发者 shell 里的合法取值；
- *   - 打包 preview：固定写入 `alwaysOn`，忽略 shell；
- *   - 打包 production：删除继承值，永不写入。
- * 没有 main 的 Web/server Host 直接读进程环境（运维/开发者设置）。
+ * Env var for local overrides, with build-tier semantics in three layers; desktop main **rewrites or deletes** it before forking the host
+ *(buildHostProcessEnv in desktopRuntimeEnv.ts), and the host consumes without provenance:
+ *   - unpackaged dev: pass through legal values from the developer's shell;
+ *   - packaged preview: pinned to `alwaysOn`, shell ignored;
+ *   - packaged production: inherited value deleted, never written.
+ * Web/server hosts without main read process env directly (ops/dev setting).
  */
 export const ZCODE_DYNAMIC_WORKFLOW_MODE_ENV = "ZCODE_DYNAMIC_WORKFLOW_MODE";
 
-/** 服务端缺省、格式非法或请求失败时的取值：fail-closed，与闲时任务灰度一致。 */
+/** Value on missing server config, malformed payload, or request failure: fail-closed, matching the off-peak rollout. */
 export const DEFAULT_DYNAMIC_WORKFLOW_MODE: DynamicWorkflowMode = "disabled";
 
 export function normalizeDynamicWorkflowMode(value: unknown): DynamicWorkflowMode | undefined {
@@ -31,19 +31,19 @@ export function normalizeDynamicWorkflowMode(value: unknown): DynamicWorkflowMod
 }
 
 /**
- * 解析保留服务端契约的三态，消费侧统一转换为布尔开关。
- * 将来 onDemand 有独立行为时，只需调整消费侧。
+ * Parse the server contract's three states; consumers convert to a boolean.
+ * When onDemand gains distinct behavior, only consumers change.
  */
 export function isDynamicWorkflowModeEnabled(mode: DynamicWorkflowMode): boolean {
   return mode !== "disabled";
 }
 
-/** 快照的来源：观测用，UI 与日志据此区分「服务端关」与「本地覆盖」。 */
+/** Snapshot provenance, for observability: UI and logs tell "server-off" from "local override". */
 export type DynamicWorkflowClientConfigSource = "remote" | "override" | "default";
 
 export interface DynamicWorkflowClientConfig {
   readonly mode: DynamicWorkflowMode;
-  /** 等于 isDynamicWorkflowModeEnabled(mode)；单独落字段免得每个消费者各写一遍折叠规则。 */
+  /// Equals isDynamicWorkflowModeEnabled(mode); a dedicated field spares every consumer the folding rule.
   readonly enabled: boolean;
   readonly source: DynamicWorkflowClientConfigSource;
 }
@@ -56,9 +56,9 @@ export function createDynamicWorkflowClientConfig(
 }
 
 /**
- * 纯函数：把远端 envelope 的 `configs.dynamicWorkflow` 与本地覆盖环境变量折叠成一个快照。
- * 优先级：覆盖 > 远端合法值 > 缺省。远端成功但**未下发**该 key 也视为 disabled——
- * 服务端撤掉 key 等于关闭，不能沿用旧快照（与 desktopContextPromptRollout 同一裁决）。
+ * Pure: fold the remote envelope's configs.dynamicWorkflow and the local override env into one snapshot.
+ * Precedence: override > legal remote value > default. A successful remote response **without** the key also counts disabled--
+ * a removed key means off; never reuse the stale snapshot (same ruling as desktopContextPromptRollout).
  */
 export function resolveDynamicWorkflowClientConfig(input: {
   remote: unknown;

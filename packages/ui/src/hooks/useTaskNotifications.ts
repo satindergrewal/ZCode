@@ -69,7 +69,7 @@ function showTaskNotification(
   try {
     platform.showTaskNotification(payload);
   } catch (error) {
-    logger.warn("[task-notification] 触发平台通知失败", {
+    logger.warn("[task-notification] Failed to fire the platform notification", {
       taskId: payload.taskId,
       status: payload.status,
       error,
@@ -78,12 +78,12 @@ function showTaskNotification(
 }
 
 /**
- * v4 任务终态通知编排。
+ * v4 terminal-task notification orchestration.
  *
- * v4 重构删掉旧 renderer background monitor 后，platform 通知通道仍在，
- * 但 sessions-index 事实没有再被翻译成展示命令，导致任务完成/失败没有系统通知。
- * 这里只在 renderer 做“已观察边沿”的通知意图，事实仍以 sessions-index 为准；
- * 是否因窗口活跃而抑制通知继续交给 desktop/web platform 层判断。
+ * After the v4 refactor removed the legacy renderer background monitor, the platform notification channel remained
+ * but sessions-index facts were no longer translated into display commands, so completions/failures had no system notification.
+ * Only a renderer-side observed-edge notification intent lives here; facts stay with sessions-index,
+ * while focus-based suppression is up to the desktop/web platform layers.
  */
 export function useWorkspaceTerminalTaskNotifications({
   workspacePath,
@@ -121,9 +121,9 @@ export function useWorkspaceTerminalTaskNotifications({
 
   useEffect(() => {
     if (!enabled || !rpcReady || !platform) {
-      // App 壳在 remote attachment 就绪前会先挂载，旧通知 hook
-      // 只看用户开关就订阅 sessions-index，从而越过 conversation 的 readiness gate
-      // 访问断连代理。这里共用 workspace rpcReady；本地 workspace 始终为 true。
+      // The app shell mounts before remote attachment is ready; the legacy notification hook
+      // subscribed to sessions-index on the user toggle alone, crossing the conversation readiness gate
+      // into a disconnected proxy. Share the workspace rpcReady here; local workspaces are always true.
       previousBySessionIdRef.current = null;
       setIndexState({ signature, sessions: [], status: "idle" });
       return;
@@ -192,10 +192,10 @@ export function useWorkspaceTerminalTaskNotifications({
 }
 
 /**
- * 当前 conversation snapshot 的阻塞交互通知。
+ * Blocking-interaction notifications for the current conversation snapshot.
  *
- * 首个 snapshot 只作为基线，避免订阅历史/恢复 replayable snapshot 时重放旧权限弹窗通知；
- * 后续新增 interactionId 才发通知，重复 pending 不会刷屏。
+ * The first snapshot is baseline only, so subscribing to history/restored replayable snapshots never replays old permission prompts;
+ * later new interactionIds notify, and repeated pendings never spam.
  */
 export function usePendingInteractionTaskNotifications({
   snapshot,

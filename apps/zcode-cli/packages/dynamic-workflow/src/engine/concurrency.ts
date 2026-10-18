@@ -1,53 +1,53 @@
 /**
- * 自适应并发控制器：一个 provider key 上的纯 AIMD 状态机。
+  * Adaptive concurrency controller: a pure AIMD state machine over one provider key.
  *
- * 纯包纪律：不读时钟、不做 I/O——`now`（ms since epoch）一律由调用方传入；本类只回答
- * 「cap 现在是多少、能不能准入、这次信号让 cap 变了没有」。谁喂信号、谁排队（bootstrap 的进程级
- * 治理器）都在包外。
+  * Pure-package discipline: no clock reads, no IO -- now (ms since epoch) is always passed in; the class only answers
+  * what-is-the-cap, may-this-admit, did-this-signal-move-the-cap. Who feeds signals and who queues (bootstrap's process-level
+  * governor) live outside.
  *
- * 度量单位是**模型请求**（每一次尝试）：`inFlight` = 已准入、尚未 release 的请求数。
- * 没有 ask 级计数——一个子代理同时只有一个请求在飞，「≤ N 个请求」与「≤ N 个子代理在跑」等价。
+  * The unit is the **model request** (each attempt): inFlight = admitted-not-yet-released requests.
+  * No per-ask counting -- a subagent has one request in flight at a time; at-most-N-requests equals at-most-N-subagents.
  *
- * 批次阻尼靠 **epoch**：每次准入记下当时的 epoch，每次限流裁决 epoch += 1。一个 429 只在
- * 它的请求是在**当前** cap 下发出（epoch 相同）时才评价当前 cap；旧 epoch 的 429 评价的是一个已被
- * 砍掉的 cap，只清 streak、刷新 cooldown。成功同理：只有当前 epoch 的成功计入 streak。
+  * Batch damping via **epoch**: each admission records the then-current epoch; every verdict epoch += 1. A 429 judges the current cap only
+  * if its request was issued under the **current** cap (same epoch); an old-epoch 429 judges a cap already
+  * cut, so it only clears the streak and refreshes cooldown. Successes likewise: only current-epoch successes count into the streak.
  *
- * 信号方法都返回本次信号引起的 cap 变化列表（通常 0 或 1 条；空闲重置紧接着一次限流时会是 2 条），
- * 调用方原样扇出成 `concurrency-changed` 事件。
+  * Signal methods return the cap changes this signal caused (usually 0 or 1; an idle reset followed by a verdict gives 2),
+  * for the caller to fan out verbatim as concurrency-changed events.
  */
 
 import type { ConcurrencyChange, ConcurrencyChangeReason } from "./types.js";
 
 /**
- * 限流即 `cap = max(FLOOR, floor(cap × 0.75))`（系数从 0.5 改为 0.75）：
- * 减半对「只多了一两个」的越界反应过猛——闸门是请求级的，一次 429 说明 cap 高了，很少说明高了一倍。
+  * On throttle: cap = max(FLOOR, floor(cap x 0.75)) (coefficient 0.5 -> 0.75):
+  * halving overreacts to barely-over by one or two -- the gate is per-request; one 429 says the cap is high, rarely twice as high.
  */
 export const CONCURRENCY_DECREASE_FACTOR = 0.75;
-/** 加性递增步长。 */
+/** Additive-increase step. */
 export const CONCURRENCY_INCREASE_STEP = 1;
 /**
- * 每 +1 需要的连续成功模型请求数 K。只有一档。该值从 40 降到 4：
- * 探测失败的代价只是一个请求撞一次 429 然后退回 `lastGood`（已证明可用的水位），不值得用 40 次
- * 成功去换一次试探。
+  * Consecutive successful requests K per +1. Single tier; lowered 40 -> 4:
+  * a failed probe costs one request meeting one 429 then returning to lastGood (a proven level); 40 successes are too high a price
+  * for one probe.
  */
 export const CONCURRENCY_INCREASE_AFTER_SUCCESSES = 4;
-/** 永远至少有一个探针在跑。 */
+/** Always keep at least one probe in flight. */
 export const CONCURRENCY_FLOOR = 1;
-/** 某 key 空闲这么久（且无在飞）后遗忘学到的 cap，回天花板。 */
+/** After this idle (and none in flight), forget the learned cap; back to the ceiling. */
 export const CONCURRENCY_IDLE_RESET_MS = 300_000;
 
-/** 会令 cap 减少的限流类原因。 */
+/** Throttle-class reasons that may lower the cap. */
 export type ConcurrencyThrottleReason = Extract<
   ConcurrencyChangeReason,
   "rate_limited" | "provider_overloaded" | "offpeak_queued"
 >;
 
-/** 控制器的只读快照（供测试断言与治理器投影 run 头的 `concurrency`）。 */
+/** Read-only snapshot (for test assertions and the governor's run-header concurrency projection). */
 export interface ConcurrencyControllerSnapshot {
   readonly key: string;
   readonly ceiling: number;
   readonly cap: number;
-  /** 限流裁决计数；准入时发给请求，请求结束时带回来比对。 */
+    /** Verdict counter; handed to the request on admission, brought back for comparison at completion. */
   readonly epoch: number;
   readonly inFlight: number;
   readonly waiters: number;
@@ -70,9 +70,9 @@ export class ConcurrencyController {
   private lastBad?: number;
 
   /**
-   * @param key provider key（`${providerId}/${modelId}`），只用于填进 change 事件——控制器自己
-   *   对它无感。放在构造参数而不是每次信号传入：一个控制器只服务一个 key，这是身份不是参数。
-   * @param ceiling CPU 推导的天花板：既是初值也是上界。
+      * @param key the provider key (providerId/modelId), only to fill change events -- the controller itself
+      *   is agnostic to it. A constructor param, not per-signal: one controller serves one key; that is identity, not configuration.
+      * @param ceiling the CPU-derived ceiling: both initial value and upper bound.
    */
   constructor(
     readonly key: string,
@@ -98,9 +98,9 @@ export class ConcurrencyController {
   }
 
   /**
-   * 闸门（准入条件）：在飞请求数低于 cap 且不在 Retry-After 冷却中。纯查询，不做空闲重置——
-   * 调用方（治理器）在准入路径上先调 {@link observe}（准入也是一次「信号」，空闲一小时后的第一个
-   * run 要立刻从天花板起步）。
+      * The gate (admission test): in-flight below cap and not in a Retry-After cooldown. Pure query, no idle reset --
+      * the caller (governor) runs {@link observe} on the admission path first (admission is a signal too; the first
+      * run after an idle hour must start from the ceiling at once).
    */
   canAdmit(now: number): boolean {
     return (
@@ -108,15 +108,15 @@ export class ConcurrencyController {
     );
   }
 
-  /** 只做空闲重置检查的「空信号」（准入前、observer 放行前用）。 */
+    /** The empty signal that only runs the idle-reset check (used pre-admission, before the observer admits). */
   observe(now: number): ConcurrencyChange[] {
     return this.idleReset(now);
   }
 
   /**
-   * 一个请求被准入：`inFlight++`、刷新 `lastRequestAt`，返回它所属的 epoch（请求结束时带回来）。
-   * 不做空闲重置——调用方已在 {@link observe} 里做过；这里若再做，一个刚被 observe 判定「不空闲」
-   * 的准入不可能变成空闲。
+      * A request admitted: inFlight++, refresh lastRequestAt, return its epoch (brought back at completion).
+      * No idle reset here -- the caller did it in {@link observe}; an admission just judged not-idle
+      * cannot become idle.
    */
   admitted(now: number): number {
     this.lastRequestAt = now;
@@ -125,11 +125,11 @@ export class ConcurrencyController {
   }
 
   /**
-   * 一个请求成功结束：`inFlight--`；只有**当前 epoch** 的成功使
-   * `successStreak++`——旧 epoch 的成功证明的是旧 cap 下退避压低后的负载，不是新 cap 可以更高。
-   * `successStreak ≥ K` 即**证明**当前 cap 可用：`lastGood = max(lastGood, cap)`（只有
-   * 完成的 streak 能设 lastGood，减少 cap 不能）。再满足有等待者 **且** `cap < ceiling` → +1。
-   * 无等待者时 streak 照累积但不兑现。
+      * A request finished successfully: inFlight--; only a **current-epoch** success moves
+      * successStreak -- an old-epoch success proves the load under the old cap with backoff damping, not that the new cap may rise.
+      * successStreak at K **proves** the current cap: lastGood = max(lastGood, cap) (only a completed
+      * streak sets lastGood; a reduction never does). With waiters **and** cap below ceiling -> +1.
+      // Without waiters the streak still accumulates, unspent.
    */
   succeeded(now: number, epoch: number): ConcurrencyChange[] {
     const changes = this.idleReset(now);
@@ -137,7 +137,7 @@ export class ConcurrencyController {
     if (epoch !== this.epoch) return changes;
     this.successStreak += 1;
     if (this.successStreak < CONCURRENCY_INCREASE_AFTER_SUCCESSES) return changes;
-    // 这一级被一整段 streak 证明可用——不论此刻有没有人等着往上爬。
+        // This level was proven by a whole streak -- regardless of anyone waiting to climb right now.
     if (this.lastGood === undefined || this.cap > this.lastGood) this.lastGood = this.cap;
     if (this.waiters_ <= 0 || this.cap >= this.ceiling) return changes;
     const previous = this.cap;
@@ -148,15 +148,15 @@ export class ConcurrencyController {
   }
 
   /**
-   * 被限流/过载。一律 `inFlight--`、清 streak、带 Retry-After 则把 cooldown
-   * 推到更晚者。
+      * Throttled / overloaded. Always inFlight--, clear the streak; with Retry-After, push cooldown
+      // to the later of the two.
    *
-   * 只有 `epoch === 当前 epoch` 的 429 才动 cap：它是在当前 cap 下发出的请求，是对当前 cap 的评价；
-   * 旧 epoch 的 429 忽略（不发事件）。当前 epoch 的分两档：在 `lastGood` **之上**探测被限流 → 退回
-   * `lastGood`（记 `lastBad`，不按系数减）；否则（`lastGood` 缺席或 `cap ≤ lastGood`：墙下移了）→
-   * `cap = max(FLOOR, floor(cap × 0.75))`，记 `lastBad = 旧 cap`，并**清掉** `lastGood`——它刚被
-   * 证伪，而新 cap 还没被任何 streak 证明（减 cap 不设 lastGood）。两档之后 `epoch += 1`——
-   * 即便 cap 已在地板、数值没变，也翻一页：同一批请求只能触发一次裁决。
+      * Only a 429 with epoch == current epoch moves the cap: it judged the cap it was issued under;
+      // old-epoch 429s are ignored (no event). Current-epoch ones split in two: a probe throttled **above** lastGood -> return to
+      // lastGood (record lastBad; no coefficient cut); otherwise (no lastGood, or cap at/below it: the wall moved) ->
+      // cap = max(FLOOR, floor(cap x 0.75)), lastBad = old cap, and **clear** lastGood -- just falsified,
+      // and the new cap is proven by no streak yet (a cut never sets lastGood). Afterwards epoch += 1 --
+      // even at the floor with an unchanged number, turn the page: one batch of requests triggers one verdict.
    */
   throttled(
     now: number,
@@ -183,14 +183,14 @@ export class ConcurrencyController {
       this.lastGood = undefined;
     }
     this.epoch += 1;
-    // cap 已在地板且无 Retry-After 时确实什么都没变，不发事件；带 Retry-After 的限流即便 cap 不动
-    // 也要让 run 头知道「冷却至…」，所以带 cooldownMs 的一律发。
+        // At the floor with no Retry-After, nothing changed -- no event; a throttling with Retry-After must inform the run header
+        // of cooling-until even when the cap stands, so any cooldownMs emits.
     if (previous === this.cap && cooldownMs === undefined) return changes;
     changes.push(this.change(previous, reason, cooldownMs));
     return changes;
   }
 
-  /** 瞬态但非限流的失败（timeout / 5xx / 网络）：`inFlight--`、清 streak，cap 不动。 */
+    /** Transient non-throttle failure (timeout / 5xx / network): inFlight--, clear streak, cap unchanged. */
   failedTransient(now: number): ConcurrencyChange[] {
     const changes = this.idleReset(now);
     this.inFlight = Math.max(0, this.inFlight - 1);
@@ -198,25 +198,25 @@ export class ConcurrencyController {
     return changes;
   }
 
-  /** 一个请求以永久失败 / 取消终结，或 ticket 只见 release 没见终结事件：只做 `inFlight--`。 */
+    /** A request ended in permanent failure / cancellation, or the ticket saw only release: inFlight-- only. */
   ended(now: number): ConcurrencyChange[] {
     const changes = this.idleReset(now);
     this.inFlight = Math.max(0, this.inFlight - 1);
     return changes;
   }
 
-  /** 治理器在队列变化时喂入的等待者数（有需求才加 cap）。 */
+    /** Waiter count fed by the governor on queue changes (cap rises only on demand). */
   waiters(now: number, count: number): ConcurrencyChange[] {
     const changes = this.idleReset(now);
     this.waiters_ = Math.max(0, count);
     return changes;
   }
 
-  // ——————————————————————————————— 内部 ———————————————————————————————
+    // --------------------------------- internal ---------------------------------
 
   /**
-   * 空闲重置：`now − lastRequestAt ≥ IDLE_RESET_MS` 且无在飞 → cap 回天花板，
-   * 清 streak / cooldown / lastGood / lastBad，epoch += 1。惰性发生在任一信号到达时（无定时器）。
+      * Idle reset: now - lastRequestAt at/after IDLE_RESET_MS and none in flight -> cap to ceiling,
+      // clear streak / cooldown / lastGood / lastBad, epoch += 1. Lazy, on any signal (no timers).
    */
   private idleReset(now: number): ConcurrencyChange[] {
     if (
@@ -227,7 +227,7 @@ export class ConcurrencyController {
       return [];
     }
     const previous = this.cap;
-    // 幂等：已在天花板且状态干净时什么都不做（否则每个空闲信号都翻一页 epoch）。
+        // Idempotent: at ceiling with clean state, do nothing (else every idle signal turns the epoch page).
     if (
       previous === this.ceiling &&
       this.successStreak === 0 &&
@@ -243,7 +243,7 @@ export class ConcurrencyController {
     this.lastGood = undefined;
     this.lastBad = undefined;
     this.epoch += 1;
-    // lastRequestAt 保留：下一次仍空闲的信号不该再「重置」一次；此时状态已处于天花板。
+        // lastRequestAt kept: a still-idle later signal must not reset again; state is already at ceiling.
     return previous === this.cap ? [] : [this.change(previous, "idle_reset")];
   }
 

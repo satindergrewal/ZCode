@@ -16,7 +16,7 @@ export const DesktopWindowFrame = memo(function DesktopWindowFrameComponent({
   children: ReactNode;
   topBar?: ReactNode;
   actions?: ReactNode;
-  /** 标签栏插槽，渲染在 header 内标题后面 */
+  /** Tab-bar slot, rendered after the title inside the header. */
   tabBar?: ReactNode;
   isDesktop?: boolean;
   isMacDesktop?: boolean;
@@ -30,16 +30,18 @@ export const DesktopWindowFrame = memo(function DesktopWindowFrameComponent({
   return (
     <div
       className={cn(
-        // 手机浏览器的 100vh 会把地址栏区域算进页面高度，
-        // 远控页底部输入框容易被挤到可视区外。动态视口高度能跟随浏览器 chrome 收放，桌面端视觉不变。
+        // Mobile 100vh counts the URL bar as page height, pushing the remote-control composer
+        // below the fold. Dynamic viewport height tracks browser chrome; desktop visuals are
+        // unchanged.
         "flex h-dvh flex-col overflow-hidden border-border text-foreground",
-        // Linux BrowserWindow 的不透明底色会把最外层恢复为直角。
-        // 外壳 16px 与内层 12px 面板及 4px inset 构成同心圆。Linux 合成器在原生拖拽/缩放时
-        // 可能短暂丢失 overflow 圆角，额外使用同半径 clip-path 固定合成裁切；最大化时两者一起归零。
+        // Linux BrowserWindow's opaque background squares off the outermost corners. The 16px
+        // shell, 12px inner panel and 4px inset form concentric radii; the Linux compositor can
+        // drop overflow rounding during native drag/resize, so a same-radius clip-path pins the
+        // composited crop. Both collapse to zero when maximized.
         isLinuxDesktop &&
           "rounded-[16px] [clip-path:inset(0_round_16px)] platform-linux-window-maximized:rounded-none platform-linux-window-maximized:[clip-path:inset(0)]",
-        // Web/Windows/Linux 都没有 macOS vibrancy 作为透明底层兜底，
-        // 如果继续走半透明 alt 背景，会和浏览器或系统窗口底色混出异常灰块。
+        // Web/Windows/Linux lack macOS vibrancy as the translucent fallback; keeping the
+        // semi-transparent alt background muddles into gray against browser or system chrome.
         usesOpaqueRootSurface ? "bg-background-win-alt" : "bg-background-alt",
       )}
       data-desktop-window-frame="true"

@@ -1,7 +1,7 @@
 /**
- * v4 命令 ack 可观测性：生产构建下 renderer 日志整体关闭（见 ui/logger.ts），
- * e2e/现场排查需要一个可 probe 的收口。这里把每条命令的 ack 摘要写进 window 上的
- * 有界环形缓冲（与 __zcodeSessionStoreE2E 同口径的调试面），不含消息正文等重 payload。
+ * v4 command-ack observability: production builds mute renderer logs (see ui/logger.ts);
+ * e2e/field debugging needs a probeable sink. Every command ack summary lands in a window-level
+ * bounded ring buffer (the __zcodeSessionStoreE2E debug surface), never heavy payloads like message bodies.
  */
 interface V4CommandAckSummary {
   type: string;

@@ -49,8 +49,8 @@ export function RemoteConnectionConnectingStep({
       return;
     }
 
-    // 日志持续追加会推高 scrollHeight，无条件写 scrollTop 会把向上查看历史日志的用户拉回底部。
-    // 这里只在用户原本贴底时继续跟随最新日志。
+    // Appending logs grows scrollHeight; unconditional scrollTop writes would drag users reading
+    // history back to the bottom. Follow the latest log only while the user is pinned to bottom.
     if (
       scrollRemoteConnectionLogsToLatestIfFollowing(container, shouldFollowLatestLogRef.current)
     ) {
@@ -59,8 +59,8 @@ export function RemoteConnectionConnectingStep({
   }, [logs.length, latestLogId, latestLogTimestamp]);
 
   const handleOpenFeedback = async () => {
-    // 远程连接失败时用户看到的是连接日志现场。
-    // 反馈入口只预填脱敏后的错误摘要，附件由用户主动选择。
+    // On connection failure the user is looking at the connection log. The feedback entry prefills
+    // only a redacted error summary; attachments stay user-selected.
     openFeedbackSubmit({
       title:
         errorMessage.slice(0, 80) ||

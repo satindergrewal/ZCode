@@ -92,7 +92,7 @@ export * from "./network/public-egress-ip.js";
 export * from "./tools/index.js";
 export * from "./tools/websearch.js";
 
-// 媒体预算上限由 App/Agent 共用策略定义；Contracts 统一转出，避免 Core 各处跨层取值。
+// Media budget caps come from the shared App/Agent policy; contracts re-exports them so core never reaches across layers.
 export {
   MEDIA_BUDGET_CURRENT_ATTACHMENT_TOO_LARGE_ERROR_CODE,
   MEDIA_BUDGET_CURRENT_IMAGE_TOO_LARGE_ERROR_CODE,

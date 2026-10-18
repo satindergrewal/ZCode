@@ -41,7 +41,7 @@ function requiredIterationCount(goal: GoalState): number {
   return Math.max(1, statusIteration, maxTodoIteration, maxVerificationIteration);
 }
 
-/** 从 V4 权威 goal 投影构造右上角逐轮摘要；不从 renderer timeline 反推轮次。 */
+/** Builds the top-right per-turn digest from the authoritative V4 goal projection; never infers turns from the renderer timeline. */
 export function buildConversationGoalIterationSummaries(
   goal: GoalState,
 ): ConversationGoalIterationSummary[] {

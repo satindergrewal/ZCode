@@ -1,5 +1,5 @@
 import { useIsOfficeMode } from "@/hooks/useInterfaceMode.js";
-/* eslint-disable max-lines -- 商店列表页把标题/搜索/已安装条/公开-个人分段/Featured/分类折叠聚合成一个连贯浏览面，拆散反而难以维持 1:1 布局。 */
+/* eslint-disable max-lines -- the store list page binds header/search/installed strip/public-personal segments/featured/category collapses into one coherent browsing surface; splitting it would break the 1:1 layout. */
 import { useMemo, useState } from "react";
 import { Download, Loader2, Settings2 } from "lucide-react";
 import type { PluginStoreOrder, ZCodePluginMarketplaceSummary } from "@zcode/shared";
@@ -27,7 +27,7 @@ import {
 } from "@/settings/pluginStoreListing.js";
 import { resolveMarketplaceDisplayName } from "@/settings/pluginSourceLabel.js";
 
-// 分类/市场分组手动收起后的展示数量；默认完整展示，避免较少的插件又被自动隐藏。
+// Items shown for a category/marketplace group after manual collapse; fully expanded by default so a few plugins are not hidden again.
 const CATEGORY_VISIBLE_LIMIT = 6;
 const RETIRED_STORE_PLUGIN_ID = `restore-legacy-sessions@${ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID}`;
 
@@ -61,8 +61,9 @@ export function PluginStoreListView({
   const modeOrder = isOfficeMode ? order?.work : order?.code;
   const keyword = query.trim().toLowerCase();
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
-  // 旧版会话恢复入口退出市场；统一过滤所有浏览投影，旧缓存/精选也不能重新露出。
-  // 完整 ID 只命中官方插件，插件管理页继续使用原始条目管理已有安装。
+  // The legacy session-restore entry left the marketplace; filter it from every browsing projection,
+  // including stale caches and featured slots. The full ID only matches the official plugin; the
+  // plugin management page keeps using the raw entries to manage existing installs.
   const items = useMemo(
     () => allItems.filter((item) => item.id !== RETIRED_STORE_PLUGIN_ID),
     [allItems],
@@ -101,7 +102,7 @@ export function PluginStoreListView({
     [locale, publicItems, modeOrder],
   );
 
-  // 个人分段：按市场分组，最近刷新的市场排最前（见 sortPersonalMarketplaceGroups）。
+  // Personal segment: group by marketplace, most recently refreshed first (see sortPersonalMarketplaceGroups).
   const personalGroups = useMemo(() => {
     const groups = new Map<string, StorePluginItem[]>();
     for (const item of personalItems) {
@@ -142,8 +143,8 @@ export function PluginStoreListView({
 
   return (
     <div className="space-y-8" data-testid="plugin-store-list">
-      {/* 大标题由设置页头部渲染（settings.plugins.title），此处从搜索框开始，避免双标题。 */}
-      {/* 搜索：横跨公开+个人；输入时下方分段布局让位于统一结果流。 */}
+      {/* The page title renders in the settings header (settings.plugins.title); start here at the search box to avoid a double title. */}
+      {/* Search: spans public + personal; while typing, the segmented layout below gives way to a unified result flow. */}
       <SettingsSearchInput
         data-testid="plugin-store-search"
         value={query}
@@ -153,7 +154,7 @@ export function PluginStoreListView({
         })}
       />
 
-      {/* 已安装条：图标点击进详情，齿轮进「管理已安装」视图。 */}
+      {/* Installed strip: the icon opens details, the gear opens "Manage Installed". */}
       {installedItems.length > 0 ? (
         <section data-testid="plugin-store-installed-strip">
           <div className="flex items-center justify-between border-b border-border pb-2">
@@ -181,8 +182,8 @@ export function PluginStoreListView({
               </Button>
             </ControlHintTooltip>
           </div>
-          {/* 横向滚动也会裁切纵向溢出；预留角标、缩放和焦点环空间。
-              窄屏不补偿负外边距，避免滚动容器越过页面右边界。 */}
+          {/* Horizontal scroll also clips vertical overflow; reserve space for the badge, scaling, and focus ring.
+              Narrow screens do not compensate with negative margins, keeping the scroll container inside the page's right edge. */}
           <div className="mt-1 flex items-center gap-3 overflow-x-auto px-2 pt-2 pb-1 sm:-mx-2">
             {installedItems.map((item) => {
               const displayName = resolveItemDisplayName(item, locale);
@@ -198,7 +199,7 @@ export function PluginStoreListView({
                       className="shrink-0 rounded-xl transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-input-border-focused"
                       onClick={() => actions.onOpenDetail(item.id)}
                     >
-                      {/* Installed Strip 只表达已安装集合，启用态统一在管理视图展示，避免用透明度误伤品牌图标。 */}
+                      {/* The Installed Strip only expresses the installed set; enabled state lives in the manage view, avoiding opacity tricks that muddy brand icons. */}
                       <PluginStoreAvatar item={item} className="size-10" />
                     </button>
                     {canUpdatePluginItem(item) ? (
@@ -229,7 +230,7 @@ export function PluginStoreListView({
         </section>
       ) : null}
 
-      {/* 公开 / 个人分段。 */}
+      {/* Public / personal segments. */}
       <div className="flex items-center gap-1.5">
         <SegmentPill
           active={segment === "public"}
@@ -356,7 +357,7 @@ function CardGrid({
   );
 }
 
-/** 分类/市场分组：默认全部展开，手动收起后展示前 6 个和展开入口。 */
+/** Category/marketplace group: fully expanded by default; once manually collapsed, shows the first 6 plus an expand control. */
 function CollapsibleCardGroup({
   groupKey,
   items,

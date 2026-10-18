@@ -56,9 +56,10 @@ type CurrentSidebarCodingPlanUsageSource =
     }
   | {
       audience: "team";
-      // 原硬绑 bigmodelCodingPlan，zai team plan 的 currentUsageSource
-      // 无法表达 zai providerId。松开为 SidebarUsageCodingPlanProviderId，
-      // zai/bigmodel team 都按各自 selectedKey 解析出的 providerId 表达。
+      // Previously hard-bound to bigmodelCodingPlan, which left zai team plans unable to
+      // express their providerId in currentUsageSource. Loosened to
+      // SidebarUsageCodingPlanProviderId so zai/bigmodel team entries each carry the
+      // providerId resolved from their own selectedKey.
       providerId: SidebarUsageCodingPlanProviderId;
       sourceId: SidebarUsageCodingPlanSourceId;
       teamSource: CodingPlanUsageSource;
@@ -106,13 +107,15 @@ function buildTeamCodingPlanUsageSources(
         projectName: projectContext.projectName ?? product.projectName,
       });
       if (!label) {
-        // Team Plan usage source 只展示组织名；缺失时不能生成 "BigModel - " 空白来源。
+        // A Team Plan usage source shows only the organization name; never emit a blank
+        // "BigModel - " source when it is missing.
         return [];
       }
       const projectKey = projectId || String(index);
-      // 原 createBigModelTeamPlanConnectionKey + bigmodelCodingPlan providerId
-      // 硬编码 bigmodel，zai team product 的 sourceId 用了 bigmodel 前缀、providerId 也错。
-      // 按 product.family 用 family-aware key + 对应 codingPlan providerId。
+      // The legacy createBigModelTeamPlanConnectionKey + bigmodelCodingPlan providerId
+      // hardcoded bigmodel, giving zai team products a bigmodel-prefixed sourceId and the
+      // wrong providerId. Derive a family-aware key and matching codingPlan providerId
+      // from product.family.
       const productFamily = resolveEnterpriseCodingPlanProductFamily(product);
       const baseAccess = accountAccesses[productFamily];
       if (baseAccess?.mode !== "team-coding-plan") {
@@ -211,8 +214,8 @@ function formatTeamUsageSourceLabel({
   if (!teamPlanName) {
     return null;
   }
-  // 原硬编码 "BigModel - " 前缀，zai team source 显示出来品牌也错位。
-  // 按 product.family 取品牌前缀，与 codingPlanItem.providerName 对齐。
+  // The old code hardcoded the "BigModel - " prefix, misbranding zai team sources.
+  // Take the brand prefix from product.family to stay aligned with codingPlanItem.providerName.
   const brandPrefix = `${getModelProviderFamilySpec(resolveEnterpriseCodingPlanProductFamily(product)).label} - `;
   return `${brandPrefix}${teamPlanName}`;
 }

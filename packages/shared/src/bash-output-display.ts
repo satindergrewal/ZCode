@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-// Bash 原始文件不会进入协议；仅传递有界头部与真实截断/文件保留事实。
+// Raw Bash files never enter the protocol; only a bounded head plus true truncation/retention facts.
 export const bashOutputDisplaySchema = z
   .object({
     kind: z.literal("bash_output"),

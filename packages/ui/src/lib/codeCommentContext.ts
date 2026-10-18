@@ -230,8 +230,8 @@ export function parsePromptCodeComments(
     workspaceIdentity?: string;
   },
 ): ParsedCodeCommentPrompt {
-  // 这里不能使用 multiline 的 `$`，否则非贪婪匹配会在第一行 `## Comment 1` 后提前停止，
-  // 导致持久化消息无法解析回 comment 附件，只能把原始 markdown 暴露在聊天气泡里。
+  // A multiline anchored end lets the lazy match stop after the first heading,
+  // leaving unparsable comment attachments and raw markdown inside the bubble.
   const blockMatch = /(?:^|\n\n)# Code comments:\s*\n\n([\s\S]*?)\s*$/.exec(content);
   if (!blockMatch || blockMatch.index < 0) {
     return {

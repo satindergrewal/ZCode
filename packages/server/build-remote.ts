@@ -13,8 +13,8 @@ const { content: zcodeBuiltinProviderConfigJson } = await loadBuiltinProviderCon
  * for `./build/Release/pty.node` relative to itself, which matches our
  * deploy layout on the remote.
  *
- * CJS 格式而非 ESM：node-pty 内部大量使用 __dirname，ESM 里没有这个变量，
- * 用 CJS 输出可以直接原生支持，不需要任何 polyfill。
+ * CJS output rather than ESM: node-pty relies heavily on __dirname, which does
+ * not exist in ESM; CJS supports it natively with no polyfill.
  */
 const nativeAddonPlugin: Plugin = {
   name: "native-addon",
@@ -35,8 +35,8 @@ const buildResult = await build({
   format: "cjs",
   target: "node22",
   plugins: [nativeAddonPlugin],
-  // CJS 环境没有 import.meta.url，通过 banner 注入等价变量，
-  // 再用 define 全局替换，这样源码无需关心最终打包格式。
+  // CJS has no import.meta.url; inject equivalents via banner and rewrite them
+  // with define so sources stay agnostic of the final bundle format.
   banner: {
     js: 'var __import_meta_url = require("url").pathToFileURL(__filename).href; var __import_meta_dirname = __dirname;',
   },
@@ -52,7 +52,8 @@ const buildResult = await build({
 const remoteBundleSource = readFileSync("dist/remote/zcode-server.cjs", "utf-8");
 const bundledInputs = Object.keys(buildResult.metafile.inputs);
 validateRemoteServerBundle({ bundledInputs, source: remoteBundleSource });
-// 修复：remote 单文件 bundle 内联第三方代码，dist/remote 也必须附完整声明。
+// Fix: the remote single-file bundle inlines third-party code, so dist/remote
+// must ship the full notices too.
 await stageThirdPartyNotices("dist/remote");
 
 console.log("Built dist/remote/zcode-server.cjs");

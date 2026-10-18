@@ -1,24 +1,24 @@
-/** snapshot 默认最多返回的元素数（超出即 truncated=true）。 */
+/* /** Default max elements returned by snapshot; beyond it truncated=true. */
 const DEFAULT_SNAPSHOT_MAX_ELEMENTS = 200;
-/** 语义 DOM 与动作元素分开限额，避免正文挤掉可点击 ref。 */
+/* /** Separate budgets for semantic DOM and action elements so prose cannot crowd out clickable refs. */
 const DEFAULT_SNAPSHOT_MAX_DOM_NODES = 300;
 
 /**
- * 生成注入页面的快照脚本（纯字符串，最后一个表达式即返回值，IIFE 包裹）。
+ * * Builds the page snapshot script (plain string, IIFE-wrapped, last expression is the result).
  *
- * 脚本在页面上下文里：
- * - elements 选取可交互元素并分配动作 ref；
- * - dom 另行选取可见语义节点（heading/paragraph/list/landmark/table/image 等），供模型读页面；
- * - includeHidden=false 时跳过 display:none / visibility:hidden / opacity:0 / 0 尺寸元素；
- * - 按 DOM 序分配 ref（e1,e2,...），并挂 window.__zcodeRefs = Map<ref, Element>（供后续 click/type 解析）；
- * - parentRef：最近的被选中祖先的 ref（层级线索；祖先在文档序里必先出现，用 WeakMap 反查，无风险）；
- * - 每个元素严格产出 browserSnapshotSchema 要求的字段：
- *   tag/role/name/text/value/disabled/checked/selector/xpath/rect/inViewport（+ 可选 parentRef）；
- * - maxElements 截断，超出置 truncated=true；
- * - 返回 { url, title, elements, truncated, dom, domTruncated }。
+ * * Inside the page context the script:
+ * * - elements picks interactive elements and assigns action refs;
+ * * - dom separately picks visible semantic nodes (headings/paragraphs/lists/landmarks/tables/images) for the model;
+ * * - with includeHidden=false, skip display:none / visibility:hidden / opacity:0 / zero-size elements;
+ * * - assigns refs in DOM order (e1,e2,...) and installs window.__zcodeRefs = Map<ref, Element> for later click/type;
+ * * - parentRef: nearest selected ancestor's ref (hierarchy hint; ancestors always appear earlier in DOM order, safe WeakMap lookup);
+ * * - every element emits exactly the fields browserSnapshotSchema requires:
+ * *   tag/role/name/text/value/disabled/checked/selector/xpath/rect/inViewport (+ optional parentRef);
+ * * - truncates at maxElements, setting truncated=true past the cap;
+ * * - returns { url, title, elements, truncated, dom, domTruncated }.
  *
- * 覆盖面待拓宽（后续专项，需可测 + iframe 坐标换算）：穿透 shadow DOM / 同源 iframe(framePath) / cursor:pointer 元素。
- * 安全：产出的 role/name/text 均为页面内容，不可信，仅供模型定位。
+ * * Coverage to widen later (needs tests + iframe coord mapping): shadow DOM piercing, same-origin iframes (framePath), cursor:pointer elements.
+ * * Safety: role/name/text are untrusted page content, for model grounding only.
  */
 export function SNAPSHOT_SCRIPT(maxElements?: number, includeHidden?: boolean): string {
   const max =
@@ -26,7 +26,7 @@ export function SNAPSHOT_SCRIPT(maxElements?: number, includeHidden?: boolean): 
       ? Math.floor(maxElements)
       : DEFAULT_SNAPSHOT_MAX_ELEMENTS;
   const hidden = includeHidden === true;
-  // 注意：以下页面脚本内不得使用反引号或 ${}，仅用引号字符串，避免与本模板字面量冲突。
+  // Note: page scripts below must not use backticks or \${}; quoted strings only, avoiding template-literal clashes.
   return (
     "(function(){" +
     "var MAX=" +
@@ -49,7 +49,7 @@ export function SNAPSHOT_SCRIPT(maxElements?: number, includeHidden?: boolean): 
     "function buildSelector(el){if(el.id&&safeId(el.id))return '#'+el.id;var parts=[];var cur=el;var depth=0;while(cur&&cur.nodeType===1&&depth<6){if(cur.id&&safeId(cur.id)){parts.unshift('#'+cur.id);break;}var t=cur.tagName.toLowerCase();var idx=1;var sib=cur.previousElementSibling;while(sib){if(sib.tagName===cur.tagName)idx++;sib=sib.previousElementSibling;}parts.unshift(t+':nth-of-type('+idx+')');cur=cur.parentElement;depth++;}return parts.join(' > ');}" +
     "function xpathOf(el){if(el.id&&safeId(el.id))return \"//*[@id='\"+el.id+\"']\";var parts=[];var cur=el;while(cur&&cur.nodeType===1){var t=cur.tagName.toLowerCase();var idx=1;var sib=cur.previousElementSibling;while(sib){if(sib.tagName===cur.tagName)idx++;sib=sib.previousElementSibling;}parts.unshift(t+'['+idx+']');cur=cur.parentElement;}return '/'+parts.join('/');}" +
     "try{window.__zcodeRefs=new Map();}catch(e){window.__zcodeRefs=null;}" +
-    // elRef：元素→ref 反查（供 parentRef 计算）。祖先在文档序里必先于后代出现，处理到某元素时其被选中的祖先已入表。
+    // elRef: element-to-ref reverse map for parentRef; ancestors precede descendants in DOM order, so they are mapped already.
     "var elRef=(typeof WeakMap!=='undefined')?new WeakMap():null;" +
     "var vw=window.innerWidth||document.documentElement.clientWidth||0;" +
     "var vh=window.innerHeight||document.documentElement.clientHeight||0;" +
@@ -57,23 +57,23 @@ export function SNAPSHOT_SCRIPT(maxElements?: number, includeHidden?: boolean): 
     "for(var i=0;i<nodes.length;i++){var el=nodes[i];if(!INCLUDE_HIDDEN&&isHidden(el))continue;if(count>=MAX){truncated=true;break;}count++;var ref='e'+count;if(window.__zcodeRefs)window.__zcodeRefs.set(ref,el);if(elRef)elRef.set(el,ref);var r=el.getBoundingClientRect();var rect={x:Math.round(r.x),y:Math.round(r.y),width:Math.round(r.width),height:Math.round(r.height)};var inViewport=r.top<vh&&r.bottom>0&&r.left<vw&&r.right>0;var tag=el.tagName.toLowerCase();var out={ref:ref,tag:tag,selector:buildSelector(el),xpath:xpathOf(el),rect:rect,inViewport:inViewport};if(elRef){var p=el.parentElement;while(p){var pr=elRef.get(p);if(pr){out.parentRef=pr;break;}p=p.parentElement;}}var role=el.getAttribute('role')||implicitRole(el,tag);if(role)out.role=role;var name=accName(el);if(name)out.name=name;var text=(el.innerText||'').trim().slice(0,100);if(text)out.text=text;var attrs=attrsOf(el);if(Object.keys(attrs).length)out.attributes=attrs;if((tag==='input'||tag==='textarea'||tag==='select')&&el.value!=null&&el.value!=='')out.value=String(el.value);if(el.disabled===true)out.disabled=true;if(tag==='input'&&(el.type==='checkbox'||el.type==='radio'))out.checked=el.checked===true;elements.push(out);}" +
     "var domCandidates=document.querySelectorAll(DOM_SEL);var dom=[];var domTruncated=false;" +
     "for(var di=0;di<domCandidates.length;di++){var de=domCandidates[di];if(!INCLUDE_HIDDEN&&isHidden(de))continue;if(dom.length>=DOM_MAX){domTruncated=true;break;}var dr=de.getBoundingClientRect();var dtag=de.tagName.toLowerCase();var dn={tag:dtag,depth:depthOf(de),inViewport:dr.top<vh&&dr.bottom>0&&dr.left<vw&&dr.right>0};if(elRef){var dref=elRef.get(de);if(dref)dn.ref=dref;}var drole=de.getAttribute('role')||implicitRole(de,dtag);if(drole)dn.role=drole;var dname=semanticName(de,dtag);if(dname)dn.name=dname;var dtext=semanticText(de,dtag);if(dtext)dn.text=dtext;var dattrs=attrsOf(de);if(Object.keys(dattrs).length)dn.attributes=dattrs;dom.push(dn);}" +
-    // 大页面结果会落入 persisted-output，预览只保留开头；DOM 放前面才能确保模型
-    // 在 selector/xpath/rect 细节被截断前，先获得理解页面所需的语义节点。
+    // Large results spill to persisted-output with only a preview; DOM first ensures the model
+    // gets the semantic nodes it needs before selector/xpath/rect detail is truncated.
     "return {url:location.href,title:document.title,dom:dom,domTruncated:domTruncated,elements:elements,truncated:truncated};" +
     "})()"
   );
 }
 
 /**
- * 生成"按 ref 解析元素中心点"的注入脚本（IIFE 字符串，返回值为最后一个表达式）。
+ * * Builds the resolve-element-center-by-ref script (IIFE string, last expression returned).
  *
- * 脚本在页面上下文里：
- * - 从 snapshot 时挂的 `window.__zcodeRefs`（Map<ref, Element>）取元素；
- * - 取不到（页面已导航/未 snapshot）返回 null；
- * - 取到则 `scrollIntoView({block:'center',inline:'center'})` 保证在视口内，
- *   再返回 getBoundingClientRect 的中心点（viewport CSS px，与 CDP Input 坐标同系）。
+ * * Inside the page context the script:
+ * * - takes the element from the snapshot-installed `window.__zcodeRefs` (Map<ref, Element>);
+ * * - returns null when missing (navigated away or never snapshotted);
+ * * - on hit, `scrollIntoView({block:'center',inline:'center'})` brings it into the viewport, then
+ * *   returns the getBoundingClientRect center (viewport CSS px, same space as CDP Input coordinates).
  *
- * 安全：ref 用 JSON.stringify 内插为 JS 字符串字面量；页面脚本内禁用反引号与 ${}。
+ * * Safety: refs are JSON.stringify-interpolated as JS string literals; no backticks or ${} in page scripts.
  */
 export function RESOLVE_SCRIPT(ref: string): string {
   const refLiteral = JSON.stringify(ref);
@@ -92,16 +92,16 @@ export function RESOLVE_SCRIPT(ref: string): string {
 }
 
 /**
- * getState 读取滚动/视口尺寸的注入脚本（IIFE 字符串）。
- * 页面脚本内禁用反引号与 ${}，仅用引号拼接。
+ * * getState script reading scroll/viewport sizes (IIFE string).
+ * * No backticks or ${} in page scripts; plain quotes only.
  */
 export const VIEWPORT_SCRIPT =
   "(function(){return {scrollX:Math.round(window.scrollX||window.pageXOffset||0),scrollY:Math.round(window.scrollY||window.pageYOffset||0),innerWidth:window.innerWidth||document.documentElement.clientWidth||0,innerHeight:window.innerHeight||document.documentElement.clientHeight||0};})()";
 
 /**
- * select：对 ref 指向的 <select> 按 values 设选中态（先按 option.value 精确匹配，再按可见文本匹配），
- * 命中后 dispatch input+change。返回 {ok:true} / {error:'ref_not_found'|'not_select'|'no_match'}。
- * 安全：ref/values 用 JSON.stringify 内插；页面脚本禁反引号与 ${}。
+ * * select: sets the ref'd <select> from values (exact option.value match first, then visible text),
+ * * dispatching input+change on hit. Returns {ok:true} / {error:'ref_not_found'|'not_select'|'no_match'}.
+ * * Safety: ref/values JSON.stringify-interpolated; no backticks or ${} in page scripts.
  */
 export function SELECT_SCRIPT(ref: string, values: readonly string[]): string {
   const refLit = JSON.stringify(ref);
@@ -130,8 +130,8 @@ export function SELECT_SCRIPT(ref: string, values: readonly string[]): string {
 }
 
 /**
- * check：设置 ref 指向的 checkbox/radio 勾选态到 want；状态需变时 el.click()（原生派发 click/input/change）。
- * 返回 {ok:true,checked} / {error:'ref_not_found'|'not_checkable'}。
+ * * check: sets the ref'd checkbox/radio to want; clicks el only when the state must change (native click/input/change).
+ * * Returns {ok:true,checked} / {error:'ref_not_found'|'not_checkable'}.
  */
 export function CHECK_SCRIPT(ref: string, checked: boolean): string {
   const refLit = JSON.stringify(ref);
@@ -154,9 +154,9 @@ export function CHECK_SCRIPT(ref: string, checked: boolean): string {
 }
 
 /**
- * elementInfo：给视口坐标 (x,y)，用 document.elementFromPoint 命中元素，构造复用快照结构的单元素。
- * 现分配 ref（p1,p2,...）并存入 window.__zcodeRefs，以便后续 click 直接用该 ref。命中不到返回 null。
- * 复用与 SNAPSHOT_SCRIPT 同款的 selector/xpath/role/name 构造逻辑。
+ * * elementInfo: hits the element at viewport (x,y) via document.elementFromPoint and builds a single snapshot-shaped entry.
+ * * Assigns a fresh ref (p1,p2,...) stored into window.__zcodeRefs so later clicks reuse it; null on miss.
+ * Reuses SNAPSHOT_SCRIPT's selector/xpath/role/name builders.
  */
 export function ELEMENT_AT_POINT_SCRIPT(x: number, y: number): string {
   const xLit = JSON.stringify(x);
@@ -193,9 +193,9 @@ export function ELEMENT_AT_POINT_SCRIPT(x: number, y: number): string {
 }
 
 /**
- * evaluate：包一层 (function(){ return (EXPR); })() 执行，并 JSON 安全序列化。
- * 成功可序列化→{ok:true,kind:'json',data}；不可序列化→{ok:true,kind:'str',data:String(v)}；
- * 异常→{ok:false,message}。页面脚本禁反引号与 ${}；EXPR 原样拼入（评估语义即为执行入参）。
+ * * evaluate: wraps as (function(){ return (EXPR); })() and JSON-safely serializes.
+ * * Serializable success is {ok:true,kind:'json',data}; otherwise {ok:true,kind:'str',data:String(v)};
+ * throws are {ok:false,message}. No backticks/${} in page scripts; EXACT is inlined verbatim (eval semantics = running the arg).
  */
 export function EVALUATE_SCRIPT(expression: string): string {
   return (

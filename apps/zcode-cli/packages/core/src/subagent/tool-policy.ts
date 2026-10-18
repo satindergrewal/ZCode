@@ -16,7 +16,7 @@ export function filterSubagentChildToolNames(
   toolNames: readonly string[],
   disallowedTools: readonly string[] | undefined,
 ): readonly string[] {
-  // 子 agent 没有独立的 plan approval 恢复面，暴露 plan tools 会让
-  // ExitPlanMode 等待用户确认并卡住父 turn，因此所有子 agent 工具面统一剔除。
+  // Subagents have no plan-approval recovery surface of their own; exposing plan tools would leave
+  // ExitPlanMode waiting on user confirmation and stall the parent turn, so every subagent surface drops them.
   return filterDisallowedToolNames(toolNames, buildSubagentChildDisallowRules(disallowedTools));
 }

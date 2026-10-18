@@ -13,9 +13,9 @@ function resolveMergedTaskTitle(preferredTask: ZCodeTaskMeta, fallbackTask: ZCod
   if (fallbackTask.titleOverridden && !preferredTask.titleOverridden) {
     return fallbackTask.title;
   }
-  // session/send 是立即 ACK，首发 ACK 后的 readSession 可能早于后台 first_input title 投影。
-  // 此时 snapshot 会带回 agent 默认占位 "New session"；如果它的 updatedAt 更新，旧合并逻辑会把
-  // 用户 query 乐观标题短暂盖掉。这里仅把空标题/默认占位视为不可覆盖真实标题，generated title 仍照常覆盖。
+  // session/send ACKs immediately, so the post-ACK readSession can precede the background first_input title projection.
+  // The snapshot then carries the agent default placeholder "New session"; with a newer updatedAt, the old merge
+  // briefly clobbered the optimistic query title. Only empty/placeholder titles yield to real ones; generated titles still win.
   if (isPlaceholderTaskTitle(preferredTask.title) && !isPlaceholderTaskTitle(fallbackTask.title)) {
     return fallbackTask.title;
   }
@@ -47,9 +47,9 @@ export function mergeTaskWithOptimisticMeta(
       preferredTask.titleOverridden === true || fallbackTask.titleOverridden === true
         ? true
         : (preferredTask.titleOverridden ?? fallbackTask.titleOverridden),
-    // 远控首页“运行中”依赖 task.meta.status 作为未订阅 runtime 时的兜底。
-    // 之前乐观元数据 updatedAt 更新后，如果自身没带 status，会把持久化 status 覆盖成 undefined，
-    // 最终列表误显示 idle。这里补 status 回退，避免 running/completed/error 被乐观层吞掉。
+    // The remote home screen's "running" relies on task.meta.status when no runtime is subscribed.
+    // A newer optimistic meta without status used to overwrite the persisted status with undefined,
+    // making the list show idle. Fall status back so running/completed/error survive the optimistic layer.
     status: preferredTask.status ?? fallbackTask.status,
     unreadAt,
   };

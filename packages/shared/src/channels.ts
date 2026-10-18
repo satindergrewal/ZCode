@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 通信频道和请求响应映射必须集中定义，避免跨进程 channel 字符串散落。 */
+/* eslint-disable max-lines -- transport channels and request/response maps must stay centralized; scattering channel strings across processes caused drift. */
 import type {
   ResourceUsageSnapshot,
   LoadCliMcpFromUserDirectoryRequest,
@@ -68,375 +68,375 @@ import type {
 } from "./cuaAccessibilitySettings.js";
 
 // ============================================================================
-// RPC 服务频道 —— 通过 ChannelServer/ChannelClient 传输
+// RPC service channels - transported via ChannelServer/ChannelClient
 // ============================================================================
 
-/** RPC 服务频道名。与 ServiceDescriptor.channelName 对应。 */
+/** RPC service channel name; matches ServiceDescriptor.channelName. */
 export const ServiceChannels = {
   File: "file",
   MediaPreview: "media-preview",
   System: "system",
   Terminal: "terminal",
-  /** Git 服务 */
+  /** Git service */
   Git: "git",
-  /** Git checkpoint 服务 */
+  /** Git checkpoint service */
   GitCheckpoint: "git-checkpoint",
   Setting: "setting",
-  /** 凭据管理（从 main IPC 迁移到 host RPC） */
+  /** Credential management (migrated from main IPC to host RPC) */
   Credential: "credential",
-  /** Computer Use Helper macOS 权限服务 */
+  /** Computer Use Helper macOS permission service */
   CuaPermission: "cua-permission",
   /** producer-owned PiP session presentation client */
   CuaPipSession: "cua-pip-session",
-  /** 跨窗口广播 */
+  /** Cross-window broadcast */
   Broadcast: "broadcast",
-  /** ZCode task wrapper 服务 */
+  /** ZCode task wrapper service */
   ZCodeTask: "zcode-task",
-  /** 窗口 Host 聚合 workspace/task 投影与列表写路由 */
+  /** Window Host aggregating workspace/task projections and list write routing */
   WindowController: "window-controller",
-  /** ZCode Protocol agent 服务 */
+  /** ZCode Protocol agent service */
   ZCodeAgent: "zcode-agent",
-  /** ZCode session 应用服务 */
+  /** ZCode session application service */
   ZCodeSession: "zcode-session",
-  /** 会话分享发布、预览与 continuation API 编排 */
+  /** Session share publish/preview and continuation API orchestration */
   ConversationShare: "conversation-share",
-  /** 文件系统监视服务 */
+  /** File system watcher service */
   FileWatcher: "file-watcher",
-  /** OAuth 认证服务 */
+  /** OAuth authentication service */
   OAuth: "oauth",
-  /** 新 Provider Config 的设置读写 Facade */
+  /** Settings facade for the new Provider Config */
   ProviderSettings: "provider-settings",
-  /** 新 Provider Registry 的模型选择 Facade */
+  /** Model selection facade for the new Provider Registry */
   ModelSelection: "model-selection",
-  /** 远端 Environment 内部 Provider Provisioning target */
+  /** Provider provisioning target inside a remote environment */
   ProviderProvisioningTarget: "provider-provisioning-target",
-  /** 本地 usage 统计服务 */
+  /** Local usage stats service */
   UsageStats: "usage-stats",
-  /** Coding Plan 订阅购买服务 */
+  /** Coding Plan subscription purchase service */
   CodingPlanSubscription: "coding-plan-subscription",
   ClientConfig: "client-config",
-  /** ZCode 客户端场景配置服务 */
+  /** ZCode client scenario configuration service */
   ClientScenes: "client-scenes",
-  /** Skills 管理服务 */
+  /** Skills management service */
   Skills: "skills",
-  /** SSH 远程 skills 同步服务 */
+  /** SSH remote skills sync service */
   SkillSync: "skill-sync",
-  /** SSH 远程 MCP 同步服务 */
+  /** SSH remote MCP sync service */
   McpSync: "mcp-sync",
-  /** SSH 远程 plugin 同步服务 */
+  /** SSH remote plugin sync service */
   PluginSync: "plugin-sync",
-  /** 插件管理服务 */
+  /** Plugin management service */
   Plugins: "plugins",
-  /** 设置页插件管理服务（UI 平台能力面收敛，不再直触 zcodeAgentService） */
+  /** Settings-page plugin management (funnels UI platform capabilities; no direct zcodeAgentService access) */
   PluginManagement: "plugin-management",
-  /** Subagents 管理服务 */
+  /** Subagents management service */
   Subagents: "subagents",
-  /** Commands 管理服务 */
+  /** Commands management service */
   Commands: "commands",
-  /** Hooks 管理服务 */
+  /** Hooks management service */
   Hooks: "hooks",
-  /** Memory 管理服务 */
+  /** Memory management service */
   Memory: "memory",
-  /** 首次启动设置同步服务 */
+  /** First-run setup sync service */
   SettingsSync: "settings-sync",
-  /** Bots 远程聊天控制服务 */
+  /** Bot remote-chat control service */
   Bots: "bots",
-  /** 用户反馈工单服务 */
+  /** User feedback ticket service */
   Feedback: "feedback",
-  /** Composer 附件在 host-local 与 remote runtime 之间的预传服务 */
+  /** Pre-transfer for composer attachments between host-local and remote runtimes */
   PromptAttachmentTransfer: "prompt-attachment-transfer",
-  /** 闲时任务管理服务（与 automation 服务面独立） */
+  /** Idle-time task management (separate surface from the automation service) */
   OffPeakTask: "off-peak-task",
-  /** Onboarding 完成记录服务（本地持久化，后续上传服务器） */
+  /** Onboarding completion record (local persistence, uploaded later) */
   OnboardingRecord: "onboarding-record",
 } as const;
 
 export type ServiceChannelName = (typeof ServiceChannels)[keyof typeof ServiceChannels];
 
 // ============================================================================
-// 平台频道 —— 仅 Desktop main 进程能处理的操作（Electron IPC）
+// Platform channels - handled only by the Desktop main process (Electron IPC)
 // ============================================================================
 
-/** Electron IPC 频道名。仅在 preload ↔ main 之间使用。 */
+/** Electron IPC channel names; used only between preload and main. */
 export const PlatformChannels = {
-  /** 打开系统目录选择框 */
+  /** Open the system directory picker */
   SelectDirectory: "zcode:select-directory",
-  /** 打开系统文件选择框 */
+  /** Open the system file picker */
   SelectFile: "zcode:select-file",
-  /** 打开系统多文件选择框 */
+  /** Open the system multi-file picker */
   SelectFiles: "zcode:select-files",
-  /** Renderer → Main：写入宿主 ~/.zcode 临时文本附件 */
+  /** Renderer -> Main: write a temp text attachment under the host ~/.zcode */
   CreateTempTextAttachment: "zcode:create-temp-text-attachment",
-  /** Renderer → Main：通过原生另存为对话框保存文件 */
+  /** Renderer -> Main: save a file via the native save-as dialog */
   SaveFile: "zcode:save-file",
-  /** Renderer → Main：用 Chromium 打印引擎把当前页面 print 媒体版面导出为 PDF */
+  /** Renderer -> Main: export the page's print layout to PDF via the Chromium print engine */
   PrintToPdf: "zcode:print-to-pdf",
-  /** Main → Renderer：转发远程连接过程日志 */
+  /** Main -> Renderer: forward remote-connection progress logs */
   RemoteConnectionLog: "zcode:remote-connection-log",
-  /** Main → Renderer：远程 workspace session 已关闭 */
+  /** Main -> Renderer: remote workspace session closed */
   RemoteSessionClosed: "zcode:remote-session-closed",
-  /** Main → Renderer：Bot 已触发远端 workspace 重连成功 */
+  /** Main -> Renderer: bot-triggered remote workspace reconnect succeeded */
   BotRemoteWorkspaceReconnected: "zcode:bot-remote-workspace-reconnected",
-  /** 检查目录是否已在其他窗口打开，如果是则激活该窗口 */
+  /** Check whether the directory is open in another window; activate it if so */
   ActivateOrSetWorkspace: "zcode:activate-or-set-workspace",
-  /** 建立 SSH 远程连接 */
+  /** Establish an SSH remote connection */
   ConnectRemote: "zcode:connect-remote",
-  /** 取消当前窗口正在进行中的远程连接 */
+  /** Cancel the in-flight remote connection of this window */
   CancelPendingRemoteConnection: "zcode:cancel-pending-remote-connection",
-  /** Renderer → Main：绑定远程 logical session 的 canonical workspace context */
+  /** Renderer -> Main: bind the canonical workspace context of a remote logical session */
   BindRemoteWorkspaceSessionContext: "zcode:bind-remote-workspace-session-context",
-  /** 释放当前窗口里的远程 session */
+  /** Release the remote session held by this window */
   DisposeRemoteSession: "zcode:dispose-remote-session",
-  /** Renderer → Main：检查本机 Docker daemon 是否可用 */
+  /** Renderer -> Main: check whether the local Docker daemon is available */
   IsDockerAvailable: "zcode:is-docker-available",
-  /** Renderer → Main：列出本机可用的 WSL 发行版 */
+  /** Renderer -> Main: list available local WSL distros */
   ListWSLDistros: "zcode:list-wsl-distros",
-  /** Renderer → Main：列出当前可连接的 Docker 容器 */
+  /** Renderer -> Main: list connectable Docker containers */
   ListDockerContainers: "zcode:list-docker-containers",
-  /** Renderer → Main：列出 SSH config 里可用于快速填表的 alias */
+  /** Renderer -> Main: list SSH config aliases usable for quick-fill */
   ListSSHConfigAliases: "zcode:list-ssh-config-aliases",
-  /** Renderer → Main：从用户目录加载 CLI MCP 配置 */
+  /** Renderer -> Main: load the CLI MCP config from the user directory */
   LoadMcpFromUserDirectory: "zcode:load-mcp-from-user-directory",
-  /** Renderer → Main：保存 CLI MCP 配置到用户目录 */
+  /** Renderer -> Main: save the CLI MCP config to the user directory */
   SaveMcpToUserDirectory: "zcode:save-mcp-to-user-directory",
-  /** Renderer 日志转发到 main 进程统一存储 */
+  /** Forward renderer logs to main for unified storage */
   Log: "zcode:log",
-  /** Renderer → Main：同步当前窗口所有 tab 的 workspace 路径 */
+  /** Renderer -> Main: sync workspace paths of all tabs in this window */
   SyncWindowTabs: "zcode:sync-window-tabs",
-  /** Renderer → Main：同步当前窗口的未读 task 数 */
+  /** Renderer -> Main: sync this window's unread task count */
   SyncWindowUnreadCount: "zcode:sync-window-unread-count",
-  /** Renderer → Main：当前窗口 active task，只更新 Main 的临时焦点映射。 */
+  /** Renderer -> Main: active task of this window; only updates main's ephemeral focus map. */
   SyncActiveTaskSession: "zcode:sync-active-task-session",
-  /** Renderer → Main：同步 main 进程需即时感知的应用设置 */
+  /** Renderer -> Main: sync app settings main must see immediately */
   SyncAppSettings: "zcode:sync-app-settings",
-  /** Renderer → Main：快捷键设置页录制态开关；true = main 暂时摘除可配置菜单 accelerator */
+  /** Renderer -> Main: shortcut recording toggle; true = main temporarily removes configurable menu accelerators */
   SetShortcutRecordingActive: "zcode:set-shortcut-recording-active",
-  /** Main → Renderer：聚焦到指定 workspace 路径的 tab */
+  /** Main -> Renderer: focus the tab of the given workspace path */
   FocusTab: "zcode:focus-tab",
-  /** Main → Renderer：菜单触发新建 tab */
+  /** Main -> Renderer: menu-triggered new tab */
   NewTab: "zcode:new-tab",
-  /** Main → Renderer：菜单或快捷键请求关闭当前上下文 */
+  /** Main -> Renderer: menu/shortcut asks to close the current context */
   CloseActiveContextRequest: "zcode:close-active-context-request",
-  /** Main → Renderer：内置 webview 请求打开新的浏览器 tab */
+  /** Main -> Renderer: embedded webview asks to open a new browser tab */
   OpenBrowserUrl: "zcode:open-browser-url",
-  /** Main → Renderer：agent 首次 browser 命令建好受控 view，通知 renderer 自动开 browser-use tab */
+  /** Main -> Renderer: the agent's first browser command created a controlled view; renderer auto-opens the browser-use tab */
   BrowserViewReady: "zcode:browser-view-ready",
-  /** Main → Renderer：agent 正在操作某个 browser-use tab，renderer 临时显示状态图标 */
+  /** Main -> Renderer: agent is driving a browser-use tab; renderer shows a transient status icon */
   BrowserViewOperation: "zcode:browser-view-operation",
-  /** Main → Renderer：browser visibility capability 显示/隐藏 IAB 右侧面板 */
+  /** Main -> Renderer: browser visibility capability shows/hides the IAB side panel */
   BrowserViewVisibility: "zcode:browser-view-visibility",
-  /** Main → Renderer：Agent 设置/重置目标 tab viewport */
+  /** Main -> Renderer: agent sets/resets the target tab viewport */
   BrowserViewViewportChanged: "zcode:browser-view-viewport-changed",
-  /** Main → Renderer：截图前请求 owner renderer 准备后台 guest 合成表面。 */
+  /** Main -> Renderer: ask the owner renderer to prepare a background guest compositing surface before a screenshot. */
   BrowserViewScreenshotSurfacePrepare: "zcode:browser-view-screenshot-surface-prepare",
-  /** Renderer → Main：目标 guest 连续两个 animation frame 的 viewport 已稳定。 */
+  /** Renderer -> Main: viewport stable across two consecutive animation frames of the target guest. */
   BrowserViewScreenshotSurfaceReady: "zcode:browser-view-screenshot-surface-ready",
-  /** Main → Renderer：截图结束或准备失败，释放临时后台合成层。 */
+  /** Main -> Renderer: capture finished or prepare failed; release the temporary background layer. */
   BrowserViewScreenshotSurfaceRelease: "zcode:browser-view-screenshot-surface-release",
-  /** Main → Renderer：agent close 命令 detach 受控 guest 后，通知 renderer 卸载对应 tab */
+  /** Main -> Renderer: after agent close detached the controlled guest, tell the renderer to unmount that tab */
   BrowserViewCloseTab: "zcode:browser-view-close-tab",
-  /** Main → Renderer：预算淘汰时卸载 guest，但保留 logical tab shell。 */
+  /** Main -> Renderer: budget eviction unmounts the guest but keeps the logical tab shell. */
   BrowserViewSuspend: "zcode:browser-view-suspend",
-  /** Main → Renderer：为 suspended shell 重新挂载 guest。 */
+  /** Main -> Renderer: remount the guest for a suspended shell. */
   BrowserViewRestore: "zcode:browser-view-restore",
-  /** Main → Renderer：菜单触发新建任务 */
+  /** Main -> Renderer: menu-triggered new task */
   NewTask: "zcode:new-task",
-  /** Main → Renderer：菜单触发打开工作区 */
+  /** Main -> Renderer: menu-triggered open workspace */
   OpenWorkspace: "zcode:open-workspace",
-  /** Main → Renderer：deep link 直接打开指定本地工作区目录 */
+  /** Main -> Renderer: deep link opens the given local workspace directory */
   OpenWorkspacePath: "zcode:open-workspace-path",
-  /** Main → Renderer：打开内置反馈对话框 */
+  /** Main -> Renderer: open the built-in feedback dialog */
   OpenFeedbackDialog: "zcode:open-feedback-dialog",
-  /** Main → Renderer：打开我的工单面板 */
+  /** Main -> Renderer: open my-tickets panel */
   OpenTicketsPanel: "zcode:open-tickets-panel",
-  /** Main → Renderer：窗口全屏状态变化 */
+  /** Main -> Renderer: window fullscreen state changed */
   WindowFullscreenChanged: "zcode:window-fullscreen-changed",
-  /** Renderer → Main：读取窗口最大化状态与系统原生圆角能力 */
+  /** Renderer -> Main: read window maximized state and native rounded-corner capability */
   GetDesktopWindowChromeState: "zcode:get-desktop-window-chrome-state",
-  /** Main → Renderer：窗口最大化状态与系统原生圆角能力变化 */
+  /** Main -> Renderer: maximized state / native rounded-corner capability changed */
   DesktopWindowChromeStateChanged: "zcode:desktop-window-chrome-state-changed",
-  /** Main → Renderer：原生窗口控制区安全边距变化 */
+  /** Main -> Renderer: native window-controls inset changed */
   WindowControlsOverlayChanged: "zcode:window-controls-overlay-changed",
-  /** Preload → Main：preload 已同步读到当前窗口控制区安全边距 */
+  /** Preload -> Main: preload read the current window-controls inset synchronously */
   WindowControlsOverlayReady: "zcode:window-controls-overlay-ready",
-  /** 获取资源管理器快照（CPU / 内存，按基础服务、内置插件、社区插件归类） */
+  /** Resource monitor snapshot (CPU/memory, grouped by base services, built-in plugins, community plugins) */
   GetResourceUsageSnapshot: "zcode:get-resource-usage-snapshot",
   SetResourceUsageSamplingActive: "zcode:set-resource-usage-sampling-active",
-  /** 打开资源管理器窗口（其他窗口触发） */
+  /** Open the resource monitor window (triggered from other windows) */
   OpenResourceManager: "zcode:open-resource-manager",
-  /** 资源管理器「存储」tab：开始扫描本机 .zcode 占用（main 持有 StorageService，Worker 线程遍历） */
+  /** Resource monitor storage tab: start scanning local .zcode usage (main owns StorageService, worker thread walks) */
   StorageStartScan: "zcode:storage-start-scan",
-  /** 资源管理器「存储」tab：取消扫描 */
+  /** Resource monitor storage tab: cancel scan */
   StorageCancelScan: "zcode:storage-cancel-scan",
-  /** 资源管理器「存储」tab：读取最近一次快照 */
+  /** Resource monitor storage tab: read the latest snapshot */
   StorageGetSnapshot: "zcode:storage-get-snapshot",
-  /** 资源管理器「存储」tab：按类别清理 */
+  /** Resource monitor storage tab: clean up by category */
   StorageClean: "zcode:storage-clean",
-  /** 资源管理器「存储」tab：在系统文件管理器中定位数据根内的路径 */
+  /** Resource monitor storage tab: reveal a path under the data root in the system file manager */
   StorageRevealPath: "zcode:storage-reveal-path",
-  /** Main → 资源管理器 renderer：扫描进度快照推送 */
+  /** Main -> monitor renderer: push scan-progress snapshot */
   StorageScanProgress: "zcode:storage-scan-progress",
-  /** Renderer → Main：打开外部 URL（用于 OAuth 跳转浏览器） */
+  /** Renderer -> Main: open an external URL (OAuth browser hop) */
   OpenExternal: "zcode:open-external",
-  /** Renderer → Main：查询当前语言下是否存在可用的用户社群入口 */
+  /** Renderer -> Main: query whether a community entry exists for the current language */
   CanOpenCommunity: "zcode:can-open-community",
-  /** Renderer → Main：在系统文件管理器中打开路径 */
+  /** Renderer -> Main: open a path in the system file manager */
   OpenInFileManager: "zcode:open-in-file-manager",
-  /** Renderer → Main：使用系统默认应用打开本地文件 */
+  /** Renderer -> Main: open a local file with the system default app */
   OpenExternalFile: "zcode:open-external-file",
-  /** Renderer → Main：打开 ZCode Computer Use 权限引导 */
+  /** Renderer -> Main: open the ZCode Computer Use permission guide */
   OpenCuaPermissionOnboarding: "zcode:open-cua-permission-onboarding",
-  /** Renderer → Main：取消当前 renderer 发起的一次权限引导 participant */
+  /** Renderer -> Main: cancel a permission-guide participant started by this renderer */
   CancelCuaPermissionOnboarding: "zcode:cancel-cua-permission-onboarding",
   /**
-   * Renderer → Main：预热并缓存已验证的 Helper 路径 + bundle 指纹。
-   * 必须在拖拽浮窗挂载时调用 —— dragstart 链路里不允许任何异步 I/O。
+   * Renderer -> Main: warm and cache the verified Helper path + bundle fingerprint.
+   * Must be called when the drag floater mounts - no async IO allowed in the dragstart path.
    */
   PrepareCuaHelperPermissionDrag: "zcode:prepare-cua-helper-permission-drag",
-  /** Renderer → Main：把已验证的 Helper.app 同步拖出到 macOS 权限列表 */
+  /** Renderer -> Main: drag the verified Helper.app into the macOS permission list */
   StartCuaHelperPermissionDrag: "zcode:start-cua-helper-permission-drag",
   /**
-   * Renderer → Main：拖拽手势结束。
-   * 拖完授权即完成，浮窗该让位（用户此时要看设置页和系统的重启提示）。必须等 dragend 而不是
-   * 在 dragstart 里就收窗：startDrag 只是把 drag session 交给 OS，非阻塞，drag source
-   * 立刻消失可能打断正在进行的拖拽。
+   * Renderer -> Main: drag gesture ended.
+   * Authorization completes with the drop, so the floater must yield (the user needs the settings page and the OS restart prompt). Wait for dragend, not
+   * closing during dragstart: startDrag merely hands the drag session to the OS, non-blocking; an instantly
+   * vanished drag source can interrupt an ongoing drag.
    */
   NotifyCuaHelperPermissionDragEnded: "zcode:notify-cua-helper-permission-drag-ended",
-  /** Renderer → Main：上报 OAuth state 用于 deep link 路由 */
+  /** Renderer -> Main: report OAuth state for deep link routing */
   OAuthRegisterState: "zcode:oauth-register-state",
-  /** Main → Renderer：转发 deep link URL */
+  /** Main -> Renderer: forward deep link URL */
   OAuthCallback: "zcode:oauth-callback",
-  /** Main → Renderer：转发支付 deep link URL */
+  /** Main -> Renderer: forward payment deep link URL */
   PaymentCallback: "zcode:payment-callback",
-  /** Main → Renderer：外部分享页请求导入 share code。 */
+  /** Main -> Renderer: external share page requests share-code import. */
   ShareImport: "zcode:share-import",
-  /** Renderer → Main：OAuth 回调已处理完成，可继续后置启动流程 */
+  /** Renderer -> Main: OAuth callback handled; post-launch flow may continue */
   OAuthCallbackHandled: "zcode:oauth-callback-handled",
-  /** Renderer → Main：renderer 已就绪，可接收缓存的 deep link */
+  /** Renderer -> Main: renderer ready to receive cached deep links */
   RendererReady: "zcode:renderer-ready",
-  /** Renderer → Main：同步当前 renderer 的 telemetry 上下文 */
+  /** Renderer -> Main: sync this renderer's telemetry context */
   SyncTelemetryContext: "zcode:sync-telemetry-context",
-  /** Renderer → Main：通过统一 telemetry 层上报业务事件 */
+  /** Renderer -> Main: report a business event via the unified telemetry layer */
   ReportTelemetryEvent: "zcode:report-telemetry-event",
-  /** Renderer → Main：上报 ARMS 自定义事件 */
+  /** Renderer -> Main: report an ARMS custom event */
   ReportArmsCustomEvent: "zcode:report-arms-custom-event",
-  /** Renderer → Main：读取 Renderer 用户操作 Trace 灰度配置。 */
+  /** Renderer -> Main: read the user-action trace rollout config. */
   GetRendererActionTraceConfig: "zcode:get-renderer-action-trace-config",
-  /** Main → Renderer：Renderer 用户操作 Trace 灰度配置变化。 */
+  /** Main -> Renderer: user-action trace rollout config changed. */
   RendererActionTraceConfigChanged: "zcode:renderer-action-trace-config-changed",
-  /** Renderer → Main：发送已结束的 ui_action batch。 */
+  /** Renderer -> Main: send a finished ui_action batch. */
   ReportRendererActionTraceBatch: "zcode:report-renderer-action-trace-batch",
-  /** Renderer → Main：主窗口 renderer 每 60 秒的 heap 读数，单向 send，不需要回执。 */
+  /** Renderer -> Main: main-window renderer heap sample every 60s; one-way send, no ack. */
   ReportRendererHeapSample: "zcode:report-renderer-heap-sample",
   ReportLocalTtftBatch: "zcode:report-local-ttft-batch",
-  /** E2E preload → Main：读取 sendCustom 最终参数的内存 ring。 */
+  /** E2E preload -> Main: read the in-memory ring of final sendCustom args. */
   ReadFinalArmsCustomEventsE2E: "zcode:e2e:read-final-arms-custom-events",
-  /** E2E preload → Main：清空 sendCustom 最终参数的内存 ring。 */
+  /** E2E preload -> Main: clear the sendCustom final-args ring. */
   ClearFinalArmsCustomEventsE2E: "zcode:e2e:clear-final-arms-custom-events",
-  /** E2E preload → Main：配置只针对目标 event name 的真实网络抑制。 */
+  /** E2E preload -> Main: configure real-network suppression for one event name. */
   ConfigureFinalArmsCustomEventsE2E: "zcode:e2e:configure-final-arms-custom-events",
-  /** Renderer → Main：触发任务完成/失败的系统通知 */
+  /** Renderer -> Main: fire the task completed/failed system notification */
   ShowTaskNotification: "zcode:show-task-notification",
-  /** Main → Preload：通知 renderer 播放任务通知提示音 */
+  /** Main -> Preload: tell the renderer to play the task notification sound */
   TaskNotificationSound: "zcode:task-notification-sound",
-  /** Main → Preload：用户点击了系统通知，携带 taskId 让 renderer 跳转到对应任务 */
+  /** Main -> Preload: user clicked a system notification; carries taskId so the renderer jumps to it */
   TaskNotificationClick: "zcode:task-notification-click",
-  /** Renderer → Main：导出日志（打包 ~/.zcode/v2 及外部 agent 日志为 zip 并在 Finder 中显示） */
+  /** Renderer -> Main: export logs (zip packaged ~/.zcode/v2 + external agent logs, reveal in Finder) */
   ExportLogs: "zcode:export-logs",
-  /** Renderer → Main：截取当前窗口作为反馈附件 */
+  /** Renderer -> Main: capture this window as a feedback attachment */
   CaptureWindowScreenshot: "zcode:capture-window-screenshot",
   /**
-   * Renderer → Main：`<webview>` guest dom-ready 后上报 webContentsId，
-   * main 用 BrowserGuestManager attach 该 guest（fire-and-forget）。CDP-on-guest pivot。
+   * Renderer -> Main: report webContentsId after `<webview>` guest dom-ready;
+   * main attaches the guest via BrowserGuestManager (fire-and-forget). CDP-on-guest pivot.
    */
   BrowserViewAttachGuest: "zcode:browser-view-attach-guest",
-  /** Renderer → Main：重建 `<webview>` 前主动断开旧 guest 的 CDP。 */
+  /** Renderer -> Main: proactively detach the old guest's CDP before the <webview> is rebuilt. */
   BrowserViewDetachGuest: "zcode:browser-view-detach-guest",
-  /** Renderer → Main：用户显式关闭 Browser tab。 */
+  /** Renderer -> Main: user explicitly closed a Browser tab. */
   BrowserViewCloseTabFromRenderer: "zcode:browser-view-close-tab-from-renderer",
-  /** Renderer → Main：上报 Browser tab residency/display facts。 */
+  /** Renderer -> Main: report Browser tab residency/display facts. */
   BrowserViewReportResidency: "zcode:browser-view-report-residency",
-  /** Renderer → Main：指定 generation 的 guest 已卸载。 */
+  /** Renderer -> Main: the guest of the given generation unmounted. */
   BrowserViewSuspendReady: "zcode:browser-view-suspend-ready",
-  /** Renderer → Main：用户访问 suspended tab，请求恢复。 */
+  /** Renderer -> Main: user visited a suspended tab; request restore. */
   BrowserViewEnsureResident: "zcode:browser-view-ensure-resident",
-  /** Renderer → Main：读取 workspace/task 的持久化 logical shells。 */
+  /** Renderer -> Main: read persisted logical shells of workspaces/tasks. */
   BrowserViewRestoreTabs: "zcode:browser-view-restore-tabs",
-  /** Renderer → Main：自由尺寸拖拽/开关回写目标 guest viewport */
+  /** Renderer -> Main: write back the free-size drag/toggle target guest viewport */
   BrowserViewUpdateViewport: "zcode:browser-view-update-viewport",
-  /** Embedded Browser preload → Main：在网页原生 Dialog 创建前同步请求可信系统框。 */
+  /** Embedded Browser preload -> Main: synchronously request a trusted system dialog before a native page dialog opens. */
   EmbeddedBrowserJavaScriptDialog: "zcode:embedded-browser-javascript-dialog",
-  /** Renderer → Main：把自动发现的本机 Chrome Profile 数据一次性导入内置浏览器分区。 */
+  /** Renderer -> Main: one-time import of auto-discovered local Chrome profile data into the built-in browser. */
   ImportChromeBrowserData: "zcode:import-chrome-browser-data",
-  /** Renderer → Main：清理内置浏览器缓存或全部站点数据。 */
+  /** Renderer -> Main: clear built-in browser cache or all site data. */
   ClearEmbeddedBrowserData: "zcode:clear-embedded-browser-data",
-  /** Main → Renderer：通知有新版本已下载完毕，可以重启安装 */
+  /** Main -> Renderer: a new version finished downloading; restart to install */
   UpdateReady: "zcode:update-ready",
-  /** Main → Renderer：用户手动点击"检查更新"后的结果反馈（toast 用） */
+  /** Main -> Renderer: result after the user clicked check-for-updates (for the toast) */
   UpdateCheckResult: "zcode:update-check-result",
-  /** Main → Renderer：自动更新持续状态变化（菜单 UI 用） */
+  /** Main -> Renderer: auto-update ongoing state changed (for menu UI) */
   UpdateStateChanged: "zcode:update-state-changed",
-  /** Renderer → Main：主动获取当前自动更新状态（菜单打开时补偿事件丢失） */
+  /** Renderer -> Main: fetch current auto-update state (compensates lost events when the menu opens) */
   GetUpdateState: "zcode:get-update-state",
-  /** Renderer → Main：开始下载当前已发现的自动更新 */
+  /** Renderer -> Main: start downloading the discovered update */
   DownloadUpdate: "zcode:download-update",
-  /** Renderer → Main：取消当前正在下载的自动更新 */
+  /** Renderer -> Main: cancel the in-flight update download */
   CancelUpdateDownload: "zcode:cancel-update-download",
-  /** Renderer → Main：打开独立自动更新窗口 */
+  /** Renderer -> Main: open the dedicated auto-update window */
   OpenUpdateStatusWindow: "zcode:open-update-status-window",
-  /** Renderer → Main：读取自动更新偏好 */
+  /** Renderer -> Main: read auto-update preferences */
   GetAutoUpdatePreferences: "zcode:get-auto-update-preferences",
-  /** Renderer → Main：写入“自动下载并安装更新”偏好 */
+  /** Renderer -> Main: write the auto-download-and-install preference */
   SetAutoDownloadAndInstallUpdates: "zcode:set-auto-download-and-install-updates",
-  /** Renderer → Main：查询桌面端正在运行的会话数量 */
+  /** Renderer -> Main: query the number of running desktop sessions */
   GetDesktopSessionActivity: "zcode:get-desktop-session-activity",
-  /** Renderer → Main：读取当前窗口页面缩放档位 */
+  /** Renderer -> Main: read this window's page zoom level */
   GetDesktopZoomLevel: "zcode:get-desktop-zoom-level",
-  /** Main → Renderer：当前窗口页面缩放档位变化 */
+  /** Main -> Renderer: page zoom level changed for this window */
   DesktopZoomLevelChanged: "zcode:desktop-zoom-level-changed",
-  /** Renderer → Main：读取开发态 stdio tap proxy 开关状态 */
+  /** Renderer -> Main: read the dev-mode stdio tap proxy toggle */
   GetZCodeStdioTapDevState: "zcode:get-zcode-stdio-tap-dev-state",
-  /** Main → Renderer：本地 setting.json 已由 main 进程更新 */
+  /** Main -> Renderer: settings.json updated by the main process */
   SettingsChanged: "zcode:settings-changed",
-  /** Main → Renderer：应用语言已切换 */
+  /** Main -> Renderer: app language switched */
   ApplicationLocaleChanged: "zcode:application-locale-changed",
-  /** Renderer → Main：读取宿主系统语言 */
+  /** Renderer -> Main: read the host system locale */
   GetSystemLocale: "zcode:get-system-locale",
-  /** Main → Renderer：更新安装后的版本说明 */
+  /** Main -> Renderer: release notes after an update was installed */
   PostUpdateReleaseNotes: "zcode:post-update-release-notes",
-  /** Renderer → Main：确认版本说明已读 */
+  /** Renderer -> Main: acknowledge release notes as read */
   AcknowledgePostUpdateReleaseNotes: "zcode:ack-post-update-release-notes",
-  /** Renderer → Main：跳过当前已发现的自动更新版本 */
+  /** Renderer -> Main: skip the currently discovered update version */
   SkipUpdateVersion: "zcode:skip-update-version",
-  /** Renderer → Main：用户确认重启安装更新 */
+  /** Renderer -> Main: user confirmed restart-to-install */
   QuitAndInstallUpdate: "zcode:quit-and-install-update",
-  /** Renderer → Main：获取系统中已安装的编辑器/终端列表（含图标） */
+  /** Renderer -> Main: list installed editors/terminals (with icons) */
   GetInstalledEditors: "zcode:get-installed-editors",
-  /** Renderer → Main：按 bundle id 获取系统应用图标 */
+  /** Renderer -> Main: get an app icon by bundle id */
   GetApplicationIcon: "zcode:get-application-icon",
-  /** Renderer → Main：用指定编辑器打开路径 */
+  /** Renderer -> Main: open a path with the given editor */
   OpenInEditor: "zcode:open-in-editor",
-  /** Renderer → Main：执行桌面窗口级命令 */
+  /** Renderer -> Main: run a desktop window-level command */
   ExecuteDesktopCommand: "zcode:execute-desktop-command",
-  /** Renderer → Main：同步应用菜单语言，用于重建原生菜单 */
+  /** Renderer -> Main: sync app-menu language for native menu rebuild */
   SetApplicationLocale: "zcode:set-application-locale",
-  /** Renderer → Main：同步标题栏亮暗色，用于原生窗口控制按钮配色 */
+  /** Renderer -> Main: sync titlebar light/dark for native window-control button tinting */
   SetTitleBarTheme: "zcode:set-title-bar-theme",
-  /** Renderer → Main：迁移旧版 Common MCP 配置 */
+  /** Renderer -> Main: migrate legacy Common MCP config */
   MigrateLegacyCommonMcp: "zcode:migrate-legacy-common-mcp",
-  /** Renderer → Main：获取当前设备的稳定标识符（deviceMid） */
+  /** Renderer -> Main: get the device's stable identifier (deviceMid) */
   GetDeviceId: "zcode:get-device-id",
 } as const;
 
 export type PlatformChannelName = (typeof PlatformChannels)[keyof typeof PlatformChannels];
 
 // ============================================================================
-// 内置 WebView 频道 —— 固定 guest preload ↔ embedder renderer
+// Built-in webview channels - fixed guest preload <-> embedder renderer
 // ============================================================================
 
-/** Electron `<webview>` 的 `sendToHost` / `ipc-message` 频道，不经过 main process。 */
+/** `sendToHost` / `ipc-message` channels of an Electron <webview>; bypasses the main process. */
 export const EmbeddedBrowserWebviewChannels = {
-  /** Guest 无法继续消费某方向的滚动时，把二维 delta 转交自由尺寸画布。 */
+  /** When the guest cannot scroll further in a direction, hand the 2D delta to the free-size canvas. */
   WheelBoundary: "zcode:embedded-browser-wheel-boundary",
 } as const;
 
@@ -446,88 +446,88 @@ export interface EmbeddedBrowserWheelBoundaryPayload {
 }
 
 // ============================================================================
-// Coding Plan WebView 频道 —— 官网页 preload ↔ App renderer
+// Coding Plan webview channels - website preload <-> app renderer
 // ============================================================================
 
 /**
- * Electron `<webview>`（partition=persist:zcode-coding-plan）的 `sendToHost` / `ipc-message` 频道。
- * 官网页通过 preload 注入的 window.zcodeBridge 调用，不经过 main process。
+ * `sendToHost` / `ipc-message` channels of the Electron <webview> (partition=persist:zcode-coding-plan).
+ * The website calls them via the preload-injected window.zcodeBridge; the main process is not involved.
  */
 export const CodingPlanWebviewChannels = {
-  /** 官网页购买成功后通知 App 刷新 entitlements 并关闭 webview。 */
+  /** After a successful purchase the website tells the app to refresh entitlements and close the webview. */
   PurchaseComplete: "zcode:coding-plan-purchase-complete",
 } as const;
 
-/** 购买完成回传 payload。provider 与官网 CodingPlanProvider / auth-ready 事件 detail.provider 同构。 */
+/** Purchase-completion payload. provider mirrors the website CodingPlanProvider / auth-ready detail.provider. */
 export interface CodingPlanPurchaseCompletePayload {
   provider: "zai" | "bigmodel";
-  /** 客户端时间戳，用于 App 侧去重/日志，不参与判等。 */
+  /** Client timestamp for app-side dedup/logging; not part of equality. */
   timestamp: number;
 }
 
 /**
- * 官网页 window.__zcodeLang__ 的取值，与 App IntlProvider 的 Locale 一致。
- * App locale 变化时通过 executeJavaScript 重写此变量并派发 lang-change 事件。
+ * Values of the website's window.__zcodeLang__; matches the app IntlProvider locale.
+ * On locale change the app rewrites it via executeJavaScript and dispatches lang-change.
  */
 export type CodingPlanWebviewLocale = "zh-CN" | "en-US";
 
 /**
- * 官网页 lang-change 事件 detail。App 用 executeJavaScript 在 main world 派发
- * `zcode-coding-plan-lang-change` CustomEvent，website 侧（zcodeBridge.onLangChange 或
- * 直接 window.addEventListener）订阅后切换 copy。
+ * detail of the website lang-change event. The app dispatches the
+ * `zcode-coding-plan-lang-change` CustomEvent in the main world via executeJavaScript; the website side
+ * (zcodeBridge.onLangChange or plain window.addEventListener) subscribes and switches copy.
  */
 export interface CodingPlanWebviewLangChangeDetail {
   locale: CodingPlanWebviewLocale;
 }
 
 // ============================================================================
-// 内部传输频道 —— 框架级别的通信
+// Internal transport channels - framework-level messaging
 // ============================================================================
-/** 内部传输频道。用于 MessagePort 转发等框架级通信。 */
+/** Internal transport channels, e.g. MessagePort forwarding. */
 export const InternalChannels = {
   DatabaseStartupState: "zcode:database-startup-state",
   DatabaseStartupControl: "zcode:database-startup-control",
-  /** main → renderer 转发 MessagePort（通过 webContents.postMessage） */
+  /** main -> renderer: forward a MessagePort (via webContents.postMessage) */
   ServicePort: "zcode:service-port",
-  /** main → renderer 转发窗口 Host 的 scoped MessagePort */
+  /** main -> renderer: forward the window Host's scoped MessagePort */
   ScopedServicePort: "zcode:scoped-service-port",
-  /** renderer → main：scoped MessagePort 已注册，可安全切换 attachment */
+  /** renderer -> main: scoped MessagePort registered; attachment switching is safe */
   ScopedServicePortReady: "zcode:scoped-service-port-ready",
-  /** preload → renderer：主进程已确认系统通知展示，renderer 可播放提示音 */
+  /** preload -> renderer: main confirmed the system notification; the renderer may play the sound */
   TaskNotificationSound: "zcode:task-notification-sound",
 } as const;
 
-/** @deprecated `/ws` 已忽略该头；保留常量仅供旧客户端兼容。 */
+/** @deprecated `/ws` ignores this header; kept for legacy clients only. */
 export const ZCODE_RPC_CLIENT_MODE_HEADER = "x-zcode-rpc-client-mode";
-/** desktop 先经受保护 HTTP endpoint 申请，再在 `/ws/host` 握手时一次性消费。 */
+/** Desktop first applies via the protected HTTP endpoint, then consumes it once during the `/ws/host` handshake. */
 export const ZCODE_RPC_HOST_CAPABILITY_HEADER = "x-zcode-rpc-host-capability";
 
 // ============================================================================
-// 进程间消息类型 —— main ↔ host process 之间的 postMessage
+// Inter-process message types - postMessage between main and the host process
 // ============================================================================
 
-/** main → host process 的初始化消息类型 */
+/** Init message types from main to the host process */
 export const HostMessageTypes = {
   DatabaseStartupControl: "database-startup-control",
-  /** 初始化本地服务 */
+  /** Initialize local services */
   InitLocal: "init-local",
-  /** main → window Host：在当前窗口建立一个远程 logical session */
+  /** main -> window Host: establish a remote logical session in this window */
   ConnectRemoteWorkspace: "connect-remote-workspace",
-  /** main → window Host：取消尚未完成的远程连接 */
+  /** main -> window Host: cancel a pending remote connection */
   CancelRemoteWorkspaceConnect: "cancel-remote-workspace-connect",
-  /** main → window Host：为 logical session 绑定 canonical workspace 身份 */
+  /** main -> window Host: bind canonical workspace identity to a logical session */
   BindRemoteWorkspaceContext: "bind-remote-workspace-context",
-  /** main → window Host：释放一个远程 logical session */
+  /** main -> window Host: release a remote logical session */
   DisposeRemoteWorkspaceSession: "dispose-remote-workspace-session",
-  /** main → host：复用现有服务，对新的 RPC MessagePort 暴露服务 */
+  /** main -> host: reuse existing services and expose them to a new RPC MessagePort */
   AttachServicePort: "attach-service-port",
-  /** main → host：精确释放一个 RPC MessagePort attachment */
+  /** main -> host: release exactly one RPC MessagePort attachment */
   DetachServicePort: "detach-service-port",
-  /** 窗口关闭，清理资源 */
+  /** Window closed; release resources */
   Dispose: "dispose",
-  /** 广播消息中转 */
+  /** Broadcast relay */
   Broadcast: "broadcast",
-  /** main → host：跨窗口原子 claim 结果 */
+  /** main -> host: cross-window atomic claim result */
   BroadcastClaimResult: "broadcast-claim-result",
   /** main → host：task realtime invalidation delivery */
   TaskRealtimeDeliver: "task-realtime-deliver",
@@ -537,136 +537,136 @@ export const HostMessageTypes = {
   TaskOwnerCommandDeliver: "task-owner-command-deliver",
   /** main → host：deliver owner command result to requester */
   TaskOwnerCommandResult: "task-owner-command-result",
-  /** main → host：Bot 远端 workspace 重连结果 */
+  /** main -> host: bot remote-workspace reconnect result */
   BotRemoteWorkspaceReconnectResult: "bot-remote-workspace-reconnect-result",
-  /** main → host：Bot 远端 workspace 连接状态查询结果 */
+  /** main -> host: bot remote-workspace connection status query result */
   BotRemoteWorkspaceConnectionStatusResult: "bot-remote-workspace-connection-status-result",
-  /** main → host：Bot 远端 workspace runtime RPC 端口 */
+  /** main -> host: bot remote-workspace runtime RPC port */
   BotRemoteWorkspaceRuntimePort: "bot-remote-workspace-runtime-port",
-  /** main → host：把 session message 投递到该 host 管理的目标 session */
+  /** main -> host: deliver a session message to the target session managed by this host */
   SessionMessageDeliver: "session-message-deliver",
-  /** main → host：把 session message 投递结果回写到源 session */
+  /** main -> host: write a session-delivery result back to the source session */
   SessionMessageDeliveryResult: "session-message-delivery-result",
-  /** main → host：反馈日志归档创建结果 */
+  /** main -> host: feedback log archive creation result */
   FeedbackLogArchiveResult: "feedback-log-archive-result",
-  /** main → host：定时任务到点派发；会话内 cron 复用 targetTaskId，历史未绑定任务才建 session */
+  /** main -> host: scheduled task due; in-session cron reuses targetTaskId, only unbound history creates a session */
   CronRun: "cron-run",
-  /** main → host：闲时任务派发；首跑 createTask 新建 session，续跑带 conversationId/sessionId resume */
+  /** main -> host: idle-task dispatch; first run createTask makes a session, continuations resume with conversationId/sessionId */
   OffPeakRun: "off-peak-run",
-  /** main → host：browser-use 命令执行结果（CDP 执行完回传，按 requestId 关联） */
+  /** main -> host: browser-use command result (returned after CDP execution, correlated by requestId) */
   BrowserExecuteResult: "browser-execute-result",
-  /** main → host：本地视频 canonical path 授权结果 */
+  /** main -> host: local-video canonical path authorization result */
   LocalMediaPreviewPathAuthorizeResult: "local-media-preview-path-authorize-result",
-  /** Main → Host：全局前台 ZCode 窗口派生的 producer focus fact。 */
+  /** Main -> Host: producer focus fact derived from the foreground ZCode window. */
   CuaPipFocusChanged: "cua-pip-focus-changed",
-  /** main → host：要求 Host 现读本地 Source，并同步指定 Remote Environment。 */
+  /** main -> host: read the local Source now and sync the given Remote Environment. */
   ProviderProvisioningExecute: "provider-provisioning-execute",
-  /** main → host：资源管理器请求 Host 采样其后代进程（Agent / MCP / 终端）的 CPU 与内存 */
+  /** main -> host: the resource monitor asks the host to sample CPU/memory of descendant processes (agent/MCP/terminal) */
   ResourceUsageSnapshotRequest: "resource-usage-snapshot-request",
   ResourceUsageSnapshotCancel: "resource-usage-snapshot-cancel",
 } as const;
 
-/** host process → main process 的反馈消息类型 */
+/** Feedback message types from the host process to main */
 export const HostResponseTypes = {
   DatabaseStartupState: "database-startup-state",
-  /** window Host → main：按 requestId 上报远程连接过程日志 */
+  /** window Host -> main: report remote-connection progress logs by requestId */
   RemoteWorkspaceConnectionLog: "remote-workspace-connection-log",
-  /** window Host → main：远程 logical session 已建立 */
+  /** window Host -> main: remote logical session established */
   RemoteWorkspaceConnected: "remote-workspace-connected",
-  /** window Host → main：远程 logical session 建立失败 */
+  /** window Host -> main: remote logical session failed to establish */
   RemoteWorkspaceConnectFailed: "remote-workspace-connect-failed",
-  /** window Host → main：已连接的远程 logical session 关闭 */
+  /** window Host -> main: a connected remote logical session closed */
   RemoteWorkspaceClosed: "remote-workspace-closed",
-  /** host 进程日志上报 */
+  /** Host process log report */
   Log: "log",
-  /** host 内拉起新的 agent 子进程 */
+  /** Host spawned a new agent child process */
   AgentProcessSpawned: "agent-process-spawned",
-  /** host 内 agent runtime 首次通过模型执行门禁 */
+  /** Host agent runtime passed the model execution gate for the first time */
   AgentProcessReady: "agent-process-ready",
-  /** host 内的 agent 子进程退出 */
+  /** Host agent child process exited */
   AgentProcessExited: "agent-process-exited",
-  /** host 内的 agent 子进程启动失败 */
+  /** Host agent child process failed to start */
   AgentProcessError: "agent-process-error",
   AgentProcessException: "agent-process-exception",
-  /** host → main：CLI 进程内自采样的 CPU / RSS */
+  /** host -> main: CLI self-sampled CPU/RSS */
   AgentResourceSample: "agent-resource-sample",
-  /** host → main：Host 进程自身每 60 秒自采的 CPU / RSS / heap（资源遥测 host 角色的 heap 来源） */
+  /** host -> main: host process self-sample CPU/RSS/heap every 60s (heap source for the host role in resource telemetry) */
   HostResourceSample: "host-resource-sample",
-  /** host → main：CLI 内 MCP 进程生命周期与内存遥测 */
+  /** host -> main: in-CLI MCP process lifetime and memory telemetry */
   McpTelemetry: "mcp-telemetry",
   McpResourceSamples: "mcp-resource-samples",
   ToolExecResource: "tool-exec-resource",
-  /** 自动化 Host 首次输入 accepted 后报告新建 Session。 */
+  /** Automation host reports the new session after the first accepted input. */
   SessionCreateTelemetry: "session-create-telemetry",
-  /** host → main：资源管理器采样结果（按 requestId 关联） */
+  /** host -> main: resource monitor sample result (correlated by requestId) */
   ResourceUsageSnapshotResult: "resource-usage-snapshot-result",
-  /** host 内当前正在执行 prompt 的 agent session 数量变化 */
+  /** Count of host agent sessions currently executing a prompt changed */
   AgentRunningTaskCountChanged: "agent-running-task-count-changed",
-  /** host 内指定 workspace 当前仍未 terminal 的 task 数量变化 */
+  /** Count of not-yet-terminal tasks for a workspace in this host changed */
   WorkspaceRunningTaskCountChanged: "workspace-running-task-count-changed",
-  /** host → main：Windows desktop-local CUA turn 的操作提示状态 */
+  /** host -> main: action-hint state of a Windows desktop-local CUA turn */
   CuaOperationState: "cua-operation-state",
-  /** host → main：workspace generation 已可安全 attach */
+  /** host -> main: workspace generation is safe to attach */
   RemoteWorkspaceAcquired: "remote-workspace-acquired",
-  /** 广播消息 */
+  /** Broadcast message */
   Broadcast: "broadcast",
-  /** host → main：申请跨窗口原子 claim */
+  /** host -> main: request a cross-window atomic claim */
   BroadcastClaimRequest: "broadcast-claim-request",
-  /** host → main：把临时 claim reservation 提交为永久 claim */
+  /** host -> main: commit a transient claim reservation into a permanent claim */
   BroadcastClaimCommit: "broadcast-claim-commit",
-  /** host → main：按 token 释放尚未提交的 claim reservation */
+  /** host -> main: release an uncommitted claim reservation by token */
   BroadcastClaimRelease: "broadcast-claim-release",
-  /** host → main：发布 task realtime invalidation */
+  /** host -> main: publish a task realtime invalidation */
   TaskRealtimePublish: "task-realtime-publish",
-  /** host → main：发布 task stream mirror op */
+  /** host -> main: publish a task stream mirror op */
   TaskStreamOpPublish: "task-stream-op-publish",
-  /** host → main：申请 task run lease */
+  /** host -> main: acquire a task run lease */
   TaskRunLeaseAcquire: "task-run-lease-acquire",
-  /** host → main：释放 task run lease */
+  /** host -> main: release a task run lease */
   TaskRunLeaseRelease: "task-run-lease-release",
-  /** host → main：observer 请求 owner 执行 task command */
+  /** host -> main: observer asks the owner to run a task command */
   TaskOwnerCommandRequest: "task-owner-command-request",
-  /** host → main：owner 返回 task command result */
+  /** host -> main: owner returns the task command result */
   TaskOwnerCommandResult: "task-owner-command-result",
-  /** host → main：Bot 请求创建远端 workspace session */
+  /** host -> main: bot requests a remote workspace session */
   BotRemoteWorkspaceReconnectRequest: "bot-remote-workspace-reconnect-request",
-  /** host → main：Bot 查询当前窗口是否已有远端 workspace session */
+  /** host -> main: bot asks whether this window already has a remote workspace session */
   BotRemoteWorkspaceConnectionStatusRequest: "bot-remote-workspace-connection-status-request",
-  /** host → main：Bot 请求远端 workspace runtime RPC 端口 */
+  /** host -> main: bot requests the remote workspace runtime RPC port */
   BotRemoteWorkspaceRuntimePortRequest: "bot-remote-workspace-runtime-port-request",
-  /** host → main：Agent 请求向另一个 session 发送消息 */
+  /** host -> main: agent asks to send a message to another session */
   SessionMessageSendRequested: "session-message-send-requested",
-  /** host → main：声明一个 ZCode Agent session 当前归属该 host */
+  /** host -> main: declare that a ZCode agent session belongs to this host */
   SessionRouteAnnounce: "session-route-announce",
-  /** host → main：目标 host 完成本地 session message 投递 */
+  /** host -> main: target host finished local session-message delivery */
   SessionMessageDeliverResult: "session-message-deliver-result",
-  /** host → main：请求 main 复用导出日志逻辑创建反馈日志归档 */
+  /** host -> main: ask main to create the feedback log archive via the export-logs path */
   FeedbackLogArchiveRequest: "feedback-log-archive-request",
-  /** host → main：定时任务派发结果（成功回填 taskId/sessionId，失败带 transient/permanent） */
+  /** host -> main: scheduled-task dispatch result (success fills taskId/sessionId; failure carries transient/permanent) */
   CronRunResult: "cron-run-result",
-  /** host → main：闲时任务派发结果（成功回填 conversationId/sessionId，失败带 transient/permanent） */
+  /** host -> main: idle-task dispatch result (success fills conversationId/sessionId; failure carries transient/permanent) */
   OffPeakRunResult: "off-peak-run-result",
-  /** host → main：manual run 已落库，请立即唤醒 scheduler 认领派发 */
+  /** host -> main: manual run persisted; wake the scheduler to claim dispatch now */
   CronSchedulerWakeRequest: "cron-scheduler-wake-request",
-  /** host → main：闲时任务翻 schedulable，请立即唤醒 scheduler 认领派发（与 cron 消息独立） */
+  /** host -> main: idle task became schedulable; wake the scheduler now (independent of the cron message) */
   OffPeakSchedulerWakeRequest: "off-peak-scheduler-wake-request",
-  /** host → main：执行一条 browser-use 命令（main 用 WebContentsView+CDP 执行，按 requestId 关联） */
+  /** host -> main: run one browser-use command (main executes via WebContentsView+CDP, correlated by requestId) */
   BrowserExecuteRequest: "browser-execute-request",
-  /** host → main：请求授权 Agent 已精确校验的本地视频路径 */
+  /** host -> main: request authorization of an agent-verified local video path */
   LocalMediaPreviewPathAuthorizeRequest: "local-media-preview-path-authorize-request",
-  /** host → main：RPC 网络遥测批次（channel.command 成功率/耗时） */
+  /** host -> main: RPC network telemetry batch (per channel.command success rate/latency) */
   NetworkTelemetryBatch: "network-telemetry-batch",
-  /** host → main：本地 Provisioning Source 成功持久化。 */
+  /** host -> main: local provisioning source persisted. */
   ProviderProvisioningSourceChanged: "provider-provisioning-source-changed",
-  /** host → main：一次 Remote Environment 同步执行完毕。 */
+  /** host -> main: one Remote Environment sync finished. */
   ProviderProvisioningExecutionResult: "provider-provisioning-execution-result",
 } as const;
 
 // ============================================================================
-// 平台频道类型映射 —— request/response 类型安全
+// Platform channel type maps - request/response type safety
 // ============================================================================
 
-/** 平台频道的请求/响应类型映射 */
+/** Request/response type map of the platform channels */
 export interface PlatformChannelMap {
   [PlatformChannels.SelectDirectory]: {
     request: void;
@@ -883,7 +883,7 @@ export interface PlatformChannelMap {
     request: undefined;
     response: PrepareCuaHelperPermissionDragResult;
   };
-  // 单向 send（不是 invoke）：dragstart 必须同步发起，等不了 invoke 的往返。
+  // One-way send, not invoke: dragstart must fire synchronously and cannot wait an invoke round-trip.
   [PlatformChannels.StartCuaHelperPermissionDrag]: {
     request: undefined;
     response: void;
@@ -944,7 +944,7 @@ export interface PlatformChannelMap {
     request: RendererActionTraceBatchV1;
     response: void;
   };
-  // 单向 send（不是 invoke）：60 秒一条的旁路遥测样本，renderer 不等 main 回执。
+  // One-way send, not invoke: a bypass telemetry sample every 60s; the renderer never waits for main.
   [PlatformChannels.ReportRendererHeapSample]: {
     request: RendererHeapSample;
     response: void;
@@ -1006,7 +1006,7 @@ export interface PlatformChannelMap {
       size: number;
     } | null;
   };
-  // CDP-on-guest pivot：renderer `<webview>` 上报 guest webContentsId → main attach。
+  // CDP-on-guest pivot: the renderer <webview> reports the guest webContentsId and main attaches.
   [PlatformChannels.BrowserViewAttachGuest]: {
     request: {
       key: string;
@@ -1155,8 +1155,8 @@ export interface PlatformChannelMap {
   };
   [PlatformChannels.ExecuteDesktopCommand]: {
     request: DesktopCommandId;
-    // 返回值直通 main 进程 handler 的 return（GetCuaOsSupport 返回 CuaOsSupport），
-    // 与 renderer 侧 IPlatformService.executeDesktopCommand 的 Promise<unknown> 对齐。
+    // The return value passes through the main-process handler's return (GetCuaOsSupport returns CuaOsSupport),
+    // aligned with the renderer-side IPlatformService.executeDesktopCommand Promise<unknown>.
     response: unknown;
   };
   [PlatformChannels.SetApplicationLocale]: {

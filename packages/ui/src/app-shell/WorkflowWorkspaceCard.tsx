@@ -1,10 +1,12 @@
 // ============================================================
-// 脚本 transcript 的一个条目
+// One script transcript entry
 // ============================================================
-// 日志簿的一行：左边 28px 的种类瓦片（失败泛红、运行泛琥珀），中间两行——动词 + 对象、然后
-// 结果行（`exit 1` 红、`41 files`、耗时、字节、replayed 芯片）——右边时间标尺（`+1:12`，跑着的
-// 说 now）。收起的命令下面露出输出的尾巴（peek）；展开是完整面板。Read 只有摘要行，文件芯片开
-// 代码查看器看**现在**的文件。状态以 journal 为准，活投影只叠 `cached`。
+// One logbook row: a 28px kind tile on the left (red-ish failed, amber running); two lines
+// in the middle — verb + object, then the result line (`exit 1` red, `41 files`, duration,
+// bytes, replayed chip) — and the time ruler on the right (`+1:12`; running cards say now).
+// Collapsed commands reveal a tail of the output (peek); expanded is the full panel. Read is
+// summary-only; its file chip opens the code viewer on the file AS IT IS NOW. Journal is the
+// truth for status; the live projection only layers `cached`.
 
 import {
   memo,
@@ -61,15 +63,15 @@ interface WorkflowWorkspaceCardProps {
   sessionId: string;
   runId: string;
   run: WorkflowRunState | undefined;
-  /** 时间标尺的零点（第一张卡的准入时刻）；缺席即不画时刻。 */
+  /** Time-ruler zero (first card's admission); absent means no instant is drawn. */
   origin: number | undefined;
-  /** 当前时刻（运行中的卡每秒推进）。 */
+  /** Current instant (advances every second for running cards). */
   now: number;
-  /** 到场错位（每张 24 ms，封顶在面板侧）；缺席即立刻。 */
+  /** Entrance stagger (24ms per card, capped panel-side); absent means immediate. */
   enterDelayMs?: number;
-  /** 落点那张卡：到位后底色亮一下。 */
+  /** The landed card: flashes its background on arrival. */
   landed?: boolean;
-  /** 工作区根：Read 卡的相对路径据此补成绝对路径再交给代码查看器。 */
+  /** Workspace root: Read cards' relative paths become absolute here before the code viewer. */
   workspacePath: string;
   onOpenCodeViewer?: (source: CodeViewerSource) => void;
 }
@@ -87,7 +89,7 @@ function readSummaryOf(path: string, workspacePath: string): ReadSummary {
   };
 }
 
-/** 结果行的零件之间放一颗小点。 */
+/** A dot between result-line parts. */
 function joined(parts: readonly ReactNode[]): ReactNode[] {
   const out: ReactNode[] = [];
   parts.forEach((part, index) => {
@@ -127,7 +129,8 @@ export const WorkflowWorkspaceCard = memo(function WorkflowWorkspaceCard({
   const failed = status === "failed" || (exitCode !== undefined && exitCode !== 0);
   const durationMs = Math.max(0, node.updatedAt - node.createdAt);
 
-  // Read 只有摘要行；其余可展开（running 的命令也可展开看命令行）。展开态按卡记忆。
+  // Read is summary-only; everything else expands (a running command expands to show the
+  // command line). Expanded state is remembered per card.
   const expandable = kind !== "read";
   const persistKey = `${sessionId}:${runId}:${card.key}`;
   const [open, setOpen] = useState(() => rememberedOpen(persistKey));
@@ -139,7 +142,7 @@ export const WorkflowWorkspaceCard = memo(function WorkflowWorkspaceCard({
   }, [persistKey]);
   const onClick = useCallback(
     (event: MouseEvent<HTMLDivElement>) => {
-      // 正文与 peek 里的点击（选文本、Copy、文件芯片）不折叠。
+      // Clicks inside the body or peek (text selection, Copy, file chips) never collapse.
       if ((event.target as HTMLElement).closest("[data-ws-body],button,a") !== null) return;
       toggle();
     },
@@ -165,7 +168,7 @@ export const WorkflowWorkspaceCard = memo(function WorkflowWorkspaceCard({
     onOpenCodeViewer({ type: "file", title: readSummary.fileName, path: readSummary.path });
   }, [onOpenCodeViewer, readSummary]);
 
-  // 第一行：动词 + 对象。
+  // Line 1: verb + object.
   const verb =
     kind === "read"
       ? format({ id: "chat.toolCall.workflow.script.verb.read" })
@@ -207,7 +210,7 @@ export const WorkflowWorkspaceCard = memo(function WorkflowWorkspaceCard({
       <span className="truncate text-foreground">{card.primary}</span>
     );
 
-  // 第二行：结果。状态词换值时新词进场。
+  // Line 2: result. A changed status word enters anew.
   const statusWord =
     status === "failed"
       ? isTimeoutError(node.error)

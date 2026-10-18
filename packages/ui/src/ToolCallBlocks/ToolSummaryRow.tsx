@@ -131,8 +131,8 @@ function SummaryContent({
     (node) => node != null && node !== false && node !== "",
   );
 
-  // 展开态可能主动清空摘要，但渲染空 flex 容器的话，标题行的 gap
-  // 会在“类别—空容器—箭头”之间计算两次，视觉上形成一块异常大的空白。
+  // The expanded state may clear the summary, but an empty flex container still counts in the header row gap,
+  // doubling the space across category/container/arrow into one oddly large blank.
   if (!hasSummaryContent) {
     return null;
   }
@@ -201,8 +201,8 @@ export function ToolSummaryRow(props: ToolSummaryRowProps) {
               return;
             }
 
-            // 摘要内可能包含文件预览按钮，因此不能用满宽 button 包裹整行。
-            // 保留 div trigger，并在这里补齐 Enter/Space 的展开能力。
+            // The summary can contain file-preview buttons, so never wrap the whole row in a full-width button.
+            // Keep the div trigger and add Enter/Space expansion here.
             event.preventDefault();
             event.currentTarget.click();
           }}

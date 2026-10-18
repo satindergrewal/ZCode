@@ -20,12 +20,12 @@ import {
 } from "./list-workflow-runs.js";
 
 /**
- * 观察类工作流工具（GetWorkflowRun / ListWorkflowRuns / EvalWorkflowSnippet /
- * ListSavedWorkflows / ListModels）的结果卡 display 载荷。
+  * Result-card display payloads of the observation family of workflow tools (GetWorkflowRun / ListWorkflowRuns / EvalWorkflowSnippet /
+  * ListSavedWorkflows / ListModels).
  *
- * 限长常量与构造侧（core 的 workflow-observation-display.ts）一一对应：display 不经过
- * result budget，文本字段与数组长度必须在进入实时事件和持久化 metadata 前独立限长，
- * 超限由构造侧打 truncated 标记。
+  * Length caps mirror the producer side (core's workflow-observation-display.ts) one for one: display bypasses the
+  * result budget, so text fields and array lengths must be capped independently before entering live events and persisted metadata,
+  * with the producer flagging truncated on overflow.
  */
 export const WORKFLOW_OBSERVATION_DISPLAY_MAX_LOG_ENTRIES = 40;
 export const WORKFLOW_OBSERVATION_DISPLAY_MAX_LOG_CHARS = 1_024;
@@ -34,20 +34,20 @@ export const WORKFLOW_OBSERVATION_DISPLAY_MAX_RESULT_CHARS = 4_000;
 export const WORKFLOW_OBSERVATION_DISPLAY_MAX_META_CHARS = 2_048;
 export const WORKFLOW_OBSERVATION_DISPLAY_MAX_RUNS = 50;
 export const WORKFLOW_OBSERVATION_DISPLAY_MAX_ARGS = 32;
-/** 目录卡一次最多画几行模型（超出由构造侧 slice 并打 truncated）。 */
+/** Max model rows per directory card (the producer slices and flags truncated beyond it). */
 export const WORKFLOW_OBSERVATION_DISPLAY_MAX_MODELS = 100;
-/** 情势截面在卡上的界，与工具面同值（{@link GET_WORKFLOW_RUN_ROSTER_LIMITS}）。 */
+/** Card bounds for the situation section, same values as the tool face ({@link GET_WORKFLOW_RUN_ROSTER_LIMITS}). */
 export const WORKFLOW_OBSERVATION_DISPLAY_MAX_PHASES = GET_WORKFLOW_RUN_ROSTER_LIMITS.maxPhases;
 export const WORKFLOW_OBSERVATION_DISPLAY_MAX_SUBAGENTS =
   GET_WORKFLOW_RUN_ROSTER_LIMITS.maxSubagents;
 
 /**
- * 卡上的一个子代理。刻意是**扁平行**而不是工具输出的嵌套形状：卡画的是一行，
- * `currentAsk` 里那几件事（派去干什么、第几轮、最后碰了哪个工具）就是这一行的后半截，
- * 多一层嵌套只会让渲染端先解构再拼回来。
+  * One subagent on the card. Deliberately a **flat row**, not the tool output's nesting: the card draws one line, and
+  * the few facts in currentAsk (dispatched to what, which round, last tool touched) are the second half of that line;
+  * another nesting layer would only make the renderer destructure and reassemble.
  *
- * 枚举集与工具面**逐字相同且闭合**：消费 bundle 会拒收未知枚举值（曾因此让一整条
- * 订阅失效），所以这两处永远一起改。
+  * The enum sets stay **verbatim-equal and closed** with the tool face: consuming bundles reject unknown enum values (this once
+  * killed a whole subscription), so the two places always change together.
  */
 export const getWorkflowRunToolResultDisplaySubagentSchema = z
   .object({
@@ -56,7 +56,7 @@ export const getWorkflowRunToolResultDisplaySubagentSchema = z
     name: z.string().max(GET_WORKFLOW_RUN_ROSTER_LIMITS.maxActorNameLength).optional(),
     state: z.enum(["idle", "executing", "waiting", "parked", "done", "failed", "unfinished"]),
     phaseName: z.string().max(GET_WORKFLOW_RUN_ROSTER_LIMITS.maxPhaseNameLength).optional(),
-    /** 当前 ask 的任务摘要与进度读数（缺席 = 不知道，绝不是 0）。 */
+        /** The current ask's task summary and progress reading (absent = unknown, never 0). */
     instructionsHead: z
       .string()
       .max(GET_WORKFLOW_RUN_ROSTER_LIMITS.maxInstructionsHeadLength)
@@ -65,7 +65,7 @@ export const getWorkflowRunToolResultDisplaySubagentSchema = z
     turn: z.number().int().nonnegative().optional(),
     toolCalls: z.number().int().nonnegative().optional(),
     lastTool: GetWorkflowRunSubagentLastToolSchema.optional(),
-    /** 在等什么（原因文本不上卡：卡只需要「等槽位」还是「在退避」和还要等多久）。 */
+        /** What it waits on (reason text stays off the card: the card needs only waiting-on-slot vs backoff, plus the remaining delay). */
     waitCause: z.enum(["slot", "backoff"]).optional(),
     retryAfterMs: z.number().nonnegative().optional(),
     waitSince: z.number().optional(),
@@ -81,20 +81,20 @@ export const getWorkflowRunToolResultDisplayLogEntrySchema = z
   .object({
     sequence: z.number(),
     message: z.string().max(WORKFLOW_OBSERVATION_DISPLAY_MAX_LOG_CHARS),
-    // 事件落 journal 的时刻（epoch ms），与工具输出的 `logTail[].at` 同源；卡上的年龄对
-    // `generatedAt` 算。可选：情势截面之前的载荷没有它，与 shared 侧同步为可选。
+        // Journal landing time of the event (epoch ms), same source as the tool output's logTail at; the card's age is
+        // computed against generatedAt. Optional: payloads predating the situation section lack it, optional in lockstep with shared.
     at: z.number().optional(),
   })
   .strict();
 
 /**
- * 工具卡上的结构化失败：**只有 code 与 message**，刻意不复用工具输出的
+  * Structured failure on the tool card: **code and message only**, deliberately not reusing the tool output's
  * `GetWorkflowRunErrorSchema`。
  *
- * 两个通道的读者不同：输出是模型在读，它需要 `providerStop` 才知道该修什么；display 是
- * 渲染端在读，而渲染端用 packages/shared 的镜像 schema 严格校验每一帧。复用等于让
- * display 跟着输出长字段，镜像没跟上就是整条 row 被拒、会话恢复 fail-closed。
- * 这份定义是那份镜像的对侧，两边逐字段同步。
+  * The two channels have different readers: the output is read by the model, which needs providerStop to know what to fix; display is
+  * read by the renderer, which strict-validates every frame against the mirror schema in packages/shared. Reuse would make
+  * display grow the output's fields, and a lagging mirror rejects the whole row -- session recovery fail-closed.
+  * This definition is the other side of that mirror; the two stay field-by-field in sync.
  */
 export const getWorkflowRunToolResultDisplayErrorSchema = z
   .object({
@@ -104,9 +104,9 @@ export const getWorkflowRunToolResultDisplayErrorSchema = z
   .strict();
 
 /**
- * GetWorkflowRun 的结果卡载荷。预算 / actor 直接复用工具输出 schema（纯小数值或已有界的
- * 小结构）；错误走上面那份 display 专用 schema；logTail 与 result 在 display 侧独立限长——
- * 输出侧的 2048 字符/条与 artifact 序列化上限属于模型通道，两道界互不替代。
+  * GetWorkflowRun's result-card payload. Budget/actors reuse the tool output schema directly (plain numbers or already-bounded
+  * small structures); errors use the display-only schema above; logTail and result are capped independently on the display side --
+  * the output side's 2048 chars/entries and artifact serialization caps belong to the model channel; neither bound stands in for the other.
  */
 export const getWorkflowRunToolResultDisplayPayloadSchema = z
   .object({
@@ -114,19 +114,19 @@ export const getWorkflowRunToolResultDisplayPayloadSchema = z
     runId: z.string().min(1),
     label: z.string(),
     status: z.enum(WORKFLOW_RUN_LIFECYCLE_STATUSES),
-    /** `status === "stopped"` 才在场。 */
+        /** Present only when status is stopped. */
     stopReason: z.enum(WORKFLOW_RUN_STOP_REASONS).optional(),
     possiblyInterrupted: z.boolean().optional(),
     /**
-     * 情势截面：那一句摘要、快照时刻、阶段表、花名册、健康。
+          * The situation section: the one-line summary, snapshot instant, phase table, roster, health.
      *
-     * 五个字段**全部可选**，尽管构造侧每次都填。理由是**已经躺在库里的 transcript**：
-     * 情势截面上线之前持久化的 `get_workflow_run` 载荷没有这些键，而 display schema 是
-     * strict 的——把它们设成必填，等于让升级后打开的每一条历史会话的这张卡整块校验失败、
-     * 退化成纯文本。文本兜底只针对**完全没有载荷**的老行，不针对有载荷的。
+          * All five fields **optional**, though the producer always fills them. The reason is the **transcript already in the store**:
+          * get_workflow_run payloads persisted before the situation section lack these keys, and the display schema is
+          * strict -- requiring them would fail whole-card validation for every historical session opened after the upgrade,
+          * degrading to plain text. The text fallback is only for old rows with **no payload at all**, not payload-bearing ones.
      *
-     * `generatedAt` 是卡上所有「多久以前」的基准：必须对快照时刻算，而不是对渲染时的
-     * `Date.now()`——一条三天前的 transcript 重新打开时，卡上的年龄仍是当时那个年龄。
+          * generatedAt is the base for every how-long-ago on the card: computed against the snapshot instant, never render-time
+          * Date.now() -- on reopening a three-day-old transcript, the card's ages are still the then-current ages.
      */
     summary: z.string().max(GET_WORKFLOW_RUN_SUMMARY_MAX_CHARS).optional(),
     generatedAt: z.number().optional(),
@@ -150,7 +150,7 @@ export const getWorkflowRunToolResultDisplayPayloadSchema = z
   })
   .strict();
 
-/** ListWorkflowRuns 的结果卡载荷：run 行直接复用输出 schema（limit 已封顶 50）。 */
+/** ListWorkflowRuns's result-card payload: run rows reuse the output schema directly (limit already capped at 50). */
 export const listWorkflowRunsToolResultDisplayPayloadSchema = z
   .object({
     kind: z.literal("list_workflow_runs"),
@@ -160,8 +160,8 @@ export const listWorkflowRunsToolResultDisplayPayloadSchema = z
   .strict();
 
 /**
- * EvalWorkflowSnippet 的结果卡载荷。诊断复用 create_workflow 的 display 诊断 schema
- * （同一 TS 诊断形状，同一道限长）；logs 取尾巴、response 独立限长。
+  * EvalWorkflowSnippet's result-card payload. Diagnostics reuse the create_workflow display diagnostic schema
+  * (same TS diagnostic shape, same cap); logs take the tail, response capped independently.
  */
 export const evalWorkflowSnippetToolResultDisplayPayloadSchema = z
   .object({
@@ -180,9 +180,9 @@ export const evalWorkflowSnippetToolResultDisplayPayloadSchema = z
   .strict();
 
 /**
- * ListSavedWorkflows 的结果卡载荷。根因：v4 wire 上 output.text 是 formatModelContent
- * 的 XML 风格投影，UI 侧 JSON 探针永不命中（掉进 raw JSON 兜底卡）——结构化列表必须走
- * 本 display 通道。description / whenToUse 独立限长；args 只保留名字（声明细节归确认窗）。
+  * ListSavedWorkflows's result-card payload. Root cause: on the v4 wire output.text is formatModelContent's
+  * XML-style projection, so the UI's JSON probe never hits (falling into the raw-JSON fallback card) -- structured lists must travel through
+  * this display channel. description / whenToUse capped independently; args keep names only (declaration details belong to the confirmation dialog).
  */
 export const savedWorkflowListToolResultDisplayPayloadSchema = z
   .object({
@@ -216,17 +216,17 @@ export const savedWorkflowListToolResultDisplayPayloadSchema = z
   .strict();
 
 /**
- * ListModels 的结果卡载荷。根因与 saved_workflow_list 同一条：v4 wire 上 output.text 是
- * formatModelContent 的 `<models>` 投影，UI 侧 JSON 探针永不命中——结构化目录只能走本通道。
+  * ListModels's result-card payload. Same root cause as saved_workflow_list: on the v4 wire output.text is
+  * formatModelContent's models projection, so the UI's JSON probe never hits -- the structured catalog has only this channel.
  *
- * 字段就是工具输出本身（读侧要画的三件事「有哪些、来自哪里、哪个是当前」全在里面），
- * 多一个 truncated。providerLabel / disabledReason 是注册表来的自由文本，display 不过 result
- * budget，必须在这里独立限长；其余是短 id 与小数值，原样透传。
+  * The fields are the tool output itself (everything the reader draws -- what exists, whence, which is current),
+  * plus one truncated. providerLabel / disabledReason are free text from the registry; display bypasses the result
+  * budget, so they are capped here; the rest are short ids and small numbers, passed through verbatim.
  */
 export const listModelsToolResultDisplayPayloadSchema = z
   .object({
     kind: z.literal("list_models"),
-    /** 会话此刻的模型（规范形）；目录里一条都对不上时缺席。 */
+        /** The session's current model (canonical form); absent when nothing in the catalog matches. */
     current: z.string().optional(),
     models: z
       .array(
@@ -265,11 +265,11 @@ export type ListModelsToolResultDisplayPayload = z.infer<
 >;
 
 /**
- * ResumeWorkflowRun 的结果卡载荷。
+  * ResumeWorkflowRun's result-card payload.
  *
- * 刻意最小 `{runId}`：恢复卡要传达的信息就是「哪个 run 在后台继续」——response 引导文案是
- * 模型通道的话术，UI 有自己的本地化词汇表，多带字段只增 wire 字节没有消费者。构造侧
- * safeParse 输出 schema 失败即回 undefined（走文本兜底），与上面四个构造函数同一骨架。
+  * Deliberately minimal, runId only: all a resume card must convey is which run continues in the background -- the response guidance prose is
+  * model-channel wording and the UI has its own localization table; extra fields only add wire bytes with no reader. On the producer side, a
+  * failed safeParse of the output schema returns undefined (text fallback), the same skeleton as the four producers above.
  */
 export const resumeWorkflowRunToolResultDisplayPayloadSchema = z
   .object({

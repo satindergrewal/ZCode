@@ -5,17 +5,17 @@ import type { SavedWorkflowProjectTarget } from "@/settings/saved-workflows/save
 import type { SavedWorkflowLaunchTarget } from "@/settings/saved-workflows/useSavedWorkflowLauncher.js";
 
 interface SavedWorkflowProjectTargets {
-  /** RPC target（含 remoteSessionId），供 store / 服务方法调用。 */
+  /** /** RPC target (with remoteSessionId) for store/service calls. */
   target: ZCodeAgentWorkspaceTarget;
-  /** 发往对话 / 打开实例的项目坐标：只有 workspacePath + identity（不带 remoteSessionId）。 */
+  /** /** Conversation/open-instance coordinates: workspacePath + identity only (no remoteSessionId). */
   projectTarget: SavedWorkflowProjectTarget;
-  /** 直接启动的连接坐标：额外带 remoteSessionId，决定 conversation 连接 endpoint 与导航目标。 */
+  /** /** Direct-start connection coordinates: plus remoteSessionId, fixing the conversation endpoint and navigation target. */
   launchTarget: SavedWorkflowLaunchTarget;
 }
 
 /**
- * 一个项目组要用到的三套坐标（所有动作都带**本项目**的
- * target）。三者只在是否携带 remoteSessionId 上不同；引用在依赖不变时保持稳定，供 memo / effect 依赖。
+ * The three coordinate sets a project group needs (every action carries this
+ * project's target). They differ only in remoteSessionId; refs stay stable while inputs do, for memo/effect deps.
  */
 export function useSavedWorkflowProjectTargets(
   project: Pick<AutomationWorkspaceOption, "workspacePath" | "workspaceIdentity">,

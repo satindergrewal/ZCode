@@ -1,6 +1,6 @@
-// desktop main 侧的 cron scheduler 进程管理器。
-// 职责：拉起/销毁常驻 scheduler 进程；把 scheduler 的派发请求路由给某个本地 host（转成 CronRun）；
-// 把 host 回报的 CronRunResult 转回 scheduler 结算。scheduler 只碰 tasks-index，createTask 在 host 域执行。
+// // Desktop-main side manager for the cron scheduler process.
+// // Owns spawn/teardown of the resident scheduler; routes dispatch requests to a local host (as CronRun) and
+// feeds CronRunResults back for settlement. The scheduler touches tasks-index only; createTask runs in the host domain.
 import { utilityProcess as electronUtilityProcess } from "electron";
 import type { UtilityProcess as ElectronUtilityProcess } from "electron";
 import { HostMessageTypes } from "@zcode/shared";
@@ -21,7 +21,7 @@ export interface CronRunResultPayload {
   failureKind?: "transient" | "permanent";
 }
 
-/** host → main 的闲时任务派发结果（与 cron 消息独立）。 */
+/* /** host-to-main off-peak dispatch result (independent of cron messages). */
 export interface OffPeakRunResultPayload {
   offPeakTaskId: string;
   ok: boolean;
@@ -38,20 +38,20 @@ interface CronSchedulerDeps {
     warn: (...args: unknown[]) => void;
     error: (...args: unknown[]) => void;
   };
-  /** 选一个能执行本地 workspace 派发的 host；无可用 host 时返回 null（scheduler 会退避重试）。 */
+  /* /** Picks a host able to run local workspace dispatch; null when none (scheduler backs off and retries). */
   resolveDispatchHost: () => ElectronUtilityProcess | null;
-  /** 闲时任务执行中计数变化（keep-awake：main 据此 + 设置切 powerSaveBlocker）。 */
+  /* /** Off-peak running-count changes (keep-awake: main toggles powerSaveBlocker per this plus settings). */
   onOffPeakActiveCountChanged?: (count: number) => void;
 }
 
 export interface CronSchedulerHandle {
-  /** host 回报派发结果时调用，转交给 scheduler 结算。 */
+  /* /** Called on host dispatch results; forwards to the scheduler for settlement. */
   handleCronRunResult: (result: CronRunResultPayload) => void;
-  /** host 回报闲时任务派发结果时调用，转交给 scheduler 结算。 */
+  /* /** Called on off-peak dispatch results; forwards to the scheduler for settlement. */
   handleOffPeakRunResult: (result: OffPeakRunResultPayload) => void;
-  /** manual run 落库后立即唤醒 scheduler，不等待下一次轮询。 */
+  /* /** Wakes the scheduler as soon as a manual run persists, skipping the next poll. */
   wake: (automationId: string) => void;
-  /** app 退出前优雅收尾（通知 scheduler 释放认领 + 关库，兜底强杀）。 */
+  /* /** Graceful shutdown: release claims, close the DB, force-kill as the fallback. */
   dispose: () => Promise<void>;
 }
 
@@ -68,7 +68,7 @@ export function spawnCronScheduler(deps: CronSchedulerDeps): CronSchedulerHandle
   });
 
   deps.logger.info(`[cron-scheduler] forked scheduler process pid=${child.pid}`);
-  // 资源遥测的 scheduler 角色 pid 只有 spawn 点知道，这里登记到进程角色注册表。
+  // Only the spawn point knows the scheduler role pid; register it in the process-role table here.
   registerSchedulerProcess(child);
   let isDisposing = false;
   let disposePromise: Promise<void> | null = null;
@@ -96,8 +96,8 @@ export function spawnCronScheduler(deps: CronSchedulerDeps): CronSchedulerHandle
       return;
     }
 
-    // scheduler 自采的 60 秒样本：main 只取 heap 作 scheduler 角色事件的 heap 维度，
-    // 非法样本在入口按 schema 丢弃。
+    // Scheduler self-samples: main takes heap only, for the scheduler-role event dim;
+    // invalid samples drop at the ingress by schema.
     if (msg.type === "scheduler-resource-sample") {
       ingestSchedulerSelfResourceSample(msg.sample);
       return;
@@ -105,8 +105,8 @@ export function spawnCronScheduler(deps: CronSchedulerDeps): CronSchedulerHandle
 
     if (msg.type === "cron-dispatch-request") {
       if (isDisposing) {
-        // App 退出时 Cron 与 Host 并行收口；进入 disposing 后继续派发会把新任务
-        // 发送给正在关闭的 Host。明确拒绝派发，避免为了保持串行而额外增加 1.5 秒退出延迟。
+        // During shutdown Cron and Host wind down in parallel; dispatching after disposing sends new tasks
+        // to a dying Host. Reject explicitly instead of adding 1.5s of exit delay for serialization.
         postToScheduler({
           type: "cron-dispatch-result",
           runId: msg.runId,
@@ -118,7 +118,7 @@ export function spawnCronScheduler(deps: CronSchedulerDeps): CronSchedulerHandle
       }
       const host = deps.resolveDispatchHost();
       if (!host) {
-        // 没有可派发的本地 host（无窗口/未就绪）：按 transient 回执，scheduler 退避后重试。
+        // No dispatchable local host (no window/not ready): ack transient; the scheduler backs off and retries.
         postToScheduler({
           type: "cron-dispatch-result",
           runId: msg.runId,
@@ -156,7 +156,7 @@ export function spawnCronScheduler(deps: CronSchedulerDeps): CronSchedulerHandle
     if (msg.type === "offpeak-dispatch-request") {
       const host = deps.resolveDispatchHost();
       if (!host) {
-        // 无可用 host：transient 回执，scheduler 按 off-peak 独立退避重试（顺延不丢弃）。
+        // No host: transient ack; the off-peak backoff retries later without dropping the task.
         postToScheduler({
           type: "offpeak-dispatch-result",
           offPeakTaskId: msg.offPeakTaskId,
@@ -224,7 +224,7 @@ export function spawnCronScheduler(deps: CronSchedulerDeps): CronSchedulerHandle
           try {
             child.kill();
           } catch {
-            // 忽略。
+            // Ignore.
           }
           done();
         }, DISPOSE_FORCE_KILL_MS);

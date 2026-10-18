@@ -1,6 +1,7 @@
-// 侧栏工作流运行行的纯模型。
-// 输入是 sessions-index 下发的 workflowActivity 与渲染端的已确认集合，输出是「画哪几行、每行几盏灯」。
-// 无时钟、无 DOM：已结束的行何时折叠只看确认集合，不看时间。
+// Pure model for the sidebar workflow run line.
+// Inputs: the workflowActivity handed down by sessions-index plus the renderer-side acknowledged set;
+// output: which lines to draw and how many dots each shows.
+// No clock, no DOM: when settled lines collapse depends only on the acknowledged set, never on time.
 import type {
   SessionWorkflowActivity,
   SessionWorkflowPhaseSummary,
@@ -9,42 +10,43 @@ import type {
 import { isSessionWorkflowRunLive } from "@zcode/shared/zcode-protocol-v4";
 import { bandOf, foldPhaseBands, trackOf } from "../components/workflow-timeline/timeline-bands.js";
 
-/** 一个会话最多画的运行行数；其余折成「+n」。 */
+/** Max run lines drawn per session; the rest collapse into a "+n" suffix. */
 const WORKFLOW_RUN_LINE_MAX_LINES = 2;
-/** 迷你轨道最多画的站点数；更多时折到运行站 ±2 并带「+n」尾。 */
+/** Max stations on the mini rail; beyond that, fold to running station +/-2 with a "+n" tail. */
 const WORKFLOW_RUN_RAIL_MAX_STATIONS = 6;
-/** 折叠时保留在运行站两侧的站点数。 */
+/** Stations kept on each side of the running station when folding. */
 const RAIL_FOLD_RADIUS = 2;
 
 export interface WorkflowRunRailStation {
   name: string;
   status: SessionWorkflowPhaseSummary["status"];
-  /** 进入本站的那一段轨道是否已被控制流走过（强色段）。 */
+  /** Whether the rail segment entering this station was traversed by control flow (strong color). */
   reached: boolean;
   /**
-   * 进入本站的那一段是**双线段**：本站与前一站同属一条带、却在不同轨道上，控制流没有从那站
-   * 走到这站——两者是并行的。
-   * 标志挂在**站**上而不是段上，所以它能活过下面的窗口折叠。
+   * The segment entering this station is a **twin segment**: this and the previous station share
+   * a band but sit on different tracks, and control flow did not run between them -- parallel.
+   * The flag lives on the **station**, not the segment, so it survives the window fold below.
    */
   twin?: true;
 }
 
 export interface WorkflowRunRail {
   stations: WorkflowRunRailStation[];
-  /** 被折叠掉、不画的站点数（「+n」尾）；0 时不画尾。 */
+  /** Stations folded away, not drawn (the "+n" tail); no tail at 0. */
   hidden: number;
-  /** 脚本没有阶段词汇表：画一个隐含站点「Workflow」。 */
+  /** The script has no phase vocabulary: draw one implicit "Workflow" station. */
   implicit: boolean;
 }
 
-/** 控制流是否到过这一站：running / done / failed 都算。 */
+/** Whether control flow reached this station: running / done / failed all count. */
 function isWorkflowRunStationReached(status: SessionWorkflowPhaseSummary["status"]): boolean {
   return status !== "pending";
 }
 
 /**
- * 迷你轨道的折叠：≤ 6 站全画；更多时以运行站为中心（没有运行站就取最后一个到过的站，再没有就取首站）
- * 保留 ±2 共 5 站，其余合成「+n」尾。这是**固定窗口**而不是滚动：侧栏没有横向手势。
+ * Mini-rail fold: draw every station at <= 6; beyond that, center on the running station (fallback:
+ * last reached, then first), keep +/-2 = 5 stations, and fold the rest into a "+n" tail. A **fixed
+ * window**, not scrolling: the sidebar has no horizontal gesture.
  */
 export function foldWorkflowRunRail(
   phases: readonly SessionWorkflowPhaseSummary[],
@@ -52,8 +54,9 @@ export function foldWorkflowRunRail(
   if (phases.length === 0) {
     return { stations: [], hidden: 0, implicit: true };
   }
-  // 折带必须在**全表**上做：窗口只取其中一段，而带是声明序上的连通分量，按窗口内的下标重折
-  // 会把跨窗口边界的带拆断。折完再窗口化，双线段标志随站走。
+  // Band folding must run on the **full** phase list: the window takes only a slice, while bands are
+  // connected components in declaration order -- re-folding inside the window would split bands
+  // across its edges. Fold first, then window; the twin flag rides on stations.
   const bands = foldPhaseBands(
     phases.length,
     phases.map((phase) => phase.alongside ?? []),
@@ -92,14 +95,15 @@ export function foldWorkflowRunRail(
   return { stations, hidden: all.length - stations.length, implicit: false };
 }
 
-/** 并行阶段之间的连接词：同时在跑的几站并排，而不是排队。 */
+/** Separator between parallel phases: simultaneously running stations sit side by side, not queued. */
 const WORKFLOW_RUN_PARALLEL_SEPARATOR = " ∥ ";
 
 /**
- * 同时在跑的站名，连成 tooltip 里的一段。并行时「当前阶段」不再是一个站——谁都不比谁更当前，
- * 所以那一段换成全部在跑的站名。
+ * Names of the simultaneously running stations, joined into one tooltip segment. When parallel, the
+ * "current phase" is no single station -- none is more current than another -- so that segment
+ * lists every running station instead.
  *
- * 只有一个（或零个）站在跑时返回 `undefined`：调用方退回 `currentPhase`，文案一字不变。
+ * Returns `undefined` when one or zero stations are running: callers keep `currentPhase` untouched.
  */
 export function workflowRunParallelPhaseLabel(
   phases: readonly SessionWorkflowPhaseSummary[],
@@ -112,13 +116,14 @@ export function workflowRunParallelPhaseLabel(
 
 interface WorkflowRunLineSelection {
   lines: SessionWorkflowRunSummary[];
-  /** 没画出来的行数（「+n」词）。 */
+  /** Lines not drawn (the "+n" suffix). */
   overflow: number;
 }
 
 /**
- * 选出要画的行：在跑的永远画；已结束的只在**未确认**时画（确认 = 会话被打开过）。
- * 输入顺序已由投影排好（在跑的按启动序在前，其后最近结束的），这里只过滤与截断。
+ * Pick the lines to draw: always draw running ones; settled ones only while **unacknowledged**
+ * (acknowledged = the session was opened). Input order is already projected by the caller (running
+ * by start order first, then most recently settled); here we only filter and truncate.
  */
 export function selectWorkflowRunLines(
   activity: SessionWorkflowActivity | undefined,
@@ -134,7 +139,7 @@ export function selectWorkflowRunLines(
   };
 }
 
-/** 已结束（可被确认）的 run id：打开会话时整批确认。 */
+/** Settled (acknowledgable) run ids: acknowledged in bulk when the session opens. */
 export function settledWorkflowRunIds(activity: SessionWorkflowActivity | undefined): string[] {
   if (activity === undefined) return [];
   return activity.runs
@@ -142,7 +147,7 @@ export function settledWorkflowRunIds(activity: SessionWorkflowActivity | undefi
     .map((run) => run.runId);
 }
 
-/** 在跑的 run 数（收起的项目组头旁的脉冲灯与数量）。 */
+/** Count of running runs (pulse dot and number next to a collapsed group header). */
 export function countLiveWorkflowRuns(activity: SessionWorkflowActivity | undefined): number {
   if (activity === undefined) return 0;
   return activity.runs.filter((run) => isSessionWorkflowRunLive(run.status)).length;

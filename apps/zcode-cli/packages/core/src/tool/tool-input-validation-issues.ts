@@ -1,5 +1,5 @@
-// 这些字段的插入顺序会直接进入 provider-visible JSON fallback，
-// 必须保持稳定，不能改成只保证语义等价的通用错误对象。
+// Insertion order of these fields flows straight into the provider-visible JSON fallback;
+// it must stay stable -- do not replace it with a merely-semantically-equal generic error object.
 export type ToolInputValidationPath = Array<string | number>;
 
 export type ToolInputValidationIssue =

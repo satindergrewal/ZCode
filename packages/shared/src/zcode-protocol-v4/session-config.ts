@@ -3,22 +3,22 @@ import { modelSelectionSchema } from "../model-selection.js";
 
 // ── config──
 export const sessionConfigStateSchema = z.object({
-  /** Session 接受并持久化的稀疏选择意图；provider/model/thought 仅为 UI effective 投影。 */
+  /// The sparse selection intent the session accepted and persisted; provider/model/thought are UI-effective projections only.
   modelSelection: modelSelectionSchema.optional(),
   provider: z.string(),
   model: z.string(),
   thought: z.string(),
-  // 思考档位是当前模型的能力，不是 workspace/UI 偏好。
-  // default 仅用于兼容旧快照；新 agent 必须从 runtime 投影实际集合。
+  // The thinking level is the current model's capability, not a workspace/UI preference.
+  // default is legacy-snapshot compat; new agents must project the actual set from the runtime.
   thoughtLevels: z.array(z.string()).default([]),
   followupMode: z.enum(["queue", "guide"]),
-  // additive（冻结面演进，同 meta 的裁决口径）：agent 协作模式（core CollaborationMode）。
-  // 必须带 default 才不破坏旧快照/旧发送端的解析；投影经 SessionModeChanged 事件更新。
+  // additive (frozen-surface evolution, same ruling as meta): the agent collaboration mode (core CollaborationMode).
+  // Needs a default to keep legacy snapshot/sender parsing; the projection updates via SessionModeChanged.
   mode: z.string().default("build"),
   planEnabled: z.boolean().optional(),
-  /** 明确审批结果；草稿按 interactionId 消费一次，普通 mode 更新不重置它。 */
+  /// Explicit approval verdict; drafts consume it once by interactionId, plain mode updates never reset it.
   permissionGrant: z.object({ interactionId: z.string().min(1) }).optional(),
-  /** 最近工具转换的关联，供草稿定向同步；不新增可见历史事件。 */
+  /// Correlation of the latest tool transition, for directed draft sync; no new visible history event.
   planTransition: z
     .object({
       toolCallId: z.string(),

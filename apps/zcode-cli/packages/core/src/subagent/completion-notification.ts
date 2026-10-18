@@ -45,7 +45,7 @@ function formatLocalAgentNotificationSummary(
 ): string {
   const summary = `Agent ${input.agentType} task "${input.description}" ${input.status}.`;
   const error = input.status === "failed" && input.error?.trim() ? input.error : undefined;
-  // 失败 summary 是 Agent 卡“子智能体输出”的来源，必须保留原前缀并
-  // 直接追加与 <error> 相同的失败原因；completed/stopped 文案保持不变。
+  // The failure summary feeds the Agent card's "subagent output" section; keep the original prefix and
+  // append the same failure reason as <error>; completed/stopped copy stays unchanged.
   return error ? `${summary} ${error}` : summary;
 }

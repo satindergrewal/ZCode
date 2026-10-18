@@ -14,8 +14,8 @@ function readRendererNavigationEntries(): RendererNavigationEntry[] {
 }
 
 /**
- * 区分 app 冷启动与同一 renderer 的刷新。
- * workspace/app 入口只应展示草稿，但输出中的 renderer reload 仍要恢复当前 pane 续流。
+ * Distinguish a cold app start from a reload of the same renderer.
+ * The workspace/app entry must show only drafts, while a renderer reload in the output still restores the current pane and stream.
  */
 export function isRendererReloadNavigation(
   entries: readonly RendererNavigationEntry[] = readRendererNavigationEntries(),

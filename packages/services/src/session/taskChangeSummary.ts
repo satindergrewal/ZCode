@@ -15,8 +15,8 @@ interface AggregatedFileChange {
 }
 
 /**
- * 按轮次分组构建文件变更摘要。
- * 每个轮次独立计算 diff，用于在每条 assistant 消息下方显示该轮的文件改动。
+ * Builds per-turn file change summaries.
+ * Each turn diffs independently, shown under its assistant message.
  */
 export function buildPerTurnChangeSummaries(
   fileChanges: readonly ZCodePersistedFileChange[] | undefined,

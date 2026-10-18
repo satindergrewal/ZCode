@@ -1,8 +1,8 @@
 import type { IServiceAccessor } from "@zcode/services";
 
 /**
- * 只把既有远端 RPC client 收进窗口 Host，不改变 zcode-server wire。
- * 这个窄类型固定 mixed remote workspace 真正依赖的 legacy channel，并在组合服务前做完整性校验。
+ * Wraps the existing remote RPC client into the window Host without changing the zcode-server wire.
+ * This narrow type pins the legacy channels a mixed remote workspace really needs and integrity-checks them before composing services.
  */
 const LEGACY_REMOTE_WORKSPACE_RPC_CHANNELS = [
   "fileService",
@@ -39,6 +39,6 @@ export function assertLegacyRemoteWorkspaceRpcContract(
     return (typeof service !== "object" || service === null) && typeof service !== "function";
   });
   if (missing.length > 0) {
-    throw new Error(`Legacy remote workspace RPC channel 不完整: ${missing.join(", ")}`);
+    throw new Error(`Legacy remote workspace RPC channel incomplete: ${missing.join(", ")}`);
   }
 }

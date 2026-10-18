@@ -39,13 +39,13 @@ export function resolveHelpAppConfig(remote: unknown, local: unknown): HelpAppCo
       "en-US": getCommunityUrlFromConfigs(remoteConfig, localConfig, "en-US"),
     },
     feedback_url: getFeedbackUrlFromConfig(remoteConfig) ?? getFeedbackUrlFromConfig(localConfig),
-    // false 是远端明确配置，不能按 truthy 判断后回退到本地 true。
+    // false is an explicit remote setting; truthy checks must not fall back to local true.
     feedback_use_external_form:
       remoteConfig?.feedback_use_external_form ?? localConfig?.feedback_use_external_form ?? false,
   };
 }
 
-/** 公开帮助配置仅做内存缓存，不共享带用户鉴权的灰度响应。 */
+/** The public help config is memory-cached only; never share the authenticated rollout response. */
 export function createHelpAppConfigReader(options: {
   fetchImpl: typeof fetch;
   now?: () => number;

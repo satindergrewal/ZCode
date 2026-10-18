@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 聚合命令、任务、文件三类搜索结果，后续可按 result section 拆分。 */
+/* eslint-disable max-lines -- aggregates command/task/file search results; splittable by result section later. */
 import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { unpackWorkspaceFileEntries } from "@zcode/shared/workspaceFileEntriesCodec";
 import { fetchWorkspaceFileEntriesPacked } from "@/workspace-file-search/fetchWorkspaceFileEntries.js";
@@ -63,9 +63,9 @@ const COMMAND_CENTER_FILE_RESULT_LIMIT = 80;
 const COMMAND_CENTER_TASK_RESULT_LIMIT = 80;
 const commandCenterDialogClassName = cn(
   quickPickDialogClassName,
-  // Linux 桌面端的通用 DialogContent 会给居中弹窗补偿自绘标题栏高度。
-  // Command Center 是顶部搜索浮层，必须在 Linux variant 下重新声明 top，
-  // 否则平台补偿会覆盖 top-16/sm:top-20，导致弹层掉到窗口中部。
+  // The generic Linux DialogContent compensates centered dialogs for the custom titlebar height.
+  // Command Center is a top search layer and must redeclare top under the Linux variant, or the
+  // platform compensation overrides top-16/sm:top-20 and drops the layer mid-window.
   "top-16 max-h-[calc(100dvh-4.5rem)] -translate-y-0 sm:top-20 sm:max-h-[calc(100dvh-6rem)]",
   "platform-linux-desktop:top-16 sm:platform-linux-desktop:top-20",
 );
@@ -255,9 +255,9 @@ function CommandCenterScopeButton({
       aria-selected={active}
       onClick={onClick}
       className={cn(
-        // scope tabs 是可交互的范围切换按钮，按 DESIGN.md 语义角色属于
-        // common buttons，应使用 text-ui-base；不能用 text-ui-xs（10px，badge/
-        // counter 专用），否则字号过小。同时与上方搜索输入框 (text-ui-base) 保持一致。
+        // Scope tabs are interactive range switchers; per DESIGN.md semantic roles they are
+        // common buttons and use text-ui-base, not text-ui-xs (10px, badge/counter only) — too
+        // small. Also matches the search input above (text-ui-base).
         "inline-flex h-6 shrink-0 items-center gap-1 rounded-full border px-2 text-ui-base font-medium leading-none transition-colors",
         active
           ? "border-border bg-selected text-foreground"
@@ -271,8 +271,8 @@ function CommandCenterScopeButton({
 }
 
 /**
- * 搜索历史 chip 的 scope 前缀（如 commands → ">"）。
- * 提取为独立函数以便 CommandCenterSearchHistory 组件复用。
+ * Scope prefix for a search-history chip (e.g. commands -> ">").
+ * Standalone function so CommandCenterSearchHistory can reuse it.
  */
 function scopeToPrefix(scope: CommandCenterSearchScope): string {
   switch (scope) {
@@ -288,9 +288,9 @@ function scopeToPrefix(scope: CommandCenterSearchScope): string {
 }
 
 /**
- * 对话搜索结果的时间戳。
- * 独立组件便于复用与单测；按 DESIGN.md 语义角色，列表项里的相对时间属于
- * secondary copy，使用 text-ui-sm（不用 text-ui-xs，避免偏小）。
+ * Timestamp of a conversation search result.
+ * Standalone component for reuse and unit tests; per DESIGN.md semantic roles, relative time in a
+ * list row is secondary copy at text-ui-sm (not text-ui-xs, too small).
  */
 function CommandCenterConversationTimestamp({
   className,
@@ -312,13 +312,13 @@ function CommandCenterConversationTimestamp({
 }
 
 /**
- * 命令中心搜索历史区：分区标题 + 历史 chip + 清除/展开按钮。
- * 从 CommandCenterDialog 内联 JSX 抽取，便于复用与单测。
+ * Command center search-history section: section heading + history chips + clear/expand buttons.
+ * Extracted from CommandCenterDialog's inline JSX for reuse and unit tests.
  *
- * 字号语义（DESIGN.md）：
- * - 分区标题：text-ui-sm（section label / helper text）
- * - 历史 chip 搜索词：text-ui-base（可读内容，与列表主体一致）
- * - chip 内 scope 前缀：text-ui-xs（badge 标记，比主体小一级形成层级）
+ * Type scale (DESIGN.md):
+ * - section heading: text-ui-sm (section label / helper text)
+ * - history chip query: text-ui-base (readable content, matches list body)
+ * - in-chip scope prefix: text-ui-xs (badge mark, one step smaller for hierarchy)
  */
 function CommandCenterSearchHistory({
   entries,
@@ -367,10 +367,9 @@ function CommandCenterSearchHistory({
             <button
               key={`${entry.scope}:${entry.query}:${entry.updatedAt}`}
               type="button"
-              // text-ui-base 随 --ui-font-size（12–20px）缩放，不能用固定 h-5
-              // 否则 20px 字号下内容区（20px - 2px 边框 = 18px）装不下字体行盒，
-              // 配合外层 overflow-hidden 会裁切文字。改用 min-h-5 + py-0.5 + leading-none
-              // 让高度随字号增长，保证 12–20px 全范围可读。
+              // text-ui-base scales with --ui-font-size (12-20px); a fixed h-5 cannot fit the
+              // line box at 20px (20px - 2px border = 18px) and overflow-hidden would clip text.
+              // min-h-5 + py-0.5 + leading-none grows with the font, readable across 12-20px.
               className="inline-flex min-h-5 max-w-44 shrink-0 items-center gap-1 rounded-full border border-border px-2 py-0.5 leading-none text-ui-base text-foreground-subtle hover:bg-surface-hover hover:text-foreground"
               onClick={() => onPickEntry(entry)}
             >
@@ -441,8 +440,9 @@ export const CommandCenterDialog = memo(function CommandCenterDialogComponent({
   const [workspaceFilesLoading, setWorkspaceFilesLoading] = useState(false);
   const [workspaceFilesError, setWorkspaceFilesError] = useState<string | null>(null);
   const [loadedWorkspaceKey, setLoadedWorkspaceKey] = useState<string | null>(null);
-  // 性能修复：Command Center 关闭时不需要跟随 chat streaming 重算命令、任务和 recent changes。
-  // 保留 hooks 顺序，但把关闭态输入降为空，避免隐藏弹窗在每个 token 批次重建结果区。
+  // Perf: with the dialog closed, skip recomputing commands/tasks/recent changes on chat streaming.
+  // Keep hook order but feed an empty closed-state input so the hidden dialog stops rebuilding
+  // results on every token batch.
   const effectiveCommands = open ? commands : EMPTY_QUICK_PICK_COMMANDS;
   const effectiveWorkspaceTabs = open ? workspaceTabs : EMPTY_COMMAND_CENTER_WORKSPACE_TABS;
   const effectiveActiveTaskChangeSummary = open ? activeTaskChangeSummary : null;
@@ -572,7 +572,7 @@ export const CommandCenterDialog = memo(function CommandCenterDialogComponent({
     setWorkspaceFilesError(null);
     void fetchWorkspaceFileEntriesPacked(fileService, workspaceAbsPath)
       .then((result) => {
-        // Host 返回列式 packed 字符串（避免大数组结构化克隆），此处一次性解包。
+        // The host returns column-packed strings (avoiding structured-clone of large arrays); unpack once here.
         const entries = unpackWorkspaceFileEntries(result, workspaceAbsPath);
         if (cancelled) {
           return;
@@ -623,7 +623,7 @@ export const CommandCenterDialog = memo(function CommandCenterDialogComponent({
       rememberSearch("commands");
       closeDialog();
       void Promise.resolve(command.run()).catch((error) => {
-        logger.error("[CommandCenter] 命令执行失败", {
+        logger.error("[CommandCenter] Command execution failed", {
           commandId: command.id,
           error,
         });

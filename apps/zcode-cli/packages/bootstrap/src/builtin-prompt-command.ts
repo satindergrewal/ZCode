@@ -9,10 +9,10 @@ const INIT_COMMAND_NAME = "init";
 
 interface ResolveZCodeBuiltinPromptCommandOptions {
   /**
-   * 动态工作流开关：只有显式 false 才禁止展开 `/workflow`。
-   * TUI 使用默认开启策略；headless 按本次 `--enable-workflow` 显式传入 true/false，默认 false。
-   * 关闭时返回 undefined；`workflow` 是保留名，自定义命令解析也不会展开它，原文作为普通 prompt
-   * 交给模型。这与命令目录隐藏该入口的规则一致。
+   * Dynamic-workflow flag: only an explicit false suppresses `/workflow` expansion.
+   * TUI defaults to enabled; headless follows the explicit `--enable-workflow` true/false, default false.
+   * When disabled it returns undefined; `workflow` is a reserved name, custom command parsing does not expand it either, and the raw text
+   * goes to the model as a plain prompt. This matches hiding the entry from the command catalog.
    */
   dynamicWorkflowEnabled?: boolean;
   workingDirectory?: string;

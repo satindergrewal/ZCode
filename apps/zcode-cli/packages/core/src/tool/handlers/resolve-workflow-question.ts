@@ -1,14 +1,14 @@
 // ============================================================
 // ResolveWorkflowQuestion Tool Handler
 // ============================================================
-// 主代理用它回答一个 actor 从**正在跑的** workflow 里升级上来的阻塞问题。见端口 `DynamicWorkflowRunPort.resolveQuestion`。
+// The main agent answers a blocking question escalated by an actor inside a **running** workflow. See port DynamicWorkflowRunPort.resolveQuestion.
 //
-// handler 刻意**很薄**：qid 查表、driver 结算、事件双轨全在 port 服务端，这里只做三件事:
-// 取端口（typeof 探测，照 resume/listRuns 先例）、透传 qid 与答案、把结果投影成契约形状。
-//
-// 拒绝文案**原样透传**服务端的 message：那段文字由写注册表的那一层写好（陈述现状与下一步），
-// 判别键与文案分开维护则两处迟早会说不同的话，而这里的读者是模型——它读到的就是它的下一步。
-// 因此本文件的三个拒绝分支只负责挑一个稳定的 errorCode，不重写一个字。
+// The handler is deliberately **thin**: qid lookup, driver settlement, dual-track events all live
+// port-side. Three things here: take the port (typeof probe, per resume/listRuns), pass qid+answer through,
+// project the result into the contract shape.
+// Server rejection copy passes through **verbatim**: authored by the registry layer (state + next step);
+// discriminator and copy maintained apart would drift, and the reader here is the model -- what it reads
+// IS its next step. The three rejection branches only pick a stable errorCode, never rewording.
 
 import {
   RESOLVE_WORKFLOW_QUESTION_TOOL_NAME,
@@ -28,13 +28,13 @@ import type {
 } from "../types.js";
 
 const RESOLVE_WORKFLOW_QUESTION_TIMEOUT_MS = 15_000;
-/** 输出只有一段确认文案，24k 绰绰有余（照 ResumeWorkflowRun）。 */
+/** Output is one confirmation paragraph; 24k is plenty (as in ResumeWorkflowRun). */
 const RESOLVE_WORKFLOW_QUESTION_MODEL_BYTES = 24_000;
 
 /**
- * 本地失败码表。数值只是日志位（executor 把它投影成 `code: "N"` 字符串）；模型真正读的是
- * message，而三个拒绝分支的 message 由服务端写好。刻意从 21 起编，与内省表（1/2）和
- * ResumeWorkflowRun 表（11–15）视觉分开——三张表的数值空间互相独立、禁止跨表比对。
+ * Local failure codes. Numbers are log bits (executor projects errorCode to `code: "N"`); the model reads
+ the message, authored server-side per branch. Numbered from 21 to stay visually apart from the
+ * the ResumeWorkflowRun table (11-15); three independent number spaces, never compare across tables.
  */
 const RESOLVE_WORKFLOW_QUESTION_ERROR_CODE = {
   ANSWERING_UNAVAILABLE: 21,
@@ -53,9 +53,9 @@ const RESOLVE_WORKFLOW_QUESTION_DESCRIPTION = [
 ].join("\n");
 
 /**
- * 「本会话没有应答能力」。端口缺席（journal 不可用 → run service 整个不构造）与方法缺席
- * （stub 不带 resolveQuestion）回同一个失败：对模型这是同一件事（照 resume 的 typeof 探测
- * 先例）。绝不静默成功——那会让一个 actor 永远等下去，而模型以为自己已经答过了。
+ * "No answer capability in this session". Port absent (no journal -> no run service at all) and method
+ absent (stub without resolveQuestion) fail identically: one fact to the model (the resume typeof-probe
+ * precedent). Never succeed silently — an actor would wait forever while the model believes it answered.
  */
 function resolveQuestionUnavailableFailure(): ToolHandlerFailure {
   return {
@@ -66,7 +66,7 @@ function resolveQuestionUnavailableFailure(): ToolHandlerFailure {
   };
 }
 
-/** 端口三种 reason → 各自的稳定错误码；message 原样来自服务端。 */
+/** Port reason -> stable error code; message verbatim from the server. */
 function resolveQuestionFailureFor(reason: string, message: string): ToolHandlerFailure {
   switch (reason) {
     case "unknown_question":
@@ -88,7 +88,7 @@ function resolveQuestionFailureFor(reason: string, message: string): ToolHandler
         message,
       };
     default:
-      // 端口契约外的 reason：仍回结构化失败（throw 是接线故障的通道），文案带原词供排查。
+      // Out-of-contract reason: still a structured failure (throw is the wiring-bug channel); copy keeps the raw word for triage.
       return {
         result: false,
         errorCode: RESOLVE_WORKFLOW_QUESTION_ERROR_CODE.UNKNOWN_QUESTION,
@@ -118,7 +118,7 @@ const resolveWorkflowQuestionHandler: ToolHandler = async (
   return {
     ok: true,
     qid: result.qid,
-    // 说清两件事：答案已经送达，以及 run 并没有因此停下——主代理不必守着它。
+    // Say two things: the answer was delivered, and the run did not stop -- no need to babysit it.
     response: `Answer delivered for question ${result.qid}. The subagent that asked has resumed its turn with your answer; the run keeps going as before.`,
   } satisfies ResolveWorkflowQuestionOutput;
 };
@@ -134,7 +134,7 @@ export const resolveWorkflowQuestionToolEntry: ToolEntry = {
   metadata: {
     name: RESOLVE_WORKFLOW_QUESTION_TOOL_NAME,
     description: RESOLVE_WORKFLOW_QUESTION_DESCRIPTION,
-    // 作答会让一个停驻的 actor 带着这段文字继续干活——不是只读。
+    // Answering sends text into a running actor -- not read-only.
     readOnly: false,
     destructive: false,
     concurrentSafe: true,
@@ -142,8 +142,8 @@ export const resolveWorkflowQuestionToolEntry: ToolEntry = {
     maxOutputBytes: RESOLVE_WORKFLOW_QUESTION_MODEL_BYTES,
     sideEffectScope: "none",
     riskLevel: "low",
-    // 免确认：作答只是把一段文字送进一个已获批准的 run（run 本身在 CreateWorkflow 的确认窗
-    // 已经过关），与 ResumeWorkflowRun 同一风险档。弹窗还会把一个正在等答案的 actor 挂更久。
+    // No confirm: answering only feeds text into an already-approved run (approved at CreateWorkflow's
+ // confirm), same risk class as ResumeWorkflowRun. A dialog would park a waiting actor longer.
     needsApproval: false,
   },
   handler: resolveWorkflowQuestionHandler,
@@ -158,7 +158,7 @@ export const resolveWorkflowQuestionToolEntry: ToolEntry = {
     riskLevel: "low",
     sideEffectScope: "none",
     needsApproval: false,
-    // question_id 进入模式匹配面（照 ResumeWorkflowRun 的 run_id）。
+    // question_id joins the pattern-match surface (as run_id in ResumeWorkflowRun).
     patternSources: ["toolName", "input"],
     alwaysAllowPatternSources: ["toolName"],
     denyPriority: "beforeAsk",

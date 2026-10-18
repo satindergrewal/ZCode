@@ -34,7 +34,7 @@ function buildWorkspacePluginMention(entry: WorkspacePluginPreviewEntry): Compos
   return {
     id: `plugin:${entry.pluginId}`,
     category: "plugins",
-    // canonical mention 使用 manifest name；本地化显示名只用于菜单展示。
+    // Canonical mentions use the manifest name; the localized display name is menu-only.
     label: entry.name,
     value: entry.pluginId,
     markdown: buildPluginMentionMarkdown(entry.name, entry.pluginId),
@@ -81,7 +81,7 @@ export function WorkspacePluginPreview({
   useEffect(() => {
     if (authority !== null) setLastCatalog({ workspaceKey, entries });
   }, [authority, entries, workspaceKey]);
-  // 刷新时目录 hook 会隔离旧请求；仅为同一 workspace 保留已成功加载的缩略图。
+  // The catalog hook isolates stale requests on refresh; keep loaded thumbnails per workspace only.
   const previewEntries =
     authority === null && lastCatalog?.workspaceKey === workspaceKey
       ? lastCatalog.entries

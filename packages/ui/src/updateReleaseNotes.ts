@@ -43,8 +43,8 @@ export function formatUpdateReleaseDate(
     year: "numeric",
     month: "long",
     day: "numeric",
-    // update feed 的 releaseDate 通常是 UTC 零点。按用户本地时区格式化会让
-    // 美洲等时区显示成前一天，hover 中只展示发布日期时应保持 feed 日期稳定。
+    // The update feed's releaseDate is usually UTC midnight. Formatting in the user's local
+    // zone shows the previous day in the Americas etc.; the hover must keep the feed date stable.
     timeZone: "UTC",
   }).format(date);
 }

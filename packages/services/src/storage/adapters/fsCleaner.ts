@@ -1,6 +1,6 @@
 /**
- * 清理执行器：枚举候选（递归 / 非递归两种范围）与有界并发删除。
- * 删除后自底向上移除变空的目录，但保留 keepDirectories（类别顶层目录），写入方不必重新 mkdir。
+ * Cleanup executor: candidate enumeration (recursive/non-recursive) and bounded-concurrency deletion.
+ * Removes emptied dirs bottom-up, keeping keepDirectories (category roots) so writers need not mkdir.
  */
 import { lstat, readdir, rm, rmdir } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
@@ -37,7 +37,7 @@ async function listShallow(rootPath: string, prefix: string): Promise<StorageCle
         mtimeMs: stats.mtimeMs,
       });
     } catch {
-      // 枚举期间被删除的文件跳过即可
+      // Skip files deleted during enumeration.
     }
   }
   return candidates;
@@ -58,7 +58,7 @@ async function pruneEmptyParents(
   deletedRelativePaths: string[],
   keepDirectories: Set<string>,
 ): Promise<void> {
-  // 先处理最深的目录，父目录才有机会变空。
+  // Deepest dirs first, so parents can actually empty.
   const directories = new Set<string>();
   for (const path of deletedRelativePaths) {
     let current = dirname(path);
@@ -83,7 +83,7 @@ export function createFsStorageCleaner(): FsCleanerPort {
             : listShallow(rootPath, scope.prefix),
         ),
       );
-      // 递归范围与非递归范围可能重叠（cli/db/backup 与 cli/db），按路径去重。
+      // Recursive and non-recursive scopes may overlap (cli/db/backup vs cli/db); dedupe by path.
       const byPath = new Map<string, StorageCleanCandidate>();
       for (const candidate of lists.flat()) {
         byPath.set(normalizeStorageRelativePath(candidate.relativePath), candidate);

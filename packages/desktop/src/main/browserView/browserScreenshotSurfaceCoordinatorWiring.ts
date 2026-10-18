@@ -19,7 +19,7 @@ interface GuestWebContentsForScreenshotActivity {
   capturePage(rect: { x: number; y: number; width: number; height: number }): Promise<unknown>;
 }
 
-/** 将截图表面协调器绑定到 owner BrowserWindow；协调器本身不依赖 Electron 全局对象，便于测试。 */
+/** Bind the screenshot surface coordinator to its owner BrowserWindow; the coordinator avoids Electron globals for testability. */
 export function createDesktopBrowserScreenshotSurfaceCoordinator(options: {
   fromId(windowId: number): BrowserWindowForScreenshotSurface | null;
   fromWebContentsId(webContentsId: number): GuestWebContentsForScreenshotActivity | null;
@@ -60,7 +60,8 @@ export function createDesktopBrowserScreenshotSurfaceCoordinator(options: {
         win.webContents.send(PlatformChannels.BrowserViewScreenshotSurfacePrepare, payload);
         return true;
       } catch {
-        // Electron 窗口关闭期间 send 可能同步抛错；prepare 必须转成受控失败，不能泄漏到主进程。
+        // send can throw synchronously while the Electron window is closing; prepare must
+        // turn that into a controlled failure, not leak it into the main process.
         options.log?.("[browser-screenshot-surface] prepare send failed");
         return false;
       }
@@ -74,7 +75,7 @@ export function createDesktopBrowserScreenshotSurfaceCoordinator(options: {
       try {
         win.webContents.send(PlatformChannels.BrowserViewScreenshotSurfaceRelease, payload);
       } catch {
-        // release 运行在 timeout/dispose/lease finally 中，绝不能反向抛出打断主进程清理。
+        // release runs inside timeout/dispose/lease finally blocks; it must never throw back into main-process cleanup.
         options.log?.("[browser-screenshot-surface] release send failed");
       }
     },

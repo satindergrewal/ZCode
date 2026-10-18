@@ -25,7 +25,7 @@ export interface WorkspaceTaskListGroup {
   total: number;
   hasMore: boolean;
   hasUnread: boolean;
-  /** 组内在跑的工作流 run 数：项目收起时组头旁的脉冲灯。 */
+  /** Running workflow runs in the group: the pulsing dot beside the header while collapsed. */
   liveWorkflowCount: number;
 }
 
@@ -46,9 +46,10 @@ export function buildWorkspaceTaskListDisplayGroups(params: {
     const cachedResult = params.resultsByQueryKey[config.queryKey];
     const previousGroup = params.previousGroupsByWorkspaceKey.get(config.workspaceKey);
     if (!cachedResult && previousGroup) {
-      // workspace 的可见上限从 5 切到 10/15 时会生成新的 limit cache key。
-      // 新 key 首次计算期间沿用上一档快照，并按目标上限裁剪，避免任务行闪空；
-      // 收起重置为 5 时也不会短暂显示上一档的更多任务。
+      // Raising a workspace's visible limit from 5 to 10/15 mints a new limit cache key.
+      // While the new key computes for the first time, keep the previous tier's snapshot
+      // trimmed to the target limit so task rows do not flash empty; collapsing back to 5
+      // likewise never briefly shows the larger tier.
       const placeholderItems = previousGroup.items.slice(0, config.visibleLimit);
       const placeholderHasMore = previousGroup.total > placeholderItems.length;
       const placeholderGroup =
@@ -115,9 +116,10 @@ export function buildWorkspaceTaskListDisplayGroups(params: {
       return previousGroup;
     }
 
-    // 添加 workspace 或拖拽重排只改变 workspace 容器顺序时，
-    // 每次都重建所有 group/items 数组会让 memo 行组件收到新引用，看起来像整条侧栏刷新。
-    // 这里按 workspaceKey 复用等价的展示快照，只让新增或真实变更的 workspace 进入乐观加载。
+    // Adding a workspace or drag-reordering only changes container order; rebuilding every
+    // group/items array would hand memoized row components fresh references and make the
+    // whole sidebar look refreshed. Reuse the equivalent per-workspaceKey snapshot and let
+    // only new or truly changed workspaces enter optimistic loading.
     cache.set(config.workspaceKey, nextGroup);
     return nextGroup;
   });

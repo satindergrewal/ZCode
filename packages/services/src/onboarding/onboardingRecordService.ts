@@ -23,15 +23,15 @@ import type {
 const logger = createServiceLogger("onboardingRecordService");
 
 function getRecordFile(): string {
-  // 记录是设备级数据，必须跟随 dataBaseDir（用户自定义数据目录时落在其 .zcode/v2 下，
-  // 与 telemetry-state.json 一致），不能学 setting.json 固定写 home——setting.json 留在 home
-  // 只是启动引导需要固定位置读取 dataBaseDir，不代表其他设备数据的落点。
+  // Records are device-level data and must follow dataBaseDir (under its .zcode/v2 when customized,
+  // like telemetry-state.json) - not setting.json's fixed home location:
+  // setting.json lives in home only to bootstrap dataBaseDir discovery.
   return join(getAppConfigDir(), "onboarding-record.json");
 }
 
 /**
- * 读取记录文件；文件不存在返回 null，内容损坏（手改/写坏）时同样返回 null 并 warn——
- * 损坏文件等价于"从未记录"，重新触发引导后在下次 append 时重建。
+ * Reads the record file; returns null when missing or corrupt (hand-edited/bad write) and warns:
+ * a corrupt file counts as never-recorded and is rebuilt on the next append after re-onboarding.
  */
 async function readRecordFile(filePath: string): Promise<OnboardingRecordFile | null> {
   let raw: string;
@@ -53,7 +53,7 @@ async function readRecordFile(filePath: string): Promise<OnboardingRecordFile | 
 export function createOnboardingRecordService(
   options: CreateOnboardingRecordServiceOptions,
 ): IOnboardingRecordService {
-  // 串行化写：引导保存与并发触发判定同时发生时不丢条目。
+  // Serialize writes so a save racing the should-trigger check cannot drop an entry.
   let writeQueue: Promise<unknown> = Promise.resolve();
   const enqueueWrite = <T>(task: () => Promise<T>): Promise<T> => {
     const queued = writeQueue.then(task, task) as Promise<T>;
@@ -76,8 +76,8 @@ export function createOnboardingRecordService(
       await enqueueWrite(async () => {
         const filePath = getRecordFile();
         const existing = await readRecordFile(filePath);
-        // deviceMid 以文件内已有值为权威：本地文件不变是设备关联的前提，
-        // 调用方传入不同值只说明异常（如 getDeviceId 行为变化），记录并沿用旧值。
+        // The file's deviceMid stays authoritative: an unchanged local file is the device identity;
+        // a differing caller value means an anomaly (e.g. getDeviceId changed) - keep the old value.
         let file: OnboardingRecordFile;
         if (existing) {
           if (existing.deviceMid !== deviceMid) {
@@ -98,8 +98,8 @@ export function createOnboardingRecordService(
           ...entry,
           uploadState: "pending",
         };
-        // 每 userId（含 null）至多一条：同一用户重复完成引导（debug 重置后再答等）覆盖旧条目，
-        // 而不是追加——覆盖后的新答案重新置 pending，等待上传。
+        // At most one entry per userId (null included): redoing onboarding overwrites the old
+        // entry instead of appending; the new answers reset to pending for upload.
         const previousIndex = file.entries.findIndex((item) => item.userId === userId);
         const validated = onboardingRecordEntrySchema.parse(record);
         if (previousIndex >= 0) file.entries[previousIndex] = validated;
@@ -118,7 +118,7 @@ export function createOnboardingRecordService(
         const file = await readRecordFile(filePath);
         if (!file) return;
         if (hasIdentityRecord(file, userId)) return;
-        // 兼容旧版重复文件取最后一条 null；移交是改写，不保留匿名副本。
+        // Legacy files may hold duplicates: take the last null entry. Handover rewrites, no anon copy.
         for (let i = file.entries.length - 1; i >= 0; i -= 1) {
           if (file.entries[i]!.userId === null) {
             file.entries[i] = onboardingRecordEntrySchema.parse({
@@ -196,15 +196,15 @@ export function createOnboardingRecordService(
       const userId = await options.loadUserId();
       const file = await readRecordFile(getRecordFile());
       if (!file) return null;
-      // append 是覆盖语义，正常每 userId 至多一条；兼容旧版本的重复追加文件时取最后一条。
+      // append is overwrite semantics, one entry per userId; for legacy duplicate files take the last.
       let latest: OnboardingRecordEntry | undefined;
       for (const entry of file.entries) {
         if (entry.userId === userId) latest = entry;
       }
       if (!latest) return null;
-      // 跳过页记 null：回填保守默认，与引导跳过写 settings 的行为一致（职业 other、偏好关）。
-      // record 的 occupation 是非枚举字符串（职业列表会演进），窄化到 settings 的枚举；
-      // 旧版本可能落过已收窄/未知的职业值，未知值回填 other，与推荐池的兜底一致。
+      // Skipped pages record null and backfill conservative defaults (occupation other, toggles off),
+      // matching the onboarding-skip path. record.occupation is free-form (the list evolves):
+      // narrow to the settings enum, mapping unknown/legacy values to other like the recommender.
       const occupation = appSettingsOccupationEnum.safeParse(latest.occupation);
       return {
         onboardingOccupation: (occupation.success ? occupation.data : null) ?? "other",

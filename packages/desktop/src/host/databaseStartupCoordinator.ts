@@ -15,7 +15,7 @@ type Report = (
   details?: { databaseId: string; migration?: DatabaseMigrationFacts; finalDatabase?: boolean },
 ) => void;
 
-/** 每窗口一个启动所有者。失败只由显式 retry 推进，刷新和重复请求不重新执行 SQL。 */
+/** One startup owner per window. Failures advance only via explicit retry; refreshes and duplicate requests never rerun the SQL. */
 export class DatabaseStartupCoordinator {
   private readonly baselines = new Map<string, string | null | undefined>();
   private readonly migrations = new Map<string, DatabaseMigrationFacts>();
@@ -48,7 +48,7 @@ export class DatabaseStartupCoordinator {
     try {
       this.options.publish(this.snapshot);
     } catch {
-      /* 通知故障不能改变数据库执行结果。 */
+      /* A notification failure must not alter the database execution result. */
     }
   }
   updateDisk(disk: StartupDiskSummary[]): void {
@@ -88,7 +88,7 @@ export class DatabaseStartupCoordinator {
     this.running = true;
     const report: Report = (phase, databasePhase, details) => {
       if (details) {
-        // 仅首次可信锁内值可替换 unknown；后续无事实通知不能抹掉起点。
+        // Only the first trusted in-lock value may replace unknown; later fact-less notices must not erase the baseline.
         if (
           !this.baselines.has(details.databaseId) ||
           this.baselines.get(details.databaseId) === undefined
@@ -98,7 +98,7 @@ export class DatabaseStartupCoordinator {
       if (details?.migration) {
         const previous = this.migrations.get(details.databaseId);
         const next = details.migration;
-        // 预检可能发现待迁移、拿锁后却由别的执行者完成；需求不丢，执行/提交不虚增。
+        // Precheck may see pending migration that another actor completes after the lock; keep the demand, never double-count executions/commits.
         const kind =
           previous?.kind === "upgrade" || next.kind === "upgrade"
             ? "upgrade"
@@ -127,7 +127,7 @@ export class DatabaseStartupCoordinator {
         phase,
         databasePhase,
         migration,
-        // tasks-index 是固定内部 ID，会话库 ID 由 CLI 对真实路径哈希生成。
+        // tasks-index uses a fixed internal ID; the session-store ID is hashed from the real path by the CLI.
         migrationBaselines: [...this.baselines].map(([databaseId, lastAppliedMigrationId]) => ({
           databaseId,
           databaseKind: databaseId === "tasks-index" ? "tasks-index" : "session",

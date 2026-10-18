@@ -23,16 +23,16 @@ async function releaseManualClaimForSettledRun(params: ManualClaimReleaseParams)
     );
     return;
   }
-  // scheduler 重启 / inFlight 丢失后仍可能收到 main 的迟到回报；manual
-  // single-flight 锁必须用 run 台账或 automation 兜回 workspaceKey，否则会卡到 stale 回收。
+  // After a scheduler restart or lost inFlight state, main's late reports can still arrive; the manual
+  // single-flight lock must recover the workspaceKey from the run ledger or automation, or it stalls until stale reaping.
   await params.repo.releaseManualClaim(params.automationId, releaseWorkspaceKey);
 }
 
 export async function settleManualClaimForDispatchResult(
   params: ManualClaimReleaseParams & { ok: boolean },
 ): Promise<void> {
-  // host ok 只表示 prompt accepted/queued，真实终态由 host subscription
-  // 收口；scheduler 仅在派发失败、没有可等待 turn 时释放 manual claim。
+  // An ok from the host only means accepted/queued; the real terminal state arrives via the host subscription,
+  // so the scheduler releases the manual claim only on dispatch failure with no awaitable turn.
   if (params.ok) return;
   await releaseManualClaimForSettledRun(params);
 }

@@ -18,34 +18,34 @@ export interface ClientSceneConfig {
 export interface ClientSceneOption {
   id: string;
   type: string;
-  /** 选项标题 i18n。 */
+  /** Option title i18n. */
   contents: Record<string, string>;
-  /** 提示词 i18n。 */
+  /** Prompt i18n. */
   prompts?: Record<string, string>;
-  /** 无筛选时展示的选项。 */
+  /** Options shown when no filter applies. */
   items?: ClientSceneItem[];
-  /** 受哪个 option.type 筛选。 */
+  /** Which option.type filters this. */
   refer?: string;
-  /** 其他 option 的 itemId 到筛选后选项的映射。 */
+  /** Map from other options' itemIds to filtered options. */
   cascades?: Record<string, ClientSceneItem[]>;
-  /** prompt 模板 i18n。 */
+  /** Prompt template i18n. */
   templates?: Record<string, string>;
 }
 
 export interface ClientSceneItem {
   id: string;
   type: string;
-  /** 选项标题 i18n。 */
+  /** Option title i18n. */
   contents: Record<string, string>;
-  /** 选项描述 i18n。 */
+  /** Option description i18n. */
   descs?: Record<string, string>;
-  /** 选项标签 i18n。 */
+  /** Option label i18n. */
   labels: Record<string, string>;
-  /** 对话完成后的触发事件。 */
+  /// Event triggered after the conversation completes.
   on_finish?: string | null;
-  /** Lucide canonical 图标名（kebab-case）。 */
+  /** Lucide canonical icon name (kebab-case). */
   img?: string | null;
-  /** 兼容保留字段；当前首页与 Automations 图标不消费。 */
+  /** Compatibility field; unused by the current home/Automations icons. */
   imgs?: {
     cn?: string;
     en?: string;

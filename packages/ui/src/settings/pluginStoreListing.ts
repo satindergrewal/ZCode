@@ -28,9 +28,9 @@ export { isTrustedImageUrl } from "@/lib/trustedImageUrl.js";
 export { isPublicStoreMarketplaceId };
 
 /**
- * 仅在名称唯一时允许从目录条目回退解析 listing。
- * 能力协议的旧 payload 可能没有 pluginId；同名插件并存时继续按裸名称 join
- * 会把第三方条目的品牌和图标误挂到另一个 marketplace，安全降级为 slug 更可靠。
+ // Fall back to resolving a listing from a directory entry only when the name is unique.
+ // Legacy capability payloads may lack pluginId; joining by bare name while same-named plugins coexist
+ // misbrands one marketplace's entry with another's identity; degrading to slug is safer.
  */
 export function resolveUniquePluginListingByName(
   plugins: readonly Pick<ZCodeAvailablePluginSummary, "name" | "listing">[],
@@ -48,21 +48,21 @@ export function resolveUniquePluginListingByName(
 }
 
 /**
- * 商店条目：把 overview 的目录条目（listing/安装态）、运行时插件信息（启用态/组件）与
- * 已安装记录（更新徽标/安装时间）按 id join 成 UI 单一视图模型。
+ // Store entry: join the overview's catalog entry (listing/install state), runtime plugin info (enabled/components) and
+ // the install record (update badge/installed at) by id into one UI view model.
  */
 export interface StorePluginItem {
   id: string;
   name: string;
   marketplace: string;
   installed: boolean;
-  /** 已卸载的内置插件（可恢复）：安装按钮走 restoreBuiltin。 */
+  // Uninstalled builtin (restorable): the install button routes to restoreBuiltin.
   restorable: boolean;
-  /** 已安装但原 marketplace 已移除；仍可运行和管理，但不能更新。 */
+  // Installed but its marketplace was removed; still runs and manages, but cannot update.
   orphaned: boolean;
   listing?: ZCodePluginStoreListing;
   summary?: ZCodeAvailablePluginSummary;
-  /** 运行时信息（仅已发现的已安装插件有）：启用态、组件、manifest 回退字段。 */
+  // Runtime info (only discovered installed plugins): enabled state, components, manifest fallback fields.
   info?: ZCodePluginInfo;
   installedMeta?: ZCodeInstalledPluginSummary;
 }
@@ -76,8 +76,8 @@ export function isPluginUpdatePending(
 }
 
 /**
- * 孤立插件可能保留删除来源前的 updateStatus；若各入口只判断该缓存状态，
- * 详情页会在菜单已禁用更新时仍显示更新按钮。更新能力必须同时满足“来源存在”和“有更新”。
+ // Orphaned plugins may keep a pre-removal updateStatus; judging only that cached state
+ // leaves an update button on a detail whose menu disabled updates. Updatability needs source-exists AND update-available.
  */
 export function canUpdatePluginItem(
   item: Pick<StorePluginItem, "installedMeta" | "orphaned"> | null | undefined,
@@ -112,7 +112,7 @@ export function resolveItemDescription(item: StorePluginItem, locale: string): s
   return resolveLocalizedText(locale, base, item.listing?.descriptionI18n);
 }
 
-/** 管理列表与商店复用完整 ID 关联的展示信息，避免英文 manifest 绕过本地化。 */
+/** Management list and store share the full-ID-keyed display info, so English manifests cannot bypass localization. */
 export function resolveManagedPluginDisplay(
   plugin: ZCodePluginInfo,
   item: StorePluginItem | undefined,
@@ -125,7 +125,7 @@ export function resolveManagedPluginDisplay(
   };
 }
 
-/** 已知分类的 i18n 映射；未知分类原样展示。无分类 → "other" 区块（排最后）。 */
+/** i18n mapping for known categories; unknown render verbatim. No category -> the other section (last). */
 export const KNOWN_CATEGORY_LABEL_IDS: Record<string, string> = {
   "developer-tools": "settings.plugins.store.category.developerTools",
   productivity: "settings.plugins.store.category.productivity",
@@ -147,7 +147,7 @@ interface StoreCategoryGroup {
   items: StorePluginItem[];
 }
 
-/** 个人分段的市场分组：marketplace 是排序键，title 是展示名。 */
+/** Personal-section marketplace groups: marketplace is the sort key, title the display name. */
 export interface PersonalMarketplaceGroup {
   marketplace: string;
   title: string;
@@ -157,8 +157,8 @@ export interface PersonalMarketplaceGroup {
 const OFFICIAL_MARKETPLACE_ORDER: readonly string[] = [ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID];
 
 /**
- * 市场源管理排序：官方源固定置顶；自定义源按最近刷新时间倒序，未刷新过的沉底。
- * 同一时间使用本地化名称稳定兜底，避免市场源顺序随持久化数组历史漂移。
+ // Marketplace-source ordering: official pinned first; custom by last-refresh desc, never-refreshed last.
+ // Ties fall back to the localized name for stability, so order never drifts with persistence history.
  */
 export function sortMarketplaceSources(
   marketplaces: readonly ZCodePluginMarketplaceSummary[],
@@ -183,9 +183,9 @@ export function sortMarketplaceSources(
 }
 
 /**
- * 个人分段市场分组排序：按 lastUpdated 倒序——最近刷新/添加的市场在最上，
- * 用户添加成功跳转过来第一眼就能看到；无 lastUpdated（官方 seed 未刷新过）的沉底，
- * 同刻或都缺失时按显示名字母序稳定兜底。ISO 时间串的字典序即时间序。
+ // Personal-section group order: lastUpdated desc. Recently refreshed/added markets on top,
+ // visible first when the user lands after adding; entries without lastUpdated (unrefreshed official seed) sink.
+ // Full ties or both-missing fall back to display-name ascending; ISO strings sort as time.
  */
 export function sortPersonalMarketplaceGroups(
   groups: PersonalMarketplaceGroup[],
@@ -200,15 +200,15 @@ export function sortPersonalMarketplaceGroups(
   return groups.toSorted((left, right) => {
     const leftAt = lastUpdatedById.get(left.marketplace) ?? "";
     const rightAt = lastUpdatedById.get(right.marketplace) ?? "";
-    // 空串字典序小于任何时间串，倒序比较自然把缺失时间沉底。
+    // The empty string sorts before any timestamp, so the desc comparison naturally sinks missing times.
     if (leftAt !== rightAt) return rightAt.localeCompare(leftAt);
     return left.title.localeCompare(right.title, locale);
   });
 }
 
 /**
- * 把 overview 数据 join 成商店条目集合。
- * 条目宇宙 = availablePlugins ∪ restorableBuiltins ∪ 实际发现的插件包（覆盖 inline/孤儿插件）。
+ // Join overview data into the store entry set.
+ // Universe = availablePlugins union restorableBuiltins union actually-discovered plugin packages (covering inline/orphans).
  */
 export function buildStoreItems(input: {
   marketplaces: ZCodePluginMarketplaceSummary[];
@@ -242,9 +242,9 @@ export function buildStoreItems(input: {
   for (const summary of input.restorableBuiltins) {
     const existing = items.get(summary.id);
     if (existing) {
-      // 内置卸载态同时存在于完整 Catalog 和 restorable 列表：只有没有实际
-      // Marketplace ownership 时才覆盖为 restorable。若 installed/installedMeta/info
-      // 已表明同名 CDN 插件归用户所有，必须保留 installed，避免详情页误显示 Restore。
+      // An uninstalled builtin exists both in the full catalog and the restorable list: overwrite to restorable only without real
+      // marketplace ownership. If installed/installedMeta/info already show a same-named CDN plugin owned by the user, keep installed
+      // so the detail does not misshow Restore.
       const hasMarketplaceOwnership =
         existing.installed || existing.installedMeta !== undefined || existing.info !== undefined;
       if (hasMarketplaceOwnership) continue;
@@ -270,11 +270,11 @@ export function buildStoreItems(input: {
       summary,
     });
   }
-  // 运行时发现、但不在任何目录里的插件（inline、被移除市场的遗留安装）也要可见/可搜索。
+  // Runtime-discovered plugins absent from every catalog (inline, leftovers of removed markets) stay visible/searchable.
   for (const info of input.plugins) {
     if (items.has(info.id)) continue;
-    // 旧插件拆分/下架后，配置仍会生成缺包诊断；它不是可安装目录来源。
-    // 保留原 plugins 给设置页诊断，但不凭此生成商店安装入口；有目录/恢复来源的条目已在上面保留。
+    // After a plugin split/removal the config still yields missing-package diagnostics; not an installable source.
+    // Keep them for the settings diagnostics, but no store entry from them; catalog/restorable entries are kept above.
     if (info.packageStatus === "missing") continue;
     items.set(info.id, {
       id: info.id,
@@ -282,8 +282,8 @@ export function buildStoreItems(input: {
       marketplace: info.marketplace,
       installed: true,
       restorable: false,
-      // 目录条目缺失不等于 Marketplace Source 已删除，overview 失败时来源状态也未知。
-      // official/inline 插件不能由目录缺失推导成孤立安装。
+      // A missing catalog entry does not mean the source was deleted; with overview failing, source state is unknown too.
+      // official/inline plugins must not be derived into orphaned installs from a missing catalog.
       orphaned:
         input.marketplaceAvailabilityKnown &&
         info.source === "cache" &&
@@ -295,7 +295,7 @@ export function buildStoreItems(input: {
   return [...items.values()];
 }
 
-/** 公开分段：Featured（CDN featured 名单按序）+ 分类聚合（无分类归 other，排最后）。 */
+/** Public section: Featured (CDN list, in order) + category groups (uncategorized into other, last). */
 export function selectFeaturedItems(
   publicItems: StorePluginItem[],
   marketplaces: ZCodePluginMarketplaceSummary[],
@@ -361,8 +361,8 @@ export function storeItemMatches(item: StorePluginItem, keyword: string, locale:
 }
 
 /**
- * 已安装图标条排序：官方文档插件优先，其余内置/inline 按名称稳定排序；
- * 市场安装插件随后按安装时间倒序，同一时间再按名称排序。
+ // Installed-icon row order: official doc plugins first, then other builtin/inline by name;
+ // marketplace installs after, by install time desc, name as tiebreak.
  */
 export function sortInstalledStripItems(
   items: StorePluginItem[],

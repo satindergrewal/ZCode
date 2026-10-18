@@ -1,4 +1,4 @@
-/* 掩膜只保留 1px 描边，旋转光场不影响品牌图标本体。 */
+/* The mask keeps only the 1px stroke; the rotating light field never touches the logo itself. */
 .onboarding-logo-sweep {
   position: absolute;
   inset: 0;

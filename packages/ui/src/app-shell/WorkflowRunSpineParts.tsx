@@ -1,8 +1,9 @@
 // ============================================================
-// 侧栏脊线的零件
+// Parts of the sidebar spine.
 // ============================================================
-// 从 WorkflowRunPhaseList.tsx 拆出（max-lines 400）：清单文件承载展开状态、问题归属与药丸接线，
-// 本文件承载四个纯展示件——轨道段、灯、折叠节头上的头像串、轮次。
+// Split from WorkflowRunPhaseList.tsx (max-lines 400): the list file owns expansion state, question
+// attribution, and pill wiring; this file holds the four pure presentational parts -- rail segments,
+// lamps, collapsed-header avatar clusters, and round chips.
 
 import { useId, type CSSProperties } from "react";
 import { Repeat2Icon } from "lucide-react";
@@ -19,24 +20,29 @@ import { MarchLight } from "@/components/workflow-timeline/WorkflowMarchLight.js
 import type { SpineSection } from "@/app-shell/workflowRunSpine.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 
-/** 折叠节头上最多几枚头像；其余进 `+n`。 */
+/** Max avatars on a collapsed header; the rest collapse into `+n`. */
 const CLUSTER_MAX = 3;
 
-/** 轨道 t 的竖轨中心；主线在 21，每条分支再右 12px（`workflowRunSpine.ts`）。 */
+/** Vertical-rail center for track t; the main line is 21, each branch 12px further right (`workflowRunSpine.ts`). */
 const TRACK_X = 21;
 const TRACK_GAP = 12;
 
 /**
- * 轨道段的一半。相邻两站之间的一段轨道拆成两截画：上一站从灯底到节底，下一站从节顶到灯顶——
- * 两截同一墨色，接在节的边界上。这样轨道随节的展开 / 折叠自己长短，不用量。
+ * One half of a rail segment. The span between two adjacent stations is drawn in two pieces: the
+ * upper station from lamp-bottom to section-bottom, the lower from section-top to lamp-top -- same
+ * ink, joined at the section boundary. The rail thus lengths with expand/collapse by itself, no
+ * measuring.
  *
- * 带里还有第三种：`full` 整节穿过（主轨经过分支站、分支轨经过别人的站）；`from` / `to` 给分叉
- * 与合流曲线让出那 13px。轨道 t > 0 的 x 用内联样式给——它是算出来的，Tailwind 生不出这个类。
+ * Bands add a third kind: `full` crosses the whole section (the main rail past branch stations,
+ * branch rails past others' stations); `from` / `to` leave the 13px for the fork/merge curves. The
+ * x of track t > 0 is inline style -- it is computed; Tailwind cannot generate the class.
  *
- * 行进段（`march`）是一条 1.5px 的**亮着的**轨道，不动：它说的是控制流已经走过的那条边，动作留给
- * 正在运行的灯。亮度沿着控制流的方向涨——`data-rail-position` 就是给样式表选渐变用的，两截都得带着
- * 它：`below`（上一节的下半截）从透明淡入到七成警示色，`above`（运行那一节的上半截）从七成涨到满，
- * 一直亮进灯里，`full` 是平的七成。
+ * The march segment is a 1.5px **lit** rail, static: it marks the edge control flow already
+ * traversed; motion belongs to the running lamp. Brightness grows along the direction of control
+ * flow -- `data-rail-position` exists so the stylesheet can pick the gradient, and both halves
+ * carry it: `below` (lower half of the previous section) fades from transparent to 70% accent,
+ * `above` (upper half of the running section) rises from 70% to full, staying lit into the lamp;
+ * `full` is flat 70%.
  */
 function SpineRail({
   from,
@@ -76,10 +82,13 @@ function SpineRail({
 }
 
 /**
- * 分叉 / 合流曲线：分支轨道在带首节的顶上 13px 里离开主轨，在汇合站的节顶（或带末节的节底）
- * 用镜像的曲线回来。淡墨与浓墨在这里同一画法（与竖轨一致），行进时沿同一条路径叠一条亮着的光
- * （`MarchLight`）：从控制流来的那一头淡入，到灯那一头最亮，不动。渐变的两端就是画 `path` 的那两个
- * 点（分叉从主轨顶到分支底，合流反过来），不去解析路径串；`id` 用 `useId()`，一张 SVG 里唯一。
+ * Fork / merge curves: the branch track leaves the main rail within the 13px above the band's
+ * first section and returns mirrored at the merge station's section top (or the band-last
+ * section's bottom). Faint and strong ink share one drawing here (like the vertical rails); when
+ * marching, a lit light (`MarchLight`) overlays the same path, fading in from the control-flow end
+ * and brightest at the lamp end, static. The gradient endpoints are exactly the two points of
+ * `path` (fork: main-rail top to branch bottom; merge the reverse); the path string is not parsed.
+ * `id` comes from `useId()`, unique within one SVG.
  */
 function SpineCurve({
   at,
@@ -125,7 +134,7 @@ function SpineCurve({
   );
 }
 
-/** 一节里全部的竖轨与曲线（`workflowRunSpine.ts` 算好的），一口气画出来。 */
+/** Every vertical rail and curve of one section (as computed by `workflowRunSpine.ts`), drawn in one go. */
 export function SpinePieces({ section }: { section: SpineSection }) {
   return (
     <>
@@ -140,8 +149,9 @@ export function SpinePieces({ section }: { section: SpineSection }) {
 }
 
 /**
- * 轨道上的灯：空心 = 未到，绿 = 已过，红带环 = 失败，琥珀带搏动 = 正在运行。运行中的灯与卡上的灯
- * 同一条命（`wf-lamp-running`）：常亮的光晕加一下心跳；`motion-reduce` 时只剩光晕。
+ * Lamp on the rail: hollow = not yet reached, green = passed, red ring = failed, pulsing amber =
+ * running. A running lamp shares the card lamp's life (`wf-lamp-running`): steady halo plus one
+ * heartbeat; under `motion-reduce` only the halo remains.
  */
 export function SpineLamp({ status, track = 0 }: { status: StepRunStatus; track?: number }) {
   return (
@@ -160,7 +170,7 @@ export function SpineLamp({ status, track = 0 }: { status: StepRunStatus; track?
   );
 }
 
-/** 折叠节头上的头像串：谁在这一站，一眼可见；子代理是按编号定色的瓦片脸，工作区是终端字形。 */
+/** Avatar cluster on a collapsed header: who is at this station, at a glance; subagents are numbered tinted tile faces, the workspace a terminal glyph. */
 export function AvatarCluster({
   pills,
   nameOf,
@@ -205,7 +215,7 @@ export function AvatarCluster({
   );
 }
 
-/** 轮次：`⟳ n`，只在回边两端且至少跑过一轮时在场（与卡上同一条规则）。 */
+/** Rounds: `⟳ n`, present only at both ends of a back-edge after at least one round (same rule as on the card). */
 export function Rounds({ station }: { station: TimelineStation }) {
   const { intl } = useZCodeIntl();
   if (!station.onLoop || station.rounds === 0) return null;

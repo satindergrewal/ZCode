@@ -2,8 +2,8 @@ import { zcodeWorkspaceUpdateModelIoPreferencesParamsSchema } from "@zcode/share
 import { parseParams, type ZCodeProtocolAgentServerContext } from "./server-types.js";
 
 /**
- * ModelIO 写盘策略是 App 全局偏好，但每个 resident session 持有独立 adapter。
- * 因此协议层同时缓存偏好供未来 session 继承，并立即更新已有 session，避免新旧任务行为分裂。
+ * The ModelIO persistence policy is an app-global preference, but each resident session owns its own adapter.
+ * The protocol layer therefore caches preferences for future sessions and applies them to live sessions immediately, keeping old and new runs consistent.
  */
 export async function updateModelIoPreferences(
   context: ZCodeProtocolAgentServerContext,

@@ -28,8 +28,8 @@ function createDirectiveStartPattern(
   directiveName: string,
   options: AssistantDirectiveSyntaxOptions = {},
 ): RegExp {
-  // 模型偶尔把文件引用的双冒号输出成单/三冒号；不能全局放宽，否则
-  // code-comment 等协议也会被意外兼容。opt-in 时同时拒绝从连续冒号中间起匹配。
+  // Models occasionally emit file-reference double colons as one/three colons; do not relax
+  // globally or protocols like code-comment get unintended matches. Opt-in also rejects mid-run colons.
   const minimumColonCount = options.allowSingleColon ? 1 : 2;
   const maximumColonCount = options.allowTripleColon ? 3 : 2;
   const prefix = `(?<!:):{${minimumColonCount},${maximumColonCount}}`;
@@ -48,8 +48,8 @@ function getDirectiveQuoteState(
   if (character === '"' || character === "'") {
     return { open: character, close: character };
   }
-  // 中文模型输出可能使用成对智能引号；未识别时会退化为未加引号值，
-  // 使空格截断路径或把引号字符带入后续文件解析。仅由 citation opt-in，保持其它 directive 严格。
+  // Model output may use paired smart quotes; unrecognized, the value degrades to unquoted,
+  // splitting paths at spaces or leaking quotes into parsing. Citation opt-in only; others stay strict.
   if (!options.allowSmartQuotes) return null;
   if (character === "“") return { open: character, close: "”" };
   if (character === "‘") return { open: character, close: "’" };
@@ -110,7 +110,7 @@ function parseQuotedValue(
     ) {
       value += escapedCharacter;
     } else {
-      // Directive 不是 JSON；未知转义必须保留反斜杠，避免把 Windows 路径改坏。
+      // Directives are not JSON; unknown escapes must keep the backslash to avoid breaking Windows paths.
       value += `\\${escapedCharacter}`;
     }
     index += 1;
@@ -289,8 +289,8 @@ export function findUnclosedAssistantDirectiveStart(
       continue;
     }
     if (findDirectiveClosingBrace(content, openBraceIndex, options) < 0) {
-      // 只有仍然符合“参数前缀”的半截 directive 才隐藏。闭合引号后又出现
-      // 普通正文时，参数解析会失败，于是保留原文，避免缺失 `}` 把后文吞掉。
+      // Only hide a partial directive while it still matches the argument prefix. Once plain body
+      // follows the closing quote, parsing fails; keep raw text so a missing brace cannot eat it.
       const parameterPrefix = content.slice(openBraceIndex + 1);
       let quote: DirectiveQuoteState | null = null;
       let escaped = false;
@@ -314,8 +314,8 @@ export function findUnclosedAssistantDirectiveStart(
 }
 
 /**
- * 流式尾部可能刚开始输出特化 directive 时，先把仍然匹配协议名称前缀的内容暂存。
- * 只检查文末连续尾部，且跳过 Markdown 代码范围；一旦前缀分叉，返回 null 让正文照常显示。
+ * While a streaming tail may just be starting a specialized directive, buffer content that still
+ * matches its name prefix. Check only the contiguous tail, skip code ranges; divergence returns null.
  */
 export function findAssistantDirectivePrefixStart(
   content: string,

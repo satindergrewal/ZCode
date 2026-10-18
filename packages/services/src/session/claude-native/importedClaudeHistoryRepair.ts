@@ -71,9 +71,9 @@ function shouldRepairImportedClaudeSnapshot(
     /^msg_import_\d+$/u.test(message.info.messageId),
   );
   if (!snapshot.session.sessionId.startsWith("claude-import-") && !hasLegacyFixedMessageIds) {
-    // user-only / assistant-first 只是异常形态，不等于 Claude 导入。
-    // 只有稳定导入 taskId 或旧版全局 msg_import_* 污染能证明它属于迁移修复边界，
-    // 避免普通 ZCode session 被同名 legacy 备份误回填成 Claude 历史。
+    // user-only / assistant-first are anomaly shapes, not Claude-import proof.
+    // Only a stable imported taskId or legacy global msg_import_* pollution proves the repair boundary,
+    // keeping plain ZCode sessions safe from same-named legacy backup backfills.
     return false;
   }
   const hasAssistant = snapshot.messages.some((message) => message.info.role === "assistant");
@@ -83,9 +83,9 @@ function shouldRepairImportedClaudeSnapshot(
   if (snapshot.messages[0]?.info.role === "assistant") {
     return true;
   }
-  // 旧协议导入把所有 Claude session 都写成 msg_import_0/msg_import_1。
-  // 这些 ID 是全局主键，后续导入会把前一个 session 的消息改绑到新 session，
-  // 即使当前快照里有 assistant，也必须按原 Claude jsonl 重新回填，修正串会话和反序。
+  // Legacy imports wrote every Claude session as msg_import_0/msg_import_1.
+  // Those ids are global PKs; later imports rebind the earlier session's messages onto the new one,
+  // so even with an assistant present, refill from the original Claude jsonl to fix crosstalk and ordering.
   return hasLegacyFixedMessageIds;
 }
 
@@ -175,8 +175,8 @@ async function resolveImportedClaudeHistoryForRepair(
     countAssistantMessages(nativeHistory.messages) >=
       countAssistantMessages(legacyHistory?.messages ?? [])
   ) {
-    // 旧版本可能已经把 user-only 的 legacy 备份写坏了。
-    // 这时 legacy 不能再作为权威来源，需要按 taskId 反查原 Claude jsonl 重建 assistant。
+    // Legacy versions may already have corrupted user-only backups.
+    // Then legacy is no longer authoritative; rebuild the assistant from the Claude jsonl via taskId.
     return nativeHistory;
   }
 
@@ -198,9 +198,9 @@ export async function repairImportedClaudeSessionSnapshot<T>(params: {
   }
 
   params.onRepair?.(history);
-  // 早期导入可能已经创建了真实 ZCode session，但没有把 Claude 历史写入
-  // zcode-cli sessionStore，或用了全局 msg_import_* 导致串会话。这里统一用同名 sessionId
-  // 幂等回填 importedHistory，让 session/read、task snapshot 和远控恢复路径走同一套修复。
+  // Early imports may have created a real ZCode session without writing Claude history into
+  // the zcode-cli sessionStore, or used global msg_import_* causing crosstalk. Idempotently backfill
+  // importedHistory under the same sessionId so session/read, task snapshots, and remote restore share one fix.
   return params.createSession({
     workspacePath: params.target.workspacePath,
     workspaceIdentity: params.target.workspaceIdentity,

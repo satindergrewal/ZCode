@@ -90,8 +90,9 @@ export async function checkRemoteAssetComponentIdentity(
     };
   }
   if (!remoteMeta.sha256) {
-    // 旧 live marker 只记录 version，无法证明运行目录来自当前 manifest 制品。
-    // 首次读取旧 marker 时必须重新部署并写入 SHA，不能继续按语义版本跳过。
+    // The legacy live marker records the version only and cannot prove the live
+    // dir came from the current manifest artifact. On first read of a legacy
+    // marker, redeploy and write the SHA instead of skipping by semver.
     return {
       shouldDeploy: true,
       reason: `remote component SHA missing expected=${options.expectedIdentity.sha256}`,
@@ -144,7 +145,7 @@ export async function writeRemoteAssetComponentMeta(
   backend: IRemoteBackend,
   meta: RemoteAssetComponentMeta,
 ): Promise<void> {
-  // 其它资源包保持既有语义：无法解析版本时不写一个会永久失配的 unknown marker。
+  // Other resource packages keep the legacy semantics: with an unresolvable version, write no unknown marker that would mismatch forever.
   if (meta.version === "unknown" && !meta.sha256) {
     return;
   }
@@ -233,8 +234,9 @@ async function resolveFreshComponentManifest(
         platformArch,
         manifestRequestTimeoutMs: options.manifestRequestTimeoutMs,
         remoteAssetNetwork: options.remoteAssetNetwork,
-        // server-bundle/GLM 允许在 app/version 不变时重发制品，每次部署必须重新取
-        // manifest，不能复用进程内旧 SHA；promise 保证本次部署只刷新一次。
+        // server-bundle/GLM allow re-published artifacts at the same app/version;
+        // every deploy must re-fetch the manifest rather than reuse the in-process
+        // SHA. The promise keeps this to one refresh per deploy.
         refreshManifest: true,
       },
       loggers,
@@ -244,8 +246,9 @@ async function resolveFreshComponentManifest(
       (Boolean(options.remoteCdnBaseUrl?.trim()) ||
         Boolean(options.remoteCdnBaseUrls?.some((baseUrl) => baseUrl.trim().length > 0)));
     if (!manifestRef && hasConfiguredManifestSource) {
-      // server-bundle 的身份判断与安装必须来自同一 manifest；404 后
-      // 不能继续走 installer 再请求一次，否则发布切换时可能部署另一份制品。
+      // server-bundle identity check and install must come from one manifest;
+      // after a 404, do not let the installer request again or a publish
+      // switchover could deploy a different artifact.
       throw new Error(
         `[remote-assets] manifest not found for ${platformArch}: manifest-${platformArch}.json`,
       );
@@ -253,8 +256,10 @@ async function resolveFreshComponentManifest(
     return manifestRef;
   } catch (error) {
     loggers.logWarn(`[remote-assets] component manifest request failed: ${String(error)}`);
-    // 这是内容寻址组件在本次 deploy transaction 的 pinned identity 输入。网络超时/解析失败
-    // 不能降级为“manifest 缺失”后再请求一次，否则会丢失原始诊断并翻倍 deadline。
+    // This is the pinned-identity input for content-addressed components in this
+    // deploy transaction. On network timeout/parse failure do not degrade to
+    // "manifest missing" and retry; that would drop the original diagnostics and
+    // double the deadline.
     throw error;
   }
 }

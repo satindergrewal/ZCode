@@ -8,7 +8,7 @@ const WORKFLOW_NAME = "Open in ZCode.workflow";
 const WORKFLOW_BUNDLE_ID = "dev.zcode.app.finder-open-workflow";
 const WORKFLOW_VERSION = "5";
 const SERVICES_MENU_LABELS: Record<Locale, string> = {
-  "zh-CN": "在ZCode中打开",
+  // "zh-CN": "在ZCode中打开",
   "en-US": "Open in ZCode",
 };
 
@@ -270,25 +270,25 @@ export function installFinderOpenFolderWorkflow(options: {
     const infoChanged = writeFileIfChanged(infoPlistPath, buildInfoPlist(options.locale));
     const workflowContent = buildDocumentWorkflow();
     const workflowChanged = writeFileIfChanged(documentWorkflowPath, workflowContent);
-    // 用户 Automator workflow 通常读取 Contents/document.wflow；
-    // 系统内置 workflow 也存在 Resources/document.wflow 形态。两个位置都写同一份，
-    // 避免 Finder 能显示服务但运行时报 “not configured correctly”。
+    // User Automator workflows read Contents/document.wflow;
+    // system workflows also use Resources/document.wflow. Write both so Finder
+    // never shows a service that fails at run time as not configured correctly.
     const resourcesWorkflowChanged = writeFileIfChanged(
       resourcesDocumentWorkflowPath,
       workflowContent,
     );
 
     if (infoChanged || workflowChanged || resourcesWorkflowChanged) {
-      // Finder 系统服务展示名来自 workflow 的 Info.plist。
-      // 语言切换后必须重写 plist 并刷新 Services 索引，否则系统菜单会继续显示旧语言。
+      // The Finder service display name comes from the workflow Info.plist.
+      // After a language switch, rewrite the plist and refresh the Services index or menus keep the old language.
       (options.refreshServicesIndex ?? refreshMacServicesIndex)();
-      options.logger.info("[finder-open-folder] Finder 服务已安装或更新", {
+      options.logger.info("[finder-open-folder] Finder service installed or updated", {
         locale: options.locale,
         workflowPath: workflowDir,
       });
     }
   } catch (error) {
-    options.logger.warn("[finder-open-folder] Finder 服务安装失败", {
+    options.logger.warn("[finder-open-folder] Finder service install failed", {
       error: error instanceof Error ? error.message : String(error),
       workflowPath: workflowDir,
     });

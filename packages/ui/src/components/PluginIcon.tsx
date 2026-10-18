@@ -3,7 +3,7 @@ import { Blocks } from "lucide-react";
 import { cn } from "@/components/lib/utils.js";
 import { resolvePluginIconSource } from "@/lib/pluginIconSource.js";
 
-/** Plugin 原始图标；支持官方内置图标与 HTTPS，缺失或失败时使用调用方兜底，默认回退 Blocks。 */
+/** Raw plugin icon; supports official built-ins and HTTPS URLs. Missing or failed loads defer to the caller's fallback, defaulting to Blocks. */
 export function PluginIcon({
   src,
   pluginId,

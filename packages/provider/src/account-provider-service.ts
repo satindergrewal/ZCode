@@ -37,10 +37,12 @@ interface RefreshWaiter {
 }
 
 /**
- * 维护当前账号状态投影出的第三层 Provider Config Overlay。
+ * Maintains the layer-3 Provider Config Overlay projected from current account state.
  *
- * 该服务只编排 Config Source、刷新与 last-known-good 发布；登录、权益和团队连接
- * 的具体查询由外围 Resolver 注入，因此本包不依赖文件、网络或 OAuth 实现。
+ * The service only orchestrates the config source, refreshes, and last-known-good
+ * publication; the actual login, entitlement, and team-connection
+ * queries are injected by the edge resolver, so this package never touches files, network,
+ * or OAuth directly.
  */
 export class AccountProviderService implements ProviderSource<AccountProviderConfigSnapshot> {
   readonly #configSource: ProviderSource<ProviderConfigSnapshot>;
@@ -65,7 +67,8 @@ export class AccountProviderService implements ProviderSource<AccountProviderCon
     this.#assertNotDisposed();
     this.#ensureStarted();
     if (this.#snapshot) return this.#snapshot;
-    // 并发首次读取不是新的账号事实，不能排出第二轮并覆盖首次 fail-closed 启动结果。
+    // A concurrent first read is not new account fact; it must not queue a second round that
+    // overrides the initial fail-closed startup result.
     if (this.#refreshInFlight) return this.#refreshInFlight;
     return this.#requestRefresh("start");
   }
@@ -93,7 +96,7 @@ export class AccountProviderService implements ProviderSource<AccountProviderCon
     this.#disposed = true;
     this.#configDispose?.();
     this.#configDispose = null;
-    const error = new Error("AccountProviderService 已 dispose");
+    const error = new Error("AccountProviderService disposed");
     for (const waiter of this.#refreshWaiters.splice(0)) waiter.reject(error);
     this.#changeListeners.clear();
     this.#errorListeners.clear();
@@ -104,15 +107,16 @@ export class AccountProviderService implements ProviderSource<AccountProviderCon
     this.#started = true;
     this.#configDispose = this.#configSource.onDidChange((reason) => {
       void this.#requestRefresh(`config:${reason || "changed"}`).catch(() => {
-        // Source 驱动的后台失败通过 onDidRefreshError 报告；保留上一份成功快照。
+        // Source-driven background failures report via onDidRefreshError; the last good snapshot stays.
       });
     });
   }
 
   #requestRefresh(reason: string): Promise<AccountProviderConfigSnapshot> {
-    // 进行中的一轮开始于本次请求之前，它读取的设置与账号身份可能已被请求方
-    // 随后的写入改变（例如 Provisioning 先写 Setting 再换凭据）。直接复用该轮会把它的
-    // 过期失败当成本次请求的结果。refresh 的契约是返回覆盖本次请求之后状态的一轮。
+    // An in-flight round started before this request; its settings and account identity may
+    // already have been changed by the requester (e.g. Provisioning writes the setting, then
+    // rotates credentials). Reusing it would report its stale failure as this request's
+    // result. The refresh contract: return a round that starts after this request.
     const generation = this.#requestedGeneration + 1;
     this.#requestedGeneration = generation;
     this.#pendingReasons.add(reason);
@@ -138,17 +142,20 @@ export class AccountProviderService implements ProviderSource<AccountProviderCon
     this.#refreshInFlight = null;
     if (this.#disposed || this.#pendingReasons.size === 0) return;
 
-    // 当前轮失败会提前退出 refresh loop；失败期间加入的事件仍在 pending 中，
-    // 必须在 in-flight 释放后启动下一轮，否则账号状态会停留在旧快照直到再次收到外部事件。
+    // A failed round exits the refresh loop early; events queued during the failure are still
+    // pending and the next round must start once in-flight releases, or account state freezes
+    // at the old snapshot until the next external event.
     void this.#startRefresh().catch(() => {
-      // 后续轮没有直接调用方；错误已经通过 onDidRefreshError 发布并保留 last-known-good。
+      // Later rounds have no direct caller; errors are published via onDidRefreshError and
+      // last-known-good is retained.
     });
   }
 
   async #runRefreshLoop(): Promise<AccountProviderConfigSnapshot> {
     let latest = this.#snapshot;
     while (this.#pendingReasons.size > 0) {
-      // 本轮开始前提出的所有请求都由本轮结果回应；本轮开始后到达的请求留给下一轮。
+      // Requests made before the round started are settled by its result; later ones wait for
+      // the next round.
       const generation = this.#requestedGeneration;
       const reasons = [...this.#pendingReasons];
       this.#pendingReasons.clear();
@@ -163,11 +170,13 @@ export class AccountProviderService implements ProviderSource<AccountProviderCon
           previousStates: latest?.states,
           reasons: Object.freeze(reasons),
         });
-        // Account Snapshot 已经表达 Overlay 的来源，目标与字段边界由注入的
-        // Resolver 和 Account Schema 负责。再按 Built-in access.type 做门禁，会错误拒绝
-        // 账号层为闲时 Provider 发布的 entitled-only Overlay，导致整个 Registry 无法启动。
+        // The Account Snapshot already expresses the Overlay provenance; target and field
+        // boundaries belong to the injected resolver and account schema. Gating on Built-in
+        // access.type here would wrongly reject the entitled-only Overlay the account layer
+        // publishes for off-peak providers and keep the whole Registry from starting.
         this.#assertNotDisposed();
-        // 查询可跨越 Built-in/凭据更新；过期轮只能丢弃，不能短暂发布后再修正。
+        // A query may span Built-in/credential updates; a stale round is dropped, never
+        // published briefly and corrected afterwards.
         const currentConfig = await this.#configSource.read();
         this.#assertNotDisposed();
         if (
@@ -200,19 +209,21 @@ export class AccountProviderService implements ProviderSource<AccountProviderCon
         const event = Object.freeze({ error, reasons: Object.freeze(reasons) });
         for (const listener of this.#errorListeners) listener(event);
         if (!latest && config) {
-          // 首次账号网络/凭据解析失败被当成整个 Registry 的 ready barrier，
-          // 连不依赖账号的 API/Personal Provider 也无法启动。账号未知只应显式 fail-closed。
+          // A first-round account/credential failure acted as a ready barrier for the whole
+          // Registry, blocking even account-independent API/Personal providers. Unknown account
+          // state must fail closed explicitly, nothing more.
           latest = createFailClosedAccountProviderConfigSnapshot(config);
           this.#snapshot = latest;
           this.#resolveRefreshWaiters(generation, latest);
           continue;
         }
-        // 只回绝本轮开始前的请求；之后到达的请求仍在 pending 中，由 #finishRefresh 启动下一轮回应。
+        // Reject only requests predating this round; later ones stay pending for the next round
+        // started by #finishRefresh.
         this.#rejectRefreshWaiters(generation, error);
         throw error;
       }
     }
-    if (!latest) throw new Error("Account Provider Service 尚未产生快照");
+    if (!latest) throw new Error("Account Provider Service has no snapshot yet");
     return latest;
   }
 
@@ -235,6 +246,6 @@ export class AccountProviderService implements ProviderSource<AccountProviderCon
   }
 
   #assertNotDisposed(): void {
-    if (this.#disposed) throw new Error("AccountProviderService 已 dispose");
+    if (this.#disposed) throw new Error("AccountProviderService disposed");
   }
 }

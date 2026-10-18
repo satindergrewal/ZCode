@@ -1,11 +1,11 @@
 /**
- * dwf_* journal 表的行 ↔ 记录映射。
+ * dwf_* journal row <-> record mapping.
  *
- * 记录类型只以 `import type` 从 @zcode/dynamic-workflow 引入：端口住在领域包里，
- * SQLite store 只是它的一个 adapter，运行时不得对领域包产生任何依赖。
+ * Record types are type-only imports from @zcode/dynamic-workflow: the port lives in the domain package,
+ * the SQLite store is one adapter, and the runtime must never depend on the domain package.
  *
- * 解码规则：可空列为 NULL 时**不写出该键**（而不是写成 undefined 或 null）。
- * 契约测试对整条记录做 toEqual，输入里缺席的可选字段必须原样缺席地回来。
+ * Decode rule: a NULL nullable column omits the key entirely, never undefined/null.
+ * Contract tests toEqual whole records, so absent optional inputs must come back absent.
  */
 
 import type {
@@ -27,27 +27,27 @@ import type {
 import { decodeJson, encodeJson } from "../json.js";
 
 /**
- * `dwf_run.status` 的**物理**词汇（migration 0019 的 CHECK 集，不迁移）。逻辑词汇是引擎的
- * `RunStatus`（`errored` / `stopped`），两者之间的映射只活在本文件：
+ * Physical vocabulary of dwf_run.status (migration 0019 CHECK set, never migrated). The logical
+ * vocabulary is the engine's RunStatus (errored/stopped); the mapping lives only here:
  *
- * | 逻辑                    | 物理 status | failure_json                                        |
+ * | logical                  | physical status | failure_json                                        |
  * | ----------------------- | ----------- | --------------------------------------------------- |
- * | stopped{reason, error?} | cancelled   | `{"stopReason": …, "error"?: WorkflowErrorJson}` 信封 |
- * | errored{error}          | failed      | WorkflowErrorJson 原样                              |
- * | completed/pending/running | 同名      | 不变                                                |
+ * | stopped{reason, error?}  | cancelled       | {stopReason, error?: WorkflowErrorJson} envelope    |
+ * | errored{error}           | failed          | WorkflowErrorJson as-is                             |
+ * | completed/pending/running| same name       | unchanged                                           |
  *
- * 解码（历史行免回填）：`cancelled` → stopped，reason = 信封的 stopReason，缺席（老行）⇒ `user`；
- * `failed` + code `Interrupted` → stopped(interrupted)（老孤儿收敛行）；其余 `failed` → errored。
- * 接受的不精确：历史无 reason 的 cancelled 一律解成 user（含 TaskStop 停的）。
+ * Decode (no historical backfill): cancelled -> stopped with the envelope's stopReason, absent (old rows) means user;
+ * failed + code Interrupted -> stopped(interrupted) (legacy orphan-convergence rows); other failed -> errored.
+ * Accepted imprecision: reason-less historical cancelled always decodes as user (TaskStop stops included).
  */
 export type DwfRunPhysicalStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 
 type RunStopReason = NonNullable<RunRecord["stopReason"]>;
 
 /**
- * stopped 行 failure_json 里的信封（与 WorkflowErrorJson 以 `stopReason` 键区分）。
- * `supersededBy` 与 `stopReason: "superseded"` 同一笔写入——信封整体重写，所以它零迁移地
- * 住在这里。
+ * Envelope inside a stopped row's failure_json (distinguished from WorkflowErrorJson by the stopReason key).
+ * supersededBy is written in the same stroke as stopReason superseded (the envelope is rewritten wholesale),
+ * so it lives here with zero migration.
  */
 interface DwfStoppedEnvelope {
   stopReason: RunStopReason;
@@ -55,7 +55,7 @@ interface DwfStoppedEnvelope {
   error?: WorkflowErrorJson;
 }
 
-/** 逻辑终态的三元组：状态 + 停止原因（+ 后继）+ 结构化失败。 */
+/** Logical terminal triple: status + stop reason (+ successor) + structured failure. */
 interface DwfRunSettlementFields {
   status: RunStatus;
   stopReason?: RunStopReason;
@@ -64,7 +64,7 @@ interface DwfRunSettlementFields {
 }
 
 const INTERRUPTED_CODE = "Interrupted";
-// 信封嗅探的白名单：少一个值，该原因的整封 envelope 解不出来、行退化成 stopped(user)。
+// Envelope-sniffing allowlist: one missing value and that reason's envelope fails to decode, degrading the row to stopped(user).
 const STOP_REASONS: ReadonlySet<string> = new Set([
   "user",
   "model",
@@ -73,7 +73,7 @@ const STOP_REASONS: ReadonlySet<string> = new Set([
   "superseded",
 ]);
 
-/** 逻辑状态（+ 结算袋）→ 物理列值。写入侧唯一入口（createRun / updateRunStatus 共用）。 */
+/** Logical status (+ settlement bag) to physical columns. The only write-side entry (createRun/updateRunStatus). */
 export function encodeRunSettlement(
   status: RunStatus,
   settlement?: Pick<RunSettlementRecord, "stopReason" | "supersededBy" | "failure">,
@@ -95,7 +95,7 @@ export function encodeRunSettlement(
   }
 }
 
-/** 物理列值 → 逻辑终态三元组。读取侧唯一入口（完整记录与枚举行共用）。 */
+/** Physical columns to logical terminal triple. The only read-side entry (full record and enum rows). */
 function decodeRunSettlement(
   status: DwfRunPhysicalStatus,
   failureJson: string | null,
@@ -137,9 +137,9 @@ function isStoppedEnvelope(
 }
 
 /**
- * 逻辑状态过滤 → SQL 谓词（`listRuns` 的 statuses 下推）。`stopped` / `errored` 在物理层共享
- * `failed` 列值，靠 `failure_json` 的 code 判别——用 SQLite 的 json_extract 在 SQL 里分清，
- * 而不是取一页再筛（后者会让 limit 与截断探测失真）。
+ * Logical status filter to SQL predicate (listRuns statuses pushdown). stopped/errored share the physical
+ * failed value, discriminated by failure_json code via SQLite json_extract in SQL,
+ * not fetch-then-filter (that would skew limit and truncation probes).
  */
 export function encodeRunStatusPredicate(statuses: readonly RunStatus[]): {
   sql: string;
@@ -178,13 +178,13 @@ export interface DwfRunRow {
   name: string | null;
   parent_session_id: string | null;
   result_json: string | null;
-  /** amend-resume 的 lineage 指针（较新迁移添加）。窄投影也 select 它：见 {@link DwfRunMetadataRow}。 */
+  /** amend-resume lineage pointer (newer migration). Narrow projections select it too: see DwfRunMetadataRow. */
   resumed_from: string | null;
   script_hash: string | null;
   script_text: string | null;
-  /** run 级 token 用量（旧称 budget_spent；同一份数字，只是不再叫预算）。 */
+  /** Run-level token usage (legacy name budget_spent; same number, no longer a budget). */
   spent_tokens: number;
-  /** 物理词汇（见文件头的映射表）；逻辑状态由 {@link decodeRunSettlement} 与 failure_json 一起解出。 */
+  /** Physical vocabulary (see the file-header table); logical status decoded by decodeRunSettlement plus failure_json. */
   status: DwfRunPhysicalStatus;
   time_created: number;
   time_updated: number;
@@ -192,51 +192,51 @@ export interface DwfRunRow {
 }
 
 /**
- * dwf_run 的**元数据列**（不含可能很大的 result_json）。枚举查询只 select 这些列：
- * 一页 50 行把 result_json 一起解出来，等于把整库的产物读进内存，而列表面根本不展示它。
+ * Metadata columns of dwf_run (result_json excluded, it can be huge). Enum queries select only these:
+ * decoding result_json for a 50-row page reads every artifact into memory the list never shows.
  *
- * 物理 `failed` 既可能是 errored 也
- * 可能是 stopped(interrupted)，逻辑 status 只有连同 failure_json 才解得出来；它是结构化的小
- * 对象（code + message + 信封），逐行解出来没有内存风险。枚举行仍**不带** `failure` 字段。
+ * Physical failed may be errored or
+ * stopped(interrupted); logical status is decodable only with failure_json, a small structured
+ * object (code + message + envelope) safe to decode per row. Enum rows still carry no failure field.
  *
- * 实参是经声明校验过的
- * 小 JSON 袋，GUI 中枢的运行历史行要展示它——而 failure / result 才是无界的产物列。
+ * The argument is a declaration-validated
+ * small JSON bag displayed by the GUI hub's run history; failure/result are the unbounded artifact columns.
  *
- * `resumed_from` 属于这一层（不是被省掉的大列）：它是一个短字符串，而「缺席 = 不是修订」
- * 的解码规则要求列真的被 select——漏掉它，窄查询里 `row.resumed_from` 会是 undefined，
- * 与 NULL 走不同分支，于是枚举行带上一个值为 undefined 的键。
+ * resumed_from belongs in this layer (not an omitted big column): a short string, and the
+ * absent-means-not-an-amend decode rule requires the column to be selected; otherwise row.resumed_from is
+ * undefined in narrow queries, a different branch from NULL, putting an undefined-valued key on enum rows.
  */
 export type DwfRunMetadataRow = Omit<DwfRunRow, "result_json">;
 
-/** journal 侧的行时间戳。`RunRecord` 刻意不带时间（引擎不关心），但读面要报 created/updated。 */
+/** Journal-side row timestamps. RunRecord deliberately carries none (engine indifferent) but reads must report created/updated. */
 export interface DwfRunTimestamps {
   timeCreated: number;
   timeUpdated: number;
 }
 
 /**
- * 枚举查询的一行：run 元数据 + 时间戳，**不含** failure / result。
- * 详情行是它的超集，所以 list 与 get 两条读面可以共用同一套标签与归属推导。
+ * One enum-query row: run metadata + timestamps, no failure/result.
+ * Detail rows are a superset, so list and get share one label/attribution derivation.
  */
 export type DwfRunListItem = Omit<RunRecord, "failure" | "result"> & DwfRunTimestamps;
 
-/** 详情查询的一行：完整 `RunRecord`（含 failure / result）+ 时间戳。 */
+/** Detail-query row: full RunRecord (failure/result included) + timestamps. */
 export type DwfRunDetailRow = RunRecord & DwfRunTimestamps;
 
 /**
- * 会话枚举查询的一行：{@link DwfRunListItem} + `failure`，**仍然不含 result**。
+ * Session-enum row: DwfRunListItem + failure, still no result.
  *
- * 为什么不直接用 {@link DwfRunListItem}：会话枚举面（`listRunsForSession` → `/dwf list`）
- * 要报 failureCode/failureMessage，且 `resumable` 的谓词就是「failed 且 code 为
- * Interrupted」——省掉 failure_json 会让每个被打断的 run 都被算成不可恢复，
- * 那是一个静默的错误答案，而不是少一列展示。
+ * Why not DwfRunListItem alone: the session enumeration (listRunsForSession -> /dwf list)
+ * reports failureCode/failureMessage and resumable means failed with code
+ * Interrupted; dropping failure_json would mark every interrupted run unrecoverable,
+ * a silently wrong answer, not a missing display column.
  *
- * 为什么仍然不取 result_json：那一列是真正无界的（脚本的顶层返回值），而列表面从不展示
- * 产物。failure_json 是结构化的小对象（code + message），逐行解出来没有内存风险。
+ * Why still no result_json: that column is truly unbounded (the script's top-level return) and lists never
+ * show artifacts. failure_json is a small structured object (code + message), per-row decoding is safe.
  */
 export type DwfRunSessionRow = DwfRunMetadataRow;
 
-/** {@link DwfRunSessionRow} 的记录形态。 */
+/** Record shape of DwfRunSessionRow. */
 export type DwfRunSessionListItem = DwfRunListItem & Pick<RunRecord, "failure">;
 
 export interface DwfActorRow {
@@ -257,18 +257,18 @@ export interface DwfNodeRow {
   actor_seq: number | null;
   actor_site_id: string | null;
   /**
-   * 用户面产物的 id（较新迁移添加）。`kind = 'artifact'` 的行带它发布 / 声明的那个产物；
-   * 带标签的 `kind = 'report'` 行带它喂养的那个预置产物。其余行为 NULL。
-   * ⚠ 与 `RunSettlement.artifact`（脚本顶层返回值）无关。
+   * User-facing artifact id (newer migration). kind=artifact rows carry the published/declared artifact;
+   * labeled kind=report rows carry the preset artifact they feed. Other rows NULL.
+   * Unrelated to RunSettlement.artifact (the script's top-level return).
    */
   artifact_id: string | null;
   error_json: string | null;
   id: number;
   input_hash: string;
-  /** world-read / world-run 行的有界 `{op, args}`（较新迁移添加）；其余行与老行为 NULL。 */
+  /** Bounded {op, args} of world-read/world-run rows (newer migration); others and legacy rows NULL. */
   input_json: string | null;
   kind: NodeKind;
-  /** ask 结算后 actor 会话消息 log 的长度（count offset，较新迁移添加）。 */
+  /** Actor session message-log length after ask settles (count offset; newer migration). */
   message_boundary: number | null;
   ordinal: number;
   result_json: string | null;
@@ -281,21 +281,21 @@ export interface DwfNodeRow {
 }
 
 /**
- * 工作区读面的一行：world-read / world-run 的
- * `NodeRecord`（**不含 `result`**——正文另有按 (siteId, ordinal) 的读面）+ journal 时间戳 +
- * `result_json` 的字节数（清单上的「多大」，不用把正文解出来就能报）。
+ * One workspace-read row: the world-read/world-run
+ * NodeRecord (no result; body has its own (siteId, ordinal) reader) + journal timestamps +
+ * result_json byte size (the how-big on the list, reportable without decoding the body).
  */
 export interface DwfWorldNodeRow extends Omit<NodeRecord, "result">, DwfRunTimestamps {
-  /** `result_json` 的 UTF-8 字节数；行还没结算或结算失败时缺席。 */
+  /** UTF-8 byte size of result_json; absent until settled or on settlement failure. */
   resultBytes?: number;
   /**
-   * 正文是 JSON 数组时的元素数（`glob` 的文件数、`grep` 的命中数、`git.changedFiles` 的路径数）。
-   * 由 SQLite 的 JSON 函数在查询里算出，正文本身不出库。
+   * Element count when the body is a JSON array (glob files, grep hits, git.changedFiles paths).
+   * Computed in-query via SQLite JSON functions; the body never leaves the DB.
    */
   resultCount?: number;
-  /** `world.run` 结算后正文上的 `exitCode`；其它 op 与未结算行缺席。 */
+  /** exitCode on the body after world.run settles; absent for other ops and unsettled rows. */
   exitCode?: number;
-  /** `world.run` 结算后 `stdout` / `stderr` 的 UTF-8 字节数。 */
+  /** UTF-8 byte size of stdout/stderr after world.run settles. */
   stdoutBytes?: number;
   stderrBytes?: number;
 }
@@ -310,9 +310,9 @@ export interface DwfEventRow {
 }
 
 /**
- * `result` 列专用编码。`null` 是合法的 ask 结果（`ask<T | null>` 会返回它），
- * 而共享的 encodeJson 把 undefined 和 null 一起压成 SQL NULL——那样 `result: null`
- * 落库再读出来会变成"没有 result"。这里只有 undefined 才映射为 SQL NULL。
+ * result-column encoding. null is a legal ask result (ask<T | null> returns it),
+ * but shared encodeJson collapses undefined and null into SQL NULL, turning a stored
+ * result null into no-result on read. Only undefined maps to SQL NULL here.
  */
 export function encodeResultJson(value: unknown): string | null {
   if (value === undefined) return null;
@@ -321,8 +321,8 @@ export function encodeResultJson(value: unknown): string | null {
 }
 
 /**
- * run 元数据的公共解码。完整记录与枚举行都从这里出发，两条读面因此不可能在「哪些可选列
- * 算缺席」上分叉。
+ * Shared run-metadata decode. Full records and enum rows both start here, so the two readers
+ * cannot diverge on which optional columns count as absent.
  */
 function decodeRunMetadata(row: DwfRunMetadataRow): Omit<RunRecord, "failure" | "result"> {
   const caps: Caps = { maxConcurrency: row.caps_max_concurrency };
@@ -338,17 +338,17 @@ function decodeRunMetadata(row: DwfRunMetadataRow): Omit<RunRecord, "failure" | 
   if (settlement.supersededBy !== undefined) record.supersededBy = settlement.supersededBy;
   if (row.parent_session_id !== null) record.parentSessionId = row.parent_session_id;
   if (row.cwd !== null) record.cwd = row.cwd;
-  // 列引入之前的行 name 为 NULL（新列、不回填）：解成**缺席的键**，读侧据此走脚本首行兜底。
+  // Rows predating the column have NULL name (new column, no backfill): decode as an absent key; readers fall back to the script's first line.
   if (row.name !== null) record.name = row.name;
-  // 早期落库的行没有这一列的值（NULL 即缺席），解成缺席的键，历史 run 照旧读回。
+  // Early rows have no value (NULL = absent): decode as absent, legacy runs read fine.
   if (row.tool_call_id !== null) record.toolCallId = row.tool_call_id;
   if (row.script_text !== null) record.scriptText = row.script_text;
   if (row.script_hash !== null) record.scriptHash = row.script_hash;
-  // 早期落库的行、以及每一个不是修订的 run（绝大多数）该列为 NULL：解成**缺席的键**。
-  // 读侧据此判定「本 run 是否需要重建导入缓存」。
+  // Early rows and every non-amend run (the vast majority) have NULL: decode as an absent key.
+  // Readers use it to decide import-cache rebuilds.
   if (row.resumed_from !== null) record.resumedFrom = row.resumed_from;
-  // 早期落库的行没有这一列的值（NULL 即缺席）：解成**缺席的键**而不是 `{}`，让「没有实参」
-  // 与「实参是空袋」在记录层面保持可分辨；沙箱侧统一把缺席读作 `{}`（不变式 7）。
+  // Early rows have no value (NULL = absent): decode as an absent key, not {}, keeping no-args
+  // and empty-args-bag distinguishable at the record level; the sandbox reads absent as {} (invariant 7).
   if (row.args_json !== null) record.args = JSON.parse(row.args_json) as Record<string, unknown>;
   return record;
 }
@@ -357,14 +357,14 @@ export function decodeRun(row: DwfRunRow): RunRecord {
   const record: RunRecord = decodeRunMetadata(row);
   const { failure } = decodeRunSettlement(row.status, row.failure_json);
   if (failure !== undefined) record.failure = failure;
-  // 早期落库的行没有值（列是新加的、值为 NULL）：必须解成**缺席的键**，而不是 undefined
-  // 值或抛错，否则升级后所有历史 run 都读不回来。`result: null` 走的是同一条 JSON.parse
-  // 路径，因此合法的 null 产物照旧出现在记录里（与 node 的 result_json 同一约定）。
+  // Early rows have no value (new column, NULL): must decode as an absent key, never an undefined
+  // value nor a throw, or no legacy run survives the upgrade. result null takes the same JSON.parse
+  // path, so legal null artifacts still appear (same convention as node result_json).
   if (row.result_json !== null) record.result = JSON.parse(row.result_json);
   return record;
 }
 
-/** 枚举行：元数据 + 时间戳。 */
+/** Enum row: metadata + timestamps. */
 export function decodeRunListItem(row: DwfRunMetadataRow): DwfRunListItem {
   return {
     ...decodeRunMetadata(row),
@@ -373,12 +373,12 @@ export function decodeRunListItem(row: DwfRunMetadataRow): DwfRunListItem {
   };
 }
 
-/** 详情行：完整记录 + 时间戳。 */
+/** Detail row: full record + timestamps. */
 export function decodeRunDetailRow(row: DwfRunRow): DwfRunDetailRow {
   return { ...decodeRun(row), timeCreated: row.time_created, timeUpdated: row.time_updated };
 }
 
-/** 会话枚举行：元数据 + 时间戳 + failure（不解 result_json——那一列没被 select）。 */
+/** Session-enum row: metadata + timestamps + failure (result_json not selected, hence not decoded). */
 export function decodeRunSessionListItem(row: DwfRunSessionRow): DwfRunSessionListItem {
   const item: DwfRunSessionListItem = decodeRunListItem(row);
   const { failure } = decodeRunSettlement(row.status, row.failure_json);
@@ -396,7 +396,7 @@ export function decodeActor(row: DwfActorRow): ActorRecord {
   const persona = decodeJson<PersonaSpec>(row.persona_json);
   if (persona !== undefined) record.persona = persona;
   if (row.session_id !== null) record.sessionId = row.session_id;
-  // 列引入之前的行该列为 NULL：解成**缺席的键**，历史 actor 记录照旧回得来。
+  // Rows predating the column are NULL: decode as an absent key, legacy actor records still read back.
   if (row.resolved_model !== null) record.resolvedModel = row.resolved_model;
   return record;
 }
@@ -418,14 +418,14 @@ export function decodeNode(row: DwfNodeRow): NodeRecord {
   if (error !== undefined) record.error = error;
   const stats = decodeJson<AskStats>(row.stats_json);
   if (stats !== undefined) record.stats = stats;
-  // 早期落库的行、非 ask 节点、以及尚未被 driver 补写边界的 ask 都是 NULL → 缺席的键。
-  // `0` 是**合法边界**（复制零条消息），所以判定必须是 `!== null` 而不是真值判断。
+  // Early rows, non-ask nodes and asks whose boundary the driver has not backfilled are NULL -> absent key.
+  // 0 is a legal boundary (zero messages copied): test !== null, never truthiness.
   if (row.message_boundary !== null) record.messageBoundary = row.message_boundary;
-  // 早期落库的行、以及每一条既不是产物行也没打标签的 report / ask / world-* 行都是 NULL
-  // → 解成**缺席的键**（不是 undefined 值）。看板取数按「artifact_id 相符」筛行，
-  // 一个值为 undefined 的键会让契约测的整条 toEqual 失败。
+  // Early rows and every report/ask/world-* row that is neither an artifact nor labeled are NULL
+  // -> absent key, not an undefined value. The board filters on artifact_id match;
+  // an undefined-valued key fails the contract test's whole toEqual.
   if (row.artifact_id !== null) record.artifactId = row.artifact_id;
-  // 0030 之前的行、以及 ask / report / artifact 行都是 NULL → 缺席的键（读面据此退回静态标签）。
+  // Pre-0030 rows and ask/report/artifact rows are NULL -> absent key (readers fall back to the static label).
   const input = decodeJson<WorldReadInput>(row.input_json);
   if (input !== undefined) record.input = input;
   return record;
@@ -435,8 +435,8 @@ export function decodeEvent(row: DwfEventRow): StoredEvent {
   return {
     sequence: row.sequence,
     event: JSON.parse(row.payload_json) as RunEvent,
-    // 事件日志里唯一的时钟：日志行的年龄、子代理
-    // 上一次动作的时刻都从它算。列自 0019 起就恒有值，所以这里无条件写出。
+    // The event log's only clock: row ages and the subagent's
+    // last-action time derive from it. The column is NOT NULL since 0019, so write unconditionally.
     timeCreated: row.time_created,
   };
 }

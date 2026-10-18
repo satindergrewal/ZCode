@@ -110,8 +110,8 @@ function extractSourcesFromToolResults(
 function extractSourcesFromSummary(summary: string | undefined): WebSearchSource[] {
   if (!summary) return [];
 
-  // WebSearch 内部请求改为流式后，provider 的引用有时只出现在
-  // summary markdown 中，而不会经过 ModelStreamEvent 暴露为 sources/toolResults。
+  // Since WebSearch went streaming, provider citations sometimes appear only in the summary markdown,
+ // never surfaced as sources/toolResults via ModelStreamEvent.
   const sources: WebSearchSource[] = [];
   const markdownLinkPattern = /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g;
   for (const match of summary.matchAll(markdownLinkPattern)) {

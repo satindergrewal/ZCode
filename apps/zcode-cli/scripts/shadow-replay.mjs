@@ -1,13 +1,13 @@
-// 影子重放对账（交付 / 测试基建）。
-// 用途：把本机真实 CLI 库（默认 ~/.zcode/cli/db/db.sqlite）的历史会话全量喂给
-// 冷恢复管线（transcript 合成 → ProductProjection），输出守恒对账报告——
-// 每阶段上线门槛 = 全量重放无崩溃、无静默丢弃、失败清单审查完毕。
+// Shadow-replay conservation audit (delivery / test infrastructure).
+// Purpose: feed the full history of the local real CLI store (default ~/.zcode/cli/db/db.sqlite)
+// through the cold-recovery pipeline (transcript synthesis -> ProductProjection) and emit a conservation
+// audit report. Per-stage gate = full replay with no crashes, no silent drops, and a reviewed failure list.
 //
-// 对源库只读：默认把 db（含 -wal/-shm）复制到临时目录再打开——store 打开时会跑
-// 迁移（0015/0016 等），不能直接落在用户真实库上（迁移应由 CLI 正常启动路径应用）。
-// 运行前先构建：pnpm -C apps/zcode-cli build（脚本从各包 dist 导入）。
+// The source store is read-only: copy the db (incl. -wal/-shm) to a temp dir before opening, because opening
+// the store runs migrations (0015/0016 etc.) which must not land on the user's real store (migrations belong
+// to the normal CLI startup path). Build first: pnpm -C apps/zcode-cli build (imports resolve from package dists).
 //
-// 用法：
+// Usage:
 //   node scripts/shadow-replay.mjs [--db <path>] [--limit <n>] [--session <id>] [--verbose] [--no-copy]
 import { parseArgs } from "node:util";
 import { homedir, tmpdir } from "node:os";
@@ -16,8 +16,7 @@ import { copyFileSync, existsSync, mkdtempSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const pkg = (relative) =>
-  import(pathToFileURL(join(here, "..", "packages", relative)).href);
+const pkg = (relative) => import(pathToFileURL(join(here, "..", "packages", relative)).href);
 
 const { values: args } = parseArgs({
   options: {
@@ -29,17 +28,13 @@ const { values: args } = parseArgs({
   },
 });
 
-const [{ createSqliteSessionStore }, hydration, projectionModule, contracts] =
-  await Promise.all([
-    pkg("adapters/dist/storage/index.js"),
-    pkg("bootstrap/dist/zcode-protocol-v4/transcript-hydration.js"),
-    pkg("bootstrap/dist/zcode-protocol-v4/product-projection.js"),
-    pkg("contracts/dist/index.js"),
-  ]);
-const {
-  synthesizeEventsFromMessages,
-  goalVerificationEntriesFromSessionEntries,
-} = hydration;
+const [{ createSqliteSessionStore }, hydration, projectionModule, contracts] = await Promise.all([
+  pkg("adapters/dist/storage/index.js"),
+  pkg("bootstrap/dist/zcode-protocol-v4/transcript-hydration.js"),
+  pkg("bootstrap/dist/zcode-protocol-v4/product-projection.js"),
+  pkg("contracts/dist/index.js"),
+]);
+const { synthesizeEventsFromMessages, goalVerificationEntriesFromSessionEntries } = hydration;
 const { ProductProjection } = projectionModule;
 const { SESSION_ENTRY_TARGET_COMPLETION_VERIFICATION } = contracts;
 
@@ -103,8 +98,8 @@ for (const session of sessions) {
     for (const event of events) projection.applyEvent(event);
     const rows = projection.getSnapshot().rows.window;
 
-    // ── 守恒对账 ──
-    // assistant 守恒：每条可见 assistant text 必须出现在 rows（多重集覆盖）。
+    // -- Conservation audit --
+    // assistant conservation: every visible assistant text must appear in rows (multiset coverage).
     const expectedTexts = [];
     for (const message of messages) {
       if (message.info.role !== "assistant") continue;
@@ -114,9 +109,7 @@ for (const session of sessions) {
         }
       }
     }
-    const actualTexts = rows
-      .filter((row) => row.kind === "assistantText")
-      .map((row) => row.text);
+    const actualTexts = rows.filter((row) => row.kind === "assistantText").map((row) => row.text);
     const remaining = [...actualTexts];
     let missingTexts = 0;
     for (const text of expectedTexts) {
@@ -126,10 +119,10 @@ for (const session of sessions) {
     }
     if (missingTexts > 0) {
       totals.assistantTextMissing += 1;
-      report.problems.push(`assistant text 缺失 ${missingTexts}/${expectedTexts.length}`);
+      report.problems.push(`missing assistant text ${missingTexts}/${expectedTexts.length}`);
     }
 
-    // goal verify 守恒：part ∪ entry 的 lifecycle key 数 vs goalVerify marker 行数。
+    // goalVerify conservation: lifecycle key count across part-union-entry vs goalVerify marker rows.
     const goalKeys = new Set();
     for (const message of messages) {
       for (const part of message.parts) {
@@ -158,19 +151,19 @@ for (const session of sessions) {
       report.problems.push(`goalVerify marker ${goalMarkers}/${goalKeys.size}`);
     }
 
-    // 可见 user 输入守恒：userInput 行数不得少于真实 user 文本消息数的下限估计
-    //（synthetic/model-only 不计；guide steer 内联也是可见行，计入两侧）。
-    // 已知误报：legacy 数据里 goal-continuation reminder / fork notice 以裸文本
-    // 持久化（无 synthetic/source/metadata 标记），分类器按文本前缀正确隐藏，
-    // 本启发式会把它们计成可见——flag 需人工核对（全量重放中 21 个
-    // flag 全为此类误报，真实守恒失败为 0）。
+    // Visible-user-input conservation: the userInput row count must not fall below a lower-bound estimate of
+    // real user text messages (synthetic/model-only excluded; guide-steer inlines are visible rows counted on
+    // both sides). Known false positive: legacy data persists goal-continuation reminders / fork notices as
+    // bare text (no synthetic/source/metadata marker); the classifier hides them correctly by text prefix, but
+    // this heuristic counts them as visible, so flags need manual review (of all flags raised in full replay,
+    // 21 were this false positive; true conservation failures: 0).
     const expectedUsers = messages.filter(
       (message) =>
         message.info.role === "user" &&
         message.info.synthetic !== true &&
         message.info.visibility !== "model-only" &&
-        // compact 续接摘要（info.summary / semantics.kind=compact_summary）是
-        // providerContextOnly：分类器裁决不可见，不计入可见 user 下限。
+        // Compact continuation summaries (info.summary / semantics.kind=compact_summary) are
+        // providerContextOnly: ruled invisible by the classifier, not counted in the visible-user lower bound.
         message.info.summary === undefined &&
         !message.info.semantics?.kind?.startsWith?.("compact") &&
         message.info.source === undefined &&
@@ -181,12 +174,12 @@ for (const session of sessions) {
     const actualUsers = rows.filter((row) => row.kind === "userInput").length;
     if (actualUsers < expectedUsers) {
       totals.userInputMismatch += 1;
-      report.problems.push(`userInput 行 ${actualUsers}/${expectedUsers}`);
+      report.problems.push(`userInput rows ${actualUsers}/${expectedUsers}`);
     }
 
-    // 可寻址性守恒：shadow replay 不能只证明“文本还在”。每条 transcript row 的
-    // entity/productTurn/message target，以及每个已发布 action，都必须由同一次 cold
-    // materialization 的 resolver 精确命中；否则 UI 会显示按钮但命令必然 stale/reject。
+    // Addressability conservation: shadow replay must prove more than "the text survives". Every transcript
+    // row's entity/productTurn/message target, and every published action, must be hit exactly by the resolver
+    // of the same cold materialization; otherwise the UI shows buttons whose commands are stale/rejected.
     let entityTargetProblems = 0;
     let actionProblems = 0;
     const actionByFlag = [
@@ -219,13 +212,10 @@ for (const session of sessions) {
           continue;
         }
         if (
-          (action === "editUserQuery" ||
-            action === "retryTurn" ||
-            action === "forkAssistant") &&
+          (action === "editUserQuery" || action === "retryTurn" || action === "forkAssistant") &&
           (!messageId ||
             ("messageId" in resolution && resolution.messageId !== messageId) ||
-            ("editTarget" in resolution &&
-              resolution.editTarget.productTurnId !== row.turnId))
+            ("editTarget" in resolution && resolution.editTarget.productTurnId !== row.turnId))
         ) {
           actionProblems += 1;
         }
@@ -233,17 +223,17 @@ for (const session of sessions) {
     }
     if (entityTargetProblems > 0) {
       totals.entityTargetMismatch += 1;
-      report.problems.push(`entity/target 不可寻址 ${entityTargetProblems}`);
+      report.problems.push(`unaddressable entity/target ${entityTargetProblems}`);
     }
     if (actionProblems > 0) {
       totals.actionAddressabilityMismatch += 1;
-      report.problems.push(`row.actions resolver 不等价 ${actionProblems}`);
+      report.problems.push(`row.actions resolver mismatch ${actionProblems}`);
     }
 
     if (report.problems.length === 0) totals.clean += 1;
   } catch (error) {
     totals.crashed += 1;
-    report.problems.push(`重放崩溃: ${error?.message ?? error}`);
+    report.problems.push(`replay crash: ${error?.message ?? error}`);
   }
   if (report.problems.length > 0) {
     offenders.push(report);
@@ -255,24 +245,25 @@ for (const session of sessions) {
 
 store.close();
 
-console.log("\n── 影子重放对账报告 ──");
-console.log(`源 DB: ${sourceDbPath}${dbPath === sourceDbPath ? "" : "（已复制到临时副本重放）"}`);
-console.log(`会话: ${totals.sessions}（干净 ${totals.clean}）`);
-console.log(`重放崩溃: ${totals.crashed}`);
-console.log(`assistant text 缺失: ${totals.assistantTextMissing}`);
-console.log(`userInput 行不足: ${totals.userInputMismatch}`);
-console.log(`goalVerify marker 缺失: ${totals.goalVerifyMissing}`);
-console.log(`entity/target 不可寻址: ${totals.entityTargetMismatch}`);
-console.log(`row.actions resolver 不等价: ${totals.actionAddressabilityMismatch}`);
+console.log("\n-- shadow replay conservation report --");
+console.log(
+  `source DB: ${sourceDbPath}${dbPath === sourceDbPath ? "" : " (copied to temp for replay)"}`,
+);
+console.log(`sessions: ${totals.sessions} (clean ${totals.clean})`);
+console.log(`replay crashes: ${totals.crashed}`);
+console.log(`missing assistant text: ${totals.assistantTextMissing}`);
+console.log(`userInput rows short: ${totals.userInputMismatch}`);
+console.log(`missing goalVerify markers: ${totals.goalVerifyMissing}`);
+console.log(`unaddressable entity/target: ${totals.entityTargetMismatch}`);
+console.log(`row.actions resolver mismatch: ${totals.actionAddressabilityMismatch}`);
 if (offenders.length > 0 && !args.verbose) {
-  console.log(`\n问题会话（前 20，--verbose 看全量）：`);
+  console.log(`\nproblem sessions (first 20; --verbose for all):`);
+
   for (const report of offenders.slice(0, 20)) {
     console.log(`  ${report.sessionId}: ${report.problems.join("; ")}`);
   }
 }
 process.exitCode =
-  totals.crashed > 0 ||
-  totals.entityTargetMismatch > 0 ||
-  totals.actionAddressabilityMismatch > 0
+  totals.crashed > 0 || totals.entityTargetMismatch > 0 || totals.actionAddressabilityMismatch > 0
     ? 1
     : 0;

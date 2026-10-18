@@ -40,7 +40,8 @@ const includedTopLevelPaths = new Set([
   ".mcp.json",
   ".zcode-plugin",
   "README.md",
-  // 官方内容插件新增 agents 后，filesystem seed 的顶层白名单未同步，目录被静默裁掉。
+  // When official content plugins gained agents/, the filesystem seed's top-level whitelist had
+  // not been updated and the directory was silently dropped.
   "agents",
   "commands",
   "dist",
@@ -48,8 +49,9 @@ const includedTopLevelPaths = new Set([
   "hooks",
   "output-styles",
   "package.json",
-  // Browser skill 会从官方插件根目录动态导入 scripts/browser-client.mjs。
-  // filesystem seed 若漏掉 scripts，Dev 会连接 node_repl 成功却在首次 Browser Use 时导入失败。
+  // The browser skill dynamically imports scripts/browser-client.mjs from the official plugin
+  // root. If the filesystem seed misses scripts/, Dev connects to node_repl fine but the first
+  // Browser Use fails on import.
   "scripts",
   "skills",
   "templates",
@@ -95,21 +97,27 @@ function seedBundledOfficialPlugins(input: {
   const source = resolveSeedSource();
   if (!source) return [];
 
-  // Catalog/cache 是内置插件的不可变产品资产；Runtime 是否加载由 discovery 的抑制态决定，
-  // 不能在 seed 阶段删除或过滤，否则卸载后详情页无法读取组件，也无法恢复。
+  // Catalog/cache are immutable product assets of the bundled plugins; whether the runtime loads
+  // them is decided by discovery's suppression state. Do not delete or filter during seeding,
+  // else after uninstall the details page can no longer read components nor recover.
   writeOfficialMarketplace(input.storageRoot, source);
   const retryBudget = createOfficialPluginCacheRetryBudget();
-  // 等锁超时降级后循环会继续；若每个插件独立重置 15s 等待预算，成组遗留的
-  // 锁会让启动同步冻结 N×15s。全部插件共享同一截止时间：无争用的锁仍瞬时获取（mkdir
-  // 一次成功不查预算），预算耗尽后有争用的锁立即降级，seeding 总等待封顶 15s。
+  // The loop continues after lock-wait timeout degradation; if each plugin reset its own 15s wait
+  // budget, leftover lock groups would freeze startup for N x 15s. All plugins share one
+  // deadline: uncontended locks are still instant (a first-try mkdir does not consult the
+  // budget); once the budget is gone, contended locks degrade immediately, capping total seeding
+  // wait at 15s.
   const seedLockDeadlineAt = Date.now() + SEED_LOCK_TOTAL_BUDGET_MS;
   const failedSeeds: OfficialPluginDefinition[] = [];
   for (const plugin of source.plugins) {
     const pluginId = `${plugin.definition.name}@${OFFICIAL_PLUGIN_MARKETPLACE}`;
     const targetRoot = officialPluginCacheRoot(input.storageRoot, plugin.definition);
-    // 入口旁的插件拷贝可能与新定义错配（升级中的桌面包、旧 checkout 未构建 dist）。
-    // 缺 requiredSeedPaths 时 seed 源解析曾直接抛错，一个残缺插件把全部插件连同会话恢复
-    // 一起炸成 resumeFailed。残缺只作用于单插件：拒绝写缓存，按既有降级协议告警并回退到可用旧缓存。
+    // A plugin copy next to the entrypoint may mismatch the new definition (desktop package
+    // mid-upgrade, old checkout without dist built). Missing requiredSeedPaths used to throw
+    // right in seed-source resolution, letting one crippled plugin blow up every plugin - and
+    // session recovery with it - into resumeFailed. Cripplement now affects a single plugin:
+    // refuse to write its cache, warn per the existing degradation protocol, and fall back to the
+    // last usable cache.
     if (plugin.missingSeedPaths.length > 0) {
       warnCacheDegraded(input.logger, {
         error: Object.assign(
@@ -130,9 +138,10 @@ function seedBundledOfficialPlugins(input: {
       withOfficialPluginSeedLock(
         targetRoot,
         () => {
-          // 桌面会并发预热多个 workspace Agent；复制插件资源时，
-          // 多进程会互删 target 并在 Windows rename 时触发 EPERM。拿锁后必须二次检查，
-          // 让等待者直接复用首个进程已经提交的完整缓存。
+          // The desktop warms up several workspace Agents concurrently; while copying plugin
+          // assets, processes would delete each other's target and trip EPERM on Windows rename.
+          // Re-check after taking the lock so waiters reuse the complete cache the first process
+          // already committed.
           if (isSeedCurrent(targetRoot, plugin)) {
             cleanupLegacySeedBackup(targetRoot, retryBudget);
             const manifestWritten = tryWriteOfficialPluginRuntimeManifest({
@@ -175,7 +184,8 @@ function seedBundledOfficialPlugins(input: {
             try {
               removeOfficialPluginCacheDirectory(temporaryRoot, retryBudget);
             } catch {
-              // 临时目录清理失败不能覆盖真正的 seed 错误；目录名唯一，不会污染后续加载。
+              // A failed temp-dir cleanup must not mask the real seed error; the name is unique
+              // and cannot pollute later loads.
             }
             throw error;
           }
@@ -185,14 +195,17 @@ function seedBundledOfficialPlugins(input: {
     } catch (error) {
       if (
         isTransientOfficialPluginCacheFsError(error) ||
-        // seed lock 等待超时只说明同版本缓存锁被别的进程持有或遗留（Windows 上
-        // 删不掉的遗留锁 + PID 复用会让接管长期不触发）。seeding 只是刷新缓存，超时必须
-        // 走既有降级协议回退到可用缓存并告警，不能把会话恢复整体炸成 resumeFailed。
+        // A seed-lock wait timeout only means the same-version cache lock is held or leftover
+        // from another process (on Windows, undeletable leftover locks plus PID reuse keep
+        // take-over from triggering). Seeding merely refreshes a cache; on timeout take the
+        // existing degradation protocol - fall back to the usable cache and warn - instead of
+        // blowing up session recovery into resumeFailed.
         isOfficialPluginSeedLockTimeoutError(error) ||
-        // 多个 workspace app 会并发 seed 同一份官方插件缓存。当前进程
-        // 写 runtime manifest 时，并发赢家可能已经原子替换整个 targetRoot，连同本进程
-        // 的临时文件一起移走，rename 因此返回 ENOENT。只在新 target 已由 marker 证明
-        // 完整时降级；目标缺失或仍旧时继续抛错，不能掩盖真实缓存损坏。
+        // Several workspace apps seed the same official plugin cache concurrently. While this
+        // process writes the runtime manifest, the concurrent winner may already have atomically
+        // replaced the whole targetRoot, moving this process's temp files with it, so rename
+        // returns ENOENT. Degrade only once the new target is proven complete by its marker; on
+        // missing-or-stale targets keep throwing - a real cache corruption must not be masked.
         (isNotFoundFsError(error) && isSeedCurrent(targetRoot, plugin))
       ) {
         warnCacheDegraded(input.logger, {
@@ -232,8 +245,9 @@ export function resolveOfficialPluginRoots(input: {
   suppressedBuiltins?: ReadonlySet<string>;
 }): string[] {
   const suppressedBuiltins = new Set(input.suppressedBuiltins ?? []);
-  // zcode-cua 内置 plugin 默认不启用，由 feature flag 控制加载。在 seed/discovery 层门控
-  // （而非只隐藏某个 UI 面），这样开关关闭时用户无法经 plugin 列表/marketplace/MCP 设置/CLI 命令看到它。
+  // The zcode-cua builtin is disabled by default; a feature flag gates loading. Gate at the
+  // seed/discovery layer (not merely hiding one UI surface) so, with the flag off, the plugin is
+  // invisible across the plugin list / marketplace / MCP settings / CLI commands.
   if (!isZCodeCuaInternalFeatureEnabled(input.env ?? process.env)) {
     suppressedBuiltins.add(ZCODE_CUA_OFFICIAL_PLUGIN_ID);
   }
@@ -243,8 +257,9 @@ export function resolveOfficialPluginRoots(input: {
   });
 
   const fallbackRoots = failedSeeds.flatMap((definition) => {
-    // CUA 的 frame contract 随 wrapper 与 producer 原子升级。加载旧版本
-    // cache 会把旧 block 布局接到新 consumer 上；当前 cache 不可用时宁可不注册 CUA。
+    // CUA's frame contract upgrades atomically with the wrapper and producer. Loading a stale
+    // cache couples an old block layout to a new consumer; when no current cache is usable, prefer
+    // not registering CUA at all.
     if (`${definition.name}@${OFFICIAL_PLUGIN_MARKETPLACE}` === ZCODE_CUA_OFFICIAL_PLUGIN_ID) {
       return [];
     }
@@ -411,9 +426,10 @@ function writeOfficialMarketplace(storageRoot: string, source: OfficialPluginSee
     manifest: {
       name: OFFICIAL_PLUGIN_MARKETPLACE,
       plugins: source.plugins.map((plugin) => {
-        // 商店信息（listing）与描述随目录条目下发：键名与 CDN 目录 schema 一致，
-        // 由 adapter 的同一套 parseEntryStoreListing 解析，UI 才能给内置插件渲染
-        // 显示名/分类/作者/示例提示词。描述取自插件包内 plugin.json（单一事实源）。
+        // Store listing and description ship with the catalog entry: key names match the CDN
+        // listing schema and are parsed by the adapter's parseEntryStoreListing, so the UI can
+        // render display name / category / author / example prompts for bundled plugins. The
+        // description comes from the plugin package's plugin.json (single source of truth).
         const description = readSeedPluginDescription(source, plugin);
         return {
           cachePath: officialPluginCacheRoot(storageRoot, plugin.definition),
@@ -430,7 +446,7 @@ function writeOfficialMarketplace(storageRoot: string, source: OfficialPluginSee
   });
 }
 
-/** 从 seed 文件集中读插件 plugin.json 的 description；读取/解析失败按 undefined 降级。 */
+/** Read the plugin.json description from the seed file set; degrade to undefined on read/parse failure. */
 function readSeedPluginDescription(
   source: OfficialPluginSeedSource,
   plugin: OfficialPluginSeedPluginSource,
@@ -461,8 +477,9 @@ function isSeedCurrent(targetRoot: string, plugin: OfficialPluginSeedPluginSourc
 }
 
 /**
- * 旧版本缓存只要插件清单和运行所需文件完整，就可以继续服务当前会话。
- * marker hash 不匹配只表示需要升级，不能把一个可用的旧缓存当成启动失败。
+ * A stale cache may keep serving the current session as long as the plugin manifest and the
+ * runtime-required files are intact. A marker hash mismatch only means an upgrade is due; a
+ * usable old cache must not count as a startup failure.
  */
 function isSeedUsable(targetRoot: string, definition: OfficialPluginDefinition): boolean {
   try {
@@ -500,8 +517,9 @@ function findUsableOfficialPluginFallback(
         entry.isDirectory() &&
         entry.name !== definition.version &&
         !entry.name.includes(".backup") &&
-        // 锁目录（含 .seed-lock.stale-*）与版本目录同级；超时降级后锁必然在场，
-        // 不能依赖 isSeedUsable 的内容检查兜底，按名字直接排除。
+        // Lock directories (incl. .seed-lock.stale-*) sit next to version dirs; after a timeout
+        // degradation a lock is guaranteed present, and isSeedUsable's content check must not be
+        // relied on as a backstop - exclude by name directly.
         !entry.name.includes(".seed-lock") &&
         !entry.name.includes(".tmp-"),
     )
@@ -526,9 +544,10 @@ function replaceSeedRoot(
       renameOfficialPluginCachePath(targetRoot, backupRoot, retryBudget);
       movedTargetToBackup = true;
     } catch (error) {
-      // 官方插件缓存由桌面窗口、协议与 CLI 入口共享。existsSync 之后，
-      // 另一个进程可能先移走 target；此处只收敛这个 TOCTOU 的 ENOENT，随后继续
-      // promote 或由 isSeedCurrent 识别并发赢家，其他缺失错误仍保持原有 fatal 语义。
+      // The official plugin cache is shared by desktop windows, the protocol, and CLI entry
+      // points. After the existsSync, another process may have moved the target away first; here
+      // only this TOCTOU ENOENT is absorbed - promote continues or isSeedCurrent recognizes the
+      // concurrent winner - while other not-found errors keep their original fatal semantics.
       if (!isNotFoundFsError(error)) throw error;
     }
   }
@@ -563,14 +582,16 @@ function cleanupLegacySeedBackup(
   const backupRoot = `${targetRoot}.backup`;
   if (!existsSync(backupRoot)) return;
 
-  // 旧版固定 backup 没有事务归属，target 暂时缺失时可能属于另一个仍在
-  // promote 的进程，不能把它恢复回去。仅在当前 seed 已确认可用后清理这个遗留目录。
+  // The legacy fixed backup has no transaction ownership: with the target momentarily missing it
+  // may belong to another process still promoting, so it must not be restored. Clean up this
+  // leftover directory only after the current seed is confirmed usable.
   removeOfficialPluginCacheDirectory(backupRoot, retryBudget);
 }
 
 function createSeedBackupRoot(targetRoot: string): string {
-  // 固定 backup 会被并发启动进程共同当作 rollback 点；每次替换使用唯一目录，
-  // catch 分支只恢复自己移动出的 target，避免一个进程窃取另一个进程的事务状态。
+  // The fixed backup doubles as a shared rollback point for concurrently starting processes; use
+  // a unique directory per replacement so the catch branch restores only the target it moved,
+  // avoiding one process stealing another's transaction state.
   return `${targetRoot}.backup-${process.pid}-${Date.now()}`;
 }
 
@@ -628,11 +649,12 @@ function officialPluginCacheRoot(
   );
 }
 
-/** 内置技能包（bundled-skills.ts）沿同一组候选目录定位，保证两类内置资产在每种运行布局下同进同出。 */
+/** bundled-skills.ts locates assets along the same candidate dirs, keeping both builtin asset kinds in lockstep across run layouts. */
 export function candidateBaseDirs(): string[] {
-  // 修复原因：Electron app-server 运行在 resources/glm/zcode.cjs，官方插件资源也随桌面包
-  // stage 到同级 packages/*-plugin。候选目录必须优先看入口文件目录，避免生产态退回到
-  // monorepo-only 的 __dirname 查找假设。
+  // Fix rationale: the Electron app-server runs at resources/glm/zcode.cjs and official plugin
+  // assets are staged by the desktop package into sibling packages/*-plugin dirs. Candidate dirs
+  // must prefer the entrypoint directory, else production falls back to the monorepo-only
+  // __dirname lookup assumption.
   return [entrypointDir(), runtimeDir(), process.cwd()].filter(
     (dir): dir is string => typeof dir === "string",
   );
@@ -673,9 +695,9 @@ function modeForSeedFile(filePath: string, sourceMode?: number): number {
   if (sourceMode !== undefined && (sourceMode & 0o111) !== 0) return 0o755;
 
   const normalizedPath = toPosixPath(filePath);
-  // official plugin seed 会重写缓存文件权限。部分插件通过 polyglot shell wrapper
-  // 直接执行 hook 脚本，若落盘成 0644 会 permission denied。这里保留源码执行位，
-  // 并对 SEA/旧 manifest 缺少 mode 的 hook 脚本兜底。
+  // The official plugin seed rewrites cached file modes. Some plugins run hook scripts directly
+  // via polyglot shell wrappers; landing as 0644 would permission-denial them. Keep the source
+  // exec bit, and fall back for hook scripts whose SEA/legacy manifest lacks a mode.
   if (/(?:^|\/)dist\/mcp\/server\.js$/i.test(normalizedPath)) return 0o755;
   if (/^hooks\//u.test(normalizedPath) && !/\.(json|md|txt)$/iu.test(normalizedPath)) {
     return 0o755;

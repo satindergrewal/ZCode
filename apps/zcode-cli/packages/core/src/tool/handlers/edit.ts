@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- Edit 工具需要集中维护文本匹配、read-before-edit 与写回状态，避免 bugfix 期间拆分扩大行为面。 */
+/* eslint-disable max-lines -- Edit centralizes text matching, read-before-edit, and write-back state; splitting mid-bugfix would widen the behavior surface. */
 // ============================================================
 // Edit Tool Handler
 // ============================================================
@@ -109,8 +109,8 @@ const editHandler: ToolHandler = async (input, context) => {
   }
 
   if (!file_path) {
-    // 空路径由共享 path-policy 抛出普通异常，绕过了 Edit 自己维护的
-    // code + message 失败契约，导致 provider-visible 内容丢失 tool_use_error envelope。
+    // Empty paths throw a plain exception from shared path-policy, bypassing Edit's own
+ // code+message failure contract and dropping the tool_use_error envelope from provider-visible content.
     return editFailure(EditErrorCode.INVALID_PATH, "Tool path must not be empty");
   }
 
@@ -447,7 +447,7 @@ function hasReadStateChanged(
 ): boolean {
   const currentMtimeMs = currentRead.revision?.mtimeMs;
   if (lastRead.mtimeMs !== undefined && currentMtimeMs !== undefined) {
-    // 亚毫秒级精度，只在当前文件的整数毫秒晚于 Read 记录或大小变化时判 stale，减少误报。
+    // Sub-millisecond mtimes: flag stale only when the current file's whole ms is later than the Read record or the size changed; fewer false positives.
     const normalizedCurrentMtimeMs = normalizeReadFileStateMtimeMs(currentMtimeMs);
     const normalizedLastReadMtimeMs = normalizeReadFileStateMtimeMs(lastRead.mtimeMs);
     const mtimeAdvanced =
@@ -533,7 +533,7 @@ async function writeEditResult(input: {
     oldContent: input.originalFile,
     newContent: contentToWrite,
   });
-  // perf 里 totalBytes/maxFileBytes 语义相同，缓存结果避免大文件编辑时重复扫描新内容。
+  // perf totalBytes/maxFileBytes share semantics; cache the result to avoid rescanning new content on large edits.
   const newContentBytes = fileByteCount(contentToWrite);
 
   return attachToolExecutionTelemetry(
@@ -628,7 +628,7 @@ function replaceLiteral(
   replacement: string,
   replaceAll: boolean,
 ): string {
-  // String.replace 的字符串 replacement 会把 $$/$& 当特殊 token；
+  // String.replace treats $$/$& as special tokens in string replacements;
   return replaceAll
     ? content.replaceAll(search, () => replacement)
     : content.replace(search, () => replacement);

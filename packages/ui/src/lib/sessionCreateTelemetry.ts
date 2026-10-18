@@ -27,7 +27,7 @@ function createSessionCreateReporter() {
       input.workspaceIdentity?.trim() || input.workspacePath,
       input.sessionId,
     ]);
-    // 创建回调和 pending 恢复可能指向同一个 session；按身份去重，不按路径合并远端。
+    // A creation callback and pending recovery may target one session; dedupe by identity, never merge remotes by path.
     if (reported.has(key)) return;
     reported.add(key);
     if (reported.size > 4096) reported.delete(reported.values().next().value!);

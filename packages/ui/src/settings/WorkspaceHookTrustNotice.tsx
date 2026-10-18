@@ -2,7 +2,7 @@ import type { Hook } from "@zcode/shared";
 import { CircleAlert } from "lucide-react";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 
-/** 与 HooksList 行内 Trust 按钮保持同一判定，避免风险提示形成第二套审核状态。 */
+/** Same verdict as HooksList's inline Trust button, so risk notes never become a second review state. */
 export function requiresWorkspaceHookTrust(hook: Hook): boolean {
   return Boolean(hook.workspaceHook) && hook.workspaceHook?.trustState !== "trusted_persistent";
 }
@@ -22,9 +22,9 @@ export function shouldShowWorkspaceHookTrustNotice({
   rpcReady: boolean;
   targetWorkspaceKey: string | null;
 }): boolean {
-  // hooksStore 是单例，切换 workspace 后连接阶段仍可能保留上一个
-  // workspace 的 hooks。只有当前 target 已就绪且快照 key 对得上时才允许显示安全提示，
-  // 避免把 A 的风险归因到正在连接的 B。
+  // hooksStore is a singleton; during connect the previous workspace's hooks may linger.
+  // Show the safety notice only when the current target is ready and the snapshot key matches,
+  // never attributing A's risks to the connecting B.
   return (
     rpcReady &&
     targetWorkspaceKey !== null &&
@@ -33,7 +33,7 @@ export function shouldShowWorkspaceHookTrustNotice({
   );
 }
 
-/** 仅展示当前 scope 的风险说明；审核、导航与开关交互仍由既有组件负责。 */
+/*/** Shows the current scope's risk notes only; review, navigation and toggling stay with the existing components. */
 export function WorkspaceHookTrustNotice({ hooks }: { hooks: readonly Hook[] }) {
   const { intl } = useZCodeIntl();
 

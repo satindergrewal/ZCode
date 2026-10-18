@@ -24,7 +24,7 @@ const SPECIAL: Record<FaceState, readonly EyeExpression[]> = {
   sad: [],
 };
 
-/** 一张脸只有一个待执行计时器；DOM 动作不触发整个工作流的 React 重渲染。 */
+/** One pending timer per face; DOM tweaks never trigger a workflow-wide React re-render. */
 export function startFaceMotion(face: SVGSVGElement, state: FaceState): () => void {
   const media = window.matchMedia?.("(prefers-reduced-motion: reduce)");
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -58,7 +58,7 @@ export function startFaceMotion(face: SVGSVGElement, state: FaceState): () => vo
       cycle,
     );
   };
-  // 闭眼时换轮廓，避免从圆眼直接跳到斜切眼；返回基础表情也使用同样的过渡。
+  // Closed eyes morph outlines instead of jumping from round to slashed; the return to the base face uses the same transition.
   const morph = (expression: EyeExpression, next: () => void) => {
     motion("morph");
     later(80, () => {
@@ -77,7 +77,7 @@ export function startFaceMotion(face: SVGSVGElement, state: FaceState): () => vo
       return;
     }
     const choices = SPECIAL[state].filter((e) => e !== previous);
-    // 只有一种偶发表情的结果态也要经过两轮基础动作，不能连续换脸。
+    // Even a single-shot expression passes through two base poses; no back-to-back face swaps.
     const pool = choices.length ? choices : SPECIAL[state];
     const expression = pool[Math.floor(Math.random() * pool.length)]!;
     previous = expression;
@@ -87,7 +87,7 @@ export function startFaceMotion(face: SVGSVGElement, state: FaceState): () => vo
   };
   const glance = () => {
     motion("glance");
-    // 平移要换到脸的另一侧；旧的 ±0.65 微移只像眼睛抖动，看不出左右驻留。
+    // The drift must cross to the face's other side; the old +/-0.65 nudge read as an eye twitch, not a dwelling gaze.
     lookingLeft = !lookingLeft;
     face.style.setProperty("--wf-face-x", lookingLeft ? "-4px" : "0px");
     later(360, maybeExpression);

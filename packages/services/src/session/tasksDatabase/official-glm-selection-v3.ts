@@ -1,5 +1,5 @@
-// 冻结本次改名表与 SQL：不能改旧 migration 或引用会随发布变化的实时目录。
-// 只改当前选择，旧字段/历史来源/闲时绑定原样保留；坏 JSON 不影响启动。
+// Freeze this rename table and SQL: never edit old migrations nor reference live dirs that change per release.
+// Only the current selection changes; legacy fields/history sources/off-peak binding stay; bad JSON never blocks startup.
 export const OFFICIAL_GLM_SELECTION_MIGRATION_SQL = `
 UPDATE automations
 SET model_selection = json_set(model_selection, '$.modelId',

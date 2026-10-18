@@ -133,7 +133,7 @@ export function createMemoryExtractionScheduler<
           try {
             await processSnapshot(acquisition.snapshot);
           } catch {
-            // 本次 error 不推进 cursor；latest pending 仍按既有 coalescing 语义继续。
+            // This error does not advance the cursor; latest pending keeps the existing coalescing semantics.
           }
         }
         current = shuttingDown ? undefined : latestPending;
@@ -169,8 +169,8 @@ export function createMemoryExtractionScheduler<
     },
     shutdown() {
       if (shuttingDown) return;
-      // ZCode 关闭单个 session 后进程仍继续运行；旧 scheduler 只让调用方
-      // 放弃等待，running/pending Extraction 仍可能继续请求模型和写 Memory。
+      // The process keeps running after ZCode closes one session; the old scheduler only let callers
+      // give up waiting while running/pending extractions kept calling the model and writing Memory.
       shuttingDown = true;
       latestPending = undefined;
       shutdownController.abort();

@@ -126,7 +126,7 @@ export type BotFeishuRegistrationPollResult =
 
 export interface IBotsService {
   /**
-   * 将 App 全局交互偏好同步给 Bot 已持有的远端 runtime；不得为此建立新的远端连接。
+   * Sync app-global interaction preferences to the bot's existing remote runtime; never open a new remote connection for this.
    */
   syncAppRuntimePreferences(preferences: ZCodeAgentAppRuntimePreferences): Promise<void>;
   getStatus(): Promise<BotServiceStatus>;
@@ -152,7 +152,7 @@ export interface IBotsService {
   createBindCode(params: BotCreateBindCodeParams): Promise<BotBindCodeResult>;
   getBotStates(): Promise<BotContextState[]>;
   resetBotState(contextKey: string): Promise<void>;
-  /** 在 automation prompt 派发前订阅终态，并把结果回推到创建它的 Bot 会话。 */
+  /** Subscribe to the terminal state before the automation prompt dispatch and push the result back to the bot conversation that created it. */
   watchAutomationRun(params: BotAutomationRunWatchParams): Promise<void>;
   handleInboundMessage(message: BotInboundMessage): Promise<BotOutboundMessage[]>;
   handleProviderCallback(provider: BotProvider, payload: unknown): Promise<BotOutboundMessage[]>;

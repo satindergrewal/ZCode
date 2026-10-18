@@ -1,18 +1,19 @@
 // ============================================================
-// Workflow 并发治理器（进程级，按 provider key 分桶，**每个模型请求**准入）
+// Workflow concurrency governor (process-wide; bucketed by provider key; **per model request** admission)
 // ============================================================
-// 一个 CLI 进程里所有 run 加主代理
-// 共用一个 provider 配额，所以治理器是**进程级**的：每个 `${providerId}/${modelId}` 一个桶，
-// 桶里一台纯 AIMD 状态机（`ConcurrencyController`，@zcode/dynamic-workflow）+ 一条按 run 轮转的
-// 准入队列。
+// Every run plus the main agent in one CLI process shares one provider quota, so the governor is
+// **process-level**: one bucket per `${providerId}/${modelId}`, each holding a pure AIMD state
+// machine (`ConcurrencyController`, @zcode/dynamic-workflow) plus a run-round-robin admission
+// queue.
 //
-// 闸门粒度是**模型请求的每一次尝试**：runner 每次尝试前 `acquire`、尝试结束 `release`，
-// 退避 sleep 期间不持槽。ticket 就是该次尝试的状态事件汇：runner 把该尝试的
-// `ModelNetworkStatus` 事件同时投递给 ticket，治理器从 ticket 上读结果。本方案
-// **不**再用 adapter 级 `addStatusSink`——同一事件不能既经 ticket 又经 adapter sink 各喂一次。
+// Gate granularity is **every model-request attempt**: the runner `acquire`s before each attempt
+// and `release`s at the end, holding no slot during backoff sleeps. The ticket is the sink for
+// that attempt's status events: the runner feeds the attempt's `ModelNetworkStatus` events to the
+// ticket as well, and the governor reads the outcome from it. Adapter-level `addStatusSink` is
+// **no longer** used - an event must not be fed once via the ticket and once via the adapter sink.
 //
-// 这里是治理器里**唯一**会碰时钟与定时器的地方：控制器只收 `now`；冷却到期要唤醒等待者，
-// 所以需要一个 setTimeout（可注入，unref）。
+// This is the **only** place in the governor that touches clocks and timers: the controller only
+// takes `now`; cooldown expiry must wake waiters, hence a setTimeout (injectable, unref'd).
 
 import type {
   ModelNetworkStatusEvent,
@@ -28,21 +29,22 @@ import {
 } from "@zcode/dynamic-workflow";
 import { resolveWorkflowConcurrencyCeiling } from "./workflow-concurrency-ceiling.js";
 
-/** provider key：最具体的配额键。 */
+/** Provider key: the most specific quota key. */
 export function workflowConcurrencyKey(model: ModelRequestTarget): string {
   return `${String(model.providerId)}/${String(model.modelId)}`;
 }
 
 /**
- * driver 看到的窄端口（不是整个治理器）。
+ * The narrow port the driver sees (not the whole governor).
  *
- * - `tryAdmit`：同步快路径——闸门开着**且没有任何人在排队**才给 ticket；否则 undefined，调用方再走
- *   `admit` 并报「等待槽位」。有等待者时不走快路径是公平性：否则一个请求密集的 run 会靠
- *   快路径越过别的 run 的队列。
- * - `admit`：排队（run 间轮转）直到 `inFlight < cap` 且不在 Retry-After 冷却；`signal` 被 abort 即
- *   出队并 reject（reject 原因是 `signal.reason`）。
- * - `subscribe`：本 run 触到的任何 key 上的 cap 变化。扇出只到**此刻在该 key 上有在飞或排队请求**的
- *   run。
+ * - `tryAdmit`: synchronous fast path - a ticket only while the gate is open **and nobody is
+ *   queued**; else undefined, and the caller falls back to `admit` reporting "waiting for a slot".
+ *   Skipping the fast path while waiters exist is fairness: otherwise a request-heavy run would
+ *   jump other runs' queues via the fast path.
+ * - `admit`: queue (round-robin across runs) until `inFlight < cap` and no Retry-After cooldown;
+ *   aborting `signal` dequeues and rejects (with `signal.reason`).
+ * - `subscribe`: cap changes on any key this run touches. Fan-out reaches only runs **currently
+ *   having in-flight or queued requests on that key**.
  */
 export interface WorkflowConcurrencyPort {
   tryAdmit(runId: string, key: string): ModelRequestAdmissionTicket | undefined;
@@ -52,30 +54,31 @@ export interface WorkflowConcurrencyPort {
 
 interface WorkflowConcurrencyGovernor extends WorkflowConcurrencyPort {
   /**
-   * 主代理用的 admission：acquire 立即放行——不排队、不看冷却——但**计入 inFlight**
-   * 且喂信号（它的请求 provider 同样看得见）。主代理的 turn 永不被 workflow 流量阻塞。
+   * Admission for the main agent: acquire grants immediately - no queueing, no cooldown check -
+   * but still **counts toward inFlight** and feeds signals (the provider sees its requests too).
+   * The main agent's turn is never blocked by workflow traffic.
    */
   observer(): ModelRequestAdmission;
-  /** 控制器只读快照；没有这个 key 的桶时为 undefined。 */
+  /** Read-only controller snapshot; undefined when no bucket exists for the key. */
   snapshot(key: string): ConcurrencyControllerSnapshot | undefined;
 }
 
 interface WorkflowConcurrencyGovernorOptions {
-  /** 天花板：桶创建时的初值与上界；进程启动时算一次。 */
+  /** Ceiling: initial value and upper bound at bucket creation; computed once at process start. */
   ceiling: number;
-  /** 时钟（可注入）。 */
+  /** Clock (injectable). */
   now?: () => number;
-  /** 定时器（可注入）：冷却到期唤醒等待者。返回取消函数。 */
+  /** Timer (injectable): wakes waiters at cooldown expiry. Returns a cancel function. */
   schedule?: (callback: () => void, delayMs: number) => () => void;
 }
 
-/** 限流类 retry 原因 → 控制器的 throttled 信号。 */
+/** Throttle-class retry reasons -> the controller's throttled signal. */
 const THROTTLE_REASONS: ReadonlySet<string> = new Set<ConcurrencyThrottleReason>([
   "rate_limited",
   "provider_overloaded",
   "offpeak_queued",
 ]);
-/** 不是 provider 失败的 retry 原因：既不减 cap 也不清 streak——只当尝试终结。 */
+/** Retry reasons that are not provider failures: neither lower the cap nor clear the streak - just end the attempt. */
 const NON_FAILURE_RETRY_REASONS: ReadonlySet<string> = new Set([
   "reasoning_signature_repair",
   "auth_refresh",
@@ -92,21 +95,22 @@ interface Waiter {
 interface Bucket {
   readonly key: string;
   readonly controller: ConcurrencyController;
-  /** 每个 run 在飞（已准入未结算）的请求数（扇出的依据：有在飞或排队请求的 run 才收 cap 变化）。 */
+  /** In-flight (admitted, unsettled) request count per run (fan-out basis: only runs with in-flight or queued requests hear cap changes). */
   readonly inFlightByRun: Map<string, number>;
-  /** 等待者按 run 分队列（run 间轮转，大 fan-out 不能饿死后来的小 run）。 */
+  /** Waiters queued per run (round-robin across runs; a large fan-out must not starve later small runs). */
   readonly queues: Map<string, Waiter[]>;
-  /** 轮转游标：上一次放行的 run，下一次从它之后开始找。 */
+  /** Rotation cursor: the last granted run; the next search starts after it. */
   lastGrantedRun?: string;
   cancelCooldownWake?: () => void;
 }
 
-/** observer（主代理）的 run 身份：不排队、不订阅，只在扇出过滤里作为「不是任何 run」出现。 */
+/** The observer's (main agent's) run identity: never queues or subscribes; appears in fan-out filtering as the no-run sentinel. */
 const OBSERVER_RUN_ID = "\0observer";
 
 const defaultSchedule = (callback: () => void, delayMs: number): (() => void) => {
   const timer = setTimeout(callback, delayMs);
-  // 不让一个等冷却的定时器把进程钉住：run 结束、进程要退出时它不该有投票权。
+  // Do not let a cooldown timer pin the process: once runs are done and the process wants to
+  // exit, it should get no vote.
   if (typeof timer === "object" && timer !== null && "unref" in timer) timer.unref();
   return () => clearTimeout(timer);
 };
@@ -117,13 +121,14 @@ function createWorkflowConcurrencyGovernor(
   const now = options.now ?? Date.now;
   const schedule = options.schedule ?? defaultSchedule;
   const buckets = new Map<string, Bucket>();
-  /** run 级订阅（不按 key）：扇出时按桶的 engaged 集合过滤。 */
+  /** Run-level subscriptions (not per key): fan-out filters by the bucket's engaged set. */
   const listeners = new Map<string, Set<(change: ConcurrencyChange) => void>>();
 
   const bucketFor = (key: string): Bucket => {
     let bucket = buckets.get(key);
     if (bucket === undefined) {
-      // 惰性建桶，初值 = 天花板；此后 run 来来去去都不重置它（只有空闲 5 分钟会）。
+      // Lazy bucket creation, initial value = ceiling; never reset afterwards by runs coming and
+      // going (only the 5-minute idle reset does).
       bucket = {
         key,
         controller: new ConcurrencyController(key, options.ceiling),
@@ -141,7 +146,7 @@ function createWorkflowConcurrencyGovernor(
     return total;
   };
 
-  /** 扇出：只给此刻在该 key 上有在飞或排队请求的 run。 */
+  /** Fan-out: only to runs currently holding in-flight or queued requests on this key. */
   const fanOut = (bucket: Bucket, changes: ConcurrencyChange[]): void => {
     if (changes.length === 0) return;
     for (const [runId, set] of listeners) {
@@ -161,9 +166,10 @@ function createWorkflowConcurrencyGovernor(
   };
 
   /**
-   * 一次已准入尝试的 ticket：事件映射保持一致。任一终结映射后结算（幂等）；`release()`
-   * 未见终结事件即按 `ended` 处理。结算后的 publish / release 一律惰性——runner 在极少数路径上
-   * （尝试已结束后的兜底事件）可能仍会投递。
+   * Ticket for one admitted attempt; the event mapping stays consistent. Settles (idempotently)
+   * on any terminal mapping; `release()` without a terminal event counts as `ended`. Post-settle
+   * publish / release are lazy no-ops - the runner may still deliver on rare paths (fallback
+   * events after the attempt already ended).
    */
   const mintTicket = (
     bucket: Bucket,
@@ -175,11 +181,12 @@ function createWorkflowConcurrencyGovernor(
       if (settled) return;
       settled = true;
       const changes = signal(now());
-      // 先扇出再减在飞：产生这条变化的请求正是本 run 的，它此刻仍算 engaged——否则一个 run 唯一的
-      // 在飞请求撞出的减半，会因为「已经不在飞」而漏发给它自己。
+      // Fan out before decrementing in-flight: the request that produced this change belongs to
+      // this very run and still counts as engaged - otherwise a halving triggered by a run's only
+      // in-flight request would be withheld from that run as "no longer in flight".
       fanOut(bucket, changes);
       bumpInFlight(bucket, runId, -1);
-      // 结算释放了一个名额（或改了 cap），排队者可能可以放行。
+      // The settle freed a slot (or changed the cap); queued waiters may be grantable now.
       drain(bucket);
     };
     return {
@@ -187,7 +194,7 @@ function createWorkflowConcurrencyGovernor(
         if (settled) return;
         switch (event.type) {
           case "model_request_started":
-            // 准入时已计入 inFlight，这里没有新信息。
+            // Already counted toward inFlight at admission; no new information here.
             return;
           case "model_request_completed":
             settle((at) => bucket.controller.succeeded(at, epoch));
@@ -213,11 +220,13 @@ function createWorkflowConcurrencyGovernor(
             return;
           }
           case "model_request_failed":
-            // retryable:true 的 failed 紧随一条 retry_scheduled——那条才是信号。
+            // A retryable:true failed is followed by a retry_scheduled - that one is the signal.
             if (event.retryable) return;
-            // 不可重试的限流：
-            // 主对话 / 工具侧撞上 3008 这类被分类器判终止的 429，仍是一次字面意义上的并发信号——
-            // 只当「链结束」会让 cap 从未因它降过。配额码也走这一支：多减一次半，run 随即停下，无害。
+            // Non-retryable throttling:
+            // The main conversation / tool side hitting a 3008-style 429 the classifier calls
+            // terminal is still a concurrency signal in the literal sense - counting it as mere
+            // "chain ended" would leave the cap never lowered by it. Quota codes take this branch
+            // too: one extra half-step reduction, the run stops right away, harmless.
             if (event.reason === "rate_limited") {
               settle((at) =>
                 bucket.controller.throttled(at, epoch, "rate_limited", event.retryAfterMs),
@@ -236,7 +245,7 @@ function createWorkflowConcurrencyGovernor(
     };
   };
 
-  /** 放行一个请求：`observe` 在前（准入也是一次「信号」），再 `admitted` 拿 epoch。 */
+  /** Grant one request: `observe` first (admission is a signal too), then `admitted` for the epoch. */
   const grant = (bucket: Bucket, runId: string): ModelRequestAdmissionTicket => {
     fanOut(bucket, bucket.controller.observe(now()));
     const epoch = bucket.controller.admitted(now());
@@ -245,7 +254,7 @@ function createWorkflowConcurrencyGovernor(
     return mintTicket(bucket, runId, epoch);
   };
 
-  /** 按轮转挑下一个有等待者的 run。 */
+  /** Pick the next run with waiters, round-robin. */
   const nextRunWithWaiters = (bucket: Bucket): string | undefined => {
     const runs = [...bucket.queues.keys()].filter(
       (runId) => (bucket.queues.get(runId)?.length ?? 0) > 0,
@@ -269,7 +278,7 @@ function createWorkflowConcurrencyGovernor(
     }, delay);
   };
 
-  /** 放行尽可能多的等待者（闸门：inFlight < cap 且不在冷却），喂 waiters，必要时定冷却闹钟。 */
+  /** Grant as many waiters as possible (gate: inFlight < cap and no cooldown), feed waiters, arm the cooldown alarm when needed. */
   const drain = (bucket: Bucket): void => {
     fanOut(bucket, bucket.controller.observe(now()));
     for (;;) {
@@ -328,8 +337,8 @@ function createWorkflowConcurrencyGovernor(
     };
   };
 
-  // 不排队、不看冷却；observe 在 grant 里。快路径总命中，所以 runner 永远不会为主代理
-  // 的请求发 queued / admitted。
+  // No queueing, no cooldown check; observe happens inside grant. The fast path always hits, so
+  // the runner never emits queued / admitted for main-agent requests.
   const observerAdmission: ModelRequestAdmission = {
     tryAcquire: ({ model }) => grant(bucketFor(workflowConcurrencyKey(model)), OBSERVER_RUN_ID),
     acquire: ({ model }) =>
@@ -356,8 +365,8 @@ function abortedError(signal: AbortSignal): Error {
 let processGovernor: WorkflowConcurrencyGovernor | undefined;
 
 /**
- * 进程级单例：天花板在首次取用时算一次；此后每个 app（会话）的主 runtime 挂它的
- * observer，run service 拿同一个端口给 driver。
+ * Process-wide singleton: the ceiling is computed on first use; afterwards each app's (session's)
+ * main runtime attaches its observer, and the run service hands the same port to the driver.
  */
 export function getWorkflowConcurrencyGovernor(): WorkflowConcurrencyGovernor {
   processGovernor ??= createWorkflowConcurrencyGovernor({

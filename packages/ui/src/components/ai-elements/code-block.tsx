@@ -43,22 +43,22 @@ type CodeBlockProps = HTMLAttributes<HTMLDivElement> & {
   showLineNumbers?: boolean;
   theme?: BundledTheme;
   /**
-   * 应用主题（store 耦合剥离）：仅透传给 Mermaid 渲染分支；
-   * `theme` 已被 shiki 高亮主题占用，故另起名 appTheme。缺省时 Mermaid 按 "system" 兜底。
+   * App theme (store decoupling): forwarded only to the Mermaid branch; `theme` is
+   * already taken by the shiki highlight theme, hence appTheme. Unset means "system".
    */
   appTheme?: Theme;
   wrapLongLines?: boolean;
   fontSizePx?: number;
   renderMermaid?: boolean;
-  /** 正文独立限高，避免滚动时把 Header 的复制/换行按钮一起卷走。 */
+  /** Independent body max-height so scrolling never carries the header's copy/wrap buttons away. */
   contentClassName?: string;
   /**
-   * 行定位透传（CodeViewer 已实现滚动+高亮，CodeBlock 也一并暴露）：
-   * focusedRange 高亮行区间，focusRequestId 变化时触发滚动到该区间。
+   * Line focus passthrough (CodeViewer implements scroll+highlight; surfaced here too):
+   * focusedRange highlights the range; a focusRequestId change scrolls to it.
    */
   focusedRange?: { startLine: number; endLine: number } | null;
   focusRequestId?: string;
-  /** 行号着警示色的行（透传 CodeViewer `markedLines`），编译反馈卡标出被诊断指到的行。 */
+  /** Lines whose numbers take the warning color (CodeViewer `markedLines`); the compile-feedback card marks diagnosed lines. */
   markedLines?: readonly number[];
 };
 
@@ -113,7 +113,7 @@ function useDocumentVisibilityRevision(enabled: boolean): number {
   const [revision, setRevision] = useState(0);
 
   useEffect(() => {
-    // 普通代码块数量和消息流同量级，不能为非 Mermaid 块批量注册页面可见性监听。
+    // Plain code blocks are as numerous as messages; do not register page-visibility listeners for non-Mermaid blocks.
     if (!enabled) {
       return;
     }
@@ -302,7 +302,7 @@ export const CodeBlock = ({
       return;
     }
 
-    logger.debug("[CodeBlock] Mermaid 自动渲染跳过", {
+    logger.debug("[CodeBlock] Mermaid auto-render skipped", {
       reason: mermaidAutoRenderDecision.reason,
       ...mermaidAutoRenderDecision.metrics,
     });
@@ -345,8 +345,9 @@ export const CodeBlock = ({
               markedLines={markedLines}
               className="bg-transparent"
               fontSizePx={fontSizePx}
-              // markdown 代码块外层是 bg-card，但 CodeViewer 默认把 @pierre/diffs 背景设成 background。
-              // 这里仅覆盖 markdown CodeBlock 入口，避免侧边栏文件预览的背景层级被一起改掉。
+              // Markdown code blocks sit on bg-card, while CodeViewer defaults the
+              // @pierre/diffs background to background. Override only at the markdown
+              // CodeBlock entry so the sidebar file preview's layering survives.
               style={
                 {
                   "--diffs-bg": "var(--color-card)",

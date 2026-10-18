@@ -48,11 +48,8 @@ export class WorkspaceHookReviewController {
   private readonly now: () => number;
   private readonly createId: () => string;
   private readonly registry = new WorkspaceHookReviewFlowRegistry();
-  /** flow → 监管 promise。WeakMap 使 flow 被回收后自动移除，不额外持有引用。 */
-  private readonly supervisedFlows = new WeakMap<
-    WorkspaceHookReviewFlow,
-    Promise<void>
-  >();
+  /** flow -> supervisor promise. A WeakMap so the entry vanishes once the flow is collected; no extra references. */
+  private readonly supervisedFlows = new WeakMap<WorkspaceHookReviewFlow, Promise<void>>();
   private reviewFlowId?: string;
   private generation = 0;
   private mutationQueue: Promise<unknown> = Promise.resolve();
@@ -62,10 +59,7 @@ export class WorkspaceHookReviewController {
     this.appVersion = options.appVersion;
     this.coordinator = options.coordinator;
     this.host = options.host;
-    this.telemetry = new WorkspaceHookReviewTelemetry(
-      this.admission,
-      options.logger,
-    );
+    this.telemetry = new WorkspaceHookReviewTelemetry(this.admission, options.logger);
     this.mutation = options.mutation;
     this.sessionId = options.sessionId;
     this.store = options.store;
@@ -74,12 +68,12 @@ export class WorkspaceHookReviewController {
   }
 
   /**
-   * 见 workspace-hook-review-supervisor：任何新开 flow 都必须交由它监管。
+   * See workspace-hook-review-supervisor: every newly opened flow must be supervised by it.
    *
-   * openOrReuseFlow 会复用仍 pending 的同一 flow
-   * 对象，因此重复 requestReview 与 revoke 重开路径可能给同一个 flow 各挂一个 supervisor，
-   * timeout 时重复 emit ReviewSettled。重复监管与缺监管同病：
-   * 按 flow 对象单例化，重复请求直接复用已有的监管 promise。
+   * openOrReuseFlow reuses a still-pending flow
+   * object, so repeated requestReview and revoke-reopen paths can each attach a supervisor to the same flow and
+   * double-emit ReviewSettled at timeout. Double-supervision is the same disease as none:
+   * singleton per flow object; repeat requests reuse the existing supervisor promise.
    */
   private superviseFlow(flow: WorkspaceHookReviewFlow): Promise<void> {
     const existing = this.supervisedFlows.get(flow);
@@ -96,12 +90,12 @@ export class WorkspaceHookReviewController {
   }
 
   /**
-   * 软门禁:按需开审核 flow。
+   * Soft gate: open a review flow on demand.
    *
-   * 用户点击「去审核」时经 requestWorkspaceHookReview 命令调用。
-   * 无 pending 项时为安全 no-op(返回 accepted)。
-   * 已有活跃 flow 时幂等复用(openOrReuseFlow)。
-   * 必须经 superviseFlow 监管——否则 flow 超时后会静默死亡、面板永久失效。
+   * Invoked via the requestWorkspaceHookReview command when the user clicks review.
+   * With no pending items it is a safe no-op (returns accepted).
+   * With a live flow, idempotent reuse (openOrReuseFlow).
+   * Must go through superviseFlow - otherwise the flow dies silently at timeout and the panel is dead forever.
    */
   async requestReview(target: {
     workspaceIdentity: string;
@@ -118,13 +112,12 @@ export class WorkspaceHookReviewController {
       };
     }
     const evaluation = this.coordinator.evaluateSnapshot({ snapshot });
-    // 旧实现只把 configuredEnabled=true 的 pending 当成可审核项，导致
-    // Settings 把未信任开关锁定后形成死锁——disabled Hook 不会运行、不会触发 Banner，
-    // 也永远无法预先建立 Trust。配置 gate 与 Trust 正交；review request 本就携带全部
-    // snapshot items，因此按 admissionClass 判断即可，disabled item 信任后仍不会运行。
-    const hasPending = evaluation.items.some(
-      (item) => item.admissionClass === "pending",
-    );
+    // The old implementation counted only configuredEnabled=true pendings as reviewable, deadlocking
+    // Settings once it locked the toggle for untrusted hooks - a disabled hook never runs, never raises the
+    // banner, and can never pre-establish trust. The config gate and trust are orthogonal; the review request
+    // already carries all snapshot items, so decide by admissionClass; a disabled item still does not run after
+    // trusting.
+    const hasPending = evaluation.items.some((item) => item.admissionClass === "pending");
     if (!hasPending) {
       if (evaluation.items.some((item) => item.trustState === "blocked_policy")) {
         return {
@@ -138,7 +131,7 @@ export class WorkspaceHookReviewController {
           reasonCode: "workspace_hooks_trust_store_corrupt" as const,
         };
       }
-      // 无待审项:安全 no-op
+      // No pending items: safe no-op
       return { accepted: true, reviewItemIds: [] };
     }
     const flow = await this.openOrReuseFlow(snapshot, evaluation);
@@ -164,35 +157,27 @@ export class WorkspaceHookReviewController {
         };
       }
       const snapshot = this.admission.getCurrentSnapshot();
-      // request 绑定打开时的 immutable snapshot bundle。今天
-      // replaceSnapshot 只有 toggle 一个合法调用方（经 refreshPendingFlow supersede 旧
-      // flow），等价校验靠这一隐式不变量；配置热监听 watcher 一旦成为第二
-      // 个调用方且绕过 refreshPendingFlow，tombstone 缺失会让授权落到新 bundle 上。
-      // 与 revokeCurrent 对齐显式校验，消除隐式依赖。
+      // The request binds the immutable snapshot bundle captured at open. Today
+      // replaceSnapshot's only legitimate caller is toggle (superseding the old flow via refreshPendingFlow);
+      // equivalence leans on that implicit invariant. Once the config hot-reload watcher becomes a second
+      // caller bypassing refreshPendingFlow, a missing tombstone would land the grant on the new bundle.
+      // Validate explicitly, aligned with revokeCurrent, removing the implicit dependency.
       if (
         target.workspaceIdentity !== snapshot.workspaceIdentity ||
         target.bundleDigest !== snapshot.bundleDigest
       ) {
-        this.telemetry.responseRejected(
-          target,
-          "workspace_hooks_snapshot_mismatch",
-        );
+        this.telemetry.responseRejected(target, "workspace_hooks_snapshot_mismatch");
         return {
           accepted: false,
           reasonCode: "workspace_hooks_snapshot_mismatch" as const,
         };
       }
-      // grant 前显式检查 persistent Trust 的 policy 资格：applyDecision 内
-      // assertPersistentTrustMutationAllowed 抛出的策略拒绝若落入下方 catch-all，
-      // 会被一律报成 trust_store_corrupt（“信任存储损坏”），企业策略收紧时
-      // 用户看到的是错误诊断；与 revoke 路径对齐：前置检查 + 精确 reasonCode。
-      if (
-        !this.coordinator.canMutatePersistentTrust(snapshot.workspaceIdentity)
-      ) {
-        this.telemetry.responseRejected(
-          target,
-          "workspace_hooks_blocked_by_policy",
-        );
+      // Check persistent-trust policy eligibility explicitly before granting: a policy rejection thrown by
+      // assertPersistentTrustMutationAllowed inside applyDecision, if it fell into the catch-all below,
+      // would be blanket-reported as trust_store_corrupt; with tightened enterprise policy the
+      // user would see the wrong diagnosis. Aligned with the revoke path: precheck + precise reasonCode.
+      if (!this.coordinator.canMutatePersistentTrust(snapshot.workspaceIdentity)) {
+        this.telemetry.responseRejected(target, "workspace_hooks_blocked_by_policy");
         return {
           accepted: false,
           reasonCode: "workspace_hooks_blocked_by_policy" as const,
@@ -202,16 +187,16 @@ export class WorkspaceHookReviewController {
       try {
         applied = await this.applyPersistentTrust(validation.reviewItemIds);
       } catch (error) {
-        // applyDecision 可因非存储原因抛错——resolveWorkspaceHookReviewDigests
-        // 对未知 reviewItemId、coordinator 内部错误、store 落盘失败等。裸 catch 会把全部
-        // 失败一律报成 trust_store_corrupt 且把原始错误彻底丢弃，与 toggle 路径同类。
-        // reasonCode 不变（新增需 contracts 评审），仅把
-        // errorMessage 透传进 telemetry 供回溯。
+        // applyDecision can throw for non-store reasons - resolveWorkspaceHookReviewDigests on unknown
+        // reviewItemId, coordinator internal errors, store persist failures. A bare catch would blanket-report
+        // all as trust_store_corrupt and drop the original error, same as the toggle path.
+        // reasonCode unchanged (new ones need a contracts review); only forward
+        // errorMessage into telemetry for traceability.
         //
-        // 脱敏：WorkspaceHookMutationError 的 message 已在上游脱敏
-        // （见 workspace-hook-review-mutation.ts 使用 workspaceIdentitySummary / digestSummary）。
-        // 对任意 Error 仅取 error.message——上游抛错点必须保证消息不含绝对路径/完整 digest
-        // （禁止上报完整 workspace path / source path）。
+        // Redaction: WorkspaceHookMutationError messages are redacted upstream
+        // (workspaceIdentitySummary / digestSummary in workspace-hook-review-mutation.ts).
+        // For any Error take error.message only - the upstream throw sites must guarantee messages carry no
+        // absolute paths / full digests (never report full workspace/source paths).
         this.telemetry.trustStoreFailure(
           target.bundleDigest,
           error instanceof Error ? error.message : String(error),
@@ -225,32 +210,30 @@ export class WorkspaceHookReviewController {
         ...(applied.grantedRecordCount === undefined
           ? {}
           : { grantedRecordCount: applied.grantedRecordCount }),
-        requestEnabledCount: flow.request.items.filter(
-          (item) => item.configuredEnabled,
-        ).length,
+        requestEnabledCount: flow.request.items.filter((item) => item.configuredEnabled).length,
       });
       const resolved = this.registry.resolve(target, decision);
-      // applyDecision 与 registry.resolve 非原子——两者之间若
-      // registry 的 deadline timer 恰好触发，flow 变为 timed_out，resolve 返回
-      // superseded，于是「Trust 已落盘」却回报「审核已过期」。用户据此重试、排障者
-      // 据此以为没写成功——同样属于错误归属倒错。
-      //
-      // 决策已经生效（持久 Trust 已落盘），故按 accepted 回报并照发
-      // Settled，让前端收敛到已决状态；resolve 被拒仅说明 flow 已被别的终态占用，
-      // 不代表授权失败。此处只多不错：不会把未授权说成已授权。
+      // applyDecision and registry.resolve are not atomic - if the
+      // registry deadline timer fires in between, the flow turns timed_out and resolve returns superseded, so
+      // trust-persisted gets reported as review-expired. Users retry; debuggers conclude the write failed -
+      // again a mis-attribution.
+      // The decision already took effect (persistent trust persisted), so report accepted and emit
+      // Settled anyway, letting the frontend converge on decided; a refused resolve only means another
+      // terminal state took the flow, not a failed grant. Here more-yes-less-no: never reports
+      // unauthorized as authorized.
       if (!resolved.accepted) {
-        // 保留观测：flow 已被别的终态占用（通常是 deadline 恰好触发）。
+        // Keep observation: another terminal state took the flow (usually the deadline firing).
         this.telemetry.responseRejected(target, resolved.reasonCode);
       }
       await this.host.emit({
         type: SessionEventType.WorkspaceHookReviewSettled,
         payload: { interactionId: target.interactionId, state: "resolved" },
       });
-      // 软门禁:settle 后重新评估 pending 状态,通知投影层更新提示条
+      // Soft gate: re-evaluate pending after settle; notify the projection to refresh the banner
       await this.emitAdmissionUpdatedAfterMutation();
-      // 行内逐条 Trust 不能让其他待审项一起失去操作入口。旧 generation settle 后，
-      // 若仍有 pending 声明，立即发布下一 immutable generation；已信任行由 Settings
-      // 刷新后消失，其他行继续可操作。
+      // Per-item trust must not strip the action entry from other pending items. Once the old generation
+      // settles with pending declarations remaining, publish the next immutable generation immediately; trusted
+      // rows disappear on the next Settings refresh, the rest stay actionable.
       await this.refreshPendingFlow(snapshot);
       return resolved.accepted
         ? resolved
@@ -277,9 +260,7 @@ export class WorkspaceHookReviewController {
       });
       if (!validation.accepted) return validation;
       const currentSnapshot = this.admission.getCurrentSnapshot();
-      const entry = currentSnapshot.hooks.find(
-        (item) => item.reviewItemId === reviewItemId,
-      );
+      const entry = currentSnapshot.hooks.find((item) => item.reviewItemId === reviewItemId);
       if (!entry?.editable) {
         return {
           accepted: false,
@@ -299,17 +280,15 @@ export class WorkspaceHookReviewController {
         this.admission.replaceSnapshot(nextSnapshot);
       } catch (error) {
         if (!writeCommitted) {
-          // 裸 catch 曾把 mutation port 的全部失败一律报成
-          // config_write_failed——包括发生在写盘之前的 snapshot mismatch（review 后
-          // bundle 已变/discovery 读败）。用户据此重试"写"永远失败，也掩盖真实原因。
-          // 按 WorkspaceHookMutationError.code 透传；telemetry 补 cause 便于定位。
+          // A bare catch used to blanket-report every mutation-port failure as
+          // config_write_failed - including pre-write snapshot mismatches (bundle changed after
+          // review / discovery read failure). Users would retry the write forever, real cause hidden.
+          // Pass through WorkspaceHookMutationError.code; add cause to telemetry for locating.
           const isMutationError =
             error instanceof WorkspaceHookMutationError ||
-            (error instanceof Error &&
-              error.name === "WorkspaceHookMutationError");
+            (error instanceof Error && error.name === "WorkspaceHookMutationError");
           const mutationCode = isMutationError
-            ? ((error as WorkspaceHookMutationError)
-                .code as WorkspaceHookReasonCode)
+            ? ((error as WorkspaceHookMutationError).code as WorkspaceHookReasonCode)
             : ("workspace_hooks_config_write_failed" as const);
           this.telemetry.toggleFailure(
             target.bundleDigest,
@@ -321,10 +300,7 @@ export class WorkspaceHookReviewController {
             reasonCode: mutationCode as WorkspaceHookReasonCode,
           };
         }
-        this.telemetry.toggleFailure(
-          target.bundleDigest,
-          "workspace_hooks_config_rebuild_failed",
-        );
+        this.telemetry.toggleFailure(target.bundleDigest, "workspace_hooks_config_rebuild_failed");
         this.registry.fail(target, "workspace_hooks_config_rebuild_failed");
         await this.host.emit({
           type: SessionEventType.WorkspaceHookReviewSettled,
@@ -341,7 +317,7 @@ export class WorkspaceHookReviewController {
       }
 
       const nextFlow = await this.refreshPendingFlow(nextSnapshot);
-      // 软门禁:toggle 重建 bundle 后重新评估 pending 状态
+      // Soft gate: re-evaluate pending after toggle rebuilds the bundle
       await this.emitAdmissionUpdatedAfterMutation();
       return {
         accepted: true,
@@ -364,30 +340,22 @@ export class WorkspaceHookReviewController {
       const snapshot = this.admission.getCurrentSnapshot();
       const result = await applyWorkspaceHookRevoke({
         coordinator: this.coordinator,
-        digests: resolveWorkspaceHookReviewDigests(
-          snapshot,
-          validation.reviewItemIds,
-        ),
+        digests: resolveWorkspaceHookReviewDigests(snapshot, validation.reviewItemIds),
         reviewItemIds: validation.reviewItemIds,
         snapshot,
         store: this.store,
       });
       if (result.accepted) {
-        this.telemetry.revoked(
-          snapshot.bundleDigest,
-          validation.reviewItemIds.length,
-        );
+        this.telemetry.revoked(snapshot.bundleDigest, validation.reviewItemIds.length);
         await this.refreshPendingFlow(snapshot);
-        // 软门禁:revoke 后重新评估 pending 状态
+        // Soft gate: re-evaluate pending after revoke
         await this.emitAdmissionUpdatedAfterMutation();
       }
       return result;
     });
   }
 
-  revokeCurrent(
-    target: WorkspaceHookTrustRevokeTarget,
-  ): Promise<WorkspaceHookReviewCommandResult> {
+  revokeCurrent(target: WorkspaceHookTrustRevokeTarget): Promise<WorkspaceHookReviewCommandResult> {
     return this.enqueueMutation(async () => {
       const snapshot = this.admission.getCurrentSnapshot();
       if (
@@ -407,8 +375,7 @@ export class WorkspaceHookReviewController {
       );
       if (
         digests.length === 0 ||
-        new Set(entries.map((entry) => entry.hookDeclarationDigest)).size !==
-          digests.length
+        new Set(entries.map((entry) => entry.hookDeclarationDigest)).size !== digests.length
       ) {
         return {
           accepted: false,
@@ -425,7 +392,7 @@ export class WorkspaceHookReviewController {
       if (result.accepted) {
         this.telemetry.revoked(snapshot.bundleDigest, digests.length);
         await this.refreshPendingFlow(snapshot);
-        // 软门禁:revokeCurrent 后重新评估 pending 状态
+        // Soft gate: re-evaluate pending after revokeCurrent
         await this.emitAdmissionUpdatedAfterMutation();
       }
       return result;
@@ -437,13 +404,13 @@ export class WorkspaceHookReviewController {
   ): Promise<WorkspaceHookReviewFlow | undefined> {
     const current = this.registry.getCurrentFlow(this.sessionId);
     if (!current || current.state.state !== "pending") {
-      // 无 pending flow 时直接返回会让
-      // 「授权 → review resolved → 撤销」之后，当前会话再没有任何重新授权入口，
-      // 用户只能新建对话。
+      // Returning directly with no pending flow would leave the
+      // current session with no re-authorization entry at all after grant -> review resolved -> revoke;
+      // the only path out would be a new conversation.
       //
-      // revoke 的语义是 revoked → admission=pending，本就应重新征询，
-      // 因此这里在确实产生了待审项时开启新 flow：不新增「直接授予信任」的旁路，
-      // 授权仍只能经当前不可变 review 绑定的行内按钮完成。
+      // revoke means revoked -> admission=pending, i.e. re-consent by design, so open a new flow only when
+      // pending items truly exist: no grant-trust-directly side door; authorization still happens only via the
+      // inline buttons of the current immutable review binding.
       return await this.openReviewFlowForNewPendingItems(snapshot);
     }
     const target = toWorkspaceHookReviewTarget(current.request);
@@ -468,9 +435,7 @@ export class WorkspaceHookReviewController {
       payload: { request: replacement },
     });
     if (replacement.summary.pendingCount === 0) {
-      this.registry.closeWithoutDecision(
-        toWorkspaceHookReviewTarget(replacement),
-      );
+      this.registry.closeWithoutDecision(toWorkspaceHookReviewTarget(replacement));
       await this.host.emit({
         type: SessionEventType.WorkspaceHookReviewSettled,
         payload: {
@@ -483,12 +448,12 @@ export class WorkspaceHookReviewController {
   }
 
   /**
-   * revoke 之后当前会话没有 pending flow 时，重新开启审核。
+   * After revoke, with no pending flow in this session, reopen review.
    *
-   * 只在真的存在待审项时开启。开关只控制运行，信任只控制准入；因此当前审核
-   * 快照中的 configured-disabled 声明也必须保留行内信任入口。开启走
-   * openOrReuseFlow，与首次征询同一条路径，因此 generation / reviewFlowId /
-   * interactionId 的既有语义不变。
+   * Only when pending items truly exist. The toggle governs running, trust governs admission; hence
+   * configured-disabled declarations in the current review snapshot keep their inline trust entry too. Opening
+   * goes through openOrReuseFlow - the same path as first consent - leaving generation / reviewFlowId /
+   * interactionId semantics untouched.
    */
   private async openReviewFlowForNewPendingItems(
     snapshot: WorkspaceHookBundleSnapshot,
@@ -496,14 +461,12 @@ export class WorkspaceHookReviewController {
     const evaluation = this.coordinator.evaluateSnapshot({
       snapshot,
     });
-    const hasPending = evaluation.items.some(
-      (item) => item.admissionClass === "pending",
-    );
+    const hasPending = evaluation.items.some((item) => item.admissionClass === "pending");
     if (!hasPending) return undefined;
     const flow = await this.openOrReuseFlow(snapshot, evaluation);
-    // 必须监管：否则该 flow 超时后静默死亡，面板永久失效（见 superviseFlow 注释）。
-    // 这里刻意不 await——revoke 命令不能被 10 分钟的审核 deadline 阻塞；
-    // catch 兜底避免未处理拒绝，flow 终结本身不产生需要向调用方冒泡的错误。
+    // Must supervise: else the flow dies silently at timeout and the panel is dead forever (see superviseFlow).
+    // Deliberately not awaited - revoke must not block on a 10-minute review deadline;
+    // the catch prevents unhandled rejection; flow termination itself raises nothing to bubble.
     void this.superviseFlow(flow).catch(() => undefined);
     return flow;
   }
@@ -554,9 +517,7 @@ export class WorkspaceHookReviewController {
     reviewItemIds: readonly string[],
   ): Promise<{ grantedRecordCount?: number }> {
     const snapshot = this.admission.getCurrentSnapshot();
-    this.coordinator.assertPersistentTrustMutationAllowed(
-      snapshot.workspaceIdentity,
-    );
+    this.coordinator.assertPersistentTrustMutationAllowed(snapshot.workspaceIdentity);
     const records = createWorkspaceHookTrustRecords({
       snapshot,
       reviewItemIds,
@@ -580,12 +541,12 @@ export class WorkspaceHookReviewController {
   }
 
   /**
-   * 软门禁:mutation 完成后重新评估 pending 状态并发射 AdmissionUpdated。
+   * Soft gate: after a mutation, re-evaluate pending and emit AdmissionUpdated.
    *
-   * 口径与 admission 一致:configuredEnabled && admissionClass === "pending"。
-   * pendingCount === 0 也要发,投影据此清空提示条。
-   * 通过 admission 的 invalidate → 触发 evaluateDispatch 内的 refreshEvaluation;
-   * 这里直接用 coordinator 重新评估快照,与 admission.emitAdmissionState 同源。
+   * Same criterion as admission: configuredEnabled && admissionClass === pending.
+   * Emit even at pendingCount === 0; the projection clears the banner on it.
+   * Via admission.invalidate -> refreshEvaluation inside evaluateDispatch;
+   * here the coordinator re-evaluates the snapshot directly, same source as admission.emitAdmissionState.
    */
   private async emitAdmissionUpdatedAfterMutation(): Promise<void> {
     const snapshot = this.admission.getCurrentSnapshot();
@@ -598,9 +559,7 @@ export class WorkspaceHookReviewController {
       payload: {
         pendingCount,
         bundleDigest: snapshot.bundleDigest,
-        ...(snapshot.workspaceIdentity
-          ? { workspaceIdentity: snapshot.workspaceIdentity }
-          : {}),
+        ...(snapshot.workspaceIdentity ? { workspaceIdentity: snapshot.workspaceIdentity } : {}),
       },
     });
   }

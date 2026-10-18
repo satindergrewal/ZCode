@@ -7,35 +7,35 @@ import { ArtifactSheetGlyph, type WorkflowCompletionArtifact } from "./WorkflowA
 import { PILL_STAGGER_MS } from "./WorkflowTimeline.js";
 
 /**
- * 完成卡的产物区。
- * 从 `WorkflowCompletionCard` 拆出来：卡本身要守 400 行的门。
+ * The completion card's artifact section.
+ * Split out of `WorkflowCompletionCard`: the card itself must respect the 400-line gate.
  *
- * - **有交付物**（打了 primary 旗子的那件，或清单只有一件）：交付物行，然后其余产物作**索引**——
- *   一件一行，卡宽时两列；至多六行，从第七件起五行 + 一行「还有 N 个」（点开 run 侧板看全部）。
- * - **没有交付物**：没有哪一件配得上一张预览，就一张也不画——索引独占产物区，同一个上限。
+ * - **With a deliverable** (the primary-flagged one, or a single-item list): the deliverable row, then the rest as an **index** —
+ *   one per row, two columns on wide cards; at most six rows, from the seventh five rows + one "n more" row (open the run side panel for all).
+ * - **No deliverable**: when none deserves a preview, none is drawn — the index owns the section, same cap.
  *
- * 只有交付物的框读字节（预览要么读得清，要么不画）；索引行与「还有 N 个」从不读。
+ * Only the deliverable's frame reads bytes (a preview is either readable or not drawn); index rows and "n more" never do.
  *
- * ⚠ 术语：artifact = 脚本经 `artifact.*` 发布给用户看的产出。
+ * ⚠ Terminology: artifact = output published to the user by the script via `artifact.*`.
  */
 
-/** 卡上索引的行数上限，也是不折叠时的上限。 */
+/** Row cap on the card, also the cap when unfolded. */
 export const COMPLETION_INDEX_MAX = 6;
-/** 需要「还有 N 个」时，与它同在的行数。 */
+/** Rows shown alongside once "n more” is needed. */
 const COMPLETION_INDEX_WITH_MORE = COMPLETION_INDEX_MAX - 1;
 
 export interface CompletionArtifactLayout {
-  /** 交付物；缺席即索引独占。 */
+  /** The deliverable; absent means index-only. */
   primary?: WorkflowCompletionArtifact;
-  /** 画成行的那些件（交付物之外）。 */
+  /** The items rendered as rows (beside the deliverable). */
   lines: readonly WorkflowCompletionArtifact[];
-  /** 没画出来的件数（「还有 N 个」的 N）。 */
+  /** Items not drawn (the N in "n more"). */
   folded: number;
-  /** 画「还有 N 个」：有折叠的件，或清单被发射侧砍过（此时 N 不可知，写 `…`）。 */
+  //** Draw "n more": folded items, or the list was truncated emitter-side (then N is unknowable; write `…`). */
   more: boolean;
 }
 
-/** 布局的**唯一**判定；卡（节奏）、取数门（哪些件读字节）与渲染都从这里读。 */
+/** The **single** layout decision; card rhythm, the byte-reading gate (which items read) and rendering all read from here. */
 export function completionArtifactLayout(
   artifacts: readonly WorkflowCompletionArtifact[],
   truncated: boolean,
@@ -43,7 +43,7 @@ export function completionArtifactLayout(
   if (artifacts.length === 0) return { lines: [], folded: 0, more: false };
   const primary = resolvePrimaryArtifact(artifacts);
   const rest = primary === undefined ? artifacts : artifacts.filter((a) => a !== primary);
-  // 砍过的清单（超 8）不知道真实件数：仍给一扇门，N 写 `…`——与产物条的省略号同一个诚实。
+  // A truncated list (over 8) hides the true count: still give the door, write `…` for N — the same honesty as the artifact strip's ellipsis.
   const more = rest.length > COMPLETION_INDEX_MAX || truncated;
   const lines = rest.slice(0, more ? COMPLETION_INDEX_WITH_MORE : COMPLETION_INDEX_MAX);
   return {
@@ -54,12 +54,12 @@ export function completionArtifactLayout(
   };
 }
 
-/** 卡上画出来的格数（行算一格，每条索引行一格，「还有 N 个」一格）：四格数字的落地节拍接在它们之后。 */
+/** Cells drawn on the card (a row counts, each index row counts, "n more" counts): the four-number beat lands after them. */
 export function completionArtifactCellCount(layout: CompletionArtifactLayout): number {
   return (layout.primary === undefined ? 0 : 1) + layout.lines.length + (layout.more ? 1 : 0);
 }
 
-/** 会读字节的那些件：只有交付物的框读；索引行与门从不读。 */
+/** The items that read bytes: only the deliverable's frame; index rows and the door never do. */
 export function completionPreviewIds(layout: CompletionArtifactLayout): ReadonlySet<string> {
   return new Set(layout.primary === undefined ? [] : [layout.primary.id]);
 }
@@ -95,7 +95,7 @@ export function WorkflowCompletionArtifacts({
         />
       ) : null}
       {lines.length > 0 || more ? (
-        // 索引跟在交付物行之后时隔一条细线；独占产物区时不要（上面没有东西可隔）。
+        // The index follows the deliverable row across a hairline; alone in the section, none (nothing above to separate).
         <WorkflowArtifactIndex
           artifacts={lines}
           columns="auto"

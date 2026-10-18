@@ -18,7 +18,7 @@ export function formatModelChangeLabel(
   intl: Pick<IntlInstance, "formatMessage">,
 ): string {
   let planLabelId: string;
-  // 切换记录必须保留当时的套餐身份，不能从当前连接或可用模型目录反推历史套餐。
+  // A switch record must keep the plan identity of its moment; never re-derive the historical plan from the current connection or catalog.
   switch (providerId) {
     case BUILTIN_MODEL_PROVIDER_IDS.zaiIndividualCodingPlan:
     case BUILTIN_MODEL_PROVIDER_IDS.bigmodelIndividualCodingPlan:
@@ -43,8 +43,9 @@ export function formatProviderModelLabel(
   providerName: string | undefined,
   modelName: string,
 ): string {
-  // Z.ai / BigModel 的内置连接名属于产品固定入口，拼进模型文案会重复展示
-  // “Coding Plan”等连接信息；切换提示额外通过 formatModelChangeLabel 标明套餐类型。
+  // Built-in Z.ai/BigModel connection names are fixed product entries; concatenating them into
+  // model copy would re-state connection info such as Coding Plan. The switch notice instead
+  // names the plan type via formatModelChangeLabel.
   if (providerId && resolveModelProviderFamilyIdByProviderId(providerId)) {
     return modelName;
   }
@@ -74,7 +75,7 @@ export function resolveV4ModelTriggerLabel({
     return fallbackLabel;
   }
 
-  // 仅当前菜单中存在的连接按 ID 兜底；历史记录的通用格式化保留原有语义。
+  // Only connections present in the current menu fall back by id; legacy records keep the generic formatting.
   return formatProviderModelLabel(
     providerId,
     providerName?.trim() || providerId,
@@ -95,8 +96,9 @@ export function resolveV4ModelTriggerDisplay({
   providerId: string | undefined;
   providerName?: string;
 }): V4ModelTriggerDisplay {
-  // 把 provider/model 预先拼成单一字符串后，响应式布局只能整段隐藏或依赖
-  // 平台 JS 分支裁剪；这里保留结构化前缀，让 composer 容器断点统一决定可见密度。
+  // Pre-concatenating provider/model into one string would force responsive layouts to hide the
+  // whole run or rely on platform JS branches; keeping the structured prefix lets the composer
+  // container breakpoints own display density.
   const fullLabel = resolveV4ModelTriggerLabel({
     modelGroups,
     normalizedValue,

@@ -740,14 +740,14 @@ export const PromptInputTools = ({ className, ...props }: PromptInputToolsProps)
   <div className={cn("flex min-w-0 items-center gap-1", className)} {...props} />
 );
 
-// 从 prompt-input-buttons 重新导出 Button / Submit 组件
+// Re-export Button / Submit from prompt-input-buttons
 export * from "./prompt-input-buttons.js";
 
-// 从 prompt-input-actions 重新导出 Action 系列组件
+// Re-export the Action family from prompt-input-actions
 export * from "./prompt-input-actions.js";
 
-// 从 prompt-input-textarea 重新导出 Textarea 组件
+// Re-export Textarea from prompt-input-textarea
 export * from "./prompt-input-textarea.js";
 
-// 从 prompt-input-primitives 重新导出 Select / HoverCard / Tabs / Command 系列组件
+// Re-export the Select / HoverCard / Tabs / Command families from prompt-input-primitives
 export * from "./prompt-input-primitives.js";

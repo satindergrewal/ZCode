@@ -31,13 +31,13 @@ import type {
   ResolvedAiSdkModel,
 } from "./runner-runtime.js";
 
-// 生产环境 rollout 目录最多保留的 model-io 会话文件数。超出删最旧。
+// Production rollout: max model-io session files kept per directory; oldest deleted beyond that.
 const MAX_ROLLOUT_FILES = 3;
-// 生产环境单个 session 的 model-io 文件硬上限。诊断日志不能因为无限增长影响 agent 主流程。
+// Production hard cap on model-io files per session; diagnostics must never squeeze the agent's main flow.
 const MAX_ROLLOUT_SESSION_BYTES = 64 * 1024 * 1024;
-// 开发态保留更多上下文，但仍避免单个 debug 文件无限膨胀。
+// Dev keeps more context, but a single debug file still must not grow unbounded.
 const MAX_DEBUG_SESSION_BYTES = 256 * 1024 * 1024;
-// 缓存缺失或文件超限后写 baseline 时，仅保留最近上下文，避免长 session 重启后再次写出巨型记录。
+// On cache miss or over-limit baseline writes keep only recent context, avoiding giant records after long-session restarts.
 const MAX_ROLLOUT_BASELINE_MESSAGES = 64;
 const MAX_DEBUG_BASELINE_MESSAGES = 256;
 const FINGERPRINT_STRING_LIMIT = 512;
@@ -62,13 +62,13 @@ interface ModelIOCompactionState {
 const modelIOCompactionStates = new Map<string, ModelIOCompactionState>();
 
 export function shouldRecordModelIO(env: EnvRecord): boolean {
-  // 开发态与生产态都记录(分别落到 debug / rollout 目录);仅测试态(ZCODE_RUNTIME_ENV=test)不写,
-  // 避免单测产生磁盘副作用。未设时按生产处理(记录到 rollout,带条数上限)。
+  // Dev and production both record (debug vs rollout dirs); only test runs (ZCODE_RUNTIME_ENV=test) skip writing
+  // to keep unit tests side-effect free. Unset behaves as production (rollout, capped).
   return normalizeRuntimeEnv(env) !== "test";
 }
 
-// 判定当前是否开发态,用于选择落盘目录(debug vs rollout)。
-// 直接看 ZCODE_RUNTIME_ENV === "development";dev 桌面/CLI 启动时已注入该变量。
+// Whether the current mode is development, choosing the output dir (debug vs rollout).
+// Reads ZCODE_RUNTIME_ENV === "development"; dev desktop/CLI inject it at startup.
 export function isDevelopmentModelIOEnv(env: EnvRecord): boolean {
   return normalizeRuntimeEnv(env) === "development";
 }
@@ -135,8 +135,8 @@ export function recordGenerateTextDebug(input: {
             headers: resultWithMetadata?.response?.headers,
             modelId: resultWithMetadata?.response?.modelId,
             providerMetadata: input.result.providerMetadata,
-            // 运行结果已有 reasoning，但 model-io 过去只记录 text，
-            // 导致调用轨迹无法得到 response.reasoningText，始终不显示思考过程。
+            // The result already has reasoning, but model-io used to record text only,
+            // so call traces never got response.reasoningText and thinking never showed.
             reasoningText: modelIOReasoningText(input.result.reasoning),
             responseId: resultWithMetadata?.response?.id,
             text: input.result.text,
@@ -160,16 +160,16 @@ export function recordGenerateTextDebug(input: {
 }
 
 /**
- * 流式请求的 model I/O 记录。
+ * Model I/O record for streaming requests.
  *
- * 背景（bug：开发态桌面 agent 始终走流式，model-io 一直为空）：
- * 只在非流式 `runGenerateText` 里写 model-io 会让桌面/协议端默认 `modelStreaming: "on"` 的
- * 每个 turn（`streamText`）即便 ZCODE_RUNTIME_ENV=development 也从不落盘。流式路径同样要记录。
+ * Background (bug: the dev desktop agent always streams, model-io stayed empty):
+ * writing model-io only in non-streaming runGenerateText left every turn of desktop/protocol defaults
+ * (modelStreaming on, via streamText) unwritten even with ZCODE_RUNTIME_ENV=development. Stream too.
  *
- * 与 generate 路径的关键差异：StreamTextResult 的 text/toolResults/sources/response 等聚合字段是 **promise**，
- * 必须等 fullStream 读完后再 await；toolResults/sources 的归一化期望数组，
- * 所以先解析聚合 promise，再用合成对象处理。toolCalls 则直接复用 assembler 的归一化快照。
- * 任何失败都不得影响模型请求路径。
+ * Key differences from the generate path: StreamTextResult aggregates text/toolResults/sources/response as promises,
+ * awaitable only after fullStream is consumed; toolResults/sources normalization expects arrays,
+ * so resolve the aggregate promises first and process via a synthesized object. toolCalls reuses the assembler's normalized snapshot.
+ * No failure may ever touch the model request path.
  */
 export async function recordStreamTextDebug(input: {
   attempt: number;
@@ -191,8 +191,8 @@ export async function recordStreamTextDebug(input: {
   }
 
   try {
-    // 成功路径下解析完整聚合结果；失败路径只读取 request/response 元数据，且必须限时——
-    // 流中途被 abort（用户 Stop / idle timeout）后 AI SDK 的聚合 promise 永不 settle。
+    // On success resolve the full aggregates; on failure read only request/response metadata, time-boxed:
+    // after a mid-stream abort (user Stop / idle timeout) the AI SDK aggregate promises never settle.
     const aggregate = input.result
       ? input.error
         ? await resolveFailedStreamModelIOAggregate(input.result, input.request.abortSignal)
@@ -247,8 +247,8 @@ export async function recordStreamTextDebug(input: {
               reasoningText: modelIOReasoningText(aggregate.reasoning),
               responseId: aggregate.responseId,
               text: aggregate.text,
-              // assembler 是流式参数归一化的唯一所有者；
-              // model-io 复用其快照，避免二次解析、重复 warn 和诊断结果漂移。
+              // The assembler owns streaming argument normalization;
+              // model-io reuses its snapshot, avoiding re-parsing, duplicate warns and diagnostic drift.
               toolCalls: input.normalizedToolCalls,
               toolResults: normalizeToolResults(syntheticResult, input.normalizedToolCalls),
               sources: normalizeSources(syntheticResult),
@@ -278,8 +278,8 @@ function buildFallbackRequestBodyFromOptions(input: {
 }): Record<string, unknown> {
   const options = input.options as Record<string, unknown>;
   return removeUndefined({
-    // 失败路径经常拿不到 AI SDK 暴露的 raw request.body。此处记录送入
-    // AI SDK 的完整 payload 快照，方便排查 provider 400 的 messages/tools 结构。
+    // Failure paths often lack the AI SDK raw request.body. Record the full payload handed to
+    // the AI SDK to debug provider 400 messages/tools shapes.
     bodySource: "ai_sdk_options",
     experimental_include: options.experimental_include,
     frequencyPenalty: options.frequencyPenalty,
@@ -314,7 +314,7 @@ interface StreamModelIOAggregate {
   usage?: Parameters<typeof normalizeUsage>[0];
 }
 
-// StreamTextResult 的聚合字段都是 promise，逐个 best-effort 解析(失败回退 undefined)。
+// StreamTextResult aggregate fields are promises; resolve each best-effort (undefined on failure).
 async function resolveStreamModelIOAggregate(
   result: AiSdkStreamTextResult,
 ): Promise<StreamModelIOAggregate> {
@@ -388,10 +388,10 @@ function modelIOReasoningText(reasoning: unknown): string | undefined {
   return text && text.length > 0 ? text : undefined;
 }
 
-// 流中途被 abort 后，AI SDK 的 request/response 聚合 promise 既不 resolve 也不 reject
-// （只有流正常读完或流级报错才会 settle），无限 await 会把 runner-stream 的 catch 挂死，
-// turn 永不结束、activeAbortController 永不释放，session 从此拒绝一切新 prompt。
-// 诊断记录是 best-effort：调用方已 abort 时直接跳过聚合，其余失败限时等待。
+// After a mid-stream abort the AI SDK request/response aggregate promises neither resolve nor reject
+// (only a fully-read stream or stream-level error settles them); awaiting forever would hang runner-stream's catch,
+// the turn never closes, activeAbortController never releases, and the session refuses every new prompt.
+// Diagnostics are best-effort: skip aggregates once the caller aborted, time-box everything else.
 const FAILED_STREAM_AGGREGATE_TIMEOUT_MS = 1_000;
 
 async function resolveFailedStreamModelIOAggregate(
@@ -399,7 +399,7 @@ async function resolveFailedStreamModelIOAggregate(
   abortSignal?: AbortSignal,
 ): Promise<StreamModelIOAggregate> {
   if (abortSignal?.aborted) {
-    // 用户 Stop：让失败路径立即走完，request body 由 fallback 快照兜底。
+    // User Stop: let the failure path finish now; the fallback snapshot covers request body.
     return {};
   }
   const streamResult = result as unknown as {
@@ -432,14 +432,14 @@ async function settleModelIOValue<T>(value: Promise<T> | T | undefined): Promise
   }
 }
 
-// 用户 stop / v4 sendQueuedNow 抢占会 abort 当前流式请求；此时
-// AI SDK StreamTextResult 的 request/response 聚合 promise 永不 settle——流被中途放弃，
-// 聚合要等 fullStream 关闭才 resolve，而关闭 iterator 的 finally（runner-stream.ts）
-// 又排在本 await 之后，形成循环等待。settleModelIOValue 只兜 reject 不兜「不 settle」，
-// 导致 runStreamText 的 catch 永远不结束：TurnCancelled 无法上抛、turn 永不收口、
-// record.activeAbortController 不释放、UI 的 stop（canStop）永久失效
-// （e2e 复现：conversation-session-v4-vertical-slice / v4-sendnow）。
-// 失败路径的 model-io 记录必须有界等待：超时按「值不可得」处理，绝不阻塞错误传播。
+// User stop / v4 sendQueuedNow preemption aborts the streaming request; then the AI SDK StreamTextResult
+// request/response aggregate promises never settle: the stream was abandoned mid-flight, the aggregate
+// waits for fullStream close, and the closing finally in runner-stream.ts is queued behind this await, a cycle.
+// settleModelIOValue only covers rejection, not never-settle, so runStreamText's catch never finishes:
+// TurnCancelled cannot propagate, the turn never closes, record.activeAbortController leaks,
+// and the UI stop (canStop) dies for good
+// (e2e repro: conversation-session-v4-vertical-slice / v4-sendnow).
+// Failure-path model-io waits must be bounded: on timeout treat the value as unavailable, never block error propagation.
 async function settleModelIOValueWithTimeout<T>(
   value: Promise<T> | T | undefined,
   timeoutMs: number,
@@ -460,7 +460,7 @@ async function settleModelIOValueWithTimeout<T>(
   }
 }
 
-// 归一化 ZCODE_RUNTIME_ENV；未设置时返回 undefined,由调用方按生产处理。
+// Normalize ZCODE_RUNTIME_ENV; undefined when unset, callers treat as production.
 function normalizeRuntimeEnv(env: EnvRecord): string | undefined {
   return normalizeZCodeRuntimeEnv(env[ZCODE_RUNTIME_ENV_KEY]);
 }
@@ -472,9 +472,9 @@ function writeModelIODebugRecord(
   modelIoFullRetentionEnabled = false,
 ): void {
   try {
-    // model-I/O 诊断直接持久化 AI SDK 的 request/response headers，
-    // 闲时 Provider 的 JWT、Coding Plan Key 与 ticket 因此会写入按 session 命名的文件。
-    // 在统一落盘边界复用网络遥测脱敏，保证 generate/stream 及后续调用方都不会漏掉。
+    // model-I/O diagnostics persist AI SDK request/response headers directly, so idle-provider
+    // JWTs, Coding Plan keys and tickets land in per-session files.
+    // Reuse network telemetry redaction at the single write boundary so generate/stream and later callers never skip it.
     const sanitizedRecord = sanitizeModelIODebugRecord(record);
     const development = isDev ?? false;
     const dir = debugDir ?? getModelIOBaseDir(isDev ?? false);
@@ -485,15 +485,15 @@ function writeModelIODebugRecord(
     const filePath = join(dir, fileName);
     const fileExists = existsSync(filePath);
     if (modelIoFullRetentionEnabled) {
-      // 全量保留仍经过统一脱敏边界，但跳过轮转、限额重置、生产裁剪和上下文压缩。
-      // 这是用户显式选择的诊断模式；更新 compaction state 使关闭后下一次 bounded 写入可平滑续接。
+      // Full retention still passes the redaction boundary but skips rotation, caps, production trimming and compaction.
+      // This is a user-selected diagnostic mode; update compaction state so the next bounded write continues smoothly.
       appendFileSync(filePath, `${stringifyDebugRecord(sanitizedRecord)}\n`, "utf8");
       modelIOCompactionStates.set(filePath, buildModelIOCompactionState(sanitizedRecord));
       return;
     }
-    // 生产态(rollout)做容量上限,避免长期运行把磁盘刷爆;开发态(debug)也保留更高的单文件上限。
-    // 同一 session 之前每次模型请求都会新建一个完整上下文文件，形成三角形重复；
-    // 现在改为一个 session 一个 JSONL 文件，新请求 append 到同文件，只有新 session 才参与淘汰。
+    // Production (rollout) enforces capacity caps; dev (debug) keeps a higher per-file cap.
+    // Previously every model request wrote a fresh full-context file per session, a triangular duplication;
+    // now one JSONL file per session, appends share it, and only new sessions enter eviction.
     if (!development && !fileExists) {
       rotateModelIOFiles(dir, MAX_ROLLOUT_FILES - 1);
     }
@@ -521,9 +521,9 @@ function writeModelIODebugRecord(
       : compacted;
     const line = `${stringifyDebugRecord(recordToWrite)}\n`;
     if (resetForSizeLimit) {
-      // 每次 append 前同步读取并 expand 整个历史 JSONL 的话，长 session 的 rollout
-      // 文件达到 GB 级时会在 UTF-8 转换/V8 字符串分配阶段 native crash。超限时直接重置为
-      // 当前 bounded baseline，保证诊断日志不会威胁 agent 主流程。
+      // Reading and expanding the whole history JSONL before each append crashes natively at GB scale
+      // during UTF-8 conversion/V8 string allocation. Over-limit resets to the
+      // current bounded baseline so diagnostics never threaten the agent's main flow.
       writeFileSync(filePath, line, "utf8");
     } else {
       appendFileSync(filePath, line, "utf8");
@@ -534,7 +534,7 @@ function writeModelIODebugRecord(
   }
 }
 
-// 保证目录下 model-io-*.jsonl 文件数不超过 maxFiles(为本次新 session 文件留位时传 maxFiles-1)。
+// Keep at most maxFiles model-io-*.jsonl files in a dir (pass maxFiles-1 to reserve a slot for the new session file).
 function rotateModelIOFiles(dir: string, maxFiles: number): void {
   let files: string[];
   try {
@@ -542,7 +542,7 @@ function rotateModelIOFiles(dir: string, maxFiles: number): void {
       (name) => name.startsWith("model-io-") && name.endsWith(".jsonl"),
     );
   } catch {
-    return; // 目录刚创建/读取失败,无需淘汰
+    return; // dir just created or unreadable, nothing to evict
   }
 
   let removeCount = files.length - maxFiles;
@@ -568,12 +568,12 @@ function rotateModelIOFiles(dir: string, maxFiles: number): void {
       modelIOCompactionStates.delete(filePath);
       removeCount -= 1;
     } catch {
-      // 单个文件删除失败不阻断写入
+      // A single file deletion failure never blocks the write.
     }
   }
 }
 
-// 仅保留文件名安全字符,其余折叠为 -,并限长避免触达 Windows 路径长度上限。
+// Keep filename-safe characters only, fold the rest to -, and cap length for Windows path limits.
 function sanitizeFileSegment(value?: string): string {
   if (!value) {
     return "";
@@ -584,8 +584,8 @@ function sanitizeFileSegment(value?: string): string {
     .slice(0, 80);
 }
 
-// storage profile 回滚删除了自定义 CLI 根模块，遗留 import 会让 adapters 无法构建。
-// 这里保持历史语义：开发态写 ~/.zcode/cli/debug，生产态写 ~/.zcode/cli/rollout。
+// The storage-profile rollback removed the custom CLI root module; stale imports would break the adapters build.
+// Historical semantics stay: dev writes ~/.zcode/cli/debug, production ~/.zcode/cli/rollout.
 function getModelIOBaseDir(isDev: boolean): string {
   return join(homedir(), ".zcode", "cli", isDev ? "debug" : "rollout");
 }
@@ -624,8 +624,8 @@ function prepareProductionRequestRecord(
   hasError: boolean,
 ): Record<string, unknown> {
   const next = { ...request };
-  // 生产 rollout 只保留 canonical request.messages。sdkMessages 与 provider body.messages
-  // 通常是同一上下文的重复拷贝，长会话下会把诊断文件和单次 stringify 放大数倍。
+  // Production rollout keeps only canonical request.messages; sdkMessages and provider body.messages
+  // duplicate the same context, multiplying diagnostic file size and a single stringify on long sessions.
   delete next.sdkMessages;
   const body = asRecord(next.body);
   if (body && !hasError) {
@@ -640,7 +640,7 @@ function prepareProductionResponseRecord(
   response: Record<string, unknown>,
 ): Record<string, unknown> {
   const next = { ...response };
-  // response.body 在生产排障里价值低于 text/toolCalls/usage/finishReason，且可能包含 provider 原始大包。
+  // response.body is worth less than text/toolCalls/usage/finishReason in production debugging and can be a huge raw payload.
   delete next.body;
   return next;
 }
@@ -700,8 +700,8 @@ function compactModelIORequest(
       offsetKey: "bodyMessageOffset",
     };
     if (options.preserveFullBodyMessages && Array.isArray(nextBody.messages)) {
-      // provider 400 等失败排障需要 exact request payload；失败记录若继续
-      // 按上一条 model-io 做 delta，会把最关键的完整 messages 丢在导出包之外。
+      // Provider 400 debugging needs the exact request payload; delta-encoding against the previous
+      // model-io would drop the all-important full messages from the export.
       next[bodyMessageKeys.countKey] = nextBody.messages.length;
       next[bodyMessageKeys.kindKey] = "full";
       next[bodyMessageKeys.offsetKey] = 0;
@@ -739,8 +739,8 @@ function compactMessageCollection(
 
   metadataTarget[keys.countKey] = currentMessages.length;
   if (canStoreDeltaFromState(currentMessages, previousState)) {
-    // 后续 model-io 只记录相对上一请求新增的消息，避免完整历史在同一 session 内梯度重复。
-    // previousState 来自进程内缓存，不再为 append 同步读取并 expand 整个历史 JSONL。
+    // Later model-io records only messages new since the previous request, avoiding gradient duplication within a session.
+    // previousState comes from the in-process cache; no per-append read/expand of the whole history JSONL.
     target[keys.collectionKey] = currentMessages.slice(previousState.count);
     metadataTarget[keys.kindKey] = "delta";
     metadataTarget[keys.offsetKey] = previousState.count;
@@ -829,7 +829,7 @@ function fingerprintCollectionSamples(value: unknown[], count = value.length): s
   if (count <= 0) {
     return [];
   }
-  // 常数级采样首/中/尾位置，避免把整段历史 stringify 成巨型字符串，同时降低中间历史变更被误判为 delta 的概率。
+  // Sample head/middle/tail at constant cost; avoids stringifying whole history and lowers false-delta risk from middle edits.
   const lastIndex = count - 1;
   const indexes = new Set([
     0,

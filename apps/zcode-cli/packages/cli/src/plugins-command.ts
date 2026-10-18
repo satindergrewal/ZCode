@@ -110,7 +110,7 @@ async function runPluginsListCommand(
     ctx.stdout.write(
       options.json ? formatJson(installed) : formatHumanPluginList(outcome, options),
     );
-    // 市场刷新失败这类诊断的 pluginId 是市场 id 或为空，归不到任何条目；error 级不能静默丢掉。
+        // Diagnostics like a failed marketplace refresh carry a marketplace id or none, matching no entry; error-level ones must not be dropped silently.
     const knownIds = new Set(outcome.plugins.map((plugin) => plugin.id));
     const orphaned = outcome.diagnostics.filter(
       (diagnostic) =>
@@ -295,7 +295,7 @@ async function runPluginsDisableCommand(
       entries.push({ plugin, error: error instanceof Error ? error.message : String(error) });
     }
   }
-  // 写的是 user 层；workspace/project 层的 enabledPlugins=true 优先级更高、盖不掉，所以按 effective 态复查。
+    // Writes the user layer; workspace/project-level enabledPlugins=true outranks it and cannot be overridden, so recheck the effective state.
   const stillEnabled = new Set(listPlugins(base).plugins.filter((p) => p.enabled).map((p) => p.id));
   const failed = entries.filter((entry) => entry.error || stillEnabled.has(entry.plugin.id));
   if (options.json) {
@@ -339,7 +339,7 @@ async function runPluginsUninstallCommand(
 
   resolveScope(flags.scope);
   const target = await resolveLoadedPluginId(deps, identifier);
-  // 卸载是破坏性的彻底清除：交互终端下询问确认；非交互(管道/CI)且未带 --force 时拒绝执行，不静默卸载。
+    // Uninstall is a destructive purge: ask for confirmation on a TTY; without --force, refuse on non-interactive (pipe/CI) stdin instead of silently uninstalling.
   if (!options.force) {
     if (!ctx.stdin.isTTY) {
       ctx.stderr.write(

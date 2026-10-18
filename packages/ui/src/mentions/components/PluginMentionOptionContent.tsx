@@ -14,7 +14,7 @@ export function PluginMentionOptionContent({ item }: { item: MentionItem }) {
         {item.displayLabel ?? item.label}
       </span>
       <span className="min-w-0 truncate text-ui-xs text-foreground-subtlest">
-        {/* 冲突禁选项优先展示原因，普通项展示当前语言的插件描述。 */}
+        {/* Conflict-disabled entries show the reason first; normal entries show the plugin description in the current language. */}
         {item.disabled && item.disabledReason ? item.disabledReason : item.description}
       </span>
     </span>

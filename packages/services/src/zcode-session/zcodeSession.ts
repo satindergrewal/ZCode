@@ -32,7 +32,7 @@ export interface ZCodeTaskTarget extends ZCodeSessionWorkspaceTarget {
 }
 
 export interface ZCodeSessionCreateParams extends ZCodeSessionWorkspaceTarget {
-  /** 仅导入事务使用的预分配 ID；普通新会话继续由 Agent 分配。 */
+  /** Preallocated ID for the import flow only; regular new sessions stay agent-assigned. */
   sessionId?: string;
   sessionTraceId?: TraceId;
   parentSessionId?: string;
@@ -49,9 +49,9 @@ export interface ZCodeSessionResumeParams extends ZCodeTaskTarget {
   thoughtLevel?: string;
   mcpServers?: ZCodeAgentMcpServer[];
   /**
-   * 默认广播 resume 得到的历史快照，并让 shadow 订阅请求初始 snapshot。
-   * 续聊发送前的 runtime 预恢复会关闭它，避免旧终态快照覆盖本地已开始的新输入运行态。
-   */
+   * Broadcast the resumed historical snapshot by default and let shadow subscribers request an
+   * initial snapshot. The pre-send runtime prepare closes it, so a stale terminal snapshot cannot
+   * overwrite locally-started runtime state. */
   broadcastSnapshot?: boolean;
 }
 
@@ -152,7 +152,7 @@ export interface IZCodeSessionService {
   setModel(params: ZCodeSessionSetModelParams): Promise<ZCodeSessionStateSnapshot>;
   setThoughtLevel(params: ZCodeSessionSetThoughtLevelParams): Promise<ZCodeSessionStateSnapshot>;
   setMode(params: ZCodeSessionSetModeParams): Promise<ZCodeSessionStateSnapshot>;
-  // renderer 订阅面走 agentService 的 conversation/sessions-index 帧通道。
+  // The renderer subscription surface uses agentService's conversation/sessions-index frame channel.
 }
 
 export const IZCodeSessionService = createServiceDescriptor<IZCodeSessionService>(

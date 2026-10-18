@@ -1,8 +1,8 @@
-/* 官方 Server MCP 的逐请求动态身份头注入与失败分类。
+/* Official-server MCP: per-request dynamic identity header injection and failure classification.
  *
- * 这里是唯一的凭证出口：包裹 createMcpTransportFetch 得到的 fetch，在 SDK 组装完
- * _commonHeaders() 与 requestInit 之后、真正发出请求之前注入。因此现有的 HTTP 代理、
- * 自定义 CA、No Proxy 策略全部保留——本 wrapper 只包裹它，不绕过。
+ * The single credential egress: wraps the fetch from createMcpTransportFetch, injecting after the SDK builds
+ * _commonHeaders() and requestInit, right before the request is sent. Existing HTTP proxy, custom CA and
+ * no-proxy policy are all preserved: this wrapper wraps, never bypasses.
  */
 import {
   findOfficialMcpReservedHeaders,
@@ -18,7 +18,7 @@ import type {
   OfficialMcpTrustedOriginRegistry,
 } from "@zcode/contracts";
 
-/** 由 adapter 抛出的、带稳定分类的官方鉴权错误。禁止调用方按 message 文本分流。 */
+/** Official auth error thrown by the adapter with a stable class; callers must never branch on message text. */
 export class OfficialMcpAuthError extends Error {
   constructor(
     readonly kind: OfficialMcpAuthFailureKind,
@@ -30,13 +30,13 @@ export class OfficialMcpAuthError extends Error {
 }
 
 /**
- * 关联 id 的 header 名。
+ * Correlation-id header names.
  *
- * 用途有两个，都**不是**发送：
- * 1. 从请求头里剥离，避免插件静态配置把这两个可观测通道注入官方端点；
- * 2. 从**响应头**读取服务端自己生成的 request id，记入日志用于端到端对账。
+ * Two uses, neither is sending:
+ * 1. strip from request headers, so plugin static config cannot inject these observability channels at official endpoints;
+ * 2. read the server-generated request id from response headers for end-to-end reconciliation logs.
  *
- * 客户端不发送这两个头：服务端始终自行生成请求 id、不读入站值，发了不会被任何人读取。
+ * The client never sends them: the server always mints its own request ids and ignores inbound values.
  */
 const REQUEST_ID_HEADER = "x-request-id";
 const TRACE_ID_HEADER = "x-trace-id";
@@ -46,51 +46,51 @@ interface CreateOfficialMcpAuthFetchInput {
   baseFetch: typeof globalThis.fetch;
   logger?: Logger;
   /**
-   * 分类上报钩子。SDK 的 version negotiation 会把本模块抛出的 OfficialMcpAuthError
-   * 重新包装成普通 Error（message 保留、对象身份丢失），因此 instanceof 在上层不可靠。
-   * 分类必须在抛出点上报，不能靠上层解析错误文本判断（项目规范禁止按错误文本分流）。
+   * Classification report hook. SDK version negotiation re-wraps OfficialMcpAuthError as a plain Error
+   * (message kept, identity lost), so instanceof is unreliable above this layer.
+   * Classification must be reported at the throw site, never by parsing text (project rule: no branching on error text).
    */
   onAuthFailure?: (kind: OfficialMcpAuthFailureKind) => void;
   /**
-   * 服务端 request id 的上报钩子，用于把它关联回具体一次 `tools/call`。
+   * Report hook for the server request id, to correlate it back to one tools/call.
    *
-   * 只有这一层能看到响应头：wrapper 之上是 MCP SDK，它只把 JSON-RPC 结果交给 adapter。
-   * 因此 in-band 失败（HTTP 200 + `isError: true`，如配额耗尽）想带上 request id，
-   * 必须由这里把它送出去，再由 adapter 按 span 关联。
+   * Only this layer sees response headers: above it sits the MCP SDK, which hands the adapter JSON-RPC results only.
+   * So an in-band failure (HTTP 200 + isError, e.g. quota exhausted) can carry the request id only if
+   * this layer emits it, for the adapter to join by span.
    */
   onServerResponse?: (response: OfficialMcpServerResponseInfo) => void;
   official: McpOfficialProvenance;
   serverName: string;
   trustedOrigins: OfficialMcpTrustedOriginRegistry;
-  /** MCP endpoint URL；Origin 校验以每次请求的实际 URL 为准，不只在连接时校验一次。 */
+  /** MCP endpoint URL; Origin is validated per request URL, not once at connect. */
   url: string;
   workspaceIdentity?: string;
   workspacePath?: string;
 }
 
-/** 一次官方 MCP 响应中可用于关联的非敏感事实。不含 body、不含任何 header 值。 */
+/** Non-sensitive correlatable facts of one official MCP response. No body, no header values. */
 export interface OfficialMcpServerResponseInfo {
   failureKind?: McpServerFailureKind;
   httpStatus: number;
   rpcMethod?: string;
   rpcToolName?: string;
-  /** 服务端自行生成的 `x-request-id`；无 HTTP response 时缺失且绝不伪造。 */
+  /** Server-generated x-request-id; absent without an HTTP response, never fabricated. */
   serverRequestId?: string;
-  /** 发起该请求的 tool call span。adapter 用它把 request id 关联回具体一次调用。 */
+  /** Tool call span that issued the request; the adapter joins the request id back to the call with it. */
   spanId?: string;
   traceId?: string;
 }
 
 /**
- * 每次可信 Origin 请求前重新解析身份头并注入；解析失败才匿名降级。
+ * Re-resolve identity headers before every trusted-origin request; degrade to anonymous only on resolution failure.
  *
- * 关键语义：
- * - Origin 逐请求校验。SDK 可能在 session 期间对同一 transport 发多种请求，
- *   只在连接时校验一次会给后续 URL 变化留下缺口；
- * - 保留头用 set 覆盖语义。append 会产生逗号拼接的多值 Authorization，
- *   "缺失才补"会让非预期的既有值存活（例如 authProvider 写入的 OAuth token）；
- * - redirect: "manual"，3xx 直接失败，避免 Bearer Token 被跨 Origin redirect 带走；
- * - 只有实际注入过凭证的请求才在 401 后重试一次；403/3xx 不重试。
+ * Key semantics:
+ * - Origin is validated per request. The SDK may send several request kinds over one transport;
+ *   connect-time-only checks leave a hole for later URL changes.
+ * - Retained headers use set semantics. append yields comma-joined multi-value Authorization, and
+ *   only-if-missing lets unexpected existing values survive (e.g. an OAuth token written by authProvider);
+ * - redirect manual: fail on 3xx so the Bearer token cannot ride a cross-origin redirect;
+ * - only requests that actually carried credentials retry once after 401; 403/3xx never retry.
  */
 export function createOfficialMcpAuthFetch(
   input: CreateOfficialMcpAuthFetchInput,
@@ -98,9 +98,9 @@ export function createOfficialMcpAuthFetch(
   const expectedOrigin = safeOrigin(input.url);
 
   /**
-   * 上报分类并构造错误，由调用点 `throw`。
-   * 不在此处直接 throw：返回 never 的箭头函数不会触发 TS 控制流收窄
-   * （需要调用目标带显式类型注解），会让 throw 之后的 origin / resolved 仍是联合类型。
+   * Report the class and build the error; the call site throws.
+   * Do not throw here: a never-returning arrow does not narrow TS control flow
+   * (the callee needs an explicit type annotation), leaving origin/resolved as unions after the throw.
    */
   const failWith = (kind: OfficialMcpAuthFailureKind, message: string): OfficialMcpAuthError => {
     input.onAuthFailure?.(kind);
@@ -125,9 +125,9 @@ export function createOfficialMcpAuthFetch(
       pluginId: input.official.pluginId,
     });
     if (!trust.trusted) {
-      // fail closed：网络请求次数必须为 0，凭证也不会被解析。
-      // message 里带上 origin 与 pluginId：只报 serverName 时，看到 detail 也无法判断
-      // 判定输入到底是什么（曾因此把 pluginId 后缀问题误查成 url 配置问题）。
+      // Fail closed: zero network requests, credentials never parsed.
+      // Include origin and pluginId in the message: serverName alone cannot tell what the
+      // inputs even were (a pluginId suffix issue was once misdiagnosed as a url config problem).
       throw failWith(
         "official_mcp_origin_untrusted",
         `official MCP origin is not trusted (${trust.detail ?? "unknown"}): ` +
@@ -135,8 +135,8 @@ export function createOfficialMcpAuthFetch(
       );
     }
 
-    // 请求级 debug 上下文。刻意只含非敏感项：rpc 方法名、请求体字节数、路径。
-    // 不记 body 内容（含用户 query），不记任何 header 值。
+    // Request-scoped debug context, non-sensitive by construction: rpc method, body byte count, path.
+    // No body content (user queries included), no header values.
     const rpc = describeJsonRpc(init?.body);
     const logBase = {
       event: "mcp.official_auth.request",
@@ -168,8 +168,8 @@ export function createOfficialMcpAuthFetch(
         if (resolved.ok) {
           authHeaders = resolved.headers;
         } else {
-          // 解析不到身份时仍把无身份请求交给 server 做权威判定；adapter 不缓存旧凭证，
-          // 也不在本地把解析失败冒充为网络失败。
+          // Without resolvable identity, send the anonymous request and let the server be the authority;
+          // never cache stale credentials nor dress parse failure up as a network failure.
           input.logger?.warn("Official MCP auth headers unavailable for request", {
             ...logBase,
             attempt,
@@ -190,22 +190,22 @@ export function createOfficialMcpAuthFetch(
           status: "failed",
         });
       }
-      // 只记 header 名与套餐维度，绝不记 header 值。targetType 是 PERSONAL/TEAM 这类
-      // 低敏枚举，但对"为什么服务端判我没权益"最关键，因此保留原值。
+      // Log header names and plan tier only, never values. targetType (PERSONAL/TEAM) is a
+      // low-sensitivity enum but the key to why the server denied entitlement, so keep the raw value.
       const identity = summarizeOfficialMcpIdentityHeaders(authHeaders);
       const headers = mergeOfficialAuthHeaders(init?.headers, authHeaders);
 
-      // 关联 id 一律**不外发**，只剥离。
+      // Correlation ids are never sent, only stripped.
       //
-      // 服务端不会采用客户端传入的 request id，始终自行生成、不读入站 header。
-      // 因此客户端发送
-      // X-Request-Id / X-Trace-Id 不会被任何人读取，属死代码且会误导后来者。
+      // The server ignores client request ids, always minting its own and never reading inbound headers,
+      // so sending X-Request-Id / X-Trace-Id
+      // is dead code that misleads the next reader.
       //
-      // 端到端对账改为反方向：读服务端**响应头**里的 x-request-id 并记入日志
-      // （见下方 serverRequestId），用它去查服务端日志。
+      // Reconciliation runs the other way: read x-request-id from the response headers and log it
+      // (see serverRequestId below), then look it up in server logs.
       //
-      // 仍然显式 delete 而不是放任：这两个 header 语义上属于关联/可观测通道，不应由
-      // 插件静态配置注入到官方端点——插件设的值会原样出现在服务端及中间层日志里。
+      // Still delete explicitly rather than let them ride: these are correlation/observability channels and
+      // plugin static config must not inject them into official endpoints; plugin values land verbatim in server and intermediary logs.
       headers.delete(REQUEST_ID_HEADER);
       headers.delete(TRACE_ID_HEADER);
 
@@ -223,19 +223,19 @@ export function createOfficialMcpAuthFetch(
         const response = await input.baseFetch(resource, {
           ...init,
           headers,
-          // 第一阶段不跟随任何重定向；正式 endpoint 应配置为 canonical URL。
+          // No redirects on the first leg; the endpoint must be configured canonical.
           redirect: "manual",
         });
-        // 服务端自行生成的 request id，从响应头读回。这是**唯一**能把客户端日志与
-        // 服务端日志对上的键：客户端不发送该头，服务端也不采纳入站值。
+        // Server-minted request id, read back from response headers. The only key that joins client
+        // and server logs: the client never sends it and the server ignores inbound values.
         const serverRequestId = readServerRequestId(response);
-        // Settings 只消费连接、initialize 与 tools/list 诊断。tools/call 可能返回大媒体，
-        // 其 request id 已按 span 投影到 tool result，禁止为了设置页再 clone/读取响应体。
+        // Settings consumes connect/initialize/tools-list diagnostics only. tools/call may return large media whose
+        // request id is already projected onto the tool result by span; never re-clone the body for the settings page.
         const failureKind =
           rpc.method === "tools/call" ? undefined : await classifyOfficialMcpResponse(response);
         if (serverRequestId || failureKind) {
-          // 上报给 adapter 做关联。放在日志之前：即使日志级别把两条记录都过滤掉，
-          // in-band 失败仍然拿得到这个 id。
+          // Report to the adapter for correlation, before logging: even if the log level filters both entries,
+          // the in-band failure keeps the id.
           input.onServerResponse?.({
             httpStatus: response.status,
             ...(failureKind ? { failureKind } : {}),
@@ -260,15 +260,15 @@ export function createOfficialMcpAuthFetch(
             status: "completed",
           });
         } else {
-          // 非 2xx 必须记在 warn，不能只有上面那条 debug。
+          // Non-2xx must be a warn; the debug above does not survive production levels.
           //
-          // 生产构建的 logger 最低级别是 Info（见 logging/index.ts 的
-          // getDefaultMinLevel），debug 直接被丢弃。结果是出错时——恰恰是唯一需要对账的
-          // 时候——服务端 request id 在日志里根本不存在，只能靠读代码反推（3001
-          // "parameter error" 那次排查就是这样）。
+          // Production loggers bottom out at Info (see getDefaultMinLevel in logging/index.ts),
+          // debug is dropped. The result: at failure time, the only moment needing reconciliation, the server
+          // request id is absent from logs, recoverable only by reading code (the 3001
+          // parameter-error hunt proved it).
           //
-          // 这里刻意不吞掉响应：4xx/5xx 仍原样交回 SDK，由它按协议报错，本 wrapper 只
-          // 补一条可检索的记录。401/403/3xx 的分类失败在下方另行抛出。
+          // Deliberately swallow nothing: 4xx/5xx go back to the SDK untouched for protocol errors; this wrapper
+          // only adds one searchable record. 401/403/3xx classification failures throw separately below.
           input.logger?.warn("Official MCP response failed", {
             ...outcome,
             status: "failed",
@@ -276,8 +276,8 @@ export function createOfficialMcpAuthFetch(
         }
         return { authApplied: Object.keys(authHeaders).length > 0, response };
       } catch (error) {
-        // 超时/取消在这里表现为 AbortError。区分二者对定位"是谁掐断的"很关键：
-        // 上层工具超时预算到期与用户主动取消都会走 abort，但 elapsed 与预算的关系不同。
+        // Timeout/cancel surface here as AbortError. Telling them apart names the cutter:
+        // the tool budget expiry and a user cancel both abort, but elapsed-vs-budget differs.
         const sendDurationMs = Date.now() - sendStartedAt;
         input.logger?.warn("Official MCP request did not complete", {
           ...logBase,
@@ -295,8 +295,8 @@ export function createOfficialMcpAuthFetch(
     let sent = await send(1);
     let response = sent.response;
     if (response.status === 401 && sent.authApplied) {
-      // 至多重试一次，无条件。能靠重试自愈的只有"请求发出后凭证恰好被刷新"这一窄竞态；
-      // 上限为 1，不存在自旋可能。
+      // At most one retry, unconditional. Only the narrow race of credentials refreshed mid-flight is self-healing;
+      // the cap is 1, no spin.
       input.logger?.info("Official MCP retrying once after 401", {
         ...logBase,
         attempt: 2,
@@ -315,7 +315,7 @@ export function createOfficialMcpAuthFetch(
       throw failWith("official_auth_rejected", message);
     }
     if (response.status === 403) {
-      // 身份有效但权限/套餐不足，重取同一份凭证不会改变结果。
+      // Identity valid but entitlement/plan insufficient; re-fetching the same credential changes nothing.
       const baseMessage = "official MCP denied access for the current plan";
       const message =
         rpc.method === "tools/call" ? withServerRequestId(baseMessage, response) : baseMessage;
@@ -403,9 +403,9 @@ async function readBoundedResponseText(
 }
 
 /**
- * 合并静态 header 与身份头。身份头一律覆盖（set），并剔除来源侧残留的保留头
- * ——parse 期已拦截静态保留头，这里是合并点的二次强制。
- * 不触碰 mcp-session-id / mcp-protocol-version / accept / content-type。
+ * Merge static and identity headers. Identity headers always set, and strip residual reserved headers from the source side:
+ * parse already blocked static reserved headers; this is the second enforcement at the merge point.
+ * mcp-session-id / mcp-protocol-version / accept / content-type are untouched.
  */
 function mergeOfficialAuthHeaders(
   incoming: HeadersInit | undefined,
@@ -415,7 +415,7 @@ function mergeOfficialAuthHeaders(
   const authHeaderNames = new Set(Object.keys(authHeaders).map((name) => name.toLowerCase()));
   new Headers(incoming ?? {}).forEach((value, name) => {
     const normalized = name.toLowerCase();
-    // 身份头稍后统一写入；其余保留头（如 authProvider 写入的 Authorization）直接丢弃。
+    // Identity headers are written later in one place; other reserved headers (e.g. authProvider Authorization) are dropped.
     if (authHeaderNames.has(normalized)) return;
     if (
       isOfficialMcpReservedHeaderName(normalized) &&
@@ -432,7 +432,7 @@ function mergeOfficialAuthHeaders(
   return merged;
 }
 
-/** 供 adapter 在解析配置时复用，保证黑名单在 parse 与合并两处同源。 */
+/** Reused by the adapter at config parse so the blocklist is identical in parse and merge. */
 export { findOfficialMcpReservedHeaders };
 
 function resolveRequestUrl(resource: Parameters<typeof globalThis.fetch>[0]): string {
@@ -444,7 +444,7 @@ function resolveRequestUrl(resource: Parameters<typeof globalThis.fetch>[0]): st
 function safeOrigin(value: string): string | undefined {
   try {
     const url = new URL(value);
-    // 带凭证的 URL 与其 origin 不是同一信任面，直接判为不可信。
+    // A credentialed URL and its origin are not the same trust surface: untrusted.
     if (url.username !== "" || url.password !== "") return undefined;
     return url.origin;
   } catch {
@@ -456,24 +456,24 @@ function isRedirect(status: number): boolean {
   return status >= 300 && status < 400;
 }
 
-/** 服务端在响应头里回带的 request id。缺失时返回 undefined。 */
+/** Request id the server returns in response headers; undefined when missing. */
 function readServerRequestId(response: Response): string | undefined {
   const value = response.headers.get(REQUEST_ID_HEADER)?.trim();
   return value ? value : undefined;
 }
 
 /**
- * 把服务端 request id 附到分类错误的 message 上。
+ * Attach the server request id to the classified error message.
  *
- * tool call 分类错误直接向上展示，使用紧凑的 `message - requestId` 形态。连接期 request id
- * 由 adapter 的结构化 status diagnostic 统一拼接，避免 SDK 包装前后重复。
+ * Tool-call classification errors surface directly, so use the compact message-requestId form. Connection-phase request ids
+ * are joined by the adapter's structured status diagnostic, avoiding duplication across SDK wrapping.
  */
 function withServerRequestId(message: string, response: Response): string {
   const requestId = readServerRequestId(response);
   return requestId ? `${message} - ${requestId}` : message;
 }
 
-/** 请求路径（不含 query）。query 可能带用户内容，因此丢弃。 */
+/** Request path without query; the query may carry user content, so drop it. */
 function safePath(value: string): string {
   try {
     return new URL(value).pathname;
@@ -495,12 +495,12 @@ function numericHeader(value: string | null): number | undefined {
 }
 
 /**
- * 从 JSON-RPC 请求体里取出**结构性**字段用于关联日志：method / id / tools\_call 的工具名 /
- * `_meta` 里的 trace\_id。
- * 刻意不取 `params.arguments`——那里是用户输入（如搜索词），不属于"没那么敏感"的范畴。
+ * Pull only structural fields from the JSON-RPC request body for correlation logs: method / id / tools_call tool name /
+ * trace_id from _meta.
+ * Deliberately not params.arguments: that is user input (search terms), beyond not-so-sensitive.
  *
- * trace\_id 仅在 `tools/call` 上存在：`initialize` / `tools/list` 由 SDK 在建连阶段发出，
- * 没有 `_meta`，因此那两个请求只有 request id、没有 trace id。这是预期的，不是缺陷。
+ * trace_id exists only on tools/call: initialize/tools-list are sent by the SDK during connect without _meta,
+ * so those carry a request id but no trace id. By design, not a defect.
  */
 function describeJsonRpc(body: unknown): {
   id?: number | string;
@@ -519,11 +519,11 @@ function describeJsonRpc(body: unknown): {
       typeof record.id === "number" || typeof record.id === "string" ? record.id : undefined;
     const params = isPlainRecord(record.params) ? record.params : undefined;
     const toolName = params && typeof params.name === "string" ? params.name : undefined;
-    // mcpRequestMeta 把 trace 写在 params._meta 上（同时有扁平键与 com.zcode/ 命名空间键）。
+    // mcpRequestMeta writes trace under params._meta (flat keys plus the com.zcode/ namespace).
     const meta = params && isPlainRecord(params._meta) ? params._meta : undefined;
     const traceId = meta && typeof meta.trace_id === "string" ? meta.trace_id : undefined;
-    // span 才是"一次 tool call"的粒度：traceId 覆盖整个顶层 session，同一 session 里的
-    // 多次调用共用它，用它做关联会串号。
+    // The span is the one-tool-call grain: traceId spans the whole top-level session and is shared by
+    // every call in it; joining on it cross-wires calls.
     const spanId = meta && typeof meta.span_id === "string" ? meta.span_id : undefined;
     return {
       ...(id !== undefined ? { id } : {}),
@@ -542,8 +542,8 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * 身份头的**非敏感摘要**：只有名字、是否成对、以及 targetType 的枚举值。
- * 绝不输出 Authorization 或 api-key 的值，连截断值也不输出——日志留存周期不受控。
+ * Non-sensitive digest of the identity headers: names, pairedness, and the targetType enum only.
+ * Never emit Authorization or api-key values, not even truncated: log retention is uncontrolled.
  */
 function describeAbortSignal(signal: AbortSignal | null | undefined): string {
   if (!signal) return "none";
@@ -558,6 +558,6 @@ async function discardBody(response: Response): Promise<void> {
   try {
     await response.body?.cancel();
   } catch {
-    // 丢弃 body 失败不影响分类结论。
+    // Body-read failure never changes the classification.
   }
 }

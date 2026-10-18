@@ -56,9 +56,9 @@ export function useProviderAvailabilityLoginEntryGuard({
       const { hasUsableProvider, providerCount } = availability;
       const shouldOpenLoginEntry = !providerFamilyDomain || (!user && !hasUsableProvider);
 
-      // 未登录且没有可用模型配置时必须引导用户连接账号或填写 API Key。
-      // 启动检查、API Key 设置回流等入口统一走这里，避免各处复制判断后语义分叉。
-      logger.info("[Root] provider 可用性登录入口守卫完成检查", {
+      // Without a sign-in and without a usable model config, guide the user to connect an account or enter an API key.
+      // Startup checks, API-key settings returns, etc. all funnel here so the semantics never fork per call site.
+      logger.info("[Root] Provider-availability login-entry guard finished its check", {
         reason: options.reason,
         source: availability.source,
         providerCount,
@@ -93,8 +93,8 @@ export function useProviderAvailabilityLoginEntryGuard({
     }
 
     if (modelSelectionError) {
-      // 首次读取失败不能伪装成“没有 Provider”，也不能让启动门禁永久停在 loading。
-      logger.error("[Root] provider 可用性读取失败，结束启动门禁等待", modelSelectionError);
+      // A first-read failure must not pose as "no providers", nor leave the startup gate loading forever.
+      logger.error("[Root] Failed to read provider availability; ending the startup-gate wait", modelSelectionError);
       startupCheckCompletedRef.current = true;
       setStartupCheckCompleted(true);
       return;

@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- rewind message primitive 与 cascade 封装共享 conversation/workspace 语义，避免拆分时误改原 /rewind 行为。 */
+/* eslint-disable max-lines -- the rewind message primitive and cascade wrapper share conversation/workspace semantics; splitting risks the /rewind behavior. */
 import {
   RewindScope,
   RewindStrategy,
@@ -307,9 +307,9 @@ async function rewindWorkspaceToCheckpoints(
   const restoredFiles: WorkspaceRewindRestoredFile[] = [];
   for (const { artifact } of artifacts) {
     throwIfTurnAborted(options.abortSignal);
-    // cascade 是 UI 消息级撤销的外置高阶接口。一个消息级撤销可能跨过多个
-    // 文件变更 checkpoint。先完整读取全部 artifact，再按创建顺序倒序写文件；这样
-    // artifact 缺失/损坏这类可预见失败不会发生在 workspace 已经半回退之后。
+    // Cascade is the outward UI message undo; one message undo can span
+    // several file checkpoints. Read every artifact, then write in reverse creation order, so
+    // foreseeable failures never hit a half-reverted workspace.
     restoredFiles.push(
       ...(await this.restoreWorkspaceCheckpointArtifact(
         artifact,
@@ -383,8 +383,8 @@ async function readWorkspaceCheckpointArtifact(
 }
 type ConversationRewindPlan =
   | {
-      // ConversationRewindResult.evaluation 是对外结果的可选字段，
-      // 但 available plan 已经完成 active-chain 校验，后续落事件必须有 evaluation。
+      // ConversationRewindResult.evaluation is optional outward,
+      // but the plan validated the active chain; events must carry evaluation.
       evaluation: NonNullable<ConversationRewindResult["evaluation"]>;
       branchCutAfterMessageId: MessageId;
       branchGeneration: number;
@@ -413,8 +413,8 @@ export async function rewindConversationToMessage(
 ): Promise<ConversationRewindResult> {
   const plan = await buildConversationRewindPlan.call(this, {
     targetMessageId: options.targetMessageId,
-    // 仅纯 conversation scope 开启 assistant 锚点回溯（v4 edit/retry 路径）；
-    // both/cascade 的显式流保持严格目标校验。
+    // Assistant-anchor remap is conversation-scope only (v4 edit/retry);
+    // explicit both/cascade flows keep strict target validation.
     remapAssistantAnchor: options.scope === undefined || options.scope === RewindScope.Conversation,
   });
   if (plan.kind === "unavailable") {
@@ -442,9 +442,9 @@ async function buildConversationRewindPlan(
   options: {
     targetMessageId: MessageId;
     /**
-     * assistant 锚点回溯映射开关：仅纯 conversation scope（v4 editUserQuery/retryTurn
-     * 的 `/rewind conversation <assistantMessageId>`）开启；cascade/both 的显式 TUI
-     * 流保持严格 user prompt 目标校验（precheck reject，不隐式扩大回滚范围）。
+     * Assistant-anchor remap switch: conversation scope only (v4 editUserQuery/retryTurn
+     * `/rewind conversation <assistantMessageId>`); explicit TUI cascade/both
+     * keeps strict user-prompt validation (precheck reject, no silent scope growth).
      */
     remapAssistantAnchor?: boolean;
   },
@@ -462,8 +462,8 @@ async function buildConversationRewindPlan(
   const persistedMessages = await this.sessionStore.messages({
     sessionID: this.sessionId,
   });
-  // rewind target 可以位于当前 compact boundary 之前。定位 edit target 时只能
-  // 应用 append-only branch cut，compact scope 只用于 provider history，不能提前隐藏 target。
+  // A target may precede the compact boundary; locating an edit target allows only
+  // an append-only branch cut; compact scope is provider-history, never early hiding.
   const activeMessages = selectActiveConversationBranch(persistedMessages, {
     branchCutAfterMessageId: session?.revert?.branchCutAfterMessageID,
     rewindCreatedMessageId: session?.revert?.createdMessageID,
@@ -473,9 +473,9 @@ async function buildConversationRewindPlan(
   const requestedIndex = activeMessages.findIndex(
     (message) => message.info.id === options.targetMessageId,
   );
-  // v4 editUserQuery/retryTurn 使用同一 turn 的 assistant messageId 作为 rewind 锚点，
-  // 因为 user 行没有稳定的 messageId。将该锚点回溯到所属 turn 的 user prompt，
-  // 让持久消息与运行时历史都从该 prompt 开始截断，避免编辑重跑或冷恢复时带回旧分支。
+  // v4 editUserQuery/retryTurn anchor on the same-turn assistant messageId,
+  // since user rows lack stable ids; remap to the owning turn user prompt
+  // and truncate both histories there; no old branches in reruns or cold restores.
   let targetIndex = requestedIndex;
   if (
     options.remapAssistantAnchor === true &&
@@ -514,7 +514,7 @@ async function buildConversationRewindPlan(
 
   const targetMessage = activeMessages[targetIndex]!;
   if (!isRewindableUserPrompt(targetMessage)) {
-    // 严格路径（remapAssistantAnchor 未开启）：非 user prompt 目标维持 precheck reject。
+    // Strict path (remap off): non-user-prompt targets keep the precheck reject.
     return {
       evaluation,
       kind: "unavailable",
@@ -566,8 +566,8 @@ async function applyConversationRewindPlan(
   await this.sessionStore!.setRevert({
     sessionID: this.sessionId,
     revert: {
-      // 只保存 target/created 无法在连续编辑或重启后还原旧 rewind 前缀。
-      // keptMessageIDs 保存的是本次 rewind 前 active branch 的保留前缀，避免旧分支重新浮出。
+      // target/created alone cannot restore the pre-rewind prefix across edits or restarts.
+      // keptMessageIDs holds the active-branch kept prefix, so old branches stay buried.
       keptMessageIDs: keptMessages.map((message) => message.info.id as MessageId),
       branchCutAfterMessageID: branchCutAfterMessageId,
       branchGeneration,
@@ -643,7 +643,7 @@ async function cancelRemovedBranchBackgroundTasks(
       traceContext: options.traceContext,
     });
     if (!result.ok) {
-      // fail closed：无法确认旧分支后台工作已停时，不提交 branch cut，也不碰 workspace。
+      // Fail closed: background work unconfirmed stopped, no branch cut, no workspace touch.
       throw new Error(`rewind background task cancellation failed: ${task.taskId}`);
     }
   }
@@ -660,8 +660,8 @@ async function finishUnavailableConversationRewind(
     traceContext: TraceContext;
   },
 ): Promise<ConversationRewindResult> {
-  // 失败/冲突不是一次已经提交的 branch cut，不能伪造 RewindTriggered。
-  // 否则 live projection 会裁 UI，而 store/provider history 仍保留旧分支。
+  // A failure/conflict is no committed branch cut; never fake RewindTriggered.
+  // Or live trims UI while store/provider history keeps the old branch.
   return {
     evaluation: options.evaluation,
     keptMessageCount: 0,
@@ -688,7 +688,7 @@ async function rebuildConversationDerivedState(
     rewindTargetMessageId: options.targetMessageId,
   };
 
-  // branch 重建，避免 compact/microcompact/read cache 或 provider usage 泄漏旧分支。
+  // branch rebuilds, so caches and provider usage never leak the old branch.
   this.messageHistory.reset();
   await hydrateMessageHistoryFromSession({
     artifactStore: this.artifactStore,

@@ -8,7 +8,7 @@ export const REMOTE_AGENT_OFFICIAL_PLUGIN_INCLUDED_TOP_LEVEL_PATHS = [
   ".mcp.json",
   ".zcode-plugin",
   "README.md",
-  // 开发态远程插件复制使用独立白名单，遗漏 agents 会只在远端丢失子代理。
+  // Dev-mode remote plugin copies use a separate allowlist; omitting agents would lose subagents on the remote only.
   "agents",
   "commands",
   "dist",
@@ -16,8 +16,8 @@ export const REMOTE_AGENT_OFFICIAL_PLUGIN_INCLUDED_TOP_LEVEL_PATHS = [
   "hooks",
   "output-styles",
   "package.json",
-  // Browser bootstrap 会从插件根目录动态导入 scripts/browser-client.mjs。
-  // 开发态 SSH 部署若漏掉 scripts，会出现 MCP server 已启动但浏览器绑定无法初始化的半成品状态。
+  // Browser bootstrap dynamically imports scripts/browser-client.mjs from the plugin root. Dev-mode
+  // SSH deploys without scripts leave an MCP server running whose browser binding never initializes.
   "scripts",
   "skills",
   "templates",
@@ -27,25 +27,25 @@ export const REMOTE_AGENT_OFFICIAL_PLUGIN_REQUIRED_RELATIVE_PATHS = [
   ...REMOTE_AGENT_OFFICIAL_PLUGIN_PACKAGE_NAMES.map(
     (packageName) => `${packageName}/.zcode-plugin/plugin.json`,
   ),
-  // 只校验 Browser Use manifest 会把“有插件壳”的残缺目录
-  // 误判为可复用。生产 remote、开发态 remote 与 release source 校验共用这份必需资产合同。
+  // Validating only the Browser Use manifest misreads a hollow plugin shell as reusable. Production
+  // remote, dev remote, and release-source validation share this required-asset contract.
   //
-  // 这里只能列 browser-use **自己产出**的资产。node_repl 宿主抽成 @zcode/node-repl-host 后
-  // browser-use 不再产出 dist/mcp/server.js；
-  // 本清单里指向不存在的文件，会让远端资产校验对着幽灵路径报缺失。
-  // 远程工作区当前不承载 Browser Use / Computer Use，因此宿主 runtime 不进这份远端合同——
-  // 要支持远程 bua/cua 时，应把 node-repl-host 补进上面的 PACKAGE_NAMES 并在此声明它的
-  // dist/mcp/server.js，而不是把宿主产物挂回 browser-use 名下。
+  // Only assets browser-use itself produces belong here. Since the node_repl host moved to
+  // @zcode/node-repl-host, browser-use no longer emits dist/mcp/server.js; listing nonexistent files
+  // makes remote asset validation report missing ghost paths. Remote workspaces carry no Browser
+  // Use/Computer Use today, so the host runtime stays out of this remote contract: to support remote
+  // bua/cua, add node-repl-host to PACKAGE_NAMES above and declare its dist/mcp/server.js here
+  // instead of pinning host artifacts onto browser-use.
   "browser-use-plugin/docs/api.json",
   "browser-use-plugin/docs/documents.json",
   "browser-use-plugin/docs/overview.md",
-  // 远端缓存若缺少 recording 正文，documents.json 仍会错误宣告该 lookup 可用。
+  // Without the recording body in the remote cache, documents.json still falsely advertises that lookup.
   "browser-use-plugin/docs/recording.md",
   "browser-use-plugin/docs/workflow.md",
   "browser-use-plugin/scripts/browser-client.mjs",
   "browser-use-plugin/skills/control-browser/SKILL.md",
   "browser-use-plugin/skills/web-gui-tester/SKILL.md",
-  // 仅校验 manifest 无法发现文档插件缺少技能正文或视觉评审 Agent。
+  // Manifest-only validation cannot detect a docs plugin missing skill bodies or the visual-review agent.
 ] as const;
 
 export function buildRemoteAgentOfficialPluginDir(remoteProviderDir: string): string {

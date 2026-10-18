@@ -24,8 +24,8 @@ export function buildPluginStoreTryMention({
 }
 
 /**
- * Plugin 商店试用与 Composer @ Picker 共用同一 canonical 引用载体。
- * 示例提示词只是紧随引用的可编辑草稿正文，不创建第二份 Plugin selection state。
+ * The store's try-it flow and the composer @ Picker share one canonical reference carrier.
+ * The sample prompt is editable draft text following the reference; never a second Plugin selection state.
  */
 export function buildPluginStoreTryPrompt({
   item,

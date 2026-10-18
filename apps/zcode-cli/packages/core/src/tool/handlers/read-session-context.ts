@@ -31,7 +31,7 @@ import type { ToolEntry, ToolExecutionContext, ToolHandler } from "../types.js";
 import { auxiliaryModelOptions } from "../../model/auxiliary-model-options.js";
 
 const MAX_READ_SESSION_CONTEXT_MODEL_BYTES = 80_000;
-// 关联对话读取会扫描持久化历史，并可能等待 lite 模型抽取大对话上下文；固定 5 分钟避免大历史误超时。
+// Related-session reads scan persisted history and may wait on a lite-model extraction over large contexts; fixed 5min avoids false timeouts on big histories.
 const DEFAULT_TIMEOUT_MS = 300_000;
 const NO_RELEVANT_CONTEXT = "NO_RELEVANT_CONTEXT";
 

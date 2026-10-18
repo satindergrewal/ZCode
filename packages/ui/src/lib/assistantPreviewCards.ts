@@ -287,7 +287,7 @@ export function buildAssistantPreviewCardsFromReferences(
   for (const match of content.matchAll(LOCALHOST_URL_RE)) {
     const url = normalizeTrailingUrlText(match[0] ?? "");
     if (!isValidAssistantPreviewWebsiteUrl(url)) continue;
-    // Web 远控没有本地端口转发或 HTML 运行环境；在候选上限前过滤，避免隐藏卡片占位。
+    // Web remote control has no port forwarding or HTML runtime; filter pre-cap to avoid hidden placeholders.
     if (options.suppressWebRemoteCards) continue;
     const filePath = resolveLocalhostHtmlChangedPath(url, workspacePath, changedFilePaths, {
       homePath: options.homePath,
@@ -328,8 +328,8 @@ export function buildAssistantPreviewCardsFromReferences(
     productTurnId: "",
     workspacePath,
     fileChanges: changedFilePaths.map((path) => ({ path, state: "active" as const })),
-    // Renderer 仍需展示已解析的 Home-relative/file URL 卡片；Share Service 会在自己的
-    // Host source 上再次执行 workspace 边界校验。
+    // The renderer still shows resolved home-relative/file URL cards; the Share Service re-runs workspace
+    // boundary checks on its own Host source.
     enforceWorkspaceBoundary: false,
   });
   const referencesByPath = new Map(

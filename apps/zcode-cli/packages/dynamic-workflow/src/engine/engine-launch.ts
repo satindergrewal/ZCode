@@ -1,30 +1,30 @@
 // ============================================================
-// run-launched：发起 run 那一轮的宿主元数据 → 事件
+// run-launched: host metadata of the run-spawning turn, as an event
 // ============================================================
-// 引擎不读这些元数据（锚点、阶段表、并行表、子代理选型），只在建 run 那一世紧跟首条
-// `run-started` 逐字转录一次（engine.ts）。构造独立成模块，engine.ts 与 types.ts 才都留在
-// 400 行的 lint 上限之内——它们是两侧同时增长的文件。
+// The engine reads none of this metadata (anchor, phase table, alongside table, subagent model); it transcribes it verbatim once,
+// right after the first run-started, in the run's birth epoch (engine.ts). A separate module keeps engine.ts and types.ts
+// under the 400-line lint cap -- both grow on both sides.
 
 import type { RunEvent } from "./types.js";
 
 /**
- * 发起 run 那一轮随 `run-launched` 同车的宿主元数据（EngineConfig.launch）：锚点 `inputId`、
- * 脚本声明的阶段表 `phaseNames`、与之按位置对齐的 `phaseAlongside`、本 run 子代理的选型
- * `subagentModel`、脚本来自哪个文件 `scriptPath`。五者引擎都不读——字段语义见 types.ts 里
- * `run-launched` 的注释。
+  * Host metadata riding run-launched (EngineConfig.launch): the anchor inputId,
+  * the script-declared phase table phaseNames, the position-aligned phaseAlongside, this run's subagent model
+  * subagentModel, and the script's source file scriptPath. The engine reads none of the five -- field semantics in the
+  * run-launched comment in types.ts.
  */
 export interface RunLaunchConfig {
   inputId: string;
   phaseNames?: string[];
   subagentModel?: string;
-  /** 本 run 脚本文件的绝对路径。 */
+    /** Absolute path of this run's script file. */
   scriptPath?: string;
   phaseAlongside?: number[][];
 }
 
 /**
- * 把 launch 元数据转录成 `run-launched`。未设的键**缺席**而不是落成 undefined 值：读侧
- * （AmendWorkflow 的三态、投影）把「没设」与「设了个空」当两件事。
+  * Transcribe the launch metadata into run-launched. Unset keys are **absent**, never undefined-valued: readers
+  * (AmendWorkflow's tri-state, the projections) treat unset and set-to-empty as different things.
  */
 export function runLaunchedEvent(
   launch: RunLaunchConfig,

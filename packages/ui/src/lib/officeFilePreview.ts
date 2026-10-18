@@ -66,8 +66,9 @@ export function decodeBase64ToArrayBuffer(dataBase64: string): ArrayBuffer {
 }
 
 /**
- * 文档内容来自不受信任的 OOXML relationship，不能把 Target 原样交给 DOM。
- * 只允许普通 Web 外链和当前文档内部锚点；其余协议一律降级为不可点击文本。
+ * Document content comes from untrusted OOXML relationships; never hand the Target to the
+ * DOM as-is. Only plain web links and in-document anchors are allowed; every other protocol
+ * degrades to non-clickable text.
  */
 export function sanitizeDocumentHref(value: unknown): string | null {
   if (typeof value !== "string") {
@@ -79,8 +80,9 @@ export function sanitizeDocumentHref(value: unknown): string | null {
     return null;
   }
 
-  // 控制字符可以把 `java\nscript:` 伪装成看似普通的协议；先拒绝而不是尝试修复。
-  // 逐字符判断避免安全正则本身触发 lint 的 no-control-regex 警告。
+  // Control characters can disguise `java\nscript:` as a plausible-looking scheme; reject
+  // up front instead of repairing. Char-by-char checks avoid no-control-regex lint warnings
+  // from a hand-rolled safety regex.
   for (const character of href) {
     const codePoint = character.codePointAt(0);
     if (
@@ -109,7 +111,7 @@ export function sanitizeDocumentHref(value: unknown): string | null {
 }
 
 /**
- * renderer 写入 DOM 后再做一次安全收口，覆盖 parser 生成的 HTML/SVG 超链接。
+ * Post-DOM-write safety pass in the renderer, covering HTML/SVG hyperlinks produced by the parser.
  */
 const DOCUMENT_LINK_SELECTOR = "a[href], a[xlink\\:href]";
 
@@ -142,7 +144,7 @@ function sanitizeDocumentLinks(root: ParentNode): void {
   root.querySelectorAll(DOCUMENT_LINK_SELECTOR).forEach(sanitizeDocumentLinkElement);
 }
 
-/** 为各 Office renderer 安装统一的 DOM 净化和点击阻断；返回卸载函数。 */
+/** Installs shared DOM sanitization and click interception for every Office renderer; returns the teardown. */
 export function installDocumentLinkSafety(
   root: HTMLElement,
   onOpenBrowserUrl?: (url: string) => void,
@@ -164,7 +166,8 @@ export function installDocumentLinkSafety(
       return;
     }
 
-    // 文档外链不能直接导航主 renderer；统一交给受控 Browser/外部浏览器入口。
+    // External document links must not navigate the main renderer; route them through the
+    // controlled Browser/external-browser entry points.
     event.preventDefault();
     onOpenBrowserUrl?.(safeHref);
   };
@@ -187,8 +190,9 @@ export function installDocumentLinkSafety(
               }
             }
           }
-          // 第三方 renderer 分批挂载或虚拟化重挂载时，每批 mutation 都曾扫描
-          // 完整预览 DOM，导致大文档重复 O(全树) 查询。这里只扫描实际新增的子树。
+          // Batched or virtualized remounts in third-party renderers used to rescan the
+          // whole preview DOM per mutation batch, repeating O(whole-tree) scans on large
+          // documents. Scan only the actually added subtrees.
           addedRoots.forEach(sanitizeDocumentLinks);
         });
   observer?.observe(root, {

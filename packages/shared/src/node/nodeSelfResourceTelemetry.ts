@@ -1,9 +1,9 @@
 /**
- * host 与 scheduler 两个 utilityProcess 自采 CPU / 内存的共用换算逻辑
+ * Shared conversion for the host and scheduler utilityProcesses' self-sampled CPU/memory.
  *
- * 只做差分换算：不持有定时器、也不负责发送。host 复用内存诊断日志既有的 60 秒定时器，
- * scheduler 自己起唯一的一个 unref 定时器，两边都把同一次 `process.memoryUsage()` 读数
- * 交给这里换算成一条样本。零外部进程，只用进程内 API。
+ * Differencing only: no timers, no sending. The host reuses the memory diagnostic log's 60s timer;
+ * the scheduler owns a single unref timer; both hand the same process.memoryUsage() reading here for one sample.
+ * Zero subprocesses, in-process APIs only.
  */
 
 import { availableParallelism } from "node:os";
@@ -15,7 +15,7 @@ interface NodeCpuUsageSnapshot {
   system: number;
 }
 
-/** Node 进程自采周期：60 秒，与本地内存诊断日志同节拍。 */
+/** Node self-sample period: 60s, in step with the local memory diagnostic log. */
 export const NODE_SELF_RESOURCE_SAMPLE_INTERVAL_MS = 60_000;
 
 export interface NodeSelfResourceSamplerOptions {
@@ -26,8 +26,8 @@ export interface NodeSelfResourceSamplerOptions {
 
 export interface NodeSelfResourceSampler {
   /**
-   * 用调用方刚读到的 `memoryUsage` 换算一条样本。
-   * 基线不可用（首次读数失败、时钟未前进、CPU 计数回退）时返回 null，只丢当前样本。
+   * Convert the caller's fresh memoryUsage into one sample.
+   * null when the baseline is unusable (first-read failure, stalled clock, CPU counter regression); only this sample drops.
    */
   sample(memoryUsage: NodeJS.MemoryUsage): NodeSelfResourceSample | null;
 }
@@ -37,7 +37,7 @@ interface SamplerBaseline {
   monotonicTimeNs: bigint;
 }
 
-/** CPU 百分比保留 4 位小数，与 CLI 自采样本同口径。 */
+/** CPU percent to 4 decimals, same convention as the CLI's self-samples. */
 function roundResourceMetric(value: number): number {
   return Math.round(value * 10_000) / 10_000;
 }
@@ -60,7 +60,7 @@ export function createNodeSelfResourceSampler(
     }
   };
 
-  // 构造时就建立基线，第一个 60 秒 tick 才能直接产出样本而不是空转一轮。
+  // Baseline at construction, so the first 60s tick yields a sample instead of idling a round.
   let baseline = readBaseline();
 
   return {

@@ -51,7 +51,7 @@ export function formatImportSummary(
   ) {
     return formatMessage({ id: "settings.browser.import.partialAppBound" }, values);
   }
-  // Rebase 后的产品语义要求成功态只展示实际导入数量；普通 skipped/failed 详情留在安全日志。
-  // App-Bound 授权/校验失败是用户刚刚显式确认的动作，单独保留部分成功提示，避免误以为 Cookie 已导入。
+  // Post-rebase semantics: success shows only actual import counts; plain skipped/failed detail stays in the safe log.
+  // App-Bound auth/verify failures follow an explicit user action; keep the partial-success notice so users never assume cookies imported.
   return formatMessage({ id: "settings.browser.import.success" }, values);
 }

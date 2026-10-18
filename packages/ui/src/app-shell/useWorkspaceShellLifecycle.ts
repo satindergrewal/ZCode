@@ -31,12 +31,14 @@ export function useWorkspaceShellLifecycle({
 
     previousWorkspaceAbsPathRef.current = workspaceAbsPath;
 
-    // Root 之前依赖按 workspacePath 改 key 来"切工作区就整棵重建 App"，
-    // 这样虽然顺手清空了局部状态，但也会把侧边栏 / TaskList 一起卸载，导致切任务时出现整列闪烁。
-    // 现在改成保留同一个 App 实例后，只显式清理真正和旧 workspace 强绑定的状态，
-    // 避免把上一项目的代码预览或测试覆盖消息串到新项目里。
-    // side pane 现在按 workspaceIdentity/workspacePath 做内存恢复。
-    // 这里不能再按 workspacePath 变化清掉 Git/source 或 tabs，否则跨 workspace 切回时会覆盖缓存。
+    // Root used to rely on keying by workspacePath so a workspace switch remounted the
+    // whole App. That wiped local state but also unmounted the sidebar/TaskList, flashing
+    // whole columns on task switches. With one persistent App instance, only state truly
+    // bound to the old workspace is cleaned here, so the previous project's code previews or
+    // test-override messages cannot bleed into the new one.
+    // The side pane now restores from memory per workspaceIdentity/workspacePath.
+    // Do not clear Git/source or tabs on workspacePath change, or switching back across
+    // workspaces would overwrite their caches.
     setBrowserNavigationRequest(null);
     setTestMessages(null);
   }, [setBrowserNavigationRequest, setTestMessages, workspaceAbsPath]);
@@ -55,11 +57,11 @@ export function useWorkspaceShellLifecycle({
         return;
       }
 
-      // 预热 session 会让没有 task 的 workspace 也常驻一个 ZCode Agent 进程。
-      // 如果切走 tab 时不清理这类"只预热、未真正使用"的会话，来回切多个 workspace 后，
-      // 背景里会留下多条空转进程。这里在离开当前 workspace 时做一次 best-effort 回收。
-      // 另外必须把 workspace 初始化状态同步回退成 idle，否则下一次进入页面仍可能看到
-      // 上一次残留的 ready/failed。单 ZCode Agent 下这里不再按 provider 循环清理。
+      // A prewarmed session keeps a ZCode Agent process alive even with no task. Leaving
+      // such "prewarmed, never used" sessions running while switching tabs accumulates
+      // idle processes across workspace switches; reclaim best-effort on exit. The
+      // workspace init state must also be reset to idle, or the next entry could still see
+      // the stale ready/failed. With a single ZCode Agent there is no per-provider loop.
       const workspaceInitState = getWorkspaceInitState(currentWorkspaceState);
       if (workspaceInitState.status === "idle") {
         return;
@@ -67,7 +69,7 @@ export function useWorkspaceShellLifecycle({
 
       const provider = currentWorkspaceState.selectedProvider;
       logger.info(
-        `[App] 回退 workspace 预热状态 workspace=${workspaceAbsPath} provider=${provider}`,
+        `[App] revert workspace warmup state workspace=${workspaceAbsPath} provider=${provider}`,
       );
       useZCodeSessionStore
         .getState()
@@ -84,7 +86,7 @@ export function useWorkspaceShellLifecycle({
         })
         .catch((error: unknown) => {
           logger.error(
-            `[App] 释放 workspace 预热态失败 workspace=${workspaceAbsPath} provider=${provider}:`,
+            `[App] failed to release workspace warmup state workspace=${workspaceAbsPath} provider=${provider}:`,
             error,
           );
         });

@@ -13,14 +13,15 @@ export function SidePaneTerminalPane({
 }: {
   services: IServiceAccessor;
   /**
-   * 保活：sessionId 复用 tab.id（跨 workspace 稳定），同时作为 TerminalSession 的 persistentKey。
-   * 让 xterm+PTY 所有权进 sidePaneTerminalSessionRegistry 模块级单例，
-   * 组件卸载只 detach、不 dispose；重挂按 key 复用，scrollback 跨 workspace 保活。
+   * Keep-alive: the sessionId reuses tab.id (stable across workspaces) and doubles as the
+   * TerminalSession persistentKey. xterm+PTY ownership lives in the module-level
+   * sidePaneTerminalSessionRegistry singleton; unmount only detaches, remounts reuse by key,
+   * and scrollback survives across workspaces.
    */
   sessionId: string;
   /**
-   * workspace 身份隔离 key（= workspaceIdentity?.trim() || workspacePath）。
-   * 写入 registry entry.workspaceKey，workspace tab 关闭时按此批量回收 PTY。
+   * Workspace identity key (= workspaceIdentity?.trim() || workspacePath). Stored as
+   * registry entry.workspaceKey; closing a workspace tab reaps its PTYs by this key.
    */
   workspaceKey?: string;
   cwd?: string;
@@ -29,8 +30,8 @@ export function SidePaneTerminalPane({
   onOpenBrowserUrl: (url: string) => void;
 }) {
   const handleShellLabelChange = useCallback(() => {
-    // 业务说明：side pane 外层 tab 已经承载终端标题，这里只需要单个 shell 实例，
-    // 不再显示或同步第二层 terminal tab 标题，避免形成嵌套 tabs。
+    // The outer side pane tab already carries the terminal title, so this pane hosts a single
+    // shell and renders/syncs no second tab bar — no nested tabs.
   }, []);
 
   return (

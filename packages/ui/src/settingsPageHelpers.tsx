@@ -1,4 +1,4 @@
-/* oxlint-disable eslint(max-lines) -- settings helper 聚合多个设置分组；终端、网络与自动归档多侧能力暂时超过行数限制。 */
+/* oxlint-disable eslint(max-lines) -- aggregates several settings groups; terminal, network and auto-archive push it past the line budget for now. */
 import type {
   IntegratedTerminalShellOption,
   IntegratedTerminalShellSelection,
@@ -177,8 +177,9 @@ export function GeneralSectionContent({
 }) {
   const { intl } = useZCodeIntl();
   const hasServices = Boolean(useOptionalServices());
-  // 部分 SSR 单测会用精简 props 直接渲染本组件，新增终端设置项后旧 helper 未必同步传值。
-  // 这里把运行时缺省值兜到“继承系统 profile”，避免 undefined.trim() 把无关测试打断。
+  // Some SSR tests render this with minimal props, and new terminal settings may not be threaded
+  // through old helpers. Default to inheriting the system profile so undefined.trim() never
+  // breaks unrelated tests.
   const [localTerminalFontFamily, setLocalTerminalFontFamily] = useState(terminalFontFamily);
 
   useEffect(() => {
@@ -503,7 +504,7 @@ export function GeneralSectionContent({
             />
           }
         />
-        {/* No Proxy 与 HTTP 代理共同决定同一出口策略，必须贴在代理地址下面。*/}
+        {/* No Proxy and the HTTP proxy decide the same egress policy; keep it directly under the address field. */}
         <SettingsRow
           label={intl.formatMessage({ id: "settings.httpProxyNoProxy" })}
           description={intl.formatMessage({
@@ -538,7 +539,7 @@ export function GeneralSectionContent({
             />
           }
         />
-        {/* 自定义 CA 属于 HTTP 代理的同一网络出口策略，必须跟代理输入放在同一卡片里。*/}
+        {/* Custom CAs belong to the same HTTP-proxy egress policy; keep them in the same card as the proxy input. */}
         <SettingsRow
           label={intl.formatMessage({ id: "settings.httpProxyCaCertPath" })}
           description={intl.formatMessage({

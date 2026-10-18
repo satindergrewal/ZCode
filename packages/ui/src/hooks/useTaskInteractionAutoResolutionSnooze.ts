@@ -14,8 +14,9 @@ interface TaskInteractionAutoResolutionTarget {
 }
 
 /**
- * 侧栏 task 可能来自本地、远端、timeline 或 pinned 列表；暂停命令必须按 workspace identity
- * 找到原 host，不能因为当前激活 tab 不同而发到当前窗口的 service。
+ * Sidebar tasks may come from local, remote, timeline, or pinned lists; the snooze command
+ * must reach the originating host via workspace identity, never the current window's
+ * service just because a different tab is active.
  */
 export function useTaskInteractionAutoResolutionSnooze(
   target: TaskInteractionAutoResolutionTarget,
@@ -36,8 +37,9 @@ export function useTaskInteractionAutoResolutionSnooze(
           workspacePath: target.workspacePath,
           workspaceIdentity,
           remoteSessionId,
-          // 该 hook 的 target 类型只携带 task 路由字段；remoteSessionId 已存在就足以
-          // 表明旧数据可使用 path 兼容恢复，不需要伪造具体 RemoteTarget。
+          // This hook's target type carries only task-routing fields; a present
+          // remoteSessionId is already proof that legacy data can restore via the path
+          // fallback, with no need to fabricate a concrete RemoteTarget.
           remoteTarget: remoteSessionId ? true : undefined,
         },
         state,
@@ -45,8 +47,9 @@ export function useTaskInteractionAutoResolutionSnooze(
       if (resolvedRemoteSessionId) {
         return state.sessionsById[resolvedRemoteSessionId]?.services ?? null;
       }
-      // 远程 task 找不到原 host 时禁止回退本地 service，否则相同 taskId
-      // 可能被投递到错误 workspace；保留可重试失败，等待远端 attachment 恢复。
+      // Never fall back to the local service when a remote task's host is missing, or the
+      // same taskId could be delivered to the wrong workspace; keep the retryable failure
+      // and wait for the remote attachment to recover.
       return null;
     },
     [contextServices, isRemoteTarget, remoteSessionId, target.workspacePath, workspaceIdentity],
@@ -57,7 +60,7 @@ export function useTaskInteractionAutoResolutionSnooze(
     async (interactionId: string): Promise<boolean> => {
       const agentService = targetServices?.zcodeAgentService;
       if (!agentService) {
-        logger.warn("[task-interaction] 暂停自动结束时目标 workspace 未连接", {
+        logger.warn("[task-interaction] target workspace not connected for auto-resolution snooze", {
           interactionId,
           sessionId: target.sessionId,
           workspaceKey: workspaceIdentity ?? target.workspacePath,
@@ -66,7 +69,7 @@ export function useTaskInteractionAutoResolutionSnooze(
       }
       if (!loggedInteractionIdsRef.current.has(interactionId)) {
         loggedInteractionIdsRef.current.add(interactionId);
-        logger.debug("[task-interaction] 用户从侧栏请求暂停自动结束", {
+        logger.debug("[task-interaction] user requested auto-resolution snooze from sidebar", {
           interactionId,
           sessionId: target.sessionId,
           source: "taskBadge",

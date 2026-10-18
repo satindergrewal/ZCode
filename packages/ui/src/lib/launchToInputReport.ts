@@ -5,7 +5,8 @@ export function shouldReportLaunchToInput(state: {
   welcomeScreenOpen: boolean;
   alreadyReported: boolean;
 }): boolean {
-  // 门禁清除 = RootStartupLoading 退场、输入框挂载;welcome 时虽门禁清除但显示登录页、无输入框,不算"能输入"。
+  // Gate cleared = RootStartupLoading exited and the composer mounted. On welcome the gate
+  // clears too but the login page shows with no composer, which does not count as "can type".
   return !state.alreadyReported && !state.isStartupRenderBlocked && !state.welcomeScreenOpen;
 }
 

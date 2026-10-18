@@ -53,8 +53,8 @@ interface AboutSnapshotOptions {
 }
 
 const ABOUT_APPLICATION_NAME = "ZCode Desktop App";
-// 自定义 About 内容本体是 256x280；原生窗口如果同尺寸会让内容贴满透明窗口边界。
-// 这里给 BrowserWindow 额外留出背景呼吸空间，避免正式 About 看起来比 demo 更局促。
+// // The About canvas is 256x280; an equally sized native window crams content against the transparent edges.
+// Pad the BrowserWindow so production About breathes more than the demo did.
 const ABOUT_WINDOW_WIDTH = 256;
 const ABOUT_WINDOW_HEIGHT = 312;
 const ABOUT_MESSAGES: Record<
@@ -68,11 +68,11 @@ const ABOUT_MESSAGES: Record<
   }
 > = {
   "zh-CN": {
-    aboutTitle: "关于 ZCode",
-    versionLabel: "版本",
-    okButtonLabel: "确定",
-    optimizedForAppleSilicon: "已针对 Apple Silicon 优化。",
-    copyright: (year) => `版权所有 © ${year} ZCode。`,
+    aboutTitle: "About ZCode",
+    versionLabel: "Version",
+    okButtonLabel: "OK",
+    optimizedForAppleSilicon: "Optimized for Apple silicon.",
+    copyright: (year) => `Copyright © ${year} ZCode.`,
   },
   "en-US": {
     aboutTitle: "About ZCode",
@@ -120,9 +120,9 @@ function resolveBuildMetadataPath(): string {
 export function readBuildMetadata(
   filePath = resolveBuildMetadataPath(),
 ): DesktopBuildMetadata | null {
-  // 之前 About 直接读取编译时注入的常量，commit/time 只能代表 tsup 那一刻。
-  // 问题原因：构建和打包是分步执行的，安装包里的 about 需要的是“最终产物”的统一元数据，而不是某个编译子步骤的快照。
-  // 这里优先读打包前生成的 build-meta.json；只有缺文件时才回退到编译时常量。
+  // About used to read compile-time constants, so commit/time reflected only the tsup moment.
+  // Build and package run separately; the installed About needs final-artifact metadata, not one sub-step's snapshot.
+  // Prefer the pre-package build-meta.json, falling back to compile-time constants only when missing.
   return readJsonFile<DesktopBuildMetadata>(filePath);
 }
 
@@ -224,9 +224,9 @@ export async function showAboutDialog(
     buildMetadata: readBuildMetadata(),
   });
   const aboutMessages = getAboutMessages(locale);
-  // 之前只有 macOS 使用自绘 About，Windows/Linux 仍走原生 message box。
-  // 问题原因：各平台原生消息框的排版、图标和按钮样式差异很大，无法复用 macOS 参考样式。
-  // 这里统一使用自绘 modal，保证 About 的品牌展示和多语言文案在三端一致。
+  // macOS once used the custom About while Windows/Linux kept native message boxes.
+  // Native boxes diverge too much in layout/icon/buttons to reuse the macOS reference.
+  // The custom modal keeps branding and localized copy identical on all three platforms.
   const iconPath = resolveAboutIconPath(app.isPackaged);
   const aboutWindow = new BrowserWindow({
     width: ABOUT_WINDOW_WIDTH,

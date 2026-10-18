@@ -23,9 +23,9 @@ import {
   type StrandRecord,
 } from "./causality-order-strands.js";
 
-// causality-order.ts 顶到 oxlint max-lines 上限（400 行），把调用这一组（调用表达式
-// 的访问器、通用调用规则 applyAt、函数体内联 inlineBody）拆到本文件；公开面仍从
-// causality-order.ts 导出。递归回 walk 一律经 `state.walk`，本文件不 import walk 模块。
+// causality-order.ts sits at oxlint's max-lines cap (400); the call group (the call-expression
+// visitor, the generic call rule applyAt, in-body inlining inlineBody) lives here; the public surface still
+// exports from causality-order.ts. Recursion back into walk always via state.walk; no walk import in this file.
 
 export function walkCall(
   state: TraceState,

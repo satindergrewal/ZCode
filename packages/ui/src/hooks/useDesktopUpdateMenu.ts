@@ -17,7 +17,7 @@ export function useDesktopUpdateMenu(isDesktop: boolean) {
     if (!visible) return;
     let active = true;
     let eventReceived = false;
-    // main 持有更新状态；先订阅，避免较慢的初始快照覆盖已经收到的新状态。
+    // main owns the update state; subscribe first so a slow initial snapshot never overwrites newer received state.
     const dispose = platform.onUpdateStateChanged?.((payload) => {
       eventReceived = true;
       if (active) setState(payload);
@@ -26,7 +26,7 @@ export function useDesktopUpdateMenu(isDesktop: boolean) {
       (payload) => {
         if (active && !eventReceived) setState(payload);
       },
-      (error) => logger.warn("[HelpMenu] 同步自动更新状态失败", { error }),
+      (error) => logger.warn("[HelpMenu] Failed to sync the auto-update state", { error }),
     );
     return () => {
       active = false;

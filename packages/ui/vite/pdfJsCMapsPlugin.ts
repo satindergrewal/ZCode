@@ -31,8 +31,8 @@ export async function listPdfJsCMapAssets(): Promise<PdfJsCMapAsset[]> {
 export function pdfJsCMapsPlugin(): Plugin {
   return {
     name: "zcode:pdfjs-cmaps",
-    // buildStart 在 Vite serve 也会执行，但开发态不支持 emitFile。
-    // CMap 产物只在 generateBundle 输出，开发态继续由下方中间件提供。
+    // Vite serve runs buildStart too, but dev mode cannot emitFile.
+    // CMap assets are only emitted in generateBundle; dev mode keeps using the middleware below.
     async generateBundle() {
       for (const asset of await listPdfJsCMapAssets()) {
         this.emitFile({
@@ -63,9 +63,10 @@ export function pdfJsCMapsPlugin(): Plugin {
           return;
         }
 
-        // PDF.js 不会把预定义 CMap 打进 worker；ReportLab 的 STSong-Light
-        // 又只引用 UniGB-UCS2-H 而不嵌入映射。开发态必须与生产构建一样提供本地 CMap，
-        // 否则浏览器原生预览正常，但应用内 PDF.js 会直接丢失整段中文。
+        // PDF.js does not bundle predefined CMaps into the worker, and ReportLab's STSong-Light
+        // references UniGB-UCS2-H without embedding the mapping. Dev mode must serve local CMaps
+        // exactly like the production build, or the in-app PDF.js viewer drops whole CJK runs
+        // even though native browser preview looks fine.
         readFile(join(cMapsDirectory, fileName))
           .then((source) => {
             response.statusCode = 200;

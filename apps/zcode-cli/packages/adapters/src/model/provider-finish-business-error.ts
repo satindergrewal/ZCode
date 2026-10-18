@@ -28,8 +28,8 @@ export function detectProviderBusinessFinishError(
     normalizeStringish(record.providerCode) ??
     normalizeStringish(errorPayload?.code);
 
-  // AI SDK 的 error chunk 常带普通 Error.message（如 rate limited），没有业务码；
-  // 仅凭 providerMessage 命中会把可重试限流误判成 ProviderBusinessError。
+  // AI SDK error chunks often carry a plain Error.message (rate limited) with no business code;
+  // matching on providerMessage alone would misread retryable rate limits as ProviderBusinessError.
   const hasBusinessSignal =
     providerCode !== undefined ||
     rawFinishReason === "provider_success_false" ||
@@ -53,8 +53,8 @@ export function detectProviderBusinessFinishError(
         : undefined),
     providerRequestId: extracted.providerRequestId,
     responseBodySummary: extracted.responseBodySummary,
-    // AI SDK 的 error chunk 会把 fetch 层业务错误重新包一层；
-    // 重建 ProviderBusinessError 时不带 responseHeaders，会让 retry-after 在重试计算前丢失。
+    // AI SDK error chunks re-wrap fetch-layer business errors;
+    // rebuilding ProviderBusinessError without responseHeaders loses retry-before math.
     responseHeaders: extracted.responseHeaders,
     responseStatus: extracted.responseStatus,
     statusCode: extracted.statusCode,
@@ -149,8 +149,8 @@ function collectCandidateRecords(record: Record<string, unknown>): Record<string
       currentRecord.choices,
     );
 
-    // zcode-plan 等业务错误可能只出现在 AI SDK finish chunk 的深层 JSON（如 response.body），
-    // 仅沿固定字段链扫描会漏掉 3007，最终让 core 误判为 suspicious empty。
+    // zcode-plan-class business errors may hide deep in the AI SDK finish chunk JSON (response.body);
+    // fixed-field chains miss 3007 and core reports suspicious empty.
     for (const nested of Object.values(currentRecord)) {
       if (nested && typeof nested === "object") {
         queue.push(nested);
@@ -170,13 +170,13 @@ function readProviderCode(record: Record<string, unknown>): string | undefined {
     normalizeProviderCode(contextRecord?.providerCode) ??
     normalizeProviderCode(record.error_code) ??
     normalizeProviderCode(errorRecord?.error_code) ??
-    // ProviderBusinessError 二次进入 AI SDK chunk 时，外层 code 是包装类型；
-    // 真实上游码在 providerCode/嵌套 body 中，不能让包装码提前截断扫描。
+    // Once ProviderBusinessError re-enters an AI SDK chunk the outer code is the wrapper type;
+    // the real upstream code is in providerCode/nested body, never truncate the scan on the wrapper.
     normalizeProviderCode(record.code) ??
     normalizeProviderCode(errorRecord?.code) ??
     normalizeProviderCode(contextRecord?.code) ??
-    // BigModel/Z.AI 的 SSE error chunk 有时只有 `[1302][...][request_id]` message，
-    // 没有结构化 code；只解析这个强格式前缀，避免把普通 rate limit 文案误判成业务码。
+    // BigModel/Z.AI SSE error chunks sometimes carry only a `[1302][...][request_id]` message
+    // without structured codes; parse only this strict prefix so plain rate-limit copy stays a normal retry.
     readBigModelBracketedBusinessCode(record.message) ??
     readBigModelBracketedBusinessCode(record.providerMessage) ??
     readBigModelBracketedBusinessCode(errorRecord?.message) ??

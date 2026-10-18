@@ -1,8 +1,8 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { ModelSelection } from "@zcode/shared";
 
-// 冻结 0002 的发布前已裁决编码；不能调用将来可能修改的运行时 parser/身份表。
-// 保持与旧 decodeCustomModelValue / parseModelPickerValue 的转义和分隔优先级一致。
+// Freeze 0002's pre-release encoding; never call runtime parsers/identity tables that may change later.
+// Keep escape/separator precedence identical to legacy decodeCustomModelValue / parseModelPickerValue.
 const providerNames: Readonly<Record<string, string>> = {
   "builtin:bigmodel": "bigmodel-api",
   "builtin:zai": "zai-api",
@@ -55,7 +55,7 @@ function decodeLegacySelection(row: LegacySelectionRow): ModelSelection | undefi
       model = model.slice(0, levelSeparator);
     }
   } else if (["glm", "zcode"].includes(provider)) {
-    // 旧 provider=glm/zcode 是执行后端，不是供应商身份。
+    // Legacy provider=glm/zcode is the execution backend, not a vendor identity.
     return undefined;
   }
   provider = provider.trim();
@@ -67,9 +67,9 @@ function decodeLegacySelection(row: LegacySelectionRow): ModelSelection | undefi
 }
 
 /**
- * 冻结 0002 的一次转换：运行 Reader 只看新列，旧三列原样保留。
- * 有旧来源允许重建未发布目标值；无法确定身份留 SQL NULL，默认语义写 JSON null。
- * 必须在库级 migration 事务内调用，不得恢复逐次读取导入。
+ * The one-shot 0002 conversion: the runtime Reader reads new columns; legacy three stay untouched.
+ * Legacy sources may rebuild unpublished targets; indeterminate identity stays SQL NULL, defaults written as JSON null.
+ * Call within the DB-level migration transaction; never restore per-read imports.
  */
 export function importLegacyAutomationSelections(db: DatabaseSync): void {
   const rows = db
@@ -80,14 +80,14 @@ export function importLegacyAutomationSelections(db: DatabaseSync): void {
   for (const row of rows) {
     const decoded = decodeLegacySelection(row);
     if (!decoded) {
-      // 有旧显式意图但无法确定身份，不保留未发布中间态的“默认”，避免静默换模型。
+      // Legacy explicit intent with indeterminate identity: keep no unpublished "default" middle state, avoiding silent model switches.
       if (row.model?.trim())
         db.prepare("UPDATE automations SET model_selection=NULL WHERE automation_id=?").run(
           row.automation_id,
         );
       continue;
     }
-    // 外层 IMMEDIATE 事务保证旧来源和写入同一快照；旧列/时间戳都不修改。
+    // The outer IMMEDIATE transaction reads legacy and writes in one snapshot; legacy columns/timestamps untouched.
     db.prepare(
       `UPDATE automations SET model_selection = ?
        WHERE automation_id = ?

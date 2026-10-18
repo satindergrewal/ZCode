@@ -16,7 +16,7 @@ export interface CoordinatorResponseResult {
 }
 
 export interface CoordinatorResponsePort {
-  // child session/agent/parent identity 由 port closure 绑定，模型不能覆盖路由。
-  // 同步返回确保 response command 入父队列后，child tool result 才能完成。
+  // child session/agent/parent identity is bound by the port closure; the model cannot override routing.
+  // The synchronous return ensures the response command is queued on the parent before the child tool result completes.
   respond(request: CoordinatorResponseRequest): CoordinatorResponseResult;
 }

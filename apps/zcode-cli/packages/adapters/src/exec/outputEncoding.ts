@@ -71,10 +71,10 @@ export function applyExecutionTextEnv(
 ): void {
   const fallbackLocale = resolveFallbackUtf8Locale(env, platform);
 
-  // Bash 工具的 stdout/stderr 是给 UI 和模型消费的 Unicode 文本。
-  // macOS GUI/远程 host 如果继承到 C/POSIX locale，wc、ls 等系统工具会先把中文路径替换成 "??"；
-  // 这时前端已经拿不到原始字符，不能靠 React 渲染兜底恢复。这里仅在 locale 缺失或明确为 C/POSIX 时
-  // 给子命令补 UTF-8 locale，并让 overlay 仍可在后面显式覆盖。
+  // Bash stdout/stderr is Unicode text consumed by the UI and the model.
+  // macOS GUI/remote hosts inheriting a C/POSIX locale make wc, ls and friends render CJK paths as "?";
+  // the frontend then cannot recover the original characters. Only when the locale is missing or C/POSIX,
+  // inject a UTF-8 locale for child commands, letting overlays still override it later.
   if (isMissingOrCLocale(getEnvValue(env, "LANG", platform))) {
     setEnvKey(env, "LANG", fallbackLocale, platform);
   }

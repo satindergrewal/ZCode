@@ -1,8 +1,8 @@
-// 会话事件 → workflowRuns 镜像的桥（app-events.ts 的 dwf case 只调这一个函数）。
+// Bridge from session events to the workflowRuns mirror (the dwf case in app-events.ts calls just this function).
 //
-// 单独成模块的理由有两个：把 contracts 的载荷类型收在这里，让 app-workflow-mirror.ts
-// 保持「只依赖 @zcode/shared」的纪律（与共享 reducer 不得反向依赖 contracts 同一姿态）；
-// 顺带让 app-events.ts 的 switch 保持在 max-lines 之内。
+// Two reasons for a dedicated module: keep contracts payload types here so app-workflow-mirror.ts keeps its
+// "depend on @zcode/shared only" discipline (same stance as shared reducers never depending back on contracts);
+// and keep app-events.ts's switch within max-lines.
 import type { DynamicWorkflowRunProgressPayload } from "@zcode/contracts";
 import type { WorkflowRunProgressEnvelope } from "@zcode/shared/zcode-protocol-v4";
 import { applyWorkflowProgressToMirror, type TuiWorkflowMirror } from "./app-workflow-mirror.js";
@@ -12,20 +12,20 @@ export type WorkflowMirrorSetter = (
 ) => void;
 
 /**
- * 把一条 `dynamic_workflow_run_progress` 事件归约进镜像。
+ * Reduce one `dynamic_workflow_run_progress` event into the mirror.
  *
- * 投影侧的对应物是 bootstrap 的 `onDynamicWorkflowRunProgress`——两边调**同一个**共享 reducer，
- * 所以 TUI 与桌面不可能对同一串事件算出不同状态。
+ * The bootstrap counterpart is `onDynamicWorkflowRunProgress` -- both call the **same** shared reducer, so TUI and
+ * desktop cannot derive different state from the same event stream.
  */
 export function applyWorkflowProgressEvent(
   payload: unknown,
   setWorkflowMirror?: WorkflowMirrorSetter,
 ): void {
   if (!setWorkflowMirror) return;
-  // 先转 contracts 的有界 payload、再赋给 shared 的结构化入参：这行赋值是「两边形状不漂移」
-  // 的编译期闸（与 bootstrap 的 v4 投影同一姿态）。
+  // Cast to the bounded contracts payload first, then assign into the shared structured input: this assignment is the
+  // compile-time gate against shape drift (same stance as bootstrap's v4 projection).
   const envelope: WorkflowRunProgressEnvelope = payload as DynamicWorkflowRunProgressPayload;
-  // 无变化时 applyWorkflowProgressToMirror 回传同一个引用，React 因此直接跳过重渲染：
-  // 共享 reducer 的「null = 语义无变化」在 UI 侧就是「不重绘」。
+  // With no change, applyWorkflowProgressToMirror returns the same reference, so React skips the re-render:
+  // the shared reducer's "null = no semantic change" is, UI-side, simply "no repaint".
   setWorkflowMirror((current) => applyWorkflowProgressToMirror(current, envelope));
 }

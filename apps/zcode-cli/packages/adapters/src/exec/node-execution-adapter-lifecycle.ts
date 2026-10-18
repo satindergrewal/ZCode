@@ -148,7 +148,7 @@ export class NodeExecutionAdapterLifecycle extends NodeExecutionAdapterRun {
       ? {
           isBackgrounded: () => state === "backgrounded",
           onExit: () => {
-            // root 已退出后只是异步读取结果，不能被前台 deadline 再转为后台任务。
+            // After root exit this only reads results async; the foreground deadline must not background it again.
             if (state === "preparing" || state === "foreground") {
               state = "settling";
               clearForegroundDeadline();
@@ -190,9 +190,9 @@ export class NodeExecutionAdapterLifecycle extends NodeExecutionAdapterRun {
     const commitBackground = () => {
       if (state !== "foreground" || controller.signal.aborted) return false;
 
-      // 旧 explicit background 复用了通用 start()，foreground timeout 与
-      // parent turn abort 会继续挂在子进程上。这里先原子提交状态，再同步清理 deadline、
-      // 脱离 parent abort 并登记 task，避免 abort/completion 在提交缝隙里误杀后台进程。
+      // Legacy explicit background reused generic start(), leaving foreground timeout and
+      // parent turn abort attached to the child. Commit state atomically first, then clear the deadline,
+      // detach parent abort and register the task, so abort/completion cannot kill it in the commit gap.
       state = "backgrounded";
       bashLifecycle?.onBackgrounded?.();
       clearForegroundDeadline();
@@ -251,7 +251,7 @@ export class NodeExecutionAdapterLifecycle extends NodeExecutionAdapterRun {
         if (state === "backgrounded") return;
         return options.onEvent?.(event);
       },
-      // 通用 lifecycle 仍使用独立 collector 和共享硬预算；Bash 由文件 watchdog 处理。
+      // Generic lifecycle keeps a dedicated collector and shared hard budget; Bash is handled by the file watchdog.
       sharePersistedOutputLimitAcrossStreams: true,
       shouldStopOnPersistedLimit: () => state === "backgrounded",
       shouldRetainExecutionAfterRootExit: () => state === "backgrounded",
@@ -276,8 +276,8 @@ export class NodeExecutionAdapterLifecycle extends NodeExecutionAdapterRun {
         originalMaxArtifactBytes,
         originalPersistOutput,
       );
-      // 前台完成仍复用 BackgroundTaskRecord；只结算 outcome 会让
-      // record.completion 永久保持 pending，并被异步资源检测识别为泄漏。
+      // Foreground completion still reuses BackgroundTaskRecord; settling only the outcome would leave
+      // record.completion pending forever, flagged as a leak by async resource detection.
       this.finalizeBackgroundTaskRecord(record, result);
       resolveOutcome({
         kind: "foreground",
@@ -309,7 +309,7 @@ export class NodeExecutionAdapterLifecycle extends NodeExecutionAdapterRun {
       !record.outputPath
     )
       return { kind: "unavailable", workId };
-    // 先冻结状态，再读文件；若读取期间退出，下次查询才能返回终态及其最终尾窗。
+    // Freeze state before reading files; only then can a later query return a terminal state and final tail.
     const snapshot = this.snapshot(record);
     try {
       const output = await readBashOutput(
@@ -321,7 +321,7 @@ export class NodeExecutionAdapterLifecycle extends NodeExecutionAdapterRun {
       return {
         kind: "output",
         workId,
-        // Stop 先标记 cancelled，结算稍后才完成；不能让详情提前停止最终尾读。
+        // Stop marks cancelled first and settles later; do not let details stop the final tail read early.
         status: snapshot.result ? snapshot.status : "running",
         output: output.text,
         truncated: output.truncated,

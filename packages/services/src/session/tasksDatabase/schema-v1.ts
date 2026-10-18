@@ -1,4 +1,4 @@
-// 0001 接管已有分散建表；发布后保持声明不变，后续变更新增 migration。
+// 0001 adopts the pre-existing scattered tables; the declaration is frozen post-release, later changes add migrations.
 export const TASK_INDEX_SCHEMA = `
       CREATE TABLE IF NOT EXISTS tasks (
         workspace_key TEXT NOT NULL,

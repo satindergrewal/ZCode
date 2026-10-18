@@ -9,11 +9,12 @@ import { cn } from "@/components/lib/utils.js";
 import type { StepRunStatus } from "@/components/workflow-graph/types.js";
 
 /**
- * 瓦片脸：应用图标的圆角方块去掉 Z、
- * 加上两只眼。子代理的头像就是它——药丸、名册格、侧栏折叠头像串共用这一张脸。
+ * The tile face: the app icon's rounded square, Z dropped, two eyes added. It is THE
+ * subagent avatar — pill, roster cell, and sidebar collapsed-avatar stack share it.
  *
- * 身份是机身色：九个固定 HEX 颜色按 `avatarIndex` 取，第十个起循环；没有编号退回名字散列。
- * 状态定义基础表情，独立随机动作仅更新 SVG 属性。
+ * Identity is body color: nine fixed HEX values by `avatarIndex`, cycling from the tenth;
+ * without an index, fall back to a name hash. Status sets the base expression; the
+ * independent idle motion touches SVG attributes only.
  */
 export const FACE_COLORS = [
   "#54B9A6",
@@ -27,14 +28,14 @@ export const FACE_COLORS = [
   "#EA4045",
 ] as const;
 
-/** 名字散列选色（31 进制取模 360 后映射到九色板）；只在没有 `avatarIndex` 时兜底。 */
+/** Name-hash color (base-31 mod 360 mapped onto the nine-color ramp); only when `avatarIndex` is missing. */
 export function avatarColor(name: string): string {
   let hash = 0;
   for (const char of name) hash = (hash * 31 + (char.codePointAt(0) ?? 0)) % 360;
   return FACE_COLORS[hash % FACE_COLORS.length]!;
 }
 
-/** 代理的颜色：编号优先（九色环循环），缺席时退回名字散列。药丸悬停描边与脸共用它。 */
+/** Agent color: index first (nine-color cycle), else name hash. The pill's hover ring shares it. */
 export function agentColor(avatarIndex: number | undefined, name: string): string {
   if (avatarIndex === undefined) return avatarColor(name);
   return FACE_COLORS[
@@ -44,7 +45,7 @@ export function agentColor(avatarIndex: number | undefined, name: string): strin
 
 const EXPRESSIONS = ["pill", "happy", "sleepy", "focused", "sad", "confused"] as const;
 
-// 直接在 20 格内绘制参考眼型；共享左右起点，换脸时保持底部和视线位置。
+// Reference eye shapes drawn on a 20px grid; shared left/right anchors keep the baseline and gaze steady across expressions.
 function Eyes() {
   return (
     <g className="wf-face-eyes">
@@ -78,7 +79,7 @@ function Eyes() {
             </g>
           ))}
         </g>
-        {/* 闭眼单独画横胶囊，避免纵向缩放把端部圆角压成细线。 */}
+        {/* Closed eyes draw as a horizontal capsule; vertical scaling would flatten the end radii. */}
         <g className="wf-face-closed" fill="var(--wf-face-eye)">
           {[7, 13].map((x) => (
             <rect key={x} x={x} y={8} width={4} height={2} rx={1} />

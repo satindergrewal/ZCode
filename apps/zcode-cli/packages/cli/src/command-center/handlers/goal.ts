@@ -10,7 +10,7 @@ import type {
 import { splitArgs } from "../utils.js";
 
 const PLAN_MODE_GOAL_CONTINUATION_SKIPPED_MESSAGE =
-  "Plan mode 下已记录 goal，但不会自动继续。";
+    "Goal recorded under plan mode; it will not auto-continue.";
 
 export async function handleTargetCommand(
   args: string,

@@ -15,7 +15,7 @@ const CLOSED_STATE: ConversationStoreState = {
   turnNavigatorDirectoryRevision: 0,
 };
 
-/** 订阅 per-session projection store（useSyncExternalStore，row 级 selector 在组件内再做）。 */
+/** Subscribes the per-session projection store (useSyncExternalStore; row-level selection happens in components). */
 export function useConversationProjection(lease: SessionLease | null): ConversationStoreState {
   const store = lease?.store ?? null;
   return useSyncExternalStore(

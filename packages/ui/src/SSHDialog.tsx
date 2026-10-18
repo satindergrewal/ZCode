@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 远程连接向导的状态编排暂集中在同一组件，后续有独立拆分计划。 */
+/* eslint-disable max-lines -- Remote-connection wizard state orchestration stays in one component for now; a dedicated split is planned. */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createUuid, type RemoteTarget, type RemoteWorkspaceSessionEntry } from "@zcode/shared";
 import {
@@ -192,7 +192,7 @@ export function RemoteConnectionDialog({
       try {
         await onCancelSession(sessionId);
       } catch (sessionError) {
-        logger.warn("[SSHDialog] 释放未确认的远程 session 失败:", {
+        logger.warn("[SSHDialog] Failed to release unconfirmed remote session:", {
           sessionId,
           error: sessionError,
         });
@@ -207,7 +207,8 @@ export function RemoteConnectionDialog({
       if (!options?.preserveSession && sessionId) {
         void handleCancelSession(sessionId);
       } else if (!options?.preserveSession && loading && currentStep === "connecting") {
-        // 连接过程里 sessionId 尚未返回时，关闭弹窗会只重置 UI；这里补上显式取消，确保后台下载同步停止。
+        // While connecting and sessionId not yet returned, closing only reset the UI; add an
+        // explicit cancel so the background download stops too.
         void cancelPendingRemoteConnection(connectingRequestId ?? undefined);
       }
       resetFeedback();
@@ -268,8 +269,9 @@ export function RemoteConnectionDialog({
     const nextTarget = withDefaultRemoteResourcePackages(target);
 
     if (loading) {
-      // React 还没来得及把按钮置 disabled 时，快速重复点击会启动多个 SSH host process。
-      // 这里在事件入口再做一次并发保护，避免同一个 dialog 产生多条部署流并把上传进度混在一起。
+      // Rapid re-clicks can start several SSH host processes before React flags the button
+      // disabled. Guard concurrency at the event entry so one dialog cannot run parallel
+      // deployments with interleaved upload progress.
       return;
     }
 
@@ -308,8 +310,9 @@ export function RemoteConnectionDialog({
 
   const handleConnect = async () => {
     if (loading) {
-      // React 还没来得及把按钮置 disabled 时，快速重复点击会启动多个 SSH host process。
-      // 这里在事件入口再做一次并发保护，避免同一个 dialog 产生多条部署流并把上传进度混在一起。
+      // Rapid re-clicks can start several SSH host processes before React flags the button
+      // disabled. Guard concurrency at the event entry so one dialog cannot run parallel
+      // deployments with interleaved upload progress.
       return;
     }
 
@@ -330,8 +333,9 @@ export function RemoteConnectionDialog({
       manualDockerContainer,
     });
     if (!nextTarget) {
-      // 必填项缺失属于表单校验，不应该和真实连接失败共用 destructive 错误样式。
-      // 这里单独落到 settings 步骤内的 warning 提示，用户能更快理解是“缺少输入”而不是“连接出错”。
+      // Missing required fields is form validation, not a connection failure; they must not share
+      // the destructive error styling. Surface a warning inside the settings step so users read
+      // "missing input" instead of "connection failed".
       setValidationMessage(errorMessage ?? "Connection failed");
       return;
     }
@@ -373,8 +377,9 @@ export function RemoteConnectionDialog({
         return;
       }
 
-      // 选中远程目录后还要做 realpath、provider 同步、session 持久化和任务列表刷新。
-      // 这些异步步骤之前没有独立的提交中状态，用户会看到按钮无响应；这里在入口设置状态并用 ref 防重复提交。
+      // After the remote dir is chosen there is still realpath, provider sync, session
+      // persistence, and task-list refresh. Those async steps had no submitting state and the
+      // button looked dead; set the state at the entry and guard re-entry with a ref.
       selectingDirectoryRef.current = true;
       setSelectingDirectory(true);
       resetFeedback();
@@ -389,7 +394,7 @@ export function RemoteConnectionDialog({
       } catch (selectionError) {
         const failureState = getRemoteConnectionDirectoryFailureState({
           connectedSessionId,
-          // 事件处理器只在失败时读取一次最新 snapshot，避免为了回调判断新增重复 Zustand 订阅。
+          // The handler reads the latest snapshot once, only on failure; no extra Zustand subscription just for callback checks.
           sessionStillRegistered: Boolean(
             useRemoteWorkspaceSessionStore.getState().sessionsById[connectedSessionId],
           ),
@@ -471,14 +476,16 @@ export function RemoteConnectionDialog({
                   onMinimize={
                     flowActive
                       ? () => {
-                          // 连接慢时用户只能关闭弹窗，关闭会取消 pending 连接并丢失当前步骤。
-                          // 这里把“收起”明确拆成仅隐藏 dialog，不重置状态、不取消后台连接，后续入口可恢复到当前步骤。
+                          // On slow connects, closing the dialog is the only escape and it cancels
+                          // the pending connection, losing progress. Make "collapse" hide the
+                          // dialog only: no state reset, no cancel; the entry can restore to this step.
                           applyOpenState(false);
                         }
                       : undefined
                   }
                   onClose={() => {
-                    // 关闭和收起的语义不同。关闭仍走确认和取消逻辑，避免已连接但未选目录的 session 泄漏。
+                    // Close and collapse differ. Close keeps confirmation/cancel semantics so a
+                    // connected-but-no-directory session cannot leak.
                     void handleCloseRequest();
                   }}
                 />
@@ -487,8 +494,8 @@ export function RemoteConnectionDialog({
               {error && currentStep !== "connecting" ? (
                 <div
                   data-testid={TID_SSH_ERROR}
-                  // 远程连接的错误提示以前直接拼接颜色 token，和全局状态反馈样式不一致。
-                  // 这里统一改成 destructive 语义色对，避免 SSH/Docker 两种模式出现不同的错误视觉。
+                  // Error hints used to inline color tokens, diverging from global status styles.
+                  // Use the destructive semantic pair for both SSH and Docker modes.
                   className="flex items-start gap-3 rounded-xl bg-destructive px-4 py-3 text-ui-base text-destructive-foreground"
                 >
                   <AlertTriangleIcon className="mt-0.5 size-4 shrink-0" />

@@ -1,30 +1,30 @@
 /**
- * Layer 5: ProxyChannel —— 服务自动代理（杀手锏）
+ * Layer 5: ProxyChannel -- automatic service proxies (the killer feature)
  *
- * 这是让 VS Code 开发者效率极高的关键抽象。
+ * The abstraction that makes VS Code developers hugely productive.
  *
- * 没有 ProxyChannel 时，你需要为每个服务手写 IServerChannel：
+ * Without ProxyChannel you would hand-write an IServerChannel per service:
  *   class FileServiceChannel implements IServerChannel {
  *     call(ctx, command, arg) {
  *       switch (command) {
  *         case 'readFile': return this.service.readFile(arg[0]);
  *         case 'writeFile': return this.service.writeFile(arg[0], arg[1]);
- *         // ... 每个方法都要手动映射
+ *         // ... every method mapped by hand
  *       }
  *     }
  *   }
  *
- * 有了 ProxyChannel，一行代码搞定：
+ * With ProxyChannel, one line:
  *   const channel = ProxyChannel.fromService(fileService);
- *   // 自动把所有方法映射为 call，所有 on* 事件映射为 listen
+ *   // every method becomes call, every on* event becomes listen
  *
- * 客户端同样一行：
+ * One line on the client too:
  *   const fileService = ProxyChannel.toService<IFileService>(channel);
- *   await fileService.readFile(uri);  // 就像调用本地方法！
+ *   await fileService.readFile(uri);  // just like a local call!
  *
- * 原理：
- * - fromService: 遍历 service 的属性，方法 → call，on* 事件 → listen
- * - toService: 利用 ES6 Proxy 拦截属性访问，自动分派到 call/listen
+ * How it works:
+ * - fromService: walks the service props; methods -> call, on* events -> listen
+ * - toService: an ES6 Proxy intercepts property access and dispatches to call/listen
  */
 
 import { Event, Emitter, IDisposable, DisposableStore } from "./foundation.js";
@@ -36,12 +36,12 @@ import { IChannel, IServerChannel } from "./channels.js";
 
 export namespace ProxyChannel {
   /**
-   * 服务端：把一个 service 对象自动包装为 IServerChannel
+   * Server side: wrap a service object as an IServerChannel automatically
    *
-   * 约定：
-   * - 以 on + 大写字母开头的属性视为事件 (如 onDidChange)
-   * - 以 onDynamic + 大写字母开头的视为动态事件（方法，调用后返回事件）
-   * - 其他方法视为 RPC 方法
+   * Convention:
+   * - props starting on + capital are events (e.g. onDidChange)
+   * - props starting onDynamic + capital are dynamic events (methods returning an event)
+   * - everything else is an RPC method
    */
   export function fromService<TContext>(
     service: unknown,
@@ -49,18 +49,18 @@ export namespace ProxyChannel {
   ): IServerChannel<TContext> {
     const handler = service as { [key: string]: unknown };
 
-    // 预缓存所有事件并 buffer
+    // Pre-cache and buffer all events
     const eventMap = new Map<string, Event<unknown>>();
     for (const key in handler) {
       if (isEvent(key) && !isDynamicEvent(key) && typeof handler[key] === "function") {
-        // 把事件 buffer 化：即使没人订阅，事件也不会丢失
+        // Buffer events: nothing is lost even with no subscriber
         eventMap.set(key, bufferEvent(handler[key] as Event<unknown>));
       }
     }
 
     return {
       listen<T>(_ctx: TContext, event: string, arg?: any): Event<T> {
-        // 先查缓存
+        // Cache first
         const cached = eventMap.get(event);
         if (cached) {
           return cached as Event<T>;
@@ -68,11 +68,11 @@ export namespace ProxyChannel {
 
         const target = handler[event];
         if (typeof target === "function") {
-          // 动态事件：onDynamicXxx(arg) 返回一个 Event
+          // Dynamic event: onDynamicXxx(arg) returns an Event
           if (isDynamicEvent(event)) {
             return target.call(handler, arg);
           }
-          // 延迟发现的事件（Proxy 服务可能不会在 for-in 中出现）
+          // Late-discovered event (Proxy services may not show up in for-in)
           if (isEvent(event)) {
             eventMap.set(event, bufferEvent(handler[event] as Event<unknown>));
             return eventMap.get(event) as Event<T>;
@@ -97,11 +97,11 @@ export namespace ProxyChannel {
   }
 
   /**
-   * 客户端：把一个 IChannel 包装成类型安全的 service 对象
+   * Client side: wrap an IChannel as a type-safe service object.
    *
-   * 利用 ES6 Proxy 拦截所有属性访问：
-   * - 访问 on* → channel.listen(propKey)
-   * - 访问其他 → 返回一个函数，调用时变成 channel.call(propKey, args)
+   * An ES6 Proxy intercepts every property access:
+   * - on* -> channel.listen(propKey)
+   * - otherwise -> a function calling channel.call(propKey, args)
    */
   export function toService<T extends object>(
     channel: IChannel,
@@ -109,10 +109,11 @@ export namespace ProxyChannel {
   ): T {
     return new Proxy({} as T, {
       get(target: T, propKey: PropertyKey, receiver: object) {
-        // React 开发态、日志工具和浏览器运行时会探测对象的 Symbol / then 等内置属性。
-        // 之前这里把所有未知属性都强行当成 RPC 成员处理，读取 Symbol.toStringTag 会直接抛错，
-        // 读取 then 还会把普通 service 误判成 thenable，导致远程 workspace 在选目录后重渲染时炸掉。
-        // 这类运行时探测属性应该回退到普通对象语义，而不是走 RPC。
+        // React dev mode, loggers, and runtimes probe built-ins like Symbol/then on objects.
+        // Every unknown prop used to be forced into an RPC member: reading Symbol.toStringTag
+        // threw, and reading then misflagged plain services as thenable -- crashing remote
+        // workspaces on re-render after a directory pick. Runtime probes must fall back to
+        // plain object semantics, not RPC.
         if (typeof propKey === "symbol") {
           return Reflect.get(target as object, propKey, receiver);
         }
@@ -122,19 +123,19 @@ export namespace ProxyChannel {
             return undefined;
           }
 
-          // 动态事件
+          // Dynamic event
           if (isDynamicEvent(propKey)) {
             return (arg: unknown) => channel.listen(propKey, arg);
           }
 
-          // 普通事件
+          // Plain event
           if (isEvent(propKey)) {
             return channel.listen(propKey);
           }
 
-          // 方法调用
+          // Method call
           return async (...args: unknown[]) => {
-            // 可选：注入 context 作为第一个参数
+            // Optional: inject context as the first argument
             const methodArgs = options?.context !== undefined ? [options.context, ...args] : args;
             return channel.call(propKey, methodArgs);
           };
@@ -147,10 +148,10 @@ export namespace ProxyChannel {
 }
 
 // ============================================================================
-// 辅助函数
+// Helpers
 // ============================================================================
 
-/** 匹配 onXxx 事件命名约定 */
+/** Matches the onXxx event naming convention */
 function isEvent(name: string): boolean {
   return (
     name.length >= 3 &&
@@ -161,7 +162,7 @@ function isEvent(name: string): boolean {
   ); // Z
 }
 
-/** 匹配 onDynamicXxx 动态事件命名约定 */
+/** Matches the onDynamicXxx dynamic-event naming convention */
 function isDynamicEvent(name: string): boolean {
   return (
     name.length >= 10 &&
@@ -172,8 +173,8 @@ function isDynamicEvent(name: string): boolean {
 }
 
 /**
- * 缓冲事件：确保在订阅之前触发的事件不会丢失。
- * 未订阅时事件存入队列，一有订阅者就 flush。
+ * Buffered event: events fired before subscription are never lost.
+ * While unsubscribed, events queue; the first subscriber flushes them.
  */
 function bufferEvent<T>(event: Event<T>): Event<T> {
   let buffer: T[] = [];
@@ -197,7 +198,7 @@ function bufferEvent<T>(event: Event<T>): Event<T> {
     },
   });
 
-  // 一旦有订阅者，先 flush 缓冲区
+  // Flush the buffer as soon as a subscriber exists
   const originalEvent = emitter.event;
   return (listener_fn) => {
     const disposable = originalEvent(listener_fn);

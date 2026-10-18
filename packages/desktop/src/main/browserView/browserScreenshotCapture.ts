@@ -19,7 +19,7 @@ const MAX_SCREENSHOT_RASTER_PIXELS = 16_777_216;
 
 function readPngDimensions(data: string): ScreenshotDimensions | null {
   try {
-    // PNG 的 signature + IHDR 尺寸只占前 24 bytes，避免为了读宽高复制整张大图。
+    // PNG signature + IHDR size live in the first 24 bytes; no full-image copy just to read dimensions.
     const header = Buffer.from(data.slice(0, 64), "base64");
     if (
       header.byteLength < 24 ||
@@ -75,7 +75,7 @@ function resolveScreenshotQualityScale(target: ScreenshotDimensions): number {
     Math.sqrt(MAX_SCREENSHOT_RASTER_PIXELS / targetPixels),
   );
 
-  // 大视口本身已有足够像素。倍率过小时收益有限，却仍会增加一次大图 capture。
+  // Large viewports already have enough pixels; tiny factors add another huge capture for little gain.
   return Number.isFinite(qualityScale) && qualityScale >= MIN_SCREENSHOT_QUALITY_SCALE
     ? qualityScale
     : 1;
@@ -135,7 +135,7 @@ function readScreenshotTarget(params: Record<string, unknown>): {
   }
   return {
     scale: value.scale,
-    // PNG raster 只有整数像素；CSS clip 可能来自带小数的 content metrics。
+    // PNG rasters are integral; CSS clips can carry fractional metrics.
     target: {
       width: Math.max(1, Math.round(value.width)),
       height: Math.max(1, Math.round(value.height)),
@@ -159,9 +159,9 @@ export async function captureScreenshotWithCssPixelCorrection(
     firstDimensions.width > expected.target.width &&
     firstDimensions.height > expected.target.height
   ) {
-    // Retina/guest compositor 返回高分辨率首帧后，再用小数 CDP
-    // scale capture 会在 Chromium 渲染阶段丢失文字细节。目标尺寸必须来自当次
-    // CSS clip，对已渲染的高分辨率 PNG 做宿主侧高质量降采样，不假设固定 DPR。
+    // After a Retina/guest compositor yields a high-res first frame, a fractional CDP
+    // scale capture loses text detail in Chromium's render pass. Target size must come from that
+    // same CSS clip, downsampling the hi-res PNG host-side with quality, never assuming a fixed DPR.
     return (await resizeScreenshotToTarget(view, first, expected.target)) ?? first;
   }
 
@@ -184,9 +184,9 @@ export async function captureScreenshotWithCssPixelCorrection(
     return first;
   }
 
-  // attach/首帧时序下，IHDR 恰好等于 CSS 目标也可能只是已经丢失细节的
-  // 低清 raster。不能把固定的 1280×720/Retina DPR 当判据；按当次 clip 动态计算
-  // 有界质量源，最多重抓一次，再由宿主图像引擎降采样到 CSS 目标。
+  // Under attach/first-frame timing, an IHDR matching the CSS target can still be a detail-lossy
+  // low-res raster. Never trust a fixed 1280x720/Retina heuristic; compute the bounded quality source
+  // from the live clip, recapture at most once, then downsample host-side to the CSS target.
   let corrected: ScreenshotCaptureResult;
   try {
     corrected = (await view.cdp.send("Page.captureScreenshot", {

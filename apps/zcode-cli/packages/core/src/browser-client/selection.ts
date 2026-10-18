@@ -66,10 +66,10 @@ function urlMatchRank(target: URL, candidate: URL): number | undefined {
 }
 
 /**
- * open(url) 的 tab 复用匹配：在 agent-owned tabs 里挑最值得原地跳转的一个。
- * 复用阈值 rank <= 2（同 hostname）；rank 3 父子域可能是不同站点，误跳风险高，不复制用。
- * 同 rank 优先 active 的 tab，否则取列表中最新（靠后）的一个。
- * 与 selectBrowserForUrl 同为纯函数，便于共享 contract cases。
+  * Tab-reuse matching for open(url): pick the agent-owned tab most worth navigating in place.
+  * Reuse threshold rank <= 2 (same hostname); rank 3 parent/child domains may be different sites — too risky to navigate, do not copy.
+  * On equal rank prefer the active tab, otherwise the newest (latest) in the list.
+  * Pure function like selectBrowserForUrl, so contract cases can be shared.
  */
 export function selectTabForUrl<T extends { url?: string; active?: boolean }>(
   targetValue: string,
@@ -83,13 +83,13 @@ export function selectTabForUrl<T extends { url?: string; active?: boolean }>(
     try {
       rank = urlMatchRank(target, parseUrl(tab.url));
     } catch {
-      continue; // 单个坏 URL 不应让复用匹配失效。
+      continue; // One bad URL must not invalidate reuse matching.
     }
     if (rank === undefined || rank > 2) continue;
     if (
       best === undefined ||
       rank < best.rank ||
-      // 同 rank：active 优先；都不 active 时列表靠后（更新）的胜出。
+            // Equal rank: active wins; otherwise the later (newer) entry in the list.
       (rank === best.rank && (tab.active === true || best.tab.active !== true))
     ) {
       best = { tab, rank };
@@ -99,8 +99,8 @@ export function selectTabForUrl<T extends { url?: string; active?: boolean }>(
 }
 
 /**
- * URL 选择是纯函数，便于用同一组 contract cases 约束 IAB/extension/CDP。
- * 显式 browser selection 不走这里，因此这里的 fallback 不会造成跨 backend 静默切换。
+  * URL selection is pure so one set of contract cases can pin IAB/extension/CDP.
+  * Explicit browser selection bypasses this path, so this fallback can never switch backends silently.
  */
 export function selectBrowserForUrl(
   infos: readonly BrowserInfo[],
@@ -127,7 +127,7 @@ export function selectBrowserForUrl(
         const rank = urlMatchRank(target, parseUrl(value));
         if (rank !== undefined && (best === undefined || rank < best)) best = rank;
       } catch {
-        // backend 返回的单个坏 URL 不应让整个 registry 失效。
+                // One bad URL from the backend must not invalidate the whole registry.
       }
     }
     return best === undefined ? [] : [{ info, matchRank: best }];

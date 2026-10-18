@@ -8,7 +8,7 @@ export type McpServerTransportType = "stdio" | "http" | "sse";
 export type McpProtocolVersion = "legacy" | "auto" | "2026-07-28";
 export type McpServerIsolation = "session" | "workspace";
 
-/** 公共 MCP 配置校验完成后由宿主附加的运行时来源。 */
+/** Runtime provenance attached by the host after public MCP config validation. */
 export interface McpServerRuntimeSource {
   kind: "builtin" | "plugin";
 }
@@ -17,7 +17,7 @@ export interface McpServerConfigBase {
   enabled?: boolean;
   isolation?: McpServerIsolation;
   protocolVersion?: McpProtocolVersion;
-  /** 仅限宿主生成，公共配置 schema 会拒绝该字段。 */
+  /** Host-generated only; the public config schema rejects the field. */
   source?: McpServerRuntimeSource;
   timeoutMs?: number;
 }
@@ -42,16 +42,16 @@ export interface McpAuthorizationCodeOAuthConfig {
 export type McpOAuthConfig = McpAuthorizationCodeOAuthConfig | McpClientCredentialsOAuthConfig;
 
 /**
- * ZCode 官方 Server MCP 的鉴权声明。
- * 允许出现在 `type: "http"` 与 `type: "stdio"`；`sse` 仍拒。
- * `type`/`provider` 均为精确值，不接受别名或大小写变体。
+ * Auth declaration of the ZCode official Server MCP.
+ * Allowed on `type: "http"` and `type: "stdio"`; `sse` still rejected.
+ * `type`/`provider` are exact values; no aliases or case variants.
  *
- * 注意：该字段本身**不构成**官方身份证明。官方身份由运行时解析的 ZCode API origin 判定
- * （host 侧还会二次校验）；第三方 Plugin 复制该字段只能让凭证流向真实 ZCode 后端。
+ * Note: the field alone is **not** proof of official identity. Official identity is decided by the runtime-resolved ZCode API origin
+ * (the host re-validates); a third-party plugin copying the field can only send credentials to the real ZCode backend.
  *
- * 两种形态的凭证投递通道不同：
- * - http：宿主在 fetch wrapper 里逐请求注入身份头，凭证从不进入插件进程；
- * - stdio：请求由插件进程自己发出，身份头随每条出站协议消息的 `_meta` 下发。
+ * The two shapes deliver credentials differently:
+ * - http: the host injects identity headers per request in its fetch wrapper; credentials never enter the plugin process;
+ * - stdio: the plugin process issues requests itself; identity headers ride the `_meta` of every outbound protocol message.
  */
 export interface ZCodeOfficialMcpAuthConfig {
   type: "zcode_official";
@@ -59,14 +59,14 @@ export interface ZCodeOfficialMcpAuthConfig {
 }
 
 /**
- * Plugin loader 生成的运行时归属信息，`.mcp.json` 不能覆盖。
- * 用于凭据解析和日志关联，不参与信任判定。
- * 目标 origin 必须通过 `isOfficialMcpOriginTrusted` 的校验；插件身份本身不构成
- * 授权过滤条件。目的地校验与服务端接口权限、套餐、配额校验分别承担不同边界。
+ * Runtime provenance produced by the plugin loader; `.mcp.json` cannot override.
+ * For credential resolution and log correlation; not a trust input.
+ * The target origin must pass `isOfficialMcpOriginTrusted`; plugin identity itself is not
+ * an authorization filter. Destination validation, server-side entitlement, and quota checks are separate boundaries.
  */
 export interface McpOfficialProvenance {
   pluginId: string;
-  /** Plugin 内的原始 MCP key（未加 `plugin:<name>:` 命名空间前缀）。 */
+  /** Raw MCP key inside the plugin (without the `plugin:<name>:` namespace prefix). */
   mcpKey: string;
   source: "plugin";
 }
@@ -78,7 +78,7 @@ export interface McpStdioServerConfig extends McpServerConfigBase {
   cwd?: string;
   env?: Record<string, string>;
   auth?: ZCodeOfficialMcpAuthConfig;
-  /** 宿主生成，禁止来自文件配置。 */
+  /** Host-generated; never from file config. */
   official?: McpOfficialProvenance;
 }
 
@@ -88,7 +88,7 @@ export interface McpHttpServerConfig extends McpServerConfigBase {
   headers?: Record<string, string>;
   oauth?: McpOAuthConfig;
   auth?: ZCodeOfficialMcpAuthConfig;
-  /** 宿主生成，禁止来自文件配置。 */
+  /** Host-generated; never from file config. */
   official?: McpOfficialProvenance;
 }
 
@@ -134,27 +134,27 @@ export interface McpToolAnnotations {
 
 export const ZCODE_MCP_ERROR_PRESENTATION_META_KEY = "zcode/errorPresentation";
 export const ZCODE_MCP_ERROR_PRESENTATION_MESSAGE_ONLY = "message-only";
-/** MCP content 中来自模型显式 tab.screenshot() 的 image block 索引。 */
+/** Index of the image block from an explicit model tab.screenshot() within MCP content. */
 export const ZCODE_MCP_BROWSER_SCREENSHOT_CONTENT_INDICES_META_KEY =
   "zcode/browserScreenshotContentIndices";
 /**
- * 本次 node_repl cell 操作的目标应用身份，供工具卡显示 App 图标。
+ * Target app identity of this node_repl cell, for the tool card's app icon.
  *
- * **只能由 node-repl-host 写入**：宿主的 CUA bridge 从 broker 响应里读 producer 的
- * `zcode.cua/app-associations-v1`，投影成这里的最小形态。producer 那个键本身经
- * `nodeRepl.setResponseMeta` / `nodeRepl.emitStructuredResult` 也能到达 `_meta`，而这两个
- * API 挂在模型可见的 sandbox globals 上，因此不可信、必须在宿主侧丢弃（同
- * `ZCODE_MCP_BROWSER_SCREENSHOT_CONTENT_INDICES_META_KEY` 的处置）。
+ * **Only node-repl-host may write it**: the host's CUA bridge reads the producer's
+ * `zcode.cua/app-associations-v1` from the broker response and projects the minimal shape here. The producer key itself also reaches `_meta` via
+ * `nodeRepl.setResponseMeta` / `nodeRepl.emitStructuredResult`, and both
+ * APIs hang off the model-visible sandbox globals, hence untrusted: dropped host-side (same
+ * disposition as `ZCODE_MCP_BROWSER_SCREENSHOT_CONTENT_INDICES_META_KEY`).
  */
 export const ZCODE_MCP_NODE_REPL_CUA_APP_META_KEY = "zcode/nodeReplCuaApp";
 /**
- * 官方 Server MCP 响应头里的 `x-request-id`，附在失败的 tool result 上（值为 string）。
+ * `x-request-id` from official Server MCP response headers, attached to failed tool results (string value).
  *
- * 用短前缀 `zcode/` 而不是 `com.zcode/`：这不是跨语言协议——服务端在 header 里给，客户端
- * 读到后自己搬进 `_meta`，产出与消费都在客户端（`com.zcode/` 留给 Go 侧直接产出的键，
- * 如 `com.zcode/mcp-unavailable`）。
+ * Short prefix `zcode/`, not `com.zcode/`: not a cross-language protocol - the server sends the header, the client
+ * moves it into `_meta` itself; producing and consuming are both client-side (`com.zcode/` is for keys produced directly on the Go side,
+ * e.g. `com.zcode/mcp-unavailable`).
  *
- * 只在 `isError` 时附加：这是给人看的排障线索（拿它去查服务端日志），成功路径上是纯噪声。
+ * Attached only on `isError`: a human debugging clue (take it to the server logs); pure noise on success.
  */
 export const ZCODE_MCP_SERVER_REQUEST_ID_META_KEY = "zcode/officialMcpServerRequestId";
 
@@ -168,17 +168,17 @@ export interface McpToolDescriptor {
   outputSchema?: JsonSchema;
   annotations?: McpToolAnnotations;
   /**
-   * 该 tool 的结果**可信到足以据此改变界面**：来自 `type: "http"` 且声明
-   * `auth.type = zcode_official` 的 MCP server。
+   * The tool result is **trusted enough to change the UI**: from a `type: "http"` MCP server declaring
+   * `auth.type = zcode_official`.
    *
-   * 唯一用途是信任结果里的结构化标识（额度耗尽 / 无套餐的 `error_code`）。判据是"结果由谁产出"
-   * 而不是"插件是谁"：
-   * - http：响应来自 ZCode 后端。连接存活即意味着每个请求都过了 origin 校验且 fail closed，
-   *   第三方插件即使声明官方鉴权，也只能把请求打到真实 ZCode，响应体不由它写；
-   * - stdio：结果由插件进程自己产出、可任意伪造，因此**不置位**。
+   * Sole use: trusting structured identifiers in the result (quota-exhausted / no-plan `error_code`). The test is "who produced the result",
+   * not "which plugin":
+   * - http: responses come from the ZCode backend. A live connection implies every request passed origin validation, fail-closed;
+   *   third-party plugins, even declaring official auth, can only hit the real ZCode, and the body is not written by them;
+   * - stdio: produced by the plugin process, freely forgeable, hence **not set**.
    *
-   * 刻意**不**按"插件是否来自官方 marketplace"判定：那会让非官方安装源（含本地自测与
-   * zcode-plugins-test）的官方插件失效，而它也不是真实屏障——详见 `@zcode/shared` 的
+   * Deliberately **not** "plugin from the official marketplace": that would break official plugins from unofficial install sources (local
+   * self-testing, zcode-plugins-test), and it is no real barrier - see `@zcode/shared`'s
    * `isOfficialMcpOriginTrusted`。
    */
   official?: boolean;
@@ -200,20 +200,20 @@ export interface McpConnectionSnapshot {
 
 export interface McpConnectOptions {
   /**
-   * authorization_code OAuth callback 的等待上限。
-   * 普通 MCP timeoutMs 只约束协议请求，session 启动需要单独限制 OAuth 授权等待。
+   * Wait ceiling for the authorization_code OAuth callback.
+   * Plain MCP timeoutMs bounds protocol requests only; session startup needs a separate OAuth wait bound.
    */
   oauthAuthorizationTimeoutMs?: number;
   /**
-   * 复用既有连接前先校验其存活性（见 McpPort.pingServer），已死则重连。
-   * 设置页刷新这类"用户明确要求重新探测"的调用必须置位；session 启动不需要，
-   * 复用池中刚建立的连接即可。
+   * Validate an existing connection's liveness before reuse (see McpPort.pingServer); reconnect when dead.
+   * Calls like the settings-page refresh ("user explicitly asked to re-probe") must set it; session startup need not -
+   * a freshly established pooled connection suffices.
    */
   revalidate?: boolean;
   signal?: AbortSignal;
   trace?: TraceContext;
   workingDirectory?: string;
-  /** 身份隔离使用 workspaceIdentity；本地缺省时才 fallback 到 workingDirectory。 */
+  /** Identity isolation uses workspaceIdentity; fall back to workingDirectory only when absent locally. */
   workspaceIdentity?: string;
 }
 
@@ -222,9 +222,9 @@ export interface McpCallToolRequest {
   toolName: string;
   arguments?: Record<string, unknown>;
   trace?: TraceContext;
-  /** 调用来源；宿主 MCP 可据此限制不能安全继承到 subagent 的能力。 */
+  /** Call origin; the host MCP may restrict capabilities that cannot safely inherit into subagents. */
   runtimeScope?: "main" | "subagent";
-  /** 请求上下文仅用于 shared-host 隔离，不改变 MCP tool 参数。 */
+  /** Request context serves shared-host isolation only; never alters MCP tool args. */
   workspacePath?: string;
   workspaceIdentity?: string;
   workspaceKey?: string;
@@ -240,8 +240,8 @@ export interface McpCallToolOptions {
 }
 
 /**
- * 端口层失败分类（"不发任何请求"的几类）。
- * `official_mcp_origin_untrusted` 可能来自 adapter 本地校验，也可能来自 host 侧二次校验。
+ * Port-level failure classes (the "no request sent" cases).
+ * `official_mcp_origin_untrusted` may come from adapter-local validation or the host-side re-check.
  */
 export type OfficialMcpAuthFailureReason = OfficialMcpAuthPortFailureReason;
 
@@ -250,12 +250,12 @@ export type OfficialMcpAuthHeadersResult =
   | { ok: false; reason: OfficialMcpAuthFailureReason };
 
 /**
- * MCP adapter 消费身份头的依赖注入端口。
- * adapter 不直接依赖 `packages/services`；Agent 进程经该端口向 host 索取本次请求的身份头。
+ * DI port through which the MCP adapter consumes identity headers.
+ * The adapter does not depend on `packages/services` directly; the Agent process asks the host for per-request identity headers here.
  *
- * 失败必须走返回值而非抛异常，调用方禁止从错误文本解析原因。
+ * Failures return values, never throw; callers must not parse error text for the cause.
  * `workspaceIdentity` / `workspacePath` / `pluginId` / `mcpKey` / `targetOrigin`
- * 仅用于路由、二次校验与审计，**不参与凭证选择**——凭证是 host 全局状态。
+ * For routing, re-validation, and audit only; **not credential selection** - credentials are host-global state.
  */
 export interface OfficialMcpAuthHeadersPort {
   resolveHeaders(input: {
@@ -269,16 +269,16 @@ export interface OfficialMcpAuthHeadersPort {
 }
 
 /**
- * 官方 MCP 信任判定。
+ * Official MCP trust decision.
  *
- * 规则只有一条：**目标 origin 逐字符等于当前 ZCode API origin（https、无 username/password）**，
- * 另有仅放开 http loopback 的本地自测开关。`pluginId` / `mcpKey` 传进来只用于日志与凭证解析
- * 归属，**不影响判定结果**——曾经的"必须是官方 marketplace 插件"那道检查已于 2026-08 移除
- * （它让官方插件在发布前无法对真实端点自测，而第三方插件本可用 hook 读到同一份凭证，
- * 并非真实屏障）。
+ * One rule only: **the target origin equals the current ZCode API origin character-for-character (https, no user/password)**,
+ * plus a local self-test switch relaxing http loopback only. `pluginId` / `mcpKey` serve logging and credential
+ * attribution only, **never the verdict** - the former "must be an official-marketplace plugin" check was removed in 2026-08
+ * (it blocked pre-release self-tests against the real endpoint; third-party plugins could read the same credentials via hooks anyway -
+ * no real barrier).
  *
- * 实现在 `@zcode/shared`：host 与 adapter 共用同一份，避免一侧放行一侧拒绝。
- * 异步是为了让 host 侧能按 settings 覆盖解析 origin。
+ * Implemented in `@zcode/shared`: host and adapter share one copy, so neither side diverges on allow/deny.
+ * Async so the host can resolve the origin with settings overrides.
  */
 export interface OfficialMcpTrustedOriginRegistry {
   isTrusted(input: { pluginId: string; mcpKey: string; origin: string }): Promise<{
@@ -299,9 +299,9 @@ export interface McpPort {
   ): Promise<McpServerStatus>;
   disconnectServer(name: string): Promise<McpServerStatus | undefined>;
   /**
-   * 主动探测连接是否仍然存活，返回 false 表示 transport 已断。
-   * HTTP/SSE MCP 被停掉时不会派发 onclose，status() 会长期停在 connected；
-   * 只有显式 ping 才能把这种"无声死亡"暴露出来。实现可选：未实现时调用方按存活处理。
+   * Actively probe connection liveness; false means the transport is gone.
+   * A stopped HTTP/SSE MCP dispatches no onclose, so status() stays connected forever;
+   * only an explicit ping exposes the silent death. Optional: callers treat unimplemented as alive.
    */
   pingServer?(name: string, options?: { timeoutMs?: number }): Promise<boolean>;
   status(): Promise<Record<string, McpServerStatus>>;

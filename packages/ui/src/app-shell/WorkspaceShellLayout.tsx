@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- workspace shell 当前集中编排 sidebar、chat、terminal 和 browser pane 的布局联动，先保持单文件收口，避免为满足行数限制打散关键布局状态。*/
+/* eslint-disable max-lines -- the workspace shell currently orchestrates sidebar/chat/terminal/browser pane layout together; keep the single file until splitting key layout state is worth it.*/
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   CSSProperties,
@@ -8,8 +8,8 @@ import type {
 import type { PanelImperativeHandle } from "react-resizable-panels";
 
 import { TID_APP_HEADER } from "@zcode/shared";
-// 保活：workspace tab 真正关闭时，按 workspaceKey 回收 side pane terminal 的常驻 PTY/xterm。
-// 对称下侧 Terminal.tsx 的 openWorkspaceKeys 回收。
+// Keep-alive: when a workspace tab truly closes, reclaim the side pane terminal's persistent
+// PTY/xterm by workspaceKey. Mirrors Terminal.tsx's openWorkspaceKeys cleanup below.
 import { sidePaneTerminalSessionRegistry } from "@/terminal/sidePaneTerminalSessionRegistry.js";
 import { V4ChatPane } from "@/v4/V4ChatPane.js";
 import { V4WorkspaceChatArea } from "@/v4/V4WorkspaceChatArea.js";
@@ -106,8 +106,9 @@ const WORKSPACE_SIDEBAR_RESIZE_KEYBOARD_STEP_PX = 16;
 const WORKSPACE_SIDEBAR_PANEL_WIDTH_CSS_VAR = "--workspace-sidebar-panel-width";
 const WORKSPACE_SIDEBAR_WIDTH_CSS_VAR = "--workspace-sidebar-width";
 const CONVERSATION_AUTO_COLLAPSE_SIDE_PANE_WIDTH_PX = 480;
-// WorkspaceShellLayout 是 memo 组件，默认 []/{} 会在缺省调用时每次创建新引用；
-// 入口缺省这些集合时复用常量，避免浅比较误判 props 变化。
+// WorkspaceShellLayout is memoized; default []/{} args would create fresh references on every
+// defaulted call. Reuse constants when the entry omits these sets so shallow comparison does not
+// falsely see prop changes.
 const EMPTY_RECONNECTING_REMOTE_WORKSPACE_LOGS_BY_WORKSPACE_KEY: NonNullable<
   WorkspaceShellLayoutProps["reconnectingRemoteWorkspaceLogsByWorkspaceKey"]
 > = {};
@@ -116,8 +117,8 @@ const EMPTY_REMOTE_WORKSPACE_SESSIONS: NonNullable<
 > = [];
 const CONVERSATION_AUTO_COLLAPSE_SIDEBAR_WIDTH_PX = 360;
 const CONVERSATION_AUTO_COLLAPSE_RESIZE_IDLE_MS = 300;
-// 性能修复：ResizablePanelGroup 收到深相等的新 panelIds 数组，
-// 会跟随 chat streaming render 重算布局上下文；固定数组语义上不会随消息变化。
+// Perf fix: a deep-equal new panelIds array makes ResizablePanelGroup recompute layout context on
+// every chat streaming render; the fixed array is semantically message-independent.
 const WORKSPACE_BODY_PANEL_IDS = ["conversation-column", "browser"];
 const WORKSPACE_CONVERSATION_PANEL_IDS = ["conversation", "terminal"];
 
@@ -338,7 +339,7 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
   const baseServices = useBaseWorkspaceServices();
   const tabStoreApi = useTabStoreApi();
   const isLinuxDesktop = Boolean(isDesktop && !isMacDesktop && !isWindowsDesktop);
-  // Windows/Linux 也需要外层留白，避免独立面板贴住窗口边缘；桌面统一使用 4px 间距。
+  // Windows/Linux also need the outer gutter so detached panes do not touch the window edge; desktop uses a uniform 4px gap.
   const hasDesktopPanelInset = isMacDesktop || isWindowsDesktop || isLinuxDesktop;
   const usesInlineWindowControls = Boolean(isWindowsDesktop || isLinuxDesktop);
   const workspaceShellRadiusOptions = {
@@ -364,8 +365,9 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
   const screenshotSurfaceTab = screenshotSurfaceRequest
     ? findScreenshotSurfaceTabForRender(sidePaneState?.tabs ?? [], screenshotSurfaceRequest)
     : undefined;
-  // v4 pane 绑定持久化（输出中刷新恢复）：renderer 刷新后恢复上次选中的
-  // session；CLI/host 进程未死，pane 重订阅即拿 snapshot+续流。
+  // v4 pane binding persistence (refresh-while-running recovery): after a renderer refresh,
+  // restore the last selected session; the CLI/host process is still alive, so pane re-subscription
+  // resumes snapshot + stream.
   usePaneSessionPersistence({
     workspaceKey,
     activeSessionId: activeTaskId,
@@ -392,10 +394,10 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
     () => workspaceTabs.map((tab) => tab.workspaceIdentity?.trim() || tab.workspacePath),
     [workspaceTabs],
   );
-  // 保活回收：workspace tab 真正关闭（从 openWorkspaceKeys 移除）时，回收属于该 workspace 的
-  // side pane terminal 常驻 session（杀 PTY + 销 xterm），避免孤儿进程泄漏。
-  // 切 workspace 不会让 workspaceKey 离开这个集合，所以保活的 session 不受影响。
-  // 对称下侧 Terminal.tsx:145-177 的 openWorkspaceKeys 回收逻辑。
+  // Keep-alive reclaim: when a workspace tab is truly closed (removed from openWorkspaceKeys),
+  // reclaim that workspace's side pane persistent sessions (kill PTY + destroy xterm) so orphan
+  // processes do not leak. Switching workspaces never removes a workspaceKey from the set, so
+  // kept-alive sessions are unaffected. Mirrors Terminal.tsx:145-177's openWorkspaceKeys reclaim.
   useEffect(() => {
     const retained = new Set(openWorkspaceKeys);
     sidePaneTerminalSessionRegistry.releaseByPredicate(
@@ -417,9 +419,9 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
     panelElementRef: sidePanePanelElementRef,
     isVisible: isSidePaneVisible,
   } = useAnimatedResizablePanel({
-    // 截图 surface 由 browser-use tab 自己的 fixed 承载层提供尺寸，不能再把整个右侧
-    // ResizablePanel 撑开；否则自动化页会闪出空白的 tab 栏，且面板过渡期间 guest surface
-    // 仍可能被 Chromium 判定为不可合成。
+    // The screenshot surface is sized by the browser-use tab's own fixed carrier layer; stretching
+    // the whole right ResizablePanel would flash an empty tab bar on the automations page and could
+    // leave the guest surface uncompositable by Chromium during the transition.
     open: workspaceMainView === "chat" && isSidePaneOpen,
     expandedSize: SIDE_PANE_DEFAULT_EXPANDED_SIZE,
     rememberExpandedSize: true,
@@ -427,8 +429,9 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
   });
   const workspaceSessionActionDisabled =
     Boolean(workspaceReadOnlyReason) || reloadSessionDisabled || reloadSessionPending;
-  // 文件树打开时任务列表整屏滑出，侧栏里的 New Task 入口也随之不可见。
-  // 顶部浮层需要临时露出 New Task，关闭文件树后继续沿用侧栏收起态规则。
+  // With the file tree open, the task list slides fully out of view, hiding the sidebar's New Task
+  // entry too. The top overlay temporarily exposes New Task; once the file tree closes, the
+  // sidebar-collapsed rules apply again.
   const showTopOverlayNewTaskButton = !isSidebarVisible || isSidebarFileTreeOpen;
   const workspaceSidebarResizeLabel = intl.formatMessage({
     id: "workspaceSidebar.resizeSidebar",
@@ -469,7 +472,7 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
       } = conversationAutoCollapseStateRef.current;
 
       if (latestIsSidebarVisible && widthPx < CONVERSATION_AUTO_COLLAPSE_SIDEBAR_WIDTH_PX) {
-        logger.info("[WorkspaceShellLayout] conversation 过窄，自动收起左侧栏", {
+        logger.info("[WorkspaceShellLayout] conversation too narrow; auto-collapsing left sidebar", {
           widthPx: Math.round(widthPx),
           thresholdPx: CONVERSATION_AUTO_COLLAPSE_SIDEBAR_WIDTH_PX,
           workspaceKey: latestWorkspaceKey,
@@ -490,10 +493,11 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
         workspaceKey: latestWorkspaceKey,
       } = conversationAutoCollapseStateRef.current;
 
-      // 功能说明：自动收起只响应用户改变窗口尺寸后的 conversation 实际宽度。
-      // 不监听 conversation 自身 ResizeObserver，避免用户手动打开面板时又被策略关回去。
+      // Behavior: auto-collapse reacts only to the conversation's actual width after the user
+      // resizes the window. Do not observe the conversation's own ResizeObserver, or manually
+      // opening a pane would immediately be closed again by the policy.
       if (latestIsSidePaneOpen && widthPx < CONVERSATION_AUTO_COLLAPSE_SIDE_PANE_WIDTH_PX) {
-        logger.info("[WorkspaceShellLayout] conversation 过窄，自动收起右侧面板", {
+        logger.info("[WorkspaceShellLayout] conversation too narrow; auto-collapsing right pane", {
           widthPx: Math.round(widthPx),
           thresholdPx: CONVERSATION_AUTO_COLLAPSE_SIDE_PANE_WIDTH_PX,
           workspaceKey: latestWorkspaceKey,
@@ -513,8 +517,9 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
         window.clearTimeout(conversationAutoCollapseResizeTimerRef.current);
       }
 
-      // 大会话 resize trace 显示自动收起侧栏会触发 WorkspaceSidebar
-      // 和大量 tooltip/menu 子树重渲染；拖拽窗口过程中先等 resize idle，再保留原收起语义。
+      // Large-session resize traces show auto-collapsing the sidebar triggers WorkspaceSidebar
+      // plus large tooltip/menu subtree re-renders; during window drag, wait for resize idle and
+      // keep the original collapse semantics.
       conversationAutoCollapseResizeTimerRef.current = window.setTimeout(() => {
         conversationAutoCollapseResizeTimerRef.current = null;
         runAutoCollapseForWindowResize();
@@ -544,9 +549,10 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
         return;
       }
 
-      // 大会话 trace 显示拖拽侧栏时每个 pointermove 都 setState，
-      // 会让 WorkspaceShellLayout、WorkspaceSidebar 和 ChatView 大树反复 render。
-      // 拖拽中的宽度只是瞬时布局值，直接写 CSS 变量；释放时再提交 React state。
+      // Large-session traces show every pointermove during sidebar drag calling setState, which
+      // re-renders the WorkspaceShellLayout / WorkspaceSidebar / ChatView trees repeatedly. The
+      // in-drag width is a transient layout value: write it straight to a CSS variable and commit
+      // React state on release.
       shellElement.style.setProperty(
         WORKSPACE_SIDEBAR_PANEL_WIDTH_CSS_VAR,
         `${isSidebarPanelVisible ? nextWidthPx : collapsedSidebarWidthPx}px`,
@@ -572,9 +578,9 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
       return;
     }
 
-    // 外层 workspace shell 不再使用 react-resizable-panels，
-    // 但旧版本已持久化过 sidebar/content 百分比。迁移成像素宽度后，
-    // 普通窗口 resize 不会再触发 RRP layout store，同时仍保留用户拖出的侧栏宽度。
+    // The outer workspace shell no longer uses react-resizable-panels, but legacy builds
+    // persisted sidebar/content percentages. After migrating to pixel widths, normal window resizes
+    // no longer touch the RRP layout store while the user's dragged sidebar width is preserved.
     const migratedWidthPx = clampWorkspaceSidebarWidth(
       containerWidthPx * legacyRatio,
       containerWidthPx,
@@ -733,8 +739,8 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
   }, [activeTaskId, searchResultHighlightRequest, workspaceAbsPath, workspaceIdentity]);
   const renderChatFindDialog = () => <TaskFindDialog {...taskFindDialogProps} placement="chat" />;
   const gitDirtyFileCount = useMemo(() => {
-    // 关键业务逻辑：同一个文件可能同时出现在 staged / unstaged。
-    // 这里按 path 去重后再统计，避免入口里“未提交更改文件数”被重复计算。
+    // Key behavior: one file can appear in both staged and unstaged. Dedupe by path before
+    // counting so the entry's "uncommitted changed files" is not double-counted.
     return getGitDirtyFileCount(gitState.datasets);
   }, [gitState.datasets.staged, gitState.datasets.unstaged]);
   const workspaceRemoteTarget = useMemo(
@@ -824,9 +830,10 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
   const canPrimaryNavigationBack = workspaceMainView === "plugin-store" || canTaskNavBack;
   const handleCreateTaskInChat = useCallback(
     (request?: Parameters<typeof onCreateTask>[0]) => {
-      // workspaceReadOnlyReason 判定的是活动 workspace；当 request 显式带 targetWorkspace 时
-      // 目标另属他项目（跨项目发起已保存工作流），
-      // 活动 workspace 的只读性不适用，真正的守卫是 root 动作对 target 的 isWorkspaceReadOnly。
+      // workspaceReadOnlyReason judges the active workspace; when the request carries an explicit
+      // targetWorkspace the target belongs to another project (cross-project saved-workflow launch)
+      // and the active workspace's read-only state does not apply -- the real guard is the root
+      // action's isWorkspaceReadOnly against the target.
       const hasTargetWorkspace =
         typeof request === "object" && request !== null && Boolean(request.targetWorkspace);
       if (!hasTargetWorkspace && workspaceReadOnlyReason) {
@@ -853,8 +860,8 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
   );
   const handleCreateAutomationInChat = useCallback(
     (prompt: string, targetWorkspace?: { workspacePath: string; workspaceIdentity?: string }) => {
-      // 带 target 时跳过活动 workspace 只读检查，交由 handleCreateTaskInChat / root 动作在
-      // target 上校验；无 target 时形状不变。
+      // With a target, skip the active-workspace read-only check and let handleCreateTaskInChat /
+      // the root action validate against the target; without one, the shape is unchanged.
       if (!targetWorkspace && workspaceReadOnlyReason) return;
       handleCreateTaskInChat({
         initialPrompt: prompt,
@@ -863,8 +870,9 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
     },
     [handleCreateTaskInChat, workspaceReadOnlyReason],
   );
-  // 工作流「运行」现由中枢直接启动：GUI 建空会话 +
-  // 发 startSavedWorkflow 命令，不再合成对话文案。本层只在 accepted 后把会话切到前台。
+  // Workflow "run" is now hub-launched: the GUI creates an empty session and sends
+  // startSavedWorkflow instead of synthesizing conversation text. This layer only foregrounds the
+  // session once accepted.
   const handleSelectTaskInChat = useCallback(
     (
       targetWorkspacePath: string,
@@ -883,7 +891,7 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
           },
         });
         if (!workspaceResult.accepted) {
-          logger.warn("[automations] 运行历史目标远程 workspace 未连接，保留当前页面", {
+          logger.warn("[automations] run-history target remote workspace disconnected; keeping current page", {
             sessionId: taskId,
             workspaceIdentity: targetWorkspaceIdentity,
             workspacePath: targetWorkspacePath,
@@ -892,7 +900,7 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
           return;
         }
         if (workspaceResult.openedLocalTab) {
-          logger.info("[automations] 为运行历史会话补开本地 workspace tab", {
+          logger.info("[automations] opening local workspace tab for run-history session", {
             sessionId: taskId,
             workspacePath: targetWorkspacePath,
           });
@@ -914,7 +922,8 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
         };
         selectWorkbenchSession(shellWorkbenchBinding, target);
       }
-      // 只有目标 workspace 已经激活或补开成功后才关闭 Automations，避免失败时看起来像跳转成功。
+      // Close Automations only after the target workspace is active or successfully opened, so a
+      // failure never looks like a successful jump.
       showChatMainView();
       if (typeof expectedUnreadAt === "number") {
         handleSelectTask(targetWorkspacePath, taskId, targetWorkspaceIdentity, expectedUnreadAt);
@@ -924,8 +933,9 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
     },
     [handleSelectTask, intl, shellWorkbenchBinding, showChatMainView, tabStoreApi, workspaceTabs],
   );
-  // 中枢直接启动 accepted 后切到新会话（run 卡已在顶部）：复用运行历史那条导航，
-  // target 恒带工作流所属项目坐标（不变式 7），remoteSessionId 决定连接 endpoint。
+  // Hub-direct launch: on accepted, switch to the new session (the run card is already at the
+  // top). Reuse the run-history navigation; the target always carries the owning project's
+  // coordinates (invariant 7) and remoteSessionId decides the connection endpoint.
   const handleNavigateToLaunchedRun = useCallback(
     (target: SavedWorkflowLaunchTarget, sessionId: string) => {
       handleSelectTaskInChat(
@@ -937,15 +947,19 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
     },
     [handleSelectTaskInChat],
   );
-  // 工作流运行历史「查看实例」：先回到发起它的会话（侧栏页只在 chat 视图里可见），再开实例详情页。
+  // Workflow run history "view instance": return to the originating session first (the sidebar
+  // page is visible only in the chat view), then open the instance detail.
   const handleOpenSavedWorkflowRun = useCallback(
     (params: SavedWorkflowsOpenRunParams) => {
-      // 中枢是跨项目视图：实例必须开在发起它的项目，而非活动项目。
-      // params 恒带 workspacePath/identity；仅在异常缺省时兜底回退到活动 workspace。
+      // The hub is a cross-project view: the instance must open in its originating project, not
+      // the active one.
+      // params always carry workspacePath/identity; fall back to the active workspace only on
+      // abnormal absence.
       const targetWorkspacePath = params.workspacePath || workspaceAbsPath;
       const targetWorkspaceIdentity =
         params.workspaceIdentity ?? (workspaceIdentity?.trim() ? workspaceIdentity : undefined);
-      // remoteSessionId 不在契约里：按目标 workspace 从已打开 tab 反查；命中活动项目即取活动值。
+      // remoteSessionId is not in the contract: reverse-lookup from open tabs by target workspace;
+      // when the hit is the active project, take the active value.
       const targetRemoteSessionId = workspaceTabs.find(
         (tab) =>
           tab.workspacePath === targetWorkspacePath &&
@@ -975,8 +989,8 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
       workspaceTabs,
     ],
   );
-  // 侧栏运行行：与 composer 徽标
-  // 同一跳转——先选中会话，再开 run pane。没有 toolCallId 的 run（不该有）只选中会话。
+  // Sidebar run row: the same jump as the composer badge -- select the session first, then open
+  // the run pane. A run without toolCallId (should not exist) only selects the session.
   const handleOpenSidebarWorkflowRun = useCallback(
     (target: WorkflowRunOpenTarget) => {
       if (target.run.toolCallId === undefined) {
@@ -1004,8 +1018,8 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
     },
     [handleOpenSavedWorkflowRun, handleSelectTaskInChat, workspaceTabs],
   );
-  // 中枢的产物 chip：与「查看实例」逐字同构（同一条「先回到发起它的会话」的路径），
-  // 只是终点是 `workflow-artifact` tab 而不是 run 详情页。
+  // Hub artifact chip: isomorphic to "view instance" (the same return-to-originating-session path);
+  // only the destination is a `workflow-artifact` tab instead of the run detail page.
   const handleOpenSavedWorkflowArtifact = useCallback(
     (params: SavedWorkflowsOpenArtifactParams) => {
       const targetWorkspacePath = params.workspacePath || workspaceAbsPath;
@@ -1030,8 +1044,9 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
         runId: params.runId,
         artifactId: params.artifactId,
         ...(params.title === undefined ? {} : { title: params.title }),
-        // 中枢的 chip 载荷带得到 contentType（html 产物据它直接开浏览器 tab）；`sourcePath`
-        // 那份载荷没有，由 `handleOpenWorkflowArtifact` 自己查 journal 补。
+        // The hub's chip payload carries contentType (html artifacts open a browser tab by it);
+        // the sourcePath payload does not, and `handleOpenWorkflowArtifact` backfills it from the
+        // journal itself.
         ...(params.contentType === undefined ? {} : { contentType: params.contentType }),
       });
     },
@@ -1120,7 +1135,7 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
     try {
       targetWorkspacePath = await onResolveConversationWorkspace();
     } catch (error) {
-      logger.error("[WorkspaceShellLayout] 切换对话 workspace 失败", {
+      logger.error("[WorkspaceShellLayout] Failed to switch conversation workspace", {
         error,
       });
       return;
@@ -1153,18 +1168,19 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
     },
     [workspaceAbsPath, workspaceIdentity],
   );
-  // v4 pane 生命周期回调（稳定引用，供 memo 友好的 pane 宿主消费）：
-  // createSession/fork 后接入既有选择路径；删除会话后回 draft。
+  // v4 pane lifecycle callbacks (stable references for memo-friendly pane hosts): hook
+  // createSession/fork into the existing selection path; return to draft after deletion.
   const handleV4SessionCreated = useCallback(
     (sessionId: string) => {
       handleSelectTask(workspaceAbsPath, sessionId, workspaceIdentity);
     },
     [handleSelectTask, workspaceAbsPath, workspaceIdentity],
   );
-  // 草稿态 composer contextHeader：workspace 切换菜单 +
-  // Git 分支切换器，与旧 ChatView 空态 contextHeaderContent 同构。壳级能力
-  // （workspaceTabs / 远程连接回调）在此闭合，pane 只收 ReactNode。
-  // onSelectWorkspace 语义与旧版一致：切到目标 workspace 的新草稿。
+  // Draft composer contextHeader: workspace switch menu + git branch switcher, isomorphic to the
+  // legacy ChatView empty-state contextHeaderContent. Shell-level capabilities (workspaceTabs /
+  // remote-connection callbacks) close over here; the pane receives only a ReactNode.
+  // onSelectWorkspace semantics match the legacy version: switch to a new draft in the target
+  // workspace.
   const draftComposerHeader = useMemo(
     () => (
       <>
@@ -1206,8 +1222,9 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
             className="px-0 pt-0"
             popoverClassName="w-72"
             branchListClassName="max-h-48"
-            // 输入框区域在底部，Radix 碰撞避让会把分支菜单翻到下方。
-            // 这里锁定上方弹出，避免菜单遮挡输入区并保持操作方向稳定。
+            // The composer sits at the bottom, so Radix collision avoidance would flip the branch
+            // menu downward. Lock to top placement so the menu never covers the composer and the
+            // direction stays stable.
             avoidPopoverCollisions={false}
           />
         ) : null}
@@ -1332,13 +1349,14 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        logger.warn("[WorkspaceShell] 打开 markdown 文件链接失败", {
+        logger.warn("[WorkspaceShell] Failed to open markdown file link", {
           path: target.path,
           error: message,
         });
         if (shouldFallbackWorkspacePathToCodeViewer(target)) {
-          // markdown file link 可能指向已不存在的路径。
-          // stat 失败时仍交给 CodeViewer 展示具体读文件错误，避免点击完全无反馈。
+          // A markdown file link may point at a path that no longer exists.
+          // On stat failure still hand it to CodeViewer so the specific read error surfaces instead
+          // of a silent click.
           handleOpenCodeViewer({
             type: "file",
             title: getPathLeaf(target.path),
@@ -1405,8 +1423,9 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
       buildSelectionSideChatKey(workspaceKey, activeTaskId),
     );
     if (!requested) {
-      // 固定入口由当前主 SessionPane 承接命令；若 pane 尚未挂载，不允许壳层自行拼接远程身份或协议。
-      logger.warn("[WorkspaceShell] 辅助对话入口没有可用的主会话控制器", {
+      // Fixed entries are served by the current primary SessionPane; when no pane is mounted, the
+      // shell must not fabricate remote identity or protocol on its own.
+      logger.warn("[WorkspaceShell] side chat entry has no primary session controller", {
         parentSessionId: activeTaskId,
         workspaceKey,
       });
@@ -1488,15 +1507,16 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
     updateState?.kind === "update-available" ||
     updateState?.kind === "download-progress" ||
     updateState?.kind === "update-downloaded";
-  // Draft 之前维护一套独立轻量 header，导致 side pane、caption 安全区和拖拽入口
-  // 与 Task Header 分叉。桌面端统一复用 WorkspaceHeader，只由 variant 裁剪 task 专属内容；
-  // 手机远控无 active task 时仍不渲染桌面 chrome，继续遵守 replayable overlay 边界。
+  // Draft previously had its own lightweight header, forking side pane, caption safe area, and drag
+  // handles from the Task Header. Desktop now reuses WorkspaceHeader uniformly, trimming task-only
+  // content by variant; phone remote control with no active task still renders no desktop chrome,
+  // honoring the replayable overlay boundary.
   const shouldRenderMainViewHeader =
     workspaceMainView !== "automations" && workspaceMainView !== "plugin-store";
   const shouldRenderWorkspaceHeader =
     shouldRenderMainViewHeader && (activeTaskId !== null || isDesktop);
-  // ErrorBoundary resetKeys 的数组如果每次 render 都重新创建，
-  // 即使 workspace/task 没变化也会在 React DevTools Components 轨道里持续表现为子树 props 变化。
+  // If ErrorBoundary resetKeys arrays are recreated every render, React DevTools' Components track
+  // shows perpetual subtree prop changes even when workspace/task are unchanged.
   const workspaceOnlyResetKeys = useMemo(() => [workspaceKey], [workspaceKey]);
   const workspaceDraftResetKeys = useMemo(
     () => [workspaceKey, activeTaskId ?? "draft"],
@@ -1522,9 +1542,10 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
         style={workspaceShellSplitStyle}
         className={cn(
           "relative flex h-full min-h-0 w-full overflow-hidden",
-          // 窗口原生 resize 时，外层 react-resizable-panels 会把每一帧
-          // 都写进 layout store，连带侧栏 tooltip/menu 子树反复 commit。这里改成
-          // CSS 变量驱动的专用 split，普通窗口 resize 只走浏览器布局，不触发 React 状态。
+          // During native window resize, outer react-resizable-panels would write every frame into
+          // the layout store, committing sidebar tooltip/menu subtrees repeatedly. Use a dedicated
+          // CSS-variable-driven split instead: normal window resize stays in browser layout and
+          // never touches React state.
         )}
       >
         <div
@@ -1534,8 +1555,9 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
           id="sidebar"
           className={cn(
             "w-[var(--workspace-sidebar-panel-width)] max-w-[50%] flex-none overflow-hidden duration-200 ease-out transition-[width,opacity] data-[workspace-sidebar-resizing=true]:transition-opacity",
-            // 拖动侧栏宽度时如果继续过渡 width，会让指针移动和实际宽度之间产生滞后。
-            // 拖拽 active 通过 DOM 标记切 transition，避免 pointerdown/up 为了切 class 重渲染整棵 workspace。
+            // Keeping the width transition during sidebar drag lags the pointer behind the actual
+            // width. Toggle transition via a DOM marker while dragging, so pointerdown/up never
+            // re-render the workspace just to switch a class.
             isSidebarPanelVisible ? "opacity-100" : "pointer-events-none opacity-0",
           )}
         >
@@ -1550,7 +1572,7 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
               variant="panel"
               className="h-full"
             >
-              {/* session workbench groups：桌面和普通 web app 可分屏。 */}
+              {/* session workbench groups: desktop and normal web app can split. */}
               <V4SplitPaneEntryProvider
                 enabled
                 canOpenSession={canOpenSessionInSplitPane}
@@ -1631,7 +1653,7 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
             )}
           />
         ) : null}
-        {/* 右侧主工作区：上方 header，下面左侧会话+终端，右侧共享 browser/code-viewer 槽位 */}
+        {/* Right main workspace: header on top; session+terminal left, shared browser/code-viewer slots right below */}.
         <div
           data-panel=""
           id="content"
@@ -1643,7 +1665,7 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
           {
             hasDesktopPanelInset && (
               <div className="h-1 w-full [app-region:drag]" />
-            ) /* 修复 macOS 顶部窗口控制按钮被 header 遮挡无法点击的问题 */
+            ) /* fix macOS: header used to cover the top window control buttons, blocking clicks */
           }
           <ResizablePanelGroup
             layoutId="workspace-body-layout"
@@ -1759,8 +1781,10 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
                             })}
                           >
                             <div
-                              // 不同 Automations tab 的内容高度不同，滚动条出现/消失会改变
-                              // mx-auto 内容列的可用宽度，造成整页左右弹动；预留稳定槽位保持居中基准不变。
+                              // Automations tabs differ in content height; the scrollbar appearing
+                              // / disappearing changes the mx-auto content column's available width
+                              // and jolts the page horizontally. Reserve a stable slot so the
+                              // centering baseline never moves.
                               className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]"
                             >
                               <ScopedErrorBoundary
@@ -1830,12 +1854,13 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
                             variant="panel"
                             className="h-full"
                           >
-                            {/* pane 绑定必须用原始选择态 activeTaskId，
-                                  不能用 meta 派生的 activeSessionId——v4 createSession 刚建的会话
-                                  不在 taskListCache/optimistic 缓存里，meta 解析为 null 会让 pane
-                                  永远停在 draft。v4 语义下 sessionId ≡ taskId，meta 只服务 Header 显示。
-                                  桌面主区升级为分屏宿主（Layout/Focus 两层）；primary pane
-                                  绑定语义与 testid 契约（paneId=workspace-main）不变。 */}
+                            {/* Pane binding must use the raw selection-state activeTaskId, not the
+                                  meta-derived activeSessionId -- a session from v4 createSession is not
+                                  yet in taskListCache/optimistic caches, so meta resolves null and the
+                                  pane would stay in draft forever. Under v4 semantics sessionId ===
+                                  taskId; meta serves Header display only. The desktop main area is now a
+                                  split host (Layout/Focus layers); primary pane binding semantics and
+                                  testid contract (paneId=workspace-main) are unchanged. */}
                             <V4WorkspaceChatArea
                               readOnly={Boolean(workspaceReadOnlyReason)}
                               foregroundEnabled={isWorkspaceVisible}
@@ -1929,8 +1954,9 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
                 ) : null}
               </ResizablePanelGroup>
             </ResizablePanel>
-            {/* Browser Guest Host 必须与主视图路由解耦，避免 automations/plugin
-                    切换时卸载 Guest；截图请求期间由上层临时展开真实面板承载可合成的 WebContents。 */}
+            {/* The Browser Guest Host must stay decoupled from main-view routing so automations/plugin
+                    switches never unmount the Guest; during screenshot requests the upper layer temporarily
+                    expands the real panel to host a compositable WebContents. */}
             {sidePanePanel}
           </ResizablePanelGroup>
         </div>

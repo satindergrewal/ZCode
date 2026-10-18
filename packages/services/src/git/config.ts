@@ -2,13 +2,13 @@ import { join } from "node:path";
 
 export const DEFAULT_GIT_DISCOVERY_TIMEOUT_MS = 3_000;
 export const DEFAULT_GIT_COMMAND_TIMEOUT_MS = 15_000;
-// `git push` 可能会被仓库的 pre-push hook 阻塞较长时间（例如执行 `pnpm test`）。
-// 继续沿用普通 Git 命令的 15s 超时会把显式 push 误判成失败，因此单独放宽 push 超时。
+// git push can stall for a long time on the repo's pre-push hook (e.g. running pnpm test).
+// The shared 15s command timeout would misreport an explicit push, so push gets its own timeout.
 export const DEFAULT_GIT_PUSH_TIMEOUT_MS = 10 * 60_000;
 export const DEFAULT_GIT_DIFF_TIMEOUT_MS = 20_000;
 export const DEFAULT_GIT_OUTPUT_BYTES = 512 * 1024;
-// pre-push hook 可能会输出完整测试日志；继续沿用普通 Git 命令的 512KB 上限，
-// 会在真正 push 完成前因为日志过多被截断终止。这里仅给 push 单独放宽输出配额。
+// A pre-push hook may print entire test logs; under the shared 512KB cap the push would be
+// truncated and killed before finishing. Give push its own larger output budget.
 export const DEFAULT_GIT_PUSH_OUTPUT_BYTES = 8 * 1024 * 1024;
 export const DEFAULT_GIT_DIFF_BYTES = 1024 * 1024;
 export const GIT_UNTRACKED_STAT_MAX_BYTES = 1024 * 1024;
@@ -64,9 +64,9 @@ export function getGitCommandEnv(): NodeJS.ProcessEnv {
     ...process.env,
   };
 
-  // pre-push hook 会向子进程注入当前仓库的 GIT_DIR/GIT_WORK_TREE 等 local env。
-  // 如果这里原样透传，Git 服务命令会“串仓”到 hook 所在仓库，临时仓库/远端仓库操作都会被污染。
-  // 统一先清理 local env，再叠加 ZCode 约束变量，保证命令只依赖显式 cwd。
+  // pre-push hooks inject repo-local env (GIT_DIR/GIT_WORK_TREE and friends) into children.
+  // Passing it through would cross wires into the hook's repo and pollute temp/remote operations.
+  // Always strip local env first, then apply ZCode overrides, so only cwd picks the repo.
   for (const variableName of GIT_LOCAL_ENV_VARS) {
     delete env[variableName];
   }

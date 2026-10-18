@@ -1,5 +1,5 @@
 import type { MarkdownSelectionTarget } from "@/lib/conversationSelectionReference.js";
-/* eslint-disable max-lines -- PreviewPane 内容路由同时承载文本、图片、媒体、Office、PDF 和 PPTX 渲染。 */
+/* eslint-disable max-lines -- the preview content router renders text, image, media, Office, PDF and PPTX. */
 import type { BundledTheme } from "shiki";
 import { useMemo, type Ref, type SyntheticEvent, type UIEventHandler } from "react";
 import type { FileBinaryPreview, FileMediaPreview, FileTextSlice } from "@zcode/shared";
@@ -54,7 +54,7 @@ interface PreviewPaneContentProps {
   codePreviewSettings: CodePreviewSettings;
   codeTheme: BundledTheme;
   resolvedTheme: "light" | "dark";
-  /** 应用主题（store 耦合剥离）：透传给 markdown/mermaid 预览，缺省按 "system" 兜底。 */
+  /** Applied theme (store-decoupled): passed to markdown/mermaid previews; defaults to "system". */
   theme?: Theme;
   workspacePath?: string;
   onOpenBrowserUrl?: (url: string) => void;
@@ -143,8 +143,8 @@ export function PreviewPaneContent({
       return null;
     }
 
-    // DiffViewer 是 memo 组件，预览 pane 父级滚动/加载状态刷新时，
-    // JSX 内联 oldFile/newFile 会生成新对象并强制 diff 重新渲染。
+    // DiffViewer is memoized; inline oldFile/newFile JSX would mint new objects on every
+    // parent scroll/load refresh and force the diff to re-render.
     return {
       oldFile: {
         name: source.path ?? source.title,
@@ -167,7 +167,7 @@ export function PreviewPaneContent({
 
   if (source.type === "patch") {
     return (
-      // 兜底分支：patch 既不是 markdown/code/image，但仍然需要独立渲染。
+      // Fallback branch: the patch is not markdown/code/image but still needs its own render.
       <PatchFallbackContent
         patch={source.patch}
         codePreviewSettings={codePreviewSettings}

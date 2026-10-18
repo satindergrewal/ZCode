@@ -1,8 +1,8 @@
 /**
- * ZCode Session Store 选择器与内部辅助函数
+ * ZCode session store selectors and internal helpers.
  *
- * 从 zcodeSessionStore.ts 拆分出来，包含 workspace 状态读取/更新辅助函数，
- * 以及所有按 task 粒度的只读访问器和独立选择器。
+ * Split from zcodeSessionStore.ts: workspace state read/update helpers,
+ * every per-task read accessor and the standalone selectors.
  */
 import type { ZCodeTaskRuntimeStatus, ZCodeTaskMeta } from "@zcode/shared";
 import { mergeTaskWithOptimisticMeta } from "@/lib/zcodeTaskMetaMerge.js";
@@ -19,7 +19,7 @@ import {
 } from "./zcodeSessionStoreTypes.js";
 
 // ────────────────────────────────────────────
-// Internal helpers（store 本体也需要使用）
+// Internal helpers (the store core uses them too)
 // ────────────────────────────────────────────
 
 export function resolveWorkspaceStateKey(
@@ -72,8 +72,8 @@ function createIdentityWorkspaceStateSeed(
     baseState.taskListCache?.filter((task) => migratedTaskIds.has(task.taskId)) ?? null;
   return {
     ...seededState,
-    // identity 首次写入时可以继承 workspace/draft 级展示种子，
-    // 但 task 状态只能按已持久化的 workspaceIdentity 做一次性迁移，不能动态合并 path 桶。
+    // On first identity write, workspace/draft-level display seeds may be inherited,
+    // but task state migrates once from the persisted workspaceIdentity; never dynamically merge path buckets.
     selectedSupplierKey: baseState.selectedSupplierKey,
     isGhostSupplier: baseState.isGhostSupplier,
     supplierMismatchReason: baseState.supplierMismatchReason,
@@ -127,9 +127,9 @@ export function getWorkspaceState(
     return baseState;
   }
 
-  // workspaceIdentity 表示远程/隔离 workspace 身份，path 桶只用于本地 fallback
-  // 和 identity 桶首次写入前的一次性迁移起点。identity 桶一旦存在，就不能再动态合并
-  // path task maps，否则同一路径的不同 SSH/WSL/Docker 窗口会互相读到 task config、队列和错误态。
+  // workspaceIdentity marks the remote/isolated workspace identity; the path bucket is local fallback only
+  // and the one-time migration source before the identity bucket exists. Once it exists, never dynamically merge
+  // path task maps, or same-path SSH/WSL/Docker windows read each other task config, queues and errors.
   return identityState;
 }
 
@@ -148,8 +148,8 @@ export function updateWorkspaceState(
   const nextWorkspaceState = updater(current);
 
   if (nextWorkspaceState === current) {
-    // 单 ZCode Agent 迁移后旧 provider 选择都会归一为 glm，很多调用实际不会改变状态。
-    // 如果仍把 merged overlay 快照写回 identity bucket，会打破 selector 的引用缓存并触发无意义重渲染。
+    // After the single-agent migration every legacy provider choice normalizes to glm; many calls change nothing.
+    // Writing the merged overlay snapshot back would break selector reference caching and re-render for nothing.
     return { workspaces: state.workspaces };
   }
 
@@ -165,10 +165,10 @@ export function updateWorkspaceState(
   return {
     workspaces: {
       ...state.workspaces,
-      // 远程 workspace 的 workspace 级状态必须只写 identity key。
-      // 不能为了兼容未透传 identity 的调用同时写 path key：同一路径的另一个远程窗口会从 path fallback
-      // 读到这份状态，造成 slashCommands、模型切换与初始化状态串台。相关调用链已补齐 identity，
-      // 这里不再污染 path 桶。
+      // A remote workspace workspace-level state must write the identity key only.
+      // Never also write the path key for callers that omit identity: another same-path remote window reads the path fallback
+      // and inherits slashCommands/model switches/init state. Call chains now carry identity,
+      // so stop polluting the path bucket.
       [workspaceKey]: nextWorkspaceState,
     },
   };
@@ -262,8 +262,8 @@ export function getTaskUnreadIndicator(
   fallbackTask?: Pick<ZCodeTaskMeta, "unreadAt">,
 ): boolean {
   const storedTask = getTaskMeta(workspaceState, taskId);
-  // IDE 升级或重启后，任务列表会先从 query cache 恢复，而 session store 尚未水合；
-  // 此时持久化 unreadAt 只存在于列表 task。仅在 store 缺少该 task 时回退，避免旧列表覆盖 optimistic 已读状态。
+  // After an IDE upgrade/restart the task list restores from query cache before the session store hydrates;
+  // persisted unreadAt then lives only on list tasks. Fall back only when the store misses the task, so stale lists never override optimistic reads.
   return (
     Boolean((storedTask ?? fallbackTask)?.unreadAt) ||
     workspaceState.taskUnreadByTaskId?.[taskId] === true

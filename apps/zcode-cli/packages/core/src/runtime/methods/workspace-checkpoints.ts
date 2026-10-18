@@ -142,11 +142,11 @@ export async function forkWorkspaceFromCheckpoint(
 ): Promise<WorkspaceForkResult> {
   const traceContext = options.traceContext ?? getCurrentTraceContext() ?? this.rootTraceContext;
 
-  // message 目标的 fork 语义是"历史包含目标回合，工作区停在 fork 点时刻"。
-  // 恢复目标回合自身 checkpoint 的 beforeContent 会把该回合刚产出的文件回退/删除——
-  // fork 与父会话共用工作区目录，父会话的产物也随之丢失（在最新回复上分叉时最明显）。
-  // message fork 只撤销 fork 点之后的 checkpoint；显式 checkpoint 目标（/fork latest、
-  // targetCheckpointId）仍保留"回到该 checkpoint 修改前"的 rewind 式语义。
+  // Message-target forks: history includes the target turn; the workspace stops at fork time.
+  // Restoring the target turn own checkpoint would revert its fresh outputs —
+  // fork shares the parent workspace, losing its artifacts too (clearest on the latest reply).
+  // Message forks undo only post-fork checkpoints; explicit targets (/fork latest,
+  // targetCheckpointId) keep the rewind-style before-this-checkpoint semantics.
   if (options.targetMessageId && !options.targetCheckpointId) {
     return await forkWorkspaceAtMessage.call(this, {
       abortSignal: options.abortSignal,
@@ -209,8 +209,8 @@ export async function forkWorkspaceFromCheckpoint(
   );
   const artifact = parseWorkspaceCheckpointArtifact(JSON.parse(read.content));
   const parentMessages = await this.sessionStore.messages({ sessionID: this.sessionId });
-  // 编辑重发后 session store 会保留被 rewind 掉的旧分支。
-  // fork 复制历史必须基于 active branch，否则子会话会重新带入旧 prompt 和被取消的 assistant。
+  // After an edit-resend the session store keeps the rewound-away branch.
+  // Fork copies the active branch, or the child re-imports old prompt and cancelled assistant.
   const forkSourceMessages = forkSourceMessagesForSession(parentMessages, parentSession);
   const targetMessageIdResolved = checkpoint.targetMessageId ?? checkpoint.messageId;
   const targetIndex = forkSourceMessages.findIndex(

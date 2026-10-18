@@ -46,8 +46,8 @@ export function cloneMessageForFork(
     strictLocalReferences?: boolean;
   },
 ): MessageInfo {
-  // copy by value + provenance：child 用新 local id 排序/渲染/
-  // 续写，forkOrigin 只供溯源与 debug，不参与 child 的 UI placement。
+  // Copy by value plus provenance: the child sorts/renders/continues with new local ids;
+  // forkOrigin serves provenance/debug only and never drives child UI placement.
   const forkOrigin = {
     sessionId: String(message.sessionID),
     messageId: String(message.id),
@@ -199,9 +199,9 @@ export function clonePartForFork(
     return (mapped ?? id) as TurnId;
   };
 
-  // part 级内嵌引用 remap（不得原样拷贝父 id）。
-  // anchor 类引用参与 child 落位：可 remap 则换 local id，不可 remap 必须清空并
-  // 降级 originAnchorMessageId（不得把父 id 当 child 本地锚点）。
+  // Part-level embedded-reference remap (never copy parent ids verbatim).
+  // Anchor-like references join child placement: remap to the local id when possible, else clear and
+  // degrade to originAnchorMessageId (a parent id must never become a child-local anchor).
   if (cloned.type === "timeline") {
     if (cloned.anchorMessageId) {
       const mapped = messageIdMap.get(cloned.anchorMessageId);
@@ -224,7 +224,7 @@ export function clonePartForFork(
           `Fork timeline anchorTurnId has no child-local identity: ${cloned.anchorTurnId}`,
         );
       } else {
-        // legacy workspace fork 没有完整 turn identity map，只能显式降级为 provenance。
+        // A legacy workspace fork has no full turn-identity map, so degrade explicitly to provenance.
         cloned.originAnchorTurnId = cloned.anchorTurnId;
         delete cloned.anchorTurnId;
       }
@@ -245,8 +245,8 @@ export function clonePartForFork(
       cloned.verificationId = verificationId ?? cloned.verificationId;
     }
   }
-  // compaction 内部引用是 provider-context 语义（非 UI 落位）：可 remap 则换，
-  // 否则保留原值（保持既有语义，不引入破坏性变更）。
+  // Compaction-internal references are provider-context semantics (not UI placement): remap when possible,
+  // else keep the original value (preserve existing semantics, no breaking change).
   if (cloned.type === "compaction") {
     if (cloned.summaryMessageId) {
       cloned.summaryMessageId = mapMessage(cloned.summaryMessageId, "compaction summaryMessageId");

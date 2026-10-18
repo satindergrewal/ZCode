@@ -1,10 +1,10 @@
 /**
- * engine.ts 顶到 oxlint max-lines 上限（400 行），把 run 的三条终态路径
- * （completed / stopped / errored）与它们共用的 finishRun
- * 拆到本文件；公开面仍从 engine.ts 导出。
+  * engine.ts sat at oxlint's max-lines cap (400); the run's three terminal paths
+  * (completed / stopped / errored) and their shared finishRun
+  * live here; the public surface still exports from engine.ts.
  *
- * 自由函数经 {@link EngineState} 接缝读写引擎状态；WorkflowEngine 的 complete / stop /
- * failRun 只是薄委托。first-wins 由 `isRunSettled()` 守在每条路径的第一行。
+  * Free functions read and write engine state via the {@link EngineState} seam; WorkflowEngine's complete / stop /
+  * failRun are thin delegates. First-wins is guarded by isRunSettled() on the first line of every path.
  */
 
 import type { EngineState } from "./engine-state.js";
@@ -12,12 +12,12 @@ import type { RunSettlementRecord, RunStatus, RunStopReason } from "./types.js";
 import { WorkflowError } from "./types.js";
 
 /**
- * 沙箱脚本成功返回顶层 artifact，结算为 completed。
+  * The sandbox script returned a top-level artifact: settle completed.
  *
- * 脚本返回时仍可能有在飞 ask（`Promise.race` 的输家、没有 `await` 的 ask）。它们与 cancel
- * 路径同款中止：driver 侧 cancelAsk、deferred 以 Cancelled reject、补发 node-settled(cancelled)。
- * 不中止的后果是三重的：scheduler 的 liveNodes 永远握着节点、driver 侧 turn 继续烧 token、
- * 事件日志里一个 node-dispatched 永远等不到它的 node-settled。
+  * Asks may still be in flight when the script returns (Promise.race losers, unawaited asks). They are aborted exactly as in the cancel
+  * path: driver-side cancelAsk, the deferred rejects with Cancelled, node-settled cancelled emitted.
+  * Not aborting costs threefold: the scheduler's liveNodes holds the node forever, the driver-side turn keeps burning tokens,
+  * and one node-dispatched in the event log never sees its node-settled.
  */
 export function settleCompleted(state: EngineState, artifact: unknown): void {
   if (state.isRunSettled()) return;
@@ -26,17 +26,17 @@ export function settleCompleted(state: EngineState, artifact: unknown): void {
     new WorkflowError("Cancelled", "Run completed; in-flight subagent tasks were abandoned."),
     true,
   );
-  // 产物随终态一笔落库。分两笔写会造出「completed 但产物丢失」的崩溃窗口，而 journal
-  // 行是产物唯一的持久化家（`run-settled` 事件刻意不加宽）。
+    // The artifact persists in the same stroke as the terminal state. Two writes would open a completed-but-artifact-lost crash window, and the journal
+    // row is the artifact's only durable home (the run-settled event deliberately stays narrow).
   finishRun(state, "completed", { result: artifact });
   state.resolveSettled({ status: "completed", artifact });
 }
 
 /**
- * 外部停止：中止在飞 ask（deferred 以 Cancelled reject、补发 node-settled(cancelled)），run
- * 结算 `stopped(reason)`；已完结的 journal 条目保留（可 resume）。四个 reason 走同一条路：
- * `user` / `model`（cancel 入口传进来的 initiator）、`interrupted`（harness 的沙箱故障）、
- * `provider`（driver 经 `stopRun` 报上来的确定性模型侧错误）。`error` 只对后两者在场。
+  * External stop: abort in-flight asks (the deferred rejects Cancelled, node-settled cancelled emitted); the run
+  * settles stopped with reason; finished journal rows are kept (resumable). All four reasons take one path:
+  * user / model (the initiator the cancel entry passes in), interrupted (a harness sandbox failure),
+  * provider (a deterministic model-side error the driver reports via stopRun). error is present only for the last two.
  */
 export function settleStopped(
   state: EngineState,
@@ -47,8 +47,8 @@ export function settleStopped(
   if (state.isRunSettled()) return;
   state.markSettled();
   state.abortInFlight(new WorkflowError("Cancelled", "Run stopped."), true);
-  // `superseded` 的后继 id 与原因**同一笔**落库：
-  // stopped 信封整体重写，分两笔写就有一个「已 superseded 却不知道被谁替代」的窗口。
+    // The successor id and reason of superseded persist **in the same stroke**:
+    // the stopped envelope is rewritten whole; two writes would open a superseded-but-by-unknown window.
   finishRun(state, "stopped", {
     stopReason: reason,
     ...(supersededBy === undefined ? {} : { supersededBy }),
@@ -62,7 +62,7 @@ export function settleStopped(
   });
 }
 
-/** run 级失败（脚本之错）：中止在飞 ask（以 run 错误 reject），run 结算 errored。 */
+/** Run-level failure (the script's fault): abort in-flight asks (rejected with the run error); the run settles errored. */
 export function settleFailed(state: EngineState, error: WorkflowError): void {
   if (state.isRunSettled()) return;
   state.markSettled(error);
@@ -72,11 +72,11 @@ export function settleFailed(state: EngineState, error: WorkflowError): void {
 }
 
 /**
- * `run-settled` 事件只带 {status, stopReason?, error?}：产物不上高频进度管线，只落 journal。
+  * The run-settled event carries only status, optional stopReason and error: artifacts bypass the high-frequency progress pipeline and live only in the journal.
  *
- * 三条终态路径都经这里，所以 driver 的 dispose 恰好一次、first-wins 自然成立。放在
- * `run-settled` **之后**：dispose 是结算之后的资源释放（actor runtime 的关闭链），不是结算
- * 的一部分，事件日志不因它多一条。
+  * All three terminal paths pass here, so the driver's dispose happens exactly once and first-wins is natural. It runs
+  * after run-settled: dispose is post-settlement resource release (the actor runtime's shutdown chain), not part of
+  * settlement; the event log gains no row for it.
  */
 function finishRun(state: EngineState, status: RunStatus, settlement?: RunSettlementRecord): void {
   state.journal.updateRunStatus(state.runId, status, settlement);

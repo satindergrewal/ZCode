@@ -1,9 +1,9 @@
 /**
- * 存储管理（资源管理器「存储」tab）的共享类型。
- * 数据由 main 进程持有的 StorageService 产生，经 preload `window.resourceManager.storage` 送到资源管理器 renderer；
- * services 层的 storage 模块与 UI 都只引用这里的类型。
+ * Shared types of storage management (the resource manager's Storage tab).
+ * Data comes from main's StorageService, via preload window.resourceManager.storage to the manager renderer;
+ * the services storage module and the UI reference only these types.
  */
-/** 两个数据根：用户家目录下的 .zcode，以及「数据存储路径」下的 .zcode。 */
+/** The two data roots: ~/.zcode under home, and .zcode under the configured data-storage path. */
 export type StorageRootId = "home" | "dataBaseDir";
 
 export const STORAGE_CATEGORY_IDS = [
@@ -22,31 +22,31 @@ export const STORAGE_CATEGORY_IDS = [
 
 export type StorageCategoryId = (typeof STORAGE_CATEGORY_IDS)[number];
 
-/** entries 超出上限后折叠项的占位路径；UI 显示为「其余 N 项」。 */
+/** Placeholder path of the folded remainder once entries pass the cap; UI shows "N more". */
 export const STORAGE_MORE_ENTRIES_PATH = "…";
 
-/** none：不提供清理；safe：直接清理；confirm：需要二次确认。 */
+/** none: no cleanup; safe: clean directly; confirm: needs a second confirmation. */
 export type StorageCleanability = "none" | "safe" | "confirm";
 
-/** 扫描输入：由 RootsResolverPort 解析出的根目录。 */
+/** Scan input: roots resolved by RootsResolverPort. */
 export interface StorageRootSpec {
   id: StorageRootId;
   path: string;
-  /** 是否启用了自定义数据存储路径；启用后 home 根下的 v2 视为旧副本，归入「其他」。 */
+  /// Whether a custom data path is enabled; then home's v2 counts as a legacy copy under Other.
   hasCustomDataBaseDir: boolean;
 }
 
 export interface StorageVolume {
-  /** 同一物理卷的稳定 key（stat().dev）；同 key 的根合并进同一张磁盘卡片。 */
+  /// Stable key of one physical volume (stat().dev); same-key roots merge into one disk card.
   deviceId: string;
-  /** mac/Linux 为挂载点路径，Windows 为盘符根。 */
+  /// Mount point on mac/Linux, drive root on Windows.
   mountPoint: string;
   totalBytes: number;
   freeBytes: number;
 }
 
 export interface StorageEntryUsage {
-  /** 相对根目录的路径。 */
+  /// Path relative to the root.
   relativePath: string;
   bytes: number;
   fileCount: number;
@@ -57,14 +57,14 @@ export interface StorageCategoryUsage {
   bytes: number;
   fileCount: number;
   cleanability: StorageCleanability;
-  /** 下钻明细：聚合到规则命中路径的下一级，按 bytes 降序，有数量上限。 */
+  /// Drill-down: one level under the rule-hit path, bytes descending, capped.
   entries: StorageEntryUsage[];
 }
 
 export interface StorageRootUsage {
   id: StorageRootId;
   path: string;
-  /** statfs 失败时为 null：只展示占用，不展示磁盘容量。 */
+  /// null when statfs fails: usage only, no disk capacity.
   volume: StorageVolume | null;
   bytes: number;
   fileCount: number;
@@ -84,7 +84,7 @@ export interface StorageUsageSnapshot {
   startedAt: number;
   finishedAt?: number;
   roots: StorageRootUsage[];
-  /** EACCES / ENOENT 等局部错误，不中断扫描。 */
+  /// Local errors like EACCES/ENOENT never abort the scan.
   errors: StoragePathError[];
 }
 
@@ -96,14 +96,14 @@ export interface StorageCleanRequest {
 export interface StorageCleanResult {
   freedBytes: number;
   deletedCount: number;
-  /** 被保护规则跳过的文件数（例如当天日志、24h 内的会话目录）。 */
+  /// Files skipped by protection rules (today's logs, session dirs < 24h old).
   skippedCount: number;
   failures: StoragePathError[];
 }
 
-/** 卷视图：同一物理卷上的根聚合在一起，供磁盘卡片使用。 */
+/** Volume view: roots on one physical volume grouped for the disk card. */
 export interface StorageVolumeGroup {
-  /** volume.deviceId，探测失败的根各自成组，key 为根路径。 */
+  /// volume.deviceId; failed probes group alone, keyed by root path.
   key: string;
   volume: StorageVolume | null;
   roots: StorageRootUsage[];
@@ -111,8 +111,8 @@ export interface StorageVolumeGroup {
 }
 
 /**
- * 按物理卷把根目录分组：同 deviceId 的根进同一组；探测失败的根各自成组。
- * 纯函数，组内根顺序与输入一致，组按 bytes 降序。
+ * Group roots by physical volume: same deviceId together; failed probes alone.
+ * Pure; within a group root order follows input, groups ordered by bytes descending.
  */
 export function groupStorageRootsByVolume(roots: StorageRootUsage[]): StorageVolumeGroup[] {
   const groups = new Map<string, StorageVolumeGroup>();
@@ -129,22 +129,22 @@ export function groupStorageRootsByVolume(roots: StorageRootUsage[]): StorageVol
   return [...groups.values()].sort((a, b) => b.bytes - a.bytes);
 }
 
-/** 主进程侧存储服务与 renderer 桥共有的命令面。 */
+/** Command surface shared by the main-side storage service and the renderer bridge. */
 export interface StorageManagementApi {
-  /** 开始一次扫描；若已有进行中的 job 会先取消它。 */
+  /// Start a scan; cancels any running job first.
   startScan(): Promise<{ jobId: string }>;
-  /** 取消指定 job；非当前 job 为 no-op。 */
+  /// Cancel a job; non-current jobs no-op.
   cancelScan(jobId: string): Promise<void>;
-  /** 最近一次快照（进行中或已完成），从未扫描过时为 null。 */
+  /// Latest snapshot (running or done); null before the first scan.
   getSnapshot(): Promise<StorageUsageSnapshot | null>;
-  /** 按类别清理；调用方负责二次确认。扫描中调用会先取消当前扫描。 */
+  /// Clean by category; the caller owns confirmation. During a scan, cancels it first.
   clean(request: StorageCleanRequest): Promise<StorageCleanResult>;
 }
 
-/** preload 暴露给资源管理器 renderer 的桥：`window.resourceManager.storage`。 */
+/** Bridge exposed to the manager renderer: window.resourceManager.storage. */
 export interface StorageManagementBridge extends StorageManagementApi {
-  /** 进度事件：≥300ms 节流一次，payload 为完整快照；终态也通过它发出。返回取消订阅函数。 */
+  /// Progress events: throttled to one per >=300ms with the full snapshot; terminal states ride it too. Returns an unsubscribe.
   subscribeScanProgress(listener: (snapshot: StorageUsageSnapshot) => void): () => void;
-  /** 在系统文件管理器中定位路径（必须位于某个数据根内，main 侧校验）。 */
+  /// Reveal a path in the system file manager (must be inside a data root; validated main-side).
   revealPath(absolutePath: string): Promise<void>;
 }

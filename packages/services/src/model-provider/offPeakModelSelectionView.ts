@@ -5,7 +5,7 @@ import {
 } from "@zcode/provider";
 import { OFF_PEAK_PROVIDER_IDS } from "@zcode/shared";
 
-/** Off-Peak 只投影固定隐藏 Provider，不向普通用户选择面开放隐藏候选。 */
+/** Off-Peak projects the fixed hidden provider only; hidden candidates never enter normal user selection. */
 export function buildOffPeakModelSelectionView(registry: ProviderRegistryView): ModelSelectionView {
   const providerIds = new Set<string>(Object.values(OFF_PEAK_PROVIDER_IDS));
   const providers = registry.providers.filter(

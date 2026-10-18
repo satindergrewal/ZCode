@@ -34,7 +34,7 @@ export function createBundledMcpRuntimeConfig(input: {
     cwd: input.cwd,
     env: {
       ...input.env,
-      // 桌面打包态 process.execPath 是 ZCode Helper；缺少 Node 模式会误进 Electron main。
+      // In the desktop package, process.execPath is the ZCode Helper; without Node mode it mistakenly enters the Electron main.
       ELECTRON_RUN_AS_NODE: "1",
     },
     timeoutMs: input.timeoutMs,
@@ -52,16 +52,16 @@ export function writeOfficialPluginRuntimeManifest(input: OfficialRuntimeManifes
   const manifestPath = join(input.rootPath, ".zcode-plugin", "plugin.json");
   const currentContents = readFileSync(manifestPath, "utf8");
   const manifest = JSON.parse(currentContents) as Record<string, unknown>;
-  // skill-only / command-only 类型的 official plugin 不带 mcpServers，直接跳过 rewrite。
-  // 之前这里无脑 asRecord(manifest.mcpServers) 会对 undefined 抛错，
-  // 把 seed 流程整个阻断，连带 listZCodeSkills 拉不出 plugin skill。
+  // skill-only / command-only official plugins carry no mcpServers; skip the rewrite.
+  // The previous unconditional asRecord(manifest.mcpServers) threw on undefined,
+  // blocking the whole seed flow, including listZCodeSkills' plugin skills.
   if (manifest.mcpServers === undefined) return;
   const mcpServers = asRecord(manifest.mcpServers);
   const hostPrefixArgs = officialPluginHostPrefixArgs();
   if (!hostPrefixArgs) return;
 
-  // 保留对其他历史 official plugin MCP 的通用重写；zcode-cua 当前是 skill/SDK-only，
-  // 不会进入这个分支，也不会生成独立的 CUA MCP server。
+  // Keep the generic rewrite for other legacy official plugin MCPs; zcode-cua is currently skill/SDK-only,
+  // never entering this branch and never producing a separate CUA MCP server.
   for (const [serverKey, serverRaw] of Object.entries(mcpServers)) {
     const mcpServer = asRecord(serverRaw);
     const mcpServerEnv = isRecord(mcpServer.env) ? mcpServer.env : {};
@@ -69,12 +69,12 @@ export function writeOfficialPluginRuntimeManifest(input: OfficialRuntimeManifes
     mcpServer.args = [...hostPrefixArgs, join(input.rootPath, ...MCP_SERVER_RELATIVE_PATH)];
     mcpServer.env = {
       ...mcpServerEnv,
-      // 桌面打包态的 process.execPath 是 ZCode Helper。
-      // 官方插件 MCP server 缺少 Node 模式 env 时会误进 Electron main，触发 deep-link 注册等桌面副作用。
+      // In the desktop package, process.execPath is the ZCode Helper.
+      // Without Node-mode env, official plugin MCP servers mistakenly enter the Electron main, triggering desktop side effects like deep-link registration.
       ELECTRON_RUN_AS_NODE: "1",
-      // 权威写入插件身份（pluginName@marketplace，来自本地 plugin registry，manifest/user env 不可覆盖）。
-      // 其他 official plugin 仍带上不可伪造的 plugin identity；CUA broker 凭据由 shared
-      // node_repl 的可信配置注入，不再写入独立 server。
+      // Authoritatively write the plugin identity (pluginName@marketplace, from the local plugin registry; manifest/user env cannot override).
+      // Other official plugins still carry the unforgeable plugin identity; CUA broker credentials are injected by the shared
+      // node_repl trusted config, no longer written into a separate server.
       [ZCODE_PLUGIN_ID_ENV_KEY]: `${input.pluginName}@${ZCODE_OFFICIAL_PLUGIN_MARKETPLACE}`,
     };
     mcpServers[serverKey] = mcpServer;
@@ -82,8 +82,8 @@ export function writeOfficialPluginRuntimeManifest(input: OfficialRuntimeManifes
   manifest.mcpServers = mcpServers;
 
   const nextContents = `${JSON.stringify(manifest, null, 2)}\n`;
-  // 启动时无条件 rename 同内容的 plugin.json 会放大 Windows 杀毒/索引器
-  // 的短暂文件占用。字节完全一致时不触碰文件；真正有更新时仍保持原子的失败语义。
+  // Unconditionally renaming an identical plugin.json at startup amplifies transient Windows AV/indexer
+  // file locks. Skip the file when bytes are identical; real updates keep the atomic failure semantics.
   if (nextContents === currentContents) return;
   writeTextFileAtomicallyWithRetry(
     manifestPath,

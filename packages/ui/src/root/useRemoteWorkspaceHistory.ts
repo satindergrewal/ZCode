@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 远端 workspace 历史目前需要在一个 hook 内同时收口恢复、重连、持久化和清理流程，先保留同文件协作边界，避免为过 lint 临时拆分后引入状态回归。*/
+/* eslint-disable max-lines -- remote workspace history keeps restore/reconnect/persistence/cleanup in one hook for now; splitting for lint alone risks state regressions.*/
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type {
@@ -55,18 +55,18 @@ async function bindRemoteWorkspaceContextAndGetSession(params: {
   workspaceIdentity?: string;
 }): Promise<RemoteWorkspaceSession> {
   if (!getRemoteWorkspaceSession(params.sessionId)) {
-    throw new Error(`远程 workspace session 不存在: ${params.sessionId}`);
+    throw new Error(`Remote workspace session not found: ${params.sessionId}`);
   }
   await params.platform.bindRemoteWorkspaceSessionContext?.({
     remoteSessionId: params.sessionId,
     workspacePath: params.workspacePath,
     workspaceIdentity: params.workspaceIdentity,
   });
-  // bind 会让同一 remoteSessionId 的 attachment/services 从 A 换代到 B。
-  // bind 前捕获的对象仍指向 A，因此必须在 ready ACK 后按 sessionId 重新读取当前 services。
+  // bind re-generates the attachment/services of one remoteSessionId from A to B.
+  // Objects captured before bind still point at A; re-read the current services by sessionId after the ready ACK.
   const currentSession = getRemoteWorkspaceSession(params.sessionId);
   if (!currentSession) {
-    throw new Error(`远程 workspace session 不存在: ${params.sessionId}`);
+    throw new Error(`Remote workspace session not found: ${params.sessionId}`);
   }
   return currentSession;
 }
@@ -78,8 +78,8 @@ function resolveBotRemoteWorkspaceReconnectedIdentity(params: {
 }): string {
   const eventWorkspaceIdentity = params.event.workspaceIdentity.trim();
   if (eventWorkspaceIdentity) {
-    // Bugfix: Bot task/stream 广播继续使用 bot context 捕获的 workspaceIdentity。
-    // 这里如果用 canonical path 重新计算 identity，UI tab 会订阅到另一个 key，导致远端结果被过滤掉。
+    // Bugfix: bot task/stream broadcasts keep the workspaceIdentity captured in the bot context.
+    // Recomputing it from the canonical path would subscribe the UI tab to another key and filter remote results away.
     return eventWorkspaceIdentity;
   }
   return buildRemoteWorkspaceIdentity(params.resolvedWorkspacePath, params.target);
@@ -94,9 +94,9 @@ function shouldPersistRemoteWorkspaceFailure(params: {
     return true;
   }
 
-  // WSL 偶发断连时，旧 session 的关闭事件可能会晚于手动重连流程。
-  // 只要当前 workspace 已经有 pending reconnect，就先别把 failed 写死到 setting，
-  // 让最终结果由这次重连成功/失败决定。
+  // On WSL flaps, the old session close event can land after the manual reconnect starts.
+  // While a reconnect is pending for this workspace, do not persist failed into settings;
+  // let this reconnect outcome decide.
   return !params.pendingReconnectRequestIds.has(params.workspaceKey);
 }
 interface RemoteWorkspaceTabStoreReader {
@@ -168,7 +168,7 @@ async function reconnectRemoteWorkspaceByKey({
     (entry) => buildWorkspaceSessionKey(entry) === workspaceKey,
   );
   if (!sessionEntry) {
-    throw new Error(`远程 workspace 不在当前窗口中，无法重连: ${workspaceKey}`);
+    throw new Error(`Remote workspace not in this window; cannot reconnect: ${workspaceKey}`);
   }
 
   await runReconnectRemoteWorkspace(sessionEntry, options);
@@ -203,8 +203,8 @@ function collectSshReconnectGroup(params: {
     return [params.selected];
   }
 
-  // 历史记录顺序不代表本次重连发起者。initiator 必须固定在首位，
-  // 否则并发加载凭据时 sibling 可能先创建共享 Host，导致整组误用旧凭据。
+  // History order does not say who initiated this reconnect. The initiator must be pinned first,
+  // or a sibling may create the shared host first while credentials load concurrently, misusing old credentials group-wide.
   return [
     params.selected,
     ...reconnectGroup.filter((entry) => buildWorkspaceSessionKey(entry) !== selectedWorkspaceKey),
@@ -249,8 +249,8 @@ async function reconnectRemoteWorkspaceGroup(params: {
     resolveHostReady = resolve;
   });
 
-  // 组内并发连接会让最先完成 credential load 的 sibling 抢建共享 Host。
-  // initiator 先负责把 Host 建到 ready；后续 provider/task 初始化不再阻塞 sibling attachment。
+  // Concurrent connects let the sibling that finishes its credential load first grab the shared host.
+  // The initiator builds the host to ready; later provider/task init no longer blocks sibling attachments.
   const initiatorPromise = params.reconnectEntry(params.selected, {
     ...params.options,
     throwOnFailure: true,
@@ -287,8 +287,8 @@ async function reconnectRemoteWorkspaceGroup(params: {
     return;
   }
 
-  // sibling 只复用 initiator credential 命中 ready Host，不再读取各自历史 credential；
-  // path/provider/task 初始化与 initiator 并行并保持独立失败语义。
+  // Siblings only reuse the initiator credential against the ready host, never their own historical credentials;
+  // path/provider/task init runs parallel to the initiator with independent failure semantics.
   const siblingPromise = Promise.allSettled(
     siblings.map((entry) =>
       params.reconnectEntry(entry, {
@@ -351,7 +351,7 @@ async function cancelPendingRemoteReconnectsForWorkspaceKeys(params: {
       try {
         await params.cancelPendingRemoteConnection?.(requestId);
       } catch (error) {
-        params.logger.warn("[Root] 取消远程 workspace 重连失败", {
+        params.logger.warn("[Root] Failed to cancel the remote workspace reconnect", {
           requestId,
           error,
         });
@@ -404,9 +404,9 @@ async function openRemoteWorkspaceFromHistoryEntry({
     return;
   }
 
-  // 选择页远程历史与侧栏重连都属于“恢复已有 remote workspace”语义。
-  // 如果这里缺少“仍需保留该 workspace”的二次校验，用户在重连中移除后仍会被成功回调重新加回 tab。
-  // 这里复用同一套 shouldKeep 判定，保证两条入口的竞态行为一致。
+  // The picker remote history and the sidebar reconnect share one restore-existing-workspace semantic.
+  // Without a keep-this-workspace recheck, a workspace removed mid-reconnect is re-added by the success callback.
+  // Reuse the same shouldKeep predicate so both entries race identically.
   resetLogsForWorkspaceKey(workspaceKey);
   inflightReconnectWorkspaceKeys.add(workspaceKey);
   const requestId = createReconnectRequestId?.();
@@ -437,13 +437,13 @@ async function openRemoteWorkspaceFromHistoryEntry({
           workspaceIdentity,
         }),
       onWorkspaceActivated: (target) => {
-        logger.debug("[Root] 远程历史 workspace ready，提交 tab 与 draft 激活", target);
+        logger.debug("[Root] Remote history workspace ready; committing tab and draft activation", target);
         onWorkspaceActivated?.(target);
       },
       options: {
-        // 历史入口过去只回填 connected tab，却没有提交 tab activation 和 draft owner，
-        // 所以连接成功后右侧仍停留在旧 workspace。共享 helper 只会在 services ready 后执行此提交，
-        // 不会提前暴露缺少 remoteSessionId 的 remote-waiting tab。
+        // The history entry used to backfill only the connected tab without committing tab activation/draft owner,
+        // leaving the right side on the old workspace after connect. The shared helper commits only once services are ready,
+        // never exposing a remote-waiting tab without remoteSessionId.
         activateWorkspaceAfterReconnect: true,
         showErrorToast: true,
         requestId,
@@ -531,9 +531,9 @@ async function selectRemoteWorkspaceProjectFromDialog({
   }
   const remoteTarget = connectionTarget ?? remoteSession.target;
   if (!remoteTarget) {
-    // 手机 web relay 复用 remote session store 只做服务路由，没有本地可重连 target。
-    // 远程历史的选目录/持久化流程必须有 target，缺失时直接阻断，避免把无 target 的桥接 session 写进历史。
-    throw new Error(`远程 workspace session 缺少连接目标: ${sessionId}`);
+    // The phone web relay reuses the remote session store for routing only; there is no locally reconnectable target.
+    // The history pick/persist flow requires a target; block otherwise, never recording a target-less bridged session.
+    throw new Error(`Remote workspace session missing its connection target: ${sessionId}`);
   }
 
   const canonicalPath = await resolveRemoteWorkspaceCanonicalPath(sessionId, path);
@@ -554,18 +554,18 @@ async function selectRemoteWorkspaceProjectFromDialog({
     return;
   }
 
-  // 断连 tab 以前会在 provider/session 绑定完成前先被 activateTabByPath 激活，
-  // V4PaneConversationProvider 此时只能得到 remote-waiting，因 rpcReady=false 返回 null，
-  // 右侧便会先空白，等后续 addTab 写回 remoteSessionId 后才出现新建对话。
-  // 断连 tab 与首次连接统一等到服务绑定完成后再由 addTab 原子激活，避免暴露半连接 workspace。
+  // Disconnected tabs used to be activated via activateTabByPath before provider/session binding;
+  // V4PaneConversationProvider then only saw remote-waiting and returned null on rpcReady=false,
+  // blanking the right side until a later addTab wrote back the remoteSessionId.
+  // Disconnected and first-connect tabs now activate atomically via addTab only after services bind, never exposing a half-connected workspace.
 
-  // 新建连接不带 context，main/host 的 logical session
-  // descriptor 停留在连接根目录 "/"，identity 也是 Host 用解析后 target 自建的；而 tab、远程历史与
-  // 手机可见 workspace 列表用的都是这里算出的 canonicalPath/workspaceIdentity。
-  // 手机桥接（attachRemoteWorkspaceSessionHost）要求二者三元全等，所以选目录后必须先把 canonical
-  // context 绑定回 main，再提交 connected 状态与 tab。df2db1df7a 把 provider 同步移到 main/host 时
-  // 顺带删掉了这次 bind，导致新建连接后选的目录在手机端必然被 REMOTE_WORKSPACE_IDENTITY_MISMATCH 拒绝。
-  // bind 失败时 fail-closed：回收 session 并把错误抛回连接弹窗，不留下 descriptor 与 tab 不一致的 session。
+  // A new connection carries no context: the main/host logical session
+  // descriptor stays at the connection root /, identity host-built from the resolved target; while the tab, remote history and
+  // phone-visible workspace list all use the canonicalPath/workspaceIdentity computed here.
+  // Phone bridging (attachRemoteWorkspaceSessionHost) requires the two triples to match exactly, so after the directory pick the canonical
+  // context must bind back to main before committing connected state and the tab. df2db1df7a moved provider sync into main/host
+  // and dropped this bind, so post-create directory picks always got REMOTE_WORKSPACE_IDENTITY_MISMATCH on the phone.
+  // On bind failure fail closed: recycle the session and throw into the connect dialog, never leaving descriptor/tab mismatched.
   try {
     await bindRemoteWorkspaceSessionContext({
       sessionId,
@@ -597,9 +597,9 @@ async function selectRemoteWorkspaceProjectFromDialog({
     workspaceIdentity,
     localWorkspacePath,
   });
-  // startDraft 之前在调用方等待 pinned/timeline 刷新结束后才执行，
-  // tab 已切到远端但草稿 owner 仍是旧状态，形成可见的空白中间帧。
-  // 激活回调必须紧跟 addTab，在任何列表刷新 await 之前提交同一 workspaceKey 的草稿态。
+  // startDraft now runs in the caller only after the pinned/timeline refreshes settle; earlier, the tab
+  // had switched to remote while the draft owner lagged, leaving a visible blank frame.
+  // The activation callback must follow addTab directly, committing the draft state for the same workspaceKey before any list-refresh await.
   onWorkspaceActivated?.({ workspacePath: canonicalPath, workspaceIdentity });
   await Promise.all([
     refreshPinnedTasks({
@@ -635,7 +635,7 @@ export function useRemoteWorkspaceHistory({
   supportsSettings: boolean;
   allowRemoteWorkspace?: boolean;
   ensureConversationWorkspaceOnRestore?: boolean;
-  /** 仅 Desktop 主窗口：输入可用后再把 inactive workspace 加入 sidebar/task 数据源。 */
+  /** Desktop main window only: add inactive workspaces to the sidebar/task sources once input is available. */
   deferInactiveWorkspaceRestore?: boolean;
   unavailableWorkspacePath?: string;
   tabStoreApi: ReturnType<typeof import("@/store/TabStoreProvider.js").useTabStoreApi>;
@@ -666,10 +666,10 @@ export function useRemoteWorkspaceHistory({
   const pendingConnectionTargetsBySessionIdRef = useRef<
     Map<string, Parameters<IPlatformService["connectRemote"]>[0]>
   >(new Map());
-  // 上一个版本这里有一个启动重连尝试用的 useRef。
-  // 移除自动重连逻辑后，Vite Fast Refresh 会复用旧 fiber 的 hook slot，
-  // 导致下一层 useReconnectingRemoteWorkspaceLogs 里的 useState 落到旧 useRef slot 上并触发 React "Should have a queue"。
-  // 保留一个空 ref 只用于稳定热更新中的 hook 顺序，不恢复任何启动重连行为。
+  // A previous version kept a useRef here for startup reconnect attempts.
+  // After auto-reconnect removal, Vite Fast Refresh reuses the old fiber hook slots,
+  // making the deeper useReconnectingRemoteWorkspaceLogs useState land on a stale ref slot and trip React "Should have a queue".
+  // Keep one empty ref purely to stabilize hook order across hot reloads; no startup reconnect behavior returns.
   const remoteStartupReconnectRefreshCompatibilityRef = useRef<null>(null);
   void remoteStartupReconnectRefreshCompatibilityRef;
   const {
@@ -708,7 +708,7 @@ export function useRemoteWorkspaceHistory({
         try {
           await services.credentialService.delete(credentialKey);
         } catch (error) {
-          logger.warn("[Root] 删除远程 workspace 凭据失败", {
+          logger.warn("[Root] Failed to delete the remote workspace credentials", {
             credentialKey,
             error,
           });
@@ -741,7 +741,7 @@ export function useRemoteWorkspaceHistory({
 
         if (Date.now() - startedAt >= 3000) {
           window.clearInterval(pollTimer);
-          reject(new Error(`等待远程 workspace session 就绪超时: ${sessionId}`));
+          reject(new Error(`Timed out waiting for the remote workspace session: ${sessionId}`));
         }
       }, 50);
     });
@@ -762,13 +762,13 @@ export function useRemoteWorkspaceHistory({
         throw new Error("Remote session was not created");
       }
 
-      // 远程连接成功只代表 main/host 已经建好 session，
-      // renderer 侧的 MessagePort 仍然可能在下一拍才注册进 zustand store。
-      // 如果此时立刻 addTab，会短暂走到本地 services，导致首屏读目录/预热 ZCode Agent 命中错误服务。
-      // 这里等 session 真正挂进 store 再继续。
+      // A successful remote connect only means main/host built the session;
+      // the renderer-side MessagePort may register into the zustand store a beat later.
+      // addTab immediately would briefly hit local services, so first-paint directory reads/warmup hit the wrong service.
+      // Wait until the session is really in the store.
       await waitForRemoteWorkspaceSessionReady(result.sessionId);
       if (!context) {
-        // 共享 Host 只向 renderer store 回传脱敏 target；完整凭据只在选目录流程完成前临时保留。
+        // The shared host returns only redacted targets to the renderer store; full credentials live only until the picker completes.
         pendingConnectionTargetsBySessionIdRef.current.set(result.sessionId, target);
       }
       return result.sessionId;
@@ -784,9 +784,9 @@ export function useRemoteWorkspaceHistory({
       }
 
       try {
-        // 同一目录可能通过符号链接别名输入（例如 /dev 与 /home/dev），
-        // 之前直接持久化用户输入会把同一 workspace 识别成两个身份。
-        // 这里在远端 host 上做一次 realpath 归一化，再参与 identity 计算与持久化。
+        // One directory can be entered via symlink aliases (e.g. /dev vs /home/dev);
+        // persisting raw user input used to split one workspace into two identities.
+        // realpath-normalize once on the remote host before identity computation and persistence.
         return await remoteSession.services.fileService.resolvePath({
           path: workspacePath,
         });
@@ -809,8 +809,8 @@ export function useRemoteWorkspaceHistory({
         await platform.disposeRemoteSession(sessionId);
       } finally {
         pendingConnectionTargetsBySessionIdRef.current.delete(sessionId);
-        // 远程目录选择如果在确认前就取消，session 释放失败也不能把前端状态卡在“仍有一个待选远程 session”。
-        // 这里始终清掉本地映射，避免下次再次打开弹窗时复用到一条已经失效的 session 记录。
+        // If a remote directory pick is canceled before confirm, a failed release must not leave the front end stuck on a phantom pending session.
+        // Always clear the local mapping, so reopening the dialog never reuses a dead session record.
         unregisterRemoteWorkspaceSession(sessionId);
       }
     },
@@ -819,8 +819,8 @@ export function useRemoteWorkspaceHistory({
 
   const bindRemoteWorkspaceSessionContext = useCallback<BindRemoteWorkspaceSessionContextFn>(
     async ({ sessionId, workspacePath, workspaceIdentity }) => {
-      // bind 会换代同一 remoteSessionId 的 renderer attachment；
-      // 复用 bindRemoteWorkspaceContextAndGetSession 等 ready ACK 后再返回，之后按 sessionId 读取的才是新代 services。
+      // bind re-generates the renderer attachment of one remoteSessionId;
+      // reuse bindRemoteWorkspaceContextAndGetSession, return after the ready ACK, and only post-await sessionId reads hit the new generation.
       await bindRemoteWorkspaceContextAndGetSession({
         platform,
         sessionId,
@@ -855,10 +855,10 @@ export function useRemoteWorkspaceHistory({
       const requestId = createUuid();
       pendingReconnectRequestIdsRef.current.set(workspaceKey, requestId);
       try {
-        // 重连期间只静默回填 ready 的 remoteSessionId；激活统一由 reconnect helper
-        // 在回填之后执行，避免 active tab 暴露 remote-waiting 中间态。
+        // During reconnect only silently backfill the ready remoteSessionId; activation belongs to the reconnect helper
+        // after the backfill, keeping remote-waiting intermediate states off the active tab.
         const upsertWorkspaceTab = tabStoreApi.getState().ensureWorkspaceTab;
-        logger.debug("[Root] 远程 workspace 重连中，保留当前 conversation", {
+        logger.debug("[Root] Remote workspace reconnecting; keeping the current conversation", {
           workspaceKey,
         });
         await reconnectRemoteWorkspaceHistoryEntry({
@@ -884,7 +884,7 @@ export function useRemoteWorkspaceHistory({
               workspaceIdentity,
             }),
           onWorkspaceActivated: (target) => {
-            logger.debug("[Root] 远程 workspace ready，提交 tab 与 draft 激活", target);
+            logger.debug("[Root] Remote workspace ready; committing tab and draft activation", target);
             onWorkspaceActivated?.(target);
           },
           options: {
@@ -935,10 +935,10 @@ export function useRemoteWorkspaceHistory({
   );
 
   useEffect(() => {
-    // 这里原来是启动自动重连 effect。
-    // 删除 effect 本身会让 Fast Refresh 中已挂载的 RootInner 后续 hook 全部前移，
-    // 旧 effect slot 被 useCallback 复用后容易触发 React hook 队列错位。
-    // 这个空 effect 只保留 hook slot；启动恢复仍只产生断开态 tab，不会发起远程连接。
+    // This used to be the startup auto-reconnect effect.
+    // Deleting the effect shifts every later hook of the mounted RootInner during Fast Refresh,
+    // and a useCallback reuse of the old effect slot trips React hook queue misalignment.
+    // This empty effect keeps the hook slot only; startup restore still yields disconnected tabs and never connects.
     const preserveRemoteStartupReconnectEffectSlot = true;
     void preserveRemoteStartupReconnectEffectSlot;
   }, []);
@@ -954,14 +954,14 @@ export function useRemoteWorkspaceHistory({
           conversationWorkspacePath = (await services.fileService.ensureConversationWorkspace())
             .path;
         } catch (error) {
-          // 路径创建失败不能连带吞掉真实项目恢复；后续显式新建对话仍会走原有可重试错误入口。
-          logger.warn("[Root] 恢复阶段解析 conversation workspace 失败", { error });
+          // A failed path creation must not swallow real project restore; the later explicit new-conversation keeps its retryable error path.
+          logger.warn("[Root] Failed to resolve the conversation workspace during restore", { error });
         }
       }
-      // 启动恢复远程 workspace 时只还原任务列表里的断开态 tab。
-      // 之前这里之后还有后台 effect 会自动发起 SSH/WSL/Docker 重连，用户只是打开应用查看任务列表也会触发远端连接和 runtime 上传。
-      // 现在把重连入口收口到用户点击“重连”或从远程历史主动打开，避免启动阶段产生隐藏副作用。
-      // Web 普通模式还会把 allowRemoteWorkspaceRestore 置为 false：保留 setting 里的远程快照，但不恢复 tab/不展示入口。
+      // Startup restore of remote workspaces reconnects only the disconnected tabs already in the task list.
+      // A later background effect used to auto-fire SSH/WSL/Docker reconnects, so merely opening the app triggered remote connections and runtime uploads.
+      // Reconnect now starts only from the user Reconnect button or the remote-history entry, avoiding hidden startup side effects.
+      // Plain web also sets allowRemoteWorkspaceRestore false: keep the settings snapshot, restore no tabs, show no entry.
       const workspaceRestore = restorePersistedRemoteWorkspaceSessions({
         settings,
         tabStoreApi,
@@ -1071,8 +1071,8 @@ export function useRemoteWorkspaceHistory({
         return;
       }
 
-      // 远程历史入口与侧栏重连都可能命中“重连中被用户移除”的竞态。
-      // 这里抽成统一入口，确保两条路径共享相同的并发保护、保留校验与错误处理语义。
+      // Both the remote-history entry and the sidebar reconnect can hit the removed-while-reconnecting race.
+      // One shared entry keeps concurrency guards, retention checks and error handling identical on both paths.
       await openRemoteWorkspaceFromHistoryEntry({
         workspaceKey,
         tabStoreApi,
@@ -1127,9 +1127,9 @@ export function useRemoteWorkspaceHistory({
         return;
       }
 
-      // 远端 host 退出后，tab 上的 remoteSessionId 之前不会被清空。
-      // UI 因此持续显示“已连接”，并继续把请求路由到失效 session。
-      // 这里在收到 main 进程的 session-close 事件时立即降级为断连态，后续只走用户手动重连。
+      // After the remote host exits, the tab remoteSessionId used to stay set:
+      // the UI kept showing connected and routing requests into a dead session.
+      // Downgrade to disconnected immediately on the main-process session-close event; afterwards only manual reconnect.
       tabStoreApi.setState((state) => ({
         tabs: state.tabs.map((tab) =>
           isWorkspaceTab(tab) && tab.remoteSessionId === sessionId
@@ -1143,7 +1143,7 @@ export function useRemoteWorkspaceHistory({
         ...new Set(matchedTabs.map((tab) => buildWorkspaceSessionKey(tab))),
       ];
       const reason = [
-        "远程连接已断开",
+        "Remote connection lost",
         event.exitCode != null ? `exitCode=${event.exitCode}` : null,
         event.signal ? `signal=${event.signal}` : null,
       ]
@@ -1157,7 +1157,7 @@ export function useRemoteWorkspaceHistory({
         reason,
       });
 
-      logger.warn("[Root] 远程 workspace session 已关闭", {
+      logger.warn("[Root] Remote workspace session closed", {
         sessionId,
         reason: event.reason,
         exitCode: event.exitCode,
@@ -1182,7 +1182,7 @@ export function useRemoteWorkspaceHistory({
             workspaceKey,
           })
         ) {
-          logger.info("[Root] WSL workspace session 关闭时跳过失败落盘，等待重连结果", {
+          logger.info("[Root] WSL session closed; skipping the failure write, awaiting the reconnect outcome", {
             pendingReconnectRequestId,
             sessionId,
             workspaceIdentity: sessionEntry.workspaceIdentity ?? null,
@@ -1226,12 +1226,12 @@ export function useRemoteWorkspaceHistory({
         await waitForRemoteWorkspaceSessionReady(sessionId);
         const remoteSession = getRemoteWorkspaceSession(sessionId);
         if (!remoteSession) {
-          throw new Error(`远程 workspace session 不存在: ${sessionId}`);
+          throw new Error(`Remote workspace session not found: ${sessionId}`);
         }
         if (!remoteSession.target) {
-          // Bugfix: Bot 重连事件来自 main/host，必须带可持久化的 target。
-          // Web relay 的桥接 session 没有 target，不能进入远程历史重连分支。
-          throw new Error(`远程 workspace session 缺少连接目标: ${sessionId}`);
+          // Bugfix: bot reconnection events come from main/host and must carry a persistable target.
+          // Web-relay bridged sessions have no target and never enter the remote-history reconnect branch.
+          throw new Error(`Remote workspace session missing its connection target: ${sessionId}`);
         }
 
         const resolvedWorkspacePath = await resolveRemoteWorkspaceCanonicalPath(
@@ -1246,8 +1246,8 @@ export function useRemoteWorkspaceHistory({
 
         bindRemoteWorkspacePath(resolvedWorkspacePath, sessionId);
         bindRemoteWorkspaceIdentity(resolvedWorkspaceIdentity, sessionId);
-        // Bugfix: Bot 触发的远端重连发生在 main/host，不会经过侧栏手动重连的 React 流程。
-        // 这里收到 main 的成功事件后，把已创建的 session 绑定回 tab 和远端历史，UI 才会从“未连接”变为“已连接”。
+        // Bugfix: a bot-triggered remote reconnect happens in main/host, never through the sidebar React flow.
+        // On the main success event, bind the created session back onto tab and remote history; only then does the UI flip to connected.
         tabStoreApi.getState().ensureWorkspaceTab(resolvedWorkspacePath, {
           remoteSessionId: sessionId,
           remoteTarget: remoteSession.target,
@@ -1276,7 +1276,7 @@ export function useRemoteWorkspaceHistory({
           }),
         ]);
       } catch (error) {
-        logger.warn("[Root] Bot 远端 workspace 重连成功后同步 UI 状态失败", {
+        logger.warn("[Root] Failed to sync UI state after the bot remote reconnect", {
           sessionId,
           workspacePath: event.workspacePath,
           workspaceIdentity: event.workspaceIdentity,
@@ -1314,8 +1314,8 @@ export function useRemoteWorkspaceHistory({
       const workspaceKeySet = new Set(workspaceKeys);
 
       void (async () => {
-        // 关闭断连态 remote tab 时，tab 上还没有 remoteSessionId，但 main 进程可能已经在上传 remote runtime。
-        // 这里用重连 requestId 精准取消 pending host，避免 UI 已移除而后台 upload 继续跑。
+        // Closing a disconnected remote tab: no remoteSessionId on the tab yet, while main may already upload the remote runtime.
+        // Cancel the pending host by reconnect requestId, so a removed UI never leaves a background upload running.
         await cancelPendingRemoteReconnectsForWorkspaceKeys({
           workspaceKeys,
           pendingRequestIds: pendingReconnectRequestIdsRef.current,
@@ -1340,16 +1340,16 @@ export function useRemoteWorkspaceHistory({
           return;
         }
 
-        // 用户在侧栏“移除”远程 workspace 后，只删 tab 不够：
-        // remoteWorkspaceSessionsRef 仍被持久化补丁合并回 setting.json，
-        // 所以下次启动又会恢复同一个断连项。这里把显式移除视为删除远程历史，
-        // 同时清理该历史独占的 SSH 凭据，避免留下不可达的 credential key。
+        // After the user removes a remote workspace in the sidebar, deleting the tab is not enough:
+        // remoteWorkspaceSessionsRef still merges back into setting.json via the persistence patch,
+        // restoring the same disconnected item next start. Treat explicit removal as history deletion
+        // and clean up the history-exclusive SSH credentials, leaving no unreachable credential key.
         await syncPersistedWorkspaceSession(removal.nextRemoteSessions);
         for (const credentialKey of removal.credentialKeysToDelete) {
           try {
             await services.credentialService.delete(credentialKey);
           } catch (error) {
-            logger.warn("[Root] 删除已移除远程 workspace 凭据失败", {
+            logger.warn("[Root] Failed to delete credentials of the removed remote workspace", {
               credentialKey,
               error,
             });

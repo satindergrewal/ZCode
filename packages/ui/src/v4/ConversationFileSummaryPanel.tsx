@@ -109,8 +109,8 @@ export function ConversationFileSummaryPanel({
     if (!open || !context.fetchFileChanges || !target) return;
 
     let disposed = false;
-    // 运行中的 fileChanges 是某个 projection revision 的局部结果；turn
-    // 进入终态后必须废弃局部 details，并用可持久缓存的终态策略重新读取。
+    // In-flight fileChanges are a partial result of some projection revision; once the turn
+    // reaches a terminal state, discard the partial details and re-read under a persistable terminal-state policy.
     setDetails(null);
     setLoadingDetails(true);
     void context
@@ -126,7 +126,7 @@ export function ConversationFileSummaryPanel({
         },
         (loadError: unknown) => {
           if (disposed) return;
-          logger.warn("[ConversationFileSummaryPanel] 读取文件变更详情失败", {
+          logger.warn("[ConversationFileSummaryPanel] failed to load file-change details", {
             error: loadError instanceof Error ? loadError.message : String(loadError),
             rowId: target.rowId,
           });
@@ -177,7 +177,7 @@ export function ConversationFileSummaryPanel({
     if (!details || !summary || summary.files <= 0 || details.items.length > 0) {
       return;
     }
-    logger.warn("[ConversationFileSummaryPanel] 文件摘要详情为空", {
+    logger.warn("[ConversationFileSummaryPanel] file summary details empty", {
       expectedFiles: summary.files,
       rowId: header.rowId,
       turnId: header.turnId,
@@ -291,8 +291,8 @@ export function ConversationFileSummaryPanel({
                             }}
                           />
                         </div>
-                        {/* writeCount 是撤销预检使用的操作轨迹，摘要行已经用 +/- 表达最终结果；
-                            在这里展示会把内部操作次数误当成变更指标，因此只在撤销弹窗保留。 */}
+                        {/* writeCount is the operation trail used by the revert precheck; the summary row already expresses the final result with +/-,
+                            rendering it here would read internal op counts as change metrics, so it stays in the revert dialog only. */}
                         <span className="flex shrink-0 items-center gap-2 tabular-nums text-ui-base">
                           {item.additions > 0 ? (
                             <span className="text-diff-added">+{item.additions}</span>

@@ -8,27 +8,28 @@ import {
 /**
  * ZaiCodingPlanSubscriptionProvider
  *
- * 历史上 Team Plan 企业定价只在 bigmodel family 上落地，service 层把所有
- * enterprise 读请求直接打到 BigModelCodingPlanSubscriptionProvider，硬编码 bigmodel
- * 域名 + bigmodelCodingPlan providerId + bigmodel OAuth token。zai family 即使生成
- * 了 team plan 连接键，也无独立的定价数据来源（死代码）。
+ * Team Plan enterprise pricing used to exist only for bigmodel: the service fired every
+ * enterprise read at BigModelCodingPlanSubscriptionProvider with a hardcoded bigmodel host,
+ * bigmodelCodingPlan providerId and bigmodel OAuth token. Even with a zai team-plan connection
+ * key there was no pricing source (dead code).
  *
- * zai 与 bigmodel Team Plan 全链路对称化：
- * 本类继承 BigModelCodingPlanSubscriptionProvider，仅覆盖 enterprise 读路径的 family 维度：
- *   - providerId  → zaiCodingPlan
- *   - 业务域名   → resolveZaiCodingPlanHost()（测试 配置的 ZAI Business origin / 线上 api.z.ai）
- *   - OAuth token → loadZaiAuthorization()（oauth:zai:access_token，复用父类）
- *   - 鉴权头     → createZaiLoginAuthHeaders()
+ * zai/bigmodel Team Plan are now symmetric end to end: this subclass of
+ * BigModelCodingPlanSubscriptionProvider overrides only the enterprise-read family dimensions -
+ *   - providerId -> zaiCodingPlan
+ *   - business host -> resolveZaiCodingPlanHost() (env-configured ZAI Business origin / prod api.z.ai)
+ *   - OAuth token -> loadZaiAuthorization() (oauth:zai:access_token, reused from the parent)
+ *   - auth headers -> createZaiLoginAuthHeaders()
  *
- * 覆盖范围：仅 getEnterprisePricing + enrichEnterprisePricingTeamProjects 相关的
- * family 维度（通过 protected 虚方法）。企业购买闭环（balance/order/pending/cancel/
- * continue/status）仍由父类走 bigmodel 域，符合 zai Team Plan "仅读定价+团队上下文" 的产品边界。
+ * Scope: only the family dimensions behind getEnterprisePricing +
+ * enrichEnterprisePricingTeamProjects (via protected virtual). The enterprise purchase loop
+ * (balance/order/pending/cancel/continue/status) stays on the parent's bigmodel domain, matching
+ * the zai Team Plan product boundary of pricing+team-context reads only.
  *
- * 其余方法（batchPreview/preview/productInfo/checkPayment/checkPendingOrders/
- * Stripe/PayPal/createSign/updateSign/staticConfigs）全部复用父类：
- *   - 购买类已通过 request.providerId 在父类 resolveEndpointConfig 内动态路由
- *     （zai 走 /api/pay + zai host + zai token，bigmodel 走 /api/biz + bigmodel host + bigmodel token）。
- *   - staticConfigs 是平台级 client/configs，与 family 无关。
+ * Everything else (batchPreview/preview/productInfo/checkPayment/checkPendingOrders/Stripe/PayPal/
+ * createSign/updateSign/staticConfigs) is inherited:
+ *   - purchase flows route in the parent's resolveEndpointConfig via request.providerId
+ *     (zai -> /api/pay + zai host + zai token; bigmodel -> /api/biz + bigmodel host + bigmodel token);
+ *   - staticConfigs is the platform-level client/configs, family-agnostic.
  */
 export class ZaiCodingPlanSubscriptionProvider extends BigModelCodingPlanSubscriptionProvider {
   protected codingPlanProviderId(): CodingPlanSubscriptionProviderId {
@@ -40,7 +41,7 @@ export class ZaiCodingPlanSubscriptionProvider extends BigModelCodingPlanSubscri
   }
 
   protected async loadFamilyEnterpriseToken(): Promise<string> {
-    // 复用父类 loadZaiAuthorization：credential key = oauth:zai:access_token。
+    // Reuse the parent's loadZaiAuthorization; credential key oauth:zai:access_token.
     return this.loadZaiAuthorization();
   }
 
@@ -50,9 +51,10 @@ export class ZaiCodingPlanSubscriptionProvider extends BigModelCodingPlanSubscri
 }
 
 /**
- * zai 业务域名（/api/biz 与 /api/pay）。
- * 与父类 file-scoped 的 resolveZaiCodingPlanHost 等价；这里独立保留是因为父类该函数未 export。
- * 必须与父类实现保持一致：跟随产品环境（测试 配置的 ZAI Business origin / 线上 api.z.ai）。
+ * zai business host for /api/biz and /api/pay.
+ * Equivalent to the parent's file-scoped resolveZaiCodingPlanHost, kept separately because the
+ * parent does not export it. Must match the parent: follow the product environment (env-configured
+ * ZAI Business origin / prod api.z.ai).
  */
 function resolveZaiCodingPlanHost(): string {
   return resolveZaiBusinessBaseUrl(process.env);

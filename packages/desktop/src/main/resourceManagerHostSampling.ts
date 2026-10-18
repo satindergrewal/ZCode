@@ -7,11 +7,11 @@ import {
 } from "@zcode/shared";
 
 /**
- * 资源管理器 main → Host 采样 fan-out。
- * 每次快照按 requestId 向每个存活 Host 发一次请求；超时用该 Host 上一轮结果兜底，避免列表闪空。
+ * Resource-manager main->Host sampling fan-out.
+ * Each snapshot requests every live Host once by requestId; on timeout reuse that Host's previous result so lists never flash empty.
  */
 
-/** Host 采样 fan-out 的等待上限 */
+/** Wait cap for the Host sampling fan-out. */
 const HOST_SNAPSHOT_TIMEOUT_MS = 900;
 
 interface PendingHostRequest {
@@ -24,19 +24,19 @@ const pendingHostRequests = new Map<string, PendingHostRequest>();
 const requestIdByHost = new Map<string, string>();
 const lastHostResults = new Map<string, HostResourceUsageProcess[]>();
 
-/** desktopHostProcess 收到 Host 回帖时调用 */
+/** Called by desktopHostProcess when a Host replies. */
 export function resolveHostResourceUsageResult(
   label: string,
   result: HostResourceUsageSnapshotResultResponse,
 ): void {
   const pending = pendingHostRequests.get(result.requestId);
-  // 关闭/重开后的旧结果不得写回新采样会话；requestId 也必须属于回帖 Host。
+  // Results from closed/reopened Hosts must not write into a new sampling session; requestId must match the replying Host.
   if (!pending || pending.label !== label) return;
   lastHostResults.set(label, result.processes);
   pending.resolve(result);
 }
 
-/** Host 退出时清掉它的兜底缓存 */
+/** Clears a Host's fallback cache on exit. */
 export function forgetHostResourceUsage(label: string): void {
   const requestId = requestIdByHost.get(label);
   if (requestId) pendingHostRequests.get(requestId)?.cancel();
@@ -50,7 +50,7 @@ export function requestHostResourceUsage(
   signal?: AbortSignal,
 ): Promise<HostResourceUsageProcess[]> {
   if (signal?.aborted) return Promise.resolve([]);
-  // 展示等待超时后仍复用同一轮采样；不能按 UI 节拍不断向慢 Host 追加请求。
+  // After the display wait times out, keep the same round; never re-poke slow Hosts on every UI tick.
   if (requestIdByHost.has(label)) return Promise.resolve(lastHostResults.get(label) ?? []);
   return new Promise((resolve) => {
     const requestId = randomUUID();
@@ -69,7 +69,7 @@ export function requestHostResourceUsage(
       try {
         child.postMessage({ type: HostMessageTypes.ResourceUsageSnapshotCancel, requestId });
       } catch {
-        /* Host 已退出，无需继续取消。 */
+        /* Host already exited; nothing to cancel. */
       }
       resolve([]);
     };

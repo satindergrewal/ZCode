@@ -75,17 +75,17 @@ export interface WorkspaceFileSearchDecision {
 
 export interface WorkspaceFileSearchFilterContext {
   /**
-   * `.zcodeignore` 规则加载成功时为 true：目录排除的单一真相源是规则文件，
-   * 内置目录黑名单退役（用户从文件里删掉 node_modules/ 就应恢复搜索），
-   * 仅文件级规则（.env/二进制后缀）与隐藏目录语义继续叠加。
-   * fail-open（规则文件完全不可用）时为 false/缺省，黑名单照旧兜底。
+   * True once .zcodeignore rules load: the rule file is the single source of truth for dir excludes,
+   * the builtin dir blocklist retires (removing node_modules/ from the file restores search), and
+   * only file-level rules (.env/binary suffixes) plus hidden-dir semantics stack on top.
+   * false/absent on fail-open (rule file unusable): the blocklist remains the fallback.
    */
   ignoreRulesActive: boolean;
 }
 
 /**
- * Workspace 文件索引只依赖这个最终过滤器，不关心规则来自内置列表、配置文件还是设置页面。
- * 后续自定义规则应注入另一份完整实现来替换默认实现，而不是与默认黑名单强制求并集。
+ * The workspace file index relies only on this final filter, regardless of the rule source.
+ * Future custom rules must inject a full replacement implementation, not union with the blocklist.
  */
 export interface WorkspaceFileSearchFilter {
   evaluate(
@@ -122,12 +122,12 @@ function isInsideHiddenDirectory(relativePath: string): boolean {
 export const defaultWorkspaceFileSearchFilter: WorkspaceFileSearchFilter = {
   evaluate(entry, context) {
     if (entry.type === "directory") {
-      // ignoreRulesActive 时目录黑名单退役：目录排除的唯一来源是 .zcodeignore 规则文件。
+      // With ignoreRulesActive the dir blocklist retires: .zcodeignore is the only dir-exclude source.
       if (!context?.ignoreRulesActive && shouldSkipDirectory(entry.name)) {
         return { include: false, traverse: false };
       }
-      // 遇到任意隐藏目录就整棵剪枝会让 .github 等目录里的有效文件无法通过名称搜索。
-      // 隐藏目录及其下级目录不占候选列表，但保留遍历，让其中的普通文件进入索引。
+      // Pruning at any hidden dir would hide real files under .github from name search:
+      // hidden dirs take no candidate slots but stay traversed so normal files inside are indexed.
       const hiddenDirectory =
         entry.name.startsWith(".") || isInsideHiddenDirectory(entry.relativePath);
       return { include: !hiddenDirectory, traverse: true };

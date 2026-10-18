@@ -116,7 +116,7 @@ export function WorkspaceHeader({
 }) {
   const [selectedEditor, setSelectedEditor] = useState<EditorInfo | null>(null);
   const shouldOffsetHeaderForWindowControls = !isSidebarVisible;
-  // Linux 与 Windows 共用内联窗控，不再预留旧悬浮窗控的标题栏区域。
+  // Linux and Windows share the inline window controls; the legacy overlay-controls titlebar reserve is gone.
   const usesInlineWindowControls = Boolean(isWindowsDesktop || (isDesktop && !isMacDesktop));
 
   let headerWindowControlsPaddingClass: string | false = false;
@@ -152,10 +152,11 @@ export function WorkspaceHeader({
       ) : null}
       <div
         className={cn(
-          // 大会话 resize trace 显示 titlebar padding 动画层会触发 scrollbar-color 非合成动画；
-          // 明确限定 transition-property 为 padding，避免 duration-300 退回默认 all。
+          // Resize traces on large sessions showed the titlebar padding transition triggering
+          // non-composited scrollbar-color animation; pin transition-property to padding so
+          // duration-300 does not fall back to all.
           "flex h-12 flex-1 min-w-0 items-center justify-between gap-2 overflow-hidden p-2 [app-region:drag] transition-[padding] duration-300",
-          // 旧 caption 菜单移除后不能继续清零右边距，否则终端按钮会贴住面板边框。
+          // Keep the right padding now that the legacy caption menu is gone, or the terminal button hugs the panel border.
           headerWindowControlsPaddingClass,
         )}
       >
@@ -215,7 +216,7 @@ export function WorkspaceHeader({
           simplifyForNarrowRemote={simplifyForNarrowRemote}
           hideHelpMenu={false}
           showWindowControls={usesInlineWindowControls}
-          // 面板操作按钮沿用 macOS 紧凑样式，Windows/Linux 窗控跟随最右侧 Header。
+          // Panel actions keep the compact macOS styling; Windows/Linux window controls align to the rightmost header edge.
           onSelectedEditorChange={setSelectedEditor}
         />
       </div>

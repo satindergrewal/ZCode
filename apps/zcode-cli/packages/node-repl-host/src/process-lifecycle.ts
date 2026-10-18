@@ -8,14 +8,14 @@ const OUTPUT_CLOSED_ERROR_CODES = new Set([
 ]);
 
 /**
- * REPL cell 的同步错误由 NodeReplSession 兜底，但 fire-and-forget 的异步错误
- * （如未 await 的 tab.* 调用在 turn 中断时被 reject）会按 Node 默认策略击穿整个 server
- * 进程。子进程一死，会话内 Browser Use 从此不可用。这里把异步错误降级为 stderr 日志：
- * runtime 状态保留、协议 stdout 不受影响。
+ * NodeReplSession catches sync REPL cell errors, but fire-and-forget async errors (e.g. an unawaited
+ * tab.* call rejected on turn interrupt) would, under Node's default policy, take down the whole server
+ * process -- and with the child gone, in-session Browser Use is lost. Downgrade async errors to stderr logs:
+ * runtime state preserved, protocol stdout untouched.
  *
- * 父进程退出后 stderr 会报 EPIPE。旧 handler 又把 EPIPE 堆栈写回同一条
- * stderr，形成 EPIPE -> uncaughtException -> stderr.write -> EPIPE 的无限循环。
- * 输出管道关闭表示 MCP client 已不可达，必须直接进入 shutdown，不能继续写诊断。
+ * After the parent exits, writing stderr raises EPIPE. The old handler wrote the EPIPE stack back to the same
+ * stderr, looping EPIPE -> uncaughtException -> stderr.write -> EPIPE. A closed output pipe means the MCP client
+ * is unreachable: go straight to shutdown instead of writing more diagnostics.
  */
 export function installNodeReplProcessGuards(input: {
   onOutputClosed: (error: Error) => void;
@@ -70,8 +70,8 @@ export function installNodeReplShutdownTriggers(input: {
     input.shutdown();
   };
 
-  // MCP SDK 的 stdio transport 不监听 stdin end/close。父进程异常退出时 runtime
-  // 因此收不到生命周期终点并沦为孤儿进程。
+  // The MCP SDK's stdio transport never watches stdin end/close; on abnormal parent exit the runtime
+  // never sees the lifecycle end and is left running as an orphan.
   input.stdin.once("end", shutdownOnce);
   input.stdin.once("close", shutdownOnce);
   input.process.once("SIGINT", shutdownOnce);
@@ -84,9 +84,9 @@ export async function isDirectMcpEntrypoint(
 ): Promise<boolean> {
   if (!argvPath) return false;
   try {
-    // macOS 的 /tmp、/var 等路径会解析到 /private/...；直接比较 file URL 会让
-    // stdio 子进程误判成“被 import”，main 未启动且无错误退出。异步 realpath 同时兼容
-    // symlink 安装目录，并避免在模块求值路径引入同步文件 IO。
+    // macOS resolves /tmp, /var, etc. to /private/...; a direct file-URL compare makes the stdio entry think it
+    // was imported as a module, so main never starts and the process exits silently. Async realpath also supports
+    // symlinked install dirs and keeps sync file IO out of module evaluation.
     const [modulePath, executablePath] = await Promise.all([
       realpath(fileURLToPath(importMetaUrl)),
       realpath(argvPath),

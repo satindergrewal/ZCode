@@ -82,9 +82,9 @@ export function useWorkspaceFileTreeStickyFolders({
   enabled: boolean;
 }) {
   const stickyFolderItems = useMemo<WorkspaceFileTreeStickyFolderItem[]>(() => {
-    // 每一层 sticky 行都会把下一层触发线向下推 28px；如果所有层级
-    // 都只和 scrollTop 比较，子目录会晚吸顶。通过探测 sticky stack 下方的行，
-    // 让计算触发线与 CSS top 使用相同的累计偏移。
+    // Each sticky row pushes the next trigger line down 28px; comparing every level against
+    // scrollTop alone makes subdirectories stick late. Probe the row below the sticky stack so
+    // the computed trigger line and the CSS top share the same accumulated offset.
     return getWorkspaceFileTreeStickyFolders({
       rows,
       virtualItems,
@@ -94,7 +94,7 @@ export function useWorkspaceFileTreeStickyFolders({
     });
   }, [enabled, rows, scrollDirection, scrollOffset, virtualItems]);
 
-  // 吸顶行以前会从虚拟列表迁出并改写 scrollTop，鼠标拖拽滚动条时
-  // 会与浏览器的原生拖拽位置竞争。现在原行保留，CSS sticky 只负责视觉覆盖。
+  // Sticky rows used to be lifted out of the virtual list, rewriting scrollTop and racing the
+  // native scrollbar drag. The original row now stays in place; CSS sticky only overlays visually.
   return stickyFolderItems;
 }

@@ -75,8 +75,9 @@ function useProviderFamilyEntitlements(params: {
     accountAccess?.access,
     params.selection,
   );
-  // Team 查询身份还包含 product/org/project。只使用 Registry 静态 Access
-  // 会让切换团队后复用上一项目的权益缓存，因此 cache identity 必须包含执行期账号上下文。
+  // Team query identity also includes product/org/project. Registry static Access alone would reuse
+  // the previous project's entitlement cache after a team switch, so cache identity must include the
+  // runtime account context.
   const codingFingerprint = registryFingerprint
     ? JSON.stringify([registryFingerprint, entitlementAccess])
     : "";
@@ -109,8 +110,9 @@ function useProviderFamilyEntitlements(params: {
       startPlanProviderId,
       startProviderFingerprint,
     }),
-    // Family 编排重构后这里每次渲染都返回新对象，导致上层等价权益事实
-    // 失去引用稳定性，并把套餐状态更新放大成 Provider 设置页的 access refresh 循环。
+    // After the family orchestration refactor this returned a new object every render, breaking the
+    // referential stability of equivalent entitlement facts upstream and amplifying plan status
+    // updates into a Provider settings access-refresh loop.
     [
       coding.error,
       coding.loading,
@@ -135,7 +137,7 @@ function resolveEntitlementAccountAccess(
   selection: ProviderFamilyConnectionSelection | undefined,
 ): ZCodeProviderAccountAccess | ZCodeAccountAccess | undefined {
   if (access?.mode !== "team-coding-plan" || selection?.kind !== "team-coding-plan") {
-    // 展示查询针对这个套餐自身，不让执行期的 current 解析器改成当前另一套餐。
+    // The display query targets this plan itself; never let the runtime "current" resolver flip to another plan.
     return access && (access.mode === "start-plan" || access.mode === "individual-coding-plan")
       ? { type: "zhipu-account", family: access.accountType, planKind: access.mode }
       : access;
@@ -161,8 +163,8 @@ export function useCodingPlanAccessRefresh({
     if (!selectedPlanKey) {
       return;
     }
-    // 原 effect 依赖整个 selectedNavItem，额度和 loading 的投影变化也会
-    // 被误判为用户重新打开套餐。这里只响应稳定的套餐选择身份。
+    // The old effect depended on the whole selectedNavItem, so entitlement/loading projection changes
+    // were misread as the user re-opening the plan. Respond only to the stable plan-selection identity.
     void refresh({ silent: true, reason: "access" });
   }, [refresh, selectedPlanKey]);
 }
@@ -177,13 +179,13 @@ export function useCodingPlanEntitlements({
   suppressProviderFingerprintAutoRefresh?: boolean;
 }): {
   entitlements: Partial<Record<string, CodingPlanEntitlementState>>;
-  /** 当前具备 Account Access、能够独立查询权益的 Start Plan Provider。 */
+  /** Start Plan providers with Account Access, able to query entitlements independently. */
   enabledStartPlanProviderIds: string[];
   refresh: (options?: UsageEntitlementRefreshOptions) => Promise<void>;
 } {
   const skippedProviderFingerprintAutoRefreshRef = useRef("");
   const loading = providerSettingsView === null;
-  // React Hook 必须保持固定调用顺序，因此显式调用两个 Family，而不是动态遍历 Spec。
+  // React hooks require a fixed call order, so both families are invoked explicitly instead of iterating specs dynamically.
   const zaiFamily = useProviderFamilyEntitlements({
     familySpec: getModelProviderFamilySpec("zai"),
     selection: connectionSelections.zai,
@@ -197,7 +199,7 @@ export function useCodingPlanEntitlements({
 
   const refresh = useCallback(
     (options: UsageEntitlementRefreshOptions = {}) => {
-      // Start/Coding 使用独立 provider id 与 cache key；两边都可用时并行刷新。
+      // Start/Coding use separate provider ids and cache keys; refresh both in parallel when available.
       const refreshJobs: Array<Promise<void>> = [];
       if (zaiFamily.codingEnabled) {
         refreshJobs.push(zaiFamily.coding.refresh(options));
@@ -257,8 +259,9 @@ export function useCodingPlanEntitlements({
       return;
     }
 
-    // provider 配置异步加载或保存后，首次 entitlement 快照可能还是旧的。
-    // 连接方式同步会单独刷新 Account Access，不能把同一次变化再扩散成套餐/余额刷新。
+    // After async provider config load/save, the first entitlement snapshot can still be stale.
+    // Connection-mode sync refreshes Account Access on its own; do not fan the same change out into
+    // plan/balance refreshes too.
     refresh({ force: true, silent: true, reason: "auth" });
   }, [providerFingerprint, loading, refresh, suppressProviderFingerprintAutoRefresh]);
 

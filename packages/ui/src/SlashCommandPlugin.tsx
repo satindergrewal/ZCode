@@ -1,11 +1,11 @@
-/* eslint-disable max-lines -- Lexical slash 插件的 trigger/面板/键盘导航同属一个协议状态机，oxfmt 换行后略超 400 行。 */
+/* eslint-disable max-lines -- trigger/panel/keyboard nav of the Lexical slash plugin form one protocol state machine; slightly over 400 lines after oxfmt wrapping. */
 /**
- * SlashCommandPlugin — Lexical trigger 面板插件
+ * SlashCommandPlugin — Lexical trigger panel plugin.
  *
- * 处理 `/` 面板里的 slash commands 和 subagents：
- * 1. `/` 直接展示 ZCode Agent 广播的真实 slash commands，并补充可用 subagents
- * 2. 面板通过 portal 渲染到输入区上方的独立挂载层，展开时直接覆盖消息区
- * 3. 支持 Esc 关闭、上下键切换、Enter / Tab 选中，以及跟随输入做模糊搜索
+ * Handles slash commands and subagents in the `/` panel:
+ * 1. `/` lists the real slash commands broadcast by the ZCode agent, plus available subagents
+ * 2. the panel portals into a layer above the input, covering the message area when open
+ * 3. Esc closes, Up/Down navigate, Enter/Tab select, fuzzy search follows typing
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ZCodeProvider } from "@zcode/shared";
@@ -71,8 +71,9 @@ export function SlashCommandPlugin({
   const [editor] = useLexicalComposerContext();
   const { intl, locale } = useZCodeIntl();
   const [activeTrigger, setActiveTrigger] = useState<ActivePromptInputTrigger | null>(null);
-  // 远程 workspace 的 slashCommands 写在 workspaceIdentity 桶。
-  // 这里只按 workspacePath 读取会落到 path 桶，表现为 ZCode Agent 已收到 available_commands_update 但 / 面板为空。
+  // Remote workspaces write slashCommands under their workspaceIdentity bucket. Reading by
+  // workspacePath alone lands in the path bucket: the agent's available_commands_update arrives
+  // but the / panel stays empty.
   const commands = useSlashCommands(workspacePath, workspaceIdentity);
   const {
     agents,
@@ -98,7 +99,7 @@ export function SlashCommandPlugin({
     const cliSuggestions = buildSlashSuggestions(commands).filter(
       (item) => !excluded.has(item.value),
     );
-    // App 层命令追加在 CLI catalog 之后展示；CLI 已提供同名命令时以 CLI 为准，避免遮蔽。
+    // App-level commands append after the CLI catalog; on name clashes the CLI one wins so it is not shadowed.
     const cliValues = new Set(cliSuggestions.map((item) => item.value));
     const appSuggestions = buildAppSlashCommandSuggestions(appCommands ?? []).filter(
       (item) => !cliValues.has(item.value) && !excluded.has(item.value),
@@ -145,9 +146,10 @@ export function SlashCommandPlugin({
   }, [activeSignature]);
 
   useEffect(() => {
-    // 面板展示需要保留 commands/subagents 分组顺序，但键盘默认选中不能固定落在第一个分组。
-    // 例如 `/rev` 时 command 描述里的弱匹配可能排在 subagent 分组前面，导致无法默认选中最佳 subagent。
-    // 这里按统一的模糊评分选择全局最佳项，同时不改变面板的分组展示顺序。
+    // Display keeps the commands/subagents group order, but the default keyboard selection must
+    // not pin to the first group: for `/rev` a weak match inside command descriptions can sort
+    // before the subagent group and hide the best subagent. Pick the global best by the shared
+    // fuzzy score without changing display order.
     setSelectedIndex(
       getBestPromptInputSuggestionIndex(filteredSuggestions, activeTrigger?.query ?? null),
     );
@@ -175,8 +177,8 @@ export function SlashCommandPlugin({
   useEffect(() => {
     return editor.registerUpdateListener(({ dirtyElements, dirtyLeaves, editorState, tags }) => {
       editorState.read(() => {
-        // 历史导航回填含 / 的历史条目时，不应重新打开 slash 面板，
-        // 否则面板以 COMMAND_PRIORITY_CRITICAL 注册方向键处理器，吞掉后续历史翻阅按键。
+        // Restoring a history entry containing / must not reopen the slash panel, or its
+        // COMMAND_PRIORITY_CRITICAL arrow-key handler eats the subsequent history navigation.
         if (!shouldSlashPanelProcessUpdate(tags)) {
           activeTokenRef.current = null;
           setActiveTrigger(null);
@@ -281,7 +283,7 @@ export function SlashCommandPlugin({
         );
 
         if (isAppCommand) {
-          // App 层命令"选中即执行"：只移除输入中的 `/xxx` token，不插入 mention、不发送。
+          // App-level commands run on select: strip the /xxx token from the input; no mention, no send.
           selectionState.selection.removeText();
           return;
         }
@@ -391,8 +393,9 @@ export function SlashCommandPlugin({
         event?.preventDefault();
         event?.stopPropagation();
 
-        // 如果 Esc 关闭后只记 query，不区分 `/` 和 `@`，两个触发器同名查询会互相把面板压住。
-        // 这里保存 trigger + query 组合签名，只有当前 token 真正变化后才重新打开，避免一关闭就立刻弹回。
+        // If Esc-close remembers only the query, / and @ triggers with the same query suppress
+        // each other's panels. Remember a trigger+query signature and reopen only after the token
+        // really changes, avoiding an instant bounce-back after close.
         dismissedSignatureRef.current = activeSignatureRef.current;
         setActiveTrigger(null);
         setSelectedIndex(0);

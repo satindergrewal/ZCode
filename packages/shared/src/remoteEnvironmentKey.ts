@@ -2,7 +2,7 @@ import type { RemoteTarget } from "./remoteTarget.js";
 import { buildSshRemoteHostKey } from "./remoteSshHostKey.js";
 
 /**
- * Provider Provisioning 等 Environment 级状态的稳定身份；不得混用 workspace/session 身份。
+ * Stable identity for Environment-scoped state such as Provider Provisioning; never mixed with workspace/session identity.
  */
 export function buildRemoteEnvironmentKey(target: RemoteTarget): string {
   switch (target.kind) {

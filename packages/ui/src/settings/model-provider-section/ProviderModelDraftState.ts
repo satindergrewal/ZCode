@@ -12,7 +12,7 @@ const CONFIG_VALUE_FIELDS = [
   "reasoningLevelValuesValue",
 ] as const;
 
-/** 只投影未覆盖控件；Host 是推荐规则的唯一解析者，草稿不保存第二份可写 Effective Config。 */
+/** Project non-overridden controls only; the Host is the sole resolver of recommended rules, and the draft never keeps a second writable Effective Config. */
 export function projectModelDraft(
   draft: ProviderModelDraftValues,
   model: ProviderSettingsFormModel,
@@ -51,7 +51,8 @@ export function updateModelDraft(
     }
     const projected = projectModelDraft(draft, model);
     const inherited = model.inheritedConfig ?? model.config;
-    // 只补空的继承输入；错误的非空用户输入保留，让保存指出错误，不以切换模式吞掉编辑。
+    // Fill only empty inherited inputs; keep erroneous non-empty user input and let save report it,
+    // instead of swallowing edits on a mode switch.
     return {
       ...projected,
       contextWindowValue:
@@ -76,7 +77,7 @@ export function updateModelDraft(
   return { ...draft, ...patch, overriddenFieldsValue: [...explicit] };
 }
 
-/** 恢复是显式草稿动作，即使原本已开启智能配置也要清除可编辑覆盖。 */
+/** Restore is an explicit draft action; clear editable overrides even when smart config was already on. */
 export function restoreModelDraft(
   draft: ProviderModelDraftValues,
   model: ProviderSettingsFormModel,

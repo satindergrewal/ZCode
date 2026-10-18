@@ -39,11 +39,15 @@ for (const fixture of fixtures) {
   // Every graph fixture is well-typed by construction; fail loudly (and list the
   // diagnostics) rather than silently skipping if one regresses.
   if (!result.ok || result.graph === undefined || result.causality === undefined) {
-    const detail = result.diagnostics.map((d) => `  ${d.line}:${d.column} [TS${d.code}] ${d.message}`).join("\n");
+    const detail = result.diagnostics
+      .map((d) => `  ${d.line}:${d.column} [TS${d.code}] ${d.message}`)
+      .join("\n");
     throw new Error(`fixture ${fixture} did not analyze clean:\n${detail}`);
   }
   const causality = causalityGraphToMermaid(result.causality);
-  // 阶段图只在词汇表在场时有内容——零标记脚本这一节整段缺席，与 UI 的视图切换同条件。
+  // The phase graph only has content when the glossary is present -- the zero-marker script omits this
+  // section entirely, same condition as the UI view toggle.
+
   const phases = result.causality.phases;
   const site = siteGraphToMermaid(result.graph);
   const actor = actorGraphToMermaid(toActorGraph(result.graph));
@@ -56,7 +60,14 @@ for (const fixture of fixtures) {
     "",
     ...(phases === undefined || phases.length === 0
       ? []
-      : ["## Phase graph", "", "```mermaid", phaseGraphToMermaid(result.causality).trimEnd(), "```", ""]),
+      : [
+          "## Phase graph",
+          "",
+          "```mermaid",
+          phaseGraphToMermaid(result.causality).trimEnd(),
+          "```",
+          "",
+        ]),
     "## Causality graph",
     "",
     "```mermaid",

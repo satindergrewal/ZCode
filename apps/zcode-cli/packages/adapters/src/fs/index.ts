@@ -234,8 +234,8 @@ export class NodeFileSystemAdapter implements FileSystemPort {
           ? await readFile(path)
           : await readAtMostBytes(path, request.maxBytes + 1, info.size);
       if (request.maxBytes !== undefined && buffer.byteLength > request.maxBytes) {
-        // stat 与 readFile 之间文件可能增长；实际读取也必须保持有界，
-        // 否则 maxBytes 既挡不住超限内容，也挡不住一次性大内存分配。
+        // The file may grow between stat and readFile; the actual read must stay bounded,
+        // or maxBytes caps neither the content nor the one-shot memory allocation.
         throw createFileSystemError({
           code: "too_large",
           path,
@@ -664,7 +664,7 @@ async function readAtMostBytes(
 ): Promise<Buffer> {
   const handle = await open(path, "r");
   try {
-    // 稳定文件按 stat 大小一次读取；只有文件在 stat 后增长时才继续分块追到硬上限。
+    // Stable files read once at the stat size; chunked catch-up to the hard cap only when the file grew after stat.
     const firstBuffer = Buffer.allocUnsafe(Math.min(maxBytes, Math.max(1, initialSizeBytes + 1)));
     const chunks: Buffer[] = [];
     let bytesReadTotal = 0;
@@ -674,7 +674,7 @@ async function readAtMostBytes(
           ? firstBuffer
           : Buffer.allocUnsafe(Math.min(64 * 1024, maxBytes - bytesReadTotal));
       const { bytesRead } = await handle.read(chunk, 0, chunk.byteLength, bytesReadTotal);
-      // FileHandle.read 的短读不等于 EOF；只有明确返回 0 字节才能停止。
+      // A short FileHandle.read is not EOF; stop only on an explicit zero-byte read.
       if (bytesRead === 0) break;
       chunks.push(chunk.subarray(0, bytesRead));
       bytesReadTotal += bytesRead;
@@ -724,7 +724,7 @@ async function atomicWrite(path: string, content: Buffer): Promise<void> {
     try {
       await handle.writeFile(content);
       if (existingMode !== undefined) {
-        // 原子写会用临时文件 inode 覆盖目标文件；必须先复制原文件权限，避免抹掉脚本执行位。
+        // Atomic writes overwrite the target with the temp inode; copy the original mode first or lose the exec bit.
         await handle.chmod(existingMode);
       }
       await handle.sync();
@@ -1053,9 +1053,9 @@ function runBundledRipgrepWorker(
     return Promise.reject(createAbortError("ripgrep search was cancelled before it started"));
   }
 
-  // 不能在 agent 主线程里直接运行 WASI ripgrep。大目录搜索会占住 Node
-  // event loop，导致 session/stop 虽然绕过协议队列，却没有机会被 agent 处理。
-  // 放到 Worker 后，用户 stop 和超时都能从主线程 terminate 这个搜索执行单元。
+  // Never run WASI ripgrep on the agent main thread: large-tree searches would occupy the Node
+  // event loop, leaving session/stop processed late even though it bypasses the protocol queue.
+  // In a worker, user stops and timeouts can terminate the search unit from the main thread.
   const worker = createRipgrepWorker({
     args: args.map(String),
     preopens,
@@ -1666,8 +1666,8 @@ function createOnlyMatchingEntries(input: {
     ];
   }
 
-  // ripgrep 只把 LF/CRLF 当作输出行边界；单独的 CR 是普通匹配文本。
-  // 同时，跨行 match 内部的空行不生成 entry，但整段零长度 match 需要保留空 entry。
+  // ripgrep treats only LF/CRLF as output line boundaries; a lone CR is ordinary matched text.
+  // Empty lines inside a multi-line match emit no entry, but a whole zero-length match keeps an empty entry.
   return input.text
     .split(/\r?\n/)
     .flatMap((line, index) =>
@@ -1686,7 +1686,7 @@ function createOnlyMatchingEntries(input: {
 }
 
 function splitRipgrepSearchLines(content: string): string[] {
-  // ripgrep 以 LF/CRLF 作为行结束符；末尾换行不是额外空行，单独的 CR 保留在行内容中。
+  // ripgrep ends lines at LF/CRLF; a trailing newline is not an extra empty line and lone CR stays in the content.
   if (content.length === 0) return [];
   return content.replace(/\r?\n$/, "").split(/\r?\n/);
 }

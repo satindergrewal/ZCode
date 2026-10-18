@@ -61,8 +61,9 @@ const MAX_NETWORK_INTERFACE_BUCKETS_PER_TRANSPORT = 128;
 const NETWORK_ERROR_KINDS = new Set<string>(NETWORK_ERROR_KIND_ORDER);
 
 /**
- * 只有仓内已知、低基数的 API 路由段可以进入 ARMS；其他段统一视为动态标识。
- * 新增静态接口时必须显式登记，避免把用户 slug、邮箱或路径片段误当作安全路由。
+ * Only known, low-cardinality API route segments from this repo may reach ARMS; every
+ * other segment is treated as a dynamic identifier. New static routes must be registered
+ * explicitly, so user slugs, emails, or path fragments are never mistaken for safe routes.
  */
 const STATIC_HTTP_PATH_SEGMENTS = new Set([
   "anthropic",
@@ -229,7 +230,7 @@ function normalizeHttpInterface(name?: string, url?: string): string {
   if (
     /^file:/iu.test(raw) ||
     /^[a-zA-Z]:[\\/]/u.test(raw) ||
-    // Bug 根因：枚举常见根目录会漏掉 /opt、/root、/mnt 等合法 POSIX 绝对路径。
+    // Root cause: enumerating common root dirs misses legitimate POSIX absolute paths such as /opt, /root, /mnt.
     raw.startsWith("/")
   ) {
     return "local_file";
@@ -255,7 +256,8 @@ function normalizeHttpPathSegment(segment: string): string {
   if (!decoded || STATIC_HTTP_PATH_SEGMENTS.has(decoded)) {
     return decoded;
   }
-  // Bug 根因：旧实现默认保留未命中规则的 segment，邮箱和短用户 slug 会直接进入 ARMS。
+  // Root cause: the old implementation kept segments that matched no rule, letting emails
+  // and short user slugs straight into ARMS.
   return ":id";
 }
 

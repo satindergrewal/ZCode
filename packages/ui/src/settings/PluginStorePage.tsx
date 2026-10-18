@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 插件商店容器统一编排列表/详情、市场源对话框、卸载确认、试用跳转与技能刷新收尾，集中维护保证交互一致。 */
+/* eslint-disable max-lines -- the store container orchestrates list/detail, source dialogs, uninstall confirm, try-run and skill refresh; centralized for interaction consistency. */
 import { PluginAddMenu } from "@/settings/PluginAddMenu.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw, Settings } from "lucide-react";
@@ -101,7 +101,7 @@ export function PluginStorePage({
   const [addSourceOpen, setAddSourceOpen] = useState(false);
   const [addMarketplaceError, setAddMarketplaceError] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
-  // 返回列表页时恢复进入详情前的滚动位置（设置页 main 容器滚动）。
+  // Returning to the list restores the scroll position from before the detail (the settings main container scrolls).
   const storeScrollTopRef = useRef(0);
   const [initialNavigationTarget] = useState(() => consumePluginStoreOpenTarget());
   const initialNavigationTargetRef = useRef(initialNavigationTarget);
@@ -115,8 +115,8 @@ export function PluginStorePage({
     if (!workspacePath) {
       return;
     }
-    // Marketplace 只管理 Host User inventory；即使从 Workspace 当前窗口打开，也不能把
-    // Workspace config 投影带入市场，否则会让项目配置看起来像安装 scope。
+    // Marketplace manages the Host User inventory only; even opened from a workspace window, workspace config
+    // projections must not enter the market, or project config reads as an install scope.
     void initialize({
       workspacePath,
       workspaceIdentity,
@@ -125,9 +125,9 @@ export function PluginStorePage({
     });
   }, [initialize, pluginManagementService, workspaceIdentity, workspacePath]);
 
-  // 目录自动刷新（Catalog Auto-Refresh）：只针对 ZCode 官方市场。每次进入商店页都刷新 CDN 目录，
-  // 否则新上架插件要等用户手动点刷新才可见；以 10 分钟窗口节流，并在发起时占位防抖（失败/在飞不重复），
-  // 判据见 officialMarketplaceAutoRefresh。状态放模块级而非组件 ref，因为每次进入都是重新挂载。
+  // Catalog auto-refresh: official marketplace only. Refresh the CDN catalog on every store entry,
+  // else newly listed plugins wait for a manual refresh; 10-minute throttle plus in-flight placeholder (no duplicate on failure/flight),
+  // criteria in officialMarketplaceAutoRefresh. Module-level state, not a ref: every entry remounts.
   useEffect(() => {
     const official = marketplaces.find((item) => item.id === ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID);
     if (
@@ -159,7 +159,7 @@ export function PluginStorePage({
   );
   const itemById = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
   const detailItem = detailPluginId ? (itemById.get(detailPluginId) ?? null) : null;
-  // 插件自身 warning 诊断（如声明的技能路径扫描为空）：详情高级区展示，避免静默失败。
+  // Plugin warning diagnostics (e.g. empty declared skill path scan) show in the detail's advanced area, never silently swallowed.
   const detailPluginInfo = detailItem?.info;
   const detailPluginWarnings = detailPluginInfo
     ? pluginDiagnostics.filter(
@@ -168,7 +168,7 @@ export function PluginStorePage({
       )
     : [];
 
-  // 详情页数据补齐：无运行时信息的条目（未安装候选）按需 describe，拿组件清单 + manifest 回退字段。
+  // Detail backfill: entries without runtime info (uninstalled candidates) describe on demand for components + manifest fallbacks.
   useEffect(() => {
     if (view !== "detail" || !detailItem || detailItem.info) return;
     void describePlugin(
@@ -179,7 +179,7 @@ export function PluginStorePage({
     );
   }, [describePlugin, detailItem, pluginManagementService, view]);
 
-  // 详情条目消失（卸载可恢复内置后 restorable 记录被移除等）时回到列表，避免空详情。
+  // When the detail entry disappears (restorable builtin uninstalled, record removed), return to the list; no empty detail.
   useEffect(() => {
     if (view === "detail" && detailPluginId && !itemById.has(detailPluginId)) {
       setView("store");
@@ -215,7 +215,7 @@ export function PluginStorePage({
       openDetail(target.pluginId);
       return;
     }
-    // 刷新后候选仍不存在时保留 stable ID 搜索，让用户看到明确的空结果而不是错误详情。
+    // If the candidate is still missing after refresh, keep the stable-ID search so the user sees a clear empty result, not an error detail.
     setView("store");
     setQuery(target.pluginId);
   }, [
@@ -237,9 +237,9 @@ export function PluginStorePage({
     });
   }, []);
 
-  // 顶栏刷新 = 真网络更新：updateMarketplace(null) 重拉全部市场 manifest（含 CDN 与 git 源，
-  // 操作内部完成后会重载概览），随后按更新徽标数量给完成提示。只做本地重载时，
-  // 用户点了刷新看不到 CDN 新插件（与规格「刷新→update(null)」不符）。
+  // Header refresh = a real network update: updateMarketplace(null) re-pulls every market manifest (CDN and git;
+  // the operation reloads the overview when done), then toasts by updated-badge count. A local reload alone
+  // shows no new CDN plugins (off spec: refresh then update(null)).
   const handleRefresh = async () => {
     void refreshStoreOrder(true);
     setRefreshing(true);
@@ -250,8 +250,8 @@ export function PluginStorePage({
     }
   };
 
-  // 插件 package 变更（安装 / 卸载 / 更新）后统一收尾：失效草稿会话并刷新技能，
-  // 避免会话里残留悬挂或旧版本能力。
+  // After any package change (install/uninstall/update): invalidate draft sessions and refresh skills,
+  // so sessions never carry dangling or stale capabilities.
   const refreshAfterPluginChange = useCallback(async () => {
     await invalidateDeferredDraftSessionForSkillChange({
       zcodeSessionService,
@@ -283,7 +283,7 @@ export function PluginStorePage({
       } else {
         await installPlugin(item.name, item.marketplace, pluginManagementService, "user");
       }
-      // 安装/恢复会引入新技能与命令，与启停/卸载一样做一次收尾刷新。
+      // Install/restore introduce skills and commands; finish-refresh exactly like enable/disable/uninstall.
       await refreshAfterPluginChange();
     },
     [installPlugin, pluginManagementService, refreshAfterPluginChange, restoreBuiltin],
@@ -295,8 +295,8 @@ export function PluginStorePage({
       if (usePluginManagementStore.getState().error) {
         return;
       }
-      // 升级会同时替换 Skill、Command 与 MCP 定义；旧入口只刷新商店列表，
-      // 已预热的草稿 session 继续携带旧版本甚至空能力，导致“升级成功”后新会话仍不可用。
+      // Updates replace Skill, Command and MCP definitions; the old path refreshed only the store list,
+      // so prewarmed draft sessions kept stale or empty capabilities and new sessions stayed broken after update-done.
       await refreshAfterPluginChange();
     },
     [pluginManagementService, refreshAfterPluginChange, updatePlugin],
@@ -329,11 +329,11 @@ export function PluginStorePage({
   const handleAddMarketplace = useCallback(
     async (source: string) => {
       const succeeded = await addMarketplace(source, pluginManagementService);
-      // 添加市场源的错误要和提交入口同层展示；否则全局错误条会被 Dialog 遮罩压到下面。
+      // Add-source errors surface at the submit entry's level; the global error bar would sit under the Dialog mask.
       setAddMarketplaceError(
         succeeded ? null : (usePluginManagementStore.getState().error ?? null),
       );
-      // 自定义市场不属于公开分段；添加成功后直接切到「个人」，让用户立刻看到刚加的来源。
+      // Custom markets are not in the public section; after adding, jump to Personal so the new source is immediately visible.
       if (succeeded) setSegment("personal");
       return succeeded;
     },
@@ -342,7 +342,7 @@ export function PluginStorePage({
 
   const handleUsePrompt = useCallback(
     (item: StorePluginItem, prompt: string) => {
-      // 未安装时点提示词先引导安装，不新建会话。
+      // Try-prompts on uninstalled plugins guide installation first; no session is created.
       if (!item.installed) {
         void handleInstall(item);
         return;
@@ -350,9 +350,9 @@ export function PluginStorePage({
       if (!workspacePath || !onCreateTask) {
         return;
       }
-      // 原入口绕过 Root 的标准新建任务编排，只写 session store，
-      // Settings 遮罩不会退出，composer remount 还可能覆盖预填。现在统一委托 Root，
-      // 同时复用 @ Picker 的 canonical Plugin 链接，不新增第二套引用语义。
+      // The old entry bypassed Root's standard new-task flow, writing only the session store:
+      // the settings mask stayed and composer remount could overwrite the prefill. Now delegate to Root,
+      // reusing the @ Picker's canonical Plugin link instead of a second reference syntax.
       onCreateTask({
         initialPrompt: buildPluginStoreTryPrompt({ item, locale, prompt }),
         initialPromptMention: buildPluginStoreTryMention({ item, locale }),
@@ -406,7 +406,7 @@ export function PluginStorePage({
           <p className="min-w-0 flex-1 text-ui-base leading-6 text-foreground-subtle">
             {intl.formatMessage({ id: "settings.plugins.store.subtitle" })}
           </p>
-          {/* 顶栏动作：刷新 / 市场源管理（齿轮）/ 新建市场源。 */}
+          {/* Header actions: refresh / marketplace sources (gear) / new source. */}
           <div className="flex shrink-0 items-center gap-2">
             <ControlHintTooltip
               title={

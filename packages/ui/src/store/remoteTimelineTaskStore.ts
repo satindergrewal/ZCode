@@ -102,9 +102,9 @@ export const useRemoteTimelineTaskStore = create<RemoteTimelineTaskState>()((set
       }));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      // 远端 timeline 是远端 ready 后的补充链路，读取失败不能阻断 workspace 恢复。
-      // 这里只记录状态和日志，后续切换 timeline 或重连时再补齐。
-      logger.warn("[remoteTimelineTaskStore] 读取远端 timeline task 失败", {
+      // The remote timeline is a post-ready supplement; a read failure never blocks workspace restore.
+      // Record state and log only; refill on the next timeline switch or reconnect.
+      logger.warn("[remoteTimelineTaskStore] Failed to read the remote timeline task", {
         workspacePath,
         workspaceIdentity,
         error: message,
@@ -196,7 +196,7 @@ export async function refreshRemoteTimelineTasksForSession({
 }): Promise<void> {
   const session = getRemoteWorkspaceSession(sessionId);
   if (!session) {
-    logger.warn("[remoteTimelineTaskStore] 远端 session 尚未注册，跳过 timeline 读取", {
+        logger.warn("[remoteTimelineTaskStore] Remote session not registered; skipping the timeline read", {
       sessionId,
       workspacePath,
       workspaceIdentity,

@@ -20,8 +20,8 @@ export async function setProviderFamilyDomain(
     providerFamilyDomain: domain,
     providerFamilyDomainUpdatedAt: Date.now(),
     providerFamilyDomainMigrated: true,
-    // WelcomeScreen OAuth 登录表示用户选择的是同 family 的 Coding Plan/OAuth 模式。
-    // 只写 providerFamilyDomain 会保留之前 API Key 入口写入的 apiKey mode，导致登录成功后仍停在 API Key。
+    // A WelcomeScreen OAuth sign-in means the user chose the same-family Coding Plan/OAuth mode.
+    // Writing providerFamilyDomain only would keep the apiKey mode written by the earlier API-key entry, leaving the user on API-key after login.
     providerFamilyConnectionSelections: buildOAuthProviderFamilySelections(
       domain,
       currentSettings.providerFamilyConnectionSelections,

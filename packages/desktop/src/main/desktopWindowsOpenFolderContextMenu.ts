@@ -88,8 +88,9 @@ export async function installWindowsOpenFolderContextMenu(options: {
   }
 
   const appArgs =
-    // 开发态 Windows 的 process.execPath 是 Electron 可执行文件。
-    // 注册表命令必须同时带上应用入口，否则 Explorer 右键菜单只能启动空 Electron。
+    // On Windows development builds process.execPath is the Electron executable.
+    // The registry command must carry the app entry too, or the Explorer context menu
+    // would only launch a bare Electron.
     options.isDefaultApp && options.argv[1] ? [resolve(options.argv[1])] : [];
   const operations = buildWindowsOpenFolderRegistryOperations({
     executablePath: options.executablePath,
@@ -100,13 +101,13 @@ export async function installWindowsOpenFolderContextMenu(options: {
   try {
     await Promise.all(operations.map((operation) => runRegAdd(operation.args)));
 
-    options.logger.info("[open-folder] Windows Explorer 右键菜单已安装或更新", {
+    options.logger.info("[open-folder] Windows Explorer context menu installed or updated", {
       executablePath: options.executablePath,
       hasDefaultAppEntry: appArgs.length > 0,
       locale: options.locale,
     });
   } catch (error) {
-    options.logger.warn("[open-folder] Windows Explorer 右键菜单安装失败", {
+    options.logger.warn("[open-folder] failed to install Windows Explorer context menu", {
       error: error instanceof Error ? error.message : String(error),
     });
   }

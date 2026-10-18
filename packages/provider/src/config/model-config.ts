@@ -1,4 +1,4 @@
-/* oxlint-disable eslint(max-lines) -- Model Config、嵌套 Overlay 与有序规则共同定义一份领域类型，暂不为行数拆散。 */
+/* oxlint-disable eslint(max-lines) -- model config, nested overlays, and ordered rules define one domain type; not split for line count yet. */
 import { ConfigOverlay, type ConfigValidationIssue } from "../config-overlay.js";
 import type { z } from "zod";
 import {
@@ -342,7 +342,7 @@ export type ModelMatchConfigRule = RuleWithConfig<ModelMatchConfigRuleData>;
 export type ModelApiMatchConfigRule = RuleWithConfig<ModelApiMatchConfigRuleData>;
 export type ProviderSiteMatchConfigRule = RuleWithConfig<ProviderSiteMatchConfigRuleData>;
 
-/** type 只标识内存执行规则的来源层，不写入配置文件；分组不能再按字段有无猜测。 */
+/** type tags only the source layer of an in-memory execution rule, never written to disk; grouping can no longer be guessed from field presence. */
 export type ModelConfigRule =
   | (ProviderModelConfigRule & { readonly type: "provider-model" })
   | (ManualProviderModelConfigRule & { readonly type: "manual-provider-model" })
@@ -375,7 +375,7 @@ export class ModelConfigRules {
     return new ModelConfigRules();
   }
 
-  /** Built-in 保留原层次和组内顺序；个人只包含普通/手动精确规则。 */
+  /** Built-in keeps its layering and in-group order; personal holds plain/manual exact rules only. */
   static composeEffective(builtin: ModelConfigRules, personal: ModelConfigRules): ModelConfigRules {
     return new ModelConfigRules([...builtin.rules(), ...personal.rules().filter(isExactModelRule)]);
   }
@@ -390,8 +390,10 @@ export class ModelConfigRules {
     for (const rule of this.#rules) {
       if (isExactModelRule(rule)) {
         if (rule.providerId !== input.providerId || rule.modelId !== input.modelId) continue;
-        // 手动规则要求所有可编辑叶子齐全，因此可直接覆盖；系统叶子继续来自当前身份的规则。
-        // 清空整份基线会既丢失系统映射，也迫使 UI 把旧模型的隐藏配置复制进个人规则。
+        // Manual rules require every editable leaf, so a direct override is safe; system leaves
+        // keep coming from the current identity's rule.
+        // Wiping the baseline would lose system mappings and force the UI to copy hidden
+        // legacy-model config into personal rules.
         result = (
           rule.type === "manual-provider-model"
             ? ModelConfig.fromData(clearManualModelConfig(result.toJSON()))
@@ -404,7 +406,7 @@ export class ModelConfigRules {
           result = result.overlay(rule.config);
         continue;
       }
-      // 只放宽推荐规则匹配，不改真实请求里的模型 ID。
+      // Only recommendation matching is relaxed; the model ID in real requests is untouched.
       if (!matchesRule(rule.modelMatch, input.modelId, true)) continue;
       if (
         (rule.type === "model-api" || rule.type === "provider-site") &&
@@ -433,7 +435,8 @@ export class ModelConfigRules {
       useRecommendedConfig === undefined
         ? previous?.type === "manual-provider-model"
         : !useRecommendedConfig;
-    // 保存入口复用整条规则 schema，不再另写一份“完整但忽略 enabled”的校验。
+    // The save path reuses the full rule schema; no second 'complete-but-ignore-enabled'
+    // validator.
     const data = { providerId, modelId, config: config.toJSON() };
     (manual ? manualProviderModelConfigRuleSchema : providerModelConfigRuleSchema).parse(data);
     const replacement: ExactModelConfigRule = {
@@ -516,7 +519,8 @@ export class ModelConfigRules {
   }
 
   toPersonalJSON(): PersonalModelConfigRulesData {
-    // 完整规则必须在编码边界再校验，不能把直接构造的不完整手动值写入文件。
+    // Completeness is re-checked at the encoding boundary; hand-built incomplete manual values
+    // must not reach disk.
     return personalModelConfigRulesSchema.parse({
       providerModelRules: this.#collect("provider-model"),
       manualProviderModelRules: this.#collect("manual-provider-model"),
@@ -547,7 +551,8 @@ function matchesRule(pattern: string, value: string, ignoreCase = false): boolea
 
 function normalizeBaseURLForRuleMatch(value: string): string | undefined {
   try {
-    // Host 大小写、默认端口和尾部斜杠不应改变配置命中；URL parser 会保留 path/query 大小写。
+    // Host case, default ports, and trailing slashes must not change matching; URL parsers
+    // keep path/query case.
     const parsed = new URL(value);
     const suffix = `${parsed.search}${parsed.hash}`;
     const serialized = parsed.toString();

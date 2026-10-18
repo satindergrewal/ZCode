@@ -24,8 +24,8 @@ export interface ProviderConfigRuntimeOptions {
 }
 
 /**
- * Services 装配层：提供 App 配置目录和已发布旧配置的一次性迁移入口。
- * 配置迁移保留 ZCode 用户的供应商数据，文件运行时由 @zcode/provider-node 唯一实现。
+ * Services assembly: provides the app config dir and the one-shot legacy-config migration entry.
+ // Migration preserves ZCode user provider data; file runtime is solely @zcode/provider-node.
  */
 export class ProviderConfigRuntime {
   readonly configService: NodeProviderConfigRuntime["configService"];

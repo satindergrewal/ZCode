@@ -7,38 +7,38 @@ import type {
   ProviderSettingsProviderView,
 } from "@zcode/provider";
 
-/** 设置页面在一次编辑会话中使用的 Provider 状态。 */
+/** Provider state for one settings editing session. */
 export interface ProviderSettingsFormProvider extends Pick<
   ProviderSettingsProviderView,
   "providerName" | "templateId"
 > {
   providerId: string;
-  /** 仅本次显式改名的补丁；其他编辑不得把继承名称物化成个人配置。 */
+  /** Patch for explicit renames only; other edits must not materialize inherited names into personal config. */
   providerNameUpdate?: string | null;
-  /** 仅本次显式开关的外层补丁；普通字段编辑不复制继承启停值。 */
+  /** Outer toggle patch for explicit flips only; ordinary field edits never copy inherited on/off values. */
   enabledUpdate?: boolean;
   enabled: boolean;
-  /** Registry 根据当前 Official、Personal 与 Account Facts 得出的状态。 */
+  /** Status derived by the registry from the current Official, Personal, and Account Facts. */
   executable: boolean;
   accountState?: AccountProviderState;
   issues?: readonly ConfigValidationIssue[];
   hasPersonalConfig: boolean;
-  /** Renderer 只修改并提交这一份稀疏 Personal Overlay。 */
+  /** The single sparse Personal Overlay the renderer edits and submits. */
   personalConfig: ProviderConfigObject;
-  /** 只读继承基线与即时表单展示值，不直接持久化。 */
+  /** Read-only inherited baseline and immediate form display values; never persisted directly. */
   config: ProviderConfigObject;
   models: ProviderSettingsFormModel[];
 }
 
-/** 设置页面在一次编辑会话中使用的 Model 状态。 */
+/** Model state for one settings editing session. */
 export interface ProviderSettingsFormModel {
   kind: "candidate";
   modelId: string;
   builtin: boolean;
-  /** Personal Rule 叠加前的 Built-in Rule 解析结果，用于编辑器表达继承与稀疏覆盖。 */
+  /** Built-in rule resolution before the Personal Rule overlay; lets the editor express inheritance and sparse overrides. */
   inheritedConfig?: ModelConfigObject;
   personalConfig: ModelConfigObject;
-  /** 缺省或 true 表示跟随 Built-in 推荐配置；false 表示固定个人配置。 */
+  /** Default or true follows the Built-in recommendation; false pins the personal config. */
   useRecommendedConfig?: boolean;
   config: ModelConfigObject;
   hasPersonalConfig: boolean;

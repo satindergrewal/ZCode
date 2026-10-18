@@ -1,13 +1,5 @@
 import { createHash } from "node:crypto";
-import {
-  mkdtemp,
-  mkdir,
-  readFile,
-  readdir,
-  rm,
-  stat,
-  writeFile,
-} from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -224,13 +216,15 @@ async function listFiles(directory) {
 }
 
 function renderGeneratedModule(registry, contentHash, stats) {
-  return `/* eslint-disable */\n` +
-    `// 此文件由 scripts/generate-bash-command-registry.mjs 确定性生成，请勿手改。\n` +
+  return (
+    `/* eslint-disable */\n` +
+    `// This file is generated deterministically by scripts/generate-bash-command-registry.mjs; do not edit by hand.\n` +
     `// Source: @withfig/autocomplete@${FIG_VERSION} (ISC); hash: ${contentHash}.\n` +
     `// Skipped: imports=${stats.skippedImport}, dynamicSubcommands=${stats.skippedDynamicSubcommands}, invalidNodes=${stats.skippedInvalidNodes}, loadSpecNodes=${stats.skippedLoadSpecNodes}.\n` +
     `export type BashCommandRegistryOption = readonly [readonly string[], 0 | 1];\n` +
     `export type BashCommandRegistryNode = readonly [readonly string[], readonly BashCommandRegistryOption[], number, readonly BashCommandRegistryNode[]];\n` +
     `export const BASH_COMMAND_REGISTRY_VERSION = "fig-${FIG_VERSION}";\n` +
     `export const BASH_COMMAND_REGISTRY_HASH = "${contentHash}";\n` +
-    `export const BASH_COMMAND_REGISTRY: Readonly<Record<string, BashCommandRegistryNode>> = ${JSON.stringify(registry)};\n`;
+    `export const BASH_COMMAND_REGISTRY: Readonly<Record<string, BashCommandRegistryNode>> = ${JSON.stringify(registry)};\n`
+  );
 }

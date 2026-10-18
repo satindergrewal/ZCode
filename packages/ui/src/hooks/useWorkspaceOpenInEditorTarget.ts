@@ -32,8 +32,10 @@ function resolveWorkspaceOpenInEditorTarget(
       (!requestedRemoteSessionId || tabRemoteSessionId === requestedRemoteSessionId)
     );
   });
-  // 远程文件动作以前只携带 Linux path，renderer 无法判断它属于哪个 SSH/WSL 目标；
-  // identity/session 已提供时精确匹配，旧调用仅在工作区匹配唯一时提取既有脱敏目标。
+  // Remote file actions used to carry only a Linux path, leaving the renderer unable to
+  // tell which SSH/WSL target they belong to; match exactly on identity/session when
+  // provided, and for legacy callers extract the existing sanitized target only when the
+  // workspace match is unique.
   const matchedTab = matches.length === 1 ? matches[0] : undefined;
   const hasRemoteMatch = matches.some((tab) =>
     Boolean(tab.workspaceIdentity || tab.remoteSessionId || tab.remoteTarget),

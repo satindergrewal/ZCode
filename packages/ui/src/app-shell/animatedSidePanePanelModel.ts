@@ -79,8 +79,8 @@ export function shouldRenderPreviewPaneHeavyContent({
   }
 
   if (isResizeSettling) {
-    // 原生 video/audio 进入 HTML fullscreen 时会触发 resize；如果此时卸载
-    // 媒体节点，浏览器会因 fullscreen 元素消失而立即退出全屏。
+    // Native video/audio entering HTML fullscreen fires resize; unmounting
+    // the media node then makes the browser exit fullscreen at once (element gone).
     return isMediaPreview;
   }
 

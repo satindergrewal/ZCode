@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- grouped row 同时承载 drag overlay 与常规交互，状态徽标需共用同一渲染语义。 */
+/* eslint-disable max-lines -- grouped rows carry both the drag overlay and normal interactions; status badges share one rendering path. */
 import { memo, useState } from "react";
 import type { KeyboardEvent, MouseEvent } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
@@ -100,11 +100,11 @@ function GroupedTaskRowComponent({
   const workspaceKey = buildTaskWorkspaceKey(task.workspacePath, task.workspaceIdentity);
   const taskActivity = getTaskListRowActivity(task);
   const taskAttention = getTaskListAttention(task);
-  // 交互胶囊是当前最高优先级的右侧状态；无论来自 sessions-index 摘要还是
-  // activity attention，都不应再并排显示相对时间并挤压任务标题。
+  // The interaction badge is the highest-priority right-side state; whether it comes from the
+  // sessions-index summary or activity attention, relative time must not squeeze the task title.
   const hasPendingInteraction = Boolean(task.pendingInteraction) || taskAttention !== null;
-  // 远端 session 未就绪时打开文件树必然会被 resolver 拒绝，因此不要暴露
-  // 无效 action；本地 task 不需要 remoteSessionId，仍保持入口可用。
+  // The resolver always rejects the file tree while the remote session is not ready, so do not
+  // expose a dead action; local tasks need no remoteSessionId and keep the entry available.
   const canOpenFileTree =
     Boolean(onOpenFileTree) && (!task.workspaceIdentity?.trim() || Boolean(remoteSessionId));
   const taskAttentionLabel = taskAttention
@@ -128,8 +128,8 @@ function GroupedTaskRowComponent({
   const taskChangeParts = formatGroupedTaskHoverChangeParts(getTaskChangeSummary(task));
   const taskTimeLabel = formatTaskRelativeTime(task.updatedAt, intl);
   const isTaskCron = isCronTask(task);
-  // 月亮身份改为持久 meta 标记判断；off-peak store 反查在任务被删除后会丢失
-  // 会话溯源，且让每一行多背一个全局 store 订阅。
+  // Moon identity comes from the persistent meta flag; off-peak store lookups lose session
+  // provenance once the task is deleted and add a global store subscription per row.
   const isTaskOffPeak = isOffPeakTask(task);
   const isActive =
     buildTaskWorkspaceKey(activeWorkspacePath, activeWorkspaceIdentity) === workspaceKey &&
@@ -139,12 +139,12 @@ function GroupedTaskRowComponent({
     leadingIndicator === "error"
       ? "bg-destructive"
       : leadingIndicator === "unread"
-        ? // grouped task 未读点需要和普通 task list 共用 sky 色，避免 brand 色在不同主题下表达漂移。
+        ? // Grouped-task unread dots share the sky color with the plain task list, keeping brand-color drift out of themes.
           "bg-sky-500 dark:bg-sky-400"
         : null;
   const canShowHoverActions = !dragOverlay;
-  // 工作流运行行：分组行同样长在标题下；
-  // drag overlay 只是纯展示，不挂确认副作用与点击入口。
+  // Workflow run lines grow under the title on grouped rows too;
+  // the drag overlay is display-only, with no confirmation side effects or click targets.
   const workflowRunLinesNode =
     taskActivity?.workflowActivity && !dragOverlay ? (
       <TaskWorkflowRunLines
@@ -180,7 +180,7 @@ function GroupedTaskRowComponent({
           className="text-foreground"
           title={dragOverlay ? undefined : taskTitle}
         >
-          {/* grouped task 标题超出时不要显示省略号，右侧渐隐能保留标题连续性，避免和右侧状态元信息挤在一起。*/}
+          {/* Do not ellipsize overflowing grouped task titles; the right fade keeps title continuity and avoids crowding status metadata. */}
           {taskTitle}
         </TaskTitleOverflowText>
         <span className="ml-auto flex shrink-0 items-center gap-1.5 text-ui-sm text-foreground-subtle">
@@ -214,7 +214,7 @@ function GroupedTaskRowComponent({
               </span>
             ) : null}
             {!hasPendingInteraction && isTaskCron ? (
-              // drag overlay 也复用 grouped row 元信息；clock 放时间前面，不能跟未读点互斥。
+              // The drag overlay reuses grouped row metadata; the clock sits before the time and never competes with the unread dot.
               <Clock
                 data-cron-task-icon="true"
                 aria-label={intl.formatMessage({ id: "taskList.cronTaskLabel" })}
@@ -234,7 +234,8 @@ function GroupedTaskRowComponent({
     </div>
   );
 
-  // DragOverlay 高频渲染时只返回纯展示节点，避免隐藏 action tooltip 的 Radix ref 循环和 task 路径 RPC。
+  // DragOverlay renders at high frequency; return a display-only node to avoid Radix ref loops
+  // from hidden action tooltips and task path RPCs.
   if (dragOverlay) return taskRow;
 
   const [contextMenuOpen, setContextMenuOpen] = useState(false);
@@ -341,14 +342,14 @@ function GroupedTaskRowComponent({
     droppable.setNodeRef(element);
   };
   const groupedTaskDomKey = typeof dragId === "string" ? encodeURIComponent(dragId) : undefined;
-  // CSS hidden → flex 会让 action trigger 在 pointer 到达时才获得布局尺寸，
-  // Tooltip Portal 可能先以未定位坐标绘制。改为交互状态决定 action 是否挂载，
-  // 同时保留键盘、触摸设备和手机远控 active task 的入口。
+  // CSS hidden -> flex gives action triggers layout size only once the pointer arrives, so the
+  // tooltip portal can paint at an unpositioned anchor. Mount actions from interaction state instead,
+  // while keyboard, touch, and mobile-remote active tasks keep their entry points.
   const shouldMountHoverActions =
     !task.pendingInteraction &&
     (taskRowHovered || taskRowFocusWithin || isHoverNone || isMobileActive);
-  // 触屏端 isHoverNone 只负责常驻 action；时间、状态点和 cron/off-peak 元信息
-  // 仍应保留，仅在真实 hover / focus 交互时让位，避免手机端永久丢失任务状态。
+  // On touch devices isHoverNone only governs persistent actions; time, status dot, and cron/off-peak
+  // metadata stay visible and yield only on real hover/focus, so mobile never permanently loses task state.
   const shouldSuppressTaskMetadata = taskRowHovered || taskRowFocusWithin;
 
   const interactiveTaskRow = (
@@ -380,7 +381,7 @@ function GroupedTaskRowComponent({
     >
       <span className={TASK_GROUP_ROW_LINE_CLASS}>
         <TaskTitleOverflowText as="span" className="text-foreground" title={taskTitle}>
-          {/* grouped task 标题超出时不要显示省略号，右侧渐隐能保留标题连续性，避免和右侧状态元信息挤在一起。*/}
+          {/* Do not ellipsize overflowing grouped task titles; the right fade keeps title continuity and avoids crowding status metadata. */}
           {taskTitle}
         </TaskTitleOverflowText>
         <span className="ml-auto flex shrink-0 items-center gap-1.5 text-ui-sm text-foreground-subtle">
@@ -408,8 +409,8 @@ function GroupedTaskRowComponent({
                 </span>
               ) : null}
               {!hasPendingInteraction && isTaskCron ? (
-                // 可交互 grouped row 之前漏渲染 clock，导致 Projects 分组里的定时任务没有 icon。
-                // 这里和普通 task list 一样放在时间前面，同时不再被未读/运行状态顶掉。
+                // Interactive grouped rows previously dropped the clock, leaving cron tasks in Projects groups icon-less.
+                // As in the plain task list it sits before the time, no longer displaced by unread/running state.
                 <Clock
                   data-cron-task-icon="true"
                   aria-label={intl.formatMessage({ id: "taskList.cronTaskLabel" })}
@@ -461,11 +462,12 @@ function GroupedTaskRowComponent({
     </div>
   );
 
-  // grouped row 不能用原生 button 承载整行；行内还有菜单、关闭、文件树等 button，外层继续用 role=button，避免嵌套 button 破坏键盘和右键菜单语义。
+  // A grouped row cannot be a native button: it contains menu, close, and file-tree buttons. Keep
+  // role=button on the wrapper to avoid nested-button keyboard and context-menu breakage.
   return (
     <ContextMenu onOpenChange={setContextMenuOpen}>
       {tooltipsDisabled ? (
-        // overlay 拖拽时指针下方的真实 row 仍可能被 Radix 识别为 hover，跳过 TooltipTrigger 避免底层 row 或 action 弹出悬浮提示。
+        // During overlay drags Radix may still read the row under the pointer as hovered; skip TooltipTrigger so the underlying row and actions pop no tooltips.
         <ContextMenuTrigger asChild>{interactiveTaskRow}</ContextMenuTrigger>
       ) : (
         <TooltipProvider>
@@ -500,7 +502,7 @@ function GroupedTaskRowComponent({
         </TooltipProvider>
       )}
       {contextMenuOpen ? (
-        // 右键菜单内容带 Radix Presence/Portal，拖拽重排时常驻挂载会触发嵌套更新循环；仅在菜单打开时挂载内容，配合路径懒加载避免拖拽过程刷 task path RPC。
+        // Context menu content mounts Radix Presence/Portal; keeping it mounted through drag reorders triggers nested update loops. Mount only while open, with lazy path loading, to avoid task path RPC spam during drags.
         <GroupedTaskContextMenuContent
           task={task}
           currentGroupId={currentGroupId}

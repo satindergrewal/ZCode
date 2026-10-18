@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- ZCode Protocol 的 session/workspace 方法共享同一个 server context 与 snapshot helpers，迁移期先集中维护。 */
+/* eslint-disable max-lines -- session/workspace methods of the ZCode Protocol share one server context and snapshot helpers; kept centralized for the migration. */
 import { observeSessionDebug } from "./session-debug.js";
 import {
   TASK_LIST_SESSION_TYPES,
@@ -120,7 +120,8 @@ import {
 import { runSessionModelConfigMutation } from "../zcode-protocol-v4/model-config-mutation.js";
 import { runWithSessionResidencyFinalization } from "./session-residency.js";
 
-const PLAN_MODE_GOAL_CONTINUATION_SKIPPED_MESSAGE = "Plan mode 下已记录 goal，但不会自动继续。";
+const PLAN_MODE_GOAL_CONTINUATION_SKIPPED_MESSAGE =
+  "Goal recorded in plan mode; it will not auto-continue.";
 const SLOW_SNAPSHOT_LOG_THRESHOLD_MS = 1000;
 
 type ProtocolGoalTarget = NonNullable<
@@ -134,8 +135,8 @@ type ZCodeSessionRecordParams = (
       model?: ZCodeSessionCreateParams["model"];
       parentSessionId?: ZCodeSessionCreateParams["parentSessionId"];
       thoughtLevel?: ZCodeSessionCreateParams["thoughtLevel"];
-      // 自动化会话会在创建期关闭标题二次生成，而 create/resume
-      // 共用 record 初始化函数；resume 兼容分支也必须声明该策略字段。
+      // Automation sessions disable title regeneration at creation, and create/resume share the
+      // record initializer; the resume compat branch must declare the same policy field.
       titleGenerationEnabled?: ZCodeSessionCreateParams["titleGenerationEnabled"];
     })
 ) & { taskType?: SessionTaskType };
@@ -430,8 +431,8 @@ function shouldFlushProtocolStreamingDeltaBatchForInterval(
   if (lastFlushAt === undefined) {
     return false;
   }
-  // active 任务的流式 function call 不能只按 4KB 字节预算出包。
-  // 单行 JSON 参数会在 protocol 边界长时间滞留，表现为工具卡参数不再流式更新。
+  // A running task's streaming function call cannot be packed by a 4KB byte budget alone:
+  // single-line JSON args linger at the protocol boundary and the tool card's args stop streaming.
   const maxIntervalMs =
     batch.kind === "tool_input_delta"
       ? PROTOCOL_TOOL_INPUT_DELTA_BATCH_MAX_INTERVAL_MS
@@ -481,8 +482,9 @@ function omitDuplicateScheduledToolInput(
   nextPayload.inputByteLength = measureJsonBytes(input);
   nextPayload.inputOmitted = true;
   nextPayload.inputRef = "model_stream";
-  // 性能修复：AI SDK 的 tool_call 已经在 model.streaming 里交付完整 input；
-  // scheduled 只是生命周期边界，重复携带 Write/Edit 大参数会让 stdio 和 renderer 双重放大。
+  // Perf fix: the AI SDK's tool_call already carries the full input in model.streaming;
+  // scheduled is a lifecycle marker only — re-sending big Write/Edit args doubles amplification
+  // on stdio and renderer.
   return {
     ...mappedEvent,
     payload: nextPayload,
@@ -506,10 +508,11 @@ function mapProtocolPromptAttachment(attachment: unknown): TurnAttachment | unde
   const mimeType = stringValue(record.mimeType);
   const isPdf =
     kind === "pdf" || mimeType?.split(";", 1)[0]?.trim().toLowerCase() === "application/pdf";
-  // GUI 协议附件使用 kind/localPath/dataBase64，而 core runtime 只认 type/path/content。
-  // 这里在协议边界完成语义转换，避免把 renderer 的传输格式泄漏到 agent 内部。
-  // 展示元信息（filename/mimeType/sizeBytes）在协议边界保真透传，
-  // TurnStarted 事件与 v4 userInput row 的附件展示不再依赖 basename/扩展名推断。
+  // GUI-protocol attachments use kind/localPath/dataBase64 while the core runtime only knows
+  // type/path/content: translate semantics at the protocol boundary so the renderer's transport
+  // shape never leaks into the agent.
+  // Display metadata (filename/mimeType/sizeBytes) passes through faithfully at the boundary, so
+  // TurnStarted events and v4 userInput rows never rely on basename/extension guesses.
   const displayMeta = {
     filename,
     ...(mimeType ? { mimeType } : {}),
@@ -545,7 +548,8 @@ function mapProtocolPromptAttachment(attachment: unknown): TurnAttachment | unde
       : undefined;
   }
 
-  // video：localPath 零拷贝（agent 侧读文件做大小校验）；Web 端 dataBase64 组 data URL inline。
+  // video: zero-copy localPath (the agent side reads the file for the size check); web builds a
+  // data URL from dataBase64 inline.
   if (kind === "video") {
     if (localPath) {
       return { path: localPath, type: "video", ...displayMeta };
@@ -613,9 +617,9 @@ function shouldHideProtocolSessionEvent(
     return true;
   }
   if (event.type === "model_network_status" && querySource === "session_title") {
-    // 不能用标题生成的全局 suppress 标记隐藏 model_network_status：
-    // 标题请求重试时会把并发主请求的 retry 事件也吞掉，导致 app 输入框右下角看不到重试次数。
-    // status 事件带 querySource，只隐藏标题生成自己的网络状态。
+    // Never hide model_network_status behind the title-generation global suppress flag: a title
+    // retry would also swallow the concurrent main request's retry event and the app's retry
+    // counter would vanish. status events carry querySource; hide only the title's own.
     return true;
   }
   if (event.type === "model_complete" && querySource === "session_title") {
@@ -650,11 +654,12 @@ function mapProtocolSessionEvent(
     });
     return null;
   }
-  // eventStore 的 sequenceNumber 是内部全量账本，包含被协议过滤的
-  // tool_input_delta 等高频模型中间态。ZCode Protocol 的 seq 是 UI/replay 的恢复键，
-  // 必须按“协议实际可见事件流”重新连续编号，不能直接暴露内部 sequenceNumber。
-  // sequenceNumber=0 的 subagent mirror/live-only 事件没有进入父 eventStore，也必须
-  // 按 eventId 分配独立 seq，不能全部复用同一个 0 号映射。
+  // eventStore's sequenceNumber is the internal full ledger, including protocol-filtered
+  // high-frequency model intermediates like tool_input_delta. The ZCode Protocol seq is the
+  // UI/replay recovery key and must be renumbered contiguously over "events actually visible to
+  // the protocol"; never expose the internal sequenceNumber directly.
+  // subagent mirror/live-only events with sequenceNumber=0 never entered the parent eventStore:
+  // assign them independent seqs by eventId — never one shared 0 mapping.
   const protocolSeq = assignProtocolEventSeq(record, event, deliveryKind);
   const mappedEvent = mapSessionEventForProtocol(event, deliveryKind, {
     seq: protocolSeq,
@@ -981,10 +986,11 @@ async function removePreviousImportedSessionHistory(params: {
     if (!isImportedHistoryMessage(message, params.source)) {
       continue;
     }
-    // 旧导入版本复用了 msg_import_0/msg_import_1 这类全局固定 ID。
-    // 第二个导入 session 会通过 saveMessage 的 upsert 把前一个 session 的消息改绑过来，
-    // 并保留旧 time_created，最终导致会话串消息、顺序反转或恢复为空。重导入前只清理
-    // 当前 session 的迁移消息，保留用户后续在导入会话里继续聊出的真实消息。
+    // Legacy import versions reused global fixed ids like msg_import_0/msg_import_1: a second
+    // imported session's saveMessage upsert re-binds the previous session's messages while keeping
+    // old time_created, ending with crossed messages, inverted order, or empty restores. Before
+    // re-import, clean only this session's migration messages and keep real messages the user later
+    // sent in the imported session.
     await params.sessionStore.removeMessage({
       sessionID: params.sessionId,
       messageID: message.info.id,
@@ -1020,7 +1026,8 @@ async function persistImportedSessionHistory(params: {
     importedHistory.source === "claudeCode"
       ? (importedHistory.updatedAt ?? importedHistory.messages.at(-1)?.timestamp ?? createdAt)
       : createdAt;
-  // 历史导入不执行模型；未绑定时保留消息内容，不能要求当前选择或伪造消息来源。
+  // History import runs no model; with none bound keep message content — never demand a current
+  // selection or fabricate a message source.
   const currentModel = optionalModelSelectionFromString(params.record.app.getModel());
   const providerId = currentModel?.providerId as ModelProviderId | undefined;
   const modelId = currentModel?.modelId as ModelId | undefined;
@@ -1059,8 +1066,9 @@ async function persistImportedSessionHistory(params: {
           role: "user",
           time: { created: importedAt },
           agent: "zcode-agent",
-          // 合并新增分享导入时仍沿用旧 model 字段，既引用了失效变量，也会丢失未绑定语义。
-          // 与普通导入共用结构化选择合同；导入不要求模型可执行。
+          // Merge-imports reused the legacy model field, referencing a dead variable and losing the
+          // unbound semantics. Share the structured-selection contract with plain imports; import
+          // never requires an executable model.
           ...(currentModel ? { modelSelection: currentModel } : {}),
           synthetic: true,
           source: "shared_context",
@@ -1092,13 +1100,13 @@ async function persistImportedSessionHistory(params: {
         ],
       },
       provenance: {
-        // session_entry.id 是全库主键（同类修复见 sqlite-session-store.ts
-        // 的 fork command fact），旧模板只含 shareId。同一个 share 导入到第二个
-        // workspace 时按 (shareCode, workspaceKey) 的去重不命中、marker 也各在自己
-        // workspace 下不冲突，saveSessionEntry 的 on conflict(id) 就把第一个会话的
-        // provenance 改绑到新会话，旧会话的 shared context 记录静默消失。
-        // 校验：所有读取都走 (session_id, type) + data.contextId，没有一处按 id 反查，
-        // 因此新旧 id 共存安全，不需要数据迁移。
+        // session_entry.id is the whole-store primary key (sibling fix in sqlite-session-store.ts's
+        // fork command fact); the legacy template carried only shareId. Importing one share into a
+        // second workspace misses the (shareCode, workspaceKey) dedupe and markers don't collide
+        // within a workspace, so saveSessionEntry's on conflict(id) re-binds the first session's
+        // provenance to the new session and the old session's shared-context record silently
+        // disappears. Verified: every read goes through (session_id, type) + data.contextId, nothing
+        // looks up by id, so old/new ids coexisting is safe — no data migration needed.
         id: `v4_shared_context_import:${params.sessionId}:${importedHistory.provenance.shareId}`,
         sessionID: params.sessionId,
         type: "v4/shared_context_import",
@@ -1116,7 +1124,8 @@ async function persistImportedSessionHistory(params: {
   await sessionStore.createSession({
     id: params.sessionId,
     projectID: projectIdFromDirectory(workspace.workspacePath),
-    // 导入会话创建后会立即 resume；必须先落盘当前 identity，避免恢复时退化为路径隔离。
+    // An imported session resumes immediately after creation; persist current identity first so
+    // restore doesn't degrade to path-isolation.
     workspaceID: workspaceIdentity as WorkspaceId | undefined,
     traceID: params.record.traceContext.traceId,
     slug: slugifyImportedSession(params.sessionId),
@@ -1144,9 +1153,9 @@ async function persistImportedSessionHistory(params: {
   for (const [index, message] of importedHistory.messages.entries()) {
     const rawTimestamp = message.timestamp ?? createdAt + index;
 
-    // sessionStore 按 time_created 排序读取消息，如果 assistant 时间早于 user，
-    // UI 会把导入会话显示成 assistant 在上、user 在下。导入边界以数组顺序为准，
-    // 只在写库前把时间戳收敛为单调递增，保留消息内容和角色不变。
+    // sessionStore reads messages ordered by time_created; if assistant predates user the UI shows
+    // imported sessions assistant-first. The import boundary takes array order as truth and only
+    // monotonicizes timestamps before the write, preserving content and roles.
     const timestamp =
       rawTimestamp > lastImportedMessageTimestamp ? rawTimestamp : lastImportedMessageTimestamp + 1;
     lastImportedMessageTimestamp = timestamp;
@@ -1225,7 +1234,7 @@ export async function createSession(
   });
 }
 
-/** V4 创建只需要 record；不要为了丢弃的 legacy snapshot 强制解析空模型。 */
+/** V4 creation needs only the record; never force-parse an empty model for a discarded legacy snapshot. */
 export async function createSessionRecordForV4(
   context: ZCodeProtocolAgentServerContext,
   rawParams: unknown,
@@ -1246,8 +1255,9 @@ async function createSessionWithProjection<T>(
   const params = parseParams(zcodeSessionCreateParamsSchema, rawParams);
   const startedAt = Date.now();
   if (params.sessionId && !params.importedHistory) {
-    // 普通 session/create 若允许外部指定 id，会覆盖 context.sessions 里的 active record，
-    // 造成运行中会话被接管、runtime 泄漏或后续 setModel/sendPrompt 路由错位。
+    // If plain session/create allowed caller-chosen ids it would overwrite the active record in
+    // context.sessions, hijacking running sessions, leaking runtimes, or misrouting later
+    // setModel/sendPrompt.
     throw new ProtocolRequestError(
       -32602,
       "sessionId is only supported for imported history creates",
@@ -1298,15 +1308,17 @@ async function createSessionWithProjection<T>(
         initialThoughtLevel,
       );
       if (supportedInitialThoughtLevel) {
-        // app 已接管默认模型/思考深度持久化，session/create 会显式传入 thoughtLevel。
-        // Workspace Preferences 必须持久化读取：只读 Agent 内存会在重启后丢掉用户上次选择。
+        // The app owns default model/thinking persistence; session/create passes thoughtLevel
+        // explicitly. Workspace Preferences must be read from persistence: an in-memory-only read
+        // loses the user's last choice on restart.
         const setInitialThoughtLevelStartedAt = Date.now();
         await record.app.setThoughtLevel(supportedInitialThoughtLevel);
         setInitialThoughtLevelDurationMs = Date.now() - setInitialThoughtLevelStartedAt;
         record.stateRevision++;
       } else if (initialThoughtLevel) {
-        // workspace 默认 thoughtLevel 可能来自上一个模型。新 session 继承另一模型时，
-        // 不能把不支持的档位硬塞给 runtime，否则创建阶段会抛 Unsupported reasoning effort。
+        // A workspace default thoughtLevel may come from the previous model. When a new session
+        // inherits another model, never force an unsupported tier onto the runtime or creation
+        // throws Unsupported reasoning effort.
         context.logger?.warn("ZCode Protocol session/create skipped unsupported thought level", {
           event: "zcode_protocol.session_create.thought_level_skipped",
           module: "bootstrap.zcode_protocol",
@@ -1319,9 +1331,10 @@ async function createSessionWithProjection<T>(
       }
     });
     if (params.importedHistory) {
-      // 历史导入过去只写 legacy snapshot，taskId 不是真实 protocol sessionId，
-      // setModel/sendPrompt 会打到不存在的 runtime。这里在创建期把历史写入 sessionStore 并 resume，
-      // 让导入结果从第一刻起就是可续聊、可切模型的 ZCode session。
+      // History import used to write only the legacy snapshot, so taskId wasn't a real protocol
+      // sessionId and setModel/sendPrompt hit nonexistent runtimes. Create + persist into
+      // sessionStore and resume here, so imports are resumable, switchable ZCode sessions from the
+      // first moment.
       await persistImportedSessionHistory({
         context,
         record,
@@ -1374,20 +1387,21 @@ async function createSessionWithProjection<T>(
       workspaceKey: workspace.workspaceKey,
       workspacePath: workspace.workspacePath,
     });
-    // draft 创建会用用户上次选择的模型作为启动种子。
-    // 如果该模型已被删除，失败的 record 不能留在 context.sessions：
-    // 后续 workspace 状态继续读到这个半初始化 app，造成模型/思考档位串台。
+    // Draft creation seeds the user's last model choice.
+    // If that model was deleted, the failed record must not stay in context.sessions: later
+    // workspace state keeps reading a half-initialized app and model/thinking tiers cross-contaminate.
     record.unsubscribe?.();
-    // v4 通道：创建期已 ingest 的事件会惰性建出 publisher，失败清理时一并回收。
-    // dispose 先于注册表删除，保证 session.removed 能带上 workspaceId 推送。
+    // v4 channel: events ingested during creation lazily build a publisher; failure cleanup
+    // reclaims it too. Dispose before registry removal so session.removed can carry workspaceId.
     context.v4Gateway?.disposeSession(sessionId);
     context.sessions.delete(sessionId);
     try {
       await record.app.close?.();
     } catch {
-      // 保留原始 create 失败原因；close 只是清理半初始化 runtime 的 best-effort 动作。
+      // Preserve the original create-failure cause; close is only a best-effort cleanup of the
+      // half-initialized runtime.
     }
-    // 内存 event store 随 record 释放。
+    // The in-memory event store dies with the record.
     await record.eventStore.deleteSession(sessionId as SessionId).catch(() => undefined);
     throw error;
   }
@@ -1396,16 +1410,17 @@ async function createSessionWithProjection<T>(
 interface ActivatedSessionForResume {
   record: ZCodeProtocolSessionRecord;
   knownSession?: SessionInfo;
-  /** 仅供启动本次 V4 hydration，不写入 record 或跨请求缓存。 */
+  /** Only for seeding this V4 hydration; never written to the record or cached across requests. */
   persistedMessages?: MessageWithParts[];
 }
 
 /**
- * 只恢复 session runtime 生命周期，不物化任何协议表示。
+ * Restores only the session runtime lifecycle; materializes no protocol representation.
  *
- * V4 冷订阅过去复用 resumeSession，虽然返回值会被直接丢弃，仍会为大历史
- * 构建一份完整 legacy snapshot。runtime 激活和 legacy 表示是两个职责；这里保留
- * snapshot 之前的原有顺序与副作用，让 V4 随后用自己的 durable projection 水合。
+ * V4 cold subscribe used to reuse resumeSession: even with the return value discarded it built a
+ * full legacy snapshot for large histories. Runtime activation and legacy representation are two
+ * concerns; this keeps the pre-snapshot ordering and side effects so V4 can hydrate from its own
+ * durable projection afterwards.
  */
 export async function activateSessionForResume(
   context: ZCodeProtocolAgentServerContext,
@@ -1421,8 +1436,8 @@ export async function activateSessionForResume(
     module: "bootstrap.zcode_protocol",
     sessionId: params.sessionId,
   });
-  // 再激活闸门：该 session 正在容量去激活（app.close 收尾未完成）时先等待，
-  // 防止新旧 app 对同一 session 资源交错读写。无 in-flight 时立即返回。
+  // Re-activation gate: while the session is under capacity deactivation (app.close finishing),
+  // wait first so old/new apps never touch the same session resources concurrently. No in-flight -> return.
   await context.sessionResidentPool?.waitForDeactivation(params.sessionId);
   const existing = context.sessions.get(params.sessionId);
   if (existing) {
@@ -1430,8 +1445,9 @@ export async function activateSessionForResume(
   }
   let session = await getPersistedSession(context, params.sessionId);
   if (!session) {
-    // 诊断：冷恢复只有在持久化记录也不存在时才会走到这里；单凭错误文本无法和
-    // readSession 的“runtime 尚未活跃”区分，因此把两层状态和等待耗时一起落盘。
+    // Diagnostics: cold restore only lands here when the persisted record is missing too; error
+    // text alone can't be told apart from readSession's "runtime not active", so log both layers
+    // plus the wait duration.
     context.logger?.warn("ZCode Protocol session resume found no persisted record", {
       activeBeforeWait,
       activeSessionCount: context.sessions.size,
@@ -1450,30 +1466,32 @@ export async function activateSessionForResume(
   const workspace =
     params.workspace ??
     buildWorkspaceRef({
-      // V4 历史会话冷订阅只传 sessionId；远端会话若在这里仅用目录
-      // 重建 workspace，identity 会退化成 path key，无法命中按 workspaceID 隔离的
-      // provider registry，最终把可用模型误判为不可用并永久触发 restoreWarning。
+      // V4 cold subscribe of historical sessions passes only sessionId; rebuilding the workspace
+      // from directory alone would degrade identity to a path key, missing the workspaceID-scoped
+      // provider registry and misreporting available models, permanently triggering
+      // restoreWarning.
       workspaceIdentity: session.workspaceID,
       workspacePath: session.path ?? session.directory,
     });
   let persistedMessages = await readPersistedSessionMessages(context, params.sessionId);
   const mode = derivePersistedSessionMode(persistedMessages);
-  // shell 设置变更只对新 session 生效；冷恢复必须使用创建时落库的
-  // Bash shell 快照。runtime.resumeFromStore 会读取快照；这里只负责不把
-  // resume 请求里携带的当前 settings 重新注入老 session。
+  // Shell-setting changes apply only to new sessions; cold restore must use the Bash shell
+  // snapshot persisted at creation. runtime.resumeFromStore reads it; here, just don't re-inject
+  // the current settings carried on the resume request into the old session.
   const record = await materializeSessionRecord(
     context,
     {
       ...params,
       mode,
-      // 模型只由 App 的单向迁移/当前 entry 恢复，不能先用消息或调用方 hint 构造一次选择。
+      // Model comes only from the App's one-way migration/current entry; never construct a
+      // selection from messages or caller hints first.
       model: undefined,
       ...(session.parentID ? { parentSessionId: String(session.parentID) } : {}),
-      // resume 曾丢掉持久化 taskType，createRecord 落回缺省
-      // "interactive"。于是被 resume 的 workflow_child / subagent_child 会话通过
-      // isTaskListSessionType 的筛，经 getSessionWorkspaceId 漏进 sessions-index，
-      // desktop 任务列表长出「workflow actor actor#N@k」假任务，任务索引同步器还会
-      // 反复对它们发 session/resume。fork 路径一直带着 taskType，这里必须同样带。
+      // resume used to drop the persisted taskType and createRecord fell back to "interactive", so
+      // resumed workflow_child/subagent_child sessions passed the isTaskListSessionType filter,
+      // leaked into sessions-index via getSessionWorkspaceId, the desktop task list grew fake
+      // "workflow actor actor#N@k" tasks, and the task-index syncer kept session/resume-ing them.
+      // The fork path always carried taskType; resume must too.
       taskType: session.taskType,
       workspace,
     },
@@ -1482,9 +1500,10 @@ export async function activateSessionForResume(
     { kind: "host" },
     session.traceID ? { traceId: session.traceID } : undefined,
   );
-  // createRecord 把 createdAt/updatedAt 写死为 Date.now()——resume 老会话
-  // 会让 sessions-index 把它当"刚创建"的会话（配合 hydration 前的空标题，侧栏
-  // 表现为原会话消失、冒出"新任务刚刚"）。恢复路径回填 store 的真实时间。
+  // createRecord hardcodes createdAt/updatedAt to Date.now() — resuming an old session made
+  // sessions-index treat it as just-created (with the empty pre-hydration title, the sidebar shows
+  // the old session vanish and a "new task just now" appear). The restore path backfills the
+  // store's real times.
   if (session.time?.created) record.createdAt = session.time.created;
   if (session.time?.updated) record.updatedAt = session.time.updated;
   context.assertServing?.();
@@ -1493,7 +1512,8 @@ export async function activateSessionForResume(
     const result = options.reusePersistedMessages
       ? await record.app.resume({ persistedMessages })
       : await record.app.resume();
-    // 仅用于首次投影种子，包含有效模型+空档位；它不是第二份可执行 Runtime 选择。
+    // For first-projection seeding only: valid model + empty tier; not a second executable Runtime
+    // selection.
     record.restoredModelSelection = result.modelSelection;
     return result;
   });
@@ -1541,8 +1561,9 @@ async function repairLegacyRemoteSessionWorkspaceForResume(
     workspaceID: legacyRemote.workspaceIdentity,
     workspacePath: legacyRemote.workspacePath,
   });
-  // 原子修复返回 false 后仍用旧 directory/path 物化 runtime，最终在错误 cwd
-  // 中执行工具。这里必须读取原始持久事实，不能让已有 identity 的内存路径修复伪装成已落盘。
+  // After the atomic fix returns false, materializing the runtime with the old directory/path runs
+  // tools in the wrong cwd. Read the original persisted facts; an in-memory path fix on an
+  // already-identityed runtime must never masquerade as persisted.
   const refreshed = await context.deps.sessionStore.getSession(session.id);
   const repairPersisted =
     refreshed?.workspaceID === legacyRemote.workspaceIdentity &&
@@ -1583,7 +1604,8 @@ async function repairLegacyRemoteSessionWorkspaceForResume(
       workspacePath: legacyRemote.workspacePath,
     });
   }
-  // Core resumeFromStore 会重新读库；NULL identity 修复必须先持久化，不能只改 bootstrap 内存值。
+  // core resumeFromStore re-reads the store; a NULL-identity fix must be persisted first, not just
+  // patched in bootstrap memory.
   return refreshed;
 }
 
@@ -1612,7 +1634,8 @@ function resolveLegacyRemoteWorkspace(
     return null;
   }
 
-  // 只接受当前 app-server cwd 直接拼出的精确形态，不在任意路径中模糊搜索 remote: 前缀。
+  // Accept only the exact shape built from the current app-server cwd; never fuzzy-search
+  // remote: prefixes in arbitrary paths.
   return {
     workspaceIdentity: embeddedIdentity as WorkspaceId,
     workspacePath: embedded.workspacePath,
@@ -1622,7 +1645,8 @@ function resolveLegacyRemoteWorkspace(
 export async function listSessions(context: ZCodeProtocolAgentServerContext, rawParams: unknown) {
   const params = parseParams(zcodeSessionListParamsSchema, rawParams ?? {});
   const store = context.deps.sessionStore;
-  // 显式 ID 查询只读持久化身份，供 Host 修复旧索引；不能为了识别 child 激活 runtime。
+  // Explicit-id reads are persisted-identity lookups for Host index repair; never activate a
+  // runtime just to identify a child.
   const stored = (
     params.sessionIds
       ? await Promise.all(params.sessionIds.map((id) => store?.getSession(id as SessionId) ?? null))
@@ -1689,8 +1713,9 @@ export async function listSessionSubagents(
 
   const parentSession = await store.getSession(params.sessionId as SessionId);
   if (!parentSession) {
-    // 诊断：hydrate 会复用子任务种子读取；若 task index/旧 ACP task 残留了无效 ID，
-    // 这里会把“持久化记录不存在”包装成 v4.hydrate，必须记录调用阶段而不是只看错误文本。
+    // Diagnostics: hydrate reuses subtask-seed reads; when the task index/legacy ACP task leaves a
+    // stale id, "persisted record missing" gets wrapped as v4.hydrate — log the call phase, not
+    // just the message.
     context.logger?.warn("ZCode Protocol session subagents has no persisted parent", {
       activeSessionCount: context.sessions.size,
       activeSession: Boolean(liveParent),
@@ -1781,11 +1806,12 @@ export async function getUsageStats(context: ZCodeProtocolAgentServerContext, ra
     until,
   };
 
-  // SessionStorePort 与 UsageStorePort 是分离接口，但实际 store 同时实现两者；
-  // 沿用 core/usage-observability 的运行时收窄方式访问只读聚合方法。
+  // SessionStorePort and UsageStorePort are separate interfaces, but the real store implements
+  // both; narrow at runtime like core/usage-observability does for the read-only aggregates.
   const usageStore = context.deps.sessionStore as Partial<UsageStorePort> | undefined;
   if (!usageStore?.queryAppUsage) {
-    // 无 usage store（不应发生）：返回空快照而非抛错，便于 UI 显示空态。
+    // No usage store (shouldn't happen): return an empty snapshot instead of throwing, so the UI
+    // can render an empty state.
     return buildAppUsageSnapshot(
       {
         totals: {
@@ -1833,7 +1859,8 @@ export async function readSession(context: ZCodeProtocolAgentServerContext, rawP
 }
 
 /**
- * V4 冷恢复 usage 的窄读取：复用 legacy snapshot 的 meter 计算，但不映射完整协议快照。
+ * Narrow read for V4 cold-restore usage: reuses the legacy snapshot's metering but maps no full
+ * protocol snapshot.
  */
 export async function readSessionContextUsage(
   context: ZCodeProtocolAgentServerContext,
@@ -1847,9 +1874,9 @@ export async function readSessionContextUsage(
     getPersistedSession(context, sessionId),
     record.eventStore.getEvents(sessionId as SessionId),
   ]);
-  // 保持 legacy buildSessionSnapshot 的取数顺序：先固定持久事实，再读取 runtime
-  // projection。运行中首订阅若恰逢 ModelComplete/rewind，不能因窄读把 projection
-  // 提前到并行阶段而制造新的跨水位组合。
+  // Keep legacy buildSessionSnapshot's read order: persisted facts first, then the runtime
+  // projection. A first subscription during ModelComplete/rewind must not promote the projection
+  // into the parallel phase via the narrow read — that would fabricate new cross-level combinations.
   const projection = await record.app.runtime.getProjection();
   const messages = projectActiveSessionMessages(
     resolvedPersistedMessages,
@@ -1894,8 +1921,9 @@ export async function subscribeSession(
   const params = parseParams(zcodeSessionSubscribeParamsSchema, rawParams);
   const record = requireSession(context, params.sessionId);
   record.deliveryKind = params.deliveryKind;
-  // 兼容保护：旧 replayable 流没有 unsubscribe RPC。这里只记录真正的 subscribe，
-  // 不复用会被 session/read 写入的 deliveryKind，避免普通读取永久阻止 resident 回收。
+  // Compat guard: legacy replayable streams have no unsubscribe RPC. Record only true subscribes,
+  // not the deliveryKind that session/read writes, or plain reads would block resident reclamation
+  // forever.
   record.legacyStreamSubscribed = true;
   const events =
     params.afterSeq === undefined
@@ -1918,7 +1946,8 @@ export async function subscribeSession(
 export async function sendPrompt(context: ZCodeProtocolAgentServerContext, rawParams: unknown) {
   const params = parseParams(zcodeSessionSendParamsSchema, rawParams);
   const record = requireSession(context, params.sessionId);
-  // legacy 输入入口同样必须保持子代理只读，不能绕过 V4 用户输入准入。
+  // The legacy input ingress must stay read-only for subagents too; never bypass V4 user-input
+  // admission.
   if (record.taskType === "subagent_child") {
     throw new ProtocolRequestError(-32010, "Subagent sessions are read-only", {
       reasonCode: "guard.subagentReadOnly",
@@ -1945,8 +1974,8 @@ export async function sendPrompt(context: ZCodeProtocolAgentServerContext, rawPa
   }
   await ensureSessionModelAvailableForNextTurn(context, record);
   if (record.persistence === "deferred") {
-    // 未发送前的 draft session 不进入两份 sqlite；用户真正发送首条消息时，
-    // 才把它提升为普通 session，让后续 list/syncer/task index 按真实任务处理。
+    // A draft session pre-send lives in neither sqlite; only when the user actually sends the first
+    // message is it promoted to a normal session, so list/syncer/task index treat it as a real task.
     record.persistence = "immediate";
   }
   const abortController = new AbortController();
@@ -1960,8 +1989,9 @@ export async function sendPrompt(context: ZCodeProtocolAgentServerContext, rawPa
     workspacePath: record.workspace.workspacePath,
   });
   const inputId = params.inputId ?? (params.modelSelection ? crypto.randomUUID() : undefined);
-  // 旧附件载荷也经同一个 canonical intent 固定本次选择，不先改 Session。这里只借用
-  // 公共 metadata 构造器（非 V4 ACK/重放入口）；无 V4 admission 的序号沿既有值 0。
+  // Legacy attachment payloads pin this selection through the same canonical intent without
+  // touching the Session first; this only borrows the shared metadata builder (not a V4 ACK/replay
+  // path) and keeps the pre-V4 admission sequence at 0.
   const intent =
     params.modelSelection && inputId
       ? inputIntentMetadata(
@@ -2004,11 +2034,13 @@ export async function sendPrompt(context: ZCodeProtocolAgentServerContext, rawPa
       botDeliveryTarget: params.botDeliveryTarget,
     }),
   ).catch(() => {
-    // 后台 turn 的错误会通过状态/事件流降级上报；这里兜底防止协议进程出现 unhandled rejection。
+    // Background-turn errors surface via state/event streams; this guard just prevents unhandled
+    // rejections in the protocol process.
   });
-  // session/send 只是“提交用户输入”的协议请求，不能同步等待整轮模型生成完成。
-  // 同步等待首 token/整轮会让超过 30s 的请求触发 host timeout，并且阻塞后续 session/resume、list 等协议消息。
-  // 这里收到输入后立即 ACK，后台 turn 继续通过 session event/state.updated 推送进度。
+  // session/send is only a "submit user input" request: never synchronously await the whole model
+  // turn. Waiting for first token/full turn would trip the host timeout past 30s and block later
+  // session/resume, list, etc. ACK immediately; the background turn reports via session
+  // event/state.updated.
   return afterPromptAccepted(context, record, "prompt_started");
 }
 
@@ -2018,8 +2050,8 @@ export async function compactSession(context: ZCodeProtocolAgentServerContext, r
   assertExpectedRevision(record, params.expectedRevision);
   const activeTurn = record.app.runtime.getActiveTurnInfo();
   if (activeTurn?.kind === "compact") {
-    // 重复 `/compact` 是同一 session 的上下文维护请求；压缩中再收到时应直接丢弃，
-    // 不能进入普通 prompt/steer 队列，也不能渲染成一次失败的压缩横条。
+    // A repeated /compact is context maintenance for the same session: while one is running, drop
+    // further ones instead of queueing them as prompts/steers or rendering a failed-compact bar.
     return {
       response: "",
       snapshot: await snapshot(context, record, undefined, {
@@ -2043,8 +2075,9 @@ export async function compactSession(context: ZCodeProtocolAgentServerContext, r
   const instructions = params.instructions?.trim();
   const command = instructions ? `/compact ${instructions}` : "/compact";
   const abortController = new AbortController();
-  // compact 的真实模型请求在后台执行，但 Stop 仍通过 record.activeAbortController 中断。
-  // 如果这里不登记 controller，压缩中的模型请求会继续跑到自然结束。
+  // compact's real model request runs in background, but Stop still interrupts via
+  // record.activeAbortController. Without registering the controller, the in-flight compact request
+  // runs to natural completion.
   record.activeAbortController = abortController;
   void runWithSessionResidencyFinalization(record, () =>
     runCompactTurnInBackground(context, record, {
@@ -2053,7 +2086,8 @@ export async function compactSession(context: ZCodeProtocolAgentServerContext, r
       inputId: params.inputId,
     }),
   ).catch(() => {
-    // 后台 compact 的错误会通过 compact timeline/state.updated 降级上报；这里兜底防 unhandled rejection。
+    // Background compact errors surface via compact timeline/state.updated; this guard prevents
+    // unhandled rejections.
   });
   record.stateRevision++;
   record.updatedAt = Date.now();
@@ -2111,8 +2145,8 @@ async function runCompactTurnInBackground(
     });
   } finally {
     if (record.activeAbortController === params.abortController) {
-      // compact 结束后必须先释放 active lock 再广播状态；否则 queued prompt
-      // 或后续 `/compact` 会在 ready 边界短暂撞上旧 controller。
+      // After compact finishes, release the active lock before broadcasting state, or a queued
+      // prompt or later /compact briefly hits the old controller at the ready boundary.
       record.activeAbortController = undefined;
     }
   }
@@ -2123,8 +2157,10 @@ export async function goalSession(context: ZCodeProtocolAgentServerContext, rawP
   const params = parseParams(zcodeSessionGoalParamsSchema, rawParams);
   const record = requireSession(context, params.sessionId);
   assertExpectedRevision(record, params.expectedRevision);
-  // /goal 是目标状态写入，不是普通 prompt；除 pause 外运行中允许执行会绕过前端队列并污染当前 turn。
-  // pause 是用户显式停止 active goal 的控制面命令，必须能打断当前 assistant turn 或 verifier。
+  // /goal writes goal state, not a prompt; while running, everything but pause would bypass the
+  // frontend queue and pollute the current turn.
+  // pause is the user's explicit stop control for the active goal and must be able to interrupt
+  // the current assistant turn or verifier.
   const goalPauseMayInterruptActiveTurn = params.action === "pause";
   if (!goalPauseMayInterruptActiveTurn) {
     ensureNoActiveTurn(record, "Cannot manage goals while a prompt is running");
@@ -2165,8 +2201,9 @@ export async function goalSession(context: ZCodeProtocolAgentServerContext, rawP
     }
     const snapshotAfterGoal = await afterStateMutation(context, record, "goal_paused");
     return {
-      // pause 是状态控制动作，UI 已通过目标面板和 runtime 收口体现结果；
-      // 返回 "Goal paused Objective..." 会被渲染成一条无意义 assistant 气泡并重复暴露目标正文。
+      // pause is a state control; the UI already reflects it via the goal panel and runtime close.
+      // Returning "Goal paused Objective..." renders a pointless assistant bubble re-exposing the
+      // goal text.
       response: target ? "" : "No goal to pause.",
       snapshot: snapshotAfterGoal,
       startedTurn: false,
@@ -2212,8 +2249,8 @@ export async function goalSession(context: ZCodeProtocolAgentServerContext, rawP
     };
   }
 
-  // App 输入框里的 `/goal 新目标` 是用户显式提交的新目标；已有目标时继续要求
-  // replace 会让用户以为目标已变更但数据库仍保留旧目标。这里把重复 set 收敛成 replace 语义。
+  // /goal <new goal> in the app input is an explicit new goal; with one present, demanding replace
+  // makes users think it changed while the DB keeps the old one. Converge repeated set onto replace.
   const replacesExistingGoal =
     params.action === "replace" || Boolean(await record.app.readTarget());
 
@@ -2250,8 +2287,9 @@ export async function forkSession(context: ZCodeProtocolAgentServerContext, rawP
 }
 
 /**
- * 已完成 core copy 后只注册 child record。V4 running fork 复用这段宿主生命周期，
- * 但不会进入 forkSession 的 active-turn guard / workspace fork；runtimeConfig 可固定在 fork 点。
+ * After the core copy, only the child record is registered. V4 running forks reuse this host
+ * lifecycle but skip forkSession's active-turn guard/workspace fork; runtimeConfig can be pinned
+ * at the fork point.
  */
 export async function registerForkedSession(
   context: ZCodeProtocolAgentServerContext,
@@ -2280,7 +2318,8 @@ export async function registerForkedSession(
     {
       sessionId: fork.forkedSessionId,
       mode: parentMode,
-      // 未绑定父会话也允许复制历史；不能因分叉而选择默认模型或解析空字符串。
+      // Copying history is allowed even with the parent unbound; never pick a default model or
+      // parse empty strings because of the fork.
       model: optionalModelSelectionFromString(parentModel),
       ...(fork.parentSessionId ? { parentSessionId: fork.parentSessionId } : {}),
       taskType: forkedSession.taskType,
@@ -2293,8 +2332,9 @@ export async function registerForkedSession(
   context.assertServing?.();
   context.sessions.set(fork.forkedSessionId, forkRecord);
   await runSessionModelConfigMutation(forkRecord.app, async () => {
-    // fork 是父会话运行态的分支；只复制消息的话新 record 会从 workspace 默认值恢复，
-    // 于是 fork 后的当前模型/模式会被最新默认设置覆盖。这里在 resume 前显式继承父会话设置。
+    // A fork branches the parent's running state; copying messages alone would restore the new
+    // record from workspace defaults, so post-fork model/mode gets clobbered by the latest
+    // defaults. Inherit the parent's settings explicitly before resume.
     if (forkRecord.app.getMode() !== parentMode) {
       await forkRecord.app.setMode(parentMode);
       forkRecord.stateRevision++;
@@ -2346,8 +2386,8 @@ async function inheritForkedSessionTarget(
     return;
   }
 
-  // core fork 现在会复制 goal state；bootstrap 只保留旧 app/fake app 的兜底。
-  // 不能再 setTarget 新建 targetId，否则 verifier timeline 会和 copied transcript 断开。
+  // core fork now copies goal state; bootstrap keeps only the legacy/fake-app fallback. Never
+  // setTarget a new targetId or the verifier timeline disconnects from the copied transcript.
   await context.deps.sessionStore.cloneTargetForFork({
     sessionID: forkedSessionId as SessionId,
     source: parentTarget,
@@ -2396,13 +2436,14 @@ async function runPromptTurnInBackground(
     activeOffPeakTaskId,
   );
   if (activeAutomationId) {
-    // 附件输入仍走旧 session/send；automation 派发可能漏传 automationId，
-    // 但 inputId 会保留 automation-* runId。这里兜底标记，避免 CronCreate 在绑定 active
-    // 会话里递归创建定时任务。
+    // Attachment input still uses legacy session/send; automation dispatch may omit automationId,
+    // but inputId keeps the automation-* runId. Mark it here so CronCreate can't recursively create
+    // scheduled tasks inside a bound active session.
     record.activeAutomationId = activeAutomationId;
   }
   if (activeOffPeakTaskId) {
-    // 闲时派发轮同型兜底标记，供 offpeak-port 拒绝递归 OffPeakCreate。
+    // Same-shaped guard mark for idle-dispatch rounds, letting offpeak-port reject recursive
+    // OffPeakCreate.
     record.activeOffPeakTaskId = activeOffPeakTaskId;
   }
   record.activeBotDeliveryTarget = params.botDeliveryTarget;
@@ -2427,14 +2468,15 @@ async function runPromptTurnInBackground(
                 ...(params.offPeakRunType ? { offPeakRunType: params.offPeakRunType } : {}),
               }
             : {}),
-        // legacy session/send 同样可能复用 active runtime；只做 port 拒绝时模型仍看得到
-        // CronCreate，并可能在失败后改调 CronDelete。automation turn 与 cron task 会话后续输入
-        // 都直接从本轮 provider 工具面移除。
+        // legacy session/send can also reuse the active runtime; port-only rejection still lets the
+        // model see CronCreate and possibly switch to CronDelete after failure. Later inputs in
+        // automation turns and cron-task sessions are removed from this turn's provider tool surface.
         ...(turnToolDisallowlist ? { toolDisallowlist: turnToolDisallowlist } : {}),
       },
     );
-    // admission 不是整轮结束。提前清理会丢失 automation 归属及 Stop controller；
-    // ACK 已由 session/send 返回，后台只在真实 completion 后释放本轮资源。
+    // Admission is not the end of the turn. Early cleanup loses automation ownership and the Stop
+    // controller; the ACK already went out via session/send — release this turn's resources only on
+    // real completion.
     if (admission.kind === "rejected") {
       throw new ProtocolRequestError(-32010, `Prompt admission rejected: ${admission.reason}`);
     }
@@ -2457,9 +2499,9 @@ async function runPromptTurnInBackground(
     });
   } finally {
     if (record.activeAbortController === params.abortController) {
-      // prompt_completed/prompt_failed 是下游 host queue 的 ready 边界。
-      // 必须先释放 active lock 再广播状态，否则手机端收到 ready 后立刻 drain 会被
-      // session/send 拒绝为 "A prompt is already running for this session"。
+      // prompt_completed/prompt_failed are the downstream host queue's ready boundary. Release the
+      // active lock before broadcasting state, or a phone-side drain right after ready is rejected
+      // by session/send with "A prompt is already running for this session".
       record.activeAbortController = undefined;
       context.logger?.info("ZCode Protocol background turn cleared active controller", {
         durationMs: Date.now() - startedAt,
@@ -2470,8 +2512,8 @@ async function runPromptTurnInBackground(
     }
     record.activeAutomationId = previousAutomationId;
     record.activeOffPeakTaskId = previousOffPeakTaskId;
-    // Bug 原因：legacy record 会跨 turn 复用；必须恢复 Bot 地址，避免后续普通 UI turn
-    // 创建的定时任务错误继承上一轮 Bot 会话。
+    // Root cause: legacy records are reused across turns; restore the Bot address or scheduled
+    // tasks created by later plain UI turns wrongly inherit the previous turn's Bot session.
     record.activeBotDeliveryTarget = previousBotDeliveryTarget;
   }
   await afterStateMutation(context, record, mutationReason);
@@ -2489,9 +2531,9 @@ function buildPromptTurnToolDisallowlist(
 ): readonly string[] | undefined {
   const tools = new Set(params.toolDenylist ?? []);
   if (activeAutomationId) tools.add("CronCreate");
-  // 闲时派发轮隐藏 OffPeakCreate（防递归自我派生）；OffPeakList 只读保留。
-  // 注意 automation 轮不加 OffPeakCreate——cron 轮放行（定时派生闲时任务）。
-  // SendMessage / Workflow 同样隐藏，与 V4 prompt-turn 及 core turn-loop-state 同值。
+  // Idle-dispatch rounds hide OffPeakCreate (no recursive self-derivation); OffPeakList stays
+  // read-only. Automation rounds keep OffPeakCreate — cron rounds may derive idle tasks on schedule.
+  // SendMessage/Workflow hide it too, matching v4 prompt-turn and core turn-loop-state.
   if (activeOffPeakTaskId) {
     for (const toolName of ["OffPeakCreate", "SendMessage", "Workflow"]) tools.add(toolName);
   }
@@ -2517,8 +2559,8 @@ function resolvePromptTurnOffPeakTaskId(params: {
 }): string | undefined {
   const explicit = params.offPeakTaskId?.trim();
   if (explicit) return explicit;
-  // 兜底：续跑派发的 inputId 形如 `offpeak-<uuid>:resume:<uuid>`（首段 traceId 无固定前缀，
-  // 主信号必须是显式 offPeakTaskId）。
+  // Fallback: resumed-dispatch inputIds look like `offpeak-<uuid>:resume:<uuid>` (the leading
+  // traceId has no fixed prefix); the primary signal must be the explicit offPeakTaskID.
   const inputId = params.inputId?.trim();
   if (!inputId?.startsWith("offpeak-")) return undefined;
   const separatorIndex = inputId.indexOf(":");
@@ -2538,7 +2580,8 @@ async function continueGoalAfterChange(
 ) {
   const response = formatGoalChanged(params.title, params.target);
   const isPlanMode = record.app.runtime.getPlanEnabled?.() ?? record.app.getMode?.() === "plan";
-  // continueActiveTarget 是 App 的必选能力；能否继续只取决于当前模式和是否已有活跃 turn。
+  // continueActiveTarget is a mandatory app capability; continuable depends only on current mode
+  // and whether a turn is active.
   const canContinue = !isPlanMode && !record.activeAbortController;
 
   if (canContinue) {
@@ -2551,7 +2594,8 @@ async function continueGoalAfterChange(
         inputId: params.inputId,
       }),
     ).catch(() => {
-      // 后台 goal continuation 的失败会通过状态/事件流降级上报；这里兜底防 unhandled rejection。
+      // Background goal-continuation failures surface via state/event streams; guard against
+      // unhandled rejections.
     });
   }
 
@@ -2581,8 +2625,9 @@ async function runGoalContinuationInBackground(
     mutationReason = "goal_continuation_failed";
   } finally {
     if (record.activeAbortController === params.abortController) {
-      // 续跑本身结束后应立刻释放活跃锁；snapshot/command discovery 只是后续广播，
-      // 如果继续占锁，连续 `/goal` 会被误判为已有活跃 turn。
+      // Release the active lock as soon as the continuation itself ends; snapshot/command discovery
+      // is broadcast afterwards — holding the lock would make consecutive /goal misread as
+      // already-active.
       record.activeAbortController = undefined;
     }
   }
@@ -2625,8 +2670,8 @@ async function pauseActiveGoalForSessionStop(
   }
 
   try {
-    // Stop 只 abort controller 时，goal verifier 若没及时收到 abort，
-    // 会在队列仍持有 stopRequested 的情况下保留 active goal，导致后续队列无法 drain。
+    // If Stop only aborts the controller and the goal verifier misses the abort, the active goal
+    // survives with stopRequested still held and the queue can never drain.
     const pausedTarget = await record.app.updateTargetStatus("paused");
     if (pausedTarget) {
       context.logger?.info("ZCode Protocol session/stop paused active goal", {
@@ -2671,8 +2716,9 @@ export async function cancelBackgroundTask(
   }
 
   const result = await record.app.cancelBackgroundTask(params.taskId);
-  // 后台 bash 取消是运行态变更，不会经过普通 prompt 终态。
-  // 取消后立即发 state.updated，让桌面 continuous 和手机 replayable 都通过各自 snapshot 边界刷新投影。
+  // Background bash cancel is a runtime-state change, not a normal prompt terminal; emit
+  // state.updated immediately so desktop continuous and phone replayable refresh via their own
+  // snapshot boundaries.
   await afterStateMutation(context, record, "background_task_cancelled");
   return result;
 }
@@ -2682,7 +2728,8 @@ export async function setModel(context: ZCodeProtocolAgentServerContext, rawPara
   const record = requireSession(context, params.sessionId);
   assertExpectedRevision(record, params.expectedRevision);
   await runSessionModelConfigMutation(record.app, async () => {
-    // 完整 Session 配置命令不能经身份字符串丢掉 reasoning；由共享 setter 原子校验/保存。
+    // Full Session config commands must not drop reasoning via identity strings; the shared setter
+    // validates/saves atomically.
     await record.app.setModel(params.model);
   });
   return await afterStateMutation(context, record, "model_changed");
@@ -2717,18 +2764,19 @@ export async function closeSession(context: ZCodeProtocolAgentServerContext, raw
   const params = parseParams(zcodeSessionCloseParamsSchema, rawParams);
   const record = requireSession(context, params.sessionId);
   if (!shouldCloseSessionForExpectedPersistence(record.persistence, params.expectedPersistence)) {
-    // 连接切换与跨端首发可能并发。session/send 会先把 deferred 提升为
-    // immediate；条件关闭必须在 Agent record 上原子判断，不能依赖 renderer 的旧快照。
+    // Connection switches and cross-device first sends can race. session/send promotes deferred to
+    // immediate first; conditional close must decide atomically on the Agent record, never on a
+    // stale renderer snapshot.
     return { closed: false };
   }
   record.unsubscribe?.();
   await record.app.close?.();
-  // v4 通道：会话关闭同时清 publisher / 订阅调度；重开会话走 snapshot 冷启动。
-  // dispose 必须先于注册表删除——gateway 靠 getSessionWorkspaceId
-  // （读 context.sessions）定位 workspace 才能推 session.removed 给 sessions-index 订阅者。
+  // v4 channel: session close also clears publisher/subscription scheduling; reopen cold-starts
+  // from snapshot. Dispose must precede registry removal — the gateway needs getSessionWorkspaceId
+  // (reads context.sessions) to locate the workspace and push session.removed to index subscribers.
   context.v4Gateway?.disposeSession(params.sessionId);
   context.sessions.delete(params.sessionId);
-  // 内存 event store 随 record 释放。
+  // The in-memory event store dies with the record.
   await record.eventStore.deleteSession(params.sessionId as SessionId);
   return { closed: true };
 }
@@ -2832,7 +2880,7 @@ function assertExpectedProviderRevision(
   _record: ZCodeProtocolSessionRecord,
   expectedProviderRevision: string | undefined,
 ): void {
-  // 兼容旧客户端字段。Provider revision 已由进程 Registry 自己管理，不再接受 Host CAS。
+  // Legacy-client field compat. Provider revision is managed by the in-process registry; no Host CAS.
   void expectedProviderRevision;
 }
 
@@ -2878,10 +2926,10 @@ async function resolveTurnMessageId(
   for (const message of messages) {
     if (message.info.role === "user") {
       if (role === "assistant" && currentTurn === turnIndex && lastAssistantForTargetTurn) {
-        // fork/rewind 的 legacy turn target 是“目标轮次的 assistant”，
-        // 不是“扫描到历史末尾时仍然处于目标轮次”。遇到下一条 user 就清空已找到的
-        // assistant，导致只有最后一轮能 fork；compact summary 和 fork notice 这类 synthetic
-        // user 又会把最后一轮变成非最后一轮。离开目标轮次前直接返回稳定目标。
+        // The legacy fork/rewind turn target is "the assistant of the target turn", not "whatever is
+        // still in the target turn when scanning to the end". The next user clears the found
+        // assistant, so only the last turn was forkable; synthetic users like compact summaries and
+        // fork notices even un-last the last turn. Return the stable target before leaving the turn.
         return lastAssistantForTargetTurn;
       }
       currentTurn += 1;
@@ -2942,19 +2990,20 @@ export async function getTaskTokenUsage(
 }
 
 /**
- * 纯配置事件集合：只改变会话选型（模型/协作模式），不代表用户消息活动。
- * 这些事件不 bump record.updatedAt（= sessions-index lastActivityAt），
- * 避免配置操作驱动侧栏列表按活动时间重排。
- * - ModelSelected / SessionModeChanged：纯配置变更（切模型/切模式）。
- * - SessionTitleUpdated：标题是会话元数据；冷恢复会为了 v4 投影补发标题事件，
- *   不能因此把历史任务当成刚活动过并顶到列表最前。
- * - SessionResumed：打开/恢复会话是读取，不是活动。冷恢复路径刚把
- *   record.updatedAt 回填成 store 的真实时间（见 resumeSession op 内说明），
- *   若再被 resume 事件冲成 Date.now()，点开/刷新任务就会被顶到列表最前并整列重排。
- * - WorkspaceHookAdmissionUpdated：冷恢复重新评估工作区 hook 准入状态，不代表用户活动；
- *   若漏掉黑名单，SessionResumed 后的准入状态事件会把历史任务显示为“刚刚”。
- * - HookRun*：hook lifecycle 是 turn/session 的内部执行细节；正常 turn 已有消息、工具等
- *   活动事件负责更新时间，冷恢复的 SessionStart hook 不能单独制造一次用户活动。
+ * Pure-config event set: only change session selection (model/collab mode); never user-message
+ * activity. They don't bump record.updatedAt (= sessions-index lastActivityAt) so config ops don't
+ * resort the sidebar by activity.
+ * - ModelSelected / SessionModeChanged: pure config changes.
+ * - SessionTitleUpdated: title is session metadata; cold restore re-emits it for the v4
+ *   projection — historical tasks must not look freshly active and jump the list.
+ * - SessionResumed: opening/resuming is a read, not activity. Cold restore just backfilled
+ *   record.updatedAt with the store's real time (see the resumeSession op note); letting the
+ *   resume event overwrite it with Date.now() would jump the task to the top and resort the list.
+ * - WorkspaceHookAdmissionUpdated: cold-restore re-evaluates workspace hook admission, not user
+ *   activity; missing it would show historical tasks as "just now" after SessionResumed.
+ * - HookRun*: hook lifecycle is internal turn/session execution detail; normal turns already have
+ *   message/tool activity events for timestamps — a cold-restored SessionStart hook must not
+ *   fabricate user activity.
  */
 function isNonActivitySessionEvent(event: SessionEvent): boolean {
   return (
@@ -2972,14 +3021,16 @@ function isNonActivitySessionEvent(event: SessionEvent): boolean {
 }
 
 /**
- * `record.persistence` 是 runtime「会话已持久化」事实的协议侧镜像：deferred = draft（不进 session/list、
- * 不进 sessions-index、可被 expectedPersistence="deferred" 的条件关闭收回）。首发路径在 accepted 时刻
- * 抢先提升（关闭竞态需要原子判断，见 startPromptTurn / admission），但**任何**经 runtime 首次持久化的
- * 路径都必须让会话离开 draft——中枢直接启动的会话由 runtime 落行、走 controlOnly
- * 启动轮，没有首发，record 一直是 deferred，sessions-index 视其为 draft 而跳过，侧栏永远不出现。
- * 于是在事件流的唯一入口按 runtime 事实对齐一次：持久化之后 runtime 必定至少发一条事件
- * （SessionTitleUpdated first_input），紧随其后的 ingest 便把会话推进 sessions-index。
- * 测试桩的 runtime 可能没有这个方法（`as never`），缺席即不对齐。
+ * `record.persistence` is the protocol-side mirror of the runtime's "session persisted" fact:
+ * deferred = draft (not in session/list, not in sessions-index, reclaimable by conditional close
+ * with expectedPersistence="deferred"). The first-send path promotes at accepted time (the close
+ * race needs the atomic check; see startPromptTurn/admission), but ANY path that persists via the
+ * runtime for the first time must move the session out of draft — hub-started sessions are
+ * persisted by the runtime via a controlOnly kickoff with no first send, so record stays deferred,
+ * sessions-index treats them as draft and skips, and they never appear in the sidebar. So align
+ * once at the event stream's single ingress on runtime truth: after persisting, the runtime emits
+ * at least one event (SessionTitleUpdated first_input) and the following ingest promotes the
+ * session into sessions-index. Test-stub runtimes may lack the method (`as never`): no alignment.
  */
 function reconcileRecordPersistence(record: ZCodeProtocolSessionRecord): void {
   if (record.persistence !== "deferred") return;
@@ -2994,14 +3045,16 @@ export function onSessionEvent(
   const computerUseOperationEvent = mapComputerUseOperationEvent(event);
   if (computerUseOperationEvent) {
     try {
-      // 桌面 v4 主链没有旧 session/event 的 deliveryKind 订阅，顶部提示不能继续
-      // 依赖该旧门控；这里只发送无内容的生命周期元数据，并与 v4 投影并行、互不阻断。
+      // The desktop v4 main path has no legacy session/event deliveryKind subscription; the top
+      // notice must not depend on that old gate. Send content-less lifecycle metadata only, in
+      // parallel with the v4 projection, neither blocking the other.
       context.notify({
         method: zcodeProtocolMethods.computerUseOperationEvent,
         params: computerUseOperationEvent,
       });
-      // 这条 notify 过去只在抛错时有日志，成功路径无痕，于是「agent 压根没发」
-      // 与「发了但宿主侧静默丢弃」无法区分。CLI 自己的 jsonl 收 debug 级，足够闭环到源头。
+      // This notify used to log only on throw — success was traceless, so "agent never sent" vs
+      // "sent but host silently dropped" was undecidable. The CLI's own jsonl takes debug level,
+      // enough to close the loop at the source.
       context.logger?.debug("Computer Use operation lifecycle notification sent", {
         event: "zcode_protocol.computer-use.operation-event.sent",
         eventId: computerUseOperationEvent.eventId,
@@ -3022,10 +3075,11 @@ export function onSessionEvent(
     }
   }
   if (String(event.sessionId) !== record.app.sessionId) {
-    // subagent runtime 复用父 runtime 的外部 event sink，但 raw child event
-    // 仍属于 child session。无条件用 parent record id ingest 会让 child topic 打开后
-    // 不再更新，同时还可能错误 bump 父任务活动时间。这里必须先按事件自己的 sessionId
-    // 路由并返回；parent mirror event 本身使用 parent sessionId，继续走下方既有链路。
+    // A subagent runtime reuses the parent's external event sink, but raw child events belong to
+    // the child session. Ingesting them under the parent record id would freeze the child topic
+    // after opening and could wrongly bump parent activity time. Route by the event's own
+    // sessionId first and return; parent mirror events keep their parent sessionId and the existing
+    // path below.
     context.v4Gateway?.ingestDetachedLiveSession(
       String(event.sessionId),
       event,
@@ -3033,22 +3087,25 @@ export function onSessionEvent(
     );
     return;
   }
-  // record.updatedAt 是 sessions-index 的 lastActivityAt 事实源（v4-bridge
-  // getSessionIndexMeta），UI 侧栏按它排序。纯配置/恢复/标题元数据事件不是用户会话活动，
-  // 之前无差别 bump 会让"切一次模型/点开任务"把任务顶到列表最前并触发整表重排。
+  // record.updatedAt is the sessions-index lastActivityAt source (v4-bridge getSessionIndexMeta);
+  // the sidebar sorts by it. Pure config/restore/title-metadata events are not user activity —
+  // undifferentiated bumping let "switch model once/open a task" jump it to the top and resort all.
   const nonActivityEvent = isNonActivitySessionEvent(event);
   if (event.type === SessionEventType.ModelSelected) {
-    // 恢复候选只服务初始 UI；用户新选择生效后不能在后续清空时被旧候选复活。
+    // Restore candidates serve initial UI only; once a user choice lands, stale candidates must not
+    // resurrect during later clears.
     delete record.restoredModelSelection;
   }
   if (!nonActivityEvent) {
     record.updatedAt = Date.now();
   }
   reconcileRecordPersistence(record);
-  // 调试旁路不依赖聊天订阅；放在 deliveryKind 判断之前，避免旧订阅退出后诊断再次断流。
+  // The debug bypass does not depend on chat subscriptions; keep it before the deliveryKind check
+  // so diagnostics survive legacy-unsubscription.
   observeSessionDebug(record, event);
-  // v4 通道：权威事件无条件喂给 v4 投影/发布器——v4 订阅不依赖旧协议的
-  // deliveryKind 订阅态，帧节奏由 gateway 按订阅者 profile 自行调度。
+  // v4 channel: authoritative events feed the v4 projection/publisher unconditionally — v4
+  // subscriptions don't depend on legacy deliveryKind state; the gateway schedules framing per
+  // subscriber profile.
   context.v4Gateway?.ingest(record.app.sessionId, event);
   if (!record.deliveryKind) return;
   const deltaInfo = readStreamingDeltaBatchableEvent(event);
@@ -3094,9 +3151,11 @@ function flushLiveProtocolStreamingDeltaBatch(
   rememberProtocolStreamingDeltaBatchFlush(batchState.lastFlushAtByBatchKey, batchState.batch);
   const event = materializeProtocolStreamingDeltaBatch(batchState.batch);
   batchState.batch = undefined;
-  // 性能修复：provider 会把 Write/Edit input 和 reasoning/text 输出切成大量很小的 delta。
-  // 在 protocol 边界按确定性字节预算合并相邻 diff，renderer 仍按 delta 追加，但不再被每个小包唤醒。
-  // 文本体感用 SessionEvent.timestamp 做低频 flush，不能用 live setTimeout，否则 replay 无法复现边界。
+  // Perf fix: providers split Write/Edit inputs and reasoning/text output into many tiny deltas.
+  // Merge adjacent diffs at the protocol boundary under a deterministic byte budget; the renderer
+  // still appends deltas but wakes per batch, not per packet.
+  // Text feel uses SessionEvent.timestamp for low-frequency flush — never a live setTimeout, or
+  // replay can't reproduce boundaries.
   sendProtocolSessionEvent(context, record, event, deliveryKind);
 }
 
@@ -3163,8 +3222,8 @@ async function requestSessionRuntimePreferences(
   trace?: ZCodeProtocolTrace,
 ): Promise<ZCodeSessionRuntimePreferencesResult> {
   const startedAt = Date.now();
-  // ZCodeProtocolTrace.traceId 是协议层的 string；LogContext 需要 branded TraceId，
-  // 按本文件既有惯例断言收口，避免多处日志构造重复转换。
+  // ZCodeProtocolTrace.traceId is a protocol-level string; LogContext wants a branded TraceId.
+  // Assert once per the file's existing convention instead of converting at every log site.
   const traceId = trace?.traceId as TraceId | undefined;
   context.logger?.debug("ZCode Protocol runtime preferences request started", {
     event: "zcode_protocol.runtime_preferences.request_started",
@@ -3206,8 +3265,8 @@ async function requestSessionRuntimePreferences(
       traceId,
     };
     if (errorCode === -32022) {
-      // 诊断：偏好请求超时发生在 runtime 注册前；记录 session/scope，区分
-      // “Host 没收到/没回包”和“恢复过程中其他阶段失败”。
+      // Diagnostics: preference-request timeout before runtime registration; log session/scope to
+      // tell "host never received/answered" from other restore-phase failures.
       context.logger?.warn("ZCode Protocol runtime preferences request timed out", diagnostic);
     } else if (errorCode !== -32601 && errorCode !== -32020) {
       context.logger?.warn("ZCode Protocol runtime preferences request failed", diagnostic);
@@ -3218,8 +3277,8 @@ async function requestSessionRuntimePreferences(
       );
     }
     if (error instanceof ProtocolRequestError && (error.code === -32601 || error.code === -32020)) {
-      // 兼容旧 Host 或无 Host 的纯 CLI 创建路径；Memory 服从产品默认关闭，
-      // 增强搜索维持原有默认开启，其他协议/传输错误仍阻止 runtime 创建。
+      // Compat with legacy Host-less pure-CLI creation. Memory follows the product default off,
+      // enhanced search keeps its default on; other protocol/transport errors still block creation.
       return {
         askUserQuestionAutoResolutionEnabled: true,
         memoryEnabled: false,
@@ -3253,7 +3312,8 @@ async function resolveSessionStartupPreferences(
     "runtime-materialization",
     trace,
   );
-  // 必须在 session runtime 可发出第一次提问前应用；关闭路径会等待已有 snooze 持久化完成。
+  // Must apply before the session runtime can ask anything; close paths wait for existing snooze
+  // persistence.
   await context.v4Interactions.initializeAskUserQuestionAutoResolutionEnabled(
     runtimePreferences.askUserQuestionAutoResolutionEnabled,
   );
@@ -3325,8 +3385,9 @@ async function createRecord(
     workspaceKey: workspace.workspaceKey,
     workspacePath: workspace.workspacePath,
   });
-  // automation-port 需要读取「本会话」的实时 model/mode/thought；record 在 app 之后才建。
-  // 用可变持有者做惰性绑定：CronCreate 在 turn 中调用 create() 时 record 早已就绪。
+  // automation-port reads this session's live model/mode/thought; the record is created after the
+  // app. Lazy-bind through a mutable holder: by the time CronCreate calls create() mid-turn, the
+  // record exists.
   let ownSessionRecord: ZCodeProtocolSessionRecord | undefined;
   const app = await createWorkspaceZCodeApp(context, workspace, {
     env: context.deps.env,
@@ -3337,59 +3398,65 @@ async function createRecord(
       modelSelection: "model" in params ? toRuntimeModelSelection(initialModel) : undefined,
       parentSessionId,
       taskType,
-      // 动态工作流灰度门：与 offPeakPort
-      // 同一套读法——本次 create/resume 参数优先，缺席时读 Host 同步到进程的 workspace 级
-      // 结论；两者都没有就是 false（fail-closed）。这里**必须写出显式布尔**，不能省成
-      // undefined：core 把「缺席」定义为「不参与灰度、保留全部工具」（TUI / headless /
-      // workflow_child 的语义），受信 Host 创建的会话不能落进那条豁免。
+      // Dynamic-workflow rollout gate: same reading as offPeakPort — this create/resume's params
+      // win; absent, the Host-synced workspace-level verdict; neither, false (fail-closed). The
+      // boolean must be explicit, never collapsed to undefined: core treats absent as "not in the
+      // rollout, keep all tools" (TUI/headless/workflow_child semantics) and trusted-Host sessions
+      // must not fall into that exemption.
       dynamicWorkflowEnabled:
         ("dynamicWorkflowEnabled" in params && params.dynamicWorkflowEnabled === true) ||
         context.appRuntimePreferences.dynamicWorkflowEnabled === true,
-      // 协议侧的工具允许/拒绝列表是 session 级安全边界，必须进入 runtimeConfig，
-      // 不能只依赖 prompt 文本约束，否则内置工具和动态 MCP 工具仍可能越过调用面。
+      // Protocol-side tool allow/deny lists are session-level security boundaries: into
+      // runtimeConfig, never prompt-text-only, or built-in and dynamic MCP tools could bypass the
+      // calling surface.
       toolAllowlist: "toolAllowlist" in params ? params.toolAllowlist : undefined,
       toolDisallowlist: "toolDenylist" in params ? params.toolDenylist : undefined,
       nativeSearchEnhancementsEnabled: startupPreferences.nativeSearchEnhancementsEnabled,
       modelContextBudgetStrategy: startupPreferences.modelContextBudgetStrategy,
-      // Memory Settings 是现有 CLI features.memory/use 之外的总开关。只在关闭时
-      // 写入 override，避免开启值反向覆盖用户已有的 CLI 禁用配置。
+      // Memory Settings is the master switch beyond the existing CLI features.memory/use. Write the
+      // override only when disabling, so enabling never reverses the user's CLI-side opt-out.
       ...(startupPreferences.memoryEnabled ? {} : { memory: { enabled: false } }),
-      // desktop-continuous session/create 由 UI 先解析 ~/.zcode/.agents 的 enabled MCP，
-      // 但 protocol app-server 自己不会读取 UI/main 侧的 MCP store；之前 createRecord 没把
-      // params.mcpServers 注入 runtimeConfig，导致日志里 runtimeHasMcpConfig=false，工具永远不启动。
-      // MCP 是 runtime 启动期配置，因此必须在 session 创建/恢复边界一次性写入 runtimeConfig.mcp。
+      // desktop-continuous session/create has the UI resolve enabled MCP from ~/.zcode/.agents,
+      // but the protocol app-server never reads the UI/main-side MCP store; createRecord used to
+      // skip params.mcpServers -> runtimeHasMcpConfig=false in logs and tools never started.
+      // MCP is runtime-startup configuration: write runtimeConfig.mcp once at the create/resume
+      // boundary.
       ...(runtimeMcp ? { mcp: runtimeMcp } : {}),
-      // 之前只有 TUI 路径（tui-prompt-handler）注入 titleGeneration，
-      // ZCode Protocol app-server 创建的 session（desktop/web/mobile）没有传，导致
-      // shouldAttemptSessionTitleGeneration 的 `if (!config.titleGeneration) return false`
-      // 永远命中，模型生成 title 的请求从不触发，侧边栏标题一直停在 first_input 的用户 query。
-      // 这里补一份默认配置开启；具体是否生成仍由 runtime 按 parent/taskType/turnNumber 把关。
-      // automation 执行会话显式关闭二次命名，避免回答内容覆盖原始用户 query 标题。
+      // Only the TUI path (tui-prompt-handler) used to inject titleGeneration, so sessions created
+      // by the ZCode Protocol app-server (desktop/web/mobile) never got it and
+      // shouldAttemptSessionTitleGeneration's `if (!config.titleGeneration) return false` always
+      // hit — model-generated titles never fired and sidebar titles stuck on the first_input user
+      // query. Default it on here; whether to generate is still gated by the runtime via
+      // parent/taskType/turnNumber. Automation execution sessions explicitly disable renaming so
+      // answers never overwrite the original user-query title.
       titleGeneration: params.titleGenerationEnabled === false ? { enabled: false } : {},
       workingDirectory: workspace.workspacePath,
-      // 身份隔离与路径执行分开：core 只把 identity 写入 session.workspace_id，
-      // workingDirectory 仍是远端机器上的实际路径；本地 workspace 保持 undefined。
+      // Identity isolation is separate from path execution: core writes only identity into
+      // session.workspace_id; workingDirectory remains the real path on the remote machine. Local
+      // workspaces keep it undefined.
       workspaceIdentity: workspace.workspaceIdentity as WorkspaceId | undefined,
     },
-    // ZCode Protocol app-server 以前没有注入可等待的交互 broker，
-    // core 遇到 permission / AskUserQuestion 只能走默认拒绝，UI 永远收不到阻塞请求。
-    // 这里把阻塞交互转换成 server-to-client JSON-RPC request，由 app 通过 response 释放 runtime。
+    // The ZCode Protocol app-server never injected an awaitable interaction broker, so core
+    // answered permission/AskUserQuestion with default-reject and the UI never saw blocking
+    // requests. Bridge blocking interactions into server-to-client JSON-RPC requests; the app
+    // releases the runtime via the response.
     permissionBroker: createProtocolInteractionBroker(context),
     automationPort: createProtocolAutomationPort(context, () => ownSessionRecord),
-    // 只接入 Host 已开放的工具面；缺省不注入。复用现行异步工厂，
-    // 不恢复旧 deferred ModelAdapter/Registry overlay，也不改变 Session Selection。
+    // Wire only tools the Host exposes; inject nothing by default. Reuse the current async
+    // factory; no legacy deferred ModelAdapter/Registry overlay, no Session Selection change.
     ...(("offPeakToolEnabled" in params && params.offPeakToolEnabled === true) ||
     context.appRuntimePreferences.offPeakToolEnabled === true
       ? { offPeakPort: createProtocolOffPeakPort(context, () => ownSessionRecord) }
       : {}),
     resolveInitialBashShellSelection: startupPreferences.resolveInitialBashShellSelection,
-    // browser-use：agent.browsers.* 经此把命令转成 interaction/browserExecute 反向请求。
+    // browser-use: agent.browsers.* bridges commands into interaction/browserExecute reverse requests.
     browserControlPort: createProtocolBrowserControlBroker(context),
-    // Protocol server 是受信任的 Desktop/Web/Mobile Host；灰度开关由这里显式注入，
-    // 不从 workspace/project 配置或环境变量读取，关闭时仍可通过删掉该字段回滚到 hard block。
+    // The protocol server is a trusted Desktop/Web/Mobile Host: rollout flags are injected here
+    // explicitly, never read from workspace/project config or env; removing the field rolls back
+    // to hard-block.
     workspaceHookTrustEnabled: true,
-    // 无 session 的 Settings Trust 曾绕过 managed policy；session Runtime 与
-    // workspace RPC 必须共享 Host 持有的同一 provider，不能各自创建默认 policy。
+    // Session-less Settings Trust used to bypass managed policy; the session Runtime and workspace
+    // RPC must share the Host's provider, never each creating a default policy.
     workspaceHookPolicyProvider: context.deps.workspaceHookPolicyProvider,
     workspaceHookReviewHost: {
       taskId: sessionId,
@@ -3428,7 +3495,7 @@ async function createRecord(
   record.unsubscribe = () => {
     unsubscribeSessionEvents();
   };
-  // 绑定归属会话，供 automation-port 读取本会话实时 model/mode/thought。
+  // Bound to the owning session for automation-port reads of live model/mode/thought.
   ownSessionRecord = record;
   return record;
 }
@@ -3580,8 +3647,8 @@ async function snapshotWithDiagnostics(
     persistedGoalVerificationEvents,
     session,
     slashCommandOptions: {
-      // session snapshot 的 `/` 目录与 workspace presentation 必须给出同一份灰度结论，
-      // 否则关闭态下侧栏面板还能看到 `workflow`。
+      // The session snapshot's `/` entry and workspace presentation must agree on the rollout
+      // verdict, or the sidebar panel still shows `workflow` while disabled.
       dynamicWorkflowEnabled: context.appRuntimePreferences.dynamicWorkflowEnabled,
       env: context.deps.env,
       logger: context.logger,
@@ -3594,8 +3661,9 @@ async function snapshotWithDiagnostics(
   phaseDurationsMs.buildSnapshot = Date.now() - buildStartedAt;
   const totalDurationMs = Date.now() - snapshotStartedAt;
   if (totalDurationMs >= SLOW_SNAPSHOT_LOG_THRESHOLD_MS) {
-    // SSH 场景下慢点集中在 session snapshot，但旧日志只有总耗时。
-    // 超过阈值时记录各子阶段，便于区分 sqlite 等待、消息读取和 projection 构建。
+    // Over SSH the slow parts concentrate in the session snapshot, but legacy logs carry only the
+    // total. Past the threshold, log sub-phases to separate sqlite waits, message reads, and
+    // projection builds.
     context.logger?.warn("ZCode Protocol session snapshot slow", {
       durationMs: totalDurationMs,
       event: "zcode_protocol.session_snapshot.slow",
@@ -3618,8 +3686,9 @@ async function readSnapshotTarget(
   try {
     return await record.app.readTarget();
   } catch (error) {
-    // goal 是 session_target 的持久业务状态；snapshot 恢复失败时不能静默吞掉，
-    // 否则 UI 会误以为历史 session 没有目标。这里保留运行期 projection 并记录协议层日志。
+    // Goal is durable business state in session_target; never swallow snapshot-restore failures or
+    // the UI will think historical sessions are goal-less. Keep the runtime projection and log at
+    // the protocol layer.
     context.logger?.warn("Failed to read persisted session goal for protocol snapshot", {
       errorMessage: error instanceof Error ? error.message : String(error),
       event: "zcode_protocol.snapshot.target_read_failed",
@@ -3636,8 +3705,8 @@ async function readSnapshotTodos(
   try {
     return await record.app.readTodos();
   } catch (error) {
-    // todo 是 DB 中的权威短期计划；如果恢复读取失败，UI 需要看到明确日志，
-    // 但协议 snapshot 仍可用消息历史继续恢复首屏。
+    // The todo is the authoritative short-term plan in the DB; log restore-read failures clearly,
+    // while the protocol snapshot still restores the first screen from message history.
     context.logger?.warn("Failed to read persisted session todos for protocol snapshot", {
       errorMessage: error instanceof Error ? error.message : String(error),
       event: "zcode_protocol.snapshot.todos_read_failed",
@@ -3666,8 +3735,8 @@ async function readSessionTargetCompletionVerificationEvents(
       )
       .filter((event): event is SessionEvent => event !== null);
   } catch (error) {
-    // goal verifier timeline 是 UI 轮次的持久事实；读取失败时不能影响
-    // session 主体恢复，但必须留下日志，否则冷启动后分组丢失很难排查。
+    // The goal verifier timeline is durable turn fact for the UI; read failures must not break
+    // session restore but must log, or post-cold-start grouping loss is undebuggable.
     context.logger?.warn("Failed to read persisted goal verification entries", {
       errorMessage: error instanceof Error ? error.message : String(error),
       event: "zcode_protocol.snapshot.goal_verification_entries_read_failed",
@@ -3858,8 +3927,9 @@ function parseActiveConversationRewindPayload(
       !payload.createdMessageId ||
       !payload.targetMessageId
     ) {
-      // core 会为不可用的 rewind 记录 unavailable event，但这类事件没有 createdMessageId。
-      // 它不是新的 active branch 起点，协议投影不能用它裁剪消息，否则连续编辑会把可见消息投空。
+      // core records an unavailable event for impossible rewinds, but such events have no
+      // createdMessageId and are not a new active-branch start; the protocol projection must not
+      // trim messages with them or consecutive edits would empty the visible messages.
       return null;
     }
     return {
@@ -3902,8 +3972,9 @@ function isRewindCommandAckMessage(
     .join("")
     .trim();
   const ackText = `Rewound conversation to before message ${targetMessageId}.`;
-  // 内部 `/rewind conversation <messageId>` 的成功回执可能被旧事件投影落成
-  // assistant 文本。它只是编辑/重试的控制命令 ACK，刷新或恢复时不能再渲染给用户。
+  // The success receipt of internal `/rewind conversation <messageId>` may be projected as
+  // assistant text by legacy events; it's only a control-command ACK for edit/retry and must not
+  // render to users on refresh/restore.
   return text === ackText || text.endsWith(`\n${ackText}`);
 }
 
@@ -3929,8 +4000,9 @@ function applyRewindBranch(
   }
 
   if (options.keptMessageIds) {
-    // 连续 rewind 后，账本里的 target 前缀不等于 active branch 前缀。
-    // 优先使用 runtime 在 rewind 当时保存的 keptMessageIDs，避免旧分支在 snapshot/readMessages 中复活。
+    // After consecutive rewinds, the ledger's target prefix != the active branch prefix. Prefer
+    // the keptMessageIDs the runtime saved at rewind time, so old branches don't resurrect in
+    // snapshot/readMessages.
     const messagesById = new Map(allMessages.map((message) => [message.info.id, message]));
     const keptMessages = options.keptMessageIds
       .map((messageId) => messagesById.get(messageId))
@@ -3963,8 +4035,9 @@ function applyRewindBranch(
     return keptMessages;
   }
 
-  // conversation rewind 的持久化账本会保留被回滚的旧分支。
-  // UI snapshot/readMessages 必须投影 active branch，否则编辑重发后会同时看到错发原文和新消息。
+  // The conversation-rewind durable ledger keeps rolled-back branches; UI snapshot/readMessages
+  // must project the active branch, or after edit-resend users see both the misedited original and
+  // the new message.
   return [...keptMessages, ...allMessages.slice(createdIndex)];
 }
 
@@ -3976,7 +4049,8 @@ async function getPersistedSession(
   if (!sessionStore) return null;
   const session = await sessionStore.getSession(sessionId as SessionId);
   if (!session) return null;
-  // 协议冷恢复先用 session.path 创建 runtime，必须在物化前清理旧版 identity/cwd 混写数据。
+  // Protocol cold restore creates the runtime from session.path; clean legacy identity/cwd
+  // mix-written data before materialization.
   return await repairPersistedRemoteSessionPaths(sessionStore, session, {
     onPersistenceFailure: (error) => {
       context.logger?.warn("Session path repair persistence failed; using in-memory repair", {
@@ -3989,10 +4063,10 @@ async function getPersistedSession(
 }
 
 /**
- * 纯配置类 mutation reason：只改会话选型，不算用户活动。
- * 与 isConfigOnlySessionEvent 同一裁决——record.updatedAt 是 sessions-index
- * lastActivityAt / snapshot.session.updatedAt（task index 排序时间）的事实源，
- * 切模型/切思考深度/切模式不能把任务顶到列表最前。
+ * Pure-config mutation reason: changes session selection only, never user activity. Same verdict
+ * as isConfigOnlySessionEvent — record.updatedAt feeds sessions-index lastActivityAt /
+ * snapshot.session.updatedAt (the task index's sort time); model/thinking/mode switches must not
+ * jump tasks to the top.
  */
 const CONFIG_ONLY_MUTATION_REASONS = new Set([
   "model_changed",
@@ -4006,9 +4080,10 @@ export async function afterStateMutation(
   reason: string,
 ) {
   if (!record.activeAbortController) {
-    // provider registry 可能在 turn 运行中删除当前模型。更新时不能改写在途请求；turn/compact/
-    // goal continuation 释放 active lock 后统一经过此安全边界，立即完成同一 Agent fallback，
-    // 无需等待用户下一次发送，也不把兜底职责重新交给 renderer。
+    // The provider registry may delete the current model mid-turn. Never rewrite in-flight
+    // requests; once turn/compact/goal-continuation releases the active lock, this safety boundary
+    // completes the same-Agent fallback immediately — no waiting for the user's next send, and no
+    // handing fallback duty back to the renderer.
     await ensureSessionModelAvailable(context, record);
   }
   record.stateRevision++;

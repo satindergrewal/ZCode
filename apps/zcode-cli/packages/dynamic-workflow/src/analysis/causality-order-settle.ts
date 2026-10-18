@@ -10,10 +10,10 @@ import {
   type AwaitedOperand,
 } from "./causality-order-strands.js";
 
-// causality-order.ts 顶到 oxlint max-lines 上限（400 行），把 await 屏障与神谕读取
-// 这一组（时间不变量准入、settle-certainty 规则、屏障、变量→step 绑定、守卫的控制依赖）拆到
-// 本文件；公开面仍从 causality-order.ts 导出。它们只读写 {@link TraceState}，不递归进 walk。
-// strand / frame 这一层的记账在 causality-order-strands.ts（同样是 400 行上限逼出来的）。
+// causality-order.ts sits at oxlint's max-lines cap (400); the await-barrier and oracle-read group
+// (time-invariant admission, the settle-certainty rule, barriers, variable-to-step binding, guard control dependencies) lives
+// here; the public surface still exports from causality-order.ts. They touch only {@link TraceState}, never recursing into walk.
+// strand/frame bookkeeping lives in causality-order-strands.ts (also evicted by the 400-line cap).
 
 /** An oracle lookup split by the settle-certainty rule. Readonly because {@link NO_CLAIM}
  * is a shared singleton — an in-place edit of an empty result would leak everywhere. */

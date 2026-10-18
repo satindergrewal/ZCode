@@ -36,7 +36,8 @@ export class BotsRepo {
     const path = join(getAppConfigDir(), BOTS_CONFIG_FILE);
     return withFileLock(path, async () => {
       const current = await readOptionalJson(path);
-      // 回滚兼容：v3 已存在就只认 v3；损坏时暴露错误，绝不能恢复旧 Bot 或覆盖用户新修改。
+      // Rollback compatibility: once v3 exists, trust only v3; on corruption surface the error -
+      // never resurrect legacy bots or overwrite newer user edits.
       if (current !== undefined) return botsConfigFileSchema.parse(current);
       const legacy = await readOptionalJson(join(getAppConfigDir(), BOTS_LEGACY_CONFIG_FILE));
       const config = botsConfigFileSchema.parse(
@@ -67,7 +68,7 @@ export class BotsRepo {
       const state = botsStateFileSchema.parse(
         legacy === undefined ? { version: 3, bots: {} } : importLegacyBotState(legacy),
       );
-      // 在同一文件锁内固定迁移结果；后续登录/套餐变化不再重新解释旧身份。
+      // Pin the migration result under the same file lock; later login/plan changes never re-interpret the legacy identity.
       await writeJson(path, state);
       return state;
     });

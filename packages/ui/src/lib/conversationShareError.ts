@@ -137,7 +137,7 @@ function sanitizeIssue(issue: unknown): ConversationShareFailureIssue | null {
     scope: value.scope as ConversationShareFailureIssue["scope"],
     ...(typeof value.rowId === "number" ? { rowId: value.rowId } : {}),
     ...(typeof value.turnOrdinal === "number" ? { turnOrdinal: value.turnOrdinal } : {}),
-    // productTurnId 是「取消选择该轮」的唯一可靠定位依据（turnOrdinal 只用于文案）。
+    // productTurnId is the only reliable handle for deselecting a turn; turnOrdinal is copy-only.
     ...(typeof value.productTurnId === "string" &&
     value.productTurnId.length > 0 &&
     value.productTurnId.length <= 128
@@ -266,8 +266,8 @@ export function resolveConversationShareIssueMessageId(
 }
 
 /**
- * 非阻断提示用独立文案：issue 版是「请确认文件仍存在后重试」的阻断语气，
- * warning 版要表达「已跳过、发布照常完成」。
+ * Non-blocking notices get their own copy: the issue variant is blocking, confirm the file still
+ * exists and retry, while the warning variant says skipped with publish completed.
  */
 const WARNING_MESSAGE_IDS: Readonly<
   Partial<Record<ConversationShareFailureIssue["code"], string>>
@@ -301,7 +301,8 @@ export function formatConversationShareArtifactType(
   issue: ConversationShareFailureIssue,
   locale: string,
 ): string {
-  const value = issue.artifactType || issue.extension || issue.mimeType || "文件";
+  const fallbackLabel = locale === "en-US" ? "file" : "文件";
+  const value = issue.artifactType || issue.extension || issue.mimeType || fallbackLabel;
   return artifactLabel(value, locale);
 }
 
@@ -327,7 +328,7 @@ export function resolveConversationShareWarningMessageId(
   return WARNING_MESSAGE_IDS[issue.code] ?? resolveConversationShareIssueMessageId(issue);
 }
 
-/** Host 侧已脱敏，这里仍复用同一套校验兜底，避免 progress 载荷被改动后泄漏路径。 */
+/** The Host sanitizes already; keep this validation as a fallback so payload edits never leak paths. */
 export function sanitizeConversationShareWarnings(
   value: unknown,
 ): readonly ConversationShareFailureIssue[] {

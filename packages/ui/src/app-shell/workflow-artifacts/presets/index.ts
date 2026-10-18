@@ -1,13 +1,17 @@
 /**
- * 预置产物渲染器的公开面。
+ * Public surface of the preset artifact renderers.
  *
- * 四个渲染器 + 两个纯函数层：
- * - `parseArtifactPresetSpec(kind, spec)` 把 wire 上的 `unknown` spec 判成「可渲染 / 不可渲染」；
- * - `applyArtifactItems(kind, spec, items)` 把 `report(item, id)` 的条目流折成视图模型；
- * - `<ArtifactChart|Table|Metrics|Board>` 渲染它，`compact` 是 run 侧板卡片里的小尺寸形态。
+ * Four renderers plus two pure-function layers:
+ * - `parseArtifactPresetSpec(kind, spec)` decides whether a wire-level `unknown` spec is
+ *   renderable;
+ * - `applyArtifactItems(kind, spec, items)` folds the `report(item, id)` item stream into
+ *   view models;
+ * - `<ArtifactChart|Table|Metrics|Board>` render them; `compact` is the small variant used
+ *   in run side pane cards.
  *
- * **这个 barrel 的静态依赖里没有 recharts**：`ArtifactChart` 是一层 `lazy()` 封装
- * （见 `ArtifactChart.tsx`），所以 import 本模块不会把图表库拖进首屏。
+ * This barrel has NO static recharts dependency: `ArtifactChart` is a `lazy()` wrapper
+ * (see `ArtifactChart.tsx`), so importing this module keeps the chart library out of the
+ * first paint.
  */
 
 export { type ArtifactItem } from "@/app-shell/workflow-artifacts/presets/apply.js";

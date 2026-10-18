@@ -55,8 +55,8 @@ function collectClosedRemoteWorkspaceSessionIds(
   return collectClosedRemoteWorkspaceKeys(previousWorkspaceTabs, nextWorkspaceTabs).flatMap(
     (workspaceKey) => {
       const sessionId = rememberedSessionIdsByWorkspaceKey.get(workspaceKey);
-      // 仍带 remoteSessionId 的 tab 会由本 hook 下方的正常移除流程释放，
-      // 这里只补释放“先断连、后清掉 tab 字段”的 session，避免重复 dispose。
+      // Tabs still carrying remoteSessionId are released by the normal removal flow below;
+      // this only covers sessions whose tab field was cleared after disconnect, avoiding a double dispose.
       return sessionId && !previousLiveSessionIds.has(sessionId) ? [sessionId] : [];
     },
   );
@@ -104,11 +104,11 @@ export function useRemoteWorkspaceTabLifecycle({
     for (const sessionId of closedRemoteSessionIds) {
       void (async () => {
         try {
-          // 断连事件会先清掉 tab 上的 remoteSessionId，导致下方正常移除流程
-          // 无法释放该 session。这里使用记忆的 sessionId 补齐“断连后再关闭 tab”的清理路径。
+          // Disconnect clears remoteSessionId from the tab first, so the normal removal flow
+          // below cannot release the session; use the remembered sessionId to cover close-after-disconnect.
           await platform.disposeRemoteSession(sessionId);
         } catch (error) {
-          logger.warn("[Root] 释放断连远程 session 失败:", { sessionId, error });
+          logger.warn("[Root] Failed to release disconnected remote session:", { sessionId, error });
         } finally {
           unregisterRemoteWorkspaceSession(sessionId);
         }
@@ -144,8 +144,8 @@ export function useRemoteWorkspaceTabLifecycle({
       });
 
       if (survivingRemoteTab?.remoteSessionId) {
-        // 之前只按 workspacePath 维护映射，关闭同路径 remote tab 时会把另一个远端 tab 一起“解绑”。
-        // 这里优先复用幸存 tab 的绑定，并同步刷新 workspaceIdentity 映射，避免后续 RPC 命中错误 session。
+        // The map used to be keyed by workspacePath only, so closing one same-path remote tab unbound the other too.
+        // Reuse the surviving tab's binding and refresh the workspaceIdentity map so later RPCs hit the right session.
         bindRemoteWorkspacePath(
           survivingRemoteTab.workspacePath,
           survivingRemoteTab.remoteSessionId,
@@ -175,14 +175,14 @@ export function useRemoteWorkspaceTabLifecycle({
       const workspacePath = previousTab.workspacePath;
       void (async () => {
         try {
-          logger.info("[Root] remote workspace tab 已移除，主动释放远程 session", {
+          logger.info("[Root] remote workspace tab removed; releasing remote session", {
             workspacePath,
             workspaceIdentity: previousTab.workspaceIdentity,
             sessionId,
           });
           await platform.disposeRemoteSession(sessionId);
         } catch (error) {
-          logger.warn("[Root] 释放远程 session 失败:", {
+          logger.warn("[Root] Failed to release remote session:", {
             sessionId,
             error,
           });
@@ -200,9 +200,9 @@ export function useRemoteWorkspaceTabLifecycle({
       return;
     }
 
-    // 同一路径的多个 remote tab 之间切换时，不能只在建连时绑定一次路径映射，
-    // 否则切换后映射仍停留在旧 tab，按 workspacePath 解析服务的 hook 仍可能命中旧 session。
-    // 这里在 active tab 切换后把路径与 workspaceIdentity 映射刷新到当前 tab，保证 workspace 级 RPC 跟着当前 tab 走。
+    // Switching between same-path remote tabs must not rely on the one-time path binding made at connect:
+    // the map would keep pointing at the old tab and path-resolved hooks could hit a stale session.
+    // Refresh the path/workspaceIdentity mapping to the active tab so workspace-level RPCs follow it.
     bindRemoteWorkspacePath(activeWorkspaceTab.workspacePath, activeWorkspaceTab.remoteSessionId);
     if (activeWorkspaceTab.workspaceIdentity) {
       bindRemoteWorkspaceIdentity(

@@ -350,7 +350,7 @@ export class TaskRealtimeBus {
     return { leaseRequestId: request.leaseRequestId, acquired: true, ownerHostId: hostId };
   }
 
-  /** 内存诊断计数器；只读 size。 */
+  /** Memory diagnostic counters; size only. */
   collectMemoryDiagnostics(): Record<string, number> {
     return {
       streamBatches: this.streamBatches.size,
@@ -504,9 +504,9 @@ export class TaskRealtimeBus {
       ),
     };
     if (JSON.stringify(event).length > STREAM_MIRROR_MAX_BATCH_BYTES) {
-      // 单次 mirror batch 过大时，RPC/base64/JSON 会在链路上多次复制，导致 host 堆内存打满。
-      // owner 仍依赖 mirror seq 流渲染主动发送端，所以这里对 owner 做小批次分片；observer
-      // 不消费正文流，只收到 snapshot invalidation/remoteGenerating 状态。
+      // An oversized single mirror batch gets copied repeatedly across RPC/base64/JSON and can exhaust host heap.
+      // The owner still renders from the mirror seq stream, so shard owner traffic into small batches; observers
+      // consume no payloads and only get snapshot invalidation/remoteGenerating state.
       this.deliverOversizedStreamBatchFallback(batch, event);
       return;
     }
@@ -522,9 +522,9 @@ export class TaskRealtimeBus {
     batch: PendingStreamBatch,
     event: TaskStreamMirrorBatchEvent,
   ): void {
-    // 不能丢弃 owner 的 mirror seq。ZCode Agent 有 realtime port 时 owner direct stream 会被关闭，
-    // 如果 oversized batch 只发 gap，service 会因为后续 seq 缺口禁用 mirror，桌面端就停到终态快照。
-    // 这里只给 owner 发送连续小批次；observer 和 late subscriber 统一走快照补齐，避免大 payload 扩散。
+    // Never drop owner mirror seq. With a realtime port the agent closes the owner direct stream; if an oversized
+    // batch emits only a gap, the service disables mirror on the seq hole and the desktop freezes at the last snapshot.
+    // Give the owner continuous small batches; observers and late subscribers recover via snapshot.
     batch.replayUnavailable = true;
     batch.replay = [];
     for (const chunk of this.splitOversizedBatchForOwner(batch, event)) {
@@ -628,8 +628,8 @@ export class TaskRealtimeBus {
         continue;
       }
 
-      // 文本 chunk 可能被 coalesce 合成超大单 op；后续即使按 op 分 batch，
-      // 单个 op 仍会超过 RPC 安全预算。这里先把文本切成连续小 op，再统一分配 seq。
+      // Coalescing can merge text chunks into one huge op; even per-op batching can exceed the RPC budget.
+      // Split text into consecutive small ops first, then assign seq uniformly.
       for (
         let offset = 0;
         offset < op.event.content.length;
@@ -697,9 +697,9 @@ export class TaskRealtimeBus {
         event: {
           ...event,
           originHostId: batch.ownerHostId,
-          // owner 和 observer 以前消费两条不同事件源：owner 走不可重放 direct event，
-          // observer 走 mirror batch。切换 task 或跨端 relay 时两边会因为事件丢失/乱序产生分叉。
-          // 这里统一把 mirror batch 回投给 owner，让所有 renderer 都按同一条 seq 流更新 task store。
+          // Owner and observer used to consume different sources (unreplayable direct events vs mirror batches);
+          // task switches or cross-device relays fork them on loss/reordering.
+          // Feed mirror batches back to the owner so every renderer follows one seq stream.
           deliveryPurpose: target.hostId === batch.ownerHostId ? "relay_owner" : "observer",
         } satisfies TaskRealtimeDeliveredEvent,
       });
@@ -727,8 +727,8 @@ export class TaskRealtimeBus {
   }
 
   private rememberReplayBatch(batch: PendingStreamBatch, event: TaskStreamMirrorBatchEvent): void {
-    // 无上限 replay 在长任务中会线性占用主进程内存。
-    // 这里恢复批次数+字节数双阈值，超限后由 replayVisibleRunsToHost 触发 stream_mirror_gap 并走快照补齐。
+    // Unbounded replay grows main-process memory linearly over long tasks.
+    // Keep batch-count+byte thresholds; past the limit replayVisibleRunsToHost emits stream_mirror_gap and snapshots recover.
     batch.replay.push(event);
     while (batch.replay.length > STREAM_MIRROR_MAX_REPLAY_BATCHES) {
       batch.replay.shift();

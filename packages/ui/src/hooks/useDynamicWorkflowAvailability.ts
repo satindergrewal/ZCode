@@ -6,12 +6,12 @@ import {
 } from "@/store/dynamicWorkflowAvailabilityStore.js";
 
 /**
- * 读动态工作流灰度快照。
- * 只读，不触发请求：取数由 Root 里的 loader 唯一负责。消费方（自动化页、run 面板）可能位于
- * 工作区级 ServiceProvider 内（远程 Host 的 accessor），让它们各自取数会把 app 级那一份覆盖掉。
+ * Reads the dynamic-workflow rollout snapshot.
+ * Read-only, never fetches: the Root-level loader is the sole fetcher. Consumers (automation page, run pane) may sit inside
+ * a workspace-level ServiceProvider (remote-host accessor); fetching per consumer would clobber the app-level snapshot.
  */
 export function useDynamicWorkflowAvailability(): DynamicWorkflowAvailabilitySnapshot {
-  // 逐字段订阅：返回对象字面量的 selector 每次都是新引用，useSyncExternalStore 会判定为变化。
+  // Per-field subscriptions: an object-literal selector returns a new reference every time and useSyncExternalStore would flag a change.
   const status = useDynamicWorkflowAvailabilityStore((state) => state.status);
   const enabled = useDynamicWorkflowAvailabilityStore((state) => state.enabled);
   const config = useDynamicWorkflowAvailabilityStore((state) => state.config);
@@ -19,8 +19,8 @@ export function useDynamicWorkflowAvailability(): DynamicWorkflowAvailabilitySna
 }
 
 /**
- * app 会话级取数，挂在 Root 里一次。service 换了（手机 `/remote` 完成工作区桥接）会重试，
- * 取数与失败重试的规则见 dynamicWorkflowAvailabilityStore。
+ * App-session fetch, mounted once in Root. Retries when the service is swapped (phone /remote completes workspace bridging).
+ * Fetch and failure-retry rules: see dynamicWorkflowAvailabilityStore.
  */
 export function useDynamicWorkflowAvailabilityLoader(
   service: ICodingPlanSubscriptionService,

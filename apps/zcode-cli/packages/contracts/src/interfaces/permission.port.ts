@@ -36,8 +36,8 @@ export type PermissionUpdate = {
   rules: PermissionRuleValue[];
 };
 
-// 修改原因：workflow Refine 与 plan 反馈同构——
-// deny + reason 只有携带专用 source 才允许被升级为真实 user message。
+// Rationale: workflow Refine mirrors plan feedback -
+// deny + reason may escalate into a real user message only when carrying the dedicated source.
 export type PermissionBrokerReasonSource = "plan_approval_feedback" | "workflow_refine_feedback";
 
 /**
@@ -71,7 +71,7 @@ export interface PermissionBrokerRequest {
 export interface PermissionBrokerResult {
   decision: PermissionDecision;
   reason?: string;
-  /** V4 permission feedback 需要保留 provider-visible 原文；只由 broker 结果携带。 */
+  /** V4 permission feedback keeps the provider-visible text; carried only on the broker result. */
   preserveReasonFormatting?: boolean;
   reasonSource?: PermissionBrokerReasonSource;
   modifiedInput?: unknown;
@@ -86,7 +86,7 @@ export interface PermissionBrokerResult {
 }
 
 export interface PermissionBrokerRequestOptions {
-  /** 带提交副作用的应答先取得唯一胜者；失败保留用户审批，Hook 不再竞争。 */
+  /** Side-effecting answers claim the single winner first; on failure the user approval stays and Hooks no longer race. */
   claimResponse?: () => boolean;
   signal?: AbortSignal;
   timeoutMs?: number;

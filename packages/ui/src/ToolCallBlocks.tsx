@@ -106,9 +106,9 @@ function ToolCallBlockComponent({
   toolCallNode: TaskChatToolCallTreeNode;
   depth?: number;
   workspacePath: string;
-  /** 应用主题（store 耦合剥离）：由宿主（v4 SessionPane 等）传入，缺省按 "system" 兜底。 */
+  /** App theme (store decoupling): injected by the host (v4 SessionPane etc.); defaults to "system". */
   theme?: ToolCallBlockRenderContext["theme"];
-  /** 代码预览设置（store 耦合剥离）：由宿主传入并保持引用稳定。 */
+  /** Code preview settings (store decoupling): injected by the host with a stable reference. */
   codePreviewSettings?: ToolCallBlockRenderContext["codePreviewSettings"];
   showIcon?: boolean;
   cuaAppIconClassName?: ToolCallBlockRenderContext["cuaAppIconClassName"];
@@ -118,21 +118,22 @@ function ToolCallBlockComponent({
   onOpenAutomationsMain?: (automationId?: string) => void;
   onOpenPlanDetail?: ToolCallBlockRenderContext["onOpenPlanDetail"];
   onOpenWorkflowRun?: ToolCallBlockRenderContext["onOpenWorkflowRun"];
-  /** 工具卡页脚的 Resume；与 workflowRun 同样不向子工具卡透传。 */
+  /** Footer Resume of the tool card; like workflowRun, not passed through to child tool cards. */
   onResumeWorkflowRun?: ToolCallBlockRenderContext["onResumeWorkflowRun"];
-  /** 药丸 → 子代理 transcript；同样不向子工具卡透传。 */
+  /** Pill -> subagent transcript; likewise not passed to child tool cards. */
   onOpenWorkflowActor?: ToolCallBlockRenderContext["onOpenWorkflowActor"];
-  /** 脚本药丸 → 脚本 transcript；同样不向子工具卡透传。 */
+  /** Script pill -> script transcript; likewise not passed to child tool cards. */
   onOpenWorkflowWorkspace?: ToolCallBlockRenderContext["onOpenWorkflowWorkspace"];
-  /** 产物药丸 → 产物 tab；同样不向子工具卡透传。 */
+  /** Artifact pill -> artifact tab; likewise not passed to child tool cards. */
   onOpenWorkflowArtifact?: ToolCallBlockRenderContext["onOpenWorkflowArtifact"];
   /**
-   * 该工具调用联接到的 workflow run 摘要（宿主按 toolCallId 从 workflowRuns 投影解析）。
-   * 刻意**不**向子工具卡透传：摘要是按 toolCallId 联接出来的，把父卡的 run 摘要传给
-   * 一个不同 toolCallId 的子卡，画出来的就是别人的运行态。
+   * Workflow run summary joined to this tool call (host resolves from the workflowRuns projection
+   * by toolCallId). Deliberately NOT passed to child tool cards: the summary is joined per
+   * toolCallId, so handing a parent's run summary to a child with a different id would render
+   * someone else's run state.
    */
   workflowRun?: ToolCallBlockRenderContext["workflowRun"];
-  /** 编译反馈的草稿位置（宿主按 toolCallId 从行窗口联接）；同 workflowRun，不向子工具卡透传。 */
+  /** Draft slot for compile feedback (host joins by toolCallId from the line window); like workflowRun, not passed to child cards. */
   workflowDraft?: ToolCallBlockRenderContext["workflowDraft"];
   onLoadFullToolCallFields?: (toolId: string) => Promise<boolean | void> | boolean | void;
   suppressSourceLabel?: boolean;
@@ -155,9 +156,10 @@ function ToolCallBlockComponent({
   const { intl } = useZCodeIntl();
   const isOfficeMode = useIsOfficeMode();
   const toolEntranceAnimationKey = `${streamingEntranceKeyPrefix}:${toolCall.toolId}`;
-  // tool 在流式对话中新出现时如果没有淡入，会和同一段文字的渐入节奏割裂。
-  // 这里按 toolId 记录已经展示过的 tool，切换任务或虚拟列表重挂时不重复播放。
-  // 记录动作放在 effect 里延迟执行，避免 React 开发态重挂把第一次动画误吞掉。
+  // A tool call appearing mid-stream needs the fade-in, otherwise its rhythm clashes with the
+  // surrounding text's. Track already-shown tool ids by toolId so task switches or virtual-list
+  // remounts never replay it. Record in an effect (deferred) so dev-mode remounts do not swallow
+  // the first animation.
   const [shouldPlayEntranceAnimation, setShouldPlayEntranceAnimation] = useState(() =>
     canPlayToolEntranceAnimation(toolEntranceAnimationKey, streamingEntranceActive),
   );
@@ -188,12 +190,11 @@ function ToolCallBlockComponent({
       window.clearTimeout(cleanupTimer);
     };
   }, [shouldPlayEntranceAnimation, toolEntranceAnimationKey]);
-  // 注意：下面的 early return 必须放在所有 hook 调用之后。
-  // 之前这里在 useMemo 之前就 `return null`，导致当某个 toolCall 的
-  // family 在 todo 与非 todo 之间切换（或 showTodoToolCalls 变化）时，
-  // 本组件这次渲染执行的 hook 数量和上次不一致，React 会抛出
-  // "Rendered fewer hooks than expected" 并导致整个聊天页面白屏崩溃。
-  // 修复方式：把 early return 下移到所有 hook 之后，保证 hook 调用顺序稳定。
+  // The early return below must come after every hook call. It used to sit before a useMemo, so
+  // when a toolCall's family flipped between todo/non-todo (or showTodoToolCalls changed), this
+  // render executed a different number of hooks than the last, React threw "Rendered fewer hooks
+  // than expected", and the whole chat page white-screened. Fix: keep the early return after all
+  // hooks so call order stays stable.
   const identity = resolveToolCallIdentity(toolCall);
   const toolState = mapToolStatus(toolCall.status);
   const displayModel = useMemo(
@@ -230,9 +231,10 @@ function ToolCallBlockComponent({
     !suppressSourceLabel && isSubAgentToolCall
       ? intl.formatMessage({ id: "chat.toolCall.source.subAgent" })
       : undefined;
-  // 之前为了避免“双预览”把 onOpenCodeViewer 全局置空，
-  // 会导致 edit/read 文件摘要失去点击能力，回归为“看得到文件名但不能点”。
-  // 这里恢复透传，保持历史交互；是否做“避免双预览”应改为更细粒度开关，而不是一刀切禁用。
+  // onOpenCodeViewer used to be globally blanked to avoid "double preview", which killed
+  // click-through on edit/read file summaries ("visible filename, not clickable"). Restore the
+  // pass-through to keep the established interaction; preventing double previews should be a
+  // finer-grained switch, not a blanket disable.
   const toolPreviewCodeViewer: ToolCallBlockRenderContext["onOpenCodeViewer"] = onOpenCodeViewer;
 
   const childToolList = useMemo(
@@ -312,9 +314,10 @@ function ToolCallBlockComponent({
       onOpenBrowserUrl,
       onOpenAutomationsMain,
       onOpenPlanDetail,
-      // onOpenWorkflowRun 之前只被透传给子工具卡，从未进过 renderContext，
-      // 于是 CreateWorkflow renderer 永远收不到它——「打开详情页」的入口不是被埋深了，
-      // 是根本没渲染过。run 态紧凑卡就挂在这个回调上，所以它必须在这里。
+      // onOpenWorkflowRun was only ever passed to child tool cards and never entered
+      // renderContext, so the CreateWorkflow renderer never received it — the "open details"
+      // entry was not buried, it never rendered. The run-state compact card hangs off this
+      // callback, so it must be set here.
       onOpenWorkflowRun,
       onResumeWorkflowRun,
       onOpenWorkflowActor,
@@ -362,7 +365,7 @@ function ToolCallBlockComponent({
   );
 
   const ToolCallRenderer = useMemo(() => resolveToolCallRenderer(renderContext), [renderContext]);
-  // early return 必须在所有 hook 之后（见上方注释说明的崩溃原因）
+  // Early return must come after all hooks (see the crash explanation above).
   if (!showTodoToolCalls && identity.family === "todo") {
     return null;
   }

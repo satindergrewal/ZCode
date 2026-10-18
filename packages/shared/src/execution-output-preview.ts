@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 const OUTPUT_PREVIEW_MAX_CHARACTERS = 4096;
-/** 两端共用的 Bash 有界输出内容；不包含 replayable 传输恢复状态。 */
+/** The bounded Bash output shared by both ends; no replayable transport recovery state. */
 export const executionOutputPreviewSchema = z
   .object({
     text: z.string().max(OUTPUT_PREVIEW_MAX_CHARACTERS),

@@ -139,7 +139,7 @@ export class DataRootLock {
       process.kill(pid, 0);
       return true;
     } catch (error: unknown) {
-      // ESRCH 表示进程不存在（stale）；EPERM 表示进程存在但无权限，保守视为存活。
+      // ESRCH means the process is gone (stale); EPERM means it lives but is not probeable, conservatively treated alive.
       return error instanceof Error && "code" in error && error.code === "EPERM";
     }
   }
@@ -187,7 +187,7 @@ export class DataRootLock {
       await rm(quarantine, { force: true });
       return;
     }
-    // 陈旧观察误 claim 了后来者时必须恢复，不能删除新 owner 的 lock。
+    // Restore when a stale observer wrongly claimed a later owner's lock; never delete the new owner's lock.
     await rename(quarantine, path).catch(() => undefined);
   }
 

@@ -100,9 +100,9 @@ export function resolveBotTaskBroadcastRuntimeStatus(
     case "elicitation_resolved":
       return "streaming";
     case "updated":
-      // Bugfix: /model、/mode、/think 这类 Bot 配置更新只同步 task 元数据/configOptions，
-      // 并没有启动一次 assistant streaming。之前把 updated 映射成 streaming，
-      // 会让当前对话一直显示 loading。
+      // Bugfix: bot config updates such as /model /mode /think sync only task meta/configOptions,
+      // without starting an assistant streaming turn; mapping updated to streaming used to keep
+      // the conversation on a spinner forever.
       return "ready";
   }
 }

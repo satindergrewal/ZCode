@@ -35,8 +35,8 @@ const PLUGIN_MANIFEST_RELATIVE_PATHS = [
 ] as const;
 
 export interface NodeSkillAdapterOptions extends SkillRootResolutionOptions {
-  // 被禁用的 SKILL.md 绝对路径集合（来自 config.json 的 skill.<path>.enable=false）。
-  // 命中的 skill 在发现阶段直接剔除，使 discover/load/inspect 全链路保持一致。
+  // Absolute paths of disabled SKILL.md files (config.json skill.<path>.enable=false).
+  // Matched skills drop out at discovery, keeping discover/load/inspect consistent.
   disabledPaths?: Iterable<string>;
 }
 
@@ -77,7 +77,7 @@ export class NodeSkillAdapter implements SkillPort {
         if (!parsed) continue;
         if (await this.isDisabledSkillPath(parsed.path)) continue;
         totalDiscovered++;
-        // 同名技能可能来自不同技能生态或版本，不能只按 name 去重；路径才是安装项身份。
+        // Same-named skills may come from different ecosystems or versions; dedup by path, the install identity, not name.
         if (selected.has(parsed.path)) {
           continue;
         }
@@ -134,10 +134,10 @@ export class NodeSkillAdapter implements SkillPort {
     diagnostics: SkillDiagnostic[],
   ): Promise<string[]> {
     try {
-      // manifest 的 skills 项既可指向单个技能目录，也可指向包含多个技能的根目录。
-      // 共享 scan helper 会检查根自身的 SKILL.md，再扫描一层子目录，排除策略与桌面端一致。
-      // 信任边界：plugin-scope 内容不可信，不跟随符号链接（目录级与文件级逃逸
-      // 一并拒绝）；用户级根保持跟随，symlink 技能导入能力不变。
+      // A manifest skills entry may point at one skill dir or a root holding many.
+      // The shared scan helper checks the root's own SKILL.md, then one subdir level, matching desktop exclusion rules.
+      // Trust boundary: plugin content is untrusted, never follow symlinks (dir and file escapes
+      // both rejected); user-level roots keep following, so symlink skill imports still work.
       return await scanSkillFilesUnderRoot(skillRoot.path, {
         followSymbolicLinks: skillRoot.source !== "plugin",
       });
@@ -176,7 +176,7 @@ export class NodeSkillAdapter implements SkillPort {
     }
 
     const frontmatter = extractFrontmatter(rawContent);
-    // 无 frontmatter 的手写 skill 仍可按目录名加载，避免设置页/CLI 出现无修复价值的错误。
+    // A hand-written skill without frontmatter still loads by directory name, avoiding pointless setup errors.
     const parsed = frontmatter
       ? parseFlatYaml(frontmatter, path, diagnostics)
       : { values: {}, keys: [] };
@@ -214,8 +214,8 @@ export class NodeSkillAdapter implements SkillPort {
       return null;
     }
 
-    // 第三方/旧版 skill 常带 version、homepage 等扩展字段。
-    // 这些字段不影响加载，不再作为 warning 暴露，只保留 safeToAutoLoad 的保守判断。
+    // Third-party/legacy skills often carry version, homepage and other extra keys.
+    // They do not affect loading and no longer warn; only the safeToAutoLoad conservatism remains.
     const pluginAlias = await this.resolvePluginSkillAlias(name, root);
 
     return {
@@ -242,8 +242,8 @@ export class NodeSkillAdapter implements SkillPort {
       return true;
     }
     const canonicalPath = await realpath(resolvedPath).catch(() => resolvedPath);
-    // UI 可能把 symlink 目标真实路径写入 config，而 agent 从 ~/.zcode/skills 的链接路径扫描。
-    // 同时比对扫描路径和真实路径，避免同一个 SKILL.md 因路径形态不同绕过禁用开关。
+    // The UI may record the symlink's real path while the agent scans the ~/.zcode/skills link path.
+    // Compare both scan and real paths so one SKILL.md cannot bypass disable via path shape.
     return this.disabledPaths.has(canonicalPath);
   }
 
@@ -326,8 +326,8 @@ function parseFlatYaml(
     keys.push(key);
     const blockStyle = parseBlockScalarStyle(value);
     if (blockStyle) {
-      // Agent 侧只读顶层 `description: >` 会把后续缩进行跳过，
-      // 导致 `.agents/skills` 的合法多行触发说明注入给模型时只剩 `>`。
+      // Reading only the top-level description: > line skips the indented continuation,
+      // reducing legit multi-layer trigger notes in .agents/skills to a bare >.
       const block = readBlockScalar(lines, index + 1, blockStyle);
       values[key] = block.value;
       index = block.nextIndex - 1;

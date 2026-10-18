@@ -31,8 +31,8 @@ export function createArchiveFetchError(source: string, cause: unknown): Error {
 }
 
 /**
- * source materialization 错误现在会被持久化并投影到桌面/Web UI，不能把 URL
- * userinfo 带入状态文件、日志或截图。凭据只在诊断生成边界清理，所有消费者共享同一规则。
+ * Source materialization errors now persist and project to desktop/web; URL
+ * userinfo must never reach state files, logs or screenshots. Redact once at the diagnostic boundary; all consumers share the rule.
  */
 function redactPluginSource(source: string): string {
   const trimmed = source.trim();

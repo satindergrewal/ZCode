@@ -27,7 +27,7 @@ export function remainingMcpDeadlineMs(deadline: McpDeadline, timeoutMessage: st
 }
 
 /**
- * 只限制当前 waiter，不取消传入的共享 promise。底层任务是否取消由自己的 owner signal 决定。
+ * Bounds only this waiter, never cancels the shared promise; cancellation belongs to the owner signal.
  */
 export function waitWithinMcpDeadline<T>(
   promise: Promise<T>,

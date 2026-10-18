@@ -2,7 +2,7 @@ import type { SessionId, SessionInfo } from "@zcode/contracts";
 import type { BackgroundBashOutputResult } from "@zcode/shared";
 import type { ZCodeProtocolAgentServerContext } from "./server-types.js";
 
-/** 只查询现存执行器，绝不为查看输出恢复 runtime。 */
+/** Queries existing executors only; never revives a runtime just to view output. */
 export async function readBackgroundBashOutputFromOwner(
   context: ZCodeProtocolAgentServerContext,
   sessionId: string,
@@ -14,8 +14,8 @@ export async function readBackgroundBashOutputFromOwner(
     visited.add(current);
     const live = context.sessions.get(current);
     if (live) {
-      // 冷恢复的 child record 可能使用新 adapter，旧任务仍在祖先中；不能把存活等同于持有任务。
-      // 始终传原始 sessionId 校验归属，仅任务不存在时继续，读取失败或能力缺失原样返回。
+      // A cold-restored child record may use a newer adapter while the old task stays in ancestors; alive does not mean we hold the task.
+      // Always pass the original sessionId for ownership; continue only when the task is missing, and return read/capability failures as-is.
       const result = await live.app.readBackgroundBashOutput(workId, sessionId);
       if (result.kind !== "unavailable") return result;
     }

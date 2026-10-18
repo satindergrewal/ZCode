@@ -1,7 +1,7 @@
 /**
- * 存储分类目录：把 .zcode 根下的相对路径映射到类别、聚合 key 与可清理性。
- * 纯函数、单一事实源。
- * 匹配顺序：根级特例 → 文件规则（精确）→ 前缀规则（最长前缀优先）→ 其他。
+ * Storage catalog: maps .zcode-relative paths to category, aggregation key, and cleanability.
+ * Pure functions, single fact source.
+ * Match order: root specials -> file rules (exact) -> prefix rules (longest first) -> other.
  */
 import type { StorageCategoryId, StorageCleanability, StorageRootId } from "@zcode/shared";
 
@@ -12,11 +12,11 @@ export interface StorageCatalogContext {
 
 interface StorageClassification {
   categoryId: StorageCategoryId;
-  /** 下钻明细的聚合 key：规则命中路径的下一级。 */
+  /** Drill-down aggregation key: the next segment under the matched rule. */
   entryKey: string;
 }
 
-/** 清理时需要枚举的范围；recursive=false 表示只看该目录直接子项（用于文件规则）。 */
+/** Enumeration scope for cleanup; recursive=false reads direct children only (file rules). */
 export interface StorageCleanScope {
   prefix: string;
   recursive: boolean;
@@ -24,7 +24,7 @@ export interface StorageCleanScope {
 
 const CLEANABILITY: Record<StorageCategoryId, StorageCleanability> = {
   sessionStore: "none",
-  // 只有 subagent 的 transcript.jsonl 可删；其余工具输出与临时缓存暂不可删。
+  // Only subagent transcript.jsonl is deletable; tool outputs and temp caches are not, yet.
   subagentTranscripts: "safe",
   toolOutputs: "none",
   modelTrajectory: "safe",
@@ -40,13 +40,13 @@ const CLEANABILITY: Record<StorageCategoryId, StorageCleanability> = {
 interface FileRule {
   categoryId: StorageCategoryId;
   pattern: RegExp;
-  /** 聚合 key 取路径前 N 段（缺省用完整路径）。 */
+  /** Aggregate key = first N path segments (default full path). */
   entryKeySegments?: number;
 }
 
-/** 文件级规则：按顺序求值，先命中先生效（备份/缓存要排在泛化的 config 之前）。 */
+/** File rules: evaluated in order, first match wins (backup/cache before the generic config). */
 const FILE_RULES: FileRule[] = [
-  // subagent 运行记录（单文件可达数十 MB），按会话目录聚合
+  // Subagent run records (single files tens of MB), aggregated by session dir
   {
     categoryId: "subagentTranscripts",
     pattern: /^cli\/agents\/[^/]+\/[^/]+\/transcript\.jsonl$/,
@@ -62,7 +62,7 @@ const FILE_RULES: FileRule[] = [
   { categoryId: "backups", pattern: /^v2\/setting\.json\.(?:corrupt-|[^/]*backup)[^/]*$/ },
   { categoryId: "backups", pattern: /^v2\/config\.json\.pre-[^/]+$/ },
   { categoryId: "toolOutputs", pattern: /^v2\/coding-plan-cache\.json$/ },
-  // Bot 历史缓存仅供资源管理器识别展示，不加载配置或启动渠道。
+  // Bot history caches are resource-explorer display only; no config loads, no channel starts.
   { categoryId: "toolOutputs", pattern: /^v2\/bots-model-cache[^/]*\.json$/ },
   { categoryId: "logs", pattern: /^computer-use\/run\/[^/]+\.log$/ },
   { categoryId: "config", pattern: /^v2\/[^/]+\.json$/ },
@@ -71,10 +71,10 @@ const FILE_RULES: FileRule[] = [
   { categoryId: "config", pattern: /^AGENTS\.md$/ },
 ];
 
-/** 前缀规则：值为相对根的目录前缀，命中最长者。 */
+/** Prefix rules: values are root-relative dir prefixes, longest match. */
 const PREFIX_RULES: Record<Exclude<StorageCategoryId, "other">, string[]> = {
   sessionStore: ["v2/sessions", "v2/session-bindings", "v2/checkpoints"],
-  // transcript.jsonl 由上面的文件规则先命中，其余 cli/agents 内容留在这里
+  // transcript.jsonl hits the file rules above; the rest of cli/agents lands here
   subagentTranscripts: [],
   toolOutputs: [
     "cli/artifacts",
@@ -95,7 +95,7 @@ const PREFIX_RULES: Record<Exclude<StorageCategoryId, "other">, string[]> = {
   backups: ["backup", "v2/backup", "v2/migrations", "cli/db/backup", "cli/db/backups"],
   exports: ["export-log", "export-log-stage", "feedback"],
   runtimes: ["agents", "bundled-agents", "lite", "computer-use", "cli/plugins"],
-  // cli/plugins 整体（含 cache）不可清理，插件缓存归运行时。
+  // cli/plugins as a whole (cache included) is not cleanable; plugin caches belong to the runtime.
   config: [
     "v2/agent-config",
     "v2/bots-runtime-locks",
@@ -132,7 +132,7 @@ const PREFIX_INDEX: Array<{ prefix: string; categoryId: StorageCategoryId }> = O
   )
   .sort((a, b) => b.prefix.length - a.prefix.length);
 
-/** 任何类别下都不能删除的文件：启动引导文件、凭据、Helper broker 凭据、诊断开关、活动崩溃现场。 */
+/** Never-delete files in any category: bootstrap files, credentials, Helper broker keys, debug flags, live crash sites. */
 const PROTECTED_BASENAMES = new Set([
   "setting.json",
   "setting.json.lock",
@@ -162,11 +162,11 @@ export function classifyStoragePath(
   context: StorageCatalogContext,
 ): StorageClassification {
   const path = normalizeStorageRelativePath(rawPath);
-  // 启用自定义数据路径后，home 根下的 v2 是迁移遗留的旧副本，整体归「其他」，不提供清理。
+  // With a custom data root, the home-level v2 is a migration leftover grouped as other, not cleanable.
   if (context.rootId === "home" && context.hasCustomDataBaseDir && isUnderPrefix(path, "v2")) {
     return { categoryId: "other", entryKey: "v2" };
   }
-  // agent/ 是 ACP 时代残留，当前代码无写入方，同样归「其他」。
+  // agent/ is an ACP-era leftover with no current writer; also other.
   if (isUnderPrefix(path, "agent")) {
     return { categoryId: "other", entryKey: "agent" };
   }
@@ -197,12 +197,12 @@ export function isProtectedStoragePath(rawPath: string): boolean {
   return PROTECTED_PREFIXES.some((prefix) => isUnderPrefix(path, prefix));
 }
 
-/** 文件规则所在的目录：清理时只需非递归枚举这些目录。 */
+/** Dirs hosting file rules: cleanup enumerates these non-recursively only. */
 const FILE_RULE_SCOPES: Partial<Record<StorageCategoryId, string[]>> = {
   backups: ["cli/db", "cli", "v2"],
   logs: ["computer-use/run"],
 };
-/** 只靠文件规则、且需要递归枚举的类别：候选按分类过滤后只剩命中文件规则的路径。 */
+/** File-rule-only categories needing recursive enumeration: category filtering leaves rule-matched paths. */
 const RECURSIVE_FILE_RULE_SCOPES: Partial<Record<StorageCategoryId, string[]>> = {
   subagentTranscripts: ["cli/agents"],
 };

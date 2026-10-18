@@ -1,34 +1,34 @@
 /**
- * IPC Framework —— 统一导出
+ * IPC Framework -- public exports
  *
- * 架构总览（从底到顶）：
+ * Architecture overview (bottom to top):
  *
  * ┌──────────────────────────────────────────────────────────────┐
- * │  Layer 6: Remote 远程连接                                     │
- * │  RemoteAuthorityResolver → SocketFactory → PersistentProtocol │
- * │  → IPCClient → channel.call()                                │
- * ├──────────────────────────────────────────────────────────────┤
- * │  Layer 5: ProxyChannel 服务自动代理                            │
- * │  fromService(service) ↔ toService(channel)                   │
- * ├──────────────────────────────────────────────────────────────┤
- * │  Layer 4: IPCServer(1:N) / IPCClient(1:1 双向)               │
- * │  连接管理、路由、多播                                          │
- * ├──────────────────────────────────────────────────────────────┤
+ * │  Layer 6: Remote connections                                 │
+ * │  RemoteAuthorityResolver->SocketFactory->PersistentProtocol  │
+ * │  -> IPCClient -> channel.call()                              │
+ * │                                                              │
+ * │  Layer 5: ProxyChannel automatic service proxies             │
+ * │  fromService(service) <-> toService(channel)                 │
+ * │                                                              │
+ * │  Layer 4: IPCServer (1:N) / IPCClient (1:1 bidirectional)    │
+ * │  connection management, routing, multicast                   │
+ * │                                                              │
  * │  Layer 3: ChannelServer / ChannelClient                      │
- * │  基于 Channel 的 RPC (call/listen)                            │
- * ├──────────────────────────────────────────────────────────────┤
+ * │  channel-based RPC (call/listen)                             │
+ * │                                                              │
  * │  Layer 2: IMessagePassingProtocol                            │
  * │  send(buffer) / onMessage: Event<buffer>                     │
- * ├──────────────────────────────────────────────────────────────┤
- * │  Layer 1: 序列化 (VQL + 类型标签)                             │
- * │  serialize() / deserialize()                                  │
- * ├──────────────────────────────────────────────────────────────┤
- * │  Layer 0: 基础设施                                            │
+ * │                                                              │
+ * │  Layer 1: serialization (VQL + type tags)                    │
+ * │  serialize() / deserialize()                                 │
+ * │                                                              │
+ * │  Layer 0: foundation                                         │
  * │  Event / Emitter / Disposable / VSBuffer / CancellationToken │
  * └──────────────────────────────────────────────────────────────┘
  */
 
-// Layer 0: 基础设施
+// Layer 0: foundation
 export {
   type IDisposable,
   toDisposable,
@@ -43,7 +43,7 @@ export {
 
 export { VSBuffer } from "./buffer.js";
 
-// Layer 1: 序列化
+// Layer 1: serialization
 export {
   type IReader,
   type IWriter,
@@ -53,7 +53,7 @@ export {
   deserialize,
 } from "./serialization.js";
 
-// Layer 2: 传输协议
+// Layer 2: transport protocol
 export {
   type IMessagePassingProtocol,
   type ConnectionFlowControl,
@@ -82,7 +82,7 @@ export {
   getDelayedChannel,
 } from "./channels.js";
 
-// Layer 4: 连接管理
+// Layer 4: connection management
 export {
   type ClientConnectionEvent,
   type Client,
@@ -93,10 +93,10 @@ export {
   StaticRouter,
 } from "./ipc.js";
 
-// Layer 5: 服务代理
+// Layer 5: service proxies
 export { ProxyChannel } from "./proxy-channel.js";
 
-// 日志中间件 —— 装饰 ChannelServer/ChannelClient，统一记录 RPC 调用
+// Logging middleware -- decorates ChannelServer/ChannelClient to record every RPC call
 export {
   type RPCLogger,
   LoggingChannelServer,

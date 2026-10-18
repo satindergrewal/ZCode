@@ -155,8 +155,8 @@ export function buildGitBranchCommitPreviewFiles(
 
     previewByRepoPath.set(change.repoRelativePath, {
       ...existing,
-      // 关键业务逻辑：同一个文件可能同时出现在 staged / unstaged。
-      // 这里把增删行数聚合后再展示，避免阻塞卡片和提交弹窗看到两条重复记录。
+      // A file can be staged and unstaged at once. Aggregate additions/deletions before display so
+      // the blocking card and commit dialog never show the same file twice.
       added: existing.added + change.added,
       removed: existing.removed + change.removed,
       kind: existing.kind === change.kind ? existing.kind : "modified",

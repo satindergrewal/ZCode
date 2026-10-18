@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- WorkspaceFileTree 需要集中编排数据、虚拟列表、吸顶和入口操作状态。 */
+/* eslint-disable max-lines -- WorkspaceFileTree centralizes data, virtualization, sticky headers, and entry-point actions. */
 import {
   useCallback,
   useEffect,
@@ -226,7 +226,7 @@ export function WorkspaceFileTree({
       return;
     }
     lastNonBlockingRootErrorRef.current = errorMessage;
-    // 根目录已有缓存时，刷新失败只能作为非阻塞提示；阻塞错误页会把保留的旧文件树隐藏掉。
+    // With cached root content, refresh failures stay non-blocking toasts; a blocking error page would hide the retained tree.
     toast(`${intl.formatMessage({ id: "workspaceFileTree.readFailed" })}: ${errorMessage}`);
   }, [intl, rootError, rootLoaded]);
   const gitStatusLabelByStatus = useMemo<Record<WorkspaceFileGitStatus, string>>(
@@ -362,8 +362,9 @@ export function WorkspaceFileTree({
     }
     const contentNode = scrollNode.firstElementChild;
     const updateScrollMask = () => {
-      // virtualizer 的 scrollOffset 需要经过 React 重渲染，拖拽滚动条时
-      // mask 会落后一帧。原生 scroll 回调直接更新 CSS 变量，与浏览器滚动同步绘制。
+      // The virtualizer's scrollOffset only updates through a React render, so the mask lags a
+      // frame while dragging the scrollbar. The native scroll callback writes the CSS variable
+      // directly, painting in sync with the browser scroll.
       listRef.current?.style.setProperty(
         WORKSPACE_FILE_TREE_MASK_OFFSET_PROPERTY,
         `${scrollNode.scrollTop}px`,
@@ -426,7 +427,7 @@ export function WorkspaceFileTree({
         })
       : await platform.openInFileManager(workspacePath);
     if (!result.success) {
-      logger.warn("[WorkspaceFileTree] 打开 workspace 路径失败", {
+      logger.warn("[WorkspaceFileTree] Failed to open workspace path", {
         path: workspacePath,
         error: result.error ?? "unknown-error",
       });
@@ -444,7 +445,7 @@ export function WorkspaceFileTree({
 
   const handleCopyPath = useCallback(async () => {
     if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) {
-      logger.warn("[WorkspaceFileTree] 复制 workspace 路径失败", {
+      logger.warn("[WorkspaceFileTree] Failed to copy workspace path", {
         path: workspacePath,
         error: "clipboard-unavailable",
       });
@@ -452,11 +453,11 @@ export function WorkspaceFileTree({
     }
     try {
       await navigator.clipboard.writeText(workspacePath);
-      logger.info("[WorkspaceFileTree] workspace 路径已复制", {
+      logger.info("[WorkspaceFileTree] Workspace path copied", {
         path: workspacePath,
       });
     } catch (error) {
-      logger.warn("[WorkspaceFileTree] 复制 workspace 路径失败", {
+      logger.warn("[WorkspaceFileTree] Failed to copy workspace path", {
         path: workspacePath,
         error: error instanceof Error ? error.message : String(error),
       });
@@ -480,8 +481,9 @@ export function WorkspaceFileTree({
         return next;
       });
       if (!row.expanded) {
-        // compact folders 的 row.depth 是压缩后的视觉深度，不能用于写入新加载节点。
-        // 使用物理路径深度后，flatten 阶段再扣除 compact offset，子内容才不会与父目录同级。
+        // compact folders store the compressed visual depth on row.depth; it must not be used
+        // for newly loaded nodes. Load with the physical path depth, then subtract the compact
+        // offset during flattening so children do not land at their parent's level.
         void treeData.loadDirectory(
           row.path,
           getWorkspaceFileTreeDirectoryLoadDepth(workspacePath, row.path),
@@ -511,8 +513,9 @@ export function WorkspaceFileTree({
         }
         return next;
       });
-      // 搜索结果是 listWorkspaceFiles 的平铺索引，不受 expandedPaths 驱动。
-      // 目录点击必须先回到树态，再逐级加载祖先目录，目标目录才会在懒加载树中可见并保持展开。
+      // Search results are a flat listWorkspaceFiles index, not driven by expandedPaths.
+      // Leave search mode first, then load ancestors level by level, so the target directory
+      // exists and stays expanded in the lazily loaded tree.
       setFileSearchQuery("");
       void (async () => {
         for (const directoryPath of directoryPathsToExpand) {
@@ -547,8 +550,8 @@ export function WorkspaceFileTree({
           getWorkspaceFileGitStatus(treeData.gitStatusByPath, row.path),
         )
       ) {
-        // 修复：deleted 文件行来自 Git 状态补全，不对应现存文件。
-        // 即使未来有其它入口直接调用预览，也要在父级兜底阻止打开。
+        // Fix: deleted rows come from Git status completion and no file exists behind them.
+        // If any future entry point calls preview directly, the parent still blocks opening.
         return;
       }
       onOpenPreview?.(createCodeViewerSourceForWorkspaceFile(row.path));

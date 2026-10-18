@@ -44,9 +44,9 @@ export function TaskListItemContextMenu({
   onStartRenameTask: () => void;
   onArchiveTask: () => void;
   onMarkTaskAsUnread: () => void;
-  /** 「在分屏打开」（仅桌面 shell 传入）。 */
+  /** "Open in split view" (passed by the desktop shell only). */
   onOpenInSplitPane?: () => void;
-  /** 叶子数达上限且该 session 未在任何 pane 时禁用。 */
+  /** Disabled once the leaf limit is hit and the session is in no pane. */
   openInSplitPaneDisabled?: boolean;
   onOpenTaskFeedback: () => void;
   onOpenTaskPathInFileManager: () => void;

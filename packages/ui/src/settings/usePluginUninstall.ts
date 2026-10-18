@@ -8,7 +8,7 @@ interface UsePluginUninstallInput {
   installedPlugins: ZCodeInstalledPluginSummary[];
   plugins: ZCodePluginInfo[];
   operationId: string | null;
-  // 卸载会让插件提供的技能/命令失效，调用方传入统一的「能力变更后刷新」收尾逻辑。
+  // Uninstall invalidates the plugin's skills/commands; callers pass the shared post-capability-change refresh.
   onAfterUninstall: () => Promise<void>;
 }
 
@@ -21,8 +21,8 @@ interface PluginUninstallController {
 }
 
 /**
- * 集中管理插件卸载的确认流程：UI 各入口（已安装详情、市场面板）都通过它发起卸载，
- * 共用同一份 pending 状态、确认弹窗目标解析与卸载收尾逻辑。
+ * Centralizes the uninstall confirmation: every entry (installed detail, market panel) initiates through it, sharing one
+ * pending state, confirm-target resolution and post-uninstall finish.
  */
 export function usePluginUninstall({
   pluginService,

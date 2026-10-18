@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- GitPane 当前集中承载来源切换、diff 懒加载、展开状态和文件变更查找联动；后续拆分需按 Git 面板功能边界单独推进。 */
+/* eslint-disable max-lines -- GitPane concentrates source switching, lazy diff loading, expansion state, and file-change search wiring; future splits must follow Git pane feature boundaries. */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { GitChangeSourceId, GitDiffResult } from "@zcode/shared";
@@ -211,11 +211,11 @@ export function GitPane({
             return;
           }
 
-          // 大文件 diff 卡顿问题需要先确认“卡在拉取还是卡在渲染”。
-          // 这里记录每次展开拿到的 diff 规模，便于从日志快速定位是否命中 fallback 条件。
-          // 文件变更查找会批量预加载 diff；这类逐文件规模日志只适合开发排查。
-          // 走 debug 可避免生产桌面日志被搜索行为刷大，同时保留定位大 diff 卡顿的线索。
-          logger.debug("[GitPane] diff 已加载", {
+          // Large-diff jank first needs to be attributed to fetching vs rendering. Log each
+          // expansion's diff size to check fallback hits from logs quickly. File-change search
+          // preloads diffs in batch, so per-file size logs are dev-debug only; debug level keeps
+          // them out of production desktop logs while preserving large-diff jank clues.
+          logger.debug("[GitPane] diff loaded", {
             workspacePath,
             sourceId,
             path: change.path,
@@ -238,7 +238,7 @@ export function GitPane({
           }
 
           const message = getErrorMessage(error);
-          logger.warn("[GitPane] 读取文件 diff 失败", {
+          logger.warn("[GitPane] Failed to load file diff", {
             workspacePath,
             sourceId,
             path: change.path,
@@ -316,9 +316,9 @@ export function GitPane({
   }, [fileChangeFindState.total, onFileChangeFindMatchCountChange]);
 
   useEffect(() => {
-    // Review 面板打开时会把数百个未跟踪文件同步挂载，CDP trace 里 click
-    // 事件因此出现 600ms+ long task。这里只挂载可视行；展开 diff 后高度变化时重测，
-    // 避免后续虚拟行继续沿用折叠态高度。
+    // Opening review used to mount hundreds of untracked files at once, showing up as 600ms+
+    // click long tasks in CDP traces. Mount only visible rows and remeasure when an expanded diff
+    // changes height, so later virtual rows never reuse collapsed heights.
     changeRowVirtualizer.measure();
   }, [changeRowVirtualizer, currentDataset.id, expandedPath]);
 
@@ -327,8 +327,9 @@ export function GitPane({
       return;
     }
 
-    // 文件变更查找需要命中折叠文件里的内容。
-    // diff 默认是展开时懒加载的，所以查找时先把当前来源的 diff 补齐，再用同一套 patch 数据计算全局命中。
+    // File-change search must also hit content inside collapsed files. Diffs lazy-load on
+    // expand, so fetch the current source's diffs first, then compute global matches from the
+    // same patch data.
     for (const change of currentChanges) {
       loadDiffForChange(change, currentDataset.id);
     }
@@ -347,8 +348,8 @@ export function GitPane({
     }
 
     if (expandedPath !== activeFileChangeFindMatch.path) {
-      // 当前命中可能位于折叠文件内。
-      // 先展开目标文件，再由文本高亮 hook 在真实 DOM 渲染后滚动到命中行。
+      // The match may live inside a collapsed file. Expand it first, then let the text-highlight
+      // hook scroll to the matched line once the real DOM has rendered.
       setExpandedPath(activeFileChangeFindMatch.path);
     }
     loadDiffForChange(activeChange, currentDataset.id);
@@ -382,14 +383,14 @@ export function GitPane({
   ]);
 
   const handleSelectSource = (nextSourceId: string) => {
-    logger.info(`[GitPane] 切换来源 workspace=${workspacePath} source=${nextSourceId}`);
+    logger.info(`[GitPane] Switched source workspace=${workspacePath} source=${nextSourceId}`);
     onSelectSource(nextSourceId as GitChangeSourceId);
     setExpandedPath(null);
   };
 
   const handleExpandChange = (change: GitPaneFileChange, nextOpen: boolean) => {
     logger.info(
-      `[GitPane] 切换文件展开 workspace=${workspacePath} source=${currentSourceOption.id} path=${change.path} expanded=${nextOpen}`,
+      `[GitPane] Toggled file expansion workspace=${workspacePath} source=${currentSourceOption.id} path=${change.path} expanded=${nextOpen}`,
     );
     setExpandedPath(nextOpen ? change.path : null);
     if (nextOpen) {
@@ -504,8 +505,9 @@ export function GitPane({
                     className="absolute left-0 w-full min-w-0"
                     data-git-pane-change-virtual-row
                     data-index={virtualRow.index}
-                    // transform 定位会让行内 sticky 文件名失效，展开大 diff 后标题不再置顶。
-                    // 改用 top 偏移保留虚拟滚动布局，同时让 sticky 继续以滚动容器为参照。
+                    // transform positioning breaks inline sticky file names: after a large diff
+                    // expands, the header no longer sticks. Use a top offset to keep the virtual
+                    // scroll layout while sticky keeps the scroll container as its containing block.
                     style={{ top: `${virtualRow.start}px` }}
                   >
                     <GitPaneChangeCard

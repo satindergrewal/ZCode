@@ -123,9 +123,10 @@ function ConversationTurnNavigatorImpl({
     if (!element) return;
     window.queueMicrotask(() => {
       if (railScrollRef.current !== element) return;
-      // 目录从 tail 一次扩展到上千项时，scrollToIndex 与 virtualizer 的
-      // measurement 更新处于同一个 commit，Chromium 可能合并 scroll 通知。补发通知
-      // 只同步 rail observer，确保活动项对应的可视窗口立即挂载。
+      // When the directory grows from tail to thousands in one go, scrollToIndex and the
+      // virtualizer measurement land in one commit and Chromium may coalesce scroll notifications.
+      // The extra notification syncs only the rail observer so the active item's window mounts
+      // immediately.
       element.dispatchEvent(new Event("scroll"));
     });
   }, [activeItemIndex, items.length, railVirtualizer]);
@@ -145,8 +146,9 @@ function ConversationTurnNavigatorImpl({
     >
       <div
         ref={railScrollRef}
-        // 只声明 overflow-y-auto 时，浏览器会把 overflow-x 计算为 auto；
-        // hover 山峰横向放大后便可能触发横向滚动条，因此 rail 必须只开放纵向滚动。
+        // With only overflow-y-auto declared, browsers compute overflow-x as auto; the hover
+        // peak's horizontal growth could summon a horizontal scrollbar, so the rail allows
+        // vertical scrolling only.
         className="!scrollbar-hide pointer-events-auto absolute left-3 top-1/2 max-h-[calc(100%-6rem)] w-9 -translate-y-1/2 overflow-x-hidden overflow-y-auto py-1"
         onPointerLeave={() => setInteractionItemIndex(undefined)}
         onScroll={() => setInteractionItemIndex(undefined)}

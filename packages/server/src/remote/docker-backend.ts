@@ -60,8 +60,8 @@ export class DockerBackend implements IRemoteBackend {
     const platform = resolveRemotePlatform(reportedPlatform, kernelOstype);
 
     if (platform !== reportedPlatform) {
-      // 测试容器里可能通过 wrapper 伪造了 uname 输出，
-      // 这里只在发生回退时打一条低频日志，便于排查“为何最终按 Linux 选包”。
+      // Test containers can fake uname output through wrappers; log this low-frequency
+      // fallback only, to explain why packages were finally chosen for Linux.
       console.warn(
         `[docker] detect: uname reported ${reportedPlatform}, but kernel ostype is ${kernelOstype}; fallback to ${platform}`,
       );
@@ -83,14 +83,16 @@ export class DockerBackend implements IRemoteBackend {
     const resolvedRemotePath = this.resolveLinuxPath(remotePath, resolvedInfo.homeDir);
     const parentDir = this.dirname(resolvedRemotePath);
 
-    // 上传流不会帮我们创建父目录。
-    // 如果直接写入 `~/.zcode/server/...` 这类首次连接路径，上传会因为目录不存在而失败。
-    // 先显式 `mkdir -p`，再由容器当前用户写入目标文件，和 SSH/WSL 保持一致。
+    // The upload stream does not create parent dirs; writing straight to a
+    // first-connection path like ~/.zcode/server/... fails on the missing dir.
+    // Explicit mkdir -p first, then write as the container's current user, same
+    // as SSH/WSL.
     await this.execSimple(`mkdir -p ${quotePosixShellArg(parentDir)}`);
 
-    // `docker cp` 复制到容器后的文件可能保留宿主 UID/GID，
-    // 非 root 容器用户随后无法 chmod。统一由容器当前用户通过 stdin 写入，
-    // 保证文件 owner 与后续部署命令的执行用户一致。
+    // Files copied via `docker cp` can keep the host UID/GID, which a non-root
+    // container user then cannot chmod. Always write via stdin as the container's
+    // current user so the file owner matches the user that later deploy commands
+    // run as.
     await this.uploadViaExec(localPath, resolvedRemotePath, options ?? {});
   }
 
@@ -237,13 +239,13 @@ export class DockerBackend implements IRemoteBackend {
   }
 
   dispose(): void {
-    // Docker backend 的命令都是一次性子进程，没有常驻连接需要显式清理。
+    // Docker backend commands are one-shot child processes; no persistent connection needs explicit cleanup.
   }
 
   private async ensureAvailable(): Promise<void> {
     const available = await isDockerAvailable();
     if (!available) {
-      throw new Error("当前系统未检测到可用的 Docker 环境");
+      throw new Error("No usable Docker environment detected on this system");
     }
   }
 
@@ -277,12 +279,12 @@ export class DockerBackend implements IRemoteBackend {
     );
 
     if (!matched) {
-      throw new Error(`未找到名为 ${this.options.container} 的 Docker 容器`);
+      throw new Error(`No Docker container named ${this.options.container} found`);
     }
 
     if (matched.state.toLowerCase() !== "running") {
       throw new Error(
-        `Docker 容器 ${matched.name} 当前未运行（state=${matched.state || "unknown"}）`,
+        `Docker container ${matched.name} is not running (state=${matched.state || "unknown"})`,
       );
     }
 

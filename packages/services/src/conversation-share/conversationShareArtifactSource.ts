@@ -38,9 +38,9 @@ function isSkippableArtifactReadError(error: unknown): boolean {
 }
 
 /**
- * 兜底读失败统一带上 artifact_read_failed 与底层 errno：
- * 调用方据此把「正文引用的文件已不存在」降级为非阻断跳过，而不是打死整次发布。
- * errno 走已白名单化的 diagnostics，路径不进错误载荷。
+ * Fallback read failures always carry artifact_read_failed plus the underlying errno, letting
+ * callers downgrade missing-referenced-file to a non-blocking skip instead of killing the
+ * publish. errno goes through allow-listed diagnostics; paths never enter error payloads.
  */
 function unreadableArtifactError(message: string, cause: unknown): ConversationShareServiceError {
   const errno = (cause as NodeJS.ErrnoException | undefined)?.code;
@@ -64,7 +64,7 @@ function isRemoteInsideWorkspace(workspacePath: string, targetPath: string): boo
 }
 
 /**
- * SSH/WSL/Docker 使用远端 fileService 完成 realpath/stat/range read；JWT 和 HTTP 上传仍留在 Desktop Host。
+ * SSH/WSL/Docker resolve realpath/stat/range reads via the remote fileService; JWT and HTTP upload stay on the Desktop Host.
  */
 export function createRemoteConversationShareArtifactSource(
   fileService: Pick<IFileService, "readFileRange" | "resolvePath" | "stat">,
@@ -190,8 +190,9 @@ export function createRemoteConversationShareArtifactSource(
         return { bytes, canonicalPath: artifactRealPath };
       } catch (error) {
         if (error instanceof ConversationShareServiceError) throw error;
-        // 只有明确的“文件不存在/路径不是文件”才允许发现流程降级为 warning。
-        // 远端连接断开、权限不足等错误必须继续抛出，避免发布成功却静默丢失结果物。
+        // Only explicit not-a-file/missing-path errors may downgrade to discovery warnings; remote
+        // disconnects and permission errors keep throwing, or a publish succeeds while silently
+        // losing artifacts.
         if (!isSkippableArtifactReadError(error)) throw error;
         throw unreadableArtifactError(
           "Conversation artifact cannot be read from the remote workspace",
@@ -270,8 +271,9 @@ export function createLocalConversationShareArtifactSource(): ConversationShareA
           ? input.ref
           : resolve(input.workspacePath, input.ref);
         const artifactRealPath = await realpath(requestedPath);
-        // artifact Row 的 ref 来自会话数据，不能因为当前仅支持本地发布就默认可信；
-        // 必须在跟随符号链接后再次验证 workspace 边界，避免分享读取任意本机文件。
+        // An artifact Row's ref comes from session data and is not trusted just because only local
+        // publishing exists; re-validate the workspace boundary after following symlinks so shares
+        // cannot read arbitrary local files.
         if (!isInsideWorkspace(workspaceRealPath, artifactRealPath)) {
           throw new ConversationShareServiceError(
             "unsafe_structure",
@@ -293,8 +295,8 @@ export function createLocalConversationShareArtifactSource(): ConversationShareA
               "Conversation artifact exceeds the byte limit",
             );
           }
-          // 后端能力上限可能远大于当前文件，按 maxBytes 分配会让小文件也占用大块内存；
-          // 只按 stat 大小多读 1 字节，仍能识别 stat/read 间的文件增长。
+          // The backend cap can far exceed this file; allocating maxBytes wastes memory on small
+          // files. Read stat size + 1 byte, still enough to detect growth between stat and read.
           const buffer = Buffer.allocUnsafe(artifactStat.size + 1);
           let bytesRead = 0;
           while (bytesRead < buffer.byteLength) {
@@ -322,8 +324,8 @@ export function createLocalConversationShareArtifactSource(): ConversationShareA
         }
       } catch (error) {
         if (error instanceof ConversationShareServiceError) throw error;
-        // 只有明确的“文件不存在/路径不是文件”才允许发现流程降级为 warning。
-        // 权限不足或其它 IO 错误需要阻断发布，不能伪装成可跳过的缺失文件。
+        // Only explicit missing-path/not-a-file errors may downgrade to discovery warnings;
+        // permission and other IO errors must block the publish, never pose as skippable absence.
         if (!isSkippableArtifactReadError(error)) throw error;
         throw unreadableArtifactError("Conversation artifact cannot be read", error);
       }

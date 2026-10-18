@@ -278,7 +278,7 @@ function editDetails(
   workspaceDirectory: string | undefined,
 ): ToolTranscriptInputProjection {
   const displayPath = formatToolFilePath(stringField(record, "file_path"), workspaceDirectory);
-  // 旧展示重复输出 file_path、replace_all 和 diff 元信息，窄终端会挤占真正变更内容；路径收进标题，详情留给 diff 行。
+  // The old render repeated file_path, replace_all, and diff metadata, crowding narrow terminals; path moved into the title, details stay in diff rows.
   return {
     detailLines: compactLines([
       fieldLine(record, "offset"),

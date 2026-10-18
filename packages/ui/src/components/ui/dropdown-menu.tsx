@@ -20,7 +20,8 @@ function DropdownMenuTrigger({
   return <DropdownMenuPrimitive.Trigger data-slot="dropdown-menu-trigger" {...props} />;
 }
 
-// 圆角规范迁移：旧菜单沿用 xl/lg，统一为独立外壳 lg、内部选项 md；子菜单重新起算。
+// Radius migration: legacy menus used xl/lg; now the outer shell is lg, items md,
+// and submenus restart the scale.
 function DropdownMenuContent({
   className,
   align = "start",
@@ -34,14 +35,16 @@ function DropdownMenuContent({
         sideOffset={sideOffset}
         align={align}
         className={cn(
-          // 共享菜单栈需要行距，且与 tooltip 同层时不能被辅助提示覆盖。
-          // 菜单刚打开时根节点持有焦点；全局 focus reset 会清除普通 shadow-md，
-          // 因此用 important focus 声明保证阴影从首帧到 item hover 始终一致。
-          // 宽度不能用 w-(...) 绑定触发器宽度变量 --radix-dropdown-menu-trigger-width：图标按钮触发器只有
-          // ~28px，实际宽度被 min-w-32 卡死在 128px，「恢复 User 默认」等较长菜单项被迫折行，
-          // 全仓 40+ 处调用因此各自传 w-*/min-w-* 兜底。菜单不是 Select，宽度应按内容撑开
-          // （Radix popper 外层是 min-width:max-content），只保留 min-w-32 下限，并用可用宽度
-          // 变量做上限，窄屏 Web 端长文案才回退折行而不是撑出视口。
+          // The shared menu stack needs leading, and a menu layered with a tooltip must not
+          // be covered by it.
+          // On open the root holds focus; the global focus reset clears a plain shadow-md,
+          // so an important focus rule keeps the shadow stable from first frame to item hover.
+          // Width must not bind the trigger-width variable --radix-dropdown-menu-trigger-width
+          // via w-(...): icon-button triggers are ~28px while min-w-32 floors the box at 128px,
+          // forcing longer items to wrap, which 40+ call sites paper over with per-call w-*/min-w-*.
+          // A menu is not a Select: width grows with content (the Radix popper wrapper is
+          // min-width:max-content). Keep the min-w-32 floor, cap with the available-width
+          // variable, and let long copy wrap on narrow viewports instead of overflowing them.
           "z-[60] flex flex-col gap-0.5 max-h-(--radix-dropdown-menu-content-available-height) max-w-(--radix-dropdown-menu-content-available-width) min-w-32 origin-(--radix-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-lg border border-popover-border bg-menu p-1 text-foreground !shadow-md focus:!shadow-md focus-visible:!shadow-md duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:overflow-hidden data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className,
         )}

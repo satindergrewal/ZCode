@@ -16,8 +16,8 @@ interface PluginHookSource {
 }
 
 /**
- * 统一发现插件 hook 来源文件，避免详情枚举和真实 loader 对 `hooks/hooks.json`
- * 与 `manifest.hooks` 的读取口径漂移。
+ * Discover plugin hook source files in one place so detail enumeration and the real loader
+ * never diverge on hooks/hooks.json vs manifest.hooks.
  */
 export function listPluginHookSources(input: {
   diagnostics: PluginDiagnostic[];
@@ -101,7 +101,7 @@ export function listPluginHookSources(input: {
   return sources;
 }
 
-/** 只抽取 hook 事件名，供 `plugins/describe` 展示；不会构造可执行 hook。 */
+//** Extract hook event names only, for plugins/describe; never builds executable hooks. */
 export function listPluginHookEventNames(input: {
   diagnostics: PluginDiagnostic[];
   loaded: LoadedPlugin;

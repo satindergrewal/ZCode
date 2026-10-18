@@ -9,8 +9,8 @@
 // accessor.ts, services/index.ts) and ui consumers (via @zcode/services root
 // export) keep importing `ICuaPermissionService` from this exact path.
 //
-// producer 只拥有 type contract；VALUE descriptor 继续由 services 的
-// createServiceDescriptor 创建，避免 producer 反向依赖 RPC/service registry。
+// The producer owns only the type contract; the VALUE descriptor keeps being created via
+// services' createServiceDescriptor so the producer never depends back on the RPC/service registry.
 
 import { ServiceChannels } from "@zcode/shared";
 
@@ -40,9 +40,10 @@ export type {
   CuaPermissionRestartOptions,
 };
 
-// 只从 producer 的纯 ports subpath 复用值谓词。这里不能从 Node-only broker barrel
-// re-export，否则 renderer bundle 会引入 process/node:path/node:crypto；也不能再复制实现，
-// 否则“省略 options 是否主动抓屏”这种隐私契约会再次漂移。
+// Reuse value predicates only from the producer's pure ports subpath. Do not re-export from the
+// Node-only broker barrel or the renderer bundle gains process/node:path/node:crypto; do not copy
+// the implementation either, or privacy contracts like does-omitted-options-trigger-capture drift
+// again.
 export {
   isCuaPermissionStatusAvailable,
   shouldRunCuaScreenCaptureProbe,

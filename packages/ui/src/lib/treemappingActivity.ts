@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- Treemapping v1 的 tool call 解析规则需要集中保持优先级一致，避免 UI 和测试分散维护后产生识别差异。 */
+/* eslint-disable max-lines - Treemapping v1 tool-call parsing rules must stay together to keep precedence consistent, avoiding recognition drift between UI and tests. */
 import type { TaskChatMessage, TaskChatToolCall } from "@/lib/taskChatMessageTypes.js";
 import { getPathLeaf, isAbsoluteFilePath } from "@/lib/path.js";
 import { readRawToolCallFileSummaries } from "@/ToolCallBlocks/fileSummaries.js";
@@ -419,8 +419,8 @@ function collectWritableEvents(
         rawOutputContentAction ??
         (summary.actionLabel === "Deleted"
           ? "delete"
-          : // ZCode agent 会返回 kind=edit/title=Write/rawOutput.content.type=update。
-            // title 只是展示文案，不能作为写入兜底；这里只信任结构化变更类型，避免 edit 被误染成 write。
+          : // ZCode agent returns kind=edit/title=Write/rawOutput.content.type=update.
+            // title is display copy, never a write fallback; trust the structured change type only, so edit never miscolors as write.
             summary.actionLabel === "Created" || summary.operationKind === "write"
             ? "write"
             : summary.operationKind === "delete"

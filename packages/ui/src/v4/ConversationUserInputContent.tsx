@@ -32,9 +32,9 @@ interface V4UserInputGoalQueryDisplay {
 }
 
 /**
- * 只解析发送入口会消费的 goal query；普通正文和携带附件的同名文本保持原样。
- * 原因：用户消息展示不能仅凭包含 `/goal` 就重猜 command intent，否则上下文 prompt
- * 在隐藏附加块后会被误画成 goal 控制命令。
+ * Parse only the goal query the send entry consumes; plain bodies and same-name text with attachments stay untouched.
+ * Reason: user-message rendering must not re-guess command intent from a bare `/goal` occurrence, or context prompts
+ * with hidden attachment blocks get misrendered as goal control commands.
  */
 function parseV4UserInputGoalQuery(
   text: string,
@@ -65,7 +65,7 @@ function mentionClassName(category: Parameters<typeof getPromptMentionVariantCla
   return cn(
     "mx-0.5 max-w-full",
     PROMPT_MENTION_BASE_CLASS_NAME,
-    // userInput 正文使用 text-ui-base，与 assistant 消息体保持一致。
+    // The userInput body uses text-ui-base, consistent with assistant message bodies.
     "text-ui-base leading-6",
     getPromptMentionVariantClassName(category),
   );
@@ -115,7 +115,7 @@ function V4UserInputMention({
   }
 
   if (part.type === "plugin") {
-    // Plugin 引用在气泡里渲染为 chip：不进 file 分支、不可作外链打开。
+    // Plugin references render as chips in the bubble: not the file branch, not openable as external links.
     return (
       <span className={mentionClassName("plugins")} data-plugin-mention-id={part.pluginId}>
         <PluginUserMessageIcon src={pluginIcon} />
@@ -135,8 +135,8 @@ function V4UserInputMention({
 
   const commandName = normalizeCommandMentionLabel(part.label);
   if ((commandName === "goal" || commandName === "target") && !authoritativeGoal) {
-    // 旧版纯文本嗅探会把带附件的 `/goal` 普通 prompt 也画成控制命令。
-    // V4 只允许发送入口确认的首个 goal token 使用特殊 UI，其余情况必须保持用户原文。
+    // Legacy plain-text sniffing rendered `/goal` prompts carrying attachments as control commands.
+    // V4 lets only the first goal token confirmed by the send entry use the special UI; everything else keeps the user's text.
     return `/${part.label}`;
   }
 
@@ -152,8 +152,8 @@ function V4UserInputMention({
       ) : (
         <SquareSlash aria-hidden="true" className="size-4 shrink-0" />
       )}
-      {/* authoritative goal 使用原始 slash token 回显，导致用户气泡重复暴露
-          控制语法。标签保留 Goal 语义，只省略 `/`；复制、编辑和协议仍使用原始 row.text。 */}
+      {/* Authoritative goals echo the original slash token, re-exposing control syntax in the user bubble.
+          The label keeps the Goal semantics and only drops the `/`; copy, edit, and protocol all use the original row.text. */}
       {part.label}
     </span>
   );

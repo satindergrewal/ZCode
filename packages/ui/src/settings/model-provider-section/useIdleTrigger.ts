@@ -3,8 +3,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 const MODEL_PROVIDER_TEXT_IDLE_TRIGGER_MS = 1_200;
 
 /**
- * Provider 文本保存与 Model Config Resolution 共用的“停止输入后执行”调度器。
- * 新输入只替换尚未执行的计时器；blur/Enter/save 通过 flush 立即执行同一动作。
+ * Shared "run after typing stops" scheduler for provider text saves and Model Config Resolution.
+ * New input only replaces a not-yet-fired timer; blur/Enter/save run the same action immediately via flush.
  */
 export function useIdleTrigger<TResult>(
   action: () => TResult | Promise<TResult>,
@@ -32,12 +32,13 @@ export function useIdleTrigger<TResult>(
     timerRef.current = setTimeout(() => {
       timerRef.current = null;
       setScheduled(false);
-      // Idle 动作的失败由所属表单在下一次 blur/save 时显式呈现；定时器本身不能制造
-      // unhandled rejection，否则一次解析失败会污染整个 Renderer 调试链路。
+      // Idle-action failures surface via the owning form on the next blur/save; the timer itself
+      // must not create an unhandled rejection, or one resolution failure pollutes the whole
+      // Renderer debug path.
       try {
         void Promise.resolve(actionRef.current()).catch(() => undefined);
       } catch {
-        // 同步失败也留给所属表单在显式 flush 时呈现。
+        // Sync failures also surface via the owning form's explicit flush.
       }
     }, delayMs);
   }, [delayMs]);

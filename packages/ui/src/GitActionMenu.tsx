@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 顶部 Git 操作当前集中承载 trigger、commit dialog 和 push dialog；先按工作流边界收口，避免为了拆行数把状态机打散。 */
+/* eslint-disable max-lines -- The header Git actions concentrate trigger, commit dialog, and push dialog; consolidate along workflow boundaries first instead of shredding the state machine to cut lines. */
 import {
   useCallback,
   useEffect,
@@ -287,7 +287,7 @@ function GitCommitDialog({
     }
 
     const frameId = window.requestAnimationFrame(() => {
-      // 打开弹窗后的默认焦点要落在提交信息里，方便立即编辑或生成后微调。
+      // Default focus after opening lands in the commit message for immediate editing or post-generation tweaks.
       messageTextareaRef.current?.focus();
       messageInputFocusedOnOpenRef.current = true;
     });
@@ -295,7 +295,8 @@ function GitCommitDialog({
   }, [actionPending, loading, open, state]);
 
   useEffect(() => {
-    // 弹窗加载 Git 状态前提交动作会短暂不可用，不能在 loading 阶段把默认选择跳到推送。
+    // Commit is briefly unavailable until the dialog loads Git state; never jump the default
+    // selection to push during loading.
     if (!open || loading || !state || actionPending) {
       return;
     }
@@ -359,7 +360,7 @@ function GitCommitDialog({
         isCommitMessageTextAreaTarget(event.target) &&
         (event.key === "ArrowDown" || event.key === "ArrowUp")
       ) {
-        // 输入框保持焦点时也允许切换下方 Command 操作，避免键盘流断掉。
+        // Allow switching the command actions below while the input keeps focus, keeping the keyboard flow intact.
         event.preventDefault();
         event.stopPropagation();
         selectAdjacentAction(event.key === "ArrowDown" ? 1 : -1);
@@ -764,8 +765,9 @@ function GitPushDialog({
                   </Button>
                 </div>
                 <Textarea
-                  // Textarea 默认带 field-sizing-content，长错误文本会按内容扩张并把弹窗横向撑爆。
-                  // 这里改成固定尺寸模式，并允许长内容换行，保证错误详情始终被限制在弹窗宽度内。
+                  // Textarea ships with field-sizing-content; long error text grows with content
+                  // and blows the dialog width horizontally. Use fixed sizing with wrapping so the
+                  // error details always stay within the dialog width.
                   className="field-sizing-fixed w-full max-w-full min-h-56 rounded-lg border-input-border bg-background/50 px-3 py-3 text-ui-base text-foreground whitespace-pre-wrap break-words placeholder:text-foreground-subtlest focus-visible:border-input-border-focused focus-visible:bg-input-focused focus-visible:ring-0 md:text-ui-base"
                   readOnly
                 >
@@ -870,10 +872,10 @@ export function GitActionMenu({
   const isStatusRowTrigger = triggerLayout === "status-row";
 
   useEffect(() => {
-    // 顶部 commit 入口改成“始终展示、异常时置灰”后，
-    // 这里记录低频可用性日志，方便继续区分是仓库探测失败，
-    // 还是 UI 交互本身出现了禁用/启用状态不一致。
-    logger.info("[GitActionMenu] 顶部 Git 操作入口可用性变化", {
+    // Since the header commit entry became "always visible, disabled on error", log this low-rate
+    // availability change to tell repository probing failures apart from UI enable/disable
+    // inconsistencies.
+    logger.info("[GitActionMenu] Header git action availability changed", {
       workspacePath,
       available: actionAvailable,
       primaryActionDisabled,
@@ -956,7 +958,7 @@ export function GitActionMenu({
         setCommitDialogLoading(false);
       } catch (error: unknown) {
         const message = getErrorMessage(error);
-        logger.warn("[GitActionMenu] 读取提交弹窗状态失败", {
+        logger.warn("[GitActionMenu] Failed to load commit dialog state", {
           workspacePath,
           error: message,
         });
@@ -990,7 +992,7 @@ export function GitActionMenu({
     async (state: GitCommitDialogState, includeUnstaged: boolean): Promise<string> => {
       const files = getCommitDialogFiles(state, includeUnstaged);
       const currentSessionFilePaths = getCurrentSessionFilePaths(state.activeTaskChangeSummary);
-      logger.info("[GitActionMenu] 开始生成提交消息", {
+      logger.info("[GitActionMenu] Commit message generation started", {
         workspacePath,
         branchName: gitSummary.branchName,
         selectedFileCount: files.length,
@@ -1010,7 +1012,7 @@ export function GitActionMenu({
           : {}),
       });
 
-      logger.info("[GitActionMenu] 提交消息生成成功", {
+      logger.info("[GitActionMenu] Commit message generated", {
         workspacePath,
         branchName: gitSummary.branchName,
         providerId: result.providerId,
@@ -1054,7 +1056,7 @@ export function GitActionMenu({
       setCommitMessage(nextCommitMessage);
     } catch (error: unknown) {
       const message = getErrorMessage(error);
-      logger.warn("[GitActionMenu] 生成提交消息失败", {
+      logger.warn("[GitActionMenu] Commit message generation failed", {
         workspacePath,
         branchName: gitSummary.branchName,
         error: message,
@@ -1079,7 +1081,7 @@ export function GitActionMenu({
   const pushCurrentBranch = useCallback(
     async (options?: { showToast?: boolean }) => {
       const result = await gitService.push({ workspacePath });
-      logger.info("[GitActionMenu] 推送更改成功", {
+      logger.info("[GitActionMenu] Changes pushed", {
         workspacePath,
         branchName: result.branchName,
         trackingBranchName: result.trackingBranchName,
@@ -1140,7 +1142,7 @@ export function GitActionMenu({
           setCommitMessage(nextCommitMessage);
         } catch (error: unknown) {
           const message = getErrorMessage(error);
-          logger.warn("[GitActionMenu] 生成提交消息失败", {
+          logger.warn("[GitActionMenu] Commit message generation failed", {
             workspacePath,
             branchName: gitSummary.branchName,
             error: message,
@@ -1161,7 +1163,7 @@ export function GitActionMenu({
       let committed = false;
 
       try {
-        logger.info("[GitActionMenu] 开始提交当前更改", {
+        logger.info("[GitActionMenu] Commit started", {
           workspacePath,
           branchName: gitSummary.branchName,
           selectedPathCount: stagePaths.length,
@@ -1187,7 +1189,7 @@ export function GitActionMenu({
           await pushCurrentBranch({ showToast: false });
         }
 
-        logger.info("[GitActionMenu] 提交当前更改成功", {
+        logger.info("[GitActionMenu] Commit succeeded", {
           workspacePath,
           branchName: gitSummary.branchName,
           pushAfterCommit: Boolean(options?.pushAfterCommit),
@@ -1203,7 +1205,7 @@ export function GitActionMenu({
         onRefreshGit();
       } catch (error: unknown) {
         const message = getErrorMessage(error);
-        logger.warn("[GitActionMenu] 提交当前更改失败", {
+        logger.warn("[GitActionMenu] Commit failed", {
           workspacePath,
           error: message,
           committed,
@@ -1264,7 +1266,7 @@ export function GitActionMenu({
       onRefreshGit();
     } catch (error: unknown) {
       const message = getErrorMessage(error);
-      logger.warn("[GitActionMenu] 推送更改失败", {
+      logger.warn("[GitActionMenu] Push failed", {
         workspacePath,
         error: message,
       });
@@ -1307,10 +1309,11 @@ export function GitActionMenu({
       <div
         onClick={isStatusRowTrigger && !triggerIconOnly ? handleStatusRowContainerClick : undefined}
         className={cn(
-          // macOS/Windows 小窗口下，顶部 Git 主按钮的中文文案会和分支入口、窗口控制区挤在同一行。
-          // 在 header 容器变窄时只隐藏主按钮文字，保留图标入口，避免丢失核心 Git 操作。
-          // transition-all 会把 scrollbar-color 等非合成属性也启动动画，
-          // 进而触发整页 UpdateLayoutTree；Git 入口只需要颜色反馈，不动画尺寸和滚动条属性。
+          // On narrow macOS/Windows windows the header Git button label competes with the branch
+          // entry and window controls for one row. Hide only the label when the header shrinks,
+          // keeping the icon entry so core Git actions survive. transition-all also animates
+          // non-composited properties such as scrollbar-color, triggering a full-page
+          // UpdateLayoutTree; this entry only needs color feedback, not size/scrollbar animation.
           "flex h-7 items-center overflow-hidden rounded-lg border border-border bg-input transition-colors hover:border-border-hover @max-[560px]/workspace-header:w-7 @max-[560px]/workspace-header:justify-center",
           triggerIconOnly && "w-7 justify-center",
           isStatusRowTrigger &&
@@ -1335,7 +1338,7 @@ export function GitActionMenu({
           )}
           onClick={isStatusRowTrigger && !triggerIconOnly ? undefined : handlePrimaryAction}
         >
-          {/* 主按钮进入 pending 时直接替换左侧动作图标，避免在紧凑头部里额外追加 loading 图标把按钮挤宽。*/}
+          {/* When pending, replace the leading action icon directly instead of appending a loading icon that widens the button in the compact header. */}
           {triggerPending ? (
             <LoaderIcon className="size-4 animate-spin text-foreground-subtle" />
           ) : primaryActionId === "push" ? (

@@ -7,8 +7,8 @@ import {
   type LinuxDeepLinkRegistrationLogger,
 } from "./desktopLinuxXdg.js";
 
-// 从 desktopLinuxDeepLinkRegistration 拆出的 AppImage 用户级图标安装逻辑：
-// 图标集成是可选的桌面增强，与 deep link 协议注册分属不同关注点，独立成模块便于各自演进。
+// // AppImage user-level icon install, split out of desktopLinuxDeepLinkRegistration:
+// icon integration is optional polish, separate from deep-link registration, so each can evolve alone.
 
 const LINUX_APP_ICON_NAME = "zcode";
 const LINUX_APP_ICON_SIZE = "512x512";
@@ -48,17 +48,20 @@ function installLinuxAppImageDesktopIcon(params: {
 }): { iconFilePath: string; installed: boolean; changed: boolean } {
   const iconFilePath = resolveLinuxUserIconFilePath(params.dataDir);
   if (!existsSync(params.iconSourcePath)) {
-    params.logger.warn("[deep-link] Linux AppImage 图标源文件不存在，跳过用户级图标安装", {
-      iconSourcePath: params.iconSourcePath,
-      iconFilePath,
-    });
+    params.logger.warn(
+      "[deep-link] Linux AppImage icon source missing; skipping user-level install",
+      {
+        iconSourcePath: params.iconSourcePath,
+        iconFilePath,
+      },
+    );
     return { iconFilePath, installed: false, changed: false };
   }
-
+  // A directly-run AppImage, unlike deb installs, never writes Icon=zcode into the hicolor theme.
   mkdirSync(dirname(iconFilePath), { recursive: true });
   const changed = copyFileIfChanged(params.iconSourcePath, iconFilePath);
-  // AppImage 直跑不会像 deb 安装包一样把 Icon=zcode 写入 hicolor 图标主题。
-  // 这里在用户级 hicolor 目录补齐同名图标，让任务栏/Dock 有机会按 desktop entry 命中真实图标。
+  //
+  //
   if (!changed) {
     return { iconFilePath, installed: true, changed };
   }
@@ -70,17 +73,17 @@ function installLinuxAppImageDesktopIcon(params: {
     join(params.dataDir, "icons", "hicolor"),
   ]);
   if (cacheResult.error) {
-    params.logger.warn("[deep-link] gtk-update-icon-cache 不可用，已跳过", {
+    params.logger.warn("[deep-link] gtk-update-icon-cache unavailable; skipped", {
       iconFilePath,
       message: cacheResult.error.message,
     });
   } else if (cacheResult.signal === "SIGTERM") {
-    params.logger.warn("[deep-link] Linux 用户级图标缓存刷新超时，已跳过", {
+    params.logger.warn("[deep-link] Linux user icon cache refresh timed out; skipped", {
       iconFilePath,
       timeoutMs: XDG_COMMAND_TIMEOUT_MS,
     });
   } else if (cacheResult.status !== 0) {
-    params.logger.warn("[deep-link] Linux 用户级图标缓存刷新失败", {
+    params.logger.warn("[deep-link] Linux user icon cache refresh failed", {
       iconFilePath,
       status: cacheResult.status,
       stderr: cacheResult.stderr?.trim(),
@@ -115,7 +118,7 @@ export function installLinuxAppImageDesktopIconBestEffort(params: {
       runCommand: params.runCommand,
     });
   } catch (error) {
-    params.logger.warn("[deep-link] Linux AppImage 图标安装失败，已降级", {
+    params.logger.warn("[deep-link] Linux AppImage icon install failed; degraded", {
       iconSourcePath: params.iconSourcePath,
       error,
     });

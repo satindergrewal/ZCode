@@ -43,9 +43,9 @@ export async function runModelTextRequest(
     providerId: model.providerId,
     modelId: model.modelId,
   };
-  // 闲时 turn 只覆盖了父 runtime 的默认模型，foreground child 重新建
-  // request 时仍读取 session 配置，导致 provider options/capability 与本轮模型分叉。
-  // turn 快照存在时必须整体采用快照，不能用 `??` 回退到用户模型的字段。
+  // Off-peak turns covered the parent default only; a foreground child rebuilding
+  // the request read session config, diverging options/capability from the turn model.
+  // With a turn snapshot take it whole; no `??` fallback to user-model fields.
   const mediaPathMessages = await projectMessagesWithMediaAttachmentPaths(
     options.messages,
     this.artifactStore,
@@ -75,16 +75,16 @@ export async function runModelTextRequest(
     mediaProjection,
     providerMessages: projectedOptions.messages,
   });
-  // 正常请求传递模型级 effective 预算，Compact 传递 min(effective, 20K) 的 summary
-  // 任务预算；adapter 只做 provider 兼容映射，不再施加独立 global cap。
+  // Normal requests pass the model effective budget; Compact passes min(effective, 20K) summary
+  // budget; the adapter maps provider compat only, no separate global cap.
   const modelInvocationContext = {
     metadata: traceContextToLogContext(projectedOptions.traceContext),
     modelRequestSessionType: resolveModelRequestSessionTypeFromTaskType(this.config.taskType),
-    // 重试预算与准入端口不在这里设：它们是 runtime 层字段，由 createRuntimeModel 绑在句柄上，turn step 与工具内部的模型调用同一来源。
+    // Retry budget and admission port are runtime-layer, bound by createRuntimeModel — one source for turn steps and in-tool calls.
     modelCall: {
-      // 普通 Agent Step 以前只靠 metadata.querySource 在 Adapter 中反推
-      // operation/actor；元数据一旦改名或缺失，就会误记为 tool_internal_model_call。
-      // Runtime 已经拥有原始执行语义，应在请求边界直接声明，旧映射只作兼容兜底。
+      // Plain Agent Steps were inferred in the adapter from metadata.querySource;
+      // any rename or absence misfiled them as tool_internal_model_call.
+      // The Runtime owns the real semantics; declare at the request boundary, keep the map as compat.
       actorKind: this.agentTelemetry.actorKind,
       operation: "agent_step" as const,
       operationId: projectedOptions.traceContext.spanId,
@@ -111,8 +111,8 @@ export async function runModelTextRequest(
       model,
       traceContext: projectedOptions.traceContext,
     }),
-    // SSE 已经输出后由 core recovery 重发新请求；这些请求在 adapter 看起来都是 attempt=1，
-    // 必须把 recovery 次数带过去，才能把 idle timeout 从首请求窗口逐次递增。
+    // Post-output recovery reissues read as attempt=1 to the adapter;
+    // carry the recovery count so idle timeout grows per attempt.
     streamIdleTimeoutRetryNumber: projectedOptions.streamRecovery?.retryNumber,
     streamRecovery: projectedOptions.streamRecovery,
   };
@@ -218,9 +218,9 @@ export async function runModelTextRequest(
       hasToolInputLineBreak(next) ||
       next.length >= TOOL_INPUT_STREAM_DELTA_FALLBACK_FLUSH_CHARS
     ) {
-      // 实验原因：Write/Edit 的行数体验依赖 content 换行尽快到 UI。
-      // 这里遇到真实/JSON 转义换行就 flush，同时保留超长单行兜底，
-      // 避免没有换行的参数一直缓冲到 tool_input_end。
+      // Experimental: Write/Edit line UX needs content newlines at the UI early.
+      // Flush on real/escaped newlines, keeping the overlong-single-line fallback,
+      // so newline-less args do not buffer to tool_input_end.
       await flushToolInputDelta(toolCallId);
     }
   };
@@ -388,8 +388,8 @@ export async function runModelTextRequest(
           }
           await flushToolInputDelta(toolCall.id as ToolCallId);
           if (toolCallIds.has(toolCall.id)) {
-            // 防御原因：协议兼容或自定义 adapter 路径可能重复投递同 id 的 final tool_call；
-            // runtime 按 id 去重，避免同一次响应内重复执行。
+            // Defensive: compat/custom adapter paths may repeat a same-id final tool_call;
+            // dedup by id against double execution in one response.
             break;
           }
           toolCallIds.add(toolCall.id);
@@ -442,8 +442,8 @@ export async function runModelTextRequest(
             done: true,
             kind: "error",
           });
-          // AI SDK 的 error chunk 常是 ProviderBusinessError 的 plain object（如 3007），
-          // 若只做 JSON.stringify 会丢失 providerCode，UI 只能看到泛化的 stream 失败文案。
+          // AI SDK error chunks are often plain-object ProviderBusinessErrors (3007);
+          // a bare stringify loses providerCode; the UI shows generic stream-failure text.
           throw normalizeStreamError(event.error);
         }
       }
@@ -461,8 +461,8 @@ export async function runModelTextRequest(
     !outputTokenLimit &&
     isContextExceededFinishReason(finishReason, rawFinishReason);
   if (contextExceeded) {
-    // 这里若把 HTTP 200 + finish metadata 提前抛成流异常，会先被通用断流恢复接管，
-    // 从而绕过 turn 层的 Reactive Compact。保留原始结果，由 turn 层统一处理超窗语义。
+    // Throwing HTTP 200 + finish metadata early hands it to generic stall recovery,
+    // bypassing turn-level Reactive Compact; the turn layer owns overflow.
     this.logger?.warn("Model stream ended with provider context overflow", {
       ...traceContextToLogContext(options.traceContext),
       event: "model.runtime.stream.context_exceeded",
@@ -476,14 +476,14 @@ export async function runModelTextRequest(
     });
   }
 
-  // 流在只发出 start/prelude 后以 finishReason=unknown 结束时，会被记到 turn-model-step
-  // 的 suspicious empty。这里在返回 result 前再扫一遍 providerMetadata/空 completion。
+  // A start/prelude-only stream ending finishReason=unknown lands in turn-model-step
+  // suspicious-empty; rescan providerMetadata/empty completion before returning.
   if (
     !contextExceeded &&
     !outputTokenLimit &&
     isSuspiciousEmptyModelResult(finishReason, text.length, toolCalls.length, usage)
   ) {
-    // zcode-plan 常返回 HTTP 200 空 SSE，需在抛错前打出 finish/providerMetadata 摘要，避免只能看到 UI 泛化文案。
+    // zcode-plan often returns HTTP 200 empty SSE; log finish/providerMetadata before throwing, or UI text stays generic.
     this.logger?.warn("Model stream ended with suspicious empty completion", {
       ...traceContextToLogContext(options.traceContext),
       event: "model.runtime.stream.suspicious_empty",

@@ -231,11 +231,11 @@ export function BrowserEmptyState({
 }
 
 /**
- * 页面加载失败时的可读错误态。
+ * Readable error state for failed page loads.
  *
- * Electron 的 `<webview>` 不带 Chrome 的安全插页，被拒的导航只落到一张空的
- * chrome-error 页；过去 errorMessage 只写进 state 没有渲染消费者，空置态又同时被关掉，
- * 用户最终只看到纯黑。证书类失败额外给出放行指引，避免用户无从下手。
+ * Electron's `<webview>` has no Chrome interstitial: blocked navigation lands on an empty
+ * chrome-error page. errorMessage used to be state with no renderer while the empty state was
+ * suppressed, leaving plain black. Certificate failures add the bypass hint so users have a next step.
  */
 export function BrowserLoadErrorState({
   errorMessage,
@@ -280,7 +280,7 @@ export function BrowserLoadErrorState({
   );
 }
 
-/** guest 启动失败时由宿主接管画面；自动重建会形成失败循环，因此只提供显式重试。 */
+/** Host takes over the screen when guest start fails; auto-rebuild would loop, so retry is explicit only. */
 export function BrowserGuestFailureState({
   formatMessage,
   guestFailure,

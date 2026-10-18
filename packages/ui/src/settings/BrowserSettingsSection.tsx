@@ -1,4 +1,4 @@
-/* oxlint-disable eslint(max-lines) -- Browser Plugin、Chrome 数据导入与清理共享同一平台状态机，拆分会扩大 pending/失败回收边界。 */
+/* oxlint-disable eslint(max-lines) -- Browser Plugin, Chrome data import, and data clearing share one platform state machine; splitting it would widen the pending/failure cleanup boundary. */
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { LoaderCircle } from "lucide-react";
 import type { ChromeBrowserDataImportResult } from "@zcode/shared";
@@ -193,7 +193,7 @@ export function BrowserSettingsSection({
       });
     } catch (error) {
       trace.fail({ failureStage: "browser_data_import" });
-      logger.error("[browser-settings] 导入 Chrome 数据失败", {
+      logger.error("[browser-settings] Failed to import Chrome data", {
         error: error instanceof Error ? error.message : String(error),
       });
       toast(intl.formatMessage({ id: "settings.browser.import.failed" }));
@@ -225,7 +225,7 @@ export function BrowserSettingsSection({
         );
       } catch (error) {
         trace.fail({ failureStage: "browser_data_clear" });
-        logger.error("[browser-settings] 清理内置浏览器数据失败", {
+        logger.error("[browser-settings] Failed to clear built-in browser data", {
           error: error instanceof Error ? error.message : String(error),
           mode,
         });
@@ -267,9 +267,11 @@ export function BrowserSettingsSection({
               ) : undefined
             }
           />
-          {/* 导入登录状态是“开启内置浏览器控制”之后的配套动作，与开关同卡片表达先后关系；
-              清除类破坏性操作仍留在“浏览器数据”分组。
-              Windows App-Bound 导入链路暂未开放，先隐藏入口但保留底层实现和清理能力。*/}
+          {/* Importing sign-in state is a companion action to enabling built-in
+              browser control; the same card expresses that ordering with the switch.
+              Destructive clear actions stay in the "Browser Data" group.
+              The Windows App-Bound import path is not enabled yet; hide the entry
+              but keep the underlying implementation and cleanup ability.*/}
           {!isWindowsDesktop ? (
             <SettingsRow
               label={intl.formatMessage({ id: "settings.browser.import.title" })}
@@ -298,7 +300,7 @@ export function BrowserSettingsSection({
         </SettingsGroupCard>
       </section>
 
-      {/* 证书策略只在桌面端有内置浏览器时可配；改动由 main 在启动时装到 Session，需重启生效。 */}
+      {/* Certificate policy is only configurable on desktop with the built-in browser; main applies it to the Session at startup and it requires a restart. */}
       {isDesktop ? (
         <section className="space-y-3">
           <div className="text-ui-base font-medium text-foreground-subtle">

@@ -36,8 +36,9 @@ export function resolveSidebarFooterProfilePlanBadge({
     return null;
   }
 
-  // 头像旁徽标只展示已确认的权益。个人权益显示套餐等级；没有个人权益但有团队权益时才显示团队。
-  // 不能把当前连接方式或历史 selectedKey 当作 Team 兜底，否则切换 family 后会误显示 Team。
+  // The avatar badge shows confirmed entitlements only: personal grants show the plan tier, and
+  // Team shows only with a team grant and no personal grant. Never fall back to the connection
+  // kind or a stale selectedKey, or switching families mislabels the account as Team.
   return hasTeamPlanEntitlement ? { audience: "team" } : null;
 }
 

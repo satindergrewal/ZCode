@@ -1,8 +1,8 @@
 /**
- * 设备级资源的有界聚合窗口。
+ * * Bounded aggregation window for device-level resources.
  *
- * 每台设备每个窗口一条 `perf_system_window`：整机 CPU 与剩余内存、应用总量、遥测自身开销。
- * 与角色窗口一样是纯内存、有界、无队列、无重试；flush 时投影成一条报告。
+ * One perf_system_window per device per window: machine CPU and free memory, app totals, and telemetry overhead.
+ * Like role windows: in-memory, bounded, no queue, no retry; flush projects one report.
  */
 
 import {
@@ -12,12 +12,12 @@ import {
 } from "./resourceMetricsStats.js";
 import { PROCESS_RESOURCE_MAX_SAMPLES_PER_WINDOW } from "./processResourceWindowAggregator.js";
 
-/** 一个 10 秒 tick 的设备级瞬时事实；缺整机 CPU 基线时不会产生样本。 */
+/* /** One 10s tick of device facts; no sample without a machine-CPU baseline. */
 export interface DeviceResourceSample {
-  /** 整机 CPU（两次 `os.cpus()` 差分得到的整机归一化百分比）。 */
+  /* /** Machine CPU (normalized percent from two os.cpus() deltas). */
   systemCpuPercent: number;
   systemFreeMemoryKb: number;
-  /** 全部本机 ZCode 进程的 CPU 之和。 */
+  /* /** CPU sum across all local ZCode processes. */
   appCpuPercent: number;
   appRssKbTotal: number;
   appProcessCount: number;
@@ -28,7 +28,7 @@ export interface SystemResourceWindowReport {
   appUptimeMinutes: number;
   systemCpuPercentP95: number;
   systemFreeMemoryKbMin: number;
-  /** 事件 value。 */
+  /* /** Event value. */
   appCpuPercentMean: number;
   appCpuPercentP95: number;
   appRssKbTotalMean: number;
@@ -55,8 +55,8 @@ export class ProcessResourceSystemWindowAggregator {
   }
 
   /**
-   * 累计 main 侧遥测代码本身的墙钟耗时（自证开销）。
-   * flush 自身的耗时只能计入下一个窗口——它发生在窗口投影之后。
+   * * Accumulates wall time spent in main-side telemetry itself (self-accounting).
+   * flush's own cost lands in the next window: it runs after projection.
    */
   addTelemetrySelfMs(elapsedMs: number): void {
     if (!Number.isFinite(elapsedMs) || elapsedMs <= 0) {
@@ -66,9 +66,9 @@ export class ProcessResourceSystemWindowAggregator {
   }
 
   /**
-   * 取出并清空窗口。窗口内没有设备样本时返回 null，不发空事件，
-   * 但已累计的自证开销顺延到下一个窗口——采样连续失败的窗口恰恰最需要看到遥测自身成本。
-   * `backgroundRatio` 由角色聚合器的 scene 计数提供，保证两个事件里是同一个数。
+   * * Takes and clears the window. null when no device sample, emitting no empty event;
+   * accrued overhead carries forward: windows with failing samples need the overhead figure most.
+   * Role aggregators supply backgroundRatio from scene counts, keeping both events consistent.
    */
   drain(input: {
     backgroundRatio: number;
@@ -113,7 +113,7 @@ export class ProcessResourceSystemWindowAggregator {
   }
 }
 
-/** 与角色窗口同一个上限与同一套溢出策略：定时器漂移时保留窗口末尾的读数。 */
+/** Same cap and overflow policy as role windows: on timer drift, keep the window-tail readings. */
 function appendSample(bucket: number[], value: number): number[] {
   return appendBoundedSamples(bucket, value, PROCESS_RESOURCE_MAX_SAMPLES_PER_WINDOW);
 }

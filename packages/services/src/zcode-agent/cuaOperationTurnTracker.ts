@@ -20,7 +20,7 @@ export interface CuaOperationStateReporter {
 
 interface CuaOperationTurnTracker {
   accept(workspace: CuaOperationWorkspaceTarget, event: ZCodeComputerUseOperationEvent): void;
-  /** 当前是否存在仍在执行 Computer Use 工具的 turn。 */
+  /** Whether a turn with a running Computer Use tool exists. */
   hasActiveTurn(): boolean;
   clearWorkspaceKey(workspaceKey: string): void;
   clearAll(): void;
@@ -52,12 +52,12 @@ function toReportedState(record: ActiveTurnRecord, active: boolean): CuaOperatio
 }
 
 export function createCuaOperationTurnTracker(options: {
-  /** Windows 顶部提示条的桌面投影；非 win32 不注入。 */
+  /** Desktop projection for the Windows top banner; not injected off-win32. */
   reporter?: CuaOperationStateReporter;
-  /** Windows operation indicator 的聚合边界；PiP 不再消费该聚合状态。 */
+  /** Aggregation boundary for the Windows operation indicator; PiP no longer consumes it. */
   onTurnsActive?: () => void;
   onTurnsIdle?: () => void;
-  /** macOS desktop-local PiP 只消费这些产品事实；panel policy 留在 producer。 */
+  /** macOS desktop-local PiP consumes exactly these product facts; panel policy stays producer-side. */
   onPipSessionLifecycle?: (
     workspace: CuaOperationWorkspaceTarget,
     event: Exclude<PipSessionEvent, { kind: "focus-changed" }>,
@@ -67,11 +67,11 @@ export function createCuaOperationTurnTracker(options: {
   const currentTurnBySession = new Map<string, string>();
   const lastSeqBySession = new Map<string, number>();
   /**
-   * 已排期、且经确认在用 Computer Use 的 tool call（键为 turnKey\0toolCallId）。
+   * Scheduled, confirmed-CUA tool calls (keyed turnKey\0toolCallId).
    *
-   * 只有 tool-scheduled 携带模型源码（ToolCallStartedPayload 没有 input 字段），所以
-   * "是否 CUA" 只能在排期时判定；但浮层要等真正开始执行才亮——排期与开始之间可能卡在
-   * 权限审批上，那时还没有人在操作电脑。于是这里把排期时的事实存下来，交给 tool-started 兑现。
+   * Only tool-scheduled carries model source (ToolCallStartedPayload has no input), so CUA-ness
+   // is decided at schedule time; the overlay lights up on real start - approval may sit in
+   // between. Persist the scheduled fact here and redeem it on tool-started.
    */
   const computerUseScheduledCalls = new Set<string>();
   const activeTurns = new Map<string, ActiveTurnRecord>();
@@ -94,7 +94,7 @@ export function createCuaOperationTurnTracker(options: {
     try {
       callback();
     } catch (error) {
-      // 边界回调是展示旁路（PiP 收口），不能截断主 session event 链路。
+      // Boundary callbacks are a display side channel (PiP); never break the main event chain.
       options.logger?.warn(`CUA operation turn boundary callback failed error=${String(error)}`);
     }
   }
@@ -117,7 +117,8 @@ export function createCuaOperationTurnTracker(options: {
       try {
         options.reporter.onStateChanged(toReportedState(record, active));
       } catch (error) {
-        // Reporter 是桌面投影旁路；MessagePort 关闭竞态不能截断主 session event 链路。
+        // The reporter is a desktop projection side channel; MessagePort close races must not
+        // break the main session event chain.
         options.logger?.warn(
           `CUA operation reporter failed workspace=${record.workspaceKey} session=${record.sessionId} turn=${record.turnId} error=${String(error)}`,
         );
@@ -151,7 +152,7 @@ export function createCuaOperationTurnTracker(options: {
     for (const key of computerUseScheduledCalls) {
       if (key.startsWith(toolPrefix)) computerUseScheduledCalls.delete(key);
     }
-    // 只有真的清掉了一个操作 turn 才可能归零；从未 active 过的 turn 不会触发边界。
+    // Only a truly removed operation turn can reach zero; never-active turns emit no boundary.
     if (record && activeTurns.size === 0) notifyBoundary("idle");
   }
 
@@ -187,8 +188,8 @@ export function createCuaOperationTurnTracker(options: {
       );
       return;
     }
-    // sideband 使用 runtime 原始 sequenceNumber；不能与旧 session/event 的投影 seq
-    // 混用，否则较大的 raw 序号会让后续旧协议终态被误判为迟到并留下永久浮层。
+    // The sideband uses raw runtime sequenceNumbers; mixing them with legacy session/event seq
+    // makes larger raw numbers flag later legacy terminals as late, leaking a permanent overlay.
     lastSeqBySession.set(sessionKey, Math.max(lastSeq, event.sequenceNumber));
 
     if (event.kind === "turn-started") {
@@ -250,8 +251,8 @@ export function createCuaOperationTurnTracker(options: {
     const currentTurnId = currentTurnBySession.get(sessionKey);
     const turnId = event.turnId ?? currentTurnId;
     if (!toolCallId || !turnId) return;
-    // 根因：新 turn 已替换旧 turn 后，迟到的旧 tool event 不能再次复活已终止的顶部提示。
-    if (currentTurnId && turnId !== currentTurnId) return;
+    // Root cause: once a new turn replaces the old, late old-turn tool events must not revive
+    // the terminated top banner.
     if (!currentTurnId) currentTurnBySession.set(sessionKey, turnId);
 
     const turnKey = turnKeyFor(sessionKey, turnId);
@@ -262,15 +263,15 @@ export function createCuaOperationTurnTracker(options: {
       return;
     }
 
-    // 只认"这次 tool call 在用 Computer Use"这一个布尔事实，不解析动作名：
-    // 动作名要从模型源码里抽出来再拿动作词表比对，SDK 面一改就整条链失配。
-    // 判定在 bootstrap 侧一次做完（usesComputerUse）。
+    // Trust only the single boolean fact this tool call uses Computer Use; do not parse action names
+    // (extracted from model source against a verb list - any SDK change breaks the chain).
+    // The decision happens once in bootstrap (usesComputerUse).
     if (!computerUseScheduledCalls.delete(toolKey)) return;
 
     const existingRecord = activeTurns.get(turnKey);
     if (existingRecord) {
-      // 同一 turn 内每个新 CUA cell 都要刷新桌面浮层的安全截止时间；Reporter 会在 Main 侧
-      // 重置兜底计时器，但不会重复创建原生窗口。
+      // Every new CUA cell in a turn refreshes the overlay's safety deadline; the reporter resets
+      // the fallback timer on the Main side without recreating the native window.
       report(existingRecord, true, true);
       return;
     }

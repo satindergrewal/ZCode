@@ -6,9 +6,10 @@
  */
 "use client";
 
-// 这些 ai-elements 组件本身就位于 @zcode/ui 包内部；如果继续写 @zcode/ui/... 自引用，
-// TypeScript 在 NodeNext 下会先套用 package.json 的 exports，而当前并没有导出这些深层源码路径。
-// 这里统一改成带 .js 后缀的相对导入，让源码、声明产物和消费方都按同一套 ESM 规则解析。
+// These ai-elements components live inside the @zcode/ui package itself; self-referencing
+// @zcode/ui/... makes NodeNext resolve through package.json exports, which do not expose
+// these deep source paths. Use relative imports with .js suffixes so sources, declaration
+// output, and consumers all resolve under the same ESM rules.
 import { Button } from "../ui/button.js";
 import { cn } from "../lib/utils.js";
 import type { UIMessage } from "ai";
@@ -22,9 +23,10 @@ export type ConversationProps = ComponentProps<typeof StickToBottom>;
 export const Conversation = ({ className, ...props }: ConversationProps) => (
   <StickToBottom
     className={cn("relative flex-1 overflow-y-hidden", className)}
-    // 切任务时消息区会整段替换，之前 smooth 初始滚动和 resize 动画会把
-    // “恢复历史消息 -> 自动吸底”做成一整段缓动，用户体感像侧边栏切过去后还在慢慢追底部。
-    // 这里统一改成立即滚动，任务切换和流式渲染就不会再叠两层动画拖慢界面。
+    // Switching tasks replaces the message area wholesale; the old smooth initial scroll
+    // plus resize animation turned "restore history -> stick to bottom" into one long
+    // ease that felt like chasing the bottom after the sidebar switched. Jump instantly
+    // instead, so task switches and streaming render never stack two animations.
     initial="instant"
     resize="instant"
     role="log"

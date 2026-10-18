@@ -26,7 +26,7 @@ export async function cleanupProtocolRuntime(options: {
   const step = async (resource: string, cleanup: () => unknown | Promise<unknown>) => {
     let timeout: NodeJS.Timeout | undefined;
     try {
-      // 共用绝对 deadline；某项失败/挂起不阻止其余资源被尝试，也不逐项续时。
+      // Shared absolute deadline: one failed/hung item must not block the rest, and nothing gets a per-item extension.
       await Promise.race([
         Promise.resolve().then(cleanup),
         new Promise<never>((_, reject) => {
@@ -54,7 +54,7 @@ export async function cleanupProtocolRuntime(options: {
   await step("projections", () => options.server?.disposeProjections());
   await Promise.all([
     step("node_repl_browser_broker", () => options.nodeReplBrowserBroker?.close()),
-    // 不能在同一个 finally 内 await：port 挂起时 pool 仍必须得到 close。
+    // Do not await inside the same finally: if the port hangs, the pool must still get close.
     step("mcp", () => options.mcpPort?.close()),
     step("mcp_pool", () => options.mcpConnectionPool?.close()),
   ]);

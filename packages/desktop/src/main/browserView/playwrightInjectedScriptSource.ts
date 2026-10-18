@@ -30,9 +30,10 @@ function readStringLiteralEnd(source: string, start: number): number {
 }
 
 /**
- * Playwright 1.59 的 generated injected script 未作为 public export 暴露。
- * DOM snapshot 使用 Apache-2.0 许可的 Playwright runtime；这里从固定版本依赖中只读取对应
- * 字符串字面量并缓存，避免复制一份数十万字符的生成代码，也避免退回手写 ARIA 猜测。
+ * Playwright 1.59's generated injected script is not exposed as a public export. The DOM
+ * snapshot relies on the Apache-2.0-licensed Playwright runtime; read only the matching
+ * string literal from the pinned dependency and cache it, instead of copying hundreds of
+ * thousands of generated characters or falling back to hand-written ARIA guesses.
  */
 export function getPlaywrightInjectedScriptSource(): string {
   if (cachedSource) return cachedSource;
@@ -52,7 +53,8 @@ export function getPlaywrightInjectedScriptSource(): string {
   const literalStart = assignment.index + assignment[0].length;
   const literalEnd = readStringLiteralEnd(generatedModule, literalStart);
   const literal = generatedModule.slice(literalStart, literalEnd);
-  // 这里只解析固定依赖中的单个字符串字面量；不执行 generated module，也不接触网页内容。
+  // Only a single string literal from the pinned dependency is parsed here; the generated
+  // module is not executed and no web content is touched.
   const decoded: unknown = runInNewContext(literal, Object.create(null), { timeout: 1_000 });
   if (
     typeof decoded !== "string" ||

@@ -1,5 +1,5 @@
 import { redactFeedbackText } from "@zcode/shared";
-/* eslint-disable max-lines -- 反馈 HTTP 客户端集中维护新后端协议、鉴权头合并、OSS 表单直传和响应归一化。 */
+/* eslint-disable max-lines -- centralized feedback HTTP client: backend protocol, auth header merging, OSS direct upload, response normalization */
 import { randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
@@ -270,13 +270,13 @@ function summarizeRequestBody(
     if (!isObjectRecord(parsed)) {
       return { jsonType: typeof parsed };
     }
-    // 反馈创建失败时 RPC 日志只记录了 database error，缺少 HTTP 边界证据。
-    // 这里仅记录字段和值摘要，避免把用户反馈正文、联系方式、token 或完整设备 ID 写入日志。
+    // RPC logs only record a database error when ticket creation fails; HTTP-boundary evidence is missing.
+    // Log field/value summaries only, keeping user feedback bodies, contact info, tokens, and full device IDs out of logs.
     if (method.toUpperCase() === "POST" && path === "/feedback/ticket") {
       return summarizeFeedbackCreateBody(parsed);
     }
-    // 日志包超出反馈后端单附件限制时只返回 parameter error；
-    // 上传凭证日志需要记录脱敏后的 file_name/size，才能从客户端侧定位是哪个附件被拒绝。
+    // The feedback backend only returns a parameter error when the log bundle exceeds the per-attachment limit;
+    // record the redacted file name/size with upload credentials to see which attachment was rejected.
     if (method.toUpperCase() === "POST" && path === "/feedback/attachment/upload-credential") {
       return summarizeUploadCredentialBody(parsed);
     }
@@ -289,8 +289,8 @@ function summarizeRequestBody(
 function sanitizeFeedbackLogUrl(url: string): string {
   try {
     const parsed = new URL(url);
-    // 工单详情和消息路径包含 ticket id，完整 URL 落盘会泄露用户工单标识。
-    // 日志只保留目标 origin 和路由模板，并移除查询参数，实际请求仍使用原始 URL。
+    // Ticket detail and message paths embed the ticket id; persisting full URLs would leak identifiers.
+    // Logs keep only origin and route template with the query stripped; requests still use the full URL.
     const pathname = parsed.pathname.replace(/(\/feedback\/ticket\/)[^/]+(?=\/|$)/, "$1:ticketId");
     return `${parsed.origin}${pathname}`;
   } catch {
@@ -332,7 +332,7 @@ export class FeedbackHttpClient {
     };
     const startedAt = Date.now();
     let requestAttemptCount = 1;
-    this.logger.info(undefined, "反馈 HTTP 请求开始", logContext);
+    this.logger.info(undefined, "Feedback HTTP request started", logContext);
     let response: Response;
     try {
       response = await requestWithHandshakeRetry(
@@ -343,7 +343,7 @@ export class FeedbackHttpClient {
           }),
         ({ attempt, error, nextAttempt }) => {
           requestAttemptCount = nextAttempt;
-          this.logger.warn(undefined, "反馈 HTTP 建连失败，准备重试", {
+          this.logger.warn(undefined, "Feedback HTTP connect failed, retrying", {
             ...logContext,
             attempt,
             nextAttempt,
@@ -354,7 +354,7 @@ export class FeedbackHttpClient {
         },
       );
     } catch (error) {
-      this.logger.warn(undefined, "反馈 HTTP 请求网络失败", {
+      this.logger.warn(undefined, "Feedback HTTP request network failure", {
         ...logContext,
         durationMs: Date.now() - startedAt,
         attemptCount: requestAttemptCount,
@@ -366,7 +366,7 @@ export class FeedbackHttpClient {
     const durationMs = Date.now() - startedAt;
     if (!response.ok) {
       const message = await readResponseError(response);
-      this.logger.warn(undefined, "反馈 HTTP 请求失败", {
+      this.logger.warn(undefined, "Feedback HTTP request failed", {
         ...logContext,
         durationMs,
         status: response.status,
@@ -376,7 +376,7 @@ export class FeedbackHttpClient {
       throw new Error(message);
     }
     if (response.status === 204) {
-      this.logger.info(undefined, "反馈 HTTP 请求成功", {
+      this.logger.info(undefined, "Feedback HTTP request succeeded", {
         ...logContext,
         durationMs,
         status: response.status,
@@ -387,7 +387,7 @@ export class FeedbackHttpClient {
     try {
       responseJson = await response.json();
     } catch (error) {
-      this.logger.warn(undefined, "反馈 HTTP 响应解析失败", {
+      this.logger.warn(undefined, "Feedback HTTP response parse failure", {
         ...logContext,
         durationMs,
         status: response.status,
@@ -397,7 +397,7 @@ export class FeedbackHttpClient {
     }
     try {
       const result = unwrapFeedbackResponse<T>(responseJson);
-      this.logger.info(undefined, "反馈 HTTP 请求成功", {
+      this.logger.info(undefined, "Feedback HTTP request succeeded", {
         ...logContext,
         durationMs,
         status: response.status,
@@ -405,7 +405,7 @@ export class FeedbackHttpClient {
       });
       return result;
     } catch (error) {
-      this.logger.warn(undefined, "反馈 HTTP 请求业务失败", {
+      this.logger.warn(undefined, "Feedback HTTP request business error", {
         ...logContext,
         durationMs,
         status: response.status,
@@ -434,8 +434,8 @@ export class FeedbackHttpClient {
           "Content-Type": "application/json",
           ...(locale ? { "Accept-Language": locale } : {}),
         },
-        // 创建工单是用户可见的第一阶段，不能无限等待网络或后端悬挂。
-        // 超时和取消都收敛到统一 ApiClient，避免 UI 停在“正在连接反馈服务”。
+        // Ticket creation is the first user-visible stage; it must not wait forever on a hung network or backend.
+        // Timeout and cancellation funnel through the shared ApiClient so the UI never sticks on connecting.
         timeoutMs: options.timeoutMs ?? FEEDBACK_CREATE_TIMEOUT_MS,
         signal: options.signal,
         body: JSON.stringify({
@@ -505,8 +505,8 @@ export class FeedbackHttpClient {
     const fileStats = await stat(filePath);
     const maxAttachmentBytes = getFeedbackMaxAttachmentBytes(kind);
     if (fileStats.size > maxAttachmentBytes) {
-      // 日志附件允许上传到 1GB；普通反馈附件仍保持较小上限。
-      // 客户端先校验可以避免无意义请求，并给 UI 返回稳定错误。
+      // Log attachments may be up to 1GB; regular feedback attachments keep a smaller limit.
+      // Validating client-side avoids pointless requests and returns a stable error to the UI.
       throw new Error(`Feedback attachment exceeds max size ${maxAttachmentBytes}`);
     }
     const credential = await this.request<FeedbackUploadCredentialResponse>(
@@ -546,7 +546,7 @@ export class FeedbackHttpClient {
 
 function buildFeedbackListPath(query: FeedbackListQuery): string {
   const params = new URLSearchParams();
-  // 新反馈列表接口支持服务端 limit/offset；只在客户端 slice 会导致刷新列表总是拉全量。
+  // The newer list API supports server-side limit/offset; client-only slicing would refetch everything.
   if (query.limit !== undefined && query.limit >= 0) {
     params.set("limit", String(query.limit));
   }
@@ -572,7 +572,7 @@ function toFeedbackEnvironment(input: CreateFeedbackTicketInput): Record<string,
   const device = input.device ?? {};
   const environment: Record<string, unknown> = {};
   assignDefined(environment, "app_version", device.appVersion);
-  // 反馈后端与 client/configs 使用同一套平台键；传 desktop 会让反馈无法按真实系统架构归类。
+  // The feedback backend shares platform keys with client/configs; "desktop" would break per-arch grouping.
   assignDefined(
     environment,
     "platform",
@@ -687,7 +687,7 @@ function buildDetailEvents(createdAt: string, comments: FeedbackComment[]): Feed
     {
       id: 1,
       type: "created",
-      summary: "已提交",
+      summary: "Submitted",
       created_at: createdAt,
     },
   ];
@@ -695,7 +695,7 @@ function buildDetailEvents(createdAt: string, comments: FeedbackComment[]): Feed
     events.push({
       id: index + 2,
       type: comment.is_staff ? "staff_replied" : "user_replied",
-      summary: comment.is_staff ? "客服已回复" : "用户补充了反馈",
+      summary: comment.is_staff ? "Staff replied" : "User added details",
       payload: { comment_id: comment.id },
       created_at: comment.created_at,
     });
@@ -710,7 +710,7 @@ function mapMessageToComment(
   const senderType = readString(message.sender_type);
   return {
     id: toStableNumericId(message.message_id, fallbackId),
-    // 补充消息附件必须使用原始 message_id 请求上传凭证，数字展示 id 不能反推后端 ID。
+    // Follow-up attachments must request upload credentials with the original message id; the display id does not map back.
     message_id: message.message_id,
     body: readString(message.content?.text) ?? "",
     is_staff: senderType === "staff" || senderType === "admin",
@@ -778,7 +778,7 @@ function mapFeedbackStatus(status: unknown): FeedbackTicketStatus {
     case "已归档":
       return "已归档";
     case "submitted":
-    // 兼容后端或历史缓存里仍返回旧中文状态的工单。
+    // Compatibility: the backend or stale caches may still return legacy statuses.
     case "待评估":
     case "已提交":
     default:
@@ -912,9 +912,9 @@ async function requestWithHandshakeRetry(
       return await request();
     } catch (error) {
       lastError = error;
-      // Cloudflare/本机代理链路偶发 TLS 握手或 Undici 建连阶段失败。
-      // 请求还没稳定到达后端时允许多次短重试；即使请求已收口到 ApiClient，
-      // 这里仍保留反馈接口自己的轻量重试，避免“我的反馈”等轻量请求直接显示 fetch failed。
+      // Cloudflare/local proxy paths intermittently fail in the TLS handshake or Undici connect phase.
+      // Allow a few short retries while the request has not reached the backend; even though ApiClient
+      // already retries, keep this feedback-level retry so light calls fail fast instead of showing fetch errors.
       if (attempt >= 3 || !isRetryableConnectionEstablishmentError(error)) {
         break;
       }
@@ -1023,7 +1023,7 @@ async function uploadOssForm(
     stream.on("data", (chunk) => {
       stream?.pause();
       uploadedBytes += Buffer.byteLength(chunk);
-      // 这里按文件内容进度上报，不把 multipart 表单头尾计入用户可见进度。
+      // Report progress per content byte; keep multipart form overhead out of user-visible progress.
       options.onUploadProgress?.({
         uploadedBytes: Math.min(uploadedBytes, options.size),
         totalBytes: options.size,

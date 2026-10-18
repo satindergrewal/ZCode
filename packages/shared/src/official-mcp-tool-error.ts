@@ -1,21 +1,21 @@
-/* 官方 Server MCP 在 tool 调用被拦截 / 失败时下发的结构化标识。
+/* Structured marker sent when official-server MCP intercepts/fails a tool call.
  *
- * 服务端把它渲染成 **tool error content 的 JSON 文本**（不是 `_meta`）：
+ * The server renders it as **JSON text in tool error content** (not `_meta`):
  * `{"error_code":"quota_exceeded","message":"...","request_id":"..."}`
- * 见 zcode-server `internal/domain/servermcp/toolerror.go` 的 `ToolError.Error()`。
+ * see zcode-server internal/domain/servermcp/toolerror.go ToolError.Error().
  *
- * 放在 shared 是因为有三个分属不同包的消费者：
- * - `apps/zcode-cli/packages/core`：解析 MCP 结果，把 code 带进 tool result display；
- * - `packages/shared/src/zcode-protocol-v4/rows.ts`：row schema 校验该 code；
- * - `packages/ui`：按 code 决定输入框上方提示的文案与动作。
- * 三处必须同源，否则新增 code 时会出现一侧识别、另一侧丢弃。
+ * In shared because three consumers live in different packages:
+ * - apps/zcode-cli/packages/core: parses MCP results into the tool result display;
+ * - packages/shared/src/zcode-protocol-v4/rows.ts: the row schema validates the code;
+ * - packages/ui: picks the above-composer hint copy and action by code.
+ * All three must share one source, or a new code gets recognized one side and dropped the other.
  */
 
 /**
- * 客户端会据此改变界面行为的 code。
+ * Codes that change UI behavior.
  *
- * 服务端还有 `internal_error`，**故意不在这里**：它是"其它一切失败"的兜底掩码
- * （详情只留在服务端日志），用户无法自助解决，不该弹提示。
+ * The server also has internal_error, deliberately absent: the catch-all "everything else"
+ *(details only in server logs); users cannot self-serve it, so never prompt.
  */
 export const OFFICIAL_MCP_TOOL_ERROR_CODES = ["quota_exceeded", "coding_plan_required"] as const;
 
@@ -25,9 +25,9 @@ const OFFICIAL_MCP_TOOL_ERROR_CODE_SET = new Set<string>(OFFICIAL_MCP_TOOL_ERROR
 
 export interface OfficialMcpToolError {
   code: OfficialMcpToolErrorCode;
-  /** 服务端给的英文可读文案；仅用于日志与排障，界面文案走 i18n。 */
+  /// Server's English readable copy; logs/diagnostics only, UI copy via i18n.
   message?: string;
-  /** 服务端 request id，便于与后端日志对账。 */
+  /// Server request id, for backend log correlation.
   requestId?: string;
 }
 
@@ -36,14 +36,14 @@ function readString(value: unknown): string | undefined {
 }
 
 /**
- * 从 tool error 文本里解析结构化标识。
+ * Parse the structured marker out of tool-error text.
  *
- * 严格解析：必须是 JSON 对象且 `error_code` 命中已知 code，否则返回 undefined。
- * 不做文案匹配兜底——那会让服务端改一句话就静默失效。
+ * Strict: must be a JSON object whose error_code hits a known code, else undefined.
+ * No copy-matching fallback--server rewording must not silently disable it.
  */
 export function parseOfficialMcpToolError(text: string): OfficialMcpToolError | undefined {
   const trimmed = text.trim();
-  // 先按首字符快速排除绝大多数普通错误文本，避免每次失败都进 JSON.parse。
+  // A first-char check filters most plain error texts before JSON.parse.
   if (!trimmed.startsWith("{")) return undefined;
 
   let payload: unknown;

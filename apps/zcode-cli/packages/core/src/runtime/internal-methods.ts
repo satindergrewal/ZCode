@@ -235,14 +235,14 @@ export interface AgentRuntimeCoreMethods {
     traceContext: TraceContext;
   }): Promise<void>;
   discardPersistedPendingSteerInputs(traceContext: TraceContext): Promise<number>;
-  /** held 项按 id 丢弃（held 回落）：active turn 结束后经投影定位补 TurnSteerDiscarded。 */
+  /** Drops held items by id (held fallback): after the active turn ends, locate via projection and emit TurnSteerDiscarded. */
   discardHeldPendingInputById(
     pendingInputId: string,
     traceContext: TraceContext,
     reservationId?: string,
     reason?: "user_removed" | "promoted",
   ): Promise<boolean>;
-  /** 清空全部排队输入（clearQueueAndSend 执行件），返回丢弃条数。 */
+  /** Clear every queued input (the clearQueueAndSend executor); returns the dropped count. */
   clearAllPendingInputs(traceContext: TraceContext): Promise<number>;
   createDefaultSubagentPort(deps: AgentRuntimeDeps): SubagentPort | undefined;
   getTools(model?: Model): ModelToolContract[];

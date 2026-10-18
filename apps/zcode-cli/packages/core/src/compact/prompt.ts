@@ -104,7 +104,7 @@ When summarizing the conversation focus on typescript code changes and also reme
 </example>
 
 <example>
-# Summary instructions
+// Summary instructions
 When you are using compact - please focus on test output and code changes. Include file reads verbatim.
 </example>`;
 

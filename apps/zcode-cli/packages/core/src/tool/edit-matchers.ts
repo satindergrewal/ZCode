@@ -167,8 +167,8 @@ function collectUnicodeEscapeNormalizedCandidates(content: string, search: strin
   const unescaped = unescapeUnicodeCharacters(search);
   if (unescaped === search) return [];
 
-  // Unicode 转义回退允许 old_string 里的 \uXXXX 匹配文件中的真实字符。
-  // 这里直接返回文件中的真实片段，后续 replacement 会按真实片段写入。
+  // The Unicode escape fallback lets \uXXXX in old_string match the real characters in the file.
+  // Return the real file snippet here; the replacement is then written against that exact snippet.
   return collectSubstringCandidates(content, unescaped);
 }
 

@@ -2,7 +2,7 @@ export type CodingPlanResetType = "FIVE_HOUR" | "WEEK";
 
 export interface CodingPlanResetScopeRequest {
   preferredProviderId: string;
-  /** Registry 静态访问类别，或调用边界已解析的 Team scope。 */
+  /// Registry static access kind, or a Team scope already resolved at the call boundary.
   accountAccess: ZCodeProviderAccountAccess | ZCodeAccountAccess;
 }
 

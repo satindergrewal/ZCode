@@ -64,9 +64,9 @@ export function BrowserViewportSurface({
   viewportZoom: BrowserViewportZoom;
 }): React.JSX.Element {
   const { guestFailure } = browserState;
-  // guest 进程级失败优先于 load error：前者连画面都没有，后者只是这次导航被拒。
+  // A guest-level process failure outranks a load error: the former has no picture at all, the latter only rejects this navigation.
   const loadError = !guestFailure && browserState.errorMessage ? browserState.errorMessage : null;
-  // 自然 viewport 没有 metrics 固定逻辑尺寸，临时 responsive frame 不代表 guest 可以扩张。
+  // The natural viewport has no metrics-pinned size; a temporary responsive frame does not mean the guest may expand.
   const responsiveGuestLayout = resolveResponsiveBrowserGuestLayout(desktopZoomFactor);
   const responsiveGuestLayoutScale = isViewportEmulated ? responsiveGuestLayout.layoutScale : 1;
   const responsiveGuestTransformScale = isViewportEmulated
@@ -132,16 +132,16 @@ export function BrowserViewportSurface({
             isGuestStarting={shouldMountWebview && !browserState.isReady}
           />
         ) : null}
-        {/* 自由尺寸开关只改变稳定 frame 的 CSS 宽高，不能条件替换 webview 的父层级；
-            否则 Electron guest 会被重建并丢失网页历史。空白页仍直接隐藏 webview，确保空置态可见。
-            Electron 41 还要求 nodeintegrationinsubframes 随 guest 创建声明，供发生真实导航的子 frame 加载固定 preload。
-            allowpopups 若等 ref 回调再 setAttribute，guest 已完成 attach，target=_blank 会在
-            Chromium 权限边界被静默吞掉。必须让 React 在插入节点前输出字符串 attribute；类型断言只用于
-            绕过 @types/react 把 Electron boolean attribute 建模为 boolean 所引发的 React DOM 告警。
-            generation 只在 guest renderer 已异常退出时递增；普通切换/resize 必须继续复用原节点。
-            新建 human tab 与 about:blank guest 同帧挂载时，Electron 的独立合成面
-            可能先于宿主隐藏样式绘制白色首帧。因此只在确认导航后创建 human guest；
-            已创建的 guest 仍保持稳定挂载。 */}
+        {/* The free-size toggle only alters the stable frame CSS width/height; never conditionally re-parent the webview,
+            or the Electron guest is rebuilt and web history lost. Blank pages keep hiding the webview directly so the empty state stays visible.
+            Electron 41 also requires nodeintegrationinsubframes declared at guest creation, so child frames that really navigate load the fixed preload.
+            If allowpopups waits for the ref callback, the guest has attached already and target=_blank is
+            silently swallowed at the Chromium permission boundary. React must emit string attributes before insertion; the type assertions only
+            silence the React DOM warning caused by @types/react modeling the Electron boolean attribute as boolean.
+            generation bumps only after a guest renderer crash; plain switches/resizes must keep reusing the node.
+            When a new human tab and an about:blank guest mount in the same frame, the separate Electron compositor surface
+            can paint a white first frame before the host hidden styles apply, so the human guest is created only after a confirmed navigation;
+            created guests stay stably mounted. */}
         {shouldMountWebview ? (
           <webview
             key={`webview:${webviewGeneration}`}
@@ -161,16 +161,16 @@ export function BrowserViewportSurface({
               "browser-use-viewport h-full min-h-0 w-full",
               isEmptyBrowserState || guestFailure || loadError ? "hidden" : "inline-flex",
             )}
-            // Electron 的 `<webview>` 独立 guest surface 对 page zoom 的合成并不对称：放大时
-            // 由 main 的 CDP metrics scale 校正 raster；缩小时先按 1 / zoom 扩布局再缩放。
-            // absolute 避免补偿布局污染 Fit 的 scroll extent。
-            // 这里只改变宿主布局/合成；guest zoom、CSS viewport、DPR 与 Browser Use 回读保持不变。
+            // Electron <webview> separate guest surfaces compose page zoom asymmetrically: zoom-in is
+            // corrected by the main CDP metrics scale; zoom-out expands the layout by 1/zoom before scaling.
+            // absolute keeps the compensation layout out of the Fit scroll extent.
+            // Only host layout/compositing changes here; guest zoom, CSS viewport, DPR and Browser Use readbacks stay untouched.
             style={{
-              // 网页画布默认按浏览器语义使用白色；这里只设置 webview 节点底色，
-              // 不增加覆盖层，也不向 guest 页面注入或覆盖任何样式。
+              // The page canvas defaults to browser white; set only the webview node background,
+              // no overlay layers, no injected or overridden styles in the guest page.
               backgroundColor: "#fff",
-              // Electron guest surface 可能早于 Tailwind hidden 类完成首次合成，
-              // 导致新 tab 闪一帧白色；创建期内联 visibility 可封住该时序窗口。
+              // The Electron guest surface can finish its first composite before the Tailwind hidden class applies,
+              // flashing a white frame on new tabs; inline visibility during creation closes that timing window.
               ...(isEmptyBrowserState ? { visibility: "hidden" as const } : {}),
               ...(isResponsiveMode
                 ? {

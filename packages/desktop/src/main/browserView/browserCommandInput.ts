@@ -3,8 +3,8 @@ import { RESOLVE_SCRIPT } from "./browserCommandScripts.js";
 import type { BrowserPoint, ControlledView } from "./browserCommandTypes.js";
 
 /**
- * 键盘修饰键 → CDP modifiers 位掩码（Alt=1, Control=2, Meta=4, Shift=8）。
- * click/press/drag 均复用此映射，透传给 dispatchMouseEvent/dispatchKeyEvent。
+ * Keyboard modifiers -> CDP modifiers bitmask (Alt=1, Control=2, Meta=4, Shift=8).
+ * click/press/drag share this map and pass it to dispatchMouseEvent/dispatchKeyEvent.
  */
 const MODIFIER_BITS: Record<BrowserKeyModifier, number> = {
   Alt: 1,
@@ -15,8 +15,8 @@ const MODIFIER_BITS: Record<BrowserKeyModifier, number> = {
 };
 
 /**
- * 常用键名 → CDP Input.dispatchKeyEvent 参数映射。
- * 未命中的 key 走裸传（仅带 key 字段），交给内核尽力解释。
+ * Common key names -> CDP Input.dispatchKeyEvent params.
+ * Unknown keys pass through bare (key field only) for best-effort kernel interpretation.
  */
 const KEY_MAP: Record<string, { key: string; code: string; windowsVirtualKeyCode: number }> = {
   Enter: { key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 },
@@ -105,7 +105,7 @@ export function modifiersBitmask(mods?: readonly BrowserKeyModifier[]): number {
   return bits;
 }
 
-/** 解析 ref 元素中心坐标；未找到（含返回非法结构）→ null。 */
+/** Resolves the ref element's center; not found (or malformed) -> null. */
 export async function resolveRefCenter(
   view: ControlledView,
   ref: string,
@@ -118,7 +118,7 @@ export async function resolveRefCenter(
   return { cx: raw.cx, cy: raw.cy };
 }
 
-/** 在给定坐标发一次 CDP 真实鼠标点击（mouseMoved→mousePressed→mouseReleased）。 */
+/** One real CDP mouse click at the given coordinates (mouseMoved->Pressed->Released). */
 export async function dispatchClickAt(
   view: ControlledView,
   center: BrowserPoint,
@@ -127,7 +127,7 @@ export async function dispatchClickAt(
   modifiers = 0,
 ): Promise<void> {
   const clickCount = doubleClick ? 2 : 1;
-  // modifiers=0 时不带该字段，保持与既有单测（不含 modifiers 的断言）一致。
+  // Omit the field when modifiers=0, matching existing tests that assert without it.
   const mod = modifiers > 0 ? { modifiers } : {};
   await view.cdp.send("Input.dispatchMouseEvent", {
     type: "mouseMoved",
@@ -154,8 +154,8 @@ export async function dispatchClickAt(
 }
 
 /**
- * 从起点拖到终点：mousePressed@from → 多个插值 mouseMoved → mouseReleased@to（带 modifiers）。
- * 拖拽期间的 mouseMoved 带 buttons:1（左键按住位）以让内核识别为拖拽而非普通移动。
+ * Drag from->to: mousePressed@from -> interpolated mouseMoved -> mouseReleased@to (with modifiers).
+ * In-flight mouseMoved carries buttons:1 (left held) so the kernel reads a drag, not a move.
  */
 export async function dispatchDrag(
   view: ControlledView,
@@ -201,7 +201,7 @@ export async function dispatchDrag(
   });
 }
 
-/** Drag 输入：逐点保留调用方 path，不把手绘/曲线路径重建为首尾直线。 */
+/** Drag input keeps the caller's path point-by-point; freehand/curves never collapse to a chord. */
 export async function dispatchDragPath(
   view: ControlledView,
   path: readonly { x: number; y: number }[],
@@ -249,7 +249,7 @@ export async function dispatchDragPath(
   }
 }
 
-/** CUA scroll：先移动到锚点，再从该位置发送真实滚轮输入。 */
+/** CUA scroll: move to the anchor, then send real wheel input from there. */
 export async function dispatchScrollGesture(
   view: ControlledView,
   point: BrowserPoint,
@@ -264,9 +264,9 @@ export async function dispatchScrollGesture(
     y: point.cy,
     ...mod,
   });
-  // Electron 41 / Chromium 146 的 <webview> guest 会让
-  // Input.synthesizeScrollGesture 静默成功但不产生 wheel 事件，页面因此完全不滚动。
-  // mouseWheel 仍是命中锚点的 trusted input，可保留嵌套滚动区和 wheel handler 语义。
+  // On Electron 41/Chromium 146, webview guests make
+  // Input.synthesizeScrollGesture silently no-op -- no wheel events, page never scrolls.
+  // mouseWheel stays trusted input on the anchor and keeps nested scrollers/wheel handlers working.
   await view.cdp.send("Input.dispatchMouseEvent", {
     type: "mouseWheel",
     x: point.cx,
@@ -277,7 +277,7 @@ export async function dispatchScrollGesture(
   });
 }
 
-/** 组合键输入：逐键按下组合键，末键 down/up 后逆序释放其余按键。 */
+/** Combo keys: press in order, then release the others in reverse after the last key's down/up. */
 export async function dispatchKeyPress(
   view: ControlledView,
   keys: readonly string[],
@@ -310,7 +310,7 @@ export async function dispatchKeyPress(
   for (const key of held.toReversed()) await dispatch("keyUp", key);
 }
 
-/** 发一次按键（keyDown + keyUp）；已知键带完整映射，未知键裸传 key。modifiers 位掩码可透传。 */
+//** One keypress (keyDown+keyUp); known keys fully mapped, unknown keys bare. modifiers bitmask passthrough. */
 export async function dispatchKey(
   view: ControlledView,
   keyName: string,
@@ -321,7 +321,7 @@ export async function dispatchKey(
   const base = def
     ? { key: def.key, code: def.code, windowsVirtualKeyCode: def.windowsVirtualKeyCode }
     : { key: keyName };
-  // modifiers=0 时不带该字段，保持与既有单测（不含 modifiers 的断言）一致。
+  // Omit the field when modifiers=0, matching existing tests that assert without it.
   const mod = modifiers > 0 ? { modifiers } : {};
   const sendKey = (type: "keyDown" | "keyUp") =>
     sessionId == null

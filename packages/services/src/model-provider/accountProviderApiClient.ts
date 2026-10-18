@@ -20,7 +20,7 @@ export class AccountProviderApiClient {
 
   async fetchRemoteData<T>(url: string, init: RequestInit): Promise<T | null> {
     const payload = await readApiJson<RemoteEnvelope<T>>(this.apiClient, url, init);
-    // BigModel 部分业务接口成功时返回 code=200，而不是 code=0。
+    // Some BigModel business endpoints succeed with code=200, not code=0.
     if (!isSuccessfulRemoteCode(payload.code)) {
       return null;
     }

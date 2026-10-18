@@ -28,7 +28,7 @@ interface WindowControllerTaskListRegistry {
 export interface WindowControllerTaskListVersion {
   controllerRevision: number;
   taskListVersionSignature: string;
-  /** 只用于让连接前缓存随 remote session 换代失效，不参与 workspace identity。 */
+  /** Only invalidates connection-cached state on remote-session generation change; no workspace-identity role. */
   workspaceSourceGenerationSignature?: string;
   manualRefreshSerial?: number;
 }
@@ -54,9 +54,9 @@ function queryContainsWorkspace(
 }
 
 function cacheVersionKey(version: WindowControllerTaskListVersion): string {
-  // Controller frame 只负责触发 hook 重读；具体 query 是否失效由 delta scope/membership 决定。
-  // 若把全局 controllerRevision 放进缓存 key，一个 timeline live delta 仍会让 pinned/archived
-  // 全部 miss，重新制造每个 frame 多轮 Host RPC。legacy/manual 版本继续保留强制刷新语义。
+  // A Controller frame only triggers hook re-reads; per-query invalidation is delta scope/membership.
+  // A global controllerRevision in the cache key would miss all pinned/archived on one timeline live delta,
+  // re-creating multi-RPC storms per frame. legacy/manual versions keep forced-refresh semantics.
   return JSON.stringify({
     taskListVersionSignature: version.taskListVersionSignature,
     workspaceSourceGenerationSignature: version.workspaceSourceGenerationSignature,
@@ -64,7 +64,7 @@ function cacheVersionKey(version: WindowControllerTaskListVersion): string {
   });
 }
 
-/** 一个 Controller proxy 对应一个共享观察器；所有列表 hook 只消费其 revision。 */
+/** One Controller proxy, one shared observer; every list hook consumes only its revision. */
 export function getWindowControllerTaskListRegistry(
   controller: IWindowControllerService,
 ): WindowControllerTaskListRegistry {
@@ -136,7 +136,7 @@ export function getWindowControllerTaskListRegistry(
             forceSnapshot: true,
           })
           .catch((error) =>
-            logger.warn("[windowControllerTaskListRegistry] Controller gap resync 失败", error),
+            logger.warn("[windowControllerTaskListRegistry] Controller gap resync failed", error),
           );
         return;
       }
@@ -146,7 +146,7 @@ export function getWindowControllerTaskListRegistry(
         seq: frame.toSeq,
       });
       if (frame.topic === CONTROLLER_WORKSPACES_TOPIC) {
-        // workspace facts 不出现在 task list result；source 上下线/移除会另发 tasks-index delta。
+        // Workspace facts never appear in the task list result; source up/down/removal sends a tasks-index delta.
         return;
       }
       const taskFrame = frame as WindowHostControllerTaskFrame;
@@ -168,9 +168,9 @@ export function getWindowControllerTaskListRegistry(
           for (const [queryKey, cached] of queryCache) {
             const touchesWorkspace = queryContainsWorkspace(cached.query, address);
             if (!touchesWorkspace) continue;
-            // 以前任意 task delta 都 clear 全部 query。只有明确掌握旧 row 时，
-            // 才按变更前后 membership 精确失效；缺少旧 row 时无法排除它曾属于其他 kind，
-            // 因此对当前 workspace 保守失效，避免 timeline/active 留下陈旧项。
+            // Previously any task delta cleared every query. Only with the old row in hand,
+            // invalidate precisely by before/after membership; without it the row could have belonged to any kind,
+            // so invalidate conservatively for this workspace, never leaving stale timeline/active items.
             if (
               !previous ||
               matchesTaskListMembershipKind(previous.membership, cached.query.kind) ||
@@ -181,7 +181,7 @@ export function getWindowControllerTaskListRegistry(
           }
         }
       }
-      // 同一 JavaScript 调度周期内的连续 task frame 合并成一个 renderer revision。
+      // Task frames within one JS scheduler tick collapse into one renderer revision.
       notifyOnce();
     });
     void Promise.all(
@@ -199,7 +199,7 @@ export function getWindowControllerTaskListRegistry(
         subscriptionIds.add(result.ack.subscriptionId);
       }),
     ).catch((error) =>
-      logger.warn("[windowControllerTaskListRegistry] Controller subscribe 失败", error),
+      logger.warn("[windowControllerTaskListRegistry] Controller subscribe failed", error),
     );
   };
 

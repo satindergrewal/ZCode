@@ -2,8 +2,8 @@ import { zcodeWorkspaceUpdateInteractionPreferencesParamsSchema } from "@zcode/s
 import { parseParams, type ZCodeProtocolAgentServerContext } from "./server-types.js";
 
 /**
- * 应用 workspace 交互偏好。CLI 进程按 workspace 隔离，因此 registry 是该 workspace
- * 内主任务、后台任务与子 Agent 共用的权威 gate。
+ * Applies workspace interaction preferences. CLI processes are isolated per workspace, so the registry is the workspace-wide
+ * authoritative gate shared by main tasks, background tasks, and subagents.
  */
 export async function updateInteractionPreferences(
   context: ZCodeProtocolAgentServerContext,

@@ -27,8 +27,8 @@ function shouldSuppressDuplicateTaskNotification(
     }
   }
 
-  // elicitation_request 和 permission_request 一样代表一次具体的人机阻塞请求。
-  // 如果仍按 taskId 去重，同一任务连续 AskUserQuestion/计划确认会在 3 秒内漏掉第二条通知。
+  // elicitation_request, like permission_request, is a concrete human-in-the-loop block;
+  // task-id dedup would drop the second of back-to-back AskUserQuestion/plan confirmations.
   const dedupeTarget =
     status === "permission_request" || status === "elicitation_request"
       ? requestId?.trim() || taskId
@@ -69,8 +69,8 @@ function focusTaskNotificationWindow(senderWindow: BrowserWindow) {
     senderWindow.show();
   }
 
-  // macOS 点通知时如果窗口曾被隐藏/最小化，必须先恢复窗口，再激活 app，
-  // 最后聚焦 BrowserWindow；否则 app.focus 抢到前台时没有可显示窗口，后续 focus 可能被系统忽略。
+  // macOS notification click with a hidden/minimized window: restore window, activate app, then focus
+  // the BrowserWindow -- else app.focus wins foreground with no visible window and focus is ignored.
   if (process.platform === "darwin") {
     app.dock?.show();
     app.show();
@@ -104,8 +104,8 @@ export function dispatchTaskNotification(options: {
   const notificationTitle = title.trim();
   const notificationBody = body.trim();
   if (!notificationTitle || !notificationBody) {
-    // main process 没有 renderer 当前语言上下文，不能在这里兜底生成中文通知文案。
-    // 通知文案必须由 renderer 侧按 i18n 生成后传入；缺失时直接拒绝展示，避免英文界面弹出中文硬编码。
+    // Main has no renderer locale context and must not fabricate localized copy here.
+    // Copy is renderer-i18n-generated; without it, refuse to show rather than hardcode a wrong language.
     options.logger.warn("[show-task-notification] missing localized notification copy", {
       taskId,
       status,
@@ -126,9 +126,9 @@ export function dispatchTaskNotification(options: {
     silent: true,
   });
 
-  // Electron 原生 Notification 如果只存在于函数局部变量里，系统通知仍能显示，
-  // 但主进程 JS 对象可能在用户点击前被回收，导致 click listener 丢失。
-  // 这里显式持有对象，等点击/关闭后释放，保证“有通知”与“点击可唤起”属于同一生命周期。
+  // A Notification held only in a local still displays, but main's JS object can be GC'd before the
+  // click, losing the listener. Hold it explicitly and release on click/close so exists and clickable
+  // share one lifetime.
   retainTaskNotification(notification);
 
   notification.once("click", () => {

@@ -35,8 +35,9 @@ export function UpdateStatusWindowRoot({
       return revisionRef.current;
     };
 
-    // 独立更新窗口没有主窗口的 app chrome state，必须自己做一次
-    // getUpdateState 快照补偿；同时用 revision 避免旧快照覆盖更晚的实时事件。
+    // The standalone update window lacks the main window's app chrome state, so it must fetch
+    // one getUpdateState snapshot itself; the revision guard keeps older snapshots from
+    // overriding later live events.
     const snapshotRevision = revisionRef.current;
     void platform.getUpdateState?.().then((payload) => {
       if (revisionRef.current !== snapshotRevision) {
@@ -71,8 +72,9 @@ export function UpdateStatusWindowRoot({
 
   return (
     <div className="min-h-screen bg-transparent text-foreground">
-      {/* 独立更新窗口不挂 workspace setting/broadcast service，不能只依赖启动时 locale。
-          主窗口切语言后由 main 进程推送最新解析语言，这里重建 Provider 让弹窗文案实时跟随。 */}
+      {/* The standalone update window has no workspace setting/broadcast service and cannot rely
+          on the startup locale alone. Main pushes the resolved locale after the main window
+          switches; remount the provider so dialog copy follows live. */}
       <ZCodeIntlProvider key={locale} initialLocale={locale}>
         <UpdateStatusDialogController
           platform={platform}

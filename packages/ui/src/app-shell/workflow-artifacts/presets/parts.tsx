@@ -1,32 +1,35 @@
 /**
- * 四个预置渲染器共用的小零件：labels 契约、空态、字段标签、揭示动画的类名。
+ * Small shared parts for the four preset renderers: the labels contract, empty state, field
+ * headings, and the reveal-animation class.
  *
- * 这些组件**一律不碰 i18n**：run 侧板与 `workflow-artifact` tab 各自持有 intl，
- * 把已翻译的文案经 `labels` 传进来。理由是渲染器要能被侧板、tab、（将来的）中枢详情页
- * 三处复用，谁在什么语境下叫什么由调用方决定；组件自己去查 message id 会把这三处焊死。
+ * These components NEVER touch i18n: the run side pane and the `workflow-artifact` tab each
+ * hold their own intl and pass translated strings via `labels`. Rationale: the renderers
+ * must be reusable from side pane, tab, and (future) hub detail page; who calls what what
+ * is the caller's call. Having components look up message ids would weld those three
+ * surfaces together.
  */
 
 import type { ReactNode } from "react";
 import { cn } from "@/components/lib/utils.js";
 
-/** 调用方必须提供的三句译文（其余文案全部来自 spec 里作者自己写的 label / title）。 */
+/** The three translations every caller must supply (all other copy comes from the spec author's label/title). */
 export type PresetLabels = {
-  /** 看板里承接「未在 columns 里列出的 status」的那一列的名字。 */
+  /** Name of the board column catching statuses not listed in `columns`. */
   otherColumn: string;
-  /** 一条数据都还没到时的提示。 */
+  /** Shown before any data has arrived. */
   empty: string;
-  /** 「N 条」——表格行数、看板卡片数。 */
+  /** "N items" — table rows, board cards. */
   itemsCount: (count: number) => string;
 };
 
 /**
- * 新元素的揭示动画。稳定 React key + 只在**挂载**时播一次，所以老点不会随着新点到达重播；
- * `motion-reduce` 下整个关掉。
+ * Reveal animation for new elements. Stable React key + plays once on MOUNT only, so
+ * existing points do not replay as new ones arrive; fully disabled under `motion-reduce`.
  */
 export const REVEAL_ANIMATION_CLASS =
   "animate-in fade-in duration-300 ease-out motion-reduce:animate-none";
 
-/** 一条数据都没有时的占位。压到最低存在感：看板本身在运行期就是会先空着的。 */
+/** Empty state. Minimal presence: a board is legitimately empty early in a run. */
 export function PresetEmpty({ label, compact }: { label: string; compact?: boolean }) {
   return (
     <div
@@ -41,14 +44,15 @@ export function PresetEmpty({ label, compact }: { label: string; compact?: boole
   );
 }
 
-/** 字段名 + 单位的统一写法：单位跟在标签后面的括号里，不重复到每一个值上（dataviz 惯例）。 */
+/** Field heading convention: the unit follows the label in parentheses, never repeated per value (dataviz convention). */
 export function fieldHeading(label: string, unit?: string): string {
   return unit ? `${label} (${unit})` : label;
 }
 
 /**
- * 全尺寸形态的标题条：spec 的 title / description 由作者用用户语言写好，这里原样呈现。
- * 三样都没有时整块**缺席**（连外边距一起消失）——所以外边距由这里带，而不是调用方包一层 div。
+ * Full-size heading bar: the spec's title/description are authored in user language and
+ * rendered verbatim. When all three are absent the whole block is OMITTED (margins
+ * included) — hence the margins live here, not in a caller's wrapper div.
  */
 export function PresetHeading({
   title,

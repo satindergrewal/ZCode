@@ -26,10 +26,10 @@ export type {
 } from "./browserScreenshotSurfaceContracts.js";
 
 /**
- * Desktop main 与 owner renderer 之间的瞬时截图表面握手。
+ * * Transient screenshot-surface handshake between desktop main and the owner renderer.
  *
- * 同一 guest 的并发截图复用一份 renderer 表面，避免相互覆盖；不同 guest 必须串行，
- * 否则单个背景 capture layer 会在同一窗口内同时指向两个 webview，导致 ready 归属不确定。
+ * Concurrent captures of one guest reuse a single renderer surface; different guests serialize,
+ * # or one background capture layer would point at two webviews, making ready attribution ambiguous.
  */
 export class DesktopBrowserScreenshotSurfaceCoordinator implements BrowserScreenshotSurfaceCoordinator {
   private readonly timeoutMs: number;
@@ -116,7 +116,7 @@ export class DesktopBrowserScreenshotSurfaceCoordinator implements BrowserScreen
       }, this.timeoutMs);
       request.abortListener = failForAbort;
 
-      // 必须先登记再发送：测试替身和真实 IPC 都可能在 sendPrepare 同步期间回传 ready。
+      // Register before sending: doubles and real IPC may answer ready during sendPrepare itself.
       group.requests.add(request);
       input.signal.addEventListener("abort", failForAbort, { once: true });
 
@@ -163,7 +163,7 @@ export class DesktopBrowserScreenshotSurfaceCoordinator implements BrowserScreen
       return;
     }
 
-    // 首个完整 scope 的可信 renderer 一经确认即冻结，防止另一个窗口的迟到回执接管请求。
+    // Freeze the first complete scope's trusted renderer so a late reply from another window cannot take over.
     group.senderWebContentsId ??= input.senderWebContentsId;
     if (!sameBrowserScreenshotViewport(expected.viewport, input.payload.viewport)) {
       this.options.log?.("[browser-screenshot-surface] ignored ready with unstable viewport");
@@ -177,8 +177,8 @@ export class DesktopBrowserScreenshotSurfaceCoordinator implements BrowserScreen
       expected.surfaceScaleMode === "unscaled" &&
       Math.abs(input.payload.surfaceScale - 1) > UNSCALED_SURFACE_EPSILON
     ) {
-      // 录制器会把 Fit 后的小 surface 放大到目标 canvas，文件分辨率虽然正确但画面已模糊。
-      // Main 必须在握手边界拒绝非 100% 回执，避免 renderer 回归时静默产出伪高清录像。
+      // The recorder upscales the fitted surface; resolution looks right but the frame is soft.
+      // Main rejects non-100% factors at handshake, preventing silent fake-HD recordings after renderer regressions.
       this.options.log?.(
         "[browser-screenshot-surface] ignored ready with scaled recording surface",
       );
@@ -280,13 +280,13 @@ export class DesktopBrowserScreenshotSurfaceCoordinator implements BrowserScreen
         );
       }, activityTimeoutMs);
     }
-    // 即使 sendPrepare 返回 false，也要 release；renderer 可能已处理了消息但发送端感知到失败。
+    // Release even when sendPrepare lies false: the renderer may have handled it despite the sender seeing failure.
     group.prepareSent = true;
     let sent = false;
     try {
       sent = this.options.sendPrepare(group.windowId, group.payload);
     } catch {
-      // sendPrepare 允许测试替身同步 ready；此时 lease 已有效，后续发送异常不能提前释放它。
+      // Doubles may ready synchronously inside sendPrepare; the lease is live and later send errors must not release early.
       if (!group.ready && !group.released) {
         this.finishGroupError(
           group,
@@ -401,8 +401,8 @@ export class DesktopBrowserScreenshotSurfaceCoordinator implements BrowserScreen
         );
       }
     } catch {
-      // release 发生在 timeout/abort/backend finally 中，transport 同步异常不能让
-      // activeGroup 永久占位，也不能阻止 screenshot activity lease 恢复后台节流。
+      // release runs in timeout/abort/backend finally; a sync transport throw must not leave
+      // activeGroup occupied forever, nor block the activity lease from restoring throttling.
       this.options.log?.("[browser-screenshot-surface] release send failed");
     } finally {
       for (const release of group.leaseReleases) release();

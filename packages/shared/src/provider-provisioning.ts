@@ -13,7 +13,7 @@ export const providerProvisioningTriggerSchema = z.enum([
 ]);
 export type ProviderProvisioningTrigger = z.infer<typeof providerProvisioningTriggerSchema>;
 
-/** Provisioning 中允许跨 Environment 传输的凭据类别。 */
+/** Credential classes allowed to cross Environments during provisioning. */
 export const providerProvisioningCredentialScopeSchema = z.enum([
   "oauth-session",
   "account-provider",
@@ -23,13 +23,13 @@ export type ProviderProvisioningCredentialScope = z.infer<
   typeof providerProvisioningCredentialScopeSchema
 >;
 
-/** 只允许同步 Account Provider 的请求期 API key，不同步账号身份或未来其它扩展字段。 */
+/** Sync only the Account Provider's request-time API key; never account identity or future extension fields. */
 export function isProviderProvisioningAccountCredentialKey(key: string): boolean {
   const normalized = key.trim();
   return normalized === key && /^account-provider:.+:api-key$/.test(normalized);
 }
 
-/** Personal Config 的 Envelope；具体字段由 @zcode/provider 在目标 Environment 再校验。 */
+/** The Personal Config envelope; @zcode-provider re-validates fields on the target Environment. */
 export const providerProvisioningPersonalConfigSchema = z
   .object({
     providerConfigRules: z.object({ providerRules: z.array(z.unknown()) }).strict(),

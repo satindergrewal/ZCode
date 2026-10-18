@@ -1,15 +1,15 @@
 /**
- * GetWorkflowRun 工具卡的**情势截面**：阶段轨 + 健康行（花名册在
- * get-workflow-run-roster.tsx）。
+ * The **situation snapshot** of the GetWorkflowRun tool card: stage track + health line (roster in
+ * get-workflow-run-roster.tsx).
  *
- * 两条纪律与模型面
- * （apps/zcode-cli/packages/core/src/tool/handlers/get-workflow-run-format-roster.ts）一字不差：
- *   1. **缺席即不画**。没有时刻就没有年龄，没有读数就没有那一格；`0` 是一件事实，
- *      而「不知道」是另一件——绝不用 0 顶替后者。
- *   2. 所有年龄对**快照时刻** `generatedAt` 算，不对 `Date.now()` 算：一张三天前的卡
- *      重新打开时读数不能跟着今天漂。`generatedAt` 缺席就一个年龄都不画。
+ * Two disciplines, verbatim from the model-facing text
+ * (apps/zcode-cli/packages/core/src/tool/handlers/get-workflow-run-format-roster.ts):
+ *   1. **Absent means not drawn.** No timestamp, no age; no reading, no cell. Zero is a fact while
+ *      unknown is another - never substitute 0 for the latter.
+ *   2. Every age is computed against the snapshot instant `generatedAt`, never `Date.now()`: a
+ *      three-day-old card reopened must not drift with today. Without generatedAt, no ages at all.
  *
- * 布局：一律换行行（flex-wrap），没有定宽表格——手机窄屏下要能折行而不是横向溢出。
+ * Layout: always wrapping rows (flex-wrap), no fixed-width tables - on narrow phone screens rows must wrap, not overflow horizontally.
  */
 
 import type { ToolCallGetWorkflowRunDisplay } from "@zcode/shared/zcode-protocol-v4";
@@ -22,16 +22,17 @@ type WorkflowRunHealthView = NonNullable<ToolCallGetWorkflowRunDisplay["health"]
 
 const I18N_PREFIX = "chat.toolCall.workflow.getRun.";
 
-/** 情势区块的容器：与同一张卡里的日志面板同款低层容器，不是第二种卡面。 */
+/** Container for situation sections: the same low-level container as the log panel within this card, not a second card face. */
 export const SITUATION_BLOCK_CLASS =
   "min-w-0 space-y-1 rounded-lg border border-border bg-surface px-2 py-1.5";
 
-/** 情势区块里的一行：窄屏折行，基线对齐（数字与文字混排时才不会互相顶高）。 */
+/** One row inside a situation section: wraps on narrow screens, baseline-aligned (mixed numbers/text never push each other taller). */
 export const SITUATION_ROW_CLASS = "flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5";
 
 /**
- * 阶段状态词的语义色。与 run 整体状态同一套判断（run-status-presentation.ts）：
- * 在动的用活动色 warning，完成用 success，还没发生的最弱，终态没结算的居中。
+ * Semantic color for stage status words. Same judgment as the run's overall status
+ * (run-status-presentation.ts): active work uses activity warning, done success, not-yet-started
+ * the faintest, unfinished terminal states in between.
  */
 const PHASE_STATE_TEXT: Record<WorkflowRunPhaseView["state"], string> = {
   done: "text-success",
@@ -41,8 +42,8 @@ const PHASE_STATE_TEXT: Record<WorkflowRunPhaseView["state"], string> = {
 };
 
 /**
- * 阶段轨：一行一个阶段，声明序。`ahead` 的行只有序号、名字和状态词——它还没发生过，
- * 没有轮次也没有步数可说。
+ * Stage track: one stage per row in declaration order. An ahead row carries only the number, name
+ * and status word - it has not happened, so there are no rounds or steps to report.
  */
 export function WorkflowRunPhaseTrack({
   phases,
@@ -59,7 +60,7 @@ export function WorkflowRunPhaseTrack({
     <div className={SITUATION_BLOCK_CLASS} data-testid="workflow-run-phases">
       {phases.map((phase, index) => {
         const cells: string[] = [];
-        // rounds 为 0 只可能是 `ahead`：没进过的阶段说不出「进过几次」。
+        // rounds 0 can only be ahead: a stage never entered cannot say how often it ran.
         if (phase.rounds > 0) {
           cells.push(
             intl.formatMessage(
@@ -77,7 +78,7 @@ export function WorkflowRunPhaseTrack({
           );
         }
         if (phase.nodesRunning > 0) {
-          // 终态 run 里的「还在跑」是没结算，不是在动。
+          // Inside a terminal run, still-running means unsettled, not active.
           cells.push(
             intl.formatMessage(
               { id: `${I18N_PREFIX}phase.${terminal ? "unfinished" : "running"}` },
@@ -118,8 +119,8 @@ function phaseDuration(
 ): string | undefined {
   if (phase.enteredAt === undefined) return undefined;
   if (phase.exitedAt !== undefined) return formatWorkflowDuration(phase.exitedAt - phase.enteredAt);
-  // 没有离开时刻：活着的 run 说「到现在为止」；终态 run 什么也不说——它的离开时刻无人记录，
-  // 拿快照时刻去减等于把进程死后的那几个小时算进这个阶段。
+  // No exit instant: a live run says so-far; a terminal run says nothing - nobody recorded its
+  // exit, and subtracting from the snapshot instant would bill the post-mortem hours to this stage.
   if (terminal) return undefined;
   const soFar = formatWorkflowAge(generatedAt, phase.enteredAt);
   return soFar === undefined
@@ -128,14 +129,15 @@ function phaseDuration(
 }
 
 /**
- * 健康行：run 整体还在不在动，一行读数。
+ * Health line: whether the run as a whole is still moving, in one row.
  *
- * `stalled` 只对活着的 run 有意义（终态 run 当然不动了）；终态 run 换成一句 **leftover 说明**
- * ——花名册里那些标着运行中的行是进程死在它们下面的残留。这是本张卡上唯一一处「把不知道
- * 说出口」的地方（另一处是待答问题不可见的提示）：沉默会被读成「它们还在跑」。
+ * stalled only means something for a live run (terminal runs obviously do not move); a terminal run
+ * gets a **leftover note** instead - roster rows still marked running are remains under a dead
+ * process. This is the only spot on the card that admits uncertainty out loud (the other is the
+ * hidden pending-question hint): silence would read as "they are still running".
  *
- * `consecutiveFailures` / `cachedSteps` 只在大于 0 时出现：这两个读数为 0 时不是新闻，
- * 而卡面比模型面更吝惜行。
+ * consecutiveFailures / cachedSteps appear only when > 0: zero is not news for these readouts, and
+ * the card is stingier with rows than the model-facing text.
  */
 export function WorkflowRunHealthLine({
   health,
@@ -159,8 +161,9 @@ export function WorkflowRunHealthLine({
   if (health.concurrency !== undefined) {
     const { effective, cap, reason, since } = health.concurrency;
     cells.push(intl.formatMessage({ id: `${I18N_PREFIX}health.concurrency` }, { effective, cap }));
-    // 原因与起始时刻各占一格，不塞进括号：括号的形状中英文不同，而这一行本来就是按格读的。
-    // reason 是开放字符串，认识的映射成短标签，不认识的原样显示。
+    // Reason and start instant each get a cell, never parentheses: parenthesis shapes differ across
+    // locales and this row reads cell by cell. reason is an open string - known values map to a
+    // short label, unknown render verbatim.
     if (reason !== undefined) cells.push(throttleReasonLabel(reason, intl.formatMessage));
     const sinceAge = formatWorkflowAge(generatedAt, since);
     if (sinceAge !== undefined) {

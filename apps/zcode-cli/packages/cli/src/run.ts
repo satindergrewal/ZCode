@@ -243,9 +243,9 @@ const runZCodeProtocolCommand = async (
   try {
     const env = prepareCliRuntimeEnv(deps.env ?? process.env);
     const workingDirectory = (deps.cwd ?? process.cwd)();
-    // 打包态 app-server 是 desktop host 的内部协议子进程。
-    // 如果这里继续从 workspace 向上读取用户 .env，读文件失败或环境污染会在协议建立前
-    // 直接退出，外层只能看到 ZCode agent transport closed。
+        // The packaged app-server is the desktop host's internal protocol subprocess.
+        // Reading the user's .env upward from the workspace here would exit before protocol establishment on any read failure or env pollution;
+        // the outer layer would only see ZCode agent transport closed.
     const dotenvResult = shouldLoadCliDotenvForProtocolServer(env)
       ? (deps.loadDotenv ?? loadCliDotenv)({
           cwd: workingDirectory,
@@ -300,8 +300,8 @@ export const run = async (ctx: RunContext, deps: RunDependencies = {}): Promise<
     return await runPluginHostCommand(ctx, ctx.argv.slice(1));
   }
 
-  // 与 plugin host 同理，且必须同样在 parseArgs 之前：SEA 下 dwf 的沙箱子进程是本二进制的
-  // 自 re-exec，argv 末位是入口文件路径——交给严格 parseArgs 只会报未知参数。
+    // Same reasoning as the plugin host, and equally before parseArgs: under SEA the dwf sandbox child re-execs this binary
+    // with the entry file path as the last argv item -- strict parseArgs would only report unknown arguments.
   if (isDwfChildInvocation(ctx.argv)) {
     return await runDwfChildCommand(ctx, ctx.argv.slice(1));
   }

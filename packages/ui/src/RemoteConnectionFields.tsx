@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 远程连接字段较多，SSH/WSL/Docker 分支暂集中在单文件维护。 */
+/* eslint-disable max-lines -- many remote-connection fields; the SSH/WSL/Docker branches stay in this single file for now. */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   DockerContainerInfo,
@@ -158,9 +158,9 @@ export function RemoteConnectionFields({
       return;
     }
 
-    // Popover 嵌在 Dialog 中时，外层滚动锁会吞掉默认滚轮行为，
-    // 导致 alias CommandList 只能拖滚动条、不能直接滚轮滚动。
-    // 这里显式驱动列表自身 scrollTop，确保鼠标滚轮和触控板都能滚动候选项。
+    // Inside a Dialog, the modal scroll lock swallows default wheel events, so the alias
+    // CommandList scrolled only via the scrollbar. Drive the list's own scrollTop explicitly so
+    // mouse wheel and trackpad both scroll the candidates.
     listElement.scrollTop += event.deltaY;
     event.preventDefault();
     event.stopPropagation();
@@ -320,13 +320,14 @@ export function RemoteConnectionFields({
             </p>
           </div>
 
-          {/* Electron / Chromium 的原生 autocomplete 在 SSH 向导里不稳定，
-              而且默认值（如 localhost / 22）会把历史候选提前过滤掉。
-              这里改成用应用自身持久化的远程连接历史做显式候选，focus 时先展示完整历史；密码仍然不参与历史回填。 */}
-          {/* 建议列表之前直接跟着全宽输入框展开，在大对话框里会变成长条。
-              这里把宽度限制在字段语义范围内，只收窄建议列表，不改变原输入框布局。 */}
-          {/* 示例值直接作为 placeholder 会被误认为已有默认值。
-              这里改成“输入提示 + 示例”，让用户知道仍需手动填写必填字段。 */}
+          {/* Native Chromium autocomplete is unreliable in the SSH wizard and its defaults
+              (localhost/22) pre-filter history candidates. Offer explicit candidates from the
+              app-persisted connection history instead; focus shows the full history and passwords
+              never backfill. */}
+          {/* The suggestion list used to stretch with the full-width input into a long bar on large
+              dialogs. Cap it to the field's semantic width; the input layout is untouched. */}
+          {/* Example values as placeholder read as prefilled defaults. Use a hint plus example so
+              required fields are still understood as manual input. */}
           <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_6.5rem]">
             <RemoteConnectionHistoryInput
               className="h-9 text-ui-base"
@@ -355,8 +356,8 @@ export function RemoteConnectionFields({
             />
           </div>
 
-          {/* 认证方式之前复用了端口的 6.5rem 窄列，两个选项扣除 padding 后会把中英文文案挤到换行或溢出。
-              这里单独给认证方式保留 12rem，并禁止选项文字换行。 */}
+          {/* Auth method reused the port's narrow 6.5rem column; after padding, both labels wrapped
+              or overflowed in either language. Reserve 12rem for it and keep option text on one line. */}
           <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_12rem] sm:items-end">
             <RemoteConnectionHistoryInput
               className="h-9 text-ui-base"

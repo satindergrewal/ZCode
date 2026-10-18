@@ -17,7 +17,7 @@ export function registerHostMcpResourceTelemetry(options: {
         samples,
       });
     } catch {
-      // main 已退出或 IPC 关闭时只丢当前资源事实，不影响 MCP 生命周期。
+      // On main exit or closed IPC, drop only the current resource fact; never touch the MCP lifecycle.
     }
   });
 }

@@ -1,4 +1,4 @@
-// Session 常驻池的真实事实适配与去激活执行面。
+// The resident-session pool's fact adapter and deactivation execution surface.
 
 import type { SessionId } from "@zcode/contracts";
 import type {
@@ -12,9 +12,9 @@ interface SessionResidencyFinalizationOwner {
 }
 
 /**
- * residency lease 只覆盖 Bootstrap detached runner 的收尾窗口，避免 pool 回收仍在使用的
- * record。Prompt admission 的 busy/idle authority 已归 Core；activeAbortController 仅是旧命令
- * 路径的兼容取消句柄，不能再作为 prompt 调度锁。
+ * The residency lease covers only the Bootstrap detached runner's wind-down, keeping the pool from reclaiming records still in use.
+ * Prompt admission's busy/idle authority belongs to Core now; activeAbortController is a legacy-command
+ * compatibility handle only and must never act as the prompt scheduling lock.
  */
 function acquireSessionResidencyFinalization(
   record: SessionResidencyFinalizationOwner,
@@ -28,7 +28,7 @@ function acquireSessionResidencyFinalization(
   };
 }
 
-/** 同步登记 lease，再启动 detached runner；同步抛错和异步终态都保证释放。 */
+/** Registers the lease synchronously, then starts the detached runner; both sync throws and async terminal states guarantee release. */
 export function runWithSessionResidencyFinalization<T>(
   record: SessionResidencyFinalizationOwner,
   run: () => Promise<T>,
@@ -43,12 +43,12 @@ export function runWithSessionResidencyFinalization<T>(
 }
 
 /**
- * 只释放 resident runtime，不删除任何持久 session/task 事实。
+ * Deactivates only the resident runtime; no persisted session/task facts are deleted.
  *
- * 若先 await app.close，再从 registry 摘除，新的 cold subscribe 会在 await
- * 窗口命中一个已进入 shutdown 的旧 runtime；若先删 record 但不设置 pool gate，新旧 app
- * 又会并发碰同一 session 资源。因此同步摘除与异步 close 必须由 pool 的 in-flight gate
- * 组合成一个生命周期事务。
+ * If app.close is awaited before the registry removal, a new cold subscribe can hit a runtime already shutting down during the
+ * await window; if the record is removed first without the pool gate, old and new apps
+ * concurrently touch the same session resources. Synchronous removal and async close must therefore be composed by the pool's in-flight gate
+ * into a single lifecycle transaction.
  */
 async function deactivateSessionRecord(
   context: ZCodeProtocolAgentServerContext,
@@ -56,14 +56,14 @@ async function deactivateSessionRecord(
 ): Promise<void> {
   const record = context.sessions.get(sessionId);
   if (!record) return;
-  // CommandInbox pin 的拒绝曾发生在 unsubscribe 之后，异常会留下仍在 registry
-  // 但收不到 runtime event 的半清 record。所有可预检拒绝必须早于第一个副作用。
+  // CommandInbox pin rejections used to happen after unsubscribe, leaving a half-cleaned record still in the
+  // registry but deaf to runtime events. Every pre-checkable rejection must precede the first side effect.
   context.v4Gateway?.assertSessionRuntimeDeactivatable(sessionId);
   record.unsubscribe?.();
   context.v4Gateway?.deactivateSession(sessionId);
   context.sessions.delete(sessionId);
   await record.app.close?.();
-  // 去激活后内存 event store 必须与“从未加载”等价。
+  // After deactivation, the in-memory event store must be equivalent to "never loaded".
   await record.eventStore.deleteSession(sessionId as SessionId);
 }
 
@@ -80,8 +80,8 @@ export function createSessionResidentPoolHost(
         hasPendingInteractions: context.v4Interactions.hasPendingForSession(sessionId),
         hasQueuedCommands: context.v4Gateway?.hasResidencyBlockingCommands(sessionId) ?? false,
         hasLegacySubscriber: record.legacyStreamSubscribed === true,
-        // active/queue 与 registry background task 不能覆盖 title、MCP、memory
-        // 等 detached work；统一查询由 runtime 维护，协议 finalization 只补协议所有权。
+        // active/queue and registry background tasks must not overwrite detached work such as title, MCP, or memory;
+        // unified queries stay with the runtime, and protocol finalization only fills in protocol ownership.
         hasResidencyBlockingWork:
           record.activeAbortController !== undefined ||
           (record.residencyFinalizationCount ?? 0) > 0 ||

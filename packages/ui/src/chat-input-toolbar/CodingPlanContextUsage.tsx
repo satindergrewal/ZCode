@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- Composer 用量入口集中维护多来源状态、弹层和重置交互；本阶段只迁移 Account Access，不拆分既有 UI 结构。 */
+/* eslint-disable max-lines -- the Composer usage entry concentrates multi-source state, dialogs, and reset interactions; this phase migrates Account Access only, no UI restructuring. */
 import { type CodingPlanResetType } from "@zcode/shared";
 import { Loader2 } from "lucide-react";
 import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -41,8 +41,8 @@ export type ChatCodingPlanUsageRemainingConfig = {
   selectedProviderId?: SidebarUsageCodingPlanSourceId;
 };
 
-/** Composer 触发器 hover 展开面板后要求补播撒花的自动完成 used_at,按重置类型定位到对应额度条。
- *  五小时与周额度可能各自 arm,因此按类型分别记录,互不覆盖。 */
+/** Composer trigger: on hover-open, request replay of the confetti completion's used_at, located per reset type.
+ *  The 5-hour and weekly quotas may arm independently, so record per type without clobbering. */
 export type CodingPlanQuotaResetAutoConfettiArms = Record<CodingPlanResetType, number | null>;
 
 export function hasChatCodingPlanUsageRemaining(
@@ -50,8 +50,8 @@ export function hasChatCodingPlanUsageRemaining(
 ): boolean {
   return (
     Boolean(resolveCodingPlanUsageRemainingState(config)) ||
-    // 按需刷新下首次打开可能还没有快照；仍需保留 Context trigger，
-    // 否则用户没有 hover 入口可以发起第一次请求。
+    // On-demand refresh may have no snapshot on first open; keep the Context trigger anyway, or
+    // users lose the hover entry for the first request.
     Boolean(config.onAccess && config.entitlements.length > 0)
   );
 }
@@ -128,7 +128,7 @@ function ChatCodingPlanUsageMeter({
   return (
     <div className="min-w-0 space-y-1.5">
       <div className="min-w-0 space-y-0.5 text-ui-sm">
-        {/* min-h 与重置动作(h-5)对齐:没有动作的额度条也保持同高,避免同排数值/进度条错位。 */}
+        {/* min-h matches the reset action (h-5): bars without actions keep the same height so values/progress stay aligned. */}
         <div className="flex min-h-5 min-w-0 items-center gap-1">
           <span className="min-w-0 truncate text-foreground-subtle">{label}</span>
           {action ? <span className="shrink-0">{action}</span> : null}
@@ -184,7 +184,7 @@ export function ChatCodingPlanUsageRemainingPanel({
   locale: string;
   quotaResetDialogOpen?: boolean;
   separated?: boolean;
-  /** 自动/运营完成后,由 Composer 触发器在 hover 展开面板时要求补播撒花的自动完成 used_at(按类型)。 */
+  /** After auto/ops completion, the Composer trigger requests the confetti completion's used_at on hover-open (per type). */
   autoCelebrateArm?: CodingPlanQuotaResetAutoConfettiArms | null;
   onAutoCelebrated?: (completedAt: number) => void;
   onQuotaResetDialogOpenChange?: (open: boolean) => void;
@@ -221,10 +221,12 @@ export function ChatCodingPlanUsageRemainingPanel({
   );
   const monthlyToolLimit = findCodingPlanQuotaLimit(limits, "TIME_LIMIT", 5, 1);
   const mcpQuotaLimit = resolveMcpQuotaLimit(state.visibleSnapshot);
-  // 额度剩余 100% 时重置没有收益:隐藏重置按钮与机会徽标(纯展示,不影响发放与轮询)。
+  // At 100% remaining, a reset has no value: hide the reset button and chance badge (display
+  // only; does not affect granting or polling).
   const fiveHourQuotaFull = isCodingPlanQuotaLimitFull(fiveHourTokenLimit);
   const weeklyQuotaFull = isCodingPlanQuotaLimitFull(weeklyTokenLimit);
-  // 五小时与周机会合并为一个徽标,次数累加,倒计时取最早到期的一档。
+  // The 5-hour and weekly chances merge into one badge: counts add, countdown takes the earliest
+  // expiry.
   const opportunityBadge = resolveChatCodingPlanResetOpportunityBadge(state, resetUi);
   const fiveHourResetTime = fiveHourTokenLimit?.nextResetTime
     ? formatContextFiveHourResetTime({
@@ -246,8 +248,8 @@ export function ChatCodingPlanUsageRemainingPanel({
         format: "date",
       })
     : undefined;
-  // MCP 额度按自然日重置，重置时刻恒为 00:00，展示时分没有信息量；
-  // 与 Weekly / Tool calls 统一用日期口径。
+  // MCP quota resets on calendar days at 00:00; an hh:mm display carries no information. Use the
+  // date-only form, consistent with Weekly / Tool calls.
   const mcpResetTime = mcpQuotaLimit?.nextResetTime
     ? formatQuotaResetTime({ locale, value: mcpQuotaLimit.nextResetTime, format: "date" })
     : undefined;
@@ -389,7 +391,7 @@ export function ChatCodingPlanUsageRemainingPanel({
               color={meter.color}
               label={meter.label}
               action={
-                // 额度标题旁入口只打开统一弹窗；真正核销由弹窗内对应类型按钮触发。
+                // The entry beside the quota title only opens the unified dialog; actual redemption happens via the type-specific button inside.
                 meter.key === "fiveHour" &&
                 resetUi.entry &&
                 ((resetUi.opportunityVisible && !fiveHourQuotaFull) ||

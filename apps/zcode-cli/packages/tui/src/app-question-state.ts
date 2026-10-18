@@ -1,7 +1,4 @@
-import type {
-  AskUserQuestionAnnotation,
-  AskUserQuestionInput,
-} from "@zcode/contracts";
+import type { AskUserQuestionAnnotation, AskUserQuestionInput } from "@zcode/contracts";
 import type { KeyEvent } from "@mbears/opentui-core";
 import type React from "react";
 import type { ApprovalPrompt, QuestionPromptState } from "./app-model.js";
@@ -260,8 +257,8 @@ function skipQuestionAnswer(
   update((draft) => {
     const target = draft.input.questions[draft.currentQuestionIndex];
     if (!target) return;
-    // 焦点只服务键盘导航；显式跳过必须清除该题已有草稿并推进，
-    // 不能把焦点选项或本地化的“跳过”文案写进共享 answers 契约。
+    // Focus only serves keyboard navigation; an explicit skip must clear the question's draft and advance,
+    // never write focus options or a localized "skip" label into the shared answers contract.
     delete draft.answers[target.question];
     delete draft.annotations[target.question];
     delete draft.multiSelections[target.question];
@@ -328,7 +325,7 @@ function answerCurrentQuestion(
   if (!question) return undefined;
 
   const selectedLabels = question.multiSelect
-    ? state.multiSelections[question.question] ?? []
+    ? (state.multiSelections[question.question] ?? [])
     : [
         state.selectedOptionIndex === question.options.length
           ? "Other"

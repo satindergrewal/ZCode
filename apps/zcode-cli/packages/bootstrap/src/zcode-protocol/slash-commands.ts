@@ -12,8 +12,8 @@ import {
 
 export interface ListProtocolSlashCommandsOptions extends ListZCodeCustomCommandsOptions {
   /**
-   * 动态工作流开关。只有显式 false 才从目录中剔除内置 `workflow`。
-   * 未传入该字段的调用方保留默认目录；协议服务端从 appRuntimePreferences 传入显式布尔。
+   * Dynamic-workflow flag. Only an explicit false removes the builtin `workflow` from the catalog.
+   * Callers omitting the field keep the default catalog; the protocol server passes an explicit boolean from appRuntimePreferences.
    */
   dynamicWorkflowEnabled?: boolean;
 }
@@ -21,9 +21,9 @@ export interface ListProtocolSlashCommandsOptions extends ListZCodeCustomCommand
 export async function listProtocolSlashCommands(
   options: ListProtocolSlashCommandsOptions = {},
 ): Promise<ZCodeSlashCommand[]> {
-  // 动态工作流关闭时：composer 的加号菜单与 `/` 面板都只读这份目录，剔除即两个入口一起消失。
-  // `workflow` 是内置命令且是保留名，用户/插件的同名自定义命令在下面的 reserved 过滤里一并消失，
-  // 不会在门关着时借自定义命令的身份漏回目录。
+  // With dynamic workflows off, the composer plus menu and the `/` panel both read this catalog, so removing here hides both entries.
+  // `workflow` is a builtin command and a reserved name; same-name user/plugin commands vanish in the reserved filter below
+  // and cannot sneak back into the catalog under a custom-command identity while the gate is closed.
   const builtins = listAppProtocolBuiltinSlashCommands().filter(
     (command) =>
       options.dynamicWorkflowEnabled !== false || command.name !== BUILTIN_WORKFLOW_COMMAND_NAME,
@@ -33,7 +33,7 @@ export async function listProtocolSlashCommands(
     const outcome = await listZCodeCustomCommands(options);
     customCommands = outcome.commands;
   } catch {
-    // 自定义命令发现失败不应阻断 session snapshot；保留可执行的内置协议命令。
+    // Custom command discovery failure must not block the session snapshot; keep the executable builtin protocol commands.
     customCommands = [];
   }
 
@@ -51,7 +51,7 @@ export async function listProtocolSlashCommands(
   ];
 }
 
-/** App `/` 面板按本目录顺序展示；内置段的顺序由 APP_PROTOCOL_VISIBLE_BUILTIN_SLASH_COMMAND_NAMES 决定。 */
+/** The app `/` panel renders in this catalog's order; the builtin segment order comes from APP_PROTOCOL_VISIBLE_BUILTIN_SLASH_COMMAND_NAMES. */
 function listAppProtocolBuiltinSlashCommands(): ZCodeSlashCommand[] {
   const sharedBuiltins = APP_PROTOCOL_VISIBLE_BUILTIN_SLASH_COMMAND_NAMES.flatMap((name) => {
     const command = BUILTIN_ZCODE_SLASH_COMMAND_HELP_ENTRIES.find((entry) => entry.name === name);

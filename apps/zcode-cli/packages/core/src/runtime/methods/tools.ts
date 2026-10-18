@@ -135,8 +135,8 @@ export async function emitToolScheduledEvents(
     const toolCall = toolCallById.get(item.toolCallId as string);
     if (!toolCall) continue;
     if (toolCall.name.trim().length === 0) {
-      // 把空名投影成普通字符串再发 scheduled 事件，会与合法同名工具发生身份碰撞。
-      // 空名只需要 registry-miss result 完成模型恢复，不建立产品工具生命周期。
+      // Projecting an empty name into the scheduled event collides with a legal same-named tool.
+      // An empty name needs only the registry-miss result; no product tool lifecycle.
       continue;
     }
     const event = this.createEvent(
@@ -149,8 +149,8 @@ export async function emitToolScheduledEvents(
         dependencies: item.dependencies,
         parallelGroupIndex: findParallelGroupIndex(schedule, item.toolCallId),
         canRunParallel: item.canRunParallel,
-        // MCP 名称来自 registry discovery，而不是合成的 provider tool name。
-        // 在 scheduled 阶段携带，保证 pending/permission/running/stop 全生命周期可展示。
+        // The MCP name comes from registry discovery, not a synthesized provider tool name.
+        // Carried from scheduled so pending/permission/running/stop all display it.
         display: createMcpToolDisplay(this.registry.getMetadata(toolCall.name)?.mcpPresentation),
         schedule: {
           parallelGroups: schedule.parallelGroups,

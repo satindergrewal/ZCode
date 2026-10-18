@@ -5,10 +5,10 @@ import {
 } from "./process-probe-shared.js";
 
 /**
- * Windows：唯一允许的外部进程是 `tasklist`，一次调用拿全部进程内存。
- * 严禁改用 Windows 管理接口脚本宿主一类实现（见 spec 性能红线的禁用关键字清单）：
- * 历史事故就是那样每隔几秒起一个重进程，显著拖慢用户电脑。
- * tasklist 既没有 ppid 也没有累计 CPU 时间，因此这里只回直连进程的 RSS。
+ * Windows: the only allowed external process is `tasklist`, one call for all process memory.
+ * Do not switch to Windows management-interface script hosts (see the spec performance red line):
+ * past incidents spawned a heavy process every few seconds and visibly slowed the machine.
+ * tasklist has no ppid and no cumulative CPU time, so only direct-children RSS is returned.
  */
 export async function readWindowsProcessMemory(
   execFile: ProcessProbeExecFile,

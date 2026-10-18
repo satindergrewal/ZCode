@@ -6,15 +6,15 @@ import {
 } from "./instrument.js";
 
 /**
- * ReplExecutor —— 「执行 + 跨调用持久」策略接缝（A-ready）。
+ * ReplExecutor — the execute-plus-persist-across-calls strategy seam (A-ready).
  *
- * NodeReplSession.run 只调 executor.run，切换实现即切换路线：
- * - 路线 B（当前）：IifeContextExecutor —— instrument 顶层声明 → async-IIFE → runInContext。
- * - 路线 A（将来，需 --experimental-vm-modules）：SourceTextModuleExecutor —— harvest 版 instrument
- *   → SourceTextModule.evaluate → 收割 namespace。主体不动，仅替换此实现。
+ * NodeReplSession.run only calls executor.run; swapping the implementation swaps the route:
+ * - Route B (current): IifeContextExecutor — instrument top-level declarations → async-IIFE → runInContext.
+ * - Route A (future, needs --experimental-vm-modules): SourceTextModuleExecutor — harvest-style instrument
+ *   → SourceTextModule.evaluate → harvest namespaces. The host stays; only this implementation swaps.
  *
- * 契约：返回完成值；出错则 throw（由 NodeReplSession 的 try/catch 归一为结构化 error）。
- * signal 支持取消（超时/停止）。
+ * Contract: return the completion value; throw on error (normalized by NodeReplSession's try/catch).
+ * signal supports cancellation (timeout/stop).
  */
 export interface ReplExecutor {
   run(
@@ -26,10 +26,10 @@ export interface ReplExecutor {
 }
 
 /**
- * 路线 B 执行器：解析用户代码，instrument 顶层声明使其复制到持久 context（globalThis），
- * 再包成 async-IIFE 拿 top-level await，runInContext 于持久 context 执行。
+ * Route B executor: parse the user code, instrument top-level declarations to copy them into the persistent context (globalThis),
+ * wrap in an async-IIFE for top-level await, and runInContext on the persistent context.
  *
- * parse 失败 → 回退用原始 code（保证不因 instrument 崩），此时顶层 const/let 不持久但仍能执行。
+ * On parse failure → fall back to the original code (an instrument crash must not break runs); top-level const/let then do not persist but still run.
  */
 export class IifeContextExecutor implements ReplExecutor {
   async run(
@@ -41,7 +41,7 @@ export class IifeContextExecutor implements ReplExecutor {
     if (signal?.aborted) {
       throw abortReason(signal);
     }
-    // instrument：顶层声明后注入 globalThis 赋值。parse 失败回退原样。
+    // Instrument: inject globalThis assignments after top-level declarations; fall back verbatim on parse failure.
     const rewrittenCode = rewriteDynamicImportsForRepl(code);
     const rewrittenParsed = parseReplCode(rewrittenCode);
     const effectiveCode =
@@ -49,13 +49,13 @@ export class IifeContextExecutor implements ReplExecutor {
         ? instrumentForContextPersistence(rewrittenCode, rewrittenParsed.ast)
         : rewrittenCode;
 
-    // 包成 async IIFE 支持顶层 await。动态加载用注入的 importModule（见 NodeReplSession.buildContext），
-    // 不传 importModuleDynamically 以免触发 vm 的 --experimental-vm-modules 要求。
+    // Async-IIFE wrapper for top-level await. Dynamic imports use the injected importModule (see NodeReplSession.buildContext);
+    // do not pass importModuleDynamically, avoiding vm's --experimental-vm-modules requirement.
     const wrapped = `(async () => {\n${effectiveCode}\n})()`;
-    // Promise race 只能取消已经把控制权交回 event loop 的异步代码；`while(true){}`
-    // 会把 agent 线程永久占住，使外层 timeout/AbortSignal 的 timer 根本没有机会执行。
-    // vm 自身的同步执行预算由 V8 interrupt 检查实现，能真正打断同步死循环。预算只覆盖
-    // runInContext 的同步段，await 后的异步等待仍由 AbortSignal race 负责。
+    // Promise.race cancels only async code that has returned control to the event loop; `while(true){}`
+    // would pin the agent thread forever, leaving the outer timeout/AbortSignal timer no chance to run.
+    // vm's own sync-execution budget rides V8 interrupts and truly breaks synchronous loops; it covers only
+    // runInContext's synchronous segment; awaits afterwards remain governed by the AbortSignal race.
     const promise = runInContext(wrapped, context, {
       timeout: Math.max(1, Math.trunc(syncTimeoutMs)),
     }) as Promise<unknown>;
@@ -65,14 +65,14 @@ export class IifeContextExecutor implements ReplExecutor {
 }
 
 function abortReason(signal: AbortSignal): unknown {
-  // AbortSignal.timeout 的 reason 是 TimeoutError。统一重写为 AbortError 会让
-  // MCP hard timeout 与用户主动停止无法区分，也无法给出准确的 kernel reset 恢复指引。
+  // AbortSignal.timeout's reason is TimeoutError. Rewriting it to AbortError across the board would make
+  // MCP hard timeouts indistinguishable from user stops and the kernel-reset recovery guidance wrong.
   const reason = signal.reason;
   if (reason && typeof reason === "object" && "name" in reason) return reason;
   return new DOMException(typeof reason === "string" ? reason : "aborted", "AbortError");
 }
 
-/** 将 promise 与 signal.abort 竞速：aborted 立即 reject signal.reason，否则透传 promise 结果。 */
+/** Race the promise against signal.abort: on abort reject with signal.reason, else pass the result through. */
 function raceAbort(promise: Promise<unknown>, signal: AbortSignal): Promise<unknown> {
   if (signal.aborted) {
     return Promise.reject(abortReason(signal));

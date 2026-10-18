@@ -24,8 +24,8 @@ export function findAutomationWorkspaceOptionByKey(
 }
 
 /**
- * 新建表单的项目选择只能落在当前有效候选中。
- * 候选变化时保留仍有效的选择，否则依次回落到有效默认项目、首个有效项目或 null。
+ * The create form's project choice may only land on currently valid candidates.
+ * Keep a still-valid choice across candidate changes; else fall back to the valid default, first valid, or null.
  */
 export function reconcileAutomationWorkspaceSelectionKey(
   options: readonly AutomationWorkspaceOption[],
@@ -50,9 +50,9 @@ function workspaceLabelFromPath(path: string): string {
 }
 
 /**
- * 构建纯项目候选，供不允许“无项目会话”的边界使用。
- * 定时任务表单额外展示的单一“无项目会话”目标由 useAutomationProjectOptions 显式归并；
- * recentProjects、conversation backing 与失效目录不能作为普通项目混入这里。
+ * Build pure project candidates for boundaries that disallow project-less sessions.
+ * The single no-project session target shown by the scheduled form is merged in explicitly by useAutomationProjectOptions;
+ * recentProjects, conversation backings and dead dirs never mix in here as plain projects.
  */
 export function buildAutomationWorkspaceOptions(
   tabs: readonly WindowTabState[],

@@ -1,6 +1,7 @@
-// 分屏 Layout 层持久化（localStorage）：try/catch 静默降级；
-// 损坏数据整体丢弃回初始布局（不部分救回）。
-// 兼容读取旧版 v1（单值 splitPane），仅当 v1 workspaceKey 是可信本地路径时迁移。
+// Split-pane Layout persistence (localStorage): try/catch silent degradation; corrupt data is
+// dropped wholesale back to the initial layout, never partially recovered. Reads legacy v1
+// (single-value splitPane) for compat, migrating only when the v1 workspaceKey is a trusted
+// local path.
 import {
   clampSplitRatio,
   leafPaneIds,
@@ -15,10 +16,10 @@ import {
 } from "@/v4/paneLayoutTree.js";
 
 const PANE_LAYOUT_STORAGE_KEY = "zcode-v4-pane-layout:v2";
-/** 旧版单值分屏的 key（只读迁移，不再写入）。 */
+/** Legacy single-value split key (read-only during migration, never written). */
 const PANE_LAYOUT_STORAGE_KEY_V1 = "zcode-v4-pane-layout:v1";
 
-/** v1 迁移用的保留 pane id（旧版 split pane 固定 id，e2e/testid 契约沿用）。 */
+/** Reserved pane id for the v1 migration (the legacy split pane fixed id; e2e/testid contracts keep it). */
 const V4_LEGACY_SPLIT_PANE_ID = "split";
 
 interface PersistedScopeV2 {
@@ -104,10 +105,11 @@ function sanitizeScope(raw: unknown): PaneWorkspaceScope | null {
 }
 
 /**
- * 把任意（可能损坏的）v2 持久化值归一为合法布局快照；不可救回 null（调用方回初始布局）。
- * 完整性要求（任一不满足即整体丢弃）：树结构合法、叶子 id 唯一、恰含一个 primary、
- * 叶子数 ≤ 上限、每个非 primary 叶子有合法绑定。恢复出的 session 绑定补
- * restoredUnvalidated（等 sessions-index 验证）；focusedPaneId 不在树中回 primary。
+ * Normalizes any (possibly corrupt) v2 persisted value into a legal layout snapshot; unfixable
+ * -> null (caller falls back to the initial layout). Integrity requirements - any miss drops
+ * the whole thing: valid tree, unique leaf ids, exactly one primary, leaf count within the cap,
+ * every non-primary leaf legally bound. Restored session bindings get restoredUnvalidated
+ * (pending sessions-index verification); an absent focusedPaneId falls back to primary.
  */
 function sanitizePersistedPaneLayout(raw: unknown): PaneLayoutSnapshot | null {
   if (typeof raw !== "object" || raw === null) {
@@ -159,14 +161,15 @@ function sanitizePersistedPaneLayout(raw: unknown): PaneLayoutSnapshot | null {
   return { root, panes, focusedPaneId };
 }
 
-/** v1 workspaceKey 只在是可信本地绝对路径时才能当 workspacePath 迁移（POSIX / Windows 盘符）。 */
+/** A v1 workspaceKey migrates as workspacePath only when it is a trusted local absolute path (POSIX / Windows drive letter). */
 function isPlausibleLocalPath(value: string): boolean {
   return value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value);
 }
 
 /**
- * 旧版 v1（单值 splitPane）→ v2 迁移：v1 只存了 workspaceKey（identity ?? path），
- * 无法还原远程 scope——仅当它是可信本地路径时迁移为双叶子树，否则丢弃回单 pane（null）。
+ * Legacy v1 (single-value splitPane) -> v2 migration: v1 stored only the workspaceKey
+ * (identity ?? path) and cannot reconstruct a remote scope, so migrate to the two-leaf tree
+ * only for trusted local paths; otherwise drop to single pane (null).
  */
 function migratePersistedPaneLayoutV1(raw: unknown): PaneLayoutSnapshot | null {
   if (typeof raw !== "object" || raw === null) {
@@ -213,7 +216,7 @@ function migratePersistedPaneLayoutV1(raw: unknown): PaneLayoutSnapshot | null {
   };
 }
 
-/** 读取持久化布局（v2 优先，缺失时尝试 v1 迁移）；无记录/损坏/无 storage 环境返回 null。 */
+/** Reads the persisted layout (v2 first, v1 migration on absence); null for no record/corrupt/no-storage. */
 export function readPersistedPaneLayout(): PaneLayoutSnapshot | null {
   try {
     const rawV2 = localStorage.getItem(PANE_LAYOUT_STORAGE_KEY);
@@ -244,8 +247,8 @@ function serializeNode(node: PaneLayoutNode): PersistedNodeV2 {
   };
 }
 
-// 去重写入：subscribe 对任何状态变化都触发，序列化相同（例如 restoredUnvalidated
-// 清除，不进持久化面）时跳过 setItem。
+// Dedup writes: subscribe fires on any state change; skip setItem when the serialization is
+// unchanged (e.g. restoredUnvalidated clearing, which never persists).
 let lastPersistedPaneLayout: string | null = null;
 
 export function persistPaneLayout(snapshot: PaneLayoutSnapshot): void {
@@ -277,6 +280,6 @@ export function persistPaneLayout(snapshot: PaneLayoutSnapshot): void {
     localStorage.setItem(PANE_LAYOUT_STORAGE_KEY, serialized);
     lastPersistedPaneLayout = serialized;
   } catch {
-    // 无 storage 环境（测试/隐身）静默降级：刷新恢复不可用，但不影响正常分屏。
+    // No-storage environments (tests/private mode) degrade silently: no refresh-restore, splits unaffected.
   }
 }

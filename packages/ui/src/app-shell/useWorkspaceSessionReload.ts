@@ -47,9 +47,10 @@ export function useWorkspaceSessionReload({
 
       const now = Date.now();
       if (shouldDebounceWorkspaceSessionReload(lastReloadSessionTriggeredAtRef.current, now)) {
-        // Header 与错误条都可触发 reload，会出现短时间双击/连点并发重建。
-        // 这里在入口做时间窗防抖，避免并发调用 restartWorkspaceProcess 抢占同一 provider-workspace。
-        logger.info(`[App] 忽略重复 workspace session 重建请求 workspace=${workspaceAbsPath}`);
+        // Both the header and the error strip can trigger reload; quick double-clicks cause
+        // concurrent rebuilds. Time-window debounce at the entry keeps concurrent
+        // restartWorkspaceProcess calls from racing for the same provider-workspace.
+        logger.info(`[App] ignoring duplicate workspace session rebuild request workspace=${workspaceAbsPath}`);
         return;
       }
       lastReloadSessionTriggeredAtRef.current = now;
@@ -66,9 +67,10 @@ export function useWorkspaceSessionReload({
         options?.resumeTaskId?.trim() || latestWorkspaceState.activeTaskId || undefined;
       const shouldPrepareWorkspace = !resumeTaskId;
 
-      // Reload session 之前只调用了服务层重建流程，没有同步 workspaceInit 状态到 UI store。
-      // 草稿态下后续准备流程会继续读到旧状态，用户会误判本次重建没有生效。
-      // 这里显式写入 initializing/ready/failed，保证重建状态和会话流程保持一致。
+      // Reload session used to run only the service-level rebuild without syncing workspaceInit
+      // state into the UI store, so later preparation kept reading stale state and users assumed
+      // the rebuild did nothing. Write initializing/ready/failed explicitly to keep rebuild state
+      // aligned with the session flow.
       zcodeSessionStore.setWorkspaceInitState(
         workspaceAbsPath,
         "initializing",
@@ -77,8 +79,9 @@ export function useWorkspaceSessionReload({
       );
       if (shouldPrepareWorkspace) {
         zcodeSessionStore.setConfigOptionsStatus(workspaceAbsPath, "loading", workspaceIdentity);
-        // 草稿态点击 reload 后若不清空旧错误，输入区会继续显示上一轮失败提示，
-        // 用户会误判本次重建仍失败。这里在新一轮重建开始时先清空草稿错误。
+        // After reload from the draft state, a stale error keeps the previous failure visible in
+        // the composer and users assume the rebuild failed again. Clear the draft error when the
+        // new rebuild starts.
         zcodeSessionStore.setDraftError(workspaceAbsPath, null, workspaceIdentity);
         zcodeSessionStore.setTaskState(workspaceAbsPath, "idle", null, workspaceIdentity);
       }
@@ -133,7 +136,7 @@ export function useWorkspaceSessionReload({
         zcodeSessionStore.setWorkspaceInitState(workspaceAbsPath, "ready", null, workspaceIdentity);
 
         logger.info(
-          `[App] workspace session 重建完成 workspace=${workspaceAbsPath} provider=${provider} resumeTaskId=${resumeTaskId ?? "<none>"}`,
+          `[App] workspace session rebuilt workspace=${workspaceAbsPath} provider=${provider} resumeTaskId=${resumeTaskId ?? "<none>"}`,
         );
         toast(intl.formatMessage({ id: "appHeader.reloadSessionSuccess" }));
       } catch (error) {
@@ -143,7 +146,7 @@ export function useWorkspaceSessionReload({
         });
         const message = reloadDraftError.message;
         logger.warn(
-          `[App] workspace session 重建失败 workspace=${workspaceAbsPath} provider=${provider}`,
+          `[App] workspace session rebuild failed workspace=${workspaceAbsPath} provider=${provider}`,
           {
             resumeTaskId: resumeTaskId ?? null,
             message,
@@ -157,8 +160,9 @@ export function useWorkspaceSessionReload({
         );
         if (shouldPrepareWorkspace) {
           zcodeSessionStore.setConfigOptionsStatus(workspaceAbsPath, "error", workspaceIdentity);
-          // 草稿态下 reload 前会先清空旧错误；如果失败后不回填 draftError，
-          // 聊天区只剩 toast，用户看不到可重试的详细报错。这里统一回填标准化错误到输入区。
+          // Draft reload clears the old error up front; without backfilling draftError on failure
+          // the chat area shows only a toast and the retryable detail is lost. Backfill the
+          // normalized error into the composer.
           zcodeSessionStore.setDraftError(workspaceAbsPath, reloadDraftError, workspaceIdentity);
         }
         toast(intl.formatMessage({ id: "appHeader.reloadSessionFailed" }));

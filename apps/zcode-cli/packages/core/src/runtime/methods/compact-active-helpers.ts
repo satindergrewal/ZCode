@@ -35,8 +35,8 @@ export function createCompactPromptTooLongError(options: {
       preCompactTokenCount: options.preCompactTokenCount,
     },
     recoverable: true,
-    // compact 内部已经完成最多 3 次旧轮次截断重试；
-    // 最终仍超窗时不能再被 auto compact 外层重试放大成 3x3。
+    // Compact internally retries old-turn truncation up to 3 times;
+    // a final overflow must not be amplified 3x3 by the outer auto-compact retry.
     retryable: false,
   });
 }
@@ -59,8 +59,8 @@ export function createCompactContextExceededFinishError(
 }
 
 function isCompactEmptyLengthFinish(result: RuntimeModelTextResult): boolean {
-  // GLM/Z.AI compact 可能以 length + 空文本完成，真实含义是没有可保存的 summary；
-  // 仅在 compact 路径把它归类为超窗压力，复用已有 prompt-too-long 降输入重试。
+  // GLM/Z.AI compact can finish length + empty text, really no savable summary;
+  // only compact classifies it as overflow pressure, reusing prompt-too-long input-shrinking retries.
   return result.finishReason.trim().toLowerCase() === "length" && result.text.trim().length === 0;
 }
 

@@ -1,13 +1,13 @@
 // ============================================================
-// 端口的情势截面 → GetWorkflowRun 输出的情势截面
+// Port situation cross-section → GetWorkflowRun output cross-section
 // ============================================================
 //
-// 两侧字段同名同义，这里**仍然逐字段搬**而不是原样透传：输出 schema 是 strict 的，端口哪天
-// 多长出一个字段，透传就会让整个工具调用在 runtimeOutputSchema 校验处失败。逐字段搬等于把
-// 「模型面看得到什么」写死在一处，端口演进不会从背后改变它。
+// Same-named, same-meaning fields both sides — still copied field by field, not passed through: the output schema is strict, and a
+// new port field would fail the call at runtimeOutputSchema. Copying pins
+// what the model face sees in one place; port evolution cannot change it behind the call.
 //
-// 可选字段一律 `...(x === undefined ? {} : { x })`：显式的 `undefined` 值与缺席在
-// `toEqual` 和 JSON 序列化里是两件事，而模型面的契约是「不知道就没有这个键」。
+// Optional fields, always `...(x === undefined ? {} : { x })`: explicit `undefined` and absence differ in
+// `toEqual` and JSON serialization; the model-face contract is absent-means-no-key.
 
 import type {
   DynamicWorkflowRunHealth,
@@ -25,7 +25,7 @@ import { GET_WORKFLOW_RUN_ROSTER_LIMITS } from "@zcode/contracts";
 export function toGetWorkflowRunPhases(
   phases: readonly DynamicWorkflowRunPhaseView[] | undefined,
 ): GetWorkflowRunPhase[] | undefined {
-  // 脚本没声明阶段、也一个都没进过 ⇒ 整字段缺席（空数组读起来像「阶段表是空的」）。
+  // No phases declared, none entered ⇒ field absent (an empty array reads phases-table-empty).
   if (phases === undefined || phases.length === 0) return undefined;
   return phases.slice(0, GET_WORKFLOW_RUN_ROSTER_LIMITS.maxPhases).map((phase) => ({
     name: phase.name,
@@ -39,8 +39,8 @@ export function toGetWorkflowRunPhases(
 }
 
 /**
- * 花名册按 {@link GET_WORKFLOW_RUN_ROSTER_LIMITS.maxSubagents} 截断，并把「截过」说出口：
- * 一个静默少掉十几行的花名册读起来像「这个 run 只有 64 个子代理」，而那是一句假话。
+ * The roster truncates at {@link GET_WORKFLOW_RUN_ROSTER_LIMITS.maxSubagents} and says so:
+ * a roster silently tens of rows short reads this-run-has-64 — a falsehood.
  */
 export function toGetWorkflowRunSubagents(subagents: readonly DynamicWorkflowRunSubagentView[]): {
   subagents: GetWorkflowRunSubagent[];
@@ -75,8 +75,8 @@ function toCurrentAsk(ask: DynamicWorkflowRunSubagentAsk): GetWorkflowRunSubagen
     ...(ask.actorSeq === undefined ? {} : { actorSeq: ask.actorSeq }),
     ...(ask.instructionsHead === undefined ? {} : { instructionsHead: ask.instructionsHead }),
     ...(ask.startedAt === undefined ? {} : { startedAt: ask.startedAt }),
-    // turn / toolCalls 缺席读作「不知道」，`0` 读作「一个工具都没调过」——老 journal 上
-    // 没有 node-progress，这两件事必须可分辨，所以这里绝不 `?? 0`。
+    // Absent turn / toolCalls reads unknown; `0` reads none-ever — old journals
+    // lack node-progress; the two must stay distinguishable, hence never `?? 0`.
     ...(ask.turn === undefined ? {} : { turn: ask.turn }),
     ...(ask.toolCalls === undefined ? {} : { toolCalls: ask.toolCalls }),
     ...(ask.lastTool === undefined
@@ -118,7 +118,7 @@ export function toGetWorkflowRunHealth(health: DynamicWorkflowRunHealth): GetWor
         }),
     consecutiveFailures: health.consecutiveFailures,
     cachedSteps: health.cachedSteps,
-    // 为 0 时缺席：终态 run 没有残留行是常态，而 `leftover_running=0` 读起来像一件发生过的事。
+    // 0 → absent: no leftovers is the terminal norm; `leftover_running=0` reads like an event.
     ...(health.leftoverRunning === undefined || health.leftoverRunning === 0
       ? {}
       : { leftoverRunning: health.leftoverRunning }),

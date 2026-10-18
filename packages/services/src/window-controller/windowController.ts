@@ -46,8 +46,8 @@ export type WindowHostControllerFrame =
   | WindowHostControllerWorkspaceFrame;
 
 /**
- * 窗口级 Controller 服务只承载列表投影与跨 source 路由。
- * conversation/file/git/terminal 仍由 attachment 对应的 scoped facade 提供。
+ * The window-scoped controller serves list projections and cross-source routing only;
+ * conversation/file/git/terminal stay on the attachment-scoped facades.
  */
 export interface IWindowControllerService {
   deleteArchivedTask(params: { address: WindowHostTaskAddress }): Promise<boolean>;

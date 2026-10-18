@@ -44,9 +44,9 @@ import {
 } from "@zcode/services";
 
 /**
- * RemoteServiceAccess — 通过 ChannelClient 自动创建类型安全的服务代理
+ * RemoteServiceAccess -- creates type-safe service proxies over the ChannelClient.
  *
- * 新增服务只需在此添加一个 getter。
+ * Adding a service only requires a new getter here.
  */
 export class RemoteServiceAccess implements IServiceAccessor {
   readonly fileService: IFileService;
@@ -63,8 +63,9 @@ export class RemoteServiceAccess implements IServiceAccessor {
   readonly windowControllerService: IWindowControllerService;
   readonly zcodeAgentService: IZCodeAgentService;
   readonly zcodeSessionService: IZCodeSessionService;
-  // cuaPermissionService 在 IServiceAccessor 上是可选（远端/bots host 不提供），但桌面 renderer
-  // 经 RPC 一定能拿到（main host 始终注册此 descriptor；非 macOS / 未启用时方法返回 available:false）。
+  // cuaPermissionService is optional on IServiceAccessor (remote/bots hosts lack it), but the
+  // desktop renderer always gets it over RPC (the main host registers the descriptor; on
+  // non-macOS or when disabled the methods return available:false).
   readonly cuaPermissionService: ICuaPermissionService;
   readonly conversationShareService: IConversationShareService;
   readonly botsService: IBotsService;
@@ -72,7 +73,7 @@ export class RemoteServiceAccess implements IServiceAccessor {
   readonly oauthService: IOAuthService;
   readonly providerSettingsService: IProviderSettingsService;
   readonly modelSelectionService: IModelSelectionService;
-  /** Host-only target proxy；不属于 IServiceAccessor，避免向 Renderer 暴露 Secret 写入接口。 */
+  /** Host-only target proxy; not part of IServiceAccessor, keeping the Secret write API off the renderer. */
   readonly providerProvisioningTargetService!: IProviderProvisioningTargetService;
   readonly usageStatsService: IUsageStatsService;
   readonly codingPlanSubscriptionService: ICodingPlanSubscriptionService;
@@ -97,8 +98,8 @@ export class RemoteServiceAccess implements IServiceAccessor {
     this.fileService = ProxyChannel.toService<IFileService>(
       channelClient.getChannel(IFileService.channelName),
     );
-    // Host 已注册 media-preview channel，但遗漏 renderer proxy 时，PreviewPane
-    // 会静默回退到 8 MiB 的 file.readMediaPreview，导致大 MP4 无法打开。
+    // The host registers the media-preview channel, but if the renderer proxy is missing,
+    // PreviewPane silently falls back to the 8 MiB file.readMediaPreview and large MP4s fail to open.
     this.mediaPreviewService = ProxyChannel.toService<IMediaPreviewService>(
       channelClient.getChannel(IMediaPreviewService.channelName),
     );

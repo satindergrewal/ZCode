@@ -214,7 +214,7 @@ function redirectsHaveDynamicWords(redirects: Redirect[]): boolean {
 }
 
 function wordHasDynamicParts(word: Word): boolean {
-  // 命令替换和进程替换会在主命令前执行，权限判断不能把它们当成普通 argv。
+  // Command and process substitution run before the main command; permission checks must not treat them as plain argv.
   return word.parts?.some(partHasDynamicExecution) ?? false;
 }
 

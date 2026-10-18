@@ -155,8 +155,8 @@ export function createGitCommandProvider(options?: {
           child.removeAllListeners("error");
           child.removeAllListeners("close");
           if (result.orphaned) {
-            // Windows 上 Git helper/filter 可能拖住 stdout/stderr 句柄，
-            // 如果超时后仍未 close，先断开本进程对管道和子进程句柄的引用，避免 checkpoint 继续卡住主链路。
+            // On Windows git helpers/filters can hold the stdout/stderr handles;
+            // if still open after the timeout, drop our pipe/child references so checkpoints cannot stall the main path.
             child.stdout?.destroy();
             child.stderr?.destroy();
             child.unref();
@@ -220,10 +220,10 @@ export function createGitCommandProvider(options?: {
         const appendStderrChunk = (chunk: Buffer) => appendChunk(chunk, "stderr");
 
         child.once("error", (error) => {
-          // 当 cwd 被并发删除或运行环境瞬时缺失 git 时，spawn 会直接抛错进入 "error" 事件。
-          // 之前这里 reject 会在某些 fire-and-forget 调用链里变成 unhandled rejection，
-          // 进而让 Vitest 出现整批超时假红。这里统一降级为“命令失败结果”，
-          // 由上层按既有 ensureGitCommandSucceeded 语义处理，避免把异常泄漏成进程级未捕获拒绝。
+          // A concurrently deleted cwd or transiently missing git binary surfaces as a spawn "error" event.
+          // Rejecting here became an unhandled rejection on fire-and-forget paths and faked batch Vitest timeouts.
+          // Degrade to a plain failed-command result instead, handled by the existing
+          // ensureGitCommandSucceeded semantics, so nothing leaks as an uncaught process rejection.
           stderr = error instanceof Error ? error.message : String(error);
           settle(buildResult(-2, null));
         });

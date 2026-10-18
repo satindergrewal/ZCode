@@ -16,8 +16,9 @@ import {
 } from "@/settings/usage-stats/usageStatsUiParts.js";
 import { getAppUsageModelChartColor } from "@/settings/usage-stats/appUsageChartPalette.js";
 
-// XAxis 首尾刻度以绘图区边界为中心向两侧延伸，原 8px margin 小于日期文本半宽，
-// SVG 会裁掉首尾文字；左右保留 24px 安全区，让桌面端与手机 Web 端都能完整显示短日期。
+// XAxis end ticks extend half their width past the plot bounds; the old 8px margin is narrower
+// than half a date label, so SVG clipped the first/last text. A 24px safe area on both sides keeps
+// short dates fully visible on desktop and mobile web.
 export const APP_USAGE_TREND_CHART_MARGIN = {
   top: 8,
   right: 24,
@@ -42,8 +43,8 @@ type ChartTooltipContentProps = ComponentProps<typeof ChartTooltipContent>;
 export function filterDailyModelTooltipPayload<T extends { value?: unknown }>(
   payload: readonly T[] | undefined,
 ): T[] {
-  // Recharts 的多序列 tooltip payload 会包含当天所有模型；
-  // 0 用量模型没有可见趋势点，继续展示会误导用户以为 hover 到了有效用量。
+  // Recharts multi-series tooltip payloads include every model of the day; zero-usage models have
+  // no visible trend point, and listing them reads as hovering real usage.
   return (payload ?? []).filter((item) => {
     const value = typeof item.value === "number" ? item.value : Number(item.value);
     return Number.isFinite(value) && value > 0;
@@ -100,8 +101,8 @@ function buildDailyModelChartData({
 }): DailyModelChartRow[] {
   const rows = new Map<string, DailyModelChartRow>();
 
-  // App Usage 的 30d 协议结果已经是每日序列，旧 all 分桶残留把
-  // 30 天按周聚合成约 5 个点，导致“最近 30 天”没有连续每日趋势。
+  // The App Usage 30d protocol result is already a per-day series; leftover all-bucketing used to
+  // aggregate the 30 days weekly into ~5 points, leaving no continuous daily trend.
   for (const day of snapshot.dailyModelUsage) {
     const label = formatDay(locale, day.date);
     const row = rows.get(day.date) ?? createEmptyChartRow(label, label, modelKeys);
@@ -155,8 +156,9 @@ export function buildAppUsageDailyModelChartViewModel({
     modelKeyById,
   });
   let maxTokens = 0;
-  // 图中是独立折线而非堆叠图，使用每日总量会把多模型之和（以及未展示模型）
-  // 当作 Y 轴上限，导致实际可见曲线被压在底部；坐标范围只应跟随可见序列的单点峰值。
+  // These are independent lines, not stacked: using the daily total as the Y cap (including
+  // unrendered models) presses visible curves to the bottom. The domain must follow the peak single
+  // point of visible series only.
   for (const row of chartData) {
     for (const model of modelKeys) {
       maxTokens = Math.max(maxTokens, Number(row[model.key] ?? 0));
@@ -188,8 +190,9 @@ function DailyModelChartTooltipContent(props: ChartTooltipContentProps) {
 export function AppUsageDailyModelTrendChart({ snapshot }: { snapshot: AppUsageSnapshot }) {
   const { intl, locale } = useZCodeIntl();
   const { topModels, modelKeys, chartConfig, chartData, maxTokens } = useMemo(
-    // Recharts 3.8 会把 data / legend / graphical item props 写入内部 store。
-    // 这里稳定派生数组和配置对象，避免父组件重渲染时因引用变化反复触发内部 dispatch。
+    // Recharts 3.8 mirrors data / legend / graphical-item props into its internal store. Keep the
+    // derived arrays and config objects referentially stable so parent re-renders do not spam
+    // internal dispatches.
     () => buildAppUsageDailyModelChartViewModel({ intl, locale, snapshot }),
     [intl, locale, snapshot],
   );

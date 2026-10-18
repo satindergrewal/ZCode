@@ -10,16 +10,16 @@ function optionalMacro(name) {
 function replaceRequired(source, needle, replacement, label) {
   const index = source.indexOf(needle);
   if (index === -1) {
-    throw new Error(`electron-builder installSection.nsh 缺少预期锚点：${label}`);
+    throw new Error(`electron-builder installSection.nsh is missing expected anchor: ${label}`);
   }
   return `${source.slice(0, index)}${replacement}${source.slice(index + needle.length)}`;
 }
 
 /**
- * 给 electron-builder 的安装段补上可见阶段，并开启 NSIS 内置逐文件详情。
+ * Adds visible stages to electron-builder's install section and enables NSIS built-in per-file details.
  *
- * 这里不复制整份上游模板，避免 electron-builder 升级时静默带入旧模板；每次打包
- * 都必须命中下面的结构锚点，模板结构变化会立即失败并提醒维护者重新对齐。
+ * The upstream template is not copied wholesale, avoiding silently carrying a stale template across electron-builder
+ * upgrades; every package run must match the structural anchors below so template changes fail loudly and force realignment.
  */
 export function patchNsisInstallSectionSource(source) {
   const sourceEol = source.includes("\r\n") ? "\r\n" : "\n";
@@ -34,7 +34,7 @@ export function patchNsisInstallSectionSource(source) {
     detailsAnchor,
     [
       PATCH_MARKER,
-      "# 详情区需要同时显示 electron-builder 的 File 条目和项目阶段。",
+      "# The details area must show both electron-builder File entries and project stages.",
       "${IfNot} ${Silent}",
       "  SetDetailsPrint listonly",
       "${endif}",

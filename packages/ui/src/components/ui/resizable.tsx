@@ -15,9 +15,9 @@ import {
 /* ------------------------------------------------------------------ */
 
 /**
- * 带 localStorage 持久化的 PanelGroup 封装。
- * 传入 layoutId 即可自动保存/恢复布局；不传则不持久化。
- * panelIds 用于支持条件渲染的面板（面板数量会变化时必须传）。
+ * PanelGroup wrapper with localStorage persistence.
+ * Pass layoutId to auto-save/restore the layout; without it nothing persists.
+ * panelIds supports conditionally rendered panels (required when the count changes).
  */
 function ResizablePanelGroup({
   className,
@@ -25,9 +25,9 @@ function ResizablePanelGroup({
   panelIds,
   ...props
 }: Omit<GroupProps, "defaultLayout" | "onLayoutChange" | "onLayoutChanged"> & {
-  /** 持久化 key，对应 useDefaultLayout 的 id */
+  /** Persistence key; matches the useDefaultLayout id */
   layoutId: string;
-  /** 条件渲染面板时需要传当前可见面板的 id 列表 */
+  /** With conditionally rendered panels, the currently visible ids */
   panelIds?: string[];
 }) {
   const { defaultLayout, onLayoutChange } = useDefaultLayout({
@@ -39,9 +39,9 @@ function ResizablePanelGroup({
     <Group
       className={cn("flex h-full w-full", className)}
       defaultLayout={defaultLayout}
-      // onLayoutChanged 会在每次布局变化后立刻写 localStorage。
-      // 窗口 resize 时 PanelGroup 会连续产生成百上千次 layout 更新，必须走库内置
-      // debounce 的 onLayoutChange，避免同步持久化放大主线程压力。
+      // onLayoutChanged writes localStorage on every layout change. While the window
+      // resizes, PanelGroup emits hundreds of updates in a row; go through the library's
+      // debounced onLayoutChange so synchronous persistence cannot pile up main-thread work.
       onLayoutChange={onLayoutChange}
       {...props}
     />
@@ -62,17 +62,18 @@ type ResizablePanelProps = PanelProps;
 function ResizableHandle({ className, ...props }: SeparatorProps) {
   return (
     <Separator
-      // react-resizable-panels 的 Separator 不会暴露 data-orientation，
-      // 实际输出的是 aria-orientation，而且方向和 PanelGroup 相反。
-      // 之前写的 data-[orientation=...] 一直没有命中，所以 w-px / h-px 看起来“没生效”。
+      // react-resizable-panels' Separator never exposes data-orientation; it emits
+      // aria-orientation instead, inverted relative to the PanelGroup. The previous
+      // data-[orientation=...] never matched, so w-px / h-px looked "broken".
 
       className={cn(
         "group/handle relative flex shrink-0 items-center justify-center bg-transparent outline-none transition-colors focus:outline-none focus-visible:outline-none focus-visible:bg-border-hover/60 focus-visible:ring-0",
         "hover:bg-border-hover/60 data-[separator=hover]:bg-border-hover/60 data-[separator=active]:bg-border-hover z-10",
 
-        // react-resizable-panels 会在 pointerdown 时主动 focus 当前 Separator，
-        // 如果这里不接管 focus 样式，Chromium 会给可聚焦的 role=separator 画默认黄色高亮。
-        // 终端/浏览器打开后颜色恢复，本质上只是焦点被转移了，不是布局自己修好了。
+        // react-resizable-panels focuses the active Separator on pointerdown; without
+        // taking over the focus style, Chromium paints its default ring on the focusable
+        // role=separator. Colors "recover" once the terminal/browser focuses — that is
+        // focus moving, not the layout healing.
         "aria-[orientation=vertical]:translate-x-px",
         "aria-[orientation=vertical]:my-6",
         "aria-[orientation=vertical]:w-px",

@@ -43,8 +43,8 @@ export async function loadPersistentCommandFacts(
       ? (store.listSessionInputs?.({ sessionID: sessionId }) ?? [])
       : Promise.all([
           store.listSessionInputs?.({ sessionID: sessionId, status: "discarded" }) ?? [],
-          // cancelled 也是 durable terminal input fact：若这里只读 discarded，用户主动删除
-          // 的 queue item 在 512 LRU 淘汰后会退成 unknown，并可能以同 commandId 再执行。
+          // cancelled is also a durable terminal input fact: reading only discarded here would degrade user-deleted
+          // queue items to unknown after 512-entry LRU eviction, allowing re-execution with the same commandId.
           store.listSessionInputs?.({ sessionID: sessionId, status: "cancelled" }) ?? [],
         ]).then(([discarded, cancelled]) => [...discarded, ...cancelled]),
   ]);
@@ -123,8 +123,8 @@ export async function loadPersistentCommandFacts(
       revisionAtDecision: 0,
       ...(discardedOnRestart
         ? {
-            // 旧 query 丢掉了 session_input.delivery，renderer 只能把所有
-            // restart discard 当成可重发丢失；queue/guide 实际只属于旧 runtime。
+            // The old query dropped session_input.delivery, so the renderer could only treat every
+            // restart discard as lost-and-resendable; queue/guide actually belong to the old runtime only.
             result: { type: "inputDisposition" as const, delivery: record.delivery },
           }
         : {}),

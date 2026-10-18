@@ -1,17 +1,17 @@
 // ============================================================
-// workflow run 的后台停止分支（runtime.stopBackgroundTask 的 local_dynamic_workflow 分派）
+// Background-stop branch for workflow runs (the local_dynamic_workflow arm of runtime.stopBackgroundTask)
 // ============================================================
 //
-// 这是**唯一一条取消路径**的末端。两个入口汇到同一个实现：
+// The tail of the **only** cancel path. Two entries, one implementation:
 //   1. GUI：v4 `cancelBackgroundWork {workId}` → `app.cancelBackgroundTask`
 //      → `runtime.cancelBackgroundTask` → `runtime.stopBackgroundTask`（lenient）
-//   2. 模型：`TaskStop` 工具 → `backgroundTaskControlPort.stopBackgroundTask`
-//      （runtime-tools.ts 把它绑定到同一个 `runtime.stopBackgroundTask`，strict: true）
-// 两者只在 strict 上不同（strict 让已终结的任务返回 not_running 而不是宽松的成功），
-// 分派与本模块之后的行为完全一致——不存在第二条 cancel 语义。
+//   2. Model: the `TaskStop` tool → `backgroundTaskControlPort.stopBackgroundTask`
+//      (runtime-tools.ts binds it to the same `runtime.stopBackgroundTask`, strict: true)
+// They differ only in strictness (strict returns not_running for finished tasks, not a loose success);
+// past the dispatch and this module, behavior is identical — no second cancel semantics exists.
 //
-// 单独成模块是为了限制 background.ts 的规模，避免继续增加分支复杂度。
-// background.ts 侧只保留一个 import 与一行分派。
+// A separate module, to bound background.ts and stop branch complexity growing.
+// background.ts keeps one import and one dispatch line.
 
 import type { AgentRuntimeInternal } from "../internal.js";
 import type {
@@ -21,16 +21,16 @@ import type {
 } from "./background-stop-types.js";
 
 /**
- * 停止一个 workflow run：把 taskId（≡ runId ≡ workId，无身份映射表）交给
+ * Stop a workflow run: hand the taskId (≡ runId ≡ workId, no identity map) to
  * `DynamicWorkflowRunPort.cancel`。
  *
- * 端口内部 abort 注册表里的 AbortController：中止在飞 ask、kill 沙箱子进程，并让引擎经
- * `stop(initiator)` 把 run 结算成 `stopped(user | model)`（**不是** `errored`——journal 是 app
- * 读的持久记录，两个状态的语义与 resume UX 都不同，harness 绝不把失败编码成停止）。
+ * the AbortController in the port abort registry: abort in-flight asks, kill sandbox children, let the engine settle
+ * `stop(initiator)` into `stopped(user | model)` (**not** `errored` — the journal is an
+ * app-read record; the states differ in meaning and resume UX, and failure is never encoded as stop).
  *
- * 两种降级都返回结构化结果而不是假装成功：
- *   - 端口整个缺席（未接线的宿主）→ 能力不支持；
- *   - 端口对未知/已结算的 run 回 false → not_found。
+ * Both degradations return structured results, no fake success:
+ *   - no port at all (unwired host) → unsupported;
+ *   - port false for an unknown/settled run → not_found.
  */
 export async function stopDynamicWorkflowBackgroundTask(
   this: AgentRuntimeInternal,
@@ -42,18 +42,18 @@ export async function stopDynamicWorkflowBackgroundTask(
   if (!port) {
     return unsupported(target);
   }
-  // 先记「是谁停的」再 abort：终态通知是稍后 waiter 结算时铸造的，registry 条目是两者之间
-  // 唯一的共享状态。写在 abort 之前，
-  // 否则结算可能抢先一步读到空值。
+  // Record who stopped before the abort: the terminal notice is minted later, at waiter settlement; the registry entry is the only
+  // shared state in between. Write before abort,
+  // or settlement reads blank first.
   if (initiator !== undefined && target.registryTask !== undefined) {
     this.runtimeTaskRegistry.update(target.taskId, (current) => ({
       ...current,
       stopInitiator: initiator,
     }));
   }
-  // 原因随 cancel 落库：run 结算成 `stopped(user|model)`，
-  // 终态通知与 GetWorkflowRun 从 journal 读到「谁停的」，而不再只靠上面那条 registry 兜底。
-  // 用户亲手停下的事实也是 AmendWorkflow 免确认规则读的那一位：用户刚表达了「停下」，模型接着修订就该重新问。
+  // The reason persists with the cancel: the run settles `stopped(user|model)`,
+  // and notice plus GetWorkflowRun read who-stopped from the journal, not the registry fallback.
+  // User-stopped-by-hand feeds the AmendWorkflow no-confirm rule too: the user said stop, so the next amend asks again.
   const cancelled = await port.cancel(target.taskId, initiator);
   if (!cancelled) {
     return {

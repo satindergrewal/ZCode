@@ -46,8 +46,9 @@ export type {
   ConversationShareTurnPreflightResult,
   PublishTextConversationInput,
 } from "./conversation-share/conversationShare.js";
-// Conversation share 的具体实现依赖 Node 文件系统，只能从 @zcode/services/node 引入；
-// 根入口必须保持 browser-safe，避免 renderer 解析到 node:* 模块。
+// The concrete conversation-share implementation depends on the Node filesystem and must be
+// imported from @zcode/services/node; the root entry must stay browser-safe so the renderer
+// never resolves node:* modules.
 export {
   createConversationTelemetryService,
   type ConversationTelemetryWorkspaceTarget,
@@ -78,23 +79,25 @@ export { ICredentialService } from "./credential/credential.js";
 // Broadcast service — IBroadcastService is both a type (interface) and value (descriptor)
 export { IBroadcastService } from "./broadcast/broadcast.js";
 
-// Onboarding 完成记录服务（本地持久化，后续上传服务器）
+// Onboarding completion record service (local persistence; uploaded to the server later)
 export { IOnboardingRecordService } from "./onboarding/onboardingRecord.js";
 export type {
   CreateOnboardingRecordServiceOptions,
   OnboardingRecordServiceFactory,
 } from "./onboarding/onboardingRecord.js";
-// 这里只能导出 descriptor 和类型。根 index 会被 renderer 经 value import 拉进浏览器包，
-// 若 value 导出 createOnboardingRecordService，会连带 fs/atomicFileUtils → @zcode/shared/node →
-// node:timers/promises 整条 Node 链进浏览器，模块加载直接抛错导致整个应用黑屏。
-// 工厂函数由 host 侧（node.ts）与测试从实现文件路径直接导入，与 createSettingService 同惯例。
+// Only the descriptor and types may be exported here. The root index is pulled into the browser
+// bundle by renderer value imports; exporting the createOnboardingRecordService value would drag
+// fs/atomicFileUtils -> @zcode/shared/node -> node:timers/promises (the whole Node chain) into the
+// browser, where module loading throws and black-screens the app.
+// Hosts (node.ts) and tests import the factory directly from the implementation path, mirroring
+// createSettingService.
 export type {
   BroadcastClaimAcquireResult,
   BroadcastClaimLease,
   BroadcastMessage,
 } from "./broadcast/broadcast.js";
 
-// ZCode task wrapper service — task 列表/置顶/归档等 app 侧包装状态入口。
+// ZCode task wrapper service — app-side wrapper state entry for task list/pin/archive and alike.
 export { IZCodeTaskService } from "./session/zcodeTaskService.js";
 export type {
   ZCodeArchivedTaskDeletionResult,
@@ -228,7 +231,8 @@ export { IOAuthService } from "./oauth/oauth.js";
 // UsageStats service — IUsageStatsService is both a type (interface) and value (descriptor)
 export { IUsageStatsService } from "./usage-stats/usageStats.js";
 
-// Storage（资源管理器「存储」tab）：数据类型在 @zcode/shared；这里只导出服务接口与卷分组纯函数
+// Storage (the explorer "Storage" tab): data types live in @zcode/shared; only the service
+// interface and volume-grouping pure functions are exported here.
 export type { IStorageService } from "./storage/contract.js";
 
 // CodingPlanSubscription service — ICodingPlanSubscriptionService is both a type (interface) and value (descriptor)
@@ -245,7 +249,8 @@ export {
   type ClientScenesResponse,
 } from "./client-scenes/clientScenes.js";
 export { isValidCronExpr } from "./session/automationCronValidation.js";
-// 闲时任务管理服务（与 automation 服务面独立）；接口/描述符 browser-safe。
+// Off-peak task management service (independent of the automation service surface); the
+// interface/descriptor are browser-safe.
 export { IOffPeakTaskService } from "./session/offPeakTask.js";
 export type { OffPeakUpdateTaskParams } from "./session/offPeakTask.js";
 
@@ -271,7 +276,8 @@ export {
 
 // Plugins service — IPluginsService is both a type (interface) and value (descriptor)
 export { IPluginsService } from "./plugins/plugins.js";
-// 设置页插件管理薄服务（UI 平台能力面不再直触 zcodeAgentService）
+// Thin settings-page plugin management service (the UI platform capability surface no longer
+// touches zcodeAgentService directly)
 export { IPluginManagementService } from "./plugins/pluginManagement.js";
 
 // Subagents service — ISubagentsService is both a type (interface) and value (descriptor)

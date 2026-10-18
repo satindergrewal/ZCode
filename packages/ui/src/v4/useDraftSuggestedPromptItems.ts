@@ -27,14 +27,17 @@ export function useDraftSuggestedPromptItems({
     const error = clientScenes.error;
     if (!error) return;
     if (isClientScenesBusinessError(error)) {
-      logger.warn("[v4-suggested-prompts] Client scenes 返回失败，推荐列表保持为空", {
-        code: error.code,
-        message: error.responseMessage,
-        workspaceKey,
-      });
+      logger.warn(
+        "[v4-suggested-prompts] client scenes returned failure; recommendations stay empty",
+        {
+          code: error.code,
+          message: error.responseMessage,
+          workspaceKey,
+        },
+      );
       return;
     }
-    logger.warn("[v4-suggested-prompts] Client scenes 请求失败，推荐列表保持为空", {
+    logger.warn("[v4-suggested-prompts] client scenes request failed; recommendations stay empty", {
       error: error.message,
       workspaceKey,
     });

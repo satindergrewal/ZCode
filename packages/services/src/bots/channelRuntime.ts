@@ -31,8 +31,9 @@ export function assertBotCallbackSucceeded(
   if (result.ok) {
     return;
   }
-  // Bugfix: provider callback 以返回值表达可恢复的业务失败，不一定 reject。
-  // 外部消费游标只能在 ok=true 后提交，否则瞬时失败会被错误确认并永久丢消息。
+  // Bugfix: a provider callback signals recoverable business failure via its return value, not
+  // necessarily a rejection. Commit the external consumption cursor only after ok=true, or a
+  // transient failure gets acked and the message is lost for good.
   throw new Error(`${provider} callback failed: status=${result.status ?? "unknown"}`);
 }
 
@@ -46,8 +47,8 @@ export function createLatestRuntimeRefreshQueue() {
       const result = queue
         .catch(() => undefined)
         .then(() => reconcile(() => currentGeneration === generation));
-      // Bugfix: 配置保存会连续触发 fire-and-forget refresh。串行队列既要让后一轮等待
-      // 前一轮释放连接，又不能因前一轮失败永久阻断后续最新配置。
+      // Bugfix: config saves fire back-to-back refreshes. The serial queue must let each round
+      // await the previous one releasing the connection, without a failed round blocking newer configs forever.
       queue = result.catch(() => undefined);
       return result;
     },
@@ -169,20 +170,20 @@ async function acquireBotRuntimeLock(
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const pendingLockPath = `${lockPath}.${owner.nonce}.pending`;
     try {
-      // Bugfix: 锁目录和 owner 文件必须作为一个完整状态对外可见。
-      // 先在唯一临时目录写完 owner，再原子 rename，避免竞争者把尚未初始化完成的锁误判为 stale。
+      // Bugfix: lock dir + owner file must be visible as one complete state. Write the owner in a
+      // unique temp dir, then rename atomically, so competitors never see a half-initialized lock as stale.
       await mkdir(pendingLockPath);
       await writeFile(join(pendingLockPath, "owner.json"), `${JSON.stringify(owner)}\n`);
       await writeFile(join(pendingLockPath, `lease-${owner.nonce}`), "");
       try {
         await rename(pendingLockPath, lockPath);
       } catch (error) {
-        // Bugfix：Windows 将临时锁目录 rename 到已存在锁目录时返回 EPERM；这里只把 rename 冲突当作锁竞争，
-        // 避免把 mkdir/writeFile 的权限错误误判为可接管锁。
+        // Bugfix: on Windows, renaming a temp lock dir onto an existing one returns EPERM; treat
+        // only rename conflicts as lock contention, not mkdir/writeFile permission errors.
         if (!isBotRuntimeLockConflictError(error)) {
           throw error;
         }
-        // EPERM 也可能只是目录权限错误；只有正式锁路径确实存在时，才进入冲突接管分支。
+        // EPERM can also be a plain permission error; enter the take-over branch only when the real lock path exists.
         if (!(await stat(lockPath).catch(() => undefined))) {
           throw error;
         }
@@ -201,7 +202,7 @@ async function acquireBotRuntimeLock(
             return null;
           }
         }
-        // Bugfix：陈旧目录可能短暂被 Windows 文件句柄占用；有限重试后再放弃，避免静默残留。
+        // Bugfix: a stale dir may be briefly held by a Windows file handle; retry a bounded number of times before giving up, avoiding silent leftovers.
         await removeBotRuntimeLockPath(lockPath);
         continue;
       }
@@ -275,7 +276,7 @@ export function waitFor(ms: number, signal: AbortSignal): Promise<void> {
     };
     const onAbort = () => finish();
     const timeout = setTimeout(finish, ms);
-    // Bugfix: runtime 会长期复用同一个 signal；每次等待结束都必须移除监听器，避免重试时持续累积。
+    // Bugfix: the runtime reuses one signal forever; remove listeners after every wait so retries do not accumulate them.
     signal.addEventListener("abort", onAbort, { once: true });
   });
 }

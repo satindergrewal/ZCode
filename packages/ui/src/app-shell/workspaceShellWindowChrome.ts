@@ -18,8 +18,9 @@ export function resolveWorkspaceShellPanelRadiusPx({
   macOSMajorVersion,
 }: WorkspaceShellPlatformRadiusOptions): number {
   if (isWindowsDesktop) return 5;
-  // 忽略 macOS 版本会让 Sequoia 的内层 12px 圆角与原生窗口小圆角不协调。
-  // 保留 4px 外层留白，旧系统和未知版本用 6px，明确识别 Tahoe 26+ 才用 12px。
+  // Ignoring the macOS version would clash Sequoia's inner 12px radius with the native
+  // window's small corners. Keep the 4px outer inset; 6px on older/unknown versions, 12px
+  // only when Tahoe 26+ is positively identified.
   if (isMacDesktop) return (macOSMajorVersion ?? 0) >= 26 ? 12 : 6;
   return 12;
 }
@@ -37,7 +38,7 @@ export function resolveWorkspaceShellWindowChromeClass({
   macOSMajorVersion,
   supportsNativeRoundedCorners,
 }: WorkspaceShellWindowChromeOptions): string {
-  // Linux 与设置页一致使用 xl；面板已有独立留白，不承担系统窗口外沿。
+  // Linux matches the settings page with xl; the pane has its own inset and does not pose as the system window edge.
   if (isLinuxDesktop) return "rounded-xl border border-border";
   if (!isWindowsDesktop) {
     const radius = resolveWorkspaceShellPanelRadiusPx({ isMacDesktop, macOSMajorVersion });
@@ -45,19 +46,22 @@ export function resolveWorkspaceShellWindowChromeClass({
   }
 
   if (supportsNativeRoundedCorners === null) {
-    // bridge 不可用或首次查询尚未完成时，不能把“未知”直接解释成 Windows 10。
-    // 保持改动前样式，避免 Win11 在失败路径永久退化为直角外观。
+    // While the bridge is unavailable or the first query is still in flight, "unknown"
+    // must not be read as Windows 10. Keep the pre-change style so Win11 does not permanently
+    // degrade to square corners on the failure path.
     return "rounded-[5px] border border-border";
   }
 
   if (!supportsNativeRoundedCorners) {
-    // 仅按 Windows 平台统一绘制右侧圆角，会在不支持原生圆角的 Windows 10
-    // 上伪造一层窗口外形。只收直右侧外角，不能顺带删除面板原有的三条弱边框。
+    // Rounding the right side purely because it is Windows would fake a window shape on
+    // Windows 10, which lacks native rounded corners. Square only the right outer corners;
+    // never drop the pane's existing three weak borders.
     return "rounded-l-[5px] border border-border";
   }
 
-  // 旧最大化规则把面板当成系统窗口外沿，清除了圆角和三条边框。
-  // 面板现有独立的 4px 留白，最大化时也必须保持完整圆角与边框。
-  // Windows 外沿内缩 4px 后，12px 圆角会形成过厚的弧形留白；布局面板统一使用 5px。
+  // The old maximized rule treated the pane as the system window edge and stripped the
+  // radius and three borders. The pane's own 4px inset must survive maximizing with full
+  // radius and borders. With the 4px Windows inset, a 12px radius reads as a too-thick
+  // arc; layout panes use 5px.
   return "rounded-[5px] border border-border";
 }

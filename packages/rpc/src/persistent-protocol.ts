@@ -1,16 +1,17 @@
 /**
- * PersistentProtocol —— 可靠性层（从 protocol.ts 拆出，避免单文件超限）。
+ * PersistentProtocol -- the reliability layer (split out of protocol.ts to bound file size).
  *
- * 在 SocketProtocol 之上添加：
- * - 消息 ACK 确认机制
- * - 心跳保活 (keepAlive)
- * - 断线重连时重放未确认的消息（有界：字节上限 + 时间宽限窗）
- * - 拥塞信号：unacknowledgedBytes 水位 + onSaturated/onDrained
- *   （帧级对事件级的唯一新增接口——事件级据此暂停
- *   drain，丢弃/降级永远发生在通道层、进 rpc 之前；接了 send() 的帧绝不丢）
+ * Adds on top of SocketProtocol:
+ * - message ACK bookkeeping
+ * - keep-alive heartbeats
+ * - replay of unacknowledged messages on reconnect (bounded: byte cap + grace window)
+ * - congestion signal: unacknowledgedBytes watermark + onSaturated/onDrained
+ *   (the only frame-level-to-event-level surface; event layers pause draining with it,
+ *   while drop/downgrade always happens in the channel layer before rpc -- a frame
+ *   handed to send() is never lost)
  *
- * 关键：Channel RPC 层完全不知道 PersistentProtocol 的存在，
- * 它只看到 IMessagePassingProtocol 接口。这就是分层抽象的威力。
+ * Key: the Channel RPC layer never knows PersistentProtocol exists -- it only sees
+ * IMessagePassingProtocol. That is the power of the layering.
  */
 
 import { VSBuffer } from "./buffer.js";
@@ -26,15 +27,15 @@ import {
   type ISocket,
 } from "./protocol.js";
 
-/** PersistentProtocol 可调参数（v4 通道层补丁）。 */
+/** PersistentProtocol tunables (v4 channel-layer patch). */
 export interface PersistentProtocolOptions {
-  /** 未 ACK 字节高水位：越过即 onSaturated（上层暂停 drain，让 coalesce 吸收）。 */
+  /** Unacked-byte high watermark: crossing fires onSaturated (upper layers pause drain; coalesce absorbs). */
   saturationHighWaterMarkBytes?: number;
-  /** 未 ACK 字节低水位：饱和后回落至此即 onDrained（上层恢复 drain）。 */
+  /** Unacked-byte low watermark: falling back to it fires onDrained (upper layers resume drain). */
   saturationLowWaterMarkBytes?: number;
-  /** 重放缓冲字节上限：越界 = 放弃协议会话（onClose），客户端走 subscribe(base)。 */
+  /** Replay buffer byte cap: exceeding it abandons the protocol session (onClose); clients recover via subscribe(base). */
   replayBufferMaxBytes?: number;
-  /** 重放缓冲时间宽限窗（ms）：最老未 ACK 消息超龄同样放弃会话。 */
+  /** Replay buffer grace window (ms): an over-age unacked message also abandons the session. */
   replayBufferGraceMs?: number;
 }
 
@@ -53,7 +54,7 @@ export class PersistentProtocol implements IMessagePassingProtocol, ConnectionFl
   private readonly _onSocketClose = new Emitter<void>();
   readonly onSocketClose = this._onSocketClose.event;
 
-  // 拥塞信号：高水位进入饱和 → onSaturated；回落低水位 → onDrained。
+  // Congestion signal: high watermark saturates -> onSaturated; falling back -> onDrained.
   private readonly _onSaturated = new Emitter<void>();
   readonly onSaturated = this._onSaturated.event;
 
@@ -64,7 +65,7 @@ export class PersistentProtocol implements IMessagePassingProtocol, ConnectionFl
   private chunkStream = new ChunkStream();
   private disposables = new DisposableStore();
 
-  // ACK 机制（队列有界化，条目携带入队时间用于宽限窗判定）
+  // ACK bookkeeping (bounded queue; entries carry their enqueue time for grace-window checks)
   private outgoingMsgId = 0;
   private outgoingUnackMsg: UnackEntry[] = [];
   private incomingAckId = 0;
@@ -72,17 +73,18 @@ export class PersistentProtocol implements IMessagePassingProtocol, ConnectionFl
   private saturated = false;
   private overflowed = false;
 
-  // 心跳
+  // Keep-alive
   private keepAliveTimer: ReturnType<typeof setInterval> | null = null;
-  private readonly KEEP_ALIVE_INTERVAL = 5000; // 5 秒
+  private readonly KEEP_ALIVE_INTERVAL = 5000; // 5s
 
-  // ACK 超时
+  // ACK timeout
   private ackCheckTimer: ReturnType<typeof setInterval> | null = null;
-  private readonly ACK_TIMEOUT = 20000; // 20 秒无 ACK 则断开
+  private readonly ACK_TIMEOUT = 20000; // drop after 20s without an ACK
   private lastAckTime = Date.now();
 
-  // 水位/上限默认值：高水位 1MiB（≈ v4 单帧上限），低水位取高水位 1/4；
-  // 重放缓冲 8MiB / 45s——对端锁屏或长期不 ACK 时放弃会话而不是无界堆内存。
+  // Watermark/cap defaults: high watermark 1MiB (approx. the v4 single-frame cap),
+  // low watermark a quarter of it; replay buffer 8MiB / 45s -- abandon the session
+  // instead of growing the heap unboundedly when the peer sleeps or never ACKs.
   private readonly saturationHighWaterMarkBytes: number;
   private readonly saturationLowWaterMarkBytes: number;
   private readonly replayBufferMaxBytes: number;
@@ -100,7 +102,7 @@ export class PersistentProtocol implements IMessagePassingProtocol, ConnectionFl
     this.startAckCheck();
   }
 
-  /** 当前未被对端 ACK 的 payload 字节数（只读拥塞观测点）。 */
+  /** Payload bytes not yet ACKed by the peer (read-only congestion observation). */
   get unacknowledgedBytes(): number {
     return this.unackBytes;
   }
@@ -130,12 +132,12 @@ export class PersistentProtocol implements IMessagePassingProtocol, ConnectionFl
     this.outgoingUnackMsg.push({ msg, queuedAt: Date.now() });
     this.unackBytes += buffer.byteLength;
     this.writeMessage(msg);
-    // 重放缓冲字节越界 → 立即放弃会话（同步判定，不等定时器）。
+    // Replay buffer over the byte cap -> abandon the session (synchronous, no timer wait).
     if (this.unackBytes > this.replayBufferMaxBytes) {
       this.abandonSession();
       return;
     }
-    // 越过高水位进入饱和态（边沿触发，不重复通知）。
+    // Crossing the high watermark saturates (edge-triggered, no repeat notifications).
     if (!this.saturated && this.unackBytes > this.saturationHighWaterMarkBytes) {
       this.saturated = true;
       this._onSaturated.fire();
@@ -143,8 +145,8 @@ export class PersistentProtocol implements IMessagePassingProtocol, ConnectionFl
   }
 
   /**
-   * 重连时替换底层 socket，并重放所有未被确认的消息。
-   * 这就是为什么 Remote 模式断线恢复后不丢消息的原因。
+   * Replace the underlying socket on reconnect and replay every unacknowledged message.
+   * This is why Remote mode loses no messages across a disconnect.
    */
   replaceSocket(newSocket: ISocket): void {
     this.disposables.dispose();
@@ -153,7 +155,7 @@ export class PersistentProtocol implements IMessagePassingProtocol, ConnectionFl
     this.socket = newSocket;
     this.bindSocket();
 
-    // 重放未确认的消息
+    // Replay unacknowledged messages
     for (const entry of this.outgoingUnackMsg) {
       this.writeMessage(entry.msg);
     }
@@ -181,8 +183,8 @@ export class PersistentProtocol implements IMessagePassingProtocol, ConnectionFl
 
       const totalFrameLength = HEADER_SIZE + length;
       if (this.chunkStream.byteLength < totalFrameLength) {
-        // PersistentProtocol 和 SocketProtocol 都跑在流式传输上，
-        // 这里同样要等整帧到齐后再消费 header，避免分片时把消息头吃掉。
+        // Like SocketProtocol, this runs over a stream: consume the header only once the
+        // whole frame is buffered, or fragmentation would eat the message header.
         break;
       }
 
@@ -192,12 +194,12 @@ export class PersistentProtocol implements IMessagePassingProtocol, ConnectionFl
       if (length > 0) {
         const readBody = this.chunkStream.read(length);
         if (!readBody) {
-          throw new Error("PersistentProtocol 读取到完整帧长度后 body 不应为空");
+          throw new Error("PersistentProtocol: body must not be empty once the full frame length is known");
         }
         body = readBody;
       }
 
-      // 处理对方的 ACK：清除已确认的发送队列
+      // Apply the peer ACK: drop acknowledged entries from the send queue
       this.processAck(ack);
 
       switch (type) {
@@ -206,10 +208,10 @@ export class PersistentProtocol implements IMessagePassingProtocol, ConnectionFl
           this._onMessage.fire(body);
           break;
         case ProtocolMessageType.Ack:
-          // 纯 ACK 消息，只更新确认号
+          // Pure ACK: only the sequence number matters
           break;
         case ProtocolMessageType.KeepAlive:
-          // 心跳，只需更新最后活跃时间
+          // Heartbeat: refresh last-activity time
           break;
         case ProtocolMessageType.Disconnect:
           this._onClose.fire();
@@ -220,13 +222,13 @@ export class PersistentProtocol implements IMessagePassingProtocol, ConnectionFl
     }
   }
 
-  /** 根据对方的 ACK 号清除已确认的消息 */
+  /** Drop messages acknowledged by the peer ACK number */
   private processAck(ack: number): void {
     while (this.outgoingUnackMsg.length > 0 && this.outgoingUnackMsg[0].msg.id <= ack) {
       const entry = this.outgoingUnackMsg.shift()!;
       this.unackBytes -= entry.msg.data.byteLength;
     }
-    // 饱和后回落到低水位 → onDrained（边沿触发）。
+    // Falling back to the low watermark after saturation -> onDrained (edge-triggered).
     if (this.saturated && this.unackBytes <= this.saturationLowWaterMarkBytes) {
       this.saturated = false;
       this._onDrained.fire();
@@ -234,8 +236,8 @@ export class PersistentProtocol implements IMessagePassingProtocol, ConnectionFl
   }
 
   /**
-   * 重放缓冲越界（字节/宽限窗）：这条协议会话已不可能无损续传，
-   * 主动断开走 onClose，客户端用 subscribe(base) 语义层恢复。
+   * Replay buffer exceeded (bytes/grace window): lossless continuation is impossible.
+   * Disconnect via onClose; clients recover at the semantic layer with subscribe(base).
    */
   private abandonSession(): void {
     if (this.overflowed) {
@@ -266,7 +268,7 @@ export class PersistentProtocol implements IMessagePassingProtocol, ConnectionFl
       if (this.outgoingUnackMsg.length > 0 && Date.now() - this.lastAckTime > this.ACK_TIMEOUT) {
         this._onSocketClose.fire();
       }
-      // 最老未 ACK 消息超过宽限窗（对端锁屏/长期后台）→ 放弃会话。
+      // Oldest unacked message beyond the grace window (peer asleep/backgrounded) -> abandon.
       const oldest = this.outgoingUnackMsg[0];
       if (oldest && Date.now() - oldest.queuedAt > this.replayBufferGraceMs) {
         this.abandonSession();

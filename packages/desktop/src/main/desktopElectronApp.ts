@@ -15,8 +15,8 @@ export function getElectronAppPath(name: ElectronAppPathName): string {
     return electronApp.getPath(name);
   }
 
-  // 部分 main-process 单测只 mock 被测模块直接需要的 Electron API，
-  // 间接导入 desktopRuntimeEnv 时可能拿不到 app。真实桌面运行仍走 app.getPath；
-  // Node-only 测试用配置目录兜底，避免导入期常量把无关测试打断。
+  // Some main-process unit tests mock only the Electron API the subject imports directly;
+  // transitively importing desktopRuntimeEnv may then lack app. Real desktop runs use app.getPath;
+  // Node-only tests fall back to the config dir so import-time constants never break unrelated tests.
   return getAppConfigDir();
 }

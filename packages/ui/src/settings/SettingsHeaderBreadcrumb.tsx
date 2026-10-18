@@ -32,8 +32,8 @@ export function SettingsBreadcrumbProvider({
       const reportVersion = ++reportVersionRef.current;
       onItemsChange([{ label: sectionLabel, onSelect: onSectionSelect }, ...items]);
       return () => {
-        // 多个页面 reporter 切换时，旧 effect 可能晚于新 effect cleanup。
-        // 旧版本只能清理自己的投影，不能把较新的面包屑覆盖为空。
+        // Across page-reporter switches a stale effect may clean up after the new one.
+        // An old instance may clear only its own projection, never blank a newer breadcrumb.
         if (reportVersionRef.current === reportVersion) {
           onItemsChange([]);
         }
@@ -50,7 +50,7 @@ export function SettingsBreadcrumbProvider({
 }
 
 /**
- * 将 section 内既有页面状态和返回动作投影到 Settings 顶栏，但不拥有或持久化导航状态。
+ * Projects the section's page state and back action into the Settings header without owning or persisting navigation state.
  */
 export function SettingsBreadcrumbReporter({
   items,

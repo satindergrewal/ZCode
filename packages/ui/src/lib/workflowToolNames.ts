@@ -1,17 +1,20 @@
 /**
- * 工作流一族工具的**按名字**识别，三处原本各自一份同款匹配器的合并：
- * - 可复用工作流：`SaveWorkflow` / `ListSavedWorkflows`；
- * - 升级问答：`escalate` / `ResolveWorkflowQuestion`；
- * - 观察与恢复：`GetWorkflowRun` / `ListWorkflowRuns` / `EvalWorkflowSnippet` 与 `ResumeWorkflowRun`；
- * - 模型目录：`ListModels`。
+ * Name-based detection for the workflow tool family; consolidates matchers that used to be
+ * duplicated per call site:
+ * - Reusable workflows: `SaveWorkflow` / `ListSavedWorkflows`
+ * - Escalation Q&A: `escalate` / `ResolveWorkflowQuestion`
+ * - Observe and resume: `GetWorkflowRun` / `ListWorkflowRuns` / `EvalWorkflowSnippet` / `ResumeWorkflowRun`
+ * - Model catalog: `ListModels`.
  *
- * 为什么不走 `resolveToolCallIdentity`：这些工具名都不在 `packages/shared` 的
- * `ZCODE_KNOWN_TOOL_NAMES` 里，identity 对它们只会回 `unknown`，分流会掉进 raw JSON 兜底卡。
+ * Why not `resolveToolCallIdentity`: none of these names are in packages/shared's
+ * `ZCODE_KNOWN_TOOL_NAMES`, so identity only returns `unknown` and dispatch falls into the
+ * raw-JSON fallback card.
  *
- * 而且这些判定必须排在 family 分流**之前**：`workflow` family 的兜底分支是 CreateWorkflow
- * 卡（`resolveRenderer.ts`）与运行确认块（`PermissionDialog.tsx`），一旦有人把这些名字登记
- * 进 workflow family，保存与列举就会静默渲染成「创建工作流」——保存确认窗甚至会长出
- * 因果图与 Refine 选项。按名字先判定让登记前后两种世界都成立。
+ * These checks must also run **before** family dispatch: the `workflow` family fallback is the
+ * CreateWorkflow card (`resolveRenderer.ts`) and the run-confirm block (`PermissionDialog.tsx`);
+ * once these names get registered in the workflow family, save/list would silently render as
+ * "create workflow" -- the save confirm dialog would even grow a causal graph and a Refine option.
+ * Checking by name first keeps both the registered and unregistered worlds correct.
  */
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
@@ -19,8 +22,8 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function normalizeToolToken(value: unknown): string {
-  // 照 cron-create.tsx 的同款归一：抹掉大小写与分隔符，`SaveWorkflow` / `save_workflow`
-  // 两种 wire 写法都命中。
+  // Same normalization as cron-create.tsx: strip case and separators so both wire spellings
+  // (`SaveWorkflow` / `save_workflow`) match.
   return typeof value === "string" ? value.toLowerCase().replace(/[^a-z0-9]/gu, "") : "";
 }
 
@@ -73,26 +76,27 @@ export function isResumeWorkflowRunToolCall(source: WorkflowToolNameSource): boo
 }
 
 /**
- * 模型目录。同款按名判定：
- * `ListModels` 也不在已知工具表里，兜底卡会把那段以 providerId 开头的模型面文本原样摊开。
+ * Model catalog. Same name-based check: `ListModels` is also missing from the known-tool table,
+ * and the fallback card would dump that providerId-prefixed model text verbatim.
  */
 export function isListModelsToolCall(source: WorkflowToolNameSource): boolean {
   return matchesToolName(source, "listmodels");
 }
 
 /**
- * 创建入口。渲染分流仍走 `workflow` family（它的兜底就是创建卡）；这个按名判定只给不经过分流的读者用：
- * 编译反馈的稿号联接要在行窗口里认出
- * 每一次创建，而 family 会把修订也算进来。
+ * Create entry. Renderer dispatch still goes through the `workflow` family (its fallback is the
+ * create card); this name check exists for readers that bypass dispatch: draft-number linking in
+ * compile feedback must recognize every creation in the line window, while the family counts amendments too.
  */
 export function isCreateWorkflowToolCall(source: WorkflowToolNameSource): boolean {
   return matchesToolName(source, "createworkflow");
 }
 
 /**
- * 修订入口。它**已登记**进 workflow
- * family（确认窗按 family 选运行确认块），但工具行仍按名先判：同一个 create-workflow 渲染器换
- * 一套修订词汇，而不是让 family 兜底把它画成一张普通的「创建工作流」卡。
+ * Amend entry. It **is registered** in the workflow
+ * family (the confirm dialog picks the run-confirm block by family), but the tool row still checks
+ * by name first: the same create-workflow renderer swaps in amendment wording instead of the family
+ * fallback drawing a plain "create workflow" card.
  */
 export function isAmendWorkflowToolCall(source: WorkflowToolNameSource): boolean {
   return matchesToolName(source, "amendworkflow");

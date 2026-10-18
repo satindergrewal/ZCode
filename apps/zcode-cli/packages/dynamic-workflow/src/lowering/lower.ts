@@ -17,17 +17,17 @@ import {
 } from "../analysis/sites.js";
 
 /**
- * Lowering（instrumentation emit step）：把已 typecheck + analyze 干净的 workflow 脚本降级为沙箱可跑的
- * **JavaScript**。两件事：
+ * Lowering (the instrumentation emit step): degrades a typecheck+analyze-clean workflow script into sandbox-runnable
+ * **JavaScript**. Two things:
  *
- *   1. 剥离类型——程序已经 typecheck 过，这里是对同一份源码做 transpile 级别的类型擦除。
- *   2. 用站点表里的**静态 site id** 给每个 facade 调用打桩，改写成 Boundary A 的 `__host.*`：
+ *   1. Strip types -- already typechecked; this is transpile-level type erasure of the same source.
+ *   2. Stub every facade call with the site-table static site id, rewriting to Boundary A host calls:
  *        agent(name, persona)        -> __host.createActor("actor#2", name, persona)
  *        planner.ask<Plan>(text)     -> __host.ask("ask#3", planner, text)
  *        maybe?.ask<Plan>(text)      -> maybe === null || maybe === undefined
  *                                         ? undefined : __host.ask("ask#3", maybe, text)
- *                                       （可选链的短路保留：receiver 为 nullish 时跳过 ask、
- *                                        实参不求值；非标识符 receiver 经临时变量求值一次）
+ *                                       (optional-chain short circuit kept: a nullish receiver skips the ask,
+ *                                        args unevaluated; non-identifier receivers evaluated once via a temp)
  *        files.glob(p) / files.read(p)
  *                                    -> __host.worldRead("world-read#1", "glob", [p])
  *                                       __host.worldRead("world-read#2", "read", [p])
@@ -36,60 +36,59 @@ import {
  *        artifact.file(id, p, o)     -> __host.publishArtifact("artifact#1", "file", [id, p, o])
  *        artifact.chart(id, spec)    -> __host.declareArtifact("artifact#2", "chart", [id, spec])
  *        log(msg)                    -> __host.log(msg)
- *        phase("gate")               -> __host.enterPhase("gate")（无站点；引擎只发一条事件）
- *      Join（Promise.all）与 fan-out 是沙箱内的普通 promise 机制，不是 host 调用，原样保留。
+ *        phase marker -> host enterPhase (no site; the engine emits one event)
+ *        Join (Promise.all) and fan-out are ordinary in-sandbox promise mechanics, not host calls -- untouched.
  *
  * ————————————————————————————————————————————————————————————————
- * 输出契约（harness 契约，沙箱负责 wrap）：
+ * Output contract (the harness contract; the sandbox wraps):
  * ————————————————————————————————————————————————————————————————
- * {@link LoweredWorkflow.code} 是 lowered 脚本的 **async 函数体**：顶层 `await` 与末尾
- * `return <artifact>` 都合法，因为 harness 会把它包进一个 async 函数里执行，形如
+ * The lowered code is the script **async function body**: a top-level await and a trailing
+ * return are both legal -- the harness wraps it in an async function,
  *
  *     const __run = async (__host) => { <code> };
  *
- * 也就是说 code 里唯一的自由标识符是 `__host`（见 {@link HOST_BINDING}）——facade 的
- * `agent` / `log` / `files` / `phase` 都已改写掉，沙箱 vm 的 globals
- * 只需提供 ES intrinsics 加一个 `__host` 即可。
- * schema 从不跨沙箱边界：引擎按 site id 从编译产物里查 schema，code 里不含任何 schema。
+ * So the only free identifier in the code is the host binding -- agent / log / files / phase
+ * are rewritten away; the sandbox vm globals need only ES intrinsics plus the host handle.
+ * Schemas never cross the sandbox boundary: the engine looks schemas up by site id from compile products; the code carries none.
  *
- * {@link LoweredWorkflow.siteIds} 是被打桩的全部 facade site id，按源码顺序排列（asks /
- * actors / world-reads / reports / artifacts；`log`/`phase` 不占 site id，故不在其中）——供
- * harness 与测试断言"每个 site id 恰好出现一次"。
+ * The exported site id list covers every stubbed facade site in source order (asks /
+ * actors / world-reads / reports / artifacts; log and phase take no site id, hence absent) -- letting the
+ * harness and tests assert each site id appears exactly once.
  *
- * 确定性：printer + transpile 都是纯函数，同一份输入 → 逐字节相同的输出。
+ * Determinism: printer and transpile are pure; same input, byte-identical output.
  */
 
-/** harness 必须为 lowered code 绑定的自由标识符（Boundary A 的 host 句柄）。 */
+/** The free identifier the harness must bind for lowered code (the Boundary A host handle). */
 export const HOST_BINDING = "__host";
 
-/** lowering 的产物：sandbox 输入的 JS 体 + 打桩到的 site id 清单。 */
+/** The lowering product: the sandbox-input JS body plus the stubbed site ids. */
 export interface LoweredWorkflow {
-  /** lowered 脚本的 async 函数体（顶层 await / 末尾 return 合法；自由标识符仅 `__host`）。 */
+  /** The lowered script async function body (top-level await / trailing return legal; the only free identifier is the host). */
   code: string;
-  /** 被打桩的 facade site id，按源码顺序（不含 log，它无 site id）。 */
+  /** Stubbed facade site ids in source order (log excluded; it has none). */
   siteIds: string[];
 }
 
-/** {@link lowerWorkflowScript} 的结果：与 analyze 同构——脏脚本不降级，`lowered` 仅在 `ok` 时给出。 */
+/** The lower result, isomorphic to analyze: dirty scripts do not lower; the payload present only when ok. */
 export interface LowerResult {
   diagnostics: CompileDiagnostic[];
   ok: boolean;
   lowered?: LoweredWorkflow;
 }
 
-/** 每个被站点表登记的 facade 调用，改写成哪种 `__host.*`（`phase` 无 site id，只带名字）。 */
+/** For each site-table facade call, which host form it becomes (phase has no site id, name only). */
 type SiteEmit =
   | { kind: "actor"; siteId: string }
   | { kind: "artifact"; siteId: string; op: ArtifactOp }
   | { kind: "ask"; siteId: string }
-  /** 阶段标记：无 site id，只带去了两端空白的名字（名字缺席的标记退回 `void 0`）。 */
+  /** Phase marker: no site id; carries the trimmed name (an absent name degrades to void undefined). */
   | { kind: "phase"; name: string | undefined }
   | { kind: "report"; siteId: string }
   | { kind: "world-read"; siteId: string; op: WorldReadOp };
 
 /**
- * 便捷入口：编译 + facade-siting 校验 + 收集站点表 + 降级，与 `analyzeWorkflowScript` 同构。
- * 脏脚本（typecheck 或 facade-siting 报错）不降级——降级只在干净程序上运行。
+ * Convenience entry: compile + facade-siting check + site table + lower, isomorphic to analyzeWorkflowScript.
+ * Dirty scripts (typecheck or facade-siting errors) do not lower -- lowering runs on clean programs only.
  */
 export function lowerWorkflowScript(scriptText: string): LowerResult {
   const workflow = createWorkflowProgram(scriptText);
@@ -104,17 +103,17 @@ export function lowerWorkflowScript(scriptText: string): LowerResult {
 }
 
 /**
- * 核心：把一个已分析干净的 workflow 降级为 {@link LoweredWorkflow}。
- * 站点调用（ask/actor/world-read）一律按 **ts.Node 身份**（站点表持有的 raw call 引用）匹配，
- * 绝不按名字/形状重新识别——那会制造第二份真相。`log` 不入站点表，按 checker 的
- * 签名解析（解析进 facade .d.ts，与 sites.ts 同一机制）识别，属于身份判定而非名字启发。
+ * Core: degrade an already-analyzed clean workflow.
+ * Site calls (ask/actor/world-read) match by **ts.Node identity** (the raw call refs the site table holds),
+ * never by re-recognizing name/shape -- that would mint a second truth. The log call is not in the site table; it is
+ * recognized via checker signature resolution (into the facade d.ts, the same mechanism as sites.ts) -- identity, not name heuristics.
  */
 export function lowerWorkflow(workflow: WorkflowProgram, table: SiteTable): LoweredWorkflow {
   const checker = workflow.program.getTypeChecker();
   const siteMap = buildSiteMap(table);
 
-  // 第一趟：instrumentation。在同一份 scriptFile（站点表引用的正是它的节点）上做 transform，
-  // 从而能按节点身份命中站点表；此时类型尚未擦除。
+  // Pass 1, instrumentation: transform over the same script file (the site table references its nodes),
+  // so site-table hits work by node identity; types not yet erased.
   const transformer: ts.TransformerFactory<ts.SourceFile> = (context) => {
     const { factory } = context;
     const hostMember = (name: string): ts.Expression =>
@@ -122,19 +121,19 @@ export function lowerWorkflow(workflow: WorkflowProgram, table: SiteTable): Lowe
     const siteArg = (id: string): ts.Expression => factory.createStringLiteral(id);
 
     const visit: ts.Visitor = (node) => {
-      // `args` 是 facade 里唯一一个**值**而不是可调用物，所以它是唯一走标识符级改写的
-      // 符号：读它不是一个等待点，没有站点、不进因果图。判定按 checker 解析结果（与站点
-      // 身份同一机制），所以脚本自己声明的局部 `args` 解析到脚本文件的符号，原样保留。
+      // args is the only facade **value** rather than callable, hence the only identifier-level rewrite:
+      // reading it is not a wait point -- no site, no causal graph. Detected via checker resolution
+      // (the same mechanism as site identity), so a script-local args resolves to the script symbol and stays.
       //
-      // 刻意**不**改用「在包装函数体里注入 `const args = ...`」：用户脚本里再声明一个
-      // `args` 会变成重复声明的运行期 SyntaxError，而编译期完全看不出来。
+      // Deliberately **not** injecting a const binding into the wrapper body: a user-declared
+      // args would become a runtime duplicate-declaration SyntaxError, invisible at compile time.
       if (ts.isIdentifier(node) && node.text === "args" && isFacadeArgsRead(node, checker)) {
         return hostMember("args");
       }
       if (ts.isCallExpression(node)) {
         const emit = siteMap.get(node);
         if (emit !== undefined) return lowerSited(node, emit);
-        // 非站点的 facade 调用只可能是 log（agent/ask/glob/read 必定成站点、已在 siteMap）。
+        // A non-site facade call can only be log (the others always become sites, already in the map).
         const name = facadeCalleeName(node, checker);
         if (name === "log") {
           return factory.createCallExpression(
@@ -152,10 +151,10 @@ export function lowerWorkflow(workflow: WorkflowProgram, table: SiteTable): Lowe
 
     const lowerSited = (call: ts.CallExpression, emit: SiteEmit): ts.Expression => {
       if (emit.kind === "phase") {
-        // phase("gate") -> __host.enterPhase("gate")。标记仍然**无站点、无 journal 行**——它不是一步工作；但控制流经过
-        // 它这件事要让引擎看见（一条 `phase-entered` 事件），否则一个没有节点的阶段在时间线
-        // 上永远是空圈。名字去两端空白，与分析器铸造阶段 id 的键同一；名字缺席（非字面量，
-        // 9004 诊断本该先拦下）退回 `void 0`——沙箱里绝不能残留自由标识符 `phase`。
+        // phase marker -> host enterPhase. Still **no site, no journal row** -- not a unit of work; but the engine must
+        // see that control flow passed (one phase-entered event), else a nodeless phase is an empty circle on the timeline forever.
+        // The name is trimmed, the same key the analyzer mints phase ids from; an absent name (non-literal,
+        // which the 9004 diagnostic should have caught) degrades to void undefined -- no free phase identifier may remain in the sandbox.
         const name = emit.name?.trim();
         if (name === undefined || name.length === 0) return factory.createVoidZero();
         return factory.createCallExpression(hostMember("enterPhase"), undefined, [
@@ -170,8 +169,8 @@ export function lowerWorkflow(workflow: WorkflowProgram, table: SiteTable): Lowe
         ]);
       }
       if (emit.kind === "ask") {
-        // receiver.ask<T>(instr) -> __host.ask(siteId, receiver, instr)（丢弃类型实参 <T>）。
-        // facade-siting 保证 ask 一定是 `receiver.ask(...)` 直接调用，故 callee 必为属性访问。
+        // receiver.ask(instr) -> host ask(siteId, receiver, instr) (the type argument dropped).
+        // facade-siting guarantees ask is a direct property call, so the callee is a property access.
         const access = call.expression as ts.PropertyAccessExpression;
         const receiver = visitExpr(access.expression);
         const loweredAsk = (recv: ts.Expression): ts.Expression =>
@@ -181,13 +180,13 @@ export function lowerWorkflow(workflow: WorkflowProgram, table: SiteTable): Lowe
             ...call.arguments.map(visitExpr),
           ]);
         if (!ts.isOptionalChain(call)) return loweredAsk(receiver);
-        // 可选链上的 ask（`p?.ask(x)`、`wrap?.p.ask(x)`）不能被无条件改写成
-        // `__host.ask(siteId, <receiver>, x)`——`?.` 的短路被丢弃。receiver 为 nullish 时
-        // 作者程序的语义是「跳过这次 ask，整条链结果 undefined」，而降级产物带着 undefined
-        // 调进引擎，被判 UnknownActor **失败整个 run**——且只在可选分支真为空时发作，
-        // 可能烧掉一整段长跑之后才炸。改写为 nullish 守卫三目：守卫命中时实参不求值，
-        // 与可选链原语义一致；标识符 receiver 直接复读（无副作用），其余表达式经 hoisted
-        // 临时变量恰好求值一次——与 tsc 自身降级可选链的做法同构。
+        // An ask on an optional chain cannot be unconditionally rewritten to
+        // the host form -- the optional short-circuit would be lost. With a nullish receiver the author semantics are
+        // skip-this-ask and chain-undefined, and a lowered undefined reaching the engine
+        // fails the whole run as UnknownActor -- and only when the optional branch is truly empty,
+        // possibly after burning a long run. Rewrite as a nullish-guard ternary: on guard hit the args are not evaluated,
+        // matching optional-chain semantics; an identifier receiver is re-read (side-effect free), any other expression goes
+        // through a hoisted temp evaluated exactly once -- isomorphic to the tsc optional-chain lowering.
         const once = ts.isIdentifier(receiver)
           ? receiver
           : factory.createTempVariable(context.hoistVariableDeclaration);
@@ -216,10 +215,10 @@ export function lowerWorkflow(workflow: WorkflowProgram, table: SiteTable): Lowe
       if (emit.kind === "artifact") {
         // artifact.file(id, path, opts)  -> __host.publishArtifact(siteId, "file", [id, path, opts])
         // artifact.chart(id, spec)       -> __host.declareArtifact(siteId, "chart", [id, spec])
-        // 两族**同形不同名**：名字不同是因为两条路的返回类型不同（promise vs void），而
-        // 引擎按方法名而不是按 op 分派——一个把声明当成效应去 await 的脚本，应该在类型层
-        // 就被挡住，而不是在运行期拿到一个 undefined。实参与 world-read 同规：原样按位置
-        // 打包进数组，lowering 不看 op、不校验元数（校验归引擎与 driver）。
+        // The two families are same-shape-different-name: names differ because the return types differ (promise vs void), and
+        // the engine dispatches by method name, not op -- a script awaiting a declaration as an effect should be
+        // stopped at the type layer, not handed a runtime undefined. Args as in world-read: packed by position
+        // verbatim; lowering ignores op and arity (validation belongs to the engine and driver).
         const member = isArtifactPresetOp(emit.op) ? "declareArtifact" : "publishArtifact";
         return factory.createCallExpression(hostMember(member), undefined, [
           siteArg(emit.siteId),
@@ -229,16 +228,16 @@ export function lowerWorkflow(workflow: WorkflowProgram, table: SiteTable): Lowe
       }
       if (emit.kind === "report") {
         // report(item, artifactId?) -> __host.report(siteId, item, artifactId?)
-        // report 走**站点映射**而不是下面那条按 checker 名字识别的 log 路径：它是
-        // 有站点的（journal 按 site × ordinal 去重 replay），而站点身份只在站点表里。
+        // report goes through the **site map**, not the checker-name log path below: it is
+        // sited (the journal dedupes replay by site x ordinal), and site identity lives only in the site table.
         return factory.createCallExpression(hostMember("report"), undefined, [
           siteArg(emit.siteId),
           ...call.arguments.map(visitExpr),
         ]);
       }
       // files.glob(arg)/files.read(arg) -> __host.worldRead(siteId, op, [arg])
-      // 实参**原样按位置**打包进数组字面量：lowering 不看 op、不看元数、不做任何校验。每个 op 的元数与实参校验归 driver，
-      // 所以加一个 world-read 原语在这一趟里是零改动。
+      // Args are packed **verbatim by position** into an array literal: no op peeking, no arity check, no validation. Per-op arity/arg checks belong to the driver,
+      // so adding a world-read primitive is a zero-touch change in this pass.
       return factory.createCallExpression(hostMember("worldRead"), undefined, [
         siteArg(emit.siteId),
         factory.createStringLiteral(emit.op),
@@ -253,14 +252,14 @@ export function lowerWorkflow(workflow: WorkflowProgram, table: SiteTable): Lowe
   const transformed = result.transformed[0];
   if (transformed === undefined) throw new Error("lowering: transform produced no source file");
 
-  // 只取 __workflowScript__ 的函数体语句（wrapper/facade/export 都不进 lowered code）。
+  // Take only the body statements of the workflow script (wrapper/facade/exports never enter the lowered code).
   const printer = ts.createPrinter({ newLine: ts.NewLineKind.LineFeed, removeComments: false });
   const instrumented = workflowBody(transformed)
     .map((statement) => printer.printNode(ts.EmitHint.Unspecified, statement, transformed))
     .join("\n");
   result.dispose();
 
-  // 第二趟：类型擦除。此时打桩已完成、不再需要节点身份，故对文本做 transpile-级擦除即可。
+  // Pass 2, type erasure: stubbing done, node identity no longer needed -- text-level transpile erasure suffices.
   const code = ts.transpileModule(instrumented, {
     compilerOptions: {
       isolatedModules: false,
@@ -276,9 +275,9 @@ export function lowerWorkflow(workflow: WorkflowProgram, table: SiteTable): Lowe
 }
 
 /**
- * 站点表的四类站点调用 + phase 标记，建成 `ts.CallExpression -> SiteEmit` 映射
- * （按节点身份匹配）。phase 走这张表是为了拿到节点身份与名字——它没有 site id，因此
- * 也不进 {@link sourceOrderSiteIds}。
+ * The four site-call kinds + phase markers, as a call-expression-to-emit map
+ * (matched by node identity). Phase rides this map for node identity and name -- it has no site id, hence
+ * never enters the source-order id list.
  */
 function buildSiteMap(table: SiteTable): Map<ts.CallExpression, SiteEmit> {
   const map = new Map<ts.CallExpression, SiteEmit>();
@@ -295,7 +294,7 @@ function buildSiteMap(table: SiteTable): Map<ts.CallExpression, SiteEmit> {
   return map;
 }
 
-/** 被打桩的 site id，按源码顺序（站点表的全局 `order` 发现序）。 */
+/** Stubbed site ids in source order (the site-table global discovery order). */
 function sourceOrderSiteIds(table: SiteTable): string[] {
   const sited = [
     ...table.actors,
@@ -307,7 +306,7 @@ function sourceOrderSiteIds(table: SiteTable): string[] {
   return sited.sort((a, b) => a.order - b.order).map((site) => site.id);
 }
 
-/** 定位 transform 后的 __workflowScript__ 函数体语句（与 sites.ts 的 findWorkflowBody 同形）。 */
+/** Locate the workflow-script body statements post-transform (same shape as the sites.ts helper). */
 function workflowBody(sourceFile: ts.SourceFile): ts.NodeArray<ts.Statement> {
   for (const statement of sourceFile.statements) {
     if (
@@ -322,10 +321,10 @@ function workflowBody(sourceFile: ts.SourceFile): ts.NodeArray<ts.Statement> {
 }
 
 /**
- * 调用解析到的 facade callable 名字（走 resolved signature 的声明，落在 facade .d.ts 内），
- * 否则 undefined。与 sites.ts 的私有 facadeCalleeName 同一思路——按签名声明的身份判定，
- * 而非 callee 表达式的拼写，故计算成员访问（`files["read"](x)`）也能解析到 facade 方法。
- * 本模块只用它认 log：站点类 facade 调用已先在 siteMap 命中并返回，不会走到这里。
+  * The facade callable name the call resolves to (via the resolved-signature declaration, inside the facade d.ts),
+  * else undefined. Same idea as the sites.ts helper -- identity via signature declaration,
+  * not callee spelling, so element accesses resolve too.
+  // Only used here to recognize log: site-kind facade calls already hit the map and returned.
  */
 
 /**
@@ -351,7 +350,7 @@ function isFacadeArgsRead(node: ts.Identifier, checker: ts.TypeChecker): boolean
     }
     if (ts.isShorthandPropertyAssignment(parent) && parent.name === node) return false;
     if (ts.isBindingElement(parent) && parent.propertyName === node) return false;
-    // 声明位（`const args = ...`、参数名、import 名）：那是在**建**一个绑定，不是读 facade。
+    // The declaration site (a const binding, a parameter, an import): building a binding, not reading the facade.
     if (
       (ts.isVariableDeclaration(parent) ||
         ts.isParameter(parent) ||

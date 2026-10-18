@@ -6,8 +6,8 @@ import { createEncodedPowerShellArgs } from "../../scripts/powershell-command.mj
 const SAFE_AUMID = /^[^\\/\s!]+![^\\/\s!]+$/u;
 const MAX_ICON_BASE64_CHARS = 1024 * 1024;
 
-// 不能把 AUMID 当文件路径交给 app.getFileIcon。AppsFolder 是 Shell namespace，
-// 必须先由 SHCreateItemInKnownFolder 得到 IShellItem，再提取其真实应用图标。
+// An AUMID is not a file path; app.getFileIcon cannot take one. AppsFolder is a Shell namespace:
+// resolve the IShellItem via SHCreateItemInKnownFolder first, then extract its real app icon.
 const WINDOWS_AUMID_ICON_SCRIPT = String.raw`
 Add-Type -AssemblyName System.Drawing;
 Add-Type -TypeDefinition @'
@@ -49,7 +49,7 @@ public static class ZCodeAumidIcon {
     if (created != 0 || shellItem == null) Marshal.ThrowExceptionForHR(created);
     IntPtr bitmap = IntPtr.Zero;
     try {
-      // SIIGBF_BIGGERSIZEOK | SIIGBF_ICONONLY，避免退化成宿主 exe 缩略图。
+      // SIIGBF_BIGGERSIZEOK | SIIGBF_ICONONLY, avoiding a degenerate host-exe thumbnail.
       int loaded = shellItem.GetImage(new SIZE { cx = 64, cy = 64 }, 0x5, out bitmap);
       if (loaded != 0 || bitmap == IntPtr.Zero) Marshal.ThrowExceptionForHR(loaded);
       using (Bitmap image = Image.FromHbitmap(bitmap))

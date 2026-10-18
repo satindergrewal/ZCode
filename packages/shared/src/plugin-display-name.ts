@@ -6,7 +6,7 @@ const CANONICAL_PLUGIN_NAME_ACRONYMS: Readonly<Record<string, string>> = {
   zcode: "ZCode",
 };
 
-/** listing 的多语言字段先精确匹配，再按语言前缀兜底。 */
+/** Listing locale fields match exactly first, then fall back by language prefix. */
 export function resolveLocalizedText(
   locale: string,
   base: string | undefined,
@@ -38,8 +38,8 @@ export function formatCanonicalPluginName(name: string, locale: string): string 
 }
 
 /**
- * 用户可见插件名称只信任与完整 Plugin ID 关联的 listing；缺失时才回退到 canonical slug。
- * 不按裸 manifest name 猜测官方产品名，避免同名 marketplace 插件互相覆盖。
+ * The user-visible plugin name trusts only the listing bound to the full plugin id; fall back to the canonical slug when absent.
+ * Never guess official product names from bare manifest names, or same-named marketplace plugins would shadow each other.
  */
 export function resolvePluginDisplayName(
   plugin: { name: string; listing?: ZCodePluginStoreListing },

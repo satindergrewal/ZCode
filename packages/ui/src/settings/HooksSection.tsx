@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- Hooks 页面聚合 Scope、插件投影、搜索与配置写入流程。 */
+/* eslint-disable max-lines -- the Hooks page aggregates scopes, plugin projections, search and config writes. */
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { Plus } from "lucide-react";
 import type { Hook, HookConfig, ZCodeInstalledPluginSummary, ZCodePluginInfo } from "@zcode/shared";
@@ -42,15 +42,15 @@ interface HooksSectionProps {
 }
 
 function isEditableHook(hook: Hook): boolean {
-  // workspace-hook-trust：运行时 discovery 会下发 editable 标志（工作区 Hook 在
-  // runtime 侧不可直接改配置），优先尊重；本地 Settings 发现路径无该标志时回退旧规则。
+  // workspace-hook-trust: runtime discovery ships an editable flag (workspace hooks cannot
+  // be config-edited runtime-side); respect it first, falling back to the old rule when local discovery lacks it.
   return hook.editable ?? (!hook.location || hook.location.source === "zcode");
 }
 
-// workspace-hook-trust：editable=false 且 source=zcode 的行是「上游/祖先 zcode.json
-// 里的只读工作区 Hook」。它们不是外部格式兼容导入源，塞进 Legacy 会让 Import 按钮
-// 必然失败（importHook 拒绝 source=zcode），也违反「只读但可逐条 Trust」的约定。
-// 这类行应留在 Installed 分组，由信任状态门控 Switch，走行内 Trust 流程。
+// workspace-hook-trust: rows with editable=false and source=zcode are read-only workspace hooks from an
+// ancestor zcode.json. They are not external-format import sources; forcing them into Legacy makes the Import
+// button always fail (importHook rejects source=zcode) and breaks read-only-but-Trustable.
+// Keep them in Installed with the Switch gated by trust, via the inline trust flow.
 function isReadOnlyZCodeHook(hook: Hook): boolean {
   return hook.editable === false && (hook.location?.source ?? "zcode") === "zcode";
 }
@@ -60,13 +60,13 @@ function isInCompatibilitySection(hook: Hook): boolean {
 }
 
 /**
- * workspace-hook-trust：解析「最新 review binding」对应的 scope 切换目标。
- * 纯函数（供 HooksSection 与单测共用）：
- * - 按 request.createdAt 取最新 binding（同一 runtime flow 的 generation 递增也会
- *   刷新 createdAt，语义是「最新出现的审核」）；
- * - identity 优先精确匹配 tab 的 scope key；无 identity 的旧本地 binding 才按
- *   workspacePath 回退（与 matchesWorkspaceBinding 的降级规则一致）；
- * - 找不到对应 tab（workspace 已关闭/未知）返回 null——调用方不得切过去。
+ * workspace-hook-trust: resolve the scope the latest review binding should switch to.
+ * Pure (shared by HooksSection and tests):
+ * latest binding by request.createdAt (a same-flow generation bump also
+ * refreshes createdAt; semantics: the newest review);
+ * identity matches the tab scope key exactly; legacy local bindings without identity fall back
+ * by workspacePath (same degradation as matchesWorkspaceBinding);
+ * no matching tab (closed/unknown workspace) returns null; the caller must not switch.
  */
 function resolveLatestReviewScopeTarget(
   bindings: Record<
@@ -95,8 +95,8 @@ function resolveLatestReviewScopeTarget(
     }
   }
   if (!latest) return null;
-  // key 规则与 getPluginWorkspaceKey 一致（identity 优先，回退 workspacePath），
-  // 这里内联而非复用，避免 helper 依赖 WorkspaceTabState 完整类型、便于单测。
+  // Same key rule as getPluginWorkspaceKey (identity first, workspacePath fallback),
+  // inlined to keep the helper free of the full WorkspaceTabState type and unit-testable.
   const scopeKeyOf = (tab: { workspacePath: string; workspaceIdentity?: string }) =>
     tab.workspaceIdentity?.trim() || tab.workspacePath;
   const identity = latest.workspaceIdentity?.trim();
@@ -120,7 +120,7 @@ function buildPluginHookRows(
       pluginEnabled: plugin.enabled,
       pluginId: plugin.id,
       pluginName: plugin.name,
-      // overview 降级时 installedPlugins=[] 表示 scope 未知，不能伪造成 User。
+      // On overview degradation installedPlugins=[] means unknown scope; never fake it into User.
       pluginScope: scopeMetadataKnown ? scopeByPluginId.get(plugin.id) : undefined,
     })),
   );
@@ -131,7 +131,7 @@ function filterPluginHooksByScope(
   scope: HookScope,
 ): PluginHookRow[] {
   const expectedScope = scope === "project" ? "workspace" : "user";
-  // 未知 scope 在两个 Tab 都保留并由列表标记，避免降级时隐藏真实存在的插件 Hook。
+  // Unknown scopes stay in both tabs, flagged by the list, so degradation never hides real plugin hooks.
   return pluginHooks.filter(
     (hook) => hook.pluginScope === undefined || hook.pluginScope === expectedScope,
   );
@@ -183,18 +183,18 @@ export function HooksSection({ workspacePath, workspaceIdentity }: HooksSectionP
     targetWorkspaceIdentity,
     selectedWorkspace?.remoteTarget,
   );
-  // Scope 切到另一个远程 workspace 后，路径已切换但 hooks/plugin 服务仍来自
-  // 当前激活 workspace。这里让服务 host 与 target 身份同源，等待连接时不发送越界 RPC。
+  // After the scope switches to another remote workspace, paths switch but hooks/plugin services
+  // still come from the active workspace. Pin the service host to the target identity; no cross-boundary RPC while connecting.
   const { hooksService, pluginManagementService } = targetServiceResolution.services;
   const zcodeSessionService = useZCodeSessionService(
     targetWorkspacePath ?? undefined,
     undefined,
     targetWorkspaceIdentity,
   );
-  // workspace-hook-trust：信任操作绑定到当前选中的 workspace（多 workspace scope 场景
-  // 下 review binding 可能属于其他 workspace，此时切换 scope 菜单到对应 workspace）。
-  // hooksService 必须传 target 解析结果：scope 选中远程 workspace 时 context 服务指向
-  // 激活 tab 的 host，越界 RPC 会打到错误 host。
+  // workspace-hook-trust: trust binds to the selected workspace (with multi-workspace scopes the review
+  // binding may belong to another workspace; switch the scope menu to it).
+  // hooksService must take the resolved target: with a remote workspace selected the context service points at
+  // the active tab's host, and cross-boundary RPC lands on the wrong host.
   const { trustActionAvailable, trustingHookId, trustHook } = useWorkspaceHookInlineTrust({
     workspacePath: targetWorkspacePath,
     workspaceIdentity: targetWorkspaceIdentity,
@@ -328,13 +328,13 @@ export function HooksSection({ workspacePath, workspaceIdentity }: HooksSectionP
     }
   }, [selectedScopeKey, workspaceTabs]);
 
-  // workspace-hook-trust（修复）：会话区对 workspace B 发起审核时，把 scope 菜单
-  // 自动切到 B 一次。两条硬约束：
-  // 1. 只在「新 interaction 出现」时切——B 的 review 仍 pending 期间用户手动切去
-  //    A/User 属于主动选择，不得被持续抢回（否则 pending 期间设置页被锁死在 B）。
-  // 2. 目标 workspace 必须仍存在于 workspaceTabs——binding 指向已关闭/断连的
-  //    workspace 时切过去只会停在 Connecting，还会与上面的「失效 scope 重置 user」
-  //    effect 形成乒乓循环。
+  // workspace-hook-trust (fix): when the session area starts a review against workspace B, switch the scope
+  // menu to B once. Two hard rules:
+  // 1. switch only on a new interaction; while B's review is pending, a manual switch to
+  // A/User is the user's choice and must not be stolen back (else the page locks onto B).
+  // 2. the target must still exist in workspaceTabs; switching to a closed/disconnected
+  // workspace stalls on Connecting and ping-pongs with the invalid-scope-reset-to-user
+  // effect above.
   const latestReviewScopeTarget = useMemo(
     () => resolveLatestReviewScopeTarget(reviewBindings, workspaceTabs),
     [reviewBindings, workspaceTabs],

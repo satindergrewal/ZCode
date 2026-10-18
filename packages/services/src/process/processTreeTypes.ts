@@ -25,19 +25,19 @@ export interface ProcessTreeTerminatorOptions {
   log?: ProcessTreeTerminatorLogger;
   forceAfterMs?: number;
   keepForceTimerRef?: boolean;
-  /** POSIX Host 在 spawn(detached=true) 时拥有的独立进程组；仅用于 cleanup 边界。 */
+  /** POSIX process group owned by the host spawn(detached=true); cleanup-boundary use only. */
   ownedProcessGroupId?: number;
-  /** Windows Host 发起 spawn 的时间；与退出时间共同约束 root 退出后的后代归属。 */
+  /** Windows host spawn time; with exit time it bounds post-exit descendant ownership. */
   ownedProcessStartedAtMs?: number;
-  /** Windows root 被观察到退出的时间；禁止认领此后由复用 PID 创建的新后代。 */
+  /** Windows time the root was observed exited; never claim descendants created after PID reuse. */
   ownedProcessExitedAtMs?: number;
-  /** 异步查询完成时读取受管 ChildProcess 的真实 exit 事件时间。 */
+  /** Real exit time from the managed ChildProcess, read when the async query completes. */
   resolveOwnedProcessExitedAtMs?: () => number | undefined;
-  /** Windows taskkill 依赖注入；生产默认仍使用异步 execFile，确定性时序测试可替换。 */
+  /** Windows taskkill injection; prod keeps async execFile, tests may swap for determinism. */
   windowsTaskkillRunner?: WindowsTaskkillRunner;
-  /** Windows taskkill 单次命令预算；默认 2 秒，测试可缩短。 */
+  /** Per-command taskkill budget; 2s default, shorter in tests. */
   windowsTaskkillTimeoutMs?: number;
-  /** Windows cleanup 全链路绝对截止时间（Unix epoch ms）；覆盖快照、EOF、taskkill 与 exit 观察。 */
+  /** Absolute Windows cleanup deadline (unix ms) across snapshot/EOF/taskkill/exit observation. */
   windowsCleanupDeadlineAtMs?: number;
 }
 
@@ -62,7 +62,7 @@ export interface ProcessTreeSnapshot {
   rootPid: number;
   descendantPids: readonly number[];
   identities: readonly ProcessIdentity[];
-  /** Windows 进程表查询失败时，空 identities 不代表进程树已经退出。 */
+  /** On Windows table-query failure, empty identities do not mean the tree exited. */
   identityVerification?: "verified" | "unavailable";
 }
 

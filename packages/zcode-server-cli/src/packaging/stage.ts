@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 发行包 staging 流程按步骤线性组装，oxfmt 换行后略超 400 行，拆分会增加跨步骤状态同步。 */
+/* eslint-disable max-lines -- release staging is assembled linearly step by step; after oxfmt wrapping it slightly exceeds 400 lines and splitting would add cross-step state sync. */
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { access, chmod, cp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
@@ -10,9 +10,9 @@ import { isTarCommand, resolveHostTarCommand } from "./tarCommand.js";
 const NODE_BUILTIN_MODULES = new Set(builtinModules);
 
 /**
- * 从 bundle 产物中提取顶层裸模块引用（`from "x"` / `import("x")` / `require("x")`）。
- * 结果只做语法归一化（scoped 包取前两段），是否为真实 npm 包由调用方与
- * workspace node_modules 求交集决定；node 内置模块在这里直接过滤。
+ * Extract top-level bare module specifiers from bundle output (`from "x"` / `import("x")` / `require("x")`).
+ * Results are only normalized syntactically (first two segments for scoped packages); whether each is a real
+ * npm package is decided by the caller intersecting with the workspace node_modules; node builtins are filtered here.
  */
 function collectBareModuleSpecifiers(source: string): Set<string> {
   const names = new Set<string>();
@@ -43,9 +43,9 @@ async function readPackageJson(packageDir: string): Promise<Record<string, unkno
 }
 
 /**
- * 按 Node 解析规则的简化版，从依赖者真实目录逐级向上定位 `node_modules/<name>`。
- * 不走 main/exports 入口解析，因此对 exports 收紧或 types-only 的包同样适用；
- * pnpm（依赖在 `.pnpm/<pkg>/node_modules` 同级）与 npm 扁平布局都能命中。
+ * Simplified Node resolution: locate `node_modules/<name>` by walking up from the depender's real dir.
+ * Skips main/exports entry resolution, so it also covers exports-tightened or types-only packages;
+ * matches both pnpm (deps beside `.pnpm/<pkg>/node_modules`) and the npm flat layout.
  */
 async function findDependencyDir(fromDir: string, name: string): Promise<string | null> {
   let current = resolve(fromDir);
@@ -61,9 +61,10 @@ async function findDependencyDir(fromDir: string, name: string): Promise<string 
 }
 
 /**
- * 从入口包集合出发递归收集生产依赖闭包（dependencies + optionalDependencies）。
- * 返回 包名 → 真实目录。同名包解析到不同真实目录时报错：扁平发行布局放不下两个版本，
- * 静默选一个会把版本漂移带进发行包。optional 依赖缺失时跳过。
+ * Recursively collect the production dependency closure (dependencies + optionalDependencies) from the entry packages.
+ * Returns package name -> real dir. Error when the same name resolves to different real dirs: a flat release
+ * layout cannot hold two versions, and silently picking one would leak version drift into the release.
+ * Missing optional deps are skipped.
  */
 async function resolveProductionPackageClosure(
   entryPackageNames: readonly string[],
@@ -91,9 +92,10 @@ async function resolveProductionPackageClosure(
     const existing = closure.get(item.name);
     if (existing) {
       if (existing !== packageDir) {
-        // pnpm peer 依赖可能合法地同时存在多个版本（典型是 ajv6 + ajv8）。
-        // 顶层保留最先解析的版本，包自身 nested node_modules 在复制阶段保留，
-        // 让 Node 的局部解析规则选择正确 peer；不能把合法的 Agent bundle 拒绝 staging。
+        // pnpm peer deps may legitimately keep several versions (typically ajv6 + ajv8).
+        // Keep the first-resolved version at the top level and preserve the package's own nested
+        // node_modules during the copy phase so Node's local resolution picks the right peer;
+        // a legitimate Agent bundle must not be rejected at staging.
         continue;
       }
       continue;
@@ -121,10 +123,10 @@ async function resolveProductionPackageClosure(
 }
 
 /**
- * node-pty 运行时白名单。必须剔除 `build/`：那是宿主平台的编译产物，而 node-pty 的
- * loadNativeModule 按 build/Release → build/Debug → prebuilds/<platform>-<arch> 顺序加载，
- * 交叉打包时留下 build/ 会让目标机优先载入错误架构的 pty.node 直接崩溃。
- * 非目标平台的 prebuilds 一并剔除，控制发行包体积。
+ * node-pty runtime allowlist. `build/` must be excluded: it holds host-platform build artifacts, and
+ * node-pty's loadNativeModule probes build/Release -> build/Debug -> prebuilds/<platform>-<arch> in order;
+ * leaving build/ in a cross-built package makes the target load a wrong-arch pty.node and crash.
+ * Also drop prebuilds of non-target platforms to keep the release small.
  */
 function isNodePtyRuntimePath(relativePath: string, target: ServerTarget): boolean {
   const normalized = relativePath.split(sep).join("/");
@@ -150,25 +152,25 @@ function isTargetSpecificPackage(packageName: string, target: ServerTarget): boo
 interface StageOptions {
   target: ServerTarget;
   appVersion: string;
-  /** tsup 产物目录（server-cli.js / server-core.js） */
+  /** tsup output dir (server-cli.js / server-core.js) */
   distDir: string;
-  /** 既有 CLI/Agent bundle（zcode.cjs，自包含 CJS） */
+  /** Prebuilt CLI/Agent bundle (zcode.cjs, self-contained CJS) */
   agentBundlePath: string;
-  /** 已准备好的目标平台 Node 二进制 */
+  /** Prepared Node binary for the target platform */
   nodeBinaryPath: string;
-  /** 构建入口从统一合规 owner 核验后传入；组件组装不能自行拼凑许可。 */
+  /** Compliance notices verified by the build entry owner; component assembly must not fabricate them. */
   notices: { thirdParty: string; node: string; nodeSource: string };
-  /** 依赖闭包解析与复制的来源 node_modules */
+  /** node_modules the dependency closure is resolved and copied from */
   workspaceNodeModulesDir: string;
-  /** 未被 pnpm 链接到 node_modules 的 workspace 包（例如 @zcode/tui）。 */
+  /** Workspace packages not linked into node_modules by pnpm (e.g. @zcode/tui). */
   workspacePackageDirs?: ReadonlyMap<string, string>;
-  /** 发行目录的输出父目录 */
+  /** Parent output dir of the release directory */
   outputDir: string;
-  /** 已准备好的 native search tools 根目录（tools/<id>/<binary>）。 */
+  /** Prepared native search tools root (tools/<id>/<binary>). */
   nativeToolsDir?: string;
-  /** 官方插件源码或已 seed 的 packages 目录。 */
+  /** Official plugins source or seeded packages dir. */
   officialPluginsDir?: string;
-  /** 是否同时产出 tar.gz（默认 true） */
+  /** Also produce the tar.gz archive (default true) */
   archive?: boolean;
 }
 
@@ -180,7 +182,7 @@ interface StagedRelease {
 }
 
 const POSIX_LAUNCHER = `#!/bin/sh
-# 由 zcode-server staging 生成：定位发行根后用随包 Node 启动 Server CLI。
+// Generated by zcode-server staging: locate the release root and boot the Server CLI with the bundled Node.
 DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 exec "$DIR/runtime/node" "$DIR/runtime/server-cli.js" "$@"
 `;
@@ -204,7 +206,7 @@ async function copyPackageDir(
     filter: (source) => {
       const relativePath = relative(sourceDir, source);
       if (relativePath === "") return true;
-      // 包内嵌套 node_modules 不复制：闭包解析已把传递依赖平铺到发行 node_modules。
+      // Nested package node_modules are not copied: closure resolution already flattened transitive deps into the release node_modules.
       if (
         !includeNestedNodeModules &&
         (relativePath === "node_modules" || relativePath.split(sep).includes("node_modules"))
@@ -217,10 +219,11 @@ async function copyPackageDir(
 
 async function runCommand(command: string, args: readonly string[], cwd: string): Promise<void> {
   await new Promise<void>((resolvePromise, rejectPromise) => {
-    // macOS 自带 tar 默认把 Finder extended attributes 写成 AppleDouble `._*` 条目。
-    // 发行包会在 Linux/Windows 解压时把这些宿主元数据落成真实文件，既污染文件树，
-    // 也会让组件 hash 在下载端与目标机不一致；关闭 copyfile 元数据后再生成归档。
-    // Windows 侧传入的是 System32 tar.exe 绝对路径，同样命中该判断。
+    // macOS stock tar writes Finder extended attributes as AppleDouble `._*` entries.
+    // Extracting the release on Linux/Windows would materialize that host metadata as real files,
+    // polluting the file tree and breaking component hashes between the download side and the target;
+    // disable copyfile metadata before archiving. The Windows side passes an absolute System32
+    // tar.exe path, which hits the same branch.
     const env = isTarCommand(command) ? { ...process.env, COPYFILE_DISABLE: "1" } : process.env;
     const child = spawn(command, [...args], { cwd, env, stdio: ["ignore", "inherit", "inherit"] });
     child.once("error", rejectPromise);
@@ -323,7 +326,7 @@ async function copyNativeTools(
     const targetPath = join(targetDir, id, source.split(sep).pop() ?? id);
     await mkdir(dirname(targetPath), { recursive: true });
     await cp(source, targetPath, { dereference: true });
-    // 修复：只复制可执行文件会让独立 native-search-tools 组件丢失已准备的声明。
+    // Fix: copying only the binaries would drop the prepared notices of the standalone native-search-tools component.
     for (const notice of ["THIRD-PARTY-NOTICES.txt", "SOURCES.json"]) {
       const bytes = await readFile(join(dirname(source), notice));
       if (!bytes.length) throw new Error(`Empty native notice: ${notice}`);
@@ -361,8 +364,8 @@ async function createComponentArchive(
   const archivePath = join(outputDir, "components", target, `${id}-${info.sha256}.${extension}`);
   await mkdir(dirname(archivePath), { recursive: true });
   await rm(archivePath, { force: true });
-  // Windows 宿主无 zip 命令且 Git Bash 的 GNU tar 不可用（详见
-  // tarCommand.ts）；所有 tar 调用显式 System32 bsdtar。POSIX 宿主打 zip 继续用 zip 命令。
+  // Windows hosts have no zip command and Git Bash's GNU tar is unavailable (see
+  // tarCommand.ts); every tar call is the explicit System32 bsdtar. POSIX hosts keep using zip for zip archives.
   const tarCommand = resolveHostTarCommand();
   if (extension === "zip") {
     if (process.platform === "win32")
@@ -375,7 +378,7 @@ async function createComponentArchive(
   return { archivePath, ...info };
 }
 
-/** 组装 `zcode-server-<os>-<arch>/` 发行目录；只做本地组装，不上传、不发布。 */
+/** Assemble the `zcode-server-<os>-<arch>/` release dir; local assembly only, no upload or publish. */
 export async function stageRelease(options: StageOptions): Promise<StagedRelease> {
   for (const [name, value] of Object.entries(options.notices)) {
     if (!value.trim()) throw new Error(`Missing distribution notice: ${name}`);
@@ -385,8 +388,9 @@ export async function stageRelease(options: StageOptions): Promise<StagedRelease
   const releaseDir = join(outputRoot, releaseName);
   const runtimeDir = join(releaseDir, "runtime");
   await rm(releaseDir, { force: true, recursive: true });
-  // staging 是发布目录的重建操作：删除同 target 的旧组件归档，避免上一次构建的
-  // hash 仍被误上传到 CDN，导致 catalog 暴露无法与本次 manifest 对齐的组件。
+  // Staging rebuilds the release dir: drop component archives of the same target left by the
+  // previous build so stale hashes are not uploaded to the CDN, which would expose components
+  // in the catalog that do not match this manifest.
   await rm(join(outputRoot, "components", options.target), { force: true, recursive: true });
   await rm(join(outputRoot, ".components"), { force: true, recursive: true });
   await mkdir(join(releaseDir, "bin"), { recursive: true });
@@ -402,7 +406,7 @@ export async function stageRelease(options: StageOptions): Promise<StagedRelease
     );
   }
 
-  // 入口 bundle 与 sourcemap 同名复制，文件名必须与 cli.ts 的相对路径解析保持一致。
+  // Entry bundles are copied under matching names; file names must stay in sync with relative path resolution in cli.ts.
   const bundleSources: string[] = [];
   for (const entryName of ["server-cli.js", "server-core.js"]) {
     const sourcePath = join(options.distDir, entryName);
@@ -416,7 +420,7 @@ export async function stageRelease(options: StageOptions): Promise<StagedRelease
     "utf8",
   );
   await cp(options.agentBundlePath, join(runtimeDir, "zcode.cjs"), { dereference: true });
-  // Agent bundle 是第三个实际运行入口；只扫描 Server bundle 会漏掉外置的 TUI/Playwright。
+  // The Agent bundle is the third actually running entry; scanning only the Server bundle would miss externalized TUI/Playwright.
   bundleSources.push(await readFile(options.agentBundlePath, "utf8"));
 
   const nodeTargetPath = join(
@@ -426,8 +430,8 @@ export async function stageRelease(options: StageOptions): Promise<StagedRelease
   await cp(options.nodeBinaryPath, nodeTargetPath, { dereference: true });
   if (!options.target.startsWith("win32-")) await chmod(nodeTargetPath, 0o755);
 
-  // runtime/node_modules 以产物扫描为事实源：bundle 引用什么就装什么（含传递依赖），
-  // 不使用 tsup external 声明列表，避免声明与实际引用漂移。
+  // runtime/node_modules treats the artifact scan as the source of truth: install exactly what the bundles import (incl. transitive deps)
+  // instead of the tsup external list, avoiding drift between the declaration and actual imports.
   const referencedPackages = new Set<string>();
   for (const source of bundleSources) {
     for (const name of collectBareModuleSpecifiers(source)) referencedPackages.add(name);
@@ -449,8 +453,8 @@ export async function stageRelease(options: StageOptions): Promise<StagedRelease
         isNodePtyRuntimePath(relativePath, options.target),
       );
     } else {
-      // Agent 的外置依赖存在 peer 版本并存（例如 ajv6 + ajv8）。只为已知 peer
-      // 冲突包保留 nested node_modules，避免把 pnpm 的整棵开发依赖树复制进发行包。
+      // The Agent's external deps keep peer versions side by side (e.g. ajv6 + ajv8). Keep nested
+      // node_modules only for known peer-conflict packages, avoiding copying pnpm's whole dev dependency tree into the release.
       await copyPackageDir(
         packageDir,
         targetDir,
@@ -562,7 +566,7 @@ export async function stageRelease(options: StageOptions): Promise<StagedRelease
     const extension = options.target.startsWith("win32-") ? "zip" : "tar.gz";
     archivePath = join(outputRoot, `${releaseName}.${extension}`);
     await rm(archivePath, { force: true });
-    // Windows 宿主显式 System32 bsdtar，不依赖调用方 PATH（原因同 tarCommand.ts）。
+    // Windows hosts use the explicit System32 bsdtar, independent of the caller's PATH (same reason as tarCommand.ts).
     const tarCommand = resolveHostTarCommand();
     if (extension === "zip") {
       if (process.platform === "win32")
@@ -607,9 +611,9 @@ async function pruneKoffiRuntime(
 }
 
 /**
- * 确保发行包内 node-pty 有目标平台的 pty.node。官方 node-pty npm 包只带
- * darwin/win32 prebuilds，linux 平台从 workspace 的 `@lydell/node-pty-<target>`
- * 补齐（与老远端资产链同一来源）；缺失时直接报错，避免发行包的终端能力必然损坏。
+ * Ensure the release's node-pty has the target platform's pty.node. The official node-pty npm package only
+ * ships darwin/win32 prebuilds; for linux, fill the gap from the workspace's `@lydell/node-pty-<target>`
+ * (same source as the legacy remote asset chain). Fail hard when missing so the release's terminal support is not silently broken.
  */
 async function ensureNodePtyPrebuild(
   options: StageOptions,
@@ -624,7 +628,7 @@ async function ensureNodePtyPrebuild(
     hasPtyNode = false;
   }
   if (!hasPtyNode) {
-    // 官方包无该平台 prebuild（linux），从 @lydell 平台包补齐。
+    // The official package has no prebuild for this platform (linux); fill in from the @lydell platform package.
     const lydellDir = await findDependencyDir(
       dirname(resolve(options.workspaceNodeModulesDir)),
       `@lydell/node-pty-${options.target}`,
@@ -640,13 +644,13 @@ async function ensureNodePtyPrebuild(
     await mkdir(prebuildDir, { recursive: true });
     await cp(lydellPtyNode, ptyNodePath, { dereference: true });
   }
-  // darwin 的 spawn-helper 必须可执行；npm 发布/解压不保证权限位，丢失时 node-pty
-  // 会在 posix_spawn 阶段报错（老远端资产链踩过同一坑，见 prepare-prebuilds.mjs）。
+  // darwin's spawn-helper must be executable; npm publish/extraction does not guarantee permission bits,
+  // and node-pty fails at the posix_spawn stage without it (same pit in the legacy remote asset chain, see prepare-prebuilds.mjs).
   const spawnHelperPath = join(prebuildDir, "spawn-helper");
   try {
     await access(spawnHelperPath);
     await chmod(spawnHelperPath, 0o755);
   } catch {
-    // 非 darwin 平台没有 spawn-helper，忽略。
+    // Non-darwin platforms have no spawn-helper; ignore.
   }
 }

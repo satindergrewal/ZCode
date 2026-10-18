@@ -6,10 +6,10 @@ import type { NamePattern } from "./types.js";
 import type { CallbackSemantics } from "./callbacks.js";
 import type { IterationCandidate } from "./sites.js";
 
-// sites.ts 顶到 oxlint max-lines 上限（400 行），把名字 / 标签辅助（ask 标签与模板
-// 形状、actor 名与模板形状、world-read 标签、字面量文本、迭代候选的构造、计数器）与它们依赖的
-// 符号解析（resolveSymbol / isFacadeDeclared）拆到本文件；公开面仍从 sites.ts 导出（后两者
-// 在那里原样再导出，其余本就不公开）。站点类型留在 sites.ts，这里只按类型导入。
+// sites.ts sat at oxlint's max-lines cap (400); the name/label helpers (ask label and template
+// shapes, actor name and template shape, the world-read label, literal text, iteration-candidate construction, counters) and their
+// symbol resolution (resolveSymbol / isFacadeDeclared) live here; the public surface still exports from sites.ts (the latter two
+// re-exported verbatim there, the rest never public). Site types stay in sites.ts; imported type-only here.
 
 /** Resolve a node's symbol, following one alias hop (imports never occur here). */
 export function resolveSymbol(node: ts.Node, checker: ts.TypeChecker): ts.Symbol | undefined {
@@ -30,12 +30,12 @@ export function isFacadeDeclared(symbol: ts.Symbol | undefined): boolean {
 }
 
 /**
- * 一个实参**无洞字符串字面量**的文本，其余（标识符、带洞模板、任意表达式）一律 undefined。
+  * The text of an arg that is a **hole-free string literal**; everything else (identifiers, holey templates, any expression) is undefined.
  *
- * 三处共用一条判定：phase 的名字、产物的 id、report 的标签。三者的规矩完全相同——只有编译期
- * 就闭合的字面量才算数，看不穿的一律留给各自的诊断趟按原表达式定位，**绝不在这里猜一个值
- * 出来**（猜出来的名字会让一条本该被教改写的调用静默通过）。`ts.isStringLiteralLike` 覆盖
- * 无插值的反引号串。
+  * One predicate, three consumers: the phase name, the artifact id, the report label. The rule is identical -- only literals
+  * closed at compile time count; opaque ones are left to each diagnostic pass via the original expression, **never
+  * guessed here** (a guessed name lets a should-be-taught call pass silently). ts.isStringLiteralLike covers
+  // backtick strings without interpolation.
  */
 export function literalText(expr: ts.Expression | undefined): string | undefined {
   return expr !== undefined && ts.isStringLiteralLike(expr) ? expr.text : undefined;
@@ -63,7 +63,7 @@ export function askLabel(receiver: ts.Expression, checker: ts.TypeChecker): stri
 }
 
 /**
- * ask label pattern: only for an inline `` agent(`研究员${i}`) `` receiver — the one shape
+  * ask label pattern: only for an inline agent(template-literal) receiver -- the one shape
  * `askLabel` answers `"ask"` for despite the script having said something. A named or
  * identifier receiver already produced a real label, so there is nothing to reconstruct.
  */
@@ -109,13 +109,13 @@ export function actorNamePattern(call: ts.CallExpression): NamePattern | undefin
 }
 
 /**
- * 模板字符串两端的字面量：第一个洞之前（`head`）与最后一个洞之后（`tail`）。
+  * The literals at both ends of a template: before the first hole (head) and after the last hole (tail).
  *
- * `ts.isStringLiteralLike` 已经覆盖了无插值的反引号串（那是字面量，走 `name` 那条路），
- * 所以这里只处理真正带洞的 `ts.TemplateExpression`。
+  * ts.isStringLiteralLike already covers interpolation-free backtick strings (literals; the name path),
+  * so only genuinely holey ts.TemplateExpression instances reach here.
  *
- * **中间的字面量刻意丢弃**：`` `a${x}b${y}c` `` 给出 `a` 与 `c`，不是 `a…b…c`。名字是一行
- * 上的标签，不是产生它的那个表达式的渲染。
+  * **Middle literals are deliberately dropped**: a-x-b-y-c yields a and c, not the middle run. A name is a one-line
+  * label, not a rendering of the expression that produced it.
  */
 function templateAffixes(arg: ts.Expression | undefined): NamePattern | undefined {
   if (arg === undefined || !ts.isTemplateExpression(arg)) return undefined;
@@ -129,10 +129,10 @@ function templateAffixes(arg: ts.Expression | undefined): NamePattern | undefine
 }
 
 /**
- * 一个 affix 值不值得显示：trim 后必须至少含一个字母或数字。
+  * Whether an affix value is worth showing: after trim, at least one letter or digit.
  *
- * 为什么要这道门：`` agent(`${x}-`) `` 的 tail 是 `-`，渲染出来是 `…-`——那比「未命名智能体」
- * 更差，读者既得不到名字，还多了一串标点。`\p{L}` 覆盖 CJK，所以「研究员」照常通过。
+  * Why the gate: a punctuation-only tail renders as dash-ellipsis -- worse than unnamed-actor:
+  // no name, plus stray punctuation. The letter class covers CJK, so such names pass.
  */
 function meaningfulAffix(text: string | undefined): string | undefined {
   const trimmed = text?.trim();

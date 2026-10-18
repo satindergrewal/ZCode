@@ -1,9 +1,9 @@
 /**
- * 代码预览设置的类型与默认值。
+ * Types and defaults for code preview settings.
  *
- * 独立的中立模块：若定义在 zustand store（@/store/index.ts）里，
- * 纯展示组件（ai-elements / ToolCallBlocks）为了拿类型和默认值就要依赖 store。
- * store 只做 re-export，展示组件改为 props 传入 + 本模块默认值兜底。
+ * A neutral standalone module: if defined in the zustand store, presentational components
+ * (ai-elements / ToolCallBlocks) would need the store just for types and defaults.
+ * The store only re-exports; components take props with these defaults as the fallback.
  */
 import type { BundledTheme } from "shiki";
 

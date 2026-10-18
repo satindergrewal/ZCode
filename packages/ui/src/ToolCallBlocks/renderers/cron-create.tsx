@@ -11,7 +11,7 @@ export interface CronCreateAutomationSummary {
   automationId?: string;
   title?: string;
   cronExpr?: string;
-  /** 权威重复规则；卡片优先用它展示 cron 无法表达的真实间隔（如每50小时、每40天）。 */
+  /** Authoritative recurrence rule; the card prefers it to show true intervals cron cannot express (every 50 hours, every 40 days). */
   scheduleRule?: ZCodeAutomationScheduleRule;
   recurring?: boolean;
   maxRuns?: number;
@@ -20,7 +20,8 @@ export interface CronCreateAutomationSummary {
 const SCHEDULE_RULE_UNITS = new Set(["minute", "hourly", "daily", "weekly", "monthly", "yearly"]);
 
 function isScheduleRule(value: unknown): value is ZCodeAutomationScheduleRule {
-  // 宽松结构校验：输出可能来自协议或历史工具结果，字段宽松地放行后由 describe 层兜底。
+  // Loose structural check: output may come from the protocol or historical tool results;
+  // permissive here, with the describe layer as the backstop.
   if (!isPlainRecord(value)) return false;
   if (typeof value.unit !== "string" || !SCHEDULE_RULE_UNITS.has(value.unit)) return false;
   if (typeof value.interval !== "number" || !Number.isFinite(value.interval)) return false;
@@ -92,7 +93,7 @@ function readCronCreateAutomationOutputSummary(value: unknown): CronCreateAutoma
     return null;
   }
 
-  // 读取权威 scheduleRule 与循环/次数信息，供卡片展示 cron 无法表达的真实间隔。
+  // Read the authoritative scheduleRule plus recurrence/count info for card display of intervals cron cannot express.
   const scheduleRule = isScheduleRule(automation.scheduleRule)
     ? (automation.scheduleRule as ZCodeAutomationScheduleRule)
     : undefined;
@@ -151,7 +152,7 @@ export function CronCreateAutomationCard({
     ? describeAutomationCardSchedule(
         {
           cronExpr: automation.cronExpr,
-          // 透传权威 scheduleRule/循环态，否则「每50小时」「每40天」会回退成「每小时的第00分」。
+          // Pass through the authoritative scheduleRule/recurrence state, or "every 50 hours" degrades to "minute 00 of every hour".
           ...(automation.scheduleRule ? { scheduleRule: automation.scheduleRule } : {}),
           ...(automation.recurring !== undefined ? { recurring: automation.recurring } : {}),
           ...(automation.maxRuns !== undefined ? { maxRuns: automation.maxRuns } : {}),
@@ -180,8 +181,8 @@ export function CronCreateAutomationCard({
           size="sm"
           data-testid={TID_CRON_CREATE_OPEN}
           className={cn(
-            // 次级文字色加尾箭头会让明确的导航操作显得像辅助说明。
-            // 固定 h-7 会压缩文字热区，导致视觉内边距无法达到上下 6px。
+            // Muted text plus a trailing arrow makes a clear navigation action read like a footnote.
+            // A fixed h-7 squeezes the tap target, so vertical padding cannot reach 6px.
             "h-auto rounded-lg border-border/70 bg-transparent px-3 py-1.5 text-ui-base text-foreground hover:bg-hover hover:text-foreground",
             !canOpenAutomations && "opacity-50",
           )}

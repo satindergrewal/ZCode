@@ -320,8 +320,8 @@ function FeatureRequestTextarea({
         rows={4}
         maxLength={max}
         placeholder={placeholder}
-        // Textarea 默认的 field-sizing-content 会按无换行长文本扩张宽度。
-        // 产品需求弹窗和问题反馈弹窗同宽，必须固定输入框尺寸并允许长词在框内换行。
+        // field-sizing-content grows the textarea with unbroken lines. This dialog matches the bug
+        // report dialog's width: fixed sizing plus word wrap inside the box.
         className="field-sizing-fixed h-[136px] max-h-[136px] min-w-0 max-w-full resize-none overflow-y-auto rounded-xl border-input-border bg-input text-ui-base leading-6 whitespace-pre-wrap break-words text-foreground placeholder:text-foreground-subtlest hover:border-input-border-hover focus-visible:border-input-border-focused focus-visible:bg-input-focused"
       />
     </section>

@@ -1,5 +1,5 @@
-// V4 wire 的跨 Node/browser 二进制纯函数。独立成小模块，避免 codec 主文件
-// 同时承载 schema、分片状态机和编码细节。
+// Cross-Node/browser binary pure functions of the V4 wire. A separate small module so the codec main file
+// does not also carry schema, fragment state machine, and encoding details.
 import { z } from "zod";
 
 export const topicWireBase64Schema = z

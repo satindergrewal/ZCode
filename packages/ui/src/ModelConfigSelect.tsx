@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 模型菜单同时维护触发器、模型项、provider family 连接方式子菜单和焦点恢复，拆开会增加受控 Dropdown 状态同步成本。 */
+/* eslint-disable max-lines -- The model menu owns trigger, model items, the provider-family connection submenu, and focus restore in one place; splitting raises controlled-Dropdown state sync cost. */
 import {
   Fragment,
   memo,
@@ -151,7 +151,7 @@ interface ModelConfigSelectProps {
   onGuideTooltipDismiss?: () => void;
   shortcutLabel?: string;
   triggerRef?: RefObject<HTMLSpanElement | null>;
-  /** 传入时由调用方统一协调菜单；省略则保持组件原有的内部开关状态。 */
+  /** When passed, the caller coordinates the menu; when omitted the internal open state applies. */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   openRequestKey?: number;
@@ -164,9 +164,9 @@ interface ModelConfigSelectProps {
   triggerLabelClassName?: string;
   triggerTestId?: string;
   formatTriggerLabel?: (label: string) => string;
-  /** false 时把第一个 group 作为无 provider 层的扁平模型列表展示。 */
+  /** When false, render the first group as a flat model list without the provider layer. */
   showProviderLevel?: boolean;
-  /** 覆盖 provider 二级模型菜单样式；缺省按内容扩展并保留最小宽度。 */
+  /** Override for the provider-level model submenu; defaults to content sizing with a min width. */
   providerSubmenuClassName?: string;
   footerActions?: readonly ModelSelectFooterAction[];
   manageModelsLabel?: string;
@@ -175,11 +175,11 @@ interface ModelConfigSelectProps {
   contentSide?: "top" | "bottom" | "left" | "right";
   contentAlign?: "start" | "center" | "end";
   /**
-   * 排在所有分组之上的单选项（与分组之间隔一条线）。工作流「配置」弹层用它把「会话模型」放在第一位；
-   * 缺省即无。
+   * Single option pinned above all groups (separated by a divider). The workflow "configure"
+   * dialog uses it to put "session model" first; empty by default.
    */
   leadingItems?: readonly ModelSelectGroupItem[];
-  /** 触发器里标签之后的小徽标（如「会话模型」「不可用」）；缺省即无。 */
+  /** Small badge after the trigger label (e.g. "session model", "unavailable"); empty by default. */
   triggerBadge?: ReactNode;
 }
 
@@ -229,10 +229,12 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
   const open = controlledOpen ?? uncontrolledOpen;
   const lastOpenRequestKeyRef = useRef(openRequestKey);
   const hasSelectableModel = modelGroups.length > 0;
-  // 闲时任务白名单只有一层模型值；只要存在 group 就强制展示 provider 层的话，
-  // 下方已有的扁平模型分支永远不可达，也无法复用 New Task 模型选择器。
+  // The off-peak allowlist carries a single flat model value. Forcing the provider layer whenever
+  // any group exists would make the flat-model branch below unreachable and block reuse of the
+  // New Task model picker.
   const shouldShowProviderLevel = showProviderLevel ?? shouldShowModelProviderLevel(modelGroups);
-  // 模型名和上游占位值可能大小写敏感，强制大写会把 `<synthetic>` 改成 `<SYNTHETIC>` 这类非原始值。
+  // Model ids and upstream placeholders may be case-sensitive; upper-casing would rewrite values
+  // like `<synthetic>` into `<SYNTHETIC>` and break the original.
   const triggerDisplayLabel = triggerLabel;
   const renderedTriggerDisplayLabel =
     formatTriggerLabel?.(triggerDisplayLabel) ?? triggerDisplayLabel;
@@ -266,8 +268,9 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
       return;
     }
 
-    // 模型菜单是受控 DropdownMenu，快捷键不能依赖模拟 click 触发。
-    // Tooltip/Dropdown 多层 asChild 合并 ref 时，click 可能找不到真实 trigger；这里直接打开菜单状态。
+    // The model menu is a controlled DropdownMenu; shortcuts must not rely on a synthesized click.
+    // With Tooltip/Dropdown asChild ref merging the click can miss the real trigger, so open the
+    // menu state directly.
     handlePopoverOpenChange(true);
     triggerRef?.current?.focus();
   }, [disabled, handlePopoverOpenChange, openRequestKey, triggerRef]);
@@ -287,7 +290,7 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
     (item: ModelSelectGroupItem) => {
       const itemLocked = isItemLocked(item.value);
       const itemSelected = item.value === normalizedValue;
-      // React 的 key 不能跟随 props spread 传入，否则开发环境会在 CDP console 报警。
+      // React keys must not ride in via props spread, or dev builds warn in the CDP console.
       const itemKey = item.key;
       const commonProps = {
         "data-model-option-locked": itemLocked ? "true" : undefined,
@@ -424,7 +427,7 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
                 if (!option) {
                   return;
                 }
-                // 切换连接方式后需要保留外层模型菜单，方便用户继续选择刷新后的模型。
+                // Keep the outer model menu open after switching connection type so the refreshed model list stays selectable.
                 onConnectionValueChange?.(option);
               }}
             >
@@ -550,8 +553,8 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
           side={contentSide}
           onCloseAutoFocus={(event) => {
             if (!focusSelectorOnClose) {
-              // Automations 没有聊天输入框可恢复；保留 Radix 默认行为，
-              // 让键盘焦点回到触发器，而不是 preventDefault 后掉到 body。
+              // Automations has no chat input to restore; keep Radix's default so keyboard focus
+              // returns to the trigger instead of falling to body after preventDefault.
               return;
             }
             event.preventDefault();
@@ -562,8 +565,9 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
             ) {
               return;
             }
-            // 聊天输入框的 data-testid 挂在 contenteditable 自身上，不是父节点。
-            // 这里与 mode 选择器保持同一个入口，避免关闭模型弹层后找不到输入框而丢失焦点。
+            // The chat input's data-testid sits on the contenteditable itself, not a parent.
+            // Share the mode selector's entry point so closing the model menu cannot lose focus
+            // by failing to find the input.
             const input = document.querySelector<HTMLElement>(focusSelectorOnClose);
             input?.focus();
           }}
@@ -622,7 +626,8 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
                       <DropdownMenuSubContent
                         className={cn(
                           "max-h-72 overflow-y-auto",
-                          // 固定宽度会提前截断模型名；按内容扩展，并让可用空间优先于最小宽度。
+                          // Fixed width truncates model names early; size to content and let
+                          // available space win over the minimum width.
                           providerSubmenuClassName ??
                             "w-max min-w-[min(12rem,var(--radix-dropdown-menu-content-available-width))] max-w-(--radix-dropdown-menu-content-available-width)",
                         )}

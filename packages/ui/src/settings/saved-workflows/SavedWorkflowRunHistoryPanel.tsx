@@ -13,16 +13,16 @@ import {
   savedWorkflowRunDurationMs,
 } from "@/settings/saved-workflows/savedWorkflowRunHistory.js";
 
-/** 详情页某一行运行记录对应的项目（全局工作流跨 cwd 时用；cwd 命中已打开项目才能「查看实例」）。 */
+/** The project behind one run-history row (global workflows span cwds; view-instance requires the cwd to match an open project). */
 export interface SavedWorkflowRunProject {
   label: string;
-  /** 完整 cwd 路径，挂在 title 上。 */
+  /** Full cwd path, attached to the title attribute. */
   title?: string;
-  /** 该行 cwd 对应本地已打开项目 → 可「查看实例」。 */
+  /** The row's cwd matches an open local project -> view-instance available. */
   canOpen: boolean;
 }
 
-/** 详情页「运行历史」：journal 行（状态 / 时间 / 花费 / 实参），有归属字段的行可「查看实例」。 */
+/** Detail-page run history: journal rows (status / time / cost / args); rows with provenance fields offer view-instance. */
 export function SavedWorkflowRunHistory({
   runs,
   now,
@@ -36,11 +36,11 @@ export function SavedWorkflowRunHistory({
   canOpenRun: boolean;
   onOpenRun: (run: ZCodeSavedWorkflowRun) => void;
   /**
-   * 产物 chip → `workflow-artifact` tab。
-   * 缺席即 chips 只读。门比「查看实例」松一格：产物不需要 `toolCallId`。
+   * Artifact chip -> the workflow-artifact tab. Absent = read-only chips. One notch looser than
+   * view-instance: artifacts need no toolCallId.
    */
   onOpenArtifact?: (run: ZCodeSavedWorkflowRun, artifactId: string) => void;
-  /** 传入即在每行渲染项目列（全局工作流跨项目历史）；「查看实例」还要该行 canOpen。 */
+  /** When passed, every row renders a project column (global cross-project history); view-instance also needs the row's canOpen. */
   resolveRunProject?: (run: ZCodeSavedWorkflowRun) => SavedWorkflowRunProject | null;
 }) {
   const { intl } = useZCodeIntl();
@@ -75,8 +75,8 @@ export function SavedWorkflowRunHistory({
             canOpenRun &&
             Boolean(run.parentSessionId && run.toolCallId) &&
             (resolveRunProject ? (project?.canOpen ?? false) : true);
-          // 产物 chip 的门：只要 `parentSessionId` 在场（老行可缺）+ 项目可打开。
-          // `toolCallId` 不是条件——产物 tab 不回那条 CreateWorkflow 工具行。
+          // Artifact chip gate: parentSessionId present (legacy rows may lack it) + project openable.
+          // toolCallId is not a condition - the artifact tab never returns to that CreateWorkflow tool row.
           const artifactsOpenable =
             onOpenArtifact !== undefined &&
             Boolean(run.parentSessionId) &&
@@ -143,9 +143,10 @@ export function SavedWorkflowRunHistory({
                   </span>
                 ))}
                 {/*
-                 * 这次运行交付的产物。
-                 * ⚠ 术语：artifact = 脚本发布给用户看的产出，不是脚本的顶层返回值。
-                 * 老行没有这个键（老 CLI 不发），整块因此缺席而不是画一个空位。
+                 * Artifacts delivered by this run. Terminology: artifact = output published to the
+                 * user by the script, not the script's top-level return value. Legacy rows lack the
+                 * key (old CLIs never sent it), so the whole block stays absent rather than drawing
+                 * an empty slot.
                  */}
                 {run.artifacts === undefined ? null : (
                   <SavedWorkflowArtifactChips

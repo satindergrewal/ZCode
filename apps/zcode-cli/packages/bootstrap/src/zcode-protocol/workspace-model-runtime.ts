@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- workspace 模型协议与兼容请求处理仍集中在本文件。 */
+/* eslint-disable max-lines -- workspace model protocol and compat request handling remain in this file. */
 import { createInMemorySessionEventStore } from "@zcode/adapters/storage";
 import type { ModelSelection } from "@zcode/contracts";
 import {
@@ -25,7 +25,7 @@ export async function readWorkspacePresentation(
     workspace: params.workspace,
     mode: "build" as const,
     slashCommands: await listProtocolSlashCommands({
-      // 灰度门是 Host 判定的 workspace 级事实，目录装配读进程缓存。
+      // The rollout gate is Host-decided workspace-level state; catalog assembly reads the process cache.
       dynamicWorkflowEnabled: context.appRuntimePreferences.dynamicWorkflowEnabled,
       env: context.deps.env,
       logger: context.logger,
@@ -40,8 +40,8 @@ export async function testProviderModelConnectivity(
   abortSignal?: AbortSignal,
 ) {
   const params = parseParams(zcodeProviderTestModelConnectivityParamsSchema, rawParams);
-  // 旧 Personal Config 跨进程 watcher 可能永久漏掉原子写事件；连接测试若不先
-  // 主动刷新，会反复查询旧 Registry。这里复用正式 Registry refresh，不旁路创建配置事实。
+  // The legacy Personal Config cross-process watcher may permanently miss atomic-write events; without a proactive
+  // refresh, connection tests keep querying the stale Registry. Reuse the proper Registry refresh, no side-channel config facts.
   await context.deps.refreshProviderRegistry?.("provider-connectivity");
   const active = Array.from(context.sessions.values()).find(
     (record) => record.workspace.workspaceKey === params.workspace.workspaceKey,
@@ -79,12 +79,12 @@ export async function createWorkspaceZCodeApp(
     providerRuntimeHeadersPort,
     runtimeConfig: {
       ...options.runtimeConfig,
-      // createZCodeApp 会把 workingDirectory 规范化为执行 cwd。把协议入口的
-      // workspacePath 单独注入 runtime，session 持久化才能保留本地 workspaceKey 的路径表示。
+      // createZCodeApp normalizes workingDirectory to the execution cwd. Injecting the protocol entry's
+      // workspacePath into the runtime separately is what lets session persistence keep the local workspaceKey's path form.
       workspacePath: workspace.workspacePath,
-      // 远端 session 是 shared-host CUA 的第二层隔离边界：不能只传 workspacePath/identity，
-      // 否则同一远端 workspace 的不同 attachment 会复用 Accessibility frame/action 状态。
-      // 放在这个 helper 里而不是各调用点，是为了两条 session 创建路径都拿到同一份隔离键。
+      // Remote sessions are the second isolation boundary of shared-host CUA: passing only workspacePath/identity would let
+      // different attachments of the same remote workspace reuse Accessibility frame/action state.
+      // It lives in this helper instead of at call sites so both session-creation paths get the same isolation key.
       ...(workspace.remoteSessionId ? { remoteSessionId: workspace.remoteSessionId } : {}),
       ...(workspace.workspaceIdentity
         ? {
@@ -94,8 +94,8 @@ export async function createWorkspaceZCodeApp(
             },
           }
         : {}),
-      // Electron/Protocol 主会话之前没有像 CLI/TUI 那样显式开启模型流式，
-      // 导致主 turn 退回 generateText 非流式请求，遇到返回 SSE 的兼容端点会按 JSON 解析失败。
+      // Electron/Protocol main sessions never enabled model streaming the way CLI/TUI does,
+      // so the main turn fell back to non-streaming generateText and failed JSON parsing on SSE-returning compat endpoints.
       modelStreaming: options.runtimeConfig?.modelStreaming ?? "on",
     },
   });
@@ -113,9 +113,9 @@ async function ensureSessionModelAvailableUnlocked(
   context: ZCodeProtocolAgentServerContext,
   record: ZCodeProtocolSessionRecord,
 ): Promise<boolean> {
-  // 存量模型失效时不能静默改成 Registry 第一项覆盖用户选择；失效选择保持未绑定，
-  // 由恢复/Composer 的选择校验和首发门禁处理；这里不能再写入另一份默认模型事实。
-  // 保留该过渡入口是为了让旧协议调用方平稳退场。
+  // When a persisted model goes invalid, never silently switch to the first Registry entry over the user's choice; keep the invalid selection unbound
+  // and let restore/Composer selection validation plus the first-send gate handle it. Do not write another default-model fact here.
+  // This transition entry remains so legacy protocol callers can exit gracefully.
   void context;
   void record;
   return false;
@@ -134,7 +134,7 @@ export function resolveSessionModelContextWindow(
   _context: ZCodeProtocolAgentServerContext,
   record: Pick<ZCodeProtocolSessionRecord, "app" | "workspace" | "restoredModelSelection">,
 ): number | undefined {
-  // 缺档位会让恢复选择暂不绑定 Runtime，但模型身份仍可只读查询容量，不能伪造 20 万。
+  // A missing tier leaves the restored selection unbound to a Runtime, but the model identity still allows read-only capacity queries; never fake 200k.
   const selection = record.app.runtime.getSessionModelSelection() ?? record.restoredModelSelection;
   const value = selection && record.app.getModelOption?.(selection)?.contextWindow;
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;

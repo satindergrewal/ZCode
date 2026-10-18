@@ -1,32 +1,32 @@
-// PermissionRequest hook 链与交互 broker 的并发竞速。
+// The PermissionRequest hook chain racing the interaction broker.
 //
-// 旧路径在 emitPermissionRequested 之后串行 await hook
-// 链，broker 的应答 deferred 要等 hook 返回才注册。同步 hook（把权限请求转投外部 UI 并
-// 阻塞等待外部点击的桥接程序）挂起期间，确认窗已对用户可见，但所有点击都被
-// resolveInteraction 按「未命中即幂等成功」丢弃——确认窗永久死亡，turn 永久挂起。
-// 修法：两个应答方并发启动、先到的决定生效、败者立即 abort 且不被等待。
+// The old path awaited the hook chain serially after emitPermissionRequested, so the broker's
+// answer deferred was registered only once the hooks returned. While a synchronous hook was suspended
+// (a bridge forwarding the request to an external UI and blocking on its click), the confirm dialog was
+// visible but every click was dropped by resolveInteraction's "idempotent on miss" -- dialog dead, turn hung.
+// Fix: start both responders concurrently; first decision wins; the loser is aborted and never awaited.
 import type { PermissionBrokerResult } from "@zcode/contracts";
 import { linkAbortSignal } from "./timeout.js";
 
 interface PermissionResponderRaceInput {
   /**
-   * hook 链应答方。resolve `undefined` 表示无决定（退赛，只剩 broker 单边等待）；
-   * 抛错同样按退赛处理并回调 {@link PermissionResponderRaceInput.onHookFailure}——
-   * 辅助应答方的基础设施故障不应替用户做拒绝决定。
+   * Hook-chain responder. Resolving undefined means no decision (forfeit; only the broker waits);
+   * throwing counts as a forfeit too and invokes {@link PermissionResponderRaceInput.onHookFailure} --
+   * a supporting responder's infra failure must not decide a rejection on the user's behalf.
    */
   runHooks: (signal: AbortSignal) => Promise<PermissionBrokerResult | undefined>;
   /**
-   * broker 应答方。应答通道（v4 interaction deferred / TUI 审批队列）必须在本函数
-   * 调用内同步建立——这是确认窗「可见即可答」的前提，由既有 broker 契约保证。
-   * 拒绝（超时、取消、fail-closed）在 hook 未胜出时原样上抛，错误形态与旧串行路径一致。
-   */
+   * Broker responder. The answer channel (v4 interaction deferred / TUI approval queue) must be
+   * registered synchronously within this call -- the precondition for "visible means answerable", guaranteed
+   * by the existing broker contract. Rejections (timeout, cancel, fail-closed) rethrow verbatim when no hook
+   * wins -- the same error shape as the old serial path. */
   requestBroker: (
     signal: AbortSignal,
     claimResponse: () => boolean,
   ) => Promise<PermissionBrokerResult>;
-  /** 外层 turn 取消信号：abort 双方，随后 broker 的拒绝按上一条上抛。 */
+  /** Outer turn cancel signal: aborts both sides; the broker rejection then propagates per the above. */
   signal?: AbortSignal;
-  /** hook 链抛错且竞速尚未收口时回调（调用方记 warn 日志）。 */
+  /** Callback when the hook chain throws while the race is undecided (caller logs a warning). */
   onHookFailure?: (error: unknown) => void;
 }
 
@@ -51,13 +51,13 @@ export async function racePermissionResponders(
         if (settled) return;
         settled = true;
         action();
-        // 先兑现结果再 abort 败者：败者的收尾（子进程终止、反向 RPC 取消）绝不能
-        // 反过来阻塞胜者——挂死的就是败者本身。
+        // Settle the winner before aborting the loser: the loser's teardown (child process kill, reverse-RPC
+        // cancel) must never block the winner in turn -- the hung thing is the loser itself.
         abortLoser.abort();
       };
 
-      // broker 先启动：requestPermission 内同步注册应答 deferred，保证确认窗一可见
-      // 用户点击就有归宿，不给 hook 留任何独占窗口期。
+      // Broker starts first: requestPermission registers its answer deferred synchronously, so the moment the
+      // dialog is visible a click has a destination; no exclusive window for hooks.
       input
         .requestBroker(brokerController.signal, () => {
           if (settled || brokerController.signal.aborted) return false;
@@ -68,15 +68,15 @@ export async function racePermissionResponders(
         .then(
           (result) => settle(() => resolve({ result, source: "broker" }), hookController),
           (error) => {
-            // hook 胜出后我们主动 abort broker 产生的拒绝是自己的取消，吞掉；
-            // 竞速未收口时的拒绝（超时/外层取消/fail-closed）是真实错误，原样上抛。
+            // After a hook wins, the broker rejection we abort with is our own cancel: swallow it. A rejection
+            // while the race is undecided (timeout/outer cancel/fail-closed) is a real error; rethrow.
             settle(() => reject(error), hookController);
           },
         );
 
       input.runHooks(hookController.signal).then(
         (decision) => {
-          // 无决定 = 退赛：不迁移竞速状态，broker 继续单边等待。
+          // No decision = forfeit: leave the race state alone; the broker keeps waiting alone.
           if (decision === undefined || brokerClaimed) return;
           settle(() => resolve({ result: decision, source: "hook" }), brokerController);
         },

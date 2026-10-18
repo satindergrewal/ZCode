@@ -3,7 +3,7 @@ import { useStartPlanRecommendation } from "@/hooks/useStartPlanRecommendation.j
 import type { SessionCreateSource } from "@zcode/shared";
 import { reportSessionCreate } from "@/lib/sessionCreateTelemetry.js";
 import { getLocalTtftObserver } from "@/v4/telemetry/localTtftObserver.js";
-/* oxlint-disable eslint(max-lines) -- SessionPane 是单 pane 竖切的命令编排收口（订阅/发送/停止/fork/edit/retry/queue/slash 全集），与旧 ChatView 同粒度；HEAD 已超限（693 行计数），拆散命令组会打散 dispatchCommand/snapshotRef 的闭包纪律。 */
+/* oxlint-disable eslint(max-lines) -- SessionPane is the single-pane vertical slice owning command orchestration (subscribe/send/stop/fork/edit/retry/queue/slash), same granularity as the old ChatView; HEAD already exceeds the limit (693 by count) and splitting the command groups would break the dispatchCommand/snapshotRef closure discipline. */
 import { useIsOfficeMode } from "@/hooks/useInterfaceMode.js";
 import {
   useCallback,
@@ -285,53 +285,53 @@ import {
 export interface SessionPaneProps {
   paneId: string;
   sessionId: string | null;
-  /** 低基数打开入口，由 pane 宿主提供；缺省仅用于兼容旧调用。 */
+  /** Low-traffic open entry, provided by the pane host; the default exists only for legacy callers. */
   openTrigger?: SessionOpenTrigger;
   rootSessionId?: string;
-  /** subagent 右侧详情等观察视图：不显示 composer/input，也不发送行内编辑类命令。 */
+  /** Observer views such as the subagent side detail: no composer/input and no inline-edit commands. */
   readOnly?: boolean;
-  /** 观察视图的显式例外：允许文件摘要恢复 workspace，但不开放会话编辑能力。 */
+  /** Explicit observer-view exception: the file summary may restore the workspace, but session editing stays disabled. */
   allowWorkspaceFileRewind?: boolean;
-  /** 框选副屏：保留普通 composer/tools，但隐藏并禁止 edit/retry/fork/goal。 */
+  /** Selection side pane: keeps the normal composer/tools but hides and disables edit/retry/fork/goal. */
   selectionSideChat?: boolean;
-  /** 主会话划词动作只投递到 Side Pane 当前激活的辅助 child。 */
+  /** Main-session selection actions are delivered only to the Side Pane's currently active auxiliary child. */
   activeSelectionSideChatSessionId?: string | null;
   workspacePath: string;
   workspaceIdentity?: string;
   remoteSessionId?: string | null;
-  /** Prompt 模板埋点当前仅覆盖 Desktop；Web / 手机远控保留 UI 行为但不触发该事件。 */
+  /** Prompt-template telemetry currently covers Desktop only; Web/mobile remote keeps the UI behavior but does not fire the event. */
   isDesktop?: boolean;
   provider?: ZCodeProvider;
   onSessionCreated?: (sessionId: string) => void;
-  /** deleteSession：删除当前会话后回到 draft（shell 起新草稿）。 */
+  /** deleteSession: return to a draft after deleting the current session (the shell starts a fresh draft). */
   onSessionDeleted?: () => void;
-  /** 隐藏副屏的 child 已不存在时，由宿主移除对应 tab。 */
+  /** When a hidden side pane's child no longer exists, the host removes its tab. */
   onSelectionSideChatUnavailable?: () => void;
   /**
-   * Focus 层：全局快捷键（Esc stop）与 add-to-chat 事件只路由到
-   * focused pane。单 pane 消费者（V4ChatPane）缺省 true。
+   * Focus layer: global shortcuts (Esc stop) and add-to-chat events route only to
+   * the focused pane. Single-pane consumers (V4ChatPane) default to true.
    */
   focused?: boolean;
   /**
-   * pane 是否真实可见。分屏的非 focused pane 仍传 true；forceMount 的隐藏侧栏 tab 传 false。
-   * 只影响 foreground UI telemetry，不影响 live subscription 或后台 /event/report。
+   * Whether the pane is actually visible. Non-focused split panes still pass true; forceMounted hidden sidebar tabs pass false.
+   * Affects foreground UI telemetry only, never the live subscription or background /event/report.
    */
   telemetryVisible?: boolean;
-  /** 向右拆分新 draft 窗格（叶子数达上限时宿主不下发）。 */
+  /** Split a new draft pane to the right (the host omits it at the leaf limit). */
   onSplitRight?: () => void;
-  /** 向下拆分新 draft 窗格。 */
+  /** Split a new draft pane downward. */
   onSplitDown?: () => void;
-  /** 关闭本窗格（仅非 primary pane 下发；关 pane ≠ 停 session）。 */
+  /** Close this pane (non-primary panes only; closing a pane never stops the session). */
   onClosePane?: () => void;
-  /** 跨 workspace pane 的归属徽标（pane workspace ≠ shell 当前 workspace 时下发）。 */
+  /** Ownership badge for cross-workspace panes (present when the pane workspace differs from the shell workspace). */
   workspaceBadge?: PaneWorkspaceBadge;
   /**
-   * 草稿态 composer 上方的 contextHeader（m5：workspace 切换菜单 + Git 分支）。
-   * 由 app-shell 构造下发（依赖 workspaceTabs / 远程连接回调等壳层能力）；
-   * 非 primary pane 不下发（workspace 切换是壳级动作）。
+   * contextHeader above the draft composer (m5: workspace switcher + Git branch).
+   * Constructed by the app shell (needs shell capabilities such as workspaceTabs / remote
+   * connection callbacks); omitted on non-primary panes (workspace switching is a shell action).
    */
   draftComposerHeader?: ReactNode;
-  /** 主草稿把 drop controller 提给 app shell 的标题栏；其他 pane 只在自身 surface 消费。 */
+  /** The primary draft exposes its drop controller to the app-shell title bar; other panes consume it only on their own surface. */
   onDropTargetControllerChange?: (controller: ConversationDropTargetController | null) => void;
   gitSummary?: GitRepositorySummary | null;
   gitDirtyFileCount?: number;
@@ -354,12 +354,12 @@ export interface SessionPaneProps {
   onOpenSelectionSideChat?: (request: OpenSelectionSideChatRequest) => void;
   onOpenPlanDetail?: (request: OpenScopedPlanDetailSideTabRequest) => void;
   onOpenWorkflowRun?: (request: OpenScopedWorkflowRunSideTabRequest) => void;
-  /** 通知行的产物 chip → 全尺寸查看 tab。 */
+  /** Notification-row artifact chip -> full-size viewer tab. */
   onOpenWorkflowArtifact?: (request: OpenScopedWorkflowArtifactSideTabRequest) => void;
   onOpenWorkflowRunDirectory?: (request: OpenScopedWorkflowRunDirectorySideTabRequest) => void;
-  /** 工具卡上的子代理药丸 → transcript tab；与详情页子代理行同一个宿主处理器。 */
+  /** Subagent pill on a tool card -> transcript tab; same host handler as the detail page's subagent row. */
   onOpenWorkflowActorSession?: (request: OpenScopedWorkflowActorSessionSideTabRequest) => void;
-  /** 工具卡上的脚本药丸 → 脚本 transcript tab；与详情页脚本行同一个宿主处理器。 */
+  /** Script pill on a tool card -> script transcript tab; same host handler as the detail page's script row. */
   onOpenWorkflowWorkspace?: (request: OpenScopedWorkflowWorkspaceSideTabRequest) => void;
   conversationFindQuery?: string;
   conversationFindActiveIndex?: number;
@@ -404,7 +404,8 @@ function toComposerUiError(
       ? { underlyingErrorMessage: error.underlyingErrorMessage }
       : {}),
     ...(error.underlyingErrorDetail ? { underlyingErrorDetail: error.underlyingErrorDetail } : {}),
-    // V4 snapshot 已携带安全归因；此处透传归因字段，保证错误按安全归因聚类。
+    // The V4 snapshot already carries security attribution; pass the attribution fields
+    // through so errors cluster by it.
     ...(error.attribution ? { attribution: error.attribution } : {}),
     ...(sessionId ? { taskId: sessionId } : {}),
   };
@@ -477,13 +478,15 @@ function shouldRestoreQueuedComposerFromAck(status: CommandAck["status"]): boole
 }
 
 /**
- * 单 pane 竖切：订阅 → 渲染 rows → composer 发送 / stop。
+ * Single-pane vertical slice: subscribe -> render rows -> composer send/stop.
  *
- * React 性能（vercel-react-best-practices）：
- * - 叶子组件（Header/Timeline/QueuePanel/InputControls/Composer/GoalBanner）均 memo；
- * - 所有回调用 useCallback 且**不依赖高频变化的 snapshot**——snapshot/composer 文本经 ref 读取，
- *   使回调在流式增量期间保持稳定引用，避免把新函数灌进 memo 子组件触发无谓重渲染；
- * - 模型表单的本地输入 state 下沉到对应子组件，输入时不牵动整个 pane。
+ * React performance (vercel-react-best-practices):
+ * - leaf components (Header/Timeline/QueuePanel/InputControls/Composer/GoalBanner) are memoized;
+ * - every callback is useCallback and **does not depend on the fast-changing snapshot** -
+ *   snapshot/composer text is read via refs, keeping callback identities stable across streaming
+ *   deltas so memoized children never re-render for nothing;
+ * - the model form's local input state lives in the child components, so typing never re-renders
+ *   the whole pane.
  */
 export function SessionPane({
   paneId,
@@ -563,8 +566,8 @@ export function SessionPane({
     workspaceIdentity,
     remoteSessionId,
   });
-  // SessionPane 已位于目标 Workspace 的 ServiceProvider 内，直接订阅该 Host Service；
-  // 不再从展示组件二次解析 workspace/remote 路由。
+  // SessionPane already sits inside the target Workspace's ServiceProvider; subscribe to the
+  // Host service directly instead of re-resolving workspace/remote routing in a view component.
   const conversationTelemetry = useScopedConversationTelemetrySupervisor({
     workspacePath,
     ...(workspaceIdentity ? { workspaceIdentity } : {}),
@@ -612,7 +615,8 @@ export function SessionPane({
   const shareWarnings = shareDock.warnings;
   const shareActive = shareDraft?.scope === "partial";
   const shareInSelectionStage = shareActive && (shareDraft?.stage ?? "selection") === "selection";
-  // 遮罩、选择面板和背景滚动锁定必须共用同一裁决，否则面板收起后遮罩会残留。
+  // Scrim, selection panel, and background scroll lock must share one verdict, or the scrim
+  // lingers after the panel collapses.
   const shareSelectionPanelVisible = resolveConversationShareSelectionPanelVisible({
     partialShareActive: shareActive,
     stage: shareDraft?.stage ?? "selection",
@@ -761,8 +765,9 @@ export function SessionPane({
     });
   }, [eligibleShareItems, snapshot?.rows.window]);
   const sharePreflightCacheRef = useRef(new Map<string, ConversationShareTurnPreflightResult>());
-  // 传输类失败会被按 turn 缓存成阻断项，仅靠选择变化无法再次触发 RPC；
-  // 重试 token 变化时清缓存并重新发起，避免一次网络抖动把用户卡死在选择阶段。
+  // Transport-class failures are cached per turn as blocking issues, so a selection change
+  // alone cannot retrigger the RPC. Clear the cache and restart when the retry token changes
+  // so one network blip cannot strand the user at the selection step.
   const [sharePreflightRetryToken, setSharePreflightRetryToken] = useState(0);
   const sharePreflightScopeKey = `${workspaceIdentity?.trim() || workspacePath}\u0000${remoteSessionId ?? ""}\u0000${sessionId ?? ""}`;
   const sharePreflightScopeKeyRef = useRef<string | null>(null);
@@ -847,8 +852,9 @@ export function SessionPane({
   }, [sessionId, shareActive]);
 
   useEffect(() => {
-    // 预检结果按 turn 缓存：选择/取消只重新聚合当前选中项，只有首次加入或 turn fingerprint
-    // 变化才触发 RPC；发布阶段仍走独立的权威 stat/read/SHA 校验，不能把这里的缓存当成最终事实。
+    // Preflight results are cached per turn: select/deselect only re-aggregates the current
+    // selection, and the RPC fires on first add or a turn-fingerprint change. Publishing still
+    // runs its own authoritative stat/read/SHA checks; this cache is never final truth.
     const requestScopeKey = sharePreflightScopeKey;
     if (!shareInSelectionStage || !sessionId || selectedShareProductTurnIds.length === 0) {
       return undefined;
@@ -882,9 +888,10 @@ export function SessionPane({
               capabilitiesFingerprint: result.capabilitiesFingerprint,
               supportedArtifactTypes: result.supportedArtifactTypes,
             };
-            // dev 下 host 进程不随 services 重建重启，老 host 返回的结果没有
-            // turnResults，直接 .map 会抛异常并被下游 catch 报成「服务端预检失败」。
-            // 拆条目的降级逻辑收敛在 helper 里，见 conversationSharePreflightCache。
+            // In dev the host process does not restart with services, so an old host returns
+            // no turnResults and a bare .map throws, surfacing as "server preflight failed" in
+            // the downstream catch. Per-item degradation lives in the helper, see
+            // conversationSharePreflightCache.
             const resultTurnFingerprints = new Map(
               missingProductTurnIds.map((productTurnId) => [
                 productTurnId,
@@ -912,10 +919,11 @@ export function SessionPane({
             setSharePreflightVersion((version) => version + 1);
           },
           (error: unknown) => {
-            // 只有 RPC / 服务端真实失败才走这里；成功回调里的渲染层异常由末尾 catch 兜住，
-            // 不再冒充预检结论。issues 缺失时兜底成 unknown，日志是唯一的定位入口。
+            // Only genuine RPC/server failures land here; renderer exceptions inside the
+            // success callback are caught by the final catch below and no longer masquerade as
+            // preflight verdicts. Missing issues degrade to unknown; the log is the only clue.
             const details = getConversationShareErrorDetails(error);
-            logger.warn("[v4-share] 会话分享预检失败", {
+            logger.warn("[v4-share] conversation share preflight failed", {
               sessionId,
               turnCount: missingProductTurnIds.length,
               name: details.name,
@@ -947,8 +955,9 @@ export function SessionPane({
           },
         )
         .catch((error: unknown) => {
-          // 渲染层自身的异常：只记日志，不写进预检缓存，避免再次把前端 bug 展示成分享失败。
-          logger.error("[v4-share] 会话分享预检结果处理异常", {
+          // Renderer-side exception: log only, never write the preflight cache, so a frontend
+          // bug is not displayed again as a share failure.
+          logger.error("[v4-share] conversation share preflight result handling error", {
             sessionId,
             message: error instanceof Error ? error.message : String(error),
             stack: error instanceof Error ? error.stack : undefined,
@@ -1007,15 +1016,17 @@ export function SessionPane({
   const pluginReferenceIconsEnabled =
     isSessionPluginCatalogReady(state.status, sessionId, snapshot?.sessionId) &&
     hasPluginReferenceUserRows(snapshot?.rows.window ?? []);
-  // send_result 的落定信号：用户消息真正画进对话历史。z-code 没有乐观渲染，
-  // 气泡必须等投影回流出 userInput row 才出现，所以 ACK accepted 不能算发送完成。
-  // 取 useEffect 而非 store 订阅回调 —— effect 在 DOM commit 之后跑，此刻气泡已在屏幕上。
+  // send_result settlement signal: the user message is actually painted into the history.
+  // z-code has no optimistic rendering - the bubble appears only once the projection echoes a
+  // userInput row - so an accepted ACK is not "sent". An effect, not a store subscription
+  // callback: effects run after the DOM commit, when the bubble is already on screen.
   useEffect(() => {
     const rows = snapshot?.rows.window;
     if (!rows || rows.length === 0) return;
-    // 不能只取最后一条 userInput：后台结果行可能紧随其后插到尾部，
-    // 只看尾部会漏掉用户自己那条，误判成 render_timeout。supervisor 侧按
-    // 待渲染表 O(1) 过滤，历史回填 / 切会话重载推来的老 row 不会误触发。
+    // Do not just take the last userInput: a background result row may be inserted right after
+    // it, and a tail-only check would miss the user's own row, misreporting render_timeout. The
+    // supervisor filters against its pending-render table in O(1), so backfilled/reloaded rows
+    // never trigger it by accident.
     for (const row of rows) {
       if (row.kind === "userInput" && row.sourceCommandId) {
         conversationTelemetry?.notifyUserInputRendered(row.sourceCommandId);
@@ -1064,7 +1075,7 @@ export function SessionPane({
     ? readOnlyDropTargetController
     : dropTargetController;
 
-  // 稳定回调读取的最新值经 ref 透传，避免回调依赖高频变化的 snapshot/文本。
+  // Stable callbacks read the latest values through refs, never depending on the fast-changing snapshot/text.
   const snapshotRef = useRef<ConversationSnapshot | null>(snapshot);
   const autoOpenedAssistantPptxKeysRef = useRef<Set<string>>(new Set());
   const assistantPreviewPptxGateRef = useRef(createAssistantPreviewPptxAutoOpenGateState());
@@ -1126,9 +1137,10 @@ export function SessionPane({
     ) {
       return;
     }
-    // Bug 原因：V4 session 配置只存在 ConversationSnapshot，legacy task 配置桶一直为空；
-    // 用户从 custom model 会话新建任务时，startDraft 只能继承 workspace 默认模型。
-    // 这里仅把权威配置叠到完整目录并按 task 缓存，不改变 session 或 workspace 事实源。
+    // Bug: V4 session config lives only in ConversationSnapshot, so the legacy task config
+    // bucket stays empty; starting a task from a custom-model session could only inherit the
+    // workspace default model. Overlay the authoritative config onto the full catalog, cached
+    // per task; session/workspace sources of truth are untouched.
     useZCodeSessionStore
       .getState()
       .setTaskConfigOptions(
@@ -1172,8 +1184,9 @@ export function SessionPane({
     workspaceKey,
   ]);
   useEffect(() => {
-    // 防止切换 workspace/session/logEpoch 后沿用旧 key；key 本身已隔离，清理仅是
-    // 生命周期边界，避免长时间 workbench 中 Set 随会话数增长。
+    // Avoid reusing keys across workspace/session/logEpoch switches; keys are already isolated,
+    // so this cleanup is just a lifecycle boundary keeping the Set from tracking every session
+    // in long-lived workbenches.
     autoOpenedAssistantPptxKeysRef.current.clear();
   }, [sessionId, snapshot?.logEpoch, workspaceKey]);
   const composerTextInsertRequest = useZCodeSessionStore(
@@ -1197,7 +1210,7 @@ export function SessionPane({
   const composerBindingRef = useRef({ sessionId, workspaceKey });
   composerBindingRef.current = { sessionId, workspaceKey };
   const configCommandBarrier = useMemo(() => createConfigCommandBarrier(), []);
-  // 软审核不是阻塞交互，不能隐藏 Composer 或禁用选区引用。
+  // Soft review is not a blocking interaction: never hide the Composer or disable selection quotes.
   const blockingInteractionId =
     snapshot?.pendingInteractions.find(
       (interaction) => interaction.payload.kind !== "workspaceHookReview",
@@ -1235,7 +1248,7 @@ export function SessionPane({
     modelSelectionService,
   });
 
-  // Composer 保存下一次 Submission 的 renderer intent；prewarm session 仅承载草稿预热。
+  // The Composer holds the renderer intent for the next Submission; the prewarm session only carries draft prewarming.
   const {
     composerDraft,
     modelSelectionRead,
@@ -1277,10 +1290,12 @@ export function SessionPane({
     ) {
       return;
     }
-    // Bug 原因：冷启动时普通 Provider 会先让草稿预热，Account Overlay 随后才进入
-    // Selection View。旧预热会话冻结了早期 fallback，即使最新 View 已包含当前账号连接，
-    // Renderer 也会永久停在旧模型。未发送且无显式选择的草稿不是执行事实；View 更新时
-    // 回收并按最新选择事实重建，已显式选择和正式会话仍保持冻结。
+    // Bug: on cold start the plain Provider lets the draft prewarm first and the Account
+    // Overlay enters the Selection View only later. The prewarm session froze the early
+    // fallback, so the renderer stayed on the old model forever even after the latest View
+    // included the current account connection. A draft with no send and no explicit choice is
+    // not an execution fact: recycle and rebuild from the latest selection on View change;
+    // explicit choices and real sessions stay frozen.
     useZCodeSessionStore.getState().invalidateDraftRuntime(workspacePath, workspaceIdentity);
   }, [draftConfigRef, modelSelectionView?.revision, sessionId, workspaceIdentity, workspacePath]);
   const recommendStartPlan = useStartPlanRecommendation(modelSelectionView);
@@ -1295,7 +1310,7 @@ export function SessionPane({
   const codingPlanUpgradeDialog = useOptionalCodingPlanUpgradeDialog();
   const openSettingsTab = useOptionalTabStore((state) => state.openSettingsTab);
   const promoteGroupedDraftTask = useZCodeSessionStore((state) => state.promoteGroupedDraftTask);
-  // 首发 commandId 在 accepted 时已存在，也是 completion 的 message_id；不必等回复完成。
+  // The first-send commandId already exists at accepted time and is also the completion message_id; no need to wait for the reply.
   const reportDraftCreated = useCallback(
     (createdSessionId: string, source: SessionCreateSource, messageId: string) => {
       void reportSessionCreate(platform, {
@@ -1324,14 +1339,16 @@ export function SessionPane({
           messageId,
         );
       }
-      // Bug 根因：Session 打开埋点只衡量已有 Session，但草稿首发过去会把新建/预热提升的
-      // sessionId 直接交给同一 hook。预热 lease 还保留草稿期的 startedAt 与空 snapshot timing，
-      // 因而把数小时闲置时间误记为 total/react。创建边界先标记本 pane 的首次绑定；离开后
-      // 再次显式打开同一 Session 时标记会清除，恢复正常的已有 Session 打开测量。
+      // Root cause: the session-open metric measures existing sessions only, yet draft
+      // first-send handed the newly created/promoted prewarm sessionId to the same hook. The
+      // prewarm lease keeps the draft-era startedAt and empty snapshot timing, recording hours
+      // of idle as total/react. Mark this pane's first binding at the creation boundary; the
+      // flag clears when the same session is explicitly reopened after leaving, restoring the
+      // normal existing-session open measurement.
       newlyCreatedSessionIdRef.current = createdSessionId;
       promoteComposerDraft(createdSessionId);
-      // 只有 draft create/promote 的 accepted 边界能继承 grouped placement。
-      // fork 和普通任务导航仍复用 onSessionCreated，但不会污染已有 task 的分组排序。
+      // Only the draft create/promote accepted boundary inherits grouped placement. Fork and
+      // plain task navigation still reuse onSessionCreated without polluting existing task grouping.
       if (groupedDraftTask) {
         promoteGroupedDraftTask(
           workspacePath,
@@ -1339,7 +1356,7 @@ export function SessionPane({
           groupedDraftTask,
           workspaceIdentity,
         );
-        logger.debug("[v4-pane] grouped draft 已显式提升", {
+        logger.debug("[v4-pane] grouped draft explicitly promoted", {
           createdSessionId,
           draftId: groupedDraftTask.draftId,
         });
@@ -1373,16 +1390,18 @@ export function SessionPane({
   const snapshotFollowupMode = snapshot?.config.followupMode ?? null;
   const snapshotRevision = snapshot?.revision ?? null;
 
-  // 注入模式对齐 PermissionDialog：theme/codePreviewSettings 在宿主取 store，
-  // 经稳定引用的 rowContext 下发给 memo 行组件（MessageResponse/ToolCallBlocks）。
+  // Injection mirrors PermissionDialog: the host reads theme/codePreviewSettings from the
+  // store and delivers them via the stable-reference rowContext to memoized row components
+  // (MessageResponse/ToolCallBlocks).
   const theme = useZCodeStoreWithDefault((state) => state.theme, "system");
   const codePreviewSettings = useZCodeStoreWithDefault(
     (state) => state.codePreviewSettings,
     DEFAULT_CODE_PREVIEW_SETTINGS,
   );
-  // Tier 1 fork 跳转：点 child 会话的 forkNotice → 把当前 pane 原地切到父会话，复用 fork
-  // 落地同款 onSessionCreated（primary→setActiveTaskId、分屏→bindPaneSession）。rowId 预留
-  // Tier 2 精确滚动——当前 forkNotice.parentRowId 恒为 0 占位，此处忽略。
+  // Tier 1 fork jump: clicking a child session's forkNotice switches this pane in place to the
+  // parent session, reusing the same onSessionCreated as the fork flow (primary ->
+  // setActiveTaskId, split -> bindPaneSession). rowId is reserved for Tier 2 exact scrolling:
+  // forkNotice.parentRowId is always the 0 placeholder, ignored here.
   const handleNavigateToRow = useCallback(
     (targetSessionId: string, _rowId: number) => {
       if (!targetSessionId || targetSessionId === sessionId) {
@@ -1419,7 +1438,7 @@ export function SessionPane({
         ...(baseLogEpoch ? { baseLogEpoch } : {}),
       });
       onEnvelopeCreated?.(envelope);
-      // 必须早于第一次上行：transport error/renderer refresh 后仍有可查询线索。
+      // Must run before the first upstream send: keeps a queryable clue across transport errors/renderer refreshes.
       const groupedDraftTask =
         type === "createSession"
           ? useZCodeSessionStore.getState().getWorkspaceState(workspacePath, workspaceIdentity)
@@ -1470,9 +1489,10 @@ export function SessionPane({
           lease.store.settleCommand(envelope.commandId);
         }
         if (isProviderNotReadyError(error)) {
-          // provider_not_ready 在 Host getClient 前确定性拒绝，CLI 不可能已经
-          // admission。若继续保留 renderer 恢复账本，重连 query 必然得到 unknown；即使
-          // unknown 现已静默清账，也不应为确定性拒绝留下无效的恢复记录。
+          // provider_not_ready deterministically rejects before Host getClient, so the CLI
+          // cannot have admitted it yet. Keeping the renderer recovery ledger would make the
+          // reconnect query return unknown for sure; unknown now settles silently, and a
+          // deterministic rejection must not leave an invalid recovery record.
           pendingCommandRegistry.settle(envelope.sessionId, envelope.commandId);
         }
         recordV4CommandAck({
@@ -1481,8 +1501,8 @@ export function SessionPane({
           reasonCode: String(error),
           at: Date.now(),
         });
-        // 发送漏斗落定：telemetrySeed 只有真实用户发送才携带，两步式 createSession
-        // 与后台任务无 seed，天然不会伪造 send_result。
+        // Send-funnel settlement: only real user sends carry telemetrySeed; two-step
+        // createSession and background tasks have no seed and cannot fake send_result.
         if (telemetrySeed) {
           conversationTelemetry?.settleSendResult({
             seed: telemetrySeed,
@@ -1504,8 +1524,9 @@ export function SessionPane({
         type === "sendText" &&
         (ack.status === "accepted" || ack.status === "duplicate")
       ) {
-        // ACK 只代表 CLI admission；若自己的 conversation topic 随后静默，store watchdog
-        // 会在宽限期后复用同一 owned subscription 恢复权威 row/queue，不重放 command。
+        // An ACK means CLI admission only; if the conversation topic goes silent afterwards,
+        // the store watchdog reuses the same owned subscription after the grace period to
+        // recover authoritative rows/queue, without replaying the command.
         lease.store.expectAcceptedInputProjection(envelope.commandId);
       }
       if (ack.status === "accepted" && telemetrySeed) {
@@ -1524,7 +1545,7 @@ export function SessionPane({
         }
       }
       if (telemetrySeed) {
-        // 队列二次确认的 ACK 返回 null（非终态），落定会让 first-wins 吃掉真实结果。
+        // The queue double-confirm ACK returns null (non-terminal); settling there would let first-wins swallow the real result.
         const outcome = resolveSendAckSettlement(ack);
         if (outcome) {
           const settledSessionId =
@@ -1533,8 +1554,9 @@ export function SessionPane({
               : (targetSessionId ??
                 (ack.result?.type === "createSession" ? ack.result.sessionId : null));
           if (outcome.kind === "awaitRender") {
-            // ACK 只代表 Host 收下了命令，用户气泡此刻还没画出来；
-            // 等投影回流出 userInput row（或 30s 超时）再落定端到端耗时。
+            // An ACK only means the Host accepted the command; the user bubble is not
+            // painted yet. Settle the end-to-end timing once the projection echoes a userInput
+            // row (or on the 30s timeout).
             conversationTelemetry?.awaitSendRender({
               seed: telemetrySeed,
               sessionId: settledSessionId,
@@ -1553,7 +1575,7 @@ export function SessionPane({
           }
         }
       }
-      // 生产构建 renderer 日志关闭，ack 摘要写入有界调试缓冲供 e2e/现场 probe。
+      // Production renderer logs are off; the ack summary goes to a bounded debug buffer for e2e/field probes.
       recordV4CommandAck({
         type,
         status: ack.status,
@@ -1562,11 +1584,12 @@ export function SessionPane({
         at: Date.now(),
       });
       if (shouldResyncForStaleAuthority(ack)) {
-        // epoch/entity authority 已变化时只清 optimistic overlay 仍会继续拿旧
-        // target 发命令；统一 same-sub recovery 后才能基于同代 rowId/entityId 再裁决。
+        // Once epoch/entity authority changes, clearing only the optimistic overlay keeps
+        // sending commands at the stale target; same-sub recovery must run first so the next
+        // verdict is made against same-generation rowId/entityId.
         lease?.store?.recoverFromStaleAuthority();
       }
-      // rejected/stale/failed 时若不 settle，optimistic overlay 会永久残留。
+      // Without settling on rejected/stale/failed, the optimistic overlay lingers forever.
       if (
         lease?.store &&
         type !== "createSession" &&
@@ -1604,8 +1627,8 @@ export function SessionPane({
         options.cachePolicy,
         sessionId,
         current.logEpoch,
-        // rewind 会在同一 logEpoch、row/entity 下把 active 切为 reverted；
-        // 终态缓存必须带上这个语义版本，不能继续复用撤销前的完整 diff。
+        // rewind flips active to reverted under the same logEpoch/row/entity; the terminal
+        // cache must carry that semantic version and not reuse the pre-undo full diff.
         options.cachePolicy === "in-flight"
           ? current.revision
           : (options.fileChangesState ?? "unknown"),
@@ -1619,8 +1642,9 @@ export function SessionPane({
         return cachedRequest;
       }
 
-      // 虚拟行卸载会丢失行内 state，复挂载后预览卡片会重复拉取包含完整
-      // patch 的 fileChanges；缓存必须放在 SessionPane，才能与文件变更面板共享同一请求。
+      // Unmounting a virtualized row loses its local state, so a remounted preview card
+      // would refetch fileChanges containing the full patch; the cache must live in
+      // SessionPane to share one request with the file-changes panel.
       let request: Promise<V4ConversationFileChangesResult>;
       request = fileChanges({
         sessionId,
@@ -1629,8 +1653,9 @@ export function SessionPane({
         baseLogEpoch: current.logEpoch,
       }).then(
         (result) => {
-          // 运行中成功结果仍可能只是当前 revision 的局部 diff；只共享
-          // in-flight Promise，settled 后删除，避免最终卡片复用早期结果。
+          // A success while still running may be a partial diff for the current revision;
+          // share only the in-flight Promise and drop it once settled, so the final card
+          // never reuses an early result.
           if (
             options.cachePolicy === "in-flight" &&
             fileChangesRequestCache.get(cacheKey) === request
@@ -1640,7 +1665,7 @@ export function SessionPane({
           return result;
         },
         (error: unknown) => {
-          // 失败不能污染后续重试；仅删除当前 Promise，避免旧请求误删同 key 的新请求。
+          // A failure must not poison later retries; delete only the current Promise so an old request cannot remove a newer same-key one.
           if (fileChangesRequestCache.get(cacheKey) === request) {
             fileChangesRequestCache.delete(cacheKey);
           }
@@ -1739,8 +1764,9 @@ export function SessionPane({
     },
     [onOpenPlanDetail, remoteSessionId, workspaceIdentity, workspacePath],
   );
-  // 与 plan-detail 完全同构：卡片只发意图（runId + toolCallId + 展示名），
-  // 会话与 workspace 身份一律由宿主（这里）补齐，卡片不感知 scope。
+  // Mirrors plan-detail exactly: the card emits intent only (runId + toolCallId + display
+  // name); session/workspace identity is always filled in by the host (here) - the card never
+  // knows the scope.
   const handleOpenWorkflowRun = useCallback(
     (request: OpenWorkflowRunSideTabRequest) => {
       onOpenWorkflowRun?.({
@@ -1752,7 +1778,7 @@ export function SessionPane({
     },
     [onOpenWorkflowRun, remoteSessionId, workspaceIdentity, workspacePath],
   );
-  // 药丸 → 子代理 transcript：与 plan-detail / workflow-run 同构，卡片只交出实例身份，scope 在这里补。
+  // Pill -> subagent transcript: same shape as plan-detail/workflow-run; the card yields only the instance identity, scope filled in here.
   const handleOpenWorkflowActorSession = useCallback(
     (request: OpenWorkflowActorSessionSideTabRequest) => {
       onOpenWorkflowActorSession?.({
@@ -1764,7 +1790,7 @@ export function SessionPane({
     },
     [onOpenWorkflowActorSession, remoteSessionId, workspaceIdentity, workspacePath],
   );
-  // 脚本药丸同构：卡片交出 run + 发起行 + 阶段，scope 在这里补。
+  // Script pill, same shape: the card yields run + origin row + phase; scope filled in here.
   const handleOpenWorkflowWorkspace = useCallback(
     (request: OpenWorkflowWorkspaceSideTabRequest) => {
       onOpenWorkflowWorkspace?.({
@@ -1776,7 +1802,7 @@ export function SessionPane({
     },
     [onOpenWorkflowWorkspace, remoteSessionId, workspaceIdentity, workspacePath],
   );
-  // 产物 chip 与 run 详情同构：卡片/通知行只发意图，scope 由这里补齐。
+  // Artifact chip mirrors run detail: card/notification row emit intent only; scope filled in here.
   const handleOpenWorkflowArtifact = useCallback(
     (request: OpenWorkflowArtifactSideTabRequest) => {
       onOpenWorkflowArtifact?.({
@@ -1788,25 +1814,32 @@ export function SessionPane({
     },
     [onOpenWorkflowArtifact, remoteSessionId, workspaceIdentity, workspacePath],
   );
-  // 工具卡 → workflow run 的关联表。权威来源是 workflowRuns 投影里每条 run 的 toolCallId
-  // （schema 注释就写着它是「工具卡 → 详情页的关联键」）；工具行自己的 output 在 v4 下
-  // 只剩 formatCreateWorkflowModelContent 挑出的那句散文，结构化字段拿不到。
+  // Tool card -> workflow run join. The authoritative source is each run's toolCallId in the
+  // workflowRuns projection (the schema comment names it the tool-card -> detail key); in v4 a
+  // tool row's own output is just the prose picked by formatCreateWorkflowModelContent, with
+  // no structured fields.
   //
-  // 值不只是 runId：run 态的卡片本身要渲染状态词与步数，所以联接一次就把摘要算完
-  // （计数规则见 buildWorkflowRunByToolCallId，它的单测穷举 settled / observed 语义）。
-  // 重启后投影不再为空：CLI 冷物化把 journal 回放进同一个 reducer，
-  // 卡片 join 只读投影，不再合并发现查询。发现查询在这里只剩一个用途——
+  // The value is more than runId: a run-state card renders status wording and step counts,
+  // so the join computes the summary in one pass (counting rules in
+  // buildWorkflowRunByToolCallId; its unit tests enumerate the settled/observed semantics).
+  // The projection is no longer empty after a restart: CLI cold materialization replays the
+  // journal into the same reducer, and the card join reads the projection only - no merged
+  // discovery queries. Discovery queries keep exactly one purpose here:
   //
-  // `limit` 与 `refreshKey` 服务的是任务列表那条「已结束的工作流 · N」页脚行：
-  // - 深度取 run 目录页的同一个常量，否则页脚行的计数与页面上的行会是两套口径；
-  // - 触发器取**同一个派生函数**（run 数 + 已结算数），所以页脚行与它开出来的目录页新鲜度一致；
-  //   接投影的 `revision` 则会把一次分页读变成一条跟着节点事件走的流。
+  // `limit`/`refreshKey` serve the task list's finished-workflows footer row:
+  // - depth reuses the run-directory page's constant, otherwise the footer count and the
+  //   page rows drift into two conventions;
+  // - the trigger is the same derived function (run count + settled count), so the footer and
+  //   the directory page it opens share one freshness; subscribing to the projection
+  //   `revision` instead would turn a single paged read into a stream following node events.
   const workflowRunJournalSummaries = useWorkflowRunJournalSummaries({
     sessionId,
-    // Bug 根因（2026-08-24 实测）：嵌套只读 transcript（dwf actor / subagent）也是 SessionPane，
-    // 无差别发这条查询等于拿子会话 id 去问一条按**父会话**建键的 journal；CLI 的冷会话前置
-    // 随即为正在运行的 detached actor 会话物化第二个 runtime（幽灵），双写事件日志，
-    // 直播冻结在「已工作 xx 秒」。只读 pane 也不消费 join 回退与任务列表页脚，直接关掉。
+    // Root cause (observed 2026-08-24): nested read-only transcripts (dwf actor/subagent)
+    // are SessionPanes too; firing this query from all of them asks a parent-session-keyed
+    // journal with a child session id. The CLI cold-session prestep then materializes a second
+    // ghost runtime for the running detached actor, double-writes the event log, and freezes
+    // the live view at working-for-xx-seconds. Read-only panes consume neither the join
+    // fallback nor the task-list footer: turn it off entirely.
     enabled: !readOnly,
     live: state.status === "live",
     limit: WORKFLOW_RUN_DIRECTORY_LIMIT,
@@ -1820,31 +1853,35 @@ export function SessionPane({
     () => buildWorkflowRunByToolCallId(snapshot?.workflowRuns?.runs),
     [snapshot?.workflowRuns],
   );
-  // runId 键的同源表：ResumeWorkflowRun 工具行的联接入口（display 带 runId，投影的
-  // toolCallId 跨 resume 沿用原始 CreateWorkflow 行，resume 行按 toolCallId 查不到）。
+  // runId-keyed sibling table: join entry for ResumeWorkflowRun tool rows (display carries
+  // the runId; in the projection toolCallId keeps referencing the original CreateWorkflow row
+  // across resumes, so resume rows are not found by toolCallId).
   const workflowRunByRunId = useMemo(
     () => buildWorkflowRunByRunId(snapshot?.workflowRuns?.runs),
     [snapshot?.workflowRuns],
   );
-  // 发起 toolCallId → 静态图：图是 run 的属性，
-  // 三种来源的轮尾 run 卡都到这一张表取图。行窗口一遍建成，随窗口重建。
+  // Origin toolCallId -> static graph: the graph belongs to the run, and turn-end run cards
+  // from all three sources fetch it from this one table. Built in one pass over the row
+  // window, rebuilt with it.
   const workflowGraphByToolCallId = useMemo(
     () => buildWorkflowGraphByToolCallId(snapshot?.rows.window),
     [snapshot?.rows.window],
   );
-  // 工作流工具行 → 草稿位置：稿号与
-  // 「后面还有更新的一稿」都只能从行序读出，行窗口一遍建成，随窗口重建。
+  // Workflow tool row -> draft position: both the draft number and whether a newer draft
+  // follows are readable only from row order. Built in one pass over the row window, rebuilt
+  // with it.
   const workflowDraftByToolCallId = useMemo(
     () => buildWorkflowDraftByToolCallId(snapshot?.rows.window),
     [snapshot?.rows.window],
   );
-  // Workflow 通知 manifest 的升级条目 Waiting→Answered 联查表（runId → 停驻 qid 集合）。
+  // Join table for Waiting->Answered upgrades in the Workflow notification manifest (runId -> parked qid set).
   const workflowRunPendingQuestionsByRunId = useMemo(
     () => buildWorkflowRunPendingQuestionsByRunId(snapshot?.workflowRuns?.runs),
     [snapshot?.workflowRuns],
   );
-  // 详情页入口（面板 Workflows 分区的行）。行只把「打开哪个 run」交出来（runId + toolCallId），
-  // 会话与 workspace 身份照旧由这里补齐——与工具卡走的是同一个 handler，不存在第二条打开路径。
+  // Detail-page entry (rows in the panel Workflows section). The row yields only which run to
+  // open (runId + toolCallId); session/workspace identity is filled in here as usual - the same
+  // handler as the tool card, never a second open path.
   const handleOpenWorkflowRunFromPanel = useCallback(
     (target: ConversationStatusPanelWorkflowRunTarget) => {
       if (!sessionId) return;
@@ -1852,7 +1889,7 @@ export function SessionPane({
     },
     [handleOpenWorkflowRun, sessionId],
   );
-  // run 目录页的入口（同一条页脚行）。同样只补 scope，不在这里多造一条打开路径。
+  // Run-directory entry (the same footer row). Also fills in scope only; no extra open path here.
   const handleOpenWorkflowRunDirectoryFromPanel = useCallback(
     (request: OpenWorkflowRunDirectorySideTabRequest) => {
       onOpenWorkflowRunDirectory?.({
@@ -1891,8 +1928,9 @@ export function SessionPane({
             });
           } catch (error) {
             if (!String(error).includes("sessionNotFound")) throw error;
-            // 多开后 tab id 包含 child，旧单例实现依靠新 child 覆盖同一个父 tab
-            // 来移除失效项已不成立。这里显式携带 replacesChildSessionId，让宿主原子删旧开新。
+            // With multiple opens the tab id includes the child, so the old singleton trick
+            // of a new child overwriting the same parent tab no longer holds. Carry
+            // replacesChildSessionId explicitly and let the host delete-then-add atomically.
             replacesChildSessionId = targetChildSessionId;
             clearSelectionSideChat(targetChildSessionId);
             clearConversationSelectionReferenceScope(targetChildSessionId, workspaceKey);
@@ -1924,7 +1962,7 @@ export function SessionPane({
             (ack.status !== "accepted" && ack.status !== "duplicate") ||
             ack.result?.type !== "createSelectionSideSession"
           ) {
-            throw new Error(ack.reasonCode ?? "createSelectionSideSession 被拒绝");
+            throw new Error(ack.reasonCode ?? "createSelectionSideSession rejected");
           }
           return ack.result.sessionId;
         });
@@ -1944,7 +1982,7 @@ export function SessionPane({
           });
         }
       } catch (error) {
-        logger.warn("[v4-pane] 创建框选副屏会话失败", {
+        logger.warn("[v4-pane] failed to create selection side session", {
           error: error instanceof Error ? error.message : String(error),
           parentSessionId: sessionId,
           workspaceKey,
@@ -1977,8 +2015,9 @@ export function SessionPane({
       const chosen = inherited ? await recommendStartPlan(inherited) : undefined;
       if (chosen === null) return false;
       const modelSelection = chosen && chosen !== inherited ? chosen : undefined;
-      // 参数命令每次都是新 child；同一条文本在 ACK 未回时重试仍复用 pending，
-      // 不同文本则不能与 bare `/side` 或另一条 prompt 合并。
+      // Every argument command spawns a new child; while the ACK is outstanding, retrying
+      // the same text reuses pending, but different text must not merge with bare `/side` or
+      // another prompt.
       const pendingKey = `${selectionSideChatKey}\u0000prompt\u0000${text}`;
       const childSessionId = await createSelectionSideChat(pendingKey, async () => {
         const ack = await dispatchCommand(
@@ -1993,7 +2032,7 @@ export function SessionPane({
           (ack.status !== "accepted" && ack.status !== "duplicate") ||
           ack.result?.type !== "createSelectionSideSession"
         ) {
-          throw new Error(ack.reasonCode ?? "createSelectionSideSession 被拒绝");
+          throw new Error(ack.reasonCode ?? "createSelectionSideSession rejected");
         }
         return ack.result.sessionId;
       });
@@ -2030,11 +2069,12 @@ export function SessionPane({
       return;
     }
 
-    // Side Pane 固定入口没有会话 Provider；这里只注册主 pane 已有的命令编排能力。
-    // 父会话即使处于 Permission/AskUser 等阻塞态也保持注册，直接入口仍可创建/激活副屏。
+    // The Side Pane fixed entry has no session Provider; register only the command
+    // orchestration the main pane already has. The parent session stays registered even while
+    // blocked in Permission/AskUser, so the direct entry can still create/focus side panes.
     return registerSelectionSideChatOpener(
       selectionSideChatKey,
-      // 合并时曾丢弃 reference，导致 Markdown 入口只建空白副屏；复用现有引用路由。
+      // A merge once dropped the reference, leaving Markdown entries with blank side panes; reuse the existing reference routing.
       (reference) => handleOpenSelectionSideConversation(reference, !reference),
       focused,
       Boolean(blockingInteractionId) || selectionSideActionBlocked,
@@ -2065,9 +2105,10 @@ export function SessionPane({
     [cliSlashCommandNames],
   );
 
-  // `/side` App 层斜杠命令。命令目录仍以 CLI catalog 为权威，这里只在渲染层
-  // 按门禁注入"选中即打开辅助对话"的本地命令；草稿态（无父 session 可挂 child）、
-  // 辅助对话自身、只读与手机 viewport 均不提供。
+  // App-level `/side` slash command. The CLI catalog stays authoritative; the renderer only
+  // injects the gated local open-side-chat-from-selection command. Not offered in draft state
+  // (no parent session to attach a child), inside a side chat itself, read-only mode, or the
+  // mobile viewport.
   const appSlashCommands = useMemo<AppSlashCommand[] | undefined>(() => {
     if (
       !sessionId ||
@@ -2084,8 +2125,9 @@ export function SessionPane({
     const openNewSelectionSideChat = () => {
       void handleOpenSelectionSideConversation(undefined, true);
     };
-    // 关键词固定同时包含中英文别名，任一 locale 下输入 side / btw / 辅助 都能搜到。
-    // `/btw` 是 `/side` 的等价别名，适配不同用户输入习惯，面板中各自独立展示。
+    // Keywords always include English and Chinese aliases so side/btw and the zh spellings
+    // match in any locale. `/btw` is an equivalent alias of `/side` for different typing
+    // habits; both are listed separately in the panel.
     const sharedKeywords = ["side", "btw", "side chat", "auxiliary", "辅助对话", "辅助", "侧边"];
     const description = intl.formatMessage({ id: "chat.slash.app.side.description" });
     return [
@@ -2108,17 +2150,18 @@ export function SessionPane({
   const chatLoadingBlockedByActiveWork = hasChatLoadingBlockingActiveWork(
     snapshot?.control.activeWorks ?? [],
   );
-  // 子智能体详情的会话内容仍只读；文件撤销恢复的是 workspace，必须作为独立能力判断。
+  // Subagent detail conversation content stays read-only; file undo restores the workspace and is gated as its own capability.
   const workspaceFileRewindEnabled = !readOnly || allowWorkspaceFileRewind;
-  // cancelBackgroundWork：启动卡 / 后台任务卡的「取消」入口。定义在 rowContext memo 之前，
-  // 供其绑定（onOpenWorkflowRun 同样在 memo 前定义）；只读模式下不下发（与 4213 处一致）。
+  // cancelBackgroundWork: the Cancel entry on spawn/background-task cards. Defined before
+  // the rowContext memo so the memo can bind it (onOpenWorkflowRun is likewise pre-memo);
+  // read-only panes never issue it (same rule as the submission guard).
   const handleCancelBackgroundWork = useCallback(
     (workId: string) => {
       if (!sessionId) return;
       void dispatchCommand("cancelBackgroundWork", { workId }, sessionId).then((ack) => {
         if (ack.status !== "accepted" && ack.status !== "noop") {
           logger.warn(
-            `[v4-pane] cancelBackgroundWork 被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`,
+            `[v4-pane] cancelBackgroundWork rejected: ${ack.status} ${ack.reasonCode ?? ""}`,
           );
         }
       });
@@ -2126,12 +2169,12 @@ export function SessionPane({
     [dispatchCommand, sessionId],
   );
 
-  // 动态工作流灰度快照：只读 store，
-  // 取数在 Root 里做一次。未就绪时 enabled 为 false，按未命中处理。
+  // Dynamic-workflow rollout snapshot: a read-only store, fetched once in Root. While
+  // unavailable, enabled is false and it is treated as a miss.
   const { enabled: dynamicWorkflowEnabled } = useDynamicWorkflowAvailability();
 
-  // resumeWorkflowRun：工具卡页脚的 Resume。与详情页
-  // 同一条 v4 命令，不携 baseRevision；`name` 喂恢复后完成通知的主题。
+  // resumeWorkflowRun: the Resume action on tool-card footers. Same v4 command as the
+  // detail page, without baseRevision; `name` feeds the resumed run completion notification subject.
   const handleResumeWorkflowRun = useCallback(
     (workId: string, name?: string) => {
       if (!sessionId) return;
@@ -2141,14 +2184,16 @@ export function SessionPane({
         sessionId,
       ).then((ack) => {
         if (ack.status !== "accepted" && ack.status !== "noop") {
-          logger.warn(`[v4-pane] resumeWorkflowRun 被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`);
+          logger.warn(
+            `[v4-pane] resumeWorkflowRun rejected: ${ack.status} ${ack.reasonCode ?? ""}`,
+          );
         }
       });
     },
     [dispatchCommand, sessionId],
   );
 
-  // amendWorkflowRunSettings：run 卡的「配置」。回 ACK 给弹层——拒绝理由画在弹层里，不是控制台的一行 warn。门与 Resume 相同。
+  // amendWorkflowRunSettings: Configure on the run card. The ACK returns to the dialog - rejection reasons render there, not as a console warn. Same gate as Resume.
   const handleAmendWorkflowRunSettings = useCallback(
     (workId: string, change: WorkflowRunSettingsChange): Promise<CommandAck> =>
       dispatchCommand("amendWorkflowRunSettings", { workId, ...change }, sessionId),
@@ -2192,8 +2237,9 @@ export function SessionPane({
       onOpenWorkflowWorkspace: onOpenWorkflowWorkspace ? handleOpenWorkflowWorkspace : undefined,
       onOpenWorkflowArtifact: onOpenWorkflowArtifact ? handleOpenWorkflowArtifact : undefined,
       onCancelBackgroundWork: readOnly ? undefined : handleCancelBackgroundWork,
-      // Resume 进入会话上下文的唯一供给点；灰度与只读两道门都在 resolveWorkflowResumeHandler 里，
-      // 断在这里等于工具卡页脚与摘要卡的按钮一起消失。
+      // The only supply point for Resume entering a session context; both the rollout and
+      // read-only gates live in resolveWorkflowResumeHandler. Breaking here hides the buttons
+      // on tool-card footers and summary cards alike.
       onResumeWorkflowRun: resolveWorkflowResumeHandler({
         readOnly,
         dynamicWorkflowEnabled,
@@ -2275,26 +2321,30 @@ export function SessionPane({
     ],
   );
 
-  // ── 草稿态 v4 draft session 预热（m5）──
-  // pane 未绑定会话时后台建 phase=draft 会话作预热载体：配置写 CAS 直达、首发复用。
-  // 对外绑定语义不变（shell activeTaskId 仍 null），预热会话只是 pane 内部 effective 订阅目标。
+  // Draft-state v4 session prewarm (m5).
+  // While the pane has no bound session, create a phase=draft session in the background as the
+  // prewarm vehicle: config writes go through CAS, first send reuses it. The external binding
+  // semantic is unchanged (shell activeTaskId stays null); the prewarm session is only the
+  // pane internal effective subscription target.
   const { binding: prewarmBinding } = useDraftSessionPrewarm({
     enabled: sessionId === null && draftAgentStartupAllowed,
     workspaceKey,
     paneId,
     invalidationVersion: draftRuntimeInvalidationVersion,
-    // SessionDataLayer 来自 workspace connection registry：同 transport generation 的 pane/remount
-    // 共享 identity；provider wrapper 重建产生的新 sendCommand 函数不能误判为 transport 换代。
+    // SessionDataLayer comes from the workspace connection registry: panes/remounts on the
+    // same transport generation share identity. A new sendCommand closure from a provider
+    // wrapper remount must not be misread as a transport generation change.
     transportIdentity: layer,
     dispatchCommand,
-    // 预热会话只消费当前 Root Composer Draft 的一次性初始化结果。
+    // The prewarm session consumes only the current Root Composer Draft one-shot initialization result.
     resolveInitialConfig: resolveInitialDraftConfig,
   });
   const prewarmBindingRef = useRef(prewarmBinding);
   prewarmBindingRef.current = prewarmBinding;
   const prewarmSessionId = prewarmBinding?.sessionId ?? null;
-  // runtime 换代（CUA Helper 就绪、liveness 恢复等触发 workspace-dispose）会冲掉草稿态尚未
-  // 持久化的预热会话。重建期间禁止发送，否则附件会挂在已消失的会话上（sessionNotFound）。
+  // A runtime generation change (CUA Helper ready, liveness recovery, etc., triggering
+  // workspace dispose) wipes a draft prewarm session that never persisted. Block sending while
+  // it rebuilds, or attachments hang off a vanished session (sessionNotFound).
   const { rebuilding: draftRuntimeRebuilding } = useDraftRuntimeRebuildGate({
     enabled: sessionId === null,
     onRuntimeRestart,
@@ -2309,8 +2359,9 @@ export function SessionPane({
   const effectiveSessionId = sessionId ?? prewarmSessionId;
   const showModelChangeNotice = useCallback(
     (sourceModel: ModelSelectionSource | null, targetModel: ModelSelectionSource) => {
-      // Bug 原因：草稿尚未形成实际会话，模型选择本身已经在 composer 中可见；
-      // 若此时重复弹出切换结果，会把初始化或 prewarm fallback 误报成一次会话内切换。
+      // Bug: the draft has no real session yet and the model choice is already visible in
+      // the composer; surfacing a switch toast here would misreport initialization or the
+      // prewarm fallback as an in-session switch.
       if (sessionId === null) {
         return;
       }
@@ -2349,9 +2400,10 @@ export function SessionPane({
       transition: SessionModelTransition,
     ) => {
       if (!focused || subscribedSessionId !== effectiveSessionId) return;
-      // Bug 原因：自动 fallback 的提示与偏好晋升过去分别由 online 事件和任意
-      // snapshot 差异驱动，recovery/历史投影可能静默改写下一草稿。现在两者都只
-      // 消费 store 已按 deliveryKind 去重后的同一 realtime online 事件。
+      // Bug: the auto-fallback notice and preference promotion were driven by online events
+      // and arbitrary snapshot diffs respectively, letting recovery/historical projections
+      // silently rewrite the next draft. Both now consume the same realtime online event after
+      // the store deliveryKind dedup.
       showModelChangeNotice(transition.from, transition.to);
     },
     [
@@ -2386,8 +2438,9 @@ export function SessionPane({
       return;
     }
     const nextLease = layer.acquire(effectiveSessionId);
-    // Bug 原因：acquire 会立即启动 connect，activation 可能在下一轮 effect 前释放
-    // 一次性 online 帧；必须在 acquire 返回后同步监听，不能靠 snapshot 重放补偿。
+    // Bug: acquire starts connect immediately and the activation may release the one-shot
+    // online frame before the next effect runs; listen synchronously right after acquire
+    // returns - snapshot replay cannot compensate.
     const offOnlineModelTransition = nextLease.store.onOnlineModelTransition((transition) => {
       onlineModelTransitionHandlerRef.current(effectiveSessionId, nextLease.store, transition);
     });
@@ -2403,10 +2456,10 @@ export function SessionPane({
     void lease.store.refreshPlans();
   }, [lease, sessionId, snapshot?.sessionId, state.planDirectoryRevision]);
 
-  // 预热会话订阅失败（CLI 重启内存会话消失等）→ 丢弃回落无预热路径，不进错误 UI。
+  // Prewarm subscription failure (e.g. the in-memory session died with a CLI restart): drop the fallback-to-prewarm path, no error UI.
   useEffect(() => {
     if (sessionId === null && prewarmBinding && state.status === "error") {
-      logger.warn("[v4-draft-prewarm] 预热会话订阅失败，丢弃回落", {
+      logger.warn("[v4-draft-prewarm] prewarm session subscription failed; dropping fallback", {
         prewarmSessionId: prewarmBinding.sessionId,
         lastError: state.lastError ?? null,
       });
@@ -2422,7 +2475,7 @@ export function SessionPane({
     ) {
       return;
     }
-    // 副屏是临时 UI 绑定；持久 child 丢失后清 tab，下一次框选按父会话重建。
+    // Side panes are transient UI bindings; clear the tab when the persisted child is gone and rebuild from the parent on the next selection.
     onSelectionSideChatUnavailable?.();
   }, [onSelectionSideChatUnavailable, selectionSideChat, state.lastError, state.status]);
 
@@ -2446,7 +2499,7 @@ export function SessionPane({
     ): Promise<boolean | "confirmationRequired"> => {
       let type: CommandType | null = null;
       let payload: Record<string, unknown> = {};
-      // compact 是可排队 input command，不走 CAS；resumeGoal 仍是 CAS。
+      // compact is a queueable input command, no CAS; resumeGoal stays CAS.
       let withBaseRevision = false;
       const currentRoutingMode = snapshotRef.current?.inputRouting.mode;
       const compactExpectedToQueue =
@@ -2459,8 +2512,9 @@ export function SessionPane({
           break;
         case "sendGoalCommand":
           type = "sendGoalCommand";
-          // 人工合并曾让 /goal 在准备完成后重新读取 Composer，覆盖点击时已冻结的档位。
-          // 与 sendText 一样沿用本次 Submission；后续菜单修改只影响下一次发送。
+          // A manual merge made /goal re-read the Composer after preparation, clobbering the
+          // tier frozen at click time. Like sendText, keep this Submission; later menu edits
+          // affect only the next send.
           if (!submission) return false;
           payload = {
             text: command.objective,
@@ -2479,16 +2533,16 @@ export function SessionPane({
           payload = { enabled: command.enabled };
           break;
         case "emptyGoal":
-          logger.warn("[v4-pane] /goal 需要目标文本");
+          logger.warn("[v4-pane] /goal needs target text");
           return true;
         case "unsupportedGoal":
-          logger.warn(`[v4-pane] 暂不支持 /goal ${command.action}`);
+          logger.warn(`[v4-pane] unsupported /goal ${command.action}`);
           return true;
         default:
           return false;
       }
       if (withBaseRevision && baseRevision === undefined) {
-        logger.warn(`[v4-pane] slash ${command.kind} 缺少 baseRevision`);
+        logger.warn(`[v4-pane] slash ${command.kind} missing baseRevision`);
         return true;
       }
       const ack = await dispatchCommand(
@@ -2510,12 +2564,12 @@ export function SessionPane({
       }
       if (ack.status !== "accepted" && ack.status !== "noop") {
         logger.warn(
-          `[v4-pane] slash ${command.kind} 被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`,
+          `[v4-pane] slash ${command.kind} rejected: ${ack.status} ${ack.reasonCode ?? ""}`,
         );
         if (command.kind === "compact" && ack.reasonCode === "compactOperationLock") {
           toast(intl.formatMessage({ id: "chat.compact.duplicateBlocked" }));
         } else if (command.kind === "compact" && ack.reasonCode === "activeTurn") {
-          // 兼容尚未升级的 CLI：旧端仍会返回 activeTurn，不能再次无声清空命令。
+          // Compatibility with not-yet-upgraded CLIs: old ends still return activeTurn; never silently clear the command twice.
           toast(intl.formatMessage({ id: "chat.compact.runningBlocked" }));
         }
       } else if (command.kind === "compact" && compactExpectedToQueue) {
@@ -2537,12 +2591,12 @@ export function SessionPane({
       let onAcceptedSelection: (() => void) | undefined;
       const dispatchSubmissionCommand = async (...args: Parameters<typeof dispatchCommand>) => {
         const ack = await dispatchCommand(...args);
-        // 在原 accepted 边界写回推荐选择，早于新 Session 的草稿转移；失败不改用户意图。
+        // Write back the recommended choice at the original accepted boundary, before the new session draft handoff; failures never change user intent.
         if (ack.status === "accepted" && submissionConfigFromCommand(args[0], args[1]))
           onAcceptedSelection?.();
         return ack;
       };
-      // 进入 barrier 前已经冻结；等待配置/附件期间不再回读 Composer 或 Session。
+      // Frozen before the barrier; while waiting for config/attachments, never re-read the Composer or Session.
       let submission = options?.submission ?? null;
       const heldQueueDisposition = options?.heldQueueDisposition;
       const expectedHeldQueueItemIds = options?.expectedHeldQueueItemIds;
@@ -2553,14 +2607,15 @@ export function SessionPane({
         contextAttachmentCount,
       });
 
-      // `/plan` 首版只消费纯文本。必须在 provider readiness 和任何 command admission 之前
-      // 拒绝附件/context，否则原始 `/plan ...` 会退化成普通 prompt，既绕过产品边界又清空草稿。
+      // The first `/plan` cut consumes plain text only. Reject attachments/context before
+      // provider readiness and any command admission, or a raw `/plan ...` degrades into a
+      // plain prompt, bypassing the product boundary and wiping the draft.
       if (slashCommand?.kind === "unsupportedPlanShortcut") {
         toast(intl.formatMessage({ id: "chat.plan.attachmentsBlocked" }));
         return "blocked" as const;
       }
 
-      // 空 /plan 与模式菜单相同，只编辑当前 Composer，不提前改写 Agent 执行状态。
+      // A bare /plan behaves like the mode menu: edits the current Composer only, never rewrites Agent execution state early.
       if (slashCommand?.kind === "planShortcut") {
         handleDraftSwitchMode("plan");
         if (submission) submission = { ...submission, planEnabled: true };
@@ -2573,13 +2628,14 @@ export function SessionPane({
 
       let effectiveText = text;
       if (slashCommand?.kind === "planShortcut") {
-        // 命令显式指定本次 Submission 的模式，不能靠另一条 CAS 的先后顺序保证。
+        // The command pins this Submission mode explicitly; ordering against another CAS must not be relied on.
         effectiveText = slashCommand.task;
-        // 命令只负责配置 shortcut；后续必须走普通 sendText，不能进入 goal/compact command 分支。
+        // The command only sets the shortcut; the follow-up must be a plain sendText, never the goal/compact command branch.
         slashCommand = null;
       }
-      // create/send ACK 期间用户可能切换任务或创建另一份 draft。
-      // placement 必须绑定发送开始时的稳定 identity，不能在完成回调里读取当前 workspace 草稿。
+      // The user may switch tasks or start another draft while create/send ACKs are in
+      // flight. placement must bind to the stable identity captured at send start; never read
+      // the current workspace draft inside the completion callback.
       const groupedDraftTaskAtSend =
         sessionId === null
           ? useZCodeSessionStore.getState().getWorkspaceState(workspacePath, workspaceIdentity)
@@ -2607,13 +2663,14 @@ export function SessionPane({
           slashCommand.kind === "emptyGoal" ||
           slashCommand.kind === "unsupportedGoal")
       ) {
-        // Plan 模式不能创建、更新或恢复 goal。必须在 draft promotion / command dispatch
-        // 之前拒绝，否则即使 CLI 后续拒绝，composer 也会误以为发送成功并清空用户输入。
+        // Plan mode cannot create, update, or resume goals. Reject before draft promotion /
+        // command dispatch, otherwise the composer clears user input believing the send
+        // succeeded even when the CLI later rejects.
         toast(intl.formatMessage({ id: "chat.goal.planModeBlocked" }));
         return "blocked" as const;
       }
       if (!submission) {
-        logger.warn("[v4-pane] Submission 缺少完整模型或模式配置");
+        logger.warn("[v4-pane] Submission missing model or mode config");
         return "blocked" as const;
       }
       const currentRoutingMode = snapshotRef.current?.inputRouting.mode;
@@ -2622,8 +2679,9 @@ export function SessionPane({
         !heldQueueDisposition &&
         (slashCommand === null || slashCommand.kind === "sendGoalCommand")
       ) {
-        // UI choice 只对普通输入和 /goal <新目标> 生效；/compact 直接追加暂停队列，
-        // resumeGoal 等控制命令也不应被发送消息确认框截获。
+        // The UI choice applies only to plain input and /goal <new goal>; /compact appends to
+        // the paused queue directly, and control commands such as resumeGoal must not be
+        // intercepted by the send-confirm dialog.
         return "confirmationRequired" as const;
       }
       if (slashCommand === null || slashCommand.kind === "sendGoalCommand") {
@@ -2638,13 +2696,16 @@ export function SessionPane({
       const prewarmTargetBeforeSend =
         sessionId === null ? prewarmBindingRef.current?.sessionId : null;
       if (prewarmTargetBeforeSend) {
-        // 屏障只保证已经入队的命令完成；若点击配置时预热 session/snapshot 尚未
-        // 就绪，命令可能当时没有目标。首发绑定确定的预热 session 前再同步一次
-        // 草稿权威配置，禁止 UI 新值与 runtime 旧值分叉。
+        // The barrier only covers already-queued commands; if the prewarm session/snapshot is
+        // not ready at click time, the command may have had no target. Re-sync the draft
+        // authoritative config once more before the first send binds the concrete prewarm
+        // session, so UI values and runtime values never diverge.
         await ensureDraftPrewarmConfigBeforeSendRef.current(prewarmTargetBeforeSend);
       }
-      // slash 命令优先：已有 session 直接消费；draft 首发 /goal 先建空会话再发命令。
-      // 携带附件或网页元素上下文时不消费为 v4 原生命令（compact/goal 等无附件语义），随 sendText 直发。
+      // Slash commands win: an existing session consumes them directly; a draft first-send
+      // /goal creates the empty session first, then sends. With attachments or web-element
+      // context, do not consume as native v4 commands (compact/goal have no attachment
+      // semantics) - pass through via sendText.
       if (sessionId && slashCommand) {
         const consumed = await dispatchSlashCommand(
           slashCommand,
@@ -2707,10 +2768,11 @@ export function SessionPane({
             }
           } catch (error) {
             if (isProviderNotReadyError(error)) throw error;
-            // 与普通首发相同：slash command 写出后的 transport error 也是 admission
-            // 结果未知，不能 discard 后换 session/command 再执行一次。
+            // Same as a plain first send: a transport error after the slash command is
+            // written leaves the admission result unknown; never discard and re-run on another
+            // session/command.
             logger.warn(
-              `[v4-draft-prewarm] 预热会话 slash 结果未知，保留原 command 禁止自动重发: ${String(error)}`,
+              `[v4-draft-prewarm] prewarm slash result unknown; keeping original command, no auto-resend: ${String(error)}`,
             );
             throw error;
           }
@@ -2725,11 +2787,11 @@ export function SessionPane({
           null,
         );
         if (createAck.status !== "accepted") {
-          throw new Error(createAck.reasonCode ?? "createSession 被拒绝");
+          throw new Error(createAck.reasonCode ?? "createSession rejected");
         }
         const createResult = createAck.result;
         if (!createResult || createResult.type !== "createSession") {
-          throw new Error("createSession 缺少 sessionId");
+          throw new Error("createSession returned no sessionId");
         }
         const newSessionId = createResult.sessionId;
         handleDraftSessionCreated(newSessionId, groupedDraftTaskAtSend, createSourceAtSend);
@@ -2745,8 +2807,8 @@ export function SessionPane({
         return;
       }
       if (!sessionId) {
-        // 草稿附件在 composer 中已绑定预热 session 完成预传。
-        // 这里只提交 ready ref，禁止在 send click 内再启动上传。
+        // Draft attachments already pre-uploaded in the composer bound to the prewarm
+        // session. Commit the ready refs only; never start an upload inside the send click.
         const prewarm = prewarmBindingRef.current;
         if (prewarm?.beginPromotion()) {
           try {
@@ -2773,29 +2835,34 @@ export function SessionPane({
               );
               return;
             }
-            // failed ACK 也可能发生在 runtime 已启动、但 TurnStarted projection commit
-            // 超时之后；模型工具副作用无法靠 failed ACK 回滚，不能自动换 command 重跑。
+            // A failed ACK can also land after the runtime started but the TurnStarted
+            // projection commit timed out; model/tool side effects cannot be rolled back via
+            // the failed ACK, so never auto-rerun under a new command.
             logger.warn(
-              `[v4-draft-prewarm] 预热会话首发未 accepted（${ack.reasonCode ?? ack.status}），禁止自动重发`,
+              `[v4-draft-prewarm] prewarm first send not accepted (${ack.reasonCode ?? ack.status}); no auto-resend`,
             );
-            throw new Error(ack.reasonCode ?? "预热会话首发未 accepted");
+            throw new Error(ack.reasonCode ?? "prewarm first send not accepted");
           } catch (error) {
             if (isProviderNotReadyError(error)) throw error;
             if (readyAttachments.length > 0) throw error;
-            // Bug 原因：transport error 不能证明 Agent 没有 admission；failed ACK 也可能
-            // 晚于 runtime 启动和工具副作用。旧逻辑统一 discard 预热会话并自动
-            // createSession(firstInput)，会把同一次提交跑两遍。保留 pending 生命周期和
-            // command 对账线索，异常交给 composer 保留草稿，禁止自动换 command 重发。
+            // Bug: a transport error does not prove the Agent never admitted the input, and
+            // a failed ACK may also land after runtime start and tool side effects. The old
+            // behavior discarded the prewarm session and auto-ran createSession(firstInput),
+            // running the same submission twice. Keep the pending lifecycle and command
+            // reconciliation clues; the composer keeps the draft on error. No automatic resend
+            // under a new command.
             logger.warn(
-              `[v4-draft-prewarm] 预热会话首发未确认成功，保留原 command 禁止自动重发: ${String(error)}`,
+              `[v4-draft-prewarm] prewarm first send unconfirmed; keeping original command, no auto-resend: ${String(error)}`,
             );
             throw error;
           }
         }
-        // fallback：无预热（创建失败/已丢弃）时现场建会话。草稿已选 config 随
-        // createSession 携带（CLI 归并请求与 runtime 缺省，首发即用草稿选择）。
-        // fallback 有 prewarm 投影时必须以 Agent 当前配置为 base；只有从未拿到投影
-        // 才使用冻结的初始化元组。否则 provider fallback 后会把 localStorage 旧模型重新写回。
+        // Fallback: with no prewarm (create failed/dropped), create the session inline. The
+        // draft-chosen config rides along in createSession (the CLI merges the request with
+        // runtime defaults, so the first send already uses the draft choice).
+        // With a prewarm projection the fallback must take the Agent current config as base;
+        // only with no projection ever received may the frozen initialization tuple be used,
+        // else a provider fallback writes the stale localStorage model back.
         const draftConfigPayload = buildDraftCreateConfigPayload(
           { ...draftConfigRef.current, modelSelection: submission.modelSelection },
           appFollowupMode,
@@ -2816,11 +2883,11 @@ export function SessionPane({
             createSourceAtSend,
           );
           if (ack.status !== "accepted") {
-            throw new Error(ack.reasonCode ?? "createSession 被拒绝");
+            throw new Error(ack.reasonCode ?? "createSession rejected");
           }
           const result = ack.result;
           if (!result || result.type !== "createSession") {
-            throw new Error("createSession 缺少 sessionId");
+            throw new Error("createSession returned no sessionId");
           }
           handleDraftSessionCreated(
             result.sessionId,
@@ -2830,20 +2897,21 @@ export function SessionPane({
           );
           return;
         }
-        // 本地 desktop localPath 是零拷贝 ready，不依赖 attachment transaction；极短窗口内
-        // 预热 session 可能还未返回。此时仍可先创建空 session，再提交现成 ref，发送点击内
-        // 不做任何附件上传，也不会让非 ready 附件绕过 composer 门禁。
+        // A local desktop localPath is zero-copy ready, no attachment transaction needed; the
+        // prewarm session may still not have returned within that tiny window. Create the empty
+        // session first, then commit the ready refs: no upload inside the send click, and
+        // non-ready attachments still cannot bypass the composer gate.
         const createAck = await dispatchSubmissionCommand(
           "createSession",
           { workspaceId: workspaceKey, ...draftConfigPayload },
           null,
         );
         if (createAck.status !== "accepted") {
-          throw new Error(createAck.reasonCode ?? "createSession 被拒绝");
+          throw new Error(createAck.reasonCode ?? "createSession rejected");
         }
         const createResult = createAck.result;
         if (!createResult || createResult.type !== "createSession") {
-          throw new Error("createSession 缺少 sessionId");
+          throw new Error("createSession returned no sessionId");
         }
         const newSessionId = createResult.sessionId;
         const sendAck = await dispatchSubmissionCommand(
@@ -2860,7 +2928,7 @@ export function SessionPane({
           options?.telemetrySeed,
         );
         if (sendAck.status !== "accepted") {
-          throw new Error(sendAck.reasonCode ?? "sendText 被拒绝");
+          throw new Error(sendAck.reasonCode ?? "sendText rejected");
         }
         handleDraftSessionCreated(
           newSessionId,
@@ -2870,7 +2938,7 @@ export function SessionPane({
         );
         return;
       }
-      // 附件 ref 已在 composer 预传状态机中收口。
+      // Attachment refs already settled in the composer pre-upload state machine.
       const ack = await dispatchSubmissionCommand(
         "sendText",
         {
@@ -2879,9 +2947,10 @@ export function SessionPane({
           ...(readyAttachments.length > 0 ? { attachments: readyAttachments } : {}),
           ...(options?.requestedDelivery
             ? {
-                // 立即发送曾先投影 QueueItem，再等待二次
-                // sendQueuedNow，导致队列中间态外泄且输入框延迟清空。现在由
-                // CLI 原子 stop + start，accepted ACK 即是 Composer 清空边界。
+                // Send-now used to project the QueueItem first and then wait for a second
+                // sendQueuedNow, leaking the queue intermediate state and delaying the input
+                // clear. The CLI now does an atomic stop+start; the accepted ACK is the
+                // composer-clear boundary.
                 requestedDelivery: options.requestedDelivery,
               }
             : {}),
@@ -2898,7 +2967,7 @@ export function SessionPane({
         return "confirmationRequired" as const;
       }
       if (ack.status !== "accepted") {
-        throw new Error(ack.reasonCode ?? "sendText 被拒绝");
+        throw new Error(ack.reasonCode ?? "sendText rejected");
       }
       if (heldQueueDisposition === "clearQueueAndSend") {
         settleCurrentQueueInputs(sessionId);
@@ -2939,15 +3008,16 @@ export function SessionPane({
         submission:
           options?.submission === undefined ? createSubmissionFromComposer() : options.submission,
       };
-      // followupMode 仍通过 Session CAS 同步；模型和模式已封装进 Submission，不再
-      // 依赖“配置命令先到、sendText 后到”的跨命令时序。
+      // followupMode still syncs via Session CAS; model and mode are encapsulated in the
+      // Submission, no longer relying on cross-command ordering (config first, sendText after).
       return configCommandBarrier.enqueue(async () => {
         try {
           return await dispatchSendTextAfterConfig(text, submissionOptions, createSource);
         } catch (error) {
           if (sessionId === null && isProviderNotReadyError(error)) {
-            // UI 预检查与 Host getClient 之间 registry 仍可能失效。竞态命中时收敛成
-            // 同一个正常等待态，不走异常发送路径，也不清空 composer。
+            // The registry can still be invalidated between the UI precheck and Host
+            // getClient. On a lost race, converge to the same normal waiting state - no
+            // exceptional send path, no composer clear.
             markDraftProviderNotReady();
             return "blocked" as const;
           }
@@ -2975,8 +3045,9 @@ export function SessionPane({
       text: string,
       options?: ConversationComposerSendOptions,
     ): Promise<ConversationComposerSendResult> => {
-      // 发送前冻结本次 admission 预期：command ACK 回来时 projection 可能已经切到 running，
-      // 不能用更新后的 enqueue mode 反推刚提交的 prompt 是否原本立即发送。
+      // Freeze this submission admission expectation before sending: by the time the command
+      // ACK returns, the projection may already be running, and the updated enqueue mode must
+      // not be used to infer whether the just-sent prompt was meant to send immediately.
       const shouldFocusLatest = shouldFocusTimelineAfterComposerSend({
         draftMode: sessionId === null,
         inputRoutingMode: snapshotRef.current?.inputRouting.mode ?? null,
@@ -2995,10 +3066,11 @@ export function SessionPane({
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
         const runtimeModelUnavailable = detail.includes("provider.notInRegistry");
-        // 首发前 switchModelConfig 失败只会抛回 Composer；Composer 为了保留草稿
-        // 仅写日志，不会生成 snapshot.control.lastError，用户看到的结果就是“点击没反应”。
-        // 这里把 admission 前失败收口为 pane-local 错误横幅，不改变 desktop continuous 或
-        // Web remote replayable 的发送/恢复语义，草稿仍由 Composer 原路径保留。
+        // A pre-send switchModelConfig failure only throws back into the Composer, which
+        // keeps the draft and just logs - no snapshot.control.lastError, so to the user the
+        // click did nothing. Funnel pre-admission failures into a pane-local error banner; the
+        // desktop-continuous / web-remote-replayable send/resume semantics are untouched and
+        // the Composer keeps the draft via its usual path.
         setSendSubmissionError({
           code: runtimeModelUnavailable ? "ZCODE_RUNTIME_MODEL_UNAVAILABLE" : "SEND_FAILED",
           message: runtimeModelUnavailable
@@ -3035,7 +3107,7 @@ export function SessionPane({
     (target: ConversationRowTarget) => {
       const current = snapshotRef.current;
       if (!sessionId || current === null) return;
-      // forkAssistant 是 CAS 命令：baseRevision 取当前投影 revision。
+      // forkAssistant is a CAS command: baseRevision comes from the current projection revision.
       void dispatchCommand(
         "forkAssistant",
         { target },
@@ -3044,11 +3116,11 @@ export function SessionPane({
         current.logEpoch,
       ).then((ack) => {
         if (ack.status !== "accepted" && ack.status !== "duplicate") {
-          logger.warn(`[v4-pane] fork 被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`);
+          logger.warn(`[v4-pane] fork rejected: ${ack.status} ${ack.reasonCode ?? ""}`);
           return;
         }
         if (ack.result?.type === "forkAssistant") {
-          // 原地切到 child session（与新建会话同一选择路径）。
+          // Switch in place to the child session (same selection path as creating a session).
           onSessionCreated?.(ack.result.sessionId);
         }
       });
@@ -3066,7 +3138,7 @@ export function SessionPane({
       const current = snapshotRef.current;
       if (!sessionId || current === null) return false;
       if (!newText.trim() && (!attachments || attachments.length === 0)) {
-        logger.warn("[v4-pane] edit 跳过：行内编辑内容为空且无附件");
+        logger.warn("[v4-pane] edit skipped: inline edit empty and no attachments");
         return false;
       }
       const ack = await dispatchCommand(
@@ -3075,8 +3147,8 @@ export function SessionPane({
           target,
           newText,
           workspaceMode,
-          // editUserQuery 的 attachments 缺省表示保留 canonical 原附件；
-          // 只有显式透传 []，CLI 才能区分“用户删除全部”与“调用方未修改附件”。
+          // Omitting editUserQuery attachments keeps the canonical originals; only an
+          // explicit [] lets the CLI tell user-deleted-all from caller-left-attachments-alone.
           ...(attachments ? { attachments: [...attachments] } : {}),
         },
         sessionId,
@@ -3084,10 +3156,10 @@ export function SessionPane({
         current.logEpoch,
       );
       if (ack.status !== "accepted" && ack.status !== "duplicate") {
-        logger.warn(`[v4-pane] edit 被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`);
+        logger.warn(`[v4-pane] edit rejected: ${ack.status} ${ack.reasonCode ?? ""}`);
         return false;
       }
-      // fork ACK 只做旧协议解码兼容；新 edit 永不导航 child。blocked 由行内冲突弹窗处理。
+      // The fork ACK exists only for legacy protocol decode; the new edit never navigates to the child. blocked is handled by the inline conflict dialog.
       return ack;
     },
     [dispatchCommand, sessionId],
@@ -3097,9 +3169,9 @@ export function SessionPane({
     async (target: ConversationRowTarget): Promise<CommandAck> => {
       const current = snapshotRef.current;
       if (!sessionId || current === null) {
-        throw new Error("retryTurn 缺少当前 session 投影");
+        throw new Error("retryTurn missing the current session projection");
       }
-      // retryTurn 是 CAS 命令：baseRevision 取当前投影 revision。
+      // retryTurn is a CAS command: baseRevision comes from the current projection revision.
       return dispatchCommand(
         "retryTurn",
         { target },
@@ -3116,11 +3188,11 @@ export function SessionPane({
       void dispatchRetryTurn(target)
         .then((ack) => {
           if (ack.status !== "accepted") {
-            logger.warn(`[v4-pane] retry 被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`);
+            logger.warn(`[v4-pane] retry rejected: ${ack.status} ${ack.reasonCode ?? ""}`);
           }
         })
         .catch((error: unknown) => {
-          logger.warn("[v4-pane] retry 提交失败", {
+          logger.warn("[v4-pane] retry submit failed", {
             error: error instanceof Error ? error.message : String(error),
           });
         });
@@ -3144,7 +3216,7 @@ export function SessionPane({
       );
       const accepted = ack.status === "accepted" || ack.status === "duplicate";
       if (!accepted) {
-        logger.warn(`[v4-pane] assistant 反馈被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`);
+        logger.warn(`[v4-pane] assistant feedback rejected: ${ack.status} ${ack.reasonCode ?? ""}`);
       }
       return accepted;
     },
@@ -3161,7 +3233,9 @@ export function SessionPane({
       void dispatchCommand("deleteQueueItem", { queueItemId }, sessionId, current.revision).then(
         (ack) => {
           if (ack.status !== "accepted" && ack.status !== "noop") {
-            logger.warn(`[v4-pane] deleteQueueItem 被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`);
+            logger.warn(
+              `[v4-pane] deleteQueueItem rejected: ${ack.status} ${ack.reasonCode ?? ""}`,
+            );
             return;
           }
           if (sourceCommandId) pendingCommandRegistry.settle(sessionId, sourceCommandId);
@@ -3181,7 +3255,9 @@ export function SessionPane({
       }
       const restoreTarget = resolveQueuedComposerRestore(current, queueItemId);
       if (!restoreTarget) {
-        logger.warn(`[v4-pane] queue 撤回编辑跳过：queue item 不存在或不可编辑 ${queueItemId}`);
+        logger.warn(
+          `[v4-pane] queue edit-withdraw skipped: queue item missing or not editable ${queueItemId}`,
+        );
         return;
       }
       const operation = { queueItemId, sessionId, workspaceKey };
@@ -3195,7 +3271,9 @@ export function SessionPane({
           restoreTarget.baseRevision,
         );
         if (!shouldRestoreQueuedComposerFromAck(ack.status)) {
-          logger.warn(`[v4-pane] queue 撤回编辑被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`);
+          logger.warn(
+            `[v4-pane] queue edit-withdraw rejected: ${ack.status} ${ack.reasonCode ?? ""}`,
+          );
           toast(intl.formatMessage({ id: "chat.queue.editRestoreFailed" }));
           clearQueueEditOperation();
           return;
@@ -3206,9 +3284,10 @@ export function SessionPane({
           currentBinding.sessionId !== sessionId ||
           currentBinding.workspaceKey !== workspaceKey
         ) {
-          // delete ACK 异步返回时 pane 可能已切 task；旧实现若直接 setText，
-          // 会把原 session 的 queue payload 写进新 task。权威删除保留，但本地恢复必须放弃。
-          logger.warn("[v4-pane] queue 撤回编辑未恢复：ACK 返回前 composer 已切换", {
+          // The pane may have switched tasks by the time the delete ACK returns; the old
+          // direct setText wrote the old session queue payload into the new task. The
+          // authoritative delete stands, but the local restore is abandoned.
+          logger.warn("[v4-pane] queue edit-withdraw not restored: composer switched before ACK", {
             queueItemId,
             sessionId,
             workspaceKey,
@@ -3226,7 +3305,7 @@ export function SessionPane({
           config: restoreTarget.config,
         });
       } catch (error) {
-        logger.warn("[v4-pane] queue 撤回编辑命令失败", error);
+        logger.warn("[v4-pane] queue edit-withdraw command failed", error);
         toast(intl.formatMessage({ id: "chat.queue.editRestoreFailed" }));
         clearQueueEditOperation();
       }
@@ -3238,13 +3317,14 @@ export function SessionPane({
     (queueItemId: string) => {
       const current = snapshotRef.current;
       if (!sessionId || current === null) return;
-      // 用户明确点击“立即发送”时，视觉意图等价于点击“滚动到底部”；command 的
-      // reserve/stop/promote 生命周期仍由 CLI 裁决，不把滚动状态混入协议。
+      // An explicit send-now click is visually equivalent to scroll-to-bottom; the command
+      // reserve/stop/promote lifecycle stays with the CLI - keep scroll state out of the
+      // protocol.
       focusTimelineToLatest();
       void dispatchCommand("sendQueuedNow", { queueItemId }, sessionId, current.revision).then(
         (ack) => {
           if (ack.status !== "accepted" && ack.status !== "noop") {
-            logger.warn(`[v4-pane] sendQueuedNow 被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`);
+            logger.warn(`[v4-pane] sendQueuedNow rejected: ${ack.status} ${ack.reasonCode ?? ""}`);
           }
         },
       );
@@ -3263,7 +3343,7 @@ export function SessionPane({
         current.revision,
       ).then((ack) => {
         if (ack.status !== "accepted" && ack.status !== "noop") {
-          logger.warn(`[v4-pane] reorderQueueItem 被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`);
+          logger.warn(`[v4-pane] reorderQueueItem rejected: ${ack.status} ${ack.reasonCode ?? ""}`);
         }
       });
     },
@@ -3282,15 +3362,17 @@ export function SessionPane({
       current.revision,
     );
     if (ack.status !== "accepted" && ack.status !== "noop") {
-      logger.warn(`[v4-pane] 恢复暂停队列被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`);
+      logger.warn(`[v4-pane] resume paused queue rejected: ${ack.status} ${ack.reasonCode ?? ""}`);
     }
   }, [dispatchCommand, sessionId]);
 
-  // 配置面 CAS 命令的 stale 重试。模型→思考深度→模式连续操作时，前一条命令的
-  // revision bump 可能尚未回流到本地投影，直接用本地 revision 会被 CAS 判 stale。
-  // stale ack 带 revisionAtDecision（CLI 当前 revision），用它重试即可收敛（有界 3 次）。
-  // m5：目标 = effective session（已绑定会话或草稿预热会话）；投影必须与目标
-  // 同源（snapshot.sessionId 校验），防止预热切换瞬间用错 revision。
+  // Stale-retry for config-plane CAS commands. Across model -> reasoning depth -> mode, the
+  // previous command revision bump may not have echoed into the local projection yet, and the
+  // local revision would be judged stale. The stale ack carries revisionAtDecision (the CLI
+  // current revision); retrying with it converges (bounded to 3 attempts).
+  // m5: target = the effective session (bound session or draft prewarm session); the projection
+  // must be same-origin with the target (snapshot.sessionId check) so the revision is never
+  // taken from the wrong side of a prewarm switch.
   const dispatchConfigCas = useCallback(
     async (
       type: CommandType,
@@ -3309,9 +3391,10 @@ export function SessionPane({
         });
         return null;
       }
-      // draft 预热会话已经创建、snapshot 尚未投影时，旧逻辑直接跳过
-      // 配置 CAS；首发随后沿用 runtime 的 build 缺省。CAS 本身支持 stale revision
-      // 回包重试，因此无 snapshot 时从 0 起步也能确定收敛，不能把“未投影”当成功。
+      // When the draft prewarm session exists but its snapshot is not yet projected, the old
+      // code skipped the config CAS and the first send inherited the runtime build default.
+      // CAS already retries on stale-revision replies, so starting from 0 without a snapshot
+      // still converges deterministically - not-yet-projected is not success.
       let baseRevision =
         options?.initialBaseRevision ??
         (current?.sessionId === targetSessionId ? current.revision : 0);
@@ -3325,26 +3408,27 @@ export function SessionPane({
             continue;
           }
           if (ack.status !== "accepted" && ack.status !== "noop") {
-            logger.warn(`[v4-pane] ${type} 被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`);
+            logger.warn(`[v4-pane] ${type} rejected: ${ack.status} ${ack.reasonCode ?? ""}`);
           }
           return ack;
         }
-        logger.warn(`[v4-pane] ${type} 连续 stale，放弃重试`);
+        logger.warn(`[v4-pane] ${type} stale too many times; giving up retry`);
         return lastAck;
       } catch (error) {
         if (isProviderNotReadyError(error)) {
-          // provider readiness 竞态被配置 CAS 吞成 null 后，首发会改写成
-          // missing-ack，草稿页无法恢复成模型配置引导。确定性启动门禁必须原样上抛。
+          // Once the config CAS swallows a provider-readiness race as null, the first send is
+          // rewritten to missing-ack and the draft page can no longer recover into the model
+          // setup flow. Deterministic startup gates must propagate verbatim.
           throw error;
         }
-        // 生产 renderer 日志关闭，异常也进 ack 调试缓冲，避免静默丢失。
+        // Production renderer logs are off; errors also go into the ack debug buffer so nothing vanishes silently.
         recordV4CommandAck({
           type: `ui:${type}`,
           status: "dispatch-error",
           reasonCode: String(error),
           at: Date.now(),
         });
-        logger.warn(`[v4-pane] ${type} 失败: ${String(error)}`);
+        logger.warn(`[v4-pane] ${type} failed: ${String(error)}`);
         return null;
       }
     },
@@ -3353,8 +3437,9 @@ export function SessionPane({
   const telemetryDraftConfig = draftConfig;
   const ensureDraftPrewarmConfigBeforeSend = useCallback(
     async (targetSessionId: string) => {
-      // followupMode 仍是 Session 行为设置；模型与模式属于本次 Submission，随 sendText
-      // 原子提交，不能在发送前通过 CAS 改写共享 Session。
+      // followupMode remains a Session behavior setting; model and mode belong to this
+      // Submission and are committed atomically with sendText - never rewrite the shared
+      // Session via CAS before sending.
       const desiredConfig = buildDraftCreateConfigPayload(
         draftConfigRef.current,
         appFollowupMode,
@@ -3371,7 +3456,7 @@ export function SessionPane({
           return;
         }
         throw new Error(
-          `${type} 未在首发前收敛: ${ack?.status ?? "missing-ack"} ${ack?.reasonCode ?? ""}`,
+          `${type} did not converge before first send: ${ack?.status ?? "missing-ack"} ${ack?.reasonCode ?? ""}`,
         );
       };
 
@@ -3403,9 +3488,10 @@ export function SessionPane({
     const syncKey = `${targetSessionId}:${appFollowupMode}:${snapshotRevision}`;
     if (followupModeSyncKeyRef.current === syncKey) return;
     followupModeSyncKeyRef.current = syncKey;
-    // 交互行为的用户事实源是 app 设置页；v4 投影 followupMode 只是
-    // CLI/runtime 同步结果。这里把设置变更补发成既有 setFollowupMode 命令，
-    // 避免 composer 再暴露一个同义“追加模式”入口造成上下游分叉。
+    // The user source of truth for interaction behavior is the app settings page; the v4
+    // projection followupMode is just the CLI/runtime sync result. Re-emit changes as the
+    // existing setFollowupMode command so the composer does not grow a second synonymous
+    // follow-up-mode entry and fork upstream/downstream state.
     void configCommandBarrier.enqueue(() =>
       dispatchConfigCas("setFollowupMode", { mode: appFollowupMode }),
     );
@@ -3420,8 +3506,9 @@ export function SessionPane({
     snapshotSessionId,
   ]);
 
-  // Composer 选择表达“下一次提交”。点击只更新 renderer intent；Session Selection
-  // 在 Submission 真正开跑（Guide 为下一次 model-step）时由 CLI/Core 更新。
+  // A Composer choice means the next submission. Clicking updates renderer intent only; the
+  // Session Selection is updated by CLI/Core once the Submission actually starts (Guide on the
+  // next model-step).
   const handleSelectModel = useCallback(
     (modelProvider: string, model: string, sourceModel: ModelSelectionSource | null) => {
       const resolvedProvider =
@@ -3457,7 +3544,7 @@ export function SessionPane({
             (candidate) => candidate.providerId === decoded.providerId,
           )?.models[0]?.modelId ?? (modelSelectionView ? null : undefined);
         if (!fallbackModel) {
-          logger.warn("[v4-pane] custom provider 恢复跳过：provider 没有可用模型", {
+          logger.warn("[v4-pane] custom provider restore skipped: provider has no models", {
             customProviderId: decoded.providerId,
             workspacePath,
           });
@@ -3466,8 +3553,9 @@ export function SessionPane({
         modelValue = encodeCustomModelValue(decoded.providerId, fallbackModel);
       }
       const modelSelection = parseModelPickerValue(modelValue);
-      // Bug 原因：configOptions error 的 custom provider 选择绕过普通 onSelectModel；
-      // 已绑定任务仍复用同一提示入口，草稿态由入口统一静默。
+      // Bug: a custom-provider choice carrying a configOptions error bypasses plain
+      // onSelectModel; bound tasks reuse the same prompt entry, and draft state is silenced
+      // centrally by that entry.
       showModelChangeNotice(sourceModel, {
         provider: modelSelection.providerId,
         model: modelSelection.modelId,
@@ -3537,7 +3625,7 @@ export function SessionPane({
     ],
   );
 
-  // 模式与模型一样属于下一次 Submission；选择时只更新 Composer。
+  // Like the model, the mode belongs to the next Submission; selecting only updates the Composer.
   const handleSwitchMode = useCallback(
     (mode: string) => {
       handleDraftSwitchMode(mode);
@@ -3545,7 +3633,7 @@ export function SessionPane({
     [handleDraftSwitchMode],
   );
 
-  // context usage 面板的压缩入口（命令文本 = "/compact"，复用 slash 解析路径）。
+  // Compact entry of the context-usage panel (command text "/compact", reusing the slash parse path).
   const handleSendCompressionCommand = useCallback(
     (command: string) => {
       if (!sessionId) return;
@@ -3556,12 +3644,12 @@ export function SessionPane({
     [dispatchSlashCommand, sessionId],
   );
 
-  // 误停排障需要区分按钮与 Esc；普通 info 在生产禁用，必须走生命周期日志。
+  // Debugging accidental stops requires telling button from Esc; plain info is off in production, so use the lifecycle logger.
   const handleStop = useCallback(
     (source: "button" | "escape") => {
       const current = snapshotRef.current;
       if (!sessionId || !current?.control.canStop) {
-        logger.lifecycle.info("[v4-pane] stop 命令被跳过（无可停执行）", {
+        logger.lifecycle.info("[v4-pane] stop skipped (nothing running to stop)", {
           source,
           sessionId: sessionId ?? "",
         });
@@ -3570,7 +3658,7 @@ export function SessionPane({
       const foregroundExecutionId = current.control.activeWorks.find(
         (work) => work.foregroundExecutionId,
       )?.foregroundExecutionId;
-      logger.lifecycle.info("[v4-pane] stop 命令发出", {
+      logger.lifecycle.info("[v4-pane] stop command sent", {
         source,
         sessionId,
         foregroundExecutionId: foregroundExecutionId ?? "",
@@ -3580,7 +3668,7 @@ export function SessionPane({
         foregroundExecutionId ? { expectedForegroundExecutionId: foregroundExecutionId } : {},
         sessionId,
       ).catch((error) => {
-        logger.lifecycle.warn(`[v4-pane] stop 失败: ${String(error)}`);
+        logger.lifecycle.warn(`[v4-pane] stop failed: ${String(error)}`);
       });
     },
     [dispatchCommand, sessionId],
@@ -3591,7 +3679,7 @@ export function SessionPane({
     if (!sessionId || !current?.availability.pauseGoal.allowed) return;
     void dispatchCommand("pauseGoal", {}, sessionId, current.revision).then((ack) => {
       if (ack.status !== "accepted" && ack.status !== "noop") {
-        logger.warn(`[v4-pane] pauseGoal 被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`);
+        logger.warn(`[v4-pane] pauseGoal rejected: ${ack.status} ${ack.reasonCode ?? ""}`);
       }
     });
   }, [dispatchCommand, sessionId]);
@@ -3601,15 +3689,16 @@ export function SessionPane({
     if (!sessionId || !current?.availability.resumeGoal.allowed) return;
     void dispatchCommand("resumeGoal", {}, sessionId, current.revision).then((ack) => {
       if (ack.status !== "accepted" && ack.status !== "noop") {
-        logger.warn(`[v4-pane] resumeGoal 被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`);
+        logger.warn(`[v4-pane] resumeGoal rejected: ${ack.status} ${ack.reasonCode ?? ""}`);
       }
     });
   }, [dispatchCommand, sessionId]);
 
-  // composer parity：Esc → stop（旧 useChatViewEffects「Escape 停止生成」语义保真：
-  // 事件路径含 dialog / defaultPrevented 时跳过；mention/slash 面板打开时 Lexical 已
-  // preventDefault，本 handler 自然让路）。仅 focused pane 监听：
-  // 「stop 等危险操作永远作用于明确的 pane，快捷键走 focused pane」。
+  // Composer parity: Esc -> stop (preserves the old useChatViewEffects escape-stops-
+  // generation semantics: skip when the event path includes a dialog / defaultPrevented; with
+  // a mention/slash popover open, Lexical already preventDefaults and this handler yields).
+  // Focused pane only: dangerous actions such as stop always target a concrete pane, and
+  // shortcuts follow the focused pane.
   useEffect(() => {
     if (!focused || readOnly) return;
     if (!sessionId || !snapshot?.control.canStop) return;
@@ -3623,16 +3712,17 @@ export function SessionPane({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [focused, handleStop, readOnly, sessionId, snapshot?.control.canStop]);
 
-  // handleStop 带 source 参数（button / escape 两个调用点），但 ConversationComposer 是 memo：
-  // 直接写 onStop={() => handleStop("button")} 每次 render 都换引用，memo 白做，而 composer
-  // 恰好是每次输入都可能重渲染的组件。这里固定 button 版的引用，不动 handleStop 的双入口设计。
+  // handleStop takes a source (two call sites: button / escape), but ConversationComposer is
+  // memoized: inlining onStop={() => handleStop("button")} changes the prop every render,
+  // defeating the memo - and the composer is exactly the component that re-renders per
+  // keystroke. Pin the button-bound reference; keep the two-entry handleStop design.
   const handleStopFromButton = useCallback(() => handleStop("button"), [handleStop]);
 
   const handleRetrySubscribe = useCallback(() => {
     void lease?.store.retry();
   }, [lease]);
 
-  // loadOlder 触发（接近顶部自动预取）。store 内部单飞防重入。
+  // loadOlder trigger (auto-prefetch near the top). Single-flight inside the store.
   const handleLoadOlder = useCallback(() => {
     return lease?.store.loadOlder();
   }, [lease]);
@@ -3653,7 +3743,7 @@ export function SessionPane({
     shareHydratedSessionRef.current = key;
     void handleLoadAllOlder().catch((error) => {
       shareHydratedSessionRef.current = null;
-      logger.warn("[conversation-share] 补齐分享目录失败", { error });
+      logger.warn("[conversation-share] failed to backfill the share directory", { error });
     });
   }, [handleLoadAllOlder, sessionId, shareActive, snapshot]);
 
@@ -3671,11 +3761,13 @@ export function SessionPane({
     if (autoLoadIncompleteTurnCursorRef.current === cursorKey) return;
     autoLoadIncompleteTurnCursorRef.current = cursorKey;
 
-    // snapshotTailWindowRows 按 row 截尾，可能把一个长 turn 的 header/user
-    // 留在窗口外。旧 UI 只在 scroll 事件到达顶边时 loadOlder；内容不足一屏或 scrollTop
-    // 已经为 0 时不会再产生事件，于是只渲染 assistant，必须先下滚再上滚。检测到首 turn
-    // 缺 header 后立即逐窗补齐；cursor 去重避免空 range 或失败时 effect 自旋。
-    logger.debug("[v4-pane] 冷快照首 turn 不完整，自动补拉更早行", {
+    // snapshotTailWindowRows truncates by row and can leave a long turn header/user rows
+    // outside the window. The old UI loaded older only on a scroll event reaching the top;
+    // with less than a screen of content or scrollTop already 0, no event ever fires, so only
+    // the assistant renders until the user scrolls down and back up. Once the first turn lacks
+    // a header, backfill window by window immediately; cursor dedup keeps the effect from
+    // spinning on empty ranges or failures.
+    logger.debug("[v4-pane] cold snapshot first turn incomplete; backfilling older rows", {
       firstRowId,
       sessionId,
       turnId: snapshot?.rows.window[0]?.turnId,
@@ -3683,8 +3775,9 @@ export function SessionPane({
     void lease.store.loadOlder();
   }, [lease, sessionId, snapshot, state.loadingOlder, state.subscriptionId]);
 
-  // subscribe ACK 会先把 store 置 live，initial snapshot 稍后才到；只看
-  // status 会在无投影窗口提前启用编辑器。正式 session 必须等首个 snapshot 才可输入。
+  // The subscribe ACK marks the store live before the initial snapshot arrives; keying on
+  // status alone would enable the editor during the projection-less window. A real session must
+  // wait for its first snapshot before accepting input.
   const connecting = sessionId !== null && (state.status === "connecting" || snapshot === null);
   const queueEditActiveForCurrentComposer =
     queueEditOperation?.sessionId === sessionId && queueEditOperation.workspaceKey === workspaceKey;
@@ -3695,18 +3788,21 @@ export function SessionPane({
     lastError: state.lastError,
     visible: errored && telemetryVisible && conversationTelemetryForegroundEnabled,
   });
-  // retry 的产品裁决属于行级权威投影。这里仅提供命令能力，入口是否展示
-  // 完全读取 row.actions.canRetry，禁止再用 pane phase 形成第二套 guard。
+  // The retry product verdict belongs to the row-level authoritative projection. This only
+  // provides the command; visibility reads row.actions.canRetry exclusively - never a second
+  // guard from the pane phase.
   const retryActionsEnabled = !readOnly && !selectionSideChat && Boolean(sessionId);
-  // fork 可用性完全由 row.actions.canFork（CLI stable resolver 投影）裁决；pane 只提供命令回调。
+  // Fork availability is decided solely by row.actions.canFork (CLI stable-resolver projection); the pane only provides the command callback.
   const forkActionsEnabled = !readOnly && !selectionSideChat && Boolean(sessionId);
-  // editUserQuery 已由 command 层防御 latest real user query，并在 running
-  // 提交时先 stop barrier 再 rewind/rerun；UI 不应再用 completed gate 把入口整轮隐藏。
+  // editUserQuery is already guarded at the command layer against the latest real user
+  // query and runs a stop barrier before rewind/rerun on running submissions; the UI must not
+  // hide the entry for a whole turn via a completed gate.
   const editActionsEnabled = !readOnly && !selectionSideChat && Boolean(sessionId);
   const isDraft = sessionId === null;
-  // 滚动恢复必须使用与 sessionId 匹配的 lease projection。切换 session 的 render 与
-  // passive effect 不在同一时刻，旧 lease 的 rows 若提前交给 timeline，会让新记忆按旧
-  // 内容高度 clamp，后续目标 rows 到达时也无法区分这次临时落点。
+  // Scroll restore must use the lease projection matching the sessionId. The switch render
+  // and its passive effect are not simultaneous; feeding the old lease rows to the timeline
+  // early clamps the new scroll memory to the old content height, and the temporary offset
+  // becomes indistinguishable once the target rows arrive.
   const timelineSnapshot =
     !isDraft && (lease === null || sessionLeaseReady) && snapshot?.sessionId === sessionId
       ? snapshot
@@ -3715,8 +3811,9 @@ export function SessionPane({
     snapshot?.sharedContextImport && "contextId" in snapshot.sharedContextImport
       ? snapshot.sharedContextImport
       : null;
-  // 导入的分享对话：读取落盘的公开 rows 用于会话顶部的只读块。
-  // 分享页可能过期或未上线，所以只读本地副本，不回源。
+  // Imported share conversation: read the persisted public rows for the read-only block at
+  // the top of the thread. The share page may be expired or not yet published, so only the
+  // local copy is read - never re-fetched from origin.
   const [importedShare, setImportedShare] = useState<ImportedConversationShare | null>(null);
   const importedShareContextId =
     shareHandoverContext && shareHandoverContext.status !== "discarded"
@@ -3739,16 +3836,19 @@ export function SessionPane({
       })
       .catch((error: unknown) => {
         if (disposed) return;
-        // 只读块是增强，读不到就不渲染，不打断会话。
-        logger.warn("[conversation-share] 读取导入的分享对话失败", { error });
+        // The read-only block is an enhancement: no data, no render, never breaks the session.
+        logger.warn("[conversation-share] failed to read the imported share conversation", {
+          error,
+        });
         setImportedShare(null);
       });
     return () => {
       disposed = true;
     };
   }, [conversationShareService, importedShareContextId, workspacePath]);
-  // normalizeConversationShareMarkdown 在 artifactNames 里找不到匹配名字时，会把正文里的
-  // 文件引用替换成空字符串（直接删掉）。不接这份映射，只读块里的文件引用会静默消失。
+  // When normalizeConversationShareMarkdown finds no match in artifactNames it replaces file
+  // references in the body with empty strings (drops them). Without this mapping, file
+  // references in the read-only block would vanish silently.
   const importedShareArtifactNames = useMemo(
     () =>
       new Map(
@@ -3777,7 +3877,7 @@ export function SessionPane({
     ) {
       return;
     }
-    // 分享块是异步挂载的；请求保留到目标 task 与本地副本都就绪，再在布局稳定后消费。
+    // The share block mounts async; keep the request until target task and local copy are both ready, then consume it once layout settles.
     const scrollToBottom = () => {
       const action = timelineScrollToBottomRef.current;
       if (!action) return false;
@@ -3812,12 +3912,13 @@ export function SessionPane({
   ]);
   const handleOpenImportedShareUrl = useCallback(() => {
     if (!shareHandoverContext || !onOpenBrowserUrl) return;
-    // 持久化的是规范 /cn/share/ 路径；展示/打开时才按界面语言本地化。
+    // The canonical /cn/share/ path is what gets persisted; localization to the UI language happens at display/open time.
     onOpenBrowserUrl(localizeConversationShareUrl(shareHandoverContext.shareUrl, locale));
   }, [locale, onOpenBrowserUrl, shareHandoverContext]);
   const initialDraftConfigForDiagnostics = isDraft ? resolveInitialDraftConfig() : undefined;
-  // CLI V4 projection 是 running/count/manifest 的唯一权威；renderer 不再在 spawn
-  // 事件后另发查询拼接第二份状态，避免并发 child 的 in-flight refresh 丢更新。
+  // The CLI V4 projection is the sole authority for running/count/manifest; the renderer no
+  // longer fires its own query after spawn to stitch a second state, which lost updates from
+  // concurrent children in-flight refreshes.
   const subagents = snapshot?.subagents ?? EMPTY_SUBAGENT_PROJECTION;
   useEffect(() => {
     if (!sessionId || subagents.revision === 0 || !onSyncSubagentSessionTabs) return;
@@ -3896,9 +3997,10 @@ export function SessionPane({
       setAgentSectionOpen(false);
     }
   }, [runningAgentCount]);
-  // composer 徽标直达：唯一在跑的是一条可开
-  // 详情页的 workflow run 时，徽标点击直接开它的 side tab，胶囊不动。判定吃胶囊的同一份模型；
-  // 宿主没给 onOpenWorkflowRun（面板行同样不可点）时不直达。
+  // Composer badge direct-open: when the only running work is a single workflow run with a
+  // detail page, clicking the badge opens its side tab directly and the pill stays put. Uses
+  // the same model that drives the pill; without a host onOpenWorkflowRun (panel rows are
+  // likewise non-clickable) there is no direct open.
   const soleRunningWorkflowRunTarget = useMemo(
     () => (onOpenWorkflowRun ? resolveSoleRunningWorkflowRunTarget(statusPanelModel) : null),
     [onOpenWorkflowRun, statusPanelModel],
@@ -3906,12 +4008,13 @@ export function SessionPane({
   const handleOpenRunningBackgroundWorks = useCallback(() => {
     if (runningBackgroundWorkCount === 0) return;
     if (soleRunningWorkflowRunTarget) {
-      // 与面板行同一个 handler：不存在第二条打开路径。
+      // Same handler as the panel rows: there is no second open path.
       handleOpenWorkflowRunFromPanel(soleRunningWorkflowRunTarget);
       return;
     }
-    // 产品规则：Composer 是全部实时活动的入口；分区拆开后一次点击仍要展开所有非空类型，
-    // 但三个区块后续保持独立折叠状态，不能再共享一个 open 布尔值。
+    // Product rule: the Composer is the entry for all live activity. After the section split
+    // one click still expands every non-empty kind, but the three sections keep independent
+    // collapsed state; they must not share a single open boolean.
     setTerminalSectionOpen(runningTerminalCount > 0);
     setAgentSectionOpen(runningAgentCount > 0);
     setWorkflowSectionOpen(runningWorkflowCount > 0);
@@ -3928,8 +4031,9 @@ export function SessionPane({
   const statusPanelVariant = resolveConversationStatusPanelVariant({
     variantOverride: effectiveSummaryPanelVariantOverride,
   });
-  // 若只有 status panel 内部知道自动展开态，而 timeline/composer 未同步调整布局，
-  // 宽屏下就会出现面板覆盖内容。因此外层布局也必须使用同一展开状态。
+  // If only the status panel knows about the auto-expanded state while timeline/composer
+  // keep the old layout, the panel overlaps content on wide screens. The outer layout must
+  // consume the same expanded state.
   const shouldUseStatusPanelInlineLayout =
     !isDraft &&
     shouldUseConversationStatusPanelInlineLayout({
@@ -3949,8 +4053,8 @@ export function SessionPane({
     controlLastError && controlLastErrorKey && !dismissedErrorKeys.includes(controlLastErrorKey)
       ? toComposerUiError(snapshot?.sessionId ?? sessionId, controlLastError)
       : null;
-  // 官方 Server MCP 不可用（额度耗尽 / 无 Coding Plan）：事实来自 tool row 上的结构化标识，
-  // 与模型额度是两条独立信息通道，这里只做投影。
+  // Official Server MCP unavailable (quota exhausted / no Coding Plan): the fact comes from
+  // the structured marker on the tool row. Model quota is a separate channel; projection only.
   const mcpUnavailableNotice = useMemo(
     () => resolveMcpUnavailableNotice(snapshot?.rows.window),
     [snapshot?.rows.window],
@@ -3982,8 +4086,9 @@ export function SessionPane({
       return;
     }
     if (!controlLastErrorKey) return;
-    // v4 control.lastError 是投影事实，单纯关闭 banner 不会改投影。
-    // 这里只记录当前错误指纹，避免下一次 render 把同一条错误立刻重新顶回来；新错误 at/message 变化仍会显示。
+    // v4 control.lastError is projection fact; dismissing the banner does not change it.
+    // Record the current error fingerprint so the next render does not immediately re-raise
+    // the same error; a new one (changed at/message) still shows.
     setDismissedErrorKeys((keys) =>
       keys.includes(controlLastErrorKey) ? keys : [...keys.slice(-19), controlLastErrorKey],
     );
@@ -4011,7 +4116,7 @@ export function SessionPane({
     const eventText = intl.formatMessage({
       id: quotaBanner.upgradeActionLabelId,
     });
-    // 横幅只建立漏斗上下文；coding_plan_upgrade_ck 仍由真实购买面板打开后统一上报。
+    // The banner only establishes funnel context; coding_plan_upgrade_ck is still reported once the real purchase panel opens.
     codingPlanUpgradeDialog.openCodingPlanUpgrade({
       providerId,
       funnelContext: createCodingPlanFunnelContext({
@@ -4108,8 +4213,9 @@ export function SessionPane({
         publishedShareUrl: share.share_url,
         warnings,
       });
-      // collectedWarnings 只在 progress 回调里赋值，TS 的控制流分析看不到跨闭包写入，
-      // 会把它收窄成 null，这里显式还原真实类型。
+      // collectedWarnings is only assigned inside the progress callback; TS control-flow
+      // analysis cannot see across the closure and narrows it to null, so restore the real
+      // type here.
       if (warnings) {
         toast(
           intl.formatMessage(
@@ -4122,7 +4228,7 @@ export function SessionPane({
       }
     } catch (error) {
       const details = getConversationShareErrorDetails(error);
-      // 401 等传输错误通常没有服务端 issues，不能再降级成 collecting 阶段的通用文案。
+      // Transport errors such as 401 usually carry no server issues; do not degrade them to the generic collecting-stage copy.
       const resolvedMessageId = resolveConversationSharePublishErrorMessageId(error);
       const messageId =
         resolvedMessageId === "conversationShare.publishFailed" ? undefined : resolvedMessageId;
@@ -4148,7 +4254,7 @@ export function SessionPane({
                 messageId,
               },
       });
-      logger.warn("[conversation-share] 会话发布失败", {
+      logger.warn("[conversation-share] session publish failed", {
         sessionId,
         operationId,
         phase: activePhase,
@@ -4192,7 +4298,7 @@ export function SessionPane({
 
   const handleOpenPublishedShare = useCallback(() => {
     if (!publishedShareUrl || !onOpenBrowserUrl) return;
-    // 服务端保存规范 /cn/share/ 路径；打开时再按当前界面语言切换落地页路径。
+    // The server persists the canonical /cn/share/ path; the landing-page path is switched per UI language at open time.
     onOpenBrowserUrl(localizeConversationShareUrl(publishedShareUrl, locale));
   }, [locale, onOpenBrowserUrl, publishedShareUrl]);
 
@@ -4223,8 +4329,9 @@ export function SessionPane({
     ) {
       return;
     }
-    // 预检 warning 已由选择 Dock 的状态入口展示；shareWarnings 只接收发布最终结果，
-    // 避免把“分享已完成”文案提前带入尚未发布的确认阶段。
+    // Preflight warnings are already surfaced by the selection dock status entry;
+    // shareWarnings takes only the final publish result, keeping the share-completed copy out
+    // of the not-yet-published confirm stage.
     updateShareDockState(sessionId, { error: null });
     goToShareConfiguration(sessionId);
   }, [goToShareConfiguration, sessionId, sharePreflight, sharePublishing, updateShareDockState]);
@@ -4251,8 +4358,9 @@ export function SessionPane({
   const handleDeselectShareTurn = useCallback(
     (productTurnId: string) => {
       if (!sessionId || !productTurnId) return;
-      // 按 product turn 身份整轮移除：service 的 issue 已带 productTurnId，
-      // 不再用 turnOrdinal 索引 UI 的 per-query 列表（两套编号会错位）。
+      // Remove by product-turn identity for the whole turn: the service issue already
+      // carries productTurnId; indexing the UI per-query lists by turnOrdinal would misalign
+      // the two numbering schemes.
       deselectShareProductTurn(sessionId, productTurnId);
       updateShareDockState(sessionId, { disclosureAccepted: false, error: null });
     },
@@ -4287,7 +4395,7 @@ export function SessionPane({
     [sessionId, setShareAccessMode, updateShareDockState],
   );
 
-  // 内联回调会让 memo 确认 Dock 每次重渲染；依赖当前 session，避免切换后写回旧会话。
+  // Inline callbacks would re-render the memoized confirm dock on every render; depend on the current session so a switch never writes back to the old one.
   const handleShareDisclosureAcceptedChange = useCallback(
     (accepted: boolean) => {
       if (sessionId) {
@@ -4351,11 +4459,15 @@ export function SessionPane({
           const originWorkspaceKey =
             originWorkspace?.workspaceIdentity?.trim() || originWorkspace?.workspacePath;
           if (originWorkspaceKey && originWorkspaceKey !== workspaceKey) {
-            // 防御 stale UI/旧闭包直接触发跨 workspace replay；正常入口已在 hook 过滤。
-            logger.error("[v4-pending-command] 拒绝跨 workspace 提交 createSession 恢复结果", {
-              originWorkspaceKey,
-              workspaceKey,
-            });
+            // Guard against stale UI/stale closures triggering a cross-workspace replay; the
+            // normal entry is already filtered in the hook.
+            logger.error(
+              "[v4-pending-command] rejecting cross-workspace createSession replay result",
+              {
+                originWorkspaceKey,
+                workspaceKey,
+              },
+            );
             return;
           }
           handleDraftSessionCreated(
@@ -4367,21 +4479,23 @@ export function SessionPane({
         }
       })
       .catch((error) => {
-        // 新 command 已先写入 registry；本次 transport 失败仍可在下次连接继续对账。
-        logger.warn("[v4-pending-command] 用户确认重发失败", error);
+        // The new command is already in the registry; this transport failure can still be
+        // reconciled on the next connection.
+        logger.warn("[v4-pending-command] user-confirmed resend failed", error);
       });
   }, [dispatchCommand, handleDraftSessionCreated, recoverableCommand, workspaceKey]);
 
-  // subagent 右侧 child tab 是观察视图；复用普通 SessionPane 时
-  // 若仍创建 composer，会让用户误以为可以直接向 child session 继续输入。
+  // The subagent side child tab is an observer view; reusing the plain SessionPane while
+  // still creating the composer would suggest users can keep typing into the child session.
   const composerNode = readOnly ? null : (
     <ConversationComposer
       key="conversation-composer"
-      // Snapshot 仍服务用量、路由与运行态；工具栏的 mode/model 只读下方 Composer Draft。
+      // The snapshot still serves usage, routing, and run state; the toolbar mode/model merely reflect the Composer Draft below.
       snapshot={snapshot}
       sessionId={sessionId}
-      // 草稿 taskId 仍为 null，但 prewarm 已经拥有独立 AgentRuntime。
-      // 只给 Skill catalog 下发 effective id，避免 UI 扫到 prewarm runtime 尚未加载的新 Skill。
+      // The draft taskId is still null, but the prewarm already owns a dedicated
+      // AgentRuntime. Pass only the effective id to the Skill catalog so the UI does not scan
+      // Skills the prewarm runtime has not loaded yet.
       skillCatalogSessionId={effectiveSessionId}
       draftMode={isDraft}
       draftConfig={draftConfig}
@@ -4429,9 +4543,10 @@ export function SessionPane({
         sessionId && runningBackgroundWorkCount > 0 ? handleOpenRunningBackgroundWorks : undefined
       }
       backgroundWorkOpenTarget={soleRunningWorkflowRunTarget ? "workflow-run" : "panel"}
-      // 父轮结束后 subagents.running 的目录投影可能短暂落后于仍为 running 的
-      // backgroundWorks；Composer 若直接读目录会提前隐藏 Agent 入口。这里复用状态面板按
-      // childSessionId 精确回退后的计数，让两个入口共享同一份运行态真值。
+      // After the parent turn ends, the subagents.running directory projection can lag the
+      // still-running backgroundWorks briefly; reading the directory directly would hide the
+      // Agent entry early. Reuse the status panel count after its per-childSessionId fallback
+      // so both entries share one run-state truth.
       runningSubagentCount={runningAgentCount}
       onRecoverCustomModelSelection={handleRecoverCustomModelSelection}
       onSendCompressionCommand={handleSendCompressionCommand}
@@ -4549,8 +4664,9 @@ export function SessionPane({
           onResume={handleResumeQueue}
         />
       ) : null}
-      {/* v4 权限/问答等待态只是 runtime 的阻塞交互，必须和 composer
-          共享 timeline bottom dock；渲染在 SessionPane 外层会脱离主列宽度并挤占下半屏。 */}
+      {/* v4 permission/question waiting states are runtime-blocking interactions and must
+          share the timeline bottom dock with the composer; rendering outside SessionPane
+          escapes the main column width and squeezes the lower half. */}
       {sessionId && snapshot ? (
         <V4InteractionDialogs
           key="conversation-interactions"
@@ -4563,7 +4679,7 @@ export function SessionPane({
         />
       ) : null}
       {composerNode}
-      {/* 办公模式显示主动任务推荐；编程模式保留原有小型场景入口。 */}
+      {/* Office mode shows proactive task suggestions; coding mode keeps the original compact scenario entry. */}
       {isDraft && (!isOfficeMode || sharedSettings?.proactiveSuggestionsEnabled === true) ? (
         <ConversationDraftSuggestedPromptsContainer
           className={isOfficeMode ? "mt-4" : "mt-6"}
@@ -4581,8 +4697,9 @@ export function SessionPane({
       ) : null}
     </>
   );
-  // 进入/退出分享时 chat dock 与分享 dock 高度不同；共享同一个 grid 单元做上下位移淡入淡出，
-  // 避免父高度突变导致的硬跳。prefers-reduced-motion 由 transition 组件内部降级为立即切换。
+  // The chat dock and share dock differ in height across share enter/exit; share one grid
+  // cell with a vertical slide+fade so the parent height never hard-jumps.
+  // prefers-reduced-motion degrades to an instant switch inside the transition component.
   const conversationBottomDock = conversationBottomDockContent ? (
     <ConversationBottomDockTransition mode={shareActive && sessionId ? "confirmation" : "chat"}>
       {conversationBottomDockContent}
@@ -4773,8 +4890,9 @@ export function SessionPane({
                 view: shareDraft?.view,
               })}
               headerSlot={
-                // unsupportedRowCount 也要开这个门：整份副本的行都被本 build 跳过时
-                // rows 为空，但只读块必须留下来显示「需要更新 ZCode」，不能整块消失。
+                // unsupportedRowCount opens this gate too: when this build skips every row,
+                // rows is empty, but the read-only block must remain to show the update-ZCode
+                // note instead of vanishing.
                 importedShare &&
                 (importedShare.rows.length > 0 || importedShare.unsupportedRowCount > 0) ? (
                   <ConversationShareImportNotice

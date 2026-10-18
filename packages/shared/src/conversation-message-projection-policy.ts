@@ -105,8 +105,8 @@ export function getConversationMessageProjectionPolicy(
       semantics.uiVisibility === "visible" &&
       semantics.transcriptVisibility === "visible"
     ) {
-      // 正常 assistant 同时会进入 provider context 和可见 transcript；
-      // providerVisibility 不能抢先把它归成 model-only，否则晚订阅的 cold hydration 会丢正文。
+      // A normal assistant enters both provider context and the visible transcript;
+      // providerVisibility must not classify it model-only first, or late cold hydration loses the body.
       return "visibleAssistant";
     }
     if (semantics.providerVisibility === "visible") {
@@ -166,8 +166,8 @@ export function isConversationRealUserTurnStarter(message: ConversationProjectio
 }
 
 /**
- * provider-context user carrier 中会真正启动独立 model-only turn 的统一 source policy。
- * live/cold 都必须消费这一个判据，否则冷恢复会跳过 carrier messageId 并生成临时 turn identity。
+ * The unified source policy for provider-context user carriers that truly start a model-only turn.
+ * Live and cold paths must share this one predicate, or cold recovery skips the carrier messageId and mints a temporary turn identity.
  */
 export function getConversationModelOnlyTurnTriggerSource(
   message: ConversationProjectionMessage,
@@ -178,7 +178,7 @@ export function getConversationModelOnlyTurnTriggerSource(
   }
   const source = messageSource(message.info, message.parts ?? []);
   if (source && MODEL_ONLY_TURN_TRIGGER_SOURCES.has(source)) return source;
-  // legacy 数据无 source 标记：通知文本前缀仍按既有 background wake 语义恢复。
+  // Legacy data has no source marker: notice text prefixes still restore per the existing background-wake semantics.
   if (hasLegacyNotificationContextText(message.parts ?? [])) return "background_task";
   return null;
 }

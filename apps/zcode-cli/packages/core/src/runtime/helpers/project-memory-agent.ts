@@ -33,7 +33,7 @@ export function captureProjectMemoryAgentContext(
   runtime: AgentRuntimeInternal,
   input: {
     memoryRoot: string;
-    /** Extraction 继承产生该工作的 Turn Model。 */
+    /** Extraction inherits the Turn Model that produced the work. */
     model?: Model;
     operation: ModelApiOperation;
     traceContext: TraceContext;
@@ -45,8 +45,8 @@ export function captureProjectMemoryAgentContext(
       selection: runtime.getSessionModelSelection(),
     });
   const model = withModelInvocationContext(baseModel, (request) => ({
-    // Extraction 是 transcript 的消费者；不把它自己的请求写回同一 model-io 目录，
-    // 避免后台链路占用 rollout 槽位并在后续 Extraction 中自反馈。
+    // Extraction consumes the transcript; do not write its own requests into the same model-io dir,
+    // or the background path occupies rollout slots and feeds back into later extractions.
     metadata: {
       ...traceContextToLogContext(input.traceContext),
       querySource: input.operation,
@@ -64,9 +64,9 @@ export function captureProjectMemoryAgentContext(
   return {
     causation: runtime.agentTelemetry.captureCausation(),
     memoryRoot: input.memoryRoot,
-    // Extraction 会跨异步边界消费这份成员浅快照；它依赖 RuntimeMessageEntry
-    // 进入 MessageHistory 后保持不可变。后续只能 append、整体 replace 或 copy-on-write，
-    // 禁止原地修改共享的 entry/message/content，否则会污染已调度的 Memory 上下文。
+    // Extraction consumes this shallow member snapshot across async boundaries; it relies on RuntimeMessageEntry
+    // staying immutable inside MessageHistory. Later changes append, replace wholly, or copy-on-write;
+    // never mutate shared entry/message/content in place, or scheduled Memory context gets polluted.
     providerEntries: [...runtime.messageHistory.borrowReadOnlyRuntimeEntries()],
     midConversationSystem: runtime.config.midConversationSystem,
     model,
@@ -116,8 +116,8 @@ export function createProjectMemoryAgentToolExecutor(
     model: context.model,
     permissionBroker: createDenyPermissionBroker(),
     permissionService: new PermissionService(defaultPermissionConfig),
-    // Memory agent 必须继承 Main 已完成的 Read；否则 provider context 说文件已读，
-    // Edit 执行边界却会拒绝同一文件，和基线的 cloned tool context 不一致。
+    // The memory agent must inherit the main agent's completed Reads; otherwise the provider context claims files are read
+    // while the Edit boundary rejects them, diverging from the baseline's cloned tool context.
     readFileState: new Map(context.readFileState),
     registry: runtime.registry,
     runtimeScope: "main",

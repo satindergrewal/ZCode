@@ -74,7 +74,7 @@ internal static class Program
         }
         catch
         {
-            // 安全边界：异常只转换为稳定错误码，绝不把密钥、路径或系统异常文本写入输出。
+            // Security boundary: exceptions map to stable error codes only; never leak keys, paths, or system exception text into output.
             if (!HasArgument(args, "--service"))
             {
                 WriteError("helper_failed");
@@ -116,13 +116,13 @@ internal static class Program
         }
         catch
         {
-            // broker 初始化异常不能统一落到 helper_failed：需要区分输入/控制管道尚未建立的失败阶段。
+            // Broker initialization failures must not collapse into helper_failed: the stage before input/control pipes exist needs distinguishing.
             WriteError("broker_initialization_failed");
             return;
         }
 
-        // 凭据切换式 UAC 会以另一个管理员 SID 启动 elevated controller；控制管道允许管理员，
-        // broker 侧用启动后拿到的精确 PID 和随机 token 绑定本次实例，controller 再反向校验 broker 映像路径。
+        // Credential-switch UAC starts the elevated controller under another admin SID; the control pipe admits administrators,
+        // while the broker binds this instance via the exact PID captured at spawn plus a random token; the controller verifies the broker image path in return.
         using (pipe)
         {
             Process elevated;
@@ -166,10 +166,10 @@ internal static class Program
                         WriteError("timeout");
                         return;
                     }
-                    // Bugfix 原因：标准用户通过 UAC 切换到其他管理员账号后，普通 broker 无权跨账号读取
-                    // 高完整性 controller 的映像路径；这里仍用 Process.Start 返回的精确 PID、管理员限定
-                    // pipe ACL 和一次性 token 绑定连接。controller 反向校验 broker 路径、SYSTEM 服务校验
-                    // broker 路径的安全边界保持不变。
+                    // Bugfix: after a standard user switches admins via UAC, a plain broker cannot read the high-integrity
+                    // controller's image path across accounts; binding still uses the exact PID from Process.Start, an
+                    // admin-restricted pipe ACL, and a one-time token. The controller verifying the broker path and the SYSTEM
+                    // service verifying the broker path remain the security boundary.
                     if (!VerifyPipeClient(pipe.SafePipeHandle, GetSelfPath(), elevated.Id, false))
                     {
                         TryTerminate(elevated);
@@ -180,7 +180,7 @@ internal static class Program
                 catch
                 {
                     TryTerminate(elevated);
-                    // Bugfix 原因：提权控制器在握手阶段断开时，最外层异常只会返回 helper_failed，丢失了失败阶段。
+                    // Bugfix: when the elevated controller drops during handshake, the outermost exception only yielded helper_failed, losing the failure stage.
                     WriteError("controller_handshake_failed");
                     return;
                 }
@@ -214,8 +214,8 @@ internal static class Program
                         string response;
                         try
                         {
-                            // 用户层 DPAPI 必须 impersonate 原始 broker，而不是 UAC 中可能另输的管理员账号。
-                            // 因此普通用户 broker 直接连接 SYSTEM service；elevated controller 只管理服务生命周期。
+                            // User-level DPAPI must impersonate the original broker, not an admin account possibly re-entered during UAC.
+                            // so the plain-user broker connects to the SYSTEM service directly; the elevated controller only manages the service lifetime.
                             using (NamedPipeClientStream servicePipe = ConnectPipeClient(systemPipeName, servicePid, false))
                             using (StreamReader serviceReader = CreateReader(servicePipe))
                             using (StreamWriter serviceWriter = CreateWriter(servicePipe))
@@ -227,7 +227,7 @@ internal static class Program
                         }
                         catch
                         {
-                            // Bugfix 原因：SYSTEM 服务管道连接或读取中断时不再退化成无阶段信息的 helper_failed。
+                            // Bugfix: SYSTEM service pipe connect/read interruptions no longer degrade into a stage-less helper_failed.
                             WriteError("service_channel_failed");
                             return;
                         }
@@ -328,8 +328,8 @@ internal static class Program
                 uint wait = WaitForSingleObject(brokerProcess, 0);
                 if (wait == WaitObject0 || wait == WaitFailed || DateTime.UtcNow >= deadline)
                 {
-                    // Bugfix 原因：Electron 退出后 broker 可能仍卡在 SYSTEM 服务响应，不能再依赖 JS 定时器。
-                    // controller 自己关闭控制管道，强制 RunTemporarySystemService 进入 finally 停止/删除服务。
+                    // Bugfix: after Electron exits the broker may still be stuck on the SYSTEM service response; JS timers are no longer reliable.
+                    // The controller closes the control pipe itself, forcing RunTemporarySystemService into finally to stop/delete the service.
                     brokerPipe.Dispose();
                     return;
                 }
@@ -394,8 +394,8 @@ internal static class Program
         }
         finally
         {
-            // Bugfix 原因：临时 LocalSystem 服务若只在成功路径删除，UAC 后的超时/管道异常会留下高权限常驻项。
-            // 所有退出路径都先请求停止；无响应时只终止 SCM 返回且映像路径匹配的精确服务 PID，再删除并核验。
+                    // Bugfix: if the temporary LocalSystem service were deleted only on success, post-UAC timeouts/pipe errors would leave a high-privilege resident item.
+                    // Every exit path requests stop first; an unresponsive service is terminated only at the exact SCM-reported PID with matching image path, then deleted and verified.
             cleanupSucceeded = CleanupTemporaryService(scm, service, serviceName);
         }
 
@@ -561,7 +561,7 @@ internal static class Program
         }
         catch
         {
-            // 服务异常只影响本次导入；最终状态和自删除仍必须执行。
+            // Service failures only affect this import; final status reporting and self-deletion must still run.
         }
         finally
         {
@@ -596,7 +596,7 @@ internal static class Program
         string token = RequireArgument(args, "--token");
         int brokerPid = ParsePositiveInt(RequireArgument(serviceArguments, "--broker-pid"));
 
-        // SYSTEM 服务只向原始普通用户 broker 暴露一次性 pipe；精确 PID/映像路径/token 仍是授权依据。
+        // The SYSTEM service exposes a one-time pipe only to the original plain-user broker; exact PID/image path/token remain the authorization basis.
         using (NamedPipeServerStream pipe = CreatePipeServer(pipeName, false, true))
         {
             activeServicePipe = pipe;
@@ -1056,8 +1056,8 @@ internal static class Program
             PipeDirection.InOut,
             1,
             PipeTransmissionMode.Byte,
-            // Bugfix 原因：WaitForConnection 使用 Begin/End 异步等待实现硬超时；同步管道会在
-            // controller/service 接入前直接抛 InvalidOperationException，导致 Cookie 解密从未开始。
+            // Bugfix: WaitForConnection uses Begin/End async waits for a hard timeout; the sync overload throws InvalidOperationException
+            // before controller/service attach, so cookie decryption never started.
             PipeOptions.Asynchronous,
             4096,
             4096,

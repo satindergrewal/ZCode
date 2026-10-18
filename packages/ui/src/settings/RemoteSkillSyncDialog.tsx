@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 远端 Skill 同步弹窗集中维护加载、选择、预检和结果状态，拆分会增加跨状态传递复杂度。 */
+/* eslint-disable max-lines -- the remote Skill sync dialog keeps loading, selection, prechecks and results in one place; splitting adds cross-state complexity. */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, UploadCloud } from "lucide-react";
 import {
@@ -84,8 +84,8 @@ function formatRemoteSkillSyncError(
   error: unknown,
   intl: Pick<IntlInstance, "formatMessage">,
 ): string {
-  // RPC 原始错误中的字节数和阶段信息不能直接作为用户文案；
-  // 这里只识别稳定错误码，按阶段和当前语言生成可操作提示，其他错误保留原始信息。
+  // Raw RPC byte counts and phases are not user copy;
+  // match stable codes only and phrase per stage/locale; anything else keeps the original message.
   const normalizedError = normalizeUnknownError(error);
   if (normalizedError.code !== SKILL_SYNC_SIZE_LIMIT_ERROR_CODE) {
     return normalizedError.message;
@@ -271,7 +271,7 @@ export function RemoteSkillSyncDialog(props: RemoteSkillSyncDialogProps) {
   const [importResult, setImportResult] = useState<SkillSyncImportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const syncInFlightRef = useRef(false);
-  // 加载请求可能跨越语言切换，effect 闭包中的 intl 会过期；错误提示必须读取最近一次渲染的实例。
+  // Loads may span language switches; the effect closure's intl goes stale, so read the latest rendered instance for error copy.
   const latestIntlRef = useRef(intl);
   latestIntlRef.current = intl;
 
@@ -421,8 +421,8 @@ export function RemoteSkillSyncDialog(props: RemoteSkillSyncDialogProps) {
           />
         </DialogHeader>
 
-        {/* 筛选会改变可见 rows 数量，DialogContent 固定高度后由列表区内部滚动；
-            否则空态按内容收缩会造成弹窗跳动，长列表也会把底部操作栏挤出窗口。 */}
+        {/* Filtering changes visible rows; DialogContent keeps a fixed height and the list scrolls inside,
+            else the empty state shrinks and jumps the dialog and long lists push the footer offscreen. */}
         <div className="min-h-0 flex-1 overflow-y-auto">
           {error ? (
             <div className="mb-3 rounded-lg border border-destructive/40 bg-surface px-3 py-2 text-ui-base text-destructive">

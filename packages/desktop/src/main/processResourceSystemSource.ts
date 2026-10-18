@@ -1,10 +1,10 @@
 /**
- * 设备级样本来源。
+ * * Device-level sample source.
  *
- * 与 Chromium 体系共用 main 的 10 秒 tick，跑在采样的第二阶段：
- * 相邻两个 tick 的 `os.cpus()` 快照差分得到整机 CPU、`os.freemem()` 得到整机剩余内存，
- * 再把第一阶段的精确合计与外部来源（CLI、MCP）的最近样本相加得到应用总量。
- * 全部为进程内 API，main 进程零外部进程。
+ * Shares main's 10s tick with the Chromium family and runs in phase two:
+ * os.cpus() deltas give machine CPU, os.freemem() free memory,
+ * and app totals add phase-one exact sums to the latest external samples (CLI/MCP).
+ * In-process APIs only; main spawns nothing.
  */
 
 import os from "node:os";
@@ -16,7 +16,7 @@ import {
 import type { ProcessResourceSampleSource } from "./processResourceSampleSources.js";
 import { roundMetric } from "./resourceMetricsStats.js";
 
-/** 整机 CPU 的累计时间快照；只有两次快照差分才是一段时间内的整机 CPU。 */
+/* /** Cumulative CPU snapshot; only the delta of two snapshots is machine CPU over time. */
 interface SystemCpuTimesSnapshot {
   busyMs: number;
   totalMs: number;
@@ -34,8 +34,8 @@ function summarizeSystemCpuTimes(cpus: readonly os.CpuInfo[]): SystemCpuTimesSna
 }
 
 /**
- * 两次快照的差分百分比；拿不到可用差分时返回 null，调用方本 tick 不产生样本。
- * 返回 null 的情况：累计时间没有前进（容器里 `os.cpus()` 为空）、核数变化或时钟回拨导致差分为负。
+ * * Delta percent of two snapshots; null when no usable delta, so no sample this tick.
+ * null cases: stalled counters (empty os.cpus in containers), core-count changes, or clock rollback negative deltas.
  */
 function diffSystemCpuPercent(
   previous: SystemCpuTimesSnapshot,
@@ -58,8 +58,8 @@ export const systemProcessResourceSampleSource: ProcessResourceSampleSource = {
     const baseline = previousCpuTimes;
     previousCpuTimes = snapshot;
 
-    // 第一个 tick 只有一个快照，差分无从谈起，因此不产生样本；
-    // 第一阶段没有任何精确合计时同理——设备事件宁可少一个样本，也不上报半真的合计。
+    // The first tick has one snapshot, so no delta and no sample;
+    // likewise when phase one has no exact totals: prefer a missing sample to a half-true total.
     if (!baseline || !context.appProcessTotals) {
       return;
     }
@@ -81,7 +81,7 @@ export const systemProcessResourceSampleSource: ProcessResourceSampleSource = {
     });
   },
   reset() {
-    // 丢弃 CPU 基线与外部来源的最近样本，避免用上一次采样会话的事实做差分与合计。
+    // Drop the CPU baseline and external latest-samples so a new session never reuses old facts.
     previousCpuTimes = null;
     resetExternalAppResourceSamples();
   },

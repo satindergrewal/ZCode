@@ -13,13 +13,14 @@ export function createWindowsCaptionControlsStyle(
   _fallbackRightInsetPx = WINDOWS_CAPTION_CONTROLS_DEFAULT_RIGHT_INSET_PX,
 ): WindowsCaptionControlsStyle {
   return {
-    // 自绘按钮随页面缩放；WCO 关闭后的几何仍可能返回整个窗口宽度，不能再用于计算安全区。
+    // Custom buttons scale with the page; geometry reported after WCO is disabled may still
+    // span the whole window width and must no longer feed safe-area math.
     "--windows-caption-controls-right-inset": `${WINDOWS_CAPTION_CONTROLS_DEFAULT_RIGHT_INSET_PX}px`,
-    // 设置页旧 caption 菜单仍复用三等分宽度；紧凑窗控本身使用固定 28px。
+    // The legacy settings caption menu still thirds the inset; compact window controls use a fixed width.
     "--windows-caption-control-width": "calc(var(--windows-caption-controls-right-inset) / 3)",
   };
 }
 
-// 该样式只能由 Windows 标题栏路径显式启用，避免影响 Linux 自绘标题栏原有间距。
+// Only the Windows titlebar path may enable this style, preserving the Linux custom titlebar spacing.
 export const WINDOWS_CAPTION_CONTROL_CLASS =
   "h-full w-[var(--windows-caption-control-width,46px)] rounded-none";

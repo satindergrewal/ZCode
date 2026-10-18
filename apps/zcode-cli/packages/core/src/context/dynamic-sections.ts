@@ -45,7 +45,7 @@ export function buildSessionGuidanceSection(toolNames: readonly string[], hasSki
   const tools = new Set(toolNames);
   const lines = ["# Session-specific guidance"];
 
-  // 当前不输出 Agent 指导段。
+  // No agent-guidance section is emitted for now.
   // if (tools.has("Agent")) {
   //   lines.push("- Use the Agent tool with specialized agents when the task at hand matches the agent's description. Subagents are valuable for parallelizing independent queries or for protecting the main context window from excessive results, but they should not be used excessively when not needed. Importantly, avoid duplicating work that subagents are already doing - if you delegate research to a subagent, do not also perform the same searches yourself.");
 
@@ -69,7 +69,7 @@ export function buildSessionGuidanceSection(toolNames: readonly string[], hasSki
     return null;
   }
 
-  // 只有存在实际 session guidance 时才输出本段，避免向 simple branch 注入空标题。
+  // Emit this section only when session guidance exists, avoiding empty headings on simple branches.
   return createDynamicSection("Session-specific guidance", "session_guidance", lines.join("\n"));
 }
 

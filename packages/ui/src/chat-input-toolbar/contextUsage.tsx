@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- context 面板聚合 Context windows、Coding Plan 和 Start Plan 三段紧耦合展示；后续拆分需要单独梳理弹层状态边界。 */
+/* eslint-disable max-lines -- the context panel binds Context windows, Coding Plan, and Start Plan displays tightly; later splits need a dedicated popover-state boundary pass. */
 import {
   useCallback,
   useEffect,
@@ -123,8 +123,9 @@ function formatContextCacheHitRateLabel(
     return null;
   }
 
-  // 生产面板只露出明显缓存收益，避免低命中率分散对上下文容量的注意力；
-  // 开发环境需要观察 provider 的真实低命中值，因此允许绕过 78% 展示阈值。
+  // The production panel shows only clear cache wins, keeping focus on context capacity instead
+  // of low hit rates; dev needs the provider's real low numbers, so the 78% display threshold is
+  // bypassable there.
   if (!options.showBelowThreshold && hitRate < CACHE_HIT_RATE_DISPLAY_THRESHOLD) {
     return null;
   }
@@ -207,8 +208,9 @@ export function getRenderableTaskUsage<T extends { used: number; size: number }>
     return null;
   }
 
-  // ZCode Protocol 迁移后会单独补齐真实 contextUsed/contextWindow。
-  // used=0 或非法值不代表可展示的上下文占用，避免把初始化/异常兜底渲染成误导性的 0%。
+  // Post-protocol-migration the real contextUsed/contextWindow arrive separately. used=0 or
+  // invalid values are not displayable usage; never render init/exception fallbacks as a
+  // misleading 0%.
   if (
     !Number.isFinite(taskUsage.used) ||
     !Number.isFinite(taskUsage.size) ||
@@ -225,7 +227,7 @@ export function getContextCompressionCommand(_provider: ZCodeProvider): string {
   return "/compact";
 }
 
-// 自动/运营完成（startedAt 为空）当前生效的 used_at；手动完成不进入触发器交互。
+// Auto/ops completions (empty startedAt) with a currently-effective used_at; manual completions never enter the trigger flow.
 function resolveAutomaticCompletedAt(entry: CodingPlanQuotaResetUiEntry | null): number | null {
   return entry?.status === "completed" && entry.startedAt === null && entry.observedAt !== null
     ? entry.completedAt
@@ -265,21 +267,24 @@ export function ChatContextUsage({
   const contextAccessRefreshSeqRef = useRef(0);
   const handleContextOpenChange = useCallback(
     (open: boolean) => {
-      // Dialog 打开后会把焦点移出 HoverCard，Radix 随即请求关闭 HoverCard；
-      // 若此时卸载内容，Portal 中的重置弹框也会一起消失，因此弹框存活期间必须拒绝关闭。
+      // Opening the Dialog moves focus out of the HoverCard and Radix asks to close it; unloading
+      // content then would take the Portal-mounted reset dialog with it, so refuse close while
+      // the dialog lives.
       if (!open && quotaResetDialogOpenRef.current) {
         return;
       }
       setContextOpen(open);
-      // hover 刷新入口不能只认 Coding Plan 的 onAccess：Start Plan（今日余额）与
-      // Coding Plan 连接方式互斥，start plan 用户 hover 时整条刷新链路都不触发，余额只能被动等
-      // 设置页/侧栏刷新。改为两段配置任一提供 onAccess 即发起本次静默 access 刷新（互斥下实际只有一个存在）。
+      // The hover refresh entry cannot honor only Coding Plan's onAccess: Start Plan (today's
+      // balance) and Coding Plan connections are mutually exclusive, so start-plan users' hover
+      // fired no refresh and the balance waited passively for settings/sidebar refreshes. Fire the
+      // silent access refresh when either config provides onAccess (only one exists at a time).
       const accessRefresh = codingPlanUsageRemaining?.onAccess ?? startPlanBalance?.onAccess;
       if (!open || !accessRefresh) {
         return;
       }
-      // silent access refresh 有缓存快照时不会把 entitlement.loading 置 true。
-      // header 的刷新图标必须跟随本次 hover 触发的远端 promise，而不是只看快照 loading。
+      // A silent access refresh with a cached snapshot never sets entitlement.loading. The
+      // header's refresh icon must follow this hover-triggered remote promise, not snapshot
+      // loading.
       const refreshSeq = contextAccessRefreshSeqRef.current + 1;
       contextAccessRefreshSeqRef.current = refreshSeq;
       setContextAccessRefreshing(true);
@@ -328,8 +333,9 @@ export function ChatContextUsage({
     }
     const base: ChatStartPlanBalanceConfig = {
       ...startPlanBalance,
-      // 静默 access 刷新不置 entitlement.loading，今日余额标题旁 spinner 需要跟随
-      // 本次 hover 触发的 promise（contextAccessRefreshing），语义对齐 Coding Plan 段的 refreshing。
+      // Silent access refreshes do not set entitlement.loading; the today-balance spinner follows
+      // this hover-triggered promise (contextAccessRefreshing), mirroring the Coding section's
+      // refreshing.
       refreshing: contextAccessRefreshing || startPlanBalance.refreshing === true,
     };
     if (!startPlanBalance.onUpgradeClick) {
@@ -339,8 +345,9 @@ export function ChatContextUsage({
     return {
       ...base,
       onUpgradeClick: () => {
-        // HoverCard 内按钮点击不会像外部 hover leave 一样自动关闭面板。
-        // 升级入口会切到设置页，必须先收起 context 面板，避免旧浮层残留在新页面上。
+        // Buttons inside a HoverCard do not close it like an outside hover-leave. The upgrade entry
+        // navigates to settings, so collapse the context panel first or the stale layer survives
+        // onto the new page.
         setContextOpen(false);
         startPlanBalance.onUpgradeClick?.();
       },
@@ -351,7 +358,7 @@ export function ChatContextUsage({
     : false;
   const hasStartPlanBalance = hasChatStartPlanBalance(startPlanBalanceWithClose);
 
-  // 自动重置：触发器和面板复用同一完整 Personal/Team scope；共享 in-flight 避免重复请求。
+  // Auto-reset: trigger and panel share one full Personal/Team scope; shared in-flight dedupes requests.
   const resetCodingPlanState = useMemo(
     () =>
       codingPlanUsageRemainingWithClose
@@ -360,7 +367,8 @@ export function ChatContextUsage({
     [codingPlanUsageRemainingWithClose],
   );
   const resetSourceKey = resetCodingPlanState?.displayedProviderId ?? null;
-  // MCP 与不足三张的主额度同排；主额度占满三列时才在下一行贯穿，浮层始终保持统一宽度。
+  // MCP shares the row with main quotas until they fill three columns; only then does it wrap to a
+  // full-width row. The layer keeps one uniform width.
   const contextPanelWidthClass = "!w-80";
   const resetUi = useCodingPlanQuotaResetUi({
     sourceKey: resetSourceKey,
@@ -431,7 +439,8 @@ export function ChatContextUsage({
     contextQuotaResetOpportunityDismissalStore.dismiss(opportunityReminder);
   }, [opportunityReminder?.opportunityKey, opportunityReminder?.phase]);
   useEffect(() => {
-    // 设置覆盖层保留工作区挂载；后台监听不能把设置页点击算作提醒已读。
+    // The settings overlay stays workspace-mounted; the background listener must not count
+    // settings-page clicks as reminder reads.
     if (!isWorkspaceVisible || !opportunityReminder || contextOpen) return;
     const handleOutsidePointerDown = (event: PointerEvent) => {
       if (
@@ -452,13 +461,15 @@ export function ChatContextUsage({
     opportunityReminder?.opportunityKey,
     opportunityReminder?.phase,
   ]);
-  // 五小时与周额度各自维护撒花轨迹，避免一类完成压制另一类的触发器动效。
+  // The 5-hour and weekly quotas keep separate confetti trails so one completion's trigger never
+  // suppresses the other's animation.
   const resetCelebrationStateByTypeRef = useRef<
     Record<CodingPlanResetType, CodingPlanQuotaResetCelebrationState | null>
   >({ FIVE_HOUR: null, WEEK: null });
   const fiveHourEntry = resetUi.entry;
   const weekEntry = resetUi.week.entry;
-  // 自动/运营完成（startedAt 为空）只是播放候选；status 入口不能直接驱动 Tooltip/撒花。
+  // Auto/ops completions (empty startedAt) are play candidates only; the status entry must not
+  // drive Tooltip/confetti directly.
   const automaticCompletionCandidateByType = useMemo<Record<CodingPlanResetType, number | null>>(
     () => ({
       FIVE_HOUR: resolveAutomaticCompletedAt(fiveHourEntry),
@@ -485,9 +496,10 @@ export function ChatContextUsage({
   };
   const [autoPlayReservationRetryTick, setAutoPlayReservationRetryTick] = useState(0);
 
-  // Main 返回 claim winner 前 Composer 可能已经卸载或切换 source。现在先获取带 token
-  // 的临时 reservation，只有组件与候选仍有效且即将展示时才 commit played；失效 winner release，
-  // busy loser 保留 observedAt，等待真实 played 广播或 reservation 释放后重试。
+  // Before main returns the claim winner, the Composer may have unmounted or switched sources.
+  // Take a tokened temporary reservation; commit played only if the component and candidate are
+  // still valid and about to display. A stale winner releases; a busy loser keeps observedAt and
+  // retries after the real played broadcast or reservation release.
   useEffect(() => {
     let active = true;
     const retryTimers: Array<ReturnType<typeof setTimeout>> = [];
@@ -589,7 +601,8 @@ export function ChatContextUsage({
     resetUi.reserveAutomaticCompletion,
   ]);
 
-  // Tooltip/撒花只消费本窗口已经 claim 成功且仍对应当前候选的 used_at。
+  // Tooltip/confetti consume only a used_at this window successfully claimed and that still
+  // matches the current candidate.
   const automaticCompletedAtByType = useMemo<Record<CodingPlanResetType, number | null>>(() => {
     if (claimedAutomaticCompletion.sourceKey !== resetSourceKey) {
       return { FIVE_HOUR: null, WEEK: null };
@@ -613,14 +626,16 @@ export function ChatContextUsage({
     resetSourceKey,
   ]);
   const [resetTooltipNow, setResetTooltipNow] = useState(() => Date.now());
-  // 已被 hover 收起的自动完成 used_at(按类型记录)；新的自动完成 used_at 不同会自动重新展示,
-  // 因此某一类型完成时无需清空另一类型的收起状态。
+  // used_at values (per type) already dismissed via hover; a new completion with a different
+  // used_at re-shows automatically, so one type's completion never clears the other's dismissed
+  // state.
   const [resetTooltipDismissed, setResetTooltipDismissed] =
     useState<CodingPlanQuotaResetAutoConfettiArms>({
       FIVE_HOUR: null,
       WEEK: null,
     });
-  // 待补播撒花的自动完成 used_at(按类型记录)；hover 展开面板后由对应额度条「已重置」位置各迸发一次。
+  // Pending confetti replay used_at values (per type); after hover-open, each quota bar's
+  // "reset" position bursts once.
   const [armedAutoConfetti, setArmedAutoConfetti] = useState<CodingPlanQuotaResetAutoConfettiArms>({
     FIVE_HOUR: null,
     WEEK: null,
@@ -662,7 +677,8 @@ export function ChatContextUsage({
       isTypeDismissed,
     ],
   );
-  // 两类同时处于自动提示阶段时，优先展示更晚被观察到的那一类（更贴近“刚刚发生”）。
+  // When both types are in the automatic-notice phase, prefer the one observed more
+  // recently (closest to "just happened").
   const activeResetType = useMemo<CodingPlanResetType | null>(() => {
     const candidates = CODING_PLAN_QUOTA_RESET_TYPES.filter(
       (resetType) => phaseByType[resetType] !== null,
@@ -683,11 +699,14 @@ export function ChatContextUsage({
     resetTooltipPhase,
     opportunityReminder?.phase ?? null,
   );
-  // Tooltip Portal 位于 body，工作区的 opacity/inert 隐藏不了它；必须跟随 Root 的设置标签可见性。
+  // The tooltip portal lives on body, so the workspace's opacity/inert hiding does not
+  // apply to it; it must follow the Root settings-label visibility instead.
   const resetStatusTooltipOpen = isWorkspaceVisible && triggerTooltipKind !== null && !contextOpen;
 
-  // 发现新的自动/运营完成：按类型重新计时合成“正在重置”,并 arm 对应额度条补播撒花。
-  // 每类各自记录,一类完成不影响另一类；dismissed 按 used_at 记录,新 used_at 会自动重新展示。
+  // Newly observed automatic/operational completions: restart the synthesized "resetting"
+  // phase per type and arm that quota bar's replay confetti.
+  // Each type is tracked independently, so one completing never blocks the other; dismissals
+  // are keyed by used_at, and a newer used_at re-surfaces the entry automatically.
   useEffect(() => {
     const armedByType: Partial<Record<CodingPlanResetType, number>> = {};
     for (const resetType of CODING_PLAN_QUOTA_RESET_TYPES) {
@@ -712,15 +731,16 @@ export function ChatContextUsage({
     }
   }, [automaticCompletedAtByType, fiveHourEntry, weekEntry, resetSourceKey]);
 
-  // 跨窗口"已播"广播会把正在展示的自动完成 observedAt 置空；此时已 arm 的
-  // 补播撒花必须同步清除，否则本窗口 hover 面板时仍会撒花，违背“多窗口只播一次”。
+  // A cross-window "already played" broadcast clears the observedAt of an in-flight automatic
+  // completion; any armed replay confetti must be pruned in the same pass, or hovering the
+  // panel here would still confetti and break the "play once across windows" rule.
   useEffect(() => {
     setArmedAutoConfetti((prev) =>
       pruneCodingPlanQuotaResetConfettiArms(prev, automaticCompletedAtByType),
     );
   }, [automaticCompletedAtByType]);
 
-  // 合成“正在重置”阶段到期后切换为“已重置”（随后一直保留直到 hover 收起）。
+  // Once the synthesized "resetting" phase expires, switch to "reset" (kept until the hover collapses).
   useEffect(() => {
     const observedAt = activeEntry?.observedAt ?? null;
     if (resetTooltipPhase !== "processing" || observedAt === null) {
@@ -731,8 +751,9 @@ export function ChatContextUsage({
     return () => window.clearTimeout(timer);
   }, [resetTooltipPhase, activeEntry?.observedAt]);
 
-  // 用户 hover 触发器展开额度面板：把当前处于自动提示阶段的**每一类**都标记收起,
-  // 交由面板内对应重置项从同一位置补播撒花(两类可能同时处于提示阶段)。
+  // Hovering the trigger expands the quota panel: mark every type currently in the
+  // automatic-notice phase as dismissed and let the matching panel row replay confetti from
+  // the same spot (both types can be in the notice phase at once).
   useEffect(() => {
     if (!contextOpen) {
       return;
@@ -876,9 +897,10 @@ export function ChatContextUsage({
           ) : null
         }
       >
-        {/* span 承载 ControlHintTooltip 的 asChild 锚点，内部 ContextTrigger 仍作为
-            HoverCard 触发器，避免两个 Radix 浮层在同一 DOM 上叠加 ref。手动核销的
-            processing 由弹层内「重置」按钮自身展示，触发器不转圈。 */}
+        {/* The span carries the ControlHintTooltip asChild anchor while the inner ContextTrigger
+            stays the HoverCard trigger, so two Radix overlays never stack refs on one DOM node.
+            A manual "reset" in flight is shown by the panel's reset button itself; the trigger
+            does not spin. */}
         <span className="inline-flex shrink-0">
           <ContextTrigger
             aria-label={triggerLabel}
@@ -890,15 +912,17 @@ export function ChatContextUsage({
             data-chat-toolbar-popover-trigger="true"
             data-testid={TID_CHAT_CONTEXT_USAGE_TRIGGER}
             onPointerDown={(event) => {
-              // Radix HoverCard 会在 touchstart 中阻止后续 click，手机端无法打开面板；
-              // 在触摸 pointerdown 阶段先打开，桌面端继续保持原有 hover/focus 语义。
+              // Radix HoverCard swallows the following click on touchstart, so phones could
+              // never open the panel; open on touch pointerdown instead, while desktop keeps
+              // the existing hover/focus semantics.
               if (
                 !event.defaultPrevented &&
                 event.pointerType === "touch" &&
                 typeof window !== "undefined" &&
                 window.matchMedia?.("(hover: none)").matches
               ) {
-                // 统一走受控 open handler，确保触摸打开也会触发额度 access 刷新和刷新态反馈。
+                // Always route through the controlled open handler so a touch open also
+                // refreshes quota access and shows the refreshing state.
                 if (!contextOpen) {
                   handleContextOpenChange(true);
                 }
@@ -913,8 +937,9 @@ export function ChatContextUsage({
         sideOffset={2}
       >
         <ContextContentBody className="space-y-3">
-          {/* 默认 ai-elements Header 会硬编码标题并把摘要拆到独立头部。
-          工具栏上下文 hover 只需要一块紧凑信息面板，摘要和明细统一放在 body 里。 */}
+          {/* The default ai-elements Header hardcodes a title and splits the summary into a
+          separate header row. The toolbar hover only needs one compact panel, so summary and
+          breakdown both live in the body. */}
           {renderableTaskUsage && compactTokenUsageLabel ? (
             <div className="space-y-2">
               <div className="flex min-w-0 mb-3 items-center gap-3">
@@ -958,7 +983,8 @@ export function ChatContextUsage({
                             id: BREAKDOWN_SOURCE_LABEL_ID[segment.source],
                           })}
                         </span>
-                        {/* breakdown 行只展示占比，分项 token 数会和顶部总量口径混在一起造成误读。*/}
+                        {/* Breakdown rows show the percentage only; per-source token counts would
+                        clash with the top-level total and invite misreading. */}
                         <span className="ml-auto min-w-10 shrink-0 text-right font-mono text-ui-sm tabular-nums text-foreground">
                           {percentageFormatter.format(segment.percent)}
                         </span>

@@ -39,10 +39,10 @@ export function createModelStreamingEventQueue(params: {
     enqueue(payload: ModelStreamingPayload): void {
       assertNoWriteFailure();
       pendingWrites += 1;
-      // 逐个 token 同步 append 会让 provider SSE reader 停在
-      // iterator.next() 之外，已经到达的帧要等落库/通知完成后才被消费。
-      // 这里把 append 串成有序写队列，读取侧继续 drain provider 队列；
-      // finish / error / tool_call 边界再显式 drain，保持原有顺序语义。
+      // Per-token sync appends stall the provider SSE reader outside
+      // iterator.next(); arrived frames wait on persist/notify before consumption.
+      // Appends serialize into an ordered write queue while the reader keeps draining the provider queue;
+      // finish / error / tool_call boundaries drain explicitly, preserving order.
       tail = tail
         .then(async () => {
           if (writeFailure) {

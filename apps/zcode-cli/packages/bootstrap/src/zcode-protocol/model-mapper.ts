@@ -11,7 +11,7 @@ function modelSelectionFromString(input: string): ModelSelection {
   return selection;
 }
 
-/** 未绑定 App 的 getModel() 返回空值；读取协议不能把合法的空状态重新变成恢复异常。 */
+/** getModel() with no bound App returns empty; the read path must not turn a valid empty state back into a restore error. */
 export function optionalModelSelectionFromString(input: string): ModelSelection | undefined {
   return input.trim() ? modelSelectionFromString(input) : undefined;
 }

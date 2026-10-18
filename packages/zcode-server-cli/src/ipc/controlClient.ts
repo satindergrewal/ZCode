@@ -4,8 +4,8 @@ import { controlResponseSchema, type ControlRequest } from "../contracts.js";
 import { encodeJsonLine, JsonLineDecoder } from "./framing.js";
 import { ControlRequestError } from "./controlError.js";
 
-// Omit 不对 union 分发：直接 Omit<ControlRequest, "id"> 会丢掉 confirmation/force 等
-// 变体字段，调用方无法以字面量构造合法请求。用分发式 Omit 保留每个命令的完整形状。
+// A plain Omit does not distribute over unions: Omit<ControlRequest, "id"> drops variant fields
+// like confirmation/force, so callers cannot build valid requests literally. Distributive Omit keeps each command's full shape.
 type DistributedOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 type ControlRequestInput = DistributedOmit<ControlRequest, "id">;
 

@@ -10,9 +10,9 @@ export function mergeAutomationMutationToolDenylist(
   return [...merged];
 }
 
-// 闲时派发轮只 deny OffPeakCreate（防止闲时任务递归自我派生、无限调度），OffPeakList 只读保留。
-// 独立常量，绝不并入 AUTOMATION_MUTATION_TOOL_NAMES——cron automation 轮
-// 明确放行 OffPeakCreate（定时派生闲时任务），混入会让 automation 轮误 deny。
+// Off-peak dispatch rounds only deny OffPeakCreate (no recursive self-spawning); OffPeakList stays.
+// Deliberately separate from AUTOMATION_MUTATION_TOOL_NAMES: cron automation rounds must
+// allow OffPeakCreate (scheduled spawning); merging would make automation rounds over-deny.
 export const OFF_PEAK_MUTATION_TOOL_NAMES = ["OffPeakCreate"] as const;
 
 export function mergeOffPeakMutationToolDenylist(current: readonly string[] | undefined): string[] {

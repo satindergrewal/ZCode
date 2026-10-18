@@ -26,7 +26,7 @@ export function sanitizeTelemetryError(error: unknown): SanitizedTelemetryError 
     error instanceof Error ? error.message : stringValue(record.message),
   );
   const chain = errorObjectChain(error);
-  // 修复原因：链包含输入本身；没有独立嵌套对象时不能把同一个错误重复登记为 cause。
+  // Fix rationale: the chain includes the input itself; without a distinct nested object, the same error must not be re-registered as its own cause.
   const cause = chain.length > 1 ? sanitizeCause(chain[chain.length - 1]!) : undefined;
   return {
     ...(cause ? { cause } : {}),
@@ -37,11 +37,11 @@ export function sanitizeTelemetryError(error: unknown): SanitizedTelemetryError 
 }
 
 /**
- * 同一个源异常会沿 Attempt -> Call -> Step -> Turn 冒泡。错误正文只应记录在最靠近
- * 来源、最先认领它的 Span；父层继续记录 outcome/failure_stage，但不复制同一份正文。
+ * One source exception bubbles along Attempt -> Call -> Step -> Turn. The message body belongs only on the
+ * Span closest to the origin that claims it first; parents keep outcome/failure_stage without duplicating it.
  *
- * 包装错误的 cause 链也参与认领：AdapterError(cause=ProviderError) 不会在上层重新覆盖
- * Provider Attempt 已记录的原始错误。WeakSet 不延长异常对象生命周期。
+ * Wrapped-error cause chains join the claim: AdapterError(cause=ProviderError) does not re-overwrite the
+ * original error already recorded on the Provider Attempt. The WeakSet does not extend object lifetime.
  */
 export function claimSanitizedTelemetryError(error: unknown): SanitizedTelemetryError | undefined {
   const objects = errorObjectChain(error);
@@ -53,8 +53,8 @@ export function claimSanitizedTelemetryError(error: unknown): SanitizedTelemetry
 
 export function sanitizeErrorMessage(value: string | undefined): string | undefined {
   if (!value) return undefined;
-  // 错误可能携带整段响应正文；先做有界截断再正则清洗，避免 Telemetry 为恶意或异常
-  // Provider 消息承担无界 CPU/内存成本。
+  // Errors may carry a whole response body; bound-truncate before regex scrubbing so Telemetry never pays
+  // unbounded CPU/memory costs for hostile or malformed provider messages.
   const sanitized = value
     .slice(0, 4_096)
     .replace(/\bhttps?:\/\/[^\s"'<>]+/giu, sanitizeUrl)
@@ -108,7 +108,7 @@ function errorObjectChain(error: unknown): object[] {
     seen.add(current);
     result.push(current);
     const record = current as Record<string, unknown>;
-    // 部分流包装器使用 adapterError/error；沿单条优先链复用同一认领机制，避免父 Span 重复记录。
+    // Some stream wrappers use adapterError/error; reuse the same claim mechanism along the single preferred chain so parent Spans never duplicate.
     current = [record.cause, record.adapterError, record.error].find(
       (nested) => nested && typeof nested === "object",
     );

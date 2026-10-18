@@ -113,7 +113,7 @@ export async function compactActiveConversation(
     traceContext: turnTraceContext,
   });
   if (options.compactContextTelemetry) {
-    // Auto 复用策略决策，Reactive 复用 overflow 路径 activeMessages；其他 trigger 不额外投影。
+    // Auto reuses the policy decision, Reactive the overflow-path activeMessages; other triggers project nothing extra.
     compactTelemetry.setInputTokens(options.compactContextTelemetry.inputTokens);
   }
   return compactTelemetry.run(async () => {
@@ -177,9 +177,9 @@ async function compactActiveConversationImpl(
       selection: this.getSessionModelSelection(),
     });
   const executionMaxOutputTokens = compactModel.optionSpecs.maxOutputTokens.max;
-  // Active compact 会跨多个 await 保留这份成员浅快照；它依赖 RuntimeMessageEntry
-  // 不可变约定。selection、provider render 和最终 replace 会创建各自拥有的副本，
-  // 禁止在 compact 期间原地修改 activeEntries 内共享的 entry/message/content。
+  // Active compact holds this shallow member snapshot across awaits, relying on the RuntimeMessageEntry
+  // immutability contract. Selection, provider render and final replace each take owned copies;
+  // mutating shared entry/message/content in activeEntries during compact is forbidden.
   const activeEntries = [
     ...(options.activeEntries ?? this.messageHistory.borrowReadOnlyRuntimeEntries()),
   ];
@@ -220,8 +220,8 @@ async function compactActiveConversationImpl(
       replace: true,
       status: CompactTimelineStatus.Skipped,
     });
-    // 刚压缩过或历史太少时，/compact 是健康 no-op，不能暴露成系统故障。
-    // 上层快速回填 tracker 只能记录真实 boundary，因此必须显式返回 skipped。
+    // Freshly compacted or thin history: /compact is a healthy no-op, not a system fault.
+    // The fast-backfill tracker records real boundaries only, so return skipped explicitly.
     await persistCompactTimelineEvent(
       this,
       SessionEventType.CompactCompleted,
@@ -248,8 +248,8 @@ async function compactActiveConversationImpl(
     turnTraceContext,
     events,
   );
-  // 止血原因：massive MCP 工具会把 compact summary request 的 provider context 撑爆。
-  // ToolSearch/deferred tools 完成前，仅在工具数超过阈值时让 compact summary 保持无工具。
+  // Hotfix reason: massive MCP toolsets blow up the compact summary request context.
+  // Until ToolSearch/deferred tools land, keep the summary request tool-free past a count threshold.
   await this.initializeMcp(turnTraceContext);
   throwIfTurnAborted(options.abortSignal);
   const runtimeCompactTools = this.getTools(compactModel);
@@ -318,8 +318,8 @@ async function compactActiveConversationImpl(
             : buildCompactSummaryRequestMessages(recordableEntries, compactPrompt, {
                 useMidConversationSystem,
               });
-        // Compact 曾只执行 capability projection，漏掉普通 turn 共用的聚合
-        // 媒体预算；统一走模型媒体策略，避免 summary 请求绕过全局请求上限。
+        // Compact ran capability projection only, missing the media-budget aggregation
+        // normal turns share; the model media policy applies so summary requests respect global caps.
         const mediaPolicyProjection = projectMessagesForModelMediaPolicy(
           requestMessages,
           compactModel.properties.inputFormat,
@@ -352,7 +352,7 @@ async function compactActiveConversationImpl(
                 compactModel.properties.inputFormat,
               ).messages;
         if (stripMediaForSummary) {
-          // 复用通用 media budget 文案会污染 summary 的 provider-visible 内容。
+          // Reusing the generic media-budget wording would pollute the summary provider-visible content.
           const mediaProjection = projectCompactMediaForRetry(projectedRequestMessages);
           projectedRequestMessages = mediaProjection.messages;
           projectedRecordableMessages =
@@ -365,8 +365,8 @@ async function compactActiveConversationImpl(
         const modelRequestEvent = this.createEvent(
           SessionEventType.ModelRequest,
           {
-            // 事件误用了含 Continue 的实际请求数组，导致 query-local 提示进入持久化轨迹。
-            // 与 v0.16.6 一致：事件记录过滤后的投影，下面的 provider 请求仍使用完整上下文。
+            // The event misused the actual request array, Continue included, leaking query-local hints into history.
+            // As in v0.16.6: the event records the filtered projection; the provider request below keeps full context.
             messages: projectedRecordableMessages,
             providerId: String(compactModel.providerId),
             modelId: String(compactModel.modelId),
@@ -396,8 +396,8 @@ async function compactActiveConversationImpl(
             operationId: compactTimeline.operationId,
           },
           statusSink: this.createModelStatusSink(modelTraceContext, events),
-          // compact 的首个真实 provider event 结束 SSE retry 资格；隐藏 partial 在
-          // content block 提交前仍可丢弃并 HTTP fallback，block end 后则禁止任何重放。
+          // The first real compact provider event ends SSE-retry eligibility; hidden partials stay
+          // discardable-with-HTTP-fallback until block commit; after block end, no replay.
           preserveProviderStreamBoundaries: true,
           traceContext: modelTraceContext,
           tools: compactTools,
@@ -468,8 +468,8 @@ async function compactActiveConversationImpl(
         });
         const contextError = createCompactContextExceededFinishError(result);
         if (contextError) {
-          // compact summary 也可能以 finishReason 返回超窗而不是 throw；
-          // 必须先进入同一套 recent preserve 重选逻辑，避免 finishReason 路径丢上下文。
+          // A compact summary can report overflow via finishReason instead of throwing;
+          // it must enter the same recent-preserve reselection, or that path loses context.
           if (reselectEntriesAfterPromptTooLong(contextError)) continue;
           if (truncateEntriesAfterPromptTooLong(contextError)) continue;
           throw createCompactPromptTooLongError({
@@ -518,7 +518,7 @@ async function compactActiveConversationImpl(
       const summaryMessageContent = buildCompactSummaryMessage(persistedSummary, {
         suppressFollowup: true,
       });
-      // Continue 没有对应 Session message；无 store 的统计也不能把它计入保留记录。
+      // Continue has no Session message; store-less accounting must not count it as preserved.
       const recordablePreservedEntries = filterOutputTokenContinuationEntries(preservedEntries);
       const preservation = this.sessionStore
         ? await selectPersistedCompactTail({
@@ -643,8 +643,8 @@ async function compactActiveConversationImpl(
           reason: compactFailureReasonFromError(error),
           status: CompactTimelineStatus.Retrying,
         });
-        // 自动 compact 的中间失败不能提前落成 failed 横线。
-        // 这里在同一个 operation 上发 retrying，直到第 3 次仍失败才写最终 failed。
+        // An intermediate auto-compact failure must not land as a failed bar early.
+        // Emit retrying on the same operation; only a third failure writes final failed.
         await persistCompactTimelineEvent(
           this,
           SessionEventType.CompactStarted,
@@ -714,7 +714,7 @@ function selectInitialCompactEntriesForActiveConversation(input: {
 }
 
 function capCompactSummaryMaxOutputTokens(model: Model): number {
-  // Compact 是独立执行链，在这里显式选择模型上限与 summary 20K 上限中的较小值。
+  // Compact is its own execution chain; the min of model limit and 20K summary cap is chosen here.
   const desired = Math.min(
     resolveNormalRequestMaxOutputTokens({
       modelMaxOutputTokens: model.optionSpecs.maxOutputTokens.max,

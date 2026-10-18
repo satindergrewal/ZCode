@@ -21,10 +21,10 @@ function resolveLocalElectronBinary() {
   const electronPackageJsonPath = require.resolve("electron/package.json");
   const electronPackageRoot = resolve(electronPackageJsonPath, "..");
 
-  // Windows 下这里之前直接 spawn("electron")，完全依赖 PATH 里恰好能找到本地 bin。
-  // 在 pnpm + PowerShell 场景里，子进程经常只拿到 node 可执行而拿不到 electron 命令，
-  // 导致 dev 脚本卡在 ENOENT，只能手动拆成三个终端绕过。
-  // 这里显式解析当前项目安装的 Electron 二进制，避免跨 shell / 跨平台时 PATH 语义不一致。
+  // This used to spawn("electron") directly on Windows, relying on PATH luckily containing the local bin.
+  // Under pnpm + PowerShell, children often get the node executable but not the electron command,
+  // leaving dev stuck on ENOENT until manually split across three terminals.
+  // Resolve the project-installed Electron binary explicitly to avoid cross-shell/platform PATH semantics.
   if (process.platform === "win32") {
     return resolve(electronPackageRoot, "dist", "electron.exe");
   }
@@ -57,9 +57,9 @@ function probeHttpUrl(url) {
 
 // Wait for both Vite dev server and main bundle to be ready
 async function waitForReady() {
-  // desktop 的 tsup 实际是 main/host/preload 三个独立 watch 构建。
-  // 之前任意一个构建成功就可能放行，Electron 会在其余产物还未稳定时启动，读到半完成的 ESM/CJS 文件。
-  // 现在必须等待三个构建各自写入 ready 标记，再额外确认 main bundle 已产出。
+  // desktop's tsup is really three independent watch builds: main/host/preload.
+  // Any single success could previously release the gate; Electron started while other artifacts were still
+  // settling, reading half-written ESM/CJS. All three ready markers are now required, plus a main-bundle existence check.
   let lastBuildWaitLogAt = 0;
   while (true) {
     const missingMarkers = buildReadyMarkers
@@ -71,8 +71,8 @@ async function waitForReady() {
     }
     const now = Date.now();
     if (now - lastBuildWaitLogAt >= waitLogIntervalMs) {
-      // dev 启动卡在等待阶段时，终端最后一行常停在 tsup watch 日志，开发者无法判断缺哪个条件。
-      // 这里定期打印等待状态，让 marker 或 main bundle 缺失能直接从日志定位。
+      // When startup waits, the last terminal line sits at tsup watch logs, hiding which condition is unmet.
+      // Print waiting state periodically so a missing marker or main bundle is visible from logs alone.
       console.log(
         `[dev] Waiting for build artifacts... missingMarkers=${
           missingMarkers.join(",") || "none"
@@ -84,8 +84,8 @@ async function waitForReady() {
   }
 
   // Wait for Vite dev server
-  // Vite 在不同本机 DNS/IPv6 配置下可能只监听 localhost/::1 或 127.0.0.1 其中之一。
-  // 这里轮询多个 loopback 地址，避免 dev 脚本和 Vite 实际监听地址不一致导致 Electron 永远不启动。
+  // Depending on local DNS/IPv6 config, Vite may bind only localhost/::1 or only 127.0.0.1.
+  // Poll several loopback addresses so a dev-script/Vite mismatch never leaves Electron waiting forever.
   const viteUrls = ["http://localhost:5174", "http://127.0.0.1:5174", "http://[::1]:5174"];
   let lastViteWaitLogAt = 0;
   while (true) {
@@ -113,9 +113,9 @@ const electronBinary = resolveLocalElectronBinary();
 let electronCommand = existsSync(electronBinary) ? electronBinary : "electron";
 
 if (process.platform === "darwin" && existsSync(electronBinary)) {
-  // macOS 命令行启动的 raw Electron 没有 CFBundleURLTypes，LaunchServices 会把
-  // zcode:// 交给一个没有项目入口的 Electron 默认壳。给本地启动副本补齐产品
-  // Info.plist 后，线上 Share 页面无需感知 Dev，仍可把链接投递给已运行的 Dev 实例。
+  // Raw Electron launched from the CLI lacks CFBundleURLTypes, so LaunchServices hands zcode://
+  // to a stock Electron shell with no project entry. Patching the local copy's Info.plist with product
+  // metadata lets the production Share page keep handing links to the running Dev instance, unaware of Dev.
   const electronPackageJsonPath = require.resolve("electron/package.json");
   const electronPackage = JSON.parse(await readFile(electronPackageJsonPath, "utf8"));
   const electronAppPath = resolve(electronBinary, "../../..");
@@ -183,9 +183,9 @@ function shutdownFromSignal(signal) {
 
   shuttingDown = true;
   console.log(`[dev] Received ${signal}, stopping Electron...`);
-  // concurrently 收到 Ctrl+C 后只会结束 node scripts/dev.mjs 这层包装进程，
-  // Electron 在 macOS 上不会可靠响应 SIGINT/SIGTERM，之前会被 orphan 到 ppid=1 继续占用端口和日志。
-  // 这里把 Electron 放进独立进程组并由 dev 脚本统一回收，超时后强制清掉整棵开发进程树。
+  // On Ctrl+C, concurrently only kills the node scripts/dev.mjs wrapper; Electron on macOS does not reliably
+  // handle SIGINT/SIGTERM and used to be orphaned to ppid=1, holding ports and logs.
+  // Run Electron in its own process group, reap it from the dev script, and force-kill the whole tree on timeout.
   signalElectronTree("SIGTERM");
   forceKillTimer = setTimeout(forceKillElectronTree, 1_500);
   hardExitTimer = setTimeout(() => process.exit(0), 5_000);

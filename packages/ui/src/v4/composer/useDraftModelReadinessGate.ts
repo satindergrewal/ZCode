@@ -16,13 +16,13 @@ interface DraftModelReadinessState {
 }
 
 interface DraftModelReadinessGate {
-  /** 只有 readiness 已确认或检查本身不可用时，才允许进入 workspace prepare/prewarm。 */
+  /** Enter workspace prepare/prewarm only once readiness is confirmed or the check itself is unavailable. */
   agentStartupAllowed: boolean;
   error: ModelConfigMissingUiError | null;
   dismissError(): void;
-  /** 首发 admission 的权威复查；false 表示应保留 composer 并返回 blocked。 */
+  /** Authoritative recheck for first-send admission; false keeps the composer and returns blocked. */
   ensureReadyForSend(): Promise<boolean>;
-  /** Host 门禁在 UI 复查后竞态命中时，将同一错误重新投影到草稿横幅。 */
+  /** When the Host gate races the UI recheck, re-project the same error onto the draft banner. */
   markProviderNotReady(): void;
 }
 
@@ -33,11 +33,11 @@ function resolveModelSelectionReadinessStatus(
 }
 
 /**
- * V4 草稿的 provider/model admission。
+ * V4 draft provider/model admission.
  *
- * V4 迁移删除了旧 useWorkspacePrepare 的 renderer readiness 门禁，草稿首发
- * 会先登记 pending command，再由 Host 以 provider_not_ready 拒绝。这个确定性拒绝随后会
- * 被恢复账本误判成 unknown。这里恢复 UI 前置门禁；Host 门禁继续负责进程级竞态兜底。
+ * The V4 migration deleted the legacy useWorkspacePrepare renderer readiness gate; a draft first-send
+ * registers the pending command and the Host rejects with provider_not_ready. That deterministic rejection then
+ * reads as unknown in the recovery ledger. This restores the UI-side gate; the Host gate keeps process-race backup.
  */
 export function useDraftModelReadinessGate(params: {
   workspacePath: string;
@@ -96,7 +96,7 @@ export function useDraftModelReadinessGate(params: {
     void modelSelectionService
       .getView()
       .then((view) => {
-        // 读取在变更事件之前发起、之后才返回时，事件快照更新；禁止旧读取覆盖新状态。
+        // A read started before the change event and returning after loses; the event snapshot is newer, never overwritten.
         if (registryEventVersion !== initialReadVersion) return;
         applyStatus(resolveModelSelectionReadinessStatus(view));
       })
@@ -106,13 +106,16 @@ export function useDraftModelReadinessGate(params: {
 
     function handleReadinessFailure(error: unknown) {
       if (disposed) return;
-      // registry 读取异常不等价于“确实没有模型”。保留 Host 门禁作为兜底，避免把
-      // app-global service 的瞬时故障错误显示成用户配置问题。
+      // A registry read error is not no-model. Keep the Host gate as backup, never showing a
+      // transient app-global service fault as a user configuration problem.
       commitStatus("check-failed");
-      logger.warn("[v4-draft-readiness] provider registry 检查失败，回落 Host 门禁", {
-        error: error instanceof Error ? error.message : String(error),
-        workspaceKey,
-      });
+      logger.warn(
+        "[v4-draft-readiness] provider registry check failed; falling back to the Host gate",
+        {
+          error: error instanceof Error ? error.message : String(error),
+          workspaceKey,
+        },
+      );
     }
 
     return () => {
@@ -137,21 +140,27 @@ export function useDraftModelReadinessGate(params: {
       const status = resolveModelSelectionReadinessStatus(view);
       commitStatus(status, { revealMissing: status === "missing" });
       if (status === "missing") {
-        logger.info("[v4-draft-readiness] 无可用 provider/model，草稿首发在 UI admission 拒绝", {
-          providerCount: view.providers.length,
-          revision: view.revision,
-          workspaceKey,
-        });
+        logger.info(
+          "[v4-draft-readiness] no provider/model available; first-send rejected at UI admission",
+          {
+            providerCount: view.providers.length,
+            revision: view.revision,
+            workspaceKey,
+          },
+        );
         return false;
       }
       return true;
     } catch (error) {
-      // 与 mount 检查一致：读 registry 失败不冒充“没有模型”，继续由 Host 启动门禁裁决。
+      // As at mount: a registry failure never poses as no-model; the Host startup gate decides.
       commitStatus("check-failed");
-      logger.warn("[v4-draft-readiness] 首发复查 provider registry 失败，回落 Host 门禁", {
-        error: error instanceof Error ? error.message : String(error),
-        workspaceKey,
-      });
+      logger.warn(
+        "[v4-draft-readiness] first-send recheck of the provider registry failed; falling back to the Host gate",
+        {
+          error: error instanceof Error ? error.message : String(error),
+          workspaceKey,
+        },
+      );
       return true;
     }
   }, [commitStatus, enabled, modelSelectionService, workspaceKey]);

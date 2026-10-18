@@ -127,9 +127,9 @@ export async function* executeToolSchedule(
       break;
     }
 
-    // 旧策略会在前序非 concurrentSafe 工具失败后，跳过所有后续调度组。
-    // 连续 subagent 场景里，TodoWrite 这类本地失败会误截断后续 Agent；现在改为继续按
-    // parallelGroups 顺序执行，后续工具由自己的权限、取消信号和 handler 决定结果。
+    // The old policy skipped every later dispatch group once a non-concurrentSafe tool failed.
+    // In back-to-back subagent runs a local failure (TodoWrite) wrongly truncated later Agent calls; keep going in
+    // parallelGroups order -- later tools are decided by their own permission, cancel signal, and handler.
     // const hasBlockingFailure = groupResults.some(
     //   (result) => !result.success && !deps.registry.get(result.toolName)?.metadata.concurrentSafe,
     // );

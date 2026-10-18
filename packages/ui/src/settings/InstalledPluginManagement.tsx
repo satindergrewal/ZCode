@@ -1,13 +1,13 @@
-/* eslint-disable max-lines -- 已安装插件列表与详情弹窗共享组件分组/Hook 明细渲染，集中维护更利于与参考图保持一致。 */
+/* eslint-disable max-lines -- installed list and detail dialog share component-group/hook detail rendering; centralized against the reference design. */
 import { AlertTriangle } from "lucide-react";
 import type { ZCodePluginDiagnostic, ZCodePluginInfo } from "@zcode/shared";
 import { Badge } from "@/components/ui/badge.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 
 /**
- * 插件 warning 诊断列表。CLI 对「声明的技能路径扫描为空」等异常
- * 只写 diagnostics 的话 UI 无渲染位置，用户无从排查。message 由 CLI 下发并包含
- * 具体路径（协议 wire 不携带 path 字段），因此正文直出 message 即可。
+ * Plugin warning diagnostics. When the CLI only writes diagnostics (e.g. declared skill path scan empty)
+ * the UI has nowhere to render it and users cannot investigate. The CLI ships the message including
+ * the path (the wire carries no path field), so rendering message verbatim suffices.
  */
 export function PluginWarningList({ warnings }: { warnings: ZCodePluginDiagnostic[] }) {
   return (

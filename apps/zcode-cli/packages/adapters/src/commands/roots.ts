@@ -96,8 +96,8 @@ function commandRootsForBase(
   scope: CustomCommandRoot["scope"],
   nextPriority: () => number,
 ): CustomCommandRoot[] {
-  // 合并而不是 fallback：兼容 `.agents` 命令和原生 `.zcode` 命令需要同时可见。
-  // 同一级别 `.zcode` 先扫描，命令同名时仍按“先到先赢”处理。
+  // Merge, never fall back: legacy `.agents` and native `.zcode` commands must stay visible together.
+  // `.zcode` is scanned first at the same level; duplicate names keep first-wins.
   return [
     root(join(baseDirectory, ZCODE_DIR, COMMANDS_DIR), scope, "zcode", nextPriority()),
     root(join(baseDirectory, AGENTS_DIR, COMMANDS_DIR), scope, "agents", nextPriority()),

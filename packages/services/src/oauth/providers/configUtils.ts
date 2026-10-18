@@ -26,15 +26,15 @@ export function readBoolean(env: NodeJS.ProcessEnv, key: string, fallback: boole
 }
 
 export function buildZCodeApiUrlFromEnv(env: NodeJS.ProcessEnv, path: string): string {
-  // OAuth provider 是运行时配置，必须跟随传入 env.ZCODE_ENV；
-  // 地址来自 .env 的通用变量，默认线上；登录与 token 交换必须使用同一配置来源。
+  // OAuth providers are runtime config following env.ZCODE_ENV;
+  // hosts come from generic .env values, production default; login and token exchange share one config source.
   return buildRuntimeZCodeApiUrl(env, path);
 }
 
 export function buildDesktopOAuthRedirectUriFromEnv(env: NodeJS.ProcessEnv): string {
   const url = new URL("/app/oauth/login", buildRuntimeZCodeEndpointUrls(env).origin);
   url.searchParams.set("redirect", DESKTOP_OAUTH_CALLBACK_URI);
-  // Website 需要按 App 版本决定是否关闭自动 deep link；缺少版本时必须兼容旧客户端行为。
+  // Website gates auto deep link on the app version; without it, keep legacy client behavior.
   url.searchParams.set("app_version", ZCODE_VERSION);
   return url.toString();
 }

@@ -59,8 +59,8 @@ export async function executeToolCallsForModelStep(
   const modelSelection = { providerId: model.providerId, modelId: model.modelId };
   const coreToolCalls: ToolCall[] = options.toolCalls.map((tc) => ({
     id: tc.id as ToolCallId,
-    // Model step admission 已完成类型/ID 校验；这里保留可恢复的原始空白名称，
-    // 让 executor 强制走 registry miss，而不是把 storage 占位值当成真实工具。
+    // Admission validated types/ids; keep the recoverable raw blank name
+    // so the executor takes registry-miss, not a placeholder as a real tool.
     name: tc.name,
     input: tc.input,
   }));
@@ -139,9 +139,9 @@ export async function executeToolCallsForModelStep(
     });
   }
 
-  // assistant tool_use 已经进入 history 后，Stop 不能在 tool result
-  // 创建前直接抛出。继续把 aborted signal 交给 executor，由现有取消路径为
-  // 每个 tool call 生成 ToolCancelled result，再由 turn loop 感知 abort。
+  // Once assistant tool_use is in history, Stop must not throw before
+  // results exist; hand the abort to the executor, whose cancel path emits
+  // ToolCancelled per call; the turn loop sees the abort.
   const schedule = await this.scheduleTools(coreToolCalls);
   state.turnMachine = new TurnMachineImpl(
     state.turnMachine.scheduleTools(coreToolCalls, this.toScheduleState(schedule)),
@@ -185,8 +185,8 @@ export async function executeToolCallsForModelStep(
       subagentModelOverride: state.subagentModelOverride,
       model: state.model,
       onBatchStart: async (toolCallIds) => {
-        // 已取消的 batch 仍由 executor 返回 cancelled results，但不能把从未进入
-        // handler 的 tool parts 误标记为 running。
+        // Cancelled batches still return results; parts never reaching a
+        // handler must not read running.
         if (state.turnAbortSignal?.aborted) return;
         for (const toolCallId of toolCallIds) {
           const toolCall = toolCallById.get(toolCallId as ToolCallId);
@@ -331,8 +331,8 @@ export async function executeToolCallsForModelStep(
                 status: "error",
                 input: persisted.input,
                 error: result.error?.message ?? content,
-                // state.error 面向 UI / 日志，可能比模型实际收到的
-                // modelContent 更笼统；仅附加保存 string 内容供冷恢复精确重放。
+                // state.error faces UI/logs, coarser than the modelContent
+                // the model got; attach the raw string for exact cold replay.
                 metadata: {
                   ...mcpToolPartMetadata(
                     this.registry.getMetadata(result.toolName)?.mcpPresentation,
@@ -365,8 +365,8 @@ export async function executeToolCallsForModelStep(
       ),
     ]);
     try {
-      // checkpoint 是 tool result 闭合后的附加操作。Stop 若在这里
-      // 触发，必须先继续提交所有 sibling tool results，不能提前进入 reminder flush。
+      // The checkpoint follows result closure; a Stop here still
+      // commits all sibling results first, never an early reminder flush.
       await this.emitFileMutationCheckpoint({
         abortSignal: state.turnAbortSignal,
         events: state.events,
@@ -425,8 +425,8 @@ export async function executeToolCallsForModelStep(
   if (stopTurnResult) {
     await persistToolModelStepFinish(this, state, options);
     if (stopTurnResult.turnControl?.reason === "automation_create_limit") {
-      // 上限错误只能由用户手动释放名额。把普通 error 继续交给模型，
-      // 导致模型循环 List/Delete/Create，甚至尝试 Bash 绕过。当前 turn 只保留一次文本收口。
+      // Only the user frees cap slots; feeding the ordinary error on,
+      // the model loops List/Delete/Create or Bash-bypasses; one text close per turn.
       state.automationCreateLimitReached = true;
       recordCompletedToolBatch(state);
       this.logger?.info("Automation create limit switched turn to text-only response", {
@@ -511,8 +511,8 @@ async function enqueueFollowUpUserInputFromToolResult(
     return;
   }
 
-  // ExitPlanMode 审批反馈必须升级成真实 user message；
-  // 如果这里被拒绝，说明 active turn 状态异常或输入超过 steer 限制，不能静默吞掉。
+  // ExitPlanMode approval feedback must become a real user message;
+  // rejection here means broken state or over-limit input; never swallow it.
   this.logger?.warn("Failed to queue follow-up user input from tool result", {
     ...traceContextToLogContext(traceContext),
     activeTurnId: steerResult.activeTurnId,

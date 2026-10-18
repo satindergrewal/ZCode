@@ -64,8 +64,8 @@ export function serverToForm(server: ZCodeMcpServer): FormState {
     headers: cfg.headers ? JSON.stringify(cfg.headers, null, 2) : "",
     timeoutMs: typeof cfg.timeoutMs === "number" ? String(cfg.timeoutMs) : "",
     oauth: isRecord(cfg.oauth) ? JSON.stringify(cfg.oauth, null, 2) : "",
-    // 非法枚举值归一为未设置（等价 auto），与 shared DTO 的 isMcpProtocolVersion
-    // 静默丢弃行为对齐；否则 config 里的手滑值会让协议版本下拉显示空白。
+    // Normalize invalid enums to unset (== auto), matching shared DTO's isMcpProtocolVersion
+    // silent-drop behavior; else a stray config value blanks the protocol dropdown.
     protocolVersion: isMcpProtocolVersion(cfg.protocolVersion) ? cfg.protocolVersion : "",
   };
 }
@@ -145,7 +145,7 @@ export function jsonDraftToForm(jsonText: string, fallback: FormState): FormStat
   if (isRecord(parsed) && isRecord(parsed.mcpServers)) {
     const entries = Object.entries(parsed.mcpServers).filter(([, value]) => isRecord(value));
     if (entries.length !== 1) {
-      throw new Error("JSON 模式暂时只支持一次编辑一个 MCP server");
+      throw new Error("JSON mode edits one MCP server at a time for now");
     }
     const [singleName, singleConfig] = entries[0]!;
     serverName = singleName;
@@ -165,11 +165,11 @@ export function jsonDraftToForm(jsonText: string, fallback: FormState): FormStat
   }
 
   if (!isRecord(serverConfig)) {
-    throw new Error("JSON 内容不是有效的 MCP server 配置对象");
+    throw new Error("JSON content is not a valid MCP server config object");
   }
 
   if (!serverName) {
-    throw new Error("JSON 模式需要提供 server 名称");
+    throw new Error("JSON mode requires a server name");
   }
 
   const normalizedConfig = serverConfig as McpServerConfig;
@@ -194,24 +194,24 @@ export function jsonDraftToForm(jsonText: string, fallback: FormState): FormStat
     env: normalizedConfig.env ? JSON.stringify(normalizedConfig.env, null, 2) : "",
     url: normalizedConfig.url ?? "",
     headers: normalizedConfig.headers ? JSON.stringify(normalizedConfig.headers, null, 2) : "",
-    // JSON 模式会先转成 FormState 再保存；这里必须保留 timeoutMs，
-    // 否则用户粘贴的 MCP tool 超时配置会被表单保存链路吞掉。
+    // JSON mode converts to FormState before saving; timeoutMs must survive,
+    // else a pasted MCP tool timeout is swallowed by the form save path.
     timeoutMs:
       typeof normalizedConfig.timeoutMs === "number" ? String(normalizedConfig.timeoutMs) : "",
-    // JSON 模式没有 OAuth 表单控件，但保存仍会走 FormState；
-    // 需要隐藏保留 oauth，避免 Notion 等授权型 MCP 被保存成裸连配置。
+    // JSON mode has no OAuth controls, but saving still routes through FormState;
+    // keep oauth hidden-but-present so auth-style MCPs (Notion) are not saved bare.
     oauth: isRecord(normalizedConfig.oauth) ? JSON.stringify(normalizedConfig.oauth, null, 2) : "",
-    // 手工配置的 protocolVersion 兼容开关也必须保留，否则 UI 编辑保存后
-    // 会被表单链路吞掉，非标 legacy server 的兼容配置被静默还原成 auto。
-    // 非法枚举值同样归一为未设置，不把可立即发现的配置错误留给连接阶段。
+    // The manual protocolVersion compat switch must survive too, or the form path
+    // silently resets a legacy server's compat config to auto.
+    // Invalid enums normalize to unset as well; surface config errors immediately, not at connect time.
     protocolVersion: isMcpProtocolVersion(normalizedConfig.protocolVersion)
       ? normalizedConfig.protocolVersion
       : "",
   };
 }
 
-// 与 shared 层 convertToZCodeAgentMcpServer 的 isMcpProtocolVersion 守卫保持同一语义：
-// 非法枚举值在 UI 读取侧就归一为未设置（等价 auto），不留给连接阶段。
+// Same semantics as shared's convertToZCodeAgentMcpServer isMcpProtocolVersion guard:
+// invalid enums normalize to unset (== auto) at UI read time, never deferred to connect.
 function isMcpProtocolVersion(value: unknown): value is "legacy" | "auto" | "2026-07-28" {
   return value === "legacy" || value === "auto" || value === "2026-07-28";
 }

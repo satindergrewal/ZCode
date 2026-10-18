@@ -12,7 +12,7 @@ function resolveMacOSMajorVersion(
   const darwinMajor = Number.parseInt(platformRelease.split(".")[0] ?? "", 10);
   if (!Number.isFinite(darwinMajor)) return null;
 
-  // Tahoe 起产品版本从 15 跳到 26，不能继续套用旧的 Darwin - 9 映射。
+  // Since Tahoe the product version jumps 15 -> 26; the old Darwin-9 mapping no longer applies.
   return darwinMajor >= 25 ? darwinMajor + 1 : darwinMajor - 9;
 }
 

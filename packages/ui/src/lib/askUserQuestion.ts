@@ -104,7 +104,7 @@ function readQuestions(input: unknown): unknown[] {
   if (Array.isArray(questions)) {
     return questions;
   }
-  // ZCode Agent 的单题输入与交互请求的多题输入共用展示管线。
+  // ZCode Agent single-question input shares the display pipeline with multi-question asks.
   return typeof input.question === "string" && Array.isArray(input.options) ? [input] : [];
 }
 

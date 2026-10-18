@@ -1,7 +1,7 @@
-// CLI session 常驻池。
+// The CLI session resident pool.
 //
-// 这是容量与生命周期控制器，不拥有 session 内容。宿主提供当前 resident registry、同步
-// 安全事实和去激活执行面；pool 只维护 idle TTL、LRU touch、operation lease 与
+// A capacity/lifecycle controller, not the owner of session content. The host provides the current resident registry, synchronous
+// safety facts, and the deactivation surface; the pool maintains only idle TTL, LRU touch, operation leases, and
 // deactivation gate。
 
 const DEFAULT_SESSION_RESIDENT_TARGET_COUNT = 8;
@@ -33,8 +33,8 @@ export interface SessionResidentPoolHost {
   listSessionIds(): string[];
   readResidencyFacts(sessionId: string): SessionResidencyFacts | null;
   /**
-   * 首个同步执行片必须把 session 从 resident registry 摘除；返回 Promise 只等待
-   * app.close 等异步收尾。
+      * The first synchronous slice must remove the session from the resident registry; the returned Promise waits only for
+      * async wind-down such as app.close.
    */
   deactivate(sessionId: string): Promise<void>;
   onDeactivated?(sessionId: string, decision: SessionDeactivationDecision): void;
@@ -91,8 +91,8 @@ export class SessionResidentPool {
   }
 
   /**
-   * 获取协议请求租约。全进程计数防跨 session 的 async workspace 操作与 sampler
-   * 回收并发；按 session 计数表达精确所有权并参与该 session 的 eligibility。
+      * Acquires the protocol-request lease. A process-wide count keeps async workspace operations and the sampler's
+      * reclamation from racing across sessions; the per-session count expresses exact ownership and feeds that session's eligibility.
    */
   async acquireOperation(sessionIdsInput?: string | readonly string[]): Promise<() => void> {
     const sessionIds = [
@@ -139,12 +139,12 @@ export class SessionResidentPool {
     if (previous === undefined || usedAt > previous) {
       this.lastTouchedAt.set(sessionId, usedAt);
     }
-    // idle TTL 表达“最后一次使用后的连续空闲”，协议请求重新使用 session
-    // 后必须重新计时，不能沿用 touch 前已经接近到期的 eligible 窗口。
+        // The idle TTL means "continuous idle since last use": once a protocol request reuses the session the
+        // clock restarts -- never keep an eligible window that was about to expire before the touch.
     this.eligibleSinceAt.delete(sessionId);
   }
 
-  /** sampler 与 request-release 共用的 TTL / 高低水位收敛入口。 */
+    /** The TTL / high-low watermark convergence entry shared by the sampler and request-release. */
   rebalance(): void {
     if (this.activeOperationCount > 0 || this.rebalancing) return;
     this.rebalancing = true;
@@ -165,8 +165,8 @@ export class SessionResidentPool {
       let residentCount = initialResidentIds.length;
       for (const candidate of expiredCandidates) {
         if (this.activeOperationCount > 0) break;
-        // 候选收集后可能重新订阅或启动后台任务，TTL 到期也不能绕过
-        // fresh facts 与 eligibleSince 二次校验。
+                // Between candidate collection and execution, re-subscribes or background tasks may appear; even an expired TTL must not bypass
+                // the fresh-facts and eligibleSince re-checks.
         const freshFacts = this.host.readResidencyFacts(candidate.sessionId);
         if (!freshFacts || !this.isEligible(candidate.sessionId, freshFacts)) {
           this.eligibleSinceAt.delete(candidate.sessionId);
@@ -197,8 +197,8 @@ export class SessionResidentPool {
 
       for (const candidate of highWaterCandidates) {
         if (residentCount <= this.targetCount || this.activeOperationCount > 0) break;
-        // 候选收集与执行之间可能有订阅/后台任务等新事实。执行前必须重读，
-        // 不能让过期 LRU 快照取消仍在运行的 session。
+                // New facts (subscriptions/background tasks) may appear between candidate collection and execution. Re-read before acting:
+                // a stale LRU snapshot must never cancel a running session.
         const freshFacts = this.host.readResidencyFacts(candidate.sessionId);
         if (!freshFacts || !this.isEligible(candidate.sessionId, freshFacts)) {
           this.eligibleSinceAt.delete(candidate.sessionId);

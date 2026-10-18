@@ -38,8 +38,8 @@ export function MarkdownOrderedList({
   return (
     <ol
       className={cn(
-        // 有序列表编号到两位/三位时，list-outside 会把 marker 向父容器外侧扩展；
-        // 消息气泡外层有 overflow-hidden，固定 pl 缩进不足就会把编号左侧截断。
+        // At two/three-digit ordering, list-outside pushes markers outside the parent; the
+        // message bubble clips via overflow-hidden, so a fixed pl truncates the numbers.
         "my-3 list-inside list-decimal space-y-1.5 pl-0 marker:text-foreground-subtlest",
         "[&_ul]:my-1.5 [&_ol]:my-1.5",
         className,

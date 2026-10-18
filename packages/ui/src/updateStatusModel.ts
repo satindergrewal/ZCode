@@ -33,8 +33,8 @@ export function deriveUpdateStatusViewModel({
     readyVersion ??
     progressVersion ??
     availableVersion ??
-    // download-progress.version 是协议可选字段。下载态必须按 kind 保持 UI，
-    // 否则某一帧缺少版本号会让入口卸载并关闭已打开弹窗。
+    // download-progress.version is optional in the protocol. The downloading UI must persist by
+    // kind, or a single frame without a version unmounts the entry and closes the open dialog.
     (isDownloadingUpdate ? "…" : null);
 
   return {
@@ -65,9 +65,9 @@ export function isUpdateActionCompleted(
   updateState: UpdateStatePayload | null,
 ) {
   return (
-    // 点击下载后 main 侧可能先广播 checking/idle 等过渡态。
-    // 这些状态不代表下载已经进入可观察阶段，不能释放按钮锁并触发弹窗卸载；
-    // 只有真正进入下载进度或下载完成，才算下载命令完成。
+    // After the download starts, main may broadcast transitional checking/idle states first.
+    // Those do not mean the download is observable yet: keep the button lock and the dialog
+    // mounted; the action counts as complete only once progress or completion arrives.
     (action === "download" &&
       (updateState?.kind === "download-progress" || updateState?.kind === "update-downloaded")) ||
     (action === "cancel" && updateState?.kind !== "download-progress") ||
@@ -94,8 +94,8 @@ function getUpdateDownloadProgressLabel(updateState: UpdateStatePayload | null) 
     return `${formatMegabytes(transferredBytes)} / ${formatMegabytes(totalBytes)}`;
   }
 
-  // 下载进度文案已经改为展示已下载/总大小。只有百分比时继续显示
-  // “0% / 42%” 会和新的大小口径冲突，且启动下载的临时态会残留一个 0%。
+  // The progress label now shows transferred/total size; a percentage-only "0% / 42%" would
+  // conflict with that and the just-started transient state would leave a stale 0%.
   return null;
 }
 
@@ -110,9 +110,9 @@ function resolveReadyVersion({
     return updateState.version;
   }
 
-  // legacy UpdateReady 只是一份“曾经 ready”的缓存。
-  // 一旦新的 UpdateState 已明确同步到 renderer，idle/checking/error 都应以新状态为准，
-  // 不能继续用旧 version 撑出“重启以更新”按钮。
+  // The legacy UpdateReady is just a "was ready once" cache. Once the new UpdateState has been
+  // synced to the renderer, idle/checking/error must follow it and the stale version must not
+  // keep propping up the "restart to update" button.
   return updateState === null ? legacyReadyVersion : null;
 }
 

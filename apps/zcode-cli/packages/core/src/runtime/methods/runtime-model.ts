@@ -17,7 +17,7 @@ export function createRuntimeModel(
     selection: RuntimeModelFactoryInput["selection"] | undefined;
   },
 ): Model {
-  // 未绑定 Session 可恢复历史；仅在执行入口拒绝缺失选择，Factory 契约仍严格。
+  // No Session bound, no restorable history; only the execution entry rejects a missing choice.
   if (!input.selection) {
     throw createCoreError(CoreErrorType.ConfigurationError, "Select a model before continuing", {
       recoverable: true,
@@ -30,14 +30,14 @@ export function createRuntimeModel(
 }
 
 /**
- * runtime 层调用上下文。
+ * The runtime-layer invocation context.
  *
- * 准入端口与重试预算回答的是「谁在调」（这个 runtime 归哪个治理器管、允许多少次重试），不是
- * 「为什么调」（agent step / web_search / compact / title）。设计缺口：它们若只在 turn step
- * 的调用上下文里注入，WebSearch / WebFetch 处理 / 压缩 / 标题 sidecar 等九处只设「为什么调」的
- * 调用点全部绕过了闸门——实测场景下治理器看不见三分之二的 429。现在这两个字段在句柄
- * 工厂绑定一次；`withModelInvocationContext` 的合并顺序让本层压过调用层，没有逐调用退出口：
- * 想不受闸门约束的 runtime 本来就不带准入端口。
+ * Admission port and retry budget answer who-calls (which governor, how many retries), not
+ * why-calls (agent step / web_search / compact / title). Design gap: injected only at the turn step,
+ * the nine why-only sites (WebSearch / WebFetch / compact / title sidecar…) bypassed the gate —
+ * in the field the governor missed two-thirds of 429s. Both fields now bind on the handle
+ * factory once; `withModelInvocationContext` puts this layer over call sites, no per-call opt-out:
+ * a runtime wanting no gate ships without an admission port.
  */
 function withRuntimeInvocationLayer(runtime: AgentRuntimeInternal, model: Model): Model {
   const layer: ModelInvocationContext = {

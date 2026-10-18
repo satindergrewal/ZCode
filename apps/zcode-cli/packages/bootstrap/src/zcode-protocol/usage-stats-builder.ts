@@ -18,7 +18,7 @@ interface BuildAppUsageOptions {
   until: number;
 }
 
-/** 用 Intl 计算 timeZone 在 atMs 时刻相对 UTC 的偏移（ms）。无法解析时回退 0。 */
+/** Uses Intl to compute the timeZone's offset from UTC at atMs (ms). Falls back to 0 when unparseable. */
 export function resolveTzOffsetMs(timeZone: string, atMs: number): number {
   try {
     const dtf = new Intl.DateTimeFormat("en-US", {
@@ -48,7 +48,7 @@ export function resolveTzOffsetMs(timeZone: string, atMs: number): number {
 }
 
 function dayIndexToDate(dayIndex: number): string {
-  // dayIndex*DAY 是「本地午夜当作 UTC」的时刻，取其 UTC 日历分量即本地日期。
+  // dayIndex*DAY is a "local midnight treated as UTC" instant; its UTC calendar components are the local date.
   return new Date(dayIndex * DAY_MS).toISOString().slice(0, 10);
 }
 
@@ -86,8 +86,8 @@ export function buildAppUsageSnapshot(
 ): AppUsageSnapshot {
   const { totals, turnTotals, toolTotals } = result;
 
-  // 用量库的 inputTokens 已是 total input，cache 字段只是 breakdown。
-  // 命中率分母不能再加 cacheRead/cacheCreation，否则会把命中率压低。
+  // The usage store's inputTokens is already total input; cache fields are breakdown only.
+  // Never add cacheRead/cacheCreation to the hit-rate denominator, or the ratio gets depressed.
   const cacheDenom =
     totals.inputTokens > 0
       ? totals.inputTokens
@@ -98,7 +98,7 @@ export function buildAppUsageSnapshot(
   const toolErrorRate =
     toolTotals.toolCallCount > 0 ? toolTotals.toolErrorCount / toolTotals.toolCallCount : 0;
 
-  // 按日 token 映射，用于 activeDays / streak / heatmap
+  // Per-day token map, used for activeDays / streak / heatmap.
   const dayTokenMap = new Map<
     number,
     { totalTokens: number; turnCount: number; toolCallCount: number }
@@ -136,7 +136,7 @@ export function buildAppUsageSnapshot(
 
   const maxTokens = result.days.reduce((m, d) => Math.max(m, d.totalTokens), 0);
 
-  // heatmap：从 startDayIndex 到 endDayIndex，按 7 天一周切片（与现有 GitHub 式一致）
+  // heatmap: startDayIndex..endDayIndex in 7-day weeks (matches the existing GitHub-style layout)
   const weeks: AppUsageHeatmapWeek[] = [];
   let week: Array<AppUsageHeatmapCell | null> = [];
   for (let di = startDayIndex; di <= endDayIndex; di++) {
@@ -165,7 +165,7 @@ export function buildAppUsageSnapshot(
     weeks,
   };
 
-  // trend：按日聚合 dayModels
+  // trend: per-day dayModels aggregation
   const dailyMap = new Map<number, Map<string | null, number>>();
   for (const dm of result.dayModels) {
     const inner = dailyMap.get(dm.dayIndex) ?? new Map<string | null, number>();
@@ -183,7 +183,7 @@ export function buildAppUsageSnapshot(
     });
   }
 
-  // 模型排行 + favorite
+  // model ranking + favorite
   const totalModelTokens = result.models.reduce((s, m) => s + m.totalTokens, 0);
   const models = result.models.map((m) => ({
     modelId: m.modelId,

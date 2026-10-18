@@ -195,7 +195,7 @@ export interface ReadImageOutput {
   };
 }
 
-/** Read 视频输出：不做转码/压缩，仅读取 base64 并做大小校验。 */
+/** Read video output: no transcoding/compression; reads base64 and validates size only. */
 export interface ReadVideoOutput {
   type: "video";
   base64: string;

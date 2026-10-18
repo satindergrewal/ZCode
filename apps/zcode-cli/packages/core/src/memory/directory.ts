@@ -14,7 +14,7 @@ export async function ensureMemoryDirectoryExists(
   try {
     await fileSystemPort.createDirectory({ path: rootDir, trace: traceContext });
   } catch (error) {
-    // 目录预创建失败不阻断执行；实际 Write/Edit 仍返回原始文件错误。
+    // Pre-creating the directory never blocks execution; the actual Write/Edit still surfaces the original file error.
     logger?.debug("Memory directory creation failed", {
       ...(traceContext ? traceContextToLogContext(traceContext) : {}),
       error: error instanceof Error ? error.message : String(error),

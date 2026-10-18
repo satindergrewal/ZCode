@@ -110,9 +110,9 @@ export function syncTaskUnreadFromStatusWorkspaceEvent(params: {
     event.taskMeta?.unreadAt ??
     (typeof pendingUnreadAt === "number" ? pendingUnreadAt : undefined);
   if (typeof persistedUnreadAt === "number") {
-    // 同一条 status 事件会由多个侧栏订阅收到。首个 listener 已经写入
-    // query-row overlay 后，后续 listener 只补兼容 Dock badge，不重复落库。
-    // 如果 unreadAt 已由事件携带，则直接对账字段；不能为已有未读再创建永久 overlay。
+    // The same status event reaches multiple sidebar subscriptions. Once the first listener has
+    // written the query-row overlay, later listeners only patch the legacy Dock badge and never write again.
+    // If unreadAt ships with the event, reconcile that field directly; never create a permanent overlay for an existing unread.
     if (typeof cachedTask?.unreadAt !== "number" && typeof pendingUnreadAt !== "number") {
       rollbackTaskQueryCacheUnread(targetTask, persistedUnreadAt);
     }
@@ -128,11 +128,11 @@ export function syncTaskUnreadFromStatusWorkspaceEvent(params: {
   const previousUnreadAt = cachedTask?.unreadAt;
   const previousLegacyUnread = getTaskUnreadIndicator(workspaceState, taskId);
   const optimisticUnreadAt = Date.now();
-  // V4 侧栏已经只消费 task query row 的 unreadAt，旧 Zustand
-  // taskUnreadByTaskId 不再驱动 TaskListItem。后台终态必须先按精确 entity key 写
-  // field overlay；即使新 task 的 row 还没 publish，后续 query 也会合并这份 overlay。
+  // The V4 sidebar consumes only task query-row unreadAt; the legacy Zustand
+  // taskUnreadByTaskId no longer drives TaskListItem. Background terminal states must first write the
+  // field overlay under the exact entity key; even if the new task row is not published yet, later queries merge this overlay.
   setTaskQueryCacheUnreadOverlay(targetTask, optimisticUnreadAt);
-  // 兼容 Dock badge 的迁移期投影；侧栏蓝点的事实源仍只有 query row unreadAt。
+  // Migration-period projection for the legacy Dock badge; the sidebar dot's source of truth remains query-row unreadAt.
   store.setTaskUnreadIndicator(event.workspacePath, taskId, true, event.workspaceIdentity);
   void service
     .setTaskUnread({
@@ -140,15 +140,15 @@ export function syncTaskUnreadFromStatusWorkspaceEvent(params: {
       unread: true,
     })
     .then((meta) => {
-      // 服务端先更新 tasks-index 再回包；只对账 unreadAt 字段，禁止整份 meta
-      // 覆盖 sessions-index activity，避免后台完成或未读写入改变 Updated 排序。
+      // The server updates tasks-index before replying; reconcile the unreadAt field only - a full meta
+      // overwrite of sessions-index activity is forbidden, or background completion/unread writes would reorder Updated.
       const committedUnreadAt = meta.unreadAt ?? optimisticUnreadAt;
       reconcileTaskQueryCacheUnread(targetTask, committedUnreadAt);
       store.setTaskUnreadIndicator(event.workspacePath, taskId, true, event.workspaceIdentity);
     })
     .catch((error: unknown) => {
-      // 持久化失败时不能留下 renderer-only 假未读。恢复提交前字段，
-      // 再标脏精确 workspace，让下一轮 membership join 回到 tasks-index 事实。
+      // On persistence failure, do not leave renderer-only phantom unread. Restore the pre-commit fields,
+      // mark the exact workspace dirty, and let the next membership join return to tasks-index truth.
       rollbackTaskQueryCacheUnread(targetTask, previousUnreadAt);
       store.setTaskUnreadIndicator(
         event.workspacePath,
@@ -159,7 +159,7 @@ export function syncTaskUnreadFromStatusWorkspaceEvent(params: {
       markTaskQueryCacheScopesStale([targetTask]);
       bumpTaskListMembershipVersion();
       logger.warn(
-        "[taskStatusUnreadSync] 持久化后台终态未读失败",
+        "[taskStatusUnreadSync] failed to persist background terminal unread",
         {
           taskId,
           workspaceIdentity: event.workspaceIdentity ?? null,

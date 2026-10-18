@@ -1,6 +1,6 @@
-/* eslint-disable max-lines -- 三类 V4 topic 的同构 connection ownership 生命周期集中在单一 facade。 */
-// V4 connection-scoped service facade：每个 RPC attachment 独立持有 subscription
-// ownership；base service 仍只转发 CLI 事实，不在 host/main/relay 复制业务状态。
+/* eslint-disable max-lines -- isomorphic connection-ownership lifecycle for the three V4 topic families, in one facade */
+// V4 connection-scoped service facade: every RPC attachment owns its subscriptions,
+// while the base service only relays CLI facts - no business state copies in host/main/relay.
 import { Emitter, Event as RpcEvent, type Event, type IDisposable } from "@zcode/rpc";
 import {
   V4_WIRE_PROTOCOL_VERSION,
@@ -30,9 +30,9 @@ export interface ZCodeAgentV4ConnectionContext {
   clientMode: ZCodeAgentV4ClientMode;
   role?: "terminal-client" | "trusted-host-relay";
   /**
-   * 这条连接的 clientHello 声明了认得 `workflowRun.*` 键级增量。与 `clientMode` 同族：
-   * 由本 facade 从握手事实写出，订阅入参里的同名字段一律被清掉——一个客户端认不认得增量
-   * 是**连接**的事实，不是某一次订阅可以自选的口味。缺席 = 按旧消费者处理。
+   * This connection's clientHello declares workflowRun.* key-level delta support. Like clientMode:
+   // written by this facade from handshake facts; same-named subscription fields are cleared -
+   // delta awareness is a property of the connection, not a per-subscription choice. Absent = legacy consumer.
    */
   workflowRunDeltas?: boolean;
 }
@@ -65,8 +65,8 @@ export function readTrustedZCodeAgentV4UnsubscribeRoute(
 }
 
 /**
- * 该字段只在 host facade → base/remote service proxy 之间传递；facade 会覆盖所有
- * UI 入参中的同名字段，因此 renderer/mobile 不能伪造可信连接模式。
+ * Passed only from host facade to base/remote service proxy; the facade overwrites same-named
+ * UI fields, so renderer/mobile cannot fake a trusted connection mode.
  */
 export function readTrustedZCodeAgentV4Connection(
   value: unknown,
@@ -83,7 +83,7 @@ export function readTrustedZCodeAgentV4Connection(
   return {
     connectionId: context.connectionId,
     clientMode: context.clientMode,
-    // 只认 true：缺席与 false 都是「旧消费者」，键在场与否是下游读端的判据。
+    // True only: absent and false both mean legacy consumer; key presence is the downstream signal.
     ...(context.workflowRunDeltas === true ? { workflowRunDeltas: true } : {}),
   };
 }
@@ -95,14 +95,14 @@ function withTrustedConnection<T extends object>(
   const forwarded: Record<string, unknown> = {
     ...(value as unknown as Record<string, unknown>),
   };
-  // 共享 service 暴露在多个 RPC port 上时，调用方曾能传 profile，且所有
-  // port 共用 workspace fan-out。facade 必须先清掉所有可伪造字段，再写 host 真值。
+  // When the shared service is exposed on several RPC ports, callers could pass profile and all
+  // ports shared one workspace fan-out. The facade clears spoofable fields, then writes host truth.
   delete forwarded[TRUSTED_CONNECTION_FIELD];
   delete forwarded["connectionId"];
   delete forwarded["clientMode"];
   delete forwarded["deliveryProfile"];
   delete forwarded["subscriberScope"];
-  // 与 clientMode 同族的可信位：UI 面的 subscribe 不能自己挑增量编码。
+  // Trusted bit like clientMode: the UI subscribe path cannot pick its own delta encoding.
   delete forwarded["workflowRunDeltas"];
   forwarded[TRUSTED_CONNECTION_FIELD] = context;
   return forwarded as T;
@@ -170,8 +170,8 @@ interface RoutedFrameEvent {
   upstream: IDisposable;
 }
 
-// ACK 窗口只覆盖控制面竞态，不替代 subscriber buffer/resync。这里按帧数和
-// JSON 字节双限额暂存，避免异常 peer 在 subscribe pending 期间无限占用 host 内存。
+// The ACK window covers control-plane races only, not subscriber buffer/resync. Bound by both
+// frame count and JSON bytes so a rogue peer cannot pin host memory during subscribe pending.
 const MAX_PENDING_OWNERSHIP_FRAMES = 1_024;
 const MAX_PENDING_OWNERSHIP_BYTES = 32 * 1024 * 1024;
 const MAX_DOWNSTREAM_CONNECTION_ID_LENGTH = 256;
@@ -189,8 +189,8 @@ function namespaceRelayConnectionId(
   upstreamConnectionId: string,
   downstreamConnectionId: string,
 ): string {
-  // 长度前缀消除 `a/b + c` 与 `a + b/c` 这类分隔符碰撞；connectionId 只作
-  // opaque route key，不需要业务层解析。
+  // Length-prefixing avoids a/b+c vs a+b/c separator collisions; connectionId stays an
+  // opaque route key, opaque to business layers.
   return `relay:${upstreamConnectionId.length}:${upstreamConnectionId}${downstreamConnectionId.length}:${downstreamConnectionId}`;
 }
 
@@ -218,8 +218,8 @@ function createHello(context: ZCodeAgentV4ConnectionContext): HelloMessage {
       compression: "none",
       workspaceHookReview: true,
       independentPlanState: true,
-      // 本 Host 会转发 `workflowRun.*` 键级增量；客户端见到它才能在 clientHello 里回声明
-      // （那个 capabilities 是 .strict() 的，反过来会让老 Host 握不上手）。
+      // This host relays workflowRun.* key deltas; clients must see it to echo it in clientHello
+      // (that capabilities schema is .strict(); legacy hosts would fail the handshake otherwise).
       workflowRunDeltas: true,
     },
     auth: {},
@@ -228,12 +228,12 @@ function createHello(context: ZCodeAgentV4ConnectionContext): HelloMessage {
 
 export interface ZCodeAgentConnectionScope {
   readonly service: IZCodeAgentService;
-  /** MessagePort/transport sideband only；不是 UI-facing RPC。 */
+  /** MessagePort/transport sideband only; not a UI-facing RPC. */
   setTransportFlowState(state: V4ConnectionFlowState): Promise<void>;
   dispose(): Promise<void>;
 }
 
-/** 为单个 host/server RPC attachment 建立可信 V4 facade。 */
+// Establishes a trusted V4 facade for one host/server RPC attachment.
 export function createZCodeAgentConnectionScope(
   base: IZCodeAgentService,
   context: ZCodeAgentV4ConnectionContext,
@@ -246,19 +246,19 @@ export function createZCodeAgentConnectionScope(
   const routedFrameEvents = new Map<string, RoutedFrameEvent>();
   const runtimeGenerationByWorkspaceKey = new Map<string, number>();
   let disposed = false;
-  // trusted relay 已在外层 transport（stdio / Node-only WS role header）完成身份
-  // 选择；终端 UI 仍必须走 hello → clientHello。
+  // Trusted relays already choose identity at the transport layer (stdio / Node-only WS role header);
+  // terminal UIs still go hello -> clientHello.
   let handshakeComplete = role === "trusted-host-relay";
   let helloIssued = role === "trusted-host-relay";
   let boundClientId: string | null = null;
-  /** clientHello 里的增量声明；trusted relay 没有自己的 clientHello，只搬运下游的。 */
+  /** Delta declaration from clientHello; trusted relays have none and forward the downstream's. */
   let clientWorkflowRunDeltas = false;
   let commandQueryWorkspaceKey: string | null = null;
   let currentTransportFlowState: V4ConnectionFlowState = "drained";
   let flowClosed = false;
   let flowUpdateChain = Promise.resolve();
   const forwardedFlowStateByRoute = new Map<string, V4ConnectionFlowState>();
-  /** attachment 曾触及的 workspace route 留到 port dispose，保证无 subscription 也能 trusted closed。 */
+  /** Workspace routes touched by this attachment live until port dispose, trusted-closed with no subscriptions. */
   const attachmentFlowRoutes = new Map<string, ConnectionFlowRoute>();
 
   const forwardedConnection = (params: unknown): ZCodeAgentV4ConnectionContext => {
@@ -268,8 +268,8 @@ export function createZCodeAgentConnectionScope(
       return {
         connectionId: namespaceRelayConnectionId(context.connectionId, downstream.connectionId),
         clientMode: downstream.clientMode,
-        // 增量位属于**下游那一端**：relay 自己不消费帧，只把下游 clientHello 的声明带上去。
-        ...(downstream.workflowRunDeltas === true ? { workflowRunDeltas: true } : {}),
+        // The delta bit belongs to the downstream end: relays do not consume frames, only forward
+        // the downstream clientHello declaration.
       };
     }
     return {
@@ -342,8 +342,8 @@ export function createZCodeAgentConnectionScope(
   const enqueueTransportFlowState = (state: V4ConnectionFlowState): Promise<void> => {
     if (disposed || (flowClosed && state !== "closed")) return Promise.resolve();
     const update = flowUpdateChain.then(() => applyTransportFlowState(state));
-    // 快速 SAT→DRN 与 close 必须保持提交顺序；单次 RPC 失败不能打断后续
-    // close 清理，但调用方仍会收到该次 update 的 rejection。
+    // SAT->DRN and close must keep submission order; one RPC failure must not break later
+    // close cleanup, though the caller still gets that update's rejection.
     flowUpdateChain = update.catch(() => {});
     return update;
   };
@@ -382,8 +382,8 @@ export function createZCodeAgentConnectionScope(
           (entry.topic === expectedRoute.topic &&
             entry.connectionId === expectedRoute.connectionId)),
     );
-    // terminal UI 只传 subId；若它在同 method/workspace 内碰撞，宁可拒绝猜测。
-    // trusted relay 则使用下游 facade 写入的 topic/connection 精确命中。
+    // Terminal UI passes only subId; on collision within method/workspace, refuse to guess.
+    // Trusted relays hit exactly via the facade-written topic/connection.
     return matches.length === 1 ? matches[0]! : null;
   };
   const ownsFrame = (
@@ -452,8 +452,8 @@ export function createZCodeAgentConnectionScope(
       pending.frames.length + 1 > MAX_PENDING_OWNERSHIP_FRAMES ||
       pending.stagedBytes + bytes > MAX_PENDING_OWNERSHIP_BYTES
     ) {
-      // 旧 ACK staging 超限时 shift 最旧帧，会把一个
-      // logical frame 变成永久缺片。溢出必须清空整批并显式失败。
+      // Legacy ACK staging shifted the oldest frame on overflow, permanently holing a logical
+      // frame. Overflow must clear the batch and fail explicitly.
       pending.frames.length = 0;
       pending.stagedBytes = 0;
       pending.overflowReason = "fault.subscription.initialFrameStagingOverflow";
@@ -534,8 +534,8 @@ export function createZCodeAgentConnectionScope(
   ): Promise<void> => {
     forget(entry);
     try {
-      // trusted relay 以 owned route 校验 flow control。最后一个 subscription
-      // 必须先 closed 再 unsubscribe；反序会让上游先忘 owner，closed 被拒绝后留下 paused connection。
+      // Trusted relays validate flow control per owned route. The last subscription must close
+      // before unsubscribe; reversed, upstream forgets the owner and closed is rejected, pausing the connection.
       await closeUnusedFlowRoute(entry);
     } finally {
       await unsubscribeBase(entry, runtimePolicy);
@@ -578,14 +578,14 @@ export function createZCodeAgentConnectionScope(
       pending.runtimeGeneration !==
         (runtimeGenerationByWorkspaceKey.get(workspaceKey(entry.target)) ?? 0)
     ) {
-      // 旧 runtime 的迟到 ACK 可能与新 runtime 复用同一 subId。
-      // 这里只丢本地 owner，绝不能向新 runtime 反向 unsubscribe 同名 subscription。
+      // A legacy runtime's late ACK may collide with a new runtime reusing the subId.
+      // Drop the local owner only; never unsubscribe the same name on the new runtime.
       discardPendingOwnership(pending);
       throw new Error("fault.subscription.runtimeRestarted");
     }
     if (disposed) {
-      // port close 与 subscribe ACK 可并发；迟到 ACK 不能在已关闭 facade
-      // 重新登记 owner，必须立即反向 unsubscribe。
+      // Port close and subscribe ACK race; a late ACK must not re-register an owner on a closed
+      // facade and must unsubscribe immediately.
       discardPendingOwnership(pending);
       await unsubscribeBase(complete).catch(() => {});
       throw new Error("fault.connection.closed");
@@ -598,8 +598,8 @@ export function createZCodeAgentConnectionScope(
     }
     remember(subscriptionId, complete);
     try {
-      // 当前 transport 已 saturated 时，订阅 ACK 才让 trusted downstream route 成为事实；
-      // 必须在此补发一次 SAT，不能等待下一个 high-water edge。
+      // Only once the transport is saturated does the subscribe ACK make the trusted downstream route real;
+      // re-send SAT here instead of waiting for the next high-water edge.
       await syncCurrentFlowForEntry(complete);
     } catch (error) {
       forget(complete);
@@ -608,9 +608,9 @@ export function createZCodeAgentConnectionScope(
     }
     const route = routedFrameEvents.get(routedEventKey(entry.kind, entry.target));
     if (!route) return;
-    // CLI notification 可能先于 RPC subscribe response 抵达 host。旧实现
-    // 直到 await 返回才登记 owner，早帧会被永久丢弃；同 topic 双端 pending 时也不能
-    // 猜 owner。ACK 后只释放 ACK subscriptionId 对应帧，保留原到达顺序。
+    // CLI notifications can beat the RPC subscribe response. Owner registration used to wait for
+    // the await, dropping early frames forever; with both ends pending, guessing is wrong too.
+    // After ACK release only that subscriptionId's frames, original arrival order preserved.
     for (const frame of pending.frames) {
       if (frame.subscriptionId === subscriptionId && ownsFrame(entry.kind, entry.target, frame)) {
         route.emitter.fire(frame);
@@ -622,7 +622,7 @@ export function createZCodeAgentConnectionScope(
 
   const invalidateWorkspaceRuntime = (invalidatedWorkspaceKey: string, generation: number) => {
     runtimeGenerationByWorkspaceKey.set(invalidatedWorkspaceKey, generation);
-    // runtime 内 subscription 已全部消失；本地 owner 直接 forget，不向新 runtime 清理。
+    // Runtime subscriptions all gone: forget the local owner, no cleanup on the new runtime.
     for (const entry of owned.values()) {
       if (workspaceKey(entry.target) === invalidatedWorkspaceKey) forget(entry);
     }
@@ -636,8 +636,8 @@ export function createZCodeAgentConnectionScope(
       .filter((pending) => workspaceKey(pending.target) === invalidatedWorkspaceKey);
     for (const pending of invalidatedPending) {
       pending.invalidatedByRuntimeRestart = true;
-      // 从 routing group 摘除，避免旧 ACK 永不到达时继续为新 runtime 每帧积压；
-      // pending 对象仍由原 Promise continuation 持有，可据 generation 拒绝迟到 ACK。
+      // Leave the routing group so a never-ACKing old owner stops buffering per frame for the new
+      // runtime; the pending object stays with its Promise continuation and rejects late ACKs by generation.
       removePendingOwnership(pending);
       pending.frames.length = 0;
       pending.stagedBytes = 0;
@@ -647,14 +647,14 @@ export function createZCodeAgentConnectionScope(
   const hasRuntimeLifecycle = Boolean(base.onAgentRuntimeLifecycle);
   const runtimeLifecycleDisposable = base.onAgentRuntimeLifecycle?.((event) => {
     if (event.state === "available") {
-      // 首次冷启动的 subscribe 会先登记 pending，再由同一次启动发布
-      // available(gen1)，最后才收到 ACK。available 不是旧 ownership 的失效边界；
-      // 若在这里推进 generation，会把当前 runtime 的合法 ACK 误判成 restart。
-      // 真正的换代一定先发布 unavailable，由下方分支清理旧 owner/pending。
+      // A cold-start subscribe registers pending, then the same start publishes available(gen1),
+      // and only then the ACK arrives. available is not an ownership-generation boundary;
+      // bumping here would read the current runtime's valid ACK as a restart.
+      // A real generation change always publishes unavailable first; that branch clears owner/pending.
       return;
     }
-    // attachment facade 若只监听 restart，runtime 退出但未重启时就会保留旧 owner，
-    // 后续 UI cleanup 会重建 unsubscribe 参数并误走启动型 client；因此 unavailable 直接失效本地 owner。
+    // Listening only for restart keeps a stale owner when the runtime exits without restart, and
+    // later UI cleanup rebuilds unsubscribe args and hits the startup client; so unavailable clears locally.
     invalidateWorkspaceRuntime(event.workspaceKey, event.runtimeIdentity.generation);
   });
   const runtimeRestartDisposable = hasRuntimeLifecycle
@@ -704,21 +704,21 @@ export function createZCodeAgentConnectionScope(
       if (role === "terminal-client") {
         assertReady();
         if (params.envelope.clientId !== boundClientId) {
-          // 旧 facade 未覆盖 command 入口，未握手调用与伪造 clientId 都会
-          // 直达 CLI；静默覆盖又会破坏 command 幂等归属，因此明确拒绝不一致。
+          // Legacy facades did not cover command: un-handshaked calls and spoofed clientIds reach
+          // the CLI; silently overwriting breaks command idempotency ownership, so reject mismatches.
           throw new Error("fault.command.clientMismatch");
         }
       }
-      // command 过去只校验 envelope.clientId，却没有像订阅、附件一样注入
-      // host 真值，导致 mobile 可伪造顶层 clientMode，且 relay 下游身份在 command 链路丢失。
-      // envelope 仍原样透传；可信连接上下文只通过 host 内部 carrier 传给 base service。
+      // command used to validate only envelope.clientId, unlike subscriptions/attachments, so
+      // mobile could spoof top-level clientMode and relay downstream identity got lost.
+      // The envelope passes through untouched; trusted context rides the internal host carrier.
       return base.sendConversationCommandV4(
         withTrustedConnection(params, forwardedConnection(params)),
       );
     },
     async queryConversationCommandsV4(params) {
       assertReady();
-      // 纯时钟探测不查询任何 command，不能抢占/改变业务查询的 workspace 绑定。
+      // A pure clock probe queries no command and must not steal/change workspace binding.
       if (params.clock)
         return base.queryConversationCommandsV4(
           withTrustedConnection(params, forwardedConnection(params)),
@@ -750,8 +750,8 @@ export function createZCodeAgentConnectionScope(
       const result = await base.attachmentBeginV4(withTrustedConnection(params, forwarded));
       if (result.state === "staging") {
         if (disposed || flowClosed) {
-          // begin ACK 可能晚于 port close。若此时再登记 route，closed 已经错过它，
-          // CLI 会留下只能等 TTL 的半上传；先用同 trusted identity abort，再拒绝迟到结果。
+          // begin ACK may land after port close; registering the route then is missed by closed,
+          // leaving a TTL-only half-upload. Abort via the same trusted identity, then reject the late result.
           await base.attachmentAbortV4(withTrustedConnection(params, forwarded)).catch(() => {});
           throw new Error("fault.connection.closed");
         }
@@ -867,8 +867,8 @@ export function createZCodeAgentConnectionScope(
     },
     onDynamicConversationTelemetryFact(params) {
       assertOpen();
-      // 可信 clientMode 来自 host attachment；Web/mobile/relay 即使能读权威对话态，
-      // 也不能借共享 workspace emitter 安装生产 telemetry reporter。
+      // Trusted clientMode comes from the host attachment; web/mobile/relay must not install
+      // production telemetry reporters via the shared workspace emitter.
       const downstream = readTrustedZCodeAgentV4Connection(params);
       const relayDesktopDownstream =
         role === "trusted-host-relay" && downstream?.clientMode === "desktop-continuous";
@@ -878,18 +878,19 @@ export function createZCodeAgentConnectionScope(
       ) {
         return RpcEvent.None;
       }
-      // renderer 的 workspace supervisor 会先于 V4 hello/initialize 挂载。
-      // telemetry emitter 本身不发起协议请求，允许可信 desktop 提前监听，避免动态
-      // Event 在 handshake 前抛错并让 host channel 退出；live fact 仍只会在 ingest 后产生。
-      // 远程 workspace 还会经过 trusted host relay；这里沿用已有 trusted carrier 传递
-      // 下游 clientMode/namespace connectionId，relay 自身没有可信下游时仍保持拒绝。
+      // The renderer workspace supervisor mounts before V4 hello/initialize. The telemetry emitter
+      // itself sends no protocol requests, so trusted desktops may listen early; otherwise dynamic
+      // events throw pre-handshake and kill the host channel. Live facts still appear only after ingest.
+      // Remote workspaces additionally cross a trusted host relay: downstream clientMode/namespace
+      // connectionId ride the existing trusted carrier, else the relay keeps rejecting.
       return base.onDynamicConversationTelemetryFact(
         withTrustedConnection(workspaceTarget(params), forwardedConnection(params)),
       );
     },
     onDynamicCuaPermissionObservation() {
       assertOpen();
-      // 权限弹窗是本地桌面副作用；手机 replay attachment 只能消费可恢复对话事实。
+      // Permission dialogs are a local desktop side effect; phone replay attachments consume
+      // resumable conversation facts only.
       if (role !== "terminal-client" || context.clientMode !== "desktop-continuous") {
         return RpcEvent.None;
       }
@@ -897,26 +898,27 @@ export function createZCodeAgentConnectionScope(
     },
     onDynamicProcessResourceSample() {
       assertOpen();
-      // CLI 资源样本只供远端 Desktop Host relay 回传 main；renderer/mobile attachment
-      // 不消费该事件，也不能把它引入 continuous/replayable 消息面。
+      // CLI resource samples only relay to main via the trusted desktop-host relay; renderer/mobile
+      // attachments neither consume them nor pull them into continuous/replayable message surfaces.
       if (role !== "trusted-host-relay") {
         return RpcEvent.None;
       }
       return base.onDynamicProcessResourceSample();
     },
     onDynamicToolExecResource() {
-      // 完成事实与会话交付无关，禁止进入 continuous/replayable attachment。
+      // Completion facts are not session delivery; keep them out of continuous/replayable attachments.
       if (disposed || role !== "trusted-host-relay") return RpcEvent.None;
       return base.onDynamicToolExecResource();
     },
     onDynamicMcpResourceSamples() {
-      // 资源事实不属于会话流，桌面 continuous 与手机 replayable attachment 均不能订阅。
+      // Resource facts are not session stream; neither desktop continuous nor phone replay subscribes.
       if (disposed || role !== "trusted-host-relay") return RpcEvent.None;
       return base.onDynamicMcpResourceSamples();
     },
     onDynamicMcpTelemetry() {
       assertOpen();
-      // MCP 遥测与 CLI 资源样本共用可信 Host relay 边界，不进入 renderer/mobile 会话链路。
+      // MCP telemetry shares the trusted host-relay boundary with CLI resource samples; never the
+      // renderer/mobile session path.
       if (role !== "trusted-host-relay") {
         return RpcEvent.None;
       }
@@ -1034,7 +1036,7 @@ export function createZCodeAgentConnectionScope(
     },
     async dispose() {
       if (disposed) return;
-      // close 必须排在已入队 SAT/DRN 之后；即使控制 RPC 失败也继续 owned cleanup。
+      // close must queue after pending SAT/DRN; proceed with owned cleanup even on RPC failure.
       await enqueueTransportFlowState("closed").catch(() => {});
       if (disposed) return;
       disposed = true;

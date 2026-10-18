@@ -1,5 +1,5 @@
-// V4 physical wire reassembly：所有 fragment 只进入 staging；bytes、checksum、
-// UTF-8、JSON 与 schema 全部通过后，才产出一个可原子 apply 的 logical frame。
+// V4 physical wire reassembly: every fragment enters staging only; bytes, checksum,
+// UTF-8, JSON, and schema all passing yields one atomically applicable logical frame.
 import { z } from "zod";
 import { PROTOCOL_V4_LIMITS } from "./core.js";
 import { crc32WireBytes, decodeWireBase64 } from "./wire-binary.js";
@@ -55,8 +55,8 @@ export function reassembleTopicWireFrames<F>(
       };
     }
     if (encodeJson(first.frame).byteLength > maxAssemblyBytes) {
-      // complete 与 fragment 是同一个 logical frame 的两种物理
-      // 承载，只限制 fragment 会允许接收端绕过 16 MiB 权威状态上限。
+      // complete and fragment are two physical bearers of the same logical frame; bounding fragment only would let
+      // receivers bypass the 16 MiB authoritative-state cap.
       return {
         kind: "rejected",
         reasonCode: "proto.frameAssemblyTooLarge",
@@ -69,8 +69,8 @@ export function reassembleTopicWireFrames<F>(
   }
 
   if (first.fragmentCount > PROTOCOL_V4_LIMITS.logicalFrameAssemblyMaxFragments) {
-    // fragmentCount 曾只受 logicalBytes 约束，恶意元数据可在
-    // 缺片路径制造千万级 missingIndexes，先用协议硬上限阻断无界分配。
+    // fragmentCount was bounded only by logicalBytes; hostile metadata could
+    // mint tens of millions of missingIndexes on the gap path--the protocol hard cap blocks unbounded allocation first.
     return {
       kind: "rejected",
       reasonCode: "proto.frameFragmentCountExceeded",
@@ -128,8 +128,8 @@ export function reassembleTopicWireFrames<F>(
     }
     const nextDecodedByteTotal = decodedByteTotal + decoded.byteLength;
     if (nextDecodedByteTotal > maxAssemblyBytes) {
-      // 总字节不能到所有分片收齐后才统计；每接纳一片就
-      // 检查，使 staging assembly 的累计内存始终受协议上限约束。
+      // Total bytes cannot wait for the last fragment; check per admission so the staging assembly's accumulated
+      // memory stays under the protocol cap.
       return {
         kind: "rejected",
         reasonCode: "proto.frameAssemblyTooLarge",

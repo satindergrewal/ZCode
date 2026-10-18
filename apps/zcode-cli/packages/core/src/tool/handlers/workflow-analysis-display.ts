@@ -1,12 +1,12 @@
 // ============================================================
-// Workflow analysis → display - 静态分析结果到显示图 / 结果卡的唯一投影
+// Workflow analysis -> display: the single projection from static analysis to display graph / result card.
 // ============================================================
 //
-// 显示图由**三份**分析投影拼成：因果图给站点与车道，控制流图给阶段词汇表与阶段边，交接图给
-// 每阶段的子代理卡与交接边。少传任何一份，图就静默地缺一层——中枢直接启动
-// 的 run 详情侧板没有时间线、没有子代理，根因正是启动路径只传了因果图。所以「分析结果 →
-// 有界显示图」只在这里拼一次；CreateWorkflow 的 handler、确认窗 gate 与直接启动三处调用它，
-// 谁都不再在调用点手拼 `boundCausalityGraph(...)` 的实参。
+// The display graph composites **three** analysis projections: causality graph (sites and lanes), control-flow
+// graph (phase vocabulary and phase edges), handoff graph (per-phase subagent cards and handoff edges).
+// Missing any one silently drops a layer -- the hub-launched run detail pane having no timeline and no
+// subagents traced to the launch path passing only the causality graph. So "analysis -> bounded display
+// graph" is composited here exactly once; CreateWorkflow's handler, the confirm gate, and direct launch
 
 import {
   CREATE_WORKFLOW_TOOL_NAME,
@@ -18,7 +18,7 @@ import type { AnalyzeResult } from "@zcode/dynamic-workflow";
 import { createCreateWorkflowDisplay } from "../executor/result-display.js";
 import { boundCausalityGraph } from "./create-workflow-graph-bounds.js";
 
-/** 分析结果的有界显示图；脚本连一个站点都分析不出（编译失败早于因果图）时缺席。 */
+/** Bounded display graph of the analysis; absent when not even one site is analyzable (compile fails before causality). */
 export function boundGraphOfAnalysis(
   analysis: AnalyzeResult,
 ): CreateWorkflowCausalityGraph | undefined {
@@ -28,9 +28,9 @@ export function boundGraphOfAnalysis(
 }
 
 /**
- * 分析结果的 `create_workflow` display（确认窗、启动轮元数据）。面向模型的 `response` 在这些
- * 读者面前没有内容——display 投影本身也不读它。AmendWorkflow 传自己的工具名：两个启动工具
- * 共用同一个 display kind。
+ * The analysis's create_workflow display (confirm dialog, launch-turn metadata). The model-facing
+ response is empty to these readers -- the display projection does not read it either. AmendWorkflow passes
+ its own tool name: both launch tools share one display kind.
  */
 export function displayOfAnalysis(
   analysis: AnalyzeResult,

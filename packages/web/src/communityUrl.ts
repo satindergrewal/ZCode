@@ -25,7 +25,8 @@ export async function resolveWebHelpConfig(options: ResolveWebCommunityUrlOption
     (env?.VITE_ZCODE_BASE_URL?.trim() ||
       env?.VITE_ZCODE_ENDPOINT_ORIGIN?.trim() ||
       DEFAULT_ZCODE_ENDPOINT_ORIGIN);
-  // 服务端拒绝 platform=web；浏览器省略可选平台参数，避免伪装桌面系统。
+  // The server rejects platform=web; the browser omits the optional platform param
+  // instead of impersonating a desktop OS.
   const url = buildHelpAppConfigUrl(endpoint, ZCODE_VERSION);
   let remote: unknown;
   try {
@@ -35,7 +36,8 @@ export async function resolveWebHelpConfig(options: ResolveWebCommunityUrlOption
         : readHelpConfig
     )(url);
   } catch {
-    // 远端不可用时保留内置入口，不使用旧 CDN 作为第二个远端配置源。
+    // Keep the built-in entry when the remote is unavailable; never add the legacy CDN
+    // as a second remote config source.
   }
   return resolveHelpAppConfig(remote, options.localConfig ?? localDefaultAppConfig);
 }

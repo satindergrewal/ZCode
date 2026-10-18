@@ -16,7 +16,7 @@ export async function openPathInDefaultApp(
   const trimmed = typeof rawPath === "string" ? rawPath.trim() : "";
   if (!trimmed) {
     const error = "empty path";
-    logger.warn("[open-external] 本地文件打开失败", { path: rawPath, error });
+    logger.warn("[open-external] failed to open local file", { path: rawPath, error });
     return { success: false, error };
   }
 
@@ -25,20 +25,20 @@ export async function openPathInDefaultApp(
   try {
     target = await realpath(normalized);
   } catch {
-    // 路径不存在或无法解析时仍尝试用规范化后的原路径，让系统返回更具体的错误。
+    // On missing/unresolvable paths, retry the normalized original so the OS reports something precise.
   }
 
   try {
     const error = await shell.openPath(target);
     if (error) {
-      logger.warn("[open-external] 本地文件打开失败", { path: target, error });
+      logger.warn("[open-external] failed to open local file", { path: target, error });
       return { success: false, error };
     }
-    logger.info?.("[open-external] 本地文件打开成功", { path: target });
+    logger.info?.("[open-external] local file opened", { path: target });
     return { success: true };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    logger.warn("[open-external] 本地文件打开失败", { path: target, error: message });
+    logger.warn("[open-external] failed to open local file", { path: target, error: message });
     return { success: false, error: message };
   }
 }
@@ -56,7 +56,7 @@ export async function openPathInFileManager(
   try {
     target = await realpath(normalized);
   } catch {
-    // 路径不存在或无法解析时仍尝试用规范化后的原路径打开，便于定位权限等问题。
+    // Retry the normalized original on missing/unresolvable paths to surface permission issues.
   }
 
   if (process.platform === "darwin") {
@@ -65,7 +65,7 @@ export async function openPathInFileManager(
 
   const error = await shell.openPath(target);
   if (error) {
-    logger.warn("[open-in-file-manager] shell.openPath 失败", {
+    logger.warn("[open-in-file-manager] shell.openPath failed", {
       path: target,
       error,
     });
@@ -79,8 +79,8 @@ export async function captureWindowScreenshot(senderWindow: BrowserWindow | null
     return null;
   }
 
-  // 报错横幅里的反馈需要带上用户看到的现场。
-  // 这里在 main 进程截当前窗口，避免 renderer 走屏幕录制权限或只能截到局部 DOM。
+  // Error-banner feedback must attach what the user actually sees.
+  // Capture the window in main, skipping renderer screen-recording prompts and partial DOM grabs.
   const image = await senderWindow.webContents.capturePage();
   const buffer = image.toPNG();
   return {
@@ -109,7 +109,7 @@ async function openDarwinPathInFileManager(target: string, logger: DesktopIpcLog
       if (!shellMessage) {
         return { success: true };
       }
-      logger.warn("[open-in-file-manager] macOS 打开目录均失败", {
+      logger.warn("[open-in-file-manager] macOS directory open failed", {
         path: target,
         shellMessage,
         firstError: firstError instanceof Error ? firstError.message : String(firstError),

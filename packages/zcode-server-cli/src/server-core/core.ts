@@ -34,7 +34,7 @@ export async function runServerCore(generation: number): Promise<void> {
       : undefined;
   if (!zcodeBuiltinProviderConfigFilePath) {
     throw new Error(
-      `当前构建未嵌入 ZCode Built-in Provider Config，且未设置 ${ZCODE_BUILTIN_PROVIDER_CONFIG_FILE_ENV}`,
+      `This build embeds no ZCode Built-in Provider Config and ${ZCODE_BUILTIN_PROVIDER_CONFIG_FILE_ENV} is not set`,
     );
   }
   const services = createLocalServices({
@@ -49,13 +49,12 @@ export async function runServerCore(generation: number): Promise<void> {
       try {
         process.send?.(message, () => resolve());
       } catch {
-        // 父进程断连后的最后一条生命周期消息不应阻塞资源释放。
+        // The last lifecycle message must not block resource release once the parent is gone.
         resolve();
       }
     });
   };
-  // ready.version 的语义是 Core 版本；不能误发 Node runtime 版本常量
-  // （22.16.0），否则消费方读取会拿到错误值。
+  // ready.version means the Core version; do not send the Node runtime constant (22.16.0) or consumers read the wrong value.
   await send({
     type: "ready",
     host: http.host,
@@ -103,10 +102,10 @@ export async function runServerCore(generation: number): Promise<void> {
     try {
       process.disconnect?.();
     } catch {
-      // 父进程已断连时 disconnect 可能报告 IPC_CHANNEL_CLOSED；不影响资源已释放后的退出。
+      // disconnect may report IPC_CHANNEL_CLOSED after the parent is gone; harmless once resources are released.
     }
-    // 仅设置 exitCode 无法关闭 Agent/SQLite 等仍持有的事件循环；Supervisor 的有界停止
-    // 会因此等待到超时。资源释放完成后显式退出，确保 stop/restart/uninstall 真正收口。
+    // exitCode alone cannot close event-loop handles held by Agent/SQLite; the Supervisor's bounded
+    // stop would wait until timeout. Exit explicitly after release so stop/restart/uninstall truly settle.
     process.exit(0);
   };
   if (parentDisconnected) void shutdown("parent-disconnected");

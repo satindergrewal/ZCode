@@ -1,12 +1,14 @@
-// 附件命令面（UI 侧）：ZCodePromptAttachment（composer 序列化产物）→ AttachmentRef
-// （v4 sendText/createSession attachments 引用模型）。
+// UI-side attachment command surface: ZCodePromptAttachment (the composer serialization
+// product) -> AttachmentRef (the v4 sendText/createSession reference model).
 //
-// 分派规则（与 CLI attachment-refs.ts 的映射对偶）：
-// - localPath（desktop 主流：native picker / 拖拽 getPathForFile / 长粘贴临时文件 /
-//   oversized 大图路径降级）→ ref 直接携带绝对路径，零上传；
-// - dataBase64（粘贴截图等内联图）→ 高层 put（内部 begin/chunk/commit）→ artifact ref；
-// - textContent（无路径文本，web 回退面）→ 编码后同走 put；
-// - 三者皆无（元信息-only）→ 丢弃并告警（无内容可发，不伪造引用）。
+// Dispatch rules (the dual of the CLI attachment-refs.ts mapping):
+// - localPath (desktop mainline: native picker / drag getPathForFile / long-paste temp file /
+//   oversized-image fallback) -> the ref carries the absolute path, zero upload;
+// - dataBase64 (pasted screenshots and other inline images) -> high-level put (begin/chunk/
+//   commit inside) -> artifact ref;
+// - textContent (pathless text, the web fallback) -> encoded, same put;
+// - none of the three (metadata only) -> drop with a warning (nothing to send; never fake a
+//   reference).
 import type { ZCodePromptAttachment } from "@zcode/shared";
 import type {
   AttachmentRef,
@@ -36,7 +38,7 @@ function base64ByteLength(dataBase64: string): number {
   return Math.floor((dataBase64.length * 3) / 4) - padding;
 }
 
-/** 单个附件 → AttachmentRef（需要上传时经 chunk transaction）。返回 null = 无内容可发（丢弃）。 */
+/** One attachment -> AttachmentRef (chunked transaction when upload needed). null = nothing to send (drop). */
 export async function uploadComposerAttachment(
   put: AttachmentPutFn,
   sessionId: string,
@@ -45,7 +47,7 @@ export async function uploadComposerAttachment(
 ): Promise<AttachmentRef | null> {
   const fileName = attachment.filename;
   const mime = attachment.mimeType;
-  // audio 变体无 sizeBytes 字段；统一经窄化读取。
+  // Audio variants lack sizeBytes; read through the narrowing helper uniformly.
   const sizeBytes =
     "sizeBytes" in attachment && typeof attachment.sizeBytes === "number"
       ? attachment.sizeBytes
@@ -66,7 +68,7 @@ export async function uploadComposerAttachment(
         : null;
   if (dataBase64 === null) {
     logger.warn(
-      `[v4-composer] 附件无内容可发（无 localPath/dataBase64/textContent），已丢弃: ${fileName}`,
+      `[v4-composer] attachment has nothing to send (no localPath/dataBase64/textContent); dropped: ${fileName}`,
     );
     return null;
   }

@@ -3,7 +3,7 @@ import { submissionModeSchema, type SubmissionMode } from "@zcode/shared/zcode-p
 import type { ModelSelectionView } from "@zcode/services";
 import { logger } from "@/logger.js";
 
-// 沿用旧 key，读取时兼容只保存 ModelSelection 的历史记录。
+// Keeps the legacy key; reads stay compatible with history entries storing ModelSelection only.
 const COMPOSER_RECENT_KEY_PREFIX = "zcode-model-selection-recent-v1";
 
 interface StorageLike {
@@ -35,7 +35,7 @@ export function readComposerRecent(
     if (!raw) return null;
     const record: unknown = JSON.parse(raw);
     if (!record || typeof record !== "object" || Array.isArray(record)) return null;
-    // 两个叶子独立校验：模型过期或坏数据不能连带丢掉合法权限，反之亦然。
+    // Validate both leaves independently so stale models or bad data never drop valid grants, either way.
     const selection = modelSelectionSchema.safeParse(
       "modelSelection" in record ? record.modelSelection : record,
     );
@@ -50,7 +50,7 @@ export function readComposerRecent(
   }
 }
 
-/** 发起真实 Submission 时捕获；返回函数只在 accepted ACK 后调用。 */
+/** Captured when the real submission starts; the returned fn runs only after the accepted ACK. */
 export function captureComposerRecentSubmission(
   workspacePath: string,
   submission: { readonly modelSelection: ModelSelection; readonly mode: SubmissionMode },
@@ -62,8 +62,8 @@ export function captureComposerRecentSubmission(
   const mode = submissionModeSchema.safeParse(submission.mode);
   const modelSelection = normalizeSparseModelSelection(submission.modelSelection);
   if (!mode.success || !modelSelection) {
-    // Recent 是发送后的附带偏好；输入异常时只放弃记录，不能阻断权威 command。
-    logger.warn("[ComposerRecent] 最近提交配置格式无效，跳过偏好记录", {
+    // Recents are a send-time side preference; on bad input drop the record, never block the command.
+    logger.warn("[ComposerRecent] Invalid recent submission shape, skipping preference record", {
       workspacePath,
       workspaceIdentity,
     });
@@ -80,16 +80,16 @@ export function captureComposerRecentSubmission(
     acceptedSequences.set(storage, accepted);
   }
   return () => {
-    // 只保存模型会让首发迁移 Root 后丢失权限；两个字段必须一起保存。
-    // 同一 Renderer 内按发起顺序取最近已接纳提交，防止跨 Pane 的迟到 ACK 回写旧偏好。
-    // 未接纳候选不推进水位，也不改变草稿或 CLI 的输入队列。
+    // Model-only persistence loses grants after a root migration; both fields must be saved together.
+    // Within a renderer take the latest accepted submission by start order so late cross-pane ACKs never
+    // rewrite stale preferences; unaccepted candidates never advance the watermark or input queues.
     if (sequence <= (accepted.get(key) ?? 0)) return;
     accepted.set(key, sequence);
     try {
       storage.setItem(key, JSON.stringify(recent));
     } catch (error) {
-      // 权威发送已经接纳，本地偏好写入失败不能把它报告成发送失败。
-      logger.warn("[ComposerRecent] 保存最近提交配置失败", {
+      // The authoritative send already accepted; a preference write failure must not read as send failure.
+      logger.warn("[ComposerRecent] Failed to persist recent submission", {
         workspacePath,
         workspaceIdentity,
         error,
@@ -102,8 +102,8 @@ export function resolveDraftInitialModelSelection(
   view: ModelSelectionView | null,
   recent: ModelSelection | null,
 ): { readonly selection: ModelSelection | null; readonly invalidated: boolean } {
-  // Registry 尚未到达时不能把已有草稿意图误判为失效；先原样保留，等同一 Hook
-  // 收到 View 后再做语义校验。
+  // Before the registry arrives, existing draft intent must not read as stale; keep it verbatim until
+  // the same hook receives the view and revalidates semantics.
   if (!view) return { selection: recent, invalidated: false };
   if (recent) {
     const model = findModel(view, recent);
@@ -113,8 +113,8 @@ export function resolveDraftInitialModelSelection(
       reasoning === undefined ||
       !model.config.optionSpecs.reasoningLevel.values.includes(reasoning)
     ) {
-      // 仍保留 Provider/Model 身份，但清空失效档位；Composer 不弹泛化通知，
-      // 让空的 Reasoning 控件直接要求用户作出新的明确选择。
+      // Provider and model identity stay while stale tiers clear; the composer shows no generic toast and
+      // lets the empty reasoning control demand an explicit new choice.
       return {
         selection: { providerId: recent.providerId, modelId: recent.modelId },
         invalidated: true,

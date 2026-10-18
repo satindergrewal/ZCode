@@ -186,7 +186,7 @@ export class RendererUserActionTelemetry implements UserActionTelemetry {
       try {
         await this.sendBatch(batch);
       } catch {
-        // Telemetry 是严格旁路；传输失败不能回压或改变用户操作结果。
+        // Telemetry is a strict side channel; a failed flush must not backpressure or alter the user action result.
       }
     }
   }

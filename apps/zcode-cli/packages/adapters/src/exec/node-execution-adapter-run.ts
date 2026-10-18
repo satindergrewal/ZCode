@@ -69,7 +69,7 @@ export class NodeExecutionAdapterRun extends NodeExecutionAdapterProcess {
       platform: this.platform,
       processEnv: this.processEnv,
     });
-    // 任务记录单独解析会重复同步执行 Windows chcp；复用执行时的编码值。
+    // Resolving the task record separately would sync-run Windows chcp again; reuse the execution's encoding.
     internalOptions.onOutputEncodingResolved?.(legacyOutputEncoding);
     const file = useBashMergedOutput
       ? new BashFileOutput(
@@ -113,7 +113,7 @@ export class NodeExecutionAdapterRun extends NodeExecutionAdapterProcess {
     const timeoutMs = request.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     let finishExit: (state: ExitState) => void = () => undefined;
     let finishResourceTelemetry: (state: ExitState) => void = () => undefined;
-    // timeout 计时器在 spawn 后才启动（见下），spawn 前的停止只可能来自取消或 adapter 关闭。
+    // The timeout timer starts only after spawn (see below); a stop before spawn means cancel or adapter close.
     const createPreSpawnStoppedResult = () =>
       this.createStoppedResult(
         startedAt,
@@ -133,8 +133,8 @@ export class NodeExecutionAdapterRun extends NodeExecutionAdapterProcess {
       }
       const startedChild = child;
       terminationRequested = true;
-      // root shell exit 不代表其进程组和继承 pipe 的后代已经退出。
-      // cancel/close 必须在组长 exit 后仍能清理整个 execution，避免 orphan。
+      // Root shell exit does not mean its group and pipe-inheriting descendants exited.
+      // cancel/close must still clean up the whole execution after the leader exits, avoiding orphans.
       this.terminateProcessTree(startedChild, useBashMergedOutput);
       if (file) {
         finishExit({ code: timedOut ? 143 : 137 });
@@ -146,8 +146,8 @@ export class NodeExecutionAdapterRun extends NodeExecutionAdapterProcess {
             signal: "SIGKILL",
           });
         }
-        // Windows 的 taskkill 或 POSIX 的 PGID 都可能已无法寻址脱离的后代；
-        // 最终释放 ZCode 持有的读端，不能继续让未知进程保活 CLI。
+        // Detached descendants may be unreachable via taskkill or PGID;
+        // release ZCode's read ends so unknown processes cannot keep the CLI alive.
         this.destroyChildOutputStreams(startedChild);
       }, FORCE_EXIT_AFTER_KILL_MS);
       forceExitTimer.unref?.();
@@ -180,7 +180,7 @@ export class NodeExecutionAdapterRun extends NodeExecutionAdapterProcess {
     try {
       const prepared = await this.prepareChildSpawn(request);
 
-      // shell init snapshot 创建是异步的；用户可能在等待期间取消或关闭 adapter。
+      // Shell init snapshot creation is async; the user may cancel or close the adapter while waiting.
 
       const stoppedAfterCommandPreparation = stoppedBeforeSpawn();
       if (stoppedAfterCommandPreparation) {
@@ -273,10 +273,10 @@ export class NodeExecutionAdapterRun extends NodeExecutionAdapterProcess {
 
       this.emit(options, { type: "started", pid: spawnedChild.pid, timestamp: startedAt });
 
-      // 复原原因：计时器提前到准备阶段是 protected-resource sandbox 时代的行为——capability
-      // probe 可能无限挂起，总超时必须覆盖准备期。sandbox 撤除后准备阶段只剩 shell snapshot /
-      // artifact 等既有异步步骤，timeoutMs 恢复为只约束子进程运行，避免 shell 初始化较慢或
-      // timeout 较短时命令尚未启动就被判 timed_out；准备期间的取消与关闭仍由 stoppedBeforeSpawn 兜底。
+      // Rationale: moving the timer to the prepare phase dates from the protected-resource sandbox era, where the
+      // capability probe could hang forever and the total timeout had to cover setup. Without the sandbox, prepare
+      // only runs known async steps (shell snapshot, artifacts), so timeoutMs again covers just the child run;
+      // this avoids timed_out before start on slow shell init or short timeouts. Cancel/close in prepare is still caught by stoppedBeforeSpawn.
       if (timeoutMs > 0) {
         timeoutTimer = setTimeout(() => requestStop("timeout"), timeoutMs);
       }

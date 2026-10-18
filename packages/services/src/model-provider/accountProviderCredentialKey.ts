@@ -12,14 +12,14 @@ type AccountProviderCredentialScope = {
 );
 
 /**
- * Credential Store 的私有物理 key。
+ * The Credential Store's private physical key.
  *
- * 旧账号标识同时承担 Config 身份和凭据缓存键，导致账号身份扩散到
- * Provider、Protocol 与 UI。物理键现在只留在拥有账号身份的 Services 凭据边界。
+ * The legacy account id doubled as Config identity and credential cache key, spreading account identity into
+ * Provider, Protocol, and UI. The physical key now lives only at the Services credential boundary owning account identity.
  */
 export function accountProviderCredentialKey(input: AccountProviderCredentialScope): string {
   const providerId = required(input.providerId, "Provider ID");
-  const accountIdentity = required(input.accountIdentity, "账号身份");
+  const accountIdentity = required(input.accountIdentity, "account identity");
   const scope =
     input.planKind === "team-coding-plan"
       ? [
@@ -37,6 +37,6 @@ export function accountProviderCredentialKey(input: AccountProviderCredentialSco
 
 function required(value: string, label: string): string {
   const normalized = value.trim();
-  if (!normalized) throw new Error(`Account Provider 缺少${label}`);
+  if (!normalized) throw new Error(`Account Provider missing ${label}`);
   return normalized;
 }

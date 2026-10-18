@@ -23,7 +23,7 @@ interface SubagentsStoreState {
   capability: AgentsCapability | null;
   loading: boolean;
   error: string | null;
-  /** 正在操作的 agent ID（用于 UI 状态指示） */
+  /** The agent being operated on (UI state indicator). */
   operatingAgentId: string | null;
   initialize: (
     workspacePath: string,
@@ -85,8 +85,8 @@ function loadAgentsOnce(
       return current;
     }
   }
-  // 设置页写入 subagent 后必须重新扫文件系统。
-  // 如果 refresh 继续复用旧的 in-flight list，请求会把写入前的列表带回输入框 @ 面板。
+  // A settings-page write must rescan the file system.
+  // If refresh reused the old in-flight list, the request would carry the pre-write list back into the @ panel.
   const request = subagentsService
     .list({ workspacePath, workspaceIdentity, provider })
     .finally(() => {
@@ -373,7 +373,7 @@ declare global {
 }
 
 if (shouldExposeE2EStoreBridge()) {
-  // E2E 诊断入口必须由 WDIO 显式打开，不能复用 ZCODE_ENV=test，避免产品测试环境暴露可变全局 store。
+  // The E2E diagnostics entry must be opened explicitly by WDIO, not via ZCODE_ENV=test, so the product test env keeps no mutable global store.
   window.__subagentsStoreE2E = useSubagentsStore;
 }
 
@@ -396,8 +396,8 @@ export async function refreshLoadedSubagentsStoreForWorkspace(params: {
   const contextStore = useSubagentsContextStore.getState();
   const contextKey = getSubagentsContextKey(workspacePath, ZCODE_AGENT_PROVIDER, workspaceIdentity);
   if (contextStore.contexts[contextKey]) {
-    // 分屏输入框按 workspaceKey 持有子智能体目录；设置页变更后只刷新对应桶，
-    // 避免同路径的本地/远端 workspace 相互污染。
+    // Split-pane inputs hold the subagent catalog per workspaceKey; after a settings change refresh only that bucket
+    // so same-path local/remote workspaces never pollute each other.
     refreshes.push(
       contextStore.refresh(
         workspacePath,

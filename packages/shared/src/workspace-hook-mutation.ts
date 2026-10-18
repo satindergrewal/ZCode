@@ -82,8 +82,8 @@ export async function writeWorkspaceHookConfiguredToggle(input: {
   try {
     raw = JSON.parse(await readFile(configPath, "utf8"));
   } catch (error) {
-    // 此处是 readFile/JSON.parse 失败，不能报成 config_write_failed：
-    // 用户据此反复重试「写入」而真实原因是配置读不出来或不是合法 JSON。
+    // This is a readFile/JSON.parse failure, never config_write_failed:
+    // users would retry "write" forever while the truth is an unreadable/non-JSON config.
     throw new WorkspaceHookMutationError(
       "workspace_hooks_config_unreadable",
       "Workspace Hook config could not be read",
@@ -111,15 +111,15 @@ export async function writeWorkspaceHookConfiguredToggle(input: {
   );
   if (!parsedDeclaration) throw mismatch("Workspace Hook declaration no longer matches its schema");
 
-  // 此处刻意把 entry 自身的 resolvedTimeoutMs / resolvedMaxOutputBytes 回填为 digest 的
-  // "default"，目的是校验「磁盘上的声明与 review 时所见一致」——即 source/command/event/
-  // matcher/hookIndex 等声明本体字段在 review 之后没有被第三方改动。
-  // 已知边界：当仅 root 级默认值（hooks.timeoutMs / hooks.maxOutputBytes）在磁盘上变化时，
-  // entry.resolvedTimeoutMs 仍是 review 时解析到的旧值，回填后重算出的 digest 必然等于
-  // entry.hookDeclarationDigest，因此本守卫不会捕获 root default 的变化（尽管
-  // resolvedTimeoutMs 参与 digest 恰恰是为了让 root 变化能触发「声明变更→重新 review」）。
-  // Admission 侧不受影响：hook 执行评估使用的是当前 snapshot，不依赖这里的 digest 比较，
-  // 不存在提权风险。
+  // Deliberately backfills the entry's own resolvedTimeoutMs / resolvedMaxOutputBytes as the digest's
+  // "default", to verify "on-disk declaration == what review saw"--i.e. source/command/event/
+  // matcher/hookIndex and the like unchanged since review.
+  // Known edge: when only root-level defaults (hooks.timeoutMs / hooks.maxOutputBytes) change on disk,
+  // entry.resolvedTimeoutMs keeps the review-time value, so the recomputed digest equals
+  // entry.hookDeclarationDigest and this guard misses root-default changes (even though
+  // resolvedTimeoutMs is in the digest precisely to trigger "declaration changed -> re-review").
+  // Admission is unaffected: hook execution evaluates the current snapshot, not this digest compare--no privilege risk.
+  // no privilege risk.
   const currentDigest = createWorkspaceHookDeclarationDigest({
     sourceRelativePath: entry.sourceRelativePath,
     sourceDiscoveryOrder: source.discoveryOrder,

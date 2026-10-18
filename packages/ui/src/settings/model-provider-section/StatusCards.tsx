@@ -1,5 +1,5 @@
 import { CodingPlanEntryButton } from "@/settings/CodingPlanEntryButton.js";
-/* eslint-disable max-lines -- Coding Plan/Start Plan 状态卡集中编排状态、动作和套餐区块，当前先保持同一文件避免拆散状态语义。 */
+/* eslint-disable max-lines -- the Coding Plan/Start Plan status cards keep status, actions, and plan blocks in one place for now so status semantics stay together. */
 import {
   BIGMODEL_PROVIDER_ID,
   isStartPlanModelProviderId,
@@ -184,14 +184,14 @@ export function CodingPlanStatusPanel({
   subscriptionExpireTime?: string | null;
   subscriptionDetails?: UsageEntitlementSubscriptionDetail[];
   quotaLimits?: UsageQuotaLimit[];
-  /** 官方 Server MCP 额度（服务端下发的总额度）。不在 quota.limits[] 里，由 nav item 单独透传。 */
+  /** Official Server MCP quota (server-delivered total). Not in quota.limits[]; passed through separately by the nav item. */
   mcpQuotaLimit?: UsageQuotaLimit | null;
   authError?: string | null;
   onOpenRegistration?: () => void;
   onLogin?: (options?: CodingPlanLoginOptions) => number | void | Promise<void>;
-  /** 凭据获取失败提供主动重新登录，不据此自动退出账号。 */
+  /** Credential failure offers active re-login; never auto-sign-out because of it. */
   reloginOnFailure?: boolean;
-  /** Start 套餐获取失败沿用 Host 手动刷新，不强制重新登录。 */
+  /** A failed Start plan fetch reuses the Host manual refresh; never force re-login. */
   onRetry?: () => void;
   onOpenPurchase?: (url: string) => void;
   onDisconnect?: () => void;
@@ -199,7 +199,7 @@ export function CodingPlanStatusPanel({
     initialAudience: PurchaseAudience;
     funnelContext: CodingPlanFunnelContext | null;
   }) => void;
-  /** 原生面板移除后，Team 状态卡仍须把购买对象传给统一升级入口。 */
+  /** After the native panel's removal, the Team status card still passes the purchase target to the unified upgrade entry. */
   purchaseInitialAudience?: PurchaseAudience;
   loginActionPlacement?: "inline" | "trailing";
   loginActionVisible?: boolean;
@@ -211,7 +211,7 @@ export function CodingPlanStatusPanel({
   statusLabelId?: string;
   statusMessage?: string | null;
   teamPlanAvailabilityReason?: TeamPlanAvailabilityReason;
-  /** Team Plan 必须传完整连接 key，避免与同 provider 的个人套餐共享重置状态。 */
+  /** Team Plan needs the full connection key so it never shares reset state with the same provider's personal plan. */
   quotaResetSourceKey?: string;
   quotaResetAccountAccess?: ZCodeProviderAccountAccess | ZCodeAccountAccess;
   onQuotaResetEntitlementRefresh?: () => void | Promise<void>;
@@ -229,9 +229,9 @@ export function CodingPlanStatusPanel({
     try {
       await onQuotaResetEntitlementRefresh();
     } catch (error) {
-      // 额度桶可能在生效时间后仍短暂未就绪。刷新失败时必须保留按钮供重试，
-      // 不能因为一次网络错误把“尚未同步”错误收敛成已完成。
-      logger.warn("[ModelProviderSection] 刷新 Start Plan 权益失败", {
+      // Quota buckets can stay briefly unready past their effective time. On refresh failure keep the
+      // button retryable; one network error must not collapse "not yet synced" into completed.
+      logger.warn("[ModelProviderSection] Failed to refresh Start Plan entitlement", {
         error: error instanceof Error ? error.message : String(error),
         providerId,
       });
@@ -278,7 +278,8 @@ export function CodingPlanStatusPanel({
           : isPurchased
             ? "settings.modelProvider.codingPlan.status.purchased"
             : "settings.modelProvider.codingPlan.status.notPurchased";
-  // 检查态可能仍携带上一轮团队错误；状态行只呈现当前检查状态，避免双图标和旧错误闪现。
+  // The checking state can still carry the previous team error; the status row shows only the current
+  // checking state, avoiding double icons and stale-error flashes.
   const statusBadgeId = isChecking
     ? defaultStatusBadgeId
     : (statusLabelId ??
@@ -288,8 +289,8 @@ export function CodingPlanStatusPanel({
           ? "settings.modelProvider.startPlan.status.noPlan"
           : defaultStatusBadgeId));
   const statusBadgeMessage = isChecking ? undefined : statusMessage?.trim();
-  // 展示文案不是状态权威。Team Plan 交互只读取显式业务原因，
-  // 避免 Project Key 错误被翻译 key 误判成“团队套餐未分配”。
+  // Display copy is not the status authority. Team Plan interaction reads only explicit business reasons,
+  // so a Project Key error is never misread as "team plan not allocated" via a translation key.
   const teamPlanUnavailableStatusVisible =
     teamPlanAvailabilityReason === "not-allocated" || teamPlanAvailabilityReason === "expired";
   const teamPlanWarningVisible = !isChecking && teamPlanAvailabilityReason !== undefined;
@@ -315,7 +316,7 @@ export function CodingPlanStatusPanel({
     ? formatQuotaModelDisplayName(rawPlanLevel)
     : normalizedPlanLevel;
   const canUpgrade =
-    // Max 已是最高档但仍需要续期入口，不能因为不可升级就隐藏按钮。
+    // Max is already the top tier but still needs a renewal entry; never hide the button just for non-upgradability.
     upgradeActionVisible && isPurchased && !isChecking && !isUnsupported;
   const canManageCodingPlan =
     !isDisconnected &&
@@ -338,8 +339,9 @@ export function CodingPlanStatusPanel({
   const createSettingPlanCardFunnelContext = (eventText: string) =>
     createCodingPlanFunnelContext({
       providerId,
-      // 修复原因：Start Plan 的升级入口与普通 Coding Plan 套餐卡属于不同链接方式，
-      // 埋点必须单独标识，避免把 Start Plan 用户误归类为普通套餐卡来源。
+      // Fix rationale: the Start Plan upgrade entry and regular Coding Plan cards are different link
+      // sources, so telemetry must tag them separately to avoid misclassifying Start users as
+      // regular plan-card traffic.
       upgradeSource: isStartPlanProvider ? "setting_start_plan_card" : "setting_plan_card",
       eventRegion: "app.setting",
       eventText,
@@ -354,8 +356,8 @@ export function CodingPlanStatusPanel({
     nextFunnelContext: CodingPlanFunnelContext | null,
   ) => {
     if (onOpenUpgradePlans) {
-      // Coding Plan 购买流程不应继续挂载在 Model Settings 内部；
-      // 状态卡只负责发起意图，由弹窗 hook 承载购买面板。
+      // The Coding Plan purchase flow must not stay mounted inside Model Settings;
+      // the status card only raises the intent — the dialog hook hosts the purchase panel.
       onOpenUpgradePlans({
         initialAudience,
         funnelContext: nextFunnelContext,
@@ -396,8 +398,8 @@ export function CodingPlanStatusPanel({
       <CodingPlanEntryButton
         type="button"
         size="lg"
-        // 未购买状态也可能正在等待权益接口返回；此时必须和 Upgrade
-        // 按钮一样禁用，避免旧的 notPurchased 快照被提前提交为购买入口。
+        // not-purchased may still be awaiting the entitlement API; disable it like the Upgrade
+        // button so a stale notPurchased snapshot never becomes a live purchase entry.
         disabled={effectiveViewState.loginLoading}
         onClick={() => {
           openUpgradePlans(
@@ -410,7 +412,7 @@ export function CodingPlanStatusPanel({
           );
         }}
       >
-        {/* 单卡同步可能晚于全局套餐查询；仅禁用会丢失等待反馈，和 Upgrade 保持一致。 */}
+        {/* Per-card sync can lag the global plan query; disable alone loses the waiting feedback — match Upgrade. */}
         {effectiveViewState.loginLoading ? <Loader2Icon className="size-3.5 animate-spin" /> : null}
         {intl.formatMessage({
           id: "settings.modelProvider.codingPlan.subscribe",
@@ -444,8 +446,9 @@ export function CodingPlanStatusPanel({
   });
   const statusMeta =
     isPurchased && isStartPlanProvider ? (
-      // 产品语义:体验套餐用量卡片不展示「管理」「解绑」操作(免费套餐无管理页,
-      // 登录态由 family 级连接方式管理),仅保留过期时间与右侧升级 Coding Plan 入口。
+      // Product semantics: the trial-plan usage card has no Manage/Unlink actions (the free tier has
+      // no management page; login state is handled by the family-level connection mode). Keep only the
+      // expiry time and the right-hand Coding Plan upgrade entry.
       <StartPlanStatusMeta
         expireTime={subscriptionExpireTime}
         entitlements={subscriptionDetails?.[0]?.entitlements}
@@ -512,7 +515,8 @@ export function CodingPlanStatusPanel({
     usageDetailsVisible &&
     isPurchased &&
     (isStartPlanProvider || hasDisplayableCodingPlanUsageLimits(quotaLimits));
-  // 同 family 已登录时默认登录动作只刷新；凭据失败后的主动恢复必须强制进入 OAuth。
+  // While the same family is signed in, the default login action only refreshes; recovery after a
+  // credential failure must force the OAuth flow.
   const trailingAction = reloginVisible ? (
     <Button
       type="button"
@@ -537,8 +541,9 @@ export function CodingPlanStatusPanel({
       {intl.formatMessage({ id: loginButtonId }, { provider: providerName })}
     </Button>
   ) : upgradeAction ? (
-    // 升级是 Plan Card 的主操作，和连接入口同属卡片级 action。
-    // 放在标题旁会随标题换行抖动；放到右侧并使用同尺寸按钮，层级和位置都更稳定。
+    // Upgrade is the Plan Card's primary action, a card-level action like the connection entry.
+    // Next to the title it jittered with title wraps; right-aligned at equal size, hierarchy and
+    // position both stay stable.
     upgradeAction
   ) : buyAction ? (
     buyAction
@@ -609,10 +614,11 @@ export function CodingPlanStatusPanel({
             usageContent={
               usageCardsVisible ? (
                 isStartPlanProvider ? (
-                  // 服务端契约保证 balances 只属于 active plans：purchased 快照必带套餐详情，
-                  // 多卡路径必然可用。兜底分支（nav item 无套餐详情）不得把全量 quotaLimits
-                  // 塞进单卡，否则无归属桶违背「无匹配 plan_id 的桶不得附着到任何卡片」的约定；
-                  // 余额未落定时只保留查询占位。
+                  // The server contract guarantees balances belong to active plans: a purchased snapshot
+                  // always carries plan details, so the multi-card path is safe. The fallback branch (nav
+                  // item without plan details) must not stuff the full quotaLimits into one card —
+                  // unassigned buckets would violate "buckets without a matching plan_id attach to no
+                  // card"; while the balance is unsettled, keep only the checking placeholder.
                   effectiveViewState.balanceStatus === "checking" ? (
                     <StartPlanQuotaStatusCard
                       isChecking
@@ -686,8 +692,9 @@ function resolveCodingPlanStatusCardTitle({
   }
 
   if (isStartPlanProvider) {
-    // Start provider 偶尔会承载同品牌 paid Coding Plan 的权益快照。
-    // 只有真实 Start 权益继续显示 Start Plan；否则必须露出后端权益名，避免付费用户看到免费套餐标题。
+    // A Start provider occasionally carries the same-brand paid Coding Plan entitlement snapshot.
+    // Only a genuine Start entitlement keeps the Start Plan title; otherwise surface the backend
+    // entitlement name so paying users never see the free-plan title.
     return isStartPlanEntitlementName(rawPlanLevel)
       ? startPlanTitle
       : displayPlanLevel || startPlanTitle;
@@ -738,7 +745,7 @@ function CodingPlanUsageSummaryCards({
     findUsageLimit(limits, "TOKENS_LIMIT", 6),
     resetUi.week.entry,
   );
-  // 额度剩余 100% 时重置没有收益:隐藏重置按钮与机会徽标(纯展示,不影响发放与轮询)。
+  // At 100% remaining, a reset has no value: hide the reset button and opportunity badge (display only; no effect on grants or polling).
   const fiveHourQuotaFull = isCodingPlanQuotaLimitFull(fiveHourLimit);
   const weeklyQuotaFull = isCodingPlanQuotaLimitFull(weeklyLimit);
   const standardCards = [
@@ -776,7 +783,7 @@ function CodingPlanUsageSummaryCards({
       }),
       limit: mcpQuotaLimit ?? undefined,
       progressColor: "var(--color-usage-chart-5)",
-      // 官方 Server MCP 额度按自然日重置，重置时刻恒为 00:00，与其它额度卡统一用日期口径。
+      // Official Server MCP quota resets on the calendar day, always at 00:00; like the other quota cards, date precision only.
       resetTimeFormat: "date",
     }),
   ].filter((card): card is CodingPlanUsageSummaryCard => card !== null);
@@ -798,7 +805,7 @@ function CodingPlanUsageSummaryCards({
 
   const fiveHourCardVisible = cards.some((card) => card.key === "fiveHour");
   const weeklyCardVisible = cards.some((card) => card.key === "weekly");
-  // 五小时与周机会合并为一个徽标,次数累加,倒计时取最早到期的一档。
+  // Five-hour and weekly opportunities merge into one badge: counts add up, countdown takes the earliest-expiring tier.
   const opportunityBadge = mergeCodingPlanQuotaResetOpportunityBadges([
     {
       count: resetUi.entry?.opportunityCount ?? 0,
@@ -858,7 +865,7 @@ function CodingPlanUsageSummaryCards({
           <PlanUsageMetricCard
             key={card.key}
             action={
-              // 额度标题旁入口只打开统一弹窗；真正核销由弹窗内对应类型按钮触发。
+              // The entry beside the quota title only opens the unified dialog; redemption happens via the dialog's per-type buttons.
               card.key === "fiveHour" &&
               resetUi.entry &&
               ((resetUi.opportunityVisible && !fiveHourQuotaFull && opportunityBadge.count <= 1) ||
@@ -917,8 +924,8 @@ function createCodingPlanUsageSummaryCard(card: {
   progressColor: string;
   resetTimeFormat: "date" | "dateTime";
 }): CodingPlanUsageSummaryCard | null {
-  // Coding Plan 剩余额度展示必须和 sidebar/context 一样只展示接口真实返回的额度项。
-  // 不能再用 limits[0]/[1]/[2] 兜底，否则 provider 详情会固定出现三张卡并和其它入口不一致。
+  // Coding Plan remaining-quota display, like sidebar/context, shows only limits the API actually returned.
+  // No limits[0]/[1]/[2] fallback, or provider details would always render three cards, inconsistent with other surfaces.
   if (!card.limit) {
     return null;
   }
@@ -958,8 +965,8 @@ function resolveGenericUsageLimitLabel(
       id: "settings.usage.entitlementMonthlyMcpUsage",
     });
   }
-  // Team Plan 的 quota limit 在测试环境可能不是个人 Coding Plan 的
-  // TOKENS_LIMIT(3/5、6) 形态。此时仍应展示剩余额度，不能因为类型不在白名单就空白。
+  // In test environments a Team Plan quota limit may not match the personal plan's TOKENS_LIMIT(3/5, 6)
+  // shape. Still show the remainder; never blank out just because the type misses the allowlist.
   return intl.formatMessage({
     id: "settings.modelProvider.planCard.usage.totalTokens",
   });
@@ -994,7 +1001,7 @@ function PlanUsageMetricCard({
   return (
     <div className="min-w-0 flex-1 rounded-lg bg-surface p-3">
       {label ? (
-        // 固定 24px 会让 20px 界面字号的 30px 行盒溢出；最小高度既保持默认对齐，也允许大字号撑高。
+        // A fixed 24px overflows the 30px line box of 20px UI type; min-height keeps default alignment while letting larger type grow.
         <div className="flex min-h-6 min-w-0 items-center gap-1">
           <span className="min-w-0 truncate text-ui-base font-medium text-foreground">{label}</span>
           {infoDescription ? (
@@ -1046,8 +1053,8 @@ function findUsageLimit(
 ): UsageQuotaLimit | undefined {
   return limits.find(
     (limit) =>
-      // zai team plan 返回 CREDIT_LIMIT，bigmodel 返回 TOKENS_LIMIT，
-      // unit/number 语义一致。用 isSameLimitCategory 让两者等价命中。
+      // zai team plans return CREDIT_LIMIT, bigmodel TOKENS_LIMIT, with matching unit/number semantics;
+      // isSameLimitCategory lets either count as the hit.
       isSameLimitCategory(limit.type, type) &&
       limit.unit === unit &&
       (number == null || limit.number === number),
@@ -1057,8 +1064,8 @@ function findUsageLimit(
 function resolveLimitRemainingPercentage(limit: UsageQuotaLimit | undefined): number | null {
   const usedPercentage = normalizeUsagePercentage(limit?.percentage);
   if (usedPercentage !== null) {
-    // Coding Plan quota 接口的 percentage 是已用百分比，
-    // Plan Card 属于“剩余额度”视图，需要和侧边栏剩余用量菜单一致反转展示。
+    // if (usedPercentage !== null) {
+    // The quota API's percentage is used-portion; the Plan Card is a "remaining" view, so invert it to match the sidebar usage menu.
     return Math.max(0, Math.min(100, 100 - usedPercentage));
   }
   const remaining = limit?.remaining;

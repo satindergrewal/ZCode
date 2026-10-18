@@ -48,12 +48,14 @@ export async function replaceAppAsarFromStaging({
     );
 
     if (!(await pathExists(candidateAsarPath)) || !(await pathExists(candidateUnpackedPath))) {
-      // CI 的 TMPDIR 位于隐藏目录 `.tmp`。旧 glob 含 `**/`，@electron/asar 用绝对路径
-      // 匹配时不会跨过隐藏目录，导致 native 被写回 asar，同时遗留旧 unpacked 形成物理双份。
-      throw new Error(`重打包结果缺少 app.asar 或 app.asar.unpacked: ${candidateAsarPath}`);
+      // CI's TMPDIR lives in the hidden `.tmp` dir. The old glob contained `**/`; @electron/asar matching with absolute
+      // paths does not cross hidden dirs, writing natives back into the asar and leaving a stale unpacked copy.
+      throw new Error(
+        `Repack result is missing app.asar or app.asar.unpacked: ${candidateAsarPath}`,
+      );
     }
 
-    // 先完整生成候选文件，再替换旧 archive 和 sidecar；不会把上一次打包的跨平台 native 留在 unpacked。
+    // Fully materialize the candidate files before replacing the old archive and sidecar; no cross-platform natives linger in unpacked.
     await rm(unpackedPath, { force: true, recursive: true });
     await rename(candidateUnpackedPath, unpackedPath);
     await rm(appAsarPath, { force: true });

@@ -5,29 +5,29 @@ import type {
 } from "@zcode/contracts";
 
 /**
- * 一次尝试的准入。
+ * Admission for one attempt.
  *
- * runner 在每次尝试**发出前** `admitAttempt`，拿到票据后才发请求；尝试结束（成功、失败、抛出、消费者
- * 提前放弃流）即 `release`——退避 sleep 期间不持票，所以进程级 cap 约束的是 provider 真正看到的在飞
- * 请求数。票据同时是该尝试的状态事件汇：`publishModelStatus` 把该尝试的事件也投递给它（见
- * `statusPublishOptions`），治理器据此判定结果；`release` 只是兜底，幂等。
+ * The runner calls `admitAttempt` before issuing each attempt and sends only with a token; when the attempt ends (success, failure, throw, or consumer
+ * abandons the stream) it calls `release`. No token is held during backoff sleep, so the process-level cap bounds the in-flight
+ * requests the provider actually sees. The token is also the status-event sink of the attempt: `publishModelStatus` delivers the
+ * attempt's events to it (see `statusPublishOptions`) and the governor reads the outcome there; `release` is only an idempotent fallback.
  *
- * 请求没有 `modelRequestAdmission` 时返回一个空实现：调用点不必分叉，runner 行为逐字不变。
+ * Without `modelRequestAdmission` a no-op implementation is returned: call sites stay branch-free, runner behavior byte-identical.
  */
 export interface AttemptAdmission {
-  /** 准入票据；请求没有准入端口时缺席（此时 publish 不转投）。 */
+  /** Admission token; absent when the request has no admission port (publish is not forwarded then). */
   readonly ticket?: ModelRequestAdmissionTicket;
-  /** 归还槽位；幂等（finally 与「退避 sleep 之前」两处都会调）。 */
+  /** Returns the slot; idempotent (invoked from finally and before the backoff sleep). */
   release(): void;
 }
 
 const NO_ADMISSION: AttemptAdmission = { release() {} };
 
 /**
- * 等待准入。先试同步快路径 `tryAcquire`；未命中才排队 `acquire`，并在两端回调 `onQueued` / `onAdmitted`
- * （runner 据此发 `model_request_queued` / `model_request_admitted`）。没有快路径的端口分不清
- * 「排了队」与「立即放行」，所以不回调。`signal` 被 abort 时 reject（以 `signal.reason`，与 `sleep` 的
- * abort 错误同一形状，由调用方按 cancelled 归类）。
+ * Wait for admission. Try the sync fast path `tryAcquire` first; on miss queue via `acquire`, firing `onQueued`/`onAdmitted` at both ends
+ * (the runner emits `model_request_queued`/`model_request_admitted` from these). Ports without a fast path cannot tell
+ * queued from immediate admission, so they fire no callbacks. Rejects with `signal.reason` when `signal` aborts, same shape as
+ * `sleep`'s abort error; callers classify it as cancelled.
  */
 export async function admitAttempt(input: {
   admission?: ModelRequestAdmission;

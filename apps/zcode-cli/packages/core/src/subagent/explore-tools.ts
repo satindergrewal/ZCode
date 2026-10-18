@@ -1,6 +1,6 @@
-// 对齐文件搜索型子 agent 的工具面。direct branch 会暴露 Glob/Grep；
-// embedded search branch 则通过 Bash find/grep 接管搜索。注意：白名单刻意不含任何
-// 文件写工具（Write/Edit/ApplyPatch），因此 Bash 是唯一的副作用入口，只读语义靠 Explore prompt 约束。
+// Align the tool surface of file-search subagents. The direct branch exposes Glob/Grep; the embedded
+// search branch searches through Bash find/grep instead. Note: the allowlist deliberately has no
+// file-write tools (Write/Edit/ApplyPatch), so Bash is the only side-effect door; read-only is enforced by the Explore prompt.
 export const EXPLORE_AGENT_ALLOWED_TOOLS = [
   "Bash",
   "Glob",

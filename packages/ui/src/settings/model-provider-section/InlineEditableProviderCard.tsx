@@ -1,4 +1,4 @@
-/* oxlint-disable eslint(max-lines) -- provider 卡片同时承载名称、连接、鉴权、模型和映射编辑；本阶段先维持单组件，后续再按表单域拆分。 */
+/* oxlint-disable eslint(max-lines) -- the provider card carries name, connection, auth, model, and mapping edits; single component for now, split by form domain later. */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   getProviderFormApiKey,
@@ -34,7 +34,7 @@ type ProviderDraftCleanupAction = "commit" | "skip-delete";
 interface ProviderSaveNotificationTarget {
   modelId?: string;
   operation?: "delete";
-  /** 显式弹窗在原草稿中重试，不让外部通知另起一次脱离编辑事务的保存。 */
+  /** Explicit dialogs retry within the original draft; external notifications never spawn a save outside the editing transaction. */
   draftOwnsRetry?: boolean;
 }
 
@@ -98,9 +98,9 @@ function resolveProviderNameEditKeyAction(event: {
   isComposing?: boolean;
   nativeEvent?: { isComposing?: boolean };
 }): ProviderNameEditKeyAction | null {
-  // 中文输入法用 Enter 确认候选时仍处于 composition 阶段。
-  // 部分平台的 keydown 标志会先恢复 false，因此同时读取本地 composition 状态，
-  // 避免提前 blur 打断候选提交，导致拼音原始按键被留在名称里。
+  // IME candidate confirmation via Enter is still inside the composition phase.
+  // Some platforms flip the keydown flag back to false early, so read local composition state too —
+  // a premature blur would interrupt the candidate commit and leave raw pinyin keys in the name.
   if (isImeComposingKeyEvent(event)) {
     return null;
   }
@@ -356,15 +356,16 @@ export function InlineEditableProviderCard({
         throw error;
       }
     },
-    // runSaveOperation 参与卸载保存 effect 的依赖链。intl/provider 随渲染换引用时，
-    // 回调也换引用会先执行旧 effect cleanup，进而再次保存并形成循环；通知身份通过 ref 读取。
+    // runSaveOperation participates in the unmount-save effect deps. When intl/provider change
+    // identity per render, a re-created callback would run the old effect cleanup first and save
+    // again, looping; the notification identity is read through a ref.
     [],
   );
 
   const persistModelOrder = useCallback(
     async (modelIds: readonly string[]) => {
       const target = reorderModelIdsTargetRef.current;
-      if (!target) throw new Error("当前设置入口未装配 Model 调序能力");
+      if (!target) throw new Error("This settings entry has no model reorder capability");
       await runSaveOperation(async () => {
         await target([...modelIds]);
       });
@@ -376,8 +377,9 @@ export function InlineEditableProviderCard({
     persist: persistModelOrder,
   });
 
-  // 成员与配置只有 Host View 一份事实。旧本地副本在异步成功/失败时会覆盖新 View，
-  // 甚至短暂移除正在编辑的模型。只保留拖拽顺序这一份明确的 pending intent。
+  // Membership and config have exactly one truth: the Host View. Stale local copies overwrite the new
+  // View on async success/failure, even briefly removing the model being edited. Keep only the drag
+  // order as an explicit pending intent.
   const models = useMemo(
     () => projectModelsToOrder(authoritativeModels, optimisticModelOrder.renderedIds),
     [authoritativeModels, optimisticModelOrder.renderedIds],
@@ -389,7 +391,7 @@ export function InlineEditableProviderCard({
         await onSave(nextProvider);
       };
       await runSaveOperation(operation).catch((error) => {
-        logger.warn("[ModelProviderSection] 自动保存 Provider 草稿失败", {
+        logger.warn("[ModelProviderSection] Failed to auto-save provider draft", {
           providerId: provider.providerId,
           error,
         });
@@ -422,10 +424,10 @@ export function InlineEditableProviderCard({
       if (lastSubmittedDraftSignatureRef.current === signature) return;
       lastSubmittedDraftSignatureRef.current = signature;
 
-      // Linux 下点击左侧供应商切换时，输入框 blur 与 Popover 关闭顺序不稳定，
-      // 连接草稿可能在组件卸载前还没走到 blur 保存。这里在切换/卸载前兜底提交，
-      // 避免“新供应商接口地址一切走就恢复为空”。
-      logger.info("[ModelProviderSection] 切换前保存未提交的供应商草稿", {
+      // On Linux, clicking a provider in the sidebar races input blur against Popover close, so the
+      // connection draft may never reach its blur-save before unmount. Commit as a backstop before
+      // switch/unmount, avoiding "endpoint reset to empty right after it was filled".
+      logger.info("[ModelProviderSection] Saving uncommitted provider draft before switch", {
         providerId: provider.providerId,
         reason,
       });
@@ -449,7 +451,7 @@ export function InlineEditableProviderCard({
     if (savingEnabled) return;
     cancelIdleDraftSave();
     setSavingEnabled(true);
-    // 同一次保存带上尚未提交的连接草稿，避免开关保存把刚输入的 Key 覆盖回旧值。
+    // Carry any uncommitted connection draft in the same save, so the toggle save cannot overwrite a just-typed key with the old value.
     const draft =
       resolvePendingProviderDraftSave({
         provider,
@@ -460,7 +462,7 @@ export function InlineEditableProviderCard({
     try {
       await saveProviderWithCleanupGuard({ ...draft, enabledUpdate: enabled });
     } catch {
-      // 统一保存入口已记录错误及可重试反馈；不乐观覆盖权威 enabled。
+      // The unified save path already records the error and retry feedback; never optimistically overwrite the authoritative enabled.
     } finally {
       setSavingEnabled(false);
     }
@@ -473,18 +475,18 @@ export function InlineEditableProviderCard({
         deleteRequested: deleteRequestedRef.current,
       });
       if (cleanupAction === "skip-delete") {
-        // 确认删除会触发详情卡片卸载；如果 cleanup 继续补保存草稿，
-        // 被删除的 provider 会在 delete 后又被 save 重新创建。
-        logger.info("[ModelProviderSection] 删除中的供应商跳过 cleanup 草稿保存", {
+        // Confirming delete unmounts the detail card; a cleanup draft-save afterwards would
+        // re-create the deleted provider via save-after-delete.
+        logger.info("[ModelProviderSection] Skipping cleanup draft save for provider being deleted", {
           providerId: provider.providerId,
         });
         return;
       }
       if (selfSaveRequestedRef.current) {
         selfSaveRequestedRef.current = false;
-        // 模型编辑会先保存新的有效模型列表，随后父层乐观更新会触发本组件 cleanup。
-        // 此时如果再用旧草稿补保存，会覆盖刚提交的模型列表。
-        logger.info("[ModelProviderSection] 内部保存触发的刷新跳过 cleanup 草稿保存", {
+        // A model edit saves the new valid model list first; the parent's optimistic update then
+        // triggers this cleanup. A follow-up draft save would overwrite the just-committed list.
+        logger.info("[ModelProviderSection] Skipping cleanup draft save after internal save", {
           providerId: provider.providerId,
         });
         return;
@@ -523,7 +525,7 @@ export function InlineEditableProviderCard({
   );
 
   const handleNameBlur = useCallback(() => {
-    // Esc/切换供应商先取消编辑意图，随后发生的 blur 不得补发保存。
+    // Esc/provider switch cancels the edit intent first; a later blur must not re-issue the save.
     if (nameEditProviderIdRef.current !== provider.providerId) return;
     nameEditProviderIdRef.current = null;
     setEditingName(false);
@@ -592,8 +594,8 @@ export function InlineEditableProviderCard({
     if (event.key !== "Enter") {
       return;
     }
-    // 候选确认的 Enter 不能被当作表单提交。本地 ref 覆盖
-    // Electron/macOS 上 nativeEvent.isComposing 过早变回 false 的时序。
+    // Candidate-confirm Enter must not submit the form. The local ref covers the window where
+    // Electron/macOS flip nativeEvent.isComposing back to false too early.
     if (
       isImeComposingKeyEvent({
         compositionActive: technicalInputCompositionActiveRef.current,
@@ -620,9 +622,10 @@ export function InlineEditableProviderCard({
         });
       }
 
-      // 连接测试曾把 Renderer 模型快照交给外层重新保存，绕过了模型草稿的
-      // revision 边界。现在只 flush 本卡片唯一的 Provider 草稿；Service 会等待同一 Provider
-      // 操作队列和 Registry 刷新完成，再按正式 providerId/modelId 创建 Model。
+      // Connectivity tests once handed the Renderer model snapshot back for a re-save, bypassing the
+      // model draft's revision boundary. Now only this card's single Provider draft is flushed; the
+      // Service waits for the same-Provider operation queue and Registry refresh, then creates the
+      // Model under the canonical providerId/modelId.
       await commitPendingDraft("connectivity-test");
       return onTestModel(provider.providerId, model);
     },
@@ -639,7 +642,7 @@ export function InlineEditableProviderCard({
       const index = models.findIndex((model) => model.modelId === originalModelId);
       const currentModel = models[index];
       if (!currentModel || !trimmed || !onSavePersonalModelDraft) {
-        throw new Error("当前设置入口未装配原子 Model Draft 保存能力");
+        throw new Error("This settings entry has no atomic model draft save capability");
       }
       const next = [...models];
       next[index] = { ...nextModel, modelId: trimmed, hasPersonalConfig: true };
@@ -676,12 +679,12 @@ export function InlineEditableProviderCard({
         void runSaveOperation(
           async () => {
             if (!onDeletePersonalModel)
-              throw new Error("当前设置入口未装配 Personal Model 删除能力");
+              throw new Error("This settings entry has no personal model deletion capability");
             await onDeletePersonalModel(provider.providerId, model.modelId);
           },
           { modelId: model.modelId, operation: "delete" },
         ).catch((error) => {
-          logger.warn("[ModelProviderSection] 删除 Personal Model 失败", {
+          logger.warn("[ModelProviderSection] Failed to delete personal model", {
             providerId: provider.providerId,
             modelId: model.modelId,
             error,
@@ -695,7 +698,7 @@ export function InlineEditableProviderCard({
 
   const handleModelEnabledChange = useCallback(
     async (modelId: string, enabled: boolean) => {
-      if (!onSetPersonalModelEnabled) throw new Error("当前设置入口未装配 Model 启停能力");
+      if (!onSetPersonalModelEnabled) throw new Error("This settings entry has no model enable/disable capability");
       await runSaveOperation(
         () =>
           onSetPersonalModelEnabled(provider.providerId, modelId, enabled).then(() => undefined),
@@ -707,7 +710,7 @@ export function InlineEditableProviderCard({
 
   const handleAddModel = useCallback(
     async (model: ProviderSettingsFormModel) => {
-      if (!onAddPersonalModel) throw new Error("当前设置入口未装配 Personal Model 添加能力");
+      if (!onAddPersonalModel) throw new Error("This settings entry has no personal model creation capability");
       const added = { ...model, modelId: model.modelId.trim(), hasPersonalConfig: true };
       if (!added.modelId) return;
       await runSaveOperation(
@@ -729,7 +732,7 @@ export function InlineEditableProviderCard({
     (modelIds: string[]) => {
       if (!onReorderModelIds) return;
       void optimisticModelOrder.commit(modelIds).catch((error) => {
-        logger.warn("[ModelProviderSection] 保存 Personal Model 顺序失败", {
+        logger.warn("[ModelProviderSection] Failed to save personal model order", {
           providerId: provider.providerId,
           error,
         });
@@ -782,10 +785,10 @@ export function InlineEditableProviderCard({
                     : "settings.modelProvider.enableProvider",
                 })}
               >
-                {/* Tooltip 的 data-state 不能覆盖 Switch 的 checked 状态，否则轨道样式会消失。 */}
+                {/* The Tooltip's data-state must not override the Switch's checked state, or the track styling disappears. */}
                 <span className="inline-flex">
                   <Switch
-                    // 共享开关左右各扩展 12px，会覆盖相邻菜单；本标题栏仅保留 4px 横向热区。
+                    // The shared switch extends 12px each side and overlaps neighbor menus; this header keeps only a 4px hit area.
                     className="after:-inset-x-1"
                     data-testid="model-provider-enabled-switch"
                     aria-label={intl.formatMessage({
@@ -840,7 +843,7 @@ export function InlineEditableProviderCard({
         ) : null}
 
         <ProviderModelsSection
-          // 不同 Provider 可以有同名模型；不能复用上一供应商的打开中草稿和版本。
+          // Different providers may share model names; never reuse the previous provider's open draft or generation.
           key={provider.providerId}
           providerId={provider.providerId}
           providerName={getProviderFormLabel(provider)}

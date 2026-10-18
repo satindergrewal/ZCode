@@ -1,9 +1,9 @@
-// SaveWorkflow 的常驻描述。
+// SaveWorkflow's ever-present description.
 //
-// 文件格式、实参声明与写作规则都在 `dynamic-workflows` 技能的「Tool
-// reference」里，由技能门保证读过。留在这里的是唯一一条**在决定调不调之前**就必须看见的
-// 规则——绝不主动保存。保存会在用户仓库里留下文件，而模型对「看起来挺通用」的判断远比用户
-// 宽松；这条门槛必须常驻，不能等到技能加载之后。
+// File format, argument declaration, and writing rules live in the `dynamic-workflows` skill's "Tool
+// reference" section, enforced by the skill gate. What remains here is the one rule that must be visible
+// **before deciding to call**: never save proactively. Saving drops files into the user's repo, and the model's
+// bar for "looks generic" is far looser than the user's; this gate stays resident, not behind skill loading.
 
 import { DYNAMIC_WORKFLOW_SKILL_NAME } from "@zcode/contracts";
 

@@ -77,7 +77,7 @@ export function buildPostCompactRuntimeEntries(
     preservedEntries?: readonly RuntimeMessageEntry[];
   } = {},
 ): RuntimeMessageEntry[] {
-  // compact 后只保留 metadata 标记的 prefix，避免用户 literal <system-reminder> 被文本规则误留。
+  // After compact keep only metadata-marked prefixes, so user-literal <system-reminder> text survives no textual rule by accident.
   const prefixCount = countContextPrefixMessages(activeEntries);
   return [
     ...activeEntries.slice(0, prefixCount).map(cloneRuntimeEntry),
@@ -132,8 +132,8 @@ export function maybeLocalMicrocompactRuntimeEntries(input: {
     if (entry.message.role !== "tool" || !entry.message.toolCallId) continue;
     const clearedContent = clearedContentByToolCallId.get(entry.message.toolCallId);
     if (!clearedContent) continue;
-    // microcompact 只改被清理的 tool result；对该 entry 做 copy-on-write，
-    // 避免为了保护 MessageHistory 的只读借用而深拷贝整段历史。
+    // Microcompact touches only the pruned tool result; copy-on-write that entry to
+    // avoid deep-copying the whole history to protect MessageHistory's read-only borrow.
     entries[index] = {
       ...entry,
       message: {

@@ -1,4 +1,4 @@
-// Plugin 对话引用（@ Plugin capability hint）核心模块出口。
+// Core module exports for plugin chat references (the @ plugin capability hint).
 export {
   extractPluginReferences,
   isValidPluginStableId,

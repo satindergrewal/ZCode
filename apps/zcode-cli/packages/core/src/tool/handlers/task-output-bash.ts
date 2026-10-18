@@ -117,8 +117,8 @@ async function readRunningBashOutputFile(
   context: ToolExecutionContext,
   maxBytes: number,
 ): Promise<TaskOutputFileRead> {
-  // 运行中 Bash 复用通用 8 MiB 尾读后，模型会看到输出末尾；
-  // 这里固定读取文件头部 30000 bytes，再交给 TaskOutput 应用最终字符预算。
+  // Running Bash reuses the generic 8 MiB tail read, so the model would see only the output tail;
+ // read the first 30000 bytes here, then let TaskOutput apply the final char budget.
   if (!outputFile) {
     return { available: false, content: "", truncated: false };
   }

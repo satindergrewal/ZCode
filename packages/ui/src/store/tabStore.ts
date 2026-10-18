@@ -1,9 +1,9 @@
 /* oxlint-disable eslint(max-lines) */
 /**
- * Tab Store —— 多标签页状态管理
+ * Tab store - multi-tab state.
  *
- * 每个窗口拥有独立的 tab store（不跨窗口广播）。
- * 标签页状态通过 settingService 持久化（见 useTabPersistence）。
+ * Each window owns its tab store (no cross-window broadcast).
+ * Tab state persists via settingService (see useTabPersistence).
  */
 import { create } from "zustand";
 import {
@@ -33,7 +33,7 @@ export interface SettingsTabState {
 
 export interface WorkspaceTabState extends TabState {
   kind: "workspace";
-  /** 启动期一次性校验结果；不持久化，运行期间不重检。 */
+  /** One-shot startup validation result; never persisted, never rechecked during the run. */
   availability?: WorkspaceAvailability;
   remoteSessionId?: string;
   remoteTarget?: RemoteTarget;
@@ -93,55 +93,55 @@ export function isSettingsTab(tab: WindowTabState): tab is SettingsTabState {
 }
 
 // ============================================================================
-// State 定义
+// State shape
 // ============================================================================
 
 export interface TabStoreState {
-  /** 当前窗口所有打开的标签页（有序） */
+  /** Every open tab of this window (ordered) */
   tabs: WindowTabState[];
-  /** 当前激活的标签页 ID，null 表示无激活标签 */
+  /** Currently active tab id; null when none */
   activeTabId: TabId | null;
-  /** 当前或最近一次激活的 workspace 路径 */
+  /** Current or last-active workspace path */
   activeWorkspacePath: string | null;
-  /** 当前或最近一次激活的 workspace identity（远端同路径隔离） */
+  /** Current or last-active workspace identity (same-path remote isolation) */
   activeWorkspaceIdentity: string | null;
-  /** 左侧侧边栏中已展开的 workspace 路径集合 */
+  /** Workspace paths expanded in the left sidebar */
   expandedWorkspacePaths: Set<string>;
-  /** 新增标签页，返回新 tab 的 ID */
+  /** Add a tab; returns the new tab id */
   addTab: (workspacePath: string, options?: WorkspaceTabOptions) => TabId;
-  /** 确保 workspace 出现在任务区数据源中，但不抢走当前焦点 */
+  /** Ensure the workspace is in the task-pane sources without stealing focus */
   ensureWorkspaceTab: (workspacePath: string, options?: WorkspaceTabOptions) => TabId;
-  /** 关闭标签页 */
+  /** Close a tab */
   closeTab: (tabId: TabId) => void;
-  /** 激活指定标签页 */
+  /** Activate a tab */
   activateTab: (tabId: TabId) => void;
-  /** 拖拽排序：将 fromIndex 位置的 tab 移动到 toIndex */
+  /** Drag reorder: move the tab at fromIndex to toIndex */
   reorderTabs: (fromIndex: number, toIndex: number) => void;
-  /** 仅按 workspace 子序列重排，保留设置页等非 workspace tab 的位置槽位 */
+  /** Reorder by workspace subsequence only, keeping slots of non-workspace tabs such as Settings */
   reorderWorkspaceTabs: (fromIndex: number, toIndex: number) => void;
-  /** 打开设置标签页（窗口内唯一） */
+  /** Open the settings tab (unique per window) */
   openSettingsTab: () => void;
-  /** 通过 workspace 路径激活 tab（跨窗口 focus 用），返回是否找到 */
+  /** Activate a tab by workspace path (for cross-window focus); returns whether found */
   activateTabByPath: (path: string, options?: { workspaceIdentity?: string }) => boolean;
-  /** 切换 workspace 的展开/收起态 */
+  /** Toggle a workspace expanded/collapsed */
   toggleWorkspaceExpanded: (path: string) => void;
-  /** 展开当前任务区里的全部 workspace */
+  /** Expand every workspace in the task pane */
   expandAllWorkspaceTabs: (paths: string[]) => void;
-  /** 收起当前任务区里的全部 workspace */
+  /** Collapse every workspace in the task pane */
   collapseAllWorkspaceTabs: (paths: string[]) => void;
-  /** 批量恢复标签页（启动时从持久化数据恢复用） */
+  /** Batch-restore tabs (startup, from persistence) */
   restoreTabs: (tabs: Array<string | RestorableWorkspaceTab>, activeIndex: number) => void;
-  /** 启动首帧后补齐持久化标签页；保留当前 active identity 和用户在此期间新增的标签页。 */
+  /** Backfill persisted tabs after the first frame; keeps the active identity and tabs added meanwhile. */
   completeTabRestore: (tabs: Array<string | RestorableWorkspaceTab>) => void;
 }
 
 // ============================================================================
-// 工具函数
+// Helpers
 // ============================================================================
 
-/** 从路径提取文件夹名作为标签显示名 */
+/** Derive the tab display name from the last path segment. */
 function labelFromPath(path: string): string {
-  // 兼容 Windows 反斜杠和 Unix 正斜杠
+  // Handle both Windows backslashes and Unix slashes.
   const segments = path.replace(/\\/g, "/").split("/").filter(Boolean);
   return segments[segments.length - 1] ?? path;
 }
@@ -238,7 +238,7 @@ function pruneExpandedWorkspace(
 }
 
 // ============================================================================
-// Store 创建
+// Store creation
 // ============================================================================
 
 interface StorageLike {
@@ -255,9 +255,10 @@ export function createTabStore(storage: StorageLike | null | undefined = undefin
     expandedWorkspacePaths: new Set<string>(),
 
     addTab: (workspacePath: string, options) => {
-      // 之前复用 tab 只按 workspacePath + history/session 片段判断，
-      // 同路径不同远端（例如 10.0.0.1:/home/dev 与 10.0.0.2:/home/dev）会被当成一个 tab。
-      // 这里优先按 workspaceIdentity（authority + canonicalPath）匹配，路径只作为最后兜底。
+      // Tab reuse used to match on workspacePath plus history/session fragments, which
+      // collapsed same-path different-remote targets (e.g. 10.0.0.1:/home/dev vs
+      // 10.0.0.2:/home/dev) into one tab. Match on workspaceIdentity
+      // (authority + canonicalPath) first; the path is only a last-resort fallback.
       const existing = get().tabs.find(
         (tab): tab is WorkspaceTabState =>
           isWorkspaceTab(tab) && isSameWorkspaceTab(tab, workspacePath, options),
@@ -265,10 +266,11 @@ export function createTabStore(storage: StorageLike | null | undefined = undefin
       if (existing) {
         persistWorkspaceExpandedPreference(existing.workspacePath, true, storage);
         set((state) => ({
-          // 远程 workspace 手动重连成功后会再次走 addTab，
-          // 但这里之前命中已有 tab 只做激活，不把新的 remoteSessionId 等元数据写回旧 tab。
-          // 结果 UI 仍然读到“remoteSessionId 还没更新”的旧状态，
-          // reconnect 按钮就会一直显示，像是还没连上。这里在复用 tab 时同步覆盖远程会话字段。
+          // A successful manual reconnect of a remote workspace calls addTab again, but
+          // hitting an existing tab only activated it and never wrote the new remoteSessionId
+          // and other metadata back onto the old tab. The UI kept reading a stale
+          // "remoteSessionId not yet updated" state, so the reconnect button stayed visible
+          // as if the connection never landed. Overwrite the remote session fields on reuse.
           tabs: state.tabs.map((tab) =>
             tab.id !== existing.id || !isWorkspaceTab(tab)
               ? tab
@@ -276,8 +278,10 @@ export function createTabStore(storage: StorageLike | null | undefined = undefin
           ),
           activeTabId: existing.id,
           activeWorkspacePath: existing.workspacePath,
-          // Settings 页的插件管理要按“最近激活 workspace”的 identity 继续命中同一远端。
-          // 之前这里只保存路径，切到 settings tab 后 identity 会丢失，导致同路径远端隔离失效。
+          // Plugin management on the Settings page must keep hitting the same remote by the
+          // "most recently activated workspace" identity. Only the path used to be stored, so
+          // the identity was lost after switching to the settings tab and broke same-path
+          // remote isolation.
           activeWorkspaceIdentity: options?.workspaceIdentity ?? existing.workspaceIdentity ?? null,
           expandedWorkspacePaths: ensureWorkspaceExpanded(
             state.expandedWorkspacePaths,
@@ -290,9 +294,10 @@ export function createTabStore(storage: StorageLike | null | undefined = undefin
       const tab = createWorkspaceTab(workspacePath, options);
       persistWorkspaceExpandedPreference(workspacePath, true, storage);
       set((state) => ({
-        // 左侧 workspace 列表现在支持手动排序，但新打开项目仍然默认追加到底部，
-        // 连续开新项目时最新 workspace 总要滚到下面找，和侧栏“最新上下文优先”的浏览方式不一致。
-        // 这里改成把新 workspace 插到最前面，让新打开的项目直接出现在列表顶部。
+        // The sidebar workspace list supports manual ordering, but newly opened projects were
+        // still appended to the bottom, forcing a scroll hunt for the latest workspace and
+        // contradicting the sidebar's "newest context first" browsing model. Insert new
+        // workspaces at the front so they appear at the top of the list.
         tabs: [tab, ...state.tabs],
         activeTabId: tab.id,
         activeWorkspacePath: workspacePath,
@@ -329,10 +334,11 @@ export function createTabStore(storage: StorageLike | null | undefined = undefin
       const tab = createWorkspaceTab(workspacePath, options);
       persistWorkspaceExpandedPreference(workspacePath, true, storage);
       set((state) => ({
-        // Claude 历史导入可能把任务写入一个“当前窗口从未打开过”的 workspace。
-        // 任务区只遍历 workspace tabs；如果这里只 bump 任务列表版本而不补 tab，
-        // 新任务虽然已经持久化成功，侧边栏里仍然没有对应分组可渲染。这里补一个仅确保可见的入口，
-        // 既让目标 workspace 进入任务区数据源，又不打断用户当前正在看的 tab / settings 上下文。
+        // Claude history imports can write tasks into a workspace this window never opened.
+        // The task pane only iterates workspace tabs; bumping just the task-list version here
+        // would persist the task while the sidebar still has no group to render it in. Add a
+        // visibility-only entry so the workspace feeds the task pane without disturbing the
+        // tab / settings context the user is looking at.
         tabs: [tab, ...state.tabs],
         expandedWorkspacePaths: ensureWorkspaceExpanded(
           state.expandedWorkspacePaths,
@@ -353,13 +359,13 @@ export function createTabStore(storage: StorageLike | null | undefined = undefin
       const closingTab = tabs[index] ?? null;
       const newTabs = tabs.filter((t) => t.id !== tabId);
 
-      // 如果关闭的是当前激活的 tab，需要切换到相邻 tab
+      // Closing the active tab requires switching to a neighboring tab.
       let newActiveTabId = activeTabId;
       if (activeTabId === tabId) {
         if (newTabs.length === 0) {
           newActiveTabId = null;
         } else {
-          // 优先激活右边的 tab，如果是最后一个则激活左边
+          // Prefer the tab to the right; fall back to the left one at the end of the list.
           const newIndex = Math.min(index, newTabs.length - 1);
           newActiveTabId = newTabs[newIndex]!.id;
         }
@@ -402,9 +408,10 @@ export function createTabStore(storage: StorageLike | null | undefined = undefin
               ? pruneExpandedWorkspace(stateBefore.expandedWorkspacePaths, closingTab.workspacePath)
               : stateBefore.expandedWorkspacePaths;
 
-          // 关闭当前 workspace 后，主内容会自动切到相邻 tab。
-          // 之前侧边栏把展开态放在组件本地状态时，会在 workspacePath 变化后顺手把接替项展开；
-          // 现在改由 store 托管后，这个兜底也要一起搬过来，否则“关闭当前 tab”会留下一个已激活但折叠的 workspace。
+          // After closing the active workspace the main content auto-switches to a neighbor.
+          // When expansion lived in component-local state, the successor got expanded as a
+          // side effect of workspacePath changing; now that the store owns it, carry the
+          // fallback over too, or "close current tab" leaves an active-but-collapsed workspace.
           return fallbackWorkspacePath
             ? ensureWorkspaceExpanded(prunedExpandedWorkspacePaths, fallbackWorkspacePath)
             : prunedExpandedWorkspacePaths;
@@ -634,9 +641,10 @@ export function createTabStore(storage: StorageLike | null | undefined = undefin
         const tabs = [...extraWorkspaceTabs, ...completedTabs, ...nonWorkspaceTabs];
         const expansionState = readWorkspaceExpansionState(storage);
 
-        // active-first 的第二阶段若再次调用 restoreTabs，会重建 active tab id，
-        // 让已经挂载的会话视图丢失 identity；用户在首帧后新开的 tab 也会被覆盖。
-        // 补齐阶段只合并缺失 tab，明确保留当前焦点和 active workspace 投影。
+        // A second restoreTabs pass in the active-first phase's completion step would rebuild
+        // the active tab id, dropping identity from already-mounted session views and
+        // clobbering tabs the user opened after the first frame. The completion pass only
+        // merges missing tabs and explicitly preserves focus and the active workspace projection.
         return {
           tabs,
           activeTabId: state.activeTabId,

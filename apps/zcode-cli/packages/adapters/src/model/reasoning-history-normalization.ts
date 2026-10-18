@@ -12,9 +12,9 @@ import { getStatusCode, unwrapRetryError } from "./failure-inspection.js";
 const EMPTY_ASSISTANT_CONTENT_FALLBACK = "(no content)";
 const REJECTED_REASONING_FALLBACK = "[Thinking removed]";
 
-// 旧历史保留 builtin 身份，当前选型已迁到 account 身份；Individual/Team
-// 也会使用不同 ID。只在 reasoning 回放时识别同服务的这些明确身份，不改变选型或鉴权。
-// 不能复用套餐展示分组：Start/Off-Peak/API 接入不在这份签名兼容范围内。
+// Legacy history keeps builtin identities; current selection moved to account identities, and Individual/Team
+// use different ids too. Recognize only these known same-service identities during reasoning replay;
+// never reuse plan display groupings: Start/Off-Peak/API access are out of signature-compat scope, and selection/auth are untouched.
 const REASONING_PROVIDER_GROUPS: readonly (readonly string[])[] = [
   [
     "builtin:zai-coding-plan",
@@ -67,8 +67,8 @@ export function repairReasoningHistoryAfterSignatureRejection(
 ): ModelInputMessage[] | undefined {
   if (!isThinkingSignatureRejection(error)) return undefined;
 
-  // 调用方传入的已经是逻辑请求入口完成结构归一化后的副本。这里仅执行签名拒绝清理，
-  // 不能再次运行结构 passes，否则会删除刚补出的 assistant 占位并改变轮次边界。
+  // Callers pass a copy already structure-normalized at the logical request entry. Run only signature-rejection
+  // cleanup here; rerunning structural passes would delete the just-restored assistant placeholder and shift turn bounds.
   const repaired = removeRejectedReasoning(projectedMessages);
   return repaired === projectedMessages ? undefined : repaired;
 }
@@ -77,8 +77,8 @@ function isThinkingSignatureRejection(error: unknown): boolean {
   const unwrapped = unwrapRetryError(error);
   if (getStatusCode(unwrapped) !== 400) return false;
 
-  // Provider 没有为该 400 提供独立错误码；这里只匹配已确认的窄化文案，
-  // 避免把其他 invalid_request 误当成可修改历史并重试。
+  // The provider has no dedicated code for this 400; match only the confirmed narrow copy so other
+  // invalid_request errors are not treated as fixable-history retries.
   const message = errorMessage(unwrapped).toLowerCase();
   if (message.includes("signature in thinking block")) return true;
 
@@ -135,7 +135,7 @@ function filterReasoningBlocks(
     if (content.length === message.content.length) continue;
 
     result ??= messages.slice();
-    // 此处只过滤 reasoning block，保留消息顺序与结构；结构修复由独立阶段处理。
+    // Filter reasoning blocks only, preserving order and shape; structural repair is a separate pass.
     result[index] = { ...message, content };
   }
 

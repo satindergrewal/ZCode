@@ -31,8 +31,8 @@ export interface PromptAttachmentStageResult {
 }
 
 /**
- * Renderer 只消费这个 host 服务，不直接依赖 SSH/WSL/Docker backend。
- * 本地 host 返回零拷贝路径，remote host wrapper 则先完成跨机暂存。
+ * Renderers consume only this host service, never the SSH/WSL/Docker backends directly:
+ * the local host returns zero-copy paths, the remote host wrapper stages across machines first.
  */
 export interface IPromptAttachmentTransferService {
   stage(params: PromptAttachmentStageParams): Promise<PromptAttachmentStageResult>;

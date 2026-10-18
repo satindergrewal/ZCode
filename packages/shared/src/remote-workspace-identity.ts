@@ -1,28 +1,28 @@
-// 远程 workspace identity 的统一解析工具（Workspace Identity 约束：构造与解析
-// 必须复用统一工具，禁止业务代码手写拼接/拆解规则）。
-// 构造侧（对偶）：packages/ui/src/lib/remoteWorkspaceHistory.ts 的
-// buildRemoteWorkspaceIdentity —— 格式契约：
+// Unified parsing of remote workspace identities (Workspace Identity rule: construction and parsing
+// must reuse these utilities; business code never hand-rolls the formats).
+// Construction (the dual): buildRemoteWorkspaceIdentity in
+// packages/ui/src/lib/remoteWorkspaceHistory.ts -- the format contract:
 //   remote:ssh:<host>:<port>:<username>:<posixPath>
 //   remote:wsl:<distro>[:<user>]:<posixPath>
 //   remote:docker:<container>:<posixPath>
-// path 段经 normalizeWorkspacePathForIdentity 归一（分隔符 → "/"，去收尾斜杠，
-// 空 → "/"），因此恒以 "/" 开头；authority 各段不含 "/"（host 小写、port 数字、
-// docker 容器名/wsl 发行版名的合法字符集均不含 ":" 与 "/"）。
-// 消费方：CLI v4 createSession 的 workspaceId（远程 pane 里 workspaceKey =
-// identity）需要还原出真实 workspacePath 作为会话 workingDirectory。
+// The path segment normalizes via normalizeWorkspacePathForIdentity (separators -> /, trailing slashes stripped,
+// empty -> /), so it always starts with /; authority segments contain no / (host lowercased, port numeric, and the legal
+// alphabets of docker container/wsl distro names have neither : nor /).
+// Consumer: the CLI v4 createSession workspaceId (remote pane's workspaceKey = identity) needs the real
+// workspacePath back as the session workingDirectory.
 import type { RemoteTarget } from "./remoteTarget.js";
 
 export type RemoteWorkspaceIdentityKind = "ssh" | "wsl" | "docker";
 
 export interface ParsedRemoteWorkspaceIdentity {
   kind: RemoteWorkspaceIdentityKind;
-  /** 远端真实路径（posix 归一形态）。 */
+  /// The remote's real path (posix-normalized).
   workspacePath: string;
 }
 
 const REMOTE_IDENTITY_PREFIX = "remote:";
 
-/** authority 必选段数（不含 kind）：ssh = host/port/username，其余远端类型 = 单段。 */
+/** Mandatory authority segment count (excluding kind): ssh = host/port/username, other remote kinds = one. */
 const AUTHORITY_SEGMENTS: Record<RemoteWorkspaceIdentityKind, number> = {
   ssh: 3,
   wsl: 1,
@@ -40,8 +40,8 @@ function normalizeWorkspacePathForIdentity(workspacePath: string): string {
 }
 
 /**
- * 统一构造远程 workspace identity。Host、Main 和 UI 禁止自行拼接 authority；
- * `workspacePath` 只在这里归一后进入身份键，实际 IO 仍使用调用方原路径。
+ * The single constructor of remote workspace identities. Host, main, and UI never concat authorities themselves;
+ * workspacePath enters the identity key only after normalization here, while actual IO keeps the caller's original path.
  */
 export function buildRemoteWorkspaceIdentity(workspacePath: string, target: RemoteTarget): string {
   const normalizedPath = normalizeWorkspacePathForIdentity(workspacePath);
@@ -61,9 +61,9 @@ export function buildRemoteWorkspaceIdentity(workspacePath: string, target: Remo
 }
 
 /**
- * 解析远程 workspace identity；非法/非远程 identity 返回 null（调用方回落
- * 「按本地 workspacePath 处理」）。只提取 workspacePath——authority 细节
- * （host/port 等）对消费方（CLI 运行在远端机器上）无意义，不透出。
+ * Parse a remote workspace identity; null for invalid/non-remote (callers fall back to
+ * by-local-workspacePath handling). Extracts workspacePath only--authority details
+ *(host/port...) are meaningless to consumers (the CLI runs on the remote) and are not exposed.
  */
 export function parseRemoteWorkspaceIdentity(
   identity: string,
@@ -80,8 +80,8 @@ export function parseRemoteWorkspaceIdentity(
   if (!isRemoteWorkspaceIdentityKind(kind)) {
     return null;
   }
-  // 逐段消费 authority；path 段可能含 ":"（理论上 posix 路径允许），
-  // 因此不能整体 split——按段推进后取剩余整段为 path。
+  // Consume the authority segment by segment; the path may contain : (legal in posix paths),
+  // so no whole-string split--advance per segment and take the remainder as the path.
   let cursor = kindEnd + 1;
   for (let i = 0; i < AUTHORITY_SEGMENTS[kind]; i++) {
     const next = rest.indexOf(":", cursor);
@@ -90,9 +90,9 @@ export function parseRemoteWorkspaceIdentity(
     }
     cursor = next + 1;
   }
-  // WSL identity 为区分默认用户与显式用户增加了可选 user 段，旧解析器
-  // 仍只消费 distro，导致 user 被误判为路径并让 identity 整体解析失败。远端路径
-  // 必须以 "/" 开头，因此可以无歧义地区分 legacy 无 user 格式与显式 user 格式。
+  // WSL identity added an optional user segment to tell default from explicit users; the legacy
+  // parser consumed only the distro, misreading user as path and failing the whole identity. Remote paths
+  // always start with /, so legacy no-user and explicit-user forms separate unambiguously.
   if (kind === "wsl" && rest[cursor] !== "/") {
     const userEnd = rest.indexOf(":", cursor);
     if (userEnd <= cursor) {
@@ -107,7 +107,7 @@ export function parseRemoteWorkspaceIdentity(
   return { kind, workspacePath };
 }
 
-/** identity 是否是远程 workspace identity（可被 parseRemoteWorkspaceIdentity 解析）。 */
+/** Is this a remote workspace identity (parseable by parseRemoteWorkspaceIdentity)? */
 export function isRemoteWorkspaceIdentity(identity: string): boolean {
   return parseRemoteWorkspaceIdentity(identity) !== null;
 }

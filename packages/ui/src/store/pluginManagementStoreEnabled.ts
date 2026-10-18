@@ -52,8 +52,9 @@ export async function setPluginEnabledOptimistically(
   };
 
   const previousPlugin = get().plugins.find((plugin) => plugin.id === pluginId);
-  // 启停 RPC 和后续列表刷新存在可感知延迟。先投影最终状态，让开关立刻响应；失败时
-  // 在 catch 中恢复快照，避免用户把正常的异步写入误判成“点了没反应”。
+  // The enable/disable RPC and the follow-up list refresh have perceptible latency.
+  // Project the final state first so the toggle reacts instantly; on failure restore the
+  // snapshot in catch so a normal async write is not misread as "the click did nothing".
   set({
     togglingPluginId: pluginId,
     error: null,
@@ -89,8 +90,9 @@ export async function setPluginEnabledOptimistically(
     });
     return isCurrentRequest();
   } catch (error) {
-    // 启停失败时必须返回 false 并恢复 optimistic projection，避免
-    // 调用方继续刷新其它能力，或让界面把失败的切换误报成成功。
+    // On toggle failure, return false and restore the optimistic projection so the caller
+    // does not keep refreshing other capabilities and the UI does not report a failed
+    // toggle as success.
     logger.error("[plugins] setEnabled failed", { pluginId, enabled, error: toMessage(error) });
     if (isCurrentRequest()) {
       set({

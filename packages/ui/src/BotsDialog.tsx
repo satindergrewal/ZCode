@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- BotsDialog 现在保留数据加载、保存和轮询编排；右侧卡片已拆到 BotsDialog/* 子组件，后续再继续下沉状态 hook。 */
+/* eslint-disable max-lines -- BotsDialog keeps data loading, saving, and polling orchestration; the right-hand cards are split into BotsDialog/* subcomponents, keep sinking state into hooks over time. */
 import {
   useCallback,
   useEffect,
@@ -73,8 +73,8 @@ function createEmptyConfig(): BotsConfigFile {
 }
 
 function createDraftBot(params: { provider: BotProvider }): BotConfig {
-  // Bugfix: Bot id 只是配置实体身份，不应该带 provider 前缀；
-  // 新建时如果看到 telegram-* 这类 id，容易误以为渠道被固定到了 Telegram。
+  // Bugfix: the bot id is only the config entity identity and must not carry a provider prefix;
+  // seeing telegram-* on creation reads as if the channel were pinned to Telegram.
   const id = `bot-${createUuid()}`;
   return {
     id,
@@ -183,8 +183,8 @@ export function BotsDialog({
   useEffect(() => {
     if (!open || !bindCode) return undefined;
     setNowMs(Date.now());
-    // Bugfix: 绑定码缩短到 30 秒后，1 秒刷新会让进度条明显跳格。
-    // 这里用更细的节奏驱动动画，文字仍由 formatBindCountdown 按秒展示。
+    // Bugfix: after the bind code shrank to 30s, 1s refresh made the progress bar visibly jump.
+    // Drive the animation at a finer cadence; the text still ticks per second via formatBindCountdown.
     const timer = window.setInterval(() => setNowMs(Date.now()), 250);
     return () => window.clearInterval(timer);
   }, [bindCode, open]);
@@ -202,13 +202,13 @@ export function BotsDialog({
           (bot) => bot.id === bindCode.botId,
         );
         if (targetBot?.providerUserId) {
-          // Bugfix: /bind 是从第三方聊天回写配置，UI 没有直接事件。
-          // 绑定码展开期间低频刷新配置，绑定成功后立即收起绑定区域。
+          // Bugfix: /bind writes the config back from the third-party chat; the UI has no direct event.
+          // Poll the config at a low rate while the bind code is expanded, collapse it on success.
           setBindCode(null);
         }
       } catch (error) {
         logger.warn(
-          "[BotsDialog] 轮询 Bot 绑定结果失败",
+          "[BotsDialog] Failed to poll bot bind result",
           error instanceof Error ? error.message : String(error),
         );
       }
@@ -233,8 +233,9 @@ export function BotsDialog({
     ) {
       return;
     }
-    // Bugfix: /bind 成功是服务层异步回写配置；即使轮询刚好被切换/刷新打断，
-    // 只要当前 Bot 已经带 providerUserId，就应该立即收起旧绑定码。
+    // Bugfix: a successful /bind is an async config write-back in the service layer; even if the
+    // poll is interrupted by a switch/refresh, collapse the old bind code as soon as the current
+    // bot already has a providerUserId.
     setBindCode(null);
   }, [bindCode, selectedBot?.id, selectedBot?.providerUserId]);
 
@@ -255,9 +256,10 @@ export function BotsDialog({
         const nextStatus = await botsService.getStatus();
         if (!cancelled) setStatus(nextStatus);
       } catch (error) {
-        logger.debug("[BotsDialog] 刷新 Bot 运行状态失败", error);
+        logger.debug("[BotsDialog] Failed to refresh bot runtime state", error);
       } finally {
-        // 投递在后台完成；只在弹窗可见时串行刷新，避免慢 RPC 堆积或关闭后回写。
+        // Delivery finishes in the background; refresh serially only while the dialog is visible
+        // to avoid slow-RPC pileup or write-backs after close.
         if (!cancelled) timer = setTimeout(() => void pollStatus(), 2000);
       }
     };
@@ -287,7 +289,7 @@ export function BotsDialog({
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      logger.error("[BotsDialog] 加载 Bots 配置失败", message);
+      logger.error("[BotsDialog] Failed to load bots config", message);
       toast(intl.formatMessage({ id: "bots.loadFailed" }, { error: message }));
     }
   }, [botsService, creatingBot, currentWorkspace, intl]);
@@ -310,7 +312,7 @@ export function BotsDialog({
         }
       } catch (error) {
         logger.warn(
-          "[BotsDialog] 轮询微信 Bot 激活状态失败",
+          "[BotsDialog] Failed to poll WeChat bot activation state",
           error instanceof Error ? error.message : String(error),
         );
       }
@@ -421,8 +423,9 @@ export function BotsDialog({
             ) {
               return current;
             }
-            // Bugfix: pending 轮询结果通常不变；如果每次都创建新对象，会触发 effect 依赖变化，
-            // 进而立即重启轮询并造成毫秒级 RPC 风暴。
+            // Bugfix: pending poll results are usually unchanged; creating a fresh object every
+            // time would flip effect dependencies, instantly restart polling, and cause a
+            // millisecond-scale RPC storm.
             return {
               ...current,
               interval: result.interval,
@@ -433,8 +436,9 @@ export function BotsDialog({
           return;
         }
         if (result.status === "success") {
-          // Bugfix: 服务层一直支持飞书扫码注册，但 Bots 重构后的 UI 只保留了手填凭据。
-          // 扫码成功后直接复用 saveBot 的 secret 写入路径，避免把 App Secret 留在明文配置文件里。
+          // Bugfix: the service layer always supported Feishu QR registration, but the reworked
+          // Bots UI only kept manual credentials. Reuse the saveBot secret write path on QR
+          // success so the app secret never lands in a plaintext config file.
           const savedBot = await saveBot(
             {
               ...selectedBot,
@@ -445,8 +449,9 @@ export function BotsDialog({
             { credentialValue: result.appSecret },
           );
           if (!cancelled) {
-            // Bugfix: 飞书/Lark 扫码成功只完成应用凭据接入；绑定码由“有凭据但未绑定”的统一状态机生成。
-            // 这里仅收起二维码，避免二维码和 /bind 面板在一次状态更新里互相抢展示优先级。
+            // Bugfix: a successful Feishu/Lark QR scan only completes app credential onboarding;
+            // the bind code comes from the shared "has credentials, not yet bound" state machine.
+            // Only collapse the QR so it and the /bind panel do not fight for focus in one update.
             setConfig((previous) => ({
               ...previous,
               bots: previous.bots.map((bot) =>
@@ -473,7 +478,7 @@ export function BotsDialog({
         );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        logger.error("[BotsDialog] 飞书扫码注册轮询失败", message);
+        logger.error("[BotsDialog] Failed to poll Feishu QR registration", message);
         if (!cancelled) {
           setFeishuRegistration((current) =>
             current?.deviceCode === registration.deviceCode
@@ -572,8 +577,9 @@ export function BotsDialog({
             { credentialValue: result.botToken },
           );
           if (!cancelled) {
-            // Bugfix: 微信扫码成功即完成连接，保留 QR registration 会让用户看到过期的扫码区域。
-            // 清掉临时状态后，Bot token 行会切到已连通的 Unbind 操作。
+            // Bugfix: a successful WeChat QR scan completes the connection; keeping the QR
+            // registration state would show a stale scan panel. Clearing it switches the bot
+            // token row to the connected Unbind action.
             setWeixinRegistration(null);
             toast(intl.formatMessage({ id: "bots.weixinRegistrationSuccess" }));
           }
@@ -596,7 +602,7 @@ export function BotsDialog({
         cancelled = true;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        logger.error("[BotsDialog] 微信扫码登录轮询失败", message);
+        logger.error("[BotsDialog] Failed to poll WeChat QR login", message);
       }
     };
 
@@ -605,8 +611,9 @@ export function BotsDialog({
       scheduleNextPoll();
     };
 
-    // Bugfix: 微信扫码状态接口会长等待，如果用 setInterval 会在上一次请求未返回时继续堆叠 RPC。
-    // 串行轮询可以避免连续 timeout，也避免多个结果互相覆盖 UI 状态。
+    // Bugfix: the WeChat QR status endpoint long-polls; setInterval would pile up RPCs while the
+    // previous request is still in flight. Serial polling avoids consecutive timeouts and results
+    // overwriting each other's UI state.
     void runPoll();
 
     return () => {
@@ -637,9 +644,9 @@ export function BotsDialog({
     setBotNameDraft(null);
     setRenamingBotId(null);
     if (nextName === selectedBot.name) return;
-    // Bugfix: Bot 名称输入过程中如果立即保存，服务层 trim 后的回写会吃掉刚输入的尾部空格，
-    // 导致用户无法继续输入包含空格的名称；改为提交时保存，保留输入过程中的本地草稿。
-    // 同时空名称是合法的未命名状态，展示层统一用多语言 fallback 名称兜底。
+    // Bugfix: saving on every keystroke lets the service-side trim eat trailing spaces, blocking
+    // names that contain spaces; save on commit and keep a local draft while typing. An empty
+    // name is a valid unnamed state; the display layer falls back to a localized default name.
     void saveBot({ ...selectedBot, name: nextName });
   }, [saveBot, selectedBot, selectedBotName]);
 
@@ -652,8 +659,8 @@ export function BotsDialog({
             nativeEvent: event.nativeEvent,
           })
         ) {
-          // Bugfix: Bot 名称重命名时中文输入法 Enter 是候选词确认，不是提交重命名。
-          // 这里避免触发 blur，否则 blur 会继续走 commitBotNameDraft。
+          // Bugfix: Enter during IME composition confirms a candidate, not the rename.
+          // Avoid triggering blur, which would run commitBotNameDraft.
           logger.debug("[BotsDialog] ignore bot name enter during IME", {
             botId: selectedBot?.id ?? null,
           });
@@ -663,7 +670,7 @@ export function BotsDialog({
         return;
       }
       if (event.key === "Escape") {
-        // Bugfix: 重命名输入框里的 Escape 只应该取消编辑，不能继续冒泡触发 Dialog 的关闭快捷键。
+        // Bugfix: Escape in the rename input must only cancel editing, not bubble into the Dialog close shortcut.
         setBotNameDraft(null);
         setRenamingBotId(null);
         event.preventDefault();
@@ -676,8 +683,8 @@ export function BotsDialog({
   const handleDialogEscapeKeyDown = useCallback(
     (event: Event) => {
       if (renamingBotId === null) return;
-      // Bugfix: Radix Dialog 会在输入框 React onKeyDown 冒泡前处理 Escape 关闭。
-      // 正在重命名时需要在 Dialog 的关闭入口拦截，Esc 只取消编辑，不关闭弹窗。
+      // Bugfix: Radix Dialog handles Escape close before the input's React onKeyDown bubbles.
+      // While renaming, intercept at the Dialog close path: Esc cancels editing only.
       event.preventDefault();
       setBotNameDraft(null);
       setRenamingBotId(null);
@@ -706,7 +713,7 @@ export function BotsDialog({
         await saveBot(optimisticBot);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        logger.error("[BotsDialog] 保存工作区访问范围失败", message);
+        logger.error("[BotsDialog] Failed to save workspace access scope", message);
         setConfig((previous) => ({
           ...previous,
           bots: previous.bots.map((bot) =>
@@ -765,7 +772,7 @@ export function BotsDialog({
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        logger.error("[BotsDialog] 创建 Bot 失败", message);
+        logger.error("[BotsDialog] Failed to create bot", message);
         toast(
           intl.formatMessage({ id: "bots.saveFailed" }, { error: message }),
         );
@@ -797,8 +804,9 @@ export function BotsDialog({
       return;
     }
 
-    // Bugfix: 远程控制弹窗新增 Bot Channel 快捷入口后，进入 BotsDialog 不能停在空白选择页。
-    // 这里在配置加载完成后再判断并创建，避免异步刷新尚未拿到已有 bot 时重复新建。
+    // Bugfix: after the remote-control dialog gained a Bot Channel shortcut, entering BotsDialog
+    // must not land on the empty selection page. Decide and create only after config loads, so a
+    // not-yet-refreshed bot list cannot duplicate the bot.
     setCreatingBot(true);
     setSelectedBotId(null);
     void handleAddBot(entry.provider);
@@ -816,7 +824,7 @@ export function BotsDialog({
       await saveBot(selectedBot, { credentialValue });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      logger.error("[BotsDialog] 保存 Bot secret 失败", message);
+      logger.error("[BotsDialog] Failed to save bot secret", message);
       toast(intl.formatMessage({ id: "bots.saveFailed" }, { error: message }));
     } finally {
       setSecretSaving(false);
@@ -838,7 +846,7 @@ export function BotsDialog({
         });
       } catch (error) {
         logger.error(
-          "[BotsDialog] 生成飞书注册二维码失败",
+          "[BotsDialog] Failed to generate Feishu registration QR code",
           error instanceof Error ? error.message : String(error),
         );
       }
@@ -857,7 +865,7 @@ export function BotsDialog({
       toast(intl.formatMessage({ id: "bots.feishuRegistrationStarted" }));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      logger.error("[BotsDialog] 启动飞书扫码注册失败", message);
+      logger.error("[BotsDialog] Failed to start Feishu QR registration", message);
       toast(
         intl.formatMessage(
           { id: "bots.feishuRegistrationFailed" },
@@ -882,7 +890,7 @@ export function BotsDialog({
         });
       } catch (error) {
         logger.error(
-          "[BotsDialog] 生成微信登录二维码失败",
+          "[BotsDialog] Failed to generate WeChat login QR code",
           error instanceof Error ? error.message : String(error),
         );
       }
@@ -898,7 +906,7 @@ export function BotsDialog({
       toast(intl.formatMessage({ id: "bots.weixinRegistrationStarted" }));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      logger.error("[BotsDialog] 启动微信扫码登录失败", message);
+      logger.error("[BotsDialog] Failed to start WeChat QR login", message);
       toast(
         intl.formatMessage(
           { id: "bots.weixinRegistrationFailed" },
@@ -929,8 +937,9 @@ export function BotsDialog({
           return;
         }
 
-        // Bugfix: 未配置 token 的飞书/Lark Bot 首次进入详情时只显示“扫码”按钮，
-        // 用户会误以为还需要额外展开；自动启动一次二维码流程，让缺失凭据的默认状态直接可操作。
+        // Bugfix: a Feishu/Lark bot without a token shows only the "Scan QR" button on first
+        // open, reading as an extra required step; auto-start the QR flow once so the
+        // missing-credentials default state is actionable immediately.
         autoQrStartedBotIdsRef.current.add(autoKey);
         void handleStartFeishuRegistration();
         return;
@@ -944,8 +953,9 @@ export function BotsDialog({
           return;
         }
 
-        // Bugfix: 飞书/Lark 的接入凭据和聊天绑定是两个阶段；已有凭据但未绑定时需要自动展示 /bind。
-        // 绑定码现在只有 30 秒有效期，过期后如果还停在旧码会打断自动绑定流程；这里自动续一枚新码。
+        // Bugfix: Feishu/Lark onboarding splits credentials and chat binding; with credentials
+        // but no binding, auto-show /bind. Bind codes now last 30s, so mint a fresh one when the
+        // old code would interrupt the automatic binding flow.
         autoBindCreatingBotIdsRef.current.add(selectedBot.id);
         void createBindCodeForBot(selectedBot).finally(() => {
           autoBindCreatingBotIdsRef.current.delete(selectedBot.id);
@@ -965,8 +975,9 @@ export function BotsDialog({
         return;
       }
 
-      // Bugfix: Telegram 和飞书/Lark 一样分成凭据接入与私聊绑定两步；
-      // token 保存后自动展示 /bind；绑定码过期也自动续码，避免 30 秒有效期让用户卡在旧码上。
+      // Bugfix: Telegram splits onboarding into credentials and direct-chat binding like
+      // Feishu/Lark; auto-show /bind after the token is saved and refresh expired bind codes so
+      // the 30s TTL never leaves the user stuck on a dead code.
       autoBindCreatingBotIdsRef.current.add(selectedBot.id);
       void createBindCodeForBot(selectedBot).finally(() => {
         autoBindCreatingBotIdsRef.current.delete(selectedBot.id);
@@ -989,8 +1000,8 @@ export function BotsDialog({
       return;
     }
 
-    // Bugfix: 微信 Bot 没有 token/绑定状态时需要立即给出登录二维码，
-    // 否则新建后右侧默认只露出按钮，和“扫码接入”的主流程不一致。
+    // Bugfix: a WeChat bot without token/binding state needs the login QR immediately, otherwise
+    // a fresh bot only exposes the button and breaks the "scan to connect" primary flow.
     autoQrStartedBotIdsRef.current.add(autoKey);
     void handleStartWeixinRegistration();
   }, [
@@ -1017,7 +1028,7 @@ export function BotsDialog({
     const command = `/bind ${bindCode.code}`;
     await navigator.clipboard?.writeText(command).catch((error: unknown) => {
       logger.warn(
-        "[BotsDialog] 复制绑定命令失败",
+        "[BotsDialog] Failed to copy bind command",
         error instanceof Error ? error.message : String(error),
       );
     });
@@ -1056,7 +1067,7 @@ export function BotsDialog({
       void refresh();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      logger.error("[BotsDialog] 移除 Bot secret 失败", message);
+      logger.error("[BotsDialog] Failed to remove bot secret", message);
       toast(
         intl.formatMessage(
           { id: "bots.removeSecretFailed" },
@@ -1068,8 +1079,9 @@ export function BotsDialog({
 
   const handleDelete = async () => {
     if (!selectedBot) return;
-    // Bugfix: 删除机器人之前没有二次确认，误触会直接移除凭据和绑定入口。
-    // 这里复用项目统一 ConfirmDialog，让破坏性操作和其它设置页保持一致。
+    // Bugfix: deleting a bot had no confirmation, so an accidental click dropped credentials and
+    // the binding entry. Reuse the project-wide ConfirmDialog to stay consistent with other
+    // settings pages for destructive actions.
     const confirmed = await confirmDialog({
       title: intl.formatMessage(
         { id: "bots.deleteConfirmTitle" },
@@ -1086,7 +1098,7 @@ export function BotsDialog({
       void refresh();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      logger.error("[BotsDialog] 删除 Bot 失败", message);
+      logger.error("[BotsDialog] Failed to delete bot", message);
       toast(
         intl.formatMessage({ id: "bots.deleteFailed" }, { error: message }),
       );
@@ -1339,8 +1351,9 @@ export function BotsDialog({
                   />
 
                   {/*
-                    暂不暴露命令权限编辑入口，避免用户在 bot 可用前把关键命令关掉。
-                    如果要恢复 UI，重新渲染 selectedBot.allowedCommands 的列表并用 patchSelectedBot 保存。
+                    Command permission editing is intentionally not exposed for now, so users cannot
+                    disable key commands before the bot works. To restore the UI, render
+                    selectedBot.allowedCommands and save via patchSelectedBot.
                   */}
 
                   <WorkspaceAccessCard

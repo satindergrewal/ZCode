@@ -6,8 +6,8 @@ import { z } from "zod";
 import { toToolJsonSchema } from "./json-schema.js";
 
 const nonEmptyString = z.string().trim().min(1);
-// contracts 仍使用 Zod 3，而 shared protocol 使用 Zod 4；跨版本 schema 实例不可组合。
-// 字段契约与 shared ModelSelection 保持逐叶一致，后续统一 Zod 版本后删除本地声明。
+// contracts remains on Zod 3 while the shared protocol uses Zod 4; schema instances cannot compose across versions.
+// Field contracts mirror shared ModelSelection leaf-for-leaf; delete these local declarations once the version is unified.
 const cronModelSelectionSchema = z
   .object({
     providerId: nonEmptyString,
@@ -22,11 +22,11 @@ const cronModelSelectionSchema = z
   })
   .strict();
 
-/** 相对任务判定的唯一口径：只有显式的正整数才是相对延迟。
- * delayMinutes 曾是必填 nullable，普通 cron 创建被迫显式传 null——
- * 省略字段的旧调用方/不稳定保留 null 的 provider 会直接 parse 失败，或在
- * `!== null` 判定下把 undefined 误走相对分支、把 recurring 任务错建成一次性。
- * undefined 与 null 都表示“非相对”，向后兼容既有 { cron, prompt, title } 协议。 */
+/** Single authority for relative-delay decisions: only an explicit positive integer is a relative delay.
+  * delayMinutes used to be required-nullable, forcing plain cron creation to pass null explicitly --
+  * old callers omitting the field, or providers persisting null unstably, would fail to parse or, under an
+  * !== null check, misroute undefined into the relative branch and build recurring tasks as one-shot.
+  * Both undefined and null mean not-relative, compatible with the legacy { cron, prompt, title } protocol. */
 export function hasRelativeDelayMinutes(input: { delayMinutes?: number | null }): boolean {
   return typeof input.delayMinutes === "number";
 }
@@ -36,7 +36,7 @@ export const CronCreateInputSchema = z
     cron: nonEmptyString
       .optional()
       .describe(
-        "Standard 5-field cron expression in the user's local timezone: minute hour day-of-month month day-of-week. Use it only for an absolute named date/time or a recurring schedule; required unless delayMinutes is set. For any relative delay such as 'in 8 minutes'/'8分钟后' or 'in 2 hours'/'2小时后', omit cron and use delayMinutes instead — never convert a relative phrase into a fixed clock time or calendar date, because a just-passed one-shot time silently rolls a full year forward. Examples: '*/20 * * * *' means every 20 minutes, '0 * * * *' means hourly, and '0 9 * * 1-5' means weekdays at 09:00. Do not convert to UTC.",
+                "Standard 5-field cron expression in the user's local timezone: minute hour day-of-month month day-of-week. Use it only for an absolute named date/time or a recurring schedule; required unless delayMinutes is set. For any relative delay such as 'in 8 minutes' or 'in 2 hours', omit cron and use delayMinutes instead -- never convert a relative phrase into a fixed clock time or calendar date, because a just-passed one-shot time silently rolls a full year forward. Examples: '*/20 * * * *' means every 20 minutes, '0 * * * *' means hourly, and '0 9 * * 1-5' means weekdays at 09:00. Do not convert to UTC.",
       ),
     delayMinutes: z
       .number()
@@ -46,13 +46,13 @@ export const CronCreateInputSchema = z
       .nullable()
       .optional()
       .describe(
-        "For any relative delay from now — 'in 3 minutes' (3), '8分钟后' (8), 'in 2 hours' (120), 'later'/'稍后' — set the exact positive delay in whole minutes and omit cron. The host calculates the future local schedule from its real current clock, so never compute an absolute time or cron yourself. For an absolute named date/time or a recurring schedule, omit it (or set null) and provide cron.",
+                "For any relative delay from now -- 'in 3 minutes' (3), 'in 2 hours' (120), 'later' -- set the exact positive delay in whole minutes and omit cron. The host calculates the future local schedule from its real current clock, so never compute an absolute time or cron yourself. For an absolute named date/time or a recurring schedule, omit it (or set null) and provide cron.",
       ),
     prompt: nonEmptyString.describe(
       "Complete prompt to send at every scheduled fire. Include all instructions needed when the automation runs. Describe the final work directly; do not ask it to create or schedule another automation or call CronCreate.",
     ),
     title: nonEmptyString.describe(
-      "Concise automation title that preserves the user's natural-language schedule phrase verbatim. For example, for '每20分钟提醒我喝水', use '每20分钟喝水提醒', not '喝水提醒'.",
+            "Concise automation title that preserves the user's natural-language schedule phrase verbatim. For example, for 'remind me to drink water every 20 minutes', use 'Drink water every 20 minutes', not 'Drink water'.",
     ),
     recurring: z
       .boolean()
@@ -68,10 +68,10 @@ export const CronCreateInputSchema = z
       .describe(
         "Maximum successful scheduled dispatch count. Use only with recurring=false; omit for a one-shot automation (defaults to 1).",
       ),
-    // 会话侧「自定义重复」carrier。每 N 分钟/小时/天/周/月/年与 UI 一样由
-    // intervalUnit + interval 表示，真实间隔由 host scheduleRule 承载；cron 仅是合法兼容展示。
-    // 不能让 cron 字段步长上限（minute 59、hour 24、day-of-month 31、month 12）篡改真实频率。
-    // carrier 与 delayMinutes（一次性）互斥。
+        // Session-side custom-recurrence carrier. Every N minutes/hours/days/weeks/months/years is expressed, like the UI, via
+        // intervalUnit + interval; the real interval is carried by the host scheduleRule, cron being only a compatible display.
+        // Never let cron field step limits (minute 59, hour 24, day-of-month 31, month 12) distort the real frequency.
+        // The carrier and delayMinutes (one-shot) are mutually exclusive.
     intervalUnit: z
       .enum(["minute", "hourly", "daily", "weekly", "monthly", "yearly"])
       .optional()
@@ -105,18 +105,18 @@ export const CronCreateInputSchema = z
     message: "a relative delay runs once and cannot use maxRuns",
     path: ["maxRuns"],
   })
-  // intervalUnit+interval 是周期 carrier，与一次性相对延迟 delayMinutes 在语义上冲突
-  // （周期 vs 一次性）；同传会形成矛盾状态，必须在 contract 层拒绝（service 层另有领域防御）。
+    // intervalUnit+interval is the recurring carrier and semantically conflicts with the one-shot delayMinutes
+    // (recurring vs one-shot); passing both is a contradictory state, rejected at the contract layer (the service layer has its own domain guard).
   .refine((input) => input.intervalUnit === undefined || !hasRelativeDelayMinutes(input), {
     message: "intervalUnit is a recurring carrier and cannot combine with a relative delayMinutes",
     path: ["intervalUnit"],
   })
-  // intervalUnit 与 interval 必须配对：只传其一无法确定真实间隔，拒绝。
+    // intervalUnit and interval must be paired: either alone cannot determine the real interval -- reject.
   .refine((input) => (input.intervalUnit === undefined) === (input.interval === undefined), {
     message: "intervalUnit and interval must be set together",
     path: ["interval"],
   })
-  // carrier 的定义就是长周期无限循环；一次性 / 有限次数与其调度语义冲突。
+    // The carrier is by definition an unbounded recurring loop; one-shot / finite-count conflicts with its scheduling semantics.
   .refine((input) => input.intervalUnit === undefined || input.recurring !== false, {
     message: "intervalUnit is a recurring carrier and requires recurring=true",
     path: ["recurring"],
@@ -141,8 +141,8 @@ const CronUpdateInputObjectSchema = z
       .describe(
         "Replacement prompt for future scheduled fires. Omit to preserve the existing prompt.",
       ),
-    // title 可选时，模型只改 cron/prompt 会把旧时间或旧任务语义留在标题中。
-    // 会话更新必须显式提交最终标题，让同一次原地更新同步持久化并回显一致结果。
+        // With title optional, a model changing only cron/prompt would leave a stale time or task semantics in the title.
+        // A session update must commit the final title explicitly, so one in-place update persists and echoes consistently.
     title: nonEmptyString.describe(
       "Required synchronized automation title describing the task after this update. Keep the user's natural-language schedule phrase consistent with cron (for example, changing every 5 minutes to every 6 minutes must also change the title), and update the title when the prompt meaning changes.",
     ),
@@ -161,7 +161,7 @@ const CronUpdateInputObjectSchema = z
       .describe(
         "Replacement maximum successful scheduled dispatch count for recurring=false. null clears the existing limit and is valid only when recurring=true is included in the same update; when recurring=true is supplied without maxRuns, the service clears the old limit automatically.",
       ),
-    // 自定义重复 carrier，语义同 create 侧 intervalUnit+interval（每 N 单位统一经 scheduleRule 执行）。
+        // Custom-recurrence carrier, same semantics as the create side's intervalUnit+interval (every-N units all run via scheduleRule).
     intervalUnit: z
       .enum(["minute", "hourly", "daily", "weekly", "monthly", "yearly"])
       .optional()
@@ -201,12 +201,12 @@ export const CronUpdateInputSchema = CronUpdateInputObjectSchema.refine(
     message: "recurring=true cannot be combined with a numeric maxRuns",
     path: ["maxRuns"],
   })
-  // intervalUnit 与 interval 必须配对（同 create 侧语义）。
+    // intervalUnit and interval must be paired (same semantics as the create side).
   .refine((input) => (input.intervalUnit === undefined) === (input.interval === undefined), {
     message: "intervalUnit and interval must be set together",
     path: ["interval"],
   })
-  // carrier 会将历史一次性任务切换为无限循环，调用方不能同传矛盾的有限次数语义。
+    // The carrier switches legacy one-shot tasks to an unbounded loop; callers must not pass contradictory finite-count semantics.
   .refine((input) => input.intervalUnit === undefined || input.recurring !== false, {
     message: "intervalUnit is a recurring carrier and cannot combine with recurring=false",
     path: ["recurring"],
@@ -223,12 +223,12 @@ export const CronUpdateInputSchema = CronUpdateInputObjectSchema.refine(
     },
   );
 export type CronUpdateInput = z.infer<typeof CronUpdateInputSchema>;
-// provider-visible schema 曾用顶层 anyOf 表达 recurring/maxRuns 组合约束，
-// 与 core 的跨 provider 守卫（禁止 $ref/$defs/anyOf 等 provider-internal key）直接冲突；
-// anyOf 还引出“部分 provider 只读分支 required、漏掉顶层 id/title”的连带问题。
-// provider 只投影干净的 object schema（顶层 required 自然生效），组合不变量由
-// runtime CronUpdateInputSchema 的 refine 强制，模型侧靠 recurring/maxRuns 的
-// description 提示，非法组合在工具执行时被拒绝并回带明确错误。
+// The provider-visible schema once expressed the recurring/maxRuns combination via a top-level anyOf,
+// which clashes with core's cross-provider guard (provider-internal keys like $ref/$defs/anyOf are banned);
+// anyOf also led some providers to read only branch required keys and drop top-level id/title.
+// Providers get a clean object schema (top-level required applies naturally); the combination invariant is
+// enforced by the runtime CronUpdateInputSchema refine, the model is guided by the recurring/maxRuns
+// descriptions, and invalid combinations are rejected at execution with a clear error.
 export const CronUpdateInputJsonSchema = toToolJsonSchema(CronUpdateInputObjectSchema);
 
 export const CronListInputSchema = z.object({}).strict();
@@ -244,10 +244,10 @@ export type CronDeleteInput = z.infer<typeof CronDeleteInputSchema>;
 export const CronDeleteInputJsonSchema = toToolJsonSchema(CronDeleteInputSchema);
 
 /**
- * 自定义重复规则的 contract 层镜像 schema（zod v3）。
- * 与 @zcode/shared 的 ZCodeAutomationScheduleRule 结构同步——此处不 import shared，
- * 避免 agent contracts 的 zod v3 与 shared zod v4 交叉依赖（同 browser-control 镜像约定）。
- * cronExpr 保留为兼容展示，调度以本字段为权威；会话侧长间隔 carrier 归一化后由本字段承载。
+  * Contract-layer mirror schema (zod v3) of the custom-recurrence rule.
+  * Kept in lockstep with ZCodeAutomationScheduleRule in @zcode/shared -- shared is not imported here,
+  * avoiding a zod v3 / zod v4 cross-dependency (same convention as the browser-control mirror).
+  * cronExpr remains a compatible display; scheduling treats this field as authoritative, and normalized long-interval session carriers land here.
  */
 export const CronAutomationScheduleRuleSchema = z
   .object({
@@ -258,7 +258,7 @@ export const CronAutomationScheduleRuleSchema = z
     anchorAt: z.number().int(),
     weekdays: z.array(z.number().int().min(0).max(6)).optional(),
     monthDays: z.array(z.number().int().min(1).max(31)).optional(),
-    /** yearly 用：1-12 人类月份。缺省回退 anchorAt 的月份（兼容未写该字段的旧记录）。 */
+        /** yearly: human month, 1-12. Falls back to anchorAt's month when absent (compat with older records lacking it). */
     months: z.array(z.number().int().min(1).max(12)).optional(),
     monthlyMode: z.enum(["date", "weekday"]).optional(),
   })
@@ -280,8 +280,8 @@ export const CronAutomationSchema = z
     maxRuns: z.number().int().positive().optional(),
     modelSelection: cronModelSelectionSchema.optional(),
     mode: z.enum(["build", "edit", "plan", "yolo"]).optional(),
-    // 自定义重复规则；缺省时调度回退到解析 cronExpr。会话卡片必须读到本字段才能展示
-    // cron 无法表达的真实间隔（如每50小时、每40天，兼容 cronExpr 只是 0 * * * *）。
+        // Custom-recurrence rule; when absent, scheduling falls back to parsing cronExpr. Session cards must read this field to show
+        // real intervals cron cannot express (every 50 hours, every 40 days; the cronExpr compat is just 0 * * * *).
     scheduleRule: CronAutomationScheduleRuleSchema.optional(),
   })
   .strict();

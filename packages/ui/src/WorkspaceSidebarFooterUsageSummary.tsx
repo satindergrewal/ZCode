@@ -1,6 +1,6 @@
 import { useCodingPlanEntryGate } from "@/settings/CodingPlanEntryButton.js";
-/* eslint-disable max-lines -- footer 套餐徽标、升级入口与 entitlement 探测共用同一份
-   provider 选择与 family 过滤上下文，拆文件会让 zai/bigmodel 对称性难以追踪。 */
+/* eslint-disable max-lines -- the footer plan badge, upgrade entry, and entitlement probing share one
+   provider-selection/family-filter context; splitting the file would break zai/bigmodel symmetry. */
 import { useEffect, useMemo } from "react";
 import {
   BUILTIN_MODEL_PROVIDER_IDS,
@@ -97,7 +97,7 @@ export function useWorkspaceSidebarFooterUsageSummaryState({
   const providerSettingsRead = useProviderSettingsView();
   const providerSettingsView =
     providerSettingsRead.state.status === "ready" ? providerSettingsRead.state.view : null;
-  // 首次读取失败也不能被解释成“已经加载且没有套餐”；只有 Ready 才能消费 Provider 事实。
+  // A failed first read must not read as "loaded, no plan"; only Ready consumes provider facts.
   const providerSourcesLoading = providerSettingsRead.state.status !== "ready";
   const selectedSupplierKey = useZCodeSessionStore((state) =>
     workspacePath
@@ -153,8 +153,9 @@ export function useWorkspaceSidebarFooterUsageSummaryState({
   const selectedProviderFamilyId = selectedProviderIdFromSupplierKey
     ? resolveModelProviderFamilyIdByProviderId(selectedProviderIdFromSupplierKey)
     : null;
-  // providerFamilyDomain 是当前登录/运行 family 边界；BigModel Team selectedKey
-  // 会在切换到 Z.ai 后保留，footer 若不按当前 domain 过滤会把头像旁徽标误显示成 Team。
+  // providerFamilyDomain is the current login/runtime family boundary. A BigModel Team selectedKey
+  // survives switching to Z.ai; without filtering by the current domain the avatar badge would
+  // wrongly show Team.
   const scopedSelectedProviderId =
     selectedProviderFamilyId &&
     providerFamilyDomain &&
@@ -162,12 +163,13 @@ export function useWorkspaceSidebarFooterUsageSummaryState({
       ? null
       : selectedProviderIdFromSupplierKey;
   const bigmodelFamilyAllowed = providerFamilyDomain !== "zai";
-  // 原只有 bigmodelFamilyAllowed 单变量，zai family 下 enterprise products 完全不拉。
-  // zai team plan 对称化需要 zai family 也独立拉一份 enterprise pricing。
+  // Previously only bigmodelFamilyAllowed existed, so enterprise products never fetched under the
+  // zai family. Zai team-plan symmetry needs its own enterprise-pricing fetch per family.
   const zaiFamilyAllowed = providerFamilyDomain !== "bigmodel";
   const bigmodelEnterpriseProducts = useEnterpriseCodingPlanProducts({
-    // footer badge 和升级入口都需要识别 Team Plan。
-    // Team 项目上下文只在企业 pricing/customerInfo 返回，账号级头像徽标也不能被当前连接方式卡住。
+    // Both the footer badge and the upgrade entry need Team Plan detection.
+    // Team project context arrives only via enterprise pricing/customerInfo; the account-level
+    // avatar badge must not be blocked by the current connection type.
     enabled:
       enabled && !providerSourcesLoading && bigmodelFamilyAllowed && Boolean(bigmodelTeamProvider),
     authenticated: true,
@@ -289,9 +291,9 @@ export function useWorkspaceSidebarFooterUsageSummaryState({
     refreshOnMount: false,
   });
   const teamEntitlement = useUsageEntitlement({
-    // 原硬绑 bigmodelCodingPlan providerId 判断，zai team source 的 providerId
-    // 是 zaiCodingPlan，永远进不到 team 分支，导致 zai team 额度不查询、badge 不显示。
-    // 改为按 currentUsageSource.audience === "team" 路由，providerId 动态取。
+    // The check was hardwired to the bigmodelCodingPlan providerId; a zai team source's id is
+    // zaiCodingPlan and never entered the team branch, so zai team quota never queried and the
+    // badge never showed. Route by currentUsageSource.audience === "team" with a dynamic providerId.
     enabled: enabled && !providerSourcesLoading && currentUsageSource?.audience === "team",
     includeSubscription: true,
     preferredProviderId:
@@ -303,9 +305,10 @@ export function useWorkspaceSidebarFooterUsageSummaryState({
     cacheKey: currentUsageSource?.teamSource?.id,
     refreshOnMount: false,
   });
-  // footer 是常驻入口，refreshOnMount: false 后冷启动没有其它
-  // 入口预热 entitlement，个人计划徽标缺失。可见时触发一次 access 刷新，复用共享
-  // 1 分钟 freshness window、失败退避和 in-flight 合并；hook disabled 时 refresh 是 no-op。
+  // The footer is a persistent entry; with refreshOnMount:false a cold start has no other
+  // entitlement warm-up and the personal-plan badge goes missing. Trigger one access refresh when
+  // visible, reusing the shared 1-minute freshness window, failure backoff, and in-flight
+  // dedupe; refresh is a no-op while the hook is disabled.
   useEffect(() => {
     for (const refresh of [
       zaiEntitlement.refresh,
@@ -336,7 +339,7 @@ export function useWorkspaceSidebarFooterUsageSummaryState({
           ]
         : []),
     ],
-    // 头像徽标使用账号的 Team entitlement；pricing 结果只负责额度来源和套餐详情。
+    // The avatar badge uses the account's Team entitlement; pricing results only feed quota source and plan details.
     hasTeamPlanEntitlement:
       providerFamilyDomain === "zai"
         ? Boolean(zaiTeamProvider)
@@ -368,8 +371,8 @@ export function useWorkspaceSidebarFooterUsageSummaryState({
           },
         ]
       : []),
-    // 原 team 分支硬判 bigmodelCodingPlan providerId，zai team source 走不进来。
-    // 改为统一按 audience === "team" 路由，覆盖 zai/bigmodel 两种 family 的 team source。
+    // The team branch hard-checked the bigmodelCodingPlan providerId, excluding zai team sources.
+    // Route uniformly by audience === "team", covering both families' team sources.
     ...(currentUsageSource?.audience === "team" && currentUsageSource.teamSource
       ? [
           {
@@ -450,7 +453,7 @@ export function WorkspaceSidebarFooterUsageSummaryContent({
         <BarChart3Icon className="size-4" />
         {intl.formatMessage({ id: "sidebar.usage.plan.openStats" })}
       </DropdownMenuItem>
-      {/* 产品要求：升级入口始终显示；未解析出当前套餐时由当前 provider family 决定品牌。 */}
+      {/* Product rule: the upgrade entry is always visible; before the current plan resolves, branding follows the active provider family. */}
       <DropdownMenuItem
         data-testid={TID_SIDEBAR_CODING_PLAN_UPGRADE_BUTTON}
         disabled={entryGate.status === "loading"}

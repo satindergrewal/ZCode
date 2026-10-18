@@ -12,8 +12,9 @@ type ArmsCustomEventDebugWindow = Window & {
 };
 
 /**
- * 仅 E2E 构建记录 renderer 实际提交给 desktop bridge 的 ARMS payload。
- * 缓冲保持有界，且生产构建不创建 window 字段，避免形成第二套持久化或回放通道。
+ * E2E builds only: record the ARMS payload the renderer actually submits to the desktop bridge.
+ * The buffer stays bounded and production builds never create the window field, avoiding a
+ * second persistence/replay channel.
  */
 export function recordArmsCustomEventForE2E(
   payload: ArmsCustomEventPayload,

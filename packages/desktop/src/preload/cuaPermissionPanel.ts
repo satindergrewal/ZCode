@@ -1,11 +1,11 @@
 /**
- * CUA 权限拖拽浮窗的 preload。
+ * Preload for the CUA permission drag panel.
  *
- * 只暴露这个浮窗真正需要的三件事，不复用主窗口那个庞大的 preload —— 浮窗是个浮在系统设置之上
- * 的无焦点窗口，攻击面越小越好。
+ * Exposes only what this panel needs instead of the main window's large preload: the panel is a
+ * focus-less window floating over System Settings; the smaller the attack surface the better.
  *
- * `startDrag` 必须是 send 而不是 invoke：Electron 要求在 dragstart 事件链路里同步发起原生拖拽，
- * invoke 的 Promise 往返会错过 OS 的拖拽手势窗口，表现为「按住拖动但什么都没被拖出来」。
+ * startDrag must be send, not invoke: Electron requires the native drag to start synchronously
+ * inside the dragstart chain; an invoke round trip misses the OS gesture and nothing gets dragged.
  */
 import { contextBridge, ipcRenderer } from "electron";
 import { PlatformChannels, type CuaPermissionKind, type Locale } from "@zcode/shared";
@@ -14,20 +14,20 @@ const CUA_PERMISSION_PANEL_STATE_CHANNEL = "zcode:cua-permission-panel-state";
 
 interface CuaPermissionPanelState {
   permission: CuaPermissionKind;
-  /** main 进程维护的 ZCode 当前界面语言；浮窗不得另读系统语言或 localStorage。 */
+  /** App UI locale maintained by main; the panel must not read system locale or localStorage. */
   locale: Locale;
-  /** 真实 ZCode 图标（data URL）；读不到时为 null，页面保留占位图形。 */
+  /** Real ZCode icon (data URL); null when unavailable and the page keeps its placeholder. */
   iconDataUrl: string | null;
 }
 
 contextBridge.exposeInMainWorld("cuaPermissionPanel", {
-  /** 挂载时预热已验证的 Helper 路径 + 指纹，让后续 dragstart 能同步 startDrag。 */
+  /** Prewarm the verified Helper path + fingerprint at mount so later dragstart can startDrag synchronously. */
   prepareDrag: () => ipcRenderer.invoke(PlatformChannels.PrepareCuaHelperPermissionDrag),
-  /** 同步发起原生文件拖拽。必须在 dragstart 处理器里直接调用。 */
+  /** Start the native file drag synchronously. Call directly inside the dragstart handler. */
   startDrag: () => ipcRenderer.send(PlatformChannels.StartCuaHelperPermissionDrag),
-  /** 拖拽手势结束，浮窗可以收走了。 */
+  /** Drag gesture finished; the panel can be dismissed. */
   notifyDragEnded: () => ipcRenderer.send(PlatformChannels.NotifyCuaHelperPermissionDragEnded),
-  /** 接收 main 推送的当前权限阶段与应用图标，用于切换文案和 tile 图标。 */
+  /// Main-pushed permission stage and app icon, driving copy and tile icon swaps.
   onState: (callback: (state: CuaPermissionPanelState) => void) => {
     const listener = (_event: unknown, payload: CuaPermissionPanelState) => callback(payload);
     ipcRenderer.on(CUA_PERMISSION_PANEL_STATE_CHANNEL, listener);

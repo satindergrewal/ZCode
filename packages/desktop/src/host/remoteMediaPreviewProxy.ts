@@ -105,7 +105,7 @@ export function createRemoteMediaPreviewProxy(options: {
   }
 
   function acquireRequestSlot(lease: MediaLease): MediaRequestSlot | null {
-    // 并发检查与递增之间一旦出现远端 await，多请求会同时越过 per-lease 上限。
+    // Any remote await between the check and the increment lets concurrent requests exceed the per-lease cap together.
     if (lease.activeRequests >= maxConcurrentRequests) {
       logBusy(lease, "lease");
       return null;

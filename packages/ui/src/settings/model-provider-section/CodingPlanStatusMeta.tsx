@@ -107,7 +107,7 @@ export function StartPlanStatusMeta({
     const effectiveAt = Date.parse(pendingTime);
     const remainingMs = effectiveAt - Date.now();
     if (!Number.isFinite(effectiveAt) || remainingMs < 0) return;
-    // setTimeout 存在约 24.8 天上限；长排期分段唤醒，到点后再切换刷新按钮。
+    // setTimeout caps out near 24.8 days; wake in segments for long schedules, then swap in the refresh button at the deadline.
     const timeout = window.setTimeout(
       () => setCurrentTime(Date.now()),
       Math.min(remainingMs + 1, 2_147_483_647),
@@ -138,8 +138,9 @@ export function StartPlanStatusMeta({
         },
       )
     : null;
-  // 产品语义：待生效时展示排期；到点但额度桶尚未同步时提供就地刷新；
-  // 对应额度桶出现后只保留过期日期。免费套餐无管理页，升级入口在卡片右侧。
+  // Product semantics: show the schedule while pending; offer in-place refresh once due but quota
+  // buckets have not synced; keep only the expiry date after the bucket appears. Free plans have no
+  // management page; the upgrade entry sits on the card's right.
   return (
     <span className="flex flex-wrap items-center gap-1.5 text-ui-base text-foreground-subtle">
       {pendingEffectiveTimeLabel ? (
@@ -148,8 +149,8 @@ export function StartPlanStatusMeta({
       <CodingPlanMetaSeparator visible={Boolean(pendingEffectiveTimeLabel && expireTimeLabel)} />
       {statusState === "refreshable" && onRefresh ? (
         <>
-          {/* 排期权益到点后服务端才创建额度桶，本地仍可能展示旧模型。
-              就地刷新只在尚未拿到额度桶时出现；立即生效和已同步成功的套餐不显示。 */}
+          {/* The server creates quota buckets only after a scheduled entitlement matures, so locals may still show old models.
+              In-place refresh appears only while no bucket has arrived; immediately-effective and synced plans never show it. */}
           <Button
             type="button"
             variant="outline"
@@ -172,7 +173,7 @@ export function StartPlanStatusMeta({
       ) : null}
       {expireTimeLabel ? (
         <>
-          {/* Start Plan 不展示 renew 时间，状态卡片只保留过期日期，避免把免费额度刷新时间误读成套餐续费。*/}
+          {/* Start Plan hides the renew time; status cards keep only expiry so the free-quota refresh time is not misread as a plan renewal.*/}
           <span className="whitespace-nowrap">{expireTimeLabel}</span>
         </>
       ) : null}
@@ -200,7 +201,7 @@ function resolveStartPlanStatusMetaState({
   }
   if (
     !hasQuota &&
-    // effective_at=0 会投影为 Unix Epoch，是立即生效哨兵值，不属于排期权益。
+    // effective_at=0 projects to the Unix Epoch; it is the immediately-effective sentinel, not a scheduled entitlement.
     effectiveTimes.some((milliseconds) => milliseconds > 0 && milliseconds <= now)
   ) {
     return "refreshable";
@@ -314,8 +315,8 @@ function formatCodingPlanSubscriptionDate(value: string, locale: string): string
     ...(isCurrentYear ? {} : { year: "numeric" }),
     month: "short",
     day: "numeric",
-    // 订阅接口返回的是日期语义，按本地时区格式化 ISO 零点会让美国时区显示成前一天。
-    // 同一年隐藏年份时也要按 UTC 判断，否则临界时区会把“今年”误判成去年/明年。
+    // The subscription API returns date-only semantics; formatting ISO midnight in local time would show the previous day for US timezones.
+    // The same-year year-hide check is UTC-based too, or edge timezones misread "this year" as last/next year.
     timeZone: "UTC",
   }).format(date);
 }
@@ -327,8 +328,8 @@ export function formatStartPlanExpireDate(value: string, locale: string, now = D
   }
 
   const isCurrentYear = date.getFullYear() === new Date(now).getFullYear();
-  // Start Plan 过去只展示到期日，同一天内无法判断额度具体何时失效。
-  // 过期时间按客户端本地时区补齐小时分钟，并继续仅在跨年时展示年份。
+  // Start Plan used to show only the expiry date, leaving the hour of quota expiry unknowable on the day itself.
+  // The expiry time gains hour:minute in the client's local timezone and keeps showing the year only across years.
   return new Intl.DateTimeFormat(locale, {
     ...(isCurrentYear ? {} : { year: "numeric" }),
     month: "short",

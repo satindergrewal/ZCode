@@ -15,9 +15,9 @@ interface ParsedSemver {
 function parseSemver(version: string): ParsedSemver | null {
   const normalized = version.trim().replace(/^v/i, "");
 
-  // 远端配置可能只传主版本号（如 "45"）或主次版本号（如 "4.5"），
-  // 严格 semver（X.Y.Z）解析会返回 null，导致 resolveForceUpdateRequirement
-  // 永远不触发。这里依次尝试标准版本和补齐版本，兼容服务端简写格式。
+  // Remote config may send major-only ("45") or major.minor ("4.5") versions;
+  // strict semver (X.Y.Z) parsing returns null and resolveForceUpdateRequirement
+  // never fires. Try the standard then the padded form, tolerating server shorthand.
   const strictMatch = normalized.match(
     /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/,
   );
@@ -30,7 +30,7 @@ function parseSemver(version: string): ParsedSemver | null {
     };
   }
 
-  // 补全：只有主版本号（"45" → "45.0.0"）
+  // Pad major-only ("45" -> "45.0.0")
   const majorOnly = normalized.match(/^(\d+)$/);
   if (majorOnly) {
     return {
@@ -41,7 +41,7 @@ function parseSemver(version: string): ParsedSemver | null {
     };
   }
 
-  // 补全：主版本号.次版本号（"4.5" → "4.5.0"）
+  // Pad major.minor ("4.5" -> "4.5.0")
   const majorMinor = normalized.match(/^(\d+)\.(\d+)$/);
   if (majorMinor) {
     return {

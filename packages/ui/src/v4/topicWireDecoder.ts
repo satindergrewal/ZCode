@@ -9,15 +9,15 @@ import { logger } from "@/logger.js";
 
 interface TopicWireDecoder {
   accept(wire: TopicWireFrameCandidate): void;
-  /** same-sub recovery：只清 fail-closed flag，保留 assembler ordinal tombstone。 */
+  /** Same-sub recovery: clear the fail-closed flag only, keep the assembler ordinal tombstone. */
   recover(topic: string, subscriptionId: string): void;
   discard(topic: string, subscriptionId: string): void;
   clear(): void;
 }
 
 /**
- * renderer 侧 physical → logical 原子边界。assembler 只在齐片且校验通过时
- * 产出 logical frame；30s timeout 用单个最近到期 timer 驱动，避免每片建 timer。
+ * Renderer-side physical-to-logical atomic boundary. The assembler emits a logical frame only when slices complete and validate;
+ * the 30s timeout runs on one latest-deadline timer, never one timer per slice.
  */
 export function createTopicWireDecoder<F extends { topic: string; subscriptionId: string }>(
   assembler: TopicWireFrameAssembler<F>,
@@ -39,9 +39,9 @@ export function createTopicWireDecoder<F extends { topic: string; subscriptionId
     }
     for (const { fault } of faults) {
       const key = routeKey(fault.topic, fault.subscriptionId);
-      // assembler.accept 会先 expire 旧 assembly，再处理当前 wire。若当前 wire 是
-      // 已完整校验的更高 ordinal recovery，同批旧 online timeout 已被它权威覆盖，
-      // 不得先上报 fault 再把 recovery 丢掉。
+      // assembler.accept expires the old assembly before handling the current wire. If that wire is
+      // a fully validated higher-ordinal recovery, the older online timeout in the same batch is authoritatively superseded:
+      // never report the fault and then drop the recovery.
       if (healingRoutes.has(key)) continue;
       failedInBatch.add(key);
       faultedRoutes.add(key);
@@ -53,8 +53,8 @@ export function createTopicWireDecoder<F extends { topic: string; subscriptionId
       if (event.kind !== "complete") continue;
       const key = routeKey(event.frame.topic, event.frame.subscriptionId);
       if (event.deliveryKind === "recovery") faultedRoutes.delete(key);
-      // 同一次 accept 可能是 [superseded fault(A), complete(A)]，同 route 必须
-      // fail closed；但 accept(B) 也会顺带 expire 其他 route A，不能因此误丢健康 B。
+      // One accept may be [superseded fault(A), complete(A)]; the same route must
+      // fail closed; but accept(B) also expires other routes A - never drop a healthy B because of that.
       if (failedInBatch.has(key) || faultedRoutes.has(key)) continue;
       deliver(event.frame, event.deliveryKind);
     }
@@ -81,9 +81,9 @@ export function createTopicWireDecoder<F extends { topic: string; subscriptionId
     accept(wire) {
       const key = routeKey(wire.topic, wire.subscriptionId);
       if (faultedRoutes.has(key)) {
-        // resync 在途时迟到旧 online 残片仍可能 fault 并关闭 route；
-        // 真正 recovery 随后会被旧 gate 永久吞掉。deliveryKind 是 publisher
-        // 权威信封事实，因此只有 exact recovery 可原子解 gate，绝不按 RPC 时序猜测。
+        // While a resync is in flight, a late stale online fragment can still fault and close the route;
+        // the real recovery would then be swallowed by the old gate forever. deliveryKind is publisher
+        // authoritative envelope fact, so only an exact recovery opens the gate atomically - never guess from RPC timing.
         if (wire.deliveryKind !== "recovery") return;
         faultedRoutes.delete(key);
         assembler.abort(wire.topic, wire.subscriptionId);
@@ -92,9 +92,9 @@ export function createTopicWireDecoder<F extends { topic: string; subscriptionId
       scheduleExpiry();
     },
     recover(topic, subscriptionId) {
-      // faultedRoutes 不能只靠 unsubscribe/discard 清理：否则 same-sub
-      // recovery 的更高 ordinal 会被永久吞掉。这里只解 fail-closed 门，assembler
-      // 的 settled ordinal 保留，迟到旧 fragment 仍会静默丢弃。
+      // faultedRoutes cannot be cleared by unsubscribe/discard alone: the higher-ordinal same-sub
+      // recovery would be swallowed forever. Only the fail-closed gate opens here; the assembler
+      // settled ordinal stays, and late stale fragments still drop silently.
       faultedRoutes.delete(routeKey(topic, subscriptionId));
       assembler.abort(topic, subscriptionId);
       scheduleExpiry();

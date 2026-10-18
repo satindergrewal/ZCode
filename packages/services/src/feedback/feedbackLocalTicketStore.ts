@@ -69,8 +69,9 @@ export class FeedbackLocalTicketStore {
 }
 
 function migrateStoredFeedbackTicket(ticket: StoredFeedbackTicket): StoredFeedbackTicket {
-  // 3.3.5 将「待评估」重命名为「已提交」，旧版匿名反馈仍会把旧值留在 tickets.json；
-  // 读取时不迁移或放行未知值会让状态元数据查找返回 undefined，点击「我的反馈」后渲染崩溃。
+  // 3.3.5 renamed pending-review to submitted; legacy anonymous feedback keeps the old value in
+  // tickets.json. Without migrating/passing unknown values on read, the status metadata lookup
+  // returns undefined and My Feedback crashes on render.
   const status = String(ticket.status);
   if (status === "待评估" || !isFeedbackTicketStatus(status)) {
     return { ...ticket, status: "已提交" };

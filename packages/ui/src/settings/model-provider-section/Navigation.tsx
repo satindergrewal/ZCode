@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 设置页 provider 导航同时承载分组、卡片化预置入口和拖拽排序，当前先集中维护交互边界。 */
+/* eslint-disable max-lines -- settings provider navigation carries grouping, card-style preset entries, and drag ordering; interaction boundaries stay centralized for now. */
 import {
   closestCenter,
   DndContext,
@@ -32,7 +32,7 @@ import type { ModelProviderNavGroup, ModelProviderNavItem } from "./constants.js
 import { useOptimisticReorder } from "./useOptimisticReorder.js";
 import { renderModelProviderNavIcon } from "./utils.js";
 
-// 侧栏会裁切水平溢出；排序只改变纵向位置，拖动时也必须保持 x=0。
+// The sidebar clips horizontal overflow; sorting only changes the vertical position, so dragging must keep x=0.
 const restrictToVerticalAxis: Modifier = ({ transform }) => ({ ...transform, x: 0 });
 
 function getSortableProviderId(

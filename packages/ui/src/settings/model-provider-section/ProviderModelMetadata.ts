@@ -1,4 +1,4 @@
-/* oxlint-disable eslint(max-lines) -- Model Config 弹窗的 Draft、校验与稀疏 Overlay 必须共享同一字段映射，避免 UI 产生第二套规则。 */
+/* oxlint-disable eslint(max-lines) -- the Model Config dialog's draft, validation, and sparse overlay must share one field mapping, so the UI never grows a second rule set. */
 import type { ProviderSettingsFormModel } from "@/lib/providerSettingsFormTypes.js";
 import type { ModelInputFormatData } from "@zcode/shared/model-config";
 import {
@@ -17,9 +17,9 @@ export interface ProviderModelDraftValues {
   inputFormatValue: ProviderModelInputFormatDraft;
   enabledValue?: boolean;
   useRecommendedConfigValue?: boolean;
-  /** 仅在本次 Draft 从固定模式切回推荐模式时清空已有 Overlay。 */
+  /** Clears the existing overlay only when this draft switches from fixed mode back to recommended mode. */
   clearPersonalConfigValue?: boolean;
-  /** 字段来源是用户意图，不依赖整份表单是否有效或数值是否恰好等于推荐。 */
+  /** Field membership is user intent; it never depends on overall form validity or a value coinciding with the recommendation. */
   overriddenFieldsValue?: readonly string[];
   supportsJsonSchemaOutputValue?: boolean;
   supportsNativeWebSearchValue?: boolean;
@@ -44,12 +44,13 @@ export type ProviderModelDraftCommitResult =
 export function createProviderModelDraftValues(
   model: ProviderSettingsFormModel,
 ): ProviderModelDraftValues {
-  // 配置不完整时编辑器就是修复入口，不能在打开前抛错；数值保留空输入，能力控件用保守初值。
+  // With an incomplete config the editor is the repair path; never throw before it opens. Keep empty
+  // number inputs and conservative defaults for capability toggles.
   const properties = model.config.properties ?? {};
   const inputFormat = properties?.inputFormat;
   return {
     idValue: model.modelId,
-    // 编辑器只把 Personal Overlay 当作真实输入；继承值由 UI 作为 placeholder 展示。
+    // The editor treats only the Personal Overlay as real input; inherited values render as placeholders.
     contextWindowValue:
       model.personalConfig.properties?.contextWindow == null
         ? ""
@@ -113,7 +114,8 @@ export function resolveProviderModelDraftCommit({
   draft: ProviderModelDraftValues;
 }): ProviderModelDraftCommitResult {
   if (draft.clearPersonalConfigValue && currentModel.inheritedConfig) {
-    // 切回推荐只重置比较基线，不能在最终提交时无条件清空，否则会吞掉重置后的新编辑。
+    // Switching back to recommended resets only the comparison baseline; never unconditionally clear
+    // at commit, or edits made after the reset would be swallowed.
     currentModel = {
       ...currentModel,
       personalConfig: clearManualModelConfig(currentModel.personalConfig),
@@ -168,7 +170,7 @@ export function resolveProviderModelDraftCommit({
   const effectiveEnabled = draft.enabledValue ?? currentModel.config.enabled ?? true;
   const currentEffectiveEnabled = currentModel.config.enabled ?? true;
   const effectiveProperties = {
-    // 系统字段不由编辑草稿产生；手动保存统一按可编辑 schema 提取。
+    // System fields never come from the edit draft; manual saves always extract via the editable schema.
     requiresMfjsToolSchema: currentModel.config.properties?.requiresMfjsToolSchema,
     contextWindow,
     inputFormat: {
@@ -198,7 +200,7 @@ export function resolveProviderModelDraftCommit({
     currentEffective: currentModel.config.properties,
     effective: effectiveProperties,
   });
-  // 数值显式填写即是覆盖；即使与推荐相等也保留，清空输入才表示撤销覆盖。
+  // An explicitly filled number is an override; keep it even when equal to the recommendation. Clearing the input is what revokes it.
   if (draft.contextWindowValue.trim())
     assignMutable(personalProperties, "contextWindow", contextWindow);
   else deleteMutable(personalProperties, "contextWindow");
@@ -236,7 +238,7 @@ export function resolveProviderModelDraftCommit({
     deleteMutable(sparsePersonalConfig, "properties");
 
   const inheritedMaxOption = inherited?.optionSpecs?.maxOutputTokens;
-  // Option Spec 不再拥有 default；该输入框唯一表达模型硬上限 max。
+  // Option specs no longer own a default; this input solely expresses the model's hard max.
   const currentEffectiveMaxOption = {
     ...currentModel.config.optionSpecs?.maxOutputTokens,
   };
@@ -335,8 +337,9 @@ function materializeEditorManagedPersonalConfig({
   current: ModelConfigObject;
   effective: ModelConfigObject;
 }): ModelConfigObject {
-  // enabled 由模型列表行单独管理，不随“跟随推荐配置”模式物化或清除。
-  // 只提取可编辑叶子；隐藏请求映射必须来自当前身份规则，不能由旧模型草稿冻结。
+  // Enabled is managed by the model-list row; never materialize or clear it with "follow recommended config".
+  // Extract editable leaves only; hidden request mappings must come from the current identity rules,
+  // never frozen from a stale model draft.
   return extractManualModelConfig({
     ...preserveEnabledPersonalConfig(current),
     properties: effective.properties,
@@ -351,7 +354,7 @@ function resolvePersonalBoolean<K extends string>(
   inherited: unknown,
   currentPersonal: boolean | null | undefined,
 ) {
-  // 未触碰的控件必须保留现有的稀疏 Overlay，不能因为 Effective 默认值而凭空写入 false。
+  // Untouched controls keep the existing sparse overlay; never materialize a false just because the Effective default says so.
   if (value === currentEffective) {
     return currentPersonal === undefined || currentPersonal === null
       ? {}

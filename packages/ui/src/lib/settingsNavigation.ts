@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 设置导航意图集中管理 sessionStorage、事件桥接和解析校验，拆分会让一次性意图消费顺序更难保证。 */
+/* eslint-disable max-lines -- settings-navigation intent centralizes sessionStorage, event bridging, and parse validation; splitting it would make one-shot intent consumption order harder to reason about. */
 import { logger } from "@/logger.js";
 
 export type SettingsSectionId =
@@ -34,13 +34,13 @@ const SETTINGS_MODEL_PROVIDER_ID_INTENT_KEY = "zcode-settings-model-provider-id-
 const SETTINGS_SECTION_INTENT_EVENT = "zcode:settings-section-intent",
   SETTINGS_LAST_SECTION_STORAGE_KEY = "zcode-settings-last-section";
 const HIDDEN_SETTINGS_SECTIONS = new Set<SettingsSectionId>([
-  // 产品语义：定时任务是 workspace 主视图，不能再作为设置页分区出现。
-  // 注意：hooks 已是正式设置页分区，不在此列。
+  // Product semantics: automations live in the workspace main view, not as a settings section.
+  // Note: hooks is already a real settings section, so it is not listed here.
   "automations",
-  // 旧插件市场已迁出设置页；保留 id 只用于迁移历史偏好和旧调用。
+  // Legacy plugin market moved out of Settings; the id remains only for migrating old preferences and callers.
   "plugins",
-  // 工作区搜索（.zcodeignore）设置入口先隐藏：规则文件仍生效并可手动编辑，
-  // 编辑页代码保留，放开时从这里移除即可。
+  // Workspace search (.zcodeignore) entry hidden for now: the rules file still applies and stays
+  // hand-editable; editor code is kept, remove it from here to re-enable.
   "workspaceFileSearch",
   "computerUse",
 ]);
@@ -100,9 +100,9 @@ function getLocalStorage(): Storage | null {
   try {
     return window.localStorage;
   } catch (error) {
-    // 部分 WebView / 移动远控容器可能禁用 localStorage。
-    // 设置页分区记忆只是 UI 偏好，存储不可用时回退默认入口，不应阻断打开设置页。
-    logger.warn("[settingsNavigation] localStorage 不可用", {
+    // Some WebView / mobile-remote containers may disable localStorage.
+    // Last-section memory is a UI preference only; fall back to the default section, never block opening Settings.
+    logger.warn("[settingsNavigation] localStorage unavailable", {
       error: error instanceof Error ? error.message : String(error),
     });
     return null;
@@ -119,7 +119,7 @@ function readLastSettingsSectionPreference(
 
   try {
     const raw = storage.getItem(SETTINGS_LAST_SECTION_STORAGE_KEY);
-    // 旧 section id 已并入 plugin；迁移持久化值，避免继续传播历史路由语义。
+    // Legacy section id merged into plugin; migrate the persisted value instead of propagating old routing semantics.
     if (raw === "plugins") {
       storage.setItem(SETTINGS_LAST_SECTION_STORAGE_KEY, "plugin");
       setPendingPluginTab("plugins");
@@ -129,7 +129,7 @@ function readLastSettingsSectionPreference(
       storage.setItem(SETTINGS_LAST_SECTION_STORAGE_KEY, "skill");
       return "skill";
     }
-    // 旧版“代码预览”已并入“外观”，保留用户上次停留位置的迁移语义。
+    // Legacy "code preview" merged into "appearance"; keep the last-visited-section migration semantics.
     if (raw === "codePreview") {
       storage.setItem(SETTINGS_LAST_SECTION_STORAGE_KEY, "appearance");
       return "appearance";
@@ -141,7 +141,7 @@ function readLastSettingsSectionPreference(
       storage.removeItem(SETTINGS_LAST_SECTION_STORAGE_KEY);
     }
   } catch (error) {
-    logger.warn("[settingsNavigation] 读取上次设置分区失败", {
+    logger.warn("[settingsNavigation] Failed to read last settings section", {
       error: error instanceof Error ? error.message : String(error),
     });
   }
@@ -159,7 +159,7 @@ export function writeLastSettingsSectionPreference(section: SettingsSectionId): 
   try {
     storage.setItem(SETTINGS_LAST_SECTION_STORAGE_KEY, resolvedSection);
   } catch (error) {
-    logger.warn("[settingsNavigation] 写入上次设置分区失败", {
+    logger.warn("[settingsNavigation] Failed to persist last settings section", {
       error: error instanceof Error ? error.message : String(error),
     });
   }
@@ -169,9 +169,9 @@ export function consumeInitialSettingsSection(
   fallbackSection: SettingsSectionId = "general",
 ): SettingsSectionId {
   const lastSection = readLastSettingsSectionPreference(fallbackSection);
-  // 普通打开设置页以前把 consumePendingSettingsSection 的 fallback 写死为
-  // modelProvider，导致没有显式跳转意图时也总进“模型供应商”。这里先读上次停留分区，
-  // 再让 quickpick / 管理模型这类一次性意图覆盖它，保留显式入口的直达语义。
+  // consumePendingSettingsSection's fallback used to be hardcoded to modelProvider, so opening
+  // Settings with no explicit intent always landed on "Model Providers". Read the last section
+  // first, then let one-shot intents (quick pick / manage models) override it, keeping direct-entry semantics.
   return resolveSettingsSection(consumePendingSettingsSection(lastSection), lastSection);
 }
 
@@ -180,13 +180,13 @@ export function setPendingSettingsSection(section: SettingsSectionId): void {
 }
 
 export function setPendingSettingsUsageIntent(): void {
-  // 使用统计入口只负责打开 Usage 分区，不强行覆盖用户要看的具体统计 tab。
+  // The usage entry only opens the Usage section; never override the specific stats tab the user wants.
   setPendingSettingsSectionIntent("usage");
 }
 
 export function setPendingSettingsUsageCodingPlanIntent(): void {
-  // 剩余额度详情入口需要直达 Coding Plan 使用统计；
-  // 头像菜单入口则只打开 Usage 分区，避免覆盖用户上次查看的统计 tab。
+  // The remaining-quota entry must land on Coding Plan usage stats, while the
+  // avatar-menu entry only opens Usage to preserve the user's last stats tab.
   setPendingSettingsSectionIntent("usage", { usageTab: "codingPlan" });
 }
 
@@ -253,11 +253,11 @@ export function setPendingSettingsSectionIntent(
       window.sessionStorage.removeItem(SETTINGS_MODEL_PROVIDER_ID_INTENT_KEY);
     }
   } catch {
-    // 忽略浏览器存储异常，不影响主流程。
+    // Ignore browser storage errors; not fatal to the main flow.
   }
 
-  // 设置页已经打开时不会重新挂载，单纯写 sessionStorage 没有订阅者会响应。
-  // 同窗口补发自定义事件，让已打开的 SettingsPage 也能即时跳到 quickpick 指定分区。
+  // An already-mounted SettingsPage does not remount, so a bare sessionStorage write has no subscriber.
+  // Re-dispatch the custom event in this window so the open SettingsPage jumps to the quick-pick section immediately.
   window.dispatchEvent(
     new CustomEvent<SettingsSectionIntentEventDetail>(SETTINGS_SECTION_INTENT_EVENT, {
       detail: {
@@ -285,7 +285,7 @@ function clearPendingSettingsSectionIntent(): void {
     window.sessionStorage.removeItem(SETTINGS_PLUGIN_ORIGIN_INTENT_KEY);
     window.sessionStorage.removeItem(SETTINGS_PLUGIN_SCOPE_KEY_INTENT_KEY);
   } catch {
-    // 忽略浏览器存储异常，不影响主流程。
+    // Ignore browser storage errors; not fatal to the main flow.
   }
 }
 
@@ -303,14 +303,14 @@ function consumePendingSettingsSection(
     }
 
     if (raw === "skills") {
-      // 旧 Skills 使用复数 id；迁移到当前独立 skill 分区。
+      // Legacy Skills used a plural id; migrate to the standalone skill section.
       return "skill";
     }
     if (raw && isSettingsSectionId(raw)) {
       return resolveSettingsSection(raw, fallbackSection);
     }
   } catch {
-    // 忽略浏览器存储异常，不影响主流程。
+    // Ignore browser storage errors; not fatal to the main flow.
   }
 
   return fallbackSection;
@@ -321,7 +321,7 @@ function setPendingPluginTab(tab: SettingsPluginTabTarget): void {
   try {
     window.sessionStorage.setItem(SETTINGS_PLUGIN_TAB_INTENT_KEY, tab);
   } catch {
-    // 忽略浏览器存储异常，不影响设置页打开。
+    // Ignore browser storage errors; do not block opening Settings.
   }
 }
 
@@ -361,7 +361,7 @@ export function clearPendingSettingsPluginScopeKey(): void {
   try {
     window.sessionStorage.removeItem(SETTINGS_PLUGIN_SCOPE_KEY_INTENT_KEY);
   } catch {
-    // 忽略浏览器存储异常，不影响主流程。
+    // Ignore browser storage errors; not fatal to the main flow.
   }
 }
 
@@ -370,7 +370,7 @@ export function clearPendingSettingsPluginOrigin(): void {
   try {
     window.sessionStorage.removeItem(SETTINGS_PLUGIN_ORIGIN_INTENT_KEY);
   } catch {
-    // 忽略浏览器存储异常，不影响设置页打开。
+    // Ignore browser storage errors; do not block opening Settings.
   }
 }
 
@@ -386,7 +386,7 @@ export function consumePendingSettingsUsageTab(): SettingsUsageTabTarget | undef
     }
     return raw === "app" || raw === "codingPlan" ? raw : undefined;
   } catch {
-    // 忽略浏览器存储异常，不影响主流程。
+    // Ignore browser storage errors; not fatal to the main flow.
     return undefined;
   }
 }
@@ -408,7 +408,7 @@ export function consumePendingSettingsModelProviderTarget():
       providerId: providerId.trim(),
     };
   } catch {
-    // 忽略浏览器存储异常，不影响主流程。
+    // Ignore browser storage errors; not fatal to the main flow.
     return undefined;
   }
 }
@@ -424,8 +424,9 @@ export function shouldFallbackSettingsUsageTabToApp({
   loadingModelProviders: boolean;
   showCodingPlanTab: boolean;
 }): boolean {
-  // Coding Plan 跳转意图可能先于 provider/entitlement 数据完成加载。
-  // 只有确认不再 loading 且仍没有有效套餐时才回退到 App Usage，避免“更多”点击后被首帧误改回默认 tab。
+  // A Coding Plan intent can land before provider/entitlement data finishes loading.
+  // Fall back to App Usage only once loading is done and no valid plan exists, so the first
+  // frame cannot flip the tab back right after the "more" click.
   return (
     activeTab === "codingPlan" &&
     !showCodingPlanTab &&
@@ -444,9 +445,9 @@ export function addPendingSettingsSectionListener(
   const handleIntent = (event: Event) => {
     const detail = (event as CustomEvent<SettingsSectionIntentEventDetail>).detail;
     if (detail?.section && isSettingsSectionId(detail.section)) {
-      // 设置页已打开时，事件已经承载了这次跳转意图。
-      // 这里同步清掉 sessionStorage，避免用户随后切到别的分区并退出后，
-      // 下次挂载又被陈旧 pending 意图覆盖“上次停留分区”。
+      // With Settings already open, the event itself carries this navigation intent.
+      // Clear sessionStorage now so that after the user switches sections and leaves, a stale
+      // pending intent cannot override the last-visited section on the next mount.
       clearPendingSettingsSectionIntent();
       listener(detail.section, detail);
     }

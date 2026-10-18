@@ -15,8 +15,8 @@ export function normalizeModelToolName(
     const hasClosableToolCallId =
       typeof toolCallId === "string" && toolCallId.trim().length > 0;
     if (context.providerExecuted !== true && hasClosableToolCallId) {
-      // client-executed 的空名调用仍可用原 id 闭合。在 Adapter
-      // 直接抛错的话，模型收不到同 id 的 tool error，整个 turn 因而停止。
+      // Empty-name client-executed calls still close with the original id. Throwing in the adapter
+      // would leave the model without a same-id tool error and stop the whole turn.
       return value;
     }
   }

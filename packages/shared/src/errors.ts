@@ -49,8 +49,8 @@ export function stringifyUnknownValue(value: unknown): string {
       return serialized;
     }
   } catch {
-    // 某些协议错误对象会带循环引用。
-    // 这里吞掉 JSON 序列化异常，避免在展示原始错误时再制造第二个错误。
+    // Some protocol error objects carry cyclic references.
+    // Swallow JSON serialization failures here; never mint a second error while presenting the first.
   }
 
   return String(value);
@@ -61,8 +61,8 @@ export function normalizeUnknownError(error: unknown): NormalizedUnknownError {
   if (candidate instanceof Error) {
     const errorWithCode = candidate as Error & { code?: unknown };
     return {
-      // 有些运行时 Error.message 可能为空字符串。
-      // 这里按 message -> name -> String 的顺序兜底，确保前端始终能拿到可展示的文本。
+      // Some runtimes leave Error.message empty.
+      // Fall back message -> name -> String so the frontend always has displayable text.
       message: candidate.message || candidate.name || String(candidate),
       code: normalizeErrorCode(errorWithCode.code),
     };

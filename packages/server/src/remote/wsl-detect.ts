@@ -12,9 +12,9 @@ function decodeWslOutput(buffer: Buffer): string {
     return "";
   }
 
-  // `wsl.exe -l -v` 在 Windows 上常返回 UTF-16LE。
-  // 如果这里直接按 UTF-8 解码，行内会夹满 `\0`，distro 解析会全部失效。
-  // 通过检测 NUL 字节优先走 UTF-16LE，可以同时兼容 UTF-8/UTF-16LE 两种输出。
+  // `wsl.exe -l -v` often returns UTF-16LE on Windows. Decoding as UTF-8 fills
+  // lines with `\0` and breaks every distro parse. Prefer UTF-16LE when NUL bytes
+  // are present, covering both UTF-8 and UTF-16LE outputs.
   if (buffer.includes(0)) {
     return buffer.toString("utf16le");
   }
@@ -123,8 +123,8 @@ function getCachedDiscovery<T>(
   };
   cache.set(executor, entry);
   void entry.promise.catch(() => {
-    // 临时 WSL CLI 错误不能把 rejected Promise 固化到 TTL 结束，
-    // 后续显式重试需要立刻重新执行探测。
+    // A transient WSL CLI error must not pin the rejected Promise until TTL
+    // expiry; an explicit retry should re-probe immediately.
     if (cache.get(executor) === entry) {
       cache.delete(executor);
     }

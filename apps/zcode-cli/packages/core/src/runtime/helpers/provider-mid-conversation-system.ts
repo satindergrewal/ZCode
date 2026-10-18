@@ -76,7 +76,7 @@ export function projectMidConversationSystemEntries(
   };
 
   for (const entry of entries) {
-    // 中途输入是因果边界：不能被普通 reminder 越过，也不能越过后来的 user。
+    // Mid-conversation input is a causal boundary: no plain reminder may jump it, nor may it jump a later user.
     const hasIncoming = pending.some((item) => isPresentedInput(item.entry));
     const nextIsUser = !isRuntimeAttachmentEntry(entry) && entry.message.role === "user";
     if (pending.length > 0 && (isPresentedInput(entry) || (hasIncoming && nextIsUser)))
@@ -111,16 +111,16 @@ function midConversationSystemText(entry: RuntimeMessageEntry): string | undefin
 
 function shouldFlushMidConversationSystemBefore(entry: RuntimeMessageEntry): boolean {
   if (isRuntimeAttachmentEntry(entry)) return false;
-  // pending system reminder 需要等到 assistant 或系统边界再落点，
-  // 避免插入同一组 tool results 中间导致 provider-visible 顺序非法。
+  // Pending system reminders must wait for an assistant or system boundary to land,
+  // or they would split a tool-result group into an illegal provider-visible order.
   return entry.message.role === "assistant" || entry.message.role === "system";
 }
 
 function canAnchorMidConversationSystemAfter(entry: ProjectedRuntimeMessageEntry): boolean {
   if (isRuntimeAttachmentEntry(entry)) return false;
   const message = entry.message;
-  // mid-conversation system 的合法 anchor 对齐 provider-visible role，
-  // model-only user（如目标续跑）仍然是 user 消息，不能因内部 source metadata 被误降级。
+  // Legal mid-conversation-system anchors align with provider-visible roles;
+  // a model-only user (e.g. goal continuation) is still a user message and must not be downgraded by internal source metadata.
   if (message.role === "tool") return true;
   return message.role === "user";
 }
@@ -145,12 +145,12 @@ function validateMidConversationSystemPositions(
       continue;
     }
 
-    // mid-conversation system 只有在 provider 合法边界才保留；
-    // 其他位置降级为旧的 user system-reminder，避免在请求体中生成非法 role 顺序。
+    // Mid-conversation system survives only at provider-legal boundaries;
+    // elsewhere degrade to the legacy user system-reminder, keeping the request body role order legal.
     const fallback: RuntimeMessageEntry = {
       message: {
         role: "user",
-        // MCS 正文未经过 user 包装，降级必须自行转义，不能假设 producer 已处理。
+        // MCS bodies were never user-wrapped, so the downgrade must escape them itself — never assume the producer did.
         content: wrapSystemReminder(
           sanitizeSystemReminderBody(entry.midSystemProjection.fallbackBody),
         ),
@@ -184,8 +184,8 @@ function isProjectedMidSystemEntry(
 export function moveLegacySystemRemindersAfterToolResultRun(
   entries: readonly ProjectedRuntimeMessageEntry[],
 ): ProjectedRuntimeMessageEntry[] {
-  // legacy/fallback system-reminder 是普通 user text；
-  // 若夹在同一组 tool results 中间，Anthropic 序列化只会合并 role，不会自动把 tool_result 排回 text 前。
+  // The legacy/fallback system-reminder is plain user text;
+  // when it lands inside a tool-result group, Anthropic serialization merges roles only and will not reorder tool_result before text.
   const projected: ProjectedRuntimeMessageEntry[] = [];
   const pendingLegacyReminders: ProjectedRuntimeMessageEntry[] = [];
 

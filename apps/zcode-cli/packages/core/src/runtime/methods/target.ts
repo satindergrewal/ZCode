@@ -146,8 +146,8 @@ export async function executeTargetContinuationWithOutcome(
     };
   }
   const latestTarget = await this.readSessionTargetForContext(traceContext);
-  // 目标校验请求可能在用户点击 Stop 后才返回；队列会保持 stopRequested，
-  // 但 verifier 拿到的是校验开始前的 active target。这里必须重读目标状态，避免用旧对象继续续跑。
+  // Verification may return after Stop; the queue keeps stopRequested
+  // while the verifier holds the pre-start target; re-read state, never continue stale.
   if (
     !latestTarget ||
     latestTarget.status !== "active" ||
@@ -186,9 +186,9 @@ export async function executeTargetContinuationWithOutcome(
 
   const result = await this.executeTurnCommand(prompt, undefined, {
     abortSignal: options.abortSignal,
-    // session/send 期间触发的目标自动续跑仍属于同一次用户提交。
-    // 若这里丢掉 inputId，最终 turn.completed 会回落到 runtime trace，
-    // 桌面端 activeInputId 对不上后会一直停在 streaming/loading。
+    // A target auto-continuation during session/send belongs to that user submission.
+    // Dropping inputId drops the final turn.completed to the runtime trace,
+    // and desktop activeInputId mismatch hangs in streaming/loading.
     inputId: options.inputId,
     intent: options.intent,
     inputSource: "goal-continuation",

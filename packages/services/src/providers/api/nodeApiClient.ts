@@ -68,8 +68,8 @@ function resolveRequestHeaders(
     return headers;
   }
 
-  // ZCode 后端请求以前只有部分业务路径手动补来源头。
-  // 统一在 ApiClient 出口按 endpoint origin 注入，避免 OAuth/config/billing/snapshot 等链路遗漏。
+  // ZCode backend requests set source headers manually on some paths only;
+  // inject them at the ApiClient boundary per endpoint origin so no OAuth/config/billing path misses.
   return withZCodeEndpointHeaders(headers, endpointOrigin);
 }
 
@@ -119,7 +119,7 @@ export class NodeApiClient implements ApiClient {
         resolveRequestHeaders(requestInput, init?.headers, activeEndpointOrigin),
       );
       if (isRequestForEndpoint(requestInput, activeEndpointOrigin)) {
-        // 调试说明：这里只记录 header key，避免 Authorization / token 等敏感值落盘。
+        // Debugging: log header keys only, keeping Authorization/token values out of logs.
         log.debug(undefined, "zcode endpoint request headers prepared", {
           headerKeys: readHeaderKeys(requestHeaders),
           method,

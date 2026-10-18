@@ -1,4 +1,4 @@
-// 本地验收接收器：保留最终 OTLP 解码证据，不拦截内部埋点调用。
+// Local acceptance receiver: keeps final OTLP decoding evidence without intercepting internal instrumentation calls.
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import { gunzip } from "node:zlib";

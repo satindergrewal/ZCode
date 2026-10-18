@@ -130,8 +130,8 @@ export async function resolveStartupWindowBootstrap({
         ? persistedActiveSession.workspacePath
         : undefined;
     if (unavailableWorkspacePath) {
-      // 上次激活 workspace 被移动或删除后，Agent 仍需保留原业务路径读取历史，
-      // 但子进程 cwd 必须落在真实存在的目录；conversation backing workspace 只承担 cwd 兜底。
+      // When the last-active workspace moved/was deleted, the agent keeps the original path for history,
+      // but child cwd must exist; the conversation backing workspace is cwd fallback only.
       await mkdir(conversationWorkspaceDir, { recursive: true });
       logger?.warn?.(
         "[startup-workspace] active local workspace unavailable; using read-only restore:",
@@ -145,9 +145,9 @@ export async function resolveStartupWindowBootstrap({
     const activeSession =
       localActiveSessionIndex == null ? undefined : sessions[localActiveSessionIndex];
     if (activeSession?.kind === "local") {
-      // 被动 sessions-index 全量恢复不能再启动全部 workspace，但只预热当前一个又让
-      // 用户在最近项目间切换重新承担完整冷启动。Main 在唯一启动边界固定选出最近 3 个，
-      // Host 仍走原 initializeWorkspace 路径；失败不继续扫描第 4 个补位。
+      // Passive full sessions-index restore must not spawn every workspace, yet warming one pushes
+      // full cold starts onto every project switch. Main fixes the most recent 3 at the single startup
+      // boundary; the Host keeps initializeWorkspace and never scans a 4th to backfill.
       const agentWarmupTargets = resolveStartupAgentWarmupTargets(settings, {
         workspacePath: activeSession.workspacePath,
       });
@@ -159,8 +159,8 @@ export async function resolveStartupWindowBootstrap({
     return unavailableWorkspacePath ? { unavailableWorkspacePath } : {};
   }
 
-  // UI 可以没有项目，但 Agent 必须始终有真实 cwd。首次启动统一预热
-  // app-managed conversation backing workspace，不能再创建会被误认成项目的 ZCodeProject。
+  // The UI may have no project, but the agent always needs a real cwd. First start warms the
+  // app-managed conversation backing workspace; no ZCodeProject that reads as a user project.
   await mkdir(conversationWorkspaceDir, { recursive: true });
   logger?.info?.("[startup-workspace] using conversation workspace:", conversationWorkspaceDir);
   return {

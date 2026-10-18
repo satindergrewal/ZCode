@@ -8,11 +8,11 @@ interface PluginConfigPatch {
 }
 
 /**
- * 构造 Plugin 配置写入 patch。
+ * Build the plugin-config write patch.
  *
- * `configuredOptions` 是当前 scope 的 effective 值，不能在保存时当作整份 draft
- * 写回；否则 Workspace 页面只修改一个字段，也会把 User/default 的其它字段固化成
- * Workspace override。只有明确产生 draft 的字段才属于本次写入。
+ * configuredOptions is the current scope's effective values; never write it back as a whole draft on save,
+ * or a Workspace page changing one field would also fossilize User/default's other fields into a
+ * Workspace override. Only fields that explicitly produced a draft belong to this write.
  */
 export function buildPluginConfigPatch(
   plugin: Pick<ZCodePluginInfo, "userConfig">,
@@ -32,7 +32,7 @@ export function buildPluginConfigPatch(
       continue;
     }
 
-    // Sensitive 的空字符串仍表示“不修改已有值”，只有 null 才是显式清除。
+    // An empty sensitive string still means leave-existing-alone; only null explicitly clears.
     if (option.sensitive && draft === "") continue;
 
     if (option.type === "number") {

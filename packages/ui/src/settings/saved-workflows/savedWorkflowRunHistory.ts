@@ -1,8 +1,9 @@
-// 运行历史的归组与呈现。
-// 归属只按 `dwf_run.name === 工作流名`；模型另起名字的 run 不归任何工作流，而不是猜。
+// Run-history grouping and presentation.
+// Attribution matches only `dwf_run.name === workflow name`; a run the model renamed belongs to no
+// workflow rather than being guessed.
 import type { ZCodeSavedWorkflowRun, ZCodeSavedWorkflowRunStatus } from "@zcode/shared";
 
-/** 每个名字下 `updatedAt` 最新的一行（服务端按 time_updated 倒序，这里只取首见）。 */
+/** The newest `updatedAt` row per name (the server sorts by time_updated desc; keep first sight only). */
 export function lastRunByWorkflowName(
   runs: readonly ZCodeSavedWorkflowRun[],
 ): Map<string, ZCodeSavedWorkflowRun> {
@@ -18,9 +19,9 @@ export function lastRunByWorkflowName(
 type SavedWorkflowRunBadgeKind = "completed" | "errored" | "running" | "stopped" | "never";
 
 /**
- * 卡片「上次运行」徽标的四态 + 「尚未运行」。pending 与 running 同画成活动态。
- * 终态词汇为 errored / stopped；老 CLI 仍可能发
- * `failed` / `cancelled`，按同一语义折进去而不是让徽标缺席。
+ * The card's "last run" badge: four states plus "never". pending renders as running.
+ * Terminal vocabulary is errored/stopped; older CLIs may still send `failed`/`cancelled` — fold them
+ * in by the same semantics instead of leaving the badge absent.
  */
 export function savedWorkflowRunBadgeKind(
   status: ZCodeSavedWorkflowRunStatus | "errored" | "stopped" | "failed" | "cancelled" | undefined,
@@ -42,7 +43,7 @@ export function savedWorkflowRunBadgeKind(
   }
 }
 
-/** 运行历史行的实参芯片：`key=value`，值按 JSON 压缩。 */
+/** Run-history argument chips: `key=value`, values JSON-compacted. */
 export function formatSavedWorkflowRunArgs(args: Record<string, unknown> | undefined): string[] {
   if (!args) return [];
   return Object.entries(args).map(
@@ -50,7 +51,7 @@ export function formatSavedWorkflowRunArgs(args: Record<string, unknown> | undef
   );
 }
 
-/** 一次 run 的时长（毫秒）；非终态按 now 计。 */
+/** A run's duration (ms); non-terminal states count up to now. */
 export function savedWorkflowRunDurationMs(run: ZCodeSavedWorkflowRun, now: number): number {
   const end = run.status === "pending" || run.status === "running" ? now : run.updatedAt;
   return Math.max(0, end - run.createdAt);

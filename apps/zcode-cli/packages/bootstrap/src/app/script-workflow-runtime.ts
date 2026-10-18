@@ -54,7 +54,7 @@ type ScriptWorkflowRunOptions = {
 } & Parameters<PrepareUserExecutionBoundary>[0];
 
 export class ScriptWorkflowRuntime {
-  // 与 workflow run service / 进程级治理器同一份天花板实现；legacy 工具仍只有本地 limiter，不接治理器。
+  // Same ceiling implementation as the workflow run service / process-wide governor; legacy tools keep a local limiter only, not the governor.
   private readonly concurrency = resolveWorkflowConcurrencyCeiling();
   private readonly limiter = new WorkflowLimiter(this.concurrency);
   private callIndex = 0;

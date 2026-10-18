@@ -30,19 +30,19 @@ interface FeedbackUiState {
   featureRequestOpen: boolean;
   tab: FeedbackTab;
   submitDraft: FeedbackSubmitDraft | null;
-  /** 仅查看指定后台提交时设置；新建反馈必须保持为 null */
+  /** Set only when viewing one background submission; new feedback must keep this null */
   submissionJobId: string | null;
-  /** 打开"我的反馈"列表时，可选地高亮某条工单 */
+  /** When opening "my feedback", optionally highlight one ticket */
   selectedTicketId: string | null;
-  /** 打开后立刻聚焦到提交表单 */
+  /** Focus the submit form right after opening */
   openSubmit: (draft?: FeedbackSubmitDraft) => void;
-  /** 打开指定后台提交任务的进度弹窗 */
+  /** Open the progress dialog of the given background submission */
   openSubmissionJob: (jobId: string) => void;
-  /** 打开独立产品需求反馈弹窗 */
+  /** Open the standalone feature-request dialog */
   openFeatureRequest: () => void;
-  /** 打开后立刻聚焦到工单列表，可选 highlight */
+  /** Focus the ticket list after opening, with optional highlight */
   openTickets: (ticketId?: string) => void;
-  /** 切换 Tab，但不关闭 dialog */
+  /** Switch tab without closing the dialog */
   setTab: (tab: FeedbackTab) => void;
   setSelectedTicketId: (ticketId: string | null) => void;
   close: () => void;
@@ -57,8 +57,8 @@ export const useFeedbackStore = create<FeedbackUiState>((set) => ({
   selectedTicketId: null,
   openSubmit: (draft) =>
     set({
-      // “问题上报”是新建入口，不能隐式续接上一次仍在上传的 job，
-      // 否则新表单会继承旧 job 的 submitting 状态并阻止用户继续提交。
+      // "bug report" is the fresh-entry path and must not silently resume a still-uploading job,
+      // or the new form inherits the old job's submitting state and blocks submission.
       open: true,
       featureRequestOpen: false,
       tab: "submit",
@@ -77,7 +77,8 @@ export const useFeedbackStore = create<FeedbackUiState>((set) => ({
     }),
   openFeatureRequest: () =>
     set({
-      // 需求反馈和问题上报是两个独立 Dialog，必须互斥打开，避免后台浮层或快捷入口叠出双弹窗。
+      // Feature request and bug report are separate dialogs and mutually exclusive on open, so
+      // background layers or shortcut entries cannot stack two dialogs.
       open: false,
       featureRequestOpen: true,
       submitDraft: null,

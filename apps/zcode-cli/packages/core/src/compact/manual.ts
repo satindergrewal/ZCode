@@ -102,8 +102,8 @@ export function buildManualCompactBoundary(
 export function estimateMessageTokens(messages: readonly CompactModelMessage[]): number {
   return messages.reduce((total, message) => {
     let estimatedCharacterCount = modelMessageContentToTokenEstimateText(message.content).length;
-    // assistant toolCalls 独立保存在 content 之外，旧估算只读取 content，
-    // 大型工具入参会被完整发给 provider，却在 auto compact 和 preflight 中计为 0。
+    // Assistant toolCalls are stored apart from content; the legacy estimate read only content,
+    // so large tool inputs went to the provider in full yet counted as 0 in auto compact and preflight.
     for (const toolCall of message.toolCalls ?? []) {
       estimatedCharacterCount += (
         toolCall.name + stringifyToolCallInputForTokenEstimate(toolCall.input)
@@ -117,8 +117,8 @@ function stringifyToolCallInputForTokenEstimate(input: unknown): string {
   try {
     return JSON.stringify(input ?? {}) ?? EMPTY_TOOL_CALL_INPUT_JSON;
   } catch {
-    // tool_use 解析失败时降级为空对象的 JSON 表示，供 estimator 估算。
-    // ZCode 的模型输入仍可能包含未知内容；异常输入不能让本地预算估算中断 compact。
+    // Fall back to the JSON form of an empty object when tool_use parsing fails, so the estimator still has input.
+    // Model input can still contain unknown shapes; malformed entries must not break the local budget estimate mid-compact.
     return EMPTY_TOOL_CALL_INPUT_JSON;
   }
 }
@@ -126,9 +126,9 @@ function stringifyToolCallInputForTokenEstimate(input: unknown): string {
 function modelMessageContentToTokenEstimateText(content: ModelMessageContent): string {
   if (typeof content === "string") return content;
 
-  // modelMessageContentToText 是“可见正文”投影，会有意隐藏 reasoning；
-  // compact fallback 却把它当作 provider 上下文体积，导致无 usage anchor 时 reasoning 全部计 0。
-  // token 估算使用独立投影，避免改变正文、memory、错误文案等既有消费者的语义。
+  // modelMessageContentToText is a visible-body projection that deliberately hides reasoning;
+  // the compact fallback treated it as the provider context size, counting all reasoning as 0 without a usage anchor.
+  // Token estimation uses a dedicated projection so existing consumers (body, memory, error copy) keep their semantics.
   return content
     .map((block) =>
       block.type === "reasoning" ? block.text : modelMessageContentBlockToText(block),

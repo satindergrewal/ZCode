@@ -43,11 +43,11 @@ export function decodeProviderConfigFile(input: unknown): ProviderConfigLayerUpd
   let candidate = input;
   let version = readSchemaVersion(candidate);
   if (version === null) {
-    throw new UnsupportedProviderConfigVersionError("Provider Config 缺少 schemaVersion", null);
+    throw new UnsupportedProviderConfigVersionError("Provider config is missing schemaVersion", null);
   }
   if (version > CURRENT_SCHEMA_VERSION) {
     throw new UnsupportedProviderConfigVersionError(
-      `Provider Config schemaVersion ${version} 高于当前支持的 ${CURRENT_SCHEMA_VERSION}`,
+      `Provider config schemaVersion ${version} is newer than supported ${CURRENT_SCHEMA_VERSION}`,
       version,
     );
   }
@@ -55,7 +55,7 @@ export function decodeProviderConfigFile(input: unknown): ProviderConfigLayerUpd
     const migration = migrations.get(version);
     if (!migration) {
       throw new UnsupportedProviderConfigVersionError(
-        `缺少 Provider Config schemaVersion ${version} 到 ${version + 1} 的迁移器`,
+        `No migrator for provider config schemaVersion ${version} -> ${version + 1}`,
         version,
       );
     }
@@ -63,7 +63,7 @@ export function decodeProviderConfigFile(input: unknown): ProviderConfigLayerUpd
     const nextVersion = requireSchemaVersion(candidate);
     if (nextVersion !== version + 1) {
       throw new Error(
-        `Provider Config 迁移器必须从 schemaVersion ${version} 迁移到 ${version + 1}`,
+        `A provider config migrator must go from schemaVersion ${version} to ${version + 1}`,
       );
     }
     version = nextVersion;
@@ -85,8 +85,9 @@ const legacyCompleteManualSchema = completeModelConfigDataSchema.extend({
   enabled: modelConfigDataSchema.shape.enabled,
 });
 
-// 旧编辑器曾把 MFJS 当作手动必填项；隐藏后仅在文件边界识别旧合法形状，
-// 提取现行可编辑字段，避免整个个人配置加载失败或继续冻结系统能力。
+// Legacy editors treated MFJS as a required manual field. After it was hidden, recognize the
+// legacy valid shape at the file boundary only and extract current editable fields, so a whole
+// personal config load neither fails nor keeps system capabilities frozen.
 const legacyEditableManualSchema = manualModelConfigSchema.extend({
   properties: manualModelConfigSchema.shape.properties.extend({
     requiresMfjsToolSchema:
@@ -100,7 +101,8 @@ function normalizeLegacyManualRules(input: unknown): unknown {
     ...input,
     manualProviderModelRules: input.manualProviderModelRules.map((rule: unknown) => {
       if (!isRecord(rule) || manualModelConfigSchema.safeParse(rule.config).success) return rule;
-      // 仅识别旧完整形状，不把未知/损坏配置通过删字段伪装成成功；公共写入入口仍严格拒绝隐藏叶子。
+      // Recognize the legacy complete shape only; never disguise unknown/corrupt configs as
+      // success by dropping fields. The common write path still strictly rejects hidden leaves.
       const legacy = z
         .union([legacyCompleteManualSchema, legacyEditableManualSchema])
         .safeParse(rule.config);
@@ -128,7 +130,7 @@ function readSchemaVersion(input: unknown): number | null {
   const version = input.schemaVersion;
   if (!Number.isInteger(version) || (version as number) < 0) {
     throw new UnsupportedProviderConfigVersionError(
-      "Provider Config schemaVersion 必须是非负整数",
+      "Provider config schemaVersion must be a non-negative integer",
       null,
     );
   }
@@ -139,7 +141,7 @@ function requireSchemaVersion(input: unknown): number {
   const version = readSchemaVersion(input);
   if (version === null) {
     throw new UnsupportedProviderConfigVersionError(
-      "Provider Config 迁移器必须产生版本化文件",
+      "A provider config migrator must produce a versioned file",
       null,
     );
   }

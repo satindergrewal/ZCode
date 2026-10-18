@@ -1,8 +1,8 @@
-// ZCode Protocol v4 —— 数据模型草稿。
+// ZCode Protocol v4 -- the data-model draft.
 //
-// 本包纪律：只放 schema 类型 + 纯函数
-// （coalesce/conflation/apply），运行时（通道层缓冲、订阅注册表、调度）一律不进本包。
-// 与旧 packages/shared/src/zcode-protocol 并存。
+// Package discipline: schema types + pure functions only
+ //(coalesce/conflation/apply); runtime (channel buffering, subscription registries, scheduling) never enters this package.
+// Coexists with the legacy packages/shared/src/zcode-protocol.
 export * from "./core.js";
 export * from "../background-bash-output.js";
 export * from "./rows.js";
@@ -12,18 +12,18 @@ export * from "./workflow-observation-display.js";
 export * from "./snapshot.js";
 export * from "./workflow-runs.js";
 export * from "./workflow-runs-reducer.js";
-// workflowRuns 的键级增量（diff / apply / 规范键序）；op 本身在 delta.js。
+// Key-level deltas of workflowRuns (diff / apply / canonical key order); the ops themselves in delta.ts.
 export * from "./workflow-runs-delta.js";
-// 界留下的痕迹：被拒实例计数、条目预算、步数读法；表满时的腾位；以及给旧消费者的裁剪。
+// What the caps leave behind: rejected-instance counters, the entry budget, step readings; table-full eviction; and legacy-consumer clipping.
 export * from "./workflow-runs-caps.js";
 export * from "./workflow-runs-eviction.js";
 export * from "./workflow-runs-tables.js";
 export * from "./workflow-runs-legacy.js";
 export * from "./workflow-artifact.js";
-// ⚠ 与上一行只差一个 s，且两个 artifact 不同义：单数 = 引擎内部的「脚本顶层返回值」的
-// 序列化；复数 = 脚本 `artifact.*` 发布给用户看的产出。见 workflow-artifacts.ts 的文件头。
+// One s different from the line above, two different artifacts: singular = serialization of the engine-internal "script top-level return";
+// plural = what the script published to users via `artifact.*`. See workflow-artifacts.ts' header.
 export * from "./workflow-artifacts.js";
-// 工作区 transcript（files.* / git.* / world.run 的回放）。
+// The workspace transcript (replay of files.* / git.* / world.run).
 export * from "./workflow-workspace.js";
 export * from "./attachment-ref.js";
 export * from "./attachment-faults.js";

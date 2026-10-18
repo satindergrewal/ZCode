@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- Telegram provider 集中处理 Bot API 文本、按钮、媒体解析和附件下载。 */
+/* eslint-disable max-lines -- the Telegram provider centralizes Bot API text, buttons, media parsing and attachment download. */
 import type {
   BotInboundAttachment,
   BotConfig,
@@ -266,8 +266,9 @@ function buildSelectionCallbackData(selection: SelectionPrompt, optionId: string
   if (selection.action === "model.set") {
     return `zc:cmd:/model model ${index + 1}`;
   }
-  // Telegram callback_data 最多 64 字节，workspace/task id 可能是远程 identity 或长路径。
-  // 这里只回传当前列表序号，后续命令解析复用已有的数字选项解析，避免长 id 被 Telegram 拒收。
+  // Telegram callback_data caps at 64 bytes while workspace/task ids can be remote identities or
+  // long paths. Return only the list index and reuse the existing numeric-option parsing so
+  // Telegram never rejects a long id.
   return `zc:${selection.action.replace(".set", "")}:${index + 1}`;
 }
 
@@ -275,7 +276,7 @@ function buildSelectionReplyMarkup(selection: SelectionPrompt): { inline_keyboar
   const cancelRows = selection.showCancel === false
     ? []
     : [
-        // Bugfix: Telegram 原生按钮以前没有取消入口，用户只能手敲 0 才能退出 pending selection。
+        // Bugfix: Telegram native buttons had no cancel affordance; users had to type 0 to exit a pending selection.
         [{ text: selection.cancelLabel ?? "Cancel", callback_data: "zc:cancel" }],
       ];
   return {
@@ -375,8 +376,9 @@ export function createTelegramBotProvider(
       }
 
       const defaultCommands = buildTelegramCommands(bot);
-      // Bugfix: Telegram 菜单不会自动从我们支持的 slash commands 推导。
-      // 这里只同步默认英文菜单；中文命令由 parser 支持，避免 Telegram 客户端菜单显示中英混杂。
+      // Bugfix: the Telegram menu is not derived from our supported slash commands. Sync the
+      // default English menu only; the parser handles zh commands, keeping the client menu
+      // single-language.
       await fetchBotProvider(`https://api.telegram.org/bot${token}/setMyCommands`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -393,8 +395,8 @@ export function createTelegramBotProvider(
       const replyMarkup = selection ? buildSelectionReplyMarkup(selection) : undefined;
       const chunks = splitTelegramText(message.text);
       for (const [index, text] of chunks.entries()) {
-        // Bugfix: 长 Plan 会被拆成多条消息，审批提示位于最后一条。
-        // 按钮必须跟随最终决策上下文，不能挂在尚未发送完整正文的第一条上。
+        // Bugfix: long plans split across messages put the approval prompt last; buttons must
+        // follow the final decision context, not the first message before the full body ships.
         const shouldAttachReplyMarkup = index === chunks.length - 1 && replyMarkup;
         const response = await fetchBotProvider(`https://api.telegram.org/bot${token}/sendMessage`, {
           method: "POST",
@@ -407,8 +409,8 @@ export function createTelegramBotProvider(
           }),
         });
         if (!response.ok) {
-          // Bugfix: Telegram Markdown 对未闭合的 `_*[]()` 很敏感，模型输出偶尔会被拒收。
-          // 解析失败时退回纯文本重发，既优先支持 Markdown，也保证消息不会丢。
+          // Bugfix: Telegram Markdown is strict about unclosed _*[]() and model output is
+          // occasionally rejected. Fall back to plain-text resend: Markdown preferred, nothing lost.
           await fetchBotProvider(`https://api.telegram.org/bot${token}/sendMessage`, {
             method: "POST",
             headers: { "content-type": "application/json" },
@@ -509,7 +511,7 @@ export function createTelegramBotProvider(
         };
       } catch (error) {
         if ((error as { name?: unknown })?.name === "AbortError") {
-          // Bugfix: Telegram 文件接口卡住时要快速失败，避免 bot 回调一直没有可见结果。
+          // Bugfix: fail fast when the Telegram file API hangs so the bot callback always gets a visible outcome.
           throw new Error("Telegram file download timed out.");
         }
         throw error;

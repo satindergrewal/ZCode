@@ -1,9 +1,9 @@
 // ============================================================
-// 详情页的「配置」
+// The detail-page "Configure" popover.
 // ============================================================
-// 从 WorkflowRunSidePane.tsx 拆出（max-lines 门）：弹层宿主、开关与锚点、以及 Apply 被接受之后
-// 「面板跟着工作流走」——新 run 一进投影，就把这个 tab 原地换成新 run 的 tab（同一个位置、同一个名字，
-// 不展开已收起的侧栏）。等的是投影里出现新 run 这一事实，不是一个超时。
+// Split out of WorkflowRunSidePane.tsx (max-lines gate): popover host, toggle and anchor, plus the
+// follow-the-run behavior once Apply is accepted: a new run entering the projection swaps this tab in place to that run (same slot, same name,
+// no re-expanding a collapsed pane). What waits on is the new run appearing in the projection, not a timeout.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { SessionConfigState, WorkflowRunState } from "@zcode/shared/zcode-protocol-v4";
@@ -23,7 +23,7 @@ import type {
 import { createCommandEnvelope } from "@/v4/commandFactory.js";
 import type { useV4Conversation } from "@/v4/V4ConversationContext.js";
 
-/** run tab 的 workspace 作用域：打开别的 tab（actor、脚本、产物、后继）时原样带上。 */
+/** The run tab workspace scope, carried as-is when other tabs (actor, script, artifact, successor) open. */
 export function workflowRunTabScope(
   tab: Pick<WorkflowRunSidePaneTab, "workspacePath" | "workspaceIdentity" | "remoteSessionId">,
 ): Pick<
@@ -46,7 +46,7 @@ export function useWorkflowRunPaneSettings({
   sessionConfig,
   tab,
 }: {
-  /** 灰度门（与 Resume 同一道）。 */
+  /** Rollout gate (shared with Resume). */
   enabled: boolean;
   onOpenWorkflowRun?: (request: OpenScopedWorkflowRunSideTabRequest) => void;
   run: WorkflowRunState | undefined;
@@ -57,8 +57,8 @@ export function useWorkflowRunPaneSettings({
 }) {
   const configurable = enabled && isWorkflowRunConfigurable(run);
   const popover = useWorkflowRunSettingsPopoverState();
-  // run 在弹层开着时变得不能配置（完成、被替代）：弹层随之卸载，开关也要跟着关——否则 run 再回到可配置
-  // 状态时弹层会自己冒出来。setOpen(false) 在已关时是无操作，不会形成更新环。
+  // When the run turns non-configurable while the popover is open (finished, superseded), unmount the popover and close the toggle too,
+  // or the popover resurfaces once the run is configurable again. setOpen(false) is a no-op when already closed; no update loop.
   const { setOpen } = popover;
   useEffect(() => {
     if (!configurable) setOpen(false);
@@ -68,7 +68,7 @@ export function useWorkflowRunPaneSettings({
     () => ({
       ...workflowRunTabScope(tab),
       ...(sessionModel === undefined ? {} : { sessionModel }),
-      // 与 Stop / Resume 同类：不携 baseRevision，workId ≡ runId。
+      // Like Stop / Resume: no baseRevision carried, workId === runId.
       apply: (change) =>
         sendCommand(
           createCommandEnvelope({
@@ -89,10 +89,10 @@ export function useWorkflowRunPaneSettings({
     ],
   );
 
-  // 跟随：被接受的那一刻新 run 未必已在投影里（run-started 随后才到），所以先记下，等它出现再换 tab。
+  // Follow mode: at accept time the new run may not be in the projection yet (run-started lands later), so record it and swap the tab once it appears.
   const [follow, setFollow] = useState<WorkflowRunSettingsAccepted | undefined>(undefined);
-  // 就地生效的修订（只改并发上限、run 仍在运行）没有后继，
-  // 结果里的 runId 就是这个 tab 自己——没有可跟随的东西，记下它只会请求把 tab 换成它自己。
+  // An in-place revision (concurrency limit only, run still running) has no successor:
+  // the result runId is this tab itself - nothing to follow, and recording it would only ask to swap the tab to itself.
   const onAccepted = useCallback(
     (accepted: WorkflowRunSettingsAccepted) => {
       if (accepted.runId !== tab.runId) setFollow(accepted);

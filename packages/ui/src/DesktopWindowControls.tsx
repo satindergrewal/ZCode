@@ -18,13 +18,14 @@ export function DesktopWindowControls() {
       receivedEvent = true;
       if (!disposed) setMaximized(state.isMaximized);
     });
-    // 订阅后读取初态；较晚返回的初态不能覆盖用户刚触发的最大化事件。
+    // Read the initial state after subscribing; a late-arriving initial value must not
+    // override a maximize the user just triggered.
     void platform
       .getDesktopWindowChromeState?.()
       .then((state) => {
         if (!disposed && !receivedEvent) setMaximized(state.isMaximized);
       })
-      .catch((error) => logger.warn("读取自绘窗口按钮状态失败", { error }));
+      .catch((error) => logger.warn("Failed to read custom window control state", { error }));
     return () => {
       disposed = true;
       unsubscribe?.();
@@ -68,7 +69,7 @@ export function DesktopWindowControls() {
           onClick={() => {
             void platform
               .executeDesktopCommand(command)
-              .catch((error) => logger.warn("执行窗口操作失败", { command, error }));
+              .catch((error) => logger.warn("Failed to run window control command", { command, error }));
           }}
         >
           <Icon className="size-4" />

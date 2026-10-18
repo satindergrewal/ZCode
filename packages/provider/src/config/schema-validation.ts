@@ -1,7 +1,7 @@
 import type { z } from "zod";
 import type { ConfigValidationIssue } from "../config-overlay.js";
 
-/** 翻译已有问题协议，不维护另一份字段或内容校验清单。 */
+/** Translates the existing issue protocol; keeps no second field/content validation list. */
 export function validateConfigSchema(
   schema: z.ZodType,
   value: unknown,
@@ -19,7 +19,8 @@ export function validateConfigSchema(
           ? Reflect.get(fieldValue, key)
           : undefined;
     }
-    // literal/enum 缺失在 Zod 中是 invalid_value，仍须维持“缺字段”的既有问题分类。
+    // Zod reports missing literal/enum as invalid_value; keep the legacy 'missing field'
+    // issue classification.
     const missing =
       ((issue.code === "invalid_type" || issue.code === "invalid_value") && fieldValue == null) ||
       (issue.code === "custom" && issue.params?.configIssueCode === "required-field-missing");
@@ -34,9 +35,9 @@ export function validateConfigSchema(
             : "invalid-config",
       path: issuePath,
       message: missing
-        ? `缺少必填配置 ${issuePath.join(".")}`
+        ? `Missing required config ${issuePath.join(".")}`
         : invalidUrl
-          ? `配置 ${issuePath.join(".")} 必须是有效 URL`
+          ? `Config ${issuePath.join(".")} must be a valid URL`
           : issue.message,
     };
   });

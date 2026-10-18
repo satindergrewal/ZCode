@@ -5,12 +5,12 @@ import {
 } from "@modelcontextprotocol/client";
 
 /**
- * 交互授权需求的稳定标识。
+ * Stable identity for interactive-grant-required.
  *
- * 用 `Symbol.for` 注册到全局 symbol registry：bundler 双装或版本偏斜导致同进程存在两份
- * adapter 代码时，两份都解析到同一个 symbol，`instanceof` 做不到这一点。SDK 在 transport
- * auth seam 上用同样的手法（`Symbol.for("mcp.authSeamEscape")`），并且 `markAuthSeamEscape()`
- * 是 identity-preserving 的，所以我们的品牌能原样穿过 SDK 冒泡到编排层。
+ * Registered via `Symbol.for` in the global registry: with bundler dual-installs or version skew two adapter
+ * copies may coexist in one process, and both resolve to the same symbol, which instanceof cannot do. The SDK
+ * uses the same trick at the transport auth seam (`Symbol.for("mcp.authSeamEscape")`), and `markAuthSeamEscape()`
+ * is identity-preserving, so our brand survives the SDK bubble up to the orchestrator.
  */
 const INTERACTIVE_REQUIRED_BRAND = Symbol.for("zcode.mcp.oauth.interactiveAuthorizationRequired");
 const TEMPORARY_REFRESH_FAILURE_BRAND = Symbol.for("zcode.mcp.oauth.temporaryRefreshFailure");
@@ -61,11 +61,11 @@ export function createInteractiveAuthorizationRequiredError(input: {
 }
 
 /**
- * reactive refresh 的网络 / 5xx 失败。
+ * Network/5xx failures of reactive refresh.
  *
- * 与 `interactiveRequired` 必须区分：临时 AS 故障不代表 grant 已失效，把它误转成交互授权会
- * 无谓打断用户；而返回已被资源服务器拒绝的旧 token 又必然产生第二次 401。
- */
+ * Must stay distinct from `interactiveRequired`: a transient AS outage does not invalidate the grant, and
+ * misrouting it to interactive grant needlessly interrupts the user, while returning a token already rejected by
+ * the resource server just produces a second 401.
 export function createTemporaryRefreshFailureError(input: {
   cause?: unknown;
   serverName: string;
@@ -101,15 +101,15 @@ export interface InteractiveAuthorizationTrigger {
 }
 
 /**
- * 把连接期 / 运行期错误归类为「需要交互授权」。
+ * Classify connection/runtime errors as interactive-grant-required.
  *
- * 纯 AuthProvider 下 SDK 只可能给出这几种确定性认证错误：
- * - 我们自己抛的 `interactiveRequired`（token 缺失、invalid_grant、invalid_client）；
- * - 重试后仍 401 的 `SdkHttpError(ClientHttpAuthentication)`；
- * - 没有 `onUnauthorized` 时的 `UnauthorizedError`（防御路径）；
- * - Streamable HTTP 403 的 `InsufficientScopeError`（带 requiredScope）。
+ * Under a pure AuthProvider the SDK can only surface these deterministic auth errors:
+ * - our own `interactiveRequired` (missing token, invalid_grant, invalid_client);
+ * - `SdkHttpError(ClientHttpAuthentication)` after retry;
+ * - `UnauthorizedError` when no `onUnauthorized` is set (defensive path);
+ * - `InsufficientScopeError` from Streamable HTTP 403 (with requiredScope).
  *
- * `temporaryRefreshFailure` 显式不在此列：它必须保留凭据并原样失败。
+ * `temporaryRefreshFailure` is deliberately excluded: it must keep credentials and fail as-is.
  */
 export function classifyInteractiveAuthorizationTrigger(
   error: unknown,
@@ -133,7 +133,7 @@ export function classifyInteractiveAuthorizationTrigger(
   }
   if (error instanceof UnauthorizedError) return { reason: "unauthorized" };
   if (isSdkAuthenticationHttpError(error)) return { reason: "unauthorized" };
-  // cause 链：SDK 在若干 seam 上包裹错误，分类不能只看最外层。
+  // cause chain: the SDK wraps errors at several seams; classification cannot look only at the outermost.
   const cause = (error as { cause?: unknown } | undefined)?.cause;
   if (cause !== undefined && cause !== error) {
     return classifyInteractiveAuthorizationTrigger(cause);
@@ -141,7 +141,7 @@ export function classifyInteractiveAuthorizationTrigger(
   return undefined;
 }
 
-/** 重试后仍 401：`SdkHttpError(SdkErrorCode.ClientHttpAuthentication)`。按 code 比较，不依赖 instanceof。 */
+/** 401 after retry: `SdkHttpError(SdkErrorCode.ClientHttpAuthentication)`. Compare codes, no instanceof. */
 function isSdkAuthenticationHttpError(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
   const code = (error as { code?: unknown }).code;

@@ -1,9 +1,9 @@
-/* oxlint-disable eslint(max-lines) -- re-home 产物：task 投影承重类型集中迁移，保持单文件契约面。 */
-// re-home 迁移产物（为删除旧协议树铺路）。
-// 本文件承载旧 task 投影中仍被存活栈消费的明星承重类型：ZCodeTaskMeta / ZCodeProvider /
+/* oxlint-disable eslint(max-lines) -- re-home artifact: task projection load-bearing types are centralized here to keep a single-file contract surface. */
+// Re-home migration artifact (paves the way for deleting the legacy protocol tree).
+// This file hosts the star load-bearing types from the legacy task projection still consumed by live stacks: ZCodeTaskMeta / ZCodeProvider /
 // ZCodeStreamEvent / TraceId/InputId/QueryId / ZCodePersistedMessage(Part) / ZCodeTaskSnapshot /
-// ZCodePlanStep / ZCodePermissionRequest 及其依赖闭包（含 realtime 传输基础类型）。
-// zcode-task-types.ts / task-realtime.ts 仍保留旧协议兼容面，共用本文件中的核心类型。
+// ZCodePlanStep / ZCodePermissionRequest and their dependency closure (including realtime transport base types).
+// zcode-task-types.ts / task-realtime.ts keep the legacy protocol compat surface and share the core types here.
 
 import type { ZCodeBackgroundTaskControlItem } from "./background-task-controls.js";
 import type { ToolCallDisplay } from "./zcode-protocol-v4/toolDisplay.js";
@@ -16,22 +16,22 @@ import type {
 import type { ErrorAttribution } from "./zcode-protocol-v4/snapshot.js";
 
 /**
- * ZCode task/session 投影共享类型定义
+ * ZCode task/session projection shared type definitions
  *
- * 跨 renderer、host process、ZCode agent service 使用的类型。
+ * Types shared across renderer, host process, and the ZCode agent service.
  */
 
-// ---- 可观测性 ----
+// ---- Observability ----
 
-/** 全链路追踪 ID，用于日志和观测链路。 */
+/** Full-chain trace ID for logs and observability. */
 export type TraceId = string;
-/** 每次用户输入的归属 ID，用于 stop/队列/终态收口。 */
+/** Attribution ID per user input; used for stop/queue/terminal-state closeout. */
 export type InputId = string;
-/** 每条真实用户 query 的语义归因 ID，用于模型请求 header 和用户问题级观测。 */
+/** Semantic attribution ID per real user query; used for model request headers and per-question observability. */
 export type QueryId = string;
 // ---- ZCode Provider ----
 
-/** 支持的 ZCode agent 提供方；当前仅保留 glm。 */
+/** Supported ZCode agent providers; currently only glm. */
 export type ZCodeProvider = "glm";
 export type ZCodeGlmAgentModelStateUpdateReason =
   | "session_initialized"
@@ -57,7 +57,7 @@ export interface ZCodeGlmAgentModelStateUpdatePayload {
     tokens: number;
   };
 }
-/** 外部历史迁移来源。当前只落 Claude Code，后续其它来源继续在这里扩展。 */
+/** External history migration source. Currently only Claude Code; more sources land here later. */
 export type ZCodeTaskMigrationSource = "claudeCode";
 export type ZCodeTaskGoalStatus = "active" | "paused" | "budget_limited" | "complete";
 export type ZCodeTaskTargetChangedAction =
@@ -87,19 +87,19 @@ export interface ZCodeTaskGoal {
   };
 }
 export interface ZCodeTaskGoalStats {
-  /** goal 运行累计秒数；来自 agent 的 session_target 或历史 turn 投影。 */
+  /** Goal elapsed seconds; from the agent session_target or historical turn projection. */
   timeUsedSeconds: number;
-  /** goal 累计 token；优先使用 goal 记账，必要时由 agent 按历史 turn 兜底。 */
+  /** Goal cumulative tokens; prefers goal accounting, falls back to agent per-turn history when needed. */
   tokensUsed: number;
-  /** 用户显式设置的 goal token budget；为空时 UI 可展示 context window。 */
+  /** User-set goal token budget; when empty the UI may show the context window. */
   tokenBudget: number | null;
-  /** 当前 session 上下文窗口已使用 token。 */
+  /** Tokens used in the current session context window. */
   contextUsed: number;
-  /** 当前 session 上下文窗口容量。 */
+  /** Capacity of the current session context window. */
   contextWindow: number;
-  /** goal 相关历史 tool calls 数。 */
+  /** Historical tool calls related to the goal. */
   toolCallCount: number;
-  /** 已触发的 goal verifier 生命周期轮次，不等同于普通 runtime turn 或用户继续次数。 */
+  /** Triggered goal verifier lifecycle rounds; not the same as runtime turns or user continue count. */
   iterationCount: number;
 }
 export interface ZCodeGoalVerification {
@@ -122,9 +122,9 @@ export interface ZCodeGoalVerificationTimelineMeta {
   status: ZCodeGoalVerificationTimelineStatus;
   verification?: ZCodeGoalVerification;
   goalIteration?: number;
-  /** verifier divider 应锚定到完成本轮输出的 assistant message，而不是按时间漂移。 */
+  /** The verifier divider must anchor to the assistant message that finished the round, not drift by time. */
   anchorAssistantMessageId?: string;
-  /** 辅助恢复同一 turn 的边界语义；旧历史可能缺失。 */
+  /** Helps restore same-turn boundary semantics; legacy history may lack it. */
   anchorTurnId?: string;
   startedAt?: number;
   updatedAt: number;
@@ -144,13 +144,13 @@ export interface ZCodeTaskGoalChangedPatch {
   target: ZCodeTaskGoal | null;
   previousTarget?: ZCodeTaskGoal | null;
 }
-// ---- ZCode task 模式 ----
+// ---- ZCode task modes ----
 
 export type ZCodeTaskMode = "yolo" | "plan" | "edit" | "auto" | "autoEdit" | "build";
 
 export type ZCodeOffPeakRunType = "init" | "resume";
 
-/** 单个自动输入轮的来源归因；两种后台业务身份禁止同时存在。 */
+/** Source attribution of a single auto-input round; the two background identities must not coexist. */
 export type ZCodeBackgroundTurnAttribution =
   | { automationId: string; offPeakTaskId?: never; offPeakRunType?: never }
   | {
@@ -159,7 +159,7 @@ export type ZCodeBackgroundTurnAttribution =
       automationId?: never;
     }
   | { automationId?: undefined; offPeakTaskId?: undefined; offPeakRunType?: never };
-/** 当前 workspace 下任务的运行时状态 */
+/** Runtime state of tasks under the current workspace */
 export type ZCodeTaskRuntimeStatus =
   | "idle"
   | "creating"
@@ -169,7 +169,7 @@ export type ZCodeTaskRuntimeStatus =
   | "streaming"
   | "completed"
   | "failed";
-/** 持久化的任务状态，记录最后一次 prompt 的结果 */
+/** Persisted task state recording the result of the last prompt */
 export type ZCodeTaskPersistStatus = "running" | "completed" | "error";
 export interface ZCodeTaskLastError {
   attribution?: ErrorAttribution;
@@ -179,17 +179,17 @@ export interface ZCodeTaskLastError {
   taskId?: string;
 }
 /**
- * 当前 prompt 支持的附件类型。
- * 图片小文件走 agent image block；本地文件/大图片优先走 localPath，让 agent 按自己的阈值读取。
+ * Attachment types supported by the current prompt.
+ * Small images go through the agent image block; local files/large images prefer localPath so the agent reads them with its own threshold.
  */
 export interface ZCodePromptImageAttachment {
   kind: "image";
   filename: string;
   mimeType: string;
   sizeBytes?: number;
-  /** agent ImageContent 已经单独携带 mimeType，所以这里只保留纯 base64 正文。 */
+  /** agent ImageContent already carries mimeType, so only the bare base64 payload is kept here. */
   dataBase64?: string;
-  /** 桌面端真实本地路径；大图片不再塞进协议正文，由 agent 侧按路径处理。 */
+  /** Real desktop-local path; large images no longer ride in the protocol body, the agent side handles them by path. */
   localPath?: string;
 }
 export interface ZCodePromptFileAttachment {
@@ -197,11 +197,11 @@ export interface ZCodePromptFileAttachment {
   filename: string;
   mimeType: string;
   sizeBytes: number;
-  /** 附件来源；clipboard-text 表示由长文本粘贴落盘生成，agent 只应按临时文件引用处理。 */
+  /** Attachment source; clipboard-text means it was persisted from a long-text paste and the agent must treat it as a temp file reference. */
   sourceKind?: "clipboard-text";
-  /** 旧版/无路径环境的兼容回退；新桌面 GUI 不再为普通文件发送 base64。 */
+  /** Compat fallback for legacy/pathless environments; the new desktop GUI no longer sends base64 for regular files. */
   dataBase64?: string;
-  /** 无本地路径时的小文本回退；有 localPath 时由 agent 自行读取。 */
+  /** Small-text fallback when no local path exists; with localPath the agent reads it itself. */
   textContent?: string;
   localPath?: string;
 }
@@ -209,19 +209,19 @@ export interface ZCodePromptAudioAttachment {
   kind: "audio";
   filename: string;
   mimeType: string;
-  /** agent AudioContent 已经单独携带 mimeType，所以这里只保留纯 base64 正文。 */
+  /** agent AudioContent already carries mimeType, so only the bare base64 payload is kept here. */
   dataBase64?: string;
   localPath?: string;
 }
-/** 视频附件：Web 小视频走 dataBase64，桌面端优先 localPath 零拷贝。 */
+/** Video attachments: small web videos use dataBase64; desktop prefers zero-copy localPath. */
 export interface ZCodePromptVideoAttachment {
   kind: "video";
   filename: string;
   mimeType: string;
   sizeBytes?: number;
-  /** 纯 base64 正文；mimeType 由字段单独携带。 */
+  /** Bare base64 payload; mimeType is carried in its own field. */
   dataBase64?: string;
-  /** 桌面端真实本地路径；agent 侧按路径读取并做大小校验。 */
+  /** Real desktop-local path; the agent side reads by path and validates size. */
   localPath?: string;
 }
 export interface ZCodePromptPdfAttachment {
@@ -238,7 +238,7 @@ export type ZCodePromptAttachment =
   | ZCodePromptVideoAttachment
   | ZCodePromptPdfAttachment
   | ZCodePromptFileAttachment;
-// ---- Task 元数据 ----
+// ---- Task metadata ----
 
 export type ZCodeTaskInteractionAutoResolution =
   | {
@@ -256,146 +256,146 @@ export type ZCodeTaskInteractionAutoResolution =
 export interface ZCodeTaskPendingInteraction {
   interactionId: string;
   kind: "permission" | "userInput";
-  /** sessions-index 下发的轻量工具身份；旧摘要缺失时保持兼容。 */
+  /** Lightweight tool identity issued by sessions-index; kept for compat when the legacy summary is missing. */
   toolName?: string;
   autoResolution?: ZCodeTaskInteractionAutoResolution;
 }
 
 export interface ZCodeTaskMeta {
-  /** UI taskId 与 ZCode agent sessionId 保持一致，用于列表选择、日志关联和恢复会话。 */
+  /** UI taskId matches the ZCode agent sessionId; used for list selection, log correlation, and session resume. */
   taskId: string;
-  /** session/任务级观测 traceId，不用于区分单次用户输入 */
+  /** Session/task-level observability traceId; not used to distinguish single user inputs */
   traceId: TraceId;
-  /** 任务标题（用户输入或从首条消息截取） */
+  /** Task title (user input or truncated from the first message) */
   title: string;
   /**
-   * 用户是否手动覆盖过任务标题。
+   * Whether the user manually overrode the task title.
    *
-   * 运行中 agent 仍会继续推送自动生成标题；UI 需要知道当前标题是手动命名，
-   * 才能在更新 status/target/updatedAt 时避免把手动标题短暂冲掉。
+   * A running agent keeps pushing auto-generated titles; the UI needs to know the current title is manual
+   * so that updating status/target/updatedAt does not briefly clobber the manual title.
    */
   titleOverridden?: boolean;
-  /** 关联的 workspace 绝对路径 */
+  /** Absolute path of the associated workspace */
   workspacePath: string;
   /**
-   * 远程 workspace 的稳定身份（authority + canonicalPath）。
+   * Stable identity of a remote workspace (authority + canonicalPath).
    *
-   * 仅按 workspacePath 持久化时，“同路径不同远端主机”会写进同一目录，
-   * 导致任务列表、快照和日志互相串读。这里补充 workspaceIdentity 参与隔离。
+   * Persisting by workspacePath alone writes "same path, different remote host" into the same directory,
+   * making task lists, snapshots, and logs cross-read. workspaceIdentity participates in the isolation.
    */
   workspaceIdentity?: string;
-  /** app-owned workspace 分类；缺省为 project，不参与 workspaceKey。 */
+  /** App-owned workspace kind; defaults to project and does not participate in workspaceKey. */
   workspacePurpose?: import("./workspacePurpose.js").WorkspacePurpose;
   createdAt: number;
   updatedAt: number;
   mode: ZCodeTaskMode;
   model?: string;
   /**
-   * task 级推理强度。
+   * Task-level reasoning effort.
    *
-   * active task 内切换 effort 时，如果只写 workspace settings.json，
-   * 同一 workspace 的其它 task 会被串改；如果只改 session，下一轮 prompt 又可能被
-   * workspace 默认值回推覆盖。这里单独持久化 task-local thoughtLevel，发送前再重放到 session。
+   * When switching effort inside an active task, writing only workspace settings.json
+   * would clobber other tasks in the same workspace; writing only the session lets the next prompt be
+   * overwritten by workspace defaults. Persist task-local thoughtLevel here and replay it before sending.
    */
   thoughtLevel?: string;
   /**
-   * 该 task 最近一次确认与 workspace 运行时基线对齐的 epoch。
+   * Epoch of the task's last confirmed alignment with the workspace runtime baseline.
    *
-   * 过去仅靠 workspacePreferredModel 判断“要不要覆盖当前 task 模型”，
-   * 会把“同 supplier 的 task 内模型切换”误当成全局收敛，导致其它 task 被串改。
-   * 这里记录 runtimeEpoch，用来区分“task 自身模型保持”与“runtime 基线确实变更后需要收敛”。
+   * Deciding "whether to override the current task model" from workspacePreferredModel alone
+   * mistakes a within-task model switch on the same supplier for global convergence and clobbers other tasks.
+   * runtimeEpoch distinguishes "task keeps its own model" from "runtime baseline changed, convergence needed".
    */
   runtimeEpoch?: number;
-  /** 创建此 task 时使用的 agent provider，缺省视为 "glm"（旧数据兼容） */
+  /** Agent provider used when the task was created; treated as "glm" when absent (legacy data compat) */
   provider?: ZCodeProvider;
-  /** 迁移来源；普通新建任务为空，用于识别 Claude Code 原生历史导入。 */
+  /** Migration source; empty for normal tasks, identifies imported native Claude Code history. */
   migrationSource?: ZCodeTaskMigrationSource;
   /**
-   * cron 身份标记：该 session 属于哪条 automation。
+   * Cron identity marker: which automation this session belongs to.
    *
-   * cron 身份必须定义在共享的 ZCodeTaskMeta 上，供持久化层、V4 UI 和服务契约
-   * 共同使用，避免字段已持久化却无法经类型契约访问。
+   * The cron identity must live on the shared ZCodeTaskMeta so persistence, the V4 UI, and service contracts
+   * all see it, avoiding fields persisted yet unreachable through the type contract.
    */
   cronAutomationId?: string;
   /**
-   * 闲时任务身份标记：该 session/幻影行属于哪条 off-peak 任务。
-   * 与 cronAutomationId 是兄弟标记（闲时不复用 cron 标记）；行 id = 创建时
-   * 预分配的 sessionId，标记从创建到运行恒定，供月亮图标与系统分组归属使用。
+   * Off-peak identity marker: which off-peak task this session/phantom row belongs to.
+   * Sibling of cronAutomationId (off-peak does not reuse cron markers); row id = the sessionId
+   * preallocated at creation; the marker is constant from creation through run, for the moon icon and system grouping.
    */
   offPeakTaskId?: string;
-  /** fork 产物保留来源 taskId，供 UI 做本地化标题兜底和后续追溯。 */
+  /** Fork artifacts keep the source taskId for localized-title fallback and later tracing. */
   forkedFromTaskId?: string;
-  /** 未读任务记录最近一次标记/产生未读的时间，用于跨重启保留蓝点状态。 */
+  /** For unread tasks, the last time unread was marked/produced; preserves the blue dot across restarts. */
   unreadAt?: number;
-  /** 持久化的任务状态，记录最后一次 prompt 的结果 */
+  /** Persisted task state recording the result of the last prompt */
   status?: ZCodeTaskPersistStatus;
-  /** sessions-index 提供的队首阻塞交互摘要，供未打开的后台 task 渲染侧栏状态。 */
+  /** Queue-head blocking interaction summary from sessions-index, for the sidebar state of unopened background tasks. */
   pendingInteraction?: ZCodeTaskPendingInteraction;
   /**
-   * 最后一次失败的可展示原因。
+   * Last failure reason fit for display.
    *
-   * 手机远控断连时实时 task_error 可能无法送达；恢复只能看到 meta.status=error，
-   * 但拿不到错误正文，用户会以为发送没有触发。这里把失败原因随 task meta 一起持久化。
+   * When phone remote control disconnects, the realtime task_error may not arrive; recovery only sees meta.status=error
+   * without the error body, so users think the send never fired. Persist the failure reason alongside task meta.
    */
   lastError?: ZCodeTaskLastError;
-  /** 任务级文件改动摘要，仅用于列表/标题展示，真实回滚仍以 fileChanges 为准 */
+  /** Task-level file-change summary, for list/title display only; real rollback still uses fileChanges */
   changeSummary?: ZCodeTaskChangeSummary;
-  /** zcode-cli /goal 会话目标；null 表示已显式清空。 */
+  /** zcode-cli /goal session objective; null means explicitly cleared. */
   target?: ZCodeTaskGoal | null;
 }
 export interface ZCodeTaskChangeSummary {
-  /** 整个任务里涉及过的唯一文件数 */
+  /** Distinct files touched over the whole task */
   fileCount: number;
-  /** 按最终文件结果聚合后的新增行数 */
+  /** Added lines aggregated by final per-file result */
   added: number;
-  /** 按最终文件结果聚合后的删除行数 */
+  /** Deleted lines aggregated by final per-file result */
   removed: number;
-  /** 任务涉及的文件摘要 */
+  /** Summary of files touched by the task */
   files: ZCodeTaskChangedFileSummary[];
 }
 export interface ZCodeTaskChangedFileSummary {
   path: string;
   added: number;
   removed: number;
-  /** 同一任务内该文件被写入的总次数 */
+  /** Total times this file was written within the task */
   writeCount: number;
-  /** 最后一次写入发生在第几轮，后续回滚按钮可直接复用 */
+  /** Round of the last write; the rollback button reuses it directly */
   lastTurnIndex: number;
 }
-// ---- ZCode 配置与命令类型 ----
+// ---- ZCode config and command types ----
 
-/** ZCode configOptions 的 UI 投影（从 session/new 响应中提取） */
+/** UI projection of ZCode configOptions (extracted from the session/new response) */
 export interface ZCodeConfigOption {
   id: string;
   name: string;
   description?: string;
-  /** mode | model | thought_level | 自定义 */
+  /** mode | model | thought_level | custom */
   category?: string;
   type: "select" | "boolean";
   currentValue: string | boolean;
-  /** type === "select" 时的选项列表 */
+  /** Options when type === "select" */
   options?: ZCodeConfigSelectValue[];
 }
 export interface ZCodeConfigSelectValue {
   value: string;
   name: string;
   description?: string;
-  /** 值来源：原生模型列表或会话侧注入项（用于 UI 去重与展示控制） */
+  /** Value source: native model list or session-injected entry (for UI dedupe and display control) */
   origin?: "native" | "injected";
-  /** 模型选项所属供应商/分组 id，用于 provider -> model 分组选择 */
+  /** Provider/group id owning this model option, for provider -> grouped selection */
   modelProviderId?: string;
-  /** 模型选项所属供应商/分组展示名 */
+  /** Provider/group display name owning this model option */
   modelProviderName?: string;
-  /** 缺失表示能力未知，空数组表示已知没有可选 reasoning 档位 */
+  /** Missing means capability unknown; empty array means known to have no selectable reasoning level */
   modelThoughtLevels?: string[];
-  /** 模型目录声明的默认 reasoning 档位，不代表用户显式选择 */
+  /** Default reasoning level declared by the model catalog; not a user choice */
   modelDefaultThoughtLevel?: string;
 }
 export interface ZCodeSlashCommand {
   name: string;
   description: string;
   inputHint?: string;
-  /** 命令来源；旧协议可能为空，客户端应按 builtin 兼容处理。 */
+  /** Command origin; legacy protocol may leave it empty, clients should treat as builtin. */
   source?: "builtin" | "custom";
 }
 export interface ZCodeTaskModeInfo {
@@ -403,7 +403,7 @@ export interface ZCodeTaskModeInfo {
   name: string;
   description?: string;
 }
-// ---- ZCode 流式事件（Host → Renderer） ----
+// ---- ZCode streaming events (Host -> Renderer) ----
 
 export type TaskStreamMirrorableEvent = (
   | ZCodeAgentMessageChunk
@@ -472,9 +472,9 @@ export interface ZCodeAgentMessageChunk {
   taskId: string;
   traceId: TraceId;
   inputId?: InputId;
-  /** 上级 toolCallId；null 表示主 agent 正文。 */
+  /** Parent toolCallId; null means the main agent body. */
   parentToolUseId?: string | null;
-  /** agent messageId；ZCode synthetic timeline 消息用它做 upsert。 */
+  /** agent messageId; ZCode synthetic timeline messages use it as the upsert key. */
   messageId?: string;
   content: string;
   zcodeTimeline?: ZCodeTimelineMeta;
@@ -484,7 +484,7 @@ export interface ZCodeAgentThoughtChunk {
   taskId: string;
   traceId: TraceId;
   inputId?: InputId;
-  /** 上级 toolCallId；null 表示主 agent 思考。 */
+  /** Parent toolCallId; null means main-agent thinking. */
   parentToolUseId?: string | null;
   content: string;
 }
@@ -514,11 +514,11 @@ export interface ZCodeContextCompactionTimelineMeta {
   trigger: ZCodeTimelineTrigger;
   display: "separator";
   /**
-   * `/compact` 本地会先渲染 optimistic 横条，agent lifecycle 事件稍后才到。
-   * 用 inputId 把两者合并，避免同一次压缩先显示“正在压缩”再额外追加一条“已压缩”。
+   * `/compact` renders an optimistic banner locally before the agent lifecycle event arrives.
+   * inputId merges the two, so one compaction does not show "compacting" plus an extra "compacted" row.
    */
   inputId?: InputId;
-  /** 失败后重试需要保留用户原本输入的 `/compact ...` 指令。 */
+  /** Retrying after failure must keep the user's original `/compact ...` input. */
   command?: string;
   replace?: boolean;
   reason?: string;
@@ -529,7 +529,7 @@ export interface ZCodeContextCompactionTimelineMeta {
   truePostCompactTokenCount?: number;
   attempt?: number;
   maxAttempts?: number;
-  /** compact 阶段用于区分 mid_turn / pre_request 等真实压缩边界，避免 UI 和 e2e 只能按文案猜。 */
+  /** Lets the compact phase tell real compaction boundaries such as mid_turn / pre_request apart, instead of guessing by copy in UI/e2e. */
   phase?: ZCodeContextCompactionTimelinePhase;
   startedAt?: number;
   endedAt?: number;
@@ -541,7 +541,7 @@ export interface ZCodeSessionForkTimelineMeta {
   display: "separator";
   parentSessionId: string;
   targetMessageId: string;
-  /** 纯对话 fork 没有 workspace checkpoint；UI 跳回父消息只依赖 targetMessageId。 */
+  /** A pure conversation fork has no workspace checkpoint; jumping back to the parent message relies only on targetMessageId. */
   targetCheckpointId?: string;
   restoredFileCount?: number;
 }
@@ -551,18 +551,18 @@ export interface ZCodeToolCall {
   traceId: TraceId;
   inputId?: InputId;
   toolId: string;
-  /** 上级 toolCallId；null 表示主 agent 直接发起的工具调用。 */
+  /** Parent toolCallId; null means a tool call issued directly by the main agent. */
   parentToolUseId?: string | null;
   input: unknown;
-  /** ZCode 固定工具名；新增字段用于把工具身份和历史 kind 分类拆开。 */
+  /** Fixed ZCode tool name; the extra field separates tool identity from legacy kind classification. */
   toolName?: string;
-  /** 兼容历史分类；当前 ZCode 流通常等于 toolName。 */
+  /** Legacy classification compat; in current ZCode streams this usually equals toolName. */
   kind: string;
-  /** agent ToolCall.title，描述当前工具动作的人类可读标题 */
+  /** agent ToolCall.title, a human-readable title of the current tool action */
   title: string;
-  /** agent ToolCall 原始 payload，调试协议字段时以此为准 */
+  /** Raw agent ToolCall payload; the source of truth when debugging protocol fields */
   raw: unknown;
-  /** Skill resolved metadata；只用于 telemetry attribution。 */
+  /** Skill resolved metadata; for telemetry attribution only. */
   skillMetadata?: {
     qualifiedName?: string;
     pluginId?: string;
@@ -575,23 +575,23 @@ export interface ZCodeToolCallUpdate {
   traceId: TraceId;
   inputId?: InputId;
   toolId: string;
-  /** 上级 toolCallId；null 表示主 agent 直接发起的工具调用。 */
+  /** Parent toolCallId; null means a tool call issued directly by the main agent. */
   parentToolUseId?: string | null;
   status: "pending" | "in_progress" | "completed" | "failed" | "denied" | "stopped";
   /**
-   * agent ToolCallUpdate.title，可选；如果 Agent 没更新标题，这里可能为空。
+   * agent ToolCallUpdate.title, optional; may be empty when the agent did not update the title.
    */
   title?: string;
-  /** ZCode 固定工具名；ToolCallResult 可能只带 toolId，服务层会从前序调用缓存补齐。 */
+  /** Fixed ZCode tool name; ToolCallResult may carry only toolId, and the service layer backfills from the previous call cache. */
   toolName?: string;
-  /** 兼容历史分类；当前 ZCode 流通常等于 toolName。 */
+  /** Legacy classification compat; in current ZCode streams this usually equals toolName. */
   kind?: string;
   input?: unknown;
   content?: unknown;
   error?: string;
-  /** agent ToolCallUpdate 原始 payload，调试协议字段时以此为准 */
+  /** Raw agent ToolCallUpdate payload; the source of truth when debugging protocol fields */
   raw: unknown;
-  /** Skill resolved metadata；只用于 telemetry attribution。 */
+  /** Skill resolved metadata; for telemetry attribution only. */
   skillMetadata?: {
     qualifiedName?: string;
     pluginId?: string;
@@ -620,15 +620,15 @@ export interface ZCodePermissionRequest {
   kind: string;
   title?: string;
   options: ZCodePermissionOption[];
-  /** V4 permission 是否允许在 Deny 时附带用户反馈。 */
+  /** Whether the V4 permission may attach user feedback on Deny. */
   freeText?: boolean;
   origin?: ZCodeInteractionRequestOrigin;
   /**
-   * 工具自报的确认预览，复用 tool call row 的 display 投影（同一有界形状）。
-   * 缺省 = 纯文本 ask（legacy v3 链路会显式剥离该字段）。
+   * Tool-reported confirmation preview, reusing the tool call row display projection (same bounded shape).
+   * Absent = plain-text ask (the legacy v3 path strips this field explicitly).
    */
   display?: ToolCallDisplay;
-  /** agent RequestPermissionRequest.toolCall 原始 payload */
+  /** Raw agent RequestPermissionRequest.toolCall payload */
   raw: unknown;
 }
 export interface ZCodeTaskPermissionResponse {
@@ -647,7 +647,7 @@ export interface ZCodePermissionOption {
   description?: string;
   response: ZCodePermissionResponse;
 }
-/** ZCode Elicitation 请求事件，用于 AskUserQuestion 等需要用户交互的工具 */
+/** ZCode Elicitation request event, for tools like AskUserQuestion that need user interaction */
 export interface ZCodeElicitationRequest {
   type: "elicitation_request";
   taskId: string;
@@ -658,30 +658,30 @@ export interface ZCodeElicitationRequest {
   header?: string;
   options: ZCodeElicitationOption[];
   multiSelect?: boolean;
-  /** AskUserQuestion 的多题结构；存在时 UI 以 tab 形式一次性收集全部答案。 */
+  /** Multi-question shape of AskUserQuestion; when present the UI collects all answers at once via tabs. */
   questions?: ZCodeElicitationQuestion[];
-  /** remote 控制链路同步的当前题号，用于跨端保持 AskUserQuestion 进度。 */
+  /** Current question index synced by the remote control path, keeping AskUserQuestion progress across devices. */
   currentQuestionIndex?: number;
-  /** remote 控制链路同步的草稿答案，key 为 answer_0 / answer_1。 */
+  /** Draft answers synced by the remote control path, keyed answer_0 / answer_1. */
   answerDrafts?: Record<string, string[]>;
   origin?: ZCodeInteractionRequestOrigin;
-  /** ElicitationSchema 原始 payload */
+  /** Raw ElicitationSchema payload */
   schema?: unknown;
 }
-/** ZCode Elicitation 单个问题 */
+/** A single ZCode Elicitation question */
 export interface ZCodeElicitationQuestion {
   question: string;
   header: string;
   options: ZCodeElicitationOption[];
   multiSelect?: boolean;
 }
-/** ZCode Elicitation 选项 */
+/** A ZCode Elicitation option */
 export interface ZCodeElicitationOption {
   value: string;
   label: string;
   description?: string;
 }
-/** ZCode Elicitation 响应事件 */
+/** ZCode Elicitation response event */
 export interface ZCodeElicitationResponse {
   type: "elicitation_response";
   taskId: string;
@@ -739,41 +739,41 @@ export interface ZCodeUsage {
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
-  /** 推理/思考消耗的 token 数；对齐 agent `thoughtTokens`。 */
+  /** Tokens consumed by reasoning/thinking; mirrors the agent `thoughtTokens`. */
   reasoningTokens?: number;
-  /** 命中缓存的 input token 数 */
+  /** Cache-hit input tokens */
   cachedInputTokens?: number;
-  /** 写入缓存的 input token 数 */
+  /** Cache-write input tokens */
   cachedWriteInputTokens?: number;
 }
 export interface ZCodeContextCacheUsage {
-  /** Provider 上报的最近一次主轮输入 token 数。 */
+  /** Input tokens of the provider-reported latest main round. */
   inputTokens: number;
-  /** Provider 上报的最近一次主轮缓存命中 token 数。 */
+  /** Cache-hit tokens of the provider-reported latest main round. */
   cacheReadTokens: number;
-  /** Provider 上报的最近一次主轮缓存写入 token 数。 */
+  /** Cache-write tokens of the provider-reported latest main round. */
   cacheWriteTokens: number;
-  /** 最近一次主轮 provider usage 的缓存命中率；未知时为 null。 */
+  /** Cache hit rate of the latest main-round provider usage; null when unknown. */
   latestHitRate?: number | null;
-  /** 参与累计平均的主轮请求数量。 */
+  /** Main-round requests participating in the cumulative average. */
   hitRateRequestCount?: number;
-  /** 参与累计平均的主轮 input token 总量。 */
+  /** Total main-round input tokens participating in the cumulative average. */
   totalInputTokens?: number;
-  /** 参与累计平均的主轮 cache read token 总量。 */
+  /** Total main-round cache-read tokens participating in the cumulative average. */
   totalCacheReadTokens?: number;
-  /** 参与累计平均的主轮 cache write token 总量。 */
+  /** Total main-round cache-write tokens participating in the cumulative average. */
   totalCacheWriteTokens?: number;
-  /** Agent 归一化后返回给 app 的主轮累计平均缓存命中率；未知时为 null。 */
+  /** Main-round cumulative average cache hit rate the agent returns to the app after normalization; null when unknown. */
   hitRate: number | null;
 }
-/** Agent 每次模型请求完成后推送的 task 累计 token 增量。 */
+/** Cumulative task token delta pushed after each agent model request completes. */
 export interface ZCodeTaskTokenUsageDelta {
   type: "task_token_usage_delta";
   taskId: string;
   traceId: TraceId;
   inputId?: InputId;
   queryId?: QueryId;
-  /** 稳定去重键，通常来自 ZCode Protocol eventId。 */
+  /** Stable dedupe key, usually the ZCode Protocol eventId. */
   eventKey: string;
   eventId?: string;
   querySource?: string;
@@ -785,7 +785,7 @@ export type ZCodeTaskNetworkDebugStatusType =
   | "model_request_failed"
   | "model_retry_scheduled"
   | "model_stream_stalled";
-/** Agent 模型网络状态调试事件；只携带元信息和脱敏 header，不携带 response body/data。 */
+/** Agent model network-state debug event; metadata and redacted headers only, no response body/data. */
 export interface ZCodeTaskNetworkDebugStatus {
   type: "task_network_debug_status";
   taskId: string;
@@ -819,9 +819,9 @@ export interface ZCodeTaskNetworkDebugStatus {
   requestHeaderCount: number;
   responseHeaderCount: number;
 }
-// ---- 新增流式事件类型 ----
+// ---- New streaming event types ----
 
-/** Agent 主动推送配置变更（如 rate limit 降级模型、模式联动变化） */
+/** Agent pushes config changes (e.g. rate-limit model downgrade, mode coupling changes) */
 export interface ZCodeConfigOptionUpdate {
   type: "config_option_update";
   taskId: string;
@@ -829,14 +829,14 @@ export interface ZCodeConfigOptionUpdate {
   inputId?: InputId;
   configOptions: ZCodeConfigOption[];
 }
-/** zcode-cli/GLM agent 专属：模型变化后同步思考等级选项和上下文窗口。 */
+/** zcode-cli/GLM agent specific: sync thinking-level options and context window after a model change. */
 export interface ZCodeGlmAgentModelStateUpdate extends ZCodeGlmAgentModelStateUpdatePayload {
   type: "glm_agent_model_state_update";
   taskId: string;
   traceId: TraceId;
   inputId?: InputId;
 }
-/** Agent 推送可用的 slash commands 列表 */
+/** Agent pushes the list of available slash commands */
 export interface ZCodeAvailableCommandsUpdate {
   type: "available_commands_update";
   taskId: string;
@@ -844,7 +844,7 @@ export interface ZCodeAvailableCommandsUpdate {
   inputId?: InputId;
   commands: ZCodeSlashCommand[];
 }
-/** Agent 推送模式变更（如从 architect 自动切到 code） */
+/** Agent pushes a mode change (e.g. auto-switch from architect to code) */
 export interface ZCodeModeUpdate {
   type: "mode_update";
   taskId: string;
@@ -853,8 +853,8 @@ export interface ZCodeModeUpdate {
   currentModeId: string;
   availableModes: ZCodeTaskModeInfo[];
 }
-/** Agent API 遇到可重试错误时的临时状态；只用于内存 UI，不写入任务持久化。
- * attempt 表示当前正在进行的“第几次重试”，从 1 开始，不是总尝试次数。
+/** Transient state while the agent API hits a retryable error; memory UI only, never persisted to the task.
+ * attempt is the retry currently in flight, 1-based; not the total attempt count.
  */
 export interface ZCodeApiRetryStatus {
   kind: "api_retry";
@@ -864,7 +864,7 @@ export interface ZCodeApiRetryStatus {
   errorStatus: number | null;
   error: string;
 }
-/** Agent 推送会话标题等元信息更新 */
+/** Agent pushes session title and other metadata updates */
 export interface ZCodeSessionInfoUpdate {
   type: "session_info_update";
   taskId: string;
@@ -872,16 +872,16 @@ export interface ZCodeSessionInfoUpdate {
   inputId?: InputId;
   title?: string | null;
   /**
-   * 可选的 API 重试状态补丁。
+   * Optional API retry-state patch.
    *
-   * `undefined` 表示本次 session_info_update 没有碰这个字段；
-   * `null` 表示显式清空重试状态；
-   * 对象表示进入/更新重试中。
+   * `undefined` means this session_info_update did not touch the field;
+   * `null` means explicitly clearing retry state;
+   * an object means entering/updating the retrying state.
    */
   apiRetry?: ZCodeApiRetryStatus | null;
   /**
-   * zcode-cli 通过兼容 session_info_update._meta.zcode.target 投影的 /goal 状态补丁。
-   * `undefined` 表示本次没有 target 变化；`target: null` 表示清空。
+   * /goal state patch projected by zcode-cli through the compat session_info_update._meta.zcode.target.
+   * `undefined` means no target change this round; `target: null` clears it.
    */
   target?: ZCodeTaskGoalChangedPatch;
 }
@@ -892,24 +892,24 @@ export interface ZCodeGoalVerificationUpdate {
   inputId?: InputId;
   verification: ZCodeGoalVerification;
 }
-/** Agent 推送实时上下文窗口使用情况 */
+/** Agent pushes realtime context-window usage */
 export interface ZCodeUsageUpdate {
   type: "usage_update";
   taskId: string;
   traceId: TraceId;
   inputId?: InputId;
-  /** 上下文窗口总大小（token 数） */
+  /** Total context window size (tokens) */
   size: number;
-  /** 当前已使用的 token 数 */
+  /** Tokens used so far */
   used: number;
-  /** 累计费用 */
+  /** Cumulative cost */
   cost?: { amount: number; currency: string } | null;
-  /** 当前主轮 provider usage 暴露的缓存命中信息。 */
+  /** Cache-hit info exposed by the latest main-round provider usage. */
   cache?: ZCodeContextCacheUsage;
-  /** Agent 按来源估算的上下文字符量，用于 UI 展示比例，不作为 token 账本。 */
+  /** Agent-estimated context characters by source, for UI ratio display only; not a token ledger. */
   breakdown?: ZCodeContextUsageBreakdownItem[];
 }
-/** Agent runtime 上报的后台任务控制项；只表示当前 host 内存态，不写入 session 文件。 */
+/** Background task controls reported by the agent runtime; current host memory state only, not written to the session file. */
 export interface ZCodeBackgroundTaskControlItemsUpdate {
   type: "background_bash_jobs_update";
   taskId: string;
@@ -917,7 +917,7 @@ export interface ZCodeBackgroundTaskControlItemsUpdate {
   inputId?: InputId;
   jobs: ZCodeBackgroundTaskControlItem[];
 }
-/** 残余数据 flush 后通知 UI 重新拉取快照，确保迟到的流式数据能被渲染 */
+/** Notifies the UI to refetch the snapshot after residual data is flushed, so late streaming data gets rendered */
 export interface ZCodeTaskSnapshotUpdated {
   type: "task_snapshot_updated";
   workspacePath: string;
@@ -951,7 +951,7 @@ export interface ZCodeTaskSendPromptCommand extends ZCodeTaskRuntimeCommandBase 
   type: "send_prompt";
   content: string;
   attachments?: ZCodePromptAttachment[];
-  /** 定时任务派发的 host command 必须保留 automation 上下文，避免队列 drain 后重新暴露 CronCreate。 */
+  /** Host commands dispatched by scheduled tasks must keep the automation context, so CronCreate is not re-exposed after the queue drains. */
   automationId?: string;
 }
 export type ZCodeTaskRuntimeCommand = ZCodeTaskSendPromptCommand;
@@ -971,24 +971,24 @@ export interface TaskStreamMirrorBatch {
   ops: TaskStreamMirrorOp[];
   terminal: boolean;
 }
-// ---- 持久化格式 ----
+// ---- Persisted format ----
 
 export interface ZCodeSessionFile {
   meta: ZCodeTaskMeta;
   messages: ZCodePersistedMessage[];
-  /** 文件变更记录，按轮次存储 */
+  /** File-change records, stored per round */
   fileChanges?: ZCodePersistedFileChange[];
-  /** Git checkpoint 元信息，按轮次存储，仅用于撤销编排 */
+  /** Git checkpoint metadata per round, for undo orchestration only */
   turnCheckpoints?: ZCodePersistedTurnCheckpoint[];
 }
 export interface ZCodeSessionRuntimeSnapshot {
   pendingPermissions?: ZCodePermissionRequest[];
   pendingElicitations?: ZCodeElicitationRequest[];
-  /** 当前 session 的 active turn 类型；用于 UI 区分普通 streaming 与 compact 维护态。 */
+  /** Active turn type of the current session; lets the UI tell normal streaming from compact maintenance. */
   activeTurnKind?: ZCodeSessionActiveTurnKind;
-  /** Agent API 网络重试是运行态提示，只随 snapshot 恢复，不写入 session JSON。 */
+  /** Agent API network retries are runtime hints; restored with the snapshot, never written to the session JSON. */
   apiRetry?: ZCodeApiRetryStatus | null;
-  /** ZCode Protocol projection 中的上下文窗口用量，用于恢复旧 task UI 的右下角 context meter。 */
+  /** Context-window usage in the ZCode Protocol projection, for the context meter of restored legacy task UI. */
   contextUsage?: {
     used: number;
     size: number;
@@ -999,66 +999,66 @@ export interface ZCodeSessionRuntimeSnapshot {
   streamWatermark?: TaskStreamWatermark;
   pendingCommands?: ZCodeTaskRuntimeCommand[];
   /**
-   * 从 agent session store 的持久 todo 映射出的恢复态。
-   * UI 只消费它恢复 todo 面板，不把该字段写回旧 session JSON。
+   * Restore state projected from the agent session store's persisted todos.
+   * The UI only consumes it to restore the todo panel; never written back to the legacy session JSON.
    */
   plan?: ZCodePlanStep[] | null;
   /**
-   * 目标摘要的运行态投影；从 agent DB / message tool parts 临时计算，不写入 task-index。
+   * Runtime projection of the objective summary; computed on demand from the agent DB / message tool parts, not written to task-index.
    */
   goalStats?: ZCodeTaskGoalStats | null;
   goalVerifications?: ZCodeGoalVerification[] | null;
   goalVerificationTimeline?: ZCodeGoalVerificationTimelineMeta[] | null;
   /**
-   * session 历史 TodoWrite 投影出的分组 todo；用于恢复展示，不作为 todo 权威存储。
+   * Grouped todos projected from session-history TodoWrite; for restore display only, not the todo source of truth.
    */
   todoGroups?: ZCodeTodoGroup[] | null;
-  /** 兼容字段：承载 host/runtime 运行态后台任务 control，可随 snapshot 恢复，但不持久化到 session JSON。 */
+  /** Compat field: host/runtime background task controls; restorable with a snapshot but not persisted to session JSON. */
   backgroundBashJobs?: ZCodeBackgroundTaskControlItem[];
 }
 export interface ZCodeTaskSnapshotHistory {
-  /** 响应态历史窗口是否裁掉了更早消息；只由 getTaskSnapshot 返回，不写入 session JSON。 */
+  /** Whether the response-state history window trimmed older messages; returned only by getTaskSnapshot, never in session JSON. */
   truncatedBefore: boolean;
-  /** 裁剪前可见消息总数，用于 UI 判断是否还能补拉更早历史。 */
+  /** Visible message count before trimming, so the UI knows older history can still be fetched. */
   totalMessages: number;
 }
 export type ZCodeTaskSnapshot = ZCodeSessionFile & {
-  /** 非持久化运行态，只由 getTaskSnapshot 组装返回，禁止写入 session JSON。 */
+  /** Non-persisted runtime state, assembled only by getTaskSnapshot; must not be written to session JSON. */
   runtime?: ZCodeSessionRuntimeSnapshot;
-  /** 非持久化历史窗口元数据，只描述本次 snapshot 响应是否为尾部窗口。 */
+  /** Non-persisted history-window metadata, only describing whether this snapshot response is a tail window. */
   history?: ZCodeTaskSnapshotHistory;
-  /** Agent/app 通信返回的可见命令列表；用于恢复 `/` 面板，不写入 session JSON。 */
+  /** Visible command list returned by agent/app communication; restores the `/` panel, never written to session JSON. */
   slashCommands?: ZCodeSlashCommand[];
-  /** 从 session settings 投影出的 UI 配置；只随 snapshot 返回，不写入 session JSON。 */
+  /** UI config projected from session settings; returned only with snapshots, never written to session JSON. */
   configOptions?: ZCodeConfigOption[];
 };
 export type ZCodeTurnFileState = "applied" | "reverted";
-/** 持久化的轮次文件变更 */
+/** Persisted per-round file changes */
 export interface ZCodePersistedFileChange {
   turnIndex: number;
   snapshots: ZCodePersistedFileSnapshot[];
-  /** 当前这轮文件变更是否仍应用在 workspace 上 */
+  /** Whether this round's file changes are still applied to the workspace */
   fileState?: ZCodeTurnFileState;
 }
-/** 持久化的轮次文件 checkpoint 元信息 */
+/** Persisted per-round file checkpoint metadata */
 export interface ZCodePersistedTurnCheckpoint {
   turnIndex: number;
-  /** 该轮开始前的文件状态 checkpoint */
+  /** File-state checkpoint from before the round started */
   baseFileCheckpointId: string;
-  /** 该轮结束后的文件状态 checkpoint；未完成时允许为空 */
+  /** File-state checkpoint after the round ended; may be empty when incomplete */
   resultFileCheckpointId?: string;
 }
-/** 持久化的文件快照 */
+/** Persisted file snapshot */
 export interface ZCodePersistedFileSnapshot {
   path: string;
   beforeContent: string | null;
   afterContent: string;
   writeCount: number;
-  /** 仅用于响应态快照：表示文件快照正文已被首屏预算裁剪，可按 ref 拉取完整内容。 */
+  /** Response-state snapshot only: the file snapshot body was trimmed by the first-screen budget; fetch full content by ref. */
   contentRefs?: ZCodeTaskSnapshotFileContentRef[];
 }
-/** 持久化消息的 parts 元素，记录 content / thought / tool-call 的交错顺序。
- *  恢复历史时用它还原 UI 侧的 parts 数组，避免所有文字堆到上面、工具调用排到下面。 */
+/** Parts element of a persisted message, recording the interleaved order of content / thought / tool-call.
+ *  On history restore it rebuilds the UI-side parts array so text does not pile on top with tool calls below. */
 export type ZCodePersistedMessagePart =
   | { type: "content"; content: string }
   | { type: "thought"; content: string }
@@ -1067,41 +1067,41 @@ export type ZCodeAssistantMessageFeedback = "like" | "dislike";
 export type ZCodeAssistantCheckpointState = "partial";
 export type ZCodeAssistantCheckpointReason = "tool_completed" | "part_boundary" | "periodic";
 export interface ZCodePersistedMessage {
-  /** 协议侧原始 messageId；用于让实时消息和 snapshot 恢复后的 timeline divider 保持同一身份。 */
+  /** Protocol-side original messageId; keeps realtime messages and post-restore timeline dividers the same identity. */
   id?: string;
-  /** 投影合并 assistant 后保留的原始 messageId 集合，用于 timeline anchor 仍能命中被合并的子消息。 */
+  /** Original messageIds kept after assistant merge projection, so timeline anchors still hit merged child messages. */
   mergedMessageIds?: string[];
   role: "user" | "assistant";
   content: string;
   timestamp: number;
-  /** assistant 归属的 legacy goal 展示迭代；仅用于 UI 历史区状态行，不参与 verifier 轮次判定。 */
+  /** Legacy goal display iteration the assistant belongs to; UI history status line only, not a verifier round. */
   goalIteration?: number;
-  /** 发送该消息时所归属的模型；历史旧数据缺失时由读取侧回退到 task.meta.model。 */
+  /** Model owning the message when sent; legacy data without it falls back to task.meta.model on read. */
   model?: string;
-  /** 纯文本字符数快照；估算 token 时统一按常量除数换算，后续改口径时可重算。 */
+  /** Plain-text character snapshot; token estimates divide by a constant, recomputable when the formula changes. */
   characterCount?: number;
-  /** assistant 历史区最终耗时；仅在本轮结束后落盘，避免历史恢复时再用 timestamp 反推导致时长失真 */
+  /** Final duration of the assistant history entry; persisted at round end so history restore avoids timestamp back-calculation drift */
   durationMs?: number;
-  /** assistant 是否以用户主动停止或异常中断结束；用于抑制 latest 回复区的提升。 */
+  /** Whether the assistant ended by user stop or abnormal interrupt; suppresses promotion into the latest reply area. */
   interrupted?: boolean;
-  /** 用户对 assistant 回复的本地反馈；仅用于 ZCode 展示/统计，不注入 Agent 上下文。 */
+  /** Local user feedback on the assistant reply; ZCode display/stats only, never injected into agent context. */
   feedback?: ZCodeAssistantMessageFeedback;
   attachments?: ZCodePromptAttachment[];
   tools?: ZCodePersistedToolCall[];
   thought?: string;
-  /** 消息各部分的交错顺序，用于历史恢复时保持 content 和 tool-call 的原始排列 */
+  /** Interleave order of the message parts, preserving content/tool-call layout on history restore */
   parts?: ZCodePersistedMessagePart[];
-  /** assistant 运行中快照；用于崩溃/重启后恢复到最近一次 parts 边界，不代表本轮自然完成。 */
+  /** While-running assistant snapshot; recovers to the last parts boundary after crash/restart, not a natural round completion. */
   checkpointState?: ZCodeAssistantCheckpointState;
   checkpointReason?: ZCodeAssistantCheckpointReason;
   checkpointUpdatedAt?: number;
-  /** 该消息所属的对话轮次，用于关联 per-turn 文件变更摘要和回滚 */
+  /** Conversation round owning this message, linking per-turn file-change summaries and rollback */
   turnIndex?: number;
-  /** 仅用于响应态快照：表示大字段已被首屏预算裁剪，可按 ref 拉取完整正文。 */
+  /** Response-state snapshot only: large fields trimmed by the first-screen budget; fetch the full body by ref. */
   bodyRefs?: ZCodeTaskSnapshotBodyRef[];
-  /** 仅用于响应态快照：tools 被按条数裁剪时的切片信息，可用于补拉更多工具调用。 */
+  /** Response-state snapshot only: slice info when tools were trimmed by count; fetch more tool calls with it. */
   toolSlice?: ZCodeTaskSnapshotToolSlice;
-  /** synthetic divider 元数据（context_compaction / session_fork），随 snapshot 恢复用于 UI 渲染分隔条。 */
+  /** Synthetic divider metadata (context_compaction / session_fork), restored with snapshots for UI dividers. */
   syntheticTimeline?: ZCodeTimelineMeta;
 }
 export type ZCodeTaskSnapshotBodyField = "content" | "thought";
@@ -1135,7 +1135,7 @@ export interface ZCodeTaskSnapshotToolSlice {
   endToolIndexExclusive: number;
 }
 export interface ZCodePersistedToolCall {
-  /** ZCode 固定工具名；旧快照里可能曾把 title 落在这里，读取侧需兼容。 */
+  /** Fixed ZCode tool name; legacy snapshots may have persisted the title here, readers must stay compat. */
   toolName?: string;
   title?: string;
   kind?: string;
@@ -1144,7 +1144,7 @@ export interface ZCodePersistedToolCall {
   output?: unknown;
   error?: string;
   raw?: unknown;
-  /** 仅用于响应态快照：表示工具大字段已被首屏预算裁剪，可按 ref 拉取完整内容。 */
+  /** Response-state snapshot only: large tool fields trimmed by the first-screen budget; fetch full content by ref. */
   snapshotRefs?: ZCodeTaskSnapshotToolFieldRef[];
 }
 export type TaskRealtimeReason =
@@ -1153,12 +1153,12 @@ export type TaskRealtimeReason =
   | "assistant_message_saved"
   | "task_status_changed"
   | "task_meta_changed"
-  // 切模型这类纯配置变更过去混在 task_meta_changed 里广播，UI 无法区分
-  // "归属相关 meta 变更（rename/unread）"和"与列表归属无关的配置变更"，
-  // 导致每次切模型都触发全局 membership 重拉 + 整表刷新。单独一个 reason 让策略层精确降级。
+  // Pure config changes like model switches used to broadcast inside task_meta_changed, so the UI could not tell
+  // "membership-related meta changes (rename/unread)" from "config changes unrelated to list membership",
+  // making every model switch trigger a global membership refetch plus a full-table refresh. A dedicated reason lets the policy layer downgrade precisely.
   | "task_model_changed"
-  // 标题更新（首条消息写 title / 收口后自动标题生成）同样与归属无关且高频，
-  // 混在 task_meta_changed 里会让每次发送/收口都触发全局 membership 重拉。
+  // Title updates (first-message title write / post-close auto title) are also membership-unrelated and high-frequency;
+  // keeping them in task_meta_changed makes every send/close-out trigger a global membership refetch.
   | "task_title_changed"
   | "task_pinned"
   | "task_unpinned"

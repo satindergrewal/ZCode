@@ -14,13 +14,13 @@ const MESSAGES: Record<
   Omit<CuaPermissionPanelMessages, "permissionLabel"> & Record<CuaPermissionKind, string>
 > = {
   "zh-CN": {
-    documentTitle: "ZCode Computer Use 权限",
-    dragTitle: "拖动我到上面的权限列表",
-    hintPrefix: "把左边的图标拖进上方的",
-    hintSuffix: "列表",
-    completion: "松手即完成授权，无需再点开关",
-    accessibility: "辅助功能",
-    screen_recording: "屏幕录制",
+    documentTitle: "ZCode Computer Use permission",
+    dragTitle: "Drag me into the permission list above",
+    hintPrefix: "Drag the icon on the left into the",
+    hintSuffix: "list above",
+    completion: "Release to grant; no toggle needed",
+    accessibility: "Accessibility",
+    screen_recording: "Screen Recording",
   },
   "en-US": {
     documentTitle: "ZCode Computer Use Permissions",

@@ -1,8 +1,10 @@
-// 中枢「运行」的直接启动编排。
-// 不再合成对话文案：在目标项目里建一个空会话 → 向它发 startSavedWorkflow 命令 →
-// accepted 则导航到新会话（启动卡已在顶部）；rejected / 抛错则删掉空会话、把错误回给调用方
-// （实参窗行内 / toast），用户留在中枢。「失败在会话存在之前」（不变式 2）：createSession
-// 被拒时不发 start、不留会话；start 被拒时立即 deleteSession 收回刚建的空会话。
+// Direct-launch orchestration behind the hub's Run button.
+// No more synthesized conversation text: create an empty session in the target project -> send it
+// the startSavedWorkflow command -> on accepted, navigate to the new session (the launch card is
+// already at top); on rejected / thrown, delete the empty session and surface the error to the
+// caller (args-dialog inline / toast), leaving the user in the hub. Failure happens before the
+// session exists (invariant 2): createSession rejected means no start and no session; start
+// rejected means an immediate deleteSession to reclaim the empty session.
 import { useCallback, useRef, useState } from "react";
 import {
   SAVED_WORKFLOW_START_REJECTED_FAULT_PREFIX,
@@ -17,21 +19,21 @@ import {
 } from "@/v4/workspaceConnectionRegistry.js";
 import { logger } from "@/logger.js";
 
-/** 目标项目坐标（工作流所属项目，绝不取活动项目；不变式 7）；remoteSessionId 决定连接 endpoint。 */
+/** Target project coordinates (the workflow's own project, never the active one; invariant 7); remoteSessionId decides the connection endpoint. */
 export interface SavedWorkflowLaunchTarget {
   workspacePath: string;
   workspaceIdentity?: string;
   remoteSessionId?: string;
 }
 
-/** 启动请求：name 由解析结果保证（不变式 6），scope 定向查找，args 已由实参窗收齐。 */
+/** Launch request: name guaranteed by resolution (invariant 6), scope-directed lookup, args collected by the args dialog. */
 interface SavedWorkflowLaunchRequest {
   name: string;
   scope: "project" | "global";
   args: Record<string, unknown>;
 }
 
-/** 错误原因 = 拒绝词表 ∪ 能力缺席 ∪ 兜底；直接映射 i18n key `workflows.hub.launch.error.<reason>`。 */
+/** Error reason = rejection vocabulary U missing-capability U fallback; maps 1:1 onto i18n key workflows.hub.launch.error.<reason>. */
 export type SavedWorkflowLaunchErrorReason =
   | SavedWorkflowStartRejectionReason
   | "unsupported"
@@ -39,9 +41,9 @@ export type SavedWorkflowLaunchErrorReason =
 
 export interface SavedWorkflowLaunchError {
   reason: SavedWorkflowLaunchErrorReason;
-  /** 原始 fault code / ACK 状态；仅用于日志与排障，不直接展示。 */
+  /** Raw fault code / ACK status; for logs and troubleshooting only, never rendered directly. */
   code: string;
-  /** 服务端人可读原因（编译诊断合并后已有界截断）；有则在行内 mono 块展示。 */
+  /** Server human-readable reason (bounded truncation after merging compile diagnostics); shown in an inline mono block when present. */
   message?: string;
 }
 
@@ -54,24 +56,25 @@ interface UseSavedWorkflowLauncherResult {
     target: SavedWorkflowLaunchTarget,
     request: SavedWorkflowLaunchRequest,
   ) => Promise<SavedWorkflowLaunchResult>;
-  /** 正在启动：实参窗主按钮 loading + 禁用，防重复点击。 */
+  /** Launching: args-dialog primary button loading + disabled against double clicks. */
   pending: boolean;
-  /** 最近一次启动失败（成功 / 新启动前清空）。 */
+  /** Most recent launch failure (cleared on success / before a new attempt). */
   error: SavedWorkflowLaunchError | null;
   clearError: () => void;
 }
 
-// 能力缺席（无 dwf 端口）时 v4 handler 回的 fault code（interaction-background.ts）。
+// Fault code the v4 handler returns when the capability is missing (no dwf port) (interaction-background.ts).
 const CAPABILITY_UNSUPPORTED_FAULT = "fault.command.capabilityUnsupported";
 
-/** createSession 的 workspaceId 与 conversation 连接口径一致：identity 优先，否则路径。 */
+/** createSession workspaceId matches the conversation binding key: identity first, else path. */
 export function launchWorkspaceId(target: SavedWorkflowLaunchTarget): string {
   return target.workspaceIdentity?.trim() || target.workspacePath;
 }
 
 /**
- * 按目标项目取连接租约（remoteSessionId 决定 endpoint）。直接启动器与「提升为全局」
- * （useSavedWorkflowPromote）共用：两者都在目标项目里建会话，只是首条命令不同。
+ * Connection lease for the target project (remoteSessionId decides the endpoint). Shared by the
+ * direct launcher and promote-to-global (useSavedWorkflowPromote): both create a session in the
+ * target project; only the first command differs.
  */
 export function acquireLaunchLease(
   target: SavedWorkflowLaunchTarget,
@@ -87,7 +90,7 @@ export function acquireLaunchLease(
   );
 }
 
-/** 把被拒 ACK 映射成结构化错误：能力缺席 → unsupported；拒绝词表 → 对应 reason；其余 → generic。 */
+/** Map a rejected ACK onto a structured error: missing capability -> unsupported; rejection vocabulary -> its reason; else generic. */
 function mapLaunchError(ack: CommandAck): SavedWorkflowLaunchError {
   const code = ack.reasonCode ?? ack.status;
   const message = ack.message;
@@ -99,14 +102,15 @@ function mapLaunchError(ack: CommandAck): SavedWorkflowLaunchError {
     const parsed = savedWorkflowStartRejectionReasonSchema.safeParse(suffix);
     if (parsed.success) return { reason: parsed.data, code, ...(message ? { message } : {}) };
   }
-  // 未知 fault / 非拒绝词表（含旧客户端遇到的新 code）都按通用错误显示。
+  // Unknown faults / non-vocabulary rejections (including new codes met by old clients) render as the generic error.
   return { reason: "generic", code, ...(message ? { message } : {}) };
 }
 
 /**
- * 中枢启动器 hook。载体 `agentService` 由调用组解析（项目组 = 目标项目的解析 service；
- * 全局组 = 本机 base service，目标 = 「运行于」选中的本地项目）。`onNavigate` 在 accepted
- * 后切到新会话（`handleSelectTaskInChat` 镜像，含 `showChatMainView`）。
+ * The hub launcher hook. The carrier `agentService` is resolved by the calling group (project
+ * group = the target project's resolved service; global group = the local base service with target
+ * = the local project chosen in run-on). `onNavigate` switches to the new session after accepted
+ * (mirrors handleSelectTaskInChat, including showChatMainView).
  */
 export function useSavedWorkflowLauncher(params: {
   agentService: WorkspaceConnectionAgentService;
@@ -115,7 +119,7 @@ export function useSavedWorkflowLauncher(params: {
   const { agentService, onNavigate } = params;
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<SavedWorkflowLaunchError | null>(null);
-  // pending 的同步事实源：防同一帧内重复触发（setPending 异步，单靠 state 挡不住）。
+  // Synchronous source of truth for pending: guards same-frame double triggers (setPending is async; state alone cannot).
   const pendingRef = useRef(false);
 
   const clearError = useCallback(() => setError(null), []);
@@ -140,7 +144,7 @@ export function useSavedWorkflowLauncher(params: {
           .sendCommand(createCommandEnvelope({ type: "deleteSession", payload: {}, sessionId }))
           .then((ack) => {
             if (ack.status !== "accepted" && ack.status !== "noop") {
-              logger.warn("[saved-workflow-launch] 回收空会话被拒", {
+              logger.warn("[saved-workflow-launch] empty-session cleanup rejected", {
                 sessionId,
                 status: ack.status,
                 reasonCode: ack.reasonCode ?? null,
@@ -148,13 +152,13 @@ export function useSavedWorkflowLauncher(params: {
             }
           })
           .catch(() => {
-            // 回收失败无碍：内存会话随 CLI 退出消失，转写里也不会出现它（无任何行）。
+            // Cleanup failure is harmless: the in-memory session dies with the CLI and never appears in the transcript (no rows).
           });
       };
 
       let createdSessionId: string | null = null;
       try {
-        // ① 空会话：无 firstInput、无 config，用 runtime 缺省模型 / 模式（不复用 composer 草稿配置）。
+        // (1) Empty session: no firstInput, no config - runtime-default model/mode, never the composer draft config.
         const createAck = await lease.transport.sendCommand(
           createCommandEnvelope({
             type: "createSession",
@@ -163,8 +167,8 @@ export function useSavedWorkflowLauncher(params: {
           }),
         );
         if (createAck.status !== "accepted" || createAck.result?.type !== "createSession") {
-          // 会话没建成：不发 start、不留会话，通用错误。
-          logger.warn("[saved-workflow-launch] createSession 被拒", {
+          // Session not created: no start, no session, generic error.
+          logger.warn("[saved-workflow-launch] createSession rejected", {
             workspaceId,
             status: createAck.status,
             reasonCode: createAck.reasonCode ?? null,
@@ -179,7 +183,7 @@ export function useSavedWorkflowLauncher(params: {
         }
         createdSessionId = createAck.result.sessionId;
 
-        // ② startSavedWorkflow：name / scope 定向查找 + 实参；无实参不带 args 键。
+        // (2) startSavedWorkflow: name/scope-directed lookup + args; omit the args key when empty.
         const startAck = await lease.transport.sendCommand(
           createCommandEnvelope({
             type: "startSavedWorkflow",
@@ -192,7 +196,7 @@ export function useSavedWorkflowLauncher(params: {
           }),
         );
         if (startAck.status === "accepted" && startAck.result?.type === "startSavedWorkflow") {
-          // accepted：启动卡已在新会话顶部，切过去让它活起来（无导航载体时静默启动，不切页）。
+          // accepted: the launch card already sits atop the new session; switch to it to bring it alive (without a navigator, launch silently and stay).
           onNavigate?.(target, createdSessionId);
           return {
             ok: true,
@@ -201,7 +205,7 @@ export function useSavedWorkflowLauncher(params: {
             toolCallId: startAck.result.toolCallId,
           };
         }
-        // 启动被拒 / 失败：收回刚建的空会话（不变式 2），把原因回给实参窗 / toast。
+        // Launch rejected / failed: reclaim the just-created empty session (invariant 2) and return the reason to the args dialog / toast.
         deleteCreatedSession(createdSessionId);
         const err = mapLaunchError(startAck);
         setError(err);

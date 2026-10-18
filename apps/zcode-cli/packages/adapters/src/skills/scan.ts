@@ -1,26 +1,26 @@
 // ============================================================
-// 技能根扫描规则（共享实现）
+// Skill root scanning rules (shared implementation).
 // ============================================================
 
-// manifest 的 skills 项既可指向单个技能目录，也可指向一层技能集合。
-// 根目录含 SKILL.md 时先识别根技能，再扫描一层子目录；与桌面发现规则保持一致，
-// 避免把单个技能误当集合而静默漏扫。
-// 插件发现链路（countSkillFiles / collectSkillComponents）是同步代码，技能 adapter 走
-// fs/promises，因此提供 sync/async 两个变体，规则只写一份、由各自实现遵循。
+// A manifest skills entry may point at a single skill directory or a one-level collection.
+// When the root has SKILL.md, recognize the root skill first, then scan one level of subdirs, matching
+// desktop discovery so a single skill is never misread as a collection and silently skipped.
+// The plugin discovery path (countSkillFiles / collectSkillComponents) is synchronous while the skill
+// adapter uses fs/promises, hence sync/async variants: one rule set, honored by each implementation.
 //
-// 错误契约：只吞「常态缺失」——路径不存在（ENOENT）或不是目录时返回空数组；其余错误
-// （如 EACCES 权限、EMFILE）必须向上抛，由调用方决定发 skill_scan_failed 诊断还是
-// 优雅降级。外层 catch 不能吞掉一切错误：权限错误会退化为静默空、skill_scan_failed
-// 诊断成为死代码，重新引入了静默失败路径。
+// Error contract: swallow only expected absence, ENOENT or not-a-directory, returning [], and rethrow
+// everything else (EACCES, EMFILE, ...) so callers choose between a skill_scan_failed diagnostic and
+// graceful degradation. A blanket outer catch would degrade permission errors to silent empty lists,
+// turning skill_scan_failed into dead code and reintroducing a silent-failure path.
 //
-// 信任边界：plugin-scope 内容不可信，符号链接（含 Windows
-// junction——Dirent.isSymbolicLink/lstat 对两者均返回 true）可指向插件根外的任意
-// 目录或文件（目录级 skills/evil-link -> ../../outside、文件级 SKILL.md -> ~/.aws/
-// credentials）。曾尝试 realpath containment，但边界作为可选参数沿数据流散布，每个
-// 文件接触点都要记得校验（文件级链接、跨盘符 relative 谓词、manifest 失败回退均成
-// 缺口）。收敛为单一规则：插件扫描一律不跟随符号链接——根自身、子目录候选、
-// SKILL.md 文件三个粒度全部拒绝链接（拒绝即无逃逸，无需判定链接指向何处）。
-// 用户级技能根（~/.zcode/skills 的 symlink 导入是受支持功能）保持默认跟随。
+// Trust boundary: plugin-scope content is untrusted. Symlinks (including Windows
+// junctions, both true per Dirent.isSymbolicLink/lstat) may point anywhere outside the plugin root,
+// e.g. dir-level skills/evil-link -> ../../outside or file-level SKILL.md -> ~/.aws/credentials.
+// Realpath containment was tried, but the boundary leaked through an optional argument across the data
+// flow and every file touchpoint had to remember to validate (file links, cross-drive relative checks,
+// manifest failure fallbacks all became holes). One rule instead: plugin scans never follow symlinks,
+// rejecting links at root, subdir candidate and SKILL.md alike (rejection cannot escape; no target checks).
+// User-level skill roots keep default following: ~/.zcode/skills symlink imports are supported.
 
 import { lstatSync, readdirSync, statSync } from "node:fs";
 import { lstat, readdir, stat } from "node:fs/promises";
@@ -29,23 +29,23 @@ import { SKILL_FILE_NAME, shouldWalkSkillDirectoryEntry } from "@zcode/shared";
 
 interface ScanSkillFilesOptions {
   /**
-   * 是否跟随符号链接（目录级与文件级），默认 true（用户级技能根的 symlink 导入
-   * 是受支持功能）。plugin-scope 扫描必须传 false：链接可指向插件根外，拒绝
-   * 链接即拒绝逃逸，无需 realpath 判定指向。
+   * Whether to follow symlinks (dir and file level); default true (user-level skill roots support
+   * symlink imports). Plugin-scope scans must pass false: links may point outside the plugin root, and
+   * rejecting links rejects escape without any realpath target checks.
    */
   followSymbolicLinks?: boolean;
 }
 
 /**
- * 根目录下所有真实存在的 SKILL.md 绝对路径（含根自身）。
- * 根目录不存在或不是目录返回空数组；扫描过程中的其他错误（EACCES 等）向上抛。
+ * All real SKILL.md absolute paths under root, root included.
+ * Returns [] when root is missing or not a directory; other scan errors (EACCES, ...) propagate.
  */
 export async function scanSkillFilesUnderRoot(
   rootPath: string,
   options: ScanSkillFilesOptions = {},
 ): Promise<string[]> {
   const followSymlinks = options.followSymbolicLinks ?? true;
-  // 根自身是链接（含 junction）时，插件扫描直接判空。
+  // A linked root (junctions included) yields an empty plugin scan.
   if (!followSymlinks && (await isSymbolicLink(rootPath))) return [];
 
   const rootInfo = await stat(rootPath).catch((error) => {
@@ -56,7 +56,7 @@ export async function scanSkillFilesUnderRoot(
 
   const files: string[] = [];
   const own = join(rootPath, SKILL_FILE_NAME);
-  // 根自身无 SKILL.md 是常态，继续扫一层子目录。
+  // No SKILL.md at the root is normal; keep scanning one level of subdirs.
   if (await isLoadableSkillFile(own, followSymlinks)) files.push(own);
 
   const entries = await readdir(rootPath, { withFileTypes: true });
@@ -64,16 +64,16 @@ export async function scanSkillFilesUnderRoot(
     const walkable = entry.isDirectory() || (followSymlinks && entry.isSymbolicLink());
     if (!walkable) continue;
     if (!shouldWalkSkillDirectoryEntry(entry.name)) continue;
-    // 子目录命中的路径必须校验文件真实存在：分类目录（如 skills/engineering/）
-    // 不是技能目录，拼出来的路径不存在；parseSkill 本会静默跳过，但计数与
-    // 组件枚举都消费该结果，不校验会把「不存在的技能」算进来。
+    // Candidate paths must exist on disk: category dirs (skills/engineering/) are not skill dirs, so the
+    // joined path is missing; parseSkill would skip silently, but counts and component enumeration
+    // consume this result and would count nonexistent skills.
     const candidate = join(rootPath, entry.name, SKILL_FILE_NAME);
     if (await isLoadableSkillFile(candidate, followSymlinks)) files.push(candidate);
   }
   return files;
 }
 
-/** scanSkillFilesUnderRoot 的同步变体，错误契约相同。 */
+/** Sync variant of scanSkillFilesUnderRoot with the same error contract. */
 export function scanSkillFilesUnderRootSync(
   rootPath: string,
   options: ScanSkillFilesOptions = {},
@@ -99,8 +99,8 @@ export function scanSkillFilesUnderRootSync(
 }
 
 /**
- * SKILL.md 候选的可加载判定：真实文件才收录。不跟随链接时符号链接文件
- * （含 junction）一律拒绝——这是文件级逃逸（SKILL.md -> 外部任意文件）的防线。
+ * Loadability check for SKILL.md candidates: only real files count. When not following links, symlinked
+ * files (junctions included) are always rejected, guarding the file-level escape path.
  */
 async function isLoadableSkillFile(path: string, followSymlinks: boolean): Promise<boolean> {
   if (!followSymlinks && (await isSymbolicLink(path))) return false;
@@ -141,7 +141,7 @@ function statSyncOrNull(path: string): { isFile(): boolean; isDirectory(): boole
   }
 }
 
-/** ENOENT（路径不存在）是扫描常态，吞掉；其余错误（EACCES 等）向上抛。 */
+/** ENOENT is normal during scans, swallow it; rethrow everything else (EACCES, ...). */
 function throwIfUnexpectedScanError(error: unknown): void {
   if (
     typeof error === "object" &&

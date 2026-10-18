@@ -29,8 +29,8 @@ export function buildSshConnectionHistorySuggestions(
   );
 
   return {
-    // SSH 历史候选要按最近连接顺序去重展示，否则同一个 host / username
-    // 会在多次连接后重复堆叠，focus 打开下拉时很难找到真正最近使用的项。
+    // Dedupe history candidates by most-recent connection; otherwise repeated connections stack
+    // the same host/user entries and the dropdown hides the actually-latest one.
     hosts: dedupeSuggestions(sshSnapshots.map((snapshot) => snapshot.host)),
     ports: dedupeSuggestions(sshSnapshots.map((snapshot) => String(snapshot.port ?? 22))),
     usernames: dedupeSuggestions(sshSnapshots.map((snapshot) => snapshot.username)),

@@ -20,7 +20,7 @@ interface SharedContextDocumentV1 {
   formatterVersion: 1;
   markdown: string;
   markdownSha256: string;
-  /** 本 build 认不出、没能进 Markdown 的 row kind；调用方负责记日志。 */
+  /** Row kind this build cannot render into Markdown; caller owns logging. */
   unsupportedKinds: string[];
 }
 
@@ -107,8 +107,9 @@ export function formatSharedContextV1(
           `Unsupported shared context row: ${row.kind}`,
         );
       default:
-        // 未来新增的 row kind：不抛（一行认不出不该让整次导入失败），但也不能静默——
-        // 模型侧少内容必须留痕，否则只能靠用户发现回答漏了东西。
+        // Future row kinds: do not throw (one unrecognized line must not fail the import) but do
+        // not stay silent either - missing model-side content needs a trace, or only users notice
+        // answers lost content.
         unsupportedKinds.add((row as { kind?: string }).kind ?? "unknown");
         break;
     }

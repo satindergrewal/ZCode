@@ -49,8 +49,9 @@ export function buildGitAutoRefreshWatchPaths(
     const path = normalizeWatchPath(watchPath.path);
     if (
       !path ||
-      // 兼容旧 remote server：旧 summary 仍可能携带 workspacePath，Linux 下不能让
-      // 这个历史字段重新绕过平台边界，触发慢速递归 watcher。
+      // Compatibility with old remote servers: legacy summaries may still carry
+      // workspacePath. On Linux that historical field must not bypass the platform
+      // boundary again and trigger the slow recursive watcher.
       (path === workspacePath && !canWatchWorkspaceRecursively) ||
       watchPaths.some((entry) => entry.path === path)
     ) {

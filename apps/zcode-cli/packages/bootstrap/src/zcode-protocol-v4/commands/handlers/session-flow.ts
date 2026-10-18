@@ -1,6 +1,6 @@
-// 会话流命令组：sendText / stop（模式样板）。
-// 每个命令组一个文件：handler 纯函数 (host, envelope) → CommandResult|undefined，
-// 决策逻辑直驱 core，环境能力走 host 钩子（见 ../types.ts 的过渡标注）。
+// Session-flow commands: sendText / stop (the pattern template).
+// One file per command group: handlers are pure (host, envelope) -> CommandResult|undefined,
+// decision logic drives core directly, environment capabilities via host hooks (transition notes in ../types.ts).
 import type {
   CommandEnvelope,
   CommandPayloadMap,
@@ -19,7 +19,7 @@ import { requireRecord } from "../record-access.js";
 import type { V4CommandCoreHost, V4SessionRecordView } from "../types.js";
 import { V4CommandNoopError } from "../../v4-gateway.js";
 
-/** 等 idle 轮询参数：25ms 间隔、5s 超时。 */
+/** The wait-idle poll: a 25ms interval, 5s timeout. */
 const IDLE_POLL_INTERVAL_MS = 25;
 const IDLE_POLL_TIMEOUT_MS = 5_000;
 
@@ -33,12 +33,12 @@ export class V4InputAdmissionRejectedError extends Error {
   }
 }
 
-/** V4 用户输入统一准入：正文或附件至少存在一个。 */
+/** Unified v4 user-input admission: body or attachments, at least one. */
 export function hasPromptInput(text: string, attachments: readonly unknown[] | undefined): boolean {
   return text.trim().length > 0 || Boolean(attachments && attachments.length > 0);
 }
 
-/** held（inputRouting.mode=choice）下 sendText/sendGoalCommand 缺 disposition → 拒绝。 */
+/** Under held (inputRouting.mode=choice), sendText/sendGoalCommand without a disposition -> reject. */
 class V4HeldQueueDispositionRequiredError extends Error {
   readonly reasonCode = "heldQueueDispositionRequired";
   constructor() {
@@ -47,7 +47,7 @@ class V4HeldQueueDispositionRequiredError extends Error {
   }
 }
 
-/** 确认框打开后队列被另一端增删：旧确认不能继续清空/保留并发送。 */
+/** The queue changed on the other end while the confirm dialog was open: a stale confirm may not clear/keep-and-send. */
 class V4HeldQueueConfirmationStaleError extends Error {
   readonly reasonCode = "guard.heldQueueConfirmationStale";
   constructor() {
@@ -89,7 +89,7 @@ export async function enqueueDeferredInputForBusyWork(
   );
 }
 
-/** 等 idle 超时（active turn 的 finally 5s 内未释放锁）→ 放弃重发并报错。 */
+/** Wait-idle timeout (the active turn's finally did not release within 5s) -> give up the resend and error. */
 export class V4SessionIdleTimeoutError extends Error {
   constructor(sessionId: string) {
     super(`v4 timed out waiting for session idle: ${sessionId}`);
@@ -98,9 +98,9 @@ export class V4SessionIdleTimeoutError extends Error {
 }
 
 /**
- * completed + queue>0 + autoDrain=false（投影 inputRouting.mode=choice）时，
- * 输入不静默入队：
- * clear → 先清空 queue 再 startNow；keep → 保留 queue 直接 startNow；缺省 → reject。
+  * completed + queue>0 + autoDrain=false (projection inputRouting.mode=choice):
+  * input does not silently enqueue:
+  * clear -> empty the queue then startNow; keep -> keep the queue, startNow; absent -> reject.
  */
 export async function applyHeldQueueDisposition(
   host: V4CommandCoreHost,
@@ -131,8 +131,8 @@ export async function applyHeldQueueDisposition(
 }
 
 /**
- * 兼容 admission：新发送端显式提交 Selection/Mode；旧发送端在 CLI 接收边界把
- * 当前 Session 值固定进 canonical intent。固定完成后 Queue/Guide 不再读取可变 Session。
+  * Admission compat: new senders submit Selection/Mode explicitly; legacy senders get the
+  * current Session values pinned into the canonical intent at the CLI receive boundary. Once pinned, Queue/Guide never read the mutable Session.
  */
 export function resolveSubmittedExecutionState(
   record: V4SessionRecordView,
@@ -151,9 +151,9 @@ export function resolveSubmittedExecutionState(
     if (!runtimeSelection && !entrySelection) {
       throw new Error(`Session model must be provider-qualified: ${record.app.getModel()}`);
     }
-    // getThoughtLevel() 是 Active Model 的 effective 展示事实。把它补回
-    // canonical intent 会把 Config 默认值伪装成显式 pin；旧发送端只能固定 Session
-    // 已经持有的稀疏 Selection，不能在 admission 时重新解释它。
+        // getThoughtLevel() is the Active Model's effective display fact. Feeding it back
+        // into the canonical intent would disguise a Config default as an explicit pin; legacy senders can only pin the sparse Selection
+        // the Session already holds, never re-interpret it at admission.
     modelSelection = runtimeSelection
       ? {
           providerId: runtimeSelection.providerId,
@@ -178,8 +178,8 @@ export function resolveSubmittedExecutionState(
   };
 }
 /**
- * sendText：只做协议/held/model/附件校验，start/queue 交给同一 session 的 Core admission。
- * held（choice）时仍按 heldQueueDisposition 裁决。
+  * sendText: protocol/held/model/attachment validation only; start/queue goes to the same session's Core admission.
+  * Under held (choice) the heldQueueDisposition still decides.
  */
 async function sendText(
   host: V4CommandCoreHost,
@@ -187,7 +187,7 @@ async function sendText(
 ): Promise<CommandResult | undefined> {
   const payload = envelope.payload as CommandPayloadMap["sendText"];
   const record = requireRecord(host, envelope.sessionId);
-  // 旧校验只看正文，UI 已允许的 attachment-only query 会在 CLI 被误判为空。
+    // The legacy check looked at text only; attachment-only queries the UI already allows would be misjudged empty here.
   if (!hasPromptInput(payload.text, payload.attachments)) {
     throw new V4InputAdmissionRejectedError("proto.invalidPayload", "input must not be empty");
   }
@@ -206,8 +206,8 @@ async function sendText(
     foregroundPromotionLeaseAcquired = false;
   };
   if (forceStartNow) {
-    // 修饰键的“立即发送”若先进入 Core busy admission 会短暂创建 queue item。
-    // 先取得唯一前台租约并抢占当前轮，再交给 Core 以 idle start_turn 原子启动。
+        // A modifier-key "send now" entering Core busy admission first would briefly create a queue item.
+        // Take the sole foreground lease and preempt the current turn first, then hand to Core for an atomic idle start_turn.
     const leaseResult = record.app.runtime.acquireForegroundPromotionLease({
       leaseId: foregroundPromotionLeaseId!,
       mode: "after-current",
@@ -221,9 +221,9 @@ async function sendText(
     }
     foregroundPromotionLeaseAcquired = true;
     try {
-      // startNow 旧分支把 held queue 裁决误当成默认路由的一部分整体跳过，
-      // 导致用户确认“清空队列并发送”后旧输入仍可能被 drain。单条消息的
-      // delivery 只决定新输入何时消费，不能绕过已有队列的用户裁决和过期校验。
+            // The startNow legacy branch skipped the held-queue verdict as part of default routing,
+            // so after the user confirmed "clear queue and send", legacy input could still be drained. One message's
+            // delivery only decides when the new input is consumed; it must not bypass the queue's user verdict and staleness check.
       await applyHeldQueueDisposition(
         host,
         record,
@@ -252,7 +252,7 @@ async function sendText(
     );
   }
   let started;
-  // 附件命令面：AttachmentRef → TurnAttachment 在闸门后映射（active turn 已排除）。
+    // Attachment command face: AttachmentRef -> TurnAttachment, mapped after the gate (active turn already excluded).
   try {
     const intent = submissionIntent({
       text: payload.text,
@@ -271,8 +271,8 @@ async function sendText(
         ? { browserAmbientContext: payload.browserAmbientContext }
         : {}),
       inputId: envelope.commandId,
-      // 立即发送切换了 runtime turn，导致运行中用户输入遗漏 human 提示。
-      // 只按 Core 的实际抢占回执标记纯文本；空闲及附件输入保留原路径。
+            // Immediate-send switched the runtime turn, so in-flight user input missed the human hint.
+            // Mark plain text only on Core's actual preemption receipt; idle and attachment input keep the legacy path.
       ...(preempted && !attachments?.length ? { inputPresentation: "user_steer" as const } : {}),
       intent,
       ...(payload.context_refs ? { sharedContextRefs: payload.context_refs } : {}),
@@ -283,8 +283,8 @@ async function sendText(
         ? { modelExecution: createModelExecutionContext(payload.modelExecution) }
         : {}),
       ...(attachments ? { attachments } : {}),
-      // promotion lease 本身属于 Core busy authority；若不声明 requireIdle，
-      // 抢占完成后的 startNow 会先落 deferred queue，待 lease 释放后再被自动 drain。
+            // The promotion lease belongs to Core busy authority; without requireIdle,
+            // the post-preemption startNow lands in the deferred queue, drained automatically only once the lease releases.
       ...(forceStartNow ? { requireIdle: true } : {}),
     });
   } finally {
@@ -304,7 +304,7 @@ async function sendText(
   };
 }
 
-/** stop：精确取消投影中看到的 runtime 前台执行，并把 active goal 收口为 paused。 */
+/** stop: cancels exactly the runtime foreground execution visible in the projection and closes the active goal as paused. */
 async function stop(
   host: V4CommandCoreHost,
   envelope: CommandEnvelope,
@@ -332,18 +332,18 @@ async function stop(
     payload.expectedForegroundExecutionId !== undefined &&
     (runtimeStop?.kind === "idle" || runtimeStop?.kind === "mismatch")
   ) {
-    // Stop 从 renderer 到 host 有异步窗口；若 verifier 已结束且下一轮已启动，
-    // 继续 abort 外层 controller 会误杀用户没看到的新执行。execution id 不匹配只能 noop。
+        // Stop has an async window from renderer to host; if the verifier ended and the next round started,
+        // aborting the outer controller kills an execution the user never saw. An execution-id mismatch can only noop.
     throw new V4CommandNoopError("guard.stopTargetChanged");
   }
   if (runtimeStop?.kind === "stopped") {
-    // 先打断 runtime-owned verifier/continuation，再等待 goal pause；否则 verifier 可能在
-    // pause RPC 完成前通过并接入下一次 continuation。
+        // Interrupt the runtime-owned verifier/continuation first, then await the goal pause; else the verifier may
+        // pass and hook the next continuation before the pause RPC completes.
     record.activeAbortController?.abort(new Error("v4 session stopped"));
     if ((host.getQueueLength?.(record.app.sessionId) ?? 0) > 0) {
       try {
-        // verifier 已越过普通 turn catch，不能依赖 TurnComplete(cancelled)
-        // 翻转 runtime queue gate；显式写入 false，确保 future queue 原位 held。
+                // The verifier is past the plain turn catch: do not rely on TurnComplete(cancelled)
+                // to flip the runtime queue gate; write false explicitly so the future queue stays held.
         await record.app.setQueueAutoDrain(false);
       } catch (error) {
         host.logger?.warn?.("v4 stop failed to hold following queue", {
@@ -359,8 +359,8 @@ async function stop(
     return undefined;
   }
 
-  // 兼容 compact 与旧客户端：它们没有 runtime foreground execution token，仍由
-  // bootstrap 外层 controller 提供取消窗口。
+    // compact and legacy clients carry no runtime foreground-execution token; the
+    // bootstrap outer controller still provides their cancellation window.
   const hadActivePrompt = Boolean(record.activeAbortController);
   let pausedGoal = false;
   if (hadActivePrompt) {
@@ -373,12 +373,12 @@ async function stop(
   return undefined;
 }
 
-/** goal-pause barrier 共用件：stop 与 sendQueuedNow（抢占重发）复用，不复制。 */
+/** The goal-pause barrier helper: shared by stop and sendQueuedNow (the preempting resend), never copied. */
 async function pauseActiveGoal(
   host: V4CommandCoreHost,
   record: V4SessionRecordView,
 ): Promise<boolean> {
-  // 注意：方法必须经 app 调用（不可解构，实现可能依赖 this 绑定）。
+    // Note: call through app (no destructuring; the implementation may rely on this binding).
   const target = await record.app.readTarget();
   if (!target || target.status !== "active") {
     return false;
@@ -395,7 +395,7 @@ async function pauseActiveGoal(
   }
 }
 
-/** 轮询等 Bootstrap turn 与 Core foreground command 的 finally 都释放 authority。 */
+/** Poll until both the Bootstrap turn and the Core foreground command finally release authority. */
 async function waitForSessionIdle(record: V4SessionRecordView): Promise<void> {
   const deadline = Date.now() + IDLE_POLL_TIMEOUT_MS;
   while (
@@ -409,7 +409,7 @@ async function waitForSessionIdle(record: V4SessionRecordView): Promise<void> {
   }
 }
 
-/** 等待旧执行释放，返回 Core 是否实际取消了前台执行。 */
+/** Waits for the legacy execution to release; returns whether Core actually cancelled the foreground execution. */
 export async function preemptActiveTurnAndWait(
   host: V4CommandCoreHost,
   record: V4SessionRecordView,
@@ -422,9 +422,9 @@ export async function preemptActiveTurnAndWait(
   },
 ): Promise<boolean> {
   const bootstrapAbortController = record.activeAbortController;
-  // background notification 的 model-only turn 由 Core runtime command
-  // 独立持有 foreground authority，不会创建 Bootstrap activeAbortController。
-  // 忽略这点会误判 idle，随后把被提升的 queue item steer 回旧 notification turn。
+    // A background notification's model-only turn holds foreground authority via the Core runtime command
+    // independently, creating no Bootstrap activeAbortController.
+    // Missing that misreads idle and then steers the promoted queue item back into the stale notification turn.
   const runtimeStop = record.app.runtime?.stopActiveForegroundExecution?.({
     preserveQueueAutoDrainOnCancel: options.preserveQueueAutoDrainOnCancel === true,
     reason: options.abortMessage,

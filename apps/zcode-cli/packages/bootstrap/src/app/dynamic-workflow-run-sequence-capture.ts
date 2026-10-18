@@ -1,23 +1,23 @@
-// 引擎事件的 journal sequence 截取层。独立成模块而不是留在 launch.ts 里：那边的职责是「装配并启动一个 run」，而这里是
-// 「把 appendEvent 分配到的号截给紧随其后的 emit」——两件事各自完整，且这一件只有一个消费者。
+// Journal-sequence capture layer for engine events. A separate module rather than part of launch.ts: that file's job is "assemble and start a run", this one is
+// "hand the sequence allocated by appendEvent to the emit immediately after" -- two complete concerns, and this one has a single consumer.
 import type { JournalStorePort, RunEvent, StoredEvent } from "@zcode/dynamic-workflow";
 
 /**
- * 包一层 journal，只为把 `appendEvent` 分配到的 sequence 截下来供紧随其后的 emit 使用。
+ * Wraps the journal for one reason: capture the sequence allocated by `appendEvent` for the emit immediately after.
  *
- * 前提（由引擎的 `record()` 保证，且被测试钉住）：每条事件都是「appendEvent 后同步紧接着
- * emit」，一一对应。所以"最后一次 append 的 sequence"就是"当前正在 emit 的那条"的 sequence。
- * 为稳妥起见按事件对象**引用相等**核对：不相等说明前提破了，此时退回最后一次 sequence 而不是
- * 猜一个——沉默的错号比停在原地更难查，而测试会先于生产发现它。
+ * Invariant (guaranteed by the engine's `record()` and pinned by tests): every event is "appendEvent then synchronously
+ * emit", one-to-one. So the last append's sequence is the sequence of the event currently being emitted.
+ * As a safeguard, verify by object **reference equality**: a mismatch means the invariant broke; fall back to the last sequence instead of
+ * guessing -- a silently wrong number is harder to debug than standing still, and tests catch it before production does.
  */
 export function createJournalSequenceCapture(journal: JournalStorePort): {
   journal: JournalStorePort;
   sequenceOf: (event: RunEvent) => number;
 } {
   let lastStored: StoredEvent | undefined;
-  // 逐方法显式转发而不是 `{...journal, appendEvent}`：两个实现都是 class，展开只拷贝自有属性，
-  // 原型上的方法会全部丢掉（引擎随后调 getRun 就会 TypeError）。转发面**只有引擎端口**：
-  // 孤儿收敛与枚举的窄查询刻意不在其中——它们发生在 service 侧、直接对 deps.journal，不经这一层。
+  // Explicit per-method forwarding instead of `{...journal, appendEvent}`: both are class instances, and spreading copies only own properties,
+  // dropping prototype methods (the engine's next getRun would TypeError). The forwarded surface is the engine port only:
+  // orphan convergence and the narrow enum query deliberately stay out -- they happen service-side against deps.journal, not through this layer.
   const wrapped: JournalStorePort = {
     createRun: (record) => journal.createRun(record),
     getRun: (runId) => journal.getRun(runId),

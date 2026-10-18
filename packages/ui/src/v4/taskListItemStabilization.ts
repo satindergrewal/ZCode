@@ -1,10 +1,10 @@
-// task list 行的引用稳定化（跨 lane 共享）。
+// Reference stabilization for task-list rows (shared across lanes).
 //
-// sessions-index / Controller tasks-index 每个内容帧都会全量重建 ZCodeTaskMeta[]，
-// 即使内容完全没变（例如只改了列表不消费的 activity 时间戳）。下游把「全新数组引用」当成新数据：
-// grouped 视图整树 refresh、虚拟器重测量、workspace 行缓存被 invalidate——表现为
-// 「右侧输出 tool 结果时左侧列表整个重新加载」。这里做逐条引用稳定化：内容等价复用旧对象；
-// 整表等价复用旧数组，让依赖数组/元素身份的 memo 与 effect 全部短路。
+// sessions-index / Controller tasks-index rebuild the whole ZCodeTaskMeta[] on every content frame,
+// even when nothing changed (e.g. only an activity timestamp the list ignores). Downstream reads a fresh array reference as new data:
+// the grouped view refreshes whole subtrees, the virtualizer remeasures, workspace row caches invalidate - observed as
+// the left list reloading entirely whenever the right pane emits one tool result. Stabilize per item: content-equal entries reuse old objects;
+// an all-equal table reuses the old array, short-circuiting every dep-array/identity memo and effect.
 import type { ZCodeTaskMeta } from "@zcode/shared";
 
 export function buildTaskListItemIdentityKey(meta: ZCodeTaskMeta): string {
@@ -12,12 +12,12 @@ export function buildTaskListItemIdentityKey(meta: ZCodeTaskMeta): string {
 }
 
 /**
- * 结构等价：忽略 key 插入顺序，把 `undefined` 值视同缺省（与 JSON 序列化口径一致）。
+ * Structural equality: ignore key insertion order, treat undefined as absent (JSON-serialization semantics).
  *
- * 这里刻意不用 `JSON.stringify` 比较：上游 Controller / tasks-index join 大量使用条件展开
- * （`...(x ? { k: v } : {})`）构造对象，同内容不同 key 顺序在字符串上恒不相等，稳定化会
- * 静默退化成「每帧全新引用」——「整列表闪一下」无声回归，而且不报错、无日志、无指标。
- * 逐字段比较让等价判断不依赖构造顺序这一隐式假设，顺带在首个差异处短路。
+ * Deliberately no JSON.stringify comparison: upstream Controller / tasks-index joins build objects with heavy conditional
+ * spread (`...(x ? { k: v } : {})`); equal content in a different key order never equals as strings, so stabilization
+ * would silently degrade to fresh references per frame - the whole-list blink regression, silent, no log, no metric.
+ * Field-by-field equality drops the implicit construction-order assumption and short-circuits at the first difference.
  */
 export function areStabilizedValuesEquivalent(left: unknown, right: unknown): boolean {
   if (left === right) {
@@ -42,12 +42,12 @@ export function areStabilizedValuesEquivalent(left: unknown, right: unknown): bo
   return leftKeys.every((key) => areStabilizedValuesEquivalent(leftRecord[key], rightRecord[key]));
 }
 
-/** 逐字段等价（嵌套字段结构比较；task meta 是小对象，代价可忽略）。 */
+/** Field-wise equality (nested structural compare; task meta is small, the cost is negligible). */
 export function areTaskListItemsEquivalent(left: ZCodeTaskMeta, right: ZCodeTaskMeta): boolean {
   return areStabilizedValuesEquivalent(left, right);
 }
 
-/** 引用稳定化：等价条目复用旧对象；顺序与内容全等时复用整个旧数组。 */
+/** Reference stabilization: equal items reuse old objects; identical order+content reuses the whole old array. */
 export function stabilizeTaskListItems<T extends ZCodeTaskMeta>(previous: T[], next: T[]): T[] {
   if (previous.length === 0) {
     return next;

@@ -3,8 +3,8 @@ import { createPortal } from "react-dom";
 import { cn } from "@/components/lib/utils.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 
-// 问题原因：Markdown 曾复制一份固定宽度的竖排菜单，与对话流逐渐分叉。
-// 两处只传选区位置与动作，共用展示和尺寸测量，避免再次出现样式差异。
+// Root cause: Markdown used to carry its own fixed-width vertical menu, drifting from the conversation flow.
+// Both places now pass only selection position and actions and share presentation and measurement, avoiding another style split.
 export function SelectionActionMenu({
   center,
   top,

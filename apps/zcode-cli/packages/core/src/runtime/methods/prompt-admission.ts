@@ -13,9 +13,9 @@ import type {
 } from "../types.js";
 
 /**
- * 每个 AgentRuntime 自己完成 prompt 的 admission：检查 busy 边界、建立 reservation、
- * 把 command 放进该 runtime 的 FIFO。Bootstrap 不应把这些步骤拆开，否则 reservation
- * 建立前的异步窗口会让同一 session 产生第二条 turn。
+ * Each AgentRuntime admits its own prompts: check the busy boundary, take the reservation,
+ * enqueue in that runtime FIFO. Bootstrap must not split these, or the pre-reservation
+ * async window yields a second turn per session.
  */
 export async function admitPrompt(
   this: AgentRuntimeInternal,
@@ -120,7 +120,7 @@ export async function admitPrompt(
       traceContext: turnTraceContext,
     }),
   });
-  // admission 已经完成；执行失败由现有 turn 事件/调用方消费，不制造 unhandled rejection。
+  // Admission is done; failures flow through existing turn events/callers, no unhandled rejection.
   void completion.catch(() => undefined);
   return { completion, kind: "started", turnId };
 }

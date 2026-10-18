@@ -21,7 +21,7 @@ function previewFor(accessMode: ConversationShareAccessMode): ConversationShareP
         createdAtSeq: 1,
         kind: "userInput",
         origin: "realUser",
-        text: "请介绍这个分享页面。",
+        text: "Introduce this share page.",
       },
       {
         rowId: 2,
@@ -30,11 +30,11 @@ function previewFor(accessMode: ConversationShareAccessMode): ConversationShareP
         createdAt: createdAt + 1_000,
         createdAtSeq: 2,
         kind: "assistantText",
-        text: "这是一个公开的 ZCode 会话分享。",
+        text: "This is a public ZCode conversation share.",
         state: "complete",
       },
-      // 让 dev mock 覆盖 artifact 卡片：它的视觉要与正文的 AssistantPreviewCards 对齐，
-      // 没有样例数据就只能靠猜。
+      // Give the dev mock an artifact card: its visuals must match AssistantPreviewCards in
+      // the body, and without sample data that is guesswork.
       {
         rowId: 3,
         turnId: "share-turn-1",
@@ -44,7 +44,7 @@ function previewFor(accessMode: ConversationShareAccessMode): ConversationShareP
         kind: "artifact",
         artifactVersionId: "mock-artifact-1",
         logicalArtifactKey: "mock-report",
-        displayName: "晨报_2026-08-28_早会版.pdf",
+        displayName: "MorningReport_2026-08-28_Standup.pdf",
         artifactType: "pdf",
         mimeType: "application/pdf",
         sizeBytes: 172_974,
@@ -62,7 +62,7 @@ function previewFor(accessMode: ConversationShareAccessMode): ConversationShareP
         state: "current",
         ref: "zcode-artifact://share/mock-artifact-1",
         artifact_type: "pdf",
-        display_name: "晨报_2026-08-28_早会版.pdf",
+        display_name: "MorningReport_2026-08-28_Standup.pdf",
         extension: "pdf",
         mime_type: "application/pdf",
         size_bytes: 172_974,
@@ -104,7 +104,8 @@ export class MockConversationSharePreviewClient {
         code: 3211,
       });
     }
-    // 跨版本兼容的两个手工验收入口（真实链路里由 conversationSharePreviewClient 判定）。
+    // Two manual acceptance entry points for cross-version compat (the real path classifies
+    // these in conversationSharePreviewClient).
     if (shareCode === "mock-outdated-client") {
       throw new ConversationSharePreviewClientError({
         kind: "unsupported_schema_version",
@@ -112,7 +113,8 @@ export class MockConversationSharePreviewClient {
         status: 200,
       });
     }
-    // 认得的行照常渲染，另有一行本 build 认不出被跳过：顶部应出现软提示。
+    // Known rows render normally; one row this build cannot parse is skipped -- the soft
+    // notice should appear at the top.
     if (shareCode === "mock-partial-unsupported") {
       return { ...previewFor("public_importable"), unsupportedRowCount: 1 };
     }

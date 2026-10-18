@@ -17,10 +17,10 @@ interface HooksStoreState {
     hooksService: IHooksService,
   ) => Promise<void>;
   /**
-   * refresh 必须显式传入发起时的 target（path/identity/service 三元组）。
-   * 旧签名只传 service，load 时才从 store 读 workspace——Trust 等待期间用户从
-   * workspace A 切到 B 会形成「A 的 service + B 的 path/identity」，把 B 的列表
-   * 污染成 A 的数据。现在三元组在调用点原子捕获，store 状态只用于漂移守卫。
+   * refresh must be passed the target captured at call time (the path/identity/service triple).
+   * The old signature took only service and read the workspace from the store at load time:
+   * a workspace A->B switch during the Trust wait produced "A service + B path/identity",
+   * polluting B's list with A's data. The triple is now captured atomically at the call site; store state is a drift guard only.
    */
   refresh: (
     hooksService: IHooksService,
@@ -38,9 +38,9 @@ type StoreGet = () => HooksStoreState;
 
 const inflightLoads = new Map<string, Promise<void>>();
 
-// store 是单例，切换 workspace 后先发起的加载可能后到。任何异步结果写回 store 之前
-// 都要比对发起时的 target key，否则旧 workspace 的 hooks 会覆盖当前投影，并被后续写操作落盘
-// 到当前 workspace。
+// The store is a singleton, so a load started before a workspace switch can land later. Before any async result
+// is written back, compare it against the target key captured at call time, or the old workspace's hooks
+// overwrite the current projection and get persisted to the new workspace.
 function currentWorkspaceKey(get: StoreGet): string | null {
   const { workspacePath, workspaceIdentity } = get();
   return workspacePath ? getWorkspaceKey(workspacePath, workspaceIdentity) : null;
@@ -138,7 +138,7 @@ async function persistHooks(
   await loadCurrentHooks(get, set, hooksService);
 }
 
-// 五个写操作共享同一条乐观更新 → 持久化 → 回滚流程，收敛到一处以便 stale 守卫只写一遍。
+// The five write actions share one optimistic update -> persist -> rollback flow, in one place so the stale guard is written only once.
 async function applyHookMutation(
   get: StoreGet,
   set: StoreSet,
@@ -157,7 +157,7 @@ async function applyHookMutation(
     await persistHooks(updatedHooks, get, set, hooksService);
     set({ operatingHookId: null });
   } catch (error) {
-    // 保存失败时若已切换 workspace，把捕获的旧 hooks 回滚进 store 会污染当前 workspace。
+    // On save failure after a workspace switch, rolling the captured old hooks back would pollute the current workspace.
     set(
       currentWorkspaceKey(get) === key
         ? { hooks: previousHooks, operatingHookId: null, error: errorMessage(error) }
@@ -184,7 +184,7 @@ export const useHooksStore = create<HooksStoreState>((set, get) => ({
       return;
     }
     const key = getWorkspaceKey(workspacePath, normalizedIdentity);
-    // 切到另一个 workspace 时立即丢弃上一份投影，避免新数据到达前展示并操作别人的 hooks。
+    // Drop the previous projection as soon as the workspace switches so its hooks are not shown or mutated before fresh data arrives.
     if (get().loadedWorkspaceKey !== key) {
       set({ hooks: [], loadedWorkspaceKey: null });
     }
@@ -214,14 +214,14 @@ export const useHooksStore = create<HooksStoreState>((set, get) => ({
   },
 
   refresh: async (hooksService, target) => {
-    // 三元组在调用点原子捕获：service 与 path/identity 必须来自同一时刻的同一 target。
+    // The triple is captured atomically at the call site: service and path/identity must come from the same target at the same moment.
     const targetPath = target.workspacePath ?? null;
     const targetIdentity = target.workspaceIdentity?.trim() || null;
     if (!targetPath) return;
     const key = getWorkspaceKey(targetPath, targetIdentity);
-    // 发起前 target 已不是当前 workspace（Trust 等待期间用户已切走）时必须直接
-    // 放弃——loading/error 是全局单一字段，若仍 set({loading:true}) 会在结果因 key 不匹配
-    // 被丢弃后，把当前 workspace 永久留在 loading=true。
+    // Bail out when the target has already stopped being the current workspace (user left during the Trust wait):
+    // loading/error is a single global field, and setting loading=true for a result that is dropped on key mismatch
+    // would leave this workspace stuck in loading forever.
     if (currentWorkspaceKey(get) !== key) return;
     set({ loading: true, error: null });
     try {
@@ -229,8 +229,8 @@ export const useHooksStore = create<HooksStoreState>((set, get) => ({
         workspacePath: targetPath,
         ...(targetIdentity ? { workspaceIdentity: targetIdentity } : {}),
       });
-      // 等待期间 store 已切到别的 workspace → 本次结果对当前投影无效，静默丢弃；
-      // loading 生命周期归新 workspace 自己的 initialize 所有，这里不得触碰。
+      // The store switched to another workspace while waiting -> this result is invalid for the current
+      // projection; drop it silently. The loading lifecycle belongs to the new workspace's own initialize.
       if (currentWorkspaceKey(get) !== key) return;
       set({ hooks: result.hooks, loadedWorkspaceKey: key, loading: false });
     } catch (error) {

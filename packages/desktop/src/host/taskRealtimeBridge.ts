@@ -127,10 +127,10 @@ function createTaskRealtimeBridge(params: {
     }
 
     if (parsed.data.type === HostMessageTypes.TaskRealtimeDeliver) {
-      // host typecheck 之前未覆盖 realtime bridge，schema 推导里 stream event payload 比
-      // TaskRealtimeDeliveredEvent 合约更宽。这里在消息通过共享 schema 校验后收口到共享合约，
-      // 保持 desktop continuous 与 web remote replayable 仍走同一条 delivery 边界。
-      // 同时把 eventId 去重缓存限制在固定窗口内，避免异常高频 relay 把 host 内存线性吃满。
+      // The realtime bridge predates host typecheck; schema inference types stream event payloads wider than
+      // the TaskRealtimeDeliveredEvent contract. After the shared-schema check, narrow to the shared contract,
+      // keeping desktop-continuous and web-remote-replayable on one delivery boundary.
+      // Bound the eventId dedupe cache to a fixed window so a pathologically hot relay cannot eat host memory linearly.
       const event = parsed.data.event as TaskRealtimeDeliveredEvent;
       if (!rememberEventId(event.eventId)) {
         return;

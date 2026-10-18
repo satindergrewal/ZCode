@@ -97,8 +97,8 @@ async function verifyTargetCompletion(
     traceContext: TraceContext;
   },
 ): Promise<GoalCompletionVerificationOutput> {
-  // 目标验证期间也允许切换 session 默认模型；请求、重试和 usage 必须共用
-  // 验证开始时的模型快照，不能在 provider 返回后重新读取 Session Selection。
+  // The session default model may switch mid-verification; request, retries and usage share
+  // the at-start model snapshot, never a post-response Session Selection reread.
   const requestedModelSelection = this.getSessionModelSelection();
   const model = createRuntimeModel(this, { selection: requestedModelSelection });
   const modelTraceContext = createChildTraceContext(input.traceContext, {
@@ -145,8 +145,8 @@ async function verifyTargetCompletion(
     applyCacheControl: true,
     model,
   }).messages;
-  // verifier 直接消费完整历史但曾绕过正常请求的媒体策略；只补 capability
-  // 仍会让聚合超限失败进入 fail-open。请求前统一执行能力和预算投影。
+  // The verifier consumes full history but skipped normal media policy; capability alone
+  // still fail-opened on overage. Run capability and budget projection pre-request.
   const messages = projectMessagesForModelMediaPolicy(
     providerMessages,
     model.properties.inputFormat,
@@ -346,7 +346,7 @@ async function generateTargetCompletionVerificationText(
         input.model.generateText({
           abortSignal: input.abortSignal,
           messages: input.messages,
-          // Verifier 继承已绑定的思考配置，不能套用低成本辅助调用的降档和封顶策略。
+          // The verifier keeps its bound thinking config; cheap-sidecar downshift/caps do not apply.
           options: { maxOutputTokens: input.model.optionSpecs.maxOutputTokens.max },
           tools: [],
         }),
@@ -361,8 +361,8 @@ async function generateTargetCompletionVerificationText(
         throw error;
       }
 
-      // 目标完成验证发生在用户已看到 assistant 迭代之后；Start Plan busy
-      // 是 admission 瞬时并发。先短暂重试，避免直接走 fail-open 把可恢复并发误当完成。
+      // Verification runs after the user saw the iteration; Start Plan busy is
+      // transient admission concurrency; retry briefly, no fail-open completion.
       this.logger?.warn("Goal completion verification retrying after Start Plan busy", {
         ...traceContextToLogContext(input.traceContext),
         attempt,
@@ -399,8 +399,8 @@ async function getNextTargetCompletionVerificationIteration(
     (maxIteration, item, index) => Math.max(maxIteration, item.goalIteration ?? index + 1),
     0,
   );
-  // goal 迭代由 verifier lifecycle 推进，而不是普通 turn 或用户继续次数。
-  // runtime 在 started/completed/failed_closed/cancelled 上固定同一个编号，UI 与 snapshot 才不会各自猜。
+  // Goal iterations advance by verifier lifecycle, not turns or user continues.
+  // One number across started/completed/failed_closed/cancelled; UI and snapshot never guess.
   return latestIteration + 1;
 }
 

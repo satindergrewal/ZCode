@@ -50,9 +50,9 @@ export interface RegisterMcpToolsOptions {
   allowedTools?: readonly string[];
   disallowedTools?: readonly string[];
   /**
-   * 由 runtime 使用不可伪造的 product authority 凭据验明的官方 CUA server。
-   * 名称本身不构成信任；省略时 fail-closed，所有 MCP 都按普通工具处理，
-   * 不投影官方 CUA 规范名，也不挂载 provider 拼写别名。
+   * The official CUA server, verified by the runtime with unforgeable product-authority credentials.
+   * The name alone is not trust; when omitted we fail closed: every MCP is treated as a plain tool,
+   * with no official-CUA canonical naming and no provider spelling aliases.
    */
   officialCuaServerNames?: ReadonlySet<string>;
 }
@@ -72,8 +72,8 @@ export function registerMcpTools(
       options.officialCuaServerNames?.has(descriptor.serverName) === true;
     const descriptorName = toMcpToolName(descriptor);
     const name = toRegisteredMcpToolName(descriptor, officialCuaAuthorityVerified);
-    // 官方 CUA 投影模型主名后，如果只按新名检查规则，升级前保存的 namespaced
-    // denylist 会静默失效并放行。新旧名称任一命中 deny 即拒绝，任一命中 allow 即接受。
+    // Once the official CUA projects its primary model name, matching rules by the new name only would silently strand
+    // namespaced denylists saved before the upgrade. Deny on a hit under either name; allow on a hit under either name.
     if (allowed && !allowed.has(name) && !allowed.has(descriptorName)) continue;
     if (disallowed?.has(name) || disallowed?.has(descriptorName)) continue;
     registry.register(createMcpToolEntry(name, descriptor, mcpPort, officialCuaAuthorityVerified));
@@ -91,9 +91,9 @@ function toRegisteredMcpToolName(
     officialCuaAuthorityVerified &&
     descriptor.serverName === ZCODE_CUA_OFFICIAL_MCP_SERVER_NAME
   ) {
-    // adapter 会把官方插件 serverName 命名空间化，descriptor.name 因而是
-    // mcp__plugin_zcode-cua_computer-use__*；直接沿用它会让 provider 约定的 computer-use
-    // 工具永远不存在。可信门成立后仅投影模型可见名称，handler 仍用 descriptor 的原路由。
+    // Adapters namespace official plugin serverNames, so descriptor.name is
+    // mcp__plugin_zcode-cua_computer-use__*; reusing it verbatim would leave the provider-contracted computer-use
+    // tools nonexistent. Once the trust gate passes, project only the model-visible name; handlers keep routing by descriptor.
     return `${ZCODE_CUA_CANONICAL_MODEL_PREFIX}${toModelVisibleMcpNamePart(descriptor.toolName)}`;
   }
   return toMcpToolName(descriptor);
@@ -110,8 +110,8 @@ function createMcpToolEntry(
   const isHostNodeReplExecution =
     descriptor.serverName === "node_repl" && descriptor.toolName === "js";
   const isCuaAppObservation = isZCodeCuaGetAppState(descriptor);
-  // 宿主 node_repl 的 js 能执行本机 Node 代码，不能沿用普通未知 MCP 的 medium/network
-  // 默认值；否则权限 UI 会把文件/进程级能力错误描述成普通网络调用。
+  // The host node_repl js tool runs local Node code, so the plain-unknown-MCP medium/network
+  // defaults do not apply; otherwise the permission UI would describe file/process capabilities as mere network calls.
   const sideEffectScope: ModelToolSideEffectScope = isHostNodeReplExecution ? "system" : "network";
   const riskLevel: RiskLevel = isHostNodeReplExecution
     ? "high"
@@ -124,9 +124,9 @@ function createMcpToolEntry(
   const timeoutMs = descriptor.timeoutMs ?? MCP_TOOL_TIMEOUT_MS;
   const resultBudget = officialCuaAuthorityVerified
     ? {
-        // 图片 block 的 base64 不计入模型文本预算，但树文本仍可能超过普通 MCP 的
-        // 50 KiB。这里给官方 CUA 足够的有界文本空间，避免通用截断把结构化
-        // image/image_ref 退化成纯字符串或改变相邻顺序。
+        // Image-block base64 does not count against the model text budget, but tree text can still exceed the plain-MCP
+        // 50 KiB. Give the official CUA a generous bounded text budget so generic truncation cannot degrade structured
+        // image/image_ref blocks into plain strings or reorder neighbors.
         maxInlineBytes: 256 * 1024,
         maxModelBytes: 256 * 1024,
         strategy: "truncate" as const,
@@ -149,18 +149,18 @@ function createMcpToolEntry(
 
   return {
 
-    // 因精确查找直接返回 Tool not found。只在不可伪造的官方 authority 门成立且内部
-    // serverName 仍是官方 namespaced 名时挂单向别名；provider 继续只看规范名称。
+    // Exact lookup returns Tool not found directly. Mount the one-way alias only while the unforgeable official authority gate
+    // holds and the internal serverName is still the official namespaced one; providers keep seeing only canonical names.
     aliases: officialCuaProviderSpellingAliases(name, descriptor, officialCuaAuthorityVerified),
     capability: `MCP tool exposed by ${descriptor.serverName}: ${descriptor.toolName}`,
-    // 项目级 CUA 授权只能复用不可伪造的 official authority gate。
-    // server/tool 名可以被第三方仿冒，因此绝不能用名称 wildcard 表达这一权限。
+    // Project-level CUA grants must reuse the unforgeable official authority gate.
+    // Server/tool names can be spoofed, so never express this grant via name wildcards.
     ...(officialCuaAuthorityVerified
       ? {
           permissionCapabilityGroup: OFFICIAL_CUA_PERMISSION_CAPABILITY_GROUP,
-          // 最终栅格和紧随其后的 image_ref 共同定义模型唯一可用的像素坐标系。
-          // modelContentProtection 是唯一 Host authority；通用 resultBudget / hook
-          // 投影据此不能截断、丢弃或重排这组块，避免并行 boolean 漂移。
+          // The final raster plus the image_ref right after it define the only pixel coordinate space available to the model.
+          // modelContentProtection is the sole host authority; generic resultBudget/hook
+          // projection must not truncate, drop, or reorder these blocks, avoiding parallel boolean drift.
           modelContentProtection: OFFICIAL_CUA_FRAME_MODEL_CONTENT_PROTECTION,
         }
       : {}),
@@ -169,15 +169,15 @@ function createMcpToolEntry(
     metadata: {
       concurrentSafe: readOnly || descriptor.annotations?.idempotentHint === true,
       destructive,
-      // 必须把 MCP tool 的 description 透传到 metadata，让 registry 把它带进模型输入，
-      // 否则模型侧只看到 name + inputSchema，调用 MCP 工具时缺乏判断依据。
+      // The MCP tool description must be forwarded into metadata so the registry carries it into model input;
+      // otherwise the model sees only name + inputSchema with no basis for calling the tool.
       description: descriptor.description,
       name,
       mcpPresentation: {
         serverName: descriptor.serverName,
         toolName: descriptor.toolName,
         ...(descriptor.description ? { description: descriptor.description } : {}),
-        // 只有官方 MCP 的结果才允许携带被客户端信任的结构化标识（额度耗尽 / 无套餐）。
+        // Only official-MCP results may carry client-trusted structured markers (quota exhausted / no plan).
         ...(descriptor.official ? { official: true } : {}),
       },
       needsApproval,
@@ -242,8 +242,8 @@ function createMcpToolEntry(
           timeoutMs,
         },
       );
-      // MCP server 会返回大 base64 图片；resultBudget 只看到图片占位文本，
-      // 必须在 handler 阶段保存副本并替换模型可见内容，避免 provider 请求体被打爆。
+      // MCP servers return large base64 images; resultBudget only sees the placeholder text,
+      // so the handler must stash a copy and swap the model-visible content, keeping provider request bodies sane.
       return normalizeMcpToolResultForModel({
         compressOversizedImages: isHostNodeReplExecution,
         context,
@@ -331,8 +331,8 @@ function createModelFacingMcpInputSchema(
     ? schema.required.filter((value): value is string => typeof value === "string")
     : [];
 
-  // 原因：title 是 ZCode 给用户看的意图摘要，不属于上游 zcode-cua 参数。只在模型 contract
-  // 叠加必填字段，runtime dispatch 再剥离，既让模型稳定生成可读标题，也保持上游严格 schema 兼容。
+  // Why: title is the user-facing intent summary ZCode shows, not an upstream zcode-cua parameter. Layer it into the model contract
+  // as required and strip it during runtime dispatch — the model emits a stable readable title while upstream keeps a strict schema.
   return {
     ...schema,
     properties: {
@@ -372,9 +372,9 @@ function formatMcpToolResult(output: unknown): ModelMessageContent {
   }
 
   const blocks = output.content.flatMap(formatContentBlock);
-  // 生产 adapter 会保留 structuredContent 的空键；undefined、null、空对象和
-  // 空数组都没有模型信息，不能追加伪造的 "Structured content" 块。有内容的错误详情
-  // 仍需保留，权限引导依赖这条结构化通道。
+  // Production adapters keep empty keys in structuredContent; undefined, null, empty objects, and
+  // empty arrays carry no model information, so never append a fabricated "Structured content" block. Error details with content
+  // are still kept: permission guidance relies on that structured channel.
   if (hasInformativeStructuredContent(output.structuredContent)) {
     blocks.push({
       type: "text",
@@ -384,8 +384,8 @@ function formatMcpToolResult(output: unknown): ModelMessageContent {
 
   const content = blocks.length > 0 ? collapseModelBlocks(blocks) : stringify(output);
   if (!output.isError) return content;
-  // 展示策略由 MCP result 显式声明；通用 bridge 不应识别具体 server，
-  // 也不应通过解析错误字符串来猜测哪些内容属于堆栈。
+  // Display policy is declared by the MCP result itself; the generic bridge must not recognize specific servers
+  // or guess stack membership by parsing error strings.
   const errorPresentation = output._meta?.[ZCODE_MCP_ERROR_PRESENTATION_META_KEY];
   return typeof errorPresentation === "string" &&
     errorPresentation === ZCODE_MCP_ERROR_PRESENTATION_MESSAGE_ONLY

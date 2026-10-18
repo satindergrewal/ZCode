@@ -115,24 +115,24 @@ function resolveGroupStageStatus(
   rows: readonly ToolCallRow[],
   stageTailIsRunning: boolean,
 ): string {
-  // Explore/Execute 父节点表达的是当前工作阶段，不是子工具执行状态的汇总。
-  // 子工具可能已经全部完成，但只要当前运行工作段尚未出现下一条可见边界，父阶段仍在继续；
-  // 反之，后续非当前分组内容已经出现时，即使迟到的子状态仍是 running，父阶段也必须结束。
+  // Explore/Execute parents express the current work phase, never an aggregate of child tool states.
+  // Child tools may all be done, but until the running segment shows the next visible boundary the phase continues;
+  // conversely, once later non-current group content appears, the phase must end even if a late child still runs.
   if (stageTailIsRunning) return "in_progress";
   return rows.some((row) => row.status === "cancelled") ? "stopped" : "completed";
 }
 
 function buildExploreGroup(rows: ToolCallRow[], stageTailIsRunning: boolean) {
-  // 分组 builder 只会在连续同类工具达到两项后调用；空数组不是合法状态，
-  // 不再用伪造 identity 的兜底掩盖调用方错误。
+  // The group builder runs only at two-plus consecutive same-kind tools; an empty array is not a legal state,
+  // and no fake-identity fallback may mask caller bugs.
   const firstRow = rows[0]!;
   const childToolCalls = rows.map(toolCallRowToLegacyNode);
 
   return {
     kind: "exploreGroup" as const,
-    // 旧 key/toolId 包含末尾 row 和数量，每新增一个 Explore 子工具都会重建组件，
-    // 并让 ToolLayout 用新的 toolId 读取不到用户刚保存的展开状态。聚合身份锚定首个子工具，
-    // 后续只更新 children，保证流式增长期间 React identity 和展开状态 identity 都稳定。
+    // The legacy key/toolId embedded the trailing row and count, so every new Explore child rebuilt the component
+    // and ToolLayout missed the just-saved expansion under a new toolId. Anchor the aggregate identity on the first child;
+    // update children only, keeping React identity and expansion state stable during streaming growth.
     key: `explore:${firstRow.rowId}`,
     rowId: firstRow.rowId,
     rows,
@@ -155,8 +155,8 @@ function buildExecuteGroup(rows: ToolCallRow[], stageTailIsRunning: boolean) {
   const firstRow = rows[0]!;
   return {
     kind: "executeGroup" as const,
-    // 分组 identity 如果包含末项或数量，流式新增命令会重建父组件并丢失展开状态。
-    // 与 Explore 一样锚定首个真实 tool call，后续只更新 children。
+    // With the last item or the count in a group identity, streaming appends rebuild the parent and drop expansion.
+    // Anchor on the first real tool call as Explore does; update children only.
     key: `execute:${firstRow.rowId}`,
     rowId: firstRow.rowId,
     rows,
@@ -179,7 +179,7 @@ function buildChangesGroup(rows: ToolCallRow[], stageTailIsRunning: boolean) {
   const firstRow = rows[0]!;
   return {
     kind: "changesGroup" as const,
-    // Changes 的展开状态必须在流式追加 Write/Edit 时保持稳定，因此身份锚定首个 tool。
+    // Changes expansion must stay stable while Write/Edit stream in; anchor the identity on the first tool.
     key: `changes:${firstRow.rowId}`,
     rowId: firstRow.rowId,
     rows,
@@ -190,8 +190,8 @@ function buildChangesGroup(rows: ToolCallRow[], stageTailIsRunning: boolean) {
         kind: "changesGroup",
         title: "Changes",
         input: {},
-        // Changes 是 UI 阶段容器，不是真实工具；子项失败/取消只留在各自明细，
-        // 父级仅表达当前阶段是否仍位于可见运行段尾部。
+        // Changes is a UI phase container, not a real tool; child failure/cancel stays in the child details,
+        // the parent expresses only whether the phase still ends the visible running segment.
         status: stageTailIsRunning ? "in_progress" : "completed",
       },
       childToolCalls: rows.map(toolCallRowToLegacyNode),
@@ -200,11 +200,11 @@ function buildChangesGroup(rows: ToolCallRow[], stageTailIsRunning: boolean) {
 }
 
 /**
- * Agent 工具行 ↔ subagent 行必须按 parentToolCallId 精确配对。
+ * Agent tool rows and subagent rows must pair exactly by parentToolCallId.
  *
- * 同一轮并发 Agent 工具的 tool call 行按模型输出顺序出现，但 SubagentSpawned
- * 事件按异步调度顺序到达；旧 FIFO 会把一个 Agent 的标题与另一个 childSessionId 拼在一起。
- * 仅对缺少新字段的历史数据保留“同 turn 唯一剩余一对”的无歧义兼容。
+ * Concurrent Agent tool calls appear in model output order, but SubagentSpawned
+ * events arrive in async schedule order; the legacy FIFO glued one agent title to another childSessionId.
+ * Keep the unambiguous one-pair-per-turn compat only for legacy data missing the new fields.
  */
 function pairSubagentRows(rows: readonly AssistantWorkRow[]): {
   subagentByAgentToolRowId: Map<number, SubagentRow>;
@@ -280,9 +280,9 @@ export function buildAssistantWorkRenderItems(
   const enableTerminalGrouping =
     options?.enableTerminalGrouping ?? ENABLE_TERMINAL_TOOL_CALL_GROUPING;
   const enableChangesGrouping = options?.enableChangesGrouping ?? ENABLE_CHANGES_TOOL_CALL_GROUPING;
-  // Explore 的阶段边界和尾部状态必须基于用户实际可见的行序。等待 command 的 Shell
-  // 若只在循环中跳过，仍会占据数组位置，导致前一个 Explore 被误判为已结束；
-  // 隐藏 reasoning 也有相同问题。先统一剔除暂不可见行，再做配对、分组和尾部判断。
+  // Explore phase boundaries and tail state must follow the user-visible row order. A Shell waiting on its command
+  // still occupies its slot when merely skipped, misjudging the previous Explore as ended;
+  // hidden reasoning has the same issue. Drop not-yet-visible rows first, then pair, group, and judge the tail.
   const visibleRows = rows.filter((row) => {
     if (
       row.kind === "reasoning" &&
@@ -313,7 +313,7 @@ export function buildAssistantWorkRenderItems(
       continue;
     }
 
-    // 已配对进 Agent 块的 subagent 行：不再单独渲染。
+    // Subagent rows already paired into Agent blocks: never rendered standalone.
     if (row.kind === "subagent" && claimedSubagentRowIds.has(row.rowId)) {
       index += 1;
       continue;
@@ -343,7 +343,7 @@ export function buildAssistantWorkRenderItems(
           groupRows.push(nextRow);
           index += 1;
         }
-        // 单个工具不需要额外的 UI 合成层；等第二个连续同类工具到达后再升级为父分组。
+        // A single tool needs no synthesis layer; upgrade to a parent group once the second consecutive same-kind arrives.
         if (groupRows.length === 1) {
           const singleRow = groupRows[0]!;
           items.push({ kind: "row", key: `row:${singleRow.rowId}`, row: singleRow });
@@ -368,7 +368,7 @@ export function buildAssistantWorkRenderItems(
           groupRows.push(nextRow);
           index += 1;
         }
-        // 单个工具保留自身语义和渲染，避免只包含一个子项的 Terminal 容器。
+        // A single tool keeps its own semantics and rendering, never a Terminal wrapper around one child.
         if (groupRows.length === 1) {
           const singleRow = groupRows[0]!;
           items.push({ kind: "row", key: `row:${singleRow.rowId}`, row: singleRow });
@@ -411,7 +411,7 @@ export function buildAssistantWorkRenderItems(
       groupRows.push(nextRow);
       index += 1;
     }
-    // Explore 只有在出现第二个连续只读工具后才成立；首项必须立即按原工具展示。
+    // Explore forms only at the second consecutive read-only tool; the first item renders as the plain tool immediately.
     if (groupRows.length === 1) {
       items.push({ kind: "row", key: `row:${row.rowId}`, row });
       continue;

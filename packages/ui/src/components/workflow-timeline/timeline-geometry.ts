@@ -2,44 +2,44 @@ import { arcLaneCount } from "./timeline-bands.js";
 import type { TimelineArc, TimelineBand, TimelineStation } from "./timeline-model.js";
 
 /**
- * 横向时间线的几何常量。与设计画布逐字相同：
- * 站宽 168、站距 24，灯落在站左缘 + 17（药丸头像列）。单独成文件是因为边檐的
- * 纯几何要读它们，而它不该反过来依赖渲染组件。
+ * Geometry constants for the horizontal timeline. Verbatim from the design canvas:
+ * station width 168, station gap 24, lamp at station left + 17 (pill avatar column). A separate file because the edge-gutter
+ * geometry needs them, and it must not depend on render components in turn.
  */
 export const STATION_WIDTH = 168;
 export const STATION_GAP = 24;
 export const STATION_PITCH = STATION_WIDTH + STATION_GAP;
-/** 灯心距站左缘的距离：外边距 12 + 半径 5。 */
+/** Lamp center offset from the station's left edge: margin 12 + radius 5. */
 export const MARK_X = 17;
 
-/** 轨道行高。 */
+/** Track row height. */
 export const RAIL_ROW = 24;
-/** 相邻两条弧道的高差。 */
+/** Height step between adjacent arc lanes. */
 export const ARC_LANE = 14;
 /**
- * 最低的弧道离轨道中线的高度。它必须装得下：圆角 8 + 落地的竖段（箭头 5.25 长，再留几像素的直线，
- * 箭头才像从上面落下来的）。之前是 16：圆角占掉 8 之后竖段只剩 −1px——最后一段反而向上走了一像素，
- * `marker-end` 跟着朝上，箭头就「不见了」。
+ * Height of the lowest arc lane above the track centerline. It must fit: corner radius 8 + the vertical landing segment (arrow 5.25 long,
+ * plus a few px of straight line so the arrow reads as landing from above). Used to be 16: after 8 of corner radius the vertical had −1px left —
+ * the last segment stepped up one pixel, `marker-end` pointed upward, and the arrow "vanished".
  */
 export const ARC_BASE = 26;
-/** 同一枚灯上相邻两个弧端（起飞或落地）的间距。 */
+/** Spacing between two adjacent arc terminals on the same lamp (takeoff or landing). */
 export const TERMINAL_PITCH = 10;
 export const PILL_HEIGHT = 32;
 export const PILL_GAP = 6;
 
 /**
- * 站台行：只有带的时间线才有，
- * 24px 一行，站头（名字 + 元数据）从轨道行搬到这里——主线就在它正上方，只有分支轨道的站需要
- * 一条引线。
+ * Platform row: only timelines with bands have it,
+ * 24px tall; station headers (name + meta) move here from the track row — the main line sits right above it, and only
+ * branch-track stations need a leader line.
  */
 export const PLATFORM_ROW = 24;
-/** 站台上名字的左缘：与灯的外边距同值，于是灯、名字、药丸头像连成一条竖脊。 */
+/** Left edge of the name on the platform: same as the lamp margin, so lamp, name and pill avatars form one vertical spine. */
 export const CAPTION_X = 12;
-/** 分叉点离首站左缘的距离；分支轨道每高一层再左移 8。 */
+/** Fork point distance from the first station's left edge; each higher branch track shifts 8 further left. */
 export const FORK_BACK = 16;
-/** 汇合点离汇合站左缘的距离（负值 = 在它左边）。 */
+/** Merge point distance from the merge station's left edge (negative = to its left). */
 export const MERGE_BACK = 10;
-/** 没有前驱时那截尾巴的长度，与没有汇合站时那截残段的长度。 */
+/** Length of the tail stub when there is no predecessor, and of the stub when there is no merge station. */
 export const TAIL = 4;
 export const STUB = 6;
 
@@ -47,38 +47,38 @@ export function timelineWidth(count: number, inset = 0): number {
   return count === 0 ? 0 : (count - 1) * STATION_PITCH + STATION_WIDTH + inset;
 }
 
-/** 第 i 站的左缘。 */
+/** Left edge of station i. */
 export function stationX(index: number, inset = 0): number {
   return index * STATION_PITCH + inset;
 }
 
-/** 第 i 站的灯心。 */
+/** Lamp center of station i. */
 export function lampX(index: number, inset = 0): number {
   return stationX(index, inset) + MARK_X;
 }
 
-/** 一条带在主线上分叉的 x；带从站 0 起时没有左边的余地，落在 4（时间线整体右移 `inset`）。 */
+/** X where a band forks off the main line; when the band starts at station 0 there is no room to the left, so it lands at 4 (the whole timeline shifts right by `inset`). */
 export function bandForkX(band: Pick<TimelineBand, "from">, inset = 0): number {
   return band.from === 0 ? TAIL : stationX(band.from, inset) - FORK_BACK;
 }
 
-/** 一条带在主线上汇合的 x；没有汇合站时落在末站槽尾之后 6px——那里仍是 strand 相遇的地方。 */
+/** X where a band merges back onto the main line; with no merge station it lands 6px past the last station's slot — still where the strands meet. */
 export function bandMergeX(band: Pick<TimelineBand, "join" | "to">, inset = 0): number {
   return band.join === undefined
     ? stationX(band.to, inset) + STATION_WIDTH + STUB
     : stationX(band.join, inset) - MERGE_BACK;
 }
 
-/** 第 i 站所在的带；带外 undefined（`timeline-bands.ts` 的同名函数只认下标带，这里认模型的带）。 */
+/** The band containing station i; undefined outside bands (the same-named helper in `timeline-bands.ts` only knows index bands, this one knows model bands). */
 export function bandAt(bands: readonly TimelineBand[], index: number): TimelineBand | undefined {
   return bands.find((band) => band.from <= index && index <= band.to);
 }
 
 /**
- * 一条弧的两端挂在哪。带内同一条轨道的弧
- * 两端都是灯（`inTrack`）；其余的弧把带当一个节点：源在带里就从带的汇合点起飞（`fromBand`），目标在
- * 带里就落在带的分叉点上（`toBand`）。带的自环两端也在同一条带里，但它的 `air` 是最上面那层空，
- * 落点又总在轨道 0 上，所以不会被认成 `inTrack`。
+ * Where the two ends of an arc attach. An arc within one track of a band
+ * attaches to lamps at both ends (`inTrack`); every other arc treats the band as one node: a source inside the band takes off from the band's merge point (`fromBand`), a target inside
+ * lands on the band's fork point (`toBand`). A band's self-loop has both ends in the same band, but its `air` is the topmost layer
+ * and its landing is always on track 0, so it is never mistaken for `inTrack`.
  */
 export interface ArcEnds {
   inTrack: boolean;
@@ -107,21 +107,21 @@ export function arcEnds(
 }
 
 /**
- * 弧端的槽位：弧在灯上的两端——源站的**起飞**、目标站的**落地**——
- * 都是这一站的弧端。一站的弧端各占一个槽，槽距 `TERMINAL_PITCH`，以灯心为中；只有一个弧端的站仍用
- * 灯心，于是没有冲突的时间线逐像素不动。
+ * Arc terminal slots: both ends of an arc on a lamp — the source station's **takeoff** and the target station's **landing** —
+ * are this station's arc terminals. Each terminal takes one slot, pitch `TERMINAL_PITCH`, centered on the lamp; a station with a single terminal keeps
+ * the lamp center, so conflict-free timelines stay pixel-identical.
  *
- * 之前只有落地会错开，起飞一律在灯心：一站既有进来的弧又有出去的弧时，出去的竖段正好穿过进来的箭头，
- * 两条竖段叠成一条线、箭头卡在半腰（testfield 的「工作流压力测试」里支路甲、支路乙两站）。车道把两条
- * 共用一站的弧在 y 上分开，却管不到 x。
+ * Previously only landings shifted while takeoffs always sat at the lamp center: with both incoming and outgoing arcs at one station, the outgoing
+ * vertical crossed the incoming arrow — two verticals stacked, the arrow stuck mid-shaft (branches A/B of testfield's "workflow stress test"). Lanes separate
+ * two arcs sharing a station along y, but do nothing along x.
  *
- * 槽的次序，自左向右：先是远端在这一站**左边**的弧端，再是远端在**右边**的；每一侧里**车道最低的在
- * 最外面**。一条弧的竖段与横段是一个朝远端张开的 L：朝左的放左边、朝右的放右边，两侧的 L 背对背永不
- * 相遇；同一侧里拐得低的若站在里面，拐得高的那条的竖段就要穿过它的横段——这正是车道的闭区间论证转了
- * 九十度。带的分叉点与汇合点不占槽：分叉点上只有落地、汇合点上只有起飞，同一个点上的竖段像 strand
- * 一样共用一条线，下面永远不会压着箭头。
+ * Slot order, left to right: first terminals whose far end is to this station's **left**, then those to the **right**; within each side the
+ * lowest lane sits outermost**. An arc's vertical + horizontal is an L opening toward the far end: left-facing on the left, right-facing on the right; the two
+ * Ls sit back to back and never meet; within one side, if the lower-bending arc sat innermost, the higher one's vertical would cross its horizontal —
+ * the lane closed-interval argument rotated 90°. Band fork/merge points take no slot: only landings at a fork, only takeoffs at a merge; verticals at
+ * the same point share one line like strands, never covering an arrow below.
  *
- * 返回与 `arcs` 一一对应的两列偏移（相对灯心，px）；端点不是灯的那一侧恒为 0。
+ * Returns two offset columns aligned with `arcs` (relative to lamp center, px); a side whose end is not a lamp is constant 0.
  */
 export function arcTerminalOffsets(
   arcs: readonly Pick<TimelineArc, "air" | "from" | "lane" | "to">[],
@@ -133,7 +133,7 @@ export function arcTerminalOffsets(
   interface Terminal {
     arc: number;
     end: "takeoff" | "landing";
-    /** 远端在左 −1、在右 1。 */
+    /** −1 when the far end is to the left, 1 when to the right. */
     side: -1 | 1;
     lane: number;
   }
@@ -153,7 +153,7 @@ export function arcTerminalOffsets(
     }
   });
   for (const list of byStation.values()) {
-    // 同一站、同一层空里的弧两两相交（闭区间），车道必不相同；稳定排序让弧序兜底。
+    // Arcs in the same station and air layer pairwise intersect (closed intervals), so their lanes must differ; the stable sort keeps arc order as tiebreak.
     list.sort(
       (left, right) =>
         left.side - right.side || (left.side < 0 ? left.lane - right.lane : right.lane - left.lane),
@@ -167,25 +167,25 @@ export function arcTerminalOffsets(
   return { landing, takeoff };
 }
 
-/** 时间线的行：每条轨道的中线、站台行、药丸列的顶，以及整体的右移。 */
+/** The timeline's rows: each track's centerline, the platform row, the top of the pill column, and the global right shift. */
 export interface TimelineLayout {
-  /** 每条轨道的中线 y，下标 = 轨道号；`rowY[0]` 是主线（最下面那一行）。 */
+  /** Centerline y per track, index = track number; `rowY[0]` is the main line (the bottom row). */
   rowY: number[];
-  /** 站台行的中线；没有带时退化成主线行——那时站头还在轨道行上。 */
+  /** Platform row centerline; without bands it degenerates to the main-line row — station headers still sit on the track row then. */
   capY: number;
-  /** 药丸列的顶。 */
+  /** Top of the pill column. */
   pillsTop: number;
-  /** 整根轨道右移的量：有带从站 0 起时 12（分叉要有落脚的地方），否则 0。 */
+  /** How far the whole rail shifts right: 12 when a band starts at station 0 (the fork needs a foothold), else 0. */
   inset: number;
-  /** 画面上有带。 */
+  /** There are bands on screen. */
   banded: boolean;
 }
 
 /**
- * 行的排布：自上而下 `t = R−1 … 0`，每条轨道
- * 先留自己的**空气**（弧道），再一行 24px 的轨道；主线因此落在最下面、紧挨着站台行。空气按那层
- * 空里的弧道数算：没有弧时最上面一层留 6px 呼吸，其余为 0。没有带时 R = 1，整套式子逐像素退回
- * 从前的「弧道 + 轨道行」。
+ * Row layout: top-down `t = R−1 … 0`; each track
+ * reserves its own **air** (arc lanes) first, then one 24px track row; the main line thus lands at the bottom, right above the platform row. Air is counted
+ * by the arc count in that layer: the topmost layer keeps 6px of breathing room with no arcs, the rest 0. Without bands R = 1 and the whole formula
+ * degenerates pixel-identically to the old "arc lanes + track row".
  */
 export function timelineLayout(
   arcs: readonly TimelineArc[],
@@ -197,7 +197,7 @@ export function timelineLayout(
   let y = 0;
   for (let t = tracks - 1; t >= 0; t -= 1) {
     const lanes = arcLaneCount(arcs.filter((arc) => arc.air === t));
-    // 最高一道的顶线落在 y = 8：rowY = air + RAIL_ROW/2 = 8 + ARC_BASE + ARC_LANE × (lanes − 1)。
+    // The topmost lane's top line lands at y = 8: rowY = air + RAIL_ROW/2 = 8 + ARC_BASE + ARC_LANE × (lanes − 1).
     const air =
       lanes === 0
         ? t === tracks - 1

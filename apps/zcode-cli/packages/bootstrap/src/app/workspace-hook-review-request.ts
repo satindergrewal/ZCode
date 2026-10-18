@@ -60,13 +60,13 @@ export function buildWorkspaceHookReviewRequest(input: {
     summary: {
       eventCount: new Set(items.map((item) => item.event)).size,
       hookCount: items.length,
-      // 注意：pendingCount 是协议契约字段，shared 的
-      // workspaceHookReviewRequestPayloadSchema 以「trustState ∈ {pending_trust,
-      // revoked, stale_digest}」校验它，刻意不看 configuredEnabled——单边加过滤会
-      // 直接违约。
+      // Note: pendingCount is a protocol contract field; the shared
+      // workspaceHookReviewRequestPayloadSchema validates it as trustState ∈ {pending_trust,
+      // revoked, stale_digest} and deliberately ignores configuredEnabled -- filtering on one side only
+      // would violate the contract.
       //
-      // 未启用的 Hook 也可随当前不可变审核快照一并信任，因此这里不按
-      // configuredEnabled 过滤；开关只控制运行，信任只控制准入。
+      // Disabled hooks may be trusted together with the current immutable review snapshot, so no
+      // configuredEnabled filtering here; the toggle controls running, trust only controls admission.
       pendingCount: items.filter((item) =>
         ["pending_trust", "revoked", "stale_digest"].includes(item.trustState),
       ).length,

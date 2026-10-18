@@ -15,17 +15,17 @@ const nativeSearchReleasePlan = resolveNativeSearchReleasePlan({
   platform: target.os,
   arch: target.arch,
 });
-// Windows Chrome 导入入口未启用，默认构建继续编译 helper 会增加 CI 时间和发布签名面。
-// 保留显式开关，后续恢复入口时仍可复用既有原生实现和供应链校验。
+// The Windows Chrome import entry is disabled; still compiling the helper by default would add CI time and signing surface.
+// The explicit flag remains so a future re-enable reuses the existing native implementation and supply-chain checks.
 const shouldPrepareWindowsBrowserImportHelper =
   target.os === "win32" && process.env.ZCODE_ENABLE_WINDOWS_BROWSER_IMPORT === "1";
-// CUA 权限浮窗的吸附数据源。仅 macOS；缺 swiftc 时脚本内部自行降级为跳过（浮窗 fail-open
-// 到屏幕底部，仍可用），所以无条件挂在 darwin 上不会让构建变脆。
+// Snap data source for the CUA permission panel. macOS only; the build script self-degrades to skip without swiftc
+// (the panel fail-opens to the screen bottom, still usable), so attaching it unconditionally on darwin keeps builds resilient.
 const shouldPrepareMacosWindowBounds = target.os === "darwin";
 
-// 本机桌面包内置 agent 的 JS bundle（prepare:agent-bundle），运行时由 app 的 Electron Node runtime 执行。
-// 远端跨平台原生二进制仍由上面的 prepare:remote-assets 提供。
-// native-search 归档随仓库分发，准备步骤只做本地解包校验，不需要任何下载源配置。
+// The local desktop package bundles the agent JS build (prepare:agent-bundle), run by the app's Electron Node runtime.
+// Remote cross-platform native binaries still come from prepare:remote-assets above.
+// native-search archives ship in the repo; prepare only verifies local unpacking, no download source config needed.
 const localRuntimeScripts = [
   "prepare:agent-bundle",
   ...(nativeSearchReleasePlan.enabled ? ["prepare:native-search"] : []),
@@ -53,9 +53,9 @@ const shouldSkipRemoteAssets = process.env.ZCODE_SKIP_REMOTE_ASSETS === "1";
 if (!shouldSkipRemoteAssets) {
   runTimedPnpmScript("prepare:remote-assets");
 } else {
-  // Windows build job 的桌面安装包不依赖 mock-cdn remote 资产。
-  // 之前这里无条件执行 prepare:remote-assets，会在同一个 job 里串行下载/打包跨平台资源，
-  // 导致 CI 时间被白白拉长并逼近 1 小时上限。增加显式开关，只在需要时才准备 remote 资产。
+  // The Windows build job's desktop installer does not need mock-cdn remote assets.
+  // prepare:remote-assets used to run unconditionally, serializing cross-platform download/pack inside the same job
+  // and stretching CI toward the 1-hour cap. The explicit flag prepares remote assets only when needed.
   console.log("[prepare:runtime-assets] skip prepare:remote-assets (ZCODE_SKIP_REMOTE_ASSETS=1)");
 }
 

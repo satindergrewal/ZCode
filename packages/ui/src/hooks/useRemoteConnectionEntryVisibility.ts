@@ -1,6 +1,8 @@
 export function useRemoteConnectionEntryVisibility(): boolean {
-  // SSH 入口之前复用了 internal-only gate，生产态外网环境会被一并隐藏。
-  // 但 SSH 是否可用取决于目标机器、网络链路和凭据，不应该依赖“当前客户端是否在内网”。
-  // 远程连接是通用 SSH 能力，不应被已退役产品的内网策略门禁。
+  // The SSH entry used to reuse the internal-only gate, hiding it in production
+  // internet-facing setups too. But SSH availability depends on the target machine, network
+  // path, and credentials — not on whether this client sits in a private network. Remote
+  // connection is a generic SSH capability and must not be gated by a retired product's
+  // intranet policy.
   return true;
 }

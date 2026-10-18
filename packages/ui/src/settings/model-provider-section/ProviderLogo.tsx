@@ -27,9 +27,9 @@ interface BuiltinProviderLogoAsset {
   readonly dark?: string;
 }
 
-// 这里只负责把 Config 中的资源 key 解析为打包素材；禁止加入 Provider ID、名称或排序逻辑。
+// Resolve config resource keys to bundled assets only; no provider ids, names or ordering here.
 const BUILTIN_PROVIDER_LOGO_ASSETS: Readonly<Record<string, BuiltinProviderLogoAsset>> = {
-  // 用户指定 Dock 应用图标；同名旧 SVG 带灰色描边，不能当作同一素材复用。
+  // User-picked Dock app icon; the same-named legacy SVG has a gray stroke and is not the same asset.
   zai: { light: zaiLogo },
   bigmodel: { light: bigModelLogo },
   "start-plan": { light: startPlanLogo },

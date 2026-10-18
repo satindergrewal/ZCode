@@ -21,8 +21,8 @@ interface ContextAttachmentPillProps {
 }
 
 /**
- * 上下文附件共享同一个 pill 与详情浮层外壳，避免各类型复制布局和交互样式。
- * Trigger 使用 asChild，详情使用 Portal，因此消息附件容器中只留下一个 pill 节点。
+ * Context attachments share one pill and detail-popover shell so no type duplicates layout/interaction.
+ * Trigger is asChild and the detail a Portal, leaving a single pill node in message attachment containers.
  */
 export function ContextAttachmentPill({
   children,
@@ -41,8 +41,9 @@ export function ContextAttachmentPill({
           aria-label={label}
           className={cn(
             "group flex h-8 max-w-full cursor-pointer select-none items-center gap-1.5 rounded-full border-0 bg-surface py-1.5 text-ui-base font-medium text-foreground transition-all hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-input-border-focused",
-            // 输入框与对话流共用该外壳，但只有输入框存在关闭按钮。
-            // 无条件压缩右 padding 会让对话流 pill 视觉上偏右，因此按删除入口分流间距。
+            // Input and conversation flow share the shell; only the input has a close button.
+            // Unconditional right-padding would bias flow pills rightward, so spacing branches on
+            // the remove entry.
             onRemoveAll ? "pl-3 pr-1.5" : "px-3",
           )}
           role="button"

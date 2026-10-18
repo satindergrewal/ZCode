@@ -18,8 +18,9 @@ interface DeviceStateLockOwner {
 
 const deviceMidCacheByStateFile = new Map<string, Promise<string>>();
 
-// `telemetry-state.json` 是设备身份文件沿用至今的磁盘文件名：CLI、Desktop、远端 server 都读写同一
-// 路径与字段，改名等于重置用户的设备身份，因此文件名保持不变。
+// telemetry-state.json is the long-standing on-disk name of the device identity file; CLI, Desktop
+// and remote servers all read/write the same path and fields, so renaming would reset device
+// identity. The name stays.
 function resolveDeviceStateFile(homeDir?: string): string {
   if (homeDir) {
     return join(homeDir, ".zcode", "v2", "telemetry-state.json");
@@ -119,7 +120,7 @@ async function withDeviceStateLock<T>(
     try {
       const handle = await open(lockFile, "wx");
       try {
-        // 锁写入 owner pid，崩溃后 5 分钟内即可判定孤儿锁并被安全回收。
+        // The lock records its owner pid; five minutes after a crash the orphaned lock is detectable and safely reclaimed.
         await handle.writeFile(
           JSON.stringify({
             pid: process.pid,
@@ -165,10 +166,12 @@ function rememberDeviceMid(deviceStateFile: string, deviceMid: string): string {
 }
 
 /**
- * 调用方必须已持有设备身份文件锁（telemetry-state.lock）；只在 state 缺失 deviceMid 时生成并写回。
+ * Caller must already hold the device-identity file lock (telemetry-state.lock); generates and
+ * persists deviceMid only when the state lacks one.
  *
- * 遥测上报等场景在自身临界区内已持有同一把锁并维护完整 state，需要把 deviceMid 的生成
- * 合并进同一次落盘；此时不能走会重新抢锁的 ensureDeviceMid，改用本入口。
+ * Callers such as telemetry reporting already hold this same lock inside their own critical
+ * section and maintain the full state, so deviceMid generation must fold into that single
+ * persist - use this entry, never the lock-reacquiring ensureDeviceMid.
  */
 export async function ensureDeviceMidInLockedState(
   state: DeviceState,
@@ -186,11 +189,11 @@ export async function ensureDeviceMidInLockedState(
 }
 
 /**
- * 确保设备身份文件里存在 deviceMid 并返回它。
+ * Ensure deviceMid exists in the device identity file and return it.
  *
- * deviceMid 是跨端共享的设备身份：X-Device-Mid 计费 header、反馈、onboarding 都读它。
- * 远端 zcode-server 没有 Desktop main 进程，由 stdio entry 启动时调用本函数补写，
- * 与同机 CLI/Desktop 共享同一个文件、字段与锁。
+ * deviceMid is the cross-component device id read by the X-Device-Mid billing header, feedback
+ * and onboarding. A remote zcode-server has no Desktop main process, so its stdio entry calls
+ * this on startup, sharing file/fields/lock with the same machine's CLI/Desktop.
  */
 export function ensureDeviceMid(options: EnsureDeviceMidOptions = {}): Promise<string> {
   const deviceStateFile = resolveDeviceStateFile(options.homeDir);

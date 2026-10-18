@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- Chrome helper、CDP 传输和 Electron 目标写入必须共享同一套敏感数据边界。 */
+/* eslint-disable max-lines -- the Chrome helper, CDP transport, and Electron-side writes share one sensitive-data boundary. */
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { cp, copyFile, mkdir, mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -68,7 +68,7 @@ function toLocalStorageFailureReason(error: unknown): string {
   if (message === "local_storage_origin_mismatch" || message.endsWith("_timeout")) {
     return message;
   }
-  // CDP 原始错误可能包含 URL 或站点细节，日志中只保留稳定分类。
+  // // CDP errors can embed URLs/site details; logs keep stable classifications only.
   return "cdp_command_failed";
 }
 
@@ -102,10 +102,10 @@ async function cleanupChromeHelperTempRoot(options: {
       retryDelay: CHROME_HELPER_TEMP_CLEANUP_RETRY_DELAY_MS,
     });
   } catch (error) {
-    // Linux Chrome 的 crashpad/子进程可能在主 helper 退出后短暂继续写临时 Profile，
-    // 使 rm 返回 ENOTEMPTY。清理失败不能覆盖已经通过 CDP 读取成功的 Cookie/LocalStorage 结果。
+    // Linux crashpad/child processes can keep writing the temp Profile after the helper exits, making rm ENOTEMPTY.
+    // Cleanup failure must not override Cookie/LocalStorage results already read via CDP.
     options.logger.warn(
-      "[browser-data] Chrome helper 临时目录清理失败",
+      "[browser-data] Chrome helper temp dir cleanup failed",
       toSafeFileSystemError(error),
     );
   }
@@ -149,8 +149,8 @@ async function discoverChromeLocalStorageOrigins(localStoragePath: string): Prom
 
   const origins = new Set<string>();
   const files = await readdir(levelDbPath, { withFileTypes: true });
-  // Chrome LocalStorage LevelDB 的 metadata key 使用 `META:<origin>`。这里只提取 origin，
-  // 不解析或输出任何 entry value；真实值由隔离 Chrome helper 通过同源 API 读取。
+  // Chrome LocalStorage LevelDB metadata keys look like META:<origin>. Extract the origin only;
+  // never parse or emit entry values; the isolated Chrome helper reads real values via same-origin APIs.
   const originPattern = /META:(https?:\/\/(?:\[[0-9a-fA-F:]+\]|[A-Za-z0-9.-]+)(?::\d{1,5})?)/g;
   for (const file of files) {
     if (!file.isFile()) continue;
@@ -164,7 +164,7 @@ async function discoverChromeLocalStorageOrigins(localStoragePath: string): Prom
           origins.add(candidate);
         }
       } catch {
-        // LevelDB 历史记录或二进制邻接字节可能形成无效候选，直接忽略。
+        // LevelDB history or adjacent binary bytes form invalid candidates; skip them.
       }
     }
   }
@@ -515,9 +515,9 @@ async function copyChromeProfileMetadata(
 }
 
 /**
- * Windows App-Bound Cookie 与 Linux 系统密钥环 Cookie 只能由匹配的 Chrome/Chromium
- * 安全解密。这里把数据库复制到一次性 Profile，再由已安装浏览器通过 CDP 读取；
- * Cookie 值和密钥环材料不会进入 renderer 或日志。
+ * * Windows App-Bound cookies and Linux keyring cookies decrypt safely only inside the matching Chrome/Chromium.
+ * Copy the DB into a throwaway profile and let the installed browser read it over CDP;
+ * cookie values and keyring material never reach the renderer or logs.
  */
 export async function readChromeCookiesWithHelper(options: {
   cookieDatabasePath: string;
@@ -593,8 +593,8 @@ async function writeElectronLocalStorage(
       backgroundThrottling: false,
     },
   });
-  // 未加载任何文档的 WebContents 尚未创建可用 renderer，直接发送 CDP
-  // 导航/存储命令会一直不返回。先初始化 about:blank，再附加 debugger。
+  // A WebContents with no document has no live renderer; CDP navigation/storage commands
+  // would never return. Init about:blank first, then attach the debugger.
   await window.loadURL("about:blank");
   const transport = createElectronCdpTransport(window.webContents);
   const unsubscribe = await initializeLocalStoragePage(transport);
@@ -649,8 +649,8 @@ export async function importChromeLocalStorage(options: {
   let originCount = 0;
   try {
     await mkdir(targetProfilePath, { recursive: true });
-    // Windows 上 Chrome 可能持续写入 LevelDB。必须先复制快照，再扫描 metadata；
-    // 直接扫描源目录会把锁冲突和写入竞态误报为“没有 LocalStorage”。
+    // Chrome writes LevelDB continuously on Windows. Snapshot-copy first, then scan metadata;
+    // scanning the live dir misreads lock contention as no-LocalStorage.
     await cp(sourceLocalStoragePath, join(targetProfilePath, "Local Storage"), {
       recursive: true,
       force: true,
@@ -665,7 +665,7 @@ export async function importChromeLocalStorage(options: {
       options.chromeExecutablePath ??
       (await resolveChromeExecutablePath({ platform: options.platform ?? process.platform }));
     if (!executablePath) {
-      options.logger.warn("[browser-data] Chrome LocalStorage helper 不可用");
+      options.logger.warn("[browser-data] Chrome LocalStorage helper unavailable");
       return {
         ...emptyChromeLocalStorageImportStats(),
         originsFailed: origins.length,
@@ -676,7 +676,7 @@ export async function importChromeLocalStorage(options: {
 
     const source = await readChromeLocalStorage({ userDataPath, origins, executablePath });
     if (source.failed > 0) {
-      options.logger.warn("[browser-data] Chrome LocalStorage 源读取存在失败", {
+      options.logger.warn("[browser-data] Chrome LocalStorage source read partial failures", {
         failureReasons: source.failureReasons,
       });
     }
@@ -687,11 +687,11 @@ export async function importChromeLocalStorage(options: {
       originsSkipped: source.skipped,
       originsFailed: source.failed + target.failedOrigins,
     };
-    options.logger.info("[browser-data] Chrome LocalStorage 导入完成", result);
+    options.logger.info("[browser-data] Chrome LocalStorage import completed", result);
     return result;
   } catch (error) {
     const importError = toLocalStorageImportError(error);
-    options.logger.warn("[browser-data] Chrome LocalStorage 导入失败", {
+    options.logger.warn("[browser-data] Chrome LocalStorage import failed", {
       originCount,
       reason: importError,
     });

@@ -36,11 +36,11 @@ export async function resolveModelForAttempt(input: {
     if (!refreshResult.headersApplied || !refreshResult.requestAuth) {
       throw new Error("Provider request auth was not returned before model request attempt.");
     }
-    // 当前绑定负责将完整鉴权材料投影到私有请求，不写共享 Registry，也不重新选择模型。
+    // The binding projects full credentials into the private request, never the shared registry, and never re-selects models.
     return input.resolveModel(refreshResult.requestAuth);
   } catch (error) {
     if (signal?.aborted) throw error;
-    // 执行作用域凭据缺失已有稳定错误码；不能被 headers 等待的通用包装吞掉。
+    // Missing execution-scope credentials have a stable code; the generic headers-await wrapper must not swallow it.
     if (
       error instanceof ModelProtocolError &&
       error.code === ModelErrorCode.ModelRequestAuthMissing

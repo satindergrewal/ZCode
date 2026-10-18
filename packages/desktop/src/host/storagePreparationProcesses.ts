@@ -106,7 +106,7 @@ export function prepareHostStorage(
   });
 }
 
-/** 在 Host 所属 Worker 运行同一 CLI bundle 的存储入口；Host 退出不会留下持锁孤儿进程。 */
+// Runs the storage entry of the same CLI bundle inside the Host's worker; host exit never leaves lock-holding orphans.
 export async function prepareSessionStorage(options: {
   cwd: string;
   env?: Record<string, string>;
@@ -153,7 +153,7 @@ export async function prepareSessionStorage(options: {
       terminate();
     }, 30_000);
     options.signal.addEventListener("abort", abort, { once: true });
-    // stdout 只有有界控制帧，stderr 排空但不把可能含本地路径的原始文本上报。
+    // stdout carries bounded control frames only; drain stderr without reporting raw text that may embed local paths.
     child.stderr.resume();
     input.on("error", (error) => {
       failure ??= error;
@@ -168,7 +168,7 @@ export async function prepareSessionStorage(options: {
           if (pathReceived) throw statusError("transport_closed");
           pathReceived = true;
           void (async () => {
-            // 仅复用同一次准备中已成功关闭的真实库，不能按不同 cwd 误判为不同数据库。
+            // Reuse only real DBs closed successfully within this same preparation; never misjudge by differing cwd.
             preparedPath = await realpath(frame.params.path).catch(
               (error: NodeJS.ErrnoException) => {
                 if (error.code === "ENOENT") return resolvePath(frame.params.path);

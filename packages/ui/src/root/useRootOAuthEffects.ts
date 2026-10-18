@@ -50,8 +50,8 @@ async function handleOAuthCallbackSuccess(params: {
     try {
       selection = await params.refreshLatestModelProviderFamilySelection(params.result.provider);
     } catch (error) {
-      // selectedKey 后台校正失败只影响默认连接方式展示，不能回滚已经成功的 OAuth 登录态。
-      logger.warn("[Root] OAuth 登录后刷新 provider family selectedKey 失败", {
+      // A failed background selectedKey correction only affects the default-connection display; never roll back a completed OAuth login.
+      logger.warn("[Root] Failed to refresh the provider family selectedKey after OAuth login", {
         provider: params.result.provider,
         error,
       });
@@ -59,12 +59,12 @@ async function handleOAuthCallbackSuccess(params: {
     const selectedConnection = selection ? JSON.stringify(selection) : "";
     if (selection && params.refreshAppSettings) {
       try {
-        // selectedKey 由 settingService 直接落盘，输入框和 context hover
-        // 读取的是 renderer settings 快照。登录后必须先刷新快照，再按最终套餐刷新
-        // 模型可用态和剩余额度，否则 UI 会一直拿旧 selectedKey，直到打开设置页或重启。
+        // settingService persists selectedKey directly, while the input and context hover
+        // read the renderer settings snapshot. After login, refresh the snapshot before the plan-based
+        // model availability/quota refresh, or the UI keeps the stale selectedKey until settings opens or the app restarts.
         await params.refreshAppSettings();
       } catch (error) {
-        logger.warn("[Root] OAuth 登录后刷新 App settings 快照失败", {
+        logger.warn("[Root] Failed to refresh the app settings snapshot after OAuth login", {
           provider: params.result.provider,
           selectedConnection,
           error,
@@ -72,7 +72,7 @@ async function handleOAuthCallbackSuccess(params: {
       }
     }
   }
-  // selectedKey 与账号状态收敛后统一刷新 Account Source 与 Registry。
+  // Once selectedKey and account state settle, refresh Account Source and the registry together.
   await params.refreshProviderState();
   if (loginProvider) {
     void reportAppTelemetryEvent(
@@ -88,7 +88,7 @@ async function handleOAuthCallbackSuccess(params: {
       "Root",
     );
   }
-  logger.info("[Root] OAuth 登录成功:", params.result.userInfo.username);
+  logger.info("[Root] OAuth login succeeded:", params.result.userInfo.username);
 }
 
 export function useRootOAuthEffects({
@@ -128,12 +128,12 @@ export function useRootOAuthEffects({
   useEffect(() => {
     let disposed = false;
     async function restoreOAuthSessionInBackground() {
-      logger.info("[Root] 后台启动 OAuth 本地会话恢复");
+      logger.info("[Root] Restoring the OAuth local session in the background");
       let hasRestoredUser = false;
       try {
-        // zai / bigmodel 的 OAuth token 生命周期较短，启动时如果仍走远端校验，
-        // 用户会在 token 过期后被立刻打回“未登录”，和“已完成登录但未主动退出”的产品语义冲突。
-        // 这里改为只读取登录成功时缓存的 user_info，展示态由“是否主动退出”决定，而不是由短 token 决定。
+        // zai/bigmodel OAuth tokens are short-lived; remote validation at startup would
+        // bounce expired-token users straight to signed-out, contradicting signed-in-until-explicit-sign-out.
+        // Read only the user_info cached at login; the displayed state keys off explicit sign-out, not token expiry.
         const result = await services.oauthService.restoreCachedSessionState();
 
         if (disposed) {
@@ -152,16 +152,16 @@ export function useRootOAuthEffects({
           },
         });
       } catch (error) {
-        logger.error("[Root] 恢复 OAuth 本地登录态失败:", error);
+        logger.error("[Root] Failed to restore the OAuth local session:", error);
         if (disposed) {
           return;
         }
       }
 
-      // 启动恢复是异步后台流程，慢网时如果不单独暴露“恢复中”状态，
-      // sidebar 会先按 user=null 渲染成“登录”，而登录弹窗又还能读到本地 activeProvider，
-      // 用户就会看到“外面未登录、弹窗里已登录提供方”的分裂展示。
-      // 这里在恢复主流程结束后立刻落定状态，让 footer 先显示 loading，再收敛到最终登录态。
+      // Restore runs in the background; on a slow network, without an explicit restoring state the
+      // sidebar renders user=null as signed-out while the login dialog still sees the local activeProvider,
+      // a split signed-out-outside/logged-in-inside view.
+      // Settle the state right after the restore flow: footer shows loading, then the final sign-in state.
       setIsRestoringOAuthSession(false);
 
       try {
@@ -175,12 +175,12 @@ export function useRootOAuthEffects({
           });
         }
 
-        // OAuth 会话恢复与 Provider Runtime 刷新保持后台执行，避免首屏等待网络链路。
+        // Keep OAuth session restore and the provider runtime refresh in the background, off the first-paint network path.
         await refreshProviderState();
       } catch (error) {
-        // 启动刷新失败不能跳过后续订阅，否则网络恢复后账号失效协调也永久停止。
-        // 保留当前事实，继续由 Provider View 的正常更新驱动，不另起重试循环。
-        logger.warn("[Root] 启动账号配置刷新失败，继续观察后续更新", { error });
+        // A failed startup refresh must not skip later subscriptions, or account-invalid coordination stops forever once offline.
+        // Keep the current facts and let normal Provider View updates drive; no retry loop.
+        logger.warn("[Root] Startup account config refresh failed; watching later updates", { error });
       }
     }
 
@@ -221,7 +221,7 @@ export function useRootOAuthEffects({
         }
         markZcodeJwtInvalidRestart();
         if (typeof window !== "undefined" && !("zcode" in window)) {
-          // Web 没有 Electron RelaunchApp；marker 写入后立即刷新，避免停留在僵尸登录态。
+          // Web has no Electron RelaunchApp; reload right after writing the marker, avoiding a zombie login state.
           window.location.reload();
           return;
         }
@@ -288,7 +288,7 @@ export function useRootOAuthEffects({
             oauthLoginSucceededRef.current,
             ownSuccessHandlerFailed ? false : oauthLoginSuccessInFlightRef.current,
           );
-          logger.warn("[Root] OAuth polling 失败判定", {
+          logger.warn("[Root] OAuth polling failure verdict", {
             succeeded: oauthLoginSucceededRef.current,
             successInFlight: oauthLoginSuccessInFlightRef.current,
             shouldApplyFailure,
@@ -296,7 +296,7 @@ export function useRootOAuthEffects({
           if (shouldApplyFailure) {
             setOAuthError(intl.formatMessage({ id: "login.oauth.loginFailure" }));
           }
-          logger.error("[Root] OAuth 轮询处理失败:", error);
+          logger.error("[Root] OAuth polling handling failed:", error);
         })
         .finally(() => {
           pollInFlight = false;
@@ -323,17 +323,17 @@ export function useRootOAuthEffects({
     const disposeOAuth = platform.onOAuthCallback(async (url) => {
       try {
         const result = await services.oauthService.handleCallback(url);
-        // 取消或切换 flow 会使已接收的回调失效，正常空结果不能被当作登录异常。
+        // Canceling or switching flows invalidates received callbacks; an empty result is normal, not a login error.
         if (!result) {
-          logger.info("[Root] 已忽略失效 OAuth 回调");
+          logger.info("[Root] Ignored a stale OAuth callback");
           return;
         }
         if (result.kind === "attribution") {
-          logger.info("[Root] OAuth 登录归因参数已缓存:", result.provider);
+          logger.info("[Root] Cached OAuth login attribution params:", result.provider);
           return;
         }
         if (result.kind === "duplicate") {
-          logger.info("[Root] 已忽略 polling 完成后的迟到 OAuth deep link");
+          logger.info("[Root] Ignored a late OAuth deep link after polling completed");
           return;
         }
 
@@ -365,9 +365,9 @@ export function useRootOAuthEffects({
         setOAuthPollingActive(false);
         markOAuthSuccess(result.provider);
       } catch (err) {
-        // 之前把底层 OAuth 错误原文写入 UI，用户会看到 provider/token 等具体失败原因。
-        // 登录页只保留统一可重试提示，具体原因继续进入 logger 便于排查。
-        // polling 成功后可能收到迟到/重复的 deep-link；该回调失败不能覆盖已完成的登录态。
+        // Raw OAuth errors used to go straight into the UI, exposing provider/token failure details.
+        // The login page keeps one uniform retryable message; details go to the logger for diagnosis.
+        // After polling succeeds, late/duplicate deep links can arrive; their failure must not overwrite the completed login.
         const ownSuccessHandlerFailed = oauthLoginSuccessOwnerRef.current === "deep-link";
         if (ownSuccessHandlerFailed) {
           oauthLoginSuccessOwnerRef.current = null;
@@ -379,7 +379,7 @@ export function useRootOAuthEffects({
               oauthLoginSucceededRef.current,
               oauthLoginSuccessInFlightRef.current,
             ) && !oauthPollingActive;
-        logger.warn("[Root] OAuth deep-link 失败判定", {
+        logger.warn("[Root] OAuth deep-link failure verdict", {
           succeeded: oauthLoginSucceededRef.current,
           successInFlight: oauthLoginSuccessInFlightRef.current,
           pollingActive: oauthPollingActive,
@@ -388,7 +388,7 @@ export function useRootOAuthEffects({
         if (shouldApplyFailure) {
           setOAuthError(intl.formatMessage({ id: "login.oauth.loginFailure" }));
         }
-        logger.error("[Root] OAuth 回调处理失败:", err);
+        logger.error("[Root] OAuth callback handling failed:", err);
       }
     });
     platform.notifyRendererReady();

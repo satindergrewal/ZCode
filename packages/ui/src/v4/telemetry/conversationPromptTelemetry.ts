@@ -15,8 +15,9 @@ function resolveLegacyConversationModelValue(params: {
   if (!configProvider || !modelName || configProvider === ZCODE_AGENT_PROVIDER) {
     return params.modelName;
   }
-  // 修复原因：V4 config 把 provider/model 拆开保存，直接上报 model 会丢失旧 UI
-  // `custom:<provider>:<model>` 维度，导致同一模型在新旧版本落入两组数仓桶。
+  // Fix rationale: V4 config stores provider/model separately, so reporting model alone drops
+  // the legacy custom:<provider>:<model> dimension and splits one model across two warehouse
+  // cohorts.
   return encodeCustomModelValue(legacyTelemetryProviderId(configProvider), modelName);
 }
 
@@ -33,7 +34,7 @@ export function resolveLegacyRuntimeModelValue(params: {
   return `${legacyTelemetryProviderId(configProvider)}/${modelName}`;
 }
 
-/** V4 config.provider 是实际模型 provider id；agentProvider 表示 ZCode 运行时。 */
+/** V4 config.provider is the actual model provider id; agentProvider names the ZCode runtime. */
 export function buildV4ConversationPromptTelemetryExtraDetail(params: {
   agentProvider?: ZCodeProvider;
   configProvider?: string | null;
@@ -57,7 +58,7 @@ export function buildV4ConversationPromptTelemetryExtraDetail(params: {
     model_provider: legacyTelemetryProviderId(
       params.configProvider?.trim() || base.model_provider || "",
     ),
-    // agent 表示 ZCode 运行时，不能用模型 provider id 替代。
+    // agent names the ZCode runtime; the model provider id cannot stand in for it.
     agent: agentProvider,
   };
 }

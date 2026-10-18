@@ -1,10 +1,10 @@
 /**
- * Layer 0.5: 跨平台 Buffer 抽象
+ * Layer 0.5: cross-platform buffer abstraction
  *
- * VS Code 需要在 Node.js (Buffer) 和浏览器 (Uint8Array) 之间统一二进制操作。
- * VSBuffer 是对 Uint8Array 的薄封装，提供统一的读写接口。
+ * VS Code must do binary ops uniformly across Node.js (Buffer) and the browser (Uint8Array).
+ * VSBuffer is a thin wrapper over Uint8Array with uniform read/write helpers.
  *
- * 这是序列化层和传输层的基础。
+ * The basis of both the serialization and transport layers.
  */
 
 export class VSBuffer {
@@ -16,23 +16,23 @@ export class VSBuffer {
     this.byteLength = buffer.byteLength;
   }
 
-  /** 分配指定大小的空 buffer */
+  /** Allocate an empty buffer of the given size */
   static alloc(byteLength: number): VSBuffer {
     return new VSBuffer(new Uint8Array(byteLength));
   }
 
-  /** 包装已有的 Uint8Array */
+  /** Wrap an existing Uint8Array */
   static wrap(buffer: Uint8Array): VSBuffer {
     return new VSBuffer(buffer);
   }
 
-  /** 从字符串创建 buffer (UTF-8) */
+  /** Create a buffer from a string (UTF-8) */
   static fromString(str: string): VSBuffer {
     const encoder = new TextEncoder();
     return new VSBuffer(encoder.encode(str));
   }
 
-  /** 拼接多个 buffer */
+  /** Concatenate buffers */
   static concat(buffers: VSBuffer[], totalLength?: number): VSBuffer {
     const len = totalLength ?? buffers.reduce((sum, b) => sum + b.byteLength, 0);
     const result = VSBuffer.alloc(len);
@@ -44,18 +44,18 @@ export class VSBuffer {
     return result;
   }
 
-  /** 转为 UTF-8 字符串 */
+  /** Convert to a UTF-8 string */
   toString(): string {
     const decoder = new TextDecoder();
     return decoder.decode(this.buffer);
   }
 
-  /** 切片 */
+  /** Slice */
   slice(start: number, end?: number): VSBuffer {
     return new VSBuffer(this.buffer.slice(start, end));
   }
 
-  /** 拷贝数据到 this buffer 的指定位置 */
+  /** Copy data into this buffer at the given offset */
   set(source: VSBuffer | Uint8Array, offset = 0): void {
     const raw = source instanceof VSBuffer ? source.buffer : source;
     this.buffer.set(raw, offset);

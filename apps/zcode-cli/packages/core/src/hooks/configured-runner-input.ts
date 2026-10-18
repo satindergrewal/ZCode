@@ -30,7 +30,7 @@ export async function createCompatibleHookStdin(input: HookInput): Promise<{
 
   if ("toolName" in input) {
 
-    // 这里只补无损 alias，继续保留 ZCode camelCase 字段作为内部主契约。
+    // Add lossless aliases only; ZCode camelCase fields remain the primary internal contract.
     compatible.tool_name = input.toolName;
     compatible.tool_input = input.toolInput;
     compatible.tool_use_id = input.toolCallId;
@@ -120,8 +120,8 @@ export function expandPluginVariables(
     /\$\{(CLAUDE_CODE_SESSION_ID|CLAUDE_PLUGIN_DATA|CLAUDE_PLUGIN_ROOT|CLAUDE_PROJECT_DIR|CLAUDE_SESSION_ID|CLAUDE_SKILL_DIR|ZCODE_PLUGIN_DATA|ZCODE_PLUGIN_ROOT|ZCODE_PROJECT_DIR|ZCODE_SESSION_ID|ZCODE_SKILL_DIR)\}/gu,
     (_match, key: string) => {
       if (key === "CLAUDE_SKILL_DIR" || key === "ZCODE_SKILL_DIR") {
-        // hook 运行时没有“当前 skill”语义，不能把该变量交给 shell 展开为空字符串。
-        // 这里提前报错，插件诊断/日志能看到明确的上下文缺失原因。
+        // Hook runtime has no "current skill" context; handing the variable to the shell would expand to an empty string.
+        // Fail here up front so plugin diagnostics/logs show the precise missing context.
         throw createCoreError(
           CoreErrorType.ConfigurationError,
           `Hook variable requires a skill context: ${key}`,

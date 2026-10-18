@@ -1,20 +1,20 @@
 /**
- * `report` 的上限常量。
+  * Cap constants of report.
  *
- * 与 `world-read-caps.ts` 分成两个模块，是因为两者的**执行侧不同**：world-read 的上限由
- * driver 执行（只有它能"不生产"——让 ripgrep 在 2000 条上停手），report 的上限由**引擎核心**
- * 执行（report 不过 driver，它在核心里落 journal 就结束了）。同一个模块会让读者以为它们由
- * 同一侧强制；数字都是契约这一点则两处相同。
+  * A separate module from world-read-caps.ts because the **enforcing sides differ**: the world-read caps are
+  * enforced by the driver (only it can not-produce -- stop ripgrep at 2000), the report caps by the **engine core**
+  * (report bypasses the driver; it ends in the journal inside core). One module would suggest a single enforcing side;
+  * that both numbers are contract holds in both places alike.
  *
- * 溢出的策略是**失败整个 run**（`ReportCapExceeded`），而不是像 world-read 那样拒绝节点。
- * 这不是严重程度的判断而是**拒绝通道**的事实：`report` 返回 `void`，脚本没有地方 `catch`。
- * 也正因为脚本作者写不出恢复路径，这两个数字必须宽到一份讲道理的脚本永远碰不到。
+  * Overflow policy: **fail the whole run** (ReportCapExceeded), not reject-the-node as world-read does.
+  * Not a severity judgment but a fact of the rejection channel: report returns void -- the script has nowhere to catch.
+  * And precisely because authors cannot write a recovery path, both numbers must be wide enough that a reasonable script never hits them.
  */
 
-/** 每个 run 的报告条数与单条序列化字节数上限。数字即契约（见本模块顶部）。 */
+/** Per-run report count and per-item serialized byte caps. The numbers are the contract (see the module top). */
 export const REPORT_CAPS = {
-  /** 一个 run 内 `report` 的最大条数。 */
+    /** Max report calls within one run. */
   maxItemsPerRun: 256,
-  /** 单条 item 序列化后的最大字节数。 */
+    /** Max serialized bytes per item. */
   maxItemSerializedBytes: 32 * 1024,
 } as const;

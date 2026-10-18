@@ -17,7 +17,7 @@ export interface ChromeCookieRow {
 
 function toCookieExpirationDate(chromeTime: bigint, importedAt: number): number {
   if (chromeTime === 0n) {
-    // Electron 的 session Cookie 会随进程退出丢失，导入时按 Chromium 上限持久化。
+    // Electron session cookies die with the process; persist up to the Chromium cap on import.
     return importedAt + IMPORTED_SESSION_COOKIE_MAX_AGE_SECONDS;
   }
   return Number((chromeTime - CHROME_EPOCH_OFFSET_MICROSECONDS) / 1_000_000n);

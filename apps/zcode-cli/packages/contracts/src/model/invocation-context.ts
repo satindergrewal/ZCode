@@ -11,18 +11,18 @@ import type {
 } from "./index.js";
 
 /**
- * Runtime 与 Adapter 之间的调用级执行信息。
+ * Invocation-scoped execution information between Runtime and Adapter.
  *
- * 它不属于业务 ModelRequest，也不允许普通调用方据此改变 Provider 或模型身份。
- * Runtime 只在统一模型调用边界设置，Adapter 在同一异步调用链内读取。
+ * Not part of the business ModelRequest, and ordinary callers may not use it to change provider or model identity.
+ * Set by the Runtime at the unified model-call boundary; read by the Adapter within the same async call chain.
  */
 export interface ModelInvocationContext {
   metadata?: Record<string, unknown>;
   modelCall?: ModelApiCallObservation;
   modelRequestSessionType?: ModelRequestSessionType;
-  /** 重试预算档位；runtime 按 taskType 决定，adapter 据此放宽瞬态失败的放弃条件。 */
+  /** Retry budget tier; chosen by the runtime per taskType, letting the adapter relax give-up conditions for transient failures. */
   modelRetryBudget?: ModelRetryBudget;
-  /** 准入端口；runtime 从 deps 带入，adapter 每次尝试先 acquire。 */
+  /** Admission port; carried in by the runtime deps, acquired by the adapter before each attempt. */
   modelRequestAdmission?: ModelRequestAdmission;
   statusSink?: ModelStatusSink;
   traceContext?: TraceContext;
@@ -43,7 +43,7 @@ export interface ModelInvocationContext {
   }>;
 }
 
-/** Adapter 为单个物理请求 attempt 使用的动态鉴权材料。 */
+/** Per-attempt dynamic auth material used by the adapter for one physical request. */
 export interface ModelRequestAuth {
   apiKey?: string;
   headers?: Record<string, string>;
@@ -57,13 +57,13 @@ export interface ModelRequestAuthSourceInput {
   traceContext?: TraceContext;
 }
 
-/** Model 创建时绑定、在每个物理请求 attempt 前解析的执行作用域鉴权来源。 */
+/** Execution-scoped auth source bound at Model creation and resolved before each physical request attempt. */
 export interface ModelRequestAuthSource {
   resolve(input: ModelRequestAuthSourceInput): Promise<ModelRequestAuth | undefined>;
 }
 
 export interface ModelRequestDependencies {
-  /** 属性存在表示当前 Model 必须取得请求级鉴权；Source 缺失同样 fail-closed。 */
+  /** Presence means this Model must obtain per-request auth; a missing Source fails closed as well. */
   requestAuth?: {
     source?: ModelRequestAuthSource;
   };

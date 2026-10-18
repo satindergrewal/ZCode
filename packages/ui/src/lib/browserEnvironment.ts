@@ -64,8 +64,9 @@ export function writeSafeLocalStorage(key: string, value: string): void {
   try {
     getSafeLocalStorage()?.setItem(key, value);
   } catch {
-    // SSR/测试环境或隐私模式下 localStorage 可能存在但不可写。
-    // 写入失败不应阻断 UI 渲染，真实偏好下次仍可从 settingService 或默认值恢复。
+    // In SSR/test environments or private mode, localStorage may exist but reject writes.
+    // A failed write must not block rendering; the real preference is recovered next time
+    // from settingService or the default.
   }
 }
 

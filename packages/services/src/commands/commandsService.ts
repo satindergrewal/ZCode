@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- commandsService 需要集中处理目录来源优先级、读写和命令解析，拆分会削弱读取顺序的一致性 */
+/* eslint-disable max-lines -- commandsService must centralize directory-source priority, IO and command parsing; splitting weakens read-order consistency */
 import { access, lstat, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
@@ -378,9 +378,9 @@ async function resolvePluginCommandRootDescriptors(): Promise<PluginCommandRootD
       continue;
     }
     const pluginId = `${manifest.name}@${candidate.marketplace}`;
-    // 内置官方插件被「卸载」后只在 CLI config 写入 suppressedBuiltins；desktop 直接扫
-    // 官方 cache 时不经过 CLI resolve 的过滤，需要在这里同样跳过，否则被卸载的内置插件
-    // 仍会从 cache 贡献命令。
+    // Uninstalling a built-in official plugin only writes suppressedBuiltins in the CLI config;
+    // the desktop's direct official-cache scan bypasses CLI resolve filtering, so skip suppressed
+    // entries here too or uninstalled builtins still contribute commands from cache.
     if (
       candidate.marketplace === ZCODE_OFFICIAL_PLUGIN_MARKETPLACE &&
       config.suppressedBuiltins.includes(pluginId)
@@ -398,8 +398,9 @@ async function resolvePluginCommandRootDescriptors(): Promise<PluginCommandRootD
       continue;
     }
 
-    // 命令管理页过去只展示本地命令，且插件扫描只覆盖内置官方 cache。
-    // marketplace installed_plugins.json 里的官方/自建市场插件也要纳入只读命令来源。
+    // The command manager used to show local commands only, with plugin scans limited to the
+    // builtin official cache. Include official/self-built marketplace plugins from installed_plugins.json
+    // as read-only command sources too.
     for (const rootPath of resolvePluginCommandRoots({
       manifest,
       rootPath: candidate.rootPath,
@@ -465,7 +466,7 @@ function buildCommandLocation(params: {
 }
 
 // ============================================================================
-// CommandsService 实现
+// CommandsService implementation
 // ============================================================================
 
 interface CommandsServiceOptions {
@@ -523,8 +524,8 @@ export function createCommandsService(_options?: CommandsServiceOptions): IComma
     const agentSources = getCommandAgentSources(params.agentSource);
     const enabledOverrides = await readCommandEnabledOverridesFromUserConfig();
 
-    // ZCode Agent 需要先合并所有 workspace 目录，再合并所有 user 目录；
-    // 按每个目录交错读取 project/user 会让 user .zcode 抢在 workspace .agents 前面。
+    // ZCode Agent merges all workspace dirs first, then all user dirs; interleaving project/user
+    // per directory would let user .zcode outrank workspace .agents.
     for (const agentSource of agentSources) {
       const descriptors =
         agentSource === ZCODE_COMMAND_AGENT_SOURCE
@@ -581,7 +582,7 @@ export function createCommandsService(_options?: CommandsServiceOptions): IComma
     const fileName = getCommandFileName(params.config, agentSource);
     const filePath = join(commandsRoot, fileName);
 
-    // 检查文件是否已存在
+    // Check whether the file already exists
     try {
       await access(filePath);
       throw new Error(`Command file already exists: ${fileName}`);
@@ -642,16 +643,16 @@ export function createCommandsService(_options?: CommandsServiceOptions): IComma
       ? await readFile(params.oldFilePath, "utf-8").catch(() => undefined)
       : undefined;
 
-    // 如果文件名变了，需要删除旧文件
+    // Name changed: remove the old file
     if (params.oldFilePath && params.oldFilePath !== newFilePath) {
       try {
         await rm(params.oldFilePath);
       } catch {
-        // 旧文件可能已被移除，忽略删除失败（ENOENT 属正常情况）。
+        // The old file may already be gone; ignore deletion failures (ENOENT is normal).
       }
     }
 
-    // 检查新文件是否已存在（排除自己的旧路径）
+    // Check whether the new file exists (excluding our own old path)
     if (newFilePath !== params.oldFilePath) {
       try {
         await access(newFilePath);
@@ -677,8 +678,8 @@ export function createCommandsService(_options?: CommandsServiceOptions): IComma
       params.oldFilePath !== newFilePath &&
       enabledOverrides.has(params.oldFilePath)
     ) {
-      // 禁用状态按命令文件路径存放；编辑命令改名会换文件路径，必须迁移 override，
-      // 否则用户刚禁用的命令会因为改名重新启用。
+      // Disabled state keys on the command file path; a rename changes the path, so migrate the
+      // override or a just-disabled command re-enables itself.
       const migratedConfig = setCommandEnabledOverride(
         setCommandEnabledOverride(await readUserCliConfig(), params.oldFilePath, true),
         newFilePath,
@@ -720,7 +721,7 @@ export function createCommandsService(_options?: CommandsServiceOptions): IComma
     } catch (error) {
       const err = error as NodeJS.ErrnoException;
       if (err.code === "ENOENT") {
-        // 文件不存在，当作成功
+        // Missing file counts as success
       } else {
         throw error;
       }
@@ -743,8 +744,8 @@ export function createCommandsService(_options?: CommandsServiceOptions): IComma
     agentSource?: CommandAgentSource;
   }): Promise<{ path: string }> {
     const path = getUserCommandsRoot(params?.agentSource);
-    // open-in-file-manager 在 Windows 上不能可靠打开不存在的路径，
-    // 这里先确保命令目录落盘，再把路径交给系统文件管理器。
+    // open-in-file-manager cannot reliably open a missing path on Windows; ensure the command dir
+    // exists on disk before handing the path to the system file manager.
     await mkdir(path, { recursive: true });
     return { path };
   }
@@ -795,7 +796,7 @@ async function discoverPluginCommands(
 }
 
 // ============================================================================
-// 辅助函数
+// Helpers
 // ============================================================================
 
 async function discoverPluginCommandsRecursive(
@@ -873,7 +874,7 @@ async function discoverPluginCommandsRecursive(
         source: "plugin",
       });
     } catch {
-      // 插件命令本身由插件管理；单个文件解析失败不阻断其它命令展示。
+      // Plugin commands are governed by plugin management; one file's parse failure must not block the rest.
     }
   }
 }
@@ -900,7 +901,7 @@ async function discoverUserCommandsRecursive(
   for (const entry of entries) {
     const fullPath = join(currentDir, entry);
 
-    // 跳过隐藏文件和目录
+    // Skip hidden files and directories
     if (entry.startsWith(".")) {
       continue;
     }
@@ -910,12 +911,12 @@ async function discoverUserCommandsRecursive(
       const stat = await lstat(fullPath);
       isDir = stat.isDirectory();
     } catch {
-      // 无法访问，跳过
+      // Unreadable: skip
       continue;
     }
 
     if (isDir) {
-      // 递归扫描子目录
+      // Recurse into subdirectories
       await discoverUserCommandsRecursive(rootDir, fullPath, commands, options);
       continue;
     }
@@ -945,7 +946,7 @@ async function discoverUserCommandsRecursive(
           });
         }
       } catch {
-        // 解析失败就跳过
+        // Skip on parse failure
       }
     }
   }
@@ -974,7 +975,7 @@ async function discoverCommandsRoot(params: {
       ...(params.projectPath ? { projectPath: params.projectPath } : {}),
     });
   } catch {
-    // 扫描出错时返回已发现的命令
+    // On scan error, return whatever was discovered
   }
   return params.commands.length - beforeCount;
 }
@@ -996,7 +997,8 @@ async function discoverCommandsFromDirectorySources(params: {
       scope: params.scope,
       ...(params.projectPath ? { projectPath: params.projectPath } : {}),
     });
-    // `.zcode` 是强优先级来源；只要读到有效命令，同 scope 的 `.agents` 就不再参与。
+    // .zcode is the strong-priority source: once valid commands load from it, same-scope .agents
+    // no longer participates.
     if (descriptor.directorySource === "zcode" && discoveredCount > 0) {
       break;
     }

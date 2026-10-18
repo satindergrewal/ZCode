@@ -169,9 +169,9 @@ function candidateFromToolPart(
   const metadata = { ...asRecord(part.metadata), ...stateMetadata };
   const agentId =
     stringField(output ?? {}, "agentId") ??
-    // 后台 Agent 的持久化 launch ACK 是纯文本，cold query 未携带
-    // 临时 spawn event 时无法恢复 childSessionId，导致真实 running Agent 被整条跳过。
-    // 标准 ACK 自带 agentId，按该稳定字段恢复，与 runtime 的 session id 规则对齐。
+    // A background agent's persisted launch ACK is plain text; when the cold query lacks the
+    // ad hoc spawn event, childSessionId cannot be recovered and real running agents get skipped entirely.
+    // The standard ACK carries agentId; recover on that stable field, aligned with the runtime's session id rules.
     agentIdFromLaunchAcknowledgement(completedOutput) ??
     stringField(metadata, "agentId") ??
     relation?.agentId;
@@ -248,8 +248,8 @@ function lastChildOutcome(messages: readonly MessageWithParts[] | undefined): {
   const assistantMessages = messages.filter((message) => message.info.role === "assistant");
   const last = assistantMessages.at(-1);
   if (!last || last.info.role !== "assistant") return {};
-  // stream recovery 作废的半截 assistant 带 error 落盘，但子会话紧接着会从锚点
-  // 重发；它是最后一条只说明恢复仍在进行或进程已退出，都不是「子会话失败」的终态。
+  // A half-written assistant with error, voided by stream recovery, does get persisted, but the child session re-sends from the
+  // anchor right away; being last only means recovery is ongoing or the process exited -- neither is a terminal "child failed".
   if (last.info.error && last.info.error.name === STREAM_RECOVERY_DISCARDED_ERROR_NAME) {
     return {};
   }
@@ -267,9 +267,9 @@ function lastChildOutcome(messages: readonly MessageWithParts[] | undefined): {
     ...(text || errorSummary ? { summary: text || errorSummary } : {}),
     ...(errorName
       ? { status: CANCELLATION_PATTERN.test(errorName) ? "cancelled" : "failed" }
-      : // assistant 发出 tool call 后，该 model step 也会写 completed/finish；
-        // 但 child session 仍在执行 Bash 等工具，不能把“本轮结束”当成“子会话终态”。
-        // 只有不含 tool part 的最终 assistant message 才能提供成功 outcome。
+      : // After the assistant emits a tool call, that model step also writes completed/finish;
+        // but the child session is still running tools such as Bash -- "turn ended" is not "child terminal".
+        // Only a final assistant message without tool parts proves a successful outcome.
         !hasToolRound && (last.info.time.completed || last.info.finish)
         ? { status: "success" }
         : {}),
@@ -301,11 +301,11 @@ function runningStatus(input: {
   }
   if (input.childProjection?.status === "waiting") return "waiting";
   if (input.childProjection?.status === "running") return "running";
-  // async Agent 的父 tool part 在 launch ACK 后立即标成 completed，
-  // partial parent projection 又可能暂时不带仍运行的 background task。此时仅按
-  // tool part 会把 child 误判为 ended，并在 cold seed 时清空 V4 running 行。
-  // child 还没有终态输出、spawn relation 也没有 stop 时，background input 本身
-  // 是可恢复的 running 事实；真实终态仍由 background/child projection/outcome 优先。
+  // An async agent's parent tool part is marked completed right after the launch ACK, while the
+  // partial parent projection may temporarily lack the still-running background task. Judging by the
+  // tool part alone would mark the child ended and wipe the V4 running row on cold seed.
+  // With no terminal child output and no stop in the spawn relation, the background input itself
+  // is a resumable running fact; real terminal state still prioritizes background/child projection/outcome.
   if (
     input.candidate.runInBackground &&
     input.background === undefined &&

@@ -1,9 +1,9 @@
 // ============================================================
 // submit_result Tool - actor terminal structured-result submission
 // ============================================================
-// 工作流 actor（子 AgentRuntime）用它提交本次 ask 的结构化结果。声明的输入是通用的
-// 任意 JSON（单个 `result` 属性）——每个 ask 的具体 schema 不进工具声明，而是随 ask
-// 指令消息的 epilogue 下发，以维持 frozen-per-actor 的工具缓存不变式。
+// Used by workflow actors (child AgentRuntime) to submit the structured result of this ask. The declared input is
+// generic arbitrary JSON (a single `result` property) -- each ask's concrete schema stays out of the tool declaration
+// and rides the ask instruction epilogue, preserving the frozen-per-actor tool-cache invariant.
 
 import { z } from "zod";
 import { TOOL_JSON_SCHEMA_VERSION, toToolJsonSchema } from "./json-schema.js";
@@ -12,8 +12,8 @@ export const SUBMIT_RESULT_TOOL_NAME = "submit_result";
 
 export const SubmitResultInputSchema = z
   .object({
-    // 有意保持通用：不约束 result 的形状。具体 per-ask schema 在 ask 指令 epilogue 里，
-    // 由引擎在 WorkflowSubmitPort 侧校验；这样工具声明可跨 ask 冻结、命中 prompt 缓存。
+    // Deliberately generic: no shape constraint on result. The per-ask schema lives in the ask epilogue and is
+    // validated engine-side at WorkflowSubmitPort, so this declaration stays frozen across asks and hits prompt caches.
     result: z
       .unknown()
       .describe(
@@ -27,9 +27,10 @@ export type SubmitResultInput = z.infer<typeof SubmitResultInputSchema>;
 export const SubmitResultInputJsonSchema = toToolJsonSchema(SubmitResultInputSchema);
 
 /**
- * mono 子代理的 typed 工具声明：`result` 的子 schema 就是该 actor 唯一的 ask 结果 schema。运行时 zod 校验仍是上面的
- * 通用 `SubmitResultInputSchema`——per-ask 形状由引擎在 WorkflowSubmitPort 侧校验，工具声明只是让
- * provider 看到（并在支持时原生约束）它。外层对象与通用声明同形：单个必填 `result`、禁止多余键。
+ * Typed tool declaration for mono-repo subagents: `result`'s subschema is the actor's single ask-result schema. Runtime
+ * zod validation remains the generic `SubmitResultInputSchema` above -- per-ask shape is enforced engine-side at
+ * WorkflowSubmitPort; the declaration only lets the provider see (and natively constrain, where supported) it. The outer
+ * object matches the generic declaration: one required `result`, no extra keys.
  */
 export function typedSubmitResultInputSchema(
   resultSchema: Record<string, unknown>,

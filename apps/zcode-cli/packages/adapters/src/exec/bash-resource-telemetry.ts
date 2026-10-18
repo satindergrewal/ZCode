@@ -20,7 +20,7 @@ interface BashResourceTelemetryOptions {
   readContext?: () => Pick<ZCodeToolExecResource, "cliRssKb" | "systemFreeMemoryKb">;
 }
 
-/** 每条命令独占状态与探针失败预算；finish 同步封口，绝不等待遥测 IO。 */
+/** Per-command state and probe failure budget; finish seals synchronously, never awaiting telemetry IO. */
 export function createBashResourceTelemetry(options: BashResourceTelemetryOptions): {
   finish(exitKind: ZCodeToolExecResource["exitKind"]): void;
 } {
@@ -43,7 +43,7 @@ export function createBashResourceTelemetry(options: BashResourceTelemetryOption
     attempts += 1;
     try {
       const rows = await probe.sampleProcessGroup(options.processGroupId!);
-      // 根退出时已封口；不能让迟到的 /proc 或 ps 结果修改已发送的摘要。
+      // Sealed at root exit; late /proc or ps results must not alter an already-sent summary.
       if (finished || !rows?.length) return;
       sampleCount += 1;
       let rssKb = 0;
@@ -56,13 +56,13 @@ export function createBashResourceTelemetry(options: BashResourceTelemetryOption
       }
       treeRssKbPeak = Math.max(treeRssKbPeak, rssKb);
     } catch {
-      // 遥测失败只丢当前样本，不能改变 Bash 的退出、输出与超时行为。
+      // Telemetry failure drops only the current sample; Bash exit, output and timeout behavior are untouched.
     } finally {
       if (attempts === BASH_RESOURCE_MAX_SAMPLES) unsubscribe?.();
     }
   };
   if (platform !== "win32" && options.processGroupId !== undefined) {
-    // 复用 Bash 已有的一秒共享轮询；按命令起点门控，错相位至多延后一轮，绝不提前采样。
+    // Reuse the Bash one-second shared poller, gated at command start: a phase shift delays at most one tick, never samples early.
     unsubscribe = subscribeBashOutputProgress(DEFAULT_PROGRESS_INTERVAL_MS, sample);
   }
 
@@ -80,7 +80,7 @@ export function createBashResourceTelemetry(options: BashResourceTelemetryOption
           systemFreeMemoryKb: freemem() / BYTES_PER_KB,
         };
         options.onComplete({
-          // 多连接和多窗口可能重复转发同一事实；在命令封口后只生成一次，供 main 按身份去重。
+          // Multiple connections/windows may forward the same fact; emit once after sealing for main-side dedup.
           completionToken: randomUUID(),
           platform,
           toolName: "bash",
@@ -91,7 +91,7 @@ export function createBashResourceTelemetry(options: BashResourceTelemetryOption
           ...(platform === "win32" ? {} : { treeRssKbPeak, treeCpuTimeMs }),
         });
       } catch {
-        // IPC 已关闭或上下文读取失败时只丢通知，不影响命令结果。
+        // With IPC closed or context read failed, drop the notification; command results are unaffected.
       }
     },
   };

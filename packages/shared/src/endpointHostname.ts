@@ -1,4 +1,4 @@
-/** 从 URL 提取可安全展示的 http(s) 主机名；非 http(s) 或解析失败返回空串。 */
+/** Extract a safely displayable http(s) hostname; empty string for non-http(s) or parse failure. */
 export function resolveSafeEndpointHostname(value: string | null | undefined): string {
   const normalized = value?.trim();
   if (!normalized) return "";

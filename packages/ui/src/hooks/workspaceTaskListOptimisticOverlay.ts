@@ -38,17 +38,19 @@ export function mergeWorkspaceTaskListItemsWithOptimistic(params: {
       continue;
     }
 
-    // workspace task 列表的服务端查询可能晚于首发 optimistic 写入返回。
-    // 如果直接信 query cache 里的旧 meta，新任务会先在顶部，随后被旧 updatedAt/title 压回下面。
-    // 这里只把已可见任务和当前 active task 的 optimistic meta 合并回来，保留真实列表成员边界。
+    // The workspace task list's server query may return after the first optimistic write.
+    // Trusting stale query-cache meta would show the new task on top, then push it back
+    // down via old updatedAt/title. Merge optimistic meta back only for already-visible
+    // tasks and the active task, preserving true list membership boundaries.
     taskByKey.set(
       taskKey,
       existingTask
         ? mergeTaskListMembershipFields(existingTask, {
             ...mergeTaskWithOptimisticMeta(existingTask, optimisticTask),
-            // unreadAt 属于 query cache 的 membership 字段，右键菜单写入的
-            // legacy optimistic task 只能兼容旧消费者，不能反向覆盖 query field overlay。
-            // 否则打开 task 的已读 overlay 或写入失败后的 rollback 都会被旧值盖回去。
+            // unreadAt is a query-cache membership field; legacy optimistic tasks written
+            // by context menus exist only for old consumers and must not overwrite the
+            // query field overlay, or the read overlay and its failure rollback get
+            // clobbered by stale values.
             unreadAt: existingTask.unreadAt,
           })
         : optimisticTask,

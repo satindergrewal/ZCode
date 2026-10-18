@@ -3,11 +3,11 @@ import { isGlobalLibValue } from "./callbacks.js";
 import { boundIdentifiers } from "./causality-order-functions.js";
 import type { TraceState } from "./causality-order-state.js";
 
-// 走查原本只有一个全局 `settled` 集合，于是内联的 `async` 体里的 `await` 会替整个
-// 脚本把 step 结算掉——把 `A ∥ B → C` 压成一条串行时间线。改成「每条 strand 一个 frame」之后，记账（strand 记录、frame 栈、被 await 的
-// 位置扫描、join 解析）本该落在 -state / -settle 两个兄弟模块，但它们已经贴着 oxlint
-// max-lines 上限（400 行），所以单开本文件。这里只读写 {@link TraceState}，不递归进 walk；
-// 公开面仍从 causality-order.ts 导出。
+// The walk originally had one global settled set, so an await inside an inlined async body settled steps for the
+// whole script -- flattening A parallel B then C into one serial timeline. With one frame per strand, the bookkeeping (strand records, frame stacks, awaited-
+// position scans, join resolution) belongs in the -state / -settle siblings, but both sit at oxlint's
+// max-lines cap (400), hence this file. Reads/writes {@link TraceState} only, never recursing into walk;
+// the public surface still exports from causality-order.ts.
 
 /**
  * One open activation's settled set. The root body is the first frame and is never a

@@ -5,18 +5,18 @@ import { browserBackendTypeSchema } from "./backend.js";
 import { browserSnapshotSchema, browserSnapshotElementSchema } from "./snapshot.js";
 
 /**
- * 受控 tab 摘要（list 命令返回）：agent 用 tabId 寻址某个具体 tab（含 human 开的 tab）。
+ * Controlled-tab summary (list result): the agent addresses a tab by tabId (human-opened ones included).
  */
 export const browserTabSummarySchema = z
   .object({
     tabId: z.string(),
     url: z.string(),
     title: z.string(),
-    /** guest 当前真实 CSS viewport；normal/free-size 均必须返回。 */
+    /// The guest's real CSS viewport; mandatory on both normal and free-size.
     viewport: browserViewportSizeSchema,
     /**
-     * main 侧最近可见/激活的内置浏览器 tab。用于让 agent 在用户手动改地址后，
-     * 先绑定并读取当前页面，而不是误读 session 默认 tab。
+     * The most recently visible/active in-app tab main-side. Lets the agent, after a user edits the URL,
+     * bind and read the current page instead of misreading the session default.
      */
     active: z.boolean().optional(),
     lifecycle: z.enum(["active", "deliverable", "handoff"]).optional(),
@@ -24,7 +24,7 @@ export const browserTabSummarySchema = z
   .strict();
 export type BrowserTabSummary = z.infer<typeof browserTabSummarySchema>;
 
-/** 尚未被当前 browser session claim 的用户 IAB tab；claim 前不能执行普通 Tab command。 */
+/** A user IAB tab not yet claimed by this browser session; plain tab commands wait until claimed. */
 export const browserUserTabInfoSchema = z
   .object({
     id: z.string().min(1),
@@ -36,7 +36,7 @@ export const browserUserTabInfoSchema = z
   .strict();
 export type BrowserUserTabInfo = z.infer<typeof browserUserTabInfoSchema>;
 
-/** JS 弹窗信息（getDialog 返回）。 */
+/** JS dialog info (getDialog result). */
 export const browserDialogSchema = z
   .object({
     type: z.enum(["alert", "confirm", "prompt", "beforeunload"]),
@@ -46,7 +46,7 @@ export const browserDialogSchema = z
   .strict();
 export type BrowserDialog = z.infer<typeof browserDialogSchema>;
 
-/** browser command 的 UI/客户端元数据；不会自动变成模型 image block。 */
+/** UI/client metadata of a browser command; never auto-converted into a model image block. */
 export const browserResponseMetaSchema = z
   .object({
     browserUse: z.literal(true),
@@ -89,8 +89,8 @@ export const browserRecordingJobSchema = z
 export type BrowserRecordingJob = z.infer<typeof browserRecordingJobSchema>;
 
 /**
- * browser 命令的统一结果（agent BrowserControlPort / 协议 result / main executor 三处同源）。
- * 截图走 image；导航/getState 回 state；snapshot 回 snapshot；list 回 tabs；失败回结构化 error。
+ * The unified browser-command result (one shape across agent BrowserControlPort / protocol result / main executor).
+ * Screenshots via image; navigation/getState via state; snapshot via snapshot; list via tabs; failures as structured error.
  */
 export const browserCommandResultSchema = z
   .object({
@@ -101,19 +101,19 @@ export const browserCommandResultSchema = z
       .object({ base64: z.string(), mimeType: z.literal("image/png") })
       .strict()
       .optional(),
-    /** list 命令返回：只包含当前 window/workspace/session/generation scope 可见的 tabs。 */
+    /// list result: only tabs visible in the current window/workspace/session/generation scope.
     tabs: z.array(browserTabSummarySchema).optional(),
-    /** BrowserUser.openTabs() 返回；与当前 session 自有 tabs.list() 严格分离。 */
+    /// From BrowserUser.openTabs(); strictly separate from this session's own tabs.list().
     userTabs: z.array(browserUserTabInfoSchema).optional(),
-    /** newTab 返回的单个真实 tab。 */
+    /// The single real tab returned by newTab.
     tab: browserTabSummarySchema.optional(),
-    /** evaluate 返回：页面表达式的可 JSON 序列化结果。 */
+    /// evaluate result: the JSON-serializable page expression value.
     value: z.unknown().optional(),
-    /** elementInfo 返回：坐标命中元素的信息（复用快照元素结构；未命中则省略）。 */
+    /// elementInfo result: the hit element's info (snapshot element shape; omitted on miss).
     element: browserSnapshotElementSchema.optional(),
-    /** getDialog 返回：当前 JS 弹窗信息；无弹窗时为 null。 */
+    /// getDialog result: current JS dialog; null when none.
     dialog: browserDialogSchema.nullable().optional(),
-    /** WebView 异步录制任务；main 临时 path 会在 Host materialize 后改写为 workspace path。 */
+    /// WebView async recording job; main's temp path is rewritten to the workspace path once the Host materializes.
     recording: browserRecordingJobSchema.optional(),
     error: z
       .object({

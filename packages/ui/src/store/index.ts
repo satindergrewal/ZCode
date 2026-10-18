@@ -1,8 +1,8 @@
 /**
- * Zustand Store —— 全局状态管理
+ * Zustand store - global state management.
  *
- * 需要跨窗口同步的状态通过 BroadcastService 广播。
- * 广播频道前缀 "state:" 表示状态同步类消息。
+ * State that must sync across windows is broadcast via BroadcastService.
+ * The broadcast channel prefix "state:" marks state-sync messages.
  */
 import { create } from "zustand";
 import type { IBroadcastService, BroadcastMessage } from "@zcode/services";
@@ -48,8 +48,8 @@ import { logger } from "@/logger.js";
 
 export type LoginEntryPurpose = "app-login";
 
-// v4 重构：类型与默认值下沉到 @/lib/codePreviewSettings.ts，
-// 让纯展示组件不依赖 store；这里保留 re-export 兼容既有 import 路径。
+// v4 refactor: types and defaults moved down into @/lib/codePreviewSettings.ts
+// so pure display components do not depend on the store; this re-export keeps the legacy import path working.
 export type { CodePreviewSettings } from "@/lib/codePreviewSettings.js";
 export { DEFAULT_CODE_PREVIEW_SETTINGS } from "@/lib/codePreviewSettings.js";
 
@@ -96,53 +96,53 @@ function loadPerformanceMode(): boolean {
 }
 
 // ============================================================================
-// State 定义
+// State shape
 // ============================================================================
 
 export interface ZCodeState {
-  /** 展示详情偏好，不改变 Agent 权限或执行能力。 */
+  /** Display-detail preference; does not change agent permissions or execution. */
   interfaceMode: InterfaceMode;
   setInterfaceMode: (mode: InterfaceMode) => void;
 
-  /** 当前主题 */
+  /** Current theme */
   theme: Theme;
   setTheme: (theme: Theme) => void;
 
-  /** 当前语言 */
+  /** Current language */
   locale: string;
   setLocale: (locale: string) => void;
 
-  /** 代码预览设置 */
+  /** Code preview settings */
   codePreviewSettings: CodePreviewSettings;
   setCodePreviewSettings: (patch: Partial<CodePreviewSettings>) => void;
 
-  /** UI 根 rem 字号（px） */
+  /** UI root rem font size (px) */
   uiFontSizePx: number;
   setUiFontSizePx: (fontSizePx: number) => void;
 
-  /** 是否启用性能模式 */
+  /** Whether performance mode is on */
   performanceMode: boolean;
   setPerformanceMode: (enabled: boolean) => void;
 
-  /** 是否启用任务通知（桌面通知；提示音由子开关控制） */
+  /** Whether task notifications are on (desktop notifications; sound has its own sub-switch) */
   notificationEnabled: boolean;
   setNotificationEnabled: (enabled: boolean) => void;
 
-  /** 是否启用任务通知声音（依附于任务通知总开关） */
+  /** Whether the task-notification sound is on (bound to the master task-notification switch) */
   notificationSoundEnabled: boolean;
   setNotificationSoundEnabled: (enabled: boolean) => void;
 
-  /** 当前用户信息 */
+  /** Current user info */
   user: UserInfo | null;
-  /** 用户由未登录进入登录态时递增；连接额外 provider 不会误判为重新登录。 */
+  /** Incremented when the user goes from signed-out to signed-in; connecting extra providers does not count as a new sign-in. */
   authSessionSeq: number;
   setUser: (user: UserInfo | null) => void;
 
-  /** 启动阶段是否仍在恢复 OAuth 登录态 */
+  /** Whether startup is still restoring the OAuth session */
   isRestoringOAuthSession: boolean;
   setIsRestoringOAuthSession: (restoring: boolean) => void;
 
-  /** OAuth 回调错误（Root 层写入，统一登录入口读取） */
+  /** OAuth callback error (written by Root, read by the unified login entry) */
   oauthError: string | null;
   setOAuthError: (error: string | null) => void;
   oauthPollingActive: boolean;
@@ -153,13 +153,13 @@ export interface ZCodeState {
   apiKeyLoginSuccessSeq: number;
   lastApiKeyLoginModel: string | null;
   markApiKeyLoginSuccess: (preferredModel?: string | null) => void;
-  /** 请求打开统一登录入口，可携带需要自动发起登录/连接的 provider */
+  /** Request to open the unified login entry, optionally carrying providers to auto sign-in/connect. */
   loginEntryRequest: {
     id: number;
     providerId?: OAuthProviderId;
     purpose?: LoginEntryPurpose;
   } | null;
-  /** 当前统一登录尝试；购买等后续动作通过 id 只续接自己发起的 OAuth。 */
+  /** Current unified-login attempt; later actions such as purchase resume only their own OAuth via the id. */
   loginEntryAttempt: LoginEntryAttempt | null;
   requestLoginEntry: (providerId?: OAuthProviderId, purpose?: LoginEntryPurpose) => number;
   clearLoginEntryRequest: (requestId?: number) => void;
@@ -168,38 +168,38 @@ export interface ZCodeState {
     status: Exclude<LoginEntryAttemptStatus, "requested">,
   ) => void;
 
-  /** Coding Plan 额度重置 UI 状态；entry/观察记录只在当前窗口内共享，不持久化。 */
+  /** Coding Plan quota-reset UI state; entry/observation records stay within this window, never persisted. */
   codingPlanQuotaResetUiBySource: Record<string, CodingPlanQuotaResetUiEntries>;
-  /** 自动/运营完成首次被观察时所属的鉴权会话，用于区分同会话后挂载和重新登录。 */
+  /** Auth session under which the auto/ops completion was first observed; separates later same-session mounts from re-login. */
   codingPlanQuotaResetAutomaticObservationsBySource: Record<
     string,
     CodingPlanQuotaResetAutomaticObservations
   >;
-  /** 自动完成提示"多窗口只播一次"的已播 used_at 记录；窗口内存态，可被广播合并。 */
+  /** played used_at records behind the once-per-window auto-complete toast; in-memory, mergeable via broadcast. */
   codingPlanQuotaResetAutoPlayedBySource: Record<string, CodingPlanQuotaResetAutoPlayedSlot>;
-  /** 写入服务端 status / 手动 use 对账后的状态；entry 为 null 表示清空该类型。 */
+  /** State after the server status write or a manual-use reconciliation; entry=null clears that kind. */
   setCodingPlanQuotaResetUiEntry: (
     sourceKey: string,
     resetType: CodingPlanResetType,
     entry: CodingPlanQuotaResetUiEntry | null,
     authSessionSeq: number,
   ) => void;
-  /** Composer 展示前申请临时 reservation；此阶段不写 played。 */
+  /** The composer requests a transient reservation before display; played is not written at this stage. */
   reserveCodingPlanQuotaResetAutoPlay: (
     sourceKey: string,
     resetType: CodingPlanResetType,
     completedAt: number,
   ) => Promise<CodingPlanQuotaResetAutoPlayReservationAttempt>;
-  /** 组件仍有效且即将展示时提交 reservation、played 与广播。 */
+  /** Commit reservation, played and the broadcast while the component is still valid and about to show. */
   commitCodingPlanQuotaResetAutoPlay: (
     reservation: CodingPlanQuotaResetAutoPlayReservation,
   ) => boolean;
-  /** 组件失效时释放尚未 commit 的 reservation。 */
+  /** Release an uncommitted reservation when the component goes away. */
   releaseCodingPlanQuotaResetAutoPlay: (
     reservation: CodingPlanQuotaResetAutoPlayReservation,
   ) => Promise<void>;
 
-  /** 手动请求打开 onboarding 弹窗 */
+  /** Manually request opening the onboarding dialog */
   newUserOnboardingOpen: boolean;
   setNewUserOnboardingOpen: (open: boolean) => void;
   onboardingDialogRequested: boolean | "migration";
@@ -208,24 +208,24 @@ export interface ZCodeState {
 }
 
 // ============================================================================
-// 需要广播的字段 —— 只有这些字段的变更会发送给其他窗口
+// Broadcast fields - only changes to these fields are sent to other windows
 // ============================================================================
 
 const BROADCAST_FIELDS = new Set(["theme", "locale", "uiFontSizePx", "interfaceMode"]);
 
 type BroadcastField = "theme" | "locale" | "uiFontSizePx" | "interfaceMode";
 
-/** 广播频道名前缀 */
+/** Broadcast channel name prefix */
 const STATE_CHANNEL_PREFIX = "state:";
 
 // ============================================================================
-// Store 创建工厂
+// Store factory
 // ============================================================================
 
 /**
- * 创建 Zustand store，连接广播服务实现跨窗口状态同步
+ * Creates the Zustand store, wired to the broadcast service for cross-window state sync.
  *
- * @param broadcastService - 广播服务。Desktop 走 RPC，Web 可传 no-op 实现
+ * @param broadcastService - broadcast service. Desktop uses RPC; web may pass a no-op implementation
  */
 export function createZCodeStore(
   broadcastService: IBroadcastService,
@@ -233,7 +233,7 @@ export function createZCodeStore(
     initialIsRestoringOAuthSession?: boolean;
   } = {},
 ) {
-  /** 标记：正在应用来自广播的更新，此时不再重复广播（防止循环） */
+  /** Flag: a broadcast update is being applied, so it is not rebroadcast (loop guard) */
   let applyingBroadcast = false;
   let loginEntryRequestSeq = 0;
   let cleanupSystemThemeListener: (() => void) | null = null;
@@ -244,7 +244,7 @@ export function createZCodeStore(
     setInterfaceMode: (mode) => {
       const interfaceMode = normalizeInterfaceMode(mode);
       if (get().interfaceMode !== interfaceMode) {
-        logger.debug("[InterfaceMode] 切换界面模式", {
+        logger.debug("[InterfaceMode] Switching interface mode", {
           interfaceMode,
           source: applyingBroadcast ? "broadcast" : "local",
         });
@@ -252,8 +252,8 @@ export function createZCodeStore(
       writeSafeLocalStorage(INTERFACE_MODE_STORAGE_KEY, interfaceMode);
       set({ interfaceMode });
     },
-    // 默认主题统一收敛到 Zai dark，避免首次启动时 store 与其他主题入口表现不一致。
-    // 仍然优先尊重 localStorage 中已保存的用户选择，不覆盖已有偏好。
+    // The default theme converges on Zai dark so the first launch matches the other theme entries.
+    // A choice already saved in localStorage still wins; existing preferences are not overwritten.
     theme: normalizeThemePreference((readSafeLocalStorage("zcode-theme") as Theme) || "zai-dark"),
     setTheme: (theme: Theme) => {
       const normalizedTheme = normalizeThemePreference(theme);
@@ -411,8 +411,8 @@ export function createZCodeStore(
         return;
       }
 
-      // system 模式需要持续订阅系统亮暗变化，不能只在切换到 system 的瞬间应用一次。
-      // 否则用户后续切系统主题时，DOM 上的 dark class 不会同步更新，看起来就像“跟随系统失效”。
+      // system mode must keep subscribing to light/dark changes, not apply once at switch time,
+      // or the DOM dark class stops following later OS theme changes, looking like broken auto mode.
       applyTheme("system");
     };
 
@@ -424,17 +424,17 @@ export function createZCodeStore(
       return;
     }
 
-    // 某些 Electron / Chromium 组合仍然只支持旧版 MediaQueryList listener API。
-    // 如果这里只调用 addEventListener，system 模式切系统主题时会完全收不到通知。
+    // Some Electron/Chromium combos still support only the legacy MediaQueryList listener API.
+    // With addEventListener alone, system mode gets no notification on OS theme changes.
     mediaQuery.addListener(handleSystemThemeChange);
     cleanupSystemThemeListener = () => {
       mediaQuery.removeListener(handleSystemThemeChange);
     };
   };
 
-  // Zustand v5 的 setState 在 replace=true/false 上使用了不同重载，
-  // 之前直接包一层并透传 replace，会在严格类型下落到互不兼容的签名分支。
-  // 这里改成订阅状态变化后再广播，只比较真正需要跨窗口同步的字段，逻辑更直观，也避免重载冲突。
+  // Zustand v5 setState uses different overloads for replace=true/false;
+  // wrapping it and passing replace through used to land on incompatible signature branches under strict types.
+  // Subscribe-then-broadcast instead, comparing only the fields that truly need cross-window sync; simpler and overload-safe.
   useStore.subscribe((state, prevState) => {
     if (applyingBroadcast) {
       return;
@@ -452,10 +452,10 @@ export function createZCodeStore(
     }
   });
 
-  // 监听来自其他窗口的广播
+  // Listen for broadcasts from other windows
   broadcastService.onMessage((msg: BroadcastMessage) => {
-    // 自动完成"多窗口只播一次"。其他窗口广播已播 used_at 后，本窗口合并
-    // played 记录并收起正在播放的同 used_at 提示；本地回声已在解析阶段被忽略。
+    // Auto-complete is once-per-window: once another window broadcasts a played used_at, this window
+    // merges the played record and dismisses its playing toast of the same used_at; local echoes were ignored at parse time.
     const autoPlayed = parseCodingPlanQuotaResetAutoPlayedBroadcastMessage(msg);
     if (autoPlayed) {
       useStore.setState((state) => applyCodingPlanQuotaResetAutoPlayedBroadcast(state, autoPlayed));
@@ -469,7 +469,7 @@ export function createZCodeStore(
 
     applyingBroadcast = true;
     try {
-      // 调用对应的 setter，确保副作用（localStorage、DOM）也执行
+      // Call the matching setter so its side effects (localStorage, DOM) run too
       const state = useStore.getState();
       if (field === "theme" && typeof msg.payload === "string") {
         state.setTheme(msg.payload as Theme);

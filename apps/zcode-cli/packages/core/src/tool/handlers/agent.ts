@@ -82,11 +82,11 @@ const AGENT_TOOL_OUTPUT_SCHEMA = {
 };
 
 /**
- * 动态工作流灰度门也管**工具描述**：
- * 关闭时十个工具不注册，但这条 bullet 仍在 Agent 的 provider 描述里写着「CreateWorkflow
- * 是强制的」，于是模型被指向一个根本不存在的工具，只会白白撞一次 tool_not_found。
- * 缺省 true：TUI、headless 与既有调用方（包括模块加载期烘焙的 AGENT_PROVIDER_DESCRIPTION）
- * 行为不变，只有显式 false 才抹掉这一行。
+ * The dynamic-workflow rollout gate also owns the **tool description**:
+ * when off, the ten tools are not registered, yet this bullet still sits in Agent's provider description
+ * claiming "CreateWorkflow is mandatory", pointing the model at a tool that does not exist -- a wasted
+ * Defaults true: TUI, headless, and existing callers (including the load-time-baked AGENT_PROVIDER_DESCRIPTION)
+ * keep their behavior; only an explicit false drops the line.
  */
 function buildAgentProviderDescription(
   options: {
@@ -114,13 +114,13 @@ function buildAgentProviderDescription(
     "- A new Agent call starts fresh, so the prompt must be self-contained.",
     "- `run_in_background: true` runs the agent asynchronously; you'll be notified when it completes.",
     "- When you launch multiple agents for independent work, send them in a single message with multiple tool uses so they run concurrently.",
-    // 只保留「用户点名工作流」这一种情形：工作流一律由用户显式请求触发，与系统提示词其余
-    // 部分一致。不能把「结果层层喂给下一步的多代理编排」也划给 CreateWorkflow，
-    // 那等于让模型在用户没开口时自行选择工作流。
+    // Keep only the "user names a workflow" case: workflows are always user-requested, like the rest of
+    // the system prompt. Folding multi-agent orchestration ("results feed the next step") into
+    // CreateWorkflow would let the model pick workflows unprompted.
     ...(options.dynamicWorkflowEnabled === false
       ? []
       : [
-          '- If the user explicitly asks for a workflow ("use a workflow", "使用 workflow", "用工作流", or any phrasing naming workflow/工作流 as the means), the CreateWorkflow tool is mandatory: do not use this tool instead, however small the task.',
+    '- If the user explicitly asks for a workflow ("use a workflow", "使用 workflow", "用工作流", or any phrasing naming workflow/工作流 as the means), the CreateWorkflow tool is mandatory: do not use this tool instead, however small the task.',
         ]),
   ].join("\n");
 }
@@ -320,7 +320,7 @@ export function createAgentToolEntry(
   _options: {
     embeddedSearchEnabled?: boolean;
     profiles?: readonly AgentProfile[];
-    /** 见 buildAgentProviderDescription：缺省 true，只有灰度显式关闭时才去掉工作流那一行。 */
+    /** See buildAgentProviderDescription: defaults true; only an explicit rollout-off drops the workflow line. */
     dynamicWorkflowEnabled?: boolean;
   } = {},
 ): ToolEntry {
@@ -337,7 +337,7 @@ export function createTaskToolEntry(
   options: {
     embeddedSearchEnabled?: boolean;
     profiles?: readonly AgentProfile[];
-    /** Task 是 Agent 的兼容别名，描述整段内嵌 Agent 的，因此同一道门一起传下去。 */
+    /** Task is Agent's compat alias with the full description inlined, so the same gate applies to it. */
     dynamicWorkflowEnabled?: boolean;
   } = {},
 ): ToolEntry {

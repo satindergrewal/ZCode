@@ -13,8 +13,8 @@ export async function persistCancelledStreamSnapshot(
     traceContext: TraceContext;
   },
 ): Promise<void> {
-  // 用户 stop 时模型请求会以异常退出，成功路径里的最终 text/reasoning
-  // 持久化不会执行；这里只 flush 已经到达本进程的 text/reasoning，工具仍等终态路径处理。
+  // On user stop the model request exits via throw, so the success-path final text/reasoning
+  // persist never runs; flush only what reached this process — tools still wait on the terminal path.
   const completedAt = Date.now();
   for (const reasoning of options.snapshot.reasoning) {
     if (!hasAssistantReasoningContent(reasoning)) continue;

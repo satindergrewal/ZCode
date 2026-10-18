@@ -57,16 +57,16 @@ export interface WorkspaceShellZCodeState {
 }
 
 export interface CreateTaskOptions {
-  /** 异步预填只能提交到解析 Skill 时的同一新任务目标。 */
+  /** Async prefill may only be submitted to the same new-task target the skill was resolved for. */
   expectedWorkspaceKey?: string;
   provider?: ZCodeProvider;
   groupedDraftPlacement?: GroupedDraftTaskPlacement;
   createSource?: SessionCreateSource;
-  /** 新草稿输入框预填文本；只写草稿，不自动发送。 */
+  /** New-draft composer prefill text; writes the draft only, never auto-sends. */
   initialPrompt?: string;
-  /** 与 initialPrompt canonical 前缀对应的结构化 mention；仅用于编辑器展示。 */
+  /** Structured mention matching initialPrompt's canonical prefix; editor display only. */
   initialPromptMention?: ComposerMentionPrefill;
-  /** 新任务落在哪个 workspace；缺省取活动 workspace。 */
+  /** Which workspace the new task lands in; defaults to the active workspace. */
   targetWorkspace?: { workspacePath: string; workspaceIdentity?: string };
 }
 
@@ -171,7 +171,7 @@ export interface WorkspaceShellLayoutProps extends Omit<AppProps, "baseFeedbackS
     availability?: import("@/store/tabStore.js").WorkspaceAvailability;
   }>;
   activeTaskId: string | null;
-  /** 右侧栏按对话隔离的归属 id：草稿态 = draftSessionId，正式态 = activeTaskId（两者同值衔接）。 */
+  /** Conversation-scoped side pane owner id: draft = draftSessionId, live = activeTaskId (the two hand off at the same value). */
   sidePaneOwnerId: string | null;
   activeTraceId: string | null;
   activeSessionId: string | null;

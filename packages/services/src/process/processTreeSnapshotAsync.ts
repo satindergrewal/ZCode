@@ -81,9 +81,9 @@ export async function captureProcessTreeSnapshotAsync(
   const ownedProcessExitedAtMs =
     options.ownedProcessExitedAtMs ?? options.resolveOwnedProcessExitedAtMs?.();
   const rootIdentity = processList.find((identity) => identity.pid === child.pid);
-  // 查询期间原 root 退出后，PID 可能在 Node exit 回调与 CIM 返回之间
-  // 被复用。查询完成时间不是受管进程的退出时间；一旦已观察到 child 退出，只能使用
-  // 调用方记录的可信退出上界恢复旧后代，绝不能把同 PID 的当前进程认作原 root。
+  // Once the original root exits mid-query its PID may be reused between the Node exit
+  // callback and the CIM result. Query completion is not the managed exit time; once the
+  // child exit is observed, recover old descendants only from the caller's trusted exit bound.
   const identities =
     rootIdentity && !childExitedDuringQuery
       ? [rootIdentity, ...collectDescendants(child.pid, processList)]

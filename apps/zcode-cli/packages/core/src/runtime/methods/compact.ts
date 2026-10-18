@@ -72,8 +72,8 @@ export async function executeManualCompact(
         turnNumber: this.turnNumber,
         input,
         inputId,
-        // 手动 /compact 是维护命令，不是用户真实 query。
-        // 事件仍保留 raw input 便于恢复/排查，但 v4 投影不能把它渲染成 user bubble。
+        // A manual /compact is a maintenance command, not a real user query.
+        // The event keeps raw input for debugging, but v4 projection must not render it as a user bubble.
         inputVisibility: "model-only",
       },
       turnTraceContext,
@@ -148,7 +148,7 @@ export async function executeManualCompact(
         coreError.type === CoreErrorType.TurnCancelled &&
         this.activeForegroundExecution?.preserveQueueAutoDrainOnCancel === true;
       if (coreError.type === CoreErrorType.TurnCancelled && !preserveQueueAutoDrainOnCancel) {
-        // Stop compact 与普通 Stop 语义一致：队列重新暂停，外层 FIFO 恢复窗口同时关闭。
+        // Stop-during-compact matches plain Stop: the queue re-pauses and the outer FIFO resume window closes.
         this.queueAutoDrain = false;
         this.queueExternalDrainActive = false;
       }
@@ -323,9 +323,9 @@ function buildProviderUsageTokenOverride(
   const incrementalStartIndex =
     baseline.contextUsageTokens === undefined ? messageIndex : messageIndex + 1;
   const incrementalTokenCount = estimateMessageTokens(messages.slice(incrementalStartIndex));
-  // usage 归属于已提交 assistant，反向扫描可随 history replacement 自然移动，
-  // 不再依赖可能失效的绝对 message cursor。若 output 是否存在已被历史归一化抹平，
-  // 则 provider input 只覆盖 assistant 之前的请求，assistant 本身仍进入本地增量。
+  // Usage belongs to the committed assistant; the backward scan moves with history replacement,
+  // no fragile absolute message cursor. If output-presence was normalized away,
+  // the provider input covers only pre-assistant requests while the assistant still enters the local delta.
   const providerBaseTokenCount = baseline.contextUsageTokens ?? baseline.inputTokens;
   return {
     baseTokenCount: providerBaseTokenCount,

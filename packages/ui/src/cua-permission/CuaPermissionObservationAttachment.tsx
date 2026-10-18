@@ -79,7 +79,8 @@ async function runCuaPermissionPrompt(
   if (!(await dependencies.confirm(beforeConfirm))) return;
   assertCuaPermissionPromptActive(dependencies);
 
-  // 原因：确认框停留期间可能已从另一窗口授权，打开设置前必须再读一次 Helper 真值。
+  // Why: while the confirm dialog is up, grant may happen from another window; re-read the
+  // Helper's truth before opening settings.
   const afterConfirm = await readMissing();
   if (afterConfirm.length === 0) return;
   const result = await runWithOneRetry(
@@ -92,7 +93,8 @@ async function runCuaPermissionPrompt(
   );
   if (result.canceled) return;
   if (shouldRestartHelperAfterCuaPermissionReturn(result)) {
-    // 原因：Helper 重启失败时只能重试重启本身，重复打开系统设置会打断用户操作。
+    // Why: when Helper restart fails, retry the restart itself; reopening System Settings would
+    // interrupt the user.
     await runWithOneRetry(
       dependencies,
       () =>
@@ -185,14 +187,14 @@ export function CuaPermissionObservationAttachment() {
               isDisposed: () => disposed,
             });
             if (disposed) return;
-            // 原因：只有正常终态（包括用户取消）才能去重；异常必须允许同一 observation 再次处理。
+            // Why: only normal terminal states (user cancel included) dedupe; errors must allow the same observation to be processed again.
             handled.add(key);
             if (handled.size > 2_000) {
               const oldest = handled.values().next().value;
               if (typeof oldest === "string") handled.delete(oldest);
             }
           } catch (error: unknown) {
-            if (!disposed) logger.warn("CUA 权限引导失败", { error });
+            if (!disposed) logger.warn("CUA permission onboarding failed", { error });
           } finally {
             pending.delete(key);
           }
@@ -200,7 +202,7 @@ export function CuaPermissionObservationAttachment() {
       },
     );
     return () => {
-      // 原因：先封闭生命周期边界，避免已排队任务在 subscription 释放后继续触发旧 workspace 副作用。
+      // Why: close the lifecycle boundary first so queued tasks cannot fire stale-workspace side effects after the subscription is released.
       disposed = true;
       subscription.dispose();
       if (activeOperationId) platform.cancelCuaPermissionOnboarding?.(activeOperationId);

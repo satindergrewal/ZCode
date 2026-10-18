@@ -167,9 +167,9 @@ export function resolveWorkspaceHookConfiguredGates(input: {
 }
 
 /**
- * 从已发现的配置目录列表生成 workspace hook 候选文件路径。
- * 纯函数，sync/async discovery 共享，确保候选文件名与顺序规则只在此处维护一次
- * （sync/async 共享同一份 flatMap，避免候选路径的生成规则出现分歧）。
+ * Candidate file paths from the discovered config-directory list.
+ * Pure, shared by sync/async discovery, so candidate names and ordering rules live here once
+ *(one flatMap for both, no divergent candidate generation).
  */
 function buildWorkspaceHookCandidatePaths(directories: readonly string[]): string[] {
   return directories.flatMap((directory) => [
@@ -179,16 +179,16 @@ function buildWorkspaceHookCandidatePaths(directories: readonly string[]): strin
 }
 
 /**
- * 对已发现的 config refs 按规范化路径去重，保留首次出现的条目。
+ * Dedupe discovered config refs by normalized path, keeping first occurrence.
  *
- * 当 explicit projectConfigPath 恰好指向 auto-discovery 已发现的文件时，
- * 同一文件会以不同 explicitProjectConfig 标记出现两次，进入 snapshot 后产生重复
- * sourceFile 与重复 declaration，导致 bundleDigest 分叉。
+ * When an explicit projectConfigPath hits a file auto-discovery also found, the same file appears twice under
+ * different explicitProjectConfig marks; entering the snapshot that way duplicates
+ * sourceFile and declaration, forked bundleDigest.
  *
- * 去重策略：保留首次出现者（auto-discovered 条目在前、explicit 在后），丢弃后续重复。
- * 不得改变剩余条目的相对顺序——discoveryOrder 和 explicitProjectConfig 均为 digest 输入，
- * 任何重排都会使既有 trust 记录失效（用户被重新提示全部 Hook）。对于无 explicit path
- * 的 workspace，auto-discovery 本身不会产生重复，此函数为 no-op，bundleDigest 不变。
+ * Policy: keep first occurrence (auto-discovered before explicit), drop later duplicates.
+ * Never reorder survivors--discoveryOrder and explicitProjectConfig both feed the digest;
+ * any reordering invalidates existing trust records (users re-prompted for every hook). Without explicit paths
+ * auto-discovery cannot duplicate, so this is a no-op and bundleDigest is unchanged.
  */
 function deduplicateWorkspaceHookConfigRefs(
   refs: readonly WorkspaceHookConfigPathRef[],

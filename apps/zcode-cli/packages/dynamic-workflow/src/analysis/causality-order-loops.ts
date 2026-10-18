@@ -9,10 +9,10 @@ import {
 import { barrier, recordControl, settlesAt } from "./causality-order-settle.js";
 import { strandMark } from "./causality-order-strands.js";
 
-// causality-order.ts 顶到 oxlint max-lines 上限（400 行），把循环语句的访问器
-// （for / for-of / for-in / while / do…while）连同 `for` 字面量轮数的推导拆到本文件；公开面
-// 仍从 causality-order.ts 导出。{@link walkLoop} 在 walk 的 if 链里占原来四个分支的位置，
-// 判定顺序与原文件逐字一致。
+// causality-order.ts sits at oxlint's max-lines cap (400); the loop-statement visitors
+// (for / for-of / for-in / while / do-while) plus the for literal-count derivation live here; the public surface
+// still exports from causality-order.ts. {@link walkLoop} takes the four former branches in walk's if-chain,
+// decision order verbatim as before.
 
 /** Walk a loop body with its statement registered as a jump target for the duration. */
 function walkLoopBody(

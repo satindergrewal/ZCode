@@ -22,7 +22,7 @@ export function resolveLoginApiKeyTemplateId(
 }
 
 export function resolveLoginApiKeyProviderLabel(choice: ApiKeyProviderChoice): string {
-  // Welcome Screen API Key 错误提示需要使用 BigModel 品牌固定写法。
+  // Welcome-screen API key errors must keep the canonical BigModel wording.
   return choice === "zai" ? "Z.ai" : "BigModel";
 }
 

@@ -75,7 +75,7 @@ export function LoginApiKeyForm({
     (template) => template.templateId === templateId,
   )?.config.access;
   const apiKeyUrl = isApiKeyAccess(templateAccess) ? templateAccess.apiKeyManagementUrl : undefined;
-  // 用户已经输入或回填 API Key 后，右侧获取入口会挤占密码输入区域。
+  // Once an API key is entered or backfilled, the right-side acquire entry crowds the password field.
   const showApiKeyLink = shouldShowLoginApiKeyLink(apiKeyValue, apiKeyUrl ?? undefined);
 
   const saveApiKeyProvider = async () => {
@@ -112,7 +112,7 @@ export function LoginApiKeyForm({
       markApiKeyLoginSuccess(defaultModelPreference);
       await onSaved();
     } catch (saveError) {
-      logger.error("[LoginEntry] 保存 API Key provider 失败", {
+      logger.error("[LoginEntry] Failed to save API key provider", {
         templateId,
         error: saveError,
       });
@@ -133,12 +133,13 @@ export function LoginApiKeyForm({
     setSkipping(true);
     setError(null);
     try {
-      // 跳过只表示用户确认当前 provider family 运行域，不能写入空 API Key
-      // 或触发 API Key 登录成功事件，否则后续模型选择会误以为已有可用凭据。
+      // Skipping only confirms the current provider family runtime domain; it must not write an
+      // empty API key or fire the api-key-login success event, or later model selection would
+      // assume credentials exist.
       await settingService.update(buildLoginApiKeySkipSettings(providerChoice, Date.now()));
       await onSkipped();
     } catch (skipError) {
-      logger.error("[LoginEntry] 跳过 API Key 登录失败", {
+      logger.error("[LoginEntry] Failed to skip API key login", {
         providerChoice,
         error: skipError,
       });

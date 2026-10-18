@@ -35,7 +35,7 @@ export type TaskOutputInput = z.infer<typeof TaskOutputInputSchema>;
 export const TaskOutputInputJsonSchema = {
   ...toToolJsonSchema(TaskOutputInputSchema),
 
-  // 的 provider schema 仍要求模型显式传入 task_id、block 和 timeout。
+  // the provider schema still requires the model to pass task_id, block, and timeout explicitly.
   required: ["task_id", "block", "timeout"],
 };
 

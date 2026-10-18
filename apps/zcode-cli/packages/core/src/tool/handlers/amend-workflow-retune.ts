@@ -1,7 +1,7 @@
-// AmendWorkflow：只改并发时就地生效。
-// 当调用只带 `run_id` 与 `max_concurrency`，且前驱仍在运行时，保留 run ID、子代理、转录与未完成 ask。
-// 本模块负责路由判定、端口调用和结果说明；若 run 在判定与调用之间结算，重新读取前驱事实，
-// 再决定是否允许回落到修订流程。
+// AmendWorkflow: take effect in place when only concurrency changes.
+// When the call carries only `run_id` and `max_concurrency` and the predecessor is still running, keep the run ID, subagents, transcript and open asks.
+// This module owns the routing decision, port call and result wording; if the run settles between decision and call, re-read the predecessor facts,
+// then decide whether falling back to the amend flow is allowed.
 
 import {
   AmendWorkflowInputSchema,
@@ -23,12 +23,12 @@ import { clampWorkflowMaxConcurrency } from "./create-workflow-source.js";
 import { workflowRunNotFoundFailure } from "./workflow-run-introspection.js";
 
 /**
- * 「除并发之外什么都没变」：判的是**入参的形状**，不是新字段。
- * `script`、`path`、`subagent_model` 与 `name` 无论带的是什么，都把这次调用送去修订那条路——
- * 它们各自都可能改变将要跑的东西，而这条路的前提是「跑的还是同一段脚本、同一批子代理」。
+ * "Nothing changed but concurrency" tests the **shape of the input**, not new fields.
+ * `script`, `path`, `subagent_model` and `name`, whatever they carry, send the call down the amend path —
+ * each may change what will run, and this path rests on "same script, same subagents".
  *
- * 归一化之后的入参同样适用：修订那条路恒会落定一份脚本，所以「没有脚本、却有并发」只可能是
- * 就地调并发。
+ * The same holds after normalization: the amend path always settles on a script, so concurrency without a script can only be
+ * an in-place retune.
  */
 export function isConcurrencyOnlyAmend(model: AmendWorkflowInput): boolean {
   return (
@@ -41,18 +41,18 @@ export function isConcurrencyOnlyAmend(model: AmendWorkflowInput): boolean {
 }
 
 /**
- * resolveInput 里的路由判定。命中即返回**不带脚本**的归一化入参——此后 prepareApproval 放行、handler 调
- * `retuneConcurrency`；不命中回 `undefined`，调用方照常走修订。
+ * The routing decision inside resolveInput. On match it returns the normalized input **without a script** — prepareApproval waves it through and the handler calls
+ * `retuneConcurrency`; on miss it returns `undefined` and the caller proceeds with the amend as usual.
  *
- * 三个前提缺一不可：入参形状只改并发、前驱还活着（`pending` 与 `running` 都试，活不活由端口说
- * 了算）、端口接得住这条控制面。端口不带 `retuneConcurrency`（老宿主）时整条路不存在，调用
- * 原样落成今天的修订——包括别人的 run 那一个确认窗。
+ * All three premises are required: input shape is concurrency-only, the predecessor still alive (both `pending` and `running` tried; liveness is the port call),
+ * and the port supporting this control plane. Without `retuneConcurrency` on the port (older hosts) the path does not exist and the call
+ * falls through to the amend as today, confirmation window for another session run included.
  */
 export function resolveConcurrencyRetuneRoute(options: {
   model: AmendWorkflowInput;
   port: DynamicWorkflowRunPort;
   predecessor: AmendWorkflowPredecessor;
-  /** 前驱快照上的上界；缺席即它跑在天花板上。 */
+  /** The limit on the predecessor snapshot; absent means it runs at the ceiling. */
   inherited: number | undefined;
 }): { result: true; input: AmendWorkflowInput } | ToolHandlerFailure | undefined {
   const { model, port, predecessor } = options;
@@ -60,7 +60,7 @@ export function resolveConcurrencyRetuneRoute(options: {
   if (predecessor.status !== "pending" && predecessor.status !== "running") return undefined;
   if (typeof port.retuneConcurrency !== "function") return undefined;
 
-  // 三态在这里**不**归一：`null` 要原样递到端口（见 resolveAmendMaxConcurrency 的注释）。
+  // The three states are **not** normalized here: `null` must reach the port untouched (see resolveAmendMaxConcurrency).
   const requested = model.max_concurrency ?? null;
   const ceiling = port.concurrencyCeiling?.();
   const unchanged = refuseUnchangedBound(model.run_id, requested, options.inherited, ceiling);
@@ -72,8 +72,8 @@ export function resolveConcurrencyRetuneRoute(options: {
 }
 
 /**
- * 同值就在这里收口——早于 hook、早于确认窗，端口一次都不碰。天花板读不到（老宿主不带
- * `concurrencyCeiling`）时 `null` 无从折算成数，这道网就让开，由端口自己去答 `unchanged`。
+ * Equal-to-ceiling collapses here — before hooks, before the confirmation window; the port is never touched. When the ceiling is unreadable (older hosts without
+ * `concurrencyCeiling`), `null` cannot be folded into a number, this net steps aside, and `unchanged` is left to the port.
  */
 function refuseUnchangedBound(
   runId: string,
@@ -88,10 +88,10 @@ function refuseUnchangedBound(
 }
 
 /**
- * handler 侧的本体：调端口、把三种答复翻成模型面的结果。
+ * The handler-side body: call the port and translate the three answers into model-facing results.
  *
- * 回 `undefined` 只有一个含义——端口答了 `not_live`（或宿主根本没有这条控制面），这次调用
- * 此刻描述的是一次修订，做不做由 {@link resolveRetuneFallbackAmend} 定夺。
+ * `undefined` has one meaning — the port answered `not_live` (or the host lacks the control plane): the call
+ * now describes an amend, and {@link resolveRetuneFallbackAmend} decides whether it happens.
  */
 export async function runConcurrencyRetune(
   parsed: AmendWorkflowInput,
@@ -101,16 +101,16 @@ export async function runConcurrencyRetune(
   if (port === undefined || typeof port.retuneConcurrency !== "function") return undefined;
   const answer = await port.retuneConcurrency({
     runId: parsed.run_id,
-    // 路由判定已保证这里是「一个数或 null」；`?? null` 只是把绕过归一化的缺席读作「回天花板」。
+    // Routing guarantees a number or null here; `?? null` just reads a normalization-bypassing absence as back-to-ceiling.
     maxConcurrency: parsed.max_concurrency ?? null,
   });
   if (answer.ok) {
     return {
       diagnostics: [],
       ok: true,
-      // 不进后台追踪器：run 本来就在里面，而且它自始至终是同一个 run，没有 `backgrounded`
-      // 契约可言，也没有编译产物可画。`retuned` 是**显式**
-      // 的判别块：消费方不该按「ok 且没有 status」去猜，那个形状还有别的来路。
+      // Not entering the background tracker: the run is already in it and stays the same run throughout — no
+      // backgrounded contract, and no compiled artifact to draw. `retuned` is an **explicit**
+      // discriminator block: consumers must not guess from ok-without-status; that shape has other sources.
       response: retuneResponse(parsed.run_id, answer),
       retuned: {
         runId: parsed.run_id,
@@ -127,24 +127,24 @@ export async function runConcurrencyRetune(
 }
 
 /**
- * 结算竞态：同一份入参此刻
- * 描述的是一次修订。能不能做只看一件事——**那次修订本来要不要开窗**。
+ * Settlement race: the same input now
+ * describes an amend. Whether it may proceed hinges on one thing — **whether that amend would have prompted at all**.
  *
- * 本会话自己的、不是用户亲手停下的 run：owner 规则本来也不开窗，于是照常修订，脚本与编译推迟
- * 到此刻才发生（缺脚本、编不过都按修订自己的拒绝回报）。别人的 run，或用户停过的 run：拒掉。
- * 这条路一个窗都没弹过，不能把「什么都没批」撑成「另起一次 run」。
+ * Own-session runs not stopped by the user: the owner rule never prompts anyway, so amend as usual, with the script copy and compile deferred
+ * happens now (missing script and compile failures report as the amend own rejections). Another session run, or one the user stopped: reject.
+ * This path never prompted, so nothing-approved must not inflate into spawn-another-run.
  */
 export async function resolveRetuneFallbackAmend(
   parsed: AmendWorkflowInput,
   context: ToolExecutionContext,
 ): Promise<{ result: true; input: AmendWorkflowInput } | ToolHandlerFailure> {
   const port = context.dynamicWorkflowRunPort;
-  // 事实要重读一遍：run 刚刚在存活判定与端口调用之间结算，入参里的那一份说的还是「在跑」。
+  // Re-read the facts: the run just settled between the liveness check and the port call — the input copy still says running.
   const snapshot = port === undefined ? undefined : await port.getTask(parsed.run_id);
   if (snapshot === undefined) return predecessorNotFoundFailure(parsed.run_id);
   const predecessor = describePredecessor(snapshot, context.sessionId);
   if (!isAmendWorkflowOwnedPredecessor(predecessor)) {
-    // 还没结算（pending、引擎没建起来）与已结算是两句不同的话，但下一步相同：再调一次。
+    // Not-yet-settled (pending, engine never built) and settled are different statements with the same next step: call once more.
     return predecessor.status === "pending" || predecessor.status === "running"
       ? notRetunableFailure(parsed.run_id)
       : runSettledFailure(parsed.run_id);
@@ -161,7 +161,7 @@ export async function resolveRetuneFallbackAmend(
     input: AmendWorkflowInputSchema.parse({
       run_id: parsed.run_id,
       ...script.fields,
-      // 落回修订就回到「一个数或没有」：这次调用显式给了值，没有可沿用的。
+      // Back on the amend path it is a-number-or-nothing: this call set a value explicitly, nothing to inherit.
       ...resolveAmendMaxConcurrency(
         parsed.max_concurrency,
         undefined,
@@ -175,7 +175,7 @@ export async function resolveRetuneFallbackAmend(
   };
 }
 
-/** 前驱不存在：与 resolveInput 那一条同源同文案（一个 run id 打错了只该有一种说法）。 */
+/** Predecessor missing: same source and wording as the resolveInput one (a mistyped run id deserves one phrasing). */
 function predecessorNotFoundFailure(runId: string): ToolHandlerFailure {
   const base = workflowRunNotFoundFailure(runId);
   return {
@@ -184,7 +184,7 @@ function predecessorNotFoundFailure(runId: string): ToolHandlerFailure {
   };
 }
 
-/** 现在生效的上界读成一句话；等于天花板即「没有自己的界」。 */
+/** The limit now in effect, as one phrase; equal to the ceiling means no limit of its own. */
 function describeBoundInForce(bound: number | undefined, ceiling: number | undefined): string {
   if (bound === undefined || bound === ceiling) {
     return "has no limit on how many subagents run at once (it runs at this machine's maximum)";
@@ -194,7 +194,7 @@ function describeBoundInForce(bound: number | undefined, ceiling: number | undef
     : `already runs at most ${bound} subagents at once`;
 }
 
-/** 同值：什么都没写、什么都没停，拒绝里点名此刻生效的那个界。 */
+/** Equal value: nothing written, nothing stopped; the rejection names the limit now in effect. */
 export function retuneUnchangedFailure(
   runId: string,
   current: number | undefined,
@@ -207,7 +207,7 @@ export function retuneUnchangedFailure(
   };
 }
 
-/** 别人的 run，已经结算：再调一次，那一次从头走修订，连同它要的那个确认窗。 */
+/** Another session run, already settled: call once more; that pass runs the amend from the top, confirmation window included. */
 export function runSettledFailure(runId: string): ToolHandlerFailure {
   return {
     result: false,
@@ -216,7 +216,7 @@ export function runSettledFailure(runId: string): ToolHandlerFailure {
   };
 }
 
-/** 别人的 run，本 agent 从没握住过（`pending`，引擎还没建）：同样的下一步。 */
+/** Another session run this agent never held (`pending`, engine not built): the same next step. */
 export function notRetunableFailure(runId: string): ToolHandlerFailure {
   return {
     result: false,
@@ -226,13 +226,13 @@ export function notRetunableFailure(runId: string): ToolHandlerFailure {
 }
 
 /**
- * 模型面的回话：**点名一个 run、没有后继**——模型正是据此
- * 分辨自己这次调用走的是哪条路，不必被告知路由本身。上界等于天花板时说「限制已取消」而不是
- * 报一个数，与 `CreateWorkflow` 划的是同一条界。
+ * The model-facing reply: **names one run, no successor** — that is how the model
+ * tells which path its call took, without being told the routing. At-ceiling limits are reported as lifted instead of
+ * as a number — the same line drawn as in `CreateWorkflow`.
  *
- * ⚠ 这段文本是**唯一**过得了 v4 的事实：这条路没有 display 载荷（`retuned` 这个块只到进程内为
- * 止，协议的 `toolOutputSchema` 只带 text / display / truncated），工具卡拿它当整行来画。所以它
- * 必须自足——点名 run、点名现在的上界、说清没有新 run——而且要稳：改词就等于改 UI。
+ * ⚠ This text is the **only** fact surviving into v4: this path has no display payload (the `retuned` block stays in-process; the protocol
+ * `toolOutputSchema` carries only text / display / truncated) and the tool card renders the whole line from it. So it
+ * must be self-sufficient — name the run, name the current limit, state there is no new run — and stable: rewording is a UI change.
  */
 function retuneResponse(
   runId: string,

@@ -5,7 +5,11 @@ export function assertSupportedRemoteEnvironment(env: RemoteEnvironment): void {
     return;
   }
 
-  // deploy/connect 之前各自硬编码 Windows 拒绝逻辑，后续容易出现 skipDeploy 绕过或错误信息不一致。
-  // 当前 remote 后端和启动命令仍依赖 POSIX shell；先集中能力边界，等 Windows shell strategy 接入后再统一放开。
-  throw new Error("当前 remote 模式仅支持 POSIX shell 环境，暂不支持 Windows 原生远程主机");
+  // deploy/connect used to hard-code the Windows rejection separately, inviting
+  // skipDeploy bypasses and inconsistent messages. Remote backends and launch
+  // commands still require a POSIX shell; centralize the capability boundary here
+  // until the Windows shell strategy lands.
+  throw new Error(
+    "Remote mode requires a POSIX shell; Windows native remote hosts are not supported yet",
+  );
 }

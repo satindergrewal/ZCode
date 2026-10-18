@@ -96,7 +96,7 @@ export function loadFileConfig(filePath?: string, options: FileConfigOptions = {
     const parsed = JSON.parse(content);
     const migrated = migratePluginConfigInFile(parsed);
     if (migrated) {
-      // 仅装载态归一化会让旧 key 永久留在磁盘，后续版本无法安全删除迁移逻辑。
+      // Load-time-only normalization would leave legacy keys on disk forever, blocking later migration cleanup.
       persistPluginConfigMigration(resolvedPath, migrated);
     }
     const result = parseConfigFileToRuntimePatchWithDiagnostics(parsed);
@@ -174,11 +174,11 @@ function persistPluginConfigMigration(
     });
     renameSync(tempPath, filePath);
   } catch {
-    // 迁移写回是 best-effort 副作用，失败不能改变合法配置的装载语义。
+    // Migration write-back is a best-effort side effect; its failure must not change load semantics.
     try {
       unlinkSync(tempPath);
     } catch {
-      // 临时文件清理失败不影响当前配置装载。
+      // Temp file cleanup failure does not affect the current config load.
     }
   }
 }
@@ -257,9 +257,9 @@ export async function updatePluginEnabledInFileConfig(
 /**
  * Mark freshly installed plugins as enabled by default, in a single atomic write.
  *
- * 设计：安装即默认启用（仅对本次安装的插件 + 其依赖闭包生效）。这里只对**用户配置里尚未显式声明**
- * 的 id 写入 `true`——若用户先前显式停用过（例如停用后重装），尊重其选择不覆盖；已是 true 的也跳过。
- * 一次性读改写，避免逐个 id 反复读写配置文件。返回真正被新置为启用的 id 列表，便于上层据此决定是否回写。
+ * Design: installed means enabled by default (only for this install plus its dependency closure).
+ * Only ids absent from user config get `true`: an explicit user disable (e.g. disable then reinstall)
+ * is respected, already-true ids are skipped. Single read-modify-write; returns ids newly enabled.
  */
 export async function enablePluginsByDefaultInFileConfig(
   filePath: string,
@@ -342,10 +342,10 @@ export async function removePluginFromFileConfig(
 }
 
 /**
- * 只删除 Plugin 的启用覆盖并保留 options。
+ * Removes only the plugin enable override, keeping options.
  *
- * Workspace“恢复继承”是配置视图操作，只应删除 Workspace 的启用覆盖，不能误删
- * 单独保存的 Workspace options 或 secret。
+ * Workspace restore-inherit is a config-view op: drop only the Workspace enable override, never the
+ * separately stored Workspace options or secret.
  */
 export async function removePluginEnabledFromFileConfig(
   filePath: string,
@@ -549,10 +549,10 @@ function patchPluginOptions(
       ...plugins,
       options: {
         ...nextOptions,
-        // 敏感字段按脱敏合同不会回传 UI，二次保存普通字段时请求中自然缺少
-        // 已存 secret。这里按 option key 合并，避免整对象替换把同 scope 的密钥静默清空。
-        // 显式清除走 clearOptionKeys，先删除指定键，再合并本次输入；不会连带删除启用状态
-        // 或同插件的其他配置。
+        // Sensitive fields are not echoed to the UI per the redaction contract, so a second save of plain
+        // fields naturally lacks the stored secret. Merge per option key so a whole-object replace cannot
+        // silently wipe same-scope secrets. Explicit clears go through clearOptionKeys: delete listed keys,
+        // then merge this input; enable state and other plugin config are untouched.
         [canonicalPluginId]: {
           ...retainedPluginOptions,
           ...options,

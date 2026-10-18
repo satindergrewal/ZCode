@@ -33,8 +33,8 @@ const SAFE_FRONTMATTER_KEYS = new Set([
 ]);
 
 export interface NodeCustomCommandAdapterOptions extends CustomCommandRootResolutionOptions {
-  // 被禁用的命令 .md 绝对路径集合（来自 config.json 的 command.<path>.enable=false）。
-  // 命中的命令在发现阶段直接剔除，使 discover/load/inspect 全链路保持一致。
+  // Absolute paths of disabled command .md files (from config.json command.<path>.enable=false).
+  // Matched commands are dropped during discovery so discover/load/inspect stay consistent.
   disabledPaths?: Iterable<string>;
 }
 
@@ -65,7 +65,7 @@ export class NodeCustomCommandAdapter implements CustomCommandPort {
         throwIfAborted(options);
         const parsed = await this.parseCommand(path, root, diagnostics);
         if (!parsed) continue;
-        // 命中 config 禁用名单的命令不进入可用集合
+        // Commands disabled via config never enter the available set
         if (this.disabledPaths.has(resolve(parsed.path))) continue;
         totalDiscovered++;
         if (selected.has(parsed.name)) {
@@ -245,7 +245,7 @@ async function scanMarkdownFiles(
           isDirectory = target.isDirectory();
           isFile = target.isFile();
         } catch {
-          // 悬空 symlink 或无权限：跳过该条目，继续扫描其余命令
+          // Dangling symlink or unreadable entry: skip it and keep scanning
           continue;
         }
       }

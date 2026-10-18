@@ -19,8 +19,8 @@ export function isProviderVisiblePdfModelInputBlock(block: ModelMessageContentBl
     block.type === "file" &&
     block.mediaType.split(";", 1)[0]?.trim().toLowerCase() === "application/pdf" &&
     block.dataUrl !== undefined &&
-    // PDF 提取文本为空字符串时，adapter 会回退发送 file-data。
-    // 只有非空文本能替代 provider-visible PDF 文件数据。
+    // When PDF text extraction yields an empty string the adapter falls back to file-data.
+    // Only non-empty text may replace provider-visible PDF file data.
     (block.text === undefined || block.text.length === 0)
   );
 }

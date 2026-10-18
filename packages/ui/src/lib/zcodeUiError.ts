@@ -74,15 +74,15 @@ function collectMessageCandidatesFromRecord(record: Record<string, unknown>): st
     ["detail"],
     ["data", "message"],
     ["data", "detail"],
-    // ZCode Agent 常把可读原因放在 data.details（复数）里；之前只识别 detail，
-    // 会导致 UI 只能看到 “Internal error” 而丢掉关键可执行提示。
+    // ZCode Agent often puts the readable reason in data.details (plural); reading detail only
+    // left the UI with Internal error, dropping the actionable hint.
     ["data", "details"],
     ["data", "reason"],
     ["data", "error", "message"],
     ["data", "error", "detail"],
     ["data", "error", "details"],
-    // zcode-cli 会把模型/网络错误摘要放在 data.zcode.error 下。
-    // 之前 UI 只读 data.error，导致已经结构化好的 provider 根因仍被 “Internal error” 盖住。
+    // zcode-cli puts model/network error summaries under data.zcode.error.
+    // The UI read data.error only, so the structured provider root cause stayed covered by Internal error.
     ["data", "zcode", "error", "message"],
     ["data", "zcode", "error", "detail"],
     ["data", "zcode", "error", "details"],
@@ -118,8 +118,8 @@ function collectMessageCandidates(error: unknown): string[] {
         return result;
       }
     }
-    // task_error 常见为 JSON 字符串，优先展示其中的 message/detail，
-    // 只有解析不到结构化字段时才回退到整段原始字符串。
+    // task_error is usually a JSON string; surface its message/detail first,
+    // falling back to the whole raw string only when nothing structured parses.
     push(error);
     return result;
   }
@@ -193,8 +193,8 @@ export function normalizeZCodeUiError(
   options: NormalizeZCodeUiErrorOptions = {},
 ): ZCodeUiError {
   const candidates = collectMessageCandidates(error);
-  // zcode-cli 已经把 provider/network 根因放进 detail 或 data.zcode.error，
-  // 外层仍可能保留 "Internal error" 这类包装文案。主提示优先选非泛化候选，避免根因被盖住。
+  // zcode-cli already puts provider/network root causes in detail or data.zcode.error;
+  // outer layers may still wrap generic Internal error copy. Prefer the least-generic candidate so the root cause shows.
   const primaryMessage =
     candidates.find((candidate) => !GENERIC_ZCODE_UI_ERROR_MESSAGES.has(candidate)) ??
     candidates[0] ??
@@ -209,7 +209,7 @@ export function normalizeZCodeUiError(
     ["data", "code"],
     ["data", "error", "code"],
     ["data", "zcode", "error", "code"],
-    // turn-errors 会把 provider 业务码写入 summary.code；部分链路仍只落在 context.providerCode。
+    // turn-errors put the provider business code in summary.code; some paths still fill only context.providerCode.
     ["data", "zcode", "error", "context", "providerCode"],
     ["data", "error", "context", "providerCode"],
     ["context", "providerCode"],
@@ -248,9 +248,9 @@ export function normalizeZCodeUiError(
   const attribution = readFirstAttributionFromPaths(error);
 
   return {
-    // 部分上游错误外层 code 只是 PROVIDER_BUSINESS_ERROR，
-    // 真实 GLM / zcode-plan 业务码只保存在 detail 的 provider_code=xxxx。
-    // 业务码需要进入统一错误分类层，否则 ChatView quota 横幅无法命中。
+    // Some upstream errors wrap code as a bare PROVIDER_BUSINESS_ERROR;
+    // the real GLM / zcode-plan business code hides in detail provider_code=xxxx.
+    // Business codes must reach the unified error classifier, or the ChatView quota banner never matches.
     code: providerCodeFromDetail ?? codeFromError ?? options.fallbackCode ?? "UNKNOWN",
     message: primaryMessage,
     detail: detailMessage,

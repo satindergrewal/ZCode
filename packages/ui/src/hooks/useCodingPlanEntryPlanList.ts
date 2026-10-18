@@ -20,7 +20,7 @@ export function useCodingPlanEntryPlanList(): CodingPlanEntryInventory {
   const loading = state.status === "loading";
   const { credentialService, codingPlanSubscriptionService } = useServices();
   const user = useZCodeStore((state) => state.user);
-  // 不传当前选中的团队上下文，四种 Start/个人连接分别使用已有权益缓存。
+  // The selected team context is not passed; the four Start/personal entries use their existing entitlement caches.
   const { entitlements, refresh } = useCodingPlanEntitlements({
     providerSettingsView,
     suppressProviderFingerprintAutoRefresh: true,
@@ -39,7 +39,7 @@ export function useCodingPlanEntryPlanList(): CodingPlanEntryInventory {
   useEffect(() => {
     if (!providerSettingsView) return;
     let cancelled = false;
-    // 团队订阅以 authenticated pricing 为准，不用静态商品目录推断已购套餐。
+    // Team subscriptions trust authenticated pricing; never infer purchased plans from the static product catalog.
     void Promise.all([
       refresh({ force: true, silent: true }),
       Promise.all(
@@ -54,7 +54,7 @@ export function useCodingPlanEntryPlanList(): CodingPlanEntryInventory {
             });
             return { token, products: result.productList };
           } catch (error) {
-            logger.warn("[purchaseTelemetry] 读取团队套餐失败", { family, error });
+            logger.warn("[purchaseTelemetry] failed to load team plans", { family, error });
             return { token, products: null };
           }
         }),
@@ -66,7 +66,7 @@ export function useCodingPlanEntryPlanList(): CodingPlanEntryInventory {
           view: providerSettingsView,
           generation,
           sources: sources.map((source, index) => {
-            // 刷新失败不等于未购；仅在账号、family 和凭据一致时复用成功结果。
+            // A failed refresh is not "not purchased"; reuse the previous success only when account, family, and credential all match.
             const cached = previous?.sources[index];
             return source.products === null &&
               source.token &&
@@ -98,13 +98,13 @@ export function useCodingPlanEntryPlanList(): CodingPlanEntryInventory {
     BUILTIN_MODEL_PROVIDER_IDS.bigmodelStartPlan,
     BUILTIN_MODEL_PROVIDER_IDS.zaiStartPlan,
   ];
-  // 账号模型没有 Personal API Key；沿用权益 hook 的只读 Access 判定，不能过滤未选中/禁用套餐。
+  // Account models have no Personal API Key; keep the entitlement hook's read-only access check and do not filter unselected/disabled plans.
   const required = planIds
     .filter((providerId) =>
       resolveAccountProviderInspectionAccess(providerSettingsView, providerId),
     )
     .map((providerId) => entitlements[providerId]);
-  // 错误描述的是本次刷新，不能否定仍可用的历史快照（含成功确认未开通）。
+  // The error describes this refresh only; it must not invalidate still-usable historical snapshots (including confirmed no-plan).
   const missing = required.filter((item) => {
     const snapshot = item?.snapshot;
     return (
@@ -118,7 +118,7 @@ export function useCodingPlanEntryPlanList(): CodingPlanEntryInventory {
   const status =
     state.status === "error" ? "error" : pending ? "loading" : failed ? "error" : "ready";
   useEffect(() => {
-    logger.debug("[purchaseTelemetry] 套餐入口查询状态", {
+    logger.debug("[purchaseTelemetry] plan entry query status", {
       status,
       configuredSources: required.length,
       generation,

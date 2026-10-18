@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- Coding Plan 订阅协议类型需要集中导出给 UI、services 和 RPC 共享，拆散会增加跨包类型入口复杂度。 */
+/* eslint-disable max-lines -- Coding Plan subscription protocol types are exported centrally for UI/services/RPC; splitting multiplies cross-package type entries. */
 import type { ProviderFamilyDomain } from "./model-provider-family.js";
 import type { BUILTIN_MODEL_PROVIDER_IDS } from "./model-provider-types.js";
 
@@ -119,10 +119,10 @@ export interface ForceUpdateConfig {
 }
 
 /**
- * 闲时任务客户端配置：client/configs 只下发入口曝光开关；模型展示来自 Built-in
- * offpeak Provider。准入/低峰判断仍以服务端为准（3006 兜底）。
- * 有效开启判据 = enable_offpeak_task===true 且 Built-in 模型成员非空。
- * 额度不再经 client/configs 下发；改由专用 availability 接口提供服务端即时快照。
+ * Off-peak client config: client/configs carries only the entry-visibility switch; model display comes from the built-in
+ * offpeak Provider. Admission/off-peak windows stay server-authoritative (3006 fallback).
+ * Enabled = enable_offpeak_task===true AND the built-in model set non-empty.
+ * Quota no longer rides client/configs; the dedicated availability API serves the live snapshot.
  */
 export interface CodingPlanProductInfoRequest {
   providerId?: CodingPlanSubscriptionProviderId;
@@ -414,9 +414,9 @@ export interface EnterpriseCodingPlanPricingResponse {
 export interface EnterpriseCodingPlanPricingRequest {
   authenticated?: boolean;
   /**
-   * 指定按哪个 family 读取企业定价。
-   * 缺省时按 bigmodel 处理，向后兼容既有调用点。
-   * service 层据此路由到对应 family 的 subscription provider。
+   * Which family's enterprise pricing to read.
+   * Defaults to bigmodel for legacy call sites.
+   * The service layer routes to that family's subscription provider.
    */
   family?: ProviderFamilyDomain;
 }

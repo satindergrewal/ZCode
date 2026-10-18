@@ -14,10 +14,10 @@ interface HostRemoteWorkspaceContext {
 }
 
 /**
- * 保存 shared remote Host 代理层持有的 workspace 资源。
+ * Holds workspace resources owned by the shared remote Host proxy layer.
  *
- * dedicated Host 会随 tab 退出，历史 task meta 和事件监听可由进程整体回收；
- * WSL Host Pool 会跨 workspace 复用，必须按 workspace 主动清理，否则引用会随 Host 寿命持续增长。
+ * A dedicated Host dies with its tab, so process-wide GC reclaims stale task metas and listeners;
+ * the WSL Host Pool is reused across workspaces and must be cleaned per workspace, or references grow for the Host's lifetime.
  */
 export function createHostRemoteWorkspaceProxyState(): {
   rememberTaskMeta: (meta: HostRemoteTaskMeta) => void;
@@ -77,7 +77,7 @@ export function createHostRemoteWorkspaceProxyState(): {
         onReady();
       });
       if (readyBeforeRegistration) {
-        // 动态 RPC 事件通常不会同步 replay，但这里处理同步实现，避免 ready 已结束后又留下 listener。
+        // Dynamic RPC events rarely replay synchronously, but handle sync implementations so no listener outlives ready.
         disposable.dispose();
         return;
       }

@@ -1,4 +1,4 @@
-/* oxlint-disable max-lines -- 热力图在同一文件内维护每日、每周、累计三种展示计算，拆分会割裂共享列模型。 */
+/* oxlint-disable max-lines -- the heatmap keeps daily, weekly and cumulative rollups in one file; splitting would fracture the shared column model. */
 import { useState } from "react";
 import type { AppUsageHeatmapCell, AppUsageHeatmapWeek } from "@zcode/shared";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs.js";
@@ -23,8 +23,9 @@ const DAY_MS = 86_400_000;
 const HEATMAP_VISIBLE_MONTH_LABEL_COUNT = 12;
 const TOKEN_ACTIVITY_MODES = ["daily", "weekly", "cumulative"] as const;
 const HEATMAP_GRID_STYLE = {
-  // 固定 14px 最小列宽加 4px 间隔会让 52 周网格超过容器，违背一次性完整展示的产品语义。
-  // 列宽改回可收缩的 1fr，桌面、Web 和手机端都由同一容器宽度等分，不再产生第二个横向滚动区。
+  // A fixed 14px min column width plus 4px gap pushes the 52-week grid past its container,
+  // breaking the show-it-all-at-once product rule. Columns return to shrinkable 1fr so desktop, web
+  // and mobile split one container width evenly, with no second horizontal scroll area.
   gridTemplateColumns: `repeat(${HEATMAP_DISPLAY_WEEK_COUNT}, minmax(0, 1fr))`,
 };
 
@@ -149,8 +150,9 @@ function buildDisplayHeatmapWeeks(weeks: AppUsageHeatmapWeek[]): AppUsageHeatmap
   const startDayIndex =
     endWeekStartDayIndex - (HEATMAP_DISPLAY_WEEK_COUNT - 1) * HEATMAP_DAYS_PER_WEEK;
 
-  // agent 只返回近 30 天真实数据会让热力图缩水；这里补齐展示用 0 格，
-  // 同时按自然周对齐，保证所有范围的第一行都是周日。
+  // The agent returns only the last 30 days of real data, which would shrink the heatmap; pad
+  // display-only zero cells here, aligned to calendar weeks so every range starts its first row on
+  // Sunday.
   return Array.from({ length: HEATMAP_DISPLAY_WEEK_COUNT }, (_, weekIndex) => ({
     weekIndex,
     days: Array.from({ length: HEATMAP_DAYS_PER_WEEK }, (_, dayOffset) => {
@@ -179,8 +181,9 @@ function filledRowsForValue(value: number, max: number): number {
 }
 
 function resolveHeatmapColumnMonthDate(week: AppUsageHeatmapWeek): string {
-  // 用周日判断月份会把非周日的每月 1 日推迟到下一周，月份文案最多错开一列。
-  // 周列包含 1 日时优先归入新月份，让文案锚定到 1 日所在列；其余列沿用周日起始月份。
+  // Deciding months by Sunday would push a non-Sunday 1st into the next week, mislabeling by up to
+  // one column. When a week column contains the 1st, assign it to the new month so the label anchors
+  // to the 1st's column; other columns keep the Sunday-anchored month.
   const firstDayOfMonth = week.days.find((cell) => cell?.date.endsWith("-01"));
   return firstDayOfMonth?.date ?? week.days[0]?.date ?? week.days.find(Boolean)?.date ?? "";
 }
@@ -306,8 +309,9 @@ function buildHeatmapMonthLabels(
     }
   }
 
-  // 52 个自然周可能横跨 13 个月，直接渲染会在底部同时出现去年和今年的同月文案。
-  // 保留多余起始月份的 span 以维持月份与周列对齐，只隐藏其文字，底部始终最多显示最近 12 个月。
+  // 52 calendar weeks can span 13 months; rendering them all shows the same month from last year
+  // and this year along the bottom. Keep extra leading-month spans to preserve month/column
+  // alignment but hide their text: at most the latest 12 months render at the bottom.
   const hiddenLabelCount = Math.max(0, labels.length - HEATMAP_VISIBLE_MONTH_LABEL_COUNT);
   for (let index = 0; index < hiddenLabelCount; index += 1) {
     const label = labels[index];
@@ -328,7 +332,7 @@ export function UsageHeatmap({
   locale: string;
   intl: ReturnType<typeof useZCodeIntl>["intl"];
   weeks: AppUsageHeatmapWeek[];
-  /** Coding Plan 远端只提供 mcpCalls；App Usage 才提供真实消息轮数。 */
+  /** Coding Plan remotes provide mcpCalls only; real conversation turns come from App Usage. */
   countMetric?: HeatmapCountMetric;
 }) {
   const [mode, setMode] = useState<TokenActivityMode>("daily");

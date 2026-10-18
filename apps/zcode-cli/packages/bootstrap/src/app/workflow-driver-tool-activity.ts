@@ -1,27 +1,27 @@
 // ============================================================
-// driver 侧的工具活动观察：子代理即将改写工作区 → 引擎关导入缓存
+// Driver-side tool-activity observation: subagent about to mutate the workspace -> engine closes the import cache
 // ============================================================
-// 与 workflow-driver-concurrency.ts 的模型活动面同一副姿态：只读 actor runtime 的会话事件流，不碰 turn
-// 编排。这里只认一种事件——`ToolCallStarted`，它由执行器在权限判定之后、handler 动手之前发出，载荷上
-// 带着按入参解析后的 `readOnly` / `sideEffectScope`（Bash 的只读命令判定已落定）。判定用 contracts 的
-// `isWorkspaceMutatingToolCall`；同一副载荷还按 `isWorldTouchingToolCall` 数出「碰过外部世界」的调用数，
-// 那个数决定一条缓存条目是不是纯的（见下）。
+// Same posture as workflow-driver-concurrency.ts's model-activity face: read the actor runtime's session event stream, never touch turn
+// orchestration. One event matters here -- `ToolCallStarted`, emitted by the executor after the permission verdict and before the handler acts, its payload carrying
+// argument-derived `readOnly` / `sideEffectScope` (Bash's read-only determination is settled). The test is contracts'
+// `isWorkspaceMutatingToolCall`; the same payload also counts world-touching calls via `isWorldTouchingToolCall`,
+// which decides whether a cache entry counts as pure (below).
 //
-// 同一份订阅还负责**数**这个 ask 的工具调用（总数与其中的写入数），因为 AskStats 需要它，而
-// `TurnResult.events` 里没有工具事件——照那里数，`toolCalls` 恒为 0（实测：生产 journal 的 2097 条
-// ask 行无一例外，其中包括明明写过文件的子代理）。计数在 startAsk 归零、跨 repair / nudge 轮累加，
-// 所以最后一次 askStats 上报的是这个 ask 的全量。
+// The same subscription also **counts** this ask's tool calls (total and writes): AskStats needs it and
+// `TurnResult.events` carries no tool events -- counting there, `toolCalls` is constant 0 (measured: all 2097 ask rows
+// in the production journal, including subagents that clearly wrote files). The count resets at startAsk and accumulates across repair / nudge rounds,
+// so the final askStats reports the ask's full total.
 //
-// 两个计数分工不同：`toolCalls` 是全部调用（审计面诚实），`worldToolCalls` 只数看或动了外部世界的那些
-// ——协议工具（`submit_result`、`escalate`）不算，否则每条 typed ask 都会因为交结果而显得「碰过世界」，
-// 纯 ask 的豁免就一条也用不上了。
+// The two counts differ: `toolCalls` is every call (an honest audit face); `worldToolCalls` counts only calls that saw or touched the outside world
+// -- protocol tools (`submit_result`, `escalate`) excluded, or every typed ask would look world-touching just by delivering its result
+// and the pure-ask exemption would never apply.
 //
-// 每个 ask 只上报一次关门：引擎侧关门本就幂等，少报几次只是省事件流量；换 ask 时 reset。
+// At most one closing report per ask: engine-side closing is idempotent; fewer reports just save event traffic. Reset on ask change.
 //
-// 同一份订阅还记下**最近一次**工具调用的名字与一条有界的目标线索（`node-progress` 的 `lastTool`）。名字在 `ToolCallStarted` 上就有，入参没有——
-// 它只在更早的 `ToolCallScheduled` 上，所以这里同时订阅两者：scheduled 把入参按 toolCallId 存一手，
-// started 取回来、压成线索、随即删掉那一手。只在 started 上落 `lastTool`，与两个计数同一时刻，
-// 于是被权限拒掉、从未真正开跑的调用不会冒充「它正在做的事」。
+// The same subscription records the **latest** tool call's name plus one bounded target hint (`node-progress`'s `lastTool`). The name rides `ToolCallStarted`; args do not --
+// they only ride the earlier `ToolCallScheduled`, so subscribe to both: scheduled stashes args by toolCallId,
+// started claims, compresses to the hint, and drops the stash. `lastTool` lands only on started, the same instant as both counts,
+// so permission-rejected calls that never started cannot pose as "what it is doing".
 
 import {
   isWorkspaceMutatingToolCall,
@@ -37,53 +37,53 @@ import type { AskLastTool } from "@zcode/dynamic-workflow";
 import { summarizeToolCall } from "./workflow-driver-tool-target.js";
 
 /**
- * 待认领的 scheduled 入参最多存这么多手。正常情况下每一手都会被紧随的 started 取走，但被权限
- * 拒绝、被取消、或整批被跳过的调用不会——没有上限，一个长 ask 就能把它们攒成一条内存泄漏。
- * 溢出时丢最老的一手（Map 按插入序遍历）：新的调用才是「它正在做什么」的答案。
+  * At most this many unclaimed scheduled-arg stashes. Normally each is claimed by its started, but permission-
+  * rejected, cancelled, or bulk-skipped calls are not -- unbounded, one long ask turns them into a memory leak.
+  * On overflow drop the oldest (Map iterates in insertion order): the newest call is the answer to "what is it doing".
  */
 const MAX_PENDING_SCHEDULED_CALLS = 64;
 
-/** 一个 ask 内观察到的工具调用计数（`AskStats` 的两个字段就是它）。 */
+/** Tool-call counts observed within one ask (two fields of `AskStats`). */
 export interface ActorToolCounts {
-  /** 全部调用，含 `submit_result` / `escalate` 这类协议工具。 */
+    /** Every call, protocol tools such as `submit_result` / `escalate` included. */
   toolCalls: number;
-  /** 其中看或动了外部世界的那些（读文件、跑命令、访问网络）；为 0 即这条 ask 是纯的。 */
+    /** Those that saw or touched the outside world (read files, run commands, network); 0 = the ask is pure. */
   worldToolCalls: number;
 }
 
 interface ActorToolActivity {
-  /** 换 ask 时归零：计数重新数，下一个 ask 的第一笔写入要重新上报一次。 */
+    /** Zeroed on ask change: counting restarts, and the next ask's first write must be reported once more. */
   reset(): void;
-  /** 本 ask 至今观察到的工具调用计数。 */
+    /** Tool calls observed in this ask so far. */
   counts(): ActorToolCounts;
   /**
-   * 此刻**还在跑**的工具调用数（started 减去 result / error，按 toolCallId 去重，所以一轮里并行
-   * 发出的四次 WebSearch 数出来就是 4）。
+      * Tool calls **still running** (started minus result / error, deduped by toolCallId, so four parallel
+      * WebSearches in one round count as 4).
    *
-   * 唯一的读者是座位闸门（workflow-seat-gate.ts）：准入调用上只有 `{model}`，分不出一次模型请求
-   * 是这个子代理的下一个 turn step 还是它某个工具内部发的，而**工具侧的请求永不停驻**。有工具在
-   * 跑就是工具侧，一个都没有就是下一个 turn step。用 started/结束配对而不是「上一次事件是什么」：
-   * 并行调用下后者会在第一个工具返回时就误判成空闲。
+      * The only reader is the seat gate (workflow-seat-gate.ts): admission calls carry only `{model}`, unable to tell a model request
+      * for this subagent's next turn step from one inside its tools -- and **tool-side requests never park**. Any tool
+      * running means tool-side; none means the next turn step. Pair started/ended instead of "the last event":
+      * with parallel calls the latter misreads idle at the first tool's return.
    */
   inFlight(): number;
-  /** 本 ask 至今**最近**一次真正开跑的工具调用；一次都没有时缺席。 */
+    /** The **latest** tool call that actually started in this ask; absent when none. */
   lastTool(): AskLastTool | undefined;
-  /** 订阅 runtime 的 `ToolCallStarted` 会话事件；最小 stub runtime 没有 subscribeEvents 时空操作。 */
+    /** Subscribes runtime `ToolCallStarted` session events; a noop on minimal stub runtimes without subscribeEvents. */
   observe(runtime: AgentRuntime, sessionId: SessionId): void;
   unsubscribe(): void;
 }
 
 export function createActorToolActivity(handlers: {
-  /** 当前 ask 的子代理即将执行一个会改写工作区的工具（每个 ask 至多一次）。 */
+    /** A subagent of the current ask is about to run a workspace-mutating tool (at most once per ask). */
   onMutating(): void;
 }): ActorToolActivity {
   let reported = false;
   let toolCalls = 0;
   let worldToolCalls = 0;
   let lastTool: AskLastTool | undefined;
-  /** toolCallId → scheduled 时的名字与入参，等 started 来认领。 */
+    /** toolCallId -> name and args at scheduled time, awaiting the started claim. */
   const scheduled = new Map<string, ToolCallSummaryHold>();
-  /** 已 started 还没等到 result / error 的那些 toolCallId（见 {@link ActorToolActivity.inFlight}）。 */
+    /** toolCallIds started but still awaiting result / error (see {@link ActorToolActivity.inFlight}). */
   const running = new Set<string>();
   let unsubscribeEvents: (() => void) | undefined;
   return {
@@ -93,8 +93,8 @@ export function createActorToolActivity(handlers: {
       worldToolCalls = 0;
       lastTool = undefined;
       scheduled.clear();
-      // ask 边界上不该还有工具在跑（上一个 ask 的 turn 已经落地或被 abort），归零只是不让
-      // 一次异常路径把残留带进下一个 ask——那会让闸门永远把它当成工具侧请求放行。
+            // No tool should be running at an ask boundary (the previous ask's turn landed or was aborted); zeroing just keeps
+            // one abnormal path from carrying leftovers into the next ask -- the gate would admit them as tool-side requests forever.
       running.clear();
     },
     counts: () => ({ toolCalls, worldToolCalls }),
@@ -109,8 +109,8 @@ export function createActorToolActivity(handlers: {
             holdScheduled(scheduled, event.payload as ToolCallScheduledPayload);
             return;
           }
-          // 一次调用的结束：执行器在 started 之后的 try/catch 两支上各发一条，所以 started 必有配对
-          // （权限拒绝、schema 失败、registry miss 都发生在 started **之前**，只发 error，不影响配对）。
+                    // One call's end: the executor emits on both arms of the post-started try/catch, so a started always has its pair
+                    // (permission rejects, schema failures, registry misses happen before started and emit error only -- pairing unaffected).
           if (
             event.type === SessionEventType.ToolCallResult ||
             event.type === SessionEventType.ToolCallError
@@ -144,13 +144,13 @@ export function createActorToolActivity(handlers: {
   };
 }
 
-/** scheduled 事件上暂存下来的一手（名字 + 入参），等对应的 started 取走。 */
+/** The stash from a scheduled event (name + args), claimed by its matching started. */
 interface ToolCallSummaryHold {
   toolName?: string;
   input?: unknown;
 }
 
-/** 存一手 scheduled 入参，并把表压在 {@link MAX_PENDING_SCHEDULED_CALLS} 之内（丢最老的）。 */
+/** Stores one scheduled-args entry, keeping the table within {@link MAX_PENDING_SCHEDULED_CALLS} (oldest dropped). */
 function holdScheduled(
   scheduled: Map<string, ToolCallSummaryHold>,
   payload: ToolCallScheduledPayload,

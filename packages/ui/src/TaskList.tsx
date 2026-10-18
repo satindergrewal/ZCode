@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- TaskList 同时承接 workspace 列表渲染、行内操作和外部数据源兼容，先集中收口避免 UI 结构漂移。 */
+/* eslint-disable max-lines -- TaskList carries workspace list rendering, row actions, and external data-source compatibility; keep it consolidated to avoid UI structure drift. */
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Settings2 } from "lucide-react";
 import type { ZCodeTaskMeta } from "@zcode/shared";
@@ -20,12 +20,12 @@ import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 
 export { deriveTaskLeadingIndicator } from "@/lib/taskListItemPresentation.js";
 
-// 默认参数里的 [] 会在每次 TaskList render 时创建新数组；
-// 任务流刷新期间这会放大 memo 子组件的等价数据判断成本。
+// A [] default argument allocates a new array on every TaskList render; during stream refreshes
+// that amplifies the equal-data check cost of memoized children.
 const EMPTY_PINNED_TASKS: ZCodeTaskMeta[] = [];
 
-// 父级 App/Shell 可能因 stream 状态更新重渲，但列表 props 本身未变。
-// TaskList 先整体 memo，避免无关父 render 重新遍历任务并触发 MemoTaskItem props 计算。
+// Parent App/Shell may rerender on stream state updates while list props are unchanged. Memoize
+// TaskList as a whole so unrelated parent renders do not re-walk tasks and recompute MemoTaskItem props.
 export const TaskList = memo(function TaskList({
   workspacePath,
   remoteSessionId,
@@ -107,8 +107,9 @@ export const TaskList = memo(function TaskList({
     onSelectTaskRef.current(taskId);
   }, []);
   const handleOpenTaskContextMenu = useCallback((taskId: string) => {
-    // 以前每个 task row 都常驻一个 Radix ContextMenu root/trigger。
-    // 现在 row 只上报目标 task，真正的菜单树由列表级单例挂载，避免大会话里按行放大 Popper/MenuProvider 成本。
+    // Every row used to host a permanent Radix ContextMenu root/trigger. Rows now only report the
+    // targeted task; a single list-level menu instance mounts the tree, avoiding per-row
+    // Popper/MenuProvider cost in large conversations.
     if (pendingArchiveTaskIdRef.current === taskId) {
       setPendingArchiveTaskId(null);
     }
@@ -119,9 +120,9 @@ export const TaskList = memo(function TaskList({
     if (readOnlyReason) {
       return;
     }
-    // 新建会话如果在按钮点击时就立即 createTask，会把"空任务"也持久化到列表里，
-    // 用户只是想先打开输入框，侧边栏却会平白多出一条没有任何消息的记录。
-    // 这里改成进入 workspace 级草稿态，等用户真正发送首条消息时再自动创建 task。
+    // Creating the task on button click would persist "empty tasks" into the list when the user
+    // only wanted the input box, leaving messageless entries behind. Enter a workspace-level draft
+    // state instead; the task is created when the first message is actually sent.
     startDraft(workspacePath, undefined, workspaceIdentity, { createSource: "project" });
   }, [readOnlyReason, startDraft, workspaceIdentity, workspacePath]);
 
@@ -136,9 +137,9 @@ export const TaskList = memo(function TaskList({
       }
 
       if (pendingArchiveTaskIdRef.current !== taskId) {
-        // 侧边栏 hover 操作现在改成“归档任务”，但它依旧会让任务从当前列表立刻消失，
-        // 如果首击就直接执行，用户很容易把“临时收起”误触成“怎么整条任务没了”。
-        // 这里改成“首次点击进入待确认态，二次点击原位确认”，既保留保护，也不离开当前上下文。
+        // The sidebar hover action is now "archive task", which still makes the task vanish from
+        // the list immediately; a single click reads as "where did my task go". First click arms a
+        // confirm state, second click confirms in place — protection without leaving context.
         setPendingArchiveTaskId(taskId);
         return;
       }
@@ -228,8 +229,9 @@ export const TaskList = memo(function TaskList({
         return;
       }
 
-      // task 标题如果直接保留用户输入的首尾空格，列表里看起来像“没对齐”或“标题丢了”，
-      // 但真实持久化内容又已经变化，后续排查很难复现。这里在提交前统一 trim，保证显示和存储一致。
+      // Keeping user-typed leading/trailing spaces in task titles looks misaligned or "lost" in
+      // the list while the persisted content differs, which is hard to reproduce later. Trim on
+      // submit so display and storage agree.
       logger.info("[TaskList] rename submit calling onRenameTask", {
         taskId,
         workspacePath,
@@ -424,7 +426,7 @@ export const TaskList = memo(function TaskList({
         </div>
       ) : null}
 
-      {/* 任务列表 */}
+      {/* Task list */}
       <div>
         <div className="space-y-1">
           {Boolean(inputLoading) && visibleSourceTasks.length === 0 ? (

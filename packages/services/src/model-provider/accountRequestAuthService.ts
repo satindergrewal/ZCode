@@ -7,10 +7,10 @@ import type {
 import type { ZCodeAccountAccess, ZCodeProviderAccountAccess } from "@zcode/shared";
 
 /**
- * 请求期 Account 鉴权边界。
+ * Request-time Account auth boundary.
  *
- * 服务按 Active Model 的静态 family/mode 约束，从当前账号连接解析请求材料。
- * 它不保存 Provider Config，也不提供 Registry fallback。
+ * constrained by the Active Model's static family/mode.
+ * It persists no Provider Config and offers no Registry fallback.
  */
 export interface IAccountRequestAuthService {
   resolveAccessCurrent(access: ZCodeProviderAccountAccess): Promise<ZCodeAccountAccess | null>;

@@ -19,7 +19,7 @@ export interface NodeZCodeBuiltinProviderConfigSourceOptions {
 
 export type ApplyZCodeBuiltinReleaseResult = "updated" | "unchanged" | "stale";
 
-/** Bundled、Active/LKG 与 Remote 共用同一 Release，并最终发布为现有 Config Snapshot。 */
+/** Bundled, Active/LKG, and Remote all produce the same Release, finally published as the existing Config Snapshot. */
 export class NodeZCodeBuiltinProviderConfigSource implements ProviderSource<ProviderConfigLayerSnapshot> {
   readonly #bundledFilePath: string;
   readonly #activeFilePath: string;
@@ -33,11 +33,12 @@ export class NodeZCodeBuiltinProviderConfigSource implements ProviderSource<Prov
 
   constructor(options: NodeZCodeBuiltinProviderConfigSourceOptions) {
     const bundledFilePath = options.bundledFilePath.trim();
-    if (!bundledFilePath) throw new Error("ZCode Built-in bundledFilePath 不能为空");
+    if (!bundledFilePath) throw new Error("ZCode Built-in bundledFilePath must not be empty");
     this.#bundledFilePath = bundledFilePath;
     this.#activeFilePath = options.activeFilePath?.trim() || bundledFilePath;
-    // 旧标识只有发布序号，不同 Endpoint 同序号会让 Registry 误复用上一来源。
-    // Active 路径已含规范化 Endpoint 隔离范围；Worker 收到同一路径，不另拼账号事实。
+    // The legacy id was a bare publish number; two endpoints sharing it made the Registry
+    // reuse the wrong source. The Active path already encodes the normalized endpoint scope,
+    // and the worker receives that same path -- no account facts appended.
     this.#sourceKey = createHash("sha256").update(resolve(this.#activeFilePath)).digest("hex");
     this.#watchEnabled = options.watch !== false;
   }
@@ -53,8 +54,9 @@ export class NodeZCodeBuiltinProviderConfigSource implements ProviderSource<Prov
       await this.#ensureWatcher();
       release = await withFileLock(this.#activeFilePath, () => this.#readAndMaterializeLocked());
     } catch {
-      // Active 只是可丢弃缓存，目录锁、监听或原子物化失败不能阻断
-      // Bundled 基线。缓存边界不可用时绕过 Active；Bundled 自身无效仍会在这里抛错。
+      // Active is a discardable cache: lock, watcher, or atomic-materialize failures must not
+      // block the Bundled baseline. When the cache boundary is unusable, bypass Active; a broken
+      // Bundled itself still throws here.
       release = selectReleaseCandidate(await readReleaseCandidate(this.#bundledFilePath), null);
     }
     this.#observedSignature ??= signatureOf(release);
@@ -73,7 +75,7 @@ export class NodeZCodeBuiltinProviderConfigSource implements ProviderSource<Prov
         if (serializeZCodeBuiltinRelease(release) === serializeZCodeBuiltinRelease(current)) {
           return "unchanged" as const;
         }
-        throw new Error(`ZCode Built-in 相同 revision ${release.revision} 对应不同内容`);
+        throw new Error(`ZCode Built-in revision ${release.revision} maps to different content`);
       }
       await this.#writeActiveLocked(release);
       this.#observedSignature = signatureOf(release);
@@ -153,7 +155,7 @@ export class NodeZCodeBuiltinProviderConfigSource implements ProviderSource<Prov
   }
 
   #assertNotDisposed(): void {
-    if (this.#disposed) throw new Error("NodeZCodeBuiltinProviderConfigSource 已 dispose");
+    if (this.#disposed) throw new Error("NodeZCodeBuiltinProviderConfigSource disposed");
   }
 }
 
@@ -187,8 +189,8 @@ function selectReleaseCandidate(
     bundled.release.revision === active.release.revision &&
     serializeZCodeBuiltinRelease(bundled.release) !== serializeZCodeBuiltinRelease(active.release)
   ) {
-    // 同 revision 冲突属于 Active 缓存失效，不能反向使可信 Bundled 无法启动。
-    // 返回 Bundled 后调用方会在能够写入时原子替换 Active。
+    // A same-revision conflict is an Active cache miss, never a reason to keep trusted Bundled
+    // from starting. Returning Bundled lets the caller atomically replace Active once writable.
     return bundled.release;
   }
   const valid = [bundled?.release, active?.release].filter(
@@ -197,7 +199,7 @@ function selectReleaseCandidate(
   if (valid.length === 0) {
     throw new AggregateError(
       [bundled?.error, active?.error].filter((error) => error !== undefined),
-      "Bundled 与 Active ZCode Built-in Release 均不可用",
+      "Neither Bundled nor Active ZCode Built-in release is usable",
     );
   }
   return valid.reduce((newest, candidate) =>

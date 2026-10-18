@@ -60,8 +60,8 @@ export function projectSessionTranscript(
       continue;
     }
     if (isModelOnlyUserMessage(message)) {
-      // goal continuation 等 runtime 内部输入需要保留在 raw history 供模型恢复，
-      // 但 transcript 是用户可见投影，不能把这类 user-role 输入展示成用户发言。
+      // Runtime-internal inputs such as goal continuation must stay in raw history for model recovery,
+      // but the transcript is a user-visible projection: such user-role inputs must not render as user speech.
       continue;
     }
 

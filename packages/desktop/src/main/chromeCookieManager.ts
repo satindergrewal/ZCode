@@ -1,6 +1,6 @@
 /* eslint-disable max-lines */
-// 安全说明：Cookie 快照、跨平台解密选择与整批写入必须留在同一事务审计边界，
-// 避免拆分后让 Windows App-Bound 原子失败语义与 Linux helper 回退顺序发生漂移。
+// Security note: cookie snapshot, cross-platform decryption choice, and the batch write share one
+// transactional audit boundary, so Windows App-Bound atomicity and Linux helper fallback order cannot drift.
 import { createDecipheriv, pbkdf2Sync } from "node:crypto";
 import { copyFile, mkdtemp, rm, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -27,8 +27,8 @@ import {
 } from "./windowsChromeAppBoundKey.js";
 
 const nodeRequire = createRequire(import.meta.url);
-// tsup/esbuild 会把动态 import("node:sqlite") 错误改写为 import("sqlite")，
-// Electron 运行时因此报 ERR_MODULE_NOT_FOUND。createRequire 能稳定保留 node: 协议。
+// tsup/esbuild rewrites dynamic import("node:sqlite") into import("sqlite"), and Electron then throws
+// ERR_MODULE_NOT_FOUND at runtime. createRequire preserves the node: scheme reliably.
 const { DatabaseSync, backup } = nodeRequire("node:sqlite") as typeof import("node:sqlite");
 
 const COOKIE_IMPORT_CONCURRENCY = 32;
@@ -80,7 +80,7 @@ function toSafeBrowserDataError(error: unknown): { name: string; code?: string }
 }
 
 function stripChromeHostDigest(value: Buffer, schemaVersion: number): Buffer {
-  // Chrome Cookie schema 24+ 在加密明文前附加 SHA-256(host_key)；这里只移除固定长度摘要。
+  // Chrome Cookie schema 24+ prefixes SHA-256(host_key) before ciphertext; strip only the fixed-length digest.
   return schemaVersion >= 24 && value.length >= 32 ? value.subarray(32) : value;
 }
 
@@ -170,7 +170,7 @@ async function withDatabaseSnapshot<T>(
       sourceDatabase?.close();
       sourceDatabase = null;
       logger.warn(
-        "[browser-data] Chrome Cookie 在线备份不可用，回退 WAL 文件快照",
+        "[browser-data] Chrome cookie online backup unavailable, falling back to WAL file snapshot",
         toSafeBrowserDataError(onlineBackupError),
       );
 
@@ -185,13 +185,13 @@ async function withDatabaseSnapshot<T>(
           if (await pathExists(sourceWalPath)) {
             await copyFile(sourceWalPath, `${stagedPath}-wal`);
           }
-          // Chrome 的 SHM 仅用于并发协调且在 Windows 上可能被独占锁定。
-          // 临时目录中的 SQLite 会自行重建 SHM，再通过 Online Backup 固化并校验主库与 WAL。
+          // Chrome's SHM only coordinates concurrency and can be locked exclusively on Windows; a temp-dir
+          // SQLite rebuilds SHM itself, then Online Backup solidifies and verifies main+WAL.
           stagedDatabase = new DatabaseSync(stagedPath, { readOnly: true });
           await databaseBackup(stagedDatabase, snapshotPath);
           stagedDatabase.close();
           stagedDatabase = null;
-          logger.info("[browser-data] Chrome Cookie WAL 文件快照完成", { attempt });
+          logger.info("[browser-data] Chrome cookie WAL file snapshot complete", { attempt });
           fallbackError = null;
           break;
         } catch (error) {
@@ -205,7 +205,7 @@ async function withDatabaseSnapshot<T>(
       }
       if (fallbackError) {
         logger.warn(
-          "[browser-data] Chrome Cookie WAL 文件快照失败",
+          "[browser-data] Chrome cookie WAL file snapshot failed",
           toSafeBrowserDataError(fallbackError),
         );
         throw fallbackError;
@@ -213,8 +213,8 @@ async function withDatabaseSnapshot<T>(
     }
     return await run(snapshotPath);
   } finally {
-    // TypeScript 会把前面显式置空后的 finally 路径收窄成 never，
-    // 但 SQLite backup 在异常边界仍可能留下句柄；保留运行时兜底并显式恢复实际联合类型。
+    // TypeScript narrows the post-finally path to never after the explicit nulling,
+    // but the SQLite backup can still leak handles on the error path; keep the runtime guard and restore the real union.
     const danglingDatabase = sourceDatabase as import("node:sqlite").DatabaseSync | null;
     danglingDatabase?.close();
     await rm(tempDir, { recursive: true, force: true });
@@ -287,7 +287,7 @@ async function collectCookieDetails(options: {
           profilePath: options.profilePath,
         });
         if (helperCookies.length > 0 || options.rows.length === 0) {
-          options.logger.info("[browser-data] Chrome helper Cookie 快照读取完成", {
+          options.logger.info("[browser-data] Chrome helper cookie snapshot read complete", {
             returnedCount: helperCookies.length,
             reason: "linux-keyring-v11",
           });
@@ -299,7 +299,7 @@ async function collectCookieDetails(options: {
           };
         }
       } catch (error) {
-        options.logger.warn("[browser-data] Chrome Cookie helper 不可用", {
+        options.logger.warn("[browser-data] Chrome cookie helper unavailable", {
           reason: "linux-keyring-v11",
           ...toSafeBrowserDataError(error),
         });
@@ -307,8 +307,8 @@ async function collectCookieDetails(options: {
     } else {
       options.issues.add("chrome_executable_not_found");
     }
-    // Linux v11 绑定系统密钥环；同品牌 Chrome helper 不可用时，只能继续尝试
-    // 当前进程可安全解密的旧格式，不能绕过系统密钥保护。
+    // Linux v11 binds the system keyring; without the same-vendor helper only legacy formats
+    // decryptable in-process remain -- never bypass system keyring protection.
     options.issues.add("chrome_cookie_protection_unsupported");
   }
 
@@ -326,7 +326,7 @@ async function collectCookieDetails(options: {
           userDataDir: dirname(options.profilePath),
         });
         appBoundDecryptor = createWindowsGcmDecryptor(key, new Set(["v20"]));
-        options.logger.info("[browser-data] Chrome App-Bound 解密材料已就绪");
+        options.logger.info("[browser-data] Chrome App-Bound decryption material ready");
       } catch (error) {
         const issue =
           error instanceof WindowsChromeAppBoundImportError
@@ -334,7 +334,7 @@ async function collectCookieDetails(options: {
             : "chrome_cookie_app_bound_decryption_failed";
         options.issues.add(issue);
         options.logger.warn(
-          "[browser-data] Chrome App-Bound Cookie 原生解密失败",
+          "[browser-data] Chrome App-Bound native cookie decryption failed",
           toSafeBrowserDataError(error),
         );
       }
@@ -343,8 +343,8 @@ async function collectCookieDetails(options: {
     }
 
     if (!appBoundDecryptor) {
-      // 同一 Chrome 数据库可能同时包含明文、旧版和 v20 Cookie。
-      // App-Bound 授权失败时 Cookie 阶段必须保持原子性，不能悄悄写入同批的普通 Cookie。
+      // One Chrome database can hold plaintext, legacy, and v20 cookies side by side; App-Bound failure
+      // must keep the cookie phase atomic -- never quietly persist the batch's plain cookies.
       return { details: [], skipped: options.rows.length };
     }
   }
@@ -364,7 +364,7 @@ async function collectCookieDetails(options: {
     } catch (error) {
       if (error instanceof ChromeCookieAccessDeniedError) throw error;
       options.issues.add("chrome_cookie_protection_unsupported");
-      options.logger.warn("[browser-data] Chrome Cookie 系统解密材料不可用");
+      options.logger.warn("[browser-data] Chrome cookie system decryption material unavailable");
     }
   }
 
@@ -435,7 +435,7 @@ export async function importChromeCookies(options: {
     options.databaseBackup ?? backup,
     async (snapshotPath) => {
       const { rows, schemaVersion } = await readChromeCookies(snapshotPath);
-      options.logger.info("[browser-data] Chrome Cookie 快照读取完成", {
+      options.logger.info("[browser-data] Chrome cookie snapshot read complete", {
         sourceCount: rows.length,
       });
       const issues = new Set<ChromeBrowserDataImportError>();
@@ -469,7 +469,7 @@ export async function importChromeCookies(options: {
         }
       }
       await options.targetSession.cookies.flushStore();
-      options.logger.info("[browser-data] Chrome Cookie 写入完成", {
+      options.logger.info("[browser-data] Chrome cookie write complete", {
         importedCount: stats.imported,
         skippedCount: stats.skipped,
         failedCount: stats.failed,

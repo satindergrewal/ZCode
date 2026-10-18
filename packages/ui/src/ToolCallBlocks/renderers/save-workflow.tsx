@@ -8,10 +8,11 @@ import type { ToolCallBlockRenderContext } from "../shared.js";
 const SAVE_WORKFLOW_TOOL_ICON = <Save className="size-4 shrink-0 text-foreground-subtle" />;
 
 /**
- * 覆盖徽标的样式：与 CreateWorkflow 结果卡的 compiled 小签同族（镌刻小签——rounded-xs +
- * 大写等宽微标签），只把语义色换成 warning。用 warning 而不是 destructive 是刻意的：
- * 文件是被**替换**，不是被删除，destructive 会过度表达；而覆盖是真实的语义状态，
- * 不属于 DESIGN.md 禁止的「借语义色让区块更响」。
+ * Overwrite badge styling: same family as the CreateWorkflow result card's compiled chip
+ * (engraved chip - rounded-xs + uppercase mono microlabel) with the semantic color switched to
+ * warning. warning over destructive is deliberate: the file is **replaced**, not deleted, and
+ * destructive would overstate it; overwrite is a real semantic state, not DESIGN.md's forbidden
+ * borrowing of semantic color for louder blocks.
  */
 const OVERWRITE_BADGE_CLASSNAME =
   "shrink-0 rounded-xs border border-warning/40 px-1.5 py-0.5 font-mono text-ui-xs uppercase tracking-wf-label leading-none text-warning";
@@ -28,23 +29,24 @@ function readTrimmedString(value: unknown): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
-/** SaveWorkflow 归一化入参里的一条 args 声明。 */
+/** One args declaration in SaveWorkflow's normalized input. */
 export interface WorkflowArgDeclaration {
   name: string;
   type: string | undefined;
   description: string | undefined;
   required: boolean;
-  /** `default` 是否在场——`default: false` 与「没有默认值」必须可分辨。 */
+  /** Whether `default` is present - a false default and no default must stay distinguishable. */
   hasDefault: boolean;
   defaultValue: unknown;
 }
 
 /**
- * SaveWorkflow 的归一化入参（可复用工作流 spec 的「SaveWorkflow 的归一化形状」）：
- * `{name, description, whenToUse?, args?, script, path, overwrite, scope}`。
+ * SaveWorkflow's normalized input (the reusable-workflow spec's "normalized SaveWorkflow shape"):
+ * `{name, description, whenToUse?, args?, script, path, overwrite, scope}`.
  *
- * `path` / `overwrite` / `scope` 是解析阶段算出来的事实，不是模型说的——确认窗展示的是
- * 「将要发生的事实」。这个 gate 没有 display 载荷，入参就是全部内容。
+ * `path` / `overwrite` / `scope` are facts computed at resolution time, not claims by the model -
+ * the dialog shows what will actually happen. This gate has no display payload; the input is the
+ * whole story.
  */
 interface SaveWorkflowInput {
   name: string | undefined;
@@ -52,7 +54,7 @@ interface SaveWorkflowInput {
   whenToUse: string | undefined;
   path: string | undefined;
   scope: string | undefined;
-  /** 另一档已有同名时的遮蔽事实（解析阶段算出，走入参通道，理由同 path / overwrite）。 */
+  /** Shadowing fact when another scope already holds this name (resolved-time, via the input channel; same rationale as path/overwrite). */
   shadowing: "hides_global" | "hidden_by_project" | undefined;
   overwrite: boolean;
   script: string | undefined;
@@ -94,8 +96,8 @@ export function readSaveWorkflowInput(input: unknown): SaveWorkflowInput {
       record.shadowing === "hides_global" || record.shadowing === "hidden_by_project"
         ? record.shadowing
         : undefined,
-    // 只有显式 true 才是覆盖：字段缺席时说不出「已经有一个文件在那儿」，
-    // 就不能让确认窗替用户断言这件事。
+    // Only explicit true is an overwrite: with the field absent we cannot know a file is already
+    // there, so the dialog must not assert it on the user's behalf.
     overwrite: record.overwrite === true,
     script:
       typeof record.script === "string" && record.script.length > 0 ? record.script : undefined,
@@ -112,8 +114,8 @@ export function SaveWorkflowOverwriteBadge({ label }: { label: string }) {
 }
 
 /**
- * 全局作用域折叠行小标：与 overwrite 徽标同一族（镌刻小签），语义色改为 foreground-subtle——
- * 它只是一个作用域说明，不是警示状态，不借 warning / destructive。
+ * Collapsed-row chip for global scope: same family as the overwrite badge (engraved chip), semantic
+ * color foreground-subtle - a scope note, not a warning; no borrowing warning/destructive.
  */
 const SCOPE_BADGE_CLASSNAME =
   "shrink-0 rounded-xs border border-border px-1.5 py-0.5 font-mono text-ui-xs uppercase tracking-wf-label leading-none text-foreground-subtle";
@@ -127,10 +129,10 @@ function SaveWorkflowScopeBadge({ label }: { label: string }) {
 }
 
 /**
- * SaveWorkflow 的聊天卡：刻意紧凑——名字、覆盖标记、说明。
+ * The SaveWorkflow chat card: deliberately compact - name, overwrite marker, description.
  *
- * 完整内容（落点、args 声明表、脚本）归确认窗：那才是用户做决定的地方，而这张卡是决定
- * 之后的一行记录。
+ * Full content (destination, args declaration table, script) belongs to the confirmation dialog:
+ * that is where the decision is made; this card is the after-the-fact record.
  */
 export function SaveWorkflowToolCallBlock(context: ToolCallBlockRenderContext) {
   const { intl } = useZCodeIntl();
@@ -174,7 +176,7 @@ export function SaveWorkflowToolCallBlock(context: ToolCallBlockRenderContext) {
 
   const kindDetail = useMemo(
     () =>
-      // 折叠行：全局档加一个「全局」小标，与 overwrite 徽标同排（未知/项目档不加）。
+      // Collapsed row: global scope adds a Global chip beside the overwrite badge (unknown/project add none).
       saved.overwrite || isGlobalScope ? (
         <span className="flex items-center gap-1">
           {saved.overwrite ? <SaveWorkflowOverwriteBadge label={overwriteLabel} /> : null}
@@ -188,13 +190,13 @@ export function SaveWorkflowToolCallBlock(context: ToolCallBlockRenderContext) {
     () => () => (
       <div className="mb-2 space-y-1.5">
         {saved.description === undefined ? null : (
-          // 折叠行只留名字 + overwrite 徽标。
+          // The collapsed row keeps only the name + overwrite badge.
           <p className="min-w-0 whitespace-pre-wrap break-words text-ui-base leading-5 text-foreground-subtle">
             {saved.description}
           </p>
         )}
         {scopeValue === null ? null : (
-          // 作用域行在落点之上。
+          // The scope line sits above the destination.
           <p className="flex min-w-0 items-baseline gap-2 text-ui-sm">
             <span className="shrink-0 text-foreground-subtlest">{scopeLabel}</span>
             <span className="min-w-0 text-foreground-subtle">{scopeValue}</span>
@@ -247,8 +249,9 @@ export function SaveWorkflowToolCallBlock(context: ToolCallBlockRenderContext) {
         kindDetail={kindDetail}
         sourceLabel={context.sourceLabel}
         primaryText={primaryText}
-        // 刻意不传 secondaryText：折叠行只有名字（+ overwrite 徽标），说明/落点/whenToUse
-        // 全部移入展开卡体——「决定之后的一行记录」越短越好读。
+        // Deliberately no secondaryText: the collapsed row is name only (+ overwrite badge);
+        // description/destination/whenToUse move into the expanded body - the shorter the
+        // after-the-fact record, the more readable.
         statusLabel={context.statusLabel}
         statusTooltip={context.errorText}
         showFailureStatus={toolCall.status === "failed"}

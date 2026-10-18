@@ -7,40 +7,40 @@ import { formatShortcutBindingLabelParts } from "@/shortcuts/label.js";
 
 export interface RecordingState {
   commandId: ShortcutCommandId;
-  /** 录制模式：replace = 替换某条绑定（bindingIndex 指向现有条，null = 未分配录第一条）；add = 给命令追加一条。 */
+  // Recording mode: replace = replace one binding (bindingIndex into existing, null = unassigned records first); add = append.
   mode: "replace" | "add";
-  /** replace 模式的目标下标；add 模式为 null。 */
+  // Target index in replace mode; null in add mode.
   bindingIndex: number | null;
-  /** 录制中的实时预览 label；null 表示尚无完整组合。 */
+  // Live preview label while recording; null until a full chord.
   preview: string | null;
-  /** 冲突 / 无效提示（i18n 后文案），标红展示。 */
+  // Conflict/invalid hint (post-i18n), shown in red.
   error: string | null;
-  /** 被其他 app 命令占用时的待确认绑定；「仍要绑定」二次确认后抢绑（系统保留键不给确认入口）。 */
+  // Pending binding when occupied by another app command; confirmed takeover via bind-anyway (system-reserved keys get no confirm).
   conflictBinding: string | null;
 }
 
 interface ShortcutBindingRowProps {
   entry: ShortcutCommandEntry;
-  /** i18n 后的命令名（主组件统一格式化后传入）。 */
+  // Localized command name (formatted by the parent).
   commandLabel: string;
   bindings: readonly string[];
-  /** 该命令是否存在用户覆盖条目（true 时键帽用品牌色标出自定义）。 */
+  // Whether a user override exists (true tints keycaps brand-color as customized).
   isOverridden: boolean;
   isRecording: boolean;
   recording: RecordingState | null;
-  /** Web 端 menu 通道命令：录制入口置灰（默认键被根级回退监听固定消费）。 */
+  // Web menu-channel command: recording entry disabled (default key consumed by the root fallback listener).
   menuChannelUnavailable: boolean;
-  /** 替换某条绑定（index = 生效列表下标；null = 未分配录第一条）。 */
+  // Replace one binding (index into the effective list; null = unassigned records first).
   onRecord: (bindingIndex: number | null) => void;
   onSteal: (binding: string) => void;
-  /** 清空全部绑定 = 未分配（显式空数组，不回退默认）。 */
+  // Clear all bindings = unassigned (explicit empty array, no default fallback).
   onClearAll: () => void;
 }
 
 /**
- * 快捷键设置页的命令行：左列命令名跨全部绑定垂直居中，右列是该命令的
- * 绑定列表——每条一行：逐键键帽 + 铅笔（点击即替换该条录制）；录制态内嵌在对应
- * 条目位置。暂不支持新增/删除绑定（仅替换），操作列为「清空全部」垃圾桶。
+ // The shortcuts page's command row: the left column holds the name centered across all bindings, the right column
+ // lists them, one per row: per-key keycaps plus a pencil (click to re-record that binding); recording embeds at the
+ // binding's position. No add/delete yet (replace only); the action column is the clear-all trash.
  */
 export function ShortcutBindingRow({
   entry,
@@ -57,7 +57,7 @@ export function ShortcutBindingRow({
   const { intl } = useZCodeIntl();
   const conflictBinding = isRecording ? recording?.conflictBinding : null;
 
-  // 录制内嵌块：出现在被替换条目 / 追加条目的位置（预览 kbd 抢占焦点）
+  // Inline recording block at the replaced/appended slot (the preview kbd takes focus)
   function renderRecorder() {
     return (
       <span className="flex min-w-0 flex-col gap-1">
@@ -65,9 +65,9 @@ export function ShortcutBindingRow({
           <Keyboard className="size-4 text-foreground-subtle" />
           <kbd
             ref={(el) => {
-              // 录制开始即抢占焦点：把焦点从可编辑元素（如上方搜索框）里拉出来，
-              // 否则中文 IME 会把 Shift+字母吞成组合输入，录制器只能收到
-              // isComposing/229 噪声事件，看起来就是「识别不了 Shift 组合」。
+              // Recording grabs focus at start: pull it out of editable elements (e.g. the search box above),
+              // else IMEs swallow Shift+letter into composition and the recorder gets only
+              // isComposing/229 noise, reading as cannot-recognize-Shift-chords.
               el?.focus();
             }}
             tabIndex={-1}
@@ -104,10 +104,10 @@ export function ShortcutBindingRow({
   }
 
   /**
-   * 单条绑定行：逐键键帽（shadcn Kbd 同款，h-5/min-w-5 居中，符号与字母尺寸一致）+
-   * 铅笔（点击键帽或铅笔即替换该条）。键帽只覆盖文字色（自定义 = 品牌色），不传 bg：
-   * bg-inherit 会经 cn 的 tailwind-merge 覆盖 Kbd 基类 bg-muted 且祖先链全透明，
-   * 芯片底色会消失。
+   // One binding row: per-key keycaps (shadcn Kbd style, h-5/min-w-5 centered, symbols and letters sized alike) plus
+   // a pencil (click keycap or pencil to replace). The keycap overrides text color only (custom = brand), never bg:
+   // bg-inherit via cn's tailwind-merge would override Kbd's bg-muted with a transparent ancestor chain,
+   // and the chip's surface vanishes.
    */
   function renderBinding(binding: string, index: number) {
     return (
@@ -162,7 +162,7 @@ export function ShortcutBindingRow({
             ? renderRecorder()
             : renderBinding(binding, index),
         )}
-        {/* 未分配命令录第一条：bindings 为空时录制态占满键位单元格 */}
+        {/* Unassigned commands record the first slot: with no bindings the recording state fills the keycap cell */}
         {isRecording && recording?.mode === "replace" && recording?.bindingIndex === null
           ? renderRecorder()
           : null}
@@ -182,7 +182,7 @@ export function ShortcutBindingRow({
           </button>
         ) : null}
       </span>
-      {/* 作用域独立成列：global = 全局生效；composer = 仅聊天输入框内生效 */}
+      {/* Scope in its own column: global = everywhere; composer = chat input only */}
       <span
         className="text-ui-sm text-foreground-subtle"
         data-testid={`settings-shortcut-scope-${entry.id}`}
@@ -198,8 +198,8 @@ export function ShortcutBindingRow({
           { id: "settings.shortcuts.clearAria" },
           { command: commandLabel },
         )}
-        // Web 端 menu 通道命令与录制入口同置灰：其默认键被根级回退监听固定消费，
-        // 清除成未分配也不会真的失效，放行会产出「显示未分配却仍触发」的分裂状态
+        // Web menu-channel commands disable recording too: the default key is consumed by the root fallback listener,
+        // so clearing to unassigned would not really disable it, a split shows-unassigned-yet-fires state.
         disabled={menuChannelUnavailable || bindings.length === 0}
         onClick={onClearAll}
         data-testid={`settings-shortcut-clear-${entry.id}`}

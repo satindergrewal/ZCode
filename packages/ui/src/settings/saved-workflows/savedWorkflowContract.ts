@@ -1,13 +1,13 @@
-// 已保存工作流中枢的跨组件类型契约。
-// 单独成文件，避免页（Section）与项目组（Group）互相 import 造成的环。
+// Cross-component type contract for the saved-workflows hub.
+// A separate file so the page (Section) and groups never import each other into a cycle.
 
-/** 工作流所属项目的坐标：发往对话（运行 / 修订 / 创建）与打开实例都用它，绝不取活动项目。 */
+/** The owning project's coordinates: used for conversation commands (run / revise / create) and instance opening; never the active project. */
 export type SavedWorkflowProjectTarget = {
   workspacePath: string;
   workspaceIdentity?: string;
 };
 
-/** 运行历史「查看实例」：切到发起它的会话并打开实例详情页；页列出所有项目，故必带所属 workspace。 */
+/** Run-history view-instance: switch to the originating session and open the instance detail page; the page lists all projects, so the owning workspace is required. */
 export interface SavedWorkflowsOpenRunParams {
   sessionId: string;
   runId: string;
@@ -18,12 +18,13 @@ export interface SavedWorkflowsOpenRunParams {
 }
 
 /**
- * 中枢的产物 chip → `workflow-artifact` tab。
+ * Hub artifact chip -> the workflow-artifact tab.
  *
- * ⚠ 术语：artifact = 脚本经 `artifact.*` 发布给用户看的产出。
+ * Terminology: artifact = the output the script published via artifact.*.
  *
- * 比 {@link SavedWorkflowsOpenRunParams} **少一个 `toolCallId`**：产物 tab 不画因果图，
- * 也就不必回到那条 CreateWorkflow 工具行。门因此只是 `parentSessionId` 在场。
+ * One field fewer than {@link SavedWorkflowsOpenRunParams}: no `toolCallId`, because the artifact
+ * tab draws no causality graph and never returns to that CreateWorkflow tool row. The gate is
+ * simply a present parentSessionId.
  */
 export interface SavedWorkflowsOpenArtifactParams {
   sessionId: string;
@@ -31,21 +32,22 @@ export interface SavedWorkflowsOpenArtifactParams {
   artifactId: string;
   title?: string;
   /**
-   * 最新版的 contentType（运行历史行的 chip 载荷带得到）。终点的 `handleOpenWorkflowArtifact`
-   * 据它决定 html 产物直接开浏览器 tab 还是开产物 tab；缺席（老行不带产物清单）即开产物 tab。
+   * Latest version's contentType (available on run-history chip payloads). The destination's
+   * handleOpenWorkflowArtifact uses it to open html artifacts straight into a browser tab vs the
+   * artifact tab; absent (legacy rows without an artifact list) means the artifact tab.
    */
   contentType?: string;
   workspacePath: string;
   workspaceIdentity?: string;
 }
 
-/** 组把自己的加载态回报给页；页据此算总数（count）、空态与首屏 spinner。 */
+/** A group's loading report to the page; the page derives the total count, empty states and the first-paint spinner from it. */
 export interface SavedWorkflowGroupState {
   loaded: boolean;
   empty: boolean;
-  /** 本组的合法工作流条数（未加载前为 0）；页对已加载组求和得到标题旁的总数。 */
+  /** Valid workflow rows in this group (0 before load); the page sums loaded groups for the count beside the title. */
   count: number;
 }
 
-/** 组的两种模式：列表 / 单个工作流详情。项目组与全局组共用。 */
+/** The group's two modes: list / single-workflow detail. Shared by project and global groups. */
 export type SavedWorkflowGroupMode = { kind: "list" } | { kind: "detail"; name: string };

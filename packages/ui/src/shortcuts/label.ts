@@ -1,6 +1,7 @@
 /**
- * 快捷键展示 label——绑定串 → 平台展示格式化。
- * 从 bindings.ts 拆出（展示层独立于匹配/录制/冲突，且 bindings.ts 有 max-lines 门禁）。
+ * Shortcut display labels — binding string -> platform-formatted label.
+ * Split from bindings.ts (display layer independent of match/record/conflicts; bindings.ts has a
+ * max-lines gate).
  */
 import { parseShortcutBinding } from "@zcode/shared";
 
@@ -10,9 +11,10 @@ import {
 } from "../lib/keyboardShortcuts.js";
 
 /**
- * 绑定串 → 逐键 token（设置页键帽渲染用）：macOS ["⇧","⌘","P"]、
- * Windows/Linux ["Ctrl","Shift","P"]。label 展示与键帽渲染共用同一 token 序列，
- * 顺序约定只有这一份；每个 token 独立渲染 Kbd 键帽，尺寸才不随内容漂移。
+ * Binding string -> per-key tokens (for keycap rendering in settings): macOS ["⇧","⌘","P"],
+ * Windows/Linux ["Ctrl","Shift","P"]. Label display and keycap rendering share one token sequence —
+ * the single source of the ordering convention; each token renders its own Kbd cap so sizes do not
+ * drift with content.
  */
 export function formatShortcutBindingLabelParts(
   binding: string,
@@ -28,7 +30,7 @@ export function formatShortcutBindingLabelParts(
   const isApple = isAppleKeyboardPlatform(platformInfo);
 
   if (isApple) {
-    // Apple 惯例修饰键顺序：⌃ ⌥ ⇧ ⌘
+    // Apple convention modifier order: Ctrl Alt Shift Cmd
     const parts: string[] = [];
     if (parsed.altGr) {
       parts.push("⌃", "⌥");
@@ -67,8 +69,8 @@ export function formatShortcutBindingLabelParts(
 }
 
 /**
- * 绑定串 → 平台展示 label。macOS 用符号风格（⌘ K、⌃ ⌥ ⇧ ⌘ P），Windows/Linux 用
- * Ctrl+Shift+P 风格；"=" 显示为 "+"（zoom 语义），命名键原样。
+ * Binding string -> platform display label. macOS uses symbol style (⌘ K, ⌃ ⌥ ⇧ ⌘ P);
+ * Windows/Linux use Ctrl+Shift+P style; "=" renders as "+" (zoom semantics), named keys verbatim.
  */
 export function formatShortcutBindingLabel(
   binding: string,

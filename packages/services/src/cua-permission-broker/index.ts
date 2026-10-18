@@ -26,12 +26,12 @@
 // plus the ax-types re-export via axReadOnly.
 export * from "@zcode/zcode-cua/broker/server";
 
-/** @deprecated 默认 CUA 装配不再使用，仅为旧注入方保留兼容导出。 */
+/** @deprecated Unused by the default CUA wiring; compatibility export for legacy injectors. */
 export {
   CuaAgentAdmissionGate,
   type CuaAgentSpawnAdmissionContext,
 } from "./cuaAgentAdmissionGate.js";
-// Services 自己拥有 permission-service descriptor value，并复用 producer ports type。
+// Services owns the permission-service descriptor value and reuses the producer's port types.
 export {
   ICuaPermissionService,
   isCuaPermissionStatusAvailable,

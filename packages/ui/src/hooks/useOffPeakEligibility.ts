@@ -3,7 +3,7 @@ import type { AppSettings } from "@zcode/shared";
 import { useServices } from "@/hooks/useServices.js";
 import { useOffPeakTaskStore } from "@/store/offPeakTaskStore.js";
 
-/** 两个闲时入口共享初始化/连接/Registry 通知边界，不在组件中另存资格。 */
+/** Both off-peak entry points share the initialization/connection/Registry notification boundary; eligibility is never stored in components. */
 export function useOffPeakEligibility(
   settings: AppSettings | null | undefined,
   registryRevision: number | undefined,
@@ -23,8 +23,10 @@ export function useOffPeakEligibility(
 
   useEffect(() => {
     if (freshnessKey === undefined) return;
-    // Settings 变化只是失效信号；ProviderSettings View revision 来自 Registry 已完成发布。
-    // 即使选择没变，账号稍后就绪也会重查；相同 key 的双入口通知由 Store 去重。
+    // Settings changes are only invalidation signals; the ProviderSettings view revision
+    // comes from an already-published Registry state. Even with unchanged selections, an
+    // account becoming ready later re-checks; duplicate same-key notifications across the
+    // two entry points are deduped by the Store.
     void refresh(offPeakTaskService, freshnessKey);
   }, [freshnessKey, offPeakTaskService, refresh]);
 }

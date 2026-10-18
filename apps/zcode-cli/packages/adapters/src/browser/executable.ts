@@ -88,6 +88,6 @@ export function resolveInstalledBrowserExecutable(
 }
 
 export async function loadPlaywrightChromium(): Promise<PlaywrightChromiumModule> {
-  // 延迟加载很关键：Desktop/app-server 路径不会启用 CLI headless，不能因外置依赖缺失而启动失败。
+  // Lazy loading matters: Desktop/app-server runs do not enable CLI headless and must not fail on a missing optional dep.
   return (await import("playwright-core")) as PlaywrightChromiumModule;
 }

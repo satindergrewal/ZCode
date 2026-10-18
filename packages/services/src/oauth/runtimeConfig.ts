@@ -2,7 +2,7 @@ import type { OAuthProviderId } from "@zcode/shared";
 import { createBigModelProviderRuntimeConfig } from "./providers/bigmodelProviderConfig.js";
 import { createZaiProviderRuntimeConfig } from "./providers/zaiProviderConfig.js";
 
-/** Provider 运行时配置（仅 host process 可见） */
+/** Provider runtime config (host process only) */
 export interface OAuthProviderRuntimeConfig {
   id: OAuthProviderId;
   displayName: string;
@@ -17,15 +17,15 @@ export interface OAuthProviderRuntimeConfig {
   appSecret?: string;
 }
 
-/** OAuth 全局运行时配置 */
+/** OAuth global runtime config */
 export interface OAuthRuntimeConfig {
   providers: OAuthProviderRuntimeConfig[];
 }
 
 /**
- * 从运行时环境变量生成 OAuth 配置。
+ * Build OAuth config from runtime env.
  *
- * 注意：这里只能在 host process 使用，避免把敏感配置暴露给 renderer。
+ * Host process only, keeping sensitive config away from the renderer.
  */
 export function createOAuthRuntimeConfig(env: NodeJS.ProcessEnv = process.env): OAuthRuntimeConfig {
   return {

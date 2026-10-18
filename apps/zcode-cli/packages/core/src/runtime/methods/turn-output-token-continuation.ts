@@ -41,18 +41,18 @@ export function isOutputTokenLimitFinishReason(
   finishReason: string | undefined,
   rawFinishReason: string | undefined,
 ): boolean {
-  // 有意设计（非 Bug）：成功响应的 model_context_window_exceeded 属于 Continue。
+  // By design, not a bug: a successful response bearing model_context_window_exceeded belongs to Continue.
 
-  // 即使 content 全空也共享最多 3 次恢复;
-  // Anthropic 允许 input 未超窗但 input + max_tokens 超窗；生成填满窗口会截断成功响应，
-  // 这不等同于 input 本身超窗导致的请求失败，不能仅按名称转成异常并抢先 Reactive Compact。
-  // 行为差异：之前见该成功 stop reason 就尝试 Reactive Compact；现在先保存 partial、
-  // 追加 Continue，再回到 outer loop 检查 Micro/Auto Compact，需要时压缩后发起续写。
-  // 续写若抛出真实超窗异常，Reactive Compact 成功后重试当前续写，无法恢复则报错；
-  // 压缩既不额外追加 Continue，也不重置已用次数，三次限制不包含压缩请求和异常重试。
-  // 第四次仍为成功截断时按输出上限报错，不再额外尝试一次 Reactive Compact。
-  // 因此，若服务端持续返回该标记而本地自动压缩未触发，可能多次无效续写后耗尽；
-  // 此取舍保留了先续写、按需压缩的原约定，不保证下一次续写一定成功。
+  // Even fully empty content shares the 3-recovery budget;
+  // Anthropic allows input under the window while input + max_tokens exceeds it; a window-filling generation truncates a success,
+  // not an input-overflow request failure; no name-based exception nor Reactive Compact race.
+  // Behavior change: that stop reason used to trigger Reactive Compact; now the partial is saved,
+  // Continue appended, and the outer loop re-checks Micro/Auto Compact before continuing.
+  // A real overflow throw in the continuation: Reactive Compact retries it on success, else errors;
+  // compaction adds no Continue, resets nothing; the 3-cap excludes compact requests and retries.
+  // A fourth successful truncation errors on the output limit, no further Reactive Compact.
+  // A server persisting this marker without local auto-compact can exhaust the budget on useless continuations;
+  // the trade keeps continue-first, compact-on-demand, promising nothing about the next try.
   return finishReason === "length" || OUTPUT_LIMIT_RAW_REASONS.has(rawFinishReason ?? "");
 }
 
@@ -79,8 +79,8 @@ export function preserveCanonicalContextPrefix(
   currentCanonicalEntries: readonly RuntimeMessageEntry[],
   turnLocalEntries: readonly RuntimeMessageEntry[],
 ): readonly RuntimeMessageEntry[] {
-  // 配置刷新会立即替换 canonical prefix，而恢复链继续持有原子 Turn 的旧
-  // prefix。turn-local Compact 若整体回写会撤销刷新，因此只提交转换后的 conversation tail。
+  // A config refresh swaps the canonical prefix at once while the recovery chain holds the atomic-Turn old
+  // prefix; a wholesale turn-local Compact write-back would undo it, so only the converted tail commits.
   return [
     ...currentCanonicalEntries.slice(0, countContextPrefixMessages(currentCanonicalEntries)),
     ...turnLocalEntries.slice(countContextPrefixMessages(turnLocalEntries)),
@@ -115,8 +115,8 @@ export function commitAssistantToTurnRequest(
   const hasAssistantContent =
     state.modelResponse.length > 0 || (reasoning?.length ?? 0) > 0 || (toolCalls?.length ?? 0) > 0;
   if (!hasAssistantContent) return false;
-  // provider result metadata 可能报告别的模型；assistant 归因必须使用
-  // Turn 已绑定的 Model，避免恢复链重新引入旧的 provider-owned 模型身份。
+  // Provider result metadata can name another model; assistant attribution must use the
+  // Turn-bound Model, so recovery cannot reintroduce the stale provider-owned identity.
   const modelRef = { providerId: state.model.providerId, modelId: state.model.modelId };
   commitTurnRequestEntries(runtime, state.turnRequestState, [
     createRuntimeAssistantEntry(

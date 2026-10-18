@@ -133,10 +133,10 @@ async function executeBashHandler(
   const progressTiming: BashProgressTiming = {};
   const commandTelemetry = startBashCommandTelemetry(parsed, context);
   const runOptions = createExecutionRunOptions(context, progressTiming, commandTelemetry);
-  // 后台命令完成后 runTaskNotificationBatch 会另起一轮通知 turn，该 turn 不带
-  // turnExecutionModel，闲时 turn 结束/失败后就会落到用户自己的套餐上跑完整 agent loop。
-  // 与 subagent runner 的 BACKGROUND_UNAVAILABLE 对称：闲时 turn 拒绝显式后台，也关闭超时自动转后台。
-  const backgroundDisabled = context.offPeakTurn === true;
+  // When a background command completes, runTaskNotificationBatch opens a fresh notification turn without
+  // turnExecutionModel, so an idle-time turn's end/failure lands the full agent loop on the user's own plan.
+  // Mirrors the subagent runner's BACKGROUND_UNAVAILABLE: idle turns reject explicit background and also
+  // disable timeout-auto-background.
   if (parsed.run_in_background && backgroundDisabled) {
     throw createCoreError(
       CoreErrorType.ToolExecutionFailed,
@@ -211,8 +211,8 @@ async function executeBashHandler(
     runtimeScope: context.runtimeScope,
   });
   if (cwdDecision.nextWorkingDirectory) {
-    // 主线程 Bash 成功后会保留项目内 cwd；
-    // 离开项目边界时 reset 回原始工作区，并把 reset 文案放进 Bash stderr。
+    // A successful main-thread Bash keeps the in-project cwd;
+    // leaving the project boundary resets to the original workspace, with the notice placed on Bash stderr.
     await context.setWorkingDirectory?.(cwdDecision.nextWorkingDirectory);
   }
   const output = await toBashOutput(result, parsed, context, {
@@ -319,8 +319,8 @@ function finishBashCommandTelemetry(
   } else if (result.status === "spawn_error") {
     telemetry.finishFailed("spawn", "configuration", result.error);
   } else if (result.status === "failed" && result.error) {
-    // 非零退出码是命令事实（例如 grep 未匹配），不等同于执行框架失败。
-    // 只有 Adapter 明确提供结构化 failure 时才污染 command failure rate。
+    // A nonzero exit is a command fact (e.g. grep no-match), not an execution-framework failure.
+    // Only an Adapter-provided structured failure pollutes the command failure rate.
     telemetry.finishFailed("execute", "internal", result.error);
   } else {
     telemetry.finishCompleted();
@@ -544,8 +544,8 @@ function createBashTimeoutBudgetResolver(
 ): NonNullable<ToolEntry["resolveTimeoutBudgetMs"]> {
   return (input) => {
     const parsed = BashInputSchema.safeParse(input);
-    // 旧 watchdog 直接读取 raw timeout，导致 0 被压成 1ms，且字符串数字绕过
-    // Bash policy。这里和 handler 共用 timeout || default / max 解析后再加 cleanup grace。
+    // The legacy watchdog read the raw timeout, squashing 0 to 1ms and letting numeric strings bypass
+    // Bash policy. Parse timeout || default / max here, shared with the handler, then add cleanup grace.
     return resolveBashTimeoutMs(parsed.success ? parsed.data.timeout : undefined, timeoutPolicy);
   };
 }

@@ -94,9 +94,10 @@ export function resolveDockerCommand(options: DockerCommandResolutionOptions = {
     }
   }
 
-  // macOS GUI 应用从 Dock/Finder 启动时通常不会继承 shell PATH，
-  // OrbStack/Docker Desktop 的 docker wrapper 仍可能位于这些稳定路径。
-  // 先查 PATH，再查常见安装位置，避免 daemon 正常运行时被误判为 Docker 不可用。
+  // macOS GUI apps launched from Dock/Finder usually do not inherit the shell
+  // PATH, while the OrbStack/Docker Desktop docker wrapper still sits at those
+  // stable locations. Check PATH, then common install locations, so a healthy
+  // daemon is not misread as "Docker unavailable".
   for (const candidate of getFallbackDockerCommands(platform, options.homeDir ?? homedir())) {
     if (isExecutable(candidate)) {
       return candidate;
@@ -167,9 +168,10 @@ export async function isDockerAvailable(): Promise<boolean> {
     await execDocker(["version", "--format", "{{.Server.Version}}"]);
     return true;
   } catch {
-    // 之前只把“docker 命令不存在”视为不可用，daemon 未启动时仍会误判成可用，
-    // UI 会继续展示 Docker 入口，直到真正连接时才报错。
-    // 这里改成任何探测失败都返回 false，让入口展示和实际可连接状态保持一致。
+    // Availability used to mean only "the docker binary exists", so a stopped
+    // daemon still looked usable and the UI kept the Docker entry until connect
+    // time failed. Any probe failure now returns false, keeping the entry state
+    // honest about actual connectability.
     return false;
   }
 }

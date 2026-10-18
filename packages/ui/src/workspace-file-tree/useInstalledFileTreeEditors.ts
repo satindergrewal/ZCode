@@ -19,7 +19,7 @@ export function useInstalledFileTreeEditors() {
         }
       })
       .catch((error) => {
-        logger.warn("[WorkspaceFileTree] 获取已安装 IDE 列表失败", {
+        logger.warn("[WorkspaceFileTree] Failed to list installed IDEs", {
           error: error instanceof Error ? error.message : String(error),
         });
       });

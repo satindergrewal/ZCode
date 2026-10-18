@@ -9,7 +9,7 @@ import {
 import { importLegacyAutomationSelections } from "#src/session/tasksDatabase/provider-selection-v2.js";
 import { OFFICIAL_GLM_SELECTION_MIGRATION_SQL } from "#src/session/tasksDatabase/official-glm-selection-v3.js";
 
-// 冻结历史列声明，不能以实时 Repo/schema 代替，否则新版构建会改变已应用 checksum。
+// Freeze historical column declarations; never substitute live repo/schema, or new builds change applied checksums.
 const columns = [
   ["tasks", "title_overridden", "INTEGER NOT NULL DEFAULT 0"],
   ["tasks", "last_unread_at", "INTEGER NOT NULL DEFAULT 0"],
@@ -41,8 +41,8 @@ const terminalStatuses = "'completed','failed','cancelled'";
 const activePredicate = `session_id IS NOT NULL AND status NOT IN (${terminalStatuses})`;
 const boundIndex = `CREATE UNIQUE INDEX IF NOT EXISTS idx_off_peak_bound_active ON off_peak_tasks(workspace_key,session_id) WHERE ${activePredicate}`;
 
-// 与 Agent 同样是库级串行事务，但不跨域依赖其具体 adapter。TS 转换使用冻结语义版本，
-// 禁用 function.toString 哈希：Electron/SEA 打包会改变函数文本而非迁移语义。
+// Like the Agent: DB-level serial transactions, no cross-domain adapter dependency. TS transforms use frozen semantic versions,
+// never function.toString hashes: Electron/SEA packaging changes function text, not migration semantics.
 const definitions = [
   {
     id: "0001_adopt_task_schema",
@@ -86,7 +86,7 @@ export function runTasksDatabaseMigrations(
     db.exec(`CREATE TABLE IF NOT EXISTS tasks_schema_migration (
       id TEXT PRIMARY KEY, checksum TEXT NOT NULL, time_applied INTEGER NOT NULL
     )`);
-    // 锁内、版本 SQL 之前采集；空账本是 none，异常编号不作为遥测原文发送。
+    // Captured under lock before version SQL; an empty ledger is none, and abnormal numbers never go to telemetry verbatim.
     const baseline = db
       .prepare("SELECT id FROM tasks_schema_migration ORDER BY id DESC LIMIT 1")
       .get();
@@ -125,11 +125,11 @@ export function runTasksDatabaseMigrations(
     db.exec("COMMIT");
     migrationFacts.committedCount = migrationFacts.executedCount;
   } catch (error) {
-    // 回滚也可能因 IO 失败，不能覆盖真正导致迁移失败的异常。
+    // Rollback can also fail on IO; never mask the error that actually failed the migration.
     try {
       if (db.isTransaction) db.exec("ROLLBACK");
     } catch {
-      /* 调用方关闭连接恢复。 */
+      /* Caller closes the connection to recover. */
     }
     if (error && typeof error === "object" && currentMigrationId)
       Object.assign(error, { migrationId: currentMigrationId });
@@ -148,7 +148,7 @@ function adoptSchema(db: DatabaseSync): void {
     }
   }
   db.exec(indexes);
-  // 沿用已裁决的旧重复绑定保留策略，但不再吞掉权限/语法/磁盘等真实 SQL 错误。
+  // Keep the adjudicated legacy duplicate-binding retention, but stop swallowing real SQL errors (permissions/syntax/disk).
   const duplicate = db
     .prepare(`SELECT 1 FROM off_peak_tasks WHERE ${activePredicate}
     GROUP BY workspace_key, session_id HAVING count(*)>1 LIMIT 1`)
@@ -156,7 +156,7 @@ function adoptSchema(db: DatabaseSync): void {
   if (!duplicate) db.exec(boundIndex);
 }
 
-/** 交接只复用已完成初始化；每个新连接仍按冻结账本确认，替换/清空文件不能假 ready。 */
+/** Handoff reuses completed initialization only; every new connection re-confirms via the frozen ledger - replaced/cleared files are not ready. */
 export function areTasksDatabaseMigrationsApplied(db: DatabaseSync): boolean {
   if (
     !db
@@ -180,7 +180,7 @@ export function areTasksDatabaseMigrationsApplied(db: DatabaseSync): boolean {
   return true;
 }
 
-/** 只读账本的展示预检，不授权执行；迁移 runner 拿锁后仍复查每一项。 */
+/** Read-only ledger precheck for display, never authorization; the runner rechecks each item under lock. */
 export function inspectTasksMigrationKind(db: DatabaseSync): DatabaseMigrationFacts["kind"] {
   const hasLedger = db
     .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='tasks_schema_migration'")

@@ -31,7 +31,7 @@ export function WorkspaceWebRemoteControlTrigger({
         <Button
           variant="ghost"
           onClick={() => {
-            logger.info("[WorkspaceWebRemoteControlTrigger] 打开远程控制弹层", {
+            logger.info("[WorkspaceWebRemoteControlTrigger] Open remote control dialog", {
               workspacePath,
               workspaceIdentity: workspaceIdentity ?? "none",
             });
@@ -46,7 +46,7 @@ export function WorkspaceWebRemoteControlTrigger({
             className,
           )}
         >
-          {/* 入口统一使用远程控制图标，具体 Bot 渠道在弹层内区分。 */}
+          {/* The entry always uses the remote-control icon; Bot channels are distinguished inside the dialog. */}
           <Smartphone className="size-4 text-foreground-subtle" />
           {compact ? (
             <span className="sr-only">

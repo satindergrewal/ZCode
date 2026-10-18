@@ -33,7 +33,8 @@ export function useBackgroundBashOutput(target: BackgroundBashOutputTarget, visi
     let disposed = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const poll = async () => {
-      // 隐藏后重新打开时，旧请求仍可能在途；等其结束，但绝不应用旧响应。
+      // After hide/reopen, a stale request may still be in flight; await it but never
+      // apply the old response.
       if (inFlight.current) await inFlight.current.catch(() => undefined);
       if (disposed) return;
       const request = (async () => {

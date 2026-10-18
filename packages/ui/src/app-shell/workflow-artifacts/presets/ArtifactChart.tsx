@@ -1,14 +1,19 @@
 /**
- * `chart` 预置渲染器的**入口**：懒加载 + 局部故障隔离，本模块自己不碰 recharts。
+ * ENTRY point of the `chart` preset renderer: lazy loading plus localized failure
+ * isolation; this module itself never touches recharts.
  *
- * 为什么必须懒：recharts 在模块初始化阶段会触发 decimal.js-light 的 LN10 校验，在 Electron
- * Linux 容器里会阻断整个 renderer 启动（`AppUsagePanel.tsx` 里记着的那次修复；spec 的
- * 「预置渲染器」行也把 `lazy()` 写成硬要求）。所以：
- * - 绘图体在 `ArtifactChartView.tsx`，只经 `lazy()` 的动态 import 抵达；
- * - 这个文件与 `index.ts` 的静态依赖里没有 recharts，谁 import 它们都不会把图表打进首屏。
+ * Why lazy is mandatory: recharts triggers decimal.js-light's LN10 check at module-init
+ * time, which blocks the whole renderer boot in Electron Linux containers (the fix recorded
+ * in `AppUsagePanel.tsx`; the spec's preset-renderer row also mandates `lazy()`).
+ * Therefore:
+ * - the plotting body lives in `ArtifactChartView.tsx`, reachable only via `lazy()` dynamic
+ *   import;
+ * - this file and `index.ts` have no static recharts dependency, so importing them never
+ *   pulls charts into the first paint.
  *
- * 调用方也可以绕过这层，自己 `lazy(() => import(".../ArtifactChartView.js"))` 并接管
- * Suspense / 错误边界——本文件只是那套接法的默认封装。
+ * Callers may bypass this wrapper with their own
+ * `lazy(() => import(".../ArtifactChartView.js"))` and own Suspense/error boundaries —
+ * this file is just the default wiring for that pattern.
  */
 
 import { lazy, Suspense } from "react";
@@ -22,7 +27,7 @@ const ArtifactChartView = lazy(
   () => import("@/app-shell/workflow-artifacts/presets/ArtifactChartView.js"),
 );
 
-/** 加载中的占位：只占位不说话——一句「加载中」在 200ms 的懒加载里只会闪一下。 */
+/** Loading placeholder: space only, no words — a "loading" label in a 200ms lazy load just flickers. */
 function ChartSkeleton({ compact }: { compact: boolean }) {
   return (
     <div
@@ -50,7 +55,7 @@ export function ArtifactChart({
   className?: string;
 }) {
   return (
-    // 图表崩了只塌这一块，run 侧板的其余部分照常——产物区是交付面，不该是单点故障。
+    // A chart crash collapses only this block; the rest of the run side pane keeps working — the artifact area is a deliverable surface and must not be a single point of failure.
     <ScopedErrorBoundary
       resetKeys={[spec, compact]}
       scope="workflow-artifact-chart"

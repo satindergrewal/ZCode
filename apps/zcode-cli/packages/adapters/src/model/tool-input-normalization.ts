@@ -14,8 +14,8 @@ export function normalizeModelToolInput(
     return {};
   }
   if (input === null) {
-    // 上游会先把合法 JSON 字面量 "null" 解析成原生 null；
-    // 这里必须与 string parse-null 使用相同恢复语义，且不能伪造原始长度。
+    // Upstream parses the legal JSON literal "null" into native null;
+    // recovery here must match the string parse-null path and never fabricate lengths.
     warnAndRecoverMalformedToolInput(new TypeError("Model tool input must not be null"), options, {
       inputType: "null",
     });
@@ -31,8 +31,8 @@ export function normalizeModelToolInput(
   try {
     const normalizedInput = JSON.parse(stripByteOrderMark(input));
     if (normalizedInput === null) {
-      // JSON null 虽然语法合法，但不能表示工具参数。与 malformed
-      // JSON 一样降级为空对象，让既有工具 schema 决定后续结果。
+      // JSON null is legal syntax but cannot be tool arguments; degrade to an empty
+      // object like malformed JSON and let the tool schema decide the outcome.
       throw new TypeError("Model tool input must not be null");
     }
     return normalizedInput;
@@ -40,9 +40,9 @@ export function normalizeModelToolInput(
     warnAndRecoverMalformedToolInput(error, options, {
       inputLength: input.length,
     });
-    // AI SDK 已提供 final tool-call；此处抛 invalid_model_response
-    // 会把参数错误错误地升级为整个模型请求失败。严格解析失败后只降级为
-    // 空对象，由普通工具 schema 决定返回 error result 还是继续执行。
+    // The AI SDK already provided the final tool-call; throwing invalid_model_response
+    // here would upgrade a bad argument into a whole-request failure. After strict parse failure degrade
+    // to an empty object and let the normal tool schema return an error result or proceed.
     return {};
   }
 }

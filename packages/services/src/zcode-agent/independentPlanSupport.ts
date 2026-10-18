@@ -3,7 +3,7 @@ import type { ZCodeProtocolClient } from "./zcodeProtocolClient.js";
 
 const checks = new WeakMap<object, Promise<void>>();
 
-/** Host 更新不代表远端 CLI 已更新；旧 CLI 会剥掉 Plan 字段，必须在发送前确认执行端。 */
+/** A host update does not update the remote CLI; old CLIs strip Plan fields, so verify the executor. */
 export function ensureIndependentPlanSupport(
   client: Pick<ZCodeProtocolClient, "request">,
 ): Promise<void> {

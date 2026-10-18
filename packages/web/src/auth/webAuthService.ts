@@ -33,7 +33,7 @@ interface WebAuthLoginOptions {
   devReturnTo?: string;
   appReturnTo?: string;
   redirectUri?: string;
-  /** 缺省 zai，保持 /remote 等既有入口行为不变。 */
+  /** Defaults to zai, keeping /remote and other existing entries unchanged. */
   provider?: WebOAuthProviderId;
 }
 
@@ -136,10 +136,11 @@ export class WebAuthService {
 
     const pendingNonce = this.repo.loadPendingNonce();
     if (statePayload.nonce !== pendingNonce) {
-      throw new Error("OAuth CSRF 检测失败");
+      throw new Error("OAuth CSRF check failed");
     }
-    // provider 必须取跳转前记下的那个：authorize 参数名和 token 响应里 access_token 的位置
-    // 都是 provider 特定的。缺失时按 zai 兜底，保持旧回调链接可用。
+    // The provider must be the one recorded before redirect: authorize param names and the
+    // access_token location in the token response are provider-specific. Fall back to zai
+    // when missing so legacy callback links keep working.
     const provider = this.repo.loadPendingProvider() ?? ZAI_PROVIDER_ID;
     this.repo.clearPendingNonce();
     this.repo.clearPendingProvider();

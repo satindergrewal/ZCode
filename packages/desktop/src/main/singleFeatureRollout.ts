@@ -1,14 +1,14 @@
 /**
- * 单功能灰度 rollout 的通用机制层：TTL 缓存、in-flight 去重、3s 请求超时、
- * awaitFirstDecision 有界裁决。解析层（每个 feature 各自的 resolveConfig）由调用方注入。
+ * * Generic mechanism for per-feature rollouts: TTL cache, in-flight dedupe, 3s request timeout,
+ * and a bounded awaitFirstDecision. Parsing (each feature's resolveConfig) is injected by the caller.
  *
- * 抽取原因：desktopContextPromptRollout 与 rendererActionTraceRollout 共享同一套
- * /api/v1/client/configs 旁路请求机制，只有 `data.configs.<key>` 的解析不同；复制两份
- * 170 行机制代码会让超时/TTL 语义悄悄分叉。
+ * Extracted because desktopContextPromptRollout and rendererActionTraceRollout share the same
+ * /api/v1/client/configs side-channel mechanics, differing only in data.configs.<key> parsing; two copied
+ * 170-line implementations would quietly fork their timeout/TTL semantics.
  *
- * 语义约定（与 desktopContextPromptRollout 一致，CUA 灰度 fail-close 也复用同一语义）：
- * - 请求失败/超时/解析失败：沿用上次快照（首次即失败 → 初始快照，由 defaultValue 决定）；
- * - 服务端成功但未下发该 key：视为"未启用"，覆盖旧缓存（不能继续沿用旧的开启快照）。
+ * Semantics (matching desktopContextPromptRollout; CUA fail-close reuses them):
+ * * - failure/timeout/parse error: keep the last snapshot (first-run failure means the initial snapshot from defaultValue);
+ * - success without the key: treated as disabled, overwriting the cache (a stale enabled snapshot must not survive).
  */
 interface SingleFeatureRolloutConfig {
   enabled: boolean;
@@ -19,13 +19,13 @@ export interface SingleFeatureRollout<T extends SingleFeatureRolloutConfig> {
   refresh(): Promise<T>;
   getSnapshot(): T;
   /**
-   * 有界等待一次灰度裁决：与服务端请求 race，超时则回退当前快照。
+   * Bounded wait for one rollout decision: races the server request, falling back to the current snapshot on timeout.
    *
-   * 设计原因：Host/Agent 的 presentation surface 在进程启动时冻结（services/node.ts 顶层
-   * const + CLI --surface），而灰度请求是旁路、不阻塞 Host。若首个 Host fork 早于请求
-   * resolve，成功结果对已冻结的 Host/Agent 无可达生效路径。该方法给"成功结果"
-   * 一条有界的生效路径：调用方在首个 Host fork 前 await 它，拿到真值后再让 spawn 流程
-   * 同步读取快照。本身无状态——first-only latch 由调用方（desktop main）持有。
+   * Why: the Host/Agent presentation surface freezes at process start (services/node.ts top-level
+   * const + CLI --surface) while rollout requests are side-channel and never block the Host. If the first Host fork
+   * beats the response, a success has no path into the frozen Host/Agent. awaitFirstDecision gives the success
+   * a bounded path: the caller awaits it before the first fork, letting the spawn flow
+   * read the snapshot synchronously with the real value. Stateless here; the first-only latch lives in desktop main.
    */
   awaitFirstDecision(timeoutMs: number): Promise<T>;
 }
@@ -39,12 +39,12 @@ const SINGLE_FEATURE_REQUEST_TIMEOUT_MS = 3_000;
 const SINGLE_FEATURE_CACHE_TTL_MS = 60 * 60 * 1_000;
 
 interface CreateSingleFeatureRolloutOptions<T extends SingleFeatureRolloutConfig> {
-  /** 解析 /api/v1/client/configs 响应体；null 表示响应无效（按失败处理，沿用旧快照）。 */
-  resolveConfig: (payload: unknown) => T | null;
-  /** 初始快照（fail-open feature 传 {enabled:true}，fail-close 传 {enabled:false}）。 */
-  defaultValue: T;
-  /** 日志前缀，如 "desktop-context-prompt" / "renderer-action-trace"。 */
-  logTag: string;
+  /** Parses /api/v1/client/configs bodies; null means invalid (treated as failure, keep last snapshot).
+   */ resolveConfig: (payload: unknown) => T | null;
+  /** Initial snapshot: fail-open features pass {enabled:true}, fail-close {enabled:false}.
+   */ defaultValue: T;
+  /** Log prefix, e.g. desktop-context-prompt / renderer-action-trace.
+   */ logTag: string;
   fetchConfig: (signal: AbortSignal) => Promise<unknown>;
   logger: SingleFeatureRolloutLogger;
   timeoutMs?: number;
@@ -94,7 +94,7 @@ export function createSingleFeatureRollout<T extends SingleFeatureRolloutConfig>
         });
         return snapshot;
       } catch (error) {
-        // 灰度配置是旁路能力：服务端异常或超时不能阻塞客户端；有成功结果时沿用，首次失败回退默认。
+        // Rollouts are side-channel: server failure/timeout never blocks the client; keep successes, default on first failure.
         options.logger.warn(`[${options.logTag}] config unavailable, using cached decision`, {
           error,
           enabled: snapshot.enabled,
@@ -127,13 +127,13 @@ export function createSingleFeatureRollout<T extends SingleFeatureRolloutConfig>
     refresh,
     getSnapshot: () => snapshot,
     awaitFirstDecision: (timeoutMs: number) => {
-      // 与 refresh() race：refresh 内部已有 TTL/inFlight 去重 + 3s 请求超时，且永不 reject
-      // （异常时返回上次快照）；外层 timeout 到点回退当前 snapshot。两支均 resolve，
-      // 保证调用方（首个 Host fork 路径）永远不会被 reject 阻塞。
+      // Race refresh(): it already dedupes via TTL/in-flight with a 3s timeout and never rejects
+      // (returning the last snapshot on error); the outer timeout falls back to the current snapshot. Both branches resolve,
+      // so the caller (first Host fork path) is never blocked by a rejection.
       const boundedTimeout = Math.max(timeoutMs, 1);
       const fallback = new Promise<T>((resolve) => {
         const timer = setTimeout(() => resolve(snapshot), boundedTimeout);
-        // 旁路计时器不能阻止进程退出（测试/关机场景）。
+        // Side-channel timers must not hold the process open (tests/shutdown).
         timer.unref?.();
       });
       return Promise.race([refresh(), fallback]);

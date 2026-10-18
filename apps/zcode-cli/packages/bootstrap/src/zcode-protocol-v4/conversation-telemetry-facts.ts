@@ -158,8 +158,8 @@ function eventTimestamp(event: SessionEvent): number {
 function automationAdmission(inputId: string | undefined, automationId: string | undefined) {
   if (!inputId || !automationId) return {};
   const parsed = parseAutomationRunId(inputId);
-  // inputId 不是本 automation 的 runId（历史入口漏传、异常透传）时不猜触发方式：
-  // 只保留关联 ID，避免把普通输入误标成 schedule 或从无关字符串切出伪 scheduledAt。
+    // When inputId is not this automation's runId (legacy entries missing it, exceptions passed through), do not guess the trigger:
+    // keep only the correlation id -- never mislabel plain input as schedule or slice a fake scheduledAt from unrelated strings.
   if (!parsed || parsed.automationId !== automationId) return { automationId };
   return {
     automationId,
@@ -251,8 +251,8 @@ function modelRequestQueueKey(sessionId: string, querySource: string | undefined
 }
 
 function isStepUsageQuerySource(querySource: string | undefined): boolean {
-  // `workflow_child`：动态工作流子代理。
-  // 该来源必须放行，否则子代理的 token 进不了业务埋点。
+    // `workflow_child`: dynamic-workflow subagents.
+    // This source must be allowed through, or subagent tokens never reach business telemetry.
   return (
     querySource === undefined ||
     querySource === "main_turn" ||
@@ -282,9 +282,9 @@ function compactTerminalStatus(
 }
 
 /**
- * 把本进程 live SessionEvent 中的轮次起止归一成 `turn.started` / `turn.terminal` 事实，
- * 供 App/服务端统计运行中的会话数。事实不带正文，只带 admission 给出的 inputId 与终态摘要。
- * 该类不读取 transcript/snapshot，因而无法在 hydration/recovery 时补造事件。
+  * Normalizes turn start/terminal from this process's live SessionEvents into `turn.started` / `turn.terminal` facts
+  * so App/server can count in-flight sessions. Facts carry no bodies, only the admission inputId and a terminal summary.
+  * The class reads no transcript/snapshot, so it cannot fabricate events during hydration/recovery.
  */
 export class ConversationTelemetryFactNormalizer {
   private readonly firstStreamChunks = new BoundedKeySet();
@@ -325,7 +325,7 @@ export class ConversationTelemetryFactNormalizer {
           payload.backgroundSource === "workflow"
             ? payload.backgroundSource
             : undefined;
-        // 用户轮与 background wake 均由 admission 提供 inputId，不混用持久化 messageId。
+                // User turns and background wakes alike get inputId from admission; never mix in persisted messageIds.
         const inputId = optionalString(payload.inputId);
         if (turnKey && inputId) this.sourceCommandByTurn.set(turnKey, inputId);
         return conversationTelemetryFactSchema.parse({
@@ -344,8 +344,8 @@ export class ConversationTelemetryFactNormalizer {
       }
       case SessionEventType.ModelNetworkStatus: {
         const payload = event.payload as ModelNetworkStatusPayload;
-        // 准入等待的两端不是 provider 请求状态：
-        // fact 的 status 枚举不收它们，显式跳过而不是让 schema.parse 抛出。
+                // The two ends of admission waiting are not provider request states:
+                // the fact status enum does not include them, so skip explicitly instead of letting schema.parse throw.
         if (payload.type === "model_request_queued" || payload.type === "model_request_admitted") {
           return null;
         }
@@ -473,9 +473,9 @@ export class ConversationTelemetryFactNormalizer {
         const error =
           event.type === SessionEventType.ToolCallError ? (payload as ToolCallErrorPayload) : null;
         const display = recordValue(result?.result.display);
-        // runtime 把 perf 改为 nested detail，旧 normalizer 仍把它
-        // 原样塞进扁平 strict fact，导致整条工具终态被丢弃。这里必须只做显式白名单映射，
-        // 不能再次透传 detail 或本地诊断用的 command.hash。
+                // The runtime turned perf into a nested detail while the legacy normalizer
+                // still stuffed it verbatim into the flat strict fact, dropping the whole tool terminal state. Map via an explicit
+                // allowlist only -- never pass through detail or the locally-diagnostic command.hash.
         const performance = toToolPerformanceFact(result?.result.perf);
         const phase =
           event.type === SessionEventType.ToolCallStarted
@@ -508,8 +508,8 @@ export class ConversationTelemetryFactNormalizer {
             : {}),
           ...(result?.result.error ? { errorMessage: result.result.error.message } : {}),
           ...skillTelemetryFactFields(toolName, error?.skillMetadata ?? result?.skillMetadata),
-          // subagent mirror 把父子关联放在工具事件 payload 顶层，旧 normalizer
-          // 只读取 result.display，导致 agent_id 等字段在进入 agent_step 前被静默丢弃。
+                    // The subagent mirror puts parent/child linkage at the top level of the tool event payload; the legacy normalizer
+                    // read only result.display, silently dropping agent_id and friends before agent_step.
           ...mirroredSubagentToolFields(rawPayload, display),
           ...(performance ? { performance } : {}),
         });
@@ -568,9 +568,9 @@ export class ConversationTelemetryFactNormalizer {
         } else {
           this.completedModelRequests.delete(requestQueueKey);
         }
-        // 标题 sidecar 沿用当前 turnId，若把它的 ModelComplete 也转成
-        // usage.delta，renderer 会把每轮标题的 64/8 tokens 累加进主对话 completion。
-        // 本期只放行主轮和 subagent request usage；sidecar/compact/tool_internal 仍不外送。
+                // The title sidecar reuses the current turnId; converting its ModelComplete into
+                // usage.delta too would make the renderer accumulate every turn's 64/8 title tokens into the main conversation completion.
+                // This round only main-turn and subagent-request usage passes; sidecar/compact/tool_internal stay internal.
         if (!isStepUsageModelComplete(payload)) return null;
         const usage = recordValue(payload.usage);
         return conversationTelemetryFactSchema.parse({
@@ -600,8 +600,8 @@ export class ConversationTelemetryFactNormalizer {
         });
       }
       case SessionEventType.DynamicWorkflowRunProgress: {
-        // 动态工作流子代理的归属事实：actor-created 登记、
-        // run-settled 结算；其余引擎事件不进埋点。
+                // Dynamic-workflow subagent attribution facts: actor-created registers,
+                // run-settled settles; other engine events never reach telemetry.
         return workflowLifecycleFactFromProgress(
           base,
           event.payload as DynamicWorkflowRunProgressPayload,
@@ -628,7 +628,7 @@ export class ConversationTelemetryFactNormalizer {
             : {}),
           background: payload.background === true,
           ...(optionalString(payload.status) ? { status: optionalString(payload.status) } : {}),
-          // stopped 可独立收口后台埋点；保留 Runtime 已有错误，避免失败汇总丢失原因。
+                    // stopped can close out background telemetry on its own; keep the Runtime's existing error so failure summaries keep the cause.
           ...(event.type === SessionEventType.SubagentStopped && optionalString(payload.error)
             ? { errorMessage: optionalString(payload.error) }
             : {}),

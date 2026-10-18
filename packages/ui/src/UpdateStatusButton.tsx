@@ -64,8 +64,9 @@ export function UpdateStatusButton({
       return;
     }
 
-    // 下载完成事件在部分平台只稳定带 version。入口 hover 继续缓存
-    // 刚发现更新时的说明，确保弹窗外移后主入口行为仍和原来一致。
+    // Some platforms' download-complete event reliably carries only the version. The entry's
+    // hover keeps caching the notes captured at discovery so the main entry behaves as before
+    // now that the dialog moved out.
     releaseNotesCacheRef.current.set(releaseNotesCacheKey, {
       releaseDateLabel: formattedReleaseDate,
       releaseNotes: localizedUpdateReleaseNotes,
@@ -83,8 +84,8 @@ export function UpdateStatusButton({
   const restoredUpdateReleaseNotes =
     localizedUpdateReleaseNotes ?? cachedReleaseNotes?.releaseNotes ?? null;
   const restoredReleaseDate = formattedReleaseDate ?? cachedReleaseNotes?.releaseDateLabel ?? null;
-  // 用户开始下载后，弹窗主任务已经从“了解版本内容”切换到“观察下载进度”。
-  // 继续展示更新日志会挤占进度区域，也会让主按钮 hover 和弹窗在下载中重复露出日志。
+  // Once downloading, the dialog's job shifts from reading release notes to watching progress.
+  // Notes would crowd the progress area and duplicate between button hover and dialog.
   const visibleUpdateReleaseNotes =
     dialogPhase === "downloading" ? null : restoredUpdateReleaseNotes;
   const handleOpenReleaseNotesExternalUrl = useCallback(
@@ -102,7 +103,8 @@ export function UpdateStatusButton({
 
   if (!displayVersion) return null;
 
-  // 更新弹窗和按钮 hover 共用同一个更新日志标题，避免 feed 自带 releaseName 与正文标题重复。
+  // Dialog and button hover share one release-notes title so the feed's releaseName never
+  // duplicates the body heading.
   const releaseNotesTitle = intl.formatMessage(
     { id: "updateReady.releaseNotesTitle" },
     { version: displayVersion },
@@ -129,10 +131,11 @@ export function UpdateStatusButton({
       aria-label={tooltipTitle}
       onClick={handleUpdateEntryClick}
       className={cn(
-        // 只把更新弹窗改成中性视觉，主页面更新入口要保留 success 色块，避免顶部状态提示变弱。
-        // 自动下载不会主动打开更新窗口；下载态入口必须保持可点，用户才能进入窗口取消下载。
-        // xs button 的固定 h-5 和展开态固定宽度只适配默认字号，UI 字号调大后会裁切文案。
-        // 改用最小高度配合内容宽度，默认仍保持紧凑，较大字号则由文字自然撑开按钮。
+        // Only the dialog goes neutral; the in-page entry keeps its success color so the header
+        // status stays prominent. Auto-download never opens the window by itself, so the entry
+        // must stay clickable to cancel from the window. The xs button's fixed h-5 and fixed
+        // expanded width fit only the default font scale and clip when larger; switch to min-height
+        // plus intrinsic width — compact by default, growing with the text.
         "h-auto min-h-5 gap-1 rounded-full py-0.5 font-medium leading-none text-ui-xs w-6 border-transparent bg-success text-success-foreground hover:bg-success/80 transition-all",
         dialogPhase !== "downloading" && expandWidthClass,
         className,
@@ -140,7 +143,7 @@ export function UpdateStatusButton({
     >
       {dialogPhase === "downloading" ? (
         <LoaderCircle
-          // 下载态本身要靠 spinner 表达 loading，不能复用普通更新图标的展开隐藏规则。
+          // The downloading state shows loading via the spinner; do not reuse the normal icon's expand/hide rule.
           className="size-3 shrink-0 animate-spin"
         />
       ) : (

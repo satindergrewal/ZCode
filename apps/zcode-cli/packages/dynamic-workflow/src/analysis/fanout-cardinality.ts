@@ -1,12 +1,12 @@
 import ts from "typescript";
 
 /**
- * fan-out 的**字面量基数**：
- * 被迭代的表达式是无展开元素的数组字面量，或一个只初始化一次、从未被写入的 `const`
- * 绑定到这样的字面量时，基数 = 字面量长度；其余一律 `undefined`。
+  * The **literal cardinality** of a fan-out:
+  * when the iterated expression is an array literal of unspread elements, or a once-initialized never-written const
+  * bound to such a literal, the cardinality is the literal length; otherwise always undefined.
  *
- * 这是**铸造期**（interpret.ts）的工作——它要看 AST 与 checker，而投影不许再看代码。
- * 原则是宁缺毋滥：任何不确定都给缺席，交接图随之画一张 `many` 卡，绝不猜一个数。
+  * This is **mint-time** work (interpret.ts) -- it needs the AST and checker; projections must not re-read code.
+  * Rule: prefer absence over guessing -- any doubt yields absence, the handoff graph draws a many card, never a guessed number.
  */
 export function literalCardinality(iterated: ts.Expression, checker: ts.TypeChecker): number | undefined {
   const expr = unwrap(iterated);
@@ -27,7 +27,7 @@ export function literalCardinality(iterated: ts.Expression, checker: ts.TypeChec
   return isEverWritten(symbol, decl.getSourceFile(), checker) ? undefined : length;
 }
 
-/** `(xs)`, `xs as const`, `xs!`, `xs satisfies T` 都是同一个数组。 */
+/** (xs), xs as const, xs!, xs satisfies T are all the same array. */
 function unwrap(expr: ts.Expression): ts.Expression {
   let current = expr;
   for (;;) {
@@ -46,13 +46,13 @@ function spreadFreeLength(literal: ts.ArrayLiteralExpression): number | undefine
   return literal.elements.length > 0 ? literal.elements.length : undefined;
 }
 
-/** 就地改变数组内容的方法：经它们调用过的绑定不再是字面量长度。 */
+/** In-place array mutators: a binding called through them no longer counts as literal-length. */
 const MUTATORS = new Set(["push", "pop", "shift", "unshift", "splice", "sort", "reverse", "fill", "copyWithin", "length"]);
 
 /**
- * 该绑定是否被写过：`xs.push(…)` 之类的就地方法、`xs[i] = …` / `xs[i]++`、`xs.length = 0`，
- * 以及（虽然 `const` 已禁止）对名字本身的赋值。别名（`const ys = xs; ys.push()`）与把数组
- * 传进函数不在检查范围——只看这三类写；它们之外的形状本来就会给出缺席以外的答案。
+  * Whether the binding is written: in-place methods such as xs.push(...), xs[i] = ... / xs[i]++, xs.length = 0,
+  * and (though const forbids it) assignment to the name itself. Aliases (const ys = xs; ys.push()) and passing the array
+  * into functions are out of scope -- only these three write shapes; anything else would answer absence anyway.
  */
 function isEverWritten(symbol: ts.Symbol, file: ts.SourceFile, checker: ts.TypeChecker): boolean {
   let written = false;
@@ -69,7 +69,7 @@ function isEverWritten(symbol: ts.Symbol, file: ts.SourceFile, checker: ts.TypeC
 
 function isWriteReference(id: ts.Identifier): boolean {
   const parent = id.parent;
-  // 声明处本身不是写。
+    // The declaration site itself is not a write.
   if (ts.isVariableDeclaration(parent) && parent.name === id) return false;
   // xs.push(...) / xs.length = 0
   if (ts.isPropertyAccessExpression(parent) && parent.expression === id) {
@@ -80,7 +80,7 @@ function isWriteReference(id: ts.Identifier): boolean {
   }
   // xs[i] = ... / xs[i]++ / delete xs[i]
   if (ts.isElementAccessExpression(parent) && parent.expression === id) return isAssignmentTarget(parent);
-  // xs = ... （const 下类型错误，但仍算写）
+    // xs = ... (a type error under const, but still a write)
   return isAssignmentTarget(id);
 }
 
@@ -94,7 +94,7 @@ function isAssignmentTarget(node: ts.Expression): boolean {
     return parent.operator === ts.SyntaxKind.PlusPlusToken || parent.operator === ts.SyntaxKind.MinusMinusToken;
   }
   if (ts.isDeleteExpression(parent)) return true;
-  // 解构赋值目标：[xs[0]] = ... / ({ a: xs[0] } = ...)
+    // Destructuring assignment targets: [xs[0]] = ... / ({ a: xs[0] } = ...)
   if (ts.isArrayLiteralExpression(parent) || ts.isPropertyAssignment(parent) || ts.isShorthandPropertyAssignment(parent)) {
     let up: ts.Node = parent;
     while (ts.isArrayLiteralExpression(up) || ts.isObjectLiteralExpression(up) || ts.isPropertyAssignment(up) || ts.isShorthandPropertyAssignment(up) || ts.isSpreadElement(up)) {

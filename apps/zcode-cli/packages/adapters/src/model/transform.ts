@@ -106,14 +106,14 @@ export function toAiSdkMessages(
           );
         }
         const toolName = projectToolNameForProvider(message.toolName, options);
-        // 含 video 的 tool result 在所有 provider kind 上都强制 textify + 后置投影：
-        // AI SDK tool result part 无 video 变体，anthropic 内嵌路径同样会丢失视频内容。
+        // Tool results carrying video are force-textified + late-projected on every provider kind:
+        // the AI SDK tool result part has no video variant, and the anthropic inline path drops video too.
         const messageTextifyToolResult =
           textifyStructuredToolResults || toolResultHasVideoMedia(message.content);
 
-        // 通用 fail-closed：帧引用结果在媒体不可投递时整体错误化（约束：
-        // 引用文本不得与"媒体不可用"占位符同现，否则 actionable frame_id 会诱导
-        // 模型对未见过画面的坐标产生动作）。
+        // Generic fail-closed: frame-reference results hard-error when media is undeliverable (constraint:
+        // reference text must not co-occur with the media-unavailable placeholder, or the actionable frame_id would
+        // induce actions against coordinates the model never saw).
         const frameReferenceFailure = undeliverableFrameReferenceText(message.content, options);
 
         const toolMediaParts =
@@ -222,9 +222,9 @@ function contentBlockToAiSdkToolResultParts(
           },
         ];
       }
-      // AI SDK tool result part 无 video 变体：视频媒体统一由 tool-result-media-projection
-      // 拆成后置 user part（toolResultHasVideoMedia 对含 video 的 tool result 在所有
-      // provider kind 上强制 textify），这里不产出内嵌 part。
+      // The AI SDK tool result part has no video variant: video media is always split into a trailing user part by
+      // tool-result-media-projection (toolResultHasVideoMedia force-textifies video-bearing results on every
+      // provider kind), so no inline part is produced here.
       return [];
     }
 
@@ -302,12 +302,12 @@ function contentBlockToAiSdkAssistantParts(
         options.stripOpenAiResponsesStoredReasoning === true &&
         hasOpenAiStoredReasoningItemId(block.providerOptions)
       ) {
-        // 部分 Responses 兼容端点不支持无 previousResponseId 时回放 store=true 的
-        // reasoning item_reference；只在 Responses 无状态回放边界丢弃该引用，避免工具结果续轮变成 5xx。
+        // Some Responses-compat endpoints cannot replay a store=true reasoning item_reference without
+        // previousResponseId; drop it only at the stateless Responses replay boundary to keep the next turn off 5xx.
         return [];
       }
-      // 没有正文和 provider 元数据的流式 reasoning 空壳会在历史回放时被
-      // Anthropic metadata 补全误认为有效 thinking；只在请求投影边界移除精确空壳。
+      // Empty streaming reasoning shells (no content, no provider metadata) get mistaken for valid thinking
+      // by Anthropic metadata backfill on replay; drop exact-empty shells at the request projection boundary only.
       if (block.text.length === 0 && Object.keys(block.providerOptions ?? {}).length === 0) {
         return [];
       }
@@ -367,8 +367,8 @@ function projectToolNameForProvider(
     return apiFormat === "anthropic-messages" ? toolName : "empty_tool_name";
   }
 
-  // OpenAI-compatible wire 不可靠接受空 function name，但历史中的原始
-  // 名称仍需保留给 Anthropic 回放；占位值只在 provider 投影边界生成。
+  // OpenAI-compatible wires unreliably accept empty function names, but the raw
+  // name must survive for Anthropic replay; the placeholder is generated only at the provider projection boundary.
   return options.providerKind === "anthropic" ? toolName : "empty_tool_name";
 }
 
@@ -389,9 +389,9 @@ function toAiSdkUserContent(
   content: ModelMessageContent,
   options: AiSdkMessageTransformOptions,
 ): AiSdkUserContent {
-  // 附件-only query 拆出 prompt attachment 后可能留下空 user
-  // content，空白占位又可能被 provider trim 后视为缺失 prompt。只在 wire
-  // 序列化边界使用固定 fallback，避免改写 session 事实、UI 可见 query 和标题种子。
+  // An attachment-only query can leave empty user content once the prompt attachment is split out, and a
+  // whitespace placeholder may be trimmed into a missing prompt. Fixed fallback only at the wire serialization
+  // boundary, leaving session facts, UI-visible queries and title seeds untouched.
   if (typeof content === "string") return content || EMPTY_USER_CONTENT_FALLBACK;
 
   const parts = content.flatMap((block) => contentBlockToAiSdkUserParts(block, options));
@@ -456,8 +456,8 @@ function contentBlockToAiSdkUserParts(
           },
         ];
       }
-      // AI SDK 无 video part 类型；mediaType 为自由 string，video/* file part 由
-      // patch 后的 @ai-sdk/openai-compatible / @ai-sdk/anthropic 转成 video_url / video block。
+      // The AI SDK has no video part type and mediaType is free-form; video/* file parts become
+      // video_url / video blocks via the patched @ai-sdk/openai-compatible / @ai-sdk/anthropic.
       return [{ type: "file", data: data.data, mediaType: block.mediaType }];
     }
 

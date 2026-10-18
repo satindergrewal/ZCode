@@ -59,8 +59,8 @@ export function GitPaneChangeCard({
       return null;
     }
 
-    // DiffViewer 是 memo 组件，oldFile/newFile 如果在 JSX 里内联创建，
-    // 父级任意刷新都会让大 diff 视图浅比较失效。
+    // DiffViewer is memoized; inline oldFile/newFile JSX would fail the shallow compare on any
+    // parent refresh and re-render large diffs.
     return {
       oldFile: {
         name: change.workspaceRelativePath,
@@ -94,9 +94,10 @@ export function GitPaneChangeCard({
             )}
             onClick={() => onOpenChange(change, !isExpanded)}
           >
-            {/* Review 打开会一次性挂载几十个可视/overscan 行；每行都用 Radix Collapsible
-                会额外创建 provider/presence 和测量链路，CDP CPU profile 里 click 后主线程集中耗在
-                React 提交阶段。这里改成普通按钮 + 仅展开行渲染内容，保留交互同时减少打开成本。 */}
+            {/* Opening Review mounts dozens of visible/overscan rows at once; a Radix Collapsible
+                per row adds provider/presence plus measurement chains, and CPU profiles show the
+                post-click main thread stuck in React commit. Plain buttons with content rendered
+                only when expanded keep the interaction and cut the open cost. */}
             <div className="min-w-0 flex-1 overflow-hidden">
               <div className="flex min-w-0 items-center gap-2 overflow-hidden">
                 <FileDisplayInline
@@ -167,8 +168,9 @@ export function GitPaneChangeCard({
             diffPreviewPlan.kind === "patch" &&
             diffState.patch ? (
             <div className="w-full min-w-0">
-              {/* 大文件展开只需要先看到变更 hunk。继续走 before/after 的 MultiFileDiff
-                会同步比较整文件并拖慢点击反馈；这里改走 patch 输入，让高亮继续由 worker 异步完成。 */}
+              {/* Expanding a large file only needs the changed hunks first. The before/after
+                MultiFileDiff compares whole files synchronously and delays click feedback; feed
+                the patch instead and let the worker keep highlighting async. */}
               <DiffViewer
                 patch={diffState.patch}
                 diffClassName="block"
@@ -182,8 +184,8 @@ export function GitPaneChangeCard({
             diffState.afterContent !== null &&
             multiFileDiffFiles ? (
             <div className="w-full min-w-0">
-              {/* 手机远控右侧栏宽度较窄，展开的文件 diff 不能依赖父级隐藏溢出。
-                外层允许横向滚动，长行 diff 才不会在窄屏被裁掉。 */}
+              {/* The phone remote side pane is narrow; the expanded diff cannot rely on a parent's
+                overflow:hidden. Allow horizontal scrolling so long lines survive small screens. */}
               <DiffViewer
                 oldFile={multiFileDiffFiles.oldFile}
                 newFile={multiFileDiffFiles.newFile}
@@ -214,8 +216,9 @@ function GitPanePlainTextDiffPreview({
   lines: readonly string[];
   codePreviewSettings: CodePreviewSettings;
 }) {
-  // 超大 patch 或深 hunk 进入富 diff 渲染会把主线程耗在同步解析/DOM 构建上。
-  // 轻量 hunk 预览复用共享 diff 行号/gutter 样式，避免和右侧 DiffViewer 视觉分叉。
+  // Rich diff rendering of huge patches or deep hunks burns the main thread on parsing and DOM
+  // builds. The light hunk preview reuses the shared line-number/gutter styling so it never
+  // drifts visually from the main DiffViewer.
   return (
     <LightweightDiffPreview
       codePreviewSettings={codePreviewSettings}

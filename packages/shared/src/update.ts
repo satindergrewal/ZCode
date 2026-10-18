@@ -9,8 +9,8 @@ export interface PostUpdateReleaseNotesPayload {
 }
 
 /**
- * 用户从菜单手动点击"检查更新"后，main 进程回传给 renderer 的结果。
- * Renderer 根据 kind 展示对应的 toast；不要与启动时的自动 check 混用。
+ * Result main returns to the renderer after a manual menu "check for updates".
+ * The renderer toasts by kind; never mix with the startup automatic check.
  */
 export type UpdateCheckResultPayload =
   | { kind: "up-to-date"; currentVersion: string }
@@ -27,7 +27,7 @@ export type UpdateCheckResultPayload =
   | { kind: "error"; message: string };
 
 /**
- * 桌面自动更新器的持续状态，用于同步原生菜单和 Windows 自绘标题栏菜单。
+ * The desktop auto-updater's ongoing state, syncing the native menu and the Windows custom title-bar menu.
  */
 export type UpdateStatePayload =
   | { kind: "idle"; enabled: boolean }

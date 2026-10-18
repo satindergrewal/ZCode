@@ -27,8 +27,8 @@ async function discardPreparedUpdateBestEffort(
   try {
     await discard();
   } catch (error: unknown) {
-    // 准备产物清理属于非关键收尾；直接 await discard 会让清理失败覆盖
-    // running-task guard 或 control socket 的原始错误，导致用户看到错误的排障方向。
+    // Discarding prepared artifacts is non-critical cleanup; awaiting it directly would let a
+    // cleanup failure mask the original running-task guard or control socket error.
     log.warn("failed to discard prepared update after command failure", error);
   }
 }
@@ -43,9 +43,10 @@ export async function runUpdateCommand(
   const force = argv.includes("--force");
   let discardPreparedUpdate: (() => Promise<void>) | undefined;
   if (!force) {
-    // prepareOnlineUpdate 会下载、解压并写入 pending release；旧流程在准备完成后
-    // 才由 apply-update 检查运行任务，导致 guard 拒绝时仍留下网络和磁盘副作用。先检查已知的
-    // 运行任务，并在准备完成后再次检查；最终 apply-update guard 仍覆盖最后一小段竞态。
+    // prepareOnlineUpdate downloads, extracts, and writes the pending release; the old flow only
+    // checked running tasks in apply-update after preparation, leaving network/disk side effects
+    // even when the guard rejects. Check known running tasks up front and again after preparation;
+    // the final apply-update guard still covers the last small race window.
     const result = updatePreparationResultSchema.parse(
       await requestControl(layout.controlEndpoint, { command: "prepare-update" }),
     );

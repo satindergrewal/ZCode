@@ -65,8 +65,8 @@ export function reconcileActivePromptInputTokenSnapshot(
     return null;
   }
 
-  // ArrowLeft/ArrowRight 只改变 selection，token 文本并未改变。
-  // 若仍按光标前缀重算 query，会反复过滤候选、重置 selectedIndex 并重建虚拟列表。
+  // ArrowLeft/ArrowRight change only the selection; the token text is unchanged.
+  // Re-deriving the query from the caret prefix would refilter candidates, reset selectedIndex and rebuild the virtual list.
   return previous;
 }
 

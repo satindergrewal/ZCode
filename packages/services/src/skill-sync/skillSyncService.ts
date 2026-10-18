@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- skill 同步服务集中维护候选扫描、远端判重和导入流程，避免拆分时扩大远端同步回归面。 */
+/* eslint-disable max-lines -- the skill sync service centralizes candidate scanning, remote dedup, and import; splitting widens the remote-sync regression surface */
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { cp, lstat, mkdir, readFile, readdir, realpath, rm, stat } from "node:fs/promises";
@@ -38,8 +38,8 @@ export function createSkillSyncService(options?: { maxArchiveBytes?: number }): 
     async listRemoteUserSkillStatuses(params): Promise<SkillSyncRemoteStatusResult> {
       const root = getUserZcodeSkillRoot();
       const existingSkillPathByName = await collectUserSkillDirectoryPathByName();
-      // skill sync service 会通过 RPC 暴露给 renderer / remote 客户端；
-      // directoryName 不能只信 UI 候选，必须在服务端限制为 skills 根内的安全相对路径。
+      // The skill sync service is exposed to renderer/remote clients over RPC;
+      // directoryName must be a safe relative path under the skills root, not a UI value on trust.
       const directoryNames = params.directoryNames.map((directoryName) =>
         normalizeSkillSyncRelativePath(directoryName),
       );
@@ -205,8 +205,8 @@ async function collectUserSkillCandidatesInRoot(root: string): Promise<SkillSync
     }
   }
 
-  // 远端同步候选必须复用设置页已有的有界扫描策略；
-  // 自己维护递归会漏掉 MAX_SKILL_SCAN_DEPTH 和软链 realpath 去重，遇到环形目录软链会卡住。
+  // Remote-sync candidates must reuse the settings page's bounded walk; a hand-rolled recursion
+  // misses MAX_SKILL_SCAN_DEPTH and realpath dedup, hanging on cyclic symlinked dirs.
   return candidates.sort((left, right) => left.directoryName.localeCompare(right.directoryName));
 }
 
@@ -397,14 +397,14 @@ async function importArchive(
   const tempRoot = join(targetRoot, `.sync-tmp-${randomUUID()}`);
   await mkdir(tempRoot, { recursive: true });
   try {
-    // 远端同步接收的是本机传来的归档，必须先解到临时目录并校验 SKILL.md，
-    // 再逐个复制到用户级 skills 根，避免路径穿越或半成品目录污染远端配置。
+    // Remote sync receives archives from the local machine: unpack to a temp dir, validate SKILL.md,
+    // then copy into the user skills root, preventing path traversal or half-written dirs.
     await extractSkillSyncArchive(archive, tempRoot, {
       maxExtractedBytes: maxArchiveBytes,
     });
     const extractedSkillDirectories = await collectExtractedSkillDirectories(tempRoot);
-    // 远端 SkillsService 会同时读取用户级 .zcode/skills 和 .agents/skills。
-    // 同名 skill 已在兼容目录存在时也必须跳过，避免同步后在 .zcode 下生成重复来源。
+    // The remote SkillsService reads both user-level .zcode/skills and .agents/skills;
+    // skip names already in the compat dir to avoid duplicate sources after sync.
     const existingSkillPathByName = await collectUserSkillDirectoryPathByName();
     const results: SkillSyncImportResult["results"] = [];
     for (const extracted of extractedSkillDirectories) {

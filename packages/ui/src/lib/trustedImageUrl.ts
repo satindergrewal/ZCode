@@ -1,4 +1,4 @@
-/** UI 远端图片只允许 HTTPS；失败时由各展示组件回退到本地图标。 */
+/** UI remote images allow HTTPS only; on failure each presentational component falls back to a local icon. */
 export function isTrustedImageUrl(url: string | undefined): url is string {
   return typeof url === "string" && url.startsWith("https://");
 }

@@ -40,8 +40,9 @@ function resolveInitialWindowControlsPaddingPx({
 }
 
 function resolveLegacyReadyVersionFromState(payload: UpdateStatePayload) {
-  // 旧的 UpdateReady 事件只会告诉 renderer “某版本 ready”，不会告诉它后续
-  // 进入 staging error 等不可安装状态。新状态流一旦不是 update-downloaded，就必须清掉旧 ready。
+  // The legacy UpdateReady event only said "some version is ready", never that the flow later
+  // entered a non-installable state such as staging error. Once the new state stream is anything
+  // other than update-downloaded, the stale ready flag must be cleared.
   return payload.kind === "update-downloaded" ? payload.version : null;
 }
 
@@ -87,17 +88,19 @@ export function useAppChromeState({
       return;
     }
 
-    // macOS 全屏后红绿灯会重新贴近左上角布局。
-    // 顶部浮层继续沿用窗口态的 pl-24 会把左侧安全区撑得过大，视觉上像是三键"消失"。
-    // 这里订阅桌面窗口全屏状态，只在 macOS 全屏时收窄留白，不影响普通窗口态。
+    // After macOS fullscreen the traffic lights hug the top-left again. Keeping the windowed
+    // pl-24 on the top overlay overstretches the left safe area, visually "losing" the three
+    // buttons. Subscribe to desktop fullscreen and narrow the padding only for macOS fullscreen;
+    // normal windowed state is untouched.
     return platform.onWindowFullscreenChanged((fullscreen) => {
       setIsMacFullscreen(fullscreen);
     });
   }, [isDesktop, isMacDesktop, platform]);
 
   useEffect(() => {
-    // 排除 macOS 会让版本始终未知，Tahoe 也错误采用 Sequoia 的 6px 圆角。
-    // 所有桌面平台共用窗口状态查询，保留事件优先和卸载清理；Web 不读取原生状态。
+    // Excluding macOS would leave the version unknown forever, and Tahoe would wrongly take
+    // Sequoia's 6px corner radius. All desktop platforms share the window-state query, keeping
+    // event-first ordering and unmount cleanup; Web never reads native state.
     if (!isDesktop || !platform.getDesktopWindowChromeState) {
       setDesktopWindowChromeState(null);
       return;
@@ -111,13 +114,14 @@ export function useAppChromeState({
     });
     const requestRevision = eventRevision;
 
-    // 只监听 maximize/unmaximize 会漏掉“应用启动时窗口已最大化”的初始状态。
-    // 先订阅再主动查询，并用 revision 防止较慢的查询结果覆盖更新的窗口事件。
+    // Listening only to maximize/unmaximize misses "window already maximized at app startup".
+    // Subscribe first, then query, and use a revision so a slower query result cannot override a
+    // newer window event.
     void platform.getDesktopWindowChromeState().then(
       (state) => {
         if (!disposed && eventRevision === requestRevision) setDesktopWindowChromeState(state);
       },
-      (error) => logger.warn("[app-chrome] 同步桌面窗口外观状态失败", { error }),
+      (error) => logger.warn("[app-chrome] Failed to sync desktop window chrome state", { error }),
     );
 
     return () => {
@@ -130,8 +134,9 @@ export function useAppChromeState({
     const isLinuxDesktop = isDesktop && !isMacDesktop && !isWindowsDesktop;
     const rootElement = document.documentElement;
     if (!rootElement) return;
-    // Linux 外壳由 renderer 裁切，若最大化后仍保留圆角，屏幕四角会露出透明缺口。
-    // 复用 main 进程的窗口状态作为唯一来源，让 Workspace 与设置页同时切换。
+    // The Linux frame is clipped by the renderer; rounded corners while maximized leave
+    // transparent gaps at the screen corners. Reuse the main process's window state as the single
+    // source so Workspace and settings pages switch together.
     rootElement.classList.toggle(
       "window-maximized",
       isLinuxDesktop && (desktopWindowChromeState?.isMaximized ?? false),
@@ -150,12 +155,12 @@ export function useAppChromeState({
       return;
     }
 
-    // 页面缩放后，原生窗口控制区不会随 renderer zoom 一起缩放。
-    // macOS 同步左侧红绿灯安全区，Windows 同步右侧标题栏按钮安全区。
+    // Native window controls do not scale with renderer zoom.
+    // macOS syncs the left traffic-light inset; Windows syncs the right caption-button inset.
     return platform.onWindowControlsOverlayChanged((metrics) => {
       const leftPaddingPx = readFinitePositivePx(metrics.leftPaddingPx);
       const rightPaddingPx = readFinitePositivePx(metrics.rightPaddingPx);
-      logger.debug("[app-chrome] 收到原生窗口控制区几何变化", {
+      logger.debug("[app-chrome] window controls overlay geometry changed", {
         isMacDesktop,
         isWindowsDesktop,
         leftPaddingPx,
@@ -175,17 +180,18 @@ export function useAppChromeState({
       return;
     }
 
-    // 更新就绪状态之前散落在按钮组件内部，各处只能各自重复订阅平台事件。
-    // 这样 WorkspaceHeader 无法知道"当前是否有更新"，也容易让多个入口各自维护一份分叉状态。
-    // 这里把 version 提升到 App 统一管理，再按需往 Header / Overlay 分发。
+    // Update-ready state used to live inside button components, forcing each to subscribe to
+    // platform events separately; WorkspaceHeader could not know whether an update was pending
+    // and multiple entries forked their own state. Lift version into the App and distribute to
+    // Header / Overlay on demand.
     return platform.onUpdateReady((version) => {
-      logger.info("[App] 收到可安装更新", {
+      logger.info("[App] installable update received", {
         workspaceAbsPath,
         version,
       });
       setUpdateReadyVersion(version);
 
-      // Windows 桌面端收到更新时显示轻提示，不阻塞主界面
+      // Windows desktop shows a light toast on update-ready; never blocks the main UI.
       if (isWindowsDesktop && !hasShownUpdateToastRef.current) {
         hasShownUpdateToastRef.current = true;
         toast(intl.formatMessage({ id: "update.toast.ready" }, { version }), {
@@ -210,7 +216,7 @@ export function useAppChromeState({
           }
         },
         (error) => {
-          logger.warn("[App] 同步自动更新状态失败", { error });
+          logger.warn("[App] Failed to sync auto-update state", { error });
         },
       );
     }

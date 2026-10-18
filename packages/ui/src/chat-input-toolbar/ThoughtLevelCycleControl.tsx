@@ -46,7 +46,7 @@ export function ThoughtLevelCycleControl({
 }: {
   disabled?: boolean;
   disabledReason?: string;
-  /** 聊天输入框由统一布局 owner 收起文字，其他调用方保留原断点规则。 */
+  /** The chat input's unified layout owner collapses the label; other callers keep the original breakpoint rules. */
   composerCollapsePriority?: number;
   interactionMode?: ThoughtLevelInteractionMode;
   indicatorClassName?: string;
@@ -144,8 +144,9 @@ export function ThoughtLevelCycleControl({
     };
   }, [currentLabel, labelVisibilityClassName]);
 
-  // 配置顺序不再经过名称排序，关闭项可能位于任意位置；只计算当前项之前的非关闭项。
-  // 未选／失效及关闭值始终为零进度，不能把缺失选择投影成首档。
+  // Config order is no longer name-sorted, so the off item can sit anywhere; count only non-off
+  // items before the current one. Unset/invalid and off values are always zero progress — never
+  // project a missing selection onto the first level.
   const thinkingEntries = entries.filter((entry) => !isNoThoughtLevel(entry));
   const activeDotCount =
     !currentValueIsValid || !currentEntry || isNoThoughtLevel(currentEntry)
@@ -172,8 +173,8 @@ export function ThoughtLevelCycleControl({
       return;
     }
     pendingCurrentValueCommitRef.current = value;
-    // Radix 对 typeahead Space 不执行选择。只在同一轮交互确实关闭
-    // Select 时提交当前值，未关闭的键盘意图在微任务中作废。
+    // Radix does not select on typeahead Space. Commit the current value only when this
+    // interaction actually closes the Select; unclosed keyboard intents void in a microtask.
     queueMicrotask(() => {
       if (pendingCurrentValueCommitRef.current === value) {
         pendingCurrentValueCommitRef.current = null;
@@ -247,7 +248,7 @@ export function ThoughtLevelCycleControl({
           data-composer-collapse-priority={composerCollapsePriority}
           data-testid={TID_CHAT_THOUGHT_LEVEL_SELECT_TRIGGER}
         >
-          {/* 单档模型（如 Kimi K3）没有可切换状态，不能继续渲染带箭头的 Select。*/}
+          {/* Single-level models (e.g. Kimi K3) have nothing to cycle; do not render a chevron Select.*/}
           {triggerContent}
         </span>
       </ControlHintTooltip>
@@ -261,8 +262,9 @@ export function ThoughtLevelCycleControl({
         onOpenChange={handleSelectOpenChange}
         value={String(option.currentValue)}
         onValueChange={(value) => {
-          // Radix Select 在受控值与子项注册竞争时可能发出空值等未渲染值；
-          // 直接上抛会被调用方误当成用户切换档位。只接受已渲染 entries 中的值。
+          // Radix Select can emit empty or unregistered values when the controlled value races
+          // item registration; bubbling those up would read as a user level-change. Accept only
+          // values present in rendered entries.
           if (!entries.some((entry) => entry.value === value)) {
             return;
           }
@@ -310,8 +312,8 @@ export function ThoughtLevelCycleControl({
           collisionPadding={8}
           onCloseAutoFocus={(event) => {
             if (!restoreFocusSelector) {
-              // Automations 没有聊天输入框可恢复；保留 Radix 默认行为，
-              // 让键盘焦点回到触发器，而不是 preventDefault 后掉到 body。
+              // Automations has no chat input to restore; keep Radix's default so focus returns to
+              // the trigger instead of falling to body after preventDefault.
               return;
             }
             event.preventDefault();

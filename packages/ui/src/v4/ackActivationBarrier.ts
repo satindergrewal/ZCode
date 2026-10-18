@@ -1,6 +1,6 @@
-// subscribe ACK activation barrier：notification 可能先于 RPC response 抵达 renderer。
-// transport 先按 topic 有界暂存，store 写入 ACK subscriptionId 后显式 activate；
-// 这里只暂存 physical wire；logical assembly 在 ownership 激活后执行。
+// subscribe ACK activation barrier: notifications may reach the renderer before the RPC response.
+// The transport stages by topic with a bound; the store activates explicitly once it writes the ACK subscriptionId;
+// only the physical wire stages here; logical assembly runs once ownership activates.
 interface PendingFrameSubscription<T> {
   topic: string;
   subscriptionId: string | null;
@@ -26,11 +26,11 @@ interface AckActivationBarrier<T extends { topic: string; subscriptionId: string
   ): { topic: string; previousSubscriptionId: string | null } | undefined;
   forget(subscriptionId: string): void;
   accept(frame: T): void;
-  /** runtime/attachment generation invalidation：丢弃全部 active/pending ownership。 */
+  /** Runtime/attachment generation invalidation: drop all active/pending ownership. */
   clear(): void;
 }
 
-/** transport-local physical-wire barrier；同 topic 并发 pending 各自等 ACK 决定 owner。 */
+/** Transport-local physical-wire barrier; concurrent same-topic pendings each wait for their ACK to win ownership. */
 export function createAckActivationBarrier<T extends { topic: string; subscriptionId: string }>(
   deliver: (frame: T) => void,
 ): AckActivationBarrier<T> {
@@ -118,8 +118,8 @@ export function createAckActivationBarrier<T extends { topic: string; subscripti
           pending.frames.length + 1 > MAX_STAGED_FRAMES ||
           pending.stagedBytes + bytes > MAX_STAGED_BYTES
         ) {
-          // 通过 shift 头部来“维持上限”会留下一个看似可激活、
-          // 实际缺片的 physical batch。越界必须整批清空并让 subscribe 明确失败。
+          // Trimming from the head to hold the cap leaves a physical batch that looks activatable
+          // but is missing slices. Out-of-range must clear the whole batch and fail the subscribe explicitly.
           pending.frames.length = 0;
           pending.stagedBytes = 0;
           pending.overflowReason = STAGING_OVERFLOW_REASON;

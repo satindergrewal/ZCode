@@ -7,17 +7,17 @@ import { enclosingFunctions, functionName } from "./causality-order-functions.js
 import { createTraceState, issue, locOf, openRegion } from "./causality-order-state.js";
 import { walkNode, walkStatements } from "./causality-order-walk.js";
 
-// 追踪词汇（区域种类、跳转种类、兜底阶段 id）定义在 constants.ts——那个文件不 import
-// `typescript`，纯投影模块（causality-graph / flow-phase / phase-graph）与浏览器端的
-// `./projections` 桶都从那里取值。这里原样再导出，
-// 既有的 `from "./causality-order.js"` 引用一个不改。
+// Trace vocabulary (region kinds, jump kinds, fallback phase id) lives in constants.ts -- that file imports no
+// typescript, and the pure projection modules (causality-graph / flow-phase / phase-graph) plus the browser-side
+// ./projections barrel take it from there. Re-exported here verbatim,
+// so existing from ./causality-order.js imports stay untouched.
 export {
   UNPHASED_ID,
   type JumpKind,
   type StructuralRegionKind,
   type TraceRegionKind,
 } from "./constants.js";
-// 追踪产物的类型同样原样再导出。
+// The trace product types are re-exported verbatim as well.
 export type {
   ActorEvent,
   ControlFact,
@@ -78,10 +78,10 @@ export type {
  * transfer with its target region already resolved). The causality projection looks
  * through all of it; the control-flow projection is built from it.
  *
- * 拆分：本文件顶到 oxlint max-lines 上限（400 行），走查按职责拆成兄弟模块——
- * causality-order-types（产物类型）、-state（显式共享状态 + 原语）、-settle（await 屏障与
- * 神谕读取）、-walk（节点访问器）、-loops（循环）、-calls（调用与内联）、-functions（函数
- * 解析）。这里只剩编排：建状态、走根语句表、收尾扫尾。公开面一个不改。
+  * Split: this file sat at oxlint's max-lines cap (400), so the walk was split by duty into sibling modules --
+  * causality-order-types (product types), -state (explicit shared state + primitives), -settle (await barriers and
+  * oracle reads), -walk (node visitors), -loops (loops), -calls (calls and inlining), -functions (function
+  * resolution). Only orchestration remains here: build state, walk the root statement table, final sweeps. Public surface unchanged.
  */
 
 /** Walk the authored body in evaluation order and record the ordering trace. */

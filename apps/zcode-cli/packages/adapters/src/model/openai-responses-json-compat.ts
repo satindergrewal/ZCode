@@ -48,8 +48,8 @@ function normalizeOpenAIResponsesJson(value: unknown): Record<string, unknown> |
 
     let normalizedMessage = message;
     if (message.id === undefined && responseId) {
-      // 部分 Responses-compatible 服务在非流式 compact 响应里省略
-      // message.id，AI SDK 会在读取正文前拒绝整个 HTTP 200 响应。
+      // Some Responses-compatible services omit
+      // message.id in non-streaming compact responses; the AI SDK rejects the whole HTTP 200 before reading body.
       normalizedMessage = {
         ...normalizedMessage,
         id: `msg_${randomUUID()}`,

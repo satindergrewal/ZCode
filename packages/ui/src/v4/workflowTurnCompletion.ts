@@ -2,28 +2,30 @@ import type { TurnHeaderRow, WorkflowNotificationMeta } from "@zcode/shared/zcod
 import type { WorkflowRunCardSummary } from "@/ToolCallBlocks/fileSummaryTypes.js";
 
 /**
- * 完成卡的解析：这一轮是不是「主代理消化了一条
- * **completed** 工作流通知」的那一轮。纯函数，照 `resolveWorkflowTurnDigests` 的同一条缝。
+ * Completion-card resolution: is this the turn where the main agent digested one **completed**
+ * workflow notification? Pure function, cut along the same seam as `resolveWorkflowTurnDigests`.
  *
- * 只认三件事齐备：后台结果轮、来源是 workflow、载荷是 terminal 且 `status === "completed"`。
- * failed / cancelled 不画卡（通知行已说错误、已挂部分产物的 chips）；升级通知、批量轮（载荷
- * 整个缺席）、bash / subagent 通知都不是。
+ * Requires all three: a background-result turn, workflow origin, terminal payload with
+ * status === "completed". failed/cancelled draw no card (the notification row already says the
+ * error and shows partial-artifact chips); escalation notices, batch turns (no payload at all),
+ * and bash/subagent notifications are not it.
  *
- * 产物清单**以通知载荷为底**：它随通知持久化，冷恢复也在；投影 / journal 只是在它之上
- * 补字节数、出处、看板 spec。
+ * The artifact list bottoms out in the notification payload: it persists with the notice and
+ * survives cold restore; projection/journal only decorate it with byte counts, provenance, and
+ * board spec.
  */
 export type WorkflowTerminalNotification = Extract<WorkflowNotificationMeta, { kind: "terminal" }>;
 
 export interface WorkflowTurnCompletion {
   runId: string;
-  /** 通知标题（CLI 的 workflowTaskSubject，不本地化），与通知行 primaryText 同源。 */
+  /** Notification title (CLI workflowTaskSubject, never localized); same source as the row primaryText. */
   name: string;
-  /** 通知里的墙钟时间；缺席即「时间」格写 `—`。 */
+  /** Wall-clock time from the notice; absent renders `—` in the time cell. */
   durationMs?: number;
   artifacts: NonNullable<WorkflowTerminalNotification["artifacts"]>;
-  /** 发射侧砍过（超 8 或被过滤）——溢出计数因此可能少报。 */
+  // Trimmed emitter-side (over 8 or filtered) - the overflow count may under-report.
   artifactsTruncated: boolean;
-  /** 投影联接到的 run；缺席（被 8 条上限淘汰）即三格 `—`、无 ⤢。重启不再让它缺席：CLI 冷物化从 journal 回放投影。 */
+  // The run joined from the projection; absent (cut by the 8-cap) means three `—` cells and no expand. Restores no longer lose it: CLI cold materialization replays the projection from the journal.
   summary: WorkflowRunCardSummary | undefined;
 }
 

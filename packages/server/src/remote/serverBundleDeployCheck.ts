@@ -35,9 +35,11 @@ if (missing.length > 0) {
     await waitForDeployCheckClose(stream);
     return { shouldDeploy: false };
   } catch (error) {
-    // 开发态远端 server 可能版本号相同但 bundle 内容仍是旧包，旧包没有
-    // skill/plugin sync channel，renderer 侧会表现为 “Channel name 'skill-sync' timed out”。
-    // 这里用远端已部署 bundle 的能力标记做精确探测，只在缺少必要 channel 时刷新主 server。
+    // A dev remote server can keep the same version while its bundle content is
+    // still the old package, which lacks the skill/plugin sync channels and shows
+    // up renderer-side as "Channel name 'skill-sync' timed out". Probe precisely
+    // via the deployed bundle's capability markers and refresh the main server
+    // only when a required channel is missing.
     return {
       shouldDeploy: true,
       reason: `remote server bundle missing required markers: ${String(error)}`,

@@ -23,7 +23,7 @@ export const providerLogoDataSchema = z
   .strict();
 
 const nonBlankRequiredString = z.string().refine((value) => value.trim().length > 0, {
-  message: "必填配置不能为空",
+  message: "Required config must not be empty",
   params: { configIssueCode: "required-field-missing" },
 });
 
@@ -74,7 +74,8 @@ export const providerApiDataSchema = z
     baseUrl: z.string().url().nullable().optional(),
   })
   .strict();
-// Personal 允许暂存编辑中的 endpoint；完整 schema 仍拒绝，且只影响该 Provider 的准入。
+// Personal may stage an in-edit endpoint; the full schema still rejects it, and it only
+// affects that provider's admission.
 export const personalProviderApiDataSchema = providerApiDataSchema.extend({
   baseUrl: z.string().nullable().optional(),
 });

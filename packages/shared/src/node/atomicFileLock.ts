@@ -37,11 +37,11 @@ function parseLockMetadata(raw: string, observedAt: number): FileLockMetadata {
   try {
     const parsed = JSON.parse(raw) as { createdAt?: unknown; pid?: unknown };
     return {
-      // 非有限、负数或明显未来的 createdAt 会让 ownerless 锁永久达不到 stale。
-      // 元数据非法时交给调用方回退到同样受校验的文件 mtime。
+      // Non-finite, negative, or future createdAt would keep ownerless locks stale-never.
+      // Invalid metadata falls back to the caller's equally validated file mtime.
       createdAt: parseLockTimestamp(parsed.createdAt, observedAt),
-      // 0、负数、小数或非有限 PID 传给 process.kill 后可能被误判为活进程，
-      // 导致损坏锁永久无法回收。只有操作系统可用的正安全整数才具有 owner 语义。
+      // Zero/negative/fractional/non-finite PIDs can be misjudged alive by process.kill,
+      // leaving broken locks unreclaimable. Only OS-usable positive safe integers have owner semantics.
       pid:
         typeof parsed.pid === "number" && Number.isSafeInteger(parsed.pid) && parsed.pid > 0
           ? parsed.pid
@@ -104,8 +104,8 @@ async function removeAbandonedLock(
           return { removed: false };
         }
 
-        // 按唯一 owner 文件删除相当于所有权校验。旧锁目录被替换后，新 owner 的
-        // 文件名不同，当前 rm 不会命中新锁；随后 rmdir 也会因目录非空而拒绝删除。
+        // Deleting by the unique owner file is the ownership check. Once the old lock dir is replaced the new
+        // owner's name differs, the rm misses the new lock, and the rmdir then fails on non-empty.
         await rm(ownerFile, { force: true });
         await rmdir(lockFile);
         return { removed: true };
@@ -130,8 +130,8 @@ async function removeAbandonedLock(
         }
       }
 
-      // mkdir 成功后、owner 文件落盘前崩溃会留下空目录；损坏目录也可能
-      // 包含多个 owner。只清理 stale 时观察到的条目，后来 owner 新增会让 rmdir 失败。
+      // A crash between mkdir and the owner-file write leaves an empty dir; broken dirs may
+      // hold several owners. Clean only entries observed stale; later owners make rmdir fail otherwise.
       await Promise.all(entries.map((entry) => rm(join(lockFile, entry), { force: true })));
       await rmdir(lockFile);
       return { removed: true };
@@ -142,7 +142,7 @@ async function removeAbandonedLock(
       return { removed: false };
     }
 
-    // 兼容升级前遗留的单文件锁。新实现创建的是非空目录，旧路径删除无法移除新 owner。
+    // Compat with pre-upgrade single-file locks. The new implementation creates a non-empty dir the legacy removal cannot
     if ((await readFile(lockFile, "utf-8")) !== raw) {
       return { removed: false };
     }
@@ -216,7 +216,7 @@ export async function acquireFileLock(
         });
       }
       return async () => {
-        // 只删除本 writer 的唯一 owner 文件；锁已被接管时不会碰到后来 writer 的 token。
+        // Delete only this writer's own owner file; once the lock is taken over, later writers' tokens are untouched.
         await rm(ownerFile, { force: true }).catch(() => {});
         await rmdir(lockFile).catch(() => {
           // best-effort cleanup
@@ -232,14 +232,14 @@ export async function acquireFileLock(
         throw error;
       }
 
-      // 等待者自身已等待多久不能证明当前锁 stale，否则旧锁释放后可能误删
-      // 后来 writer 的新锁。这里只回收 owner 已退出或无 PID 且超过短 grace 的锁，
-      // 其余竞争等待到 maxWaitMs，并保留明确的权限错误或锁超时。
+      // How long the waiter itself waited proves nothing about this lock being stale, or a new lock could be
+      // deleted after the old one frees. Reclaim only owner-exited/PID-less locks past a short grace;
+      // the rest compete until maxWaitMs, preserving explicit permission errors and lock timeouts.
       const elapsedMs = Date.now() - startedAt;
       if (elapsedMs >= maxWaitMs) {
-        // 旧顺序会在达到 maxWaitMs 后仍先做一次 stale 回收。
-        // 损坏 ownerless 锁可能恰好在这次检查跨过 grace，导致超时 waiter 越过
-        // 等待上限删除后来 writer 的锁。达到上限后直接超时，避免跨实例误删。
+        // The old order ran one stale sweep even after maxWaitMs.
+        // A broken ownerless lock may cross grace exactly then, letting the timed-out waiter
+        // delete a later writer's lock past its budget. Timeout directly at the cap, avoiding cross-instance deletes.
         const removalErrorCode = getErrorCode(lastRemovalError);
         if (removalErrorCode === "EACCES" || removalErrorCode === "EPERM") {
           throw lastRemovalError;

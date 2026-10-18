@@ -3,7 +3,7 @@ import {
   sessionCreateTelemetrySchema,
   automationSessionCreateTelemetrySchema,
 } from "./sessionCreateTelemetry.js";
-/* eslint-disable max-lines -- 运行时 schema 当前集中在共享包入口，外部 relay payload 校验加入后先保持单一导出面。 */
+/* eslint-disable max-lines -- runtime schemas stay at the shared package entry for now; single export surface until the external relay payload validation lands. */
 import { z } from "zod";
 import { zcodeProcessDiagnosticSchema } from "./process-diagnostic.js";
 import { browserCommandSchema } from "./browser-use/commands.js";
@@ -259,8 +259,8 @@ export const hostDisposeRemoteWorkspaceSessionMessageSchema = z
 export const hostAttachServicePortMessageSchema = z
   .object({
     type: z.literal("attach-service-port"),
-    // main 只能声明 attachment 来源；connectionId 仍由 host process 分配。
-    // desktop reload/remote reattach 必须显式 continuous，手机 shared-host 必须 replayable。
+    // Main may only declare the attachment source; the host process still assigns connectionId.
+    // Desktop reload/remote reattach must be explicit continuous; phone shared-host must be replayable.
     requestId: nonEmptyStringSchema,
     attachmentId: nonEmptyStringSchema,
     clientMode: z.enum(["desktop-continuous", "web-remote-replayable"]),
@@ -385,8 +385,8 @@ export const hostFeedbackLogArchiveResultMessageSchema = z.object({
   error: z.string().optional(),
 });
 
-// main → host：定时任务到点派发。会话内 cron 带 targetTaskId 时直接 sendPrompt 到当前会话；
-// 历史未绑定任务才 fallback createTask + sendPrompt 建 session。
+// main -> host: cron dispatch at fire time. In-session crons with targetTaskId sendPrompt straight into that session;
+// only legacy unbound tasks fall back to createTask + sendPrompt minting a session.
 export const hostCronRunMessageSchema = z.object({
   type: z.literal("cron-run"),
   automationId: nonEmptyStringSchema,
@@ -399,16 +399,16 @@ export const hostCronRunMessageSchema = z.object({
   mode: z.string().optional(),
 });
 
-// main → host：闲时任务派发（仿 cron-run，字段独立不复用）。首跑不带 conversationId/sessionId，
-// host createTask 新建 session；3h 续跑 / 中断恢复带上两者 resume 同一会话。
-// serverTicketId 供 idle plan 适配层注入 X-Off-Peak-Ticket-ID 请求头（run 作用域）。
+// main -> host: off-peak dispatch (cron-run-shaped, independent fields). First run carries no conversationId/sessionId--
+// host createTask mints the session; the 3h resume / interrupt recovery carries both and resumes it.
+// serverTicketId lets the idle-plan adapter inject the X-Off-Peak-Ticket-ID header (run-scoped).
 export const hostOffPeakRunMessageSchema = z.object({
   type: z.literal("off-peak-run"),
   offPeakTaskId: nonEmptyStringSchema,
   workspacePath: nonEmptyStringSchema,
   workspaceIdentity: z.string().optional(),
   prompt: nonEmptyStringSchema,
-  // 权限四档映射现有 ZCodeTaskMode；与 cron-run 的 mode 同样按宽松 string 传输
+  // The four permission tiers map onto ZCodeTaskMode; like cron-run's mode, transported as a loose string.
   permissionMode: nonEmptyStringSchema,
   modelSelection: modelSelectionSchema,
   conversationId: z.string().optional(),
@@ -416,7 +416,7 @@ export const hostOffPeakRunMessageSchema = z.object({
   serverTicketId: z.string().optional(),
 });
 
-// main → host：browser-use 命令执行结果（按 requestId 关联到 host 的 pending）。
+// main -> host: browser-use command result (correlated to the host's pending by requestId).
 export const hostBrowserExecuteResultMessageSchema = z.object({
   type: z.literal("browser-execute-result"),
   requestId: nonEmptyStringSchema,
@@ -552,7 +552,7 @@ export const zcodeTaskMigrationSourceSchema = z.enum(["claudeCode"]);
 
 export const hostAgentProcessSpawnedResponseSchema = z.object({
   type: z.literal("agent-process-spawned"),
-  /** 进程泳道（mcp-status 等），旧 Host 不带该字段。 */
+  /// Process lane (mcp-status etc.); legacy hosts omit it.
   lane: nonEmptyStringSchema.optional(),
   pid: z.number().int().positive(),
   provider: zcodeProviderSchema,
@@ -567,7 +567,7 @@ export type HostAgentProcessSpawnedResponse = z.infer<typeof hostAgentProcessSpa
 
 export const hostAgentProcessReadyResponseSchema = z.object({
   type: z.literal("agent-process-ready"),
-  /** 进程泳道（mcp-status 等），旧 Host 不带该字段。 */
+  /// Process lane (mcp-status etc.); legacy hosts omit it.
   lane: nonEmptyStringSchema.optional(),
   pid: z.number().int().positive(),
   provider: zcodeProviderSchema,
@@ -581,7 +581,7 @@ export type HostAgentProcessReadyResponse = z.infer<typeof hostAgentProcessReady
 
 export const hostAgentProcessExitedResponseSchema = z.object({
   type: z.literal("agent-process-exited"),
-  /** 进程泳道（mcp-status 等），旧 Host 不带该字段。 */
+  /// Process lane (mcp-status etc.); legacy hosts omit it.
   lane: nonEmptyStringSchema.optional(),
   pid: z.number().int().positive(),
   provider: zcodeProviderSchema,
@@ -591,7 +591,7 @@ export const hostAgentProcessExitedResponseSchema = z.object({
   endedAt: z.number().int().nonnegative(),
   terminationKind: z.enum(["expected", "unexpected", "watchdog_recycle"]),
   terminationReason: z.string().optional(),
-  /** rolling-upgrade 兼容：旧 Host 缺字段时 desktop 映射 crash_phase=unknown。 */
+  /// Rolling-upgrade compat: desktop maps crash_phase=unknown when legacy hosts omit the field.
   runtimeReady: z.boolean().optional(),
   runtimeGeneration: z.number().int().positive(),
   runtimeInstanceId: nonEmptyStringSchema.optional(),
@@ -604,7 +604,7 @@ export type HostAgentProcessExitedResponse = z.infer<typeof hostAgentProcessExit
 
 export const hostAgentProcessErrorResponseSchema = z.object({
   type: z.literal("agent-process-error"),
-  /** 进程泳道（mcp-status 等），旧 Host 不带该字段。 */
+  /// Process lane (mcp-status etc.); legacy hosts omit it.
   lane: nonEmptyStringSchema.optional(),
   pid: z.number().int().positive().nullable(),
   provider: zcodeProviderSchema,
@@ -639,11 +639,11 @@ export type HostAgentProcessExceptionResponse = z.infer<
 >;
 
 /**
- * services 打标后的 CLI 资源样本。
+ * CLI resource samples after services lane-tagging.
  *
- * `lane` 不是 CLI 协议字段：CLI 进程不知道自己被哪个进程管理器拉起，由 services 层在解析
- * 协议样本时按所属进程管理器补上。样本自身仍按 CLI 协议 schema 严格校验，因此 CLI 自报 lane
- * 会被协议层直接拒绝。`lane` 可选是为了兼容版本落后、还没打标的远端 server。
+ * `lane` is not a CLI protocol field: a CLI process cannot know which manager spawned it, so services tags it while
+ * parsing protocol samples. Samples themselves still validate strictly against the CLI schema, so a CLI-reported
+ * lane is rejected at the protocol layer. optional for version-lagged, not-yet-tagged remote servers.
  */
 export const processResourceCliLaneSchema = z.enum(PROCESS_RESOURCE_CLI_LANES);
 export const agentLaneResourceSampleSchema = zcodeProcessResourceSampleSchema
@@ -651,7 +651,7 @@ export const agentLaneResourceSampleSchema = zcodeProcessResourceSampleSchema
   .strict();
 export type AgentLaneResourceSample = z.infer<typeof agentLaneResourceSampleSchema>;
 
-/** Host 仅传运行环境的 SHA-256 哈希，避免原始主机、用户或 URL 进入消息与日志。 */
+/** The host sends only a SHA-256 of the runtime environment, keeping hosts/users/URLs out of messages and logs. */
 const resourceTelemetryEnvironmentKeySchema = z.string().regex(/^[a-f0-9]{64}$/);
 
 export const hostAgentResourceSampleResponseSchema = z
@@ -665,16 +665,16 @@ export const hostAgentResourceSampleResponseSchema = z
 export type HostAgentResourceSampleResponse = z.infer<typeof hostAgentResourceSampleResponseSchema>;
 
 /**
- * Node 进程（host / scheduler）每 60 秒自采的瞬时事实
+ * Instantaneous facts self-sampled every 60s by Node processes (host / scheduler).
  *
- * 只带这三项：CPU 与 RSS 由 main 的 `getAppMetrics()` 负责，heap 只有进程自己读得到。
+ * Those three only: main's getAppMetrics() owns CPU and RSS; heap is readable only by the process itself.
  */
 export const nodeSelfResourceSampleSchema = z
   .object({
     /**
-     * 整机归一化 CPU 百分比，100 表示所有逻辑核占满。
-     * 上限刻意放宽（与 CLI 的 `zcodeProcessResourceSampleSchema` 同口径）：读数异常时宁可让
-     * 样本带着离谱数值上去、由平台侧数值异常规则暴露，也不在客户端静默丢样本。
+     * Machine-normalized CPU percent; 100 = all logical cores saturated.
+     * The cap is deliberately loose (matching the CLI's zcodeProcessResourceSampleSchema): odd readings
+     * ship with their absurd values for platform-side anomaly rules, rather than being silently dropped client-side.
      */
     cpuPercent: z.number().finite().nonnegative().max(100_000),
     rssKb: z.number().finite().nonnegative().max(Number.MAX_SAFE_INTEGER),
@@ -684,10 +684,10 @@ export const nodeSelfResourceSampleSchema = z
 export type NodeSelfResourceSample = z.infer<typeof nodeSelfResourceSampleSchema>;
 
 /**
- * 主窗口 renderer 每 60 秒经 preload 桥送 main 的 heap 读数
+ * Heap readings the main-window renderer sends via the preload bridge every 60s.
  *
- * 只带 heap：renderer 的 CPU 与 RSS 由 main 的 `getAppMetrics()` 负责，
- * renderer 自己也读不到。`strict` 保证 UI 侧不会顺手夹带路径、session 等隐私字段。
+ * Heap only: main's getAppMetrics() owns renderer CPU/RSS, which the renderer cannot read itself.
+ * `strict` keeps paths/sessions and other private fields out of the UI's payload.
  */
 export const rendererHeapSampleSchema = z
   .object({
@@ -861,7 +861,7 @@ export const hostFeedbackLogArchiveRequestResponseSchema = z.object({
   sourceDir: nonEmptyStringSchema,
 });
 
-// host → main：定时任务派发结果。ok=已成功创建 session 且 prompt 已发出。
+// host -> main: cron dispatch result. ok = session created and prompt sent.
 export const hostCronRunResultResponseSchema = z.object({
   type: z.literal("cron-run-result"),
   runId: nonEmptyStringSchema,
@@ -872,7 +872,7 @@ export const hostCronRunResultResponseSchema = z.object({
   failureKind: z.enum(["transient", "permanent"]).optional(),
 });
 
-// host → main：闲时任务派发结果。ok=session 已确保存在且 prompt 已发出；迟到结果用 offPeakTaskId 兜底结算。
+// host -> main: off-peak dispatch result. ok = session ensured and prompt sent; late results settle via offPeakTaskId.
 export const hostOffPeakRunResultResponseSchema = z.object({
   type: z.literal("off-peak-run-result"),
   offPeakTaskId: nonEmptyStringSchema,
@@ -883,23 +883,23 @@ export const hostOffPeakRunResultResponseSchema = z.object({
   failureKind: z.enum(["transient", "permanent"]).optional(),
 });
 
-// host → main：manual run 落库后的 scheduler 唤醒请求；业务数据仍由 scheduler 从 sqlite 读取。
+// host -> main: scheduler wake after a manual run persists; business data still read from sqlite by the scheduler.
 export const hostCronSchedulerWakeRequestResponseSchema = z.object({
   type: z.literal("cron-scheduler-wake-request"),
   automationId: nonEmptyStringSchema,
 });
 
-// host → main：闲时任务 schedulable 翻转后的 scheduler 唤醒；业务数据仍由 scheduler 从 sqlite 读取。
+// host -> main: scheduler wake on off-peak schedulable flip; business data still scheduler-read from sqlite.
 export const hostOffPeakSchedulerWakeRequestResponseSchema = z.object({
   type: z.literal("off-peak-scheduler-wake-request"),
   offPeakTaskId: z.string().optional(),
 });
 
-// host → main：执行一条 browser-use 命令（main 用 WebContentsView+CDP 执行）。
+// host -> main: run one browser-use command (main executes via WebContentsView+CDP).
 export const hostBrowserExecuteRequestResponseSchema = z.object({
   type: z.literal("browser-execute-request"),
   requestId: nonEmptyStringSchema,
-  // 迁移兼容：旧 host bundle 没有 browserId/context；新 browser-client 链路始终携带。
+  // Migration compat: legacy host bundles lack browserId/context; the new browser-client path always carries them.
   browserId: nonEmptyStringSchema.optional(),
   browserGeneration: z.number().int().nonnegative().optional(),
   sessionId: nonEmptyStringSchema,
@@ -1045,8 +1045,8 @@ export const zcodePromptImageAttachmentSchema = z.object({
   localPath: z.string().optional(),
 });
 
-// 附件 TypeScript 联合类型新增 video 后，手写的持久化运行时 schema 未同步，
-// session 恢复解析会拒绝含视频的用户消息。字段与 image 的 inline/local 引用语义保持一致。
+// The handwritten persistence schema lagged the attachment union's new video member,
+// so session-restore parsing rejected user messages with videos. Field semantics match image's inline/local references.
 export const zcodePromptVideoAttachmentSchema = z.object({
   kind: z.literal("video"),
   filename: z.string(),
@@ -1120,9 +1120,9 @@ export const zcodePersistedMessageSchema = z.object({
   timestamp: z.number().int().nonnegative(),
   model: z.string().optional(),
   characterCount: z.number().int().nonnegative().optional(),
-  // assistant 历史耗时已经在服务层落盘为 durationMs，
-  // 但校验 schema 没同步，saveTask/getTaskSnapshot 解析时会把它静默剥掉，
-  // 导致新消息结束后 UI 仍然只能看到“Worked”。这里补上字段以保留持久化值。
+  // Assistant history duration is persisted service-side as durationMs,
+  // but the validation schema lacked it and saveTask/getTaskSnapshot silently stripped it,
+  // leaving only "Worked" after a message finished. Added to preserve the persisted value.
   durationMs: z.number().int().nonnegative().optional(),
   interrupted: z.boolean().optional(),
   feedback: z.enum(["like", "dislike"]).optional(),
@@ -1134,8 +1134,8 @@ export const zcodePersistedMessageSchema = z.object({
   checkpointReason: z.enum(["tool_completed", "part_boundary", "periodic"]).optional(),
   checkpointUpdatedAt: z.number().int().nonnegative().optional(),
   turnIndex: z.number().int().nonnegative().optional(),
-  // snapshot 按需加载依赖 bodyRefs（content/thought -> refId）定位完整内容；
-  // 若 schema 缺字段，Zod 会在解析 session 文件时静默剥离，导致“加载完整内容”功能失效。
+  // On-demand snapshot loading needs bodyRefs (content/thought -> refId) to locate full bodies;
+  // without the field Zod strips it during session parse, breaking "load full content".
   bodyRefs: z
     .array(
       z.object({
@@ -1175,8 +1175,8 @@ export const zcodeTaskGoalSchema = z.object({
   sessionID: nonEmptyStringSchema,
   targetID: nonEmptyStringSchema,
   objective: nonEmptyStringSchema,
-  // 2.15.0 之前的 /goal 历史任务没有写 summaryTitle。
-  // 读取 task index 老数据时要补成 null，否则整个任务列表会被运行时 schema 拒绝。
+  // /goal history tasks before 2.15.0 wrote no summaryTitle.
+  // Backfill null when reading legacy task-index rows, or the whole task list fails the runtime schema.
   summaryTitle: z.string().min(1).nullable().default(null),
   status: zcodeTaskGoalStatusSchema,
   tokenBudget: z.number().int().positive().nullable(),
@@ -1219,12 +1219,12 @@ export const zcodeTaskMetaSchema = z.object({
   provider: zcodeAgentProviderSchema.optional(),
   migrationSource: zcodeTaskMigrationSourceSchema.optional(),
   forkedFromTaskId: nonEmptyStringSchema.optional(),
-  // cron automation 身份：随 meta_json 一起持久化（单一来源），同时在写入时投影到 tasks 表
-  // cron_automation_id 索引列，供按 automation 反查 session。runId 属于 automation_runs /
-  // 投递 metadata，不属于 task 表。
+  // Cron automation identity: persisted in meta_json (single source) and projected at write time into the tasks table's
+  // cron_automation_id index column for by-automation session lookup. runId belongs to automation_runs /
+  // delivery metadata, not the task table.
   cronAutomationId: nonEmptyStringSchema.optional(),
-  // off-peak 身份：与 cron 同款持久化策略——meta_json 单一来源 + tasks 表
-  // off_peak_task_id 索引投影列（兜底/反查）。
+  // Off-peak identity: the same persistence pattern as cron--meta_json single source plus the tasks table's
+  // off_peak_task_id index projection (fallback/lookup).
   offPeakTaskId: nonEmptyStringSchema.optional(),
   unreadAt: z.number().int().nonnegative().optional(),
   status: zcodeTaskPersistStatusSchema.optional(),

@@ -58,7 +58,7 @@ export async function ensureContextInitialized(
     : this.createConfigOnlyContextSnapshot(this.workingDirectory);
 
   this.workingDirectory = snapshot.workingDirectory;
-  // Bash cd 之后 workingDirectory 会变化，但 workspaceRoot 仍表示会话初始工作区边界。
+  // After a Bash cd workingDirectory changes, but workspaceRoot stays the session-initial workspace boundary.
   this.workspaceRoot = snapshot.workingDirectory;
   this.contextSourceSnapshot = snapshot;
   this.startMcpStartup(traceContext);
@@ -77,9 +77,9 @@ export async function getSkillCatalog(
   this: AgentRuntimeInternal,
   traceContext: TraceContext,
 ): Promise<SkillLoadOutcome> {
-  // Composer 曾独立扫描磁盘，所以运行中的 Session 会看到 AgentRuntime
-  // 尚未加载的新 Skill。先经过 runtime 唯一的 context 初始化门，再返回防御性副本，
-  // 让 UI 与本 Session 实际可用的 Skill 保持同一快照；新 runtime 会自然重新发现。
+  // Composer once scanned disk itself, so a live Session could see skills the AgentRuntime
+  // had not loaded. Pass the single runtime context-init gate, then return a defensive copy,
+  // keeping UI and Session-effective skills on one snapshot; a new runtime rediscovers naturally.
   await this.ensureContextInitialized(traceContext);
   const outcome = this.skillLoadOutcome ?? {
     skills: [],
@@ -100,11 +100,11 @@ export function createContextBuilderFromSnapshot(
   options: { memoryIndexContent?: string; model?: Model; persistEnvInfo?: boolean } = {},
 ): ContextBuilder {
   const envInfo = snapshot.envInfo;
-  // 同步 preview / config-only fallback 会构造 unknown envInfo。
-  // 这类临时值不能写回 config，否则首轮真实 context source 会把它当作显式 envInfo，
-  // 从而跳过 Node env/git 探测。
+  // Sync preview / config-only fallback builds unknown envInfo.
+  // Transient values must not write back to config, or the first real source treats them as explicit envInfo
+  // and skips Node env/git probes.
   if (options.persistEnvInfo !== false) {
-    // 执行模型属于 model step，不写回可复用的 Context Source。
+    // The execution model belongs to the model step; never write it into the reusable Context Source.
     this.config.envInfo = envInfo;
   }
   if (this.config.subagentContext) {
@@ -189,7 +189,7 @@ async function loadProjectMemoryIndexContent(
     });
     return read.content;
   } catch {
-    // 默认 Memory 分支将缺失或不可读的 index 视为没有该 context source。
+    // The default Memory branch reads a missing/unreadable index as no such context source.
     return undefined;
   }
 }

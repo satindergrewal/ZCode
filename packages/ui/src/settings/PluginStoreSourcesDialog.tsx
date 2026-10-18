@@ -9,7 +9,7 @@ import {
   sortMarketplaceSources,
 } from "@/settings/pluginStoreListing.js";
 
-// 官方市场不可移除：移除后启动时会被重新补种，只会造成「删了又回来」的困惑。
+// The official marketplace cannot be removed: startup re-seeds it, only causing removed-then-back confusion.
 function isRemovableMarketplace(marketplace: ZCodePluginMarketplaceSummary): boolean {
   return !isPublicStoreMarketplaceId(marketplace.id);
 }
@@ -37,7 +37,7 @@ function PluginStoreSourceRefreshFailure({
   );
 }
 
-/** 顶栏齿轮 → 市场源管理：列出已登记市场，支持刷新与移除（新增走 New 按钮）。 */
+/** Header gear -> marketplace sources: list registered marketplaces, refresh and remove (adding uses New). */
 export function PluginStoreSourcesDialog({
   open,
   onOpenChange,

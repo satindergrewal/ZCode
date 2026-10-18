@@ -92,8 +92,8 @@ export function useConversationTimelineFind({
     }
     const matches: ConversationFindMatch[] = [];
     let loadedRowCount = 0;
-    // streaming delta 只会改变当前 running turn；稳定 turn 的全文索引可复用，
-    // 避免每个 token 都扫描整段历史，导致长会话 renderer 主线程被持续占满。
+    // Streaming deltas only touch the running turn; the full-text index of stable turns is reusable,
+    // avoiding a whole-history scan per token that would pin the renderer main thread in long sessions.
     renderUnits.forEach((unit, unitIndex) => {
       const cacheKey = `${normalizedQuery}:${codeCommentCardsEnabled}:${unit.key}`;
       const cached = !unit.isRunning ? unitFindCacheRef.current.get(cacheKey) : undefined;

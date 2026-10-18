@@ -3,14 +3,14 @@ import { cn } from "@/components/lib/utils.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 
 /**
- * 「仅展示 {shown}/{total} 步的详情」：run 撞过 `WORKFLOW_RUNS_LIMITS.maxNodes` 之后，实例表停在界上，而它
- * 上面那些数（步数、结算数）已经把表外的算进来了。这一行说的正是这个差额——**没停的是 run，
- * 停的是每一步的详情**。
+ // "Showing {shown}/{total} steps": once a run passes `WORKFLOW_RUNS_LIMITS.maxNodes`, the instance table freezes at the bound, while the
+ * numbers above it (steps, settled) already include the off-table ones. This row names exactly that gap — **the run did not stop;
+ * each step's detail did**.
  *
- * 卡与详情页共用一个实现：同一条 run 在两个面上必须说同一句话。
+ * One implementation for card and detail page: the same run must say the same sentence on both surfaces.
  *
- * 只在真有实例被拒之表外时出现。`truncated` 本身还会被 reports / artifacts / phases 等小表
- * 触界置位（workflow-runs.ts），那时步数一个不少，再念一句「仅展示 40/40 步」是句废话。
+ * Appears only when instances were truly rejected from the table. `truncated` itself is also set by the small tables (reports / artifacts / phases)
+ * hitting the bound (workflow-runs.ts); then no step is missing and repeating "showing 40/40 steps" is noise.
  */
 export function WorkflowTruncatedNotice({
   className,
@@ -18,7 +18,7 @@ export function WorkflowTruncatedNotice({
   testId,
 }: {
   className?: string;
-  /** 活投影里的这条 run；缺席（run 已被淘汰出投影）即无从谈起。 */
+  //** The run in the live projection; absent (run evicted from projection) means nothing to say. */
   run: WorkflowRunState | undefined;
   testId: string;
 }) {
@@ -32,8 +32,8 @@ export function WorkflowTruncatedNotice({
       className={cn("min-w-0 text-ui-xs text-foreground-subtlest", className)}
       data-testid={testId}
     >
-      {/* 两个数不加千分位：紧挨着的摘要行那一段（`{done}/{total} steps`）就是裸数字，
-          同一块里一个「2,001」一个「2001」比多一个分隔符更刺眼。 */}
+      {/* No thousands separators on the two numbers: the adjacent summary segment (`{done}/{total} steps`) is bare,
+          and inside one block a "2,001" next to a "2001" jars more than any separator would. */}
       {intl.formatMessage({ id: "chat.toolCall.workflow.run.truncated" }, { shown, total })}
     </p>
   );

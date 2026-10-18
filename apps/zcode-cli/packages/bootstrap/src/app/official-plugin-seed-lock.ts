@@ -52,7 +52,7 @@ export function withOfficialPluginSeedLock<T>(
   }
 }
 
-/** 稳定错误码判定（项目规范：不靠错误文本分流），供调用方把等锁超时按降级处理。 */
+/** Stable error-code check (project rule: never branch on error text) so callers can degrade lock-wait timeouts. */
 export function isOfficialPluginSeedLockTimeoutError(
   error: unknown,
 ): error is NodeJS.ErrnoException {
@@ -74,8 +74,8 @@ function tryTakeOverStaleLock(lockRoot: string, staleLockAgeMs: number): void {
 
   const staleRoot = `${lockRoot}.stale-${process.pid}-${Date.now()}`;
   try {
-    // 直接删除 stale lock 存在 TOCTOU，可能误删另一进程刚创建的新锁。
-    // 先原子改名取得旧锁所有权，只清理自己成功改名的目录。
+    // Deleting a stale lock directly is TOCTOU-prone and may remove a lock another process just created.
+    // Rename atomically to take ownership of the old lock, then clean up only the directory we successfully renamed.
     renameSync(lockRoot, staleRoot);
   } catch (error) {
     if (isTransientLockRace(error)) return;
@@ -103,7 +103,7 @@ function isProcessAlive(pid: number): boolean {
     process.kill(pid, 0);
     return true;
   } catch (error) {
-    // Windows/Unix 都可能因权限返回 EPERM；这代表进程存在，只是不可探测。
+    // Windows and Unix alike may return EPERM for permission reasons; that means the process exists but cannot be probed.
     return errorCode(error) === "EPERM";
   }
 }
@@ -137,7 +137,7 @@ function errorCode(error: unknown): string {
 
 function sleepSync(ms: number): void {
   if (ms <= 0) return;
-  // bootstrap 的 filesystem seed 本身是同步启动边界；这里短暂阻塞当前 Agent
-  // 进程，换取跨进程同版本缓存只有一个写入者。
+  // The bootstrap filesystem seed is a synchronous startup boundary; briefly blocking this Agent
+  // process buys a single writer for the same-version cache across all processes.
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }

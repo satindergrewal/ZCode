@@ -218,6 +218,6 @@ declare global {
 }
 
 if (shouldExposeE2EStoreBridge()) {
-  // E2E 诊断入口必须由 WDIO 显式打开，不能复用 ZCODE_ENV=test，避免产品测试环境暴露可变全局 store。
+  // The E2E diagnostic hook must be enabled explicitly by WDIO; do not reuse ZCODE_ENV=test or product test envs would expose a mutable global store.
   window.__whiteboardStoreE2E = useWhiteboardStore;
 }

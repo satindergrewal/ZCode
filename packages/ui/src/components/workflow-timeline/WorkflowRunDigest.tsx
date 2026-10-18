@@ -29,48 +29,52 @@ import {
 import { timelineHeight, WorkflowTimeline } from "./WorkflowTimeline.js";
 import { WorkflowTruncatedNotice } from "./WorkflowTruncatedNotice.js";
 
-/** 下方运行卡默认展开，无箭头但仍可收起；状态由标题表达。 */
+/** The run card below defaults expanded, no chevron yet still collapsible; the header carries state. */
 export interface WorkflowRunDigestProps {
   name: string;
   runId: string;
-  /** 该 run 的发起图（按发起 toolCallId 查到）；缺席即画不出阶段线（行窗口没带发起行）。 */
+  /** The run's originating graph (looked up by toolCallId); without it no phase line (the row window lacks the origin row). */
   graph: WorkflowCausalityGraphData | undefined;
   /**
-   * 活投影的联接摘要。缺席 = run 不在投影里（八条上限淘汰 / 冷恢复无 journal 命中）：卡退成中性单行
-   * ——种类词「工作流已结束」、无灯无轨道无 Cancel / Resume，只留 ⤢（侧板会说「不再实时追踪」）。
+   * The live projection's join summary. Absent = the run left the projection (evicted by
+   * the eight-run cap / cold recovery with no journal hit): the card collapses to one
+   * neutral row — kind word "Workflow finished", no light/rail/Cancel/Resume, ⤢ only
+   * (the side panel explains it is no longer tracked live).
    */
   summary: WorkflowRunCardSummary | undefined;
-  /** 该 run 停驻的待答问题数；> 0 时表头出现警示色芯片。 */
+  /** Pending questions this run waits on; > 0 adds the warning chip to the header. */
   pendingQuestions?: number;
   /**
-   * 打开 run 详情；缺席即无 ⤢、芯片不可点、「还有 n 个」那一行是静态的。带 `landing` 时详情页落到
-   * 那一站：只有那一行会带，⤢ 与问题芯片开的是整个 run。
+   * Opens run details; absent means no ⤴, inert chip, static more-row. With `landing`,
+   * details focus that station: only the row carries it — ⤴ and the question chip open
+   * the whole run.
    */
   onOpenRun?: (landing?: { phaseId: string }) => void;
-  /** 恢复 run；只在 `summary.resumable` 且回调在场时渲染 Resume。 */
+  /** Resume the run; rendered only when `summary.resumable` and the callback exist. */
   onResume?: () => void;
   /**
-   * 停止 run；只在 running 且回调
-   * 在场时渲染 Stop，与 Resume 占同一个位置——两个互斥状态，用户从卡上就看到 run 的两条出路。
+   * Stop the run; rendered only while running with a callback, sharing Resume's slot —
+   * mutually exclusive states, both exits visible on the card.
    */
   onCancel?: () => void;
-  /** 点一枚药丸开那个子代理的 transcript；缺席即药丸不可点。 */
+  /** Opens a pill's subagent transcript; absent leaves pills inert. */
   onOpenPill?: (pill: TimelinePill) => void;
-  /** 点脚本药丸开脚本 transcript、落到那一站；缺席即脚本药丸不可点。 */
+  /** Opens the script transcript at that station; absent leaves the script pill inert. */
   onOpenWorkspace?: (pill: TimelinePill) => void;
-  /** 点一枚产物药丸开产物 tab；缺席即产物药丸禁用。 */
+  /** Opens an artifact pill's tab; absent disables artifact pills. */
   onOpenArtifact?: (artifactId: string) => void;
   /**
-   * providerId → provider 名（宿主从会话的模型清单给，见 useWorkflowSubagentModelProviderName）。
-   * 缺席即拼名退回裸 modelId——**永远不显示 providerId**（团队套餐的它是一个 UUID）。
+   * providerId -> provider name (host supplies it from the session's model list, see
+   * useWorkflowSubagentModelProviderName). Missing: labels fall back to the bare modelId —
+   * **never render the providerId** (on team plans it is a UUID).
    */
   subagentModelProviderName?: (providerId: string) => string | undefined;
   /**
-   * 「配置」弹层的宿主。在场即表头有
-   * Configure 钮——宿主只在回调在场且 run 能配置时给它。
+   * Configure-popover host. Present = the header grows a Configure button — the host
+   * supplies it only when a callback exists and the run is configurable.
    */
   settingsHost?: WorkflowRunSettingsHost;
-  /** testid 后缀（unit.key + toolCallId）。 */
+  /** testid suffix (unit.key + toolCallId). */
   testIdKey: string;
 }
 
@@ -94,7 +98,8 @@ export function WorkflowRunDigest({
   const run = summary?.run;
   const [expanded, setExpanded] = useState(true);
 
-  // 阶段线只在有活投影且有图时画：没有投影的图全是 pending 灯，会把一条已完成的 run 画成没跑过。
+  // Draw the phase line only with a live projection and a graph: an unprojected graph is all
+  // pending lights and would portray a finished run as never-run.
   const model = useMemo(
     () =>
       graph !== undefined && graph.steps.length > 0 && run !== undefined
@@ -113,7 +118,7 @@ export function WorkflowRunDigest({
           },
     [expanded, model],
   );
-  // 去掉箭头不代表取消折叠。仅空白区域切换，子控件继续执行各自的操作。
+  // Dropping the chevron does not drop collapsing: blank areas toggle, children keep their own actions.
   const hitsControl = (target: EventTarget | null, root: HTMLElement) => {
     const control =
       target instanceof Element
@@ -123,9 +128,10 @@ export function WorkflowRunDigest({
   };
 
   const format = intl.formatMessage.bind(intl);
-  // 卡上刻意**不**画 lineage：
-  // 「调整自 / 已被替代」两句只在详情页与确认窗说；卡只换种类词——卡上太吵。
-  // 细节串的最后一段是子代理模型名（没指定过模型就没有这一段），强度与规范串进 tooltip。
+  // The card deliberately does **not** draw lineage: "adjusted from / superseded by"
+  // belongs to the detail page and confirm dialog; the card only swaps its kind word —
+  // anything more is noise. The detail string's last segment is the subagent model name
+  // (absent when never set); level and canonical string live in the tooltip.
   const cardDetail = workflowCardDetail(format, model, graph, run, subagentModelProviderName);
   const live = summary?.status === "running";
   const kind = format({
@@ -176,16 +182,18 @@ export function WorkflowRunDigest({
         {format({ id: "chat.toolCall.workflow.run.resume" })}
       </Button>
     ) : undefined;
-  // Stop 与 Resume 互斥（running vs 已停），共用表头右侧同一个位置。走详情页同一条命令。
-  // 点下 Stop 后按钮进入禁用的「正在停止…」态，直到投影把状态换掉：按 status 键控重挂，状态一变
-  // 按钮就是新的（cancelled → resume 后再 running 亦然）。复位曾是按 status 跑的
-  // effect setState，每次状态变化都在投影帧的同步提交之后再补一笔更新——与工作流卡 React #185 崩溃
-  // 的抛点同形；键控重挂没有第二次提交。
+  // Stop and Resume are mutually exclusive (running vs stopped) and share the header's
+  // right slot, issuing the same command as the detail page. After Stop, the button enters
+  // a disabled "Stopping..." state until the projection moves it on: keying by status
+  // remounts fresh on any transition (cancelled -> resumed -> running included). The old
+  // reset was an effect setState per status — an extra update after each projection-frame
+  // commit, the same shape as the workflow-card React #185 crash; keyed remount has no
+  // second commit.
   const cancel =
     live && onCancel !== undefined ? (
       <CancelRunButton key={summary?.status} onCancel={onCancel} />
     ) : undefined;
-  // Configure 排在 Resume / Stop 之前、每种状态里都在同一个位置，所以它出现与否从不挪动 ⤢。
+  // Configure sits before Resume / Stop and in the same slot in every state, so whether it appears never moves ⤢.
   const configure =
     settingsHost !== undefined && run !== undefined ? (
       <ConfigureRunButton host={settingsHost} run={run} />
@@ -242,7 +250,7 @@ export function WorkflowRunDigest({
         {...(onOpenRun === undefined ? {} : { onOpenDetails: () => onOpenRun() })}
       />
       {shown === undefined || !hasRail ? null : (
-        // 收起时只隐藏代理，保留阶段线作为运行进度概览。
+        // Collapsing hides only the agents; the phase line stays as the progress overview.
         <div
           className={cn("wf-digest-plot overflow-hidden")}
           data-testid="workflow-digest-plot"
@@ -259,12 +267,13 @@ export function WorkflowRunDigest({
           />
         </div>
       )}
-      {/* 时间线下的那一句「仅展示 n/m 步的详情」：表头的计数已经是真实步数，这一行只说
-          停在界上的是**详情**。收起态也在——它解释的是上面那些数，不是药丸。
-          没有轨道的卡（行窗口里翻不到发起行）按规范是**单行**，也没有任何计数可供限定，
-          这一句跟着一起缺席。 */}
+      {/* The "showing n/m steps" line under the timeline: the header count is already true,
+          this line only says the **details** are what got capped. Present collapsed too —
+          it explains the numbers above, not the pills. Cards without a rail (no origin row
+          in the window) are single-line by spec with no count to qualify, so the line
+          drops with them. */}
       {hasRail ? <WorkflowTruncatedNotice run={run} testId="workflow-digest-truncated" /> : null}
-      {/* 产物条（追记「产物药丸」）：run 的交付物，收起与展开态都在——它是收据上最有用的一行。 */}
+      {/* Artifact strip: the run's deliverable, present collapsed and expanded — the receipt's most useful row. */}
       {run?.artifacts !== undefined && run.artifacts.length > 0 ? (
         <WorkflowArtifactStrip
           artifacts={run.artifacts}
@@ -280,8 +289,8 @@ export function WorkflowRunDigest({
 }
 
 /**
- * 表头的 Configure 钮：滑杆图标的 ghost
- * `icon-md`，与 Stop 同形——表头容不下一枚带字的按钮。点它在自己下方开「配置」弹层。
+ * Header Configure: sliders glyph, ghost `icon-md`, shaped like Stop — the header has no
+ * room for a labeled button. Opens the Configure popover below itself.
  */
 function ConfigureRunButton({
   host,
@@ -321,12 +330,14 @@ function ConfigureRunButton({
 }
 
 /**
- * 表头的 Stop 钮：形态与 ⤢ 打开详情同款（ghost 图标钮 + 提示，不带文字——表头容不下一枚带字的
- * 按钮）。「正在停止」是它自己的局部状态；宿主按 run 状态给它 key，状态一变即重挂、自然复位。
+ * Header Stop: same style as the ⤴ details button (ghost icon + tooltip, no label — no
+ * room for text). "Stopping" is local state; the host keys it by run status so any
+ * transition remounts and it resets naturally.
  *
- * 提示带第二行「停止后可以随时恢复，已完成的步骤会保留。」：动词从「取消」改成「停止」之后，
- * 还要在按下去的那一刻就把「不是丢弃」说出来（一个停下的 run 是可恢复的）。正在停止时那句话
- * 撤走——决定已经做完了，没什么可再劝的。
+ * Tooltip's second line: "You can resume anytime; finished steps are kept." Since the
+ * verb became Stop, the press itself must say this is not a discard (a stopped run is
+ * resumable). While stopping, the line withdraws — the decision is made; nothing left to
+ * argue.
  */
 function CancelRunButton({ onCancel }: { onCancel: () => void }) {
   const { intl } = useZCodeIntl();

@@ -1,29 +1,29 @@
 import type { WorkspaceFileEntry } from "@zcode/shared";
 
 /**
- * 工作区文件条目的列式编解码（worker/跨进程传输专用，零运行时依赖）。
- * 每行 `type\trelativePath`——name 是 relativePath 的最后段、path 由
- * rootPath 拼回，不重复传输（37 万条实测 65.7MB → ~25MB）。
- * Unix 文件名可含 \t、\n、\\，打包时转义、解包时还原。
+ * Columnar codec for workspace file entries (worker/cross-process transport; zero runtime deps).
+ * Each line `type\trelativePath`--name is relativePath's last segment and path rebuilds from
+ * rootPath, so nothing transmits twice (370k rows measured 65.7MB -> ~25MB).
+ * Unix filenames may contain \t \n \\; escaped on pack, restored on unpack.
  *
- * 传输形态选择（性能约束）：
- * - RPC 顶层返回裸 string：走框架的 String 快速路径（长度前缀+原始字节），
- *   避免 Object 的 JSON.stringify/parse 对含 \t\n 大字符串的转义开销（实测 6-9s）；
- * - 单条消息不超过 WORKSPACE_FILE_ENTRIES_CHUNK_SIZE（~4MB）：大消息在 renderer
- *   接收端的分帧重组是秒级主线程长任务（实测 4.6-6.3s），分块拉取 + 块间让出
- *   事件循环后，主线程任何时刻只处理一小块（~50ms），输入永不冻结。
+ * Transport shape (performance-constrained):
+ * - RPC top level returns a bare string: the framework's String fast path (length prefix + raw bytes),
+ *   avoiding Object JSON stringify/parse escape costs on \t\n-heavy strings (6-9s measured);
+ * - one message <= WORKSPACE_FILE_ENTRIES_CHUNK_SIZE (~4MB): on the renderer side, framing a giant message
+   is a seconds-long main-thread task (4.6-6.3s measured); chunked fetches + yields between chunks
+   keep every slice ~50ms, so input never freezes.
  */
 const FIELD_SEPARATOR = "\t";
 const LINE_SEPARATOR = "\n";
 
-/** 单块目标大小（字符数）；调用方按 totalLength 分块拉取。 */
+/** Per-chunk target size (chars); callers page by totalLength. */
 export const WORKSPACE_FILE_ENTRIES_CHUNK_SIZE = 4_000_000;
 
 function escapeField(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/\t/g, "\\t").replace(/\n/g, "\\n");
 }
 
-// 正则一次性还原转义（比逐字符循环快数倍，37 万行下节省秒级 worker 时间）。
+// One regex restores escapes (several times faster than a char loop; seconds saved at 370k rows).
 const UNESCAPE_PATTERN = /\\(.)/g;
 
 function unescapeField(value: string): string {
@@ -47,8 +47,8 @@ export function packWorkspaceFileEntries(entries: WorkspaceFileEntry[]): string 
 }
 
 /**
- * 解包并拼回完整 entries：name 取 relativePath 最后段，path 由 rootPath 拼出
- * （rootPath 以分隔符结尾与否都兼容；Windows 下用 \、其余用 /）。
+ * Unpack and rebuild full entries: name = relativePath's last segment, path = rootPath + it
+ *(rootPath with or without trailing separator; \ on Windows, / elsewhere).
  */
 export function unpackWorkspaceFileEntries(packed: string, rootPath: string): WorkspaceFileEntry[] {
   if (packed.length === 0) {
@@ -69,7 +69,7 @@ export function unpackWorkspaceFileEntries(packed: string, rootPath: string): Wo
     }
     const relativePath = unescapeField(line.slice(tabAt + 1));
     const lastSlash = relativePath.lastIndexOf("/");
-    // Windows root 下把 posix 相对路径的分隔符也换回 \，保持与 node:path.join 一致。
+    // Under a Windows root, convert posix relative separators to \ too, matching node:path.join.
     const pathPart = separator === "/" ? relativePath : relativePath.split("/").join("\\");
     entries.push({
       name: lastSlash === -1 ? relativePath : relativePath.slice(lastSlash + 1),

@@ -17,11 +17,11 @@ export function hasPluginReferenceUserRows(
 }
 
 /**
- * 已发送 Plugin chip 的 display-only 投影。
+ * Display-only projection for sent Plugin chips.
  *
- * 历史消息只能从 canonical stable ID 重建展示；若误用 workspace
- * authority，会让已有 Session 在 Plugin 启停后显示不属于自身身份边界的数据。
- * 因此只有明确的 Session authority 才可建立 icon map，其余情况统一 fail closed。
+ * Historical messages may rebuild presentation only from the canonical stable ID; misusing workspace
+ * authority would show a session data outside its identity boundary once plugins toggle. Thus
+ * only an explicit Session authority may build the icon map; everything else fails closed.
  */
 export function buildSessionPluginIconMap(
   authority: "session" | "workspace" | null,

@@ -1,5 +1,6 @@
-// Remote workspace service proxy 的 renderer-local 单调代际。
-// session 注册入口先预分配，异步 consumer 再按对象身份读取同一代际，避免 effect 乱序回切。
+// Renderer-local monotonic generation for the remote workspace service proxy.
+// The session-registration entry pre-allocates; async consumers read the same generation by object
+// identity, so out-of-order effect re-entry cannot flip back to an older service.
 const generations = new WeakMap<object, number>();
 let nextGeneration = 1;
 

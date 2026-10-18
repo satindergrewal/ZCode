@@ -1,5 +1,5 @@
-// V4 physical wire schema：logical topic frame 保持原子 seq 语义，超大帧只在
-// UTF-8 byte 层分片。codec/reassembly 纯函数见 wire-codec.ts。
+// V4 physical wire schema: logical topic frames keep atomic seq semantics; over-large frames
+// fragment at the UTF-8 byte layer only. Pure codec/reassembly in wire-codec.ts.
 import { z } from "zod";
 import { PROTOCOL_V4_LIMITS, V4_WIRE_PROTOCOL_VERSION } from "./core.js";
 import { topicWireBase64Schema } from "./wire-binary.js";
@@ -12,7 +12,7 @@ export const topicWireChecksumSchema = z
   .strict();
 export type TopicWireChecksum = z.infer<typeof topicWireChecksumSchema>;
 
-/** publisher reservation 对物理帧用途的权威标记；consumer 禁止按 RPC 时序猜测。 */
+/** The publisher reservation's authoritative marker of the physical frame's purpose; consumers must never guess from RPC timing. */
 export const topicFrameDeliveryKindSchema = z.enum(["initial", "online", "recovery"]);
 export type TopicFrameDeliveryKind = z.infer<typeof topicFrameDeliveryKindSchema>;
 
@@ -43,23 +43,23 @@ export type TopicWireFrame<F> =
     };
 
 /**
- * service 边界只验证可安全路由/计量的 outer 形状；range/base64/checksum/logical
- * payload 的完整校验必须在 ownership 过滤后的 assembler 中产生 typed fault。
+ * The service boundary validates only the safely-routable/meterable outer shape; full range/base64/checksum/logical
+ * payload validation must happen in the post-ownership-filter assembler as typed faults.
  */
 export const topicWireFrameCandidateSchema = z.discriminatedUnion("kind", [
   z
     .object({
       wireVersion: z.literal(V4_WIRE_PROTOCOL_VERSION),
       kind: z.literal("complete"),
-      // ownership 路由只读 topic/subId；坏 deliveryKind 必须进入 owned assembler
-      // 产生 typed fault，不能在 service 边界 warn/drop 后让 store 永久等待。
+      // Ownership routing reads topic/subId only; a bad deliveryKind must reach the owned assembler
+      // and become a typed fault, never warned/dropped at the boundary leaving the store waiting forever.
       deliveryKind: z.unknown().optional(),
       logicalFrameId: z.string().min(1),
       logicalFrameOrdinal: z.number(),
       topic: z.string().min(1),
       subscriptionId: z.string().min(1),
-      // inner payload 故意不在 service route boundary 校验；缺失/类型/extra 由
-      // ownership 后 assembler 统一转 typed fault，避免早期 warn/drop 永久 loading。
+      // The inner payload is deliberately not validated at the service route boundary; missing/type/extra become
+      // typed faults in the post-ownership assembler, avoiding early warn/drop leaving loading forever.
       frame: z.unknown().optional(),
     })
     .passthrough(),

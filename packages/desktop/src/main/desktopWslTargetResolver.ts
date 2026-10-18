@@ -61,7 +61,7 @@ function createCanonicalWslTargetResolver(
     };
     cache.set(key, entry);
     void entry.promise.catch(() => {
-      // 临时 discovery 失败若留在 cache，会让用户在 TTL 内无法通过重试恢复连接。
+      // A transient discovery failure left in cache would lock the user out of retrying for the whole TTL.
       if (cache.get(key) === entry) {
         cache.delete(key);
       }

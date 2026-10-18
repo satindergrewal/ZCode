@@ -71,7 +71,7 @@ export function toWorkspaceRelativePath(workspacePath: string, filePath: string)
     return normalizedFilePath.slice(exactPrefix.length) || getPathLeaf(filePath);
   }
 
-  // Windows 路径在不同来源下大小写可能不一致，这里做一次只用于比较的降级匹配。
+  // Windows path casing differs across sources; normalize for comparison only.
   const caseInsensitivePrefix = exactPrefix.toLowerCase();
   if (normalizedFilePath.toLowerCase().startsWith(caseInsensitivePrefix)) {
     return normalizedFilePath.slice(exactPrefix.length) || getPathLeaf(filePath);
@@ -145,9 +145,9 @@ export function buildTurnChangeSummary(
     return null;
   }
 
-  // 调用方需要严格只显示当前轮的文件摘要。
-  // 这里把单轮摘要计算抽成独立 helper，只从传入的当前轮快照重算，
-  // 避免任何 task/session 级聚合误传进来时把历史轮次文件一起展示出来。
+  // Callers need strictly the current-turn file summary.
+  // The per-turn computation is a standalone helper recomputing only from the passed current-turn snapshot,
+  // so no task/session-level aggregate can leak historical turns into the display.
   const filesByPath = new Map<
     string,
     {
@@ -198,8 +198,8 @@ export function buildTurnChangeSummary(
 }
 
 /**
- * 从 fileChanges 中按轮次构建 per-turn 文件变更摘要。
- * 用于在每条 assistant 消息下方显示该轮的文件改动。
+ * Builds per-turn file-change summaries from fileChanges.
+ * Rendered under each assistant message for that turn file changes.
  */
 export function buildPerTurnChangeSummaries(
   fileChanges: readonly ZCodePersistedFileChange[] | undefined,

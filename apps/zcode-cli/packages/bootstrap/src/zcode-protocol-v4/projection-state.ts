@@ -1,5 +1,5 @@
-// ProductProjection 状态工厂与派生规则。
-// 本文件只放纯函数：初始快照、availability/inputRouting 派生、revision 递进判定。
+// ProductProjection state factory and derivation rules.
+// Pure functions only: initial snapshot, availability/inputRouting derivations, revision-advance decisions.
 import type {
   ActionAvailability,
   ConversationDelta,
@@ -12,10 +12,10 @@ import type {
 } from "@zcode/shared/zcode-protocol-v4";
 
 /**
- * 冷恢复合成事件的 traceId 哨兵。
- * 合成事件是「视图重建」而非权威用户动作：ModelSelected 等 config 类合成事件
- * 更新投影 config，但不得声明 种子权威（configModelTouchedByEvent）——
- * 否则历史最后一轮的模型会压掉 resume 回写的 runtime 真值（含草稿态选型）。
+  * The traceId sentinel for cold-restored synthesized events.
+  * Synthesized events are view rebuilds, not authoritative user actions: config-class synths such as ModelSelected
+  * update the projected config but must not claim seed authority (configModelTouchedByEvent) --
+  * else the last historical round's model would override the runtime truth rewritten at resume (draft-stage choices included).
  */
 export const HYDRATION_TRACE_ID = "hydrate-trace";
 
@@ -30,7 +30,7 @@ export function createInitialConversationSnapshot(
     seq: 0,
     revision: 0,
     control: {
-      // draft 裁决：会话实体已存在但尚无输入。
+            // draft verdict: the session entity exists but has no input yet.
       phase: "draft",
       sessionEnded: false,
       canStop: false,
@@ -60,9 +60,9 @@ export function createInitialConversationSnapshot(
       "queue",
     ),
     meta: { title: "", titleSource: "default" },
-    // mode 初值 = core 默认协作模式（session-mode-port getMode 的 "build" 回落）。
-    // SessionCreated 事件虽带 mode，但 draft 语义要求无可见 delta（不 bump revision）；
-    // 持久化偏好非 build 时以首条 SessionModeChanged 为准（TODO：draft 期免 revision 种子通道）。
+        // mode initial value = core's default collaboration mode (session-mode-port getMode's "build" fallback).
+        // SessionCreated carries a mode, but draft semantics demand no visible delta (no revision bump);
+        // non-build persisted preferences wait for the first SessionModeChanged (TODO: a revision-free seed channel during draft).
     config: {
       provider: "",
       model: "",
@@ -88,7 +88,7 @@ export function createInitialConversationSnapshot(
     subagents: { revision: 0, childSessionIds: [], running: [], endedTotal: 0 },
     goal: null,
     plan: null,
-    // 软门禁：初始无待审核状态;activate() 上报后由投影写入。
+        // Soft gate: no pending review initially; written by the projection once activate() reports.
     workspaceHookAdmission: null,
     rows: { window: [], totalCount: 0, firstRowId: null },
   };
@@ -100,9 +100,9 @@ function denied(reasonCode: string): ActionAvailability {
   return { allowed: false, reasonCode };
 }
 
-// guard 派生的输入面（与投影同源）。compacting/goalVerifying 不是独立 phase
-// （phase 封闭枚举），从 activeWorks / goal.status 派生后传入。
-// queueLength/autoDrain 用于 held 派生。
+// Input face derived from the guard (same source as the projection). compacting/goalVerifying are not separate phases
+// (phase is a closed enum); derive them from activeWorks / goal.status and pass in.
+// queueLength/autoDrain feed the held derivation.
 interface AvailabilityContext {
   phase: SessionControl["phase"];
   goalStatus: GoalState["status"] | null;
@@ -112,18 +112,18 @@ interface AvailabilityContext {
   autoDrain: boolean;
 }
 
-// 裁决表与 packages/formal-proof/src/model.ts 的 evaluate 逐条对齐
-// （黄金测试 formal-proof-consistency 背书）；reasonCode = product-protocol guard id。
+// The verdict table aligns row-by-row with packages/formal-proof/src/model.ts's evaluate
+// (backed by the formal-proof-consistency golden test); reasonCode = the product-protocol guard id.
 export function computeAvailability(context: AvailabilityContext): SessionActionAvailability {
   const { phase, goalStatus, compacting } = context;
   const running = phase === "running" || phase === "prewarming";
   const compact = compacting
-    ? // formal-proof: duplicateCompactRejected —— running/queued compact 操作锁去重。
+        ? // formal-proof: duplicateCompactRejected -- dedup via the running/queued compact operation lock.
       denied("compactOperationLock")
     : phase === "draft"
-      ? // formal-proof: idleCannotCompact —— 没有可压缩上下文。
+            ? // formal-proof: idleCannotCompact -- no compactable context.
         denied("idleCannotCompact")
-      : // running/goal verifier 时命令进入 typed FIFO，completed 时立即执行或进入 held queue。
+            : // during running/goal-verifier the command enters the typed FIFO; on completed it executes at once or enters held.
         ALLOWED;
   return {
     fork: compacting
@@ -140,13 +140,13 @@ export function computeAvailability(context: AvailabilityContext): SessionAction
       : running
         ? ALLOWED
         : denied("sendQueuedNowRequiresRunning"),
-    // 独立 pauseGoal 改变 target 产品态；verifier/notSatisfied 期间底层 target 仍是 active，
-    // 因此也允许暂停，不能要求当前一定存在 provider abort controller。
+        // A standalone pauseGoal changes the target's product state; during verifier/notSatisfied the underlying target is still active,
+        // so pausing is allowed -- never require a live provider abort controller.
     pauseGoal:
       goalStatus === "active" || goalStatus === "verifying" || goalStatus === "notSatisfied"
         ? ALLOWED
         : denied(goalStatus === null ? "noGoalToPause" : "goalNotActive"),
-    // resumeGoal = stopPausesActiveGoalTarget 的逆操作：仅 paused 可恢复。
+        // resumeGoal is the inverse of stopPausesActiveGoalTarget: only paused resumes.
     resumeGoal:
       goalStatus === "paused"
         ? ALLOWED
@@ -159,21 +159,21 @@ export function computeInputRouting(
   followupMode: "queue" | "guide",
 ): InputRouting {
   // formal-proof: compactingAcceptsFutureInput
-  // —— compact 是维护步骤，输入是未来意图 → 入队，不打断 compact。
+    // -- compact is maintenance; the input is future intent -> queue, never interrupt the compact.
   if (context.compacting) {
     return { mode: "enqueue", reasonCode: "compactingAcceptsFutureInput" };
   }
-  // goal verifier 是 completion-blocking active work，但不是普通
-  // assistant active turn；只看 phase=running 会在 guide 模式下尝试 steer，
-  // core 此时没有 steerable activeTurn，导致用户输入既不进 queue 也不进历史。
+    // The goal verifier is completion-blocking active work, but not a normal
+    // assistant active turn; keying on phase=running would steer in guide mode while
+    // core has no steerable activeTurn, so the input lands in neither queue nor history.
   if (context.goalVerifying) {
     return { mode: "enqueue", reasonCode: "goalVerifierAcceptsFutureInput" };
   }
   if (context.phase === "running" || context.phase === "prewarming") {
     return { mode: followupMode === "guide" ? "guide" : "enqueue" };
   }
-  // completed + queue>0 + autoDrain=false 时，输入不静默入队；
-  // 客户端呈现 clear/keep 选择，disposition 随 command 上行。
+    // completed + queue>0 + autoDrain=false: input does not silently enqueue;
+    // the client presents clear/keep, and the disposition travels up with the command.
   const completed =
     context.phase === "completedSuccess" || context.phase === "completedInterrupted";
   if (completed && context.queueLength > 0 && !context.autoDrain) {
@@ -182,11 +182,11 @@ export function computeInputRouting(
   return { mode: "startNow" };
 }
 
-// revision 递进规则（封闭定义）：行结构变化 + A 区（usage/pendingCommands 除外）变化各 +1。
-// `workflowRuns` **刻意不在列**，归入 usage/pendingCommands 的豁免类：它是高频派生数据
-// （每个节点约 5 次迁移）、自带单调 revision 字段、且没有任何 command 的
-// baseRevision CAS 读它——列入会让 run 在飞期间的每次节点迁移都抖动 conversation revision，
-// 徒增 CAS 假失败。
+// Revision-advance rule (closed definition): row-structure changes and group-A changes (except usage/pendingCommands) each +1.
+// `workflowRuns` is **deliberately excluded**, in the usage/pendingCommands exemption class: high-frequency derived data
+// (about 5 migrations per node), with its own monotonic revision field, and no command's
+// baseRevision CAS reads it -- listing it would jitter conversation revision on every node migration of a live run,
+// buying CAS false failures.
 const REVISION_BEARING_PATCH_KEYS: ReadonlyArray<keyof StatePatch> = [
   "control",
   "availability",
@@ -211,8 +211,8 @@ export function deltaBumpsRevision(delta: ConversationDelta): boolean {
       return false;
     case "state.updated":
       return REVISION_BEARING_PATCH_KEYS.some((key) => delta.patch[key] !== undefined);
-    // 键级增量与整键 `workflowRuns` patch 同一条豁免（见上面的注释）：它们表达的就是那个键的变化，
-    // 换个编码不该换记账规则——列入会让一条在飞的 run 每次节点迁移都抖动 conversation revision。
+        // Key-level deltas share the whole-key `workflowRuns` exemption (see above): they express that key's change,
+        // and a different encoding must not change the accounting -- listing them would jitter conversation revision per node migration of a live run.
     case "workflowRun.updated":
     case "workflowRun.removed":
       return false;

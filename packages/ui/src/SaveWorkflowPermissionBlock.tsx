@@ -35,9 +35,10 @@ function MetadataRow({ label, value, mono }: { label: string; value: string; mon
 }
 
 /**
- * args 声明表。列是 名称 / 类型 / 必填 / 默认值，说明另起一行跨列——五列在权限窗这个宽度上
- * 会把说明挤成一列碎字，而 DESIGN.md 明令不允许「靠紧凑截断才活得下去」的布局，也要求
- * 版面扛得住 i18n 膨胀。必填用文字而不是对勾：语义不靠图标单独表达。
+ * Args table: name / type / required / default, with the description on its own spanning row —
+ * five columns at dialog width crush the description into fragments, and DESIGN.md forbids
+ * layouts that only survive via tight truncation and requires i18n tolerance. Required is a
+ * word, not a checkmark: meaning never rides on an icon alone.
  */
 function WorkflowArgsTable({ args }: { args: readonly WorkflowArgDeclaration[] }) {
   const { intl } = useZCodeIntl();
@@ -105,14 +106,14 @@ function WorkflowArgsTable({ args }: { args: readonly WorkflowArgDeclaration[] }
 }
 
 /**
- * SaveWorkflow 的保存确认块。
+ * The SaveWorkflow save-confirmation block.
  *
- * 这个 gate **没有 display 载荷**（spec 明确 v1 不加 `save_workflow` display kind）：入参就是
- * 全部内容，所以块里的每一项都读自归一化入参。脚本折叠沿用运行确认窗的同一习语与同一组文案
- * ——同一段脚本在两个窗里必须同名。
+ * This gate carries NO display payload (the spec keeps `save_workflow` display out of v1): the
+ * arguments are the entire content, so every row reads from the normalized input. Script folding
+ * reuses the run-confirm idiom and copy verbatim — the same script must match in both dialogs.
  *
- * 刻意**不**接 Refine：Refine 的语义是「拒绝这次运行并告诉模型怎么改工作流」，
- * 而保存是一次写盘，改法是模型换一组元数据重新调用，不需要第三个选项。
+ * Deliberately NO Refine action: Refine means "reject this run and tell the model how to change
+ * the workflow", while saving is a single write — a retry with new metadata needs no third option.
  */
 export function SaveWorkflowPermissionBlock({ request }: { request: ZCodePermissionRequest }) {
   const { intl } = useZCodeIntl();
@@ -120,14 +121,14 @@ export function SaveWorkflowPermissionBlock({ request }: { request: ZCodePermiss
   const input = readSaveWorkflowInput(request.raw);
   const [scriptOpen, setScriptOpen] = useState(false);
 
-  // PermissionDialog 跨请求复用组件实例，换请求后必须回到默认折叠态，
-  // 否则上一次的展开会泄漏到下一个保存确认。
+  // PermissionDialog reuses component instances across requests; reset to collapsed on request
+  // change or the previous expansion leaks into the next save confirmation.
   useEffect(() => {
     setScriptOpen(false);
   }, [request.requestId]);
 
-  // 覆盖与新建是两句**不同的问句**，不是同一句话加个标记：用户要在读第一行时就知道
-  // 这次操作会不会替换掉已经存在的东西。
+  // Overwrite and create are two different questions, not one sentence plus a badge: the first
+  // line must already say whether existing data gets replaced.
   const title = intl.formatMessage({
     id: input.overwrite
       ? "chat.permission.workflow.save.overwriteTitle"

@@ -106,8 +106,8 @@ export async function verifyWindowsProcessIdentityAsync(
 ): Promise<boolean> {
   if (process.platform !== "win32" || timeoutMs <= 0) return false;
   if (windowsCimCapability === "identity-unavailable") return false;
-  // Windows 11 24H2 及部分 Win10 镜像不再提供 WMIC；Windows 10+ 统一使用
-  // PowerShell/CIM，查询失败仍按 CreationDate 无法确认处理，禁止绕过身份校验强杀。
+  // Windows 11 24H2 and some Win10 images dropped WMIC; Windows 10+ uses PowerShell/CIM, and a failed
+  // query stays creation-unverified - never force-kill past the identity check.
   return await new Promise<boolean>((resolve) => {
     execFile(
       "powershell.exe",
@@ -128,7 +128,7 @@ export async function verifyWindowsProcessIdentityAsync(
           if (isHardCimUnavailable(error)) windowsCimCapability = "identity-unavailable";
           warn(
             options,
-            `Windows root 身份 PowerShell 复核失败 pid=${identity.pid}:`,
+            `Windows root identity PowerShell recheck failed pid=${identity.pid}:`,
             error ?? stderr,
           );
           resolve(false);
@@ -157,14 +157,14 @@ export async function readWindowsProcessListAsync(
     return await awaitWindowsProcessListWithinDeadline(windowsProcessListInFlight.promise, options);
   }
 
-  // Get-CimInstance 在部分 Windows 机器上会超过 1 秒。同步等待会阻塞 Host
-  // 的退出 deadline；共享同一个异步查询后，多个 workspace 可以复用一次系统进程表。
-  // 旧共享 Promise 可能早于新 Agent 的 spawn 开始，复用这张进程表必然找不到
-  // 新 root 并退化为 unverified。只有严格晚于 root 启动的查询才具备可复用资格。
+  // Get-CimInstance can exceed 1s on some machines; awaiting synchronously would eat the host
+  // exit deadline. Share one async query so multiple workspaces reuse a single system table;
+  // a table from before a newer spawn degrades to unverified, so only queries strictly after
+  // the root started are reusable.
   const startedAtMs = Date.now();
   const request = new Promise<readonly ProcessIdentity[]>((resolve) => {
-    // 移除 WMIC 后直接走受支持的 CIM 后端，避免 ENOENT fallback 消耗 cleanup
-    // deadline；查询失败返回空身份，调用方继续沿 fail-closed 路径观察退出。
+    // Post-WMIC, go straight to the supported CIM backend (no ENOENT fallback burning cleanup
+    // deadline); failure returns empty identities and callers keep fail-closed observation.
     const timeoutMs = boundedWindowsLookupTimeoutMs(WINDOWS_PROCESS_LOOKUP_TIMEOUT_MS, options);
     if (timeoutMs <= 0) {
       resolve([]);
@@ -188,13 +188,13 @@ export async function readWindowsProcessListAsync(
       (error, stdout, stderr) => {
         if (error || !stdout) {
           if (isHardCimUnavailable(error)) windowsCimCapability = "identity-unavailable";
-          warn(options, "查询 Windows runtime 进程表失败（异步）:", error ?? stderr);
+          warn(options, "Failed to query the Windows runtime process table (async):", error ?? stderr);
           resolve([]);
           return;
         }
         const identities = parseWindowsProcessList(stdout);
         if (identities.length === 0)
-          warn(options, "PowerShell 未返回可解析的 Windows runtime 进程表");
+          warn(options, "PowerShell returned no parseable Windows runtime process table");
         if (identities.length > 0) windowsCimCapability = "cim";
         resolve(identities);
       },

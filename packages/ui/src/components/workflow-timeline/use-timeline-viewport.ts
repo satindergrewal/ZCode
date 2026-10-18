@@ -1,23 +1,23 @@
 import { useEffect, useLayoutEffect, useState } from "react";
 
 /**
- * 滚动视口的三个数（scrollLeft / clientWidth / scrollWidth）与「正在滚」标记。
- * 滚动事件按帧合并；尺寸变化走 ResizeObserver（容器与内容层都看，草稿的笔每揭示一站内容就变宽）。
- * jsdom 里量不到（宽 0），消费者据此什么都不折——静态测试结果逐像素保持不变。
+ * The scroll viewport's three numbers (scrollLeft / clientWidth / scrollWidth) and the "is scrolling" mark.
+ * Scroll events coalesce per frame; resizes go through ResizeObserver (watching container and content layer — the draft's pen widens it with every revealed station).
+ * jsdom cannot measure (width 0); consumers fold nothing in that case — static test output stays pixel-identical.
  *
- * 以**元素**而不是 ref 对象为依赖：草稿首帧没有站、滚动层晚一帧才挂上，
- * 以 ref 对象为依赖的 effect 在首帧遇到 null 就提前返回、之后再也不跑——监听从来没接上，视口只剩宽度变化时
- * 那一次陈旧的测量，最新一站被永久折到右檐。元素由消费者用 callback ref 放进状态交过来：出现就接线、离开就拆。
+ * Depend on the **element**, not the ref object: the draft's first frame has no stations and the scroll layer mounts a frame later;
+ * an effect depending on the ref object returns early on the null first frame and never runs again — the listener never attaches, and the viewport
+ * keeps that one stale measurement, leaving the newest station folded to the right edge forever. The consumer passes the element in via callback-ref state: attach on mount, detach on unmount.
  *
- * 量到的数没变就不换对象，ResizeObserver 与
- * 滚动回调每次都造新对象曾让时间线白渲染一轮；空草稿空转期间这些多余的更新一起给 React 的嵌套更新
- * 计数记账。
+ * Keep the previous object while the measured numbers are unchanged; the ResizeObserver and
+ * scroll callbacks used to allocate a fresh object per event and cost the timeline a wasted render; during empty-draft idle those extra updates all get
+ * charged to React's nested-update accounting.
  */
 export interface TimelineViewport {
   scrollLeft: number;
   clientWidth: number;
   scrollWidth: number;
-  /** 最近 800ms 内滚过（滚动条据此露出）。 */
+  /** Scrolled within the last 800ms (the scrollbar shows on this). */
   scrolling: boolean;
 }
 
@@ -32,7 +32,7 @@ function measure(element: HTMLElement): Omit<TimelineViewport, "scrolling"> {
   };
 }
 
-/** 把一次测量并进上一份视口；三个数与 scrolling 都没变就返回上一份，React 据此跳过这轮渲染。 */
+/** Fold one measurement into the previous viewport; with the three numbers and scrolling unchanged, return the previous object so React skips the render. */
 function merge(
   previous: TimelineViewport,
   measured: Omit<TimelineViewport, "scrolling">,
@@ -49,9 +49,9 @@ function merge(
 const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 export function useTimelineViewport(
-  /** 滚动层元素；还没挂上（草稿首帧）或已卸下时为 null。 */
+  /** The scrolling-layer element; null before mount (draft first frame) or after unmount. */
   element: HTMLElement | null,
-  /** 内容变化的抓手（站数、宽度）：变了就重新量一次。 */
+  /** Handle on content changes (station count, width): re-measure when it changes. */
   contentKey: number,
 ): TimelineViewport {
   const [viewport, setViewport] = useState<TimelineViewport>(EMPTY);

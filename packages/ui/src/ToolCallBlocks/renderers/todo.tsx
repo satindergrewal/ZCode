@@ -38,8 +38,8 @@ function TodoStatusIcon({ status }: { status: ZCodePlanStep["status"] }) {
     return <CircleCheckIcon className="size-3.5 shrink-0 text-success" />;
   }
   if (status === "in_progress") {
-    // 工具输出里的 todo running 状态会长时间留在页面上；
-    // 用静态箭头表达当前项，避免和加载动画语义混在一起。
+    // The todo running state from tool output lingers on screen; use a static arrow for
+    // the current item so it does not read as a loading spinner.
     return <ArrowRightIcon className="size-3.5 shrink-0 text-foreground" />;
   }
   return <CircleIcon className="size-3.5 shrink-0 text-foreground-subtlest" />;

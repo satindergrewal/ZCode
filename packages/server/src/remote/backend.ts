@@ -30,11 +30,11 @@ export interface RemoteUploadOptions {
 }
 
 export interface IRemoteBackend extends IDisposable {
-  /** WSL 可选的运行时网络解析；其它远端类型保持未注入。 */
+  /** Optional WSL runtime proxy resolution; other remote types leave it unset. */
   resolveRuntimeProxy?(proxyUrl: string): Promise<string>;
-  /** 等待当前 backend 自己创建的底层进程/连接完成回收；不允许扩大到共享运行时。 */
+  /** Await reclamation of the underlying process/connection this backend created; never extend to shared runtimes. */
   disposeAndWait?(options?: { graceTimeoutMs?: number; killWaitTimeoutMs?: number }): Promise<void>;
-  /** 远端底层连接断开事件；用于补偿 stdio channel 没有及时 close 的半开连接。 */
+  /** Underlying remote connection dropped; compensates for half-open connections when the stdio channel fails to close in time. */
   onDidDisconnect?: Event<RemoteDisconnectEvent>;
   /** Detect remote environment (no Node.js required) */
   detect(): Promise<RemoteEnvironment>;

@@ -30,10 +30,10 @@ export function PatchFallbackContent({
     resolvedTheme === "dark" ? codePreviewSettings.darkTheme : codePreviewSettings.lightTheme;
 
   if (plainTextFallbackLines) {
-    // @pierre/diffs 的 PatchDiff 只支持单文件 patch。日志里出现过多文件
-    // patch 直接进入右侧预览，生产包渲染阶段会抛错并卡住侧栏，所以这里统一降级成轻量 diff。
-    // edit 打开的右侧 Diff 对新增/删除文件也会走这条轻量 fallback；之前只渲染纯文本，
-    // 导致 HTML/TS 等文件在右侧失去语法高亮。这里复用异步 Shiki 高亮，保留不卡顿的轻量渲染路径。
+    // @pierre/diffs PatchDiff only supports single-file patches; multi-file patches reaching the
+    // side preview threw during render and jammed the pane, so everything degrades to a lightweight
+    // diff. The edit side diff uses the same fallback for added/deleted files; it used to render
+    // plain text, losing syntax highlighting for HTML/TS etc. Async Shiki keeps the light path.
     return (
       <HighlightedLightweightDiffPreview
         className="h-full"

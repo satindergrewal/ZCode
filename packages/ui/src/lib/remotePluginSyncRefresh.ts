@@ -55,9 +55,9 @@ async function refreshSlashCommandsAfterRemotePluginSync(params: {
       workspacePath,
       workspaceIdentityParam,
     ).slashCommands;
-    // 远程插件同步入口不一定打开过命令设置页，commandsStore 可能尚未初始化。
-    // 输入框 `/` 面板读取的是 zcodeSessionStore.slashCommands，所以同步后必须直接
-    // 向当前远端 workspace 拉取 commands 并写回 slashCommands，不能只刷新设置页 store。
+    // Remote plugin sync can run without the command settings page ever opening, so commandsStore may be uninitialized.
+    // The composer `/` panel reads zcodeSessionStore.slashCommands: after sync, fetch commands from the remote
+    // workspace and write them back there -- refreshing only the settings store is not enough.
     zcodeSessionStore.setSlashCommands(
       workspacePath,
       mergeSlashCommandsAfterCommandRefresh(currentSlashCommands, result.commands),

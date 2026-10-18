@@ -1,5 +1,5 @@
 import { type ZCodeRuntimeEnv } from "@zcode/shared";
-/** 主进程 init 的 browserCollectors，经 autoInject 注入到 renderer 的 RumSDK.init(collectors) */
+/** browserCollectors for the main init, injected into the renderer RumSDK.init(collectors) via autoInject. */
 export declare const ARMS_BROWSER_COLLECTORS: {
   readonly perf: true;
   readonly webvitals: true;
@@ -10,9 +10,9 @@ export declare const ARMS_BROWSER_COLLECTORS: {
   readonly click: true;
   readonly longTask: true;
 };
-/** ARMS 页面名解析：file:// 与 dev-server 统一规则，主进程 parseViewName 与 renderer 共用 */
+/** ARMS view-name resolution: one rule for file:// and dev-server, shared by main parseViewName and renderer. */
 export declare function parseArmsViewName(url: string): string;
-/** Renderer Browser SDK init 配置（与主进程 endpoint/env/version 对齐） */
+/** Renderer Browser SDK init config (endpoint/env/version aligned with main). */
 export declare function buildArmsBrowserInitConfig(runtimeEnv: ZCodeRuntimeEnv): {
   enable: boolean;
   version: string;

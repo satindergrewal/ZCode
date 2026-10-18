@@ -2,8 +2,8 @@ import {
   isTasksStorageMigrated,
   isTasksStoragePrepared,
 } from "#src/session/tasksDatabase/prepared.js";
-/* eslint-disable max-lines -- automation 仓库集中维护 automations / automation_runs 的 sqlite schema、
-   调度状态机写入与运行历史，稳定后再按读写职责拆分。 */
+/* eslint-disable max-lines -- the automation repo keeps automations/automation_runs sqlite schema,
+   scheduling state-machine writes, and run history together; split by read/write duty once stable. */
 import { mkdir } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname } from "node:path";
@@ -34,14 +34,14 @@ const require = createRequire(import.meta.url);
 const { DatabaseSync } = require("node:sqlite") as typeof import("node:sqlite");
 type DatabaseSyncInstance = InstanceType<typeof DatabaseSync>;
 
-/** 派发失败退避常量。 */
+/** Dispatch-failure backoff constants. */
 export const DISPATCH_RETRY_BASE_MS = 30_000;
 export const DISPATCH_RETRY_CAP_MS = 15 * 60_000;
 export const DISPATCH_MAX_ATTEMPTS = 5;
-/** 认领超时回收：running=1 超过该时长仍未结算，视为持有者已崩溃，允许重新认领。 */
+/** Claim-timeout recycle: running=1 unsettled past this long means the holder crashed; reclaim allowed. */
 export const CLAIM_STALE_MS = 10 * 60_000;
 
-/** 创建总数超过产品上限；错误码会跨 RPC 保留在 message 中供 UI 识别。 */
+/** Creation exceeds the product cap; the code survives across RPC in message for UI detection. */
 export class AutomationCreateLimitError extends Error {
   readonly code = AUTOMATION_CREATE_LIMIT_ERROR_CODE;
 
@@ -119,8 +119,8 @@ function rowToAutomation(row: AutomationRow): ZCodeAutomation {
     cronExpr: row.cron_expr,
     prompt: row.prompt,
     ...(modelSelection ? { modelSelection } : {}),
-    // 历史版本曾把空字符串写进 mode，旧读取逻辑又直接强转为枚举，导致
-    // automation/list 在协议层校验整个数组时被单条脏数据拖垮。历史非法值按未设置兼容。
+    // A legacy version wrote "" into mode and old reads cast straight to the enum, so one dirty row
+    // could take down automation/list array validation. Treat legacy invalid values as unset.
     mode: normalizeAutomationMode(row.mode),
     workspaceKey: row.workspace_key,
     workspacePath: row.workspace_path,
@@ -149,7 +149,7 @@ function rowToAutomation(row: AutomationRow): ZCodeAutomation {
 }
 
 function readAutomationModelSelection(row: AutomationRow): ZCodeAutomation["modelSelection"] {
-  // 旧字段只能经过独立 importer；新字段损坏或明确清空时不能复活旧选择。
+  // Legacy fields arrive only via the dedicated importer; broken or explicitly cleared new fields never revive them.
   return readSerializedModelSelection(row.model_selection);
 }
 
@@ -174,7 +174,7 @@ function normalizeAutomationMode(mode: string | null): ZCodeAutomation["mode"] |
 function assertValidAutomationMode(mode: unknown): void {
   if (mode === undefined || mode === null) return;
   if (!zcodeTaskModeSchema.safeParse(mode).success) {
-    // 读取兼容历史脏数据不代表允许继续写脏数据；Repo 是绕过 RPC 时的最终持久化边界。
+    // Reading legacy dirty data compatibly does not license writing it; the Repo is the final persistence boundary past RPC.
     throw new Error(`Invalid automation mode: ${String(mode)}`);
   }
 }
@@ -208,7 +208,7 @@ function readSerializedModelSelection(value: string | null): ModelSelection | un
   }
 }
 
-/** 退避重试时间：now + min(BASE * 2^(attempts-1), CAP)。 */
+/** Backoff retry time: now + min(BASE * 2^(attempts-1), CAP). */
 export function computeRetryAt(now: number, attempts: number): number {
   const backoff = Math.min(
     DISPATCH_RETRY_BASE_MS * 2 ** Math.max(0, attempts - 1),
@@ -218,21 +218,21 @@ export function computeRetryAt(now: number, attempts: number): number {
 }
 
 /**
- * automation 存储仓库：automations（定义 + 调度状态）与 automation_runs（运行历史 + runId 幂等台账），
- * 与 task index 同库 tasks-index.sqlite（WAL、多进程安全）。
+ * The automation store: automations (definition + scheduling state) and automation_runs (history + runId idempotency ledger),
+ * sharing tasks-index.sqlite with the task index (WAL, multi-process safe).
  *
- * 仓库只做存储与原子状态迁移；cron 表达式解析 / next_run_at 计算由调用方（scheduler / 管理层）
- * 用 cron 库算好后传入，仓库不感知 cron 语义。
+ * The repo only stores and transitions state atomically; cron parsing/next_run_at is the caller's duty
+ * (scheduler/management via a cron lib); the repo is cron-agnostic.
  */
 export class AutomationRepo {
   private db: DatabaseSyncInstance | null = null;
   private dbPath: string | null = null;
   private initializePromise: Promise<void> | null = null;
-  // db 路径不能从进程级全局 _dataBaseDir（getTasksIndexDatabasePath）解析：
-  // vitest threads 池会在同一进程并发跑多个测试文件，各文件的 setDataBaseDir(tempDir)
-  // 互相覆盖全局值，导致 repo 与裸 SQL 操作在并发窗口内写进真实库 ~/.zcode/v2（历史脏数据
-  // /tmp/ws 系列即因此污染）。改为构造期固定一份 dbPath，测试通过依赖注入传入临时库路径，
-  // 生产路径不传则回退 getTasksIndexDatabasePath，向后兼容。
+  // The db path must not resolve from the process-global _dataBaseDir (getTasksIndexDatabasePath):
+  // the vitest threads pool runs multiple test files in one process; each file's setDataBaseDir(tempDir)
+  // overwrites the global, so repo and raw SQL write the real ~/.zcode/v2 in concurrent windows
+  // (the /tmp/ws pollution). Pin one dbPath at construction; tests inject a temp path,
+  // production falls back to getTasksIndexDatabasePath, backward compatible.
   private readonly resolvedDbPath: string | null;
 
   constructor(
@@ -283,20 +283,20 @@ export class AutomationRepo {
       this.db.exec("PRAGMA journal_mode = WAL");
       this.db.exec("PRAGMA synchronous = NORMAL");
     }
-    // Worker 已完成该路径的原始准备，业务连接不再重复全表修复。
+    // The Worker already did raw prep for this path; business connections skip the full-table repair.
     if (isTasksStoragePrepared(path, this.db)) return;
     if (!isTasksStorageMigrated(path, this.db)) runTasksDatabaseMigrations(this.db);
   }
 
   private getDatabase(): DatabaseSyncInstance {
     if (!this.db) {
-      throw new Error("AutomationRepo 未初始化：请先 await ensureReady()");
+      throw new Error("AutomationRepo not initialized; await ensureReady() first");
     }
     return this.db;
   }
 
-  // workspaceKey 传入时强制归属校验（写/单查路径,防跨 workspace 越界）；省略=不加过滤,
-  // 供 scheduler/host 跨 workspace 的调度状态机使用。
+  // With workspaceKey, enforce ownership (write/single-read paths, no cross-workspace escape); omitted = no filter,
+  // for the scheduler/host cross-workspace state machine.
   private getRow(automationId: string, workspaceKey?: string): AutomationRow | null {
     const row = this.getDatabase()
       .prepare(
@@ -308,7 +308,7 @@ export class AutomationRepo {
     return row ?? null;
   }
 
-  // ---- 管理 CRUD ----
+  // ---- Management CRUD ----
 
   async create(
     params: ZCodeAutomationCreateParams,
@@ -323,8 +323,8 @@ export class AutomationRepo {
       workspaceIdentity: params.workspaceIdentity,
     });
     const db = this.getDatabase();
-    // 仅在 UI 或事务外先 list 再 create，会让多窗口/CronCreate 并发请求同时通过旧计数。
-    // BEGIN IMMEDIATE 串行化“全状态总数检查 + 插入”，确保本地任务索引不会突破 20 条。
+    // list-then-create outside the transaction lets multi-window/CronCreate concurrency pass the stale count.
+    // BEGIN IMMEDIATE serializes count-check + insert so the local task index never passes 20.
     db.exec("BEGIN IMMEDIATE");
     try {
       const countRow = db.prepare("SELECT COUNT(*) AS count FROM automations").get() as {
@@ -360,7 +360,7 @@ export class AutomationRepo {
         prompt: params.prompt,
         model: null,
         provider: null,
-        // 任务配置的显式空值与尚未迁移的 SQL NULL 分开；run 的 SQL NULL 冻结语义不变。
+        // Explicit empty config values differ from not-yet-migrated SQL NULL; the run's NULL-freeze semantics stay.
         model_selection: serializeAutomationModelSelection(params.modelSelection) ?? "null",
         mode: params.mode ?? null,
         thought_level: null,
@@ -410,24 +410,25 @@ export class AutomationRepo {
     return rows.map(rowToAutomation);
   }
 
-  /** 首次派发专用读取：列表可以展示未绑定任务，但派发不能把损坏值当成跟随默认。 */
+  /** First-dispatch read: lists may show unbound tasks, but dispatch never treats broken values as follow-default. */
   async getModelSelectionForDispatch(
     automationId: string,
     workspaceKey: string,
   ): Promise<ModelSelection | undefined> {
     await this.ensureReady();
     const row = this.getRow(automationId, workspaceKey);
-    if (!row) throw new Error("Automation 不存在或不属于当前工作区");
+    if (!row) throw new Error("Automation not found in this workspace");
     const selection = readAutomationModelSelection(row);
     if (selection) return selection;
-    // 迁移已把旧默认写为 JSON null。SQL NULL 是缺配置，不能借旧列决定执行默认值。
+    // Migration wrote legacy defaults as JSON null. SQL NULL means unconfigured; the legacy column never decides execution defaults.
     const followsWorkspace = row.model_selection === "null";
-    if (!followsWorkspace) throw new Error("Automation 模型选择不可用，请重新选择模型与思考档位");
+    if (!followsWorkspace)
+      throw new Error("Automation model selection unavailable; reselect model and thought level");
     return undefined;
   }
 
   /**
-   * 仅供后台派发读取 Bot 回推目标；该内部来源信息不进入 automation 展示模型。
+   * Background-dispatch read of the Bot reply target; this internal source never enters the automation display model.
    */
   async getBotDeliveryTarget(
     automationId: string,
@@ -440,7 +441,7 @@ export class AutomationRepo {
       const parsed = zcodeAutomationBotDeliveryTargetSchema.safeParse(JSON.parse(raw));
       return parsed.success ? parsed.data : undefined;
     } catch {
-      // Bug 原因：历史/外部写入的脏 JSON 不能拖垮任务列表或 scheduler；无效来源按未配置处理。
+      // Bug: dirty JSON from legacy/external writers must not break task list or scheduler; invalid source = unconfigured.
       return undefined;
     }
   }
@@ -452,8 +453,8 @@ export class AutomationRepo {
   }): Promise<boolean> {
     await this.ensureReady();
     const workspaceKey = resolveWorkspaceKey(scope);
-    // CronCreate 过去为判断一个 session 的归属而读取并序列化完整列表，任意无关
-    // 展示字段损坏都会让安全查询失败。这里仅查询授权判据本身，并严格限定 workspaceKey。
+    // CronCreate used to read+serialize the whole list to learn one session's ownership, so any unrelated
+    // display-field corruption failed the safety query. Query the authorization criterion only, workspaceKey strictly bound.
     const row = this.getDatabase()
       .prepare(
         `SELECT 1 AS bound FROM automations
@@ -472,7 +473,7 @@ export class AutomationRepo {
     return row ? rowToAutomation(row) : null;
   }
 
-  /** maxRuns 的生命周期口径只统计定时派发；manual run 仅属于 Card 累计展示。 */
+  /** maxRuns lifecycle counts scheduled dispatches only; manual runs feed the Card total display. */
   async getScheduledRunCount(automationId: string, workspaceKey?: string): Promise<number | null> {
     await this.ensureReady();
     const row = this.getRow(automationId, workspaceKey);
@@ -480,8 +481,8 @@ export class AutomationRepo {
   }
 
   /**
-   * 编辑定义字段。调用方按需传入重算后的 nextRunAt（改 cron_expr 时）与新的 lifecycleStatus
-   * （改 recurring/max_runs 时），仓库不感知 cron 语义。改 cron_expr 时清空 retry 态。
+   * Edit definition fields. Callers pass recomputed nextRunAt (cron_expr changes) and new lifecycleStatus
+   * (recurring/max_runs changes); the repo stays cron-agnostic. cron_expr changes clear retry state.
    */
   async update(
     automationId: string,
@@ -503,7 +504,7 @@ export class AutomationRepo {
       title: params.title ?? existing.title,
       cron_expr: params.cronExpr ?? existing.cron_expr,
       prompt: params.prompt ?? existing.prompt,
-      // 旧三列只供回滚保留；标题等编辑不能清除尚未迁入的旧选择，也不能参与新版运行读取。
+      // The three legacy columns exist for rollback only; edits never clear un-migrated legacy selections nor feed new runs.
       model: existing.model,
       provider: existing.provider,
       model_selection:
@@ -532,9 +533,9 @@ export class AutomationRepo {
       dispatch_attempts: options?.resetRetry ? 0 : existing.dispatch_attempts,
       retry_at: options?.resetRetry ? null : existing.retry_at,
       dispatch_status: options?.resetRetry ? "idle" : existing.dispatch_status,
-      // enabled 完整由 lifecycleStatus 推导：仅当调用方显式改了生命周期时才动它
-      // （active→入调度=1；completed/failed/paused→出调度=0），否则保持原值。
-      // 修复：原实现在 completed/failed 时错误保留 existing.enabled，可能出现「已完成但仍被 claimDue 认领」。
+      // enabled derives fully from lifecycleStatus: touch it only when the caller changed lifecycle
+      // (active -> scheduled=1; completed/failed/paused -> unscheduled=0), else keep.
+      // Fix: the old code kept existing.enabled on completed/failed, allowing "completed but claimDue still claims it".
       enabled: options?.lifecycleStatus
         ? options.lifecycleStatus === "active"
           ? 1
@@ -558,7 +559,7 @@ export class AutomationRepo {
     return result.changes > 0;
   }
 
-  /** 暂停 / 恢复。paused ↔ active，保留 next_run_at / run_count。 */
+  /** Pause/resume. paused <-> active, keeping next_run_at / run_count. */
   async setEnabled(automationId: string, enabled: boolean, workspaceKey?: string): Promise<void> {
     await this.ensureReady();
     this.getDatabase()
@@ -579,7 +580,7 @@ export class AutomationRepo {
       });
   }
 
-  /** 终态任务手动重跑：回 active、清计数与重试态，nextRunAt 由调用方重算传入。 */
+  /** Manual rerun of a terminal task: back to active, clear counts/retry; caller passes the recomputed nextRunAt. */
   async restart(
     automationId: string,
     options: { nextRunAt: number | null },
@@ -613,10 +614,10 @@ export class AutomationRepo {
   }
 
   /**
-   * 立即运行：写入由当前 host 直接持有的 manual run，不修改 automation 的 cron 计划/生命周期。
-   * 直派路径过去没有占用 automation running 锁，连续点击会并发投递到同一个 target task，
-   * 进而让模型配置 revision 互相踩踏。这里复用 scheduler 的 single-flight 锁；host 派发结算后释放。
-   * attempts=1 表示已经交给直接派发方；scheduler 只会在认领超时后做崩溃恢复。
+   * Run now: persist a manual run owned by the current host, touching neither cron schedule nor lifecycle.
+   // The direct path never took the running lock, so repeated clicks concurrently delivered to one target,
+   // stamping on each other's model config revision. Reuse the scheduler single-flight lock; released on host dispatch settle.
+   // attempts=1 means handed to the direct dispatcher; the scheduler only crash-recovers on claim timeout.
    */
   async runNow(
     automationId: string,
@@ -671,7 +672,7 @@ export class AutomationRepo {
         automation_id: automationId,
         workspace_key: row.workspace_key,
         scheduled_at: options.now,
-        // 认领尚未经过目标 Host 解析；原意图仍在 automation，run 等首次派发再固定。
+        // The claim has not passed target-Host resolution; intent stays on the automation, the run pins at first dispatch.
         model_selection: null,
         now: options.now,
       });
@@ -705,35 +706,35 @@ export class AutomationRepo {
     }
   }
 
-  // ---- 调度状态机 ----
+  // ---- Scheduling state machine ----
 
   /**
-   * single-flight 认领到期项：原子 running=0→1。同时回收认领超时（claimed_at 过期）的僵尸项。
-   * due 判定同时看 next_run_at 与 retry_at，任一到期即 due。
+   * Single-flight claim of due items: atomic running 0->1. Also reclaims zombies (claimed_at expired).
+   // Due checks next_run_at and retry_at; either expiring means due.
    */
   async claimDue(now: number): Promise<ZCodeAutomation[]> {
     await this.ensureReady();
     const db = this.getDatabase();
     db.exec("BEGIN IMMEDIATE");
     try {
-      // 截止日期是计划边界；过期任务先转终态，避免继续被正常 cron 或 retry 认领。
+      // The deadline is a planning boundary; terminal expired tasks first, so normal cron/retry never claims them.
       db.prepare(
         `UPDATE automations
         SET lifecycle_status = 'completed', enabled = 0, next_run_at = NULL,
             retry_at = NULL, running = 0, claimed_at = NULL, updated_at = @now
         WHERE enabled = 1 AND end_at IS NOT NULL AND end_at < @now`,
       ).run({ now });
-      // 先回收僵尸认领（持有者崩溃，running=1 但 claimed_at 过期）。
+      // Reclaim zombie claims first (holder crashed: running=1, claimed_at expired).
       db.prepare(
         `UPDATE automations
         SET running = 0, claimed_at = NULL
         WHERE running = 1 AND claimed_at IS NOT NULL AND claimed_at <= @stale`,
       ).run({ stale: now - CLAIM_STALE_MS });
-      // 认领条件：enabled 且未在途。
-      // - 有 retry_at（transient 退避中）：只按 retry_at 到期认领，忽略 next_run_at——
-      //   否则 next_run_at 仍停在过去会让退避被绕过、每 tick 立即重试。next_run_at 保持不变，
-      //   保证重试复用同一个 runId（scheduler 以 next_run_at 作 scheduledAt）。
-      // - 无 retry_at：按 next_run_at 到期认领。
+      // Claim condition: enabled and not in flight.
+      // - With retry_at (transient backoff): claim on retry_at only, ignoring next_run_at -
+      //   a stale past next_run_at would bypass backoff and retry every tick. next_run_at stays,
+      //   so the retry reuses the same runId (scheduler uses next_run_at as scheduledAt).
+      // - Without retry_at: claim on next_run_at.
       const dueRows = db
         .prepare(
           `SELECT * FROM automations
@@ -772,9 +773,9 @@ export class AutomationRepo {
   }
 
   /**
-   * 认领 UI「立即运行」产生的 manual run。
-   * 立即运行不能改 next_run_at，否则会污染原 cron 节奏；manual run 使用 automation_runs
-   * 作队列，短暂占用 automation running 锁来避免和定时触发并发投递同一个 task。
+   * Claim the manual run produced by the UI's run-now.
+   // Run-now must not move next_run_at (it would pollute the cron cadence); the manual run queues in
+   // automation_runs, briefly holding the running lock to avoid racing scheduled delivery to the same task.
    */
   async claimManualRuns(now: number): Promise<ClaimedManualAutomationRun[]> {
     await this.ensureReady();
@@ -928,9 +929,9 @@ export class AutomationRepo {
   }
 
   /**
-   * 派发成功结算：展示总数与定时派发数各 +1、写 last_run_at、清重试态、复位 running；
-   * 循环任务回 active（nextRunAt 由调用方按实际派发时间重算传入）；
-   * 有限次任务达 max_runs 转 completed（enabled=0、next_run_at=NULL）。
+   * Dispatch success settle: totals and scheduled count +1, last_run_at, clear retry, running reset;
+   * recurring back to active (caller passes recomputed nextRunAt);
+   * finite tasks at max_runs -> completed (enabled=0, next_run_at=NULL).
    */
   async markDispatched(
     automationId: string,
@@ -938,12 +939,12 @@ export class AutomationRepo {
   ): Promise<void> {
     await this.ensureReady();
     const row = this.getRow(automationId);
-    if (!row) return; // 已删除，丢弃回写，避免复活
+    if (!row) return; // deleted; drop the writeback, never resurrect
     const runCount = row.run_count + 1;
     const scheduledRunCount = row.scheduled_run_count + 1;
-    // 有限次任务（recurring=0）达上限即 completed。未显式设 max_runs 时按一次性任务处理（默认上限 1），
-    // 否则一次性 cron 会一直停在 active 并被 cron 反复触发，永不结束。这里必须使用独立的
-    // scheduled_run_count；run_count 还包含 manual run，只能用于 Card 累计展示。
+    // Finite tasks (recurring=0) complete at the cap. Without explicit max_runs treat as one-shot (default cap 1),
+    // else a one-shot cron stays active and re-fires forever. Use the dedicated
+    // scheduled_run_count; run_count includes manual runs and feeds Card display only.
     const reachedMax = row.recurring === 0 && scheduledRunCount >= (row.max_runs ?? 1);
     const reachedEnd = row.end_at !== null && (options.nextRunAt ?? Infinity) > row.end_at;
     this.getDatabase()
@@ -977,8 +978,8 @@ export class AutomationRepo {
   }
 
   /**
-   * 派发失败：transient 累加 attempts 并按退避写 retry_at；达上限后循环任务放弃本轮跳下一个
-   * next_run_at（调用方传入），有限次任务转 failed。permanent 直接 failed 终态停用。
+   * Dispatch failure: transient bumps attempts and writes backoff retry_at; at the cap recurring tasks skip this
+   * round to the caller's next next_run_at, finite tasks fail. permanent fails and disables at once.
    */
   async markDispatchFailed(
     automationId: string,
@@ -986,7 +987,7 @@ export class AutomationRepo {
       failedAt: number;
       error: string;
       kind: "transient" | "permanent";
-      /** transient 达上限后，循环任务的下一个正常 next_run_at（调用方重算）。 */
+      /** transient-at-cap: the recurring task's next normal next_run_at (caller recomputed). */
       nextRunAt?: number | null;
     },
   ): Promise<void> {
@@ -1008,7 +1009,7 @@ export class AutomationRepo {
     const attempts = row.dispatch_attempts + 1;
     if (attempts >= DISPATCH_MAX_ATTEMPTS) {
       if (row.recurring === 1) {
-        // 循环任务：放弃本轮，跳下一个正常 next_run_at，清重试态回 idle。
+        // Recurring: abandon this round, jump to the next normal next_run_at, clear retry, idle.
         db.prepare(
           `UPDATE automations
           SET dispatch_status = 'idle', dispatch_attempts = 0, retry_at = NULL,
@@ -1032,7 +1033,7 @@ export class AutomationRepo {
       }
       return;
     }
-    // 未达上限：写退避 retry_at，复位 running 等下轮重认领。
+    // Under the cap: write backoff retry_at, reset running, await the next claim round.
     db.prepare(
       `UPDATE automations
       SET dispatch_status = 'failed_to_dispatch', dispatch_attempts = @attempts,
@@ -1048,7 +1049,7 @@ export class AutomationRepo {
     });
   }
 
-  /** 关机/退出时释放认领：清 running、保留 next_run_at，不记失败不推进。 */
+  /** Shutdown release: clear running, keep next_run_at, no failure recorded, no advancement. */
   async releaseClaim(automationId: string): Promise<void> {
     await this.ensureReady();
     this.getDatabase()
@@ -1060,7 +1061,7 @@ export class AutomationRepo {
       .run({ id: automationId, now: Date.now() });
   }
 
-  /** manual run 结束后只释放 single-flight 锁，不修改 automation 的调度状态。 */
+  /** After a manual run ends, release only the single-flight lock; scheduling state untouched. */
   async releaseManualClaim(automationId: string, workspaceKey: string): Promise<void> {
     await this.ensureReady();
     this.getDatabase()
@@ -1074,7 +1075,7 @@ export class AutomationRepo {
       .run({ id: automationId, workspace_key: workspaceKey, now: Date.now() });
   }
 
-  /** host 仍持有 queued/running manual run 时续租，避免长任务被 scheduler 当作僵尸认领回收。 */
+  /** Renew while the host still holds a queued/running manual run, so long tasks survive scheduler zombie reclaim. */
   async touchManualClaim(automationId: string, workspaceKey: string): Promise<void> {
     await this.ensureReady();
     this.getDatabase()
@@ -1089,10 +1090,10 @@ export class AutomationRepo {
   }
 
   /**
-   * 错过触发窗口：原子地记一条 skipped run + 把 next_run_at 前推到下一个未来触发点 + 复位认领。
-   * 不计 run_count。用于 scheduler 启动/恢复后发现 next_run_at 已远早于 now 的补偿跳过。
-   * finalize=true 用于纯一次性任务：目标时刻已错过即终态（completed + 停用 + 清空调度），
-   * 不得再从兼容性 scheduleRule 推导出后续周期继续执行。
+   * Missed window: atomically record one skipped run + advance next_run_at to the next future trigger + reset the claim.
+   // Not counted in run_count. The scheduler's startup/resume compensation when next_run_at is far past.
+   // finalize=true for pure one-shot tasks: a missed target time terminates (completed + disabled + schedule cleared),
+   // never re-derived into further periods from the compat scheduleRule.
    */
   async skipAndReschedule(params: {
     automationId: string;
@@ -1148,9 +1149,9 @@ export class AutomationRepo {
     }
   }
 
-  // ---- 运行历史 automation_runs ----
+  // ---- Run history automation_runs ----
 
-  /** 确保 run 历史存在。用于 host outcome 回写兜底，不增加 attempts，避免和 scheduler retry 计数互相污染。 */
+  /** Ensure the run history row exists. Host outcome-writeback fallback; no attempts bump, keeping scheduler retry counts clean. */
   async ensureRunClaimed(params: {
     runId: string;
     automationId: string;
@@ -1178,7 +1179,7 @@ export class AutomationRepo {
       });
   }
 
-  /** 认领时 upsert 一行 run（run_id 冲突即命中本轮 retry，不新建）。 */
+  /** Upsert one run row at claim (run_id conflict = this round's retry, no new row). */
   async upsertRunClaimed(params: {
     runId: string;
     automationId: string;
@@ -1215,8 +1216,8 @@ export class AutomationRepo {
   }
 
   /**
-   * Select 首次形成 Submission 时原子固定 run Selection；之后调用只能读回原值。
-   * 旧派发在每次 transient retry 都重新读取 Host preferred，导致同一 run 换模型。
+   * Atomically pin the run Selection when Select first forms the Submission; later calls only read it back.
+   // Legacy dispatch re-read Host preferred on every transient retry, switching models mid-run.
    */
   async fixRunModelSelection(runId: string, selection: ModelSelection): Promise<ModelSelection> {
     await this.ensureReady();
@@ -1234,11 +1235,11 @@ export class AutomationRepo {
       .prepare(`SELECT model_selection FROM automation_runs WHERE run_id = @run_id`)
       .get({ run_id: runId }) as Pick<AutomationRunRow, "model_selection"> | undefined;
     const fixed = row ? readSerializedModelSelection(row.model_selection) : undefined;
-    if (!fixed) throw new Error(`Automation run 不存在或无法固定模型选择: ${runId}`);
+    if (!fixed) throw new Error(`Automation run missing or cannot pin model selection: ${runId}`);
     return fixed;
   }
 
-  /** 派发结果回写 run（dispatched 回填 session_id / failed_to_dispatch 记 error）。 */
+  /** Write the dispatch result to the run (dispatched backfills session_id / failed_to_dispatch records the error). */
   async markRunDispatch(params: {
     runId: string;
     dispatchStatus: ZCodeAutomationRunDispatchStatus;
@@ -1265,11 +1266,11 @@ export class AutomationRepo {
   }
 
   /**
-   * manual run 首次派发成功结算：原子更新 run 台账与累计运行次数。
-   * 手动运行过去只更新 automation_runs，Card 的 runCount 因而只统计定时触发；
-   * 同一个 runId 还可能由 direct host、scheduler 崩溃恢复或迟到回报重复结算，所以必须以
-   * dispatch_status 首次进入 dispatched 作为幂等边界。manual 不推进 cron/maxRuns/lifecycle，
-   * 也不释放 single-flight claim，claim 仍由真实 turn 终态收口。
+   * Manual-run first-dispatch settle: atomically update the run ledger and cumulative count.
+   // Manual runs used to touch only automation_runs, so Card runCount saw scheduled triggers only;
+   // the same runId may also settle via direct host, scheduler crash recovery, or a late report, so
+   // dispatch_status first entering dispatched is the idempotency boundary. Manual never advances cron/maxRuns/lifecycle,
+   // nor releases the single-flight claim; the real turn terminal does.
    */
   async markManualRunDispatched(params: {
     runId: string;
@@ -1328,7 +1329,7 @@ export class AutomationRepo {
     }
   }
 
-  /** session runtime 回写运行结果（running / succeeded / failed / stopped）。 */
+  /** Session runtime writes the run outcome (running / succeeded / failed / stopped). */
   async markRunOutcome(
     runId: string,
     outcome: ZCodeAutomationRunOutcome,
@@ -1352,7 +1353,7 @@ export class AutomationRepo {
       .run({ run_id: runId, outcome, error: error ?? null, now: Date.now() });
   }
 
-  /** 错过触发窗口：落一条 skipped run（session_id=null），不计 run_count。 */
+  /** Missed window: record one skipped run (session_id=null), not in run_count. */
   async recordSkippedRun(params: {
     runId: string;
     automationId: string;
@@ -1418,7 +1419,7 @@ export class AutomationRepo {
       .run({ run_id: runId, workspace_key: workspaceKey ?? null });
   }
 
-  /** 保留策略：删除超过 maxAgeMs 的历史 run（防无限增长）。 */
+  /** Retention: delete runs older than maxAgeMs (boundless growth guard). */
   async pruneRuns(maxAgeMs: number): Promise<number> {
     await this.ensureReady();
     const res = this.getDatabase()

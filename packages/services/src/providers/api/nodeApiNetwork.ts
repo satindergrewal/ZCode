@@ -23,8 +23,8 @@ function mergeHostApiCaCertificates(
   customCa: string,
   defaultCa: readonly string[] = rootCertificates,
 ): string[] {
-  // Node 的 tls.ca 会替换而不是追加默认根证书。只传企业代理 CA 会让未被
-  // 中间人重签的公网证书失去信任链，因此必须同时保留 Node 默认根证书。
+  // Node's tls.ca replaces, not appends, the default roots; enterprise-CA-only trust would break
+  // publicly-signed certs, so always keep the Node defaults too.
   return [...defaultCa, customCa];
 }
 
@@ -96,8 +96,8 @@ export function createHostApiNetworkTransport(
   resolveOptions: () => Promise<HostApiNetworkOptions>,
   dependencies: HostApiNetworkTransportDependencies = {},
 ): HostApiNetworkTransport {
-  // Host 是独立 Node 进程，Electron Session.setProxy 不会影响它的 globalThis.fetch；
-  // 在 NodeApiClient 出口按请求注入 dispatcher，避免把 telemetry 等其它裸 fetch 全局改道。
+  // The host is a separate Node process; Electron Session.setProxy does not touch its global fetch.
+  // Inject a per-request dispatcher at the ApiClient boundary instead of rerouting all bare fetches.
   let optionsPromise: Promise<HostApiNetworkOptions> | undefined;
   const dispatcherPromises = new Map<string, Promise<Dispatcher>>();
   let disposed = false;
@@ -119,8 +119,8 @@ export function createHostApiNetworkTransport(
     }
     const requestGeneration = generation;
     if (!optionsPromise) {
-      // 设置读取失败只影响当前请求；清掉 rejected promise，避免一次瞬时 IPC/启动竞态
-      // 把 Host API 永久锁死，同时仍保持失败请求不回退到直连。
+      // A settings read failure affects one request: clear the rejected dispatcher so a startup
+      // race cannot lock the host API forever, while failures still fail closed (no direct fallback).
       optionsPromise = resolveOptions().catch((error: unknown) => {
         optionsPromise = undefined;
         throw error;
@@ -172,8 +172,8 @@ export function createHostApiNetworkTransport(
       };
       void dispatcherPromise.then(markDispatcherCreationDone, markDispatcherCreationDone);
       dispatcherPromise.catch(() => {
-        // 设置/CA 等临时 IO 失败只影响当前请求；清理 rejected dispatcher，避免一次启动竞态
-        // 把同一路由永久锁死，同时仍保持失败请求 fail-closed、不回退到直连。
+        // Transient settings/CA IO failures affect one request: clear the rejected dispatcher so a
+        // startup race cannot lock the route forever; failures stay fail-closed, no direct fallback.
         if (dispatcherPromises.get(dispatcherKey) === dispatcherPromise) {
           dispatcherPromises.delete(dispatcherKey);
         }
@@ -197,9 +197,9 @@ export function createHostApiNetworkTransport(
     disposed = true;
     generation += 1;
     disposeMode = mode;
-    // dispatcher 不能只被闭包缓存、没有 Host owner：窗口/远端 Host 重建后连接池和
-    // keep-alive socket 仍可能存活。释放时对当前单飞 Promise 做快照，确保初始化中的 dispatcher
-    // 也会在完成后被收口；同步退出 destroy，等待式退出 close。
+    // A dispatcher cached only in a closure has no host owner: after a window/remote host rebuild
+    // pools and keep-alive sockets may live on. Snapshot the in-flight single-flight promise so
+    // an initializing dispatcher is finalized too; destroy synchronously, close awaiting.
     const pendingDispatchers = [...dispatcherPromises.values()];
     dispatcherPromises.clear();
     if (pendingDispatcherCreations > 0) {

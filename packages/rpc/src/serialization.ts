@@ -1,19 +1,19 @@
 /**
- * Layer 1: 二进制序列化
+ * Layer 1: binary serialization
  *
- * RPC 消息需要编码为二进制才能通过 IMessagePassingProtocol 传输。
- * 这里实现了 VS Code 的自定义序列化协议：
+ * RPC messages must be encoded to binary to travel over IMessagePassingProtocol.
+ * This is the VS Code-style custom serialization protocol:
  *
- * 格式: [1 byte 类型标签] [VQL 编码的长度] [数据]
+ * format: [1-byte type tag] [VQL-encoded length] [data]
  *
- * VQL (Variable-Length Quantity) 用 7 bit 存数据，最高位标记是否还有后续字节。
- * 小数字只需 1 byte，大数字按需扩展，比固定 4 byte 更紧凑。
+ * VQL (Variable-Length Quantity) stores 7 bits per byte; the high bit marks a continuation.
+ * Small numbers take 1 byte and large ones extend as needed -- tighter than a fixed 4 bytes.
  */
 
 import { VSBuffer } from "./buffer.js";
 
 // ============================================================================
-// Reader / Writer 接口
+// Reader / Writer interfaces
 // ============================================================================
 
 export interface IReader {
@@ -25,8 +25,8 @@ export interface IWriter {
 }
 
 /**
- * BufferReader: 从一个 VSBuffer 中按顺序读取数据。
- * 内部维护一个 pos 游标。
+ * BufferReader: reads sequentially from a VSBuffer.
+ * Keeps an internal pos cursor.
  */
 export class BufferReader implements IReader {
   private pos = 0;
@@ -41,8 +41,8 @@ export class BufferReader implements IReader {
 }
 
 /**
- * BufferWriter: 收集多个写入的 buffer，最后通过 .buffer 属性一次性拼接。
- * 避免了写入时频繁的内存拷贝。
+ * BufferWriter: accumulates written buffers and joins them once via .buffer.
+ * Avoids repeated memory copies while writing.
  */
 export class BufferWriter implements IWriter {
   private buffers: VSBuffer[] = [];
@@ -57,11 +57,11 @@ export class BufferWriter implements IWriter {
 }
 
 // ============================================================================
-// VQL 编码
+// VQL encoding
 // ============================================================================
 
 /**
- * 读取 VQL 编码的整数
+ * Read a VQL-encoded integer
  * @see https://en.wikipedia.org/wiki/Variable-length_quantity
  */
 function readIntVQL(reader: IReader): number {
@@ -78,8 +78,8 @@ function readIntVQL(reader: IReader): number {
 const vqlZero = createOneByteBuffer(0);
 
 /**
- * 写入 VQL 编码的整数
- * 例: 0 → [0x00], 127 → [0x7F], 128 → [0x80, 0x01]
+ * Write a VQL-encoded integer
+ * e.g. 0 -> [0x00], 127 -> [0x7F], 128 -> [0x80, 0x01]
  */
 function writeInt32VQL(writer: IWriter, value: number): void {
   if (value === 0) {
@@ -103,7 +103,7 @@ function writeInt32VQL(writer: IWriter, value: number): void {
 }
 
 // ============================================================================
-// 数据类型标签
+// Data type tags
 // ============================================================================
 
 enum DataType {
@@ -113,7 +113,7 @@ enum DataType {
   VSBuffer = 3,
   Array = 4,
   Object = 5, // JSON fallback
-  Int = 6, // VQL 编码的整数
+  Int = 6, // VQL-encoded integer
 }
 
 function createOneByteBuffer(value: number): VSBuffer {
@@ -122,7 +122,7 @@ function createOneByteBuffer(value: number): VSBuffer {
   return result;
 }
 
-/** 预创建的类型标签 buffer，避免每次序列化都分配内存 */
+/** Pre-built type-tag buffers; avoids an allocation per serialization */
 const BufferPresets = {
   Undefined: createOneByteBuffer(DataType.Undefined),
   String: createOneByteBuffer(DataType.String),
@@ -141,13 +141,13 @@ const RPC_NESTED_UINT8_ARRAY_BASE64_KEY = "base64";
 // ============================================================================
 
 /**
- * 序列化任意数据到 writer。
+ * Serialize arbitrary data to the writer.
  *
- * 格式：[1 byte 类型] [VQL 长度(如果需要)] [数据]
+ * format: [1-byte type] [VQL length (when needed)] [data]
  *
- * 每条 RPC 消息 = serialize(header) + serialize(body)
- * header 通常是 [RequestType, id, channelName, methodName]
- * body 是方法参数或返回值
+ * every RPC message = serialize(header) + serialize(body)
+ * header is usually [RequestType, id, channelName, methodName]
+ * body is the method arguments or return value
  */
 export function serialize(writer: IWriter, data: any): void {
   if (typeof data === "undefined") {
@@ -173,13 +173,14 @@ export function serialize(writer: IWriter, data: any): void {
       serialize(writer, el);
     }
   } else if (typeof data === "number" && (data | 0) === data) {
-    // 整数用 VQL 编码，比 JSON 更紧凑
+    // Integers use VQL: tighter than JSON
     writer.write(BufferPresets.Int);
     writeInt32VQL(writer, data);
   } else {
-    // 对象字段里的 Uint8Array 之前会被 JSON.stringify 展开成 {"0":...}，
-    // 远端 RPC 收到后不再是二进制，skill sync 这类归档传输会在解压阶段失败。
-    // 这里保持 Object JSON fallback 的协议形态，只对嵌套 Uint8Array 加标记并在反序列化时恢复。
+    // Uint8Array inside object fields used to be expanded by JSON.stringify into {"0":...};
+    // the remote side no longer received binary and archive transfers such as skill sync
+    // failed at inflate. The Object/JSON fallback shape is preserved; nested Uint8Array
+    // values are tagged and restored on deserialize.
     const buffer = VSBuffer.fromString(JSON.stringify(data, encodeRpcJsonValue));
     writer.write(BufferPresets.Object);
     writeInt32VQL(writer, buffer.byteLength);
@@ -188,7 +189,7 @@ export function serialize(writer: IWriter, data: any): void {
 }
 
 /**
- * 从 reader 反序列化数据
+ * Deserialize data from the reader
  */
 export function deserialize(reader: IReader): any {
   const type = reader.read(1).readUInt8(0);

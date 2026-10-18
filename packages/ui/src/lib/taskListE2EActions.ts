@@ -46,7 +46,7 @@ export interface TaskListE2EActions {
 export const taskListE2EActions: TaskListE2EActions = {
   armTaskMembershipRefreshHold: () => {
     armTaskListMembershipRefreshHoldForE2E();
-    // gate 安装后再 bump，确保所有因版本变化启动的 membership fetch 都进入暂停窗口。
+    // Bump only after the hold is armed, so every membership fetch started by the version change lands in the pause window.
     bumpTaskListMembershipVersion();
   },
   releaseTaskMembershipRefreshHold: releaseTaskListMembershipRefreshHoldForE2E,
@@ -69,8 +69,8 @@ export const taskListE2EActions: TaskListE2EActions = {
       }
     }
     return {
-      // E2E 非 UI 证据：置顶入口必须让同一个 entity 在 query cache 中切换 membership，
-      // 不能只靠 DOM 临时保留一行掩盖 grouped/pinned 分区仍然错误。
+      // Non-UI E2E evidence: pinning must flip the same entity's membership inside the query cache,
+      // not rely on the DOM temporarily keeping a row while grouped/pinned sections stay wrong.
       membershipKinds: [...membershipKinds].sort(),
       taskPresent: Boolean(state.taskMetaByEntityKey[entityKey]),
     };

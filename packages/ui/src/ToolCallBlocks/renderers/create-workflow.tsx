@@ -57,21 +57,24 @@ import { ToolSnapshotFieldNotice } from "@/ToolCallBlocks/ToolSnapshotFieldNotic
 import { ToolLayout } from "../ToolLayout.js";
 import type { ToolCallBlockRenderContext } from "../shared.js";
 
-/** 没有 display 时交给草稿槽位的空诊断：模块级常量，免得每次渲染一个新数组打穿记忆。 */
+/** Empty diagnostics for the draft slots when display is absent: module-level constant so a fresh array never breaks memoization. */
 const NO_DIAGNOSTICS: readonly never[] = [];
 
-/** 折叠状态按 toolId 记忆（与 ToolLayout 的 toolLayoutOpenState 同一模式）；默认展开。 */
+/** Collapsed state keyed by toolId (same pattern as ToolLayout's toolLayoutOpenState); expanded by default. */
 const workflowCardOpenState = new Map<string, boolean>();
 
 /**
- * 聊天区的 CreateWorkflow / AmendWorkflow 工具卡。
+ * The CreateWorkflow / AmendWorkflow chat-card renderer.
  *
- * 编写中使用不可展开的 ToolLayout，行下常驻草稿阶段线（站随脚本流式写出）；待确认使用可展开脚本的 ToolLayout；编不过是编译反馈行
- * （「工作流草稿 · 第 n 稿 · n 处待修正 · 未运行」）——不是失败，什么都没跑。
- * v4 已关联 run 的上方行由 WorkflowToolSummary 承载。本组件保留旧宿主的运行卡渲染。
+ * While writing: non-expandable ToolLayout with a permanent draft stage line under the row
+ * (stations stream out with the script). Awaiting confirmation: ToolLayout with expandable script.
+ * Compile failure: the compile-feedback row ("workflow draft - draft n - n fixes - not run") -
+ * not a failure; nothing ran yet. For v4 runs already joined, the row above is owned by
+ * WorkflowToolSummary; this component keeps the legacy-host run card.
  *
- * AmendWorkflow 行走**同一个**渲染器（display kind 同为 `create_workflow`，图、草稿笔与诊断卡只有一份
- * 实现），只换修订词汇，并在卡体多一行「调整自 run X」——按工具名判，不看 family。
+ * AmendWorkflow rows run through the **same** renderer (same `create_workflow` display kind; one
+ * implementation for graph, draft pen and diagnostics card), with revision vocabulary and one extra
+ * body line "retuned from run X" - decided by tool name, never by family.
  */
 export function CreateWorkflowToolCallBlock(context: ToolCallBlockRenderContext) {
   const { intl } = useZCodeIntl();
@@ -80,9 +83,10 @@ export function CreateWorkflowToolCallBlock(context: ToolCallBlockRenderContext)
   const amendTarget = amend ? readWorkflowAmendTarget(toolCall.input) : undefined;
 
   const display = useMemo(() => readWorkflowDisplay(toolCall.raw), [toolCall.raw]);
-  // 在途的词：只改并发上限的调用不写脚本、也不编译，
-  // 「正在校验工作流」对它不成立。整行退成设置行是**结算之后**的事，由接线层按同一个入参形状裁
-  // （ConversationRowView），这里只管在途这几个词。
+  // In-flight wording: a limit-only retune writes no script and compiles nothing, so "validating
+  // workflow" is false for it. Collapsing the row into a settings row happens **after** settlement,
+  // cut by the wiring layer from the same input shape (ConversationRowView); here only the
+  // in-flight words matter.
   const retuning = amend && readWorkflowRetuneCall(toolCall.input) !== undefined;
   const scriptText = useMemo(() => readWorkflowScript(toolCall.input), [toolCall.input]);
   const workflowName = readWorkflowName(toolCall.input);
@@ -97,17 +101,18 @@ export function CreateWorkflowToolCallBlock(context: ToolCallBlockRenderContext)
   const showFailureStatus = hasCompileErrors || (!display && toolCall.status === "failed");
   const draft = context.workflowDraft;
 
-  // 空图（脚本里一次 ask / files.* 都没有）不值得一条空轨道；有 step 才建模型。
+  // An empty graph (no ask / files.* at all in the script) deserves no empty track; build the model only with steps.
   const graph =
     display?.causalityGraph !== undefined && display.causalityGraph.steps.length > 0
       ? display.causalityGraph
       : undefined;
   const v4Status = isPlainRecord(toolCall.raw) ? toolCall.raw.v4Status : undefined;
   const writing = context.isRunning && v4Status === "inputStreaming";
-  // 沿用前驱脚本的修订：行上的入参是模型发出的
-  // 那一份，`script` 与 `path` 都没有就是省略了脚本（`path` 修订不带 `script`，却是改过的脚本）
-  // ——只在入参写完之后才这么说，流式中脚本可能还没到。缺脚本是这次
-  // 调用的用意：lineage 行说「脚本不变」，「未提供脚本」的提示不出现。
+  // Amend inheriting the predecessor script: the row's input is the model-emitted copy; with both
+  // `script` and `path` absent the script was omitted (a `path` amend carries no `script` yet is a
+  // changed script). Say this only once input completes - while streaming it may not have arrived.
+  // A missing script is this call's intent: the lineage row says "script unchanged", and the
+  // "no script provided" notice never appears.
   const keptScript = amend && !writing && readWorkflowCardKeptScript(toolCall);
   const inFlight = context.isRunning && workflowRun === undefined;
   const draftSlots = useWorkflowDraftRowSlots({
@@ -121,7 +126,7 @@ export function CreateWorkflowToolCallBlock(context: ToolCallBlockRenderContext)
 
   const model = useMemo<WorkflowTimelineModel | undefined>(() => {
     if (graph !== undefined) return buildWorkflowTimeline(graph, run);
-    // 流式草稿：display 还没到，站先从半截脚本里扫出来；display 一到整个模型被替换。
+    // Streaming draft: display not here yet, so stations are scanned from the partial script; the whole model is replaced once display arrives.
     if (writing && scriptText !== undefined) return draftTimeline(scanWorkflowDraft(scriptText));
     return undefined;
   }, [graph, run, scriptText, writing]);
@@ -144,7 +149,7 @@ export function CreateWorkflowToolCallBlock(context: ToolCallBlockRenderContext)
     () => onOpenWorkflowRun?.(named),
     [onOpenWorkflowRun, named],
   );
-  // 站头与「还有 n 个」那一行交出站 id：详情页落到这一站、把清单展开。
+  // The station header and the n-more line hand out the station id: the detail page lands on that station and expands the list.
   const handleSelectStation = useCallback(
     (station: TimelineStation) => onOpenWorkflowRun?.({ ...named, phaseId: station.id }),
     [onOpenWorkflowRun, named],
@@ -153,14 +158,15 @@ export function CreateWorkflowToolCallBlock(context: ToolCallBlockRenderContext)
   const handleResume = useCallback(() => {
     onResumeWorkflowRun?.(workflowName === undefined ? {} : { workflowName });
   }, [onResumeWorkflowRun, workflowName]);
-  // 点一枚药丸直接开那个子代理的 transcript。卡片只交出槽位身份
-  // （还没启动的药丸也可开，会话 id 有则随行），会话与 workspace 身份由宿主补齐。
+  // Clicking a pill opens that subagent's transcript directly. The card hands over only the slot
+  // identity (unstarted pills are clickable too, session id attached when present); session and
+  // workspace identities are completed by the host.
   const onOpenWorkflowActor = context.onOpenWorkflowActor;
   const onOpenWorkflowWorkspace = context.onOpenWorkflowWorkspace;
   const onOpenWorkflowArtifact = context.onOpenWorkflowArtifact;
   const runId = workflowRun?.runId;
-  // 脚本药丸：交出这一站的阶段 id，run 与会话
-  // 身份由宿主绑定（与 onOpenWorkflowRun 同一条路）。
+  // Script pill: hands out the stage id of that station; run and session binding is the host's job
+  // (same path as onOpenWorkflowRun).
   const handleOpenWorkspace = useCallback(
     (pill: TimelinePill) => {
       const phaseId = pill.workspace?.phaseId;
@@ -189,7 +195,7 @@ export function CreateWorkflowToolCallBlock(context: ToolCallBlockRenderContext)
     [onOpenWorkflowActor, runId],
   );
 
-  // ToolLayout 是 memo 组件：交给它的节点与回调必须引用稳定（reactStableReferences 守卫）。
+  // ToolLayout is memoized: nodes and callbacks handed to it must be reference-stable (reactStableReferences guard).
   const diagnosticsPrimaryText = useMemo(
     () => <span className="truncate text-foreground-subtlest">{name}</span>,
     [name],
@@ -217,13 +223,16 @@ export function CreateWorkflowToolCallBlock(context: ToolCallBlockRenderContext)
     />
   );
 
-  // 编不过：编译反馈行；无 display 且失败：失败摘要。handler 在编不过的路径上直接回诊断、不启动引擎，
-  // 本来就不该有 run——即使宿主联接到了也留在反馈行，把「诊断优先」写死在这里而不是依赖调用方。
-  // 启动前复用普通摘要：编写中不展示半截脚本，待确认可展开最终脚本。
+  // No-compile: compile-feedback row; failed without display: failure summary. On the no-compile
+  // path the handler returns diagnostics directly without starting the engine, so no run should
+  // exist - even if the host joins one, stay on the feedback row; diagnostics-first is hard-coded
+  // here rather than delegated to callers. Pre-launch reuses the plain summary: no partial script
+  // while writing; the final script is expandable once awaiting confirmation.
   const prelaunch = workflowRun === undefined && (writing || v4Status === "pendingApproval");
   const summaryOnly = writing && !showFailureStatus;
-  // 编写中的行不可展开，但草稿阶段线常驻在行下（不是展开内容，没有折叠入口）：
-  // 站由笔逐字写出，display 一到整个模型换成分析器的站，这块随 writing 结束一起离场。
+  // The writing row is not expandable, but the draft stage line stays under it (not expandable
+  // content, no collapse entry): stations are written verbatim by the pen, and once display arrives
+  // the whole model switches to the analyzer's stations; this block leaves with writing.
   const draftTimelineBlock =
     summaryOnly && model?.draft !== undefined ? (
       <div className="pt-2" data-testid="workflow-draft-timeline">
@@ -255,13 +264,13 @@ export function CreateWorkflowToolCallBlock(context: ToolCallBlockRenderContext)
           }
           sourceLabel={context.sourceLabel}
           primaryText={diagnosticsPrimaryText}
-          // 稿号在展开后仍留在行上：它说的是「这是第几稿」，不是折叠时的摘要。
+          // The draft ordinal stays on the row even expanded: it states which draft this is, not a collapsed-state summary.
           secondaryText={draftSlots.secondaryText}
           statusLabel={draftSlots.statusLabel ?? context.statusLabel}
           statusIndicator={draftSlots.statusIndicator}
           statusTooltip={draftSlots.statusTooltip ?? context.errorText}
           showFailureStatus={showFailureStatus}
-          // 待确认仍处于启动流程中，与编写态共用扫光，避免看起来已经结束。
+          // Awaiting-confirmation is still inside the launch flow: share the writing shimmer so it never looks finished.
           isRunning={showFailureStatus ? context.isRunning : prelaunch}
           title={toolCall.title}
           renderContent={summaryOnly ? undefined : renderDiagnosticsContent}
@@ -272,13 +281,13 @@ export function CreateWorkflowToolCallBlock(context: ToolCallBlockRenderContext)
     );
   }
 
-  // 已联接 run 的种类词按 run 状态说（旧宿主的运行卡）；修订行在 run 出现之前用修订词汇。
+  // With a run joined, the kind word follows run status (legacy-host run card); revision vocabulary until the run appears.
   const kindId =
     workflowRun !== undefined
       ? workflowRunKindMessageId(workflowRun)
       : readWorkflowKindMessageId(toolCall.raw, context.isRunning, amend, retuning);
   const kindText = context.kindLabelOverride ?? intl.formatMessage({ id: kindId });
-  // 种类词按文案换（编写中 → 待确认 → 运行中）：换词动画由表头自己包，见 WorkflowCardHeader。
+  // The kind word phases by copy (writing -> awaiting -> running); the header owns the swap animation, see WorkflowCardHeader.
   const live = workflowRun !== undefined ? workflowRun.status === "running" : context.isRunning;
   const status =
     workflowRun !== undefined ? (
@@ -286,11 +295,12 @@ export function CreateWorkflowToolCallBlock(context: ToolCallBlockRenderContext)
     ) : display?.ok === true ? (
       <WorkflowStaticStatus word={intl.formatMessage({ id: "chat.toolCall.workflow.compiled" })} />
     ) : undefined;
-  // 细节串与它的 tooltip（含子代理模型名）与 v4 轮尾摘要同一份实现。这条渲染路径拿不到会话的
-  // 模型清单（工具卡一层不碰 store），自定义 provider 的名字因此查不到——按同一条兜底规则退回
-  // 裸 modelId，绝不显示 providerId。
+  // The detail string and its tooltip (subagent model name included) share one implementation with
+  // the v4 round-end summary. This render path cannot reach the session's model catalog (the tool
+  // card layer never touches stores), so custom-provider names are unresolvable - fall back to the
+  // bare modelId per the same rule; providerId is never rendered.
   const cardDetail = workflowCardDetail(intl.formatMessage.bind(intl), model, graph, run);
-  // 校验中（在途、还没有图）从第 2 稿起在细节位写稿号，免得「正在修改 · 第 2 稿」→ 校验 → 反馈之间一闪而空。
+  // While validating (in flight, no graph yet) the details slot carries the draft ordinal from the 2nd on, so the modifying -> validating -> feedback hand-off never flashes empty.
   const headerDetail = cardDetail?.detail ?? draftSlots.inFlightOrdinalText;
   const terminal = run !== undefined && (run.status === "errored" || run.status === "stopped");
   const resume =
@@ -373,7 +383,7 @@ export function CreateWorkflowToolCallBlock(context: ToolCallBlockRenderContext)
               />
             )}
 
-            {/* 产物条：run 交付了什么，≤ 3 枚 + N，全量在详情侧板。 */}
+            {/* Artifact strip: what the run delivered, <= 3 pills + N; the full set lives in the detail side panel. */}
             {run?.artifacts !== undefined && run.artifacts.length > 0 ? (
               <WorkflowArtifactStrip
                 artifacts={run.artifacts}
@@ -415,7 +425,7 @@ export function CreateWorkflowToolCallBlock(context: ToolCallBlockRenderContext)
             ) : null}
 
             {showScriptFold ? (
-              // 没有 run 就没有详情页的 Script 区，脚本原文只能在这里读；默认收起，与确认窗同形。
+              // No run means no Script section on the detail page; the raw script is readable only here. Collapsed by default, mirroring the confirmation dialog.
               <Collapsible open={scriptOpen} onOpenChange={setScriptOpen}>
                 <CollapsibleTrigger
                   className="flex min-w-0 items-center gap-1 rounded-md py-0.5 text-left text-ui-xs font-medium text-foreground-subtlest transition-colors hover:text-foreground-subtle"
@@ -450,9 +460,10 @@ export function CreateWorkflowToolCallBlock(context: ToolCallBlockRenderContext)
           </div>
         ) : null}
 
-        {/* 页脚：展开时恒在；折叠时只有终态（失败 / 取消）留下——Resume 必须仍然够得着。 */}
-        {/* 页脚曾是摘要行（子代理 · 步数 · token · 轮次 · 产物）；卡上只说阶段与
-            子代理，都在表头——页脚只剩 Resume 的落点，没有 Resume 就没有页脚。 */}
+        {/* Footer: always present expanded; collapsed, only terminal states (failed / canceled) keep it - Resume must stay reachable. */}
+        {/* The footer used to be a summary row (subagents - steps - tokens - rounds - artifacts);
+            the card now states stage and subagents in the header, so the footer is only the Resume
+            anchor: no Resume, no footer. */}
         {resume !== undefined && run !== undefined && (expanded || terminal) ? (
           <WorkflowCardFooter status={run.status} trailing={resume} />
         ) : null}

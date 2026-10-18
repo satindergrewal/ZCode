@@ -32,17 +32,17 @@ export async function detectRemoteAssetTools(
 
   if (!download) {
     throw new Error(
-      "远端服务器缺少 curl 或 wget，无法直接下载 ZCode 远程资源。请安装 curl/wget，或切回“本地下载后上传”。",
+      "The remote server has neither curl nor wget, so ZCode remote assets cannot be downloaded directly. Install curl/wget, or switch back to local download-and-upload.",
     );
   }
   if (!tar) {
     throw new Error(
-      "远端服务器缺少 tar，无法解压 ZCode 远程资源。请安装 tar，或切回“本地下载后上传”。",
+      "The remote server has no tar, so ZCode remote assets cannot be extracted. Install tar, or switch back to local download-and-upload.",
     );
   }
   if (!sha256) {
     throw new Error(
-      "远端服务器缺少 sha256sum、shasum 或 openssl，无法校验 ZCode 远程资源。请安装其中一个校验工具，或切回“本地下载后上传”。",
+      "The remote server has no sha256sum, shasum, or openssl, so ZCode remote assets cannot be verified. Install one of those tools, or switch back to local download-and-upload.",
     );
   }
 
@@ -122,8 +122,10 @@ async function collectStdout(stream: StdioStream): Promise<string> {
     stream.stdout.on("end", settle);
     stream.stdout.on("close", settle);
     stream.stdout.on("error", settle);
-    // ssh2 的 exit/onClose 可能早于 stdout data；不能在 onClose 立刻结束收集。
-    // 这里给 stdout 一个短暂排空窗口，同时仍兜底处理 stdout 不触发 end/close 的后端实现，避免 preflight 卡住。
+    // ssh2's exit/onClose can fire before stdout data; ending collection on
+    // onClose alone would truncate it. Give stdout a short drain window while
+    // still covering backends whose stdout never emits end/close, so preflight
+    // cannot hang.
     stream.onClose(scheduleCloseFallback);
   });
 }

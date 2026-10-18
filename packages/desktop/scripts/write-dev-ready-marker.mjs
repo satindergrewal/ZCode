@@ -7,8 +7,8 @@ const readyMarkerNames = {
   main: ".main-build-ready",
   host: ".host-build-ready",
   preload: ".preload-build-ready",
-  // scheduler 已成为独立 tsup target，onSuccess 会调用同一 marker 脚本。
-  // 旧白名单缺少该 target，导致 production build 在 bundle 成功后仍以 unknown target 失败。
+  // scheduler is now a standalone tsup target whose onSuccess calls this same marker script.
+  // The old allowlist missed that target, so production builds failed with unknown target after a successful bundle.
   scheduler: ".scheduler-build-ready",
 };
 
@@ -20,6 +20,6 @@ const readyMarkerPath = resolve(root, "out", readyMarkerNames[target]);
 
 mkdirSync(dirname(readyMarkerPath), { recursive: true });
 
-// tsup 的 CLI 级 onSuccess 会被每个子构建单独触发，不能代表 desktop 整体构建完成。
-// 这里改成 main/host/preload 各自写独立 marker，dev.mjs 只有在三者都就绪后才会启动 Electron。
+// tsup's CLI-level onSuccess fires per sub-build and cannot represent overall desktop completion.
+// main/host/preload now each write their own marker; dev.mjs starts Electron only once all three are ready.
 writeFileSync(readyMarkerPath, `${new Date().toISOString()}\n`, "utf8");

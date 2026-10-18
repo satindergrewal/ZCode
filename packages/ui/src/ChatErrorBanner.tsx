@@ -1,8 +1,8 @@
 import { CodingPlanEntryButton } from "@/settings/CodingPlanEntryButton.js";
 /**
- * ChatErrorBanner — 错误提示组件
+ * ChatErrorBanner — error banner
  *
- * 显示 ZCode Agent 链路中的错误，带 traceId 方便排查。
+ * Surfaces ZCode Agent errors, with traceId for debugging.
  */
 import { useState } from "react";
 import {
@@ -35,8 +35,9 @@ import {
 } from "@/lib/providerBusinessError.js";
 import type { ZCodeUiError } from "@/lib/zcodeUiError.js";
 
+// The historical-task banner matches localized agent copies of this message; one canonical
+// English form suffices now that ui copy is English-only.
 const HISTORICAL_MODEL_UNAVAILABLE_MESSAGES = [
-  "历史任务使用的模型已不可用",
   "The model used by this historical task is no longer available",
 ];
 
@@ -48,8 +49,8 @@ const LOCALIZED_ERROR_CODES = new Set([
   MEDIA_BUDGET_CURRENT_ATTACHMENT_TOO_LARGE_ERROR_CODE,
   MEDIA_BUDGET_CURRENT_IMAGE_TOO_LARGE_ERROR_CODE,
   MEDIA_BUDGET_CURRENT_VIDEO_TOO_LARGE_ERROR_CODE,
-  // 服务层错误 message 是跨进程兜底，不能作为最终 UI 语言来源。
-  // 历史任务模型不可用要按稳定 code 本地化，避免英文界面显示中文提示。
+  // Service error messages cross process boundaries and cannot be the UI language source.
+  // The unavailable-model case localizes by stable code so an English UI never shows Chinese.
   "ZCODE_RUNTIME_MODEL_UNAVAILABLE",
   "ZCODE_BIGMODEL_TEAM_PLAN_MEMBER_REQUIRED",
 ]);
@@ -61,10 +62,11 @@ const MODEL_CONFIG_MISSING_CODES = new Set([
 ]);
 
 function isModelConfigMissingError(error: Pick<ZCodeUiError, "code" | "message">): boolean {
-  // 桌面端发送前 registry 为空时，agent 会退回 CLI config 并抛 Model config is missing。
-  // 真实原因是“当前没有可用模型”，不能把 CLI 配置路径直接暴露给桌面用户。
-  // 这里只按结构化 code 识别，避免 UNKNOWN/SEND_FAILED 等包装错误的可读 message
-  // 碰巧包含同一段文本时被误判，并连带隐藏复制、反馈等诊断入口。
+  // With an empty pre-send registry the agent falls back to CLI config and throws
+  // Model config is missing; the real cause is no available model, and the CLI config path
+  // must not reach desktop users. Match on the structured code only — readable messages of
+  // UNKNOWN/SEND_FAILED wrappers may contain the same text, and a false positive would also
+  // hide the copy/feedback diagnostics.
   return Boolean(error.code && MODEL_CONFIG_MISSING_CODES.has(error.code));
 }
 
@@ -95,8 +97,8 @@ export function resolveChatErrorBannerDisplayMessage(
 export function shouldSuppressChatErrorBanner(
   error: Pick<ZCodeUiError, "code" | "message">,
 ): boolean {
-  // 只有历史恢复残留的模型不可用提示才隐藏；当前发送/草稿报错需要展示，
-  // 否则 registry 移除模型后用户会看到“请求没返回”而没有任何可操作反馈。
+  // Only hide the stale unavailable-model banner left by history restore; live send/draft
+  // errors must show, or after a model is removed the user sees a silent no-reply.
   return Boolean(
     error.code === "ZCODE_RUNTIME_MODEL_UNAVAILABLE" &&
     HISTORICAL_MODEL_UNAVAILABLE_MESSAGES.some((message) => error.message.includes(message)),
@@ -160,8 +162,8 @@ export function ChatErrorBanner({
     }
 
     try {
-      // 错误横幅之前只能复制 TraceID，开发拿不到完整上下文。
-      // 这里统一复制摘要、TraceID 和详情，方便用户一键转发完整报错信息。
+      // The banner used to copy only the TraceID. Copy summary + TraceID + details so the whole
+      // failure forwards in one click.
       await navigator.clipboard.writeText(
         buildErrorCopyText({
           message: localizedErrorMessage,
@@ -247,8 +249,8 @@ export function ChatErrorBanner({
               className={actionButtonClassName}
               data-testid={TID_CHAT_ERROR_DETAILS_BUTTON}
               onClick={() => {
-                // 详情之前内嵌在 banner 里展开，长错误会把消息区直接撑高，聊天滚动也会突然跳动。
-                // 改成 dialog 后，横幅只保留单行摘要，详细内容放到独立浮层里看，结构和交互都更稳定。
+                // Details used to expand inline, letting long errors inflate the message area and
+                // jolt scrolling. A dialog keeps the banner to one line; the rest lives in its own layer.
                 setDetailsDialogOpen(true);
               }}
             >
@@ -286,8 +288,9 @@ export function ChatErrorBanner({
           </Button>
         ) : null}
 
-        {/* 错误横幅本身就是异常态，不能再经过 Radix Tooltip 的 Popper/Slot 状态链。
-            这里改成普通 Button，避免无可用模型等错误触发横幅时发生 Maximum update depth 循环。 */}
+        {/* The error banner is already an exceptional state; routing it through Radix Tooltip's
+            Popper/Slot chain again risks a Maximum update depth loop when e.g. no model is
+            available. Plain Button instead. */}
         {!modelConfigMissing ? (
           <Button
             type="button"
@@ -296,8 +299,8 @@ export function ChatErrorBanner({
             onClick={() => {
               void handleOpenFeedback();
             }}
-            // ChatErrorBanner 这里之前混用了原生 button，导致按钮体系、焦点态和禁用态都绕开了设计系统。
-            // 统一收口到 Button 组件后，错误横幅里的所有操作按钮才能保持同一套交互和主题表现。
+            // Raw button elements bypassed the design system's focus/disabled handling. Routing
+            // every banner action through Button keeps one interaction and theme story.
             className={cn(actionButtonClassName)}
             aria-label={intl.formatMessage({ id: "chat.error.feedback" })}
             title={error.traceId}

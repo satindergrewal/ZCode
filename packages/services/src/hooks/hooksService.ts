@@ -131,25 +131,25 @@ async function loadLegacyHooksFromLocation(
 }
 
 /**
- * 读取持久化 workspace hook trust digest 集合。
+ * Read the persisted workspace hook trust digest set.
  *
- * 整个函数不能包在 `try { ... } catch { return new Set(); }` 里：
- * 文件损坏/不可读与「无 trust 记录」无法区分且零诊断。根因：trust store 读取失败被
- * 吞掉后，调用方只能把所有 hook 标记为 `pending_trust`（"需要审核"），而 Runtime 侧
- * 对 trust store 损坏显式检测并以 `blocked_untrusted` 硬拦截——用户看到一条审核入口
- * 但无论怎样审批，Runtime 都不会放行。此为展示/运行时分歧（两侧均 fail-closed）。
+ * Never wrap this whole function in try/catch-return-emptySet: that makes a corrupt/unreadable
+ * file indistinguishable from no-trust-record with zero diagnostics. Root cause seen in the
+ * field: with read failures swallowed, callers marked every hook pending_trust (needs review)
+ * while the Runtime detects corruption and hard-blocks via blocked_untrusted - the user gets a
+ * review affordance that nothing can ever pass. A display/runtime split, both fail-closed.
  *
- * 手写的局部字段校验（isRecord + digest 正则）与 runtime/adapters
- * 使用的完整 strict schema 结论不一致——"JSON 合法但结构非法"（缺 schemaVersion、
- * 非法 decision、非法时间戳、未知字段等）的文件会被本层当作部分可信，runtime 却判
- * corrupt 全部阻断，UI 展示"已信任"而 Hook 永不执行。信任存储是权限边界，所有消费
- * 者必须对同一文件得出同一结论：改用 shared 的
- * parseWorkspaceHookTrustStoreContent（contracts schema 的单一权威下沉实现），
- * 任何 parse 失败一律 corrupt + fail-closed，不返回任何部分 digest。
+ * Hand-rolled field checks (isRecord + digest regex) disagree with the full strict schema used by
+ * runtime/adapters: a JSON-valid-but-shape-invalid file (missing schemaVersion, bad decision,
+ * bad timestamp, unknown fields...) counts as partially trusted here while runtime judges it
+ * corrupt and blocks everything - the UI shows trusted while the hook never runs. The trust store
+ * is a permission boundary; every consumer must reach the same conclusion about the same file.
+ * Use shared parseWorkspaceHookTrustStoreContent (the single authoritative contracts-schema
+ * implementation): any parse failure is corrupt + fail-closed, never a partial digest.
  *
- * 注意：存储目录解析（storage.dir 的 ~/、相对路径处理）与 Runtime 侧
- * resolveWorkspaceHookTrustStorePath（adapters）逻辑等价但各自内联——架构上 services
- * 不应反向依赖 adapters，统一需下沉到 shared 层，此处仅记录该重复。
+ * Note: storage-dir resolution (storage.dir ~ and relative handling) matches runtime
+ * resolveWorkspaceHookTrustStorePath (adapters) but is inlined here - services must not depend
+ * back on adapters; the shared sinking is noted, duplication recorded intentionally.
  */
 async function readPersistentWorkspaceHookTrustDigests(
   workspaceIdentity: string,
@@ -168,22 +168,23 @@ async function readPersistentWorkspaceHookTrustDigests(
     : join(home, ".zcode");
   const trustFilePath = join(storageRoot, "security", "workspace-hook-trust-v1.json");
 
-  // 异步读取 + ENOENT 区分：不用 existsSync 预检——同步调用会阻塞服务
-  // 线程，且「检查→读取」之间存在 TOCTOU 窗口；readFile 的 ENOENT 本身就是
-  // 权威的"文件不存在"信号。
+  // Async read with ENOENT handling, no existsSync precheck: the sync call would block the service
+  // thread and check-then-read has a TOCTOU window; readFile ENOENT is the authoritative
+  // missing-file signal.
   let content: string;
   try {
     content = await readFile(trustFilePath, "utf8");
   } catch (error) {
     if (isNodeError(error, "ENOENT")) {
-      // 文件不存在 ⇒ 合理无记录，返回空集且不标记 corrupt。
+      // Missing file means legitimately no record: return empty without marking corrupt.
       return { digests: new Set<string>(), corrupt: false };
     }
-    // services 层曾直接 console.warn，无法进入统一服务日志文件，也无法在
-    // 测试中注入 sink。改用可注入 ServiceLogger；此为低频可恢复降级，使用 warn。
+    // services used to console.warn directly: nothing reached the unified service log and tests
+    // could not inject a sink. Injectable ServiceLogger instead; low-frequency recoverable
+    // degradation, hence warn.
     logger.warn(
       undefined,
-      "Workspace Hook Trust store 不可读，已 fail-closed 忽略全部持久信任记录",
+      "Workspace Hook Trust store unreadable; fail-closed, ignoring all persisted trust records",
       {
         path: trustFilePath,
         error: error instanceof Error ? error.message : String(error),
@@ -192,12 +193,12 @@ async function readPersistentWorkspaceHookTrustDigests(
     return { digests: new Set<string>(), corrupt: true };
   }
 
-  // JSON 语法错误与 schema 校验失败统一判 corrupt（与 runtime/adapters 同判）。
+  // JSON syntax errors and schema failures alike count as corrupt (same verdict as runtime/adapters).
   const parsedStore = parseWorkspaceHookTrustStoreContent(content);
   if (parsedStore.status === "invalid") {
     logger.warn(
       undefined,
-      "Workspace Hook Trust store 结构不符合 schema，已 fail-closed 忽略全部持久信任记录",
+      "Workspace Hook Trust store fails schema; fail-closed, ignoring all persisted trust records",
       { path: trustFilePath },
     );
     return { digests: new Set<string>(), corrupt: true };

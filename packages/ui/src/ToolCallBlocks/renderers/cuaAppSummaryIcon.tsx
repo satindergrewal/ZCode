@@ -13,9 +13,9 @@ export function CuaAppSummaryIcon({
 }: {
   bundleId?: string;
   /**
-   * 图标取不到时显示什么（平台无 resolver、Linux 无 locator、读取失败）。
-   * 默认沿用 CUA 图标；node_repl 工具卡传入自己的图标，避免同一张卡在解析失败时
-   * 跳成另一个指针图形。
+   * What to show when no icon resolves (no platform resolver, no Linux locator, read
+   * failure). Defaults to the CUA icon; the node_repl tool card passes its own so one card
+   * does not jump to a different pointer glyph on resolution failure.
    */
   fallback?: ReactNode;
   iconRequest?: ApplicationIconRequest | string | null;

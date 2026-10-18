@@ -5,9 +5,9 @@ function readTerminalColor(style: CSSStyleDeclaration, name: string, fallback: s
 }
 
 /**
- * xterm 的 `css.toColor` 不认 `color-mix()`、`var()`、现代 `rgb(r g b / a)` 新语法。
- * 这里先用隐藏元素让浏览器解析掉 `var()/color-mix()`，再通过 canvas 将结果规范化为
- * xterm 能解析的老式 `rgba(r, g, b, a)` 字符串。
+ * xterm's `css.toColor` does not understand `color-mix()`, `var()`, or modern `rgb(r g b / a)`
+ * syntax. A hidden element lets the browser resolve `var()/color-mix()` first, then a canvas
+ * pass normalizes the result into the legacy `rgba(r, g, b, a)` form xterm can parse.
  */
 const colorResolverEl: HTMLSpanElement | null =
   typeof document === "undefined" ? null : document.createElement("span");
@@ -66,7 +66,7 @@ const TERMINAL_THEME_TOKENS = {
   brightWhite: ["--color-terminal-bright-white", "#f9fafb"],
 } satisfies Partial<Record<keyof ITheme, readonly [string, string]>>;
 
-/** 从 CSS 变量读取 terminal 主题色，跟随 dark/light 切换 */
+/** Read terminal theme colors from CSS variables, following dark/light switches. */
 function getTerminalTheme() {
   const style = getComputedStyle(document.documentElement);
   return Object.fromEntries(
@@ -83,9 +83,10 @@ function restrictInheritedTerminalTheme(profileTheme: ITheme | undefined): IThem
   }
 
   const inheritedTheme = { ...profileTheme };
-  // macOS iTerm2 / Terminal profile 会带回 background / foreground / cursor，
-  // 直接覆盖 ZCode 主题 token 会让浅色 app 里出现深色终端块，或光标和当前背景撞色后不可见。
-  // 这些基础可读性颜色必须跟随 app 主题；系统 profile 只继承 ANSI、选区等终端细节色。
+  // A macOS iTerm2/Terminal profile brings its own background/foreground/cursor; letting them
+  // override the ZCode theme tokens renders a dark terminal block inside a light app, or a
+  // cursor invisible against the background. Base readability colors always follow the app
+  // theme; system profiles only inherit terminal detail colors such as ANSI and selection.
   delete inheritedTheme.background;
   delete inheritedTheme.foreground;
   delete inheritedTheme.cursor;

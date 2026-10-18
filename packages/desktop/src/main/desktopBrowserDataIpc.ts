@@ -8,7 +8,7 @@ export function registerBrowserDataIpcHandlers(logger: {
 }) {
   ipcMain.handle(PlatformChannels.ImportChromeBrowserData, (_event, value: unknown) => {
     const requested = value as ChromeBrowserDataImportOptions | undefined;
-    // renderer 只能为本次调用显式传 true；main 不接受或持久化其他授权形态。
+    // The renderer may only pass true explicitly for this call; main accepts and persists no other authorization shape.
     const allowElevatedChromeDecryption = requested?.allowElevatedChromeDecryption === true;
     return importChromeBrowserData({ allowElevatedChromeDecryption, logger });
   });

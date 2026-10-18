@@ -1,5 +1,5 @@
 /**
- * useSettingService —— 设置服务 hooks
+ * useSettingService - settings service hooks.
  */
 import { useState, useEffect, useCallback } from "react";
 import { APP_RUNTIME_PREFERENCES_CHANGED_BROADCAST_CHANNEL, type AppSettings } from "@zcode/shared";
@@ -19,9 +19,9 @@ interface SettingsStore {
   listeners: Set<(snapshot: SettingsSnapshot) => void>;
 }
 
-// SettingsPage 外层与模型配置页内层可能分别绑定 Local/Remote Service；
-// 共享一份 snapshot/inflight 会让一次 Environment 的刷新结果覆盖另一份事实源。
-// 按 Service 实例隔离 store，保持同一 Environment 内的组件共享，同时阻断跨 Environment 串写。
+// The settings page shell and the model-config page body may bind Local/Remote services separately;
+// one snapshot/inflight pair would let one environment refresh overwrite the other truth.
+// Isolate the store per service instance: components within one environment share it, cross-environment writes stay blocked.
 const stores = new WeakMap<object, SettingsStore>();
 const unavailableSettingsStore: SettingsStore = {
   snapshot: {
@@ -90,7 +90,7 @@ async function refreshSettingsStore(settingService: ISettingService | undefined)
       emitSettingsSnapshot(store);
     } catch (error) {
       store.snapshot = {
-        // 设置读取失败时保留旧快照，避免一次刷新错误把已可用的设置页降级为空状态。
+        // On a read failure keep the previous snapshot so one refresh error never blanks a working settings page.
         settings: store.snapshot.settings,
         loading: false,
         error,
@@ -104,7 +104,7 @@ async function refreshSettingsStore(settingService: ISettingService | undefined)
   return store.inflightRefresh;
 }
 
-/** 获取和更新应用设置 */
+/** Read and update app settings. */
 export function useSettings() {
   const { botsService, broadcastService, settingService, zcodeAgentService } = useServices();
   const platform = usePlatform();
@@ -190,7 +190,7 @@ export function useSettings() {
   };
 }
 
-/** 最近项目列表的便捷 hook */
+/** Convenience hook over the recent-projects list. */
 export function useRecentProjects() {
   const { settings, loading, update } = useSettings();
   return {

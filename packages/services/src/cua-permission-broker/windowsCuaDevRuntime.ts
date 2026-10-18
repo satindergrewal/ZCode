@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- source/product 两种解析模式共享同一稳定错误契约与路径校验，拆开会引入循环依赖 */
+/* eslint-disable max-lines -- source/product resolution modes share one error contract and path validation; splitting would create a cycle */
 import { createHash } from "node:crypto";
 import type { Stats } from "node:fs";
 import * as fs from "node:fs/promises";
@@ -71,9 +71,9 @@ const defaultHashBytes = async (bytes: string | Uint8Array): Promise<string> =>
   createHash("sha256").update(bytes).digest("hex");
 
 /**
- * Windows 产品运行时解析边界：
- * - 显式开发目录具有最高优先级，配置错误时 fail closed，不能悄悄改用安装资源；
- * - 产品模式只读取 resources/tools/cua-helper，不搜索源码目录或 node_modules。
+ * Windows product-runtime resolution boundaries:\ * - an explicit dev dir wins and fails closed on misconfiguration, never silently falling back to
+ * packaged resources;
+ * - product mode reads only resources/tools/cua-helper, never source dirs or node_modules.
  */
 export async function resolveWindowsCuaRuntime(
   options: WindowsCuaRuntimeResolveOptions = {},
@@ -106,8 +106,8 @@ async function resolveDevelopmentRuntime(
     );
   }
 
-  // 构建和测试会在非 Windows 主机校验 Windows runtime；宿主 path.isAbsolute
-  // 不认识 C:\ 路径，不能在进入可注入文件系统前误判为相对路径。
+  // Builds/tests validate the Windows runtime on non-Windows hosts; the host's path.isAbsolute
+  // does not understand C:\ paths, so never pre-judge relativity before the injectable fs.
   const root = isHostAbsolute ? resolve(configuredRoot) : windowsPath.normalize(configuredRoot);
   const rootRealPath = await requireDevelopmentRuntimeRoot(fileSystem, root);
   const producerContract = await requireExpectedPackage(
@@ -335,7 +335,7 @@ async function requireDevelopmentRuntimeRoot(
       throw new Error("development root is not a regular directory");
     }
     const rootRealPath = await realpathFile(fileSystem, root);
-    // 根因：stat 会跟随 symlink/junction；开发目录必须绑定到用户显式配置的物理根。
+    // Root cause: stat follows symlinks/junctions; the dev dir must bind to the user's explicit physical root.
     if (!samePhysicalPath(root, rootRealPath)) {
       throw new Error("development root resolves outside its configured location");
     }
@@ -362,8 +362,8 @@ function hasExactKeys(value: object, expectedKeys: readonly string[]): boolean {
 }
 
 function resolveManifestArtifact(root: string, artifact: string, field: "entry" | "addon"): string {
-  // 测试和构建编排可能在非 Windows 主机上检查 Windows 清单；仅用宿主 path.isAbsolute
-  // 会把 C:\... 误判成相对路径，因此同时按 Windows 路径语义 fail closed。
+  // Test/build orchestration may check Windows manifests on non-Windows hosts; host path.isAbsolute
+  // alone misreads C:\... as relative, so also fail closed under Windows path semantics.
   if (!isCanonicalRelativeArtifactPath(artifact)) {
     throwInvalidArtifactPath(field);
   }
@@ -488,7 +488,7 @@ async function readRequiredArtifact(
   try {
     return await fileSystem.readFile(artifactPath);
   } catch {
-    // stat 与 read 之间文件仍可能被替换/删除；不能把宿主 I/O 细节泄漏成不稳定诊断。
+    // The file can still be replaced/deleted between stat and read; never leak host I/O details as unstable diagnostics.
     throw new WindowsCuaDevRuntimeResolutionError(
       reason,
       `Windows CUA runtime is missing required ${artifactKind}: ${artifact}.`,
@@ -557,7 +557,7 @@ async function requireExpectedPackage(
       addon: contract.windows.nativeAddon,
     };
   } catch {
-    // 解析和 I/O 失败共用稳定的 package 诊断，避免依赖底层错误文本。
+    // Resolution and IO failures share one stable package diagnostic; never depend on underlying error text.
   }
   throw new WindowsCuaDevRuntimeResolutionError(
     "invalid-package",

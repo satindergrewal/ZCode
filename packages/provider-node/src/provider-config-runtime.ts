@@ -37,7 +37,7 @@ export interface NodeProviderConfigRuntimeOptions {
   readonly watch?: boolean;
 }
 
-/** 组装一个 Node.js 进程内共享的 ZCode Built-in/Personal Config 运行边界。 */
+/** Assembles the in-process Node.js runtime boundary shared by ZCode Built-in/Personal config. */
 export class NodeProviderConfigRuntime {
   readonly configService: ProviderConfigService;
   readonly #zcodeBuiltinSource:
@@ -99,19 +99,19 @@ export class NodeProviderConfigRuntime {
     return this.#personalRepository;
   }
 
-  /** Environment 同一周期检查中恢复未对齐依赖，不被下载 TTL 或失败挡住。 */
+  /** Re-aligns lagging dependencies within the same environment check, unhindered by download TTL or failures. */
   onDidCheckZCodeBuiltin(listener: () => Promise<void>): () => void {
     this.#checkListeners.add(listener);
     return () => this.#checkListeners.delete(listener);
   }
 
   start(): Promise<void> {
-    if (this.#disposed) throw new Error("NodeProviderConfigRuntime 已 dispose");
+    if (this.#disposed) throw new Error("NodeProviderConfigRuntime disposed");
     if (this.#startPromise) return this.#startPromise;
     const startPromise = this.configService.read().then(() => {
       if (this.#disposed) return;
       void this.#checkBackground();
-      // Managed Worker 无下载配置也无恢复 owner，不建立周期任务。
+      // A managed worker has no download config and no recovery owner; no periodic task.
       if (
         this.#remoteSynchronizer ||
         this.#zcodeBuiltinSource instanceof EndpointScopedZCodeBuiltinSource ||

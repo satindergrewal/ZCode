@@ -45,8 +45,9 @@ function findNearestScrollableAncestor(element: HTMLElement): HTMLElement | null
   while (current) {
     const style = window.getComputedStyle(current);
     if (isPotentialVerticalScrollContainer(style.overflowY)) {
-      // 折叠/展开时顶层行高度会先变、滚动高度后变；只认“当前已可滚”
-      // 会让虚拟器在过渡帧丢失 scrollElement，展开后出现 header 有状态但内容空白。
+      // While collapsing/expanding, top-level row heights change before scroll height does;
+      // accepting only "currently scrollable" containers would drop the scrollElement on the
+      // transition frame, leaving headers with state but blank content after expanding.
       return current;
     }
     current = current.parentElement;
@@ -136,10 +137,10 @@ function VirtualizedGroupedTopLevelList({
     overscan: GROUPED_TOP_LEVEL_VIRTUALIZATION_OVERSCAN,
     scrollMargin,
     scrollToFn: scrollGroupedTaskVirtualizerToOffset,
-    // 虚拟器可能在共享滚动容器已经滚动后重新绑定 scrollElement。
-    // react-virtual 默认 initialOffset 是 0，初次绑定时会主动 scrollTo(0)，
-    // 造成左侧任务列表滚动中偶发回顶；这里从 DOM 现场反查真实 scrollTop，
-    // 避免首个 layout effect 里 scrollElement state 尚未写回时提前缓存 0。
+    // The virtualizer may rebind the scrollElement after the shared container has scrolled.
+    // react-virtual's default initialOffset is 0 and it actively scrollTo(0)s on first bind,
+    // snapping the task list back to the top mid-scroll. Read the real scrollTop from the DOM
+    // so the first layout effect cannot cache 0 before scrollElement state is written back.
     initialOffset: resolveInitialScrollOffset,
   });
   const virtualRows = rowVirtualizer.getVirtualItems();
@@ -181,12 +182,13 @@ function VirtualizedGroupedTopLevelList({
         overflowAnchor: "none",
       }}
     >
-      {/* 非 group 顶层 task 也可能有 2000+ 条；以前只虚拟化 group 内任务，
-          顶层 view.nodes 仍一次性挂载全部行。这里保留 dnd-kit 的真实 index，
-          但只渲染滚动窗口附近节点，降低初次渲染和滚动 CPU。 */}
-      {/* 虚拟行会在滚动中频繁挂载/卸载，Chrome 的 scroll anchoring 偶尔会
-          把这些绝对定位节点选为锚点并反向修正 scrollTop，表现成列表突然回顶。
-          这里禁用虚拟列表子树的锚点选择，滚动位置只由用户滚轮和虚拟器控制。 */}
+      {/* Top-level non-group tasks can also exceed 2000; only in-group tasks were virtualized
+          while view.nodes mounted every row at once. Keep the real dnd-kit index but render only
+          nodes near the scroll window, cutting initial-render and scroll CPU. */}
+      {/* Virtual rows mount/unload while scrolling, and Chrome scroll anchoring can pick these
+          absolutely positioned nodes as anchors and correct scrollTop backwards, appearing as a
+          sudden jump to the top. Disable anchoring in the virtualized subtree; scroll position
+          stays with the user's wheel and the virtualizer. */}
       {renderedVirtualNodes}
     </div>
   );

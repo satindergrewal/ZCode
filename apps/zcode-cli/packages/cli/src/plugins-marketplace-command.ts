@@ -30,7 +30,7 @@ export async function runMarketplaceCommand(
   switch (action) {
     case "add": {
 
-      // marketplaces 只有 Host 级一份，这里仅校验拼写以保持参数面一致。
+            // Only one Host-level marketplaces set exists; validate spelling here merely to keep the argument surface consistent.
       resolveScope(flags.scope);
       const source = requireOne(rest);
       const summary = await (await resolveDep(deps, "addMarketplace"))({
