@@ -57,6 +57,7 @@ const listWorkflowRunsHandler: ToolHandler = async (input, context) => {
     // `sideEffectScope: "none"`. Literal-equality match, no path normalization -- written raw, queried raw;
     // normalizing would create one-sided misses.
     // The limit is clamped to [1, 50] by the input schema (preprocess); the port never sees an unbounded scan.
+    cwd: context.workingDirectory,
     limit: parsed.limit,
     ...(parsed.statuses === undefined ? {} : { statuses: parsed.statuses }),
   });

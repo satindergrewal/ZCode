@@ -183,6 +183,7 @@ async function executeBashHandler(
   // turnExecutionModel, so an idle-time turn's end/failure lands the full agent loop on the user's own plan.
   // Mirrors the subagent runner's BACKGROUND_UNAVAILABLE: idle turns reject explicit background and also
   // disable timeout-auto-background.
+  const backgroundDisabled = context.offPeakTurn === true;
   if (parsed.run_in_background && backgroundDisabled) {
     throw createCoreError(
       CoreErrorType.ToolExecutionFailed,

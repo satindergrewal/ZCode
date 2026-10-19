@@ -23,11 +23,11 @@ export function createCliProviderRefreshReporter(
   return {
     onBuiltinRefreshError(error: unknown) {
       stderr.write(
-                `ZCode Built-in refresh failed: ${error instanceof Error ? error.message : "unknown error"}\n`,
+        `ZCode Built-in refresh failed: ${error instanceof Error ? error.message : "unknown error"}\n`,
       );
     },
     onBuiltinRefreshResult(event: ZCodeBuiltinRefreshEvent) {
-            // TTL checks are not production events; only successful updates leave a default trace, and CDN URL query params or content must not be printed.
+      // TTL checks are not production events; only successful updates leave a default trace, and CDN URL query params or content must not be printed.
       if (event.result === "updated" || process.env.NODE_ENV !== "production") {
         stderr.write(
           `ZCode Built-in ${event.result}${event.reason ? ` (${event.reason})` : ""}${event.revision === undefined ? "" : ` revision=${event.revision} source=CDN`}\n`,
@@ -88,7 +88,7 @@ export async function prepareCliProviderRuntimeEnv(
     activeFilePath: cachePaths.activeFilePath,
     watch: false,
   });
-    // The entry only prepares resources and paths; downloads are owned and cancelled by the long-lived Prompt/TUI runtime.
+  // The entry only prepares resources and paths; downloads are owned and cancelled by the long-lived Prompt/TUI runtime.
   try {
     await source.read();
   } finally {
@@ -143,8 +143,9 @@ async function resolveBundledZCodeBuiltinProviderConfig(input: {
   }
 
   const entrypoint = input.entrypoint?.trim();
-    if (!entrypoint) throw new Error("Cannot locate the CLI ZCode Built-in Provider Config: missing entry path");
-    // Global bin entries can be symlinks; the with-pack layout must resolve relative to the real entry.
+  if (!entrypoint)
+    throw new Error("Cannot locate the CLI ZCode Built-in Provider Config: missing entry path");
+  // Global bin entries can be symlinks; the with-pack layout must resolve relative to the real entry.
   const entryDirectory = dirname(realpathSync(resolve(entrypoint)));
   const candidates = [
     join(entryDirectory, "provider", "zcode-builtin.json"),
@@ -152,7 +153,7 @@ async function resolveBundledZCodeBuiltinProviderConfig(input: {
   ];
   const candidate = candidates.find((filePath) => existsSync(filePath));
   if (candidate) return candidate;
-    throw new Error(`Cannot locate the CLI ZCode Built-in Provider Config: ${candidates.join(", `)}`);
+  throw new Error(`Cannot locate the CLI ZCode Built-in Provider Config: ${candidates.join(", ")}`);
 }
 
 function getSeaProviderConfigAssets(): SeaProviderConfigAssets | undefined {

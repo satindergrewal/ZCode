@@ -246,6 +246,7 @@ class V4SavedWorkflowStartRejectedError extends Error {
   constructor(reason: SavedWorkflowStartRejectionReason, message?: string) {
     // message goes straight into ack.message (gateway convention: error.message closes into ACK); readable
     // fallback when absent.
+    super(message ?? `saved workflow start rejected: ${reason}`);
     this.name = "V4SavedWorkflowStartRejectedError";
     this.reasonCode = `${SAVED_WORKFLOW_START_REJECTED_FAULT_PREFIX}${reason}`;
   }

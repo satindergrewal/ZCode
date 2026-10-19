@@ -36,7 +36,8 @@ const WORKFLOW_ARTIFACT_DESCRIPTION_MAX_CHARS = 500;
 /**
  * Deliverable first, rest in original order (stable). All three lists pass here before truncating, so the cap
  * cannot cut the deliverable. The port's `artifactsOf` already sorts; sorting again covers the snapshot and
- notification paths (they read the projection's order).
+ * notification paths (they read the projection's order).
+ */
 function primaryFirst<T extends { primary?: true }>(artifacts: readonly T[]): T[] {
   return [...artifacts].sort(
     (left, right) => Number(right.primary === true) - Number(left.primary === true),

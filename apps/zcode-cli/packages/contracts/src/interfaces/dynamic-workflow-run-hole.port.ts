@@ -59,7 +59,7 @@ export interface DynamicWorkflowRunFillHoleRequest {
   /** Hole site id (`hole#21b40fca`, name key). */
   holeId: string;
   body: string;
-  /** Filling session, recorded into `hole-filled.filledBy`.
+  /** Filling session, recorded into `hole-filled.filledBy`. */
   parentSessionId?: SessionId | string;
   /** FillWorkflowHole tool call that requested the fill. */
   toolCallId?: ToolCallId | string;

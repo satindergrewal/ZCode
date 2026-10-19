@@ -301,6 +301,7 @@ async function resolveWorkspaceFile(
   } catch (cause) {
     // ENOENT (including a missing middle segment) lands here: a missing path and a symlink to a missing target are
     // the same fact.
+    throw sourceMissing(given, cause);
   }
   if (resolveWithinWorkspace(realCwd, real) === undefined) throw outsideWorkspace(given);
   return { real, relative };

@@ -39,6 +39,7 @@ const listSavedWorkflowsHandler: ToolHandler = async (input, context) => {
 
   // cwd is always this session's working directory: the model may not scan across projects; also the
   // precondition of `sideEffectScope: "none"`.
+  const { entries, invalid } = listSavedWorkflows({ cwd: context.workingDirectory ?? "." });
 
   return {
     workflows: entries,

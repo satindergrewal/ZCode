@@ -68,11 +68,12 @@ const submitResultHandler: ToolHandler = async (input, context) => {
 
 /**
  * submit_result's tool entry. Without schema = the generic declaration (`result` any JSON; per-ask schema
- via the ask epilogue); with schema = the dwf mono subagent's typed declaration (`result` is that actor's
-// sole ask-result schema, frozen per actor across asks, cache-prefix safe) plus `strict` eligibility for
-// native Anthropic enforcement. Only the provider-visible declaration/description differ: handler,
-// permissions, concurrency group, terminal semantics, budget are byte-identical -- engine-side validation is
-// the same for both; typing just makes the shape provider-visible (and enforced where supported).
+ * via the ask epilogue); with schema = the dwf mono subagent's typed declaration (`result` is that actor's
+ * sole ask-result schema, frozen per actor across asks, cache-prefix safe) plus `strict` eligibility for
+ * native Anthropic enforcement. Only the provider-visible declaration/description differ: handler,
+ * permissions, concurrency group, terminal semantics, budget are byte-identical -- engine-side validation is
+ * the same for both; typing just makes the shape provider-visible (and enforced where supported).
+ */
 export function createSubmitResultToolEntry(resultSchema?: JsonSchema): ToolEntry {
   const typed = resultSchema !== undefined;
   return {
@@ -85,12 +86,12 @@ export function createSubmitResultToolEntry(resultSchema?: JsonSchema): ToolEntr
       readOnly: false,
       destructive: false,
       // Payload nature: concurrentSafe:false puts it in its own serial group. When a valid submit
- // (success requests turn end) runs, later-scheduled siblings get the existing synthetic ToolCancelled
-// (success requests turn end) runs, later-scheduled siblings get the existing synthetic ToolCancelled
+      // (success requests turn end) runs, later-scheduled siblings get the existing synthetic ToolCancelled
+      // while earlier ones complete first -- terminal semantics need no new mechanism.
       concurrentSafe: false,
       // Terminal tool: a valid submit (engine accept) is success and must end the actor turn. Declared via
- // metadata so the executor's generic withTerminalToolTurnStop attaches turnControl on the success
-// result -- no name-keyed hardcoding, no handler-side stop channel.
+      // metadata so the executor's generic withTerminalToolTurnStop attaches turnControl on the success
+      // result -- no name-keyed hardcoding, no handler-side stop channel.
       stopTurnOnSuccess: true,
       maxOutputBytes: MAX_SUBMIT_RESULT_MODEL_BYTES,
       sideEffectScope: "session",
@@ -103,7 +104,7 @@ export function createSubmitResultToolEntry(resultSchema?: JsonSchema): ToolEntr
     ...(typed ? { strict: true } : {}),
     outputSchema: SubmitResultOutputJsonSchema,
     // Runtime zod validation is the same for both (result any JSON): per-ask shape is validated engine-side
-// at the port, returning repairable violations.
+    // at the port, returning repairable violations.
     runtimeOutputSchema: SubmitResultOutputSchema,
     permission: {
       permission: "workflow.submitResult",

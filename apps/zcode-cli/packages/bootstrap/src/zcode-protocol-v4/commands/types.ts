@@ -160,7 +160,7 @@ export interface V4CommandCoreHost {
    * true=turn-tail segment; false=mid segment (reject); null=no projection/unknown (treated as translation failure).
    */
   isLatestAssistantSegmentRow?(sessionId: string, rowId: number): boolean | null;
-  /** The single stable-fork resolver: projection gate plus transcript-persistent anchor/fallback.
+  /** The single stable-fork resolver: projection gate plus transcript-persistent anchor/fallback. */
   resolveStableForkTarget?(sessionId: string, rowId: number): Promise<V4StableForkTargetResolution>;
   /**
    * latestAssistantRetryOnly core-side guard: retryTurn may target only the current projection's last
@@ -172,7 +172,7 @@ export interface V4CommandCoreHost {
    * userInput row. false/null are handler-refused, so legacy clients cannot bypass the UI.
    */
   isLatestEditableUserRow?(sessionId: string, rowId: number): boolean | null;
-  /** rowId -> product turnId (editUserQuery's store lookup without an assistant anchor).
+  /** rowId -> product turnId (editUserQuery's store lookup without an assistant anchor). */
   getTurnIdForRow?(sessionId: string, rowId: number): string | null;
   /**
    * restoreWarning self-heal probe: has this process's Registry published a usable model?

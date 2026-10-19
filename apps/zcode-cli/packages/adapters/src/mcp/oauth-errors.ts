@@ -66,6 +66,7 @@ export function createInteractiveAuthorizationRequiredError(input: {
  * Must stay distinct from `interactiveRequired`: a transient AS outage does not invalidate the grant, and
  * misrouting it to interactive grant needlessly interrupts the user, while returning a token already rejected by
  * the resource server just produces a second 401.
+ */
 export function createTemporaryRefreshFailureError(input: {
   cause?: unknown;
   serverName: string;

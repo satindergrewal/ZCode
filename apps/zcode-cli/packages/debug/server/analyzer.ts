@@ -1481,7 +1481,8 @@ function preview(text: string, maxLength = 180): string {
 }
 
 function estimateTokens(text: string): number {
-  const cjkChars = text.match(/\p{Han}/gu)?.length ?? 0;
+  // Canonical Script= form: tsc's regex check rejects the bare `\p{Han}` shorthand with TS1529.
+  const cjkChars = text.match(/\p{Script=Han}/gu)?.length ?? 0;
 
   const otherChars = text.length - cjkChars;
   return Math.ceil((cjkChars * 2 + otherChars) / 3);

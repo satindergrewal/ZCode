@@ -6,6 +6,7 @@ const JsInputBaseShape = {
   // field copy must not promise cross-call state for either boundary -- lifecycles live in each tool description.
   //
   // optional-only cannot tell the model when to override the default; long waits time out after side effects land.
+  code: z.string().describe("JavaScript code to execute in the Node REPL session"),
   timeout_ms: z
     .number()
     .int()
